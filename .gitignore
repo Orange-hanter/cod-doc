@@ -1,2 +1,16 @@
 __pycache__/
+*.py[cod]
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
 .chroma/
+.cod-doc/
+.env
+*.env
+.idea/
+.vscode/
+.pytest_cache/
+.coverage

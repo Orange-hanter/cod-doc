@@ -1,0 +1,109 @@
+/* COD-DOC TUI Styles */
+
+Screen {
+    background: $surface;
+}
+
+#wizard-title, .panel-title {
+    background: $primary;
+    color: $text;
+    padding: 1 2;
+    text-style: bold;
+    dock: top;
+}
+
+#wizard-body {
+    padding: 2 4;
+    height: 1fr;
+}
+
+.wizard-step { height: auto; }
+.hidden { display: none; }
+
+.field-label {
+    margin-top: 1;
+    color: $accent;
+    text-style: bold;
+}
+
+.hint {
+    color: $text-muted;
+    font-style: italic;
+    padding-bottom: 1;
+}
+
+#wizard-nav {
+    dock: bottom;
+    padding: 1 2;
+    height: 5;
+}
+
+#wizard-nav Button { margin: 0 1; min-width: 16; }
+
+/* Dashboard */
+#main-layout { height: 1fr; }
+
+#projects-panel {
+    width: 40%;
+    border-right: solid $primary;
+}
+
+#detail-panel { width: 60%; }
+
+#projects-list {
+    height: 1fr;
+    padding: 1;
+}
+
+#project-actions, #detail-actions {
+    height: 5;
+    padding: 1;
+    dock: bottom;
+}
+
+#project-actions Button, #detail-actions Button { margin: 0 1; }
+
+/* Dialog */
+#dialog-body {
+    border: double $primary;
+    padding: 2 4;
+    margin: 4 8;
+    background: $surface-darken-1;
+    height: auto;
+}
+
+#dialog-title {
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+}
+
+/* Agent Run */
+#agent-layout { height: 1fr; padding: 1; }
+
+#agent-options {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#agent-controls {
+    height: 5;
+    layout: horizontal;
+}
+
+#agent-controls Button { margin: 0 1; }
+
+#agent-log {
+    height: 1fr;
+    border: solid $primary;
+    padding: 1;
+}
+
+#human-input-block {
+    border: solid $warning;
+    padding: 1 2;
+    height: auto;
+    margin-top: 1;
+}
+
+#question-label { color: $warning; text-style: bold; }

@@ -1,0 +1,41 @@
+services:
+  cod-doc:
+    build: .
+    container_name: cod-doc
+    restart: unless-stopped
+    ports:
+      - "${COD_DOC_API_PORT:-8765}:8765"
+    environment:
+      # Обязательно: API-ключ OpenRouter
+      COD_DOC_API_KEY: ${COD_DOC_API_KEY:?Укажите COD_DOC_API_KEY в .env файле}
+      # Модель
+      COD_DOC_MODEL: ${COD_DOC_MODEL:-anthropic/claude-sonnet-4-6}
+      COD_DOC_BASE_URL: ${COD_DOC_BASE_URL:-https://openrouter.ai/api/v1}
+      # Поведение агента
+      COD_DOC_AUTO_COMMIT: ${COD_DOC_AUTO_COMMIT:-false}
+      COD_DOC_AGENT_INTERVAL: ${COD_DOC_AGENT_INTERVAL:-60}
+      COD_DOC_MAX_ITERATIONS: ${COD_DOC_MAX_ITERATIONS:-50}
+    volumes:
+      # Конфиг и ChromaDB
+      - cod_doc_data:/data/cod-doc
+      # Монтируем проекты (добавляйте сюда свои репозитории)
+      # Пример:
+      # - /path/to/your/project:/projects/my-project:rw
+      # После монтирования зарегистрируйте проект через API:
+      # POST /api/projects {"name": "my-project", "path": "/projects/my-project"}
+    networks:
+      - cod_doc_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  cod_doc_data:
+    driver: local
+
+networks:
+  cod_doc_net:
+    driver: bridge

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# COD-DOC post-merge hook
+set -euo pipefail
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+echo "🔄 COD-DOC post-merge..."
+if [[ -f "$REPO_ROOT/MASTER.md" ]] && command -v cod-doc &>/dev/null; then
+  cod-doc hash update "$REPO_ROOT/MASTER.md"
+  if ! git diff --quiet MASTER.md 2>/dev/null; then
+    git add MASTER.md && git commit -m "chore: пересчёт хэшей после мержа [skip ci]" --no-verify
+    echo -e "${GREEN}✅ MASTER.md обновлён${NC}"
+  fi
+else
+  echo -e "${YELLOW}⚠️  cod-doc не найден — хэши не обновлены${NC}"
+fi
+echo -e "${GREEN}✅ post-merge завершён${NC}"; exit 0

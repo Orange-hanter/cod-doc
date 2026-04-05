@@ -1,6 +1,0 @@
-# COD-DOC зависимости
-# Базовые (нет внешних зависимостей для hash_calc.py и get_context.py)
-
-# Векторная БД (для reindex.py)
-chromadb>=0.4.0
-sentence-transformers>=2.2.0

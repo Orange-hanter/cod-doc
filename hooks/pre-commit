@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# COD-DOC pre-commit hook
+set -euo pipefail
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; NC='\033[0m'
+ERRORS=0
+echo "🔍 COD-DOC pre-commit check..."
+CHANGED_MD=$(git diff --cached --name-only --diff-filter=ACM | grep '\.md$' || true)
+[[ -z "$CHANGED_MD" ]] && { echo -e "${GREEN}✅ Нет .md файлов — OK${NC}"; exit 0; }
+
+while IFS= read -r file; do
+  LINK_LINES=$(git show ":$file" 2>/dev/null | grep -n '📁' || true)
+  if [[ -n "$LINK_LINES" ]]; then
+    MALFORMED=$(echo "$LINK_LINES" | grep -vP '📁\s+\S+\s+\|\s+🗃️\s+\S+\s+\|\s+🔑\s+sha:[0-9a-f]{12}' || true)
+    if [[ -n "$MALFORMED" ]]; then
+      echo -e "${RED}❌ Неверный формат ссылок в $file:${NC}"; echo "$MALFORMED"; ERRORS=$((ERRORS+1))
+    fi
+  fi
+done <<< "$CHANGED_MD"
+
+if echo "$CHANGED_MD" | grep -q 'MASTER\.md'; then
+  STALE=$(git show ":MASTER.md" 2>/dev/null | grep -n '🔴' || true)
+  if [[ -n "$STALE" ]]; then
+    echo -e "${YELLOW}⚠️  MASTER.md содержит устаревшие ссылки:${NC}"; echo "$STALE"; ERRORS=$((ERRORS+1))
+  fi
+fi
+
+[[ $ERRORS -gt 0 ]] && { echo -e "${RED}❌ Коммит отклонён: $ERRORS ошибок${NC}"; exit 1; }
+echo -e "${GREEN}✅ OK${NC}"; exit 0
