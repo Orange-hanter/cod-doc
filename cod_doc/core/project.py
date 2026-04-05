@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -14,6 +14,10 @@ from typing import Any
 import yaml
 
 from cod_doc.config import ProjectEntry
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class TaskStatus(str, Enum):
@@ -42,7 +46,7 @@ class Task:
         self.description = description
         self.priority = priority
         self.status = TaskStatus(status)
-        self.created = created or datetime.utcnow().isoformat()
+        self.created = created or _now()
         self.updated = updated or self.created
         self.result = result
         self.context_refs: list[str] = context_refs or []
@@ -97,7 +101,6 @@ class Project:
             self._write_state({"status": "idle", "last_run": None, "agent_context": []})
         if not self.entry.master_path.exists():
             self._create_master()
-        # Добавить .cod-doc/ в .gitignore проекта (агент не коммитит своё состояние)
         self._ensure_gitignore()
 
     def _ensure_gitignore(self) -> None:
@@ -117,7 +120,7 @@ class Project:
         tmpl = env.get_template("MASTER.md.j2")
         content = tmpl.render(
             project_name=self.entry.name,
-            date=datetime.utcnow().strftime("%Y-%m-%d"),
+            date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             repo=self.entry.path,
         )
         self.entry.master_path.write_text(content, encoding="utf-8")
@@ -157,7 +160,7 @@ class Project:
                         t.status = TaskStatus(v)
                     else:
                         setattr(t, k, v)
-                t.updated = datetime.utcnow().isoformat()
+                t.updated = _now()
                 self._save_tasks(tasks)
                 return t
         return None
@@ -183,15 +186,13 @@ class Project:
     def set_status(self, status: str) -> None:
         s = self._read_state()
         s["status"] = status
-        s["last_run"] = datetime.utcnow().isoformat()
+        s["last_run"] = _now()
         self._write_state(s)
 
     def push_message(self, role: str, content: str) -> None:
-        """Добавить сообщение в контекст агента (история диалога)."""
         s = self._read_state()
         ctx = s.get("agent_context", [])
         ctx.append({"role": role, "content": content})
-        # Ограничение: последние 50 сообщений
         s["agent_context"] = ctx[-50:]
         self._write_state(s)
 
@@ -211,12 +212,10 @@ class Project:
         return None
 
     def extract_next_actions(self) -> dict:
-        """Парсить блок next_actions из MASTER.md."""
         import json
         import re
 
         content = self.read_master() or ""
-        # Ищем JSON в разделе "Quick Actions"
         m = re.search(r"```json\s*(\{[^`]+\"next_step\"[^`]+\})\s*```", content, re.DOTALL)
         if m:
             try:

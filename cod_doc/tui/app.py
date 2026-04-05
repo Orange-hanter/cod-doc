@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 
@@ -17,7 +18,7 @@ class CodDocApp(App):
     """COD-DOC TUI."""
 
     TITLE = "COD-DOC — Context Orchestrator for Documentation"
-    CSS_PATH = "cod_doc.tcss"
+    CSS_PATH = str(Path(__file__).parent / "cod_doc.tcss")
 
     BINDINGS = [
         Binding("q", "quit", "Выход", show=True),

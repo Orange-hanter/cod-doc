@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "cod-doc"
@@ -36,6 +36,10 @@ include = ["cod_doc*"]
 
 [tool.setuptools.package-data]
 "cod_doc" = ["tui/*.tcss"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100

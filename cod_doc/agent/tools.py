@@ -13,6 +13,7 @@ from typing import Any, Callable
 from cod_doc.core.context import get_context
 from cod_doc.core.hash_calc import calc_hash, make_ref, update_hashes
 from cod_doc.core.project import Project, Task, TaskStatus
+from cod_doc.core.reindex import reindex_project, search_documents as _search_docs
 
 # ── Определения инструментов для LLM ─────────────────────────────────────────
 
@@ -237,6 +238,36 @@ TOOL_DEFINITIONS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_documents",
+            "description": (
+                "Семантический поиск по проиндексированным документам проекта (ChromaDB). "
+                "Используй для поиска связанных спецификаций и зависимостей."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Поисковый запрос на естественном языке"},
+                    "n_results": {
+                        "type": "integer",
+                        "description": "Количество результатов (по умолчанию 5)",
+                        "default": 5,
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "reindex_project",
+            "description": "Переиндексировать документы проекта в ChromaDB. Запускай после создания новых файлов.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 
@@ -245,10 +276,16 @@ TOOL_DEFINITIONS = [
 class ToolExecutor:
     """Выполняет вызовы инструментов от имени агента."""
 
-    def __init__(self, project: Project, on_ask_human: Callable[[str, str], str] | None = None) -> None:
+    def __init__(
+        self,
+        project: Project,
+        on_ask_human: Callable[[str, str], str] | None = None,
+        chroma_path: str | None = None,
+    ) -> None:
         self.project = project
         self.root = project.entry.root
-        self.on_ask_human = on_ask_human  # callback для запроса к человеку
+        self.on_ask_human = on_ask_human
+        self.chroma_path = chroma_path
         self._blocked = False
         self._blocked_question: str | None = None
 
@@ -387,3 +424,32 @@ class ToolExecutor:
             "stats": self.project.stats(),
             "next_actions": self.project.extract_next_actions(),
         }
+
+    # ── ChromaDB tools ────────────────────────────────────────────────────────
+
+    def _tool_search_documents(self, query: str, n_results: int = 5) -> dict:
+        if not self.chroma_path:
+            return {"error": "ChromaDB не настроен. Укажите chroma_path в конфиге."}
+        try:
+            hits = _search_docs(
+                query=query,
+                chroma_path=self.chroma_path,
+                project_root=str(self.root),
+                n_results=n_results,
+            )
+            return {"results": hits, "count": len(hits)}
+        except ImportError as e:
+            return {"error": str(e)}
+        except Exception as e:
+            return {"error": f"ChromaDB ошибка: {e}"}
+
+    def _tool_reindex_project(self) -> dict:
+        if not self.chroma_path:
+            return {"error": "ChromaDB не настроен. Укажите chroma_path в конфиге."}
+        try:
+            result = reindex_project(self.root, self.chroma_path)
+            return result
+        except ImportError as e:
+            return {"error": str(e)}
+        except Exception as e:
+            return {"error": f"Reindex ошибка: {e}"}

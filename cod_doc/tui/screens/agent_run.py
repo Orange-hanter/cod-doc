@@ -107,13 +107,13 @@ class AgentRunScreen(Screen):
     def _hide_human_input(self) -> None:
         self.query_one("#human-input-block").add_class("hidden")
 
-    def _on_ask_human(self, question: str, context: str) -> str:
-        """Callback для агента: показать вопрос, дождаться ответа через очередь."""
+    async def _async_on_ask_human(self, question: str, context: str) -> str:
+        """Async-callback: показать вопрос и await ответа из очереди.
+        Вызывается напрямую из _agent_loop который уже в asyncio event loop.
+        """
         self._answer_queue = asyncio.Queue()
-        self.call_from_thread(self._show_human_input, question)
-        # Синхронное ожидание (запускаем в thread executor)
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self._answer_queue.get())
+        self._show_human_input(question)
+        return await self._answer_queue.get()
 
     # ── Button handlers ───────────────────────────────────────────────────────
 
@@ -147,7 +147,7 @@ class AgentRunScreen(Screen):
         cfg = self.config
         cfg.auto_commit = auto_commit
 
-        orch = Orchestrator(self.project, cfg, on_ask_human=self._on_ask_human)
+        orch = Orchestrator(self.project, cfg, async_on_ask_human=self._async_on_ask_human)
 
         try:
             if autonomous:

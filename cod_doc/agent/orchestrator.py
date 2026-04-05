@@ -15,15 +15,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable
 from typing import Any, Callable
 
 from openai import AsyncOpenAI
 
 from cod_doc.agent.prompts import SYSTEM_PROMPT
+from cod_doc.agent.retry import LLMError, with_retry
 from cod_doc.agent.tools import TOOL_DEFINITIONS, ToolExecutor
 from cod_doc.config import Config
 from cod_doc.core.project import Project, Task, TaskStatus
+
+# Тип async-callback для запроса к человеку
+AskHumanAsync = Callable[[str, str], Awaitable[str]]
 
 logger = logging.getLogger("cod_doc.agent")
 
@@ -47,9 +51,11 @@ class Orchestrator:
         project: Project,
         config: Config,
         on_ask_human: Callable[[str, str], str] | None = None,
+        async_on_ask_human: AskHumanAsync | None = None,
     ) -> None:
         self.project = project
         self.config = config
+        self._async_on_ask_human = async_on_ask_human
         self.client = AsyncOpenAI(
             api_key=config.api_key,
             base_url=config.base_url,
@@ -58,7 +64,12 @@ class Orchestrator:
                 "X-Title": "COD-DOC Orchestrator",
             },
         )
-        self.executor = ToolExecutor(project, on_ask_human=on_ask_human)
+        # Передаём sync-callback только в daemon/CLI режиме
+        self.executor = ToolExecutor(
+            project,
+            on_ask_human=on_ask_human if not async_on_ask_human else None,
+            chroma_path=config.chroma_path,
+        )
 
     # ── Public API ───────────────────────────────────────────────────────────
 
@@ -131,17 +142,20 @@ class Orchestrator:
                 yield AgentEvent("blocked", self.executor._blocked_question)
                 return
 
-            # Запрос к LLM
+            # Запрос к LLM с retry
             try:
-                response = await self.client.chat.completions.create(
-                    model=self.config.model,
-                    messages=[{"role": "system", "content": SYSTEM_PROMPT}] + messages,
-                    tools=TOOL_DEFINITIONS,
-                    tool_choice="auto",
-                    max_tokens=self.config.max_tokens,
+                llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+                response = await with_retry(
+                    lambda: self.client.chat.completions.create(
+                        model=self.config.model,
+                        messages=llm_messages,
+                        tools=TOOL_DEFINITIONS,
+                        tool_choice="auto",
+                        max_tokens=self.config.max_tokens,
+                    )
                 )
-            except Exception as e:
-                yield AgentEvent("error", f"Ошибка LLM: {e}")
+            except LLMError as e:
+                yield AgentEvent("error", str(e))
                 self.project.update_task(task.id, status=TaskStatus.FAILED, result=str(e))
                 return
 
@@ -169,18 +183,26 @@ class Orchestrator:
 
                 yield AgentEvent("tool_call", {"name": fn_name, "args": fn_args})
 
-                result = self.executor.execute(fn_name, fn_args)
-                yield AgentEvent("tool_result", {"name": fn_name, "result": result})
+                # ask_human — единственный инструмент с async-путём
+                if fn_name == "ask_human" and self._async_on_ask_human is not None:
+                    args: dict = json.loads(fn_args) if isinstance(fn_args, str) else fn_args
+                    question = args.get("question", "")
+                    context = args.get("context", "")
+                    yield AgentEvent("blocked", question)
+                    answer = await self._async_on_ask_human(question, context)
+                    result = json.dumps({"answer": answer}, ensure_ascii=False)
+                else:
+                    result = self.executor.execute(fn_name, fn_args)
+                    if self.executor.is_blocked:
+                        yield AgentEvent("blocked", self.executor._blocked_question)
+                        return
 
+                yield AgentEvent("tool_result", {"name": fn_name, "result": result})
                 tool_results.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
                     "content": result,
                 })
-
-                if self.executor.is_blocked:
-                    yield AgentEvent("blocked", self.executor._blocked_question)
-                    return
 
             messages.extend(tool_results)
 
@@ -200,14 +222,19 @@ class Orchestrator:
         messages = [{"role": "user", "content": prompt}]
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self.config.model,
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}] + messages,
-                tools=[t for t in TOOL_DEFINITIONS if t["function"]["name"] in ("create_task", "get_project_status")],
-                tool_choice="auto",
-                max_tokens=2048,
+            llm_msgs = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+            allowed = {t["function"]["name"] for t in TOOL_DEFINITIONS if t["function"]["name"] in ("create_task", "get_project_status")}
+            tools_subset = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in allowed]
+            response = await with_retry(
+                lambda: self.client.chat.completions.create(
+                    model=self.config.model,
+                    messages=llm_msgs,
+                    tools=tools_subset,
+                    tool_choice="auto",
+                    max_tokens=2048,
+                )
             )
-        except Exception as e:
+        except LLMError as e:
             yield AgentEvent("error", f"Ошибка генерации задач: {e}")
             return
 
