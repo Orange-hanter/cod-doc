@@ -14,3 +14,6 @@ venv/
 .vscode/
 .pytest_cache/
 .coverage
+
+# COD-DOC
+*.pyc

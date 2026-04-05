@@ -6,355 +6,45 @@ FastAPI REST API для production-режима COD-DOC.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import hmac
-import json
 import logging
 from contextlib import asynccontextmanager
-from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi import FastAPI
 
-from cod_doc.agent.orchestrator import AgentEvent, Orchestrator, run_daemon
-from cod_doc.config import Config, ProjectEntry
-from cod_doc.core.project import Project, Task
+from cod_doc.agent.orchestrator import run_daemon
+from cod_doc.config import Config
 from cod_doc.logging_config import setup_logging
 
-setup_logging()  # читает LOG_FORMAT / LOG_LEVEL из окружения
+from cod_doc.api.deps import get_daemon_task, set_config, set_daemon_task
+from cod_doc.api.routes import router as core_router
+from cod_doc.api.webhooks import router as webhook_router
+
+setup_logging()
 logger = logging.getLogger("cod_doc.api")
-
-# ── Lifespan ──────────────────────────────────────────────────────────────────
-
-_daemon_task: asyncio.Task | None = None
-_config: Config | None = None
-# repo_url → {project_name, secret}
-_webhook_registry: dict[str, dict] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _daemon_task, _config
-    _config = Config.load()
-    logger.info(f"COD-DOC API запущен. Проектов: {len(_config.list_projects())}")
-    if _config.is_configured:
-        _daemon_task = asyncio.create_task(
-            run_daemon(_config, log_callback=lambda m: logger.info(m))
+    cfg = Config.load()
+    set_config(cfg)
+    logger.info(f"COD-DOC API запущен. Проектов: {len(cfg.list_projects())}")
+    if cfg.is_configured:
+        task = asyncio.create_task(
+            run_daemon(cfg, log_callback=lambda m: logger.info(m))
         )
+        set_daemon_task(task)
     yield
-    if _daemon_task:
-        _daemon_task.cancel()
+    daemon = get_daemon_task()
+    if daemon:
+        daemon.cancel()
 
 
 app = FastAPI(
     title="COD-DOC API",
     description="Context Orchestrator for Documentation — REST API",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
-
-def _get_config() -> Config:
-    if _config is None:
-        raise HTTPException(500, "Конфиг не загружен")
-    return _config
-
-
-def _get_project(name: str) -> Project:
-    cfg = _get_config()
-    entry = cfg.get_project(name)
-    if not entry:
-        raise HTTPException(404, f"Проект не найден: {name}")
-    return Project(entry)
-
-
-# ── Pydantic schemas ──────────────────────────────────────────────────────────
-
-class ProjectCreate(BaseModel):
-    name: str
-    path: str
-    master_md: str = "MASTER.md"
-    auto_commit: bool = False
-
-
-class TaskCreate(BaseModel):
-    title: str
-    description: str = ""
-    priority: int = 5
-    context_refs: list[str] = []
-
-
-class ConfigUpdate(BaseModel):
-    api_key: str | None = None
-    model: str | None = None
-    base_url: str | None = None
-    auto_commit: bool | None = None
-    agent_interval: int | None = None
-
-
-class WebhookRegister(BaseModel):
-    """Регистрация webhook для проекта."""
-    project_name: str
-    repo_url: str        # https://github.com/owner/repo
-    secret: str = ""    # HMAC-секрет (рекомендуется)
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
-
-@app.get("/api/health")
-def health() -> dict:
-    cfg = _get_config()
-    return {"status": "ok", "configured": cfg.is_configured, "projects": len(cfg.list_projects())}
-
-
-# Config
-@app.get("/api/config")
-def get_config() -> dict:
-    cfg = _get_config()
-    data = cfg.model_dump()
-    data.pop("api_key", None)  # Не отдавать ключ
-    return data
-
-
-@app.patch("/api/config")
-def update_config(update: ConfigUpdate) -> dict:
-    cfg = _get_config()
-    for field, value in update.model_dump(exclude_none=True).items():
-        setattr(cfg, field, value)
-    cfg.save()
-    return {"updated": True}
-
-
-# Projects
-@app.get("/api/projects")
-def list_projects() -> list[dict]:
-    cfg = _get_config()
-    result = []
-    for entry in cfg.list_projects():
-        proj = Project(entry)
-        result.append({**entry.model_dump(), "stats": proj.stats()})
-    return result
-
-
-@app.post("/api/projects", status_code=201)
-def create_project(data: ProjectCreate) -> dict:
-    cfg = _get_config()
-    entry = ProjectEntry(**data.model_dump())
-    cfg.add_project(entry)
-    proj = Project(entry)
-    proj.init()
-    return {"created": entry.name}
-
-
-@app.delete("/api/projects/{name}")
-def delete_project(name: str) -> dict:
-    cfg = _get_config()
-    if not cfg.remove_project(name):
-        raise HTTPException(404, f"Проект не найден: {name}")
-    return {"deleted": name}
-
-
-@app.get("/api/projects/{name}")
-def get_project(name: str) -> dict:
-    proj = _get_project(name)
-    return {
-        **proj.entry.model_dump(),
-        "stats": proj.stats(),
-        "master_exists": proj.entry.master_path.exists(),
-    }
-
-
-@app.get("/api/projects/{name}/master")
-def get_master(name: str) -> dict:
-    proj = _get_project(name)
-    content = proj.read_master()
-    if content is None:
-        raise HTTPException(404, "MASTER.md не найден")
-    return {"content": content}
-
-
-# Tasks
-@app.get("/api/projects/{name}/tasks")
-def list_tasks(name: str, status: str | None = None) -> list[dict]:
-    from cod_doc.core.project import TaskStatus
-    proj = _get_project(name)
-    s = TaskStatus(status) if status else None
-    return [t.to_dict() for t in proj.get_tasks(s)]
-
-
-@app.post("/api/projects/{name}/tasks", status_code=201)
-def create_task(name: str, data: TaskCreate) -> dict:
-    proj = _get_project(name)
-    task = Task(**data.model_dump())
-    proj.add_task(task)
-    return task.to_dict()
-
-
-@app.patch("/api/projects/{name}/tasks/{task_id}")
-def update_task(name: str, task_id: str, body: dict) -> dict:
-    proj = _get_project(name)
-    task = proj.update_task(task_id, **body)
-    if not task:
-        raise HTTPException(404, f"Задача не найдена: {task_id}")
-    return task.to_dict()
-
-
-# Agent run
-@app.post("/api/projects/{name}/run")
-async def run_agent(name: str, background_tasks: BackgroundTasks) -> dict:
-    """Запустить агент в фоне для проекта."""
-    proj = _get_project(name)
-    cfg = _get_config()
-    if not cfg.is_configured:
-        raise HTTPException(400, "API-ключ не настроен")
-
-    async def _run() -> None:
-        orch = Orchestrator(proj, cfg)
-        async for event in orch.run_autonomous():
-            logger.info(f"[{name}] {event.type}: {event.data}")
-
-    background_tasks.add_task(_run)
-    return {"started": True, "project": name}
-
-
-# ── Webhooks ──────────────────────────────────────────────────────────────────
-
-@app.post("/api/webhooks", status_code=201)
-def register_webhook(data: WebhookRegister) -> dict:
-    """Зарегистрировать GitHub/GitLab webhook для проекта."""
-    cfg = _get_config()
-    if not cfg.get_project(data.project_name):
-        raise HTTPException(404, f"Проект не найден: {data.project_name}")
-    _webhook_registry[data.repo_url] = {
-        "project": data.project_name,
-        "secret": data.secret,
-    }
-    return {"registered": data.repo_url, "project": data.project_name}
-
-
-@app.get("/api/webhooks")
-def list_webhooks() -> list[dict]:
-    return [
-        {"repo_url": url, "project": info["project"], "has_secret": bool(info["secret"])}
-        for url, info in _webhook_registry.items()
-    ]
-
-
-@app.delete("/api/webhooks")
-def delete_webhook(repo_url: str) -> dict:
-    if repo_url not in _webhook_registry:
-        raise HTTPException(404, f"Webhook не найден: {repo_url}")
-    del _webhook_registry[repo_url]
-    return {"deleted": repo_url}
-
-
-@app.post("/api/webhook/github")
-async def github_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    x_hub_signature_256: str | None = Header(default=None),
-    x_github_event: str = Header(default="push"),
-) -> dict:
-    """
-    Принять GitHub push webhook и запустить агента для соответствующего проекта.
-
-    Настройка в GitHub:
-      Payload URL: https://your-server/api/webhook/github
-      Content type: application/json
-      Secret: <ваш секрет>
-      Events: Just the push event
-    """
-    body = await request.body()
-
-    # Найти подходящий webhook по repo_url из payload
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        raise HTTPException(400, "Невалидный JSON payload")
-
-    # GitHub кладёт URL репозитория в payload.repository.html_url
-    repo_url: str = (
-        payload.get("repository", {}).get("html_url", "")
-        or payload.get("repository", {}).get("url", "")
-    )
-
-    entry = _webhook_registry.get(repo_url)
-    if not entry:
-        # Попробовать найти по ssh_url / clone_url
-        for alt_key in ("ssh_url", "clone_url", "git_url"):
-            alt = payload.get("repository", {}).get(alt_key, "")
-            if alt and alt in _webhook_registry:
-                entry = _webhook_registry[alt]
-                break
-
-    if not entry:
-        logger.warning(f"Webhook: репозиторий не зарегистрирован: {repo_url}")
-        raise HTTPException(404, f"Репозиторий не зарегистрирован: {repo_url}")
-
-    # HMAC-валидация подписи
-    secret: str = entry.get("secret", "")
-    if secret:
-        if not x_hub_signature_256:
-            raise HTTPException(403, "Отсутствует подпись X-Hub-Signature-256")
-        expected = "sha256=" + hmac.new(
-            secret.encode(), body, hashlib.sha256
-        ).hexdigest()
-        if not hmac.compare_digest(expected, x_hub_signature_256):
-            raise HTTPException(403, "Неверная подпись webhook")
-
-    # Обрабатываем только push-события
-    if x_github_event != "push":
-        return {"skipped": True, "event": x_github_event}
-
-    project_name: str = entry["project"]
-    branch = payload.get("ref", "").replace("refs/heads/", "")
-    logger.info(
-        "Webhook push получен",
-        extra={"project": project_name, "event_type": "webhook", "tool": branch},
-    )
-
-    cfg = _get_config()
-    if not cfg.is_configured:
-        raise HTTPException(400, "API-ключ не настроен")
-
-    proj = _get_project(project_name)
-
-    async def _run() -> None:
-        orch = Orchestrator(proj, cfg)
-        async for event in orch.run_autonomous():
-            logger.info(
-                str(event.data)[:200],
-                extra={"project": project_name, "event_type": event.type},
-            )
-
-    background_tasks.add_task(_run)
-    return {"triggered": True, "project": project_name, "branch": branch}
-
-
-# WebSocket — стриминг агента
-@app.websocket("/ws/projects/{name}/run")
-async def ws_run_agent(websocket: WebSocket, name: str) -> None:
-    """WebSocket для стриминга вывода агента в реальном времени."""
-    await websocket.accept()
-    try:
-        proj = _get_project(name)
-        cfg = _get_config()
-        if not cfg.is_configured:
-            await websocket.send_json({"type": "error", "data": "API-ключ не настроен"})
-            return
-
-        orch = Orchestrator(proj, cfg)
-        async for event in orch.run_autonomous():
-            await websocket.send_json(event.to_dict())
-            await asyncio.sleep(0)  # yield
-
-        await websocket.send_json({"type": "done", "data": "Завершено"})
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket отключён: {name}")
-    except HTTPException as e:
-        await websocket.send_json({"type": "error", "data": e.detail})
-    except Exception as e:
-        await websocket.send_json({"type": "error", "data": str(e)})
-    finally:
-        await websocket.close()
+app.include_router(core_router)
+app.include_router(webhook_router)

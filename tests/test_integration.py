@@ -46,9 +46,9 @@ def app_client(tmp_path: Path, tmp_project):
     )
     cfg.add_project(entry)
 
-    import cod_doc.api.server as srv
-    srv._config = cfg
-    srv._webhook_registry = {}
+    import cod_doc.api.deps as deps
+    deps.set_config(cfg)
+    deps.webhook_registry.clear()
 
     # Инициализировать проект
     Project(entry).init()
@@ -203,7 +203,7 @@ def test_github_webhook_triggers_agent(app_client) -> None:
 
     sig = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
 
-    with patch("cod_doc.api.server.Orchestrator") as MockOrch:
+    with patch("cod_doc.api.webhooks.Orchestrator") as MockOrch:
         async def _fake_run():
             from cod_doc.agent.orchestrator import AgentEvent
             yield AgentEvent("done", "ok")
@@ -284,7 +284,7 @@ def test_agent_run_full_cycle(app_client) -> None:
     assert r.status_code == 201
 
     # Запустить агента (background task в TestClient выполняется синхронно)
-    with patch("cod_doc.api.server.Orchestrator") as MockOrch:
+    with patch("cod_doc.api.routes.Orchestrator") as MockOrch:
         async def _fake_auto():
             from cod_doc.agent.orchestrator import AgentEvent
             yield AgentEvent("thinking", "start")

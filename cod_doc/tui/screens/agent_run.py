@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
-from textual import work
+from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import ScrollableContainer, Vertical
@@ -44,7 +44,7 @@ class AgentRunScreen(Screen):
         super().__init__()
         self.project = project
         self.config = config
-        self._running = False
+        self._agent_running = False
         self._stop_event = asyncio.Event()
         self._answer_queue: asyncio.Queue[str] = asyncio.Queue()
 
@@ -137,36 +137,52 @@ class AgentRunScreen(Screen):
 
     # ── Button handlers ───────────────────────────────────────────────────────
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    @on(Button.Pressed, "#btn-start")
+    def _on_start_pressed(self, event: Button.Pressed) -> None:
         log.debug(
             f"Button pressed: {event.button.id}",
             extra={"event_type": "agent_button", "project": self.project.entry.name},
         )
-        if event.button.id == "btn-start":
-            self._start_agent()
-        elif event.button.id == "btn-stop":
-            self._stop_event.set()
-            self._log("Остановка агента...", "yellow", "⏹")
-        elif event.button.id == "btn-send-answer":
-            from textual.widgets import Input
-            answer = self.query_one("#human-answer", Input).value.strip()
-            if answer:
-                self._answer_queue.put_nowait(answer)
-                self._hide_human_input()
-                self._log(f"Ответ отправлен: {answer}", "green", "👤")
+        self._start_agent()
 
-    @work(exclusive=True, thread=False)
-    async def _start_agent(self) -> None:
-        if self._running:
+    @on(Button.Pressed, "#btn-stop")
+    def _on_stop_pressed(self, event: Button.Pressed) -> None:
+        log.debug(
+            f"Button pressed: {event.button.id}",
+            extra={"event_type": "agent_button", "project": self.project.entry.name},
+        )
+        self._stop_event.set()
+        self._log("Остановка агента...", "yellow", "⏹")
+
+    @on(Button.Pressed, "#btn-send-answer")
+    def _on_send_answer_pressed(self, event: Button.Pressed) -> None:
+        log.debug(
+            f"Button pressed: {event.button.id}",
+            extra={"event_type": "agent_button", "project": self.project.entry.name},
+        )
+        from textual.widgets import Input
+
+        answer = self.query_one("#human-answer", Input).value.strip()
+        if answer:
+            self._answer_queue.put_nowait(answer)
+            self._hide_human_input()
+            self._log(f"Ответ отправлен: {answer}", "green", "👤")
+
+    def _start_agent(self) -> None:
+        if self._agent_running:
             log.debug(
                 "Start ignored because agent is already running",
                 extra={"event_type": "agent_duplicate_start", "project": self.project.entry.name},
             )
             return
-        self._running = True
+        self._agent_running = True
         self._stop_event.clear()
         self.query_one("#btn-start", Button).disabled = True
         self.query_one("#btn-stop", Button).disabled = False
+
+        self.run_worker(self._run_agent(), exclusive=True, thread=False)
+
+    async def _run_agent(self) -> None:
 
         auto_commit = self.query_one("#cb-auto-commit", Checkbox).value
         autonomous = self.query_one("#cb-autonomous", Checkbox).value
@@ -215,9 +231,13 @@ class AgentRunScreen(Screen):
                 "Agent run finished",
                 extra={"event_type": "agent_finish", "project": self.project.entry.name},
             )
-            self._running = False
-            self.query_one("#btn-start", Button).disabled = False
-            self.query_one("#btn-stop", Button).disabled = True
+            self._agent_running = False
+            start_buttons = list(self.query("#btn-start"))
+            stop_buttons = list(self.query("#btn-stop"))
+            if start_buttons:
+                start_buttons[0].disabled = False
+            if stop_buttons:
+                stop_buttons[0].disabled = True
 
     def action_stop_agent(self) -> None:
         log.debug(

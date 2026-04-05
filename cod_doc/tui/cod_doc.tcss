@@ -4,7 +4,7 @@ Screen {
     background: $surface;
 }
 
-#wizard-title, .panel-title {
+.panel-title {
     background: $primary;
     color: $text;
     padding: 1 2;
@@ -12,33 +12,8 @@ Screen {
     dock: top;
 }
 
-#wizard-body {
-    padding: 2 4;
-    height: 1fr;
-}
-
-.wizard-step { height: auto; }
+/* Shared utility */
 .hidden { display: none; }
-
-.field-label {
-    margin-top: 1;
-    color: $accent;
-    text-style: bold;
-}
-
-.hint {
-    color: $text-muted;
-    text-style: italic;
-    padding-bottom: 1;
-}
-
-#wizard-nav {
-    dock: bottom;
-    padding: 1 2;
-    height: 5;
-}
-
-#wizard-nav Button { margin: 0 1; min-width: 16; }
 
 /* Dashboard */
 #main-layout { height: 1fr; }
