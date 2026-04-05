@@ -75,11 +75,11 @@ class AddProjectDialog(Screen):
                 yield Button("Отмена", id="btn-cancel", variant="default")
 
     @on(Button.Pressed, "#btn-cancel")
-    def cancel(self) -> None:
+    def cancel(self, event: Button.Pressed) -> None:
         self.dismiss(None)
 
     @on(Button.Pressed, "#btn-add")
-    def add(self) -> None:
+    def add(self, event: Button.Pressed) -> None:
         path_str = self.query_one("#proj-path", Input).value.strip()
         name = self.query_one("#proj-name", Input).value.strip()
         master = self.query_one("#proj-master", Input).value.strip() or "MASTER.md"
@@ -123,11 +123,11 @@ class AddTaskDialog(Screen):
                 yield Button("Отмена", id="btn-cancel")
 
     @on(Button.Pressed, "#btn-cancel")
-    def cancel(self) -> None:
+    def cancel(self, event: Button.Pressed) -> None:
         self.dismiss(None)
 
     @on(Button.Pressed, "#btn-create")
-    def create(self) -> None:
+    def create(self, event: Button.Pressed) -> None:
         title = self.query_one("#task-title", Input).value.strip()
         if not title:
             self.notify("Введите название задачи", severity="error")
@@ -234,7 +234,7 @@ class DashboardScreen(Screen):
             self._select_project(event.control.project)
 
     @on(Button.Pressed, "#btn-add-proj")
-    def _on_add_project(self) -> None:
+    def _on_add_project(self, event: Button.Pressed | None = None) -> None:
         self.app.push_screen(AddProjectDialog(self.config), self._on_project_added)
 
     def _on_project_added(self, entry: ProjectEntry | None) -> None:
@@ -243,12 +243,12 @@ class DashboardScreen(Screen):
             self.notify(f"Проект '{entry.name}' добавлен")
 
     @on(Button.Pressed, "#btn-refresh")
-    def action_refresh(self) -> None:
+    def action_refresh(self, event: Button.Pressed | None = None) -> None:
         self._reload_projects()
         self.notify("Обновлено")
 
     @on(Button.Pressed, "#btn-add-task")
-    def _on_add_task(self) -> None:
+    def _on_add_task(self, event: Button.Pressed) -> None:
         if not self._selected_project:
             return
         self.app.push_screen(AddTaskDialog(self._selected_project), self._on_task_added)
@@ -259,13 +259,13 @@ class DashboardScreen(Screen):
             self.notify(f"Задача '{task.title}' создана")
 
     @on(Button.Pressed, "#btn-run-agent")
-    def _on_run_agent(self) -> None:
+    def _on_run_agent(self, event: Button.Pressed) -> None:
         if not self._selected_project:
             return
         self.app.push_screen(AgentRunScreen(self._selected_project, self.config))
 
     @on(Button.Pressed, "#btn-remove-proj")
-    def _on_remove_project(self) -> None:
+    def _on_remove_project(self, event: Button.Pressed) -> None:
         if not self._selected_project:
             return
         name = self._selected_project.entry.name

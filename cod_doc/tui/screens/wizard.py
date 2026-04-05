@@ -126,7 +126,7 @@ class WizardScreen(Screen):
         next_btn.label = "Готово" if step == 3 else ("Начать →" if step == 0 else "Далее →")
 
     @on(Button.Pressed, "#btn-next")
-    def _next(self) -> None:
+    def _next(self, event: Button.Pressed) -> None:
         log.debug("Next pressed", extra={"event_type": "wizard_next", "task_id": str(self._step)})
         if self._step == 3:
             self._finish()
@@ -140,7 +140,7 @@ class WizardScreen(Screen):
         self._show_step(self._step + 1)
 
     @on(Button.Pressed, "#btn-back")
-    def _back(self) -> None:
+    def _back(self, event: Button.Pressed) -> None:
         log.debug("Back pressed", extra={"event_type": "wizard_back", "task_id": str(self._step)})
         if self._step > 0:
             self._show_step(self._step - 1)
