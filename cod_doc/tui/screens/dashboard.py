@@ -8,6 +8,7 @@ from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
+from textual.message import Message
 from textual.screen import Screen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Static
 
@@ -22,6 +23,15 @@ log = get_logger("tui.dashboard")
 
 class ProjectCard(Static):
     """Карточка одного проекта."""
+
+    can_focus = True
+
+    class Selected(Message):
+        """Сообщение о выборе карточки проекта."""
+
+        def __init__(self, project: Project) -> None:
+            super().__init__()
+            self.project = project
 
     DEFAULT_CSS = """
     ProjectCard {
@@ -50,6 +60,13 @@ class ProjectCard(Static):
         )
         if stats["last_run"]:
             yield Label(f"Последний запуск: {stats['last_run'][:19]}", classes="card-stats")
+
+    def on_click(self) -> None:
+        self.focus()
+        self.post_message(self.Selected(self.project))
+
+    def on_focus(self) -> None:
+        self.post_message(self.Selected(self.project))
 
 
 class AddProjectDialog(Screen):
@@ -192,7 +209,6 @@ class DashboardScreen(Screen):
         for entry in projects:
             proj = Project(entry)
             card = ProjectCard(proj)
-            card.can_focus = True
             container.mount(card)
 
     def _select_project(self, project: Project) -> None:
@@ -228,10 +244,9 @@ class DashboardScreen(Screen):
 
     # ── Events ───────────────────────────────────────────────────────────────
 
-    @on(Static.focus)
-    def _on_card_focus(self, event) -> None:
-        if isinstance(getattr(event, 'control', None), ProjectCard):
-            self._select_project(event.control.project)
+    @on(ProjectCard.Selected)
+    def _on_card_selected(self, event: ProjectCard.Selected) -> None:
+        self._select_project(event.project)
 
     @on(Button.Pressed, "#btn-add-proj")
     def _on_add_project(self, event: Button.Pressed | None = None) -> None:
