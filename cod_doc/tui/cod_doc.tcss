@@ -28,7 +28,7 @@ Screen {
 
 .hint {
     color: $text-muted;
-    font-style: italic;
+    text-style: italic;
     padding-bottom: 1;
 }
 
