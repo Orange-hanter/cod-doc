@@ -12,6 +12,7 @@ dependencies = [
     "chromadb>=0.5.0",
     "sentence-transformers>=3.0.0",
     "textual>=0.80.0",
+    "mcp>=1.0.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "pyyaml>=6.0",
@@ -29,6 +30,7 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.4"]
 
 [project.scripts]
 cod-doc = "cod_doc.cli:main"
+cod-doc-mcp = "cod_doc.mcp.server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
