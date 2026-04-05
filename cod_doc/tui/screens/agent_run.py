@@ -15,6 +15,10 @@ from textual.widgets import Button, Checkbox, Footer, Header, Label, RichLog, St
 from cod_doc.agent.orchestrator import AgentEvent, Orchestrator
 from cod_doc.config import Config
 from cod_doc.core.project import Project, Task, TaskStatus
+from cod_doc.logging_config import get_logger
+
+
+log = get_logger("tui.agent_run")
 
 
 EVENT_STYLES = {
@@ -73,17 +77,25 @@ class AgentRunScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
+        log.debug(
+            "Agent screen mounted",
+            extra={"event_type": "agent_mount", "project": self.project.entry.name},
+        )
         self._log("Готов к запуску. Нажмите ▶ Запустить.")
 
     def _log(self, message: str, style: str = "white", prefix: str = "") -> None:
-        log = self.query_one("#agent-log", RichLog)
+        rich_log = self.query_one("#agent-log", RichLog)
         ts = datetime.now().strftime("%H:%M:%S")
         if prefix:
-            log.write(f"[dim]{ts}[/dim] {prefix} [{style}]{message}[/{style}]")
+            rich_log.write(f"[dim]{ts}[/dim] {prefix} [{style}]{message}[/{style}]")
         else:
-            log.write(f"[dim]{ts}[/dim] [{style}]{message}[/{style}]")
+            rich_log.write(f"[dim]{ts}[/dim] [{style}]{message}[/{style}]")
 
     def _log_event(self, event: AgentEvent) -> None:
+        log.debug(
+            f"Agent event: {event.type}",
+            extra={"event_type": event.type, "project": self.project.entry.name},
+        )
         style, icon = EVENT_STYLES.get(event.type, ("white", "•"))
         if event.type == "tool_call":
             data = event.data if isinstance(event.data, dict) else {}
@@ -98,6 +110,10 @@ class AgentRunScreen(Screen):
             self._log(str(event.data)[:500], style, icon)
 
     def _show_human_input(self, question: str) -> None:
+        log.debug(
+            "Agent requested human input",
+            extra={"event_type": "agent_blocked", "project": self.project.entry.name},
+        )
         block = self.query_one("#human-input-block")
         block.remove_class("hidden")
         self.query_one("#question-label", Label).update(f"❓ {question}")
@@ -105,6 +121,10 @@ class AgentRunScreen(Screen):
         self.query_one("#human-answer", Input).focus()
 
     def _hide_human_input(self) -> None:
+        log.debug(
+            "Human input block hidden",
+            extra={"event_type": "agent_input_hidden", "project": self.project.entry.name},
+        )
         self.query_one("#human-input-block").add_class("hidden")
 
     async def _async_on_ask_human(self, question: str, context: str) -> str:
@@ -118,6 +138,10 @@ class AgentRunScreen(Screen):
     # ── Button handlers ───────────────────────────────────────────────────────
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        log.debug(
+            f"Button pressed: {event.button.id}",
+            extra={"event_type": "agent_button", "project": self.project.entry.name},
+        )
         if event.button.id == "btn-start":
             self._start_agent()
         elif event.button.id == "btn-stop":
@@ -134,6 +158,10 @@ class AgentRunScreen(Screen):
     @work(exclusive=True, thread=False)
     async def _start_agent(self) -> None:
         if self._running:
+            log.debug(
+                "Start ignored because agent is already running",
+                extra={"event_type": "agent_duplicate_start", "project": self.project.entry.name},
+            )
             return
         self._running = True
         self._stop_event.clear()
@@ -142,6 +170,10 @@ class AgentRunScreen(Screen):
 
         auto_commit = self.query_one("#cb-auto-commit", Checkbox).value
         autonomous = self.query_one("#cb-autonomous", Checkbox).value
+        log.debug(
+            f"Starting agent: autonomous={autonomous} auto_commit={auto_commit}",
+            extra={"event_type": "agent_start", "project": self.project.entry.name},
+        )
 
         # Временно обновить auto_commit
         cfg = self.config
@@ -155,25 +187,49 @@ class AgentRunScreen(Screen):
             else:
                 task = self.project.next_pending_task()
                 if not task:
+                    log.debug(
+                        "No pending task available",
+                        extra={"event_type": "agent_no_task", "project": self.project.entry.name},
+                    )
                     self._log("Нет задач в очереди. Добавьте задачу через дашборд.", "yellow", "⚠️")
                     return
                 gen = orch.run_task(task)
 
             async for event in gen:
                 if self._stop_event.is_set():
+                    log.debug(
+                        "Stop event detected during stream",
+                        extra={"event_type": "agent_stop_requested", "project": self.project.entry.name},
+                    )
                     break
                 self._log_event(event)
 
         except Exception as e:
+            log.exception(
+                "Agent run failed",
+                extra={"event_type": "agent_error", "project": self.project.entry.name},
+            )
             self._log(str(e), "red", "❌")
         finally:
+            log.debug(
+                "Agent run finished",
+                extra={"event_type": "agent_finish", "project": self.project.entry.name},
+            )
             self._running = False
             self.query_one("#btn-start", Button).disabled = False
             self.query_one("#btn-stop", Button).disabled = True
 
     def action_stop_agent(self) -> None:
+        log.debug(
+            "Agent screen stop action",
+            extra={"event_type": "agent_action_stop", "project": self.project.entry.name},
+        )
         self._stop_event.set()
         self.app.pop_screen()
 
     def action_clear_log(self) -> None:
+        log.debug(
+            "Agent log cleared",
+            extra={"event_type": "agent_clear_log", "project": self.project.entry.name},
+        )
         self.query_one("#agent-log", RichLog).clear()

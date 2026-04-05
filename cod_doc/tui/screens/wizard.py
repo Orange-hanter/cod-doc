@@ -12,6 +12,10 @@ from textual.screen import Screen
 from textual.widgets import Button, Input, Label, Markdown, Select, Static
 
 from cod_doc.config import Config, ProjectEntry
+from cod_doc.logging_config import get_logger
+
+
+log = get_logger("tui.wizard")
 
 WELCOME_TEXT = """
 # 🧭 COD-DOC — Мастер настройки
@@ -102,10 +106,12 @@ class WizardScreen(Screen):
             yield Button("Начать →", id="btn-next", variant="primary")
 
     def on_mount(self) -> None:
+        log.debug("Wizard mounted", extra={"event_type": "wizard_mount"})
         self._show_step(0)
 
     def _show_step(self, step: int) -> None:
         self._step = step
+        log.debug(f"Wizard step -> {step}", extra={"event_type": "wizard_step"})
         # Скрыть все шаги
         for s in self.query(".wizard-step"):
             s.add_class("hidden")
@@ -121,6 +127,7 @@ class WizardScreen(Screen):
 
     @on(Button.Pressed, "#btn-next")
     def _next(self) -> None:
+        log.debug("Next pressed", extra={"event_type": "wizard_next", "task_id": str(self._step)})
         if self._step == 3:
             self._finish()
             return
@@ -134,12 +141,14 @@ class WizardScreen(Screen):
 
     @on(Button.Pressed, "#btn-back")
     def _back(self) -> None:
+        log.debug("Back pressed", extra={"event_type": "wizard_back", "task_id": str(self._step)})
         if self._step > 0:
             self._show_step(self._step - 1)
 
     def _save_api_step(self) -> bool:
         key = self.query_one("#input-api-key", Input).value.strip()
         if not key:
+            log.debug("API key not provided", extra={"event_type": "wizard_validation"})
             self.notify("Введите API-ключ", severity="error")
             return False
         model_select = self.query_one("#select-model", Select)
@@ -149,6 +158,10 @@ class WizardScreen(Screen):
         self.config.model = model
         self.config.base_url = base_url or "https://openrouter.ai/api/v1"
         self.config.save()
+        log.debug(
+            "API step saved",
+            extra={"event_type": "wizard_save_api", "tool": self.config.model},
+        )
         return True
 
     def _save_project_step(self) -> bool:
@@ -157,14 +170,17 @@ class WizardScreen(Screen):
         master_md = self.query_one("#input-master-md", Input).value.strip() or "MASTER.md"
 
         if not path_str:
+            log.debug("Project path missing", extra={"event_type": "wizard_validation"})
             self.notify("Укажите путь к проекту", severity="error")
             return False
         if not name:
+            log.debug("Project name missing", extra={"event_type": "wizard_validation"})
             self.notify("Введите имя проекта", severity="error")
             return False
 
         path = Path(path_str).expanduser()
         if not path.exists():
+            log.debug("Project path not found", extra={"event_type": "wizard_validation", "tool": str(path)})
             self.notify(f"Директория не найдена: {path}", severity="error")
             return False
 
@@ -175,8 +191,13 @@ class WizardScreen(Screen):
         from cod_doc.core.project import Project
         proj = Project(entry)
         proj.init()
+        log.debug(
+            "Project step saved",
+            extra={"event_type": "wizard_save_project", "project": name},
+        )
         return True
 
     def _finish(self) -> None:
         from cod_doc.tui.screens.dashboard import DashboardScreen
+        log.debug("Wizard finished, switching to dashboard", extra={"event_type": "wizard_finish"})
         self.app.switch_screen(DashboardScreen(self.config))

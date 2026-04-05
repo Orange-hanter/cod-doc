@@ -13,7 +13,11 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Sta
 
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project, Task, TaskStatus
+from cod_doc.logging_config import get_logger
 from cod_doc.tui.screens.agent_run import AgentRunScreen
+
+
+log = get_logger("tui.dashboard")
 
 
 class ProjectCard(Static):
@@ -172,6 +176,7 @@ class DashboardScreen(Screen):
         self._selected_project: Project | None = None
 
     def on_mount(self) -> None:
+        log.debug("Dashboard mounted", extra={"event_type": "dashboard_mount"})
         table = self.query_one("#tasks-table", DataTable)
         table.add_columns("ID", "Приоритет", "Статус", "Название", "Обновлено")
         self._reload_projects()
@@ -179,7 +184,12 @@ class DashboardScreen(Screen):
     def _reload_projects(self) -> None:
         container = self.query_one("#projects-list", ScrollableContainer)
         container.remove_children()
-        for entry in self.config.list_projects():
+        projects = self.config.list_projects()
+        log.debug(
+            "Reloading project cards",
+            extra={"event_type": "dashboard_reload", "task_id": str(len(projects))},
+        )
+        for entry in projects:
             proj = Project(entry)
             card = ProjectCard(proj)
             card.can_focus = True
@@ -187,6 +197,10 @@ class DashboardScreen(Screen):
 
     def _select_project(self, project: Project) -> None:
         self._selected_project = project
+        log.debug(
+            "Project selected",
+            extra={"event_type": "dashboard_select", "project": project.entry.name},
+        )
         self.query_one("#detail-header", Static).update(
             f"📁 {project.entry.name}  ·  {project.entry.path}"
         )
@@ -214,9 +228,9 @@ class DashboardScreen(Screen):
 
     # ── Events ───────────────────────────────────────────────────────────────
 
-    @on(Static.Focus)
-    def _on_card_focus(self, event: Static.Focus) -> None:
-        if isinstance(event.control, ProjectCard):
+    @on(Static.focus)
+    def _on_card_focus(self, event) -> None:
+        if isinstance(getattr(event, 'control', None), ProjectCard):
             self._select_project(event.control.project)
 
     @on(Button.Pressed, "#btn-add-proj")
