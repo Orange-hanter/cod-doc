@@ -113,11 +113,12 @@ class Project:
                 f.write("\n# COD-DOC\n" + "\n".join(added) + "\n")
 
     def _create_master(self) -> None:
-        from jinja2 import Environment, FileSystemLoader
+        from importlib.resources import files
+        from jinja2 import Environment, BaseLoader
 
-        templates_dir = Path(__file__).resolve().parent.parent.parent / "templates"
-        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=False)
-        tmpl = env.get_template("MASTER.md.j2")
+        tmpl_text = files("cod_doc.templates").joinpath("MASTER.md.j2").read_text(encoding="utf-8")
+        env = Environment(loader=BaseLoader(), autoescape=False)
+        tmpl = env.from_string(tmpl_text)
         content = tmpl.render(
             project_name=self.entry.name,
             date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),

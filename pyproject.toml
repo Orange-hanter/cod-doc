@@ -35,7 +35,7 @@ where = ["."]
 include = ["cod_doc*"]
 
 [tool.setuptools.package-data]
-"cod_doc" = ["tui/*.tcss"]
+"cod_doc" = ["tui/*.tcss", "templates/*.j2"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

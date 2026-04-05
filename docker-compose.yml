@@ -15,6 +15,9 @@ services:
       COD_DOC_AUTO_COMMIT: ${COD_DOC_AUTO_COMMIT:-false}
       COD_DOC_AGENT_INTERVAL: ${COD_DOC_AGENT_INTERVAL:-60}
       COD_DOC_MAX_ITERATIONS: ${COD_DOC_MAX_ITERATIONS:-50}
+      # Логирование
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       # Конфиг и ChromaDB
       - cod_doc_data:/data/cod-doc

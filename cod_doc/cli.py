@@ -22,14 +22,18 @@ from rich.console import Console
 from rich.table import Table
 
 from cod_doc.config import Config, ProjectEntry
+from cod_doc.logging_config import setup_logging
 
 console = Console()
 
 
 @click.group()
+@click.option("--log-level", default=None, envvar="LOG_LEVEL", help="DEBUG|INFO|WARNING|ERROR")
+@click.option("--log-format", default=None, envvar="LOG_FORMAT", help="text|json")
 @click.pass_context
-def main(ctx: click.Context) -> None:
+def main(ctx: click.Context, log_level: str | None, log_format: str | None) -> None:
     """🧭 COD-DOC — Context Orchestrator for Documentation."""
+    setup_logging(level=log_level, fmt=log_format)
     ctx.ensure_object(dict)
     ctx.obj["config"] = Config.load()
 
@@ -148,6 +152,88 @@ def project_init(ctx: click.Context, name: str) -> None:
         sys.exit(1)
     Project(entry).init()
     console.print(f"[green]✅ Проект '{name}' инициализирован.[/green]")
+
+
+@project.command("status")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
+@click.pass_context
+def project_status(ctx: click.Context, name: str, as_json: bool) -> None:
+    """Подробный статус проекта: задачи, ссылки, последний запуск."""
+    import json as _json
+    import re
+    from cod_doc.core.project import Project, TaskStatus
+
+    cfg: Config = ctx.obj["config"]
+    entry = cfg.get_project(name)
+    if not entry:
+        console.print(f"[red]Проект '{name}' не найден.[/red]")
+        sys.exit(1)
+
+    proj = Project(entry)
+    stats = proj.stats()
+    tasks = proj.get_tasks()
+    next_actions = proj.extract_next_actions()
+
+    # Проверить сломанные ссылки в MASTER.md (строки с 📁 и статусом 🔴)
+    master_content = proj.read_master() or ""
+    broken_links = re.findall(r"[^\n]*📁[^\n]*🔴[^\n]*", master_content)
+    stale_links  = re.findall(r"[^\n]*📁[^\n]*🔴 STALE[^\n]*", master_content)
+
+    if as_json:
+        data = {
+            "project": name,
+            "stats": stats,
+            "tasks": [t.to_dict() for t in tasks],
+            "next_actions": next_actions,
+            "broken_links": broken_links,
+            "stale_links": stale_links,
+        }
+        console.print(_json.dumps(data, ensure_ascii=False, indent=2))
+        return
+
+    # Human-readable
+    status_icon = {"idle": "🟢", "running": "🔵", "error": "🔴"}.get(stats["status"], "⚪")
+    console.rule(f"[bold cyan]📁 {name}[/bold cyan]")
+    console.print(f"  Путь:        [dim]{entry.path}[/dim]")
+    console.print(f"  MASTER.md:   {'✅' if entry.master_path.exists() else '❌'}")
+    console.print(f"  Статус:      {status_icon} {stats['status']}")
+    if stats["last_run"]:
+        console.print(f"  Последний запуск: {stats['last_run'][:19]}")
+
+    console.print()
+    console.print("[bold]📋 Задачи:[/bold]")
+    if not tasks:
+        console.print("  [dim]Нет задач[/dim]")
+    else:
+        icons = {
+            TaskStatus.PENDING: "🟡",
+            TaskStatus.IN_PROGRESS: "🔵",
+            TaskStatus.DONE: "🟢",
+            TaskStatus.FAILED: "🔴",
+            TaskStatus.BLOCKED: "⚠️",
+        }
+        table = Table(show_header=True, box=None, padding=(0, 2))
+        table.add_column("ID", style="dim", width=10)
+        table.add_column("Статус", width=14)
+        table.add_column("Приор.", width=6)
+        table.add_column("Название")
+        for t in tasks:
+            table.add_row(t.id, f"{icons.get(t.status, '⚪')} {t.status.value}", str(t.priority), t.title)
+        console.print(table)
+
+    if broken_links:
+        console.print()
+        console.print("[bold red]🔴 Сломанные/устаревшие ссылки в MASTER.md:[/bold red]")
+        for link in broken_links[:5]:
+            console.print(f"  {link[:100]}")
+
+    if next_actions:
+        console.print()
+        console.print("[bold]⚡ Next actions:[/bold]")
+        console.print(f"  {next_actions.get('next_step', '—')}")
+        if next_actions.get("blocked_by"):
+            console.print(f"  [yellow]Blocked by: {next_actions['blocked_by']}[/yellow]")
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────

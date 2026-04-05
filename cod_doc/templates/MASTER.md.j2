@@ -1,0 +1,76 @@
+# 🧭 Project Navigator: {{ project_name }}
+
+> 📊 Meta: `{"version": "0.1", "last_updated": "{{ date }}", "context_depth": "L0", "repo": "{{ repo }}"}`
+
+## 1. 🎯 Executive Summary
+- **Цель:** {Одно предложение — опишите цель проекта}
+- **Текущий статус:** `🟡 DRAFT`
+- **Ключевые ограничения:**
+  - {ограничение 1}
+  - {ограничение 2}
+
+## 2. 🗺️ Context Map
+```mermaid
+graph TD
+    Root[MASTER.md] --> S[📁 /specs/]
+    Root --> A[📁 /arch/]
+    Root --> M[📁 /models/]
+    Root --> D[📁 /docs/]
+```
+
+## 3. 🧩 Modular Sections
+
+> Каждый раздел — ссылка на один файл.
+> Загружать только при явном запросе: `@Orchestrator: раскрой раздел "..."`.
+
+<!--
+Шаблон секции:
+### {Section Name}
+- **Описание:** {≤2 строки}
+- **Ссылка:** `📁 /path/to/file.ext | 🗃️ doc:{id} | 🔑 sha:{12hex}`
+- **Статус:** `🟡 DRAFT`
+- **Ответственный агент:** `@Orchestrator`
+-->
+
+## 4. ⚡ Quick Actions & Handoffs
+```json
+{
+  "next_step": "Заполнить Executive Summary и добавить первые разделы",
+  "required_input": "Цель проекта, список компонентов/модулей",
+  "blocked_by": []
+}
+```
+
+## 5. ✅ Validation & Changelog
+```json
+{
+  "self_check": {
+    "links_verified": true,
+    "hashes_match": true,
+    "no_hallucinations": true,
+    "context_depth": "L0",
+    "missing_info": ["Executive Summary не заполнен", "Разделы ещё не созданы"]
+  },
+  "changelog": [
+    {
+      "date": "{{ date }}",
+      "action": "Init project",
+      "author": "COD-DOC",
+      "scope": "master"
+    }
+  ]
+}
+```
+
+---
+
+## 📖 Snowball Protocol
+
+| Уровень | Загружено | Когда |
+|---------|-----------|-------|
+| `L0` | Только `MASTER.md` | Старт сессии (по умолчанию) |
+| `L1` | MASTER.md + 1 целевой файл | Явный запрос раздела |
+| `L2` | L1 + зависимости | Запрос анализа зависимостей |
+
+**Формат ссылки:** `📁 {path} | 🗃️ doc:{id} | 🔑 sha:{12hex}`
+**Статусы:** `🟢 VERIFIED` | `🟡 DRAFT` | `🔴 STALE` | `🔴 BROKEN`
