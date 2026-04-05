@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# COD-DOC post-merge hook
+# Запускается после мержа в main:
+#   1. Пересчитывает хэши в MASTER.md
+#   2. Переиндексирует изменённые документы в ChromaDB
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+
+echo "🔄 COD-DOC post-merge: обновление индекса..."
+
+# ── 1. Пересчитать хэши в MASTER.md ────────────────────────────────────────
+if [[ -f "$REPO_ROOT/MASTER.md" ]]; then
+  if command -v python3 &>/dev/null; then
+    python3 "$REPO_ROOT/tools/hash_calc.py" update "$REPO_ROOT/MASTER.md"
+    # Если хэши обновились — зафиксировать автоматически
+    if ! git diff --quiet MASTER.md 2>/dev/null; then
+      git add MASTER.md
+      git commit -m "chore: пересчёт хэшей после мержа [skip ci]" --no-verify
+      echo -e "${GREEN}✅ MASTER.md обновлён и закоммичен.${NC}"
+    fi
+  else
+    echo -e "${YELLOW}⚠️  python3 не найден — хэши не обновлены.${NC}"
+  fi
+fi
+
+# ── 2. Переиндексация ChromaDB ──────────────────────────────────────────────
+if python3 -c "import chromadb" 2>/dev/null; then
+  echo "📚 Запуск переиндексации ChromaDB..."
+  python3 "$REPO_ROOT/tools/reindex.py"
+else
+  echo -e "${YELLOW}⚠️  chromadb не установлен — пропуск переиндексации.${NC}"
+  echo "   Установите: pip install -r requirements.txt"
+fi
+
+echo -e "${GREEN}✅ post-merge завершён.${NC}"
+exit 0
