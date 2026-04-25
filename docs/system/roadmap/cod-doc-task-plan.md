@@ -4,7 +4,7 @@ scope: cod-doc-bootstrap
 status: pending
 principle: test-first
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-04-25
 source_of_truth:
   vision: docs/system/VISION.md
   architecture: docs/system/ARCHITECTURE.md
@@ -27,13 +27,13 @@ source_of_truth:
 
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
-| A: Data Core | inline | 5 | 0 | 5 | ❌ pending |
-| B: Services | inline | 6 | 0 | 6 | ❌ pending |
+| A: Data Core | inline | 5 | 5 | 0 | ✅ done |
+| B: Services | inline | 6 | 2 | 4 | 🔄 in-progress |
 | C: Write Paths | inline | 4 | 0 | 4 | ❌ pending |
 | D: MCP & CLI | inline | 4 | 0 | 4 | ❌ pending |
 | E: Retrieval | inline | 3 | 0 | 3 | ❌ pending |
 | F: Migration | inline | 3 | 0 | 3 | ❌ pending |
-| **TOTAL**   |        | **25** | **0** | **25** | |
+| **TOTAL**   |        | **25** | **7** | **18** | |
 
 ## Gap Analysis Summary
 
@@ -56,11 +56,13 @@ source_of_truth:
 
 ## Next Batch
 
-Dependency-unblocked tasks ready for implementation:
+Section A (Data Core) closed. Revision + Doc services landed. Next batch:
 
-- **COD-001** — Migration: Alembic + BaseRepository + схема из DATA_MODEL (Project, Document, Section)
-- **COD-010** — Test + Implement: DocService.create/get/patch_section
-- **COD-050** — Test: frontmatter parser (все обязательные поля, error paths)
+- **COD-011** — Test + Implement: TaskService (create/update_status/complete)
+- **COD-013** — Test + Implement: LinkService (parse/resolve/verify/rename-cascade)
+- **COD-023** — Implement: projection export/import (hash-based detection) — unlocked by COD-010
+- **COD-040** — Implement: embeddings pipeline — unlocked by COD-010
+- **COD-050** — Test: frontmatter/task-plan parser (property-based)
 
 ## Dependency Graph
 
@@ -139,7 +141,7 @@ graph TD
 id: COD-001
 title: "Migration: core tables (project, document, section, link)"
 section: A-Data-Core
-status: pending
+status: done
 depends_on: []
 type: migration
 priority: critical
@@ -154,23 +156,30 @@ affected_files:
 - `alembic upgrade head` проходит на чистом SQLite и на чистом Postgres.
 - Базовые CRUD-операции через репозиторий (insert/select/update) покрыты smoke-тестами.
 
+> ✅ **Implemented 2026-04-19** (commit `pending`): SQLAlchemy 2.0 + Alembic, схема §3.1-§3.4 (project/document/section/link с sensitivity, content_hash, preamble), репозитории Project/Document/Section, smoke-тесты `tests/infra/test_db_smoke.py` — 5/5 passed. Postgres-проверка отложена до фактического деплоя; SQL-диалект-нейтральный код.
+
 ### COD-002
 
 ```yaml
 id: COD-002
 title: "Migration: plan + plan_section + task + dependency + affected_file"
 section: A-Data-Core
-status: pending
+status: done
 depends_on: [COD-001]
 type: migration
 priority: critical
 affected_files:
-  - cod_doc/infra/migrations/0002_tasks.py
+  - cod_doc/infra/migrations/versions/20260425_0002_tasks.py
+  - cod_doc/infra/models.py
+  - cod_doc/domain/entities.py
+  - tests/infra/test_tasks_migration.py
 ```
 
 **Description:** Таблицы из [DATA_MODEL.md §3.6-3.9](../DATA_MODEL.md). Вьюхи `section_totals`, `plan_totals`, `ready_tasks`.
 
 **Acceptance:** миграция проходит; view возвращают корректные агрегаты на ручном seed.
+
+> ✅ **Implemented 2026-04-25** (commit `pending`): таблицы plan/plan_section/task/dependency/affected_file (§3.6-3.9), view'ы `section_totals` / `plan_totals` / `ready_tasks` (§4.1-§4.3) — `ready_tasks` фильтрует только по `kind='blocks'`. ORM-модели (`PlanModel`, `PlanSectionModel`, `TaskModel`, `DependencyModel`, `AffectedFileModel`) и domain dataclasses + enums. Smoke-тесты `tests/infra/test_tasks_migration.py` — 6/6 passed; общий suite — 11/11.
 
 ### COD-003
 
@@ -178,15 +187,20 @@ affected_files:
 id: COD-003
 title: "Migration: user_story + story_acceptance + story_link + module"
 section: A-Data-Core
-status: pending
+status: done
 depends_on: [COD-002]
 type: migration
 priority: high
 affected_files:
-  - cod_doc/infra/migrations/0003_stories.py
+  - cod_doc/infra/migrations/versions/20260425_0003_stories.py
+  - cod_doc/infra/models.py
+  - cod_doc/domain/entities.py
+  - tests/infra/test_stories_migration.py
 ```
 
 **Description:** Stories и Modules из [DATA_MODEL.md §3.10-3.11](../DATA_MODEL.md).
+
+> ✅ **Implemented 2026-04-25** (commit `pending`): таблицы user_story, story_acceptance, story_link, module, module_dependency, module_code (§3.10-3.11). Уникальные индексы: `user_story.story_id` и `module.module_id` — глобально (§6); `module_dependency(from, to)` — без дублей. Cascade delete от `user_story` на `story_acceptance` / `story_link`. ORM-модели + domain dataclasses + enums (`UserStoryStatus`, `StoryLinkKind`, `StoryRelation`, `ModuleStatus`, `ModuleCodeKind`). Smoke-тесты `tests/infra/test_stories_migration.py` — 7/7 passed; общий suite — 18/18.
 
 ### COD-004
 
@@ -194,15 +208,20 @@ affected_files:
 id: COD-004
 title: "Migration: revision + audit_log"
 section: A-Data-Core
-status: pending
+status: done
 depends_on: [COD-003]
 type: migration
 priority: critical
 affected_files:
-  - cod_doc/infra/migrations/0004_revisions.py
+  - cod_doc/infra/migrations/versions/20260425_0004_revisions.py
+  - cod_doc/infra/models.py
+  - cod_doc/domain/entities.py
+  - tests/infra/test_revisions_migration.py
 ```
 
 **Description:** Revisions append-only, с индексами для `cod-doc log`. AuditLog для всех write-path вызовов.
+
+> ✅ **Implemented 2026-04-25** (commit `pending`): таблицы `revision` (§3.5) с unique `revision_id` (ULID, 26 chars) и индексами `ix_revision_entity` (entity_kind, entity_id, at) / `ix_revision_parent` для chain-walk; `audit_log` (§3.13) с `payload_json` (JSON-колонка) и индексами `ix_audit_action`, `ix_audit_actor` под фильтрацию по action/time и actor/time. CASCADE от project. ORM-модели + domain dataclasses + enums (`EntityKind`, `AuditSurface`). Smoke-тесты `tests/infra/test_revisions_migration.py` — 5/5 (chain through `parent_revision_id`, ULID uniqueness, JSON round-trip, cascade); общий suite — 23/23.
 
 ### COD-005
 
@@ -210,13 +229,20 @@ affected_files:
 id: COD-005
 title: "Migration: link (parsed) + tag"
 section: A-Data-Core
-status: pending
+status: done
 depends_on: [COD-004]
 type: migration
 priority: high
+affected_files:
+  - cod_doc/infra/migrations/versions/20260425_0005_links_tags.py
+  - cod_doc/infra/models.py
+  - cod_doc/domain/entities.py
+  - tests/infra/test_tags_migration.py
 ```
 
 **Description:** Таблицы `tag`, связующие таблицы; финальная проверка индексов.
+
+> ✅ **Implemented 2026-04-25** (commit `pending`): таблицы `tag` (uniq `(project_id, name)`), `document_tag`, `task_tag`, `story_tag` (§3.12) — junction-таблицы с composite PK и CASCADE на обе стороны. Replaced full-column `ix_link_unresolved` with the partial `ix_link_broken WHERE resolved = 0` (§3.4) — горячий read-path «broken-links» останется дешёвым по мере роста resolved-доли. ORM-модели + `Tag` dataclass. Smoke-тесты `tests/infra/test_tags_migration.py` — 6/6 (схема, partial-index наличие+условие, uniqueness per project, attach-to-doc/task/story, дубль через PK, cascade-delete тэга); общий suite — 29/29. **Section A (Data Core) closed.**
 
 ---
 
@@ -228,13 +254,13 @@ priority: high
 id: COD-010
 title: "Test + Implement: DocService.create/get/patch_section/rename"
 section: B-Services
-status: pending
-depends_on: [COD-001]
+status: done
+depends_on: [COD-001, COD-015]
 type: feature
 priority: critical
 affected_files:
   - cod_doc/services/doc_service.py
-  - cod_doc/services/tests/test_doc_service.py
+  - tests/services/test_doc_service.py
 ```
 
 **Description:** Создание, чтение, патч секции, rename. Patch → unified diff → `revision`. Rename → cascade update ссылок (пока заготовка; реальный cascade — в COD-013).
@@ -243,6 +269,10 @@ affected_files:
 - `cod-doc doc new --type guide --title "Hello"` создаёт запись + skeleton.
 - `cod-doc doc patch ... --section X` пишет revision.
 - Тесты: создание/патч/rename; проверка frontmatter валидации.
+
+> ✅ **Implemented 2026-04-25** (commit `pending`): функциональный API `create / get / get_sections / render_body / add_section / patch_section / rename`. Каждая мутация пишет revision: `create`/`rename` → `entity_kind=DOCUMENT`, `add_section`/`patch_section` → `entity_kind=SECTION` (DATA_MODEL §3.3 «Section.body — носитель»). `render_body` читает через view `document_body` (§4.3a). `patch_section` — no-op на одинаковом body; пробрасывает `expected_parent_revision_id` в RevisionService для optimistic concurrency. `rename` пишет JSON-patch diff `{op, from, to}`; cascade-update incoming-ссылок остался стуб-комментом — реальный cascade в COD-013. Кастомные исключения `DocumentNotFoundError` / `SectionNotFoundError`. Frontmatter-валидация остаётся за COD-020. Тесты — 15/15 (create+revision+UNIQUE+sections+render+patch path/no-op/conflict+rename path/no-op/unknown). Общий suite — 61/61.
+
+> Зависимость дополнена `COD-015`: DocService использует RevisionService для записи revision; формально blocker'ом в исходной графе не значился, но фактически COD-015 был сделан перед COD-010, и API DocService опирается на `rev.write` / `rev.list_for_entity`.
 
 ### COD-011
 
@@ -307,13 +337,20 @@ priority: medium
 id: COD-015
 title: "Test + Implement: RevisionService (write, list, revert)"
 section: B-Services
-status: pending
+status: done
 depends_on: [COD-004]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/services/__init__.py
+  - cod_doc/services/revision_service.py
+  - tests/services/__init__.py
+  - tests/services/test_revision_service.py
 ```
 
 **Description:** append-only запись, получение истории сущности, revert (через обратный сервисный вызов).
+
+> ✅ **Implemented 2026-04-25** (commit `pending`): `cod_doc/services/revision_service.py` — функциональный API: `write(session, *, project_id, entity_kind, entity_id, author, diff, ...)` (auto-fills ULID + chains via `parent_revision_id`), `list_for_entity(session, entity_kind, entity_id)` (oldest→newest), `RevisionConflictError` при mismatch `expected_parent_revision_id` (DATA_MODEL §3.5 optimistic concurrency). `revert` намеренно стуб — диспетчер по entity-сервисам, COD-022. Тесты — 9/9 passed (write/chain/list/filter/expected-parent match/mismatch/explicit-None varianты/revert NotImplementedError); общий suite — 46/46.
 
 ---
 
