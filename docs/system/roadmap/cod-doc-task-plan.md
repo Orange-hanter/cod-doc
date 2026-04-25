@@ -28,12 +28,12 @@ source_of_truth:
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Data Core | inline | 5 | 5 | 0 | ✅ done |
-| B: Services | inline | 6 | 2 | 4 | 🔄 in-progress |
+| B: Services | inline | 6 | 3 | 3 | 🔄 in-progress |
 | C: Write Paths | inline | 4 | 0 | 4 | ❌ pending |
 | D: MCP & CLI | inline | 4 | 0 | 4 | ❌ pending |
 | E: Retrieval | inline | 3 | 0 | 3 | ❌ pending |
 | F: Migration | inline | 3 | 0 | 3 | ❌ pending |
-| **TOTAL**   |        | **25** | **7** | **18** | |
+| **TOTAL**   |        | **25** | **8** | **17** | |
 
 ## Gap Analysis Summary
 
@@ -56,12 +56,12 @@ source_of_truth:
 
 ## Next Batch
 
-Section A (Data Core) closed. Revision + Doc services landed. Next batch:
+Section A (Data Core) closed. Revision + Doc + Task services landed. Next batch:
 
-- **COD-011** — Test + Implement: TaskService (create/update_status/complete)
+- **COD-012** — Test + Implement: PlanService (recalc, ready, audit, export) — unlocked by COD-011
 - **COD-013** — Test + Implement: LinkService (parse/resolve/verify/rename-cascade)
-- **COD-023** — Implement: projection export/import (hash-based detection) — unlocked by COD-010
-- **COD-040** — Implement: embeddings pipeline — unlocked by COD-010
+- **COD-014** — Test + Implement: StoryService — unlocked by COD-011
+- **COD-023** — Implement: projection export/import (hash-based detection)
 - **COD-050** — Test: frontmatter/task-plan parser (property-based)
 
 ## Dependency Graph
@@ -280,16 +280,19 @@ affected_files:
 id: COD-011
 title: "Test + Implement: TaskService (create/update_status/complete)"
 section: B-Services
-status: pending
-depends_on: [COD-002]
+status: done
+depends_on: [COD-002, COD-015]
 type: feature
 priority: critical
 affected_files:
+  - cod_doc/infra/repositories/task_repo.py
   - cod_doc/services/task_service.py
-  - cod_doc/services/tests/test_task_service.py
+  - tests/services/test_task_service.py
 ```
 
 **Description:** Создание задачи с валидацией формата, генерация id в пределах section-range, update status, complete (с проверкой depends_on). Пишет revision.
+
+> ✅ **Implemented 2026-04-25** (commit `pending`): `TaskRepository` (get_by_task_id, list_for_plan), `task_service.py` — `create` (TaskStatus.PENDING, auto-ID `{prefix}-NNN` по max в плане, опциональные affected_files), `update_status` (no-op при одинаковом статусе), `complete` (проверяет все `kind='blocks'` зависимости → `TaskBlockedError`; игнорирует `relates`; пробрасывает `expected_parent_revision_id`), `get`, `list_for_plan`. Все мутации пишут JSON-patch revision через RevisionService. Тесты — 14/14 (create+auto-id+affected-files+revision, update-status/no-op/unknown, complete/blocked/unblocked-after-dep/relates-ignored/conflict). Общий suite — 126/126.
 
 ### COD-012
 
