@@ -167,8 +167,8 @@ $ .venv/bin/cod-doc project list
 ┌──────────────────┬────────────────────────────┬───────────┬─────────┬─────────────┐
 │ Имя              │ Путь                       │ MASTER.md │ Статус  │ Задачи      │
 ├──────────────────┼────────────────────────────┼───────────┼─────────┼─────────────┤
-│ integration-test │ /private/var/folders/...    │ ✅        │ 🟢 idle │ 🟡1 🟢0 🔴0 │
-│ test-wizard-proj │ /private/tmp/test-wiz...   │ ✅        │ 🟢 idle │ 🟡0 🟢0 🔴0 │
+│ integration-test │ /private/var/folders/...   │ ✅        │ 🟢 idle  │ 🟡1 🟢0 🔴0  │
+│ test-wizard-proj │ /private/tmp/test-wiz...   │ ✅        │ 🟢 idle  │ 🟡0 🟢0 🔴0  │
 └──────────────────┴────────────────────────────┴───────────┴─────────┴─────────────┘
 
 $ .venv/bin/cod-doc project remove test-wizard-proj
