@@ -58,13 +58,21 @@ docs/system/
 │   ├── auto-linking.md
 │   ├── context-retrieval.md
 │   ├── plan-management.md
-│   └── user-stories-graph.md
+│   ├── user-stories-graph.md
+│   ├── decisions-and-questions.md  ← ADR + Open Questions
+│   ├── agents-and-skills.md        ← каталог агентов
+│   ├── project-bootstrap.md        ← `cod-doc project new`
+│   └── audit-and-ci.md             ← каталог проверок + git/CI
+│
+├── audit/
+│   └── 2026-04-19-initial-audit.md ← первый формальный аудит пакета
 │
 ├── migration/
 │   └── from-restate.md             ← как перевезти реальное состояние Restate
 │
 └── roadmap/
-    └── cod-doc-task-plan.md        ← план внедрения (dogfood формата task-plan)
+    ├── cod-doc-task-plan.md        ← план внедрения (dogfood формата task-plan)
+    └── audit-followups-task-plan.md ← фиксы пакета по аудиту
 ```
 
 ---
@@ -119,3 +127,13 @@ docs/system/
 | Дата | Событие |
 |------|---------|
 | 2026-04-19 | Начальная версия пакета; базовая структура, стандарты и capabilities. |
+| 2026-04-19 | Проведён первый аудит ([audit/2026-04-19-initial-audit.md](audit/2026-04-19-initial-audit.md)); закрыто 6 задач (HI-1..5, LO-1) стабами; заведён follow-up план ([roadmap/audit-followups-task-plan.md](roadmap/audit-followups-task-plan.md)) с 17 оставшимися задачами. |
+
+---
+
+## 7. Соглашения об оформлении
+
+- Проза — на русском; идентификаторы (поля, типы, status, имена сущностей и таблиц) — на английском.
+- Заголовки секций — `## N. Title`; ссылки — markdown-relative из location документа.
+- Каждый документ имеет frontmatter согласно [standards/frontmatter.md](standards/frontmatter.md).
+- При `status: active` любая правка обязана сопровождаться записью в changelog таблицу + revision (после реализации COD-004) — см. [standards/revision-history.md](standards/revision-history.md).

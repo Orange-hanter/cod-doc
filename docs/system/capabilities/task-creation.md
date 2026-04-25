@@ -66,7 +66,7 @@ related_docs:
   "task_id": "AUTH-025",
   "section": "C-AccountLifecycle",
   "status": "pending",
-  "created_revision": "r_01hq..."
+  "created_revision": "01HQX5Z9F0K8RNG6CB7VHQK4XX"
 }
 ```
 

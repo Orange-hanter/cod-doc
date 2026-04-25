@@ -192,9 +192,94 @@ ContextService.build(target, depth)
 
 - Данные проекта не покидают БД без явного export.
 - Встроенный LLM-клиент не видит содержимого документов сверх того, что ContextService положил в сессию.
-- Audit-лог всех write-операций через MCP/REST — в таблице `Revision` + отдельном `AuditLog` (см. [DATA_MODEL.md §7](DATA_MODEL.md)).
+- Audit-лог всех write-операций через MCP/REST — в таблице `Revision` + отдельном `AuditLog` (см. [DATA_MODEL.md §3.13](DATA_MODEL.md)).
 
-## 10. Ссылки
+## 10. Error Model
+
+Единый набор исключений уровня домена/сервисов (`cod_doc.errors`). Все surface'ы (CLI, MCP, REST, TUI) маппят их в свой формат.
+
+### 11.1 Иерархия
+
+```
+CodDocError
+├── ValidationError       — нарушение формата (frontmatter, task verb-pattern, enum)
+├── NotFoundError         — целевая сущность не существует
+├── ConflictError         — состояние не позволяет операцию
+│   ├── DependencyError   — неудовлетворённые depends_on
+│   ├── CycleError        — попытка создать цикл в графе
+│   └── OptimisticLockError — parent_revision_id устарел (см. §11)
+├── AuthDeniedError       — actor не имеет права на инструмент / sensitivity
+├── IntegrityError        — нарушение схемы / FK / уникальности
+└── ExternalError         — провал внешнего сервиса (LLM, embeddings, git)
+```
+
+Каждое исключение несёт:
+
+```python
+class CodDocError(Exception):
+    code: str         # 'TP-004', 'FM-001', 'AUTHZ-001' — стабильный для интеграций
+    message: str      # человекочитаемое
+    details: dict     # структурированные поля (entity_id, suggestion, ...)
+```
+
+### 11.2 Маппинг по поверхностям
+
+| Error → | CLI exit | MCP isError + payload | REST status | TUI |
+|---------|---------:|------------------------|-------------|-----|
+| ValidationError    | 2 | `{"code":"FM-001",...}` | 400 | inline form error |
+| NotFoundError      | 3 | ↑ | 404 | toast |
+| ConflictError      | 4 | ↑ | 409 | modal |
+| AuthDeniedError    | 5 | ↑ | 403 | modal |
+| IntegrityError     | 6 | ↑ | 500 | crash screen |
+| ExternalError      | 7 | ↑ | 502 | retry-toast |
+| Unknown / panic    | 1 | ↑ | 500 | crash screen |
+
+### 11.3 Правило write-path
+
+Любая ошибка в транзакции = полный rollback.
+Никаких partial updates: либо весь набор изменений (task + dependency + revision + section_totals refresh) применился, либо ни одно.
+`audit_log` пишется **до** commit'а с предварительным `result='pending'` и обновляется на `'ok'` / `'error:<code>'` после.
+
+### 11.4 Идемпотентность
+
+- `task.create` принимает `idempotency_key` (опционально); повторный вызов с тем же ключом возвращает оригинальный результат.
+- `doc.patch_section` идемпотентен по `parent_revision_id` — повторный apply того же патча с тем же parent даёт тот же revision_id (детерминированный ULID при флаге `--deterministic`).
+
+## 11. Concurrency & Identity
+
+### 12.1 Optimistic locking
+
+Запись revision требует `parent_revision_id` — последнюю известную revision сущности. Если за это время появилась новая — `OptimisticLockError`. Клиент перечитывает state и повторяет.
+
+### 12.2 Identity
+
+Каждый actor имеет запись в таблице `actor` (отдельно от `agent_definition`):
+
+```sql
+CREATE TABLE actor (
+  row_id     INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES project(row_id),
+  kind       TEXT    NOT NULL,    -- 'human'|'agent'|'mcp'|'system'
+  handle     TEXT    NOT NULL,    -- 'dakh','task-steward','claude-code'
+  token_hash TEXT,                -- SHA256 для server-profile; NULL для embedded
+  created    TEXT    NOT NULL,
+  UNIQUE(project_id, kind, handle)
+);
+```
+
+Embedded-профиль: единственный неявный actor `human:<os-user>` без токена.
+Server-профиль: REST/MCP требуют `Authorization: Bearer <token>`; токен резолвится в `actor.handle`. CLI-локально на сервере — через keyring.
+
+### 12.3 Authz
+
+Перед каждым tool-call:
+
+1. Резолв actor.
+2. Проверка allowed_tools/denied_tools (см. [capabilities/agents-and-skills.md §3](capabilities/agents-and-skills.md)).
+3. Проверка sensitivity_clearance vs target document (см. [standards/sensitive-data.md §3](standards/sensitive-data.md)).
+4. При deny — `AuthDeniedError(code='AUTHZ-001'|'AUTHZ-002')`, audit_log пишется обязательно.
+
+## 12. Ссылки
 
 - [VISION.md](VISION.md)
 - [DATA_MODEL.md](DATA_MODEL.md)

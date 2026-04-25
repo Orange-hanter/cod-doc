@@ -26,16 +26,18 @@ related_docs:
 ## 2. Схема записи
 
 ```yaml
-entity_kind: document | task | plan | story | link | module
+revision_id: ULID                # 26 chars, '01HQX5Z9F0K8RNG6CB7VHQK4XX'
+parent_revision_id: ULID | null  # предыдущая revision той же сущности
+entity_kind: document | task | plan | story | link | module | proposal
 entity_id: <row_id>
-author: agent:<name> | human:<login> | mcp:<client>
-at: ISO-8601
+author: agent:<name> | human:<login> | mcp:<client> | system:<service>
+at: ISO-8601                     # должен соответствовать timestamp в revision_id
 diff: unified-diff | json-patch
 reason: freeform string (recommended)
 commit_sha: optional
 ```
 
-Подробнее — `revision` в [DATA_MODEL.md §3.5](../DATA_MODEL.md).
+**Формат `revision_id`** — ULID (Crockford-base32, 26 символов, 128 бит). Первые 48 бит — timestamp ms; остальные 80 — random. Сортируется лексикографически по времени; безопасен при offline-сессиях и нескольких репликах. Подробнее — `revision` в [DATA_MODEL.md §3.5](../DATA_MODEL.md).
 
 ## 3. Когда пишется revision
 

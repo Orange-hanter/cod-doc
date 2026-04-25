@@ -72,7 +72,7 @@ cod-doc doc patch modules/M1-auth/overview \
     new_body: "...",
     reason: "Add account_status column"
   })
-← { revision_id: "r_...", updated_links: 3, reindex_queued: true }
+← { revision_id: "01HQX5Z9F0K8RNG6CB7VHQK4XX", updated_links: 3, reindex_queued: true }
 ```
 
 ## 5. Inline-правки под patch-review
@@ -149,7 +149,7 @@ cod-doc doc split modules/M1-auth-v2 --into \
 - Перекрывать frontmatter список реальных подпапок (prompt: «следующие новые файлы не упомянуты в спеке…»).
 - Генерировать task типа `docs` «Docs: document new files in M1 AUTH» с `affected_files = ...` для незакрытой разницы.
 
-Механика опирается на [standards/task-plan.md §9 affected_files](../standards/task-plan.md) и zamyka цикл doc ↔ code.
+Механика опирается на [standards/task-plan.md §9 affected_files](../standards/task-plan.md) и замыкает цикл doc ↔ code.
 
 ## 11. Пример полного цикла
 

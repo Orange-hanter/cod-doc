@@ -77,10 +77,10 @@ cod-doc plan next --count 5
 ← { master, spec, task_plan_progress, open_questions, related_stories }
 
 → cod_doc.task.update_status(id="AUTH-025", status="in-progress")
-← ok, revision=r_abc123
+← ok, revision=01HQX5Z9F0K8RNG6CB7VHQK4XX
 
 → cod_doc.doc.propose_edit(doc="M1-auth/overview.md", patch=...)
-← pending_approval=r_def456
+← pending_approval=01HQX60E1A2P7K3MMSV0NRD9YA
 ```
 
 ### 4.4 Мигратор с Restate
