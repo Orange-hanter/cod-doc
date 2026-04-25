@@ -35,7 +35,10 @@ class RevisionConflictError(RuntimeError):
 
 # Sentinel: caller didn't pass a parent expectation. Distinct from `None`,
 # which is a *valid* expectation ("I expect this is the first revision").
-_NO_PARENT_CHECK: Final = object()
+# Public so that other services can use it as a default parameter value.
+NO_PARENT_CHECK: Final = object()
+# Keep the underscore alias for backward compatibility within this module.
+_NO_PARENT_CHECK = NO_PARENT_CHECK
 
 
 def _to_domain(model: RevisionModel) -> Revision:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from typing import Any
 
 from sqlalchemy import select
 
@@ -34,7 +34,7 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
         )
 
     def _to_model(self, entity: Task) -> TaskModel:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "project_id": entity.project_id,
             "task_id": entity.task_id,
             "plan_id": entity.plan_id,

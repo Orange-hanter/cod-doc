@@ -325,3 +325,40 @@ def test_list_for_plan_returns_all_tasks(engine_with_schema) -> None:  # type: i
             _task(session, p, pl, s, task_id=f"P-{n:03d}", title=f"T{n}")
         all_tasks = tasks.list_for_plan(session, pl)
         assert {t.task_id for t in all_tasks} == {"P-001", "P-002", "P-003"}
+
+
+# ------- SB-ME-2: update_status optimistic concurrency ----------------------
+
+
+def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        head = rev.list_for_entity(session, EntityKind.TASK, task.row_id)[0].revision_id
+
+        # Concurrent writer lands first.
+        tasks.update_status(session, task_id=task.task_id, new_status=TaskStatus.IN_PROGRESS, author="other")
+
+        # We still hold the stale head → must conflict.
+        with pytest.raises(rev.RevisionConflictError):
+            tasks.update_status(
+                session, task_id=task.task_id, new_status=TaskStatus.DONE,
+                author="x", expected_parent_revision_id=head,
+            )
+
+
+# ------- SB-LO-6: double-complete guard --------------------------------------
+
+
+def test_complete_already_done_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        tasks.complete(session, task_id=task.task_id, author="x")
+
+        with pytest.raises(tasks.TaskAlreadyDoneError):
+            tasks.complete(session, task_id=task.task_id, author="x")

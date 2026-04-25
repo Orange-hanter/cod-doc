@@ -26,7 +26,8 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import (
@@ -47,6 +48,10 @@ class DocumentNotFoundError(LookupError):
 
 
 class SectionNotFoundError(LookupError):
+    pass
+
+
+class SectionAlreadyExistsError(ValueError):
     pass
 
 
@@ -146,8 +151,6 @@ def render_body(session: Session, document_id: int) -> str | None:
     Returns preamble + concatenated section bodies (with markdown headings),
     in `section.position` order — see DATA_MODEL §4.3a.
     """
-    from sqlalchemy import text  # noqa: PLC0415
-
     row = session.execute(
         text("SELECT body FROM document_body WHERE document_id = :d"),
         {"d": document_id},
@@ -167,20 +170,32 @@ def add_section(
     author: str,
     reason: str | None = None,
 ) -> Section:
-    """Add a new section to a document; writes a SECTION revision."""
+    """Add a new section to a document; writes a SECTION revision.
+
+    Raises `SectionAlreadyExistsError` if a section with the same anchor
+    already exists in this document.
+    """
     doc = _require_doc(session, document_id)
 
-    section = SectionRepository(session).add(
-        Section(
-            document_id=document_id,
-            anchor=anchor,
-            heading=heading,
-            level=level,
-            position=position,
-            body=body,
-            content_hash=_content_hash(body),
-        )
-    )
+    try:
+        # Use a savepoint so that an IntegrityError on duplicate anchor rolls
+        # back only the nested transaction, leaving the outer session usable.
+        with session.begin_nested():
+            section = SectionRepository(session).add(
+                Section(
+                    document_id=document_id,
+                    anchor=anchor,
+                    heading=heading,
+                    level=level,
+                    position=position,
+                    body=body,
+                    content_hash=_content_hash(body),
+                )
+            )
+    except IntegrityError as exc:
+        raise SectionAlreadyExistsError(
+            f"section {anchor!r} already exists in document #{document_id}"
+        ) from exc
     assert section.row_id is not None
 
     doc.last_updated = datetime.now(timezone.utc)
@@ -204,7 +219,7 @@ def patch_section(
     new_body: str,
     author: str,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev._NO_PARENT_CHECK,
+    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
 ) -> Section:
     """Replace a section's body; writes a SECTION revision with unified diff.
 

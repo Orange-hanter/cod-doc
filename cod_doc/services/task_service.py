@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timezone
-from typing import Final
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -37,8 +36,6 @@ from cod_doc.infra.models import AffectedFileModel, DependencyModel, TaskModel
 from cod_doc.infra.repositories import TaskRepository
 from cod_doc.services import revision_service as rev
 
-_TASK_ID_RE: Final = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*)-(\d+)$")
-
 
 class TaskNotFoundError(LookupError):
     pass
@@ -46,6 +43,10 @@ class TaskNotFoundError(LookupError):
 
 class TaskBlockedError(RuntimeError):
     """Raised by `complete()` when blocking deps are not yet done."""
+
+
+class TaskAlreadyDoneError(RuntimeError):
+    """Raised by `complete()` when the task is already done (idempotency guard)."""
 
 
 # --------------------------------------------------------------------------- #
@@ -161,11 +162,14 @@ def update_status(
     new_status: TaskStatus,
     author: str,
     reason: str | None = None,
+    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Set task.status directly; no dep-gate.
 
     For the guarded `→done` transition that validates blocking deps, use
     `complete()` instead.
+    Pass `expected_parent_revision_id` to detect concurrent writes
+    (mirrors `patch_section` optimistic concurrency).
     """
     model = _require_task(session, task_id)
     old_status = model.status
@@ -186,6 +190,7 @@ def update_status(
         author=author,
         diff=_task_diff("status", old=old_status, new=new_status.value),
         reason=reason,
+        expected_parent_revision_id=expected_parent_revision_id,
     )
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
@@ -199,13 +204,17 @@ def complete(
     author: str,
     commit_sha: str | None = None,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev._NO_PARENT_CHECK,
+    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Complete a task: validate deps → done, write revision.
 
+    Raises `TaskAlreadyDoneError` if the task is already done.
     Raises `TaskBlockedError` if any `blocks`-type dep is not yet done.
     """
     model = _require_task(session, task_id)
+
+    if model.status == TaskStatus.DONE.value:
+        raise TaskAlreadyDoneError(task_id)
 
     # Check blocking deps (DATA_MODEL §7.2).
     blocking: list[str] = []

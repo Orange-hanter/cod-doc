@@ -9,8 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import (
+    Document,
     DocumentStatus,
     DocumentType,
     EntityKind,
@@ -54,7 +56,7 @@ def _add_project(session, slug: str = "p") -> int:
     return proj.row_id
 
 
-def _new_doc(session, project_id: int, doc_key: str = "modules/M1-auth/overview"):
+def _new_doc(session: Session, project_id: int, doc_key: str = "modules/M1-auth/overview") -> Document:
     return docs.create(
         session,
         project_id=project_id,
@@ -341,3 +343,25 @@ def test_rename_no_op_when_target_equals_current(engine_with_schema) -> None:  #
 
         history = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)
         assert len(history) == 1  # only create
+
+
+# -------------- SB-LO-7: add_section duplicate anchor -----------------------
+
+
+def test_add_section_duplicate_anchor_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.services.doc_service import SectionAlreadyExistsError  # noqa: PLC0415
+
+    factory = make_session_factory(engine_with_schema)
+
+    with transactional(factory) as session:
+        proj_id = _add_project(session)
+        doc = _new_doc(session, proj_id)
+        docs.add_section(
+            session, document_id=doc.row_id, anchor="dup", heading="Dup", level=2,
+            position=0, body="x", author="x",
+        )
+        with pytest.raises(SectionAlreadyExistsError):
+            docs.add_section(
+                session, document_id=doc.row_id, anchor="dup", heading="Dup2", level=2,
+                position=1, body="y", author="x",
+            )
