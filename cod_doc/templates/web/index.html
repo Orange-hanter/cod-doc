@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Projects — COD-DOC{% endblock %}
+{% block content %}
+<h1>Projects</h1>
+
+{% if not configured %}
+  <p class="warn">API-ключ не настроен. Перейдите в <a href="/settings">Settings</a>.</p>
+{% endif %}
+
+{% if projects %}
+<table class="grid">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Path</th>
+      <th class="num">Tasks</th>
+      <th class="num">Done</th>
+      <th class="num">In&nbsp;progress</th>
+      <th>Last&nbsp;run</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in projects %}
+    <tr>
+      <td><a href="/p/{{ p.name }}">{{ p.name }}</a>{% if not p.enabled %} <span class="muted">(disabled)</span>{% endif %}</td>
+      <td class="mono">{{ p.path }}</td>
+      <td class="num">{{ p.stats.total }}</td>
+      <td class="num">{{ p.stats.done }}</td>
+      <td class="num">{{ p.stats.in_progress }}</td>
+      <td class="muted">{{ p.stats.last_run or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p class="muted">No projects yet.</p>
+{% endif %}
+{% endblock %}

@@ -62,6 +62,7 @@ docs/system/
 │   ├── decisions-and-questions.md  ← ADR + Open Questions
 │   ├── agents-and-skills.md        ← каталог агентов
 │   ├── project-bootstrap.md        ← `cod-doc project new`
+│   ├── web-frontend.md             ← server-rendered Web UI (Jinja + HTMX)
 │   └── audit-and-ci.md             ← каталог проверок + git/CI
 │
 ├── audit/
@@ -72,6 +73,7 @@ docs/system/
 │
 └── roadmap/
     ├── cod-doc-task-plan.md        ← план внедрения (dogfood формата task-plan)
+    ├── web-frontend-task-plan.md   ← план Web UI поверх FastAPI
     └── audit-followups-task-plan.md ← фиксы пакета по аудиту
 ```
 

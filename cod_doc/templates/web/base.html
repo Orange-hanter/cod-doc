@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}COD-DOC{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">COD-DOC</a>
+    <nav>
+      <a href="/">Projects</a>
+      <a href="/settings">Settings</a>
+    </nav>
+  </header>
+  <div id="alerts"></div>
+  <main class="content">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

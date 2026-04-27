@@ -1,0 +1,63 @@
+/* COD-DOC web — minimal functional baseline. No design system. */
+
+:root {
+  --fg: #1a1a1a;
+  --muted: #666;
+  --bg: #fff;
+  --bg-alt: #f6f7f8;
+  --border: #d8dadd;
+  --accent: #1f6feb;
+  --warn-bg: #fff8c5;
+  --warn-fg: #6a4f00;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+}
+.topbar .brand { font-weight: 600; color: var(--fg); }
+.topbar nav { display: flex; gap: 16px; }
+
+.content { padding: 20px; max-width: 1200px; }
+
+h1 { font-size: 20px; margin: 0 0 16px; }
+h2 { font-size: 16px; margin: 24px 0 8px; }
+
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.grid th, .grid td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.grid th { background: var(--bg-alt); font-weight: 600; }
+.grid td.num, .grid th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.muted { color: var(--muted); }
+
+.warn {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin: 0 0 16px;
+}

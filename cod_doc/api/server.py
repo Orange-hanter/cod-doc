@@ -10,6 +10,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from cod_doc.agent.orchestrator import run_daemon
 from cod_doc.config import Config
@@ -17,6 +18,8 @@ from cod_doc.logging_config import setup_logging
 
 from cod_doc.api.deps import get_daemon_task, set_config, set_daemon_task
 from cod_doc.api.routes import router as core_router
+from cod_doc.api.web import router as web_router
+from cod_doc.api.web.templates_env import STATIC_DIR
 from cod_doc.api.webhooks import router as webhook_router
 
 setup_logging()
@@ -48,3 +51,5 @@ app = FastAPI(
 
 app.include_router(core_router)
 app.include_router(webhook_router)
+app.include_router(web_router)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
