@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.doc_key }} · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/docs">Docs</a> /
+  <span>{{ doc.doc_key }}</span>
+</nav>
+
+<h1>{{ doc.title }}</h1>
+<p class="mono muted">{{ doc.path }}</p>
+
+<section class="doc-meta">
+  <span><strong>Type:</strong> {{ doc.type }}</span>
+  <span><strong>Status:</strong> {{ doc.status }}</span>
+  {% if doc.owner %}<span><strong>Owner:</strong> {{ doc.owner }}</span>{% endif %}
+  {% if doc.last_updated %}<span><strong>Updated:</strong> {{ doc.last_updated }}</span>{% endif %}
+</section>
+
+<div class="split">
+  <aside class="sections-nav">
+    <h2>Sections</h2>
+    {% if sections %}
+    <ul>
+      {% for s in sections %}
+      <li class="lvl-{{ s.level }}"><a href="#{{ s.anchor }}">{{ s.heading }}</a></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No sections.</p>
+    {% endif %}
+  </aside>
+
+  <article class="doc-body">
+    {% if body %}
+      <pre class="md-preview">{{ body }}</pre>
+    {% else %}
+      <p class="muted">Document body is empty.</p>
+    {% endif %}
+  </article>
+</div>
+{% endblock %}

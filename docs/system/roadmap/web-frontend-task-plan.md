@@ -26,11 +26,11 @@ source_of_truth:
 
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
-| A: Scaffold | inline | 3 | 2 | 1 | 🔄 in-progress |
+| A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
 | B: Read views | inline | 4 | 0 | 4 | ❌ pending |
 | C: Write paths | inline | 3 | 0 | 3 | ❌ pending |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
-| **TOTAL** |  | **12** | **2** | **10** | |
+| **TOTAL** |  | **12** | **3** | **9** | |
 
 ## Gap Analysis Summary
 
@@ -159,13 +159,24 @@ affected_files:
 id: WEB-003
 title: "Implement: documents list + show (DocService)"
 section: A-Scaffold
-status: pending
+status: done
 depends_on: [WEB-002]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/api/web/pages.py
+  - cod_doc/api/web/db_resolver.py
+  - cod_doc/services/doc_service.py
+  - cod_doc/infra/repositories/document_repo.py
+  - cod_doc/templates/web/project/docs_list.html
+  - cod_doc/templates/web/project/doc_show.html
+  - cod_doc/static/app.css
+  - tests/api/test_web_docs.py
 ```
 
 **Description:** `GET /p/{slug}/docs` — список документов проекта (через `DocService` или `DocumentRepository.list_for_project`). `GET /p/{slug}/docs/{doc_key:path}` — render через `DocService.render_body` + список секций сбоку.
+
+> ✅ **Implemented 2026-04-28** (commit `pending`): добавлены `DocumentRepository.list_for_project(project_id)` и thin-wrapper `doc_service.list_for_project` (web-страницы используют только сервис). Bridge legacy↔DB живёт в `cod_doc/api/web/db_resolver.py:open_db_for_project(slug)` — context-manager: резолвит `Config`-проект → embedded sqlite в `<root>/.cod-doc/state.db` → `ProjectRepository.get_by_slug` (slug==`ProjectEntry.name`); возвращает `(None, None)` если БД нет, схема не накатана (`OperationalError` от первой query) или slug-mapping отсутствует. Это даёт graceful degrade для свежих проектов: страница рендерится с warning «DB-проект не инициализирован», без 500. `GET /p/{slug}/docs` — таблица doc_key/title/type/status/owner/last_updated. `GET /p/{slug}/docs/{doc_key:path}` — split-layout (sections nav + body): nav через `docs.get_sections`, body через `docs.render_body` (view `document_body`, §4.3a) с fallback на preamble; 404 при отсутствии БД или документа. CSS расширен (`doc-meta`, `split`, `sections-nav`, `lvl-N` indent). Тесты — 5 (рендер списка с seeded doc, warning без БД, doc show с секциями+body, 404 на missing doc, 404 без БД); общий suite — 208/208.
 
 ---
 

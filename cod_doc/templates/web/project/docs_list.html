@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Docs · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>Docs</span></nav>
+
+<h1>{{ project.name }} · Docs</h1>
+
+<nav class="tabs">
+  <a href="/p/{{ project.name }}">Overview</a>
+  <a class="active" href="/p/{{ project.name }}/docs">Docs</a>
+  <a href="/p/{{ project.name }}/tasks">Tasks</a>
+  <a href="/p/{{ project.name }}/plans">Plans</a>
+  <a href="/p/{{ project.name }}/revisions">Revisions</a>
+  <a href="/p/{{ project.name }}/run">Run</a>
+</nav>
+
+{% if not db_available %}
+  <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug проекта не совпадает с <code>project.slug</code> в БД. Документы появятся после <code>cod-doc project init</code> и первого <code>doc create</code>.</p>
+{% elif not documents %}
+  <p class="muted">В этом проекте пока нет документов.</p>
+{% else %}
+<table class="grid">
+  <thead>
+    <tr>
+      <th>Doc&nbsp;key</th>
+      <th>Title</th>
+      <th>Type</th>
+      <th>Status</th>
+      <th>Owner</th>
+      <th>Last&nbsp;updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in documents %}
+    <tr>
+      <td class="mono"><a href="/p/{{ project.name }}/docs/{{ d.doc_key }}">{{ d.doc_key }}</a></td>
+      <td>{{ d.title }}</td>
+      <td>{{ d.type }}</td>
+      <td>{{ d.status }}</td>
+      <td class="muted">{{ d.owner or "—" }}</td>
+      <td class="muted">{{ d.last_updated or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

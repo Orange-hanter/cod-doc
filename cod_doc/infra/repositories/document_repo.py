@@ -71,6 +71,14 @@ class DocumentRepository(BaseRepository[Document, DocumentModel]):
         model = self.session.execute(stmt).scalar_one_or_none()
         return self._to_domain(model) if model else None
 
+    def list_for_project(self, project_id: int) -> list[Document]:
+        stmt = (
+            select(DocumentModel)
+            .where(DocumentModel.project_id == project_id)
+            .order_by(DocumentModel.doc_key)
+        )
+        return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
+
 
 class SectionRepository(BaseRepository[Section, SectionModel]):
     model_cls = SectionModel
