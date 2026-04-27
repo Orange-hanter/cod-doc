@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">Projects</a> / <span>{{ project.name }}</span></nav>
+
+<h1>{{ project.name }}{% if not project.enabled %} <span class="muted">(disabled)</span>{% endif %}</h1>
+<p class="mono muted">{{ project.path }}</p>
+
+<nav class="tabs">
+  <a class="active" href="/p/{{ project.name }}">Overview</a>
+  <a href="/p/{{ project.name }}/docs">Docs</a>
+  <a href="/p/{{ project.name }}/tasks">Tasks</a>
+  <a href="/p/{{ project.name }}/plans">Plans</a>
+  <a href="/p/{{ project.name }}/revisions">Revisions</a>
+  <a href="/p/{{ project.name }}/run">Run</a>
+</nav>
+
+<section class="cards">
+  <div class="card">
+    <div class="card-label">Status</div>
+    <div class="card-value">{{ stats.status }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Tasks total</div>
+    <div class="card-value">{{ stats.total }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Done</div>
+    <div class="card-value">{{ stats.done }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">In&nbsp;progress</div>
+    <div class="card-value">{{ stats.in_progress }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Pending</div>
+    <div class="card-value">{{ stats.pending }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Failed</div>
+    <div class="card-value">{{ stats.failed }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Last run</div>
+    <div class="card-value muted">{{ stats.last_run or "—" }}</div>
+  </div>
+</section>
+
+<h2>{{ project.master_md }}</h2>
+{% if not project.master_exists %}
+  <p class="warn">{{ project.master_md }} ещё не создан.</p>
+{% elif master_preview is none %}
+  <p class="muted">Файл пуст.</p>
+{% else %}
+  <pre class="md-preview">{{ master_preview }}</pre>
+  {% if master_truncated %}
+    <p class="muted">Показаны первые строки. <a href="/p/{{ project.name }}/docs/{{ project.master_md }}">Открыть целиком</a>.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

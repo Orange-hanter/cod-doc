@@ -26,11 +26,11 @@ source_of_truth:
 
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
-| A: Scaffold | inline | 3 | 1 | 2 | 🔄 in-progress |
+| A: Scaffold | inline | 3 | 2 | 1 | 🔄 in-progress |
 | B: Read views | inline | 4 | 0 | 4 | ❌ pending |
 | C: Write paths | inline | 3 | 0 | 3 | ❌ pending |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
-| **TOTAL** |  | **12** | **1** | **11** | |
+| **TOTAL** |  | **12** | **2** | **10** | |
 
 ## Gap Analysis Summary
 
@@ -134,10 +134,15 @@ affected_files:
 id: WEB-002
 title: "Implement: project detail page (stats + MASTER preview + tabs nav)"
 section: A-Scaffold
-status: pending
+status: done
 depends_on: [WEB-001]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/api/web/pages.py
+  - cod_doc/templates/web/project/show.html
+  - cod_doc/static/app.css
+  - tests/api/test_web_scaffold.py
 ```
 
 **Description:** `GET /p/{slug}` — основной дашборд проекта. Карточка stats, превью MASTER.md (первые 80 строк или первая секция), навигация на табы Docs / Tasks / Plan / Revisions / Settings. Использует существующие helper-ы `get_project` / `Project.stats` / `Project.read_master`.
@@ -145,6 +150,8 @@ priority: high
 **Acceptance:**
 - 200 на seed-проекте; 404 на несуществующем slug.
 - Все табы — обычные `<a href>`, без JS.
+
+> ✅ **Implemented 2026-04-28** (commit `pending`): `GET /p/{slug}` через существующий `get_project()` (404 на unknown name); `_preview()` режет MASTER.md по `MASTER_PREVIEW_LINES=80` с флагом `master_truncated` → ссылка «Открыть целиком» ведёт на `/p/{slug}/docs/{master_md}` (страница появится в WEB-003). Шаблон `project/show.html`: breadcrumb, табы (active=Overview, остальные — заглушки на будущие маршруты), 7 карточек stats, `<pre class="md-preview">` для preview. CSS расширен (`crumbs`, `tabs`, `cards`, `md-preview`). Тесты — 4 новых (рендер табов+stats+preview, 404, наличие md-preview block, truncation на 120-строчном master); общий suite — 181/181.
 
 ### WEB-003
 
