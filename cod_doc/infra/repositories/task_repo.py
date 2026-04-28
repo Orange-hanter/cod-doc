@@ -69,3 +69,15 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
             .order_by(TaskModel.section_id, TaskModel.task_id)
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
+
+    def list_for_project(
+        self,
+        project_id: int,
+        *,
+        status: TaskStatus | None = None,
+    ) -> list[Task]:
+        stmt = select(TaskModel).where(TaskModel.project_id == project_id)
+        if status is not None:
+            stmt = stmt.where(TaskModel.status == status.value)
+        stmt = stmt.order_by(TaskModel.plan_id, TaskModel.section_id, TaskModel.task_id)
+        return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]

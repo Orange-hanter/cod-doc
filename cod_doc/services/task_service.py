@@ -264,3 +264,12 @@ def get(session: Session, task_id: str) -> Task | None:
 
 def list_for_plan(session: Session, plan_id: int) -> list[Task]:
     return TaskRepository(session).list_for_plan(plan_id)
+
+
+def list_for_project(
+    session: Session,
+    project_id: int,
+    *,
+    status: TaskStatus | None = None,
+) -> list[Task]:
+    return TaskRepository(session).list_for_project(project_id, status=status)

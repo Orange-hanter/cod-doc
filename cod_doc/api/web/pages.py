@@ -9,7 +9,9 @@ from cod_doc.api.deps import get_config, get_project
 from cod_doc.api.web.db_resolver import open_db_for_project
 from cod_doc.api.web.templates_env import templates
 from cod_doc.core.project import Project
+from cod_doc.domain.entities import TaskStatus
 from cod_doc.services import doc_service as docs
+from cod_doc.services import task_service as tasks
 
 router = APIRouter()
 
@@ -94,6 +96,55 @@ def docs_list(request: Request, slug: str) -> HTMLResponse:
             "project": {"name": proj.entry.name},
             "documents": documents,
             "db_available": db_available,
+        },
+    )
+
+
+@router.get("/p/{slug}/tasks", response_class=HTMLResponse)
+def tasks_list(
+    request: Request,
+    slug: str,
+    status: str | None = None,
+) -> HTMLResponse:
+    proj = get_project(slug)
+
+    status_filter: TaskStatus | None = None
+    status_invalid = False
+    if status:
+        try:
+            status_filter = TaskStatus(status)
+        except ValueError:
+            status_invalid = True
+
+    rows: list[dict] = []
+    db_available = False
+    with open_db_for_project(slug) as (session, project_db_id):
+        if session is not None and project_db_id is not None:
+            db_available = True
+            for t in tasks.list_for_project(
+                session, project_db_id, status=status_filter
+            ):
+                rows.append(
+                    {
+                        "task_id": t.task_id,
+                        "title": t.title,
+                        "status": t.status.value,
+                        "type": t.type.value,
+                        "priority": t.priority.value,
+                        "plan_id": t.plan_id,
+                        "section_id": t.section_id,
+                    }
+                )
+    return templates.TemplateResponse(
+        request,
+        "project/tasks_list.html",
+        {
+            "project": {"name": proj.entry.name},
+            "tasks": rows,
+            "db_available": db_available,
+            "status_filter": status_filter.value if status_filter else "",
+            "status_invalid": status_invalid,
+            "status_options": [s.value for s in TaskStatus],
         },
     )
 

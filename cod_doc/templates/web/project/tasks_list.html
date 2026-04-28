@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Tasks · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>Tasks</span></nav>
+
+<h1>{{ project.name }} · Tasks</h1>
+
+<nav class="tabs">
+  <a href="/p/{{ project.name }}">Overview</a>
+  <a href="/p/{{ project.name }}/docs">Docs</a>
+  <a class="active" href="/p/{{ project.name }}/tasks">Tasks</a>
+  <a href="/p/{{ project.name }}/plans">Plans</a>
+  <a href="/p/{{ project.name }}/revisions">Revisions</a>
+  <a href="/p/{{ project.name }}/run">Run</a>
+</nav>
+
+<form class="filter-bar" method="get" action="/p/{{ project.name }}/tasks">
+  <label>Status:
+    <select name="status" onchange="this.form.submit()">
+      <option value="" {% if not status_filter %}selected{% endif %}>(all)</option>
+      {% for s in status_options %}
+        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <noscript><button type="submit">Apply</button></noscript>
+  {% if status_filter %}
+    <a class="muted" href="/p/{{ project.name }}/tasks">clear</a>
+  {% endif %}
+</form>
+
+{% if status_invalid %}
+  <p class="warn">Неизвестное значение status — фильтр проигнорирован.</p>
+{% endif %}
+
+{% if not db_available %}
+  <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug не совпадает с <code>project.slug</code> в БД.</p>
+{% elif not tasks %}
+  <p class="muted">{% if status_filter %}Нет задач со статусом <code>{{ status_filter }}</code>.{% else %}В этом проекте пока нет задач.{% endif %}</p>
+{% else %}
+<table class="grid">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Title</th>
+      <th>Type</th>
+      <th>Status</th>
+      <th>Priority</th>
+      <th class="num">Plan</th>
+      <th class="num">Section</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tasks %}
+    <tr class="status-{{ t.status }}">
+      <td class="mono">{{ t.task_id }}</td>
+      <td>{{ t.title }}</td>
+      <td>{{ t.type }}</td>
+      <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
+      <td><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span></td>
+      <td class="num">{{ t.plan_id }}</td>
+      <td class="num">{{ t.section_id }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="muted">{{ tasks | length }} task{% if tasks | length != 1 %}s{% endif %}.</p>
+{% endif %}
+{% endblock %}

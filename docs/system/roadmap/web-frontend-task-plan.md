@@ -27,10 +27,10 @@ source_of_truth:
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
-| B: Read views | inline | 4 | 0 | 4 | ❌ pending |
+| B: Read views | inline | 4 | 1 | 3 | 🔄 in-progress |
 | C: Write paths | inline | 3 | 0 | 3 | ❌ pending |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
-| **TOTAL** |  | **12** | **3** | **9** | |
+| **TOTAL** |  | **12** | **4** | **8** | |
 
 ## Gap Analysis Summary
 
@@ -202,13 +202,22 @@ priority: high
 id: WEB-010
 title: "Implement: tasks list + filter"
 section: B-Read-Views
-status: pending
+status: done
 depends_on: [WEB-002]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/api/web/pages.py
+  - cod_doc/services/task_service.py
+  - cod_doc/infra/repositories/task_repo.py
+  - cod_doc/templates/web/project/tasks_list.html
+  - cod_doc/static/app.css
+  - tests/api/test_web_tasks.py
 ```
 
 **Description:** `GET /p/{slug}/tasks?plan=&status=`. Таблица: id / title / section / status / priority. Без HTMX в этой задаче — только read.
+
+> ✅ **Implemented 2026-04-28** (commit `pending`): добавлены `TaskRepository.list_for_project(project_id, *, status=None)` (project-wide select с optional `status`-where, order by `plan_id, section_id, task_id`) и thin-wrapper `task_service.list_for_project`. `GET /p/{slug}/tasks?status=` — таблица id/title/type/status/priority/plan_id/section_id, status-фильтр через нативный `<select onchange="form.submit()">` (работает и без JS — `<noscript>` показывает кнопку Apply). Невалидный status-параметр — fallback на «все», warning-баннер. Color-coded badges (`badge-pending` жёлтый, `badge-in-progress` синий, `badge-done` зелёный) + priority colors (critical красный, high оранжевый, low серый). Plan-фильтр-дропдаун отложен — требует listing-метода в PlanRepository, который пока не отлит в `main` (см. pre-existing untracked `plan_repo.py`); URL-параметр `?plan=...` зарезервирован для следующей итерации. Тесты — 6 (рендер, status filter on `done`, on `in-progress`, invalid status, missing DB, 404 на unknown project); общий suite — 318/318. **Section A (Scaffold) closed; Section B (Read views) — 1/4.**
 
 ### WEB-020
 
