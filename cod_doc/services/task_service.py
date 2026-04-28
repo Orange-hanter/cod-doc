@@ -32,7 +32,7 @@ from cod_doc.domain.entities import (
     TaskStatus,
     TaskType,
 )
-from cod_doc.infra.models import AffectedFileModel, DependencyModel, TaskModel
+from cod_doc.infra.models import AffectedFileModel, DependencyModel, PlanModel, TaskModel
 from cod_doc.infra.repositories import TaskRepository
 from cod_doc.services import revision_service as rev
 from cod_doc.services import validation
@@ -258,6 +258,11 @@ def complete(
         reason=reason or "complete",
         expected_parent_revision_id=expected_parent_revision_id,
     )
+    # COD-022: signal plan staleness so callers know projection may be outdated.
+    plan_model = session.get(PlanModel, model.plan_id)
+    if plan_model is not None:
+        plan_model.last_updated = now
+    session.flush()
 
     t = TaskRepository(session).get(model.row_id)
     assert t is not None

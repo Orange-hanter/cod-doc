@@ -203,9 +203,9 @@ def test_explicit_none_expected_parent_on_existing_entity_raises(engine_with_sch
             )
 
 
-def test_revert_not_yet_implemented(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_revert_raises_lookup_for_unknown_revision_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session:
-        with pytest.raises(NotImplementedError):
-            rev.revert(session, "01HQX5Z9F0K8R0000000000000")
+        with pytest.raises(LookupError):
+            rev.revert(session, "01HQX5Z9F0K8R0000000000000", author="human:test")
