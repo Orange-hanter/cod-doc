@@ -16,15 +16,17 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI
 
 from cod_doc.agent.prompts import SYSTEM_PROMPT
 from cod_doc.agent.retry import LLMError, with_retry
 from cod_doc.agent.tools import TOOL_DEFINITIONS, ToolExecutor
-from cod_doc.config import Config
 from cod_doc.core.project import Project, Task, TaskStatus
+
+if TYPE_CHECKING:
+    from cod_doc.config import Config
 
 # Тип async-callback для запроса к человеку
 AskHumanAsync = Callable[[str, str], Awaitable[str]]
@@ -147,11 +149,11 @@ class Orchestrator:
 
             # Запрос к LLM с retry
             try:
-                llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+                llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
                 response = await with_retry(
-                    lambda: self.client.chat.completions.create(
+                    lambda msgs=llm_messages: self.client.chat.completions.create(
                         model=self.config.model,
-                        messages=llm_messages,
+                        messages=msgs,
                         tools=TOOL_DEFINITIONS,
                         tool_choice="auto",
                         max_tokens=self.config.max_tokens,
@@ -225,7 +227,7 @@ class Orchestrator:
         messages = [{"role": "user", "content": prompt}]
 
         try:
-            llm_msgs = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+            llm_msgs = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
             allowed = {t["function"]["name"] for t in TOOL_DEFINITIONS if t["function"]["name"] in ("create_task", "get_project_status")}
             tools_subset = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in allowed]
             response = await with_retry(

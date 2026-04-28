@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum
-from typing import Any
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
-class DocumentType(str, Enum):
+class DocumentType(StrEnum):
     MODULE_SPEC = "module-spec"
     MODULE_SUBDOC = "module-subdoc"
     EXECUTION_PLAN = "execution-plan"
@@ -24,21 +26,21 @@ class DocumentType(str, Enum):
     REDIRECT = "redirect"
 
 
-class DocumentStatus(str, Enum):
+class DocumentStatus(StrEnum):
     DRAFT = "draft"
     REVIEW = "review"
     ACTIVE = "active"
     DEPRECATED = "deprecated"
 
 
-class Sensitivity(str, Enum):
+class Sensitivity(StrEnum):
     PUBLIC = "public"
     INTERNAL = "internal"
     CONFIDENTIAL = "confidential"
     RESTRICTED = "restricted"
 
 
-class LinkKind(str, Enum):
+class LinkKind(StrEnum):
     CANONICAL = "canonical"
     WIKI = "wiki"
     MARKDOWN = "markdown"
@@ -48,13 +50,13 @@ class LinkKind(str, Enum):
     SECTION = "section"
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in-progress"
     DONE = "done"
 
 
-class TaskType(str, Enum):
+class TaskType(StrEnum):
     FEATURE = "feature"
     TEST = "test"
     BUG = "bug"
@@ -64,52 +66,52 @@ class TaskType(str, Enum):
     CHORE = "chore"
 
 
-class Priority(str, Enum):
+class Priority(StrEnum):
     CRITICAL = "critical"
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
 
 
-class DependencyKind(str, Enum):
+class DependencyKind(StrEnum):
     BLOCKS = "blocks"
     RELATES = "relates"
     DUPLICATES = "duplicates"
 
 
-class AffectedFileKind(str, Enum):
+class AffectedFileKind(StrEnum):
     SOURCE = "source"
     TEST = "test"
     MIGRATION = "migration"
     CONFIG = "config"
 
 
-class UserStoryStatus(str, Enum):
+class UserStoryStatus(StrEnum):
     DRAFT = "draft"
     ACCEPTED = "accepted"
     DELIVERED = "delivered"
     DEFERRED = "deferred"
 
 
-class StoryLinkKind(str, Enum):
+class StoryLinkKind(StrEnum):
     TASK = "task"
     DOCUMENT = "document"
     MODULE = "module"
 
 
-class StoryRelation(str, Enum):
+class StoryRelation(StrEnum):
     IMPLEMENTED_BY = "implemented_by"
     SPECIFIED_IN = "specified_in"
     OWNED_BY = "owned_by"
 
 
-class ModuleStatus(str, Enum):
+class ModuleStatus(StrEnum):
     PROPOSED = "proposed"
     ACTIVE = "active"
     DEPRECATED = "deprecated"
 
 
-class ModuleCodeKind(str, Enum):
+class ModuleCodeKind(StrEnum):
     BACKEND = "backend"
     FRONTEND = "frontend"
     TESTS = "tests"
@@ -117,7 +119,7 @@ class ModuleCodeKind(str, Enum):
     ADMIN_PANEL = "admin_panel"
 
 
-class EntityKind(str, Enum):
+class EntityKind(StrEnum):
     DOCUMENT = "document"
     SECTION = "section"
     TASK = "task"
@@ -127,7 +129,7 @@ class EntityKind(str, Enum):
     MODULE = "module"
 
 
-class AuditSurface(str, Enum):
+class AuditSurface(StrEnum):
     CLI = "cli"
     MCP = "mcp"
     REST = "rest"

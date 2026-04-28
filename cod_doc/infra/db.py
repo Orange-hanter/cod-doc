@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 DEFAULT_EMBEDDED_PATH = ".cod-doc/state.db"
 

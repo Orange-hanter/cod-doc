@@ -20,9 +20,9 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import (
     AffectedFileKind,
@@ -36,6 +36,9 @@ from cod_doc.infra.models import AffectedFileModel, DependencyModel, PlanModel, 
 from cod_doc.infra.repositories import TaskRepository
 from cod_doc.services import revision_service as rev
 from cod_doc.services import validation
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 class TaskNotFoundError(LookupError):

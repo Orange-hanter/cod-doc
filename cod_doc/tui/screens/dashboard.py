@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar
 
 from textual import on
-from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.message import Message
@@ -16,6 +16,9 @@ from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project, Task, TaskStatus
 from cod_doc.logging_config import get_logger
 from cod_doc.tui.screens.agent_run import AgentRunScreen
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 log = get_logger("tui.dashboard")
 
@@ -71,7 +74,7 @@ class ProjectCard(Static):
 class AddProjectDialog(Screen):
     """Диалог добавления нового проекта."""
 
-    BINDINGS = [Binding("escape", "dismiss", "Закрыть")]
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "dismiss", "Закрыть")]
 
     def __init__(self, config: Config) -> None:
         super().__init__()
@@ -119,7 +122,7 @@ class AddProjectDialog(Screen):
 class AddTaskDialog(Screen):
     """Диалог добавления задачи в проект."""
 
-    BINDINGS = [Binding("escape", "dismiss", "Закрыть")]
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "dismiss", "Закрыть")]
 
     def __init__(self, project: Project) -> None:
         super().__init__()
@@ -158,7 +161,7 @@ class AddTaskDialog(Screen):
 class DashboardScreen(Screen):
     """Главный экран — список проектов."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("a", "add_project", "Добавить проект", show=True),
         Binding("r", "refresh", "Обновить", show=True),
         Binding("s", "settings", "Настройки", show=True),

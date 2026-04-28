@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -20,6 +20,9 @@ from fastapi.testclient import TestClient
 
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -34,7 +37,7 @@ def tmp_project(tmp_path: Path) -> tuple[Path, ProjectEntry]:
 @pytest.fixture
 def app_client(tmp_path: Path, tmp_project):
     """TestClient с изолированным конфигом."""
-    repo, entry = tmp_project
+    _repo, entry = tmp_project
 
     cfg = Config(
         api_key="sk-test-key",
@@ -58,7 +61,7 @@ def app_client(tmp_path: Path, tmp_project):
 # ── API: health & config ──────────────────────────────────────────────────────
 
 def test_health(app_client) -> None:
-    client, cfg, _ = app_client
+    client, _cfg, _ = app_client
     r = client.get("/api/health")
     assert r.status_code == 200
     data = r.json()

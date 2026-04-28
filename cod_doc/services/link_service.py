@@ -33,9 +33,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import EntityKind, Link, LinkKind
 from cod_doc.infra.models import (
@@ -47,6 +47,9 @@ from cod_doc.infra.models import (
 )
 from cod_doc.infra.repositories import LinkRepository
 from cod_doc.services import doc_service as docs
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 class LinkNotFoundError(LookupError):

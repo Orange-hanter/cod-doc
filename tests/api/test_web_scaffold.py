@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
 
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture

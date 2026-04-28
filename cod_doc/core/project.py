@@ -7,19 +7,20 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from enum import Enum
-from typing import Any
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from cod_doc.config import ProjectEntry
+if TYPE_CHECKING:
+    from cod_doc.config import ProjectEntry
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     DONE = "done"

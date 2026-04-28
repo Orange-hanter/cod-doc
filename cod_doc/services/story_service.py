@@ -24,10 +24,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import (
     EntityKind,
@@ -57,6 +57,9 @@ from cod_doc.infra.repositories import (
 from cod_doc.services import revision_service as rev
 from cod_doc.services import validation
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 
 class StoryNotFoundError(LookupError):
     pass
@@ -74,7 +77,7 @@ class BrokenLinkError(ValueError):
     """Raised when `link()` target doesn't resolve in the current project."""
 
 
-class CoverageStatus(str, Enum):
+class CoverageStatus(StrEnum):
     """Derived coverage state. See [user-stories-graph.md §4]."""
 
     DRAFT = "draft"

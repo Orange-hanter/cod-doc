@@ -6,10 +6,9 @@ import json
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import EntityKind, Priority, Task, TaskStatus, TaskType
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
@@ -21,6 +20,9 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

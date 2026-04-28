@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 logger = logging.getLogger("cod_doc.core.reindex")
 
@@ -147,7 +150,7 @@ def search_documents(
     metas = results.get("metadatas", [[]])[0]
     distances = results.get("distances", [[]])[0]
 
-    for doc, meta, dist in zip(docs, metas, distances):
+    for doc, meta, dist in zip(docs, metas, distances, strict=False):
         hits.append({
             "path": meta.get("path", ""),
             "hash": meta.get("hash", ""),

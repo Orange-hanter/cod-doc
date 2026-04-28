@@ -4,18 +4,22 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from typing import TYPE_CHECKING, ClassVar
 
 from textual import on
-from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Checkbox, Footer, Header, Label, RichLog, Static
 
 from cod_doc.agent.orchestrator import AgentEvent, Orchestrator
-from cod_doc.config import Config
-from cod_doc.core.project import Project
 from cod_doc.logging_config import get_logger
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
+
+    from cod_doc.config import Config
+    from cod_doc.core.project import Project
 
 log = get_logger("tui.agent_run")
 
@@ -34,7 +38,7 @@ EVENT_STYLES = {
 class AgentRunScreen(Screen):
     """Экран выполнения задачи агентом."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "stop_agent", "Остановить", show=True),
         Binding("c", "clear_log", "Очистить лог", show=True),
     ]

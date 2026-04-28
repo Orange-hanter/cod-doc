@@ -6,9 +6,12 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from cod_doc.core.hash_calc import calc_hash
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 REF_PATTERN = re.compile(
     r"📁\s+(?P<path>\S+)\s+\|\s+🗃️\s+(?P<vec_id>\S+)\s+\|\s+🔑\s+sha:(?P<hash>[0-9a-f]{12})"

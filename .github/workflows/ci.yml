@@ -39,10 +39,8 @@ jobs:
         run: pytest -q
 
   ruff:
-    name: ruff (advisory)
+    name: ruff
     runs-on: ubuntu-latest
-    # COD-024a — pre-existing lint debt; non-blocking until cleaned up.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 

@@ -6,8 +6,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Callable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from cod_doc.agent.tool_defs import TOOL_DEFINITIONS
 from cod_doc.core.context import get_context
@@ -15,6 +14,10 @@ from cod_doc.core.hash_calc import calc_hash, make_ref, update_hashes
 from cod_doc.core.project import Project, Task, TaskStatus
 from cod_doc.core.reindex import reindex_project
 from cod_doc.core.reindex import search_documents as _search_docs
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 # Re-export for backward compatibility
 __all__ = ["TOOL_DEFINITIONS", "ToolExecutor"]
@@ -150,7 +153,7 @@ class ToolExecutor:
             if branch:
                 subprocess.run(["git", "checkout", "-b", branch], cwd=root, check=True, capture_output=True)
             if files:
-                subprocess.run(["git", "add"] + files, cwd=root, check=True, capture_output=True)
+                subprocess.run(["git", "add", *files], cwd=root, check=True, capture_output=True)
             else:
                 subprocess.run(["git", "add", "-A"], cwd=root, check=True, capture_output=True)
             result = subprocess.run(

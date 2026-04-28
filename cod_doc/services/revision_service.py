@@ -17,14 +17,16 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 from ulid import ULID
 
 from cod_doc.domain.entities import EntityKind, Revision, TaskStatus
 from cod_doc.infra.models import RevisionModel, SectionModel, TaskModel
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 class RevisionConflictError(RuntimeError):

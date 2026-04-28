@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import click
 
-from cod_doc.config import Config
+if TYPE_CHECKING:
+    from cod_doc.config import Config
 
 
 @click.command()

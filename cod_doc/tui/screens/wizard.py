@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar
 
 from textual import on
-from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import Screen
@@ -13,6 +14,9 @@ from textual.widgets import Button, Checkbox, Input, Label, RadioButton, RadioSe
 
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.logging_config import get_logger
+
+if TYPE_CHECKING:
+    from textual.app import ComposeResult
 
 log = get_logger("tui.wizard")
 
@@ -69,7 +73,7 @@ class _StepBar(Static):
 class WizardScreen(Screen):
     """Интерактивный экран первоначальной настройки."""
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "quit_wizard", "Выход"),
         Binding("enter", "next_step", "Далее", show=False),
     ]
@@ -260,10 +264,8 @@ class WizardScreen(Screen):
         # Модель из конфига
         for model_id, _ in MODELS:
             if model_id == self.config.model:
-                try:
+                with contextlib.suppress(Exception):
                     self.query_one(f"#model-{model_id}", RadioButton).value = True
-                except Exception:
-                    pass
                 break
         self._show_step(0)
 
@@ -311,10 +313,8 @@ class WizardScreen(Screen):
             2: "#input-project-path",
         }
         if step in targets:
-            try:
+            with contextlib.suppress(Exception):
                 self.query_one(targets[step], Input).focus()
-            except Exception:
-                pass
 
     @on(Button.Pressed, "#btn-next")
     def action_next_step(self, event: Button.Pressed | None = None) -> None:
@@ -343,10 +343,8 @@ class WizardScreen(Screen):
 
     def _set_error(self, widget_id: str, msg: str) -> None:
         """Показать/скрыть инлайн-сообщение об ошибке."""
-        try:
+        with contextlib.suppress(Exception):
             self.query_one(f"#err-{widget_id}", Static).update(msg)
-        except Exception:
-            pass
 
     def _validate_and_save_api(self) -> bool:
         key = self.query_one("#input-api-key", Input).value.strip()

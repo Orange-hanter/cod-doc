@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,6 +11,9 @@ import pytest
 from cod_doc.agent.orchestrator import Orchestrator
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project, Task, TaskStatus
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

@@ -23,10 +23,10 @@ Caller owns the transaction.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select, text
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import Priority, Task, TaskStatus
 from cod_doc.infra.models import (
@@ -35,6 +35,9 @@ from cod_doc.infra.models import (
     TaskModel,
 )
 from cod_doc.infra.repositories import TaskRepository
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 class PlanNotFoundError(LookupError):
@@ -45,7 +48,7 @@ class TaskNotFoundInPlanError(LookupError):
     pass
 
 
-class DerivedStatus(str, Enum):
+class DerivedStatus(StrEnum):
     EMPTY = "empty"
     PENDING = "pending"
     IN_PROGRESS = "in-progress"
@@ -654,9 +657,10 @@ def critical_path(session: Session, plan_id: int) -> CriticalPathResult:
         for prereq_rid in prereqs[current]:
             if prereq_rid not in depth_map:
                 continue
-            if depth_map[prereq_rid] == depth_map[current] - 1:
-                if best is None or info[prereq_rid][0] < info[best][0]:
-                    best = prereq_rid
+            if depth_map[prereq_rid] == depth_map[current] - 1 and (
+                best is None or info[prereq_rid][0] < info[best][0]
+            ):
+                best = prereq_rid
         if best is None:
             break
         path_rids.append(best)

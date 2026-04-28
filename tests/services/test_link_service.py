@@ -5,9 +5,9 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import (
     DocumentStatus,
@@ -29,6 +29,9 @@ from cod_doc.services import doc_service as docs
 from cod_doc.services import link_service as links
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -317,9 +320,11 @@ def test_resolve_task_ref(engine_with_schema) -> None:  # type: ignore[no-untype
         # Need a plan + section to host a task.
         now = datetime.now(UTC)
         plan = PlanModel(project_id=proj, scope="x-plan", created=now, last_updated=now)
-        session.add(plan); session.flush()
+        session.add(plan)
+        session.flush()
         ps = PlanSectionModel(plan_id=plan.row_id, letter="A", title="X", slug="A-X", position=0)
-        session.add(ps); session.flush()
+        session.add(ps)
+        session.flush()
         tasks.create(
             session, project_id=proj, plan_id=plan.row_id, section_id=ps.row_id,
             task_id="AUTH-025", title="t", type=TaskType.FEATURE,
@@ -348,7 +353,8 @@ def test_resolve_story_ref(engine_with_schema) -> None:  # type: ignore[no-untyp
             narrative="...", status=UserStoryStatus.ACCEPTED.value,
             priority=Priority.MEDIUM.value, created=now, last_updated=now,
         )
-        session.add(story); session.flush()
+        session.add(story)
+        session.flush()
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session, document_id=host, anchor="i", heading="I", level=2, position=0,
@@ -461,7 +467,7 @@ def test_rename_cascade_updates_link_rows(engine_with_schema) -> None:  # type: 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj = _seed_project(session)
-        target_id = _add_doc(session, proj, doc_key="old-key")
+        _add_doc(session, proj, doc_key="old-key")
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session, document_id=host, anchor="i", heading="I", level=2, position=0,

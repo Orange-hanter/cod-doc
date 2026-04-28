@@ -6,9 +6,9 @@ import json
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import (
     DocumentStatus,
@@ -33,6 +33,9 @@ from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
 from cod_doc.services import story_service as stories
 from cod_doc.services import task_service as tasks
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -60,19 +63,23 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 def _seed_project(session: Session) -> int:
     now = datetime.now(UTC)
     proj = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
-    proj.created = now; proj.updated = now
-    session.add(proj); session.flush()
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
     return proj.row_id
 
 
 def _seed_plan_with_section(session: Session, project_id: int) -> tuple[int, int]:
     now = datetime.now(UTC)
     plan = PlanModel(project_id=project_id, scope="p-plan", created=now, last_updated=now)
-    session.add(plan); session.flush()
+    session.add(plan)
+    session.flush()
     sec = PlanSectionModel(
         plan_id=plan.row_id, letter="A", title="X", slug="A-X", position=0
     )
-    session.add(sec); session.flush()
+    session.add(sec)
+    session.flush()
     return plan.row_id, sec.row_id
 
 
@@ -337,7 +344,8 @@ def test_link_to_module_validates_target(engine_with_schema) -> None:  # type: i
             project_id=proj, module_id="M1-auth", name="Auth",
             status=ModuleStatus.ACTIVE.value,
         )
-        session.add(m); session.flush()
+        session.add(m)
+        session.flush()
         story = _make_story(session, proj)
         link = stories.link(
             session, story_id=story.story_id,

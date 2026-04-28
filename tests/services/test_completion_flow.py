@@ -5,9 +5,9 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import (
     DocumentStatus,
@@ -22,6 +22,9 @@ from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -49,12 +52,16 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 def _seed(session: Session) -> tuple[int, int, int]:
     now = datetime.now(UTC)
     proj = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
-    proj.created = now; proj.updated = now
-    session.add(proj); session.flush()
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
     plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
-    session.add(plan); session.flush()
+    session.add(plan)
+    session.flush()
     sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0)
-    session.add(sec); session.flush()
+    session.add(sec)
+    session.flush()
     return proj.row_id, plan.row_id, sec.row_id
 
 

@@ -27,11 +27,10 @@ import difflib
 import hashlib
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import (
     Document,
@@ -45,6 +44,9 @@ from cod_doc.infra.models import DocumentModel, SectionModel
 from cod_doc.infra.repositories import DocumentRepository, SectionRepository
 from cod_doc.services import revision_service as rev
 from cod_doc.services import validation
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 class DocumentNotFoundError(LookupError):

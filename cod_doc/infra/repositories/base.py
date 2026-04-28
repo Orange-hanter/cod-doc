@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
-from sqlalchemy.orm import Session
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 DomainT = TypeVar("DomainT")
 ModelT = TypeVar("ModelT")

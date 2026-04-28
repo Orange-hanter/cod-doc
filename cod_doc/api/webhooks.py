@@ -71,8 +71,8 @@ async def github_webhook(
 
     try:
         payload = json.loads(body)
-    except json.JSONDecodeError:
-        raise HTTPException(400, "Невалидный JSON payload")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, "Невалидный JSON payload") from exc
 
     repo_url: str = (
         payload.get("repository", {}).get("html_url", "")

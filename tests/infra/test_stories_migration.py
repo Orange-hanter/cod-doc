@@ -117,7 +117,7 @@ def test_user_story_with_acceptance_and_links(engine_with_schema) -> None:  # ty
         ).scalar_one()
         assert [a.position for a in story.acceptance] == [0, 1]
         assert [a.met for a in story.acceptance] == [True, False]
-        assert {(l.to_kind, l.to_ref, l.relation) for l in story.links} == {
+        assert {(link.to_kind, link.to_ref, link.relation) for link in story.links} == {
             ("task", "AUTH-025", "implemented_by"),
             ("document", "modules/M1-auth/overview", "specified_in"),
         }

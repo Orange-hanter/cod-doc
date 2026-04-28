@@ -64,8 +64,8 @@ def task_status_update(
 
     try:
         new_status = TaskStatus(status)
-    except ValueError:
-        raise HTTPException(400, f"Неизвестное значение status: {status}")
+    except ValueError as exc:
+        raise HTTPException(400, f"Неизвестное значение status: {status}") from exc
 
     with open_db_for_project(slug) as (session, project_db_id):
         if session is None or project_db_id is None:

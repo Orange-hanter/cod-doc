@@ -33,23 +33,27 @@ Caller owns the transaction.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 from dataclasses import dataclass
-from enum import Enum
-from pathlib import Path
-from typing import Any
+from enum import StrEnum
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import Document, DocumentStatus, DocumentType, Sensitivity
 from cod_doc.infra.models import DocumentModel
 from cod_doc.infra.repositories import DocumentRepository
 from cod_doc.services import doc_service as docs
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
-class DriftStatus(str, Enum):
+    from sqlalchemy.orm import Session
+
+
+class DriftStatus(StrEnum):
     IN_SYNC = "in_sync"                # file == projection_hash == DB content
     STALE_EXPORT = "stale_export"      # DB changed but not yet exported
     EDITED_IN_PLACE = "edited_in_place"  # file changed after last export
@@ -288,22 +292,16 @@ def _parse_frontmatter(content: str) -> dict[str, Any]:
 def _apply_frontmatter_to_model(model: DocumentModel, fm: dict[str, Any]) -> None:
     """Apply recognised frontmatter fields to the ORM model (in-place)."""
     if "type" in fm:
-        try:
+        with contextlib.suppress(ValueError):
             model.type = DocumentType(fm["type"]).value
-        except ValueError:
-            pass
     if "status" in fm:
-        try:
+        with contextlib.suppress(ValueError):
             model.status = DocumentStatus(fm["status"]).value
-        except ValueError:
-            pass
     if "owner" in fm:
         model.owner = str(fm["owner"]) if fm["owner"] else None
     if "sensitivity" in fm:
-        try:
+        with contextlib.suppress(ValueError):
             model.sensitivity = Sensitivity(fm["sensitivity"]).value
-        except ValueError:
-            pass
     if "source_of_truth" in fm and isinstance(fm["source_of_truth"], bool):
         model.source_of_truth = fm["source_of_truth"]
 

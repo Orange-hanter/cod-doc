@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
 
-from cod_doc.config import Config
 from cod_doc.logging_config import get_logger
+
+if TYPE_CHECKING:
+    from cod_doc.config import Config
 
 console = Console()
 log = get_logger("cli")

@@ -7,9 +7,9 @@ import json
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import (
     Document,
@@ -22,6 +22,9 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import ProjectModel
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

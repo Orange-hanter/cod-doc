@@ -5,9 +5,9 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import Priority, TaskStatus, TaskType
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
@@ -19,6 +19,9 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -52,14 +55,18 @@ def _seed(session: Session) -> tuple[int, int, int]:
     """Return (project_id, plan_id, section_id)."""
     now = datetime.now(UTC)
     proj = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
-    proj.created = now; proj.updated = now
-    session.add(proj); session.flush()
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
 
     plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
-    session.add(plan); session.flush()
+    session.add(plan)
+    session.flush()
 
     sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0)
-    session.add(sec); session.flush()
+    session.add(sec)
+    session.flush()
     return proj.row_id, plan.row_id, sec.row_id
 
 

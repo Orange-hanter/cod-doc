@@ -8,10 +8,13 @@ Create Date: 2026-04-19
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
 from alembic import op
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 revision: str = "0001_core"
 down_revision: str | None = None

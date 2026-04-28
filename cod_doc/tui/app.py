@@ -7,14 +7,17 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar
 
 from textual.app import App
 from textual.binding import Binding
 
-from cod_doc.config import Config
 from cod_doc.logging_config import get_logger
 from cod_doc.tui.screens.dashboard import DashboardScreen
 from cod_doc.tui.screens.wizard import WizardScreen
+
+if TYPE_CHECKING:
+    from cod_doc.config import Config
 
 log = get_logger("tui.app")
 
@@ -25,7 +28,7 @@ class CodDocApp(App):
     TITLE = "COD-DOC — Context Orchestrator for Documentation"
     CSS_PATH = str(Path(__file__).parent / "cod_doc.tcss")
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("q", "quit", "Выход", show=True),
         Binding("ctrl+c", "quit", "Выход", show=False),
     ]

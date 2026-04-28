@@ -17,12 +17,13 @@ import logging
 import os
 import sys
 from datetime import UTC, datetime
+from typing import ClassVar
 
 
 class JsonFormatter(logging.Formatter):
     """Форматтер для структурированных JSON-логов."""
 
-    LEVEL_MAP = {
+    LEVEL_MAP: ClassVar[dict[int, str]] = {
         logging.DEBUG: "debug",
         logging.INFO: "info",
         logging.WARNING: "warning",
@@ -52,7 +53,7 @@ class JsonFormatter(logging.Formatter):
 class TextFormatter(logging.Formatter):
     """Человекочитаемый форматтер с цветом для терминала."""
 
-    COLORS = {
+    COLORS: ClassVar[dict[str, str]] = {
         "DEBUG": "\033[36m",    # cyan
         "INFO": "\033[32m",     # green
         "WARNING": "\033[33m",  # yellow

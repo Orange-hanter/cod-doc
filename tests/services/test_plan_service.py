@@ -5,9 +5,9 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import Priority, TaskStatus, TaskType
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
@@ -19,6 +19,9 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

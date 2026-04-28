@@ -5,15 +5,18 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy.orm import Session
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import ProjectModel
 from cod_doc.services import doc_service as docs
 from cod_doc.services import projection_service as proj
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -48,8 +51,10 @@ def root_path(tmp_path: Path) -> Path:
 def _seed_project(session: Session) -> int:
     now = datetime.now(UTC)
     proj_model = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
-    proj_model.created = now; proj_model.updated = now
-    session.add(proj_model); session.flush()
+    proj_model.created = now
+    proj_model.updated = now
+    session.add(proj_model)
+    session.flush()
     return proj_model.row_id
 
 
