@@ -274,12 +274,14 @@ def rename(
     author: str,
     new_path: str | None = None,
     reason: str | None = None,
+    cascade_links: bool = True,
 ) -> Document:
     """Change `doc_key` / `path`; writes a DOCUMENT revision.
 
-    Cascade-update of incoming links (where `link.to_doc_key == old_doc_key`)
-    is intentionally NOT done here — that is LinkService.rename_cascade in
-    COD-013. Callers that need link integrity must run the cascade afterwards.
+    When `cascade_links=True` (default), runs `LinkService.rename_cascade`
+    inside the same transaction to update incoming `link.to_doc_key` rows
+    and rewrite canonical refs in section bodies. Pass `cascade_links=False`
+    only when the caller will run the cascade later (e.g. bulk import).
     """
     doc = _require_doc(session, document_id)
     old_key = doc.doc_key
@@ -312,6 +314,19 @@ def rename(
         diff=diff,
         reason=reason or "rename",
     )
+
+    if cascade_links and old_key != new_doc_key:
+        # Local import to avoid a cycle: link_service imports doc_service.
+        from cod_doc.services import link_service as _links  # noqa: PLC0415
+        _links.rename_cascade(
+            session,
+            project_id=doc.project_id,
+            old_doc_key=old_key,
+            new_doc_key=new_doc_key,
+            author=author,
+            reason=reason,
+        )
+
     refreshed = DocumentRepository(session).get(document_id)
     assert refreshed is not None
     return refreshed
