@@ -45,7 +45,7 @@ def get_collection(
     api_key: str,
     base_url: str,
     embedding_model: str,
-):
+) -> Any:
     """Получить или создать ChromaDB коллекцию.
 
     Embeddings идут через OpenAI-совместимый /embeddings endpoint (по умолчанию

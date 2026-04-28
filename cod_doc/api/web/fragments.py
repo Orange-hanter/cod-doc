@@ -8,6 +8,8 @@ Convention: each fragment endpoint accepts both HTMX and non-HTMX form posts.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.exc import IntegrityError
@@ -15,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from cod_doc.api.deps import get_project
 from cod_doc.api.web.db_resolver import open_db_for_project
 from cod_doc.api.web.templates_env import templates
-from cod_doc.domain.entities import TaskStatus
+from cod_doc.domain.entities import Task, TaskStatus
 from cod_doc.services import task_service as tasks
 from cod_doc.services.revision_service import RevisionConflictError
 
@@ -30,7 +32,7 @@ def _render_task_row(
     request: Request,
     *,
     project_name: str,
-    task,  # cod_doc.domain.entities.Task
+    task: Any,
     error: str | None = None,
 ) -> HTMLResponse:
     return templates.TemplateResponse(

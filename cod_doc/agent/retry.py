@@ -8,7 +8,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from typing import TypeVar
+from collections.abc import Callable, Coroutine
+from typing import Any, TypeVar
 
 from openai import APIConnectionError, APIStatusError, RateLimitError
 
@@ -55,7 +56,9 @@ class LLMError(Exception):
         return cls(str(exc), retryable=False)
 
 
-async def with_retry(coro_factory, max_attempts: int = 4, base_delay: float = 2.0):
+async def with_retry(
+    coro_factory: Callable[[], Coroutine[Any, Any, T]], max_attempts: int = 4, base_delay: float = 2.0
+) -> T:
     """
     Выполнить async-корутину с экспоненциальным backoff.
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -26,7 +27,7 @@ logger = logging.getLogger("cod_doc.api")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cfg = Config.load()
     set_config(cfg)
     logger.info(f"COD-DOC API запущен. Проектов: {len(cfg.list_projects())}")
