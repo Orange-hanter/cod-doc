@@ -69,6 +69,9 @@ class Orchestrator:
             project,
             on_ask_human=on_ask_human if not async_on_ask_human else None,
             chroma_path=config.chroma_path,
+            api_key=config.api_key,
+            base_url=config.base_url,
+            embedding_model=config.embedding_model,
         )
 
     # ── Public API ───────────────────────────────────────────────────────────

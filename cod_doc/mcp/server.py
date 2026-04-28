@@ -342,21 +342,39 @@ def search_docs(
     n_results: int = 5,
 ) -> list[dict[str, Any]]:
     """Semantic search across indexed documentation files. Returns matched snippets with paths, scores, and hashes."""
+    from cod_doc.config import Config
     from cod_doc.core.reindex import search_documents
 
     proj = _project(project_name)
+    cfg = Config.load()
     chroma_path = str(proj.entry.cod_doc_dir / "chroma")
-    return search_documents(query, chroma_path, project_root=str(proj.entry.root), n_results=n_results)
+    return search_documents(
+        query,
+        chroma_path,
+        api_key=cfg.api_key,
+        base_url=cfg.base_url,
+        embedding_model=cfg.embedding_model,
+        project_root=str(proj.entry.root),
+        n_results=n_results,
+    )
 
 
 @mcp.tool()
 def reindex(project_name: str) -> dict[str, Any]:
     """Rebuild the ChromaDB vector index for a project's documentation files (specs/, arch/, models/, docs/)."""
+    from cod_doc.config import Config
     from cod_doc.core.reindex import reindex_project
 
     proj = _project(project_name)
+    cfg = Config.load()
     chroma_path = str(proj.entry.cod_doc_dir / "chroma")
-    return reindex_project(proj.entry.root, chroma_path)
+    return reindex_project(
+        proj.entry.root,
+        chroma_path,
+        api_key=cfg.api_key,
+        base_url=cfg.base_url,
+        embedding_model=cfg.embedding_model,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

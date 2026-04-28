@@ -37,18 +37,32 @@ def _collect_files(repo_root: Path) -> list[Path]:
     return files
 
 
-def get_collection(chroma_path: str):
-    """Получить или создать ChromaDB коллекцию. Ленивый импорт."""
+def get_collection(
+    chroma_path: str,
+    api_key: str,
+    base_url: str,
+    embedding_model: str,
+):
+    """Получить или создать ChromaDB коллекцию.
+
+    Embeddings идут через OpenAI-совместимый /embeddings endpoint (по умолчанию
+    OpenRouter). Локальные torch-бекенды отключены — см. roadmap COD-043.
+    """
     try:
         import chromadb
-        from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+        from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
     except ImportError as e:
-        raise ImportError(
-            "chromadb не установлен. Выполните: pip install chromadb sentence-transformers"
-        ) from e
+        raise ImportError("chromadb не установлен. Выполните: pip install chromadb") from e
+
+    if not api_key:
+        raise ValueError("api_key обязателен для embeddings (OpenRouter / OpenAI-совместимый endpoint)")
 
     client = chromadb.PersistentClient(path=chroma_path)
-    ef = SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+    ef = OpenAIEmbeddingFunction(
+        api_key=api_key,
+        api_base=base_url,
+        model_name=embedding_model,
+    )
     return client.get_or_create_collection(
         name="cod_doc",
         embedding_function=ef,
@@ -59,13 +73,16 @@ def get_collection(chroma_path: str):
 def reindex_project(
     repo_root: Path,
     chroma_path: str,
+    api_key: str,
+    base_url: str,
+    embedding_model: str,
     single_file: Path | None = None,
 ) -> dict:
     """
     Проиндексировать файлы проекта в ChromaDB.
     Возвращает {'indexed': int, 'errors': list[str]}.
     """
-    collection = get_collection(chroma_path)
+    collection = get_collection(chroma_path, api_key, base_url, embedding_model)
     files = [single_file] if single_file else _collect_files(repo_root)
     indexed = 0
     errors: list[str] = []
@@ -100,6 +117,9 @@ def reindex_project(
 def search_documents(
     query: str,
     chroma_path: str,
+    api_key: str,
+    base_url: str,
+    embedding_model: str,
     project_root: str | None = None,
     n_results: int = 5,
 ) -> list[dict]:
@@ -108,7 +128,7 @@ def search_documents(
 
     Returns список dict: {path, score, snippet, hash}.
     """
-    collection = get_collection(chroma_path)
+    collection = get_collection(chroma_path, api_key, base_url, embedding_model)
     where = {"project": project_root} if project_root else None
 
     try:

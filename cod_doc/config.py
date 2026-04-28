@@ -70,8 +70,12 @@ class Config(BaseSettings):
     max_iterations: int = Field(default=50, description="Макс. шагов за одну задачу")
     agent_interval: int = Field(default=60, description="Интервал опроса задач (сек) в daemon-режиме")
 
-    # ChromaDB
+    # ChromaDB / Embeddings
     chroma_path: str = Field(default=str(CONFIG_DIR / "chroma"))
+    embedding_model: str = Field(
+        default="openai/text-embedding-ada-002",
+        description="Embeddings model slug (OpenRouter route, OpenAI-compatible /embeddings)",
+    )
 
     # Проекты
     projects: list[dict[str, Any]] = Field(default_factory=list)

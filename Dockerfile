@@ -3,7 +3,7 @@ FROM python:3.12-slim
 LABEL maintainer="COD-DOC" \
       description="Context Orchestrator for Documentation — autonomous agent"
 
-# Зависимости системы
+# ── 1. System packages (cached until this list changes) ──────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
@@ -11,34 +11,36 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Установка зависимостей Python
+# ── 2. pip upgrade (separate layer — almost never invalidated) ────────────────
+RUN pip install --no-cache-dir --upgrade pip
+
+# ── 3. Python dependencies (cached until pyproject.toml changes) ─────────────
+#    Extract deps via stdlib tomllib (Python 3.11+) — no stub needed.
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -e ".[dev]" 2>/dev/null || pip install --no-cache-dir -e .
+RUN python -c "import tomllib; deps=tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']; open('/tmp/reqs.txt','w').write('\n'.join(deps))" \
+    && pip install --no-cache-dir -r /tmp/reqs.txt \
+    && rm /tmp/reqs.txt
 
-# Копирование кода
+# ── 4. Application source (invalidated on every code change) ─────────────────
+#    pip install --no-deps registers entry-points without re-downloading deps.
 COPY cod_doc/ ./cod_doc/
-COPY templates/ ./templates/
-COPY hooks/ ./hooks/
+RUN pip install --no-cache-dir --no-deps .
 
-# Директория конфига
-ENV COD_DOC_HOME=/data/cod-doc
+# ── 5. Runtime directories & env defaults ────────────────────────────────────
 RUN mkdir -p /data/cod-doc /projects
 
-# Переменные окружения (переопределяются в docker-compose или при запуске)
-ENV COD_DOC_API_KEY=""
-ENV COD_DOC_MODEL="anthropic/claude-sonnet-4-6"
-ENV COD_DOC_BASE_URL="https://openrouter.ai/api/v1"
-ENV COD_DOC_AUTO_COMMIT="false"
-ENV COD_DOC_AGENT_INTERVAL="60"
-ENV COD_DOC_API_HOST="0.0.0.0"
-ENV COD_DOC_API_PORT="8765"
+ENV COD_DOC_HOME=/data/cod-doc \
+    COD_DOC_API_KEY="" \
+    COD_DOC_MODEL="anthropic/claude-sonnet-4-6" \
+    COD_DOC_BASE_URL="https://openrouter.ai/api/v1" \
+    COD_DOC_AUTO_COMMIT="false" \
+    COD_DOC_AGENT_INTERVAL="60" \
+    COD_DOC_API_HOST="0.0.0.0" \
+    COD_DOC_API_PORT="8765"
 
 EXPOSE 8765
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-    CMD curl -f http://localhost:8765/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
+    CMD curl -f http://localhost:${COD_DOC_API_PORT}/api/health || exit 1
 
-# Точка входа: REST API сервер
 CMD ["cod-doc", "serve"]

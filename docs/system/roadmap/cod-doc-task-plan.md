@@ -4,7 +4,7 @@ scope: cod-doc-bootstrap
 status: pending
 principle: test-first
 created: 2026-04-19
-last_updated: 2026-04-25
+last_updated: 2026-04-28
 source_of_truth:
   vision: docs/system/VISION.md
   architecture: docs/system/ARCHITECTURE.md
@@ -28,12 +28,12 @@ source_of_truth:
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Data Core | inline | 5 | 5 | 0 | ✅ done |
-| B: Services | inline | 6 | 3 | 3 | 🔄 in-progress |
-| C: Write Paths | inline | 4 | 0 | 4 | ❌ pending |
+| B: Services | inline | 6 | 6 | 0 | ✅ done |
+| C: Write Paths | inline | 4 | 4 | 0 | ✅ done |
 | D: MCP & CLI | inline | 4 | 0 | 4 | ❌ pending |
-| E: Retrieval | inline | 3 | 0 | 3 | ❌ pending |
+| E: Retrieval | inline | 4 | 0 | 4 | ❌ pending |
 | F: Migration | inline | 3 | 0 | 3 | ❌ pending |
-| **TOTAL**   |        | **25** | **8** | **17** | |
+| **TOTAL**   |        | **26** | **15** | **11** | |
 
 ## Gap Analysis Summary
 
@@ -56,13 +56,13 @@ source_of_truth:
 
 ## Next Batch
 
-Section A (Data Core) closed. Revision + Doc + Task services landed. Next batch:
+Sections A (Data Core), B (Services), C (Write Paths) all closed. Service layer + write-path validation + graph queries + revision revert + projection pipeline complete. Next batch moves into user-facing surfaces (CLI/MCP) and migration tooling:
 
-- **COD-012** — Test + Implement: PlanService (recalc, ready, audit, export) — unlocked by COD-011
-- **COD-013** — Test + Implement: LinkService (parse/resolve/verify/rename-cascade)
-- **COD-014** — Test + Implement: StoryService — unlocked by COD-011
-- **COD-023** — Implement: projection export/import (hash-based detection)
-- **COD-050** — Test: frontmatter/task-plan parser (property-based)
+- **COD-030** — Implement: CLI — task/plan/story commands — first user-facing surface
+- **COD-031** — Implement: CLI — doc/link/revision commands
+- **COD-050** — Test: frontmatter/task-plan parser (property-based) — no dependencies, can run in parallel
+- **COD-032** — Implement: MCP tools — depends on COD-030 + COD-031
+- **COD-040** — Implement: embeddings pipeline (sqlite-vss / pgvector)
 
 ## Dependency Graph
 
@@ -300,13 +300,20 @@ affected_files:
 id: COD-012
 title: "Test + Implement: PlanService (recalc, ready, audit, export)"
 section: B-Services
-status: pending
+status: done
 depends_on: [COD-011]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/services/plan_service.py
+  - cod_doc/infra/repositories/plan_repo.py
+  - cod_doc/infra/repositories/__init__.py
+  - tests/services/test_plan_service.py
 ```
 
 **Description:** Derived статусы секции/плана. `ready()` через view. `audit()` — проверка циклов, drift. `export()` — регенерация Progress Overview/Next Batch/Dependency Graph в markdown.
+
+> ✅ **Implemented 2026-04-28** (commit `pending`): pure read-side сервис (без revisions). `recalc(plan_id)` читает `section_totals` + `plan_totals` (§4.1-§4.2), возвращает `PlanProgress` с `DerivedStatus` (`empty`/`pending`/`in-progress`/`done`) per-section и rolled-up на план — правило: `total==0`→empty, `done==total`→done, иначе `in-progress` если есть прогресс, `pending` иначе. `ready(plan_id, *, limit=None)` фильтрует view `ready_tasks` по плану, сортирует по priority (`critical < high < medium < low`) затем по `task_id` для стабильности. `audit(plan_id)` — итеративный DFS-cycle-detector только по `kind='blocks'` (canonicalize cycles по min-element, дубли отсекаются), drift-check `done_with_unfinished_blocks` ловит задачи помеченные done с открытыми блокирующими депами (например, после ручного `update_status`, минуя `complete()`). `export(plan_id)` рендерит three markdown projections: Progress Overview (markdown table), Next Batch (top-N ready по priority), Dependency Graph (Mermaid `graph TD`, edges blocker→blocked, node ID — `task_id` с `-`→`_`). `PlanRepository` + `PlanSectionRepository` добавлены под общий шаблон. Тесты — 18/18 (recalc empty/partial/done/unknown; ready visibility/scope/priority/limit; audit clean/cycle/non-blocks-ignored/drift; export PO+NB+Mermaid+empty); общий suite — 147/147.
 
 ### COD-013
 
@@ -314,13 +321,23 @@ priority: high
 id: COD-013
 title: "Test + Implement: LinkService (parse/resolve/verify/rename-cascade)"
 section: B-Services
-status: pending
-depends_on: [COD-005]
+status: done
+depends_on: [COD-005, COD-010]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/services/link_service.py
+  - cod_doc/services/doc_service.py
+  - cod_doc/infra/repositories/link_repo.py
+  - cod_doc/infra/repositories/__init__.py
+  - tests/services/test_link_service.py
 ```
 
-**Description:** Парсер ссылок (remark + regex), резолвер, кэш, верификация, cascade при rename документа.
+**Description:** Парсер ссылок (regex), резолвер, верификация, cascade при rename документа.
+
+> ✅ **Implemented 2026-04-28** (commit `pending`): pipeline `parse → sync_section → resolve → verify` + `rename_cascade`. Полное покрытие форм из [standards/document-link.md §1](../standards/document-link.md): canonical `[[doc:KEY]]`, section `[[doc:KEY#anchor]]`, task `[[task:ID]]`, story `[[story:ID]]`, wiki `[[Title]]` (exact match только; fuzzy отложен), markdown relative `[label](../path.md)` с anchor-формой, bare URL и markdown URL. Парсер чистый: regex-based, скипает fenced code blocks (заменяет на whitespace равной длины — сохраняет offsets), сортирует выдачу по позиции в body. `sync_section` транзакционно заменяет link-rows для секции; `resolve_section` авто-синкает если нет rows; `resolve` не штампует `to_doc_key` если target не найден (для CANONICAL/MARKDOWN), но штампует для SECTION-ref'a с broken-anchor — каскад полагается на `to_doc_key` для поиска. `verify_section` возвращает `VerifyReport(ok/broken/skipped)` — URL пропускает (no network на write-path, §7), остальные ре-резолвит и стампит `last_checked`/`broken_reason`. `rename_cascade(project_id, old, new, author)` транзакционно UPDATE'ит `link.to_doc_key` + переписывает `link.raw` + переписывает body секций (только canonical refs `[[doc:OLD…]]`, markdown-paths не трогаем — слишком хрупко без mapping'a путей) + пишет SECTION revision per изменённую секцию через DocService.patch_section. Возвращает `RenameCascadeReport(updated_links, rewritten_sections)`. **DocService.rename теперь авто-вызывает `rename_cascade` (cascade_links=True default)** — закрыли долг из COD-010 ([doc_service.py:265-330](../../../cod_doc/services/doc_service.py)). Тесты — 26/26 (parse: 11 сценариев, sync: 2, resolve: 7, verify: 2, rename_cascade: 4); общий suite — 177/177.
+
+> Зависимость дополнена `COD-010`: cascade-rewrite использует `DocService.patch_section` для записи SECTION revision'ов на каждый изменённый body. Cycle избегается local-import'ом link_service внутри `DocService.rename`.
 
 ### COD-014
 
@@ -328,11 +345,20 @@ priority: high
 id: COD-014
 title: "Test + Implement: StoryService (CRUD, link, coverage)"
 section: B-Services
-status: pending
-depends_on: [COD-003, COD-011]
+status: done
+depends_on: [COD-003, COD-011, COD-015]
 type: feature
 priority: medium
+affected_files:
+  - cod_doc/services/story_service.py
+  - cod_doc/infra/repositories/story_repo.py
+  - cod_doc/infra/repositories/__init__.py
+  - tests/services/test_story_service.py
 ```
+
+> ✅ **Implemented 2026-04-28** (commit `pending`): функциональный API `create / get / list_for_project / list_acceptance / list_links / list_tasks / update_status / add_criterion / set_criterion_met / link / coverage` (см. [cod_doc/services/story_service.py](../../../cod_doc/services/story_service.py)). Все мутации пишут JSON-patch revision'ы с `entity_kind=STORY` ([standards/revision-history.md](../standards/revision-history.md): `op` ∈ `create / status / add_criterion / criterion_met / link`). `update_status` — optimistic concurrency через `expected_parent_revision_id` (как в TaskService.complete). `add_criterion` авто-вычисляет `position = max + 1`. `link(to_kind, to_ref, relation)` — hard-error на broken reference (target task/document/module отсутствует в проекте; per [document-link.md §4](../standards/document-link.md)) + idempotent dedup на edge `(story, kind, ref, relation)` — повторный вызов возвращает существующий row без новой revision. `list_tasks` фильтрует только `relation=implemented_by` (per [user-stories-graph.md §5.2](../capabilities/user-stories-graph.md)). `coverage(story_id)` возвращает `StoryCoverage` с derived `CoverageStatus` (`draft|accepted|in-progress|delivered|deferred`, отдельный enum от persisted `UserStoryStatus` — DELIVERED не в DB-enum'е): DRAFT/DEFERRED — pinned (берётся из `user_story.status`); DELIVERED требует `tasks_total>0 AND all done AND all acceptance met`; IN_PROGRESS — хоть одна in-progress/done; иначе ACCEPTED. Возвращает разбивку `tasks_total/done/in_progress` + `acceptance_total/met`. `StoryRepository` + `StoryAcceptanceRepository` + `StoryLinkRepository` под общий шаблон. Кастомные исключения: `StoryNotFoundError`, `StoryAlreadyExistsError`, `AcceptanceNotFoundError`, `BrokenLinkError`. Тесты — 22/22 (CRUD: 5, update_status: 3, criteria: 3, link: 4, list_tasks: 1, coverage: 6); общий suite — 208/208. **Section B (Services) closed.**
+
+> Зависимость дополнена `COD-015`: каждая мутация пишет revision через RevisionService (как DocService/TaskService). Формально не в исходной графе — добавляем для точности.
 
 ### COD-015
 
@@ -379,11 +405,16 @@ priority: critical
 id: COD-021
 title: "Implement: cycle detection + critical path (recursive CTE)"
 section: C-Write-Paths
-status: pending
-depends_on: [COD-011]
+status: done
+depends_on: [COD-011, COD-012]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/services/plan_service.py
+  - tests/services/test_graph_service.py
 ```
+
+> ✅ **Implemented 2026-04-28** (commit `pending`): расширил `plan_service.py` тремя graph-функциями, реализующими [user-stories-graph.md §6](../capabilities/user-stories-graph.md). `forward_chain(session, task_id) → list[ChainEntry]` — рекурсивный CTE, стартует с task_id, следует по `from→to` edges (prerequisite-direction), возвращает все транзитивные блокеры в порядке depth. `reverse_chain(session, task_id) → list[ChainEntry]` — CTE в обратном направлении (`to→from`), возвращает зависимые задачи которые разблокируются. `critical_path(session, plan_id) → CriticalPathResult` — depth-CTE вычисляет максимальную глубину цепочки для каждой задачи плана, Python-backtrack реконструирует путь от source до sink по greedy (выбирает predecessor с `depth-1`; при tie — алфавитно). Возвращает `CriticalPathResult(task_ids, chain: list[ChainEntry], length)`. `PlanAuditReport` дополнен полем `critical_path_length` — `audit()` теперь вызывает `critical_path()` и включает его в отчёт. Новый exception `TaskNotFoundInPlanError` для unknown task_id в chain-функциях. Добавлены dataclasses `ChainEntry`, `CriticalPathResult` в `plan_service.py`. Тесты — 17/17 (forward: 6 сценариев, reverse: 4, critical_path: 7 — empty/single/linear/diamond/parallel/status-meta/unknown-plan); общий suite — 288/288.
 
 ### COD-022
 
@@ -391,11 +422,18 @@ priority: high
 id: COD-022
 title: "Implement: completion flow (depends_on gate + log + projection)"
 section: C-Write-Paths
-status: pending
+status: done
 depends_on: [COD-011, COD-015]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/services/revision_service.py
+  - cod_doc/services/task_service.py
+  - tests/services/test_completion_flow.py
+  - tests/services/test_revision_service.py
 ```
+
+> ✅ **Implemented 2026-04-28** (commit `pending`): два deliverable'а. (1) **RevisionService.revert dispatch** — `revert(session, revision_id, *, author)` заменила прежний stub: диспетчеризует по `entity_kind` + `op` из diff-payload: `TASK op=status` → `TaskService.update_status(old_status)`; `TASK op=complete` → `update_status(old_status)` (restores pre-done state); `SECTION` (unified diff) → `_restore_original_from_unified(diff)` + `DocService.patch_section` — кастомный парсер разрезает unified-diff по последнему `@@ ... @@` маркеру и извлекает `-`-lines (original) из content-секции, обходя баг формата хранения где `lineterm=""` + `"".join()` не добавляет `\n` после header-строк; `DOCUMENT op=rename` → `DocService.rename(old_doc_key, old_path)`. Неподдерживаемые entity_kind/op → `RevertNotSupportedError(NotImplementedError)`. Каждый revert создаёт новую revision (история append-only). (2) **Plan staleness signal** — `TaskService.complete()` теперь обновляет `plan.last_updated = now` в той же транзакции, что и task completion — сигнал для future projection-системы (COD-023) что экспорт устарел. Тесты — 9/9 (revert: TASK status, TASK complete, TASK unsupported-op, SECTION patch, SECTION writes-new-revision, DOCUMENT rename, unsupported entity_kind; plan staleness: 2). `test_revert_not_yet_implemented` заменён на `test_revert_raises_lookup_for_unknown_revision_id`. Общий suite — 297/297.
 
 ### COD-023
 
@@ -403,11 +441,16 @@ priority: high
 id: COD-023
 title: "Implement: projection export/import (hash-based detection)"
 section: C-Write-Paths
-status: pending
+status: done
 depends_on: [COD-010]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/services/projection_service.py
+  - tests/services/test_projection_service.py
 ```
+
+> ✅ **Implemented 2026-04-28** (commit `pending`): `cod_doc/services/projection_service.py` — pipeline `render_markdown → export_document → detect_drift → import_document` (см. [ARCHITECTURE.md §4.2](../ARCHITECTURE.md)). `render_markdown(session, document_id)` — pure-функция: рендерит YAML-frontmatter (type/status/sensitivity/source_of_truth/owner/title + extra из frontmatter_json, но НЕ включает reserved-поля `projection_hash`/`doc_key`/`revision`) + body из view `document_body`. `export_document(session, document_id, *, root_path, force=False)` — writes `root_path/document.path`, updates `document.projection_hash = SHA256(content)`. Идемпотентен: если projection_hash уже совпадает с текущим DB-контентом — skip (`written=False`), если `force=True` — перезаписывает безусловно. Создаёт parent-директории. Возвращает `ExportResult(document_id, path, written, content_hash)`. `detect_drift(session, document_id, *, root_path)` — сравнивает `projection_hash` (последний export), SHA256(текущий DB-контент), SHA256(файл на диске) → `DriftStatus` ∈ `IN_SYNC | STALE_EXPORT | EDITED_IN_PLACE | MISSING`. `import_document(session, project_id, file_path, *, author, root_path)` — читает файл, хеш совпадает → no-op; хеш отличается → parse YAML frontmatter → apply type/status/owner/sensitivity/source_of_truth через ORM. Полный section-body import — COD-051 (Restate importer). Ключевое решение: `projection_hash` НЕ входит в rendered markdown (reserved-field), иначе возникала circular hash dependency. Тесты — 15/15 (render: 3, export: 5, detect_drift: 4, import: 3); общий suite — 312/312. **Section C (Write Paths) closed.**
 
 ---
 
@@ -507,6 +550,32 @@ depends_on: [COD-041]
 type: feature
 priority: medium
 ```
+
+### COD-043
+
+```yaml
+id: COD-043
+title: "Switch embeddings to local torch (CPU-only) backend"
+section: E-Retrieval
+status: pending
+depends_on: [COD-042]
+type: feature
+priority: low
+```
+
+**Контекст.** На этапе bootstrap embeddings вынесены на OpenRouter (OpenAI-совместимый `/embeddings`, модель `openai/text-embedding-ada-002`) — это убрало ~2 GB CUDA/torch-зависимостей из Docker-сборки и сняло блокер деплоя. Решение временное: внешний провайдер означает (а) платный трафик за каждый reindex, (б) сетевую зависимость для офлайн-сценариев, (в) утечку содержимого документов наружу.
+
+**Что сделать.**
+- Вернуть `sentence-transformers` (или альтернативу: `fastembed`, `infinity`) как опциональный extra `[embeddings-local]` в `pyproject.toml`.
+- В `Dockerfile` (или отдельном `Dockerfile.local`) ставить CPU-only torch с `https://download.pytorch.org/whl/cpu` чтобы не тянуть NVIDIA-пакеты.
+- Сделать выбор бекенда настраиваемым: `Config.embedding_backend = "openrouter" | "local"`, дефолт оставить `openrouter`.
+- В `core/reindex.get_collection()` переключаться между `OpenAIEmbeddingFunction` и `SentenceTransformerEmbeddingFunction` по конфигу.
+- Документировать миграцию: смена бекенда меняет dimension (ada-002 = 1536, MiniLM-L6-v2 = 384) → нужен wipe ChromaDB и полный reindex.
+
+**Definition of done.**
+- `pip install cod-doc[embeddings-local]` ставит torch CPU-only без CUDA-пакетов.
+- При `embedding_backend=local` reindex/search работают офлайн, без сетевых запросов.
+- README/docs описывают trade-offs (cost vs offline vs privacy) и шаги переключения.
 
 ---
 

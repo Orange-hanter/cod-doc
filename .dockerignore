@@ -1,0 +1,32 @@
+# Version control
+.git/
+.gitignore
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+dist/
+build/
+
+# Dev / local state
+.env
+.env.*
+.cod-doc/
+session-log.md
+
+# Tests & docs (not needed at runtime)
+tests/
+docs/
+arch/
+specs/
+
+# Root-level template/hook scripts (not used inside the container)
+templates/
+hooks/
+
+# macOS
+.DS_Store
