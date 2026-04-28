@@ -28,7 +28,8 @@ def agent() -> None:
 def agent_run(ctx: click.Context, project_name: str, task: str | None, autonomous: bool) -> None:
     """Запустить агент для проекта."""
     from cod_doc.agent.orchestrator import Orchestrator
-    from cod_doc.core.project import Project, Task as PTask
+    from cod_doc.core.project import Project
+    from cod_doc.core.project import Task as PTask
 
     cfg: Config = ctx.obj["config"]
     if not cfg.is_configured:

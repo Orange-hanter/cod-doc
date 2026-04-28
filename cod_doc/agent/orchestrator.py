@@ -15,8 +15,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import AsyncGenerator, Awaitable
-from typing import Any, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from typing import Any
 
 from openai import AsyncOpenAI
 

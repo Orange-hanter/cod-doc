@@ -14,7 +14,10 @@ Public API:
 
 Conventions:
 - All mutating ops require an `author` (per DATA_MODEL §3.5: 'agent:…',
-  'human:…', 'mcp:…'). Format validation is COD-020's job.
+  'human:…', 'mcp:…').
+- `create` gates frontmatter through `validation.audit_frontmatter` and
+  escalates `severity=error` issues (FM-002, FM-003) to `ValidationError`.
+  FM-004/FM-005 freshness rules stay advisory.
 - Caller owns the transaction (`transactional()` from `cod_doc.infra.db`).
 """
 
@@ -23,7 +26,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, text
@@ -41,6 +44,7 @@ from cod_doc.domain.entities import (
 from cod_doc.infra.models import DocumentModel, SectionModel
 from cod_doc.infra.repositories import DocumentRepository, SectionRepository
 from cod_doc.services import revision_service as rev
+from cod_doc.services import validation
 
 
 class DocumentNotFoundError(LookupError):
@@ -90,6 +94,35 @@ def _require_doc(session: Session, document_id: int) -> DocumentModel:
     return model
 
 
+def _gate_frontmatter(
+    *,
+    type: DocumentType,
+    status: DocumentStatus,
+    owner: str | None,
+    frontmatter: dict[str, Any] | None,
+) -> None:
+    """Escalate `severity=error` advisory frontmatter issues to ValidationError.
+
+    Write-path gate (COD-020): the caller must satisfy FM-002 (active⇒owner)
+    and FM-003 (source_of_truth=false⇒canonical_source). FM-004/FM-005 are
+    advisory and stay non-fatal — they're surfaced by `cod-doc audit`.
+    """
+    fm = frontmatter or {}
+    sot = bool(fm.get("source_of_truth", True))
+    issues = validation.audit_frontmatter(
+        type=type,
+        status=status,
+        owner=owner,
+        source_of_truth=sot,
+        frontmatter=fm,
+    )
+    for issue in issues:
+        if issue.severity == "error":
+            raise validation.ValidationError(
+                issue.code, issue.message, **issue.details
+            )
+
+
 def create(
     session: Session,
     *,
@@ -107,7 +140,13 @@ def create(
     reason: str | None = None,
 ) -> Document:
     """Persist a new document and write its initial revision."""
-    now = datetime.now(timezone.utc)
+    _gate_frontmatter(
+        type=type,
+        status=status,
+        owner=owner,
+        frontmatter=frontmatter,
+    )
+    now = datetime.now(UTC)
     doc = DocumentRepository(session).add(
         Document(
             project_id=project_id,
@@ -202,7 +241,7 @@ def add_section(
         ) from exc
     assert section.row_id is not None
 
-    doc.last_updated = datetime.now(timezone.utc)
+    doc.last_updated = datetime.now(UTC)
     rev.write(
         session,
         project_id=doc.project_id,
@@ -248,7 +287,7 @@ def patch_section(
     )
     sec_model.body = new_body
     sec_model.content_hash = _content_hash(new_body)
-    doc.last_updated = datetime.now(timezone.utc)
+    doc.last_updated = datetime.now(UTC)
     session.flush()
 
     rev.write(
@@ -295,7 +334,7 @@ def rename(
 
     doc.doc_key = new_doc_key
     doc.path = target_path
-    doc.last_updated = datetime.now(timezone.utc)
+    doc.last_updated = datetime.now(UTC)
     session.flush()
 
     diff = json.dumps(
@@ -317,7 +356,7 @@ def rename(
 
     if cascade_links and old_key != new_doc_key:
         # Local import to avoid a cycle: link_service imports doc_service.
-        from cod_doc.services import link_service as _links  # noqa: PLC0415
+        from cod_doc.services import link_service as _links
         _links.rename_cascade(
             session,
             project_id=doc.project_id,

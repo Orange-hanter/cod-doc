@@ -30,7 +30,8 @@ source_of_truth:
 | B: Read views | inline | 4 | 1 | 3 | 🔄 in-progress |
 | C: Write paths | inline | 3 | 1 | 2 | 🔄 in-progress |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
-| **TOTAL** |  | **12** | **5** | **7** | |
+| E: Architecture Hygiene | inline | 1 | 0 | 1 | ❌ pending |
+| **TOTAL** |  | **13** | **5** | **8** | |
 
 ## Gap Analysis Summary
 
@@ -336,3 +337,35 @@ priority: low
 ```
 
 **Description:** Тот же SSE-механизм для `cod-doc import restate` (после COD-051).
+
+---
+
+## Section E: Architecture Hygiene
+
+> Создан 2026-04-28 на основе аудита capability-layer ([audit/2026-04-28-section-c-capabilities.md](../audit/2026-04-28-section-c-capabilities.md)).
+
+### WEB-040
+
+```yaml
+id: WEB-040
+title: "Refactor: remove web → infra direct access (db_resolver bypass)"
+section: E-Architecture-Hygiene
+status: pending
+depends_on: [WEB-002, WEB-003, WEB-010, WEB-011]
+type: refactor
+priority: medium
+affected_files:
+  - cod_doc/api/web/db_resolver.py
+  - cod_doc/api/web/pages.py
+  - cod_doc/api/web/fragments.py
+  - tests/api/test_web_docs.py
+  - tests/api/test_web_tasks.py
+```
+
+**Description:** Сейчас `cod_doc/api/web/db_resolver.py` импортирует `DocumentModel` напрямую из `cod_doc.infra.models`, что нарушает правило [capabilities/web-frontend.md §7](../capabilities/web-frontend.md): «Web-страница не имеет права обходить сервис. Разрешённые модули: только `cod_doc.services.*` и `cod_doc.api.deps`».
+
+**Acceptance:**
+- `cod_doc/api/web/db_resolver.py` удалён или сведён к функциям, использующим только сервисы.
+- `pages.py` / `fragments.py` зависят только от `cod_doc.services.*` и `cod_doc.api.deps`.
+- Линт-правило (ruff `flake8-tidy-imports.banned-module-level-imports` или custom check) запрещает `from cod_doc.infra` внутри `cod_doc/api/web/`.
+- Все существующие web-тесты зелёные.

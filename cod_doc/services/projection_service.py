@@ -262,13 +262,13 @@ def import_document(
     content = file_path.read_text(encoding="utf-8")
     file_hash = _sha256(content)
     if file_hash == model.projection_hash:
-        return DocumentRepository(session)._to_domain(model)  # noqa: SLF001
+        return DocumentRepository(session)._to_domain(model)
 
     # Parse frontmatter from the file.
     fm = _parse_frontmatter(content)
     _apply_frontmatter_to_model(model, fm)
     session.flush()
-    return DocumentRepository(session)._to_domain(model)  # noqa: SLF001
+    return DocumentRepository(session)._to_domain(model)
 
 
 def _parse_frontmatter(content: str) -> dict[str, Any]:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -54,7 +54,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 
 def _seed_project(session: Session) -> int:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
     proj.created = now
     proj.updated = now
@@ -74,6 +74,7 @@ def _add_doc(
         status=DocumentStatus.ACTIVE,
         title=title or doc_key,
         author="human:test",
+        owner="human:test",
     )
     return doc.row_id  # type: ignore[return-value]
 
@@ -314,7 +315,7 @@ def test_resolve_task_ref(engine_with_schema) -> None:  # type: ignore[no-untype
     with transactional(factory) as session:
         proj = _seed_project(session)
         # Need a plan + section to host a task.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         plan = PlanModel(project_id=proj, scope="x-plan", created=now, last_updated=now)
         session.add(plan); session.flush()
         ps = PlanSectionModel(plan_id=plan.row_id, letter="A", title="X", slug="A-X", position=0)
@@ -341,7 +342,7 @@ def test_resolve_story_ref(engine_with_schema) -> None:  # type: ignore[no-untyp
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj = _seed_project(session)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         story = UserStoryModel(
             project_id=proj, story_id="US-014", persona="user",
             narrative="...", status=UserStoryStatus.ACCEPTED.value,
@@ -420,7 +421,7 @@ def test_verify_recomputes_resolved_state(engine_with_schema) -> None:  # type: 
         assert rows_before[0].resolved is True
 
         # Delete target doc; verify must mark the link broken.
-        from cod_doc.infra.models import DocumentModel  # noqa: PLC0415
+        from cod_doc.infra.models import DocumentModel
         session.delete(session.get(DocumentModel, target))
         session.flush()
 
@@ -508,7 +509,7 @@ def test_rename_cascade_rewrites_section_body_and_writes_revision(engine_with_sc
         )
 
         # Body in DB updated.
-        from cod_doc.infra.models import SectionModel  # noqa: PLC0415
+        from cod_doc.infra.models import SectionModel
         body = session.get(SectionModel, sec.row_id).body
         assert "old-key" not in body
         assert "new-key" in body

@@ -92,7 +92,7 @@ class Config(BaseSettings):
     # ── Persistence ──────────────────────────────────────────────────────────
 
     @classmethod
-    def load(cls) -> "Config":
+    def load(cls) -> Config:
         """Загрузить конфиг из файла (или вернуть дефолтный)."""
         if CONFIG_FILE.exists():
             data = yaml.safe_load(CONFIG_FILE.read_text(encoding="utf-8")) or {}

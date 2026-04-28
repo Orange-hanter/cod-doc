@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from textual import on, work
+from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer, Vertical
@@ -16,7 +16,6 @@ from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project, Task, TaskStatus
 from cod_doc.logging_config import get_logger
 from cod_doc.tui.screens.agent_run import AgentRunScreen
-
 
 log = get_logger("tui.dashboard")
 

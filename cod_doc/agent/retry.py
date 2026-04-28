@@ -29,7 +29,7 @@ class LLMError(Exception):
         self.status_code = status_code
 
     @classmethod
-    def from_openai(cls, exc: Exception) -> "LLMError":
+    def from_openai(cls, exc: Exception) -> LLMError:
         if isinstance(exc, RateLimitError):
             return cls(
                 "OpenRouter: превышен лимит запросов (429). Подождите и повторите.",

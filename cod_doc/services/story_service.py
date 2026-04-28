@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 
 from sqlalchemy import select
@@ -159,7 +159,7 @@ def create(
     ).scalar_one_or_none() is not None:
         raise StoryAlreadyExistsError(story_id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     story = UserStoryRepository(session).add(
         UserStory(
             project_id=project_id,
@@ -234,7 +234,7 @@ def list_tasks(session: Session, story_id: str) -> list[Task]:
         .order_by(TaskModel.task_id)
     )
     repo = TaskRepository(session)
-    return [repo._to_domain(m) for m in session.execute(stmt).scalars()]  # noqa: SLF001
+    return [repo._to_domain(m) for m in session.execute(stmt).scalars()]
 
 
 # --------------------------------------------------------------------------- #
@@ -259,7 +259,7 @@ def update_status(
         return s
 
     model.status = new_status.value
-    model.last_updated = datetime.now(timezone.utc)
+    model.last_updated = datetime.now(UTC)
     session.flush()
 
     rev.write(
@@ -300,7 +300,7 @@ def add_criterion(
             story_id=model.row_id, position=next_pos, criterion=criterion, met=False
         )
     )
-    model.last_updated = datetime.now(timezone.utc)
+    model.last_updated = datetime.now(UTC)
     session.flush()
 
     rev.write(
@@ -335,11 +335,11 @@ def set_criterion_met(
 
     if bool(ac_model.met) == met:
         # Idempotent — return without writing a revision.
-        return StoryAcceptanceRepository(session)._to_domain(ac_model)  # noqa: SLF001
+        return StoryAcceptanceRepository(session)._to_domain(ac_model)
 
     old_met = bool(ac_model.met)
     ac_model.met = met
-    model.last_updated = datetime.now(timezone.utc)
+    model.last_updated = datetime.now(UTC)
     session.flush()
 
     rev.write(
@@ -351,7 +351,7 @@ def set_criterion_met(
         diff=_diff("criterion_met", position=position, old=old_met, new=met),
         reason=reason,
     )
-    return StoryAcceptanceRepository(session)._to_domain(ac_model)  # noqa: SLF001
+    return StoryAcceptanceRepository(session)._to_domain(ac_model)
 
 
 # --------------------------------------------------------------------------- #
@@ -382,14 +382,14 @@ def link(
     )
     existing = session.execute(stmt).scalar_one_or_none()
     if existing is not None:
-        return StoryLinkRepository(session)._to_domain(existing)  # noqa: SLF001
+        return StoryLinkRepository(session)._to_domain(existing)
 
     new_link = StoryLinkRepository(session).add(
         StoryLink(
             story_id=model.row_id, to_kind=to_kind, to_ref=to_ref, relation=relation,
         )
     )
-    model.last_updated = datetime.now(timezone.utc)
+    model.last_updated = datetime.now(UTC)
     session.flush()
 
     rev.write(

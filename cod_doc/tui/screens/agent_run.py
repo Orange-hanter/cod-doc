@@ -8,15 +8,14 @@ from datetime import datetime
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import ScrollableContainer, Vertical
+from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Checkbox, Footer, Header, Label, RichLog, Static
 
 from cod_doc.agent.orchestrator import AgentEvent, Orchestrator
 from cod_doc.config import Config
-from cod_doc.core.project import Project, Task, TaskStatus
+from cod_doc.core.project import Project
 from cod_doc.logging_config import get_logger
-
 
 log = get_logger("tui.agent_run")
 

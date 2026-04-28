@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from cod_doc.agent.orchestrator import Orchestrator
-from cod_doc.config import ProjectEntry
-from cod_doc.core.project import Project, Task, TaskStatus
-
 from cod_doc.api.deps import get_config, get_project
 from cod_doc.api.schemas import ConfigUpdate, ProjectCreate, TaskCreate
+from cod_doc.config import ProjectEntry
+from cod_doc.core.project import Project, Task, TaskStatus
 
 logger = logging.getLogger("cod_doc.api")
 

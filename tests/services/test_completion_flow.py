@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -47,7 +47,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 
 def _seed(session: Session) -> tuple[int, int, int]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
     proj.created = now; proj.updated = now
     session.add(proj); session.flush()
@@ -161,7 +161,7 @@ def test_revert_section_patch_restores_old_body(engine_with_schema) -> None:  # 
 
         rev.revert(session, patch_rev.revision_id, author="human:test")
 
-        from cod_doc.infra.models import SectionModel  # noqa: PLC0415
+        from cod_doc.infra.models import SectionModel
         sec_model = session.get(SectionModel, sec.row_id)
         assert sec_model is not None
         assert sec_model.body == "Original body.\n"
@@ -216,7 +216,7 @@ def test_revert_document_rename_restores_key(engine_with_schema) -> None:  # typ
 
         rev.revert(session, rename_rev.revision_id, author="human:test")
 
-        from cod_doc.infra.models import DocumentModel  # noqa: PLC0415
+        from cod_doc.infra.models import DocumentModel
         doc_model = session.get(DocumentModel, doc.row_id)
         assert doc_model is not None
         assert doc_model.doc_key == "original-key"

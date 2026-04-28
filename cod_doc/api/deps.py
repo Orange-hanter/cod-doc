@@ -7,7 +7,7 @@ import logging
 
 from fastapi import HTTPException
 
-from cod_doc.config import Config, ProjectEntry
+from cod_doc.config import Config
 from cod_doc.core.project import Project
 
 logger = logging.getLogger("cod_doc.api")

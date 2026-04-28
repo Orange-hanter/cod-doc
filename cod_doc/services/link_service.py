@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -255,7 +255,7 @@ def sync_section(session: Session, section_id: int) -> list[Link]:
         inserted.append(m)
     session.flush()
 
-    return [repo._to_domain(m) for m in inserted]  # noqa: SLF001
+    return [repo._to_domain(m) for m in inserted]
 
 
 # --------------------------------------------------------------------------- #
@@ -410,7 +410,7 @@ def _apply_resolution(
     model.resolved = ok
     model.broken_reason = None if ok else reason
     if mark_checked:
-        model.last_checked = datetime.now(timezone.utc)
+        model.last_checked = datetime.now(UTC)
     return (False, ok)
 
 
@@ -427,7 +427,7 @@ def resolve(session: Session, link_row_id: int) -> Link:
     )
     session.flush()
     repo = LinkRepository(session)
-    return repo._to_domain(model)  # noqa: SLF001
+    return repo._to_domain(model)
 
 
 def resolve_section(session: Session, section_id: int) -> list[Link]:
@@ -449,7 +449,7 @@ def resolve_section(session: Session, section_id: int) -> list[Link]:
             parsed=parsed,
             mark_checked=False,
         )
-        out.append(repo._to_domain(model))  # noqa: SLF001
+        out.append(repo._to_domain(model))
     session.flush()
     return out
 

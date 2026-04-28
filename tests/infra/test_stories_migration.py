@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -44,7 +44,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 
 def _add_project(session, slug: str = "p") -> int:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug=slug, title=slug.upper(), root_path=f"/tmp/{slug}", config_json={})
     proj.created = now
     proj.updated = now
@@ -71,7 +71,7 @@ def test_migration_creates_all_tables(engine_with_schema) -> None:  # type: igno
 
 def test_user_story_with_acceptance_and_links(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj_id = _add_project(session, "demo")
@@ -125,10 +125,10 @@ def test_user_story_with_acceptance_and_links(engine_with_schema) -> None:  # ty
 
 def test_user_story_id_is_unique_globally(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """story_id is globally unique per DATA_MODEL §6."""
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         a_id = _add_project(session, "a")
@@ -146,25 +146,24 @@ def test_user_story_id_is_unique_globally(engine_with_schema) -> None:  # type: 
             )
         )
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            session.add(
-                UserStoryModel(
-                    project_id=b_id,
-                    story_id="US-001",
-                    persona="Y",
-                    narrative="N2",
-                    status="draft",
-                    priority="medium",
-                    created=now,
-                    last_updated=now,
-                )
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        session.add(
+            UserStoryModel(
+                project_id=b_id,
+                story_id="US-001",
+                persona="Y",
+                narrative="N2",
+                status="draft",
+                priority="medium",
+                created=now,
+                last_updated=now,
             )
+        )
 
 
 def test_story_acceptance_cascade_delete(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj_id = _add_project(session, "casc")
@@ -249,7 +248,7 @@ def test_module_with_dependencies_and_code(engine_with_schema) -> None:  # type:
 
 
 def test_module_dependency_unique_edge(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
 
@@ -262,13 +261,12 @@ def test_module_dependency_unique_edge(engine_with_schema) -> None:  # type: ign
         session.add(ModuleDependencyModel(from_module=m1.row_id, to_module=m2.row_id))
         a, b = m1.row_id, m2.row_id
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            session.add(ModuleDependencyModel(from_module=a, to_module=b))
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        session.add(ModuleDependencyModel(from_module=a, to_module=b))
 
 
 def test_module_id_unique_globally(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
 
@@ -277,8 +275,7 @@ def test_module_id_unique_globally(engine_with_schema) -> None:  # type: ignore[
         b = _add_project(session, "mb")
         session.add(ModuleModel(project_id=a, module_id="M1-auth", name="Auth A", status="active"))
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            session.add(
-                ModuleModel(project_id=b, module_id="M1-auth", name="Auth B", status="active")
-            )
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        session.add(
+            ModuleModel(project_id=b, module_id="M1-auth", name="Auth B", status="active")
+        )

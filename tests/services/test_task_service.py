@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +47,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 def _seed_plan(session: Session) -> tuple[int, int, int]:
     """Seed project + plan + one section. Returns (project_id, plan_id, section_id)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
     proj.created = now
     proj.updated = now
@@ -158,7 +158,7 @@ def test_create_without_task_id_and_prefix_raises(engine_with_schema) -> None:  
 
 
 def test_create_rejects_invalid_task_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from cod_doc.services import validation as v  # noqa: PLC0415
+    from cod_doc.services import validation as v
 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -174,7 +174,7 @@ def test_create_rejects_invalid_task_id(engine_with_schema) -> None:  # type: ig
 
 
 def test_create_rejects_invalid_id_prefix(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from cod_doc.services import validation as v  # noqa: PLC0415
+    from cod_doc.services import validation as v
 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -190,9 +190,9 @@ def test_create_rejects_invalid_id_prefix(engine_with_schema) -> None:  # type: 
 
 
 def test_create_with_affected_files(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from sqlalchemy import select as _select  # noqa: PLC0415
+    from sqlalchemy import select as _select
 
-    from cod_doc.infra.models import AffectedFileModel  # noqa: PLC0415
+    from cod_doc.infra.models import AffectedFileModel
 
     factory = make_session_factory(engine_with_schema)
 
@@ -250,11 +250,10 @@ def test_update_status_no_op_if_same(engine_with_schema) -> None:  # type: ignor
 def test_update_status_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
 
-    with transactional(factory) as session:
-        with pytest.raises(tasks.TaskNotFoundError):
-            tasks.update_status(
-                session, task_id="GHOST-001", new_status=TaskStatus.IN_PROGRESS, author="x"
-            )
+    with transactional(factory) as session, pytest.raises(tasks.TaskNotFoundError):
+        tasks.update_status(
+            session, task_id="GHOST-001", new_status=TaskStatus.IN_PROGRESS, author="x"
+        )
 
 
 # ----------------------------- complete --------------------------------------

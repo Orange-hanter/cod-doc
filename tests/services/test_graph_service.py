@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -50,7 +50,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 def _seed(session: Session) -> tuple[int, int, int]:
     """Return (project_id, plan_id, section_id)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
     proj.created = now; proj.updated = now
     session.add(proj); session.flush()
@@ -140,9 +140,8 @@ def test_forward_chain_depth_ordering(engine_with_schema) -> None:  # type: igno
 
 def test_forward_chain_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        with pytest.raises(plans.TaskNotFoundInPlanError):
-            plans.forward_chain(session, "GHOST-001")
+    with transactional(factory) as session, pytest.raises(plans.TaskNotFoundInPlanError):
+        plans.forward_chain(session, "GHOST-001")
 
 
 def test_forward_chain_excludes_relates_kind(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -308,6 +307,5 @@ def test_critical_path_includes_status_info(engine_with_schema) -> None:  # type
 
 def test_critical_path_unknown_plan_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        with pytest.raises(plans.PlanNotFoundError):
-            plans.critical_path(session, 9999)
+    with transactional(factory) as session, pytest.raises(plans.PlanNotFoundError):
+        plans.critical_path(session, 9999)

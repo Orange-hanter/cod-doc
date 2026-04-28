@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -46,7 +46,7 @@ def _seed_plan_with_tasks(session, statuses: list[str]) -> tuple[int, int, list[
 
     Returns (plan_id, section_id, [task_row_id, ...]).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     project = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
     project.created = now
     project.updated = now
@@ -143,7 +143,7 @@ def test_section_and_plan_totals_aggregate_correctly(engine_with_schema) -> None
 def test_section_totals_zero_for_empty_section(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """LEFT JOIN must yield (0, 0, 0) — not NULL — for a section without tasks."""
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj = ProjectModel(slug="empty", title="Empty", root_path="/tmp/empty", config_json={})
@@ -221,7 +221,7 @@ def test_ready_tasks_ignores_non_blocks_kind(engine_with_schema) -> None:  # typ
 
 def test_dependency_unique_edge(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Same (from, to, kind) edge cannot be inserted twice."""
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
 
@@ -229,6 +229,5 @@ def test_dependency_unique_edge(engine_with_schema) -> None:  # type: ignore[no-
         _, _, [a, b] = _seed_plan_with_tasks(session, ["pending", "pending"])
         session.add(DependencyModel(from_task_id=a, to_task_id=b, kind="blocks"))
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            session.add(DependencyModel(from_task_id=a, to_task_id=b, kind="blocks"))
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        session.add(DependencyModel(from_task_id=a, to_task_id=b, kind="blocks"))

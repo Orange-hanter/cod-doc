@@ -4,9 +4,10 @@ scope: cod-doc-audit-followups
 status: pending
 principle: fix-first
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-04-28
 source_of_truth:
   audit_report: docs/system/audit/2026-04-19-initial-audit.md
+  section_c_audit: docs/system/audit/2026-04-28-section-c-capabilities.md
   cod_doc_plan: docs/system/roadmap/cod-doc-task-plan.md
 ---
 
@@ -28,9 +29,9 @@ source_of_truth:
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Critical (blocking) | inline | 2 | 2 | 0 | ✅ done |
 | B: High (pre-impl) | inline | 9 | 9 | 0 | ✅ done |
-| C: Medium | inline | 7 | 0 | 7 | ❌ pending |
+| C: Medium | inline | 7 | 1 | 6 | 🔄 in-progress |
 | D: Low | inline | 5 | 1 | 4 | 🔄 in-progress |
-| **TOTAL** |       | **23** | **12** | **11** | |
+| **TOTAL** |       | **23** | **13** | **10** | |
 
 > Стабы для DOC-HI-1..HI-5 уже созданы во время аудита (decisions-and-questions, agents-and-skills, sensitive-data, project-bootstrap, audit-and-ci); они помечены `done` ниже. Остался blockers фундамента (DOC-HI-6..HI-9), medium и low.
 
@@ -368,7 +369,7 @@ affected_files:
 id: DOC-ME-4
 title: "Docs: explicit status sets per document type"
 section: C-Medium
-status: pending
+status: done
 depends_on: []
 type: docs
 priority: medium
@@ -377,6 +378,8 @@ affected_files:
 ```
 
 **Description:** §3.1 — таблица «type → допустимые status». Документ-спека: draft/review/active/deprecated. Task: pending/in-progress/done. Story: draft/accepted/in-progress/delivered/deferred. Decision: proposed/accepted/superseded/rejected. Question: open/resolved/dropped.
+
+> ✅ **Implemented 2026-04-28:** Добавлен §2a «Допустимые `status` по `type`» в [standards/frontmatter.md](../standards/frontmatter.md) — explicit таблица для всех 11 типов, включая `audit-report` (active/resolved/superseded). Добавлены коды `FM-006` (несовместимая пара type/status) и `FM-007` (reserved под sensitivity). Уточнён §7 — `source_of_truth` как nested dict для execution-plan и его взаимодействие с FM-003.
 
 ### DOC-ME-5
 

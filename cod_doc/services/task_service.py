@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -118,7 +118,7 @@ def create(
         validation.validate_task_id(task_id)
     validation.validate_task_type(type.value)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     task = TaskRepository(session).add(
         Task(
             project_id=project_id,
@@ -184,7 +184,7 @@ def update_status(
         return t
 
     model.status = new_status.value
-    model.last_updated = datetime.now(timezone.utc)
+    model.last_updated = datetime.now(UTC)
     session.flush()
 
     rev.write(
@@ -236,7 +236,7 @@ def complete(
             f"{task_id} blocked by: {', '.join(blocking)}"
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     old_status = model.status
     model.status = TaskStatus.DONE.value
     model.completed_at = now

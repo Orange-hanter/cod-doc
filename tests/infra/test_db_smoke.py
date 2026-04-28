@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -14,7 +14,6 @@ from cod_doc.domain.entities import (
     Document,
     DocumentStatus,
     DocumentType,
-    Link,
     LinkKind,
     Project,
     Section,
@@ -90,7 +89,7 @@ def test_project_crud(engine_with_schema) -> None:  # type: ignore[no-untyped-de
 
 def test_document_with_sections_and_links(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Setup: project + document + 2 sections + 1 link
     with transactional(factory) as session:
@@ -138,7 +137,7 @@ def test_document_with_sections_and_links(engine_with_schema) -> None:  # type: 
             )
         )
 
-        from cod_doc.infra.models import LinkModel  # noqa: PLC0415
+        from cod_doc.infra.models import LinkModel
 
         assert s1.row_id is not None
         session.add(
@@ -167,10 +166,10 @@ def test_document_with_sections_and_links(engine_with_schema) -> None:  # type: 
 
 def test_unique_constraint_doc_key(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Same doc_key in same project must fail."""
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj = ProjectRepository(session).add(
@@ -190,26 +189,25 @@ def test_unique_constraint_doc_key(engine_with_schema) -> None:  # type: ignore[
             )
         )
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            proj_id = ProjectRepository(session).get_by_slug("dup").row_id  # type: ignore[union-attr]
-            DocumentRepository(session).add(
-                Document(
-                    project_id=proj_id,
-                    doc_key="x",
-                    path="x2.md",
-                    type=DocumentType.GUIDE,
-                    status=DocumentStatus.DRAFT,
-                    title="X again",
-                    created=now,
-                    last_updated=now,
-                )
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        proj_id = ProjectRepository(session).get_by_slug("dup").row_id  # type: ignore[union-attr]
+        DocumentRepository(session).add(
+            Document(
+                project_id=proj_id,
+                doc_key="x",
+                path="x2.md",
+                type=DocumentType.GUIDE,
+                status=DocumentStatus.DRAFT,
+                title="X again",
+                created=now,
+                last_updated=now,
             )
+        )
 
 
 def test_cascade_delete_project_drops_documents(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj = ProjectRepository(session).add(
@@ -230,7 +228,7 @@ def test_cascade_delete_project_drops_documents(engine_with_schema) -> None:  # 
         )
 
     with transactional(factory) as session:
-        from cod_doc.infra.models import ProjectModel  # noqa: PLC0415
+        from cod_doc.infra.models import ProjectModel
 
         # Quick-and-dirty drop via ORM to validate cascade.
         proj_model = session.get(ProjectModel, sys.maxsize)  # not exists, just to import
@@ -239,9 +237,9 @@ def test_cascade_delete_project_drops_documents(engine_with_schema) -> None:  # 
         session.delete(target)
 
     with transactional(factory) as session:
-        from sqlalchemy import select as _select  # noqa: PLC0415
+        from sqlalchemy import select as _select
 
-        from cod_doc.infra.models import DocumentModel  # noqa: PLC0415
+        from cod_doc.infra.models import DocumentModel
 
         remaining = session.execute(_select(DocumentModel).where(DocumentModel.path == "d.md")).first()
         assert remaining is None

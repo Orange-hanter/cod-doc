@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -48,7 +48,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 def _seed_project_with_targets(session) -> dict[str, int]:
     """Seed one project + one document + one task + one story. Return their row_ids."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     proj = ProjectModel(slug="t", title="T", root_path="/tmp/t", config_json={})
     proj.created = now
@@ -141,10 +141,10 @@ def test_link_partial_index_replaces_unresolved(engine_with_schema) -> None:
 
 def test_tag_unique_per_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Same tag name allowed across projects, banned within one."""
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         a = ProjectModel(slug="A", title="A", root_path="/a", config_json={})
@@ -163,9 +163,8 @@ def test_tag_unique_per_project(engine_with_schema) -> None:  # type: ignore[no-
         )
         a_id = a.row_id
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            session.add(TagModel(project_id=a_id, name="urgent"))
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        session.add(TagModel(project_id=a_id, name="urgent"))
 
 
 def test_attach_tags_to_document_task_story(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -228,7 +227,7 @@ def test_attach_tags_to_document_task_story(engine_with_schema) -> None:  # type
 
 def test_junction_pk_prevents_duplicate_attach(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """(document_id, tag_id) is the primary key — same pair twice must fail."""
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
 
@@ -240,9 +239,8 @@ def test_junction_pk_prevents_duplicate_attach(engine_with_schema) -> None:  # t
         session.add(DocumentTagModel(document_id=ids["document_id"], tag_id=tag.row_id))
         doc_id, tag_id = ids["document_id"], tag.row_id
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            session.add(DocumentTagModel(document_id=doc_id, tag_id=tag_id))
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        session.add(DocumentTagModel(document_id=doc_id, tag_id=tag_id))
 
 
 def test_cascade_delete_tag_drops_attachments(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

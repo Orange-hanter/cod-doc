@@ -16,14 +16,13 @@ from __future__ import annotations
 
 import click
 
-from cod_doc.config import Config
-from cod_doc.logging_config import setup_logging
-
-from cod_doc.cli.cmd_tui import tui, wizard
-from cod_doc.cli.cmd_project import project
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_hash import hash
-from cod_doc.cli.cmd_serve import serve, mcp_server
+from cod_doc.cli.cmd_project import project
+from cod_doc.cli.cmd_serve import mcp_server, serve
+from cod_doc.cli.cmd_tui import tui, wizard
+from cod_doc.config import Config
+from cod_doc.logging_config import setup_logging
 
 
 @click.group()

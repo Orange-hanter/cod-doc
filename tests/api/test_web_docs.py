@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -14,8 +14,10 @@ from cod_doc.core.project import Project
 from cod_doc.domain.entities import (
     DocumentStatus,
     DocumentType,
-    Project as ProjectEntity,
     Sensitivity,
+)
+from cod_doc.domain.entities import (
+    Project as ProjectEntity,
 )
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
@@ -57,7 +59,7 @@ def docs_client(tmp_path: Path):
     engine = make_engine(f"sqlite:///{db_path}")
     factory = make_session_factory(engine)
     with transactional(factory) as session:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         proj = ProjectRepository(session).add(
             ProjectEntity(slug="demo", title="Demo", root_path=str(repo), config={})
         )
@@ -73,6 +75,7 @@ def docs_client(tmp_path: Path):
             status=DocumentStatus.ACTIVE,
             title="Auth Module Overview",
             author="human:dakh",
+            owner="human:dakh",
             sensitivity=Sensitivity.INTERNAL,
             preamble="Top preamble.",
         )

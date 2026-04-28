@@ -7,14 +7,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from textual.app import App, ComposeResult
+
+from textual.app import App
 from textual.binding import Binding
 
 from cod_doc.config import Config
 from cod_doc.logging_config import get_logger
 from cod_doc.tui.screens.dashboard import DashboardScreen
 from cod_doc.tui.screens.wizard import WizardScreen
-
 
 log = get_logger("tui.app")
 

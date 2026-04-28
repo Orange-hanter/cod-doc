@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -41,7 +41,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 
 def _add_project(session, slug: str = "p") -> int:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug=slug, title=slug.upper(), root_path=f"/tmp/{slug}", config_json={})
     proj.created = now
     proj.updated = now
@@ -73,7 +73,7 @@ def test_revision_chain_for_one_entity(engine_with_schema) -> None:  # type: ign
     """Two revisions for the same task: ULIDs sort by time; parent_revision_id chains them."""
     factory = make_session_factory(engine_with_schema)
 
-    base = datetime(2026, 4, 25, 12, 0, 0, tzinfo=timezone.utc)
+    base = datetime(2026, 4, 25, 12, 0, 0, tzinfo=UTC)
     rid1 = str(ULID())
     rid2 = str(ULID())
 
@@ -121,11 +121,11 @@ def test_revision_chain_for_one_entity(engine_with_schema) -> None:  # type: ign
 
 
 def test_revision_id_is_unique(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
     rid = str(ULID())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj_id = _add_project(session, "ruq")
@@ -141,26 +141,25 @@ def test_revision_id_is_unique(engine_with_schema) -> None:  # type: ignore[no-u
             )
         )
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            proj_id2 = _add_project(session, "ruq2")
-            session.add(
-                RevisionModel(
-                    revision_id=rid,  # same ULID — must collide globally
-                    project_id=proj_id2,
-                    entity_kind="document",
-                    entity_id=2,
-                    author="y",
-                    at=now,
-                    diff="d2",
-                )
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        proj_id2 = _add_project(session, "ruq2")
+        session.add(
+            RevisionModel(
+                revision_id=rid,  # same ULID — must collide globally
+                project_id=proj_id2,
+                entity_kind="document",
+                entity_id=2,
+                author="y",
+                at=now,
+                diff="d2",
             )
+        )
 
 
 def test_audit_log_persists_payload_as_json(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """payload_json round-trips as a real dict, not stringified."""
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj_id = _add_project(session, "audit")
@@ -187,7 +186,7 @@ def test_audit_log_persists_payload_as_json(engine_with_schema) -> None:  # type
 
 def test_cascade_delete_project_drops_revisions_and_audit(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj_id = _add_project(session, "casc")

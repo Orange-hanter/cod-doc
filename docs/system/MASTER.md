@@ -50,7 +50,8 @@ docs/system/
 │   ├── frontmatter.md
 │   ├── task-plan.md
 │   ├── document-link.md
-│   └── revision-history.md
+│   ├── revision-history.md
+│   └── sensitive-data.md           ← классификация и redaction
 │
 ├── capabilities/                   ← целевые возможности, по одной на файл
 │   ├── task-creation.md
@@ -66,7 +67,10 @@ docs/system/
 │   └── audit-and-ci.md             ← каталог проверок + git/CI
 │
 ├── audit/
-│   └── 2026-04-19-initial-audit.md ← первый формальный аудит пакета
+│   ├── 2026-04-19-initial-audit.md         ← первый формальный аудит пакета
+│   ├── 2026-04-25-section-a-data-core.md   ← аудит ядра (Section A)
+│   ├── 2026-04-25-section-b-services.md    ← аудит сервисов (Section B)
+│   └── 2026-04-28-section-c-capabilities.md ← аудит capability-layer (Section C)
 │
 ├── migration/
 │   └── from-restate.md             ← как перевезти реальное состояние Restate
@@ -118,9 +122,14 @@ docs/system/
 | standards/* | draft | cod-doc core |
 | capabilities/* | draft | cod-doc core |
 | migration/from-restate | draft | cod-doc core |
-| roadmap/cod-doc-task-plan | draft | cod-doc core |
+| roadmap/cod-doc-task-plan | active | cod-doc core |
+| roadmap/audit-followups-task-plan | active | cod-doc core |
+| roadmap/web-frontend-task-plan | active | cod-doc core |
+| audit/2026-04-19-initial-audit | active | cod-doc core |
+| audit/2026-04-25-section-a-data-core | resolved | cod-doc core |
+| audit/2026-04-25-section-b-services | resolved | cod-doc core |
 
-Пока пакет в статусе `draft` — изменения допустимы без revision-истории. После `active` любая правка обязана вести к revision-записи (см. [standards/revision-history.md](standards/revision-history.md)).
+Пока пакет в статусе `draft` — изменения допустимы без revision-истории. После `active` любая правка обязана вести к revision-записи (см. [standards/revision-history.md](standards/revision-history.md)). Статус `resolved` — для audit-отчётов, чьи задачи закрыты (см. [standards/frontmatter.md §7](standards/frontmatter.md)).
 
 ---
 
@@ -130,6 +139,9 @@ docs/system/
 |------|---------|
 | 2026-04-19 | Начальная версия пакета; базовая структура, стандарты и capabilities. |
 | 2026-04-19 | Проведён первый аудит ([audit/2026-04-19-initial-audit.md](audit/2026-04-19-initial-audit.md)); закрыто 6 задач (HI-1..5, LO-1) стабами; заведён follow-up план ([roadmap/audit-followups-task-plan.md](roadmap/audit-followups-task-plan.md)) с 17 оставшимися задачами. |
+| 2026-04-25 | Аудиты Section A (Data Core) и Section B (Services) — оба `resolved`; см. [audit/2026-04-25-section-a-data-core.md](audit/2026-04-25-section-a-data-core.md), [audit/2026-04-25-section-b-services.md](audit/2026-04-25-section-b-services.md). |
+| 2026-04-28 | Добавлен `standards/sensitive-data.md` в индекс §2; зафиксирован пробел: инфраструктура (scanner, redaction, фильтры контекста) пока отсутствует — вынесена в задачу COD-025. |
+| 2026-04-28 | Аудит capability-layer (Section C) — выявлены пробелы: нет CI workflow (COD-024), LinkService.rename не каскадит body (COD-014a), web-layer обходит сервисы (WEB-020), TUI без тестов (COD-026). |
 
 ---
 

@@ -61,7 +61,7 @@ def test_update_hashes(tmp_path: Path) -> None:
     # Создать MASTER.md со старым хэшем
     master = tmp_path / "MASTER.md"
     master.write_text(
-        f"📁 /specs/auth.md | 🗃️ doc:specs_auth_md | 🔑 sha:000000000000\n",
+        "📁 /specs/auth.md | 🗃️ doc:specs_auth_md | 🔑 sha:000000000000\n",
         encoding="utf-8",
     )
 

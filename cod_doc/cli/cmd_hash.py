@@ -34,6 +34,7 @@ def hash_calc(file_path: str) -> None:
 def hash_update(master_path: str) -> None:
     """Обновить все хэши в MASTER.md."""
     from pathlib import Path
+
     from cod_doc.core.hash_calc import update_hashes
 
     n, warns = update_hashes(Path(master_path))

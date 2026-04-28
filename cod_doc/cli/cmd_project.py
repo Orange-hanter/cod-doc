@@ -64,6 +64,7 @@ def project_list(ctx: click.Context) -> None:
 def project_add(ctx: click.Context, path: str, name: str, master: str) -> None:
     """Добавить проект в реестр COD-DOC."""
     from pathlib import Path
+
     from cod_doc.core.project import Project
 
     cfg: Config = ctx.obj["config"]

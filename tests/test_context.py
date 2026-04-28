@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from cod_doc.core.context import get_context, parse_ref
-from cod_doc.core.hash_calc import calc_hash, make_ref
+from cod_doc.core.hash_calc import make_ref
 
 
 @pytest.fixture

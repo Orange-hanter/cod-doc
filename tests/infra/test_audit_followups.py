@@ -7,7 +7,7 @@ no-self-loop), LO-6 (FK SET NULL), LO-7 (story_acceptance position uniqueness).
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -52,7 +52,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 
 def _add_project(session, slug: str = "p") -> int:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug=slug, title=slug.upper(), root_path=f"/tmp/{slug}", config_json={})
     proj.created = now
     proj.updated = now
@@ -66,7 +66,7 @@ def _add_project(session, slug: str = "p") -> int:
 
 def test_document_body_assembles_preamble_and_sections(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj_id = _add_project(session, "body")
@@ -128,7 +128,7 @@ def test_document_body_assembles_preamble_and_sections(engine_with_schema) -> No
 def test_document_body_for_doc_without_sections(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """LEFT JOIN must yield preamble with empty section block, not NULL."""
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj_id = _add_project(session, "empty")
@@ -162,7 +162,7 @@ def test_document_body_for_doc_without_sections(engine_with_schema) -> None:  # 
 
 def test_raw_insert_without_json_columns_uses_server_default(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Raw SQL INSERT skipping config_json must rely on server_default '{}', not fail."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     with engine_with_schema.begin() as conn:
         # Don't pass config_json — server_default must kick in.
@@ -183,7 +183,7 @@ def test_raw_insert_without_json_columns_uses_server_default(engine_with_schema)
 
 
 def _seed_two_tasks(session) -> tuple[int, int]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj_id = _add_project(session, "self")
     plan = PlanModel(project_id=proj_id, scope="self-plan", created=now, last_updated=now)
     session.add(plan)
@@ -209,28 +209,26 @@ def _seed_two_tasks(session) -> tuple[int, int]:
 
 
 def test_dependency_self_loop_rejected(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            a, _ = _seed_two_tasks(session)
-            session.add(DependencyModel(from_task_id=a, to_task_id=a, kind="blocks"))
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        a, _ = _seed_two_tasks(session)
+        session.add(DependencyModel(from_task_id=a, to_task_id=a, kind="blocks"))
 
 
 def test_module_self_loop_rejected(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            proj_id = _add_project(session, "msl")
-            m = ModuleModel(project_id=proj_id, module_id="MSL", name="MSL", status="active")
-            session.add(m)
-            session.flush()
-            session.add(ModuleDependencyModel(from_module=m.row_id, to_module=m.row_id))
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        proj_id = _add_project(session, "msl")
+        m = ModuleModel(project_id=proj_id, module_id="MSL", name="MSL", status="active")
+        session.add(m)
+        session.flush()
+        session.add(ModuleDependencyModel(from_module=m.row_id, to_module=m.row_id))
 
 
 # --------------------------- LO-6: FK SET NULL ------------------------------
@@ -239,7 +237,7 @@ def test_module_self_loop_rejected(engine_with_schema) -> None:  # type: ignore[
 def test_module_spec_doc_id_set_null_on_doc_delete(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Deleting a document must NULL out module.spec_doc_id (not cascade-delete the module)."""
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj_id = _add_project(session, "fknull")
@@ -269,7 +267,7 @@ def test_module_spec_doc_id_set_null_on_doc_delete(engine_with_schema) -> None: 
 
 def test_plan_parent_doc_id_set_null_on_doc_delete(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj_id = _add_project(session, "pfk")
@@ -301,10 +299,10 @@ def test_plan_parent_doc_id_set_null_on_doc_delete(engine_with_schema) -> None: 
 
 
 def test_story_acceptance_position_unique_within_story(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     with transactional(factory) as session:
         proj_id = _add_project(session, "sapos")
@@ -317,6 +315,5 @@ def test_story_acceptance_position_unique_within_story(engine_with_schema) -> No
         session.add(StoryAcceptanceModel(story_id=story.row_id, position=0, criterion="A"))
         s_id = story.row_id
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            session.add(StoryAcceptanceModel(story_id=s_id, position=0, criterion="A2"))
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        session.add(StoryAcceptanceModel(story_id=s_id, position=0, criterion="A2"))

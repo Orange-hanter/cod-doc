@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from sqlalchemy.orm import Session
 
-from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
+from cod_doc.domain.entities import DocumentStatus, DocumentType
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import ProjectModel
 from cod_doc.services import doc_service as docs
@@ -46,7 +46,7 @@ def root_path(tmp_path: Path) -> Path:
 
 
 def _seed_project(session: Session) -> int:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj_model = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
     proj_model.created = now; proj_model.updated = now
     session.add(proj_model); session.flush()
@@ -106,9 +106,8 @@ def test_render_markdown_includes_section_body(engine_with_schema) -> None:  # t
 
 def test_render_markdown_unknown_doc_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        with pytest.raises(docs.DocumentNotFoundError):
-            proj.render_markdown(session, 9999)
+    with transactional(factory) as session, pytest.raises(docs.DocumentNotFoundError):
+        proj.render_markdown(session, 9999)
 
 
 # ============================================================================ #
@@ -129,7 +128,7 @@ def test_export_creates_file_and_updates_hash(engine_with_schema, root_path: Pat
         assert result.path.exists()
         assert result.content_hash  # non-empty hash
 
-        from cod_doc.infra.models import DocumentModel  # noqa: PLC0415
+        from cod_doc.infra.models import DocumentModel
         doc_model = session.get(DocumentModel, doc_id)
         assert doc_model.projection_hash == result.content_hash
 

@@ -6,9 +6,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -17,7 +16,7 @@ from cod_doc.config import ProjectEntry
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class TaskStatus(str, Enum):
@@ -65,7 +64,7 @@ class Task:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Task":
+    def from_dict(cls, d: dict) -> Task:
         return cls(
             title=d["title"],
             description=d.get("description", ""),
@@ -114,14 +113,15 @@ class Project:
 
     def _create_master(self) -> None:
         from importlib.resources import files
-        from jinja2 import Environment, BaseLoader
+
+        from jinja2 import BaseLoader, Environment
 
         tmpl_text = files("cod_doc.templates").joinpath("MASTER.md.j2").read_text(encoding="utf-8")
         env = Environment(loader=BaseLoader(), autoescape=False)
         tmpl = env.from_string(tmpl_text)
         content = tmpl.render(
             project_name=self.entry.name,
-            date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            date=datetime.now(UTC).strftime("%Y-%m-%d"),
             repo=self.entry.path,
         )
         self.entry.master_path.write_text(content, encoding="utf-8")

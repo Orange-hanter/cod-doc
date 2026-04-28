@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from cod_doc.domain.entities import (
@@ -44,7 +44,6 @@ from cod_doc.domain.entities import (
     DocumentType,
     TaskType,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Error model                                                                   #
@@ -254,9 +253,9 @@ def audit_frontmatter(
 
     # FM-004 / FM-005: last_updated freshness.
     if last_updated is not None:
-        ref = now or datetime.now(timezone.utc)
+        ref = now or datetime.now(UTC)
         if last_updated.tzinfo is None:
-            last_updated = last_updated.replace(tzinfo=timezone.utc)
+            last_updated = last_updated.replace(tzinfo=UTC)
         if last_updated > ref:
             issues.append(
                 ValidationIssue(

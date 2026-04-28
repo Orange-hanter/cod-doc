@@ -8,7 +8,15 @@ import hmac
 import json
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 
 from cod_doc.agent.orchestrator import Orchestrator
 from cod_doc.api.deps import get_config, get_project, webhook_registry

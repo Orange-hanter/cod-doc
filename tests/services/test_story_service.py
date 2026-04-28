@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -58,7 +58,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 
 def _seed_project(session: Session) -> int:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
     proj.created = now; proj.updated = now
     session.add(proj); session.flush()
@@ -66,7 +66,7 @@ def _seed_project(session: Session) -> int:
 
 
 def _seed_plan_with_section(session: Session, project_id: int) -> tuple[int, int]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     plan = PlanModel(project_id=project_id, scope="p-plan", created=now, last_updated=now)
     session.add(plan); session.flush()
     sec = PlanSectionModel(
@@ -142,7 +142,7 @@ def test_create_duplicate_story_id_raises(engine_with_schema) -> None:  # type: 
 
 
 def test_create_rejects_invalid_story_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from cod_doc.services import validation as v  # noqa: PLC0415
+    from cod_doc.services import validation as v
 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -317,7 +317,7 @@ def test_link_to_document_validates_target(engine_with_schema) -> None:  # type:
         docs.create(
             session, project_id=proj, doc_key="modules/M1-auth/overview",
             type=DocumentType.MODULE_SPEC, status=DocumentStatus.ACTIVE,
-            title="Auth Overview", author="human:test",
+            title="Auth Overview", author="human:test", owner="human:test",
         )
         story = _make_story(session, proj)
 
@@ -501,6 +501,5 @@ def test_coverage_delivered_requires_all_done_and_acceptance_met(engine_with_sch
 
 def test_coverage_unknown_story_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        with pytest.raises(stories.StoryNotFoundError):
-            stories.coverage(session, "GHOST-001")
+    with transactional(factory) as session, pytest.raises(stories.StoryNotFoundError):
+        stories.coverage(session, "GHOST-001")

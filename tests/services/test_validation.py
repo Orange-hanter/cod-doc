@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, TaskType
 from cod_doc.services import validation as v
-
 
 # ============================================================================ #
 # task_id                                                                       #
@@ -201,7 +200,7 @@ def test_audit_frontmatter_non_canonical_with_canonical_source_ok() -> None:
 
 
 def test_audit_frontmatter_last_updated_in_future_warns() -> None:
-    now = datetime(2026, 4, 28, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 28, tzinfo=UTC)
     issues = v.audit_frontmatter(
         type=DocumentType.GUIDE,
         status=DocumentStatus.ACTIVE,
@@ -214,7 +213,7 @@ def test_audit_frontmatter_last_updated_in_future_warns() -> None:
 
 
 def test_audit_frontmatter_stale_active_warns() -> None:
-    now = datetime(2026, 4, 28, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 28, tzinfo=UTC)
     issues = v.audit_frontmatter(
         type=DocumentType.GUIDE,
         status=DocumentStatus.ACTIVE,
@@ -227,7 +226,7 @@ def test_audit_frontmatter_stale_active_warns() -> None:
 
 
 def test_audit_frontmatter_stale_does_not_apply_to_draft() -> None:
-    now = datetime(2026, 4, 28, tzinfo=timezone.utc)
+    now = datetime(2026, 4, 28, tzinfo=UTC)
     issues = v.audit_frontmatter(
         type=DocumentType.GUIDE,
         status=DocumentStatus.DRAFT,

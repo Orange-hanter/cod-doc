@@ -16,7 +16,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 class JsonFormatter(logging.Formatter):
@@ -32,7 +32,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "level": self.LEVEL_MAP.get(record.levelno, record.levelname.lower()),
             "logger": record.name,
             "msg": record.getMessage(),
@@ -66,7 +66,7 @@ class TextFormatter(logging.Formatter):
         self.use_color = use_color and sys.stderr.isatty()
 
     def format(self, record: logging.LogRecord) -> str:
-        ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
+        ts = datetime.now(UTC).strftime("%H:%M:%S")
         level = record.levelname
         if self.use_color:
             color = self.COLORS.get(level, "")

@@ -5,9 +5,10 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-04-28
 related_docs:
   - ../audit/2026-04-19-initial-audit.md
+  - ../audit/2026-04-28-section-c-capabilities.md
 ---
 
 # Capability — Audit & CI
@@ -27,14 +28,17 @@ related_docs:
 
 ### 2.1 Frontmatter (см. [standards/frontmatter.md](../standards/frontmatter.md))
 
-| ID | Severity | Описание |
-|----|----------|----------|
-| FM-001 | error | Обязательное поле отсутствует |
-| FM-002 | error | `type` не из enum |
-| FM-003 | error | `source_of_truth=false` без `canonical_source` |
-| FM-004 | warning | `last_updated` старше 180 дней при `status=active` |
-| FM-005 | warning | `last_updated` в будущем |
-| FM-006 | warning | Отсутствует `sensitivity` (default internal) |
+Коды и severity синхронизированы с [`cod_doc/services/validation.py`](../../../cod_doc/services/validation.py) (COD-020 + последующие).
+
+| ID | Severity | Описание | Где реализовано |
+|----|----------|----------|------------------|
+| FM-001 | error | Неизвестное значение `type` (вне enum) | domain enum upstream |
+| FM-002 | error | `status=active` при пустом `owner` | `audit_frontmatter` |
+| FM-003 | error | `source_of_truth=false` без `canonical_source` | `audit_frontmatter` |
+| FM-004 | warning | `last_updated` в будущем | `audit_frontmatter` |
+| FM-005 | warning | `last_updated` старше 180 дней при `status=active` | `audit_frontmatter` |
+| FM-006 | error | Несовместимая пара `type`/`status` (см. [frontmatter.md §2a](../standards/frontmatter.md)) | reserved (COD-031) |
+| FM-007 | warning | Отсутствует `sensitivity` для `module-spec`/`architecture`/`standard` | reserved (COD-025) |
 
 ### 2.2 Task plan (см. [standards/task-plan.md](../standards/task-plan.md))
 
@@ -95,7 +99,23 @@ cod-doc hooks install
 
 ## 4. Интеграция с CI
 
-### 4.1 GitHub Actions (пример)
+### 4.1 Текущий workflow (внутренний — для самого репо)
+
+Активный workflow: [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml) (COD-024).
+
+Три job'а:
+
+| Job | Trigger | Status |
+|-----|---------|--------|
+| **pytest** | `pull_request`, `push: main`, matrix `python-version: ['3.11', '3.12']` | ✅ blocking |
+| **ruff** | то же | ⚠️ advisory (`continue-on-error`) — снимется после COD-024a |
+| **mypy** | то же | ⚠️ advisory (`continue-on-error`) — снимется после COD-024a |
+
+Concurrency-group отменяет суперседнутые runs, кэш pip — через `cache-dependency-path: pyproject.toml`.
+
+### 4.2 Внешний workflow для пользовательских проектов (целевой пример)
+
+Для проектов, использующих `cod-doc` как утилиту (после COD-031):
 
 ```yaml
 name: COD-DOC audit
@@ -113,7 +133,7 @@ jobs:
         run: cat audit.json
 ```
 
-### 4.2 GitLab CI (пример)
+### 4.3 GitLab CI (пример)
 
 ```yaml
 audit:

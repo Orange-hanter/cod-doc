@@ -10,18 +10,16 @@ Provides a complete LLM interface to COD-DOC:
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import click
 from mcp.server.fastmcp import FastMCP
 
 from cod_doc.config import Config, ProjectEntry
+from cod_doc.core.context import get_context
 from cod_doc.core.hash_calc import calc_hash, check_hash, make_ref, update_hashes
-from cod_doc.core.context import get_context, parse_ref
 from cod_doc.core.project import Project, Task, TaskStatus
 from cod_doc.logging_config import get_logger, setup_logging
-
 
 log = get_logger("mcp")
 mcp = FastMCP("COD-DOC", json_response=True)
@@ -204,7 +202,6 @@ def update_master_hashes(project_name: str) -> dict[str, Any]:
 @mcp.tool()
 def check_stale_refs(project_name: str) -> dict[str, Any]:
     """Scan MASTER.md for hybrid references and check which files have changed (stale) or are missing (broken)."""
-    import re
     from cod_doc.core.hash_calc import LINK_PATTERN
 
     proj = _project(project_name)

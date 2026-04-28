@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-04-28
 ---
 
 # Frontmatter Standard
@@ -21,11 +21,22 @@ last_updated: 2026-04-19
 
 | Поле | Значения | Мэппинг в БД |
 |------|----------|--------------|
-| `type` | `module-spec`, `module-subdoc`, `execution-plan`, `task-section`, `execution-log`, `standard`, `architecture`, `vision`, `guide`, `user-story`, `redirect` | `document.type` |
-| `status` | `draft`, `review`, `active`, `deprecated` (для task-файлов — `pending`, `in-progress`, `done`) | `document.status` |
+| `type` | `module-spec`, `module-subdoc`, `execution-plan`, `task-section`, `execution-log`, `standard`, `architecture`, `vision`, `guide`, `user-story`, `audit-report`, `redirect` | `document.type` |
+| `status` | См. таблицу §2a (зависит от `type`) | `document.status` |
 | `owner` | Строка (команда или роль) | `document.owner` |
 | `last_updated` | `YYYY-MM-DD` | `document.last_updated` |
-| `source_of_truth` | `true` / `false` | `document.source_of_truth` |
+| `source_of_truth` | `true` / `false` *(или вложенный dict для `execution-plan` — см. §7)* | `document.source_of_truth` |
+
+## 2a. Допустимые `status` по `type`
+
+Каждый `type` определяет своё подмножество `status`. Несовместимая пара (например `type: execution-plan` + `status: active`) → error.
+
+| `type` | Допустимые `status` | Терминал |
+|--------|---------------------|----------|
+| `module-spec`, `module-subdoc`, `standard`, `architecture`, `vision`, `guide`, `redirect` | `draft` → `review` → `active` → `deprecated` | `deprecated` |
+| `execution-plan`, `task-section`, `execution-log` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`) | `done` / `cancelled` |
+| `user-story` | `draft` → `accepted` → `delivered` → `archived` | `archived` |
+| `audit-report` | `active` (живой аудит) → `resolved` (все задачи закрыты) → `superseded` (устарел) | `resolved` / `superseded` |
 
 ## 3. Условно-обязательные
 
@@ -74,18 +85,26 @@ last_updated: 2026-04-19
 
 Правила:
 
-- Неизвестное значение `type` → error.
-- `status=active` при пустом `owner` → error.
-- `source_of_truth: false` без `canonical_source` → error.
-- `last_updated` в будущем → warning.
-- `last_updated` старше 180 дней для `status=active` → warning (`stale-doc`).
+- `FM-001` Неизвестное значение `type` → error.
+- `FM-002` `status=active` при пустом `owner` → error.
+- `FM-003` `source_of_truth: false` без `canonical_source` → error (для `execution-plan` см. §7 — dict-вариант исключён).
+- `FM-004` `last_updated` в будущем → warning.
+- `FM-005` `last_updated` старше 180 дней для `status=active` → warning (`stale-doc`).
+- `FM-006` Несовместимая пара `type`/`status` (см. §2a) → error.
+- `FM-007` *(reserved, см. [sensitive-data.md](sensitive-data.md))* Отсутствие `sensitivity` для документов с `type` ∈ `{module-spec, architecture, standard}` → warning. Реализуется в задаче COD-025.
 
 ## 7. Соотношение с task-plan ecosystem
 
 Task-plan использует узкое подмножество и переопределяет часть значений:
 
 - `status` в execution-plan: `pending` / `in-progress` / `done` (а не `draft`/`active`).
-- `source_of_truth` в execution-plan: nested dict вместо boolean.
+- `source_of_truth` в execution-plan: nested dict с указанием источников каждого аспекта (vision, architecture, data_model, …) вместо boolean. Пример:
+  ```yaml
+  source_of_truth:
+    vision: docs/system/VISION.md
+    architecture: docs/system/ARCHITECTURE.md
+  ```
+  При write-path валидации FM-003 (требование `canonical_source` при `false`) не применяется — наличие dict эквивалентно «у плана есть источники».
 - `owner` не требуется (владелец — Task Steward по конвенции).
 
 Подробнее: [task-plan.md](task-plan.md) и Restate `tools/task-plan-ecosystem.md §3`.

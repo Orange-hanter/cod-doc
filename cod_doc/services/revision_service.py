@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Final
 
 from sqlalchemy import select
@@ -101,7 +101,7 @@ def write(
             f"actual={head!r} for {entity_kind.value} #{entity_id}"
         )
 
-    rid_obj = ULID.from_datetime(datetime.now(timezone.utc))
+    rid_obj = ULID.from_datetime(datetime.now(UTC))
     model = RevisionModel(
         revision_id=str(rid_obj),
         project_id=project_id,
@@ -199,7 +199,7 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
         raise LookupError(f"task #{model.entity_id} not found (may have been deleted)")
 
     # Import locally to avoid circular dependency.
-    from cod_doc.services import task_service as _tasks  # noqa: PLC0415
+    from cod_doc.services import task_service as _tasks
 
     _tasks.update_status(
         session,
@@ -255,7 +255,7 @@ def _revert_section(session: Session, model: RevisionModel, *, author: str) -> N
     if sec is None:
         raise LookupError(f"section #{model.entity_id} not found")
 
-    from cod_doc.services import doc_service as _docs  # noqa: PLC0415
+    from cod_doc.services import doc_service as _docs
 
     _docs.patch_section(
         session,
@@ -279,7 +279,7 @@ def _revert_document(session: Session, model: RevisionModel, *, author: str) -> 
     old_doc_key = diff_obj["from"]["doc_key"]
     old_path = diff_obj["from"]["path"]
 
-    from cod_doc.services import doc_service as _docs  # noqa: PLC0415
+    from cod_doc.services import doc_service as _docs
 
     _docs.rename(
         session,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -47,7 +47,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 
 def _add_project(session, slug: str = "p") -> int:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug=slug, title=slug.upper(), root_path=f"/tmp/{slug}", config_json={})
     proj.created = now
     proj.updated = now
@@ -65,6 +65,7 @@ def _new_doc(session: Session, project_id: int, doc_key: str = "modules/M1-auth/
         status=DocumentStatus.ACTIVE,
         title="Auth Module Overview",
         author="human:dakh",
+        owner="human:dakh",
         sensitivity=Sensitivity.INTERNAL,
         preamble="Intro paragraph.",
     )
@@ -105,7 +106,7 @@ def test_create_writes_initial_document_revision(engine_with_schema) -> None:  #
 
 
 def test_create_duplicate_doc_key_violates_unique(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415
+    from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
 
@@ -113,14 +114,13 @@ def test_create_duplicate_doc_key_violates_unique(engine_with_schema) -> None:  
         proj_id = _add_project(session)
         _new_doc(session, proj_id, "dup")
 
-    with pytest.raises(IntegrityError):
-        with transactional(factory) as session:
-            proj_id2 = (
-                session.execute(
-                    __import__("sqlalchemy").select(ProjectModel.row_id)
-                ).scalar_one()
-            )
-            _new_doc(session, proj_id2, "dup")  # same project, same key
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        proj_id2 = (
+            session.execute(
+                __import__("sqlalchemy").select(ProjectModel.row_id)
+            ).scalar_one()
+        )
+        _new_doc(session, proj_id2, "dup")  # same project, same key
 
 
 # --------------------------- sections / render -------------------------------
@@ -235,11 +235,10 @@ def test_patch_section_unknown_anchor_raises(engine_with_schema) -> None:  # typ
 def test_patch_section_unknown_document_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
 
-    with transactional(factory) as session:
-        with pytest.raises(docs.DocumentNotFoundError):
-            docs.patch_section(
-                session, document_id=99999, anchor="x", new_body="x", author="x"
-            )
+    with transactional(factory) as session, pytest.raises(docs.DocumentNotFoundError):
+        docs.patch_section(
+            session, document_id=99999, anchor="x", new_body="x", author="x"
+        )
 
 
 def test_patch_section_no_op_when_body_unchanged(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -321,11 +320,10 @@ def test_rename_updates_doc_key_and_writes_revision(engine_with_schema) -> None:
 def test_rename_unknown_document_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
 
-    with transactional(factory) as session:
-        with pytest.raises(docs.DocumentNotFoundError):
-            docs.rename(
-                session, document_id=99999, new_doc_key="x", author="x"
-            )
+    with transactional(factory) as session, pytest.raises(docs.DocumentNotFoundError):
+        docs.rename(
+            session, document_id=99999, new_doc_key="x", author="x"
+        )
 
 
 def test_rename_no_op_when_target_equals_current(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -349,7 +347,7 @@ def test_rename_no_op_when_target_equals_current(engine_with_schema) -> None:  #
 
 
 def test_add_section_duplicate_anchor_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from cod_doc.services.doc_service import SectionAlreadyExistsError  # noqa: PLC0415
+    from cod_doc.services.doc_service import SectionAlreadyExistsError
 
     factory = make_session_factory(engine_with_schema)
 
@@ -365,3 +363,68 @@ def test_add_section_duplicate_anchor_raises(engine_with_schema) -> None:  # typ
                 session, document_id=doc.row_id, anchor="dup", heading="Dup2", level=2,
                 position=1, body="y", author="x",
             )
+
+
+# ----------------- COD-020: write-path frontmatter gate ---------------------
+
+
+def test_create_rejects_active_without_owner(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """FM-002: status=active requires non-empty owner."""
+    from cod_doc.services.validation import ValidationError
+
+    factory = make_session_factory(engine_with_schema)
+
+    with transactional(factory) as session:
+        proj_id = _add_project(session)
+        with pytest.raises(ValidationError) as exc_info:
+            docs.create(
+                session,
+                project_id=proj_id,
+                doc_key="modules/M1-auth/overview",
+                type=DocumentType.MODULE_SPEC,
+                status=DocumentStatus.ACTIVE,
+                title="Auth Overview",
+                author="human:dakh",
+                # owner is intentionally omitted
+            )
+        assert exc_info.value.code == "FM-002"
+
+
+def test_create_rejects_sot_false_without_canonical_source(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """FM-003: source_of_truth=false requires a canonical_source field."""
+    from cod_doc.services.validation import ValidationError
+
+    factory = make_session_factory(engine_with_schema)
+
+    with transactional(factory) as session:
+        proj_id = _add_project(session)
+        with pytest.raises(ValidationError) as exc_info:
+            docs.create(
+                session,
+                project_id=proj_id,
+                doc_key="modules/copy/overview",
+                type=DocumentType.GUIDE,
+                status=DocumentStatus.DRAFT,
+                title="Mirror",
+                author="human:dakh",
+                frontmatter={"source_of_truth": False},
+            )
+        assert exc_info.value.code == "FM-003"
+
+
+def test_create_accepts_draft_without_owner(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """status=draft has no owner requirement (FM-002 is active-only)."""
+    factory = make_session_factory(engine_with_schema)
+
+    with transactional(factory) as session:
+        proj_id = _add_project(session)
+        doc = docs.create(
+            session,
+            project_id=proj_id,
+            doc_key="drafts/note",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.DRAFT,
+            title="Note",
+            author="human:dakh",
+        )
+        assert doc.row_id is not None

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -37,7 +37,7 @@ def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
 
 
 def _add_project(session, slug: str = "p") -> int:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug=slug, title=slug.upper(), root_path=f"/tmp/{slug}", config_json={})
     proj.created = now
     proj.updated = now
@@ -206,6 +206,5 @@ def test_explicit_none_expected_parent_on_existing_entity_raises(engine_with_sch
 def test_revert_raises_lookup_for_unknown_revision_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
 
-    with transactional(factory) as session:
-        with pytest.raises(LookupError):
-            rev.revert(session, "01HQX5Z9F0K8R0000000000000", author="human:test")
+    with transactional(factory) as session, pytest.raises(LookupError):
+        rev.revert(session, "01HQX5Z9F0K8R0000000000000", author="human:test")

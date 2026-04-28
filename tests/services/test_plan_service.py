@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -52,7 +52,7 @@ def _seed_plan_with_sections(
     Returns (project_id, plan_id, {letter: section_id}).
     """
     sections = sections or [("A", "Data Core", "A-Data-Core")]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     proj = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
     proj.created = now
     proj.updated = now
@@ -191,9 +191,8 @@ def test_recalc_partial_done_is_in_progress(engine_with_schema) -> None:  # type
 
 def test_recalc_unknown_plan_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        with pytest.raises(plans.PlanNotFoundError):
-            plans.recalc(session, 9999)
+    with transactional(factory) as session, pytest.raises(plans.PlanNotFoundError):
+        plans.recalc(session, 9999)
 
 
 # ============================================================================ #
@@ -250,7 +249,7 @@ def test_ready_scoped_to_plan(engine_with_schema) -> None:  # type: ignore[no-un
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-001")
 
         # Plan 2 in same project
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         plan2 = PlanModel(project_id=p, scope="other-plan", created=now, last_updated=now)
         session.add(plan2)
         session.flush()

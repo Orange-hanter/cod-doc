@@ -13,16 +13,13 @@ import hashlib
 import hmac
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-import respx
 from fastapi.testclient import TestClient
-from httpx import Response
 
 from cod_doc.config import Config, ProjectEntry
-from cod_doc.core.project import Project, Task
-
+from cod_doc.core.project import Project
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
