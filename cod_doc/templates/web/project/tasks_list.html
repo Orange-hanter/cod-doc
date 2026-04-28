@@ -52,15 +52,7 @@
   </thead>
   <tbody>
     {% for t in tasks %}
-    <tr class="status-{{ t.status }}">
-      <td class="mono">{{ t.task_id }}</td>
-      <td>{{ t.title }}</td>
-      <td>{{ t.type }}</td>
-      <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
-      <td><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span></td>
-      <td class="num">{{ t.plan_id }}</td>
-      <td class="num">{{ t.section_id }}</td>
-    </tr>
+      {% include "_frag/task_row.html" with context %}
     {% endfor %}
   </tbody>
 </table>

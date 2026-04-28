@@ -188,3 +188,24 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
 .prio-high { color: #bc4c00; }
 .prio-medium { color: var(--fg); }
 .prio-low { color: var(--muted); font-weight: 400; }
+
+.row-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.row-status select {
+  padding: 2px 4px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+}
+.row-error {
+  display: inline-block;
+  margin-left: 8px;
+  color: #cf222e;
+  font-size: 12px;
+}
+.htmx-request select { opacity: 0.5; }

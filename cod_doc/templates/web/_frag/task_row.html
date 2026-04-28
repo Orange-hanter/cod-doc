@@ -1,0 +1,31 @@
+{# Single task row — reused by tasks_list.html and POST /p/{slug}/tasks/{task_id}/status #}
+<tr id="task-{{ t.task_id }}" class="status-{{ t.status }}">
+  <td class="mono">{{ t.task_id }}</td>
+  <td>{{ t.title }}</td>
+  <td>{{ t.type }}</td>
+  <td>
+    <form class="row-status"
+          method="post"
+          action="/p/{{ project.name }}/tasks/{{ t.task_id }}/status">
+      <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
+      <select
+        name="status"
+        hx-post="/p/{{ project.name }}/tasks/{{ t.task_id }}/status"
+        hx-target="#task-{{ t.task_id }}"
+        hx-swap="outerHTML"
+        hx-trigger="change"
+      >
+        {% for s in status_options %}
+          <option value="{{ s }}" {% if t.status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button type="submit">set</button></noscript>
+    </form>
+    {% if error %}
+      <span class="row-error">{{ error }}</span>
+    {% endif %}
+  </td>
+  <td><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span></td>
+  <td class="num">{{ t.plan_id }}</td>
+  <td class="num">{{ t.section_id }}</td>
+</tr>

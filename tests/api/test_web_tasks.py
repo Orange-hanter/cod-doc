@@ -143,10 +143,13 @@ def test_tasks_list_renders_all(tasks_client) -> None:
     assert "AUTH-002" in r.text
     assert "AUTH-003" in r.text
     assert "Implement: account deactivation flow" in r.text
-    # status badges present
+    # status badges present (rendered inside each row's status cell)
     assert "badge-pending" in r.text
     assert "badge-in-progress" in r.text
     assert "badge-done" in r.text
+    # HTMX inline status form is wired
+    assert 'hx-post="/p/demo/tasks/AUTH-001/status"' in r.text
+    assert 'hx-target="#task-AUTH-001"' in r.text
     # tab strip: Tasks active
     assert 'class="active" href="/p/demo/tasks"' in r.text
     # count footer
@@ -207,3 +210,113 @@ def test_tasks_list_404_unknown_project(tasks_client) -> None:
     client, _ = tasks_client
     r = client.get("/p/nope/tasks")
     assert r.status_code == 404
+
+
+# ── WEB-011: HTMX inline status update ──────────────────────────────────────
+
+def test_status_post_htmx_returns_row_fragment(tasks_client) -> None:
+    client, entry = tasks_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/AUTH-001/status",
+        data={"status": "in-progress"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    # Row id present, swap-friendly
+    assert 'id="task-AUTH-001"' in r.text
+    # New status reflected in badge + selected option
+    assert "badge-in-progress" in r.text
+    assert '<option value="in-progress" selected>' in r.text
+    # No row-error span when success
+    assert "row-error" not in r.text
+
+
+def test_status_post_form_redirects_back_to_list(tasks_client) -> None:
+    client, entry = tasks_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/AUTH-001/status",
+        data={"status": "in-progress"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/p/{entry.name}/tasks"
+
+
+def test_status_post_no_op_same_status(tasks_client) -> None:
+    """Posting the same status as current → service no-op, returns row unchanged."""
+    client, entry = tasks_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/AUTH-001/status",
+        data={"status": "pending"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert "badge-pending" in r.text
+
+
+def test_status_post_unknown_task_404(tasks_client) -> None:
+    client, entry = tasks_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/NO-999/status",
+        data={"status": "done"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 404
+
+
+def test_status_post_invalid_status_value_400(tasks_client) -> None:
+    client, entry = tasks_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/AUTH-001/status",
+        data={"status": "garbage"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 400
+
+
+def test_status_post_404_unknown_project(tasks_client) -> None:
+    client, _ = tasks_client
+    r = client.post(
+        "/p/nope/tasks/AUTH-001/status",
+        data={"status": "done"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 404
+
+
+def test_status_post_404_db_absent(tmp_path: Path) -> None:
+    repo = tmp_path / "no-db-post"
+    repo.mkdir()
+    entry = ProjectEntry(name="bare", path=str(repo))
+
+    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg.add_project(entry)
+
+    import cod_doc.api.deps as deps
+    deps.set_config(cfg)
+
+    Project(entry).init()
+
+    from cod_doc.api.server import app
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.post(
+            f"/p/{entry.name}/tasks/X-001/status",
+            data={"status": "done"},
+            headers={"HX-Request": "true"},
+        )
+    assert r.status_code == 404
+
+
+def test_status_post_persists_change(tasks_client) -> None:
+    """After a HTMX post, GET /tasks shows the updated status."""
+    client, entry = tasks_client
+    client.post(
+        f"/p/{entry.name}/tasks/AUTH-001/status",
+        data={"status": "done"},
+        headers={"HX-Request": "true"},
+    )
+    r = client.get(f"/p/{entry.name}/tasks?status=done")
+    assert r.status_code == 200
+    assert "AUTH-001" in r.text  # now also done
+    assert "AUTH-003" in r.text  # was already done

@@ -28,9 +28,9 @@ source_of_truth:
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
 | B: Read views | inline | 4 | 1 | 3 | 🔄 in-progress |
-| C: Write paths | inline | 3 | 0 | 3 | ❌ pending |
+| C: Write paths | inline | 3 | 1 | 2 | 🔄 in-progress |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
-| **TOTAL** |  | **12** | **4** | **8** | |
+| **TOTAL** |  | **12** | **5** | **7** | |
 
 ## Gap Analysis Summary
 
@@ -257,16 +257,25 @@ priority: medium
 id: WEB-011
 title: "Implement: HTMX inline task status update"
 section: C-Write-Paths
-status: pending
+status: done
 depends_on: [WEB-010]
 type: feature
 priority: high
 affected_files:
   - cod_doc/api/web/fragments.py
+  - cod_doc/api/web/__init__.py
+  - cod_doc/api/server.py
   - cod_doc/templates/web/_frag/task_row.html
+  - cod_doc/templates/web/project/tasks_list.html
+  - cod_doc/templates/web/base.html
+  - cod_doc/static/htmx.min.js
+  - cod_doc/static/app.css
+  - tests/api/test_web_tasks.py
 ```
 
 **Description:** `<select hx-post="/p/{slug}/tasks/{task_id}/status">` → возвращает обновлённый `<tr>` для swap. Ошибки сервиса (`TaskNotFoundError`, conflict) → красный inline-маркер.
+
+> ✅ **Implemented 2026-04-28** (commit `pending`): vendored `htmx.min.js` v2.0.4 (50 KB) → `cod_doc/static/`, подключён в `base.html` через `<script defer src="/static/htmx.min.js">`. Task-row выделен в фрагмент `_frag/task_row.html` (используется и в `tasks_list.html`, и в HTMX-ответе). Внутри row — `<form method="post" action="...">` с `<select hx-post hx-target="#task-{id}" hx-swap="outerHTML" hx-trigger="change">` + `<noscript>`-кнопка. Новый под-роутер `cod_doc.api.web.fragments` (отдельный от `pages` per capability §4): `POST /p/{slug}/tasks/{task_id}/status` принимает `Form(status)`, валидирует enum (400 на garbage), резолвит project через `open_db_for_project` (404 если БД нет / задача чужого проекта / unknown task_id), вызывает `task_service.update_status`, ловит `RevisionConflictError` / `IntegrityError` / `ValueError` → возвращает row с `row-error` span. HTMX-ответ (`HX-Request: true`) → row-фрагмент; обычный form-post → `303 See Other` на `/p/{slug}/tasks` (POST/Redirect/GET). CSS: `.row-status` inline-flex, `.row-error` красный, `.htmx-request select` opacity (loading). Тесты — 8 (HTMX success, form 303, no-op same status, 404 unknown task / unknown project / db absent, 400 invalid status, persistence через follow-up GET); общий suite — 326/326.
 
 ### WEB-012
 
