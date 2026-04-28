@@ -71,7 +71,7 @@ def _task(
     proj_id: int,
     plan_id: int,
     sec_id: int,
-    task_id: str = "P-001",
+    task_id: str = "PLN-001",
     title: str = "Task",
     **kw: Any,
 ) -> Task:
@@ -130,16 +130,16 @@ def test_create_auto_generates_task_id(engine_with_schema) -> None:  # type: ign
         p, pl, s = _seed_plan(session)
         t1 = tasks.create(
             session, project_id=p, plan_id=pl, section_id=s,
-            id_prefix="P", title="T1", type=TaskType.MIGRATION,
+            id_prefix="PLN", title="T1", type=TaskType.MIGRATION,
             priority=Priority.HIGH, author="x",
         )
         t2 = tasks.create(
             session, project_id=p, plan_id=pl, section_id=s,
-            id_prefix="P", title="T2", type=TaskType.MIGRATION,
+            id_prefix="PLN", title="T2", type=TaskType.MIGRATION,
             priority=Priority.HIGH, author="x",
         )
-        assert t1.task_id == "P-001"
-        assert t2.task_id == "P-002"
+        assert t1.task_id == "PLN-001"
+        assert t2.task_id == "PLN-002"
 
 
 def test_create_without_task_id_and_prefix_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -152,6 +152,41 @@ def test_create_without_task_id_and_prefix_raises(engine_with_schema) -> None:  
                 session, project_id=p, plan_id=pl, section_id=s,
                 title="X", type=TaskType.FEATURE, priority=Priority.LOW, author="x",
             )
+
+
+# ------- COD-020: write-path validation enforcement -----------------------
+
+
+def test_create_rejects_invalid_task_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.services import validation as v  # noqa: PLC0415
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        with pytest.raises(v.ValidationError) as exc:
+            tasks.create(
+                session, project_id=p, plan_id=pl, section_id=s,
+                task_id="bad",  # lowercase + missing number
+                title="Test: x", type=TaskType.TEST,
+                priority=Priority.LOW, author="human:test",
+            )
+        assert exc.value.code == "TP-001"
+
+
+def test_create_rejects_invalid_id_prefix(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.services import validation as v  # noqa: PLC0415
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        with pytest.raises(v.ValidationError) as exc:
+            tasks.create(
+                session, project_id=p, plan_id=pl, section_id=s,
+                id_prefix="X",  # single letter
+                title="Implement: foo", type=TaskType.FEATURE,
+                priority=Priority.LOW, author="human:test",
+            )
+        assert exc.value.code == "TP-002"
 
 
 def test_create_with_affected_files(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -252,14 +287,14 @@ def test_complete_raises_when_blocking_dep_pending(engine_with_schema) -> None: 
 
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
-        a = _task(session, p, pl, s, task_id="P-001")
-        b = _task(session, p, pl, s, task_id="P-002")
+        a = _task(session, p, pl, s, task_id="PLN-001")
+        b = _task(session, p, pl, s, task_id="PLN-002")
         # B depends on A (from_task=B, to_task=A)
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
         session.flush()
 
-        with pytest.raises(tasks.TaskBlockedError, match="P-001"):
-            tasks.complete(session, task_id="P-002", author="x")
+        with pytest.raises(tasks.TaskBlockedError, match="PLN-001"):
+            tasks.complete(session, task_id="PLN-002", author="x")
 
 
 def test_complete_succeeds_after_blocking_dep_done(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -267,14 +302,14 @@ def test_complete_succeeds_after_blocking_dep_done(engine_with_schema) -> None: 
 
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
-        a = _task(session, p, pl, s, task_id="P-001")
-        b = _task(session, p, pl, s, task_id="P-002")
+        a = _task(session, p, pl, s, task_id="PLN-001")
+        b = _task(session, p, pl, s, task_id="PLN-002")
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
 
         # Complete A first.
-        tasks.complete(session, task_id="P-001", author="x")
+        tasks.complete(session, task_id="PLN-001", author="x")
         # Now B can be completed.
-        done_b = tasks.complete(session, task_id="P-002", author="x")
+        done_b = tasks.complete(session, task_id="PLN-002", author="x")
         assert done_b.status == TaskStatus.DONE
 
 
@@ -284,12 +319,12 @@ def test_complete_ignores_non_blocks_kind(engine_with_schema) -> None:  # type: 
 
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
-        a = _task(session, p, pl, s, task_id="P-001")
-        b = _task(session, p, pl, s, task_id="P-002")
+        a = _task(session, p, pl, s, task_id="PLN-001")
+        b = _task(session, p, pl, s, task_id="PLN-002")
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="relates"))
         session.flush()
 
-        done = tasks.complete(session, task_id="P-002", author="x")
+        done = tasks.complete(session, task_id="PLN-002", author="x")
         assert done.status == TaskStatus.DONE
 
 
@@ -322,9 +357,9 @@ def test_list_for_plan_returns_all_tasks(engine_with_schema) -> None:  # type: i
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         for n in range(1, 4):
-            _task(session, p, pl, s, task_id=f"P-{n:03d}", title=f"T{n}")
+            _task(session, p, pl, s, task_id=f"PLN-{n:03d}", title=f"T{n}")
         all_tasks = tasks.list_for_plan(session, pl)
-        assert {t.task_id for t in all_tasks} == {"P-001", "P-002", "P-003"}
+        assert {t.task_id for t in all_tasks} == {"PLN-001", "PLN-002", "PLN-003"}
 
 
 # ------- SB-ME-2: update_status optimistic concurrency ----------------------

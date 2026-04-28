@@ -35,6 +35,7 @@ from cod_doc.domain.entities import (
 from cod_doc.infra.models import AffectedFileModel, DependencyModel, TaskModel
 from cod_doc.infra.repositories import TaskRepository
 from cod_doc.services import revision_service as rev
+from cod_doc.services import validation
 
 
 class TaskNotFoundError(LookupError):
@@ -111,7 +112,11 @@ def create(
     if task_id is None:
         if not id_prefix:
             raise ValueError("provide task_id or id_prefix")
+        validation.validate_id_prefix(id_prefix)
         task_id = _next_task_id(session, plan_id, id_prefix)
+    else:
+        validation.validate_task_id(task_id)
+    validation.validate_task_type(type.value)
 
     now = datetime.now(timezone.utc)
     task = TaskRepository(session).add(
@@ -253,6 +258,7 @@ def complete(
         reason=reason or "complete",
         expected_parent_revision_id=expected_parent_revision_id,
     )
+
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t
