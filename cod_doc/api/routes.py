@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -20,13 +22,13 @@ router = APIRouter(prefix="/api")
 # ── Health / Config ───────────────────────────────────────────────────────────
 
 @router.get("/health")
-def health() -> dict:
+def health() -> dict[str, Any]:
     cfg = get_config()
     return {"status": "ok", "configured": cfg.is_configured, "projects": len(cfg.list_projects())}
 
 
 @router.get("/config")
-def read_config() -> dict:
+def read_config() -> dict[str, Any]:
     cfg = get_config()
     data = cfg.model_dump()
     data.pop("api_key", None)
@@ -34,7 +36,7 @@ def read_config() -> dict:
 
 
 @router.patch("/config")
-def update_config(update: ConfigUpdate) -> dict:
+def update_config(update: ConfigUpdate) -> dict[str, Any]:
     cfg = get_config()
     for field, value in update.model_dump(exclude_none=True).items():
         setattr(cfg, field, value)
@@ -55,7 +57,7 @@ def list_projects() -> list[dict]:
 
 
 @router.post("/projects", status_code=201)
-def create_project(data: ProjectCreate) -> dict:
+def create_project(data: ProjectCreate) -> dict[str, Any]:
     cfg = get_config()
     entry = ProjectEntry(**data.model_dump())
     cfg.add_project(entry)
@@ -65,7 +67,7 @@ def create_project(data: ProjectCreate) -> dict:
 
 
 @router.delete("/projects/{name}")
-def delete_project(name: str) -> dict:
+def delete_project(name: str) -> dict[str, Any]:
     cfg = get_config()
     if not cfg.remove_project(name):
         raise HTTPException(404, f"Проект не найден: {name}")
@@ -73,7 +75,7 @@ def delete_project(name: str) -> dict:
 
 
 @router.get("/projects/{name}")
-def read_project(name: str) -> dict:
+def read_project(name: str) -> dict[str, Any]:
     proj = get_project(name)
     return {
         **proj.entry.model_dump(),
@@ -83,7 +85,7 @@ def read_project(name: str) -> dict:
 
 
 @router.get("/projects/{name}/master")
-def read_master(name: str) -> dict:
+def read_master(name: str) -> dict[str, Any]:
     proj = get_project(name)
     content = proj.read_master()
     if content is None:
@@ -101,7 +103,7 @@ def list_tasks(name: str, status: str | None = None) -> list[dict]:
 
 
 @router.post("/projects/{name}/tasks", status_code=201)
-def create_task(name: str, data: TaskCreate) -> dict:
+def create_task(name: str, data: TaskCreate) -> dict[str, Any]:
     proj = get_project(name)
     task = Task(**data.model_dump())
     proj.add_task(task)
@@ -109,7 +111,7 @@ def create_task(name: str, data: TaskCreate) -> dict:
 
 
 @router.patch("/projects/{name}/tasks/{task_id}")
-def update_task(name: str, task_id: str, body: dict) -> dict:
+def update_task(name: str, task_id: str, body: dict[str, Any]) -> dict[str, Any]:
     proj = get_project(name)
     task = proj.update_task(task_id, **body)
     if not task:
@@ -120,7 +122,7 @@ def update_task(name: str, task_id: str, body: dict) -> dict:
 # ── Agent ─────────────────────────────────────────────────────────────────────
 
 @router.post("/projects/{name}/run")
-async def run_agent(name: str, background_tasks: BackgroundTasks) -> dict:
+async def run_agent(name: str, background_tasks: BackgroundTasks) -> dict[str, Any]:
     """Запустить агент в фоне для проекта."""
     proj = get_project(name)
     cfg = get_config()

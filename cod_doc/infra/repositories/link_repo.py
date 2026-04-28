@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import select
 
 from cod_doc.domain.entities import Link, LinkKind
@@ -28,7 +30,7 @@ class LinkRepository(BaseRepository[Link, LinkModel]):
         )
 
     def _to_model(self, entity: Link) -> LinkModel:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "project_id": entity.project_id,
             "from_section_id": entity.from_section_id,
             "raw": entity.raw,

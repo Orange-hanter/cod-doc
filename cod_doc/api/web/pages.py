@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
@@ -73,7 +75,7 @@ def _preview(text: str | None, max_lines: int) -> tuple[str | None, bool]:
 @router.get("/p/{slug}/docs", response_class=HTMLResponse)
 def docs_list(request: Request, slug: str) -> HTMLResponse:
     proj = get_project(slug)
-    documents: list[dict] = []
+    documents: list[dict[str, Any]] = []
     db_available = False
     with open_db_for_project(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
@@ -116,7 +118,7 @@ def tasks_list(
         except ValueError:
             status_invalid = True
 
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     db_available = False
     with open_db_for_project(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:

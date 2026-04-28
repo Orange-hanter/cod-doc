@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -13,9 +14,9 @@ from cod_doc.core.project import Project
 logger = logging.getLogger("cod_doc.api")
 
 # Runtime-состояние (задаётся в lifespan)
-_daemon_task: asyncio.Task | None = None
+_daemon_task: asyncio.Task[Any] | None = None
 _config: Config | None = None
-webhook_registry: dict[str, dict] = {}
+webhook_registry: dict[str, dict[str, Any]] = {}
 
 
 def set_config(cfg: Config) -> None:
@@ -23,12 +24,12 @@ def set_config(cfg: Config) -> None:
     _config = cfg
 
 
-def set_daemon_task(task: asyncio.Task | None) -> None:
+def set_daemon_task(task: asyncio.Task[Any] | None) -> None:
     global _daemon_task
     _daemon_task = task
 
 
-def get_daemon_task() -> asyncio.Task | None:
+def get_daemon_task() -> asyncio.Task[Any] | None:
     return _daemon_task
 
 

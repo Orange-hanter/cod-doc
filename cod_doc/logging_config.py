@@ -17,7 +17,7 @@ import logging
 import os
 import sys
 from datetime import UTC, datetime
-from typing import ClassVar
+from typing import Any, ClassVar
 
 
 class JsonFormatter(logging.Formatter):
@@ -32,7 +32,7 @@ class JsonFormatter(logging.Formatter):
     }
 
     def format(self, record: logging.LogRecord) -> str:
-        payload: dict = {
+        payload: dict[str, Any] = {
             "ts": datetime.now(UTC).isoformat(),
             "level": self.LEVEL_MAP.get(record.levelno, record.levelname.lower()),
             "logger": record.name,

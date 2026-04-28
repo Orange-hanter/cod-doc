@@ -51,7 +51,7 @@ class Task:
         self.result = result
         self.context_refs: list[str] = context_refs or []
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "title": self.title,
@@ -65,7 +65,7 @@ class Task:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> Task:
+    def from_dict(cls, d: dict[str, Any] ) -> Task:
         return cls(
             title=d["title"],
             description=d.get("description", ""),
@@ -173,16 +173,16 @@ class Project:
 
     # ── State ─────────────────────────────────────────────────────────────────
 
-    def _read_state(self) -> dict:
+    def _read_state(self) -> dict[str, Any]:
         if not self._state_file.exists():
             return {}
         return yaml.safe_load(self._state_file.read_text(encoding="utf-8")) or {}
 
-    def _write_state(self, state: dict) -> None:
+    def _write_state(self, state: dict[str, Any] ) -> None:
         self._state_file.write_text(yaml.dump(state, allow_unicode=True), encoding="utf-8")
 
     @property
-    def state(self) -> dict:
+    def state(self) -> dict[str, Any]:
         return self._read_state()
 
     def set_status(self, status: str) -> None:
@@ -213,7 +213,7 @@ class Project:
             return self.entry.master_path.read_text(encoding="utf-8")
         return None
 
-    def extract_next_actions(self) -> dict:
+    def extract_next_actions(self) -> dict[str, Any]:
         import json
         import re
 
@@ -228,7 +228,7 @@ class Project:
 
     # ── Stats ─────────────────────────────────────────────────────────────────
 
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         tasks = self._load_tasks()
         return {
             "total": len(tasks),

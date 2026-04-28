@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 log = get_logger("tui.app")
 
 
-class CodDocApp(App):
+class CodDocApp(App[Any]):
     """COD-DOC TUI."""
 
     TITLE = "COD-DOC — Context Orchestrator for Documentation"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import asyncio
 import hashlib
 import hmac
@@ -30,7 +32,7 @@ router = APIRouter(prefix="/api")
 # ── Webhook management ────────────────────────────────────────────────────────
 
 @router.post("/webhooks", status_code=201)
-def register_webhook(data: WebhookRegister) -> dict:
+def register_webhook(data: WebhookRegister) -> dict[str, Any]:
     cfg = get_config()
     if not cfg.get_project(data.project_name):
         raise HTTPException(404, f"Проект не найден: {data.project_name}")
@@ -50,7 +52,7 @@ def list_webhooks() -> list[dict]:
 
 
 @router.delete("/webhooks")
-def delete_webhook(repo_url: str) -> dict:
+def delete_webhook(repo_url: str) -> dict[str, Any]:
     if repo_url not in webhook_registry:
         raise HTTPException(404, f"Webhook не найден: {repo_url}")
     del webhook_registry[repo_url]
@@ -65,7 +67,7 @@ async def github_webhook(
     background_tasks: BackgroundTasks,
     x_hub_signature_256: str | None = Header(default=None),
     x_github_event: str = Header(default="push"),
-) -> dict:
+) -> dict[str, Any]:
     """Принять GitHub push webhook и запустить агента для соответствующего проекта."""
     body = await request.body()
 

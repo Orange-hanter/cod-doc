@@ -71,7 +71,7 @@ class ProjectCard(Static):
         self.post_message(self.Selected(self.project))
 
 
-class AddProjectDialog(Screen):
+class AddProjectDialog(Screen[Any]):
     """Диалог добавления нового проекта."""
 
     BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "dismiss", "Закрыть")]
@@ -119,7 +119,7 @@ class AddProjectDialog(Screen):
         self.dismiss(entry)
 
 
-class AddTaskDialog(Screen):
+class AddTaskDialog(Screen[Any]):
     """Диалог добавления задачи в проект."""
 
     BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "dismiss", "Закрыть")]
@@ -158,7 +158,7 @@ class AddTaskDialog(Screen):
         self.dismiss(task)
 
 
-class DashboardScreen(Screen):
+class DashboardScreen(Screen[Any]):
     """Главный экран — список проектов."""
 
     BINDINGS: ClassVar[list[Binding]] = [

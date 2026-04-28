@@ -70,7 +70,7 @@ class _StepBar(Static):
         self.update("".join(parts))
 
 
-class WizardScreen(Screen):
+class WizardScreen(Screen[Any]):
     """Интерактивный экран первоначальной настройки."""
 
     BINDINGS: ClassVar[list[Binding]] = [

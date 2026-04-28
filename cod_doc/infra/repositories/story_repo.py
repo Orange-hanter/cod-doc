@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import select
 
 from cod_doc.domain.entities import (
@@ -38,7 +40,7 @@ class UserStoryRepository(BaseRepository[UserStory, UserStoryModel]):
         )
 
     def _to_model(self, entity: UserStory) -> UserStoryModel:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "project_id": entity.project_id,
             "story_id": entity.story_id,
             "persona": entity.persona,
@@ -81,7 +83,7 @@ class StoryAcceptanceRepository(BaseRepository[StoryAcceptance, StoryAcceptanceM
         )
 
     def _to_model(self, entity: StoryAcceptance) -> StoryAcceptanceModel:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "story_id": entity.story_id,
             "position": entity.position,
             "criterion": entity.criterion,
@@ -113,7 +115,7 @@ class StoryLinkRepository(BaseRepository[StoryLink, StoryLinkModel]):
         )
 
     def _to_model(self, entity: StoryLink) -> StoryLinkModel:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "story_id": entity.story_id,
             "to_kind": entity.to_kind.value,
             "to_ref": entity.to_ref,

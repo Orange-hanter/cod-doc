@@ -35,7 +35,7 @@ EVENT_STYLES = {
 }
 
 
-class AgentRunScreen(Screen):
+class AgentRunScreen(Screen[Any]):
     """Экран выполнения задачи агентом."""
 
     BINDINGS: ClassVar[list[Binding]] = [

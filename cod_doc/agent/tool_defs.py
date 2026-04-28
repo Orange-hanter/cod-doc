@@ -2,7 +2,9 @@
 Определения инструментов агента (OpenAI function calling формат).
 """
 
-TOOL_DEFINITIONS: list[dict] = [
+from typing import Any
+
+TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {

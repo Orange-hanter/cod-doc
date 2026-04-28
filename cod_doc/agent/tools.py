@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cod_doc.agent.tool_defs import TOOL_DEFINITIONS
 from cod_doc.core.context import get_context
@@ -53,7 +53,7 @@ class ToolExecutor:
 
     def execute(self, name: str, arguments: str | dict) -> str:
         """Вызвать инструмент по имени. Возвращает строку-результат."""
-        args: dict = json.loads(arguments) if isinstance(arguments, str) else arguments
+        args: dict[str, Any] = json.loads(arguments) if isinstance(arguments, str) else arguments
         handler = getattr(self, f"_tool_{name}", None)
         if handler is None:
             return json.dumps({"error": f"Неизвестный инструмент: {name}"})
@@ -73,7 +73,7 @@ class ToolExecutor:
             raise ValueError(f"Путь за пределами проекта: {path}")
         return p
 
-    def _tool_read_file(self, path: str, page: int = 1) -> dict:
+    def _tool_read_file(self, path: str, page: int = 1) -> dict[str, Any]:
         p = self._resolve(path)
         if not p.exists():
             return {"error": f"Файл не найден: {path}"}
@@ -88,37 +88,37 @@ class ToolExecutor:
             "path": path,
         }
 
-    def _tool_write_file(self, path: str, content: str) -> dict:
+    def _tool_write_file(self, path: str, content: str) -> dict[str, Any]:
         p = self._resolve(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         h = calc_hash(p)
         return {"written": path, "hash": h, "bytes": len(content.encode())}
 
-    def _tool_list_files(self, directory: str = ".", pattern: str = "*") -> dict:
+    def _tool_list_files(self, directory: str = ".", pattern: str = "*") -> dict[str, Any]:
         d = self._resolve(directory)
         if not d.exists():
             return {"error": f"Директория не найдена: {directory}"}
         files = [str(f.relative_to(self.root)) for f in d.glob(pattern) if f.is_file()]
         return {"files": sorted(files), "count": len(files)}
 
-    def _tool_calc_hash(self, path: str) -> dict:
+    def _tool_calc_hash(self, path: str) -> dict[str, Any]:
         p = self._resolve(path)
         if not p.exists():
             return {"error": f"Файл не найден: {path}"}
         return {"path": path, "hash": f"sha:{calc_hash(p)}"}
 
-    def _tool_get_context(self, ref: str, depth: str = "L1") -> dict:
+    def _tool_get_context(self, ref: str, depth: str = "L1") -> dict[str, Any]:
         return get_context(ref, self.root, depth=depth)
 
-    def _tool_update_master_hashes(self) -> dict:
+    def _tool_update_master_hashes(self) -> dict[str, Any]:
         master = self.project.entry.master_path
         if not master.exists():
             return {"error": "MASTER.md не найден"}
         n, warns = update_hashes(master)
         return {"updated": n, "warnings": warns}
 
-    def _tool_make_ref(self, path: str) -> dict:
+    def _tool_make_ref(self, path: str) -> dict[str, Any]:
         p = self._resolve(path)
         if not p.exists():
             return {"error": f"Файл не найден: {path}"}
@@ -128,18 +128,18 @@ class ToolExecutor:
 
     def _tool_create_task(
         self, title: str, description: str = "", priority: int = 5, context_refs: list[str] | None = None
-    ) -> dict:
+    ) -> dict[str, Any]:
         task = Task(title=title, description=description, priority=priority, context_refs=context_refs or [])
         self.project.add_task(task)
         return {"created": task.id, "title": task.title}
 
-    def _tool_complete_task(self, task_id: str, result: str = "") -> dict:
+    def _tool_complete_task(self, task_id: str, result: str = "") -> dict[str, Any]:
         t = self.project.update_task(task_id, status=TaskStatus.DONE, result=result)
         if not t:
             return {"error": f"Задача не найдена: {task_id}"}
         return {"done": task_id, "title": t.title}
 
-    def _tool_fail_task(self, task_id: str, reason: str) -> dict:
+    def _tool_fail_task(self, task_id: str, reason: str) -> dict[str, Any]:
         t = self.project.update_task(task_id, status=TaskStatus.FAILED, result=reason)
         if not t:
             return {"error": f"Задача не найдена: {task_id}"}
@@ -147,7 +147,7 @@ class ToolExecutor:
 
     # ── Git tools ─────────────────────────────────────────────────────────────
 
-    def _tool_git_commit(self, message: str, files: list[str] | None = None, branch: str | None = None) -> dict:
+    def _tool_git_commit(self, message: str, files: list[str] | None = None, branch: str | None = None) -> dict[str, Any]:
         root = str(self.root)
         try:
             if branch:
@@ -167,7 +167,7 @@ class ToolExecutor:
 
     # ── Meta tools ────────────────────────────────────────────────────────────
 
-    def _tool_ask_human(self, question: str, context: str = "") -> dict:
+    def _tool_ask_human(self, question: str, context: str = "") -> dict[str, Any]:
         self._blocked = True
         self._blocked_question = question
         if self.on_ask_human:
@@ -176,7 +176,7 @@ class ToolExecutor:
             return {"answer": answer}
         return {"blocked": True, "question": question, "context": context}
 
-    def _tool_get_project_status(self) -> dict:
+    def _tool_get_project_status(self) -> dict[str, Any]:
         return {
             "project": self.project.entry.name,
             "stats": self.project.stats(),
@@ -185,7 +185,7 @@ class ToolExecutor:
 
     # ── ChromaDB tools ────────────────────────────────────────────────────────
 
-    def _tool_search_documents(self, query: str, n_results: int = 5) -> dict:
+    def _tool_search_documents(self, query: str, n_results: int = 5) -> dict[str, Any]:
         if not self.chroma_path:
             return {"error": "ChromaDB не настроен. Укажите chroma_path в конфиге."}
         try:
@@ -204,7 +204,7 @@ class ToolExecutor:
         except Exception as e:
             return {"error": f"ChromaDB ошибка: {e}"}
 
-    def _tool_reindex_project(self) -> dict:
+    def _tool_reindex_project(self) -> dict[str, Any]:
         if not self.chroma_path:
             return {"error": "ChromaDB не настроен. Укажите chroma_path в конфиге."}
         try:

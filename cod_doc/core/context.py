@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cod_doc.core.hash_calc import calc_hash
 
@@ -19,8 +19,7 @@ REF_PATTERN = re.compile(
 INLINE_REF = re.compile(r"📁\s+\S+\s+\|\s+🗃️\s+\S+\s+\|\s+🔑\s+sha:[0-9a-f]{12}")
 PAGE_SIZE = 200  # строк
 
-
-def parse_ref(ref: str) -> dict:
+def parse_ref(ref: str) -> dict[str, Any]:
     m = REF_PATTERN.search(ref)
     if not m:
         raise ValueError(
@@ -35,7 +34,7 @@ def get_context(
     repo_root: Path,
     depth: str = "L1",
     page: int = 1,
-) -> dict:
+) -> dict[str, Any]:
     """
     Доставить содержимое файла по гибридной ссылке.
 

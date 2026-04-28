@@ -43,7 +43,7 @@ def update_hashes(master_path: Path) -> tuple[int, list[str]]:
     updated = 0
     warnings: list[str] = []
 
-    def replace_hash(m: re.Match) -> str:
+    def replace_hash(m: re.Match[str]) -> str:
         nonlocal updated
         rel = m.group("path").lstrip("/")
         target = repo_root / rel

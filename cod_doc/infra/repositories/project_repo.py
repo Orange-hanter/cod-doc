@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import select
 
 from cod_doc.domain.entities import Project
@@ -24,7 +26,7 @@ class ProjectRepository(BaseRepository[Project, ProjectModel]):
         )
 
     def _to_model(self, entity: Project) -> ProjectModel:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "slug": entity.slug,
             "title": entity.title,
             "root_path": entity.root_path,

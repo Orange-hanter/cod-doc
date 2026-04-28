@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -80,7 +80,7 @@ def reindex_project(
     base_url: str,
     embedding_model: str,
     single_file: Path | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """
     Проиндексировать файлы проекта в ChromaDB.
     Возвращает {'indexed': int, 'errors': list[str]}.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import select
 
 from cod_doc.domain.entities import Plan, PlanSection
@@ -26,7 +28,7 @@ class PlanRepository(BaseRepository[Plan, PlanModel]):
         )
 
     def _to_model(self, entity: Plan) -> PlanModel:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "project_id": entity.project_id,
             "scope": entity.scope,
             "principle": entity.principle,
@@ -63,7 +65,7 @@ class PlanSectionRepository(BaseRepository[PlanSection, PlanSectionModel]):
         )
 
     def _to_model(self, entity: PlanSection) -> PlanSectionModel:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "plan_id": entity.plan_id,
             "letter": entity.letter,
             "title": entity.title,

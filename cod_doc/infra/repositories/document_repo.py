@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import select
 
 from cod_doc.domain.entities import (
@@ -39,7 +41,7 @@ class DocumentRepository(BaseRepository[Document, DocumentModel]):
         )
 
     def _to_model(self, entity: Document) -> DocumentModel:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "project_id": entity.project_id,
             "doc_key": entity.doc_key,
             "path": entity.path,
@@ -96,7 +98,7 @@ class SectionRepository(BaseRepository[Section, SectionModel]):
         )
 
     def _to_model(self, entity: Section) -> SectionModel:
-        kwargs: dict = {
+        kwargs: dict[str, Any] = {
             "document_id": entity.document_id,
             "anchor": entity.anchor,
             "heading": entity.heading,

@@ -41,7 +41,7 @@ class AgentEvent:
         self.type = event_type  # thinking | tool_call | tool_result | message | done | error | blocked
         self.data = data
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"type": self.type, "data": self.data}
 
 
@@ -139,7 +139,7 @@ class Orchestrator:
         return [{"role": "user", "content": user_message}]
 
     async def _agent_loop(
-        self, messages: list[dict], task: Task
+        self, messages: list[dict[str, Any]], task: Task
     ) -> AsyncGenerator[AgentEvent, None]:
         """Основной цикл агент ↔ LLM ↔ инструменты."""
         while True:
