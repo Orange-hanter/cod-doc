@@ -10,6 +10,25 @@ cod-doc agent run        — запустить агент для проекта
 cod-doc serve            — запустить REST API сервер
 cod-doc hash calc        — вычислить хэш файла
 cod-doc hash update      — обновить хэши в MASTER.md
+cod-doc task list        — список задач
+cod-doc task show        — детали задачи
+cod-doc task create      — создать задачу
+cod-doc task status      — обновить статус задачи
+cod-doc task complete    — завершить задачу
+cod-doc plan show        — прогресс плана
+cod-doc plan ready       — готовые задачи
+cod-doc plan audit       — аудит плана
+cod-doc plan export      — экспорт markdown
+cod-doc plan critical-path — критический путь
+cod-doc plan forward     — цепочка prerequisites
+cod-doc plan reverse     — цепочка dependents
+cod-doc story list       — список историй
+cod-doc story show       — детали истории
+cod-doc story create     — создать историю
+cod-doc story status     — обновить статус истории
+cod-doc story add-criterion — добавить критерий приёмки
+cod-doc story link       — связать историю с задачей/документом
+cod-doc story coverage   — покрытие истории
 """
 
 from __future__ import annotations
@@ -21,6 +40,9 @@ from cod_doc.cli.cmd_hash import hash
 from cod_doc.cli.cmd_project import project
 from cod_doc.cli.cmd_serve import mcp_server, serve
 from cod_doc.cli.cmd_tui import tui, wizard
+from cod_doc.cli.plan import plan
+from cod_doc.cli.story import story
+from cod_doc.cli.task import task
 from cod_doc.config import Config
 from cod_doc.logging_config import setup_logging
 
@@ -44,6 +66,9 @@ main.add_command(agent)
 main.add_command(hash)
 main.add_command(serve)
 main.add_command(mcp_server)
+main.add_command(task)
+main.add_command(plan)
+main.add_command(story)
 
 
 if __name__ == "__main__":
