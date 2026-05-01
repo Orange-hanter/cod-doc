@@ -52,9 +52,27 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
         tools = await session.list_tools()
 
     tool_names = [tool.name for tool in tools.tools]
+    # legacy tools
     assert "list_projects" in tool_names
     assert "add_task" in tool_names
     assert "get_master" in tool_names
+    # COD-032: DB-backed tool groups
+    assert "task.list" in tool_names
+    assert "task.create" in tool_names
+    assert "task.complete" in tool_names
+    assert "doc.list" in tool_names
+    assert "doc.get" in tool_names
+    assert "doc.export" in tool_names
+    assert "plan.progress" in tool_names
+    assert "plan.ready" in tool_names
+    assert "plan.critical_path" in tool_names
+    assert "story.list" in tool_names
+    assert "story.create" in tool_names
+    assert "story.coverage" in tool_names
+    assert "link.list" in tool_names
+    assert "link.verify" in tool_names
+    assert "revision.list" in tool_names
+    assert "revision.revert" in tool_names
 
 
 @pytest.mark.anyio

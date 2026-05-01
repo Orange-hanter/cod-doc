@@ -5,6 +5,7 @@ Provides a complete LLM interface to COD-DOC:
 - Documentation operations (MASTER.md, hashes, references)
 - Context delivery (file access via hybrid refs, semantic search)
 - Agent orchestration (run tasks, autonomous mode)
+- DB-backed tools: doc.*, task.*, plan.*, story.*, link.*, revision.* (COD-032)
 """
 
 from __future__ import annotations
@@ -510,6 +511,27 @@ def onboard_project(project_name: str) -> str:
         "6. Run update_master_hashes to fix stale hashes\n"
         "7. Provide a summary of the documentation coverage and gaps"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DB-BACKED TOOLS — COD-032 (doc.*, task.*, plan.*, story.*, link.*, revision.*)
+# ══════════════════════════════════════════════════════════════════════════════
+
+from cod_doc.mcp.tools import (  # noqa: E402
+    doc_tools,
+    link_tools,
+    plan_tools,
+    revision_tools,
+    story_tools,
+    task_tools,
+)
+
+doc_tools.register(mcp)
+task_tools.register(mcp)
+plan_tools.register(mcp)
+story_tools.register(mcp)
+link_tools.register(mcp)
+revision_tools.register(mcp)
 
 
 @click.command()
