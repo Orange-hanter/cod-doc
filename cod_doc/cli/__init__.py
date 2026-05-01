@@ -29,6 +29,21 @@ cod-doc story status     — обновить статус истории
 cod-doc story add-criterion — добавить критерий приёмки
 cod-doc story link       — связать историю с задачей/документом
 cod-doc story coverage   — покрытие истории
+cod-doc doc list         — список документов
+cod-doc doc show         — детали документа
+cod-doc doc create       — создать документ
+cod-doc doc rename       — переименовать документ
+cod-doc doc body         — показать тело документа
+cod-doc doc export       — экспортировать на диск
+cod-doc doc drift        — проверить дрейф проекции
+cod-doc doc import       — импортировать из файла
+cod-doc link list        — список ссылок документа
+cod-doc link sync        — синхронизировать ссылки секции
+cod-doc link verify      — проверить ссылки секции
+cod-doc revision list    — история ревизий сущности
+cod-doc revision show    — детали ревизии
+cod-doc revision revert  — откатить ревизию
+cod-doc audit            — проверка frontmatter + дрейфа (FM-*/DR-*)
 """
 
 from __future__ import annotations
@@ -36,11 +51,15 @@ from __future__ import annotations
 import click
 
 from cod_doc.cli.cmd_agent import agent
+from cod_doc.cli.cmd_audit import audit
 from cod_doc.cli.cmd_hash import hash
 from cod_doc.cli.cmd_project import project
 from cod_doc.cli.cmd_serve import mcp_server, serve
 from cod_doc.cli.cmd_tui import tui, wizard
+from cod_doc.cli.doc import doc
+from cod_doc.cli.link import link
 from cod_doc.cli.plan import plan
+from cod_doc.cli.revision import revision
 from cod_doc.cli.story import story
 from cod_doc.cli.task import task
 from cod_doc.config import Config
@@ -69,6 +88,10 @@ main.add_command(mcp_server)
 main.add_command(task)
 main.add_command(plan)
 main.add_command(story)
+main.add_command(doc)
+main.add_command(link)
+main.add_command(revision)
+main.add_command(audit)
 
 
 if __name__ == "__main__":
