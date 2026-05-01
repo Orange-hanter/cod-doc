@@ -115,6 +115,46 @@ def test_validate_task_type_passes_known_values() -> None:
 
 
 # ============================================================================ #
+# validate_doc_path (path traversal guard)                                      #
+# ============================================================================ #
+
+
+@pytest.mark.parametrize(
+    "good",
+    [
+        "arch/data-model.md",
+        "docs/system/MASTER.md",
+        "foo.md",
+        "a/b/c/d.md",
+        "subdir/file.with.dots.md",
+    ],
+)
+def test_validate_doc_path_accepts_relative(good: str) -> None:
+    v.validate_doc_path(good)  # no raise
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "/etc/passwd",                       # POSIX absolute
+        "/Users/victim/.ssh/authorized_keys",
+        "../etc/passwd",                     # traversal
+        "../../../etc/passwd",               # deep traversal
+        "foo/../bar",                        # mid-path traversal
+        "foo/../../bar.md",
+        "C:\\Users\\victim\\file.txt",       # Windows absolute (rejected on any host)
+        "C:/Users/victim/file.txt",
+        "",                                  # empty
+        "   ",                               # whitespace only
+    ],
+)
+def test_validate_doc_path_rejects_unsafe(bad: str) -> None:
+    with pytest.raises(v.ValidationError) as exc:
+        v.validate_doc_path(bad)
+    assert exc.value.code == "SD-100"
+
+
+# ============================================================================ #
 # audit_task_title (advisory)                                                   #
 # ============================================================================ #
 

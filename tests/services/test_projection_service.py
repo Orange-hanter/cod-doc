@@ -303,3 +303,75 @@ def test_import_applies_frontmatter_field_changes(engine_with_schema, root_path:
         )
         assert doc is not None
         assert doc.status is DocumentStatus.ACTIVE
+
+
+# ============================================================================ #
+# Path traversal — defense-in-depth in projection_service                       #
+# ============================================================================ #
+
+
+def test_export_refuses_absolute_path_in_db(engine_with_schema, root_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """If a poisoned absolute path lands in document.path (bypassing validation),
+    export_document must refuse to write outside the project root.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+
+        # Poison the DB directly to simulate a row that bypassed validate_doc_path.
+        from cod_doc.infra.models import DocumentModel
+        model = session.get(DocumentModel, doc_id)
+        assert model is not None
+        model.path = "/etc/cod_doc_pwned"
+        session.flush()
+
+        with pytest.raises(proj.PathEscapeError):
+            proj.export_document(session, doc_id, root_path=root_path)
+
+        assert not Path("/etc/cod_doc_pwned").exists()
+
+
+def test_export_refuses_dotdot_path_in_db(engine_with_schema, root_path: Path, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """`..` segments must be rejected by the resolved-containment check."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+
+        from cod_doc.infra.models import DocumentModel
+        model = session.get(DocumentModel, doc_id)
+        assert model is not None
+        model.path = "../escaped.md"
+        session.flush()
+
+        with pytest.raises(proj.PathEscapeError):
+            proj.export_document(session, doc_id, root_path=root_path)
+
+        # Confirm no file landed in tmp_path's parent (the escape target).
+        assert not (tmp_path / "escaped.md").exists()
+
+
+def test_drift_refuses_absolute_path_in_db(engine_with_schema, root_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """detect_drift must also refuse to read poisoned out-of-root paths."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+
+        from cod_doc.infra.models import DocumentModel
+        model = session.get(DocumentModel, doc_id)
+        assert model is not None
+        model.path = "/etc/passwd"
+        session.flush()
+
+        with pytest.raises(proj.PathEscapeError):
+            proj.detect_drift(session, doc_id, root_path=root_path)
+
+
+def test_create_rejects_absolute_path() -> None:
+    """The primary write-path guard: validate_doc_path is invoked from doc_service.create."""
+    from cod_doc.services import validation
+    with pytest.raises(validation.ValidationError) as exc:
+        validation.validate_doc_path("/Users/victim/.ssh/authorized_keys")
+    assert exc.value.code == "SD-100"

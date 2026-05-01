@@ -431,3 +431,65 @@ def test_create_accepts_draft_without_owner(engine_with_schema) -> None:  # type
             author="human:dakh",
         )
         assert doc.row_id is not None
+
+
+def test_create_rejects_absolute_path(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """SD-100: doc_service.create must reject absolute paths (path traversal guard)."""
+    from cod_doc.services import validation
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _add_project(session)
+        with pytest.raises(validation.ValidationError) as exc:
+            docs.create(
+                session,
+                project_id=proj_id,
+                doc_key="evil",
+                type=DocumentType.GUIDE,
+                status=DocumentStatus.DRAFT,
+                title="evil",
+                author="human:test",
+                path="/etc/passwd",
+            )
+        assert exc.value.code == "SD-100"
+
+
+def test_create_rejects_traversal_in_default_path(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """If path is not given, default `<doc_key>.md` is also validated."""
+    from cod_doc.services import validation
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _add_project(session)
+        with pytest.raises(validation.ValidationError) as exc:
+            docs.create(
+                session,
+                project_id=proj_id,
+                doc_key="../../etc/passwd",
+                type=DocumentType.GUIDE,
+                status=DocumentStatus.DRAFT,
+                title="evil",
+                author="human:test",
+            )
+        assert exc.value.code == "SD-100"
+
+
+def test_rename_rejects_absolute_new_path(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """SD-100: doc_service.rename must reject absolute new_path."""
+    from cod_doc.services import validation
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _add_project(session)
+        doc = docs.create(
+            session, project_id=proj_id, doc_key="ok",
+            type=DocumentType.GUIDE, status=DocumentStatus.DRAFT,
+            title="ok", author="human:test",
+        )
+        assert doc.row_id is not None
+        with pytest.raises(validation.ValidationError) as exc:
+            docs.rename(
+                session,
+                document_id=doc.row_id,
+                new_doc_key="ok-renamed",
+                new_path="/etc/passwd",
+                author="human:test",
+            )
+        assert exc.value.code == "SD-100"

@@ -148,12 +148,14 @@ def create(
         owner=owner,
         frontmatter=frontmatter,
     )
+    effective_path = path or f"{doc_key}.md"
+    validation.validate_doc_path(effective_path)
     now = datetime.now(UTC)
     doc = DocumentRepository(session).add(
         Document(
             project_id=project_id,
             doc_key=doc_key,
-            path=path or f"{doc_key}.md",
+            path=effective_path,
             type=type,
             status=status,
             title=title,
@@ -328,6 +330,7 @@ def rename(
     old_key = doc.doc_key
     old_path = doc.path
     target_path = new_path or f"{new_doc_key}.md"
+    validation.validate_doc_path(target_path)
 
     if old_key == new_doc_key and old_path == target_path:
         no_change = DocumentRepository(session).get(document_id)

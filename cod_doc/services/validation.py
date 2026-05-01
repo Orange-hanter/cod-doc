@@ -30,6 +30,7 @@ Codes:
 - `FM-003` — `source_of_truth=false` without `canonical_source`
 - `FM-004` — `last_updated` is in the future
 - `FM-005` — `last_updated` older than 180 days for `status=active`
+- `SD-100` — document path is absolute, contains `..`, or escapes the project root
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
 from cod_doc.domain.entities import (
@@ -168,6 +170,40 @@ def validate_task_type(type_value: str) -> None:
             "use 'feature' instead of 'implementation'; "
             "split compound types into separate tasks",
             type=type_value,
+        )
+
+
+def validate_doc_path(path: str) -> None:
+    """Reject document paths that could escape the project root.
+
+    Document paths are stored verbatim and combined with the project's
+    `root_path` by `projection_service.export_document` via `root_path / path`.
+    Pathlib's `/` operator returns the right operand when it is absolute, so
+    an absolute or `..`-bearing path lets a caller break the containment
+    invariant and write outside the project tree. Rejected forms:
+      * empty / whitespace-only
+      * absolute (POSIX `/etc/foo` OR Windows `C:\\foo` — both checked
+        regardless of host OS, since the DB is portable)
+      * any segment equal to `..`
+    """
+    if not isinstance(path, str) or not path.strip():
+        raise ValidationError(
+            "SD-100",
+            "document path is empty",
+            path=path,
+        )
+    posix = PurePosixPath(path)
+    if posix.is_absolute() or PureWindowsPath(path).is_absolute():
+        raise ValidationError(
+            "SD-100",
+            f"document path must be relative, got {path!r}",
+            path=path,
+        )
+    if any(part == ".." for part in posix.parts):
+        raise ValidationError(
+            "SD-100",
+            f"document path must not contain '..' segments, got {path!r}",
+            path=path,
         )
 
 

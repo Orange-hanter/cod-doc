@@ -86,6 +86,35 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+class PathEscapeError(ValueError):
+    """Raised when a document's stored path resolves outside its project root.
+
+    This is a defense-in-depth guard. `validation.validate_doc_path` is the
+    primary check on the write-path; this guard catches DB rows that were
+    poisoned before the validator existed (or by any path that bypasses the
+    service layer).
+    """
+
+
+def _safe_target(root_path: Path, doc_path: str) -> Path:
+    """Compose root_path/doc_path, then verify the result stays under root.
+
+    Raises `PathEscapeError` if the resolved target is not contained in
+    the resolved root. This catches absolute paths, `..` segments, and
+    symlink-based escapes that slipped past `validate_doc_path`.
+    """
+    resolved_root = root_path.resolve()
+    target = (root_path / doc_path).resolve()
+    try:
+        target.relative_to(resolved_root)
+    except ValueError as exc:
+        raise PathEscapeError(
+            f"document path {doc_path!r} resolves outside project root "
+            f"({resolved_root}); refusing to read or write"
+        ) from exc
+    return target
+
+
 def _require_doc_model(session: Session, document_id: int) -> DocumentModel:
     m = session.get(DocumentModel, document_id)
     if m is None:
@@ -157,10 +186,10 @@ def export_document(
     Returns `ExportResult` with `written=False` on a skipped export.
     """
     model = _require_doc_model(session, document_id)
+    target = _safe_target(root_path, model.path)
     content = render_markdown(session, document_id)
     content_hash = _sha256(content)
 
-    target = root_path / model.path
     if not force and model.projection_hash == content_hash:
         return ExportResult(
             document_id=document_id,
@@ -198,10 +227,10 @@ def detect_drift(
     Returns a `DriftReport` with `status` ∈ `DriftStatus`.
     """
     model = _require_doc_model(session, document_id)
+    file_path = _safe_target(root_path, model.path)
     content = render_markdown(session, document_id)
     db_hash = _sha256(content)
 
-    file_path = root_path / model.path
     if not file_path.exists():
         return DriftReport(
             document_id=document_id,
