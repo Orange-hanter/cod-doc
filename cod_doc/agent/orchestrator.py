@@ -38,7 +38,9 @@ class AgentEvent:
     """Событие агента для стриминга в TUI/API."""
 
     def __init__(self, event_type: str, data: Any) -> None:
-        self.type = event_type  # thinking | tool_call | tool_result | message | done | error | blocked
+        self.type = (
+            event_type  # thinking | tool_call | tool_result | message | done | error | blocked
+        )
         self.data = data
 
     def to_dict(self) -> dict[str, Any]:
@@ -92,7 +94,9 @@ class Orchestrator:
             iterations += 1
             if iterations > self.config.max_iterations:
                 yield AgentEvent("error", "Превышен лимит итераций")
-                self.project.update_task(task.id, status=TaskStatus.FAILED, result="Max iterations exceeded")
+                self.project.update_task(
+                    task.id, status=TaskStatus.FAILED, result="Max iterations exceeded"
+                )
                 break
 
         self.project.set_status("idle")
@@ -102,7 +106,9 @@ class Orchestrator:
         Автономный режим: читает MASTER.md, формирует задачи, выполняет их.
         Возвращает после завершения всех текущих задач.
         """
-        yield AgentEvent("thinking", f"Запуск автономного режима для проекта: {self.project.entry.name}")
+        yield AgentEvent(
+            "thinking", f"Запуск автономного режима для проекта: {self.project.entry.name}"
+        )
 
         # Шаг 1: Проверить очередь
         task = self.project.next_pending_task()
@@ -115,7 +121,9 @@ class Orchestrator:
             task = self.project.next_pending_task()
 
         if not task:
-            yield AgentEvent("done", "Задач для выполнения не найдено. Проект в актуальном состоянии.")
+            yield AgentEvent(
+                "done", "Задач для выполнения не найдено. Проект в актуальном состоянии."
+            )
             return
 
         # Шаг 3: Выполнить задачу
@@ -126,7 +134,7 @@ class Orchestrator:
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
-    def _build_messages(self, task: Task) -> list[dict]:
+    def _build_messages(self, task: Task) -> list[dict[str, Any]]:
         """Построить начальные сообщения для задачи."""
         master_content = self.project.read_master() or "MASTER.md не найден."
         user_message = (
@@ -151,7 +159,7 @@ class Orchestrator:
             try:
                 llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
                 response = await with_retry(
-                    lambda msgs=llm_messages: self.client.chat.completions.create(
+                    lambda msgs=llm_messages: self.client.chat.completions.create(  # type: ignore[call-overload,misc]
                         model=self.config.model,
                         messages=msgs,
                         tools=TOOL_DEFINITIONS,
@@ -177,12 +185,16 @@ class Orchestrator:
                 if self.project._load_tasks():
                     tasks = [t for t in self.project._load_tasks() if t.id == task.id]
                     if tasks and tasks[0].status == TaskStatus.IN_PROGRESS:
-                        self.project.update_task(task.id, status=TaskStatus.DONE, result=content[:500])
+                        self.project.update_task(
+                            task.id, status=TaskStatus.DONE, result=content[:500]
+                        )
                 return
 
             # Обработка вызовов инструментов
             tool_results = []
             for tc in msg.tool_calls:
+                if tc.type != "function":
+                    continue
                 fn_name = tc.function.name
                 fn_args = tc.function.arguments
 
@@ -190,7 +202,9 @@ class Orchestrator:
 
                 # ask_human — единственный инструмент с async-путём
                 if fn_name == "ask_human" and self._async_on_ask_human is not None:
-                    args: dict = json.loads(fn_args) if isinstance(fn_args, str) else fn_args
+                    args: dict[str, Any] = (
+                        json.loads(fn_args) if isinstance(fn_args, str) else fn_args
+                    )
                     question = args.get("question", "")
                     context = args.get("context", "")
                     yield AgentEvent("blocked", question)
@@ -203,11 +217,13 @@ class Orchestrator:
                         return
 
                 yield AgentEvent("tool_result", {"name": fn_name, "result": result})
-                tool_results.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result,
-                })
+                tool_results.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    }
+                )
 
             messages.extend(tool_results)
 
@@ -228,10 +244,14 @@ class Orchestrator:
 
         try:
             llm_msgs = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
-            allowed = {t["function"]["name"] for t in TOOL_DEFINITIONS if t["function"]["name"] in ("create_task", "get_project_status")}
+            allowed = {
+                t["function"]["name"]
+                for t in TOOL_DEFINITIONS
+                if t["function"]["name"] in ("create_task", "get_project_status")
+            }
             tools_subset = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in allowed]
             response = await with_retry(
-                lambda: self.client.chat.completions.create(
+                lambda: self.client.chat.completions.create(  # type: ignore[call-overload]
                     model=self.config.model,
                     messages=llm_msgs,
                     tools=tools_subset,
@@ -246,6 +266,8 @@ class Orchestrator:
         msg = response.choices[0].message
         if msg.tool_calls:
             for tc in msg.tool_calls:
+                if tc.type != "function":
+                    continue
                 if tc.function.name == "create_task":
                     result = self.executor.execute("create_task", tc.function.arguments)
                     yield AgentEvent("tool_result", {"name": "create_task", "result": result})
@@ -255,6 +277,7 @@ class Orchestrator:
 
 
 # ── Daemon runner ─────────────────────────────────────────────────────────────
+
 
 async def run_daemon(config: Config, log_callback: Callable[[str], None] | None = None) -> None:
     """
