@@ -17,8 +17,10 @@ from cod_doc.api.deps import (
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.core.project import Project
-from cod_doc.domain.entities import TaskStatus
+from cod_doc.domain.entities import EntityKind, TaskStatus
 from cod_doc.services import doc_service as docs
+from cod_doc.services import plan_service as plans
+from cod_doc.services import revision_service as revisions
 from cod_doc.services import task_service as tasks
 
 router = APIRouter()
@@ -90,11 +92,83 @@ def index(
     )
 
 
+OVERVIEW_READY_LIMIT = 5
+OVERVIEW_REVISIONS_LIMIT = 5
+
+
 @router.get("/p/{slug}", response_class=HTMLResponse)
 def project_show(request: Request, slug: str) -> HTMLResponse:
     proj = get_project(slug)
     master = proj.read_master()
     master_preview, master_truncated = _preview(master, MASTER_PREVIEW_LINES)
+
+    # WEB-014 — overview aggregator: ready-to-start tasks, plan-progress
+    # mini-bars, recent revisions. Each block is independent and is left
+    # empty (not crashed) if the DB project isn't initialised yet.
+    ready_tasks: list[dict[str, Any]] = []
+    plan_rows: list[dict[str, Any]] = []
+    recent_revs: list[dict[str, Any]] = []
+    db_available = False
+
+    with try_open_project_db(slug) as (session, project_db_id):
+        if session is not None and project_db_id is not None:
+            db_available = True
+            project_plans = plans.list_for_project(session, project_db_id)
+            for plan in project_plans:
+                # `row_id` is Optional in the domain dataclass (used for
+                # not-yet-persisted entities); list_for_project always
+                # returns persisted rows.
+                assert plan.row_id is not None
+                progress = plans.recalc(session, plan.row_id)
+                plan_rows.append(
+                    {
+                        "plan_id": plan.row_id,
+                        "scope": plan.scope,
+                        "total": progress.total,
+                        "done": progress.done,
+                        "in_progress": progress.in_progress,
+                        "remaining": progress.remaining,
+                        "status": progress.status.value,
+                        "percent": (
+                            round(100 * progress.done / progress.total)
+                            if progress.total
+                            else 0
+                        ),
+                    }
+                )
+                # Top-N ready-to-start across all plans, capped overall.
+                if len(ready_tasks) < OVERVIEW_READY_LIMIT:
+                    for t in plans.ready(
+                        session, plan.row_id, limit=OVERVIEW_READY_LIMIT - len(ready_tasks)
+                    ):
+                        ready_tasks.append(
+                            {
+                                "task_id": t.task_id,
+                                "title": t.title,
+                                "type": t.type.value,
+                                "status": t.status.value,
+                                "priority": t.priority.value,
+                                "plan_id": t.plan_id,
+                                "section_id": t.section_id,
+                            }
+                        )
+
+            for r in revisions.list_recent_for_project(
+                session, project_db_id, limit=OVERVIEW_REVISIONS_LIMIT
+            ):
+                recent_revs.append(
+                    {
+                        "revision_id": r.revision_id,
+                        "entity_kind": r.entity_kind.value
+                        if isinstance(r.entity_kind, EntityKind)
+                        else str(r.entity_kind),
+                        "entity_id": r.entity_id,
+                        "author": r.author,
+                        "at": r.at,
+                        "reason": r.reason or "",
+                    }
+                )
+
     return templates.TemplateResponse(
         request,
         "project/show.html",
@@ -109,6 +183,10 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
             "stats": proj.stats(),
             "master_preview": master_preview,
             "master_truncated": master_truncated,
+            "db_available": db_available,
+            "ready_tasks": ready_tasks,
+            "plan_rows": plan_rows,
+            "recent_revs": recent_revs,
         },
     )
 

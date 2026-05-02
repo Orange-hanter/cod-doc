@@ -179,6 +179,79 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
 .section-body ul, .doc-preamble ul { margin: 0 0 8px; padding-left: 20px; }
 .doc-mode-toggle { margin-left: auto; }
 
+/* ── Overview agg blocks (project dashboard) ────────────────────────── */
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin: 0 0 20px;
+}
+.overview-block {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px 14px;
+  background: var(--bg);
+}
+.overview-block h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+.ready-list { list-style: none; padding: 0; margin: 0; }
+.ready-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.ready-row:last-child { border-bottom: 0; }
+.ready-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ready-complete { margin: 0; }
+.ready-complete button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  padding: 2px 8px;
+  font-size: 13px;
+  color: #1a7f37;
+}
+.ready-complete button:hover { background: #dafbe1; }
+
+.progress-bar {
+  display: inline-block;
+  width: 100px;
+  height: 8px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.progress-fill {
+  display: block;
+  height: 100%;
+  background: #1f883d;
+  transition: width 0.2s ease;
+}
+
+.rev-list { list-style: none; padding: 0; margin: 0; }
+.rev-list li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rev-list li:last-child { border-bottom: 0; }
+.rev-list .ts { margin-left: auto; }
+
 .filter-bar {
   display: flex;
   align-items: center;

@@ -32,6 +32,7 @@ from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import TaskStatus
 from cod_doc.services import task_service as tasks
 from cod_doc.services.revision_service import RevisionConflictError
+from cod_doc.services.task_service import TaskAlreadyDoneError, TaskBlockedError
 
 router = APIRouter()
 
@@ -125,6 +126,72 @@ def task_status_update(
     # browser refresh doesn't re-submit the form. Surface inline_alert via
     # cookie-flash when present.
     redirect = RedirectResponse(url=f"/p/{proj.entry.name}/tasks", status_code=303)
+    if inline_alert is not None:
+        severity, message = inline_alert
+        redirect.set_cookie("flash_severity", severity, max_age=30, path="/")
+        redirect.set_cookie(
+            "flash_message",
+            quote(truncate_for_cookie(message)),
+            max_age=30,
+            path="/",
+        )
+    return redirect
+
+
+@router.post("/p/{slug}/tasks/{task_id}/complete", response_class=HTMLResponse)
+def task_complete(
+    request: Request,
+    slug: str,
+    task_id: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> Response:
+    """Mark a task done — endpoint for the Ready-block ✓ button (WEB-014).
+
+    Errors get the same alert pipeline as `task_status_update`:
+    - HTMX → returns the row plus an OOB alert,
+    - Form post → 303 with cookie-flash.
+    """
+    proj = get_project(slug)
+    session, project_db_id = db
+
+    existing = tasks.get(session, task_id)
+    if existing is None or existing.project_id != project_db_id:
+        raise NotFoundWebError(f"Задача не найдена: {task_id}")
+
+    inline_alert: tuple[str, str] | None = None
+    try:
+        updated = tasks.complete(
+            session,
+            task_id=task_id,
+            author="human:web",
+            reason="web ready-block complete",
+        )
+        session.commit()
+    except TaskAlreadyDoneError as exc:
+        session.rollback()
+        updated = existing
+        inline_alert = ("info", f"already done: {exc}")
+    except TaskBlockedError as exc:
+        session.rollback()
+        updated = existing
+        inline_alert = ("warning", f"blocked: {exc}")
+    except RevisionConflictError as exc:
+        session.rollback()
+        updated = existing
+        inline_alert = ("warning", f"conflict: {exc}")
+    except (IntegrityError, ValueError) as exc:
+        session.rollback()
+        updated = existing
+        inline_alert = ("error", str(exc))
+
+    if _is_htmx(request):
+        return _render_task_row(
+            request,
+            project_name=proj.entry.name,
+            task=updated,
+            inline_alert=inline_alert,
+        )
+    redirect = RedirectResponse(url=f"/p/{proj.entry.name}", status_code=303)
     if inline_alert is not None:
         severity, message = inline_alert
         redirect.set_cookie("flash_severity", severity, max_age=30, path="/")

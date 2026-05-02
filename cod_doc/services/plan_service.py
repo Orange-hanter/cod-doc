@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select, text
 
-from cod_doc.domain.entities import Priority, Task, TaskStatus
+from cod_doc.domain.entities import Plan, Priority, Task, TaskStatus
 from cod_doc.infra.models import (
     DependencyModel,
     PlanModel,
@@ -137,6 +137,33 @@ def _require_plan(session: Session, plan_id: int) -> PlanModel:
     if model is None:
         raise PlanNotFoundError(f"plan #{plan_id}")
     return model
+
+
+def list_for_project(session: Session, project_id: int) -> list[Plan]:
+    """All plans owned by the project, ordered by `created` (oldest first).
+
+    Lightweight read helper for the overview dashboard (WEB-014); recalc
+    is done lazily per-plan only when the caller actually needs progress.
+    """
+    stmt = (
+        select(PlanModel)
+        .where(PlanModel.project_id == project_id)
+        .order_by(PlanModel.created.asc(), PlanModel.row_id.asc())
+    )
+    return [
+        Plan(
+            row_id=m.row_id,
+            project_id=m.project_id,
+            scope=m.scope,
+            principle=m.principle,
+            module_id=m.module_id,
+            parent_doc_id=m.parent_doc_id,
+            completed_log_id=m.completed_log_id,
+            created=m.created,
+            last_updated=m.last_updated,
+        )
+        for m in session.execute(stmt).scalars()
+    ]
 
 
 def _derive_status(total: int, done: int, in_progress: int) -> DerivedStatus:

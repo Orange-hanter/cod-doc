@@ -69,7 +69,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/docs/{doc_key:path}/sections/{anchor}` | HTMX-патч секции (form-encoded body) | `doc_service.patch_section` | ❌ | WEB-012 |
 | `GET /p/{slug}/tasks` | Таблица задач (фильтр `?status=`, `?plan=`) | `task_service.list_for_project` | ✅ | WEB-010 |
 | `POST /p/{slug}/tasks/{task_id}/status` | HTMX-смена статуса (radio/select) | `task_service.update_status` | ✅ | WEB-011 |
-| `POST /p/{slug}/tasks/{task_id}/complete` | HTMX-завершение задачи | `task_service.complete` | ❌ | WEB-014 |
+| `POST /p/{slug}/tasks/{task_id}/complete` | HTMX-завершение задачи | `task_service.complete` | ✅ | WEB-014 |
 | `GET /p/{slug}/plans/{plan_id}` | Plan view: Progress Overview + Next Batch + Mermaid | `plan_service.recalc/ready/export` | ❌ | WEB-004 |
 | `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `revision_service.list_for_entity` | ❌ | WEB-021 |
 | `GET /p/{slug}/run` | SSE-стрим запуска агента | переиспользует `Orchestrator.run_autonomous` (см. [routes.py](../../../cod_doc/api/routes.py)) | ❌ | WEB-030 |

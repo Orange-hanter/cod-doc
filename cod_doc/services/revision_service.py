@@ -132,6 +132,27 @@ def list_for_entity(session: Session, entity_kind: EntityKind, entity_id: int) -
     return [_to_domain(m) for m in session.execute(stmt).scalars()]
 
 
+def list_recent_for_project(
+    session: Session,
+    project_id: int,
+    *,
+    limit: int = 5,
+) -> list[Revision]:
+    """Most recent revisions across all entities of a project, newest → oldest.
+
+    Used by the project overview dashboard (WEB-014). `RevisionModel` carries
+    `project_id` directly, so this is a single index-supported query — no
+    join chain through entity tables needed.
+    """
+    stmt = (
+        select(RevisionModel)
+        .where(RevisionModel.project_id == project_id)
+        .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
+        .limit(limit)
+    )
+    return [_to_domain(m) for m in session.execute(stmt).scalars()]
+
+
 class RevertNotSupportedError(NotImplementedError):
     """Raised for revision ops or entity kinds that cannot be auto-reverted."""
 

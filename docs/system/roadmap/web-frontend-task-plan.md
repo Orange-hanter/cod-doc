@@ -31,13 +31,13 @@ related_audits:
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
-| B: Read views | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-010, 006 ✅; 004, 014, 021, 060) |
+| B: Read views | inline | 6 | 3 | 3 | 🔄 in-progress (WEB-010, 006, 014 ✅; 004, 021, 060) |
 | C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
 | F: Hardening (NEW 2026-05-02) | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-005, 013 ✅; 050..053 pending) |
 | F-tail: Polish from checkpoint | inline | 3 | 3 | 0 | ✅ done (WEB-013b, 022b, 054) |
-| **TOTAL** |  | **26** | **14** | **12** | |
+| **TOTAL** |  | **26** | **15** | **11** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -826,30 +826,43 @@ affected_files:
 id: WEB-014
 title: "Implement: overview dashboard agg (ready/progress/recent)"
 section: B-Read-Views
-status: pending
+status: done
 depends_on: [WEB-005, WEB-010]
 type: feature
 priority: medium
 affected_files:
-  - cod_doc/api/web/pages.py
-  - cod_doc/templates/web/project/show.html
-  - cod_doc/templates/web/_frag/ready_block.html
-  - cod_doc/templates/web/_frag/recent_revisions.html
-  - tests/api/test_web_scaffold.py
+  - cod_doc/services/plan_service.py            # list_for_project
+  - cod_doc/services/revision_service.py        # list_recent_for_project
+  - cod_doc/api/web/pages.py                     # overview agg
+  - cod_doc/api/web/fragments.py                 # POST .../complete
+  - cod_doc/templates/web/project/show.html      # 3 agg blocks
+  - cod_doc/static/app.css                       # .overview-grid + .progress-bar
+  - tests/api/test_web_overview.py               # NEW (8 tests)
 ```
 
-**Description:** Дашборд `/p/{slug}` показывает только KPI-карточки. Агрегатных
-блоков (ready-to-start tasks, plan progress, recent revisions) нет —
-продуктивность ниже CLI-команды `cod-doc plan ready` (SW-ME-7).
+**Description:** Дашборд `/p/{slug}` показывал только KPI-карточки. Добавлены
+3 агрегатных блока (ready / plan-progress / recent revisions) + HTMX-кнопка
+✓ в блоке Ready (SW-ME-7).
 
 **Acceptance:**
-- Блок «Ready to start» — top-5 из `plan_service.ready` (если плана нет — пусто).
-- Блок «Plan progress» — мини-таблица `plan_service.recalc` по каждому плану.
-- Блок «Recent revisions» — top-5 из `revision_service.list_for_entity` (или
-  агрегата всех ревизий).
-- Endpoint `POST /p/{slug}/tasks/{task_id}/complete` — HTMX-кнопка ✓ в блоке Ready.
-- 3 теста: ready-блок виден на seed-проекте, complete POST работает,
-  пустой проект не падает.
+- ✅ `plan_service.list_for_project(session, project_id)` — все планы проекта.
+- ✅ `revision_service.list_recent_for_project(session, project_id, limit=5)` —
+  newest-first через `RevisionModel.project_id` (single index-supported query,
+  без join chain).
+- ✅ `pages.project_show` собирает: top-5 ready (across all plans, capped),
+  per-plan progress (recalc → done/total + percent), top-5 revisions.
+  Пустой/неинициализированный DB — graceful: блоки не рендерятся, выводится
+  «Дашборд агрегата пуст».
+- ✅ `POST /p/{slug}/tasks/{task_id}/complete` в `fragments.py` — единый
+  alert-pipeline: `TaskAlreadyDoneError → info`, `TaskBlockedError → warning`,
+  `RevisionConflictError → warning`, `IntegrityError/ValueError → error`.
+  HTMX-fragment + form-post 303 + cookie-flash.
+- ✅ 8 новых тестов: ready/progress/recent rendering, complete HTMX swap,
+  complete form-post 303, already-done info-alert, unknown-task 404 alert,
+  empty-DB placeholder.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`): закрывает SW-ME-7 в audit
+> 2026-05-02. Suite 102 web-tests; ruff/mypy clean.
 
 ### WEB-060
 

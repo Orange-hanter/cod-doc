@@ -39,6 +39,86 @@
   </div>
 </section>
 
+{% if db_available %}
+<section class="overview-grid">
+  <div class="overview-block">
+    <h2>Ready to start</h2>
+    {% if ready_tasks %}
+    <ul class="ready-list">
+      {% for t in ready_tasks %}
+      <li class="ready-row" id="task-{{ t.task_id }}">
+        <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
+        <a class="ready-title" href="/p/{{ project.name }}/tasks">
+          <span class="mono">{{ t.task_id }}</span> · {{ t.title }}
+        </a>
+        <span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>
+        <form class="ready-complete"
+              method="post"
+              action="/p/{{ project.name }}/tasks/{{ t.task_id }}/complete">
+          <button type="submit"
+                  hx-post="/p/{{ project.name }}/tasks/{{ t.task_id }}/complete"
+                  hx-target="#task-{{ t.task_id }}"
+                  hx-swap="outerHTML"
+                  title="Mark done">✓</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Нет задач, готовых к старту.</p>
+    {% endif %}
+  </div>
+
+  <div class="overview-block">
+    <h2>Plan progress</h2>
+    {% if plan_rows %}
+    <table class="grid">
+      <thead>
+        <tr><th>Plan</th><th class="num">Done</th><th class="num">Total</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for p in plan_rows %}
+        <tr>
+          <td class="mono">{{ p.scope }}</td>
+          <td class="num">{{ p.done }}</td>
+          <td class="num">{{ p.total }}</td>
+          <td>{{ p.status }}</td>
+          <td>
+            <div class="progress-bar" title="{{ p.percent }}%">
+              <span class="progress-fill" style="width: {{ p.percent }}%"></span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Планов в этом проекте пока нет.</p>
+    {% endif %}
+  </div>
+
+  <div class="overview-block">
+    <h2>Recent revisions</h2>
+    {% if recent_revs %}
+    <ul class="rev-list">
+      {% for r in recent_revs %}
+      <li>
+        <span class="mono">{{ r.entity_kind }}#{{ r.entity_id }}</span>
+        <span class="muted">— {{ r.author }}</span>
+        {% if r.reason %}<span class="muted">: {{ r.reason }}</span>{% endif %}
+        <span class="muted ts">{{ r.at }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Ревизий пока нет.</p>
+    {% endif %}
+  </div>
+</section>
+{% else %}
+<p class="muted">Дашборд агрегата пуст: <code>.cod-doc/state.db</code> ещё не создан.</p>
+{% endif %}
+
 <h2>{{ project.master_md }}</h2>
 {% if not project.master_exists %}
   <p class="warn">{{ project.master_md }} ещё не создан.</p>
