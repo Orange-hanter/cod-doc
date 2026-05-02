@@ -144,12 +144,29 @@ def list_recent_for_project(
     `project_id` directly, so this is a single index-supported query — no
     join chain through entity tables needed.
     """
-    stmt = (
-        select(RevisionModel)
-        .where(RevisionModel.project_id == project_id)
-        .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
-        .limit(limit)
-    )
+    return list_for_project(session, project_id, limit=limit)
+
+
+def list_for_project(
+    session: Session,
+    project_id: int,
+    *,
+    limit: int = 50,
+    entity_kind: EntityKind | None = None,
+    entity_id: int | None = None,
+) -> list[Revision]:
+    """Newest-first revisions of a project, optionally narrowed to one entity.
+
+    Used by the revisions log page (WEB-021). When both `entity_kind` and
+    `entity_id` are passed, behaves like `list_for_entity` but order is
+    flipped to newest-first to match the timeline UX.
+    """
+    stmt = select(RevisionModel).where(RevisionModel.project_id == project_id)
+    if entity_kind is not None:
+        stmt = stmt.where(RevisionModel.entity_kind == entity_kind.value)
+    if entity_id is not None:
+        stmt = stmt.where(RevisionModel.entity_id == entity_id)
+    stmt = stmt.order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc()).limit(limit)
     return [_to_domain(m) for m in session.execute(stmt).scalars()]
 
 

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Revisions · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>Revisions</span></nav>
+
+<h1>{{ project.name }} · Revisions</h1>
+
+{% with slug=project.name, active="revisions" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<form class="filter-bar" method="get" action="/p/{{ project.name }}/revisions">
+  <label>Entity:
+    <select name="entity_kind" onchange="this.form.submit()">
+      <option value="" {% if not entity_kind %}selected{% endif %}>(all)</option>
+      {% for k in kind_options %}
+        <option value="{{ k }}" {% if entity_kind == k %}selected{% endif %}>{{ k }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if entity_kind %}
+  <label>ID:
+    <input type="number" name="entity_id" value="{{ entity_id or '' }}" min="1" placeholder="42">
+  </label>
+  {% endif %}
+  <noscript><button type="submit">Apply</button></noscript>
+  {% if entity_kind or entity_id %}
+    <a class="muted" href="/p/{{ project.name }}/revisions">clear</a>
+  {% endif %}
+</form>
+
+{% if kind_invalid %}
+  <p class="warn">Неизвестное значение entity_kind — фильтр проигнорирован.</p>
+{% endif %}
+
+{% if not db_available %}
+  <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug не совпадает с <code>project.slug</code> в БД.</p>
+{% elif not revisions %}
+  <p class="muted">Ревизий пока нет{% if entity_kind %} для <code>{{ entity_kind }}</code>{% endif %}.</p>
+{% else %}
+<table class="grid">
+  <thead>
+    <tr>
+      <th>Revision</th>
+      <th>Entity</th>
+      <th>Author</th>
+      <th>At</th>
+      <th>Reason</th>
+      <th>Diff (first line)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in revisions %}
+    <tr>
+      <td class="mono">{{ r.revision_id }}</td>
+      <td class="mono">{{ r.entity_kind }}#{{ r.entity_id }}</td>
+      <td>{{ r.author }}</td>
+      <td class="muted">{{ r.at }}</td>
+      <td>{{ r.reason }}</td>
+      <td class="mono diff-preview">{{ r.diff_preview }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="muted">{{ revisions | length }} revision{% if revisions | length != 1 %}s{% endif %} (newest first, latest {{ limit }}).</p>
+{% endif %}
+{% endblock %}

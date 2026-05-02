@@ -56,14 +56,15 @@ def test_overview_tab_active_others_live_or_disabled(tabs_client) -> None:
     block = _extract_tabs_block(r.text)
     # Overview is active
     assert re.search(r'<a[^>]*class="active"[^>]*href="/p/demo"[^>]*>Overview</a>', block)
-    # Docs / Tasks are live (anchors)
+    # Docs / Tasks / Revisions are live (anchors)
     assert 'href="/p/demo/docs"' in block
     assert 'href="/p/demo/tasks"' in block
-    # Plans / Revisions / Run are disabled (no href)
+    assert 'href="/p/demo/revisions"' in block
+    # Plans / Run are still disabled (no href)
     assert 'class="tab-disabled"' in block
     assert "coming soon" in block
     # Disabled labels still appear
-    for label in ("Plans", "Revisions", "Run"):
+    for label in ("Plans", "Run"):
         assert f">{label}</span>" in block
 
 
@@ -89,8 +90,8 @@ def test_disabled_tabs_have_no_href(tabs_client) -> None:
     r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
     block = _extract_tabs_block(r.text)
-    # No anchor target should resolve to /plans, /revisions, /run.
-    for slug in ("plans", "revisions", "run"):
+    # No anchor target should resolve to /plans or /run (still disabled).
+    for slug in ("plans", "run"):
         assert f'href="/p/demo/{slug}"' not in block, (
             f"disabled tab '{slug}' must not emit a href"
         )

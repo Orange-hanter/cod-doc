@@ -31,13 +31,13 @@ related_audits:
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
-| B: Read views | inline | 6 | 3 | 3 | 🔄 in-progress (WEB-010, 006, 014 ✅; 004, 021, 060) |
+| B: Read views | inline | 6 | 4 | 2 | 🔄 in-progress (WEB-010, 006, 014, 021 ✅; 004, 060) |
 | C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
 | F: Hardening (NEW 2026-05-02) | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-005, 013 ✅; 050..053 pending) |
 | F-tail: Polish from checkpoint | inline | 3 | 3 | 0 | ✅ done (WEB-013b, 022b, 054) |
-| **TOTAL** |  | **26** | **15** | **11** | |
+| **TOTAL** |  | **26** | **16** | **10** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -295,13 +295,41 @@ priority: medium
 id: WEB-021
 title: "Implement: revisions log"
 section: B-Read-Views
-status: pending
+status: done
 depends_on: [WEB-002]
 type: feature
 priority: medium
+affected_files:
+  - cod_doc/services/revision_service.py        # list_for_project (filtered)
+  - cod_doc/api/web/pages.py                     # revisions_log handler
+  - cod_doc/templates/web/project/revisions.html # NEW
+  - cod_doc/templates/web/_layout/project_tabs.html  # revisions tab → ready
+  - cod_doc/static/app.css                       # .diff-preview
+  - tests/api/test_web_revisions.py              # NEW (6 tests)
 ```
 
-**Description:** `GET /p/{slug}/revisions?entity_kind=&entity_id=` — список ревизий через `RevisionService.list_for_entity`. Diff-render — pre-formatted JSON-patch на этом этапе (без визуального diff-виджета).
+**Description:** `GET /p/{slug}/revisions?entity_kind=&entity_id=` — список
+ревизий проекта через `revision_service.list_for_project` (filtered).
+Diff показывается одной первой строкой (truncated) — полноценный diff-render
+будет в P-8 backlog idea при необходимости.
+
+**Acceptance:**
+- ✅ `revision_service.list_for_project(session, project_id, *, limit, entity_kind, entity_id)`
+  — newest-first; поддерживает narrowing по kind/id. `list_recent_for_project`
+  оставлен thin wrapper.
+- ✅ `pages.revisions_log` handler с `?entity_kind` + `?entity_id` query.
+  Невалидный kind → warning + fallback к «all».
+- ✅ Шаблон `revisions.html` с filter-bar (kind dropdown + id input при
+  выбранном kind) и таблицей (revision_id, entity, author, at, reason,
+  diff first line).
+- ✅ Revisions tab переведён в `ready=True` в `_layout/project_tabs.html`.
+- ✅ 6 новых тестов: render seed history, filter by kind, filter by kind+id,
+  invalid kind warning, db-absent warning, 404 unknown project. Также
+  обновлены `test_web_tabs.py` / `test_web_scaffold.py` (Revisions больше
+  не disabled).
+- ✅ Suite 108 web-tests; ruff/mypy clean.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`).
 
 ---
 

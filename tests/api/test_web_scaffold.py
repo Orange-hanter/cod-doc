@@ -100,12 +100,11 @@ def test_project_show_renders(web_client) -> None:
     # ready tabs link to live routes
     assert f'href="/p/{entry.name}/docs"' in r.text
     assert f'href="/p/{entry.name}/tasks"' in r.text
+    assert f'href="/p/{entry.name}/revisions"' in r.text
     # not-yet-implemented tabs render as disabled spans (WEB-041) — no href
     assert f'href="/p/{entry.name}/plans"' not in r.text
-    assert f'href="/p/{entry.name}/revisions"' not in r.text
     assert f'href="/p/{entry.name}/run"' not in r.text
     assert ">Plans<" in r.text  # label still visible
-    assert ">Revisions<" in r.text
     assert ">Run<" in r.text
     assert 'class="tab-disabled"' in r.text
     # stats card labels

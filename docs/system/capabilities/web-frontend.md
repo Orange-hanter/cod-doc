@@ -71,7 +71,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/tasks/{task_id}/status` | HTMX-смена статуса (radio/select) | `task_service.update_status` | ✅ | WEB-011 |
 | `POST /p/{slug}/tasks/{task_id}/complete` | HTMX-завершение задачи | `task_service.complete` | ✅ | WEB-014 |
 | `GET /p/{slug}/plans/{plan_id}` | Plan view: Progress Overview + Next Batch + Mermaid | `plan_service.recalc/ready/export` | ❌ | WEB-004 |
-| `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `revision_service.list_for_entity` | ❌ | WEB-021 |
+| `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `revision_service.list_for_project` | ✅ | WEB-021 |
 | `GET /p/{slug}/run` | SSE-стрим запуска агента | переиспользует `Orchestrator.run_autonomous` (см. [routes.py](../../../cod_doc/api/routes.py)) | ❌ | WEB-030 |
 | `GET /settings`, `POST /settings` | Просмотр + сохранение конфига (API-ключ маскирован) | `Config.load/save` | ❌ | WEB-020 / WEB-060 |
 | `GET /static/{path:path}` | Статика | StaticFiles mount | ✅ | WEB-001 |
