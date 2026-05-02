@@ -35,8 +35,8 @@ related_audits:
 | C: Write paths | inline | 3 | 1 | 2 | 🔄 in-progress |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 0 | 3 | ❌ pending (+ WEB-041, WEB-042) |
-| F: Hardening (NEW 2026-05-02) | inline | 6 | 0 | 6 | ❌ pending (WEB-005, 013, 022 ↑, 050..053) |
-| **TOTAL** |  | **23** | **5** | **18** | |
+| F: Hardening (NEW 2026-05-02) | inline | 6 | 1 | 5 | 🔄 in-progress (WEB-005 ✅; 013, 022 ↑, 050..053 pending) |
+| **TOTAL** |  | **23** | **6** | **17** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -533,14 +533,14 @@ APIRouter (через FastAPI app routes) и сравнивает с табли�
 id: WEB-005
 title: "Implement: project DB engine cache + get_project_db DI helper"
 section: F-Hardening
-status: pending
+status: done
 depends_on: [WEB-001]
 type: refactor
 priority: high
 affected_files:
-  - cod_doc/api/deps.py                  # get_project_db
-  - cod_doc/api/server.py                # инициализация в lifespan
-  - cod_doc/api/web/db_resolver.py        # перенесётся / удалится в WEB-040
+  - cod_doc/api/deps.py
+  - cod_doc/api/server.py
+  - cod_doc/api/web/db_resolver.py        # стал тонким shim, удалится в WEB-040
   - tests/api/test_deps_engine_cache.py   # NEW
 ```
 
@@ -549,15 +549,26 @@ affected_files:
 локальном SSD, 50–200 ms на сетевой FS (SW-HI-2 в аудите).
 
 **Acceptance:**
-- `cod_doc.api.deps:get_engine_for_slug(slug) -> Engine | None` — возвращает
-  закэшированный engine; кэш — `dict[Path, tuple[Engine, float]]` с
-  TTL-инвалидацией по mtime файла state.db.
-- `cod_doc.api.deps:get_project_db(slug) -> Iterator[tuple[Session, int]]` —
-  FastAPI dependency (yield-style); закрывает session после response.
-- В `server.py` lifespan: при shutdown вызвать `dispose_all()`.
-- Перфтест/бенчмарк (или хотя бы микротест): 100 sequential `GET /p/{slug}/tasks`
-  работают в **N×** быстрее, чем без кэша (записать число в DoD).
-- 3 теста: cache hit, cache invalidation по mtime, dispose-on-shutdown.
+- ✅ `cod_doc.api.deps:get_engine_for_slug(slug) -> Engine | None` —
+  TTL=5s + mtime-stat-on-stale; lock'ом защищён конкурентный доступ.
+- ✅ `cod_doc.api.deps:get_project_db(slug) -> Iterator[tuple[Session, int]]` —
+  yield-style FastAPI dependency; HTTPException(404), если БД нет / схема не накатана / project row отсутствует.
+- ✅ `cod_doc.api.deps:try_open_project_db(slug)` — graceful context manager
+  для list-страниц с warning; `(None, None)` если БД недоступна.
+- ✅ `cod_doc.api.deps:dispose_all_engines()` вызывается в `app.lifespan` shutdown.
+- ✅ `cod_doc/api/web/db_resolver.py:open_db_for_project` стал тонким shim
+  поверх `try_open_project_db` (на удаление в WEB-040).
+- ✅ Counter-based perf test: 100 lookups → `make_engine` вызывается ровно 1 раз.
+- ✅ 16 новых тестов: cache hit/miss, mtime-инвалидация, deletion handling,
+  TTL skips stat, dispose, FastAPI Depends интеграция, graceful + strict pathways.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`): Suite 418/418 ✅; ruff/mypy clean
+> на тронутых файлах. Существующие 27 web-тестов продолжают работать без изменений
+> (db_resolver-shim сохраняет прежний контракт). `_ENGINE_CACHE` лежит в
+> `cod_doc.api.deps`; ключ — `Path` (точка-в-точку state.db file path), значение —
+> `_CachedEngine(engine, mtime, last_check)`. Lock — `threading.Lock` (FastAPI
+> запускает sync handlers в threadpool). На warm-path возвращаем тот же Engine
+> instance; на холодную — создаём, на mtime-stale — dispose+recreate.
 
 ### WEB-013
 

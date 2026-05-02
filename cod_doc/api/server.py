@@ -14,7 +14,12 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from cod_doc.agent.orchestrator import run_daemon
-from cod_doc.api.deps import get_daemon_task, set_config, set_daemon_task
+from cod_doc.api.deps import (
+    dispose_all_engines,
+    get_daemon_task,
+    set_config,
+    set_daemon_task,
+)
 from cod_doc.api.routes import router as core_router
 from cod_doc.api.web import fragments_router, pages_router
 from cod_doc.api.web.templates_env import STATIC_DIR
@@ -41,6 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     daemon = get_daemon_task()
     if daemon:
         daemon.cancel()
+    dispose_all_engines()
 
 
 app = FastAPI(
