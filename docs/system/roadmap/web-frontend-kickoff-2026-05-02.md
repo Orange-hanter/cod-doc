@@ -32,8 +32,13 @@ audience: [next-session-agent, contributors]
   WEB-014 (overview agg + complete), WEB-021 (revisions log) ✅.
   13 / 16 находок baseline закрыты; suite 441 → 483; endpoints 5→8/14;
   checkpoint #2 → [batch-2](../audit/2026-05-02-checkpoint-web-batch-2.md).
-- **Следующий шаг:** WEB-004 (plan view + Mermaid). Закрывает Section B
-  до 5/6, делает Plans-таб live. Самый объёмный из остатков.
+- **Batch-3 закрыт 2026-05-02:** WEB-004 (plan view), WEB-060 (settings),
+  WEB-051 (asset versioning) ✅. **Section B closed (6/6).**
+  14 / 16 находок baseline закрыты; suite 483 → 500; endpoints 8→10/14;
+  checkpoint #3 → [batch-3](../audit/2026-05-02-checkpoint-web-batch-3.md).
+- **Следующий шаг:** WEB-012 (HTMX section patch). Закрывает Section C
+  до 3/3 и `POST /docs/.../sections/{anchor}` endpoint. Использует
+  готовые alert/Depends паттерны.
 
 ## 2. Где что лежит
 
@@ -66,21 +71,21 @@ audience: [next-session-agent, contributors]
 | WEB-054 | flash_message length cap | F | ✅ done 2026-05-02 | low |
 | WEB-014 | Overview agg + complete | B | ✅ done 2026-05-02 | medium |
 | WEB-021 | Revisions log | B | ✅ done 2026-05-02 | medium |
-| **WEB-004** | **Plan view + Mermaid** | **B** | **❌ next** | **high** |
-| WEB-012 | Section patch HTMX | C | ❌ pending | high |
-| WEB-060 | Settings page | B | ❌ pending | medium |
+| WEB-004 | Plan view + Mermaid | B | ✅ done 2026-05-02 | high |
+| WEB-060 | Settings page | B | ✅ done 2026-05-02 | medium |
+| WEB-051 | Asset versioning | F | ✅ done 2026-05-02 | low |
+| **WEB-012** | **Section patch HTMX** | **C** | **❌ next** | **high** |
 | WEB-030 | SSE run console | D | ❌ pending | medium |
 | WEB-031 | Import progress | D | ❌ pending | low |
 | WEB-042 | Doc/code §3 sync | E | ❌ pending | medium |
 | WEB-050 | Session DI pattern | F | ❌ pending | medium |
-| WEB-051 | Asset versioning | F | ❌ pending | low |
 | WEB-052 | Error-branch tests | F | ❌ pending | low |
 | WEB-053 | Test hygiene (cache+alembic) | F | 🔄 partial | medium (↑) |
 | WEB-053b | Tab fixture consolidation | F | ❌ pending | low (NEW from checkpoint #2) |
 | WEB-014b | task complete next_url | B | ❌ pending | low (NEW from checkpoint #2) |
 
-26 total · **16 done / 9 pending / 1 partial** · expected order:
-WEB-004 → WEB-012 → WEB-060 → D (WEB-030, 031) → tail (042/050/051/052/053/053b/014b).
+26 total · **19 done / 6 pending / 1 partial** · expected order:
+WEB-012 → D (WEB-030, 031) → tail (042/050/052/053/053b/014b).
 
 ## 4. Первый tick — WEB-005 (Engine cache + DI helper)
 

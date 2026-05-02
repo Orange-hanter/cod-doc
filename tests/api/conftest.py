@@ -6,6 +6,14 @@
 - Каждый тест стартует с пустым `cod_doc.api.deps._ENGINE_CACHE`
   (после WEB-005 кэш живёт на уровне модуля и иначе утечёт между
   тестами engine-ссылками на удалённые `tmp_path` директории).
+
+⚠ Lifespan vs. set_config footgun:
+The FastAPI app lifespan calls `Config.load()` and OVERWRITES whatever
+the test pre-set via `deps.set_config(cfg)`. Tests that need a specific
+config visible to handlers must call `cfg.save()` BEFORE entering the
+TestClient (since CONFIG_FILE is monkeypatched into tmp_path, this is
+local). Then access the live config via `deps.get_config()` after entry.
+See `tests/api/test_web_settings.py:settings_client` for the pattern.
 """
 
 from __future__ import annotations
