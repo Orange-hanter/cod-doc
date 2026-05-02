@@ -31,13 +31,13 @@ related_audits:
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
-| B: Read views | inline | 6 | 5 | 1 | 🔄 in-progress (WEB-010, 006, 014, 021, 004 ✅; 060) |
+| B: Read views | inline | 6 | 6 | 0 | ✅ done (WEB-010, 006, 014, 021, 004, 060) |
 | C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
 | F: Hardening (NEW 2026-05-02) | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-005, 013 ✅; 050..053 pending) |
 | F-tail: Polish from checkpoint | inline | 3 | 3 | 0 | ✅ done (WEB-013b, 022b, 054) |
-| **TOTAL** |  | **26** | **17** | **9** | |
+| **TOTAL** |  | **26** | **18** | **8** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -926,30 +926,43 @@ affected_files:
 id: WEB-060
 title: "Implement: settings page (config view + form save)"
 section: B-Read-Views
-status: pending
+status: done
 depends_on: [WEB-001]
 type: feature
 priority: medium
 affected_files:
-  - cod_doc/api/web/pages.py
-  - cod_doc/templates/web/settings.html
-  - tests/api/test_web_settings.py
+  - cod_doc/api/web/pages.py             # /settings GET + POST
+  - cod_doc/templates/web/settings.html  # NEW
+  - cod_doc/static/app.css                # .settings-form
+  - tests/api/test_web_settings.py       # NEW (8 tests)
 ```
 
-**Description:** `GET/POST /settings` — read/write `Config`. API-ключ
-маскируется при отображении (показ только последних 4 символов). Форма
-работает без JS.
-
-> **Раньше WEB-020 (medium).** Перенумеровано в WEB-060 для группировки в
-> Section B новых задач после аудита 2026-05-02.
+**Description:** `GET/POST /settings` — read/write `Config` через простую
+HTML-форму. Никакого JS не требуется.
 
 **Acceptance:**
-- `GET /settings` рендерит форму с текущими значениями;
-  `Config.api_key` показан как `…XXXX`.
-- `POST /settings` (form-encoded) сохраняет через `Config.save()`,
-  redirects 303 → `/settings`.
-- Если api-key пустой — поле остаётся, не затирается.
-- 4 теста: GET render, POST save, mask, empty-key keeps existing.
+- ✅ `GET /settings` рендерит форму с текущими значениями (Base URL, Model,
+  Max tokens, Embedding model, Max iterations, Agent interval, Auto-commit
+  чекбокс). API-ключ показан masked (`…XXXX`), не в plaintext в HTML.
+- ✅ `POST /settings` (form-encoded) сохраняет через `Config.save()`, redirects
+  303 → `/settings`.
+- ✅ **API-ключ semantics**: пустое поле = не менять; явный `-` = удалить;
+  непустая строка = заменить. Поведение задокументировано в `<small>`-help
+  возле поля. Это типичный web-UX для secret-полей: empty input не
+  затирает существующий secret.
+- ✅ Auto-commit чекбокс отсутствует в form-submit когда unchecked — handler
+  это правильно интерпретирует как `False`.
+- ✅ 8 тестов: GET render with values, masked key, unset-key UI; POST save +
+  303, persistence to disk, empty-key keeps existing, dash clears, new key
+  replaces, uncheck auto_commit clears it.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`). Test fixture использует
+> `Config.save()` ДО создания TestClient'а: app lifespan вызывает
+> `Config.load()` и затирает любой `set_config(cfg)`, поэтому
+> in-memory cfg должен попасть на диск раньше, чем lifespan запустится.
+
+> **Раньше WEB-020 (medium).** Перенумеровано в WEB-060 для группировки
+> новых задач после аудита 2026-05-02.
 
 > **WEB-020 deprecated** в пользу WEB-060.
 

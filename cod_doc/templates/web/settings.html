@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Settings — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">Projects</a> / <span>Settings</span></nav>
+
+<h1>Settings</h1>
+
+<form method="post" action="/settings" class="settings-form">
+  <fieldset>
+    <legend>LLM</legend>
+    <label class="field">
+      <span class="label">API key</span>
+      <input type="password" name="api_key"
+             placeholder="{% if config.api_key_set %}{{ config.api_key_masked }} (оставь пустым — не менять){% else %}sk-…{% endif %}">
+      <small class="muted">
+        {% if config.api_key_set %}
+          Ключ установлен ({{ config.api_key_masked }}). Пустое поле — оставить как есть.
+          Чтобы удалить — введи дефис&nbsp;«−».
+        {% else %}
+          Ключ не установлен. Перейди на OpenRouter за ключом.
+        {% endif %}
+      </small>
+    </label>
+    <label class="field">
+      <span class="label">Base URL</span>
+      <input type="text" name="base_url" value="{{ config.base_url }}" required>
+    </label>
+    <label class="field">
+      <span class="label">Model</span>
+      <input type="text" name="model" value="{{ config.model }}" required>
+    </label>
+    <label class="field">
+      <span class="label">Max tokens</span>
+      <input type="number" name="max_tokens" value="{{ config.max_tokens }}" min="1" required>
+    </label>
+    <label class="field">
+      <span class="label">Embedding model</span>
+      <input type="text" name="embedding_model" value="{{ config.embedding_model }}" required>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Agent</legend>
+    <label class="field">
+      <span class="label">Max iterations</span>
+      <input type="number" name="max_iterations" value="{{ config.max_iterations }}" min="1" required>
+    </label>
+    <label class="field">
+      <span class="label">Daemon interval (sec)</span>
+      <input type="number" name="agent_interval" value="{{ config.agent_interval }}" min="5" required>
+    </label>
+    <label class="field-checkbox">
+      <input type="checkbox" name="auto_commit"{% if config.auto_commit %} checked{% endif %}>
+      <span>Auto-commit after task</span>
+    </label>
+  </fieldset>
+
+  <div class="form-actions">
+    <button type="submit">Save</button>
+  </div>
+</form>
+{% endblock %}

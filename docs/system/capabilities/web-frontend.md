@@ -74,7 +74,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `GET /p/{slug}/plans` | Список планов проекта | `plan_service.list_for_project + recalc` | ✅ | WEB-004 |
 | `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `revision_service.list_for_project` | ✅ | WEB-021 |
 | `GET /p/{slug}/run` | SSE-стрим запуска агента | переиспользует `Orchestrator.run_autonomous` (см. [routes.py](../../../cod_doc/api/routes.py)) | ❌ | WEB-030 |
-| `GET /settings`, `POST /settings` | Просмотр + сохранение конфига (API-ключ маскирован) | `Config.load/save` | ❌ | WEB-020 / WEB-060 |
+| `GET /settings`, `POST /settings` | Просмотр + сохранение конфига (API-ключ маскирован) | `Config.load/save` | ✅ | WEB-060 |
 | `GET /static/{path:path}` | Статика | StaticFiles mount | ✅ | WEB-001 |
 
 **Принцип:** обработчик не знает про SQL/репозитории. Только сервисы (`cod_doc.services.*`) и существующие helper-ы (`get_config`, `get_project`, новый `get_project_db` после WEB-040). См. §7.
