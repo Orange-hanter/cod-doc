@@ -70,7 +70,8 @@ docs/system/
 │   ├── 2026-04-19-initial-audit.md         ← первый формальный аудит пакета
 │   ├── 2026-04-25-section-a-data-core.md   ← аудит ядра (Section A)
 │   ├── 2026-04-25-section-b-services.md    ← аудит сервисов (Section B)
-│   └── 2026-04-28-section-c-capabilities.md ← аудит capability-layer (Section C)
+│   ├── 2026-04-28-section-c-capabilities.md ← аудит capability-layer (Section C)
+│   └── 2026-05-01-section-g-hardening.md   ← закрытие hardening (Section G)
 │
 ├── migration/
 │   └── from-restate.md             ← как перевезти реальное состояние Restate
@@ -128,6 +129,8 @@ docs/system/
 | audit/2026-04-19-initial-audit | active | cod-doc core |
 | audit/2026-04-25-section-a-data-core | resolved | cod-doc core |
 | audit/2026-04-25-section-b-services | resolved | cod-doc core |
+| audit/2026-04-28-section-c-capabilities | active | cod-doc core |
+| audit/2026-05-01-section-g-hardening | resolved | cod-doc core |
 
 Пока пакет в статусе `draft` — изменения допустимы без revision-истории. После `active` любая правка обязана вести к revision-записи (см. [standards/revision-history.md](standards/revision-history.md)). Статус `resolved` — для audit-отчётов, чьи задачи закрыты (см. [standards/frontmatter.md §7](standards/frontmatter.md)).
 
@@ -142,6 +145,7 @@ docs/system/
 | 2026-04-25 | Аудиты Section A (Data Core) и Section B (Services) — оба `resolved`; см. [audit/2026-04-25-section-a-data-core.md](audit/2026-04-25-section-a-data-core.md), [audit/2026-04-25-section-b-services.md](audit/2026-04-25-section-b-services.md). |
 | 2026-04-28 | Добавлен `standards/sensitive-data.md` в индекс §2; зафиксирован пробел: инфраструктура (scanner, redaction, фильтры контекста) пока отсутствует — вынесена в задачу COD-025. |
 | 2026-04-28 | Аудит capability-layer (Section C) — выявлены пробелы: нет CI workflow (COD-024), LinkService.rename не каскадит body (COD-014a), web-layer обходит сервисы (WEB-020), TUI без тестов (COD-026). |
+| 2026-05-01 | Section G (Hardening & DevX) закрыта целиком — 5/5 задач: COD-024a (strict ruff/mypy debt cleared, CI gates blocking), COD-014a (markdown-relative rename cascade), COD-025 (sensitive-data infrastructure: scanner+FM-007+SD-001 audit+SD-002 redaction+clearance helper), COD-026 (TUI smoke tests, попутно фикс bug в WizardScreen). Suite 402/402; см. [audit/2026-05-01-section-g-hardening.md](audit/2026-05-01-section-g-hardening.md). |
 
 ---
 

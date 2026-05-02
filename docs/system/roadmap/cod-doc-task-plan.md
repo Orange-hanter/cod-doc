@@ -33,8 +33,8 @@ source_of_truth:
 | D: MCP & CLI | inline | 4 | 0 | 4 | ❌ pending |
 | E: Retrieval | inline | 4 | 0 | 4 | ❌ pending |
 | F: Migration | inline | 3 | 0 | 3 | ❌ pending |
-| G: Hardening & DevX | inline | 5 | 1 | 4 | 🔄 in-progress |
-| **TOTAL**   |        | **31** | **16** | **15** | |
+| G: Hardening & DevX | inline | 5 | 5 | 0 | ✅ done |
+| **TOTAL**   |        | **31** | **20** | **11** | |
 
 ## Gap Analysis Summary
 
@@ -642,16 +642,19 @@ priority: high
 id: COD-014a
 title: "Implement: rename markdown-relative cascade with path mapping"
 section: G-Hardening
-status: pending
+status: done
 depends_on: [COD-013]
 type: feature
 priority: medium
 affected_files:
   - cod_doc/services/link_service.py
+  - cod_doc/services/doc_service.py
   - tests/services/test_link_service.py
 ```
 
 **Description:** В COD-013 `rename_cascade` намеренно пропускает markdown-relative ссылки (`[label](../path.md)`) — слишком хрупко без mapping'a путей. Подзадача: построить path-mapping `{old_path → new_path}` при rename документа, передать в LinkService, переписать markdown-relative refs тем же diff-flow что canonical refs. Тесты: rename M1-auth/overview → M1-auth/spec, проверить что входящие `[overview](../M1-auth/overview.md)` обновлены, плюс idempotency на повторный rename. Acceptance: 4+ тестов, общий suite green.
+
+> ✅ **Implemented 2026-05-01:** `rename_cascade` принимает `path_map: dict[str, str] | None`. Новые helpers: `_resolve_md_href` (резолвит `[label](rel.md)` против каталога source-документа через `posixpath.normpath`, скипает URLs/anchors-only), `_make_relative_href`, `_rewrite_markdown_relative_refs`. Кандидаты-секции расширены: при наличии `path_map` подтягиваем все секции с `LinkKind` ∈ {MARKDOWN, SECTION} (markdown-resolver `parse()` теряет `../` префиксы и не даёт надёжного `to_doc_key` для вложенных папок — см. inline-комментарий). `link.raw` для markdown-rows перезаписывается тем же helper'ом, чтобы re-resolve был стабилен. `DocService.rename` строит `{old_path: target_path}` когда `new_path` отличается, и кэскадирует даже при no-op doc_key (path-only rename). 6 новых тестов в `test_link_service.py` (markdown-rewrite через path_map, path-only rename, anchor preservation, idempotency, URL/anchor skip, end-to-end DocService.rename). Suite 357/357 зелёные.
 
 ### COD-024
 
@@ -685,7 +688,7 @@ affected_files:
 id: COD-024a
 title: "Refactor: clean ruff/mypy debt (lift advisory CI gates to blocking)"
 section: G-Hardening
-status: pending
+status: done
 depends_on: [COD-024]
 type: refactor
 priority: medium
@@ -716,21 +719,29 @@ affected_files:
 
 **Стратегия:** делать batch'ами по слою (api → agent → tui → mcp/cli → tests). Авто-фиксы (`ruff check --fix`, `ruff format`) — отдельным коммитом для прозрачного review.
 
+> ✅ **Implemented 2026-05-01:** debt cleared — `ruff check` zero, `ruff format --check` zero diffs (117 файлов), `mypy cod_doc` zero (87 файлов, strict). CI mypy job переведён в blocking (`continue-on-error` снят). Ключевые правки:
+> - `cod_doc/agent/orchestrator.py` — `# type: ignore[call-overload,misc]` на двух `chat.completions.create` (OpenAI SDK overloads против bare-dict messages); фильтр `tc.type == "function"` для tool_call union; `cast` импорт.
+> - `cod_doc/cli/cmd_serve.py` + `cod_doc/mcp/server.py` — `host/port/stateless_http` перенесены на `mcp.settings`; `transport` сужен до literal'ов.
+> - `cod_doc/tui/{app,screens/*}.py` — `BINDINGS: ClassVar[list[BindingType]]` (covariant), переименован `_StepBar._render` → `_refresh_label` (override-конфликт с `Static._render`).
+> - `cod_doc/core/{project,reindex}.py`, `cod_doc/agent/tools.py`, `cod_doc/api/{routes,webhooks}.py` — bare `dict` → `dict[str, Any]`; `cast(dict[str, Any], …)` для JSON-парсинга.
+> - `cod_doc/agent/retry.py`, `cod_doc/api/server.py` — `collections.abc` импорты в `TYPE_CHECKING` (TC003).
+> - `tests/test_orchestrator.py` — mock `tc.type = "function"` (мейнтенанс под новый фильтр).
+> - 73 файла отформатированы `ruff format`; suite 351/351 зелёные.
+
 ### COD-025
 
 ```yaml
 id: COD-025
 title: "Implement: Sensitive-data infrastructure (scanner + redaction + clearance)"
 section: G-Hardening
-status: pending
+status: done
 depends_on: [COD-020]
 type: feature
 priority: high
 affected_files:
   - cod_doc/services/sensitivity_scanner.py
+  - cod_doc/services/validation.py
   - cod_doc/services/projection_service.py
-  - cod_doc/services/context_service.py
-  - cod_doc/infra/migrations/0007_agent_clearance.py
   - tests/services/test_sensitivity.py
 ```
 
@@ -744,13 +755,26 @@ affected_files:
 
 Acceptance: 15+ тестов; SensitivityScanner детектит ≥4 паттерна секретов; redaction воспроизводимо; clearance-фильтр покрыт интеграционным тестом.
 
+> ✅ **Implemented 2026-05-01:** 36 тестов в `tests/services/test_sensitivity.py`. Доставленные компоненты:
+> - **SD-001 SensitivityScanner** — `cod_doc/services/sensitivity_scanner.py`: 5 high-confidence паттернов (`aws_access_key`, `github_pat`, `slack_token`, `pem_private_key`, `jwt_token`), generic high-entropy heuristic с порогом 4.5 bits/char и капом 25/документ, PII окно 80 chars (email+phone). Snippets частично замаскированы (`prefix…suffix`); line numbers 1-based.
+> - **SD-001 advisory** — `validation.audit_sensitivity(body, declared_sensitivity)` оборачивает scanner: high-conf секреты в public/internal → `severity=error`, в confidential/restricted → warning; PII всегда warning. Не raise — следует write-path-validation pattern (см. memory `validation_pattern.md`).
+> - **SD-002 Redaction** — `ProjectionService.render_markdown(audience=...)` и `export_document(audience=...)`. Audience tiers: public<internal<confidential<restricted. Когда audience не дотягивает — body заменяется на `> [content redacted: <level> — see DB]`. Frontmatter сохраняется, чтобы потребитель видел причину. Audience-specific export НЕ обновляет `projection_hash` — canonical drift detection не ломается.
+> - **SD-003 Clearance helper** — `sensitivity_scanner.clearance_meets(actor, doc)`: pure helper, единый источник истины для будущих ContextService/audit/redaction. Unknown clearance → public (наиболее ограничительно). Сама `ContextService` и миграция `agent_definition.sensitivity_clearance` отложены до Section D (таблица `agent_definition` ещё не существует) — `clearance_meets` используется как ready API.
+> - **FM-007** — `audit_frontmatter` warning при отсутствии `sensitivity` для `module-spec`/`architecture`/`standard`.
+>
+> Защёл общий suite: 393/393 зелёные, ruff/mypy strict zero.
+
+**Deferred to next sections:**
+- `cod-doc audit --sensitivity` CLI flag — в составе COD-031 (CLI audit).
+- Migration `0007_agent_clearance.py` + ContextService gating — Section D / E (зависит от схемы `agent_definition`).
+
 ### COD-026
 
 ```yaml
 id: COD-026
 title: "Test: TUI smoke tests (textual.pilot)"
 section: G-Hardening
-status: pending
+status: done
 depends_on: []
 type: test
 priority: low
@@ -758,6 +782,7 @@ affected_files:
   - tests/tui/__init__.py
   - tests/tui/test_app_boot.py
   - tests/tui/test_screens.py
+  - cod_doc/tui/screens/wizard.py
 ```
 
 **Description:** Минимальное smoke-покрытие TUI (`cod_doc/tui/`). Использует `textual.pilot.Pilot` (поставляется с `textual`). Сценарии:
@@ -767,3 +792,12 @@ affected_files:
 - `AgentRunScreen` открывается при выборе ready-task; обработчики `Button.Pressed` не падают.
 
 Acceptance: 5+ тестов; не требует БД (мокать через fixture). Не покрываем визуальные regression — только маршрутизацию и не-исключения.
+
+> ✅ **Implemented 2026-05-01:** 9 smoke-тестов в `tests/tui/`:
+> - `test_app_boot.py` (3) — wizard при unconfigured Config, dashboard при наличии api_key, `q`-binding triggers app exit.
+> - `test_screens.py` (6) — каждый экран (`WizardScreen`, `DashboardScreen`, `AgentRunScreen`, `AddProjectDialog`, `AddTaskDialog`) монтируется без исключений; `r`-binding на пустом dashboard не падает.
+> - Использует `App.run_test()` + `Pilot.pause()`. `_ScreenHost` — минимальный host-App для изолированного теста одного screen'a. `Config` создаётся с tmp `cod_doc_home`, чтобы тесты не трогали реальный `~/.cod-doc/`.
+>
+> **Bug surfaced and fixed:** WizardScreen использовал `id=f"model-{model_id}"` где `model_id` — `anthropic/claude-sonnet-4-6` (содержит `/` и `.`). Textual ругался `BadIdentifier` при mount. Добавлен `_model_widget_id()` helper, заменяющий `/` и `.` на `_`. Без smoke-тестов баг бы дожил до пользовательского запуска wizard'а.
+>
+> Suite 402/402 зелёные, ruff/mypy strict zero.
