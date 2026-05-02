@@ -22,14 +22,14 @@ def test_validate_task_id_accepts_valid(good: str) -> None:
 @pytest.mark.parametrize(
     "bad",
     [
-        "p-001",         # lowercase
-        "P-001",         # single-letter prefix
-        "ABCDEF-001",    # 6-letter prefix (>5)
-        "AB-1",          # 1-digit number
-        "AB-1234",       # 4-digit number
-        "AB-001a",       # lowercase suffix
-        "AB001",         # missing dash
-        "",              # empty
+        "p-001",  # lowercase
+        "P-001",  # single-letter prefix
+        "ABCDEF-001",  # 6-letter prefix (>5)
+        "AB-1",  # 1-digit number
+        "AB-1234",  # 4-digit number
+        "AB-001a",  # lowercase suffix
+        "AB001",  # missing dash
+        "",  # empty
     ],
 )
 def test_validate_task_id_rejects_invalid(bad: str) -> None:
@@ -136,16 +136,16 @@ def test_validate_doc_path_accepts_relative(good: str) -> None:
 @pytest.mark.parametrize(
     "bad",
     [
-        "/etc/passwd",                       # POSIX absolute
+        "/etc/passwd",  # POSIX absolute
         "/Users/victim/.ssh/authorized_keys",
-        "../etc/passwd",                     # traversal
-        "../../../etc/passwd",               # deep traversal
-        "foo/../bar",                        # mid-path traversal
+        "../etc/passwd",  # traversal
+        "../../../etc/passwd",  # deep traversal
+        "foo/../bar",  # mid-path traversal
         "foo/../../bar.md",
-        "C:\\Users\\victim\\file.txt",       # Windows absolute (rejected on any host)
+        "C:\\Users\\victim\\file.txt",  # Windows absolute (rejected on any host)
         "C:/Users/victim/file.txt",
-        "",                                  # empty
-        "   ",                               # whitespace only
+        "",  # empty
+        "   ",  # whitespace only
     ],
 )
 def test_validate_doc_path_rejects_unsafe(bad: str) -> None:
