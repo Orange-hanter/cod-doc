@@ -1,10 +1,10 @@
 ---
 type: execution-plan
 scope: cod-doc-bootstrap
-status: pending
+status: in-progress
 principle: test-first
 created: 2026-04-19
-last_updated: 2026-04-28
+last_updated: 2026-05-02
 source_of_truth:
   vision: docs/system/VISION.md
   architecture: docs/system/ARCHITECTURE.md
@@ -30,11 +30,11 @@ source_of_truth:
 | A: Data Core | inline | 5 | 5 | 0 | ✅ done |
 | B: Services | inline | 6 | 6 | 0 | ✅ done |
 | C: Write Paths | inline | 4 | 4 | 0 | ✅ done |
-| D: MCP & CLI | inline | 4 | 0 | 4 | ❌ pending |
-| E: Retrieval | inline | 4 | 0 | 4 | ❌ pending |
+| D: MCP & CLI | inline | 4 | 3 | 1 | 🔄 in-progress |
+| E: Retrieval | inline | 4 | 1 | 3 | 🔄 in-progress |
 | F: Migration | inline | 3 | 0 | 3 | ❌ pending |
 | G: Hardening & DevX | inline | 5 | 5 | 0 | ✅ done |
-| **TOTAL**   |        | **31** | **20** | **11** | |
+| **TOTAL**   |        | **31** | **24** | **7** | |
 
 ## Gap Analysis Summary
 
@@ -57,16 +57,14 @@ source_of_truth:
 
 ## Next Batch
 
-Sections A (Data Core), B (Services), C (Write Paths) all closed. Service layer + write-path validation + graph queries + revision revert + projection pipeline complete. Next batch moves into user-facing surfaces (CLI/MCP), CI hygiene и migration tooling:
+Sections A–D (кроме COD-033) и COD-040 закрыты. CLI + MCP-тулы + embeddings pipeline готовы — система готова к dogfood (задачи хранятся в БД). Оставшиеся задачи: ContextService, Restate importer, freeze-flow.
 
-- **COD-024** — Implement: CI workflow (pytest + mypy + ruff) — нет зависимостей, должно стартовать первым (защищает все следующие задачи от регрессий)
-- **COD-030** — Implement: CLI — task/plan/story commands — first user-facing surface
-- **COD-031** — Implement: CLI — doc/link/revision commands
-- **COD-025** — Implement: Sensitive-data infrastructure — зависит от COD-020 (закрыт), параллельно с CLI
-- **COD-050** — Test: frontmatter/task-plan parser (property-based) — no dependencies, can run in parallel
-- **COD-032** — Implement: MCP tools — depends on COD-030 + COD-031
-- **COD-040** — Implement: embeddings pipeline (sqlite-vss / pgvector)
-- **COD-014a, COD-026** — follow-up'ы пониженного приоритета (markdown-cascade, TUI smoke)
+- **COD-041** — Implement: ContextService L0/L1 — разблокирует COD-033 (MCP context.get) и COD-042
+- **COD-033** — Implement: MCP tool context.get — depends on COD-041
+- **COD-050** — Test: frontmatter/task-plan parser (property-based) — нет зависимостей, параллельно
+- **COD-051** — Implement: Restate importer — depends on COD-032 + COD-050; нужен для bulk-переноса markdown task-plan'ов в БД
+- **COD-052** — Implement: projection freeze + accept flow — depends on COD-023 + COD-051
+- **COD-042, COD-043** — ContextService L2/L3 + local torch backend — пониженный приоритет
 
 ## Dependency Graph
 
@@ -475,7 +473,7 @@ affected_files:
 id: COD-030
 title: "Implement: CLI — task/plan/story commands"
 section: D-MCP-CLI
-status: pending
+status: done
 depends_on: [COD-020]
 type: feature
 priority: high
@@ -485,17 +483,25 @@ affected_files:
   - cod_doc/cli/story.py
 ```
 
+> ✅ **Implemented:** `cod_doc/cli/task.py` (385 loc) — команды `list`, `show`, `create`, `status`, `complete`; `cod_doc/cli/plan.py` (428 loc); `cod_doc/cli/story.py` (489 loc). Все команды работают через DB-сессию (`_make_session`), принимают `--project` и `--json` флаги.
+
 ### COD-031
 
 ```yaml
 id: COD-031
 title: "Implement: CLI — doc/link/revision commands"
 section: D-MCP-CLI
-status: pending
+status: done
 depends_on: [COD-023, COD-013]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/cli/doc.py
+  - cod_doc/cli/link.py
+  - cod_doc/cli/revision.py
 ```
+
+> ✅ **Implemented:** `cod_doc/cli/doc.py` (519 loc), `cod_doc/cli/link.py` (248 loc), `cod_doc/cli/revision.py` (315 loc). `cod-doc audit --sensitivity` CLI-флаг включён в cmd_audit.py (деливерабль COD-025).
 
 ### COD-032
 
@@ -503,7 +509,7 @@ priority: high
 id: COD-032
 title: "Implement: MCP tools (doc.*, task.*, plan.*, story.*, link.*, revision.*)"
 section: D-MCP-CLI
-status: pending
+status: done
 depends_on: [COD-030, COD-031]
 type: feature
 priority: critical
@@ -511,6 +517,8 @@ affected_files:
   - cod_doc/mcp/server.py
   - cod_doc/mcp/tools/
 ```
+
+> ✅ **Implemented:** `cod_doc/mcp/tools/` — `task_tools.py` (`task.list`, `task.get`, `task.create`, `task.update_status`, `task.complete`), `doc_tools.py`, `plan_tools.py`, `story_tools.py`, `link_tools.py`, `revision_tools.py`. Каждый модуль регистрирует инструменты через `register(mcp: FastMCP)` — вызывается из `mcp/server.py`.
 
 ### COD-033
 
@@ -534,11 +542,15 @@ priority: critical
 id: COD-040
 title: "Implement: embeddings pipeline (sqlite-vss / pgvector)"
 section: E-Retrieval
-status: pending
+status: done
 depends_on: [COD-010]
 type: feature
 priority: medium
+affected_files:
+  - cod_doc/core/reindex.py
 ```
+
+> ✅ **Implemented:** `cod_doc/core/reindex.py` (165 loc) — `reindex_project(root, cfg)` (индексирует markdown-файлы проекта в ChromaDB через OpenRouter `/embeddings` endpoint, модель `text-embedding-ada-002`) и `search_documents(query, collection, n)`. Backend настраивается через `Config` (`api_key`, `embedding_model`). Фактически использует ChromaDB, не sqlite-vss/pgvector — локальное хранилище без Postgres-зависимости.
 
 ### COD-041
 
