@@ -1,21 +1,24 @@
 ---
 type: capability
 scope: web-frontend
-status: draft
+status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-28
-last_updated: 2026-04-28
+last_updated: 2026-05-02
 related_docs:
   - ../ARCHITECTURE.md
   - ../VISION.md
   - plan-management.md
   - doc-evolution.md
   - context-retrieval.md
+  - ../audit/2026-05-02-section-web-frontend.md
 related_code:
   - cod_doc/api/server.py
-  - cod_doc/api/routes.py
+  - cod_doc/api/web/
   - cod_doc/services/
+  - cod_doc/templates/web/
+  - cod_doc/static/
 ---
 
 # Capability — Web Frontend
@@ -51,58 +54,76 @@ related_code:
 
 Web-маршруты живут в `cod_doc.api.web.*` и подключаются вторым роутером в `server.py`. Префикса нет — корень отдан под Web; API остаётся на `/api/*`.
 
-| Метод + путь | Назначение | Сервис |
-|--------------|-----------|--------|
-| `GET /` | Список проектов + ссылка на settings | `Config.list_projects()` (legacy) или `ProjectRepository.list_all()` (DB) |
-| `GET /p/{slug}` | Дашборд проекта: stats, MASTER preview, табы | `Project.stats()` + `DocService.get` |
-| `GET /p/{slug}/docs` | Список документов | `DocService.list` (TBD) |
-| `GET /p/{slug}/docs/{doc_key:path}` | Просмотр документа: секции + body | `DocService.get` + `DocService.get_sections` + `DocService.render_body` |
-| `POST /p/{slug}/docs/{doc_key:path}/sections/{anchor}` | HTMX-патч секции (form-encoded body) | `DocService.patch_section` |
-| `GET /p/{slug}/tasks` | Таблица задач (фильтр `?status=`, `?plan=`) | `TaskService.list_for_plan` |
-| `POST /p/{slug}/tasks/{task_id}/status` | HTMX-смена статуса (radio/select) | `TaskService.update_status` |
-| `POST /p/{slug}/tasks/{task_id}/complete` | HTMX-завершение задачи | `TaskService.complete` |
-| `GET /p/{slug}/plans/{plan_id}` | Plan view: Progress Overview + Next Batch + Mermaid | `PlanService.recalc/ready/export` |
-| `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `RevisionService.list_for_entity` |
-| `GET /p/{slug}/run` | SSE-стрим запуска агента | переиспользует `Orchestrator.run_autonomous` (см. [routes.py](../../../cod_doc/api/routes.py)) |
-| `GET /settings` | Просмотр конфига | `Config.load()` |
-| `POST /settings` | Сохранение конфига (form) | `Config.save()` |
-| `GET /static/{path:path}` | Статика | StaticFiles mount |
+Колонка **Status** показывает реальное состояние реализации (см. также §11):
 
-**Принцип:** обработчик не знает про SQL/репозитории. Только сервисы (`cod_doc.services.*`) и существующие helper-ы (`get_config`, `get_project`).
+- ✅ shipped, тесты зелёные;
+- 🔄 in-progress / частично реализовано;
+- ❌ pending — endpoint описан как целевой, но в коде его ещё нет.
+
+| Метод + путь | Назначение | Сервис | Status | Task |
+|--------------|-----------|--------|:------:|------|
+| `GET /` | Список проектов + ссылка на settings | `Config.list_projects()` + `Project.stats()` | ✅ | WEB-001 |
+| `GET /p/{slug}` | Дашборд проекта: stats, MASTER preview, табы | `Project.stats()` + `Project.read_master()` | ✅ | WEB-002 |
+| `GET /p/{slug}/docs` | Список документов | `doc_service.list_for_project` | ✅ | WEB-003 |
+| `GET /p/{slug}/docs/{doc_key:path}` | Просмотр документа: секции + body | `doc_service.get` + `get_sections` + `render_body` | ✅ | WEB-003 |
+| `POST /p/{slug}/docs/{doc_key:path}/sections/{anchor}` | HTMX-патч секции (form-encoded body) | `doc_service.patch_section` | ❌ | WEB-012 |
+| `GET /p/{slug}/tasks` | Таблица задач (фильтр `?status=`, `?plan=`) | `task_service.list_for_project` | ✅ | WEB-010 |
+| `POST /p/{slug}/tasks/{task_id}/status` | HTMX-смена статуса (radio/select) | `task_service.update_status` | ✅ | WEB-011 |
+| `POST /p/{slug}/tasks/{task_id}/complete` | HTMX-завершение задачи | `task_service.complete` | ❌ | WEB-014 |
+| `GET /p/{slug}/plans/{plan_id}` | Plan view: Progress Overview + Next Batch + Mermaid | `plan_service.recalc/ready/export` | ❌ | WEB-004 |
+| `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `revision_service.list_for_entity` | ❌ | WEB-021 |
+| `GET /p/{slug}/run` | SSE-стрим запуска агента | переиспользует `Orchestrator.run_autonomous` (см. [routes.py](../../../cod_doc/api/routes.py)) | ❌ | WEB-030 |
+| `GET /settings`, `POST /settings` | Просмотр + сохранение конфига (API-ключ маскирован) | `Config.load/save` | ❌ | WEB-020 / WEB-060 |
+| `GET /static/{path:path}` | Статика | StaticFiles mount | ✅ | WEB-001 |
+
+**Принцип:** обработчик не знает про SQL/репозитории. Только сервисы (`cod_doc.services.*`) и существующие helper-ы (`get_config`, `get_project`, новый `get_project_db` после WEB-040). См. §7.
+
+> **Drift note (2026-05-02):** до закрытия WEB-040 в `cod_doc/api/web/db_resolver.py`
+> сохраняется прямой импорт `cod_doc.infra.db`/`infra.repositories` — известное
+> нарушение §7, отслеживается как `audit/2026-05-02-section-web-frontend.md::SW-HI-1`.
 
 ## 4. HTML-структура
 
+> **Целевая структура.** Реальное состояние и матрица «есть/нет» — в
+> [roadmap/web-frontend-task-plan.md](../roadmap/web-frontend-task-plan.md)
+> Progress Overview. Добавлять файлы под TBD-эндпоинты заранее **не нужно** —
+> создавайте только то, что закрывает живая задача.
+
 ```text
 cod_doc/api/web/
-├── __init__.py          # router = APIRouter()
-├── pages.py             # GET-страницы: возвращают HTMLResponse через templates
-├── fragments.py         # HTMX-фрагменты: возвращают HTML-куски (hx-swap targets)
-└── templates_env.py     # настройка Jinja2Templates с фильтрами/глобалами
+├── __init__.py            # router = APIRouter()         ← ✅
+├── pages.py               # GET-страницы                  ← ✅
+├── fragments.py           # HTMX-фрагменты                ← ✅
+├── templates_env.py       # Jinja2Templates + STATIC_DIR  ← ✅
+└── db_resolver.py         # bridge slug → DB session      ← ⚠ удалить в WEB-040
+                           #   (заменить на get_project_db в cod_doc.api.deps)
 
 cod_doc/templates/web/
-├── base.html            # <html>, <head>, htmx, app.css; блок {% block content %}
-├── _layout/             # шапка, навигация, alert-бар
-│   ├── header.html
-│   └── nav.html
-├── index.html           # список проектов
-├── settings.html
+├── base.html              # <html>, htmx, app.css; #alerts ← ✅
+├── _layout/               # макросы — общие фрагменты         ❌ (WEB-041)
+│   ├── project_tabs.html  # tabs nav (active=…)               ❌ (WEB-041)
+│   ├── header.html                                           ❌
+│   └── nav.html                                              ❌
+├── index.html             # список проектов               ← ✅
+├── settings.html                                            ❌ (WEB-020)
 ├── project/
-│   ├── show.html        # дашборд
-│   ├── docs_list.html
-│   ├── doc_show.html
-│   ├── tasks_list.html
-│   ├── plan_show.html
-│   ├── revisions.html
-│   └── run.html         # SSE-консоль
-└── _frag/               # HTMX-фрагменты
-    ├── task_row.html
-    ├── section_view.html
-    └── section_edit.html
+│   ├── show.html          # дашборд                       ← ✅
+│   ├── docs_list.html     # список документов             ← ✅
+│   ├── doc_show.html      # просмотр документа            ← ✅ (raw markdown — WEB-006)
+│   ├── tasks_list.html    # таблица задач + фильтр        ← ✅
+│   ├── plan_show.html     # Plan + Mermaid                ❌ (WEB-004)
+│   ├── revisions.html     # лог ревизий                   ❌ (WEB-021)
+│   └── run.html           # SSE-консоль                   ❌ (WEB-030)
+└── _frag/
+    ├── task_row.html      # строка таблицы задач          ← ✅
+    ├── section_view.html  # секция документа              ❌ (WEB-012)
+    ├── section_edit.html  # textarea + concurrency token  ❌ (WEB-012)
+    └── alert.html         # ошибка/уведомление в #alerts  ❌ (WEB-022)
 
 cod_doc/static/
-├── app.css              # минимальный baseline
-├── htmx.min.js          # вендорный (или CDN — на выбор)
-└── mermaid.min.js       # для Plan view
+├── app.css                # ~210 LOC, raw CSS             ← ✅
+├── htmx.min.js            # v2.0.4 vendored                ← ✅
+└── mermaid.min.js                                          ❌ (WEB-004)
 ```
 
 ## 5. UX-инварианты
@@ -121,23 +142,61 @@ cod_doc/static/
 - WebSocket в [webhooks.py](../../../cod_doc/api/webhooks.py#L120) остаётся для машинных клиентов; web-консоль использует SSE.
 - Подключение one-way (сервер → клиент); отмена — через `DELETE /p/{slug}/run/{run_id}`.
 
-## 7. Соответствие сервисам
+## 7. Соответствие сервисам и DI-конвенция
 
-Web-страница не имеет права обходить сервис. Ниже — соответствие, проверяемое в `cod-doc audit` (правило `web_calls_services_only`):
+Web-страница не имеет права обходить сервис. Правило проверяется в `cod-doc audit`
+(`web_calls_services_only`) и в банлисте импортов (ruff
+`flake8-tidy-imports.banned-module-level-imports` после WEB-040).
 
-| Страница | Разрешённые модули |
-|----------|-------------------|
-| `/` | `cod_doc.config`, `cod_doc.infra.repositories.project_repo` |
-| `/p/{slug}/*` | `cod_doc.services.*`, `cod_doc.api.deps` |
-| `/settings` | `cod_doc.config` |
+| Страница | Разрешённые модули | Запрещено |
+|----------|-------------------|-----------|
+| `/` | `cod_doc.config`, `cod_doc.api.deps` | `cod_doc.infra.*` |
+| `/p/{slug}/*` | `cod_doc.services.*`, `cod_doc.api.deps`, `cod_doc.domain.entities` (только enums) | `cod_doc.infra.*`, ORM-модели |
+| `/settings` | `cod_doc.config`, `cod_doc.api.deps` | `cod_doc.infra.*` |
+
+### DI: как страница получает DB session
+
+Резолв «slug → SQLAlchemy Session + project_db_id» — единственный способ
+работы с per-project БД из web-слоя. После закрытия WEB-040 он живёт в
+[cod_doc/api/deps.py](../../../cod_doc/api/deps.py) как FastAPI dependency:
+
+```python
+# целевой контракт (после WEB-040):
+def get_project_db(slug: str) -> tuple[Session, int]: ...
+# возвращает (session, project_db_id) или поднимает HTTPException(404)
+# session — из кэшированного Engine-а (см. WEB-005)
+```
+
+Запрещено:
+- `from cod_doc.infra.db import make_engine`,
+- `from cod_doc.infra.repositories import ProjectRepository`,
+- импорт ORM-моделей `from cod_doc.infra.models import …`.
+
+Разрешено:
+- `from cod_doc.domain.entities import TaskStatus, DocumentStatus, …` — только
+  enums и dataclass-ы домена; они не привязаны к БД.
 
 Прямой доступ из Web к `cod_doc.infra.db` или ORM-моделям — запрещён.
 
+> **Известное нарушение (2026-05-02):** [cod_doc/api/web/db_resolver.py](../../../cod_doc/api/web/db_resolver.py)
+> временно нарушает это правило, чтобы разблокировать WEB-001..011.
+> Закрывается в **WEB-040** + **WEB-005** одним PR (см. roadmap §F-Hardening).
+
 ## 8. Тестирование
 
-- Smoke-тесты через `fastapi.testclient.TestClient`: каждая страница возвращает 200 на seed-проекте.
-- Snapshot-тесты HTML-фрагментов — нет (фрагменты тестируются через service-тесты + smoke-проверку структуры).
-- E2E (Playwright) — отложено; сначала закрыть scope §3.
+- **Smoke**: `fastapi.testclient.TestClient`, каждая страница 200 на seed-проекте.
+  Текущий suite — `tests/api/test_web_*.py`, **27 тестов, все зелёные**.
+- **Error-branch coverage** (часть DoD каждой write-path задачи):
+  - валидация формы (400 на garbage),
+  - конфликт ревизий (`RevisionConflictError`),
+  - нарушение FK (`IntegrityError`),
+  - доменный отказ (`ValueError` от сервиса).
+  Без всех четырёх веток — не закрывать write-path.
+- **Snapshot-тесты HTML-фрагментов** — нет, и не планируем. Фрагменты тестируются
+  через service-тесты + smoke-структурные ассерты (`'badge-pending' in r.text`).
+  HTML-snapshot шумит на каждой косметической правке.
+- **E2E (Playwright)** — отложено до закрытия §3. Триггер: появление ≥3 многошаговых
+  сценариев (например, «создать → редактировать секцию → откатить ревизию»).
 
 ## 9. Roadmap
 
@@ -158,3 +217,56 @@ Web-страница не имеет права обходить сервис. �
 - Регрессии по принципу «UI отстаёт от CLI/MCP» — то самое, чего избегаем по [ARCHITECTURE.md §1](../ARCHITECTURE.md).
 
 Возврат к SPA возможен, когда понадобится один из non-goals выше (мобайл, интерактивный граф). До этого — server-rendered.
+
+---
+
+## 11. Текущее состояние (2026-05-02)
+
+Срез по факту реализации. Поддерживается в синхроне с
+[roadmap/web-frontend-task-plan.md](../roadmap/web-frontend-task-plan.md) и
+[audit/2026-05-02-section-web-frontend.md](../audit/2026-05-02-section-web-frontend.md).
+
+### 11.1 Метрики
+
+| Метрика | Значение |
+|---|---:|
+| Endpoints shipped | **5 / 14** (~36 %) |
+| LOC python (`api/web`) | 363 |
+| LOC templates | 280 |
+| LOC `app.css` | 211 |
+| Web-tests | 27 (`pytest tests/api/ -q` ⇒ зелёные) |
+| Vendored JS | `htmx.min.js` v2.0.4 |
+| Зависимостей в `pyproject.toml` сверх baseline | **0** (как обещано §2) |
+
+### 11.2 Что работает «сегодня»
+
+- **Список проектов** (`/`) — все registered проекты, их stats, warning при unconfigured.
+- **Дашборд проекта** (`/p/{slug}`) — 7 KPI-карточек, MASTER preview (первые 80 строк),
+  ссылка «Открыть целиком», табы.
+- **Документы** (`/p/{slug}/docs` + `/p/{slug}/docs/{doc_key:path}`) — список, split-layout
+  body+sections, graceful warning «БД не инициализирована».
+- **Задачи** (`/p/{slug}/tasks`) — таблица с фильтром по статусу, color-coded badges + priority,
+  HTMX inline status update (POST `/{task_id}/status`), `<noscript>` fallback,
+  POST/Redirect/GET для не-HTMX клиентов.
+
+### 11.3 Архитектурный долг
+
+| Долг | Где | Закрывается в |
+|---|---|---|
+| Web → infra direct import | `db_resolver.py` | **WEB-040** (high) |
+| Engine на каждый запрос | `db_resolver.py` | **WEB-005** (high) |
+| Index N+1 (`Project.stats()` per project) | `pages.py:27-35` | **WEB-013** (high) |
+| Tabs дублируются в 3 шаблонах, в `doc_show` отсутствуют | `templates/web/project/*` | **WEB-041** (medium) |
+| Tabs ведут на 404 для нереализованных страниц | shared | **WEB-041** (medium) |
+| `<div id="alerts">` без модели — ошибки молча теряются | `base.html` + `fragments.py` | **WEB-022** (high, ↑) |
+| `doc_show` body — raw markdown без anchor'ов | `doc_show.html`, `pages.py:162` | **WEB-006** (medium) |
+| `status_options` дубль | `pages.py:147`, `fragments.py:52` | **WEB-041** (medium) |
+
+Полный разбор — в audit-отчёте от 2026-05-02 (см. ссылку выше).
+
+## 12. Changelog
+
+| Дата | Событие |
+|------|---------|
+| 2026-04-28 | Создан capability-документ (status: draft). |
+| 2026-05-02 | Section A (Scaffold) + WEB-010/011 закрыты. Capability переведён в `active`. §3 расширен колонками Status/Task; §4 — пометкой «целевая структура», явное реальное состояние; §7 — DI-конвенция и ссылка на WEB-040; §8 — error-branch coverage в DoD; добавлен §11 «Текущее состояние». См. audit-отчёт `2026-05-02-section-web-frontend.md`. |

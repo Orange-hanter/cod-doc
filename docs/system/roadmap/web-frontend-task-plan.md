@@ -4,10 +4,12 @@ scope: web-frontend
 status: in-progress
 principle: test-first
 created: 2026-04-28
-last_updated: 2026-04-28
+last_updated: 2026-05-02
 source_of_truth:
   capability: docs/system/capabilities/web-frontend.md
   architecture: docs/system/ARCHITECTURE.md
+related_audits:
+  - docs/system/audit/2026-05-02-section-web-frontend.md
 ---
 
 # Web Frontend — Execution Plan
@@ -21,17 +23,24 @@ source_of_truth:
 - [Architecture](../ARCHITECTURE.md)
 - [Capability: Web Frontend](../capabilities/web-frontend.md)
 - [Bootstrap plan (ядро)](cod-doc-task-plan.md)
+- **[Kickoff brief 2026-05-02](web-frontend-kickoff-2026-05-02.md)** — точка входа на Section F
+- [Audit-отчёт 2026-05-02 (Web)](../audit/2026-05-02-section-web-frontend.md)
 
 ## Progress Overview
 
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
-| B: Read views | inline | 4 | 1 | 3 | 🔄 in-progress |
+| B: Read views | inline | 6 | 1 | 5 | 🔄 in-progress (+ WEB-006, WEB-014, WEB-060) |
 | C: Write paths | inline | 3 | 1 | 2 | 🔄 in-progress |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
-| E: Architecture Hygiene | inline | 1 | 0 | 1 | ❌ pending |
-| **TOTAL** |  | **13** | **5** | **8** | |
+| E: Architecture Hygiene | inline | 3 | 0 | 3 | ❌ pending (+ WEB-041, WEB-042) |
+| F: Hardening (NEW 2026-05-02) | inline | 6 | 0 | 6 | ❌ pending (WEB-005, 013, 022 ↑, 050..053) |
+| **TOTAL** |  | **23** | **5** | **18** | |
+
+> **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
+> добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
+> WEB-022 поднят с `medium` до `high`, приоритет WEB-040 — с `medium` до `high`.
 
 ## Gap Analysis Summary
 
@@ -51,48 +60,89 @@ source_of_truth:
 - HTMX-фрагментов для inline-редактирования.
 - SSE-стрима для long-running операций (есть только WS).
 
-## Next Batch
+## Next Batch (после аудита 2026-05-02)
 
-- **WEB-001** — Test + Implement: scaffold (templates env, base layout, static mount, index page, smoke-тест).
-- **WEB-002** — Implement: project detail page (stats + MASTER preview + tabs nav).
-- **WEB-003** — Implement: documents list + show (через DocService).
-- **WEB-010** — Implement: tasks list + filter (через TaskService).
-- **WEB-011** — Implement: HTMX inline status update.
+Порядок продиктован зависимостями: сначала HARDENING (WEB-005 → WEB-040 → WEB-022),
+затем читалки (WEB-004/021/041), потом write-path (WEB-012/014).
 
-## Dependency Graph
+1. **WEB-005** — Engine cache + `get_project_db` DI helper в `cod_doc.api.deps`.
+   *Разблокирует:* WEB-040, WEB-013, любую новую страницу с DB.
+2. **WEB-040** — удалить `db_resolver.py`, перевести на DI из WEB-005, добавить ban-rule.
+3. **WEB-022** — alert/error model (`#alerts` HTMX target, `_frag/alert.html`).
+4. **WEB-041** — `_layout/project_tabs.html` include + `disabled`-табы.
+5. **WEB-013** — Index batch stats (закрывает N+1 на `GET /`).
+6. **WEB-004** — Plan view (Progress Overview + Mermaid).
+7. **WEB-021** — Revisions log.
+8. **WEB-014** — Overview agg + `task complete` POST.
+9. **WEB-012** — HTMX section patch (depends WEB-022, WEB-040).
+10. **WEB-006** — Markdown rendering для doc body.
+
+«Хвост» (LO): WEB-051 (asset versioning), WEB-052 (error-branch tests),
+WEB-053 (conftest cleanup), WEB-042 (capability §3/§4 keep-in-sync helper).
+
+## Dependency Graph (post-audit 2026-05-02)
 
 ```mermaid
 graph TD
-  WEB_001[WEB-001 scaffold]
-  WEB_002[WEB-002 project page]
-  WEB_003[WEB-003 docs view]
-  WEB_004[WEB-004 plan view]
+  %% Section A — done
+  WEB_001[WEB-001 ✅ scaffold]
+  WEB_002[WEB-002 ✅ project page]
+  WEB_003[WEB-003 ✅ docs view]
+  WEB_010[WEB-010 ✅ tasks list]
+  WEB_011[WEB-011 ✅ task status HTMX]
 
-  WEB_010[WEB-010 tasks list]
-  WEB_011[WEB-011 task status HTMX]
+  %% Section F — Hardening (NEW)
+  WEB_005[WEB-005 ⚙ engine cache + DI]
+  WEB_013[WEB-013 ⚙ index batch stats]
+  WEB_040[WEB-040 ⚙ remove infra bypass]
+  WEB_022[WEB-022 ⚙ alerts/error model]
+  WEB_050[WEB-050 ⚙ DB session pattern]
+  WEB_051[WEB-051 ⚙ asset versioning]
+  WEB_052[WEB-052 ⚙ error-branch tests]
+  WEB_053[WEB-053 ⚙ conftest extract]
+
+  %% Section B — Read views
+  WEB_004[WEB-004 plan view]
+  WEB_006[WEB-006 markdown render]
+  WEB_014[WEB-014 overview agg]
+  WEB_021[WEB-021 revisions log]
+  WEB_060[WEB-060 settings page]
+
+  %% Section C — Write paths
   WEB_012[WEB-012 section patch HTMX]
 
-  WEB_020[WEB-020 settings page]
-  WEB_021[WEB-021 revisions log]
-  WEB_022[WEB-022 alerts + error model]
+  %% Section D — Live ops
+  WEB_030[WEB-030 SSE run]
+  WEB_031[WEB-031 import progress]
 
-  WEB_030[WEB-030 SSE run console]
-  WEB_031[WEB-031 import progress stream]
+  %% Section E — Architecture Hygiene
+  WEB_041[WEB-041 tabs include]
+  WEB_042[WEB-042 §3 doc/code sync]
 
-  WEB_001 --> WEB_002
-  WEB_002 --> WEB_003
-  WEB_002 --> WEB_010
-  WEB_002 --> WEB_004
-  WEB_002 --> WEB_020
+  %% Edges
+  WEB_001 --> WEB_002 --> WEB_003
+  WEB_002 --> WEB_010 --> WEB_011
   WEB_002 --> WEB_021
+  WEB_002 --> WEB_030 --> WEB_031
 
-  WEB_010 --> WEB_011
+  WEB_001 --> WEB_005
+  WEB_005 --> WEB_040
+  WEB_005 --> WEB_013
+  WEB_005 --> WEB_014
+  WEB_040 --> WEB_022
+  WEB_040 --> WEB_050
+
+  WEB_002 --> WEB_004
+  WEB_002 --> WEB_041
+  WEB_003 --> WEB_006
   WEB_003 --> WEB_012
-  WEB_011 --> WEB_022
-  WEB_012 --> WEB_022
+  WEB_022 --> WEB_012
+  WEB_010 --> WEB_014
+  WEB_001 --> WEB_060
 
-  WEB_002 --> WEB_030
-  WEB_030 --> WEB_031
+  WEB_001 --> WEB_051
+  WEB_011 --> WEB_052
+  WEB_022 --> WEB_052
 ```
 
 ---
@@ -220,19 +270,23 @@ affected_files:
 
 > ✅ **Implemented 2026-04-28** (commit `pending`): добавлены `TaskRepository.list_for_project(project_id, *, status=None)` (project-wide select с optional `status`-where, order by `plan_id, section_id, task_id`) и thin-wrapper `task_service.list_for_project`. `GET /p/{slug}/tasks?status=` — таблица id/title/type/status/priority/plan_id/section_id, status-фильтр через нативный `<select onchange="form.submit()">` (работает и без JS — `<noscript>` показывает кнопку Apply). Невалидный status-параметр — fallback на «все», warning-баннер. Color-coded badges (`badge-pending` жёлтый, `badge-in-progress` синий, `badge-done` зелёный) + priority colors (critical красный, high оранжевый, low серый). Plan-фильтр-дропдаун отложен — требует listing-метода в PlanRepository, который пока не отлит в `main` (см. pre-existing untracked `plan_repo.py`); URL-параметр `?plan=...` зарезервирован для следующей итерации. Тесты — 6 (рендер, status filter on `done`, on `in-progress`, invalid status, missing DB, 404 на unknown project); общий suite — 318/318. **Section A (Scaffold) closed; Section B (Read views) — 1/4.**
 
-### WEB-020
+### WEB-020 ~~superseded by WEB-060~~
 
 ```yaml
 id: WEB-020
 title: "Implement: settings page (config view + form save)"
 section: B-Read-Views
-status: pending
+status: superseded
+superseded_by: WEB-060
 depends_on: [WEB-001]
 type: feature
 priority: medium
 ```
 
-**Description:** `GET/POST /settings` — read/write `Config` через `ConfigUpdate`-аналогичную модель. API-ключ маскируется при отображении.
+**Description:** ~~`GET/POST /settings` — read/write `Config` через `ConfigUpdate`-аналогичную модель. API-ключ маскируется при отображении.~~
+
+> **Superseded 2026-05-02:** перенумерована в **WEB-060** в рамках реорганизации
+> Section B после аудита (см. конец плана). Спека и acceptance расширены.
 
 ### WEB-021
 
@@ -299,12 +353,25 @@ id: WEB-022
 title: "Implement: alert/error model (HTMX target #alerts)"
 section: C-Write-Paths
 status: pending
-depends_on: [WEB-011, WEB-012]
+depends_on: [WEB-040, WEB-005]
 type: feature
-priority: medium
+priority: high
 ```
 
 **Description:** Единый формат ошибок для web-роутера: `WebError` exception → middleware → render `_frag/alert.html` в `#alerts` (HTMX `hx-swap-oob`). Покрывает NotFound / Validation / Conflict.
+
+> **Поднято с `medium` до `high` (2026-05-02, аудит SW-HI-4):** сейчас ошибки в
+> `fragments.py` теряются как inline `row-error` без структуры; conflict ревизий
+> исчезает после следующего HTMX-обновления, инцидент пропадает. Развязана
+> зависимость `[WEB-011, WEB-012]` → `[WEB-040, WEB-005]` — шина для всех
+> будущих write-path должна быть готова до WEB-012.
+
+**Acceptance:**
+- `cod_doc.api.web.errors:WebError` (ValidationError / ConflictError / NotFoundError).
+- Middleware (или exception handler) ловит — рендерит `_frag/alert.html` с severity.
+- HTMX-ответ возвращает фрагмент с `hx-swap-oob="afterbegin:#alerts"`.
+- Не-HTMX → 4xx + alert flash в session/cookie + 303 на референера.
+- 2 теста: HTMX (alert виден) и не-HTMX (cookie + redirect).
 
 ---
 
@@ -351,21 +418,559 @@ id: WEB-040
 title: "Refactor: remove web → infra direct access (db_resolver bypass)"
 section: E-Architecture-Hygiene
 status: pending
-depends_on: [WEB-002, WEB-003, WEB-010, WEB-011]
+depends_on: [WEB-005]
+type: refactor
+priority: high
+affected_files:
+  - cod_doc/api/web/db_resolver.py    # удалить
+  - cod_doc/api/deps.py                # добавить get_project_db
+  - cod_doc/api/web/pages.py
+  - cod_doc/api/web/fragments.py
+  - pyproject.toml                      # ruff banned-module-level-imports
+  - tests/api/test_web_docs.py
+  - tests/api/test_web_tasks.py
+  - docs/system/audit/2026-04-28-section-c-capabilities.md  # SC-HI-3 → resolved
+```
+
+**Description:** [cod_doc/api/web/db_resolver.py](../../../cod_doc/api/web/db_resolver.py)
+импортирует `cod_doc.infra.db.make_engine`, `make_session_factory` и
+`cod_doc.infra.repositories.ProjectRepository` — нарушает
+[capabilities/web-frontend.md §7](../capabilities/web-frontend.md). Замещается
+DI-функцией `get_project_db(slug)` в `cod_doc.api.deps` поверх кэшированного
+Engine из WEB-005.
+
+> **Поднято с `medium` до `high` (2026-05-02, аудит SW-HI-1):** WEB-011 уже
+> добавил второй call-site через `db_resolver`; чем больше write-path задач —
+> тем больше зацепится за резолвер. Зависимости упрощены: вместо `[WEB-002, 003,
+> 010, 011]` теперь `[WEB-005]` — нет смысла ждать всех читалок, надо ломать
+> цикл сейчас.
+
+**Acceptance:**
+- `cod_doc/api/web/db_resolver.py` удалён.
+- `cod_doc.api.deps:get_project_db` существует, возвращает `(Session, int)` или
+  поднимает `HTTPException(404)`. Закрывает context-manager автоматически
+  через FastAPI dependency yield.
+- `pages.py` / `fragments.py` импортируют только `cod_doc.services.*`,
+  `cod_doc.api.deps`, `cod_doc.domain.entities` (enums).
+- `pyproject.toml`: ruff `flake8-tidy-imports` секция запрещает
+  `cod_doc.infra` внутри `cod_doc/api/web/`. Тест-кейс: `ruff check` падает
+  при попытке вернуть `from cod_doc.infra...` в `pages.py`.
+- Все 27 web-тестов зелёные. Добавлен 1 новый тест: import-ban работает.
+- Audit-отчёт `2026-04-28-section-c-capabilities.md` переведён в `resolved`
+  (последняя его задача).
+
+### WEB-041
+
+```yaml
+id: WEB-041
+title: "Refactor: extract _layout/project_tabs.html include + disabled tabs"
+section: E-Architecture-Hygiene
+status: pending
+depends_on: [WEB-002]
 type: refactor
 priority: medium
 affected_files:
-  - cod_doc/api/web/db_resolver.py
+  - cod_doc/templates/web/_layout/project_tabs.html  # NEW
+  - cod_doc/templates/web/project/show.html
+  - cod_doc/templates/web/project/docs_list.html
+  - cod_doc/templates/web/project/doc_show.html       # ← добавить tabs
+  - cod_doc/templates/web/project/tasks_list.html
+  - cod_doc/api/web/templates_env.py                  # PROJECT_TABS глобал
+  - cod_doc/static/app.css                            # .tab-disabled
+```
+
+**Description:** Tab strip копипастится в 3 шаблонах, в `doc_show.html` он
+**отсутствует** (рассинхрон). Все целевые табы (`Plans`, `Revisions`, `Run`)
+ведут на 404, потому что страницы ещё не написаны — пользователь видит «битый
+сайт» вместо «функция в работе» (SW-ME-1, SW-ME-2 в аудите).
+
+**Acceptance:**
+- `_layout/project_tabs.html` принимает `slug` и `active`, рендерится через
+  `{% include 'project_tabs.html' with context %}` или макрос.
+- Список вкладок описан в `templates_env.py` как `PROJECT_TABS = [(slug, label, route, ready)]`,
+  доступен как Jinja-глобал.
+- Нереализованные табы (`ready=False`) рендерятся как `<span class="tab-disabled" title="coming soon">{label}</span>`.
+- `doc_show.html` показывает табы (Docs active).
+- `status_options` тоже вынесен в `templates_env` или `cod_doc/api/web/choices.py`.
+- 1 тест: на одной странице видна полная полоса табов; на нереализованных —
+  `class="tab-disabled"` без `<a href>`.
+
+### WEB-042
+
+```yaml
+id: WEB-042
+title: "Doc/code sync helper: capability §3 ↔ реальность"
+section: E-Architecture-Hygiene
+status: pending
+depends_on: []
+type: feature
+priority: medium
+affected_files:
+  - cod_doc/cli/cmd_audit.py
+  - tests/cli/test_cmd_audit.py
+```
+
+**Description:** Capability §3 в [web-frontend.md](../capabilities/web-frontend.md)
+содержит таблицу маршрутов с колонкой Status (✅/🔄/❌) и Task. Сейчас
+синхронизируется руками. Добавить `cod-doc audit --web-routes`: парсит
+APIRouter (через FastAPI app routes) и сравнивает с таблицей в capability.
+
+**Acceptance:**
+- CLI команда возвращает diff (отсутствует в коде / отсутствует в доке).
+- Прогоняется в CI как warning (не блокирует).
+- 2 теста: расхождение детектируется + matched-set игнорируется.
+
+---
+
+## Section F: Hardening
+
+> Создан 2026-05-02 на основе [audit/2026-05-02-section-web-frontend.md](../audit/2026-05-02-section-web-frontend.md).
+> Задачи этой секции — фундамент для всех будущих write-path и read-views.
+
+### WEB-005
+
+```yaml
+id: WEB-005
+title: "Implement: project DB engine cache + get_project_db DI helper"
+section: F-Hardening
+status: pending
+depends_on: [WEB-001]
+type: refactor
+priority: high
+affected_files:
+  - cod_doc/api/deps.py                  # get_project_db
+  - cod_doc/api/server.py                # инициализация в lifespan
+  - cod_doc/api/web/db_resolver.py        # перенесётся / удалится в WEB-040
+  - tests/api/test_deps_engine_cache.py   # NEW
+```
+
+**Description:** Сейчас `open_db_for_project` создаёт `Engine + factory + session`
+на каждый HTTP-запрос и `dispose()`-ит в finally. Стоимость — 5–15 ms на
+локальном SSD, 50–200 ms на сетевой FS (SW-HI-2 в аудите).
+
+**Acceptance:**
+- `cod_doc.api.deps:get_engine_for_slug(slug) -> Engine | None` — возвращает
+  закэшированный engine; кэш — `dict[Path, tuple[Engine, float]]` с
+  TTL-инвалидацией по mtime файла state.db.
+- `cod_doc.api.deps:get_project_db(slug) -> Iterator[tuple[Session, int]]` —
+  FastAPI dependency (yield-style); закрывает session после response.
+- В `server.py` lifespan: при shutdown вызвать `dispose_all()`.
+- Перфтест/бенчмарк (или хотя бы микротест): 100 sequential `GET /p/{slug}/tasks`
+  работают в **N×** быстрее, чем без кэша (записать число в DoD).
+- 3 теста: cache hit, cache invalidation по mtime, dispose-on-shutdown.
+
+### WEB-013
+
+```yaml
+id: WEB-013
+title: "Perf: index page batch stats (resolve N+1 on /)"
+section: F-Hardening
+status: pending
+depends_on: [WEB-005]
+type: feature
+priority: high
+affected_files:
   - cod_doc/api/web/pages.py
-  - cod_doc/api/web/fragments.py
+  - cod_doc/core/project.py              # batch_stats helper
+  - tests/api/test_web_scaffold.py
+```
+
+**Description:** `GET /` для каждого проекта вызывает `Project.stats()` →
+последовательный read из state.db. На N проектах — N×I/O. После WEB-005
+engine закэширован, но всё ещё N запросов; нужен batch-метод (SW-HI-3).
+
+**Acceptance:**
+- Реализован batch-сбор stats (либо asyncio.gather, либо single query через
+  глобальную DB-агрегацию, если архитектура позволит).
+- Лимит на отображаемое количество (top-N с пагинацией) — по умолчанию 20.
+- Прогресс-индикатор (HTMX `hx-trigger="load"`) для long-tail проектов.
+- 2 теста: 10 проектов рендерятся за один request; пагинация работает.
+
+### WEB-050
+
+```yaml
+id: WEB-050
+title: "Convention: project_db_id flow через DI (предотвратить регрессию WEB-040)"
+section: F-Hardening
+status: pending
+depends_on: [WEB-040]
+type: refactor
+priority: medium
+affected_files:
+  - cod_doc/api/deps.py
+  - docs/system/capabilities/web-frontend.md
+```
+
+**Description:** После WEB-040 ввести структурный паттерн: каждая web-функция
+объявляет `project_db: tuple[Session, int] = Depends(get_project_db)` и
+никогда не имеет дела со slug→DB резолвом сама. Линт-правило (или явный
+`mypy` plugin / custom ruff rule) ловит ручной импорт `open_db_for_project`-подобных
+helper'ов.
+
+**Acceptance:**
+- Pattern зафиксирован в capability §7 как «единственно верный».
+- Все существующие endpoints используют его.
+- Документ-обзор «как добавить новую web-страницу» (раздел в capability §13).
+
+### WEB-051
+
+```yaml
+id: WEB-051
+title: "Static asset versioning (cache-bust by file hash)"
+section: F-Hardening
+status: pending
+depends_on: [WEB-001]
+type: feature
+priority: low
+affected_files:
+  - cod_doc/api/web/templates_env.py
+  - cod_doc/templates/web/base.html
+```
+
+**Description:** Vendored `htmx.min.js` и `app.css` ссылаются без версии. При
+апгрейде htmx → старый файл из browser-кэша (SW-LO-1).
+
+**Acceptance:**
+- Jinja-функция `static('app.css')` возвращает `/static/app.css?v={short_hash}`.
+- Hash вычисляется один раз при старте app и кэшируется.
+- 1 тест: `static('app.css')` содержит `?v=...`.
+
+### WEB-052
+
+```yaml
+id: WEB-052
+title: "Tests: error-branch coverage (HTMX fragments + service errors)"
+section: F-Hardening
+status: pending
+depends_on: [WEB-011, WEB-022]
+type: test
+priority: low
+affected_files:
+  - tests/api/test_web_tasks.py
+  - tests/api/test_web_errors.py        # NEW
+```
+
+**Description:** Сейчас тесты на fragments покрывают только success path и
+400/404. Не тестируются `RevisionConflictError`, `IntegrityError`, доменный
+`ValueError` (SW-LO-2).
+
+**Acceptance:**
+- Тест: симулировать concurrent update task → conflict → `<span class="row-error">`.
+- Тест: PostgreSQL FK violation (sqlite — IntegrityError сложнее, можно через
+  monkeypatch сервиса).
+- Тест: state-machine отказ от `task_service.update_status`.
+- Тест: MASTER.md удалён вручную после init → страница рендерится без crash.
+
+### WEB-053
+
+```yaml
+id: WEB-053
+title: "Tests: extract _alembic_upgrade to conftest"
+section: F-Hardening
+status: pending
+depends_on: []
+type: refactor
+priority: low
+affected_files:
+  - tests/api/conftest.py
   - tests/api/test_web_docs.py
   - tests/api/test_web_tasks.py
 ```
 
-**Description:** Сейчас `cod_doc/api/web/db_resolver.py` импортирует `DocumentModel` напрямую из `cod_doc.infra.models`, что нарушает правило [capabilities/web-frontend.md §7](../capabilities/web-frontend.md): «Web-страница не имеет права обходить сервис. Разрешённые модули: только `cod_doc.services.*` и `cod_doc.api.deps`».
+**Description:** Идентичная функция `_alembic_upgrade()` живёт в двух
+fixture-файлах (SW-LO-5).
 
 **Acceptance:**
-- `cod_doc/api/web/db_resolver.py` удалён или сведён к функциям, использующим только сервисы.
-- `pages.py` / `fragments.py` зависят только от `cod_doc.services.*` и `cod_doc.api.deps`.
-- Линт-правило (ruff `flake8-tidy-imports.banned-module-level-imports` или custom check) запрещает `from cod_doc.infra` внутри `cod_doc/api/web/`.
-- Все существующие web-тесты зелёные.
+- Перенести в `conftest.py` как fixture `migrated_db_factory(tmp_path)`.
+- Оба test-файла используют новую fixture.
+- Все 27 тестов остаются зелёными.
+
+---
+
+## Section B: Read views (новые задачи)
+
+### WEB-006
+
+```yaml
+id: WEB-006
+title: "Implement: server-rendered markdown for doc_show body (anchors work)"
+section: B-Read-Views
+status: pending
+depends_on: [WEB-003]
+type: feature
+priority: medium
+affected_files:
+  - cod_doc/services/doc_service.py        # render_html (новый)
+  - cod_doc/api/web/pages.py
+  - cod_doc/templates/web/project/doc_show.html
+  - cod_doc/static/app.css                  # .doc-html
+  - tests/api/test_web_docs.py
+```
+
+**Description:** `doc_show` сейчас показывает body как raw markdown в `<pre>`.
+Якоря `#data-model` в боковой нав-панели не работают (SW-ME-3).
+
+**Acceptance:**
+- Решение принять отдельным mini-ADR в capability/web-frontend §13:
+  собственный mini-renderer поверх `DocService` (структура секций уже
+  известна) **или** `markdown-it-py` (новая dep — требует обоснования).
+- Body рендерится как `<section id="{anchor}"><h{level}>...</h{level}>{html}</section>`.
+- Клик на боковую ссылку → scroll-to-anchor работает.
+- `?raw=1` query сохраняет текущее `<pre>` поведение.
+- 2 теста: anchor scroll работает (HTML содержит `<section id="data-model">`);
+  raw-mode возвращает `<pre>`.
+
+### WEB-014
+
+```yaml
+id: WEB-014
+title: "Implement: overview dashboard agg (ready/progress/recent)"
+section: B-Read-Views
+status: pending
+depends_on: [WEB-005, WEB-010]
+type: feature
+priority: medium
+affected_files:
+  - cod_doc/api/web/pages.py
+  - cod_doc/templates/web/project/show.html
+  - cod_doc/templates/web/_frag/ready_block.html
+  - cod_doc/templates/web/_frag/recent_revisions.html
+  - tests/api/test_web_scaffold.py
+```
+
+**Description:** Дашборд `/p/{slug}` показывает только KPI-карточки. Агрегатных
+блоков (ready-to-start tasks, plan progress, recent revisions) нет —
+продуктивность ниже CLI-команды `cod-doc plan ready` (SW-ME-7).
+
+**Acceptance:**
+- Блок «Ready to start» — top-5 из `plan_service.ready` (если плана нет — пусто).
+- Блок «Plan progress» — мини-таблица `plan_service.recalc` по каждому плану.
+- Блок «Recent revisions» — top-5 из `revision_service.list_for_entity` (или
+  агрегата всех ревизий).
+- Endpoint `POST /p/{slug}/tasks/{task_id}/complete` — HTMX-кнопка ✓ в блоке Ready.
+- 3 теста: ready-блок виден на seed-проекте, complete POST работает,
+  пустой проект не падает.
+
+### WEB-060
+
+```yaml
+id: WEB-060
+title: "Implement: settings page (config view + form save)"
+section: B-Read-Views
+status: pending
+depends_on: [WEB-001]
+type: feature
+priority: medium
+affected_files:
+  - cod_doc/api/web/pages.py
+  - cod_doc/templates/web/settings.html
+  - tests/api/test_web_settings.py
+```
+
+**Description:** `GET/POST /settings` — read/write `Config`. API-ключ
+маскируется при отображении (показ только последних 4 символов). Форма
+работает без JS.
+
+> **Раньше WEB-020 (medium).** Перенумеровано в WEB-060 для группировки в
+> Section B новых задач после аудита 2026-05-02.
+
+**Acceptance:**
+- `GET /settings` рендерит форму с текущими значениями;
+  `Config.api_key` показан как `…XXXX`.
+- `POST /settings` (form-encoded) сохраняет через `Config.save()`,
+  redirects 303 → `/settings`.
+- Если api-key пустой — поле остаётся, не затирается.
+- 4 теста: GET render, POST save, mask, empty-key keeps existing.
+
+> **WEB-020 deprecated** в пользу WEB-060.
+
+---
+
+## Backlog: Productivity Ideas (2026-05-02)
+
+> **Не задачи.** Это backlog предложений по росту продуктивности фронта. У них
+> нет id/status/acceptance — это «сырое» состояние, чтобы не терять идеи.
+> Когда какая-то возьмётся в работу — переедет в Section B/C/E/F с
+> формальным `WEB-XXX` и acceptance.
+>
+> Принцип отбора: каждая идея должна сократить путь от **«что я хочу
+> понять/сделать»** до **«я это вижу/сделал»**, не нарушая non-goals §1
+> (никакой SPA, никакого build pipeline, никакой дизайн-системы).
+
+### P-1. URL state для фильтров и hash-share
+
+`/p/demo/tasks?status=pending&priority=critical#row=AUTH-007` — копируешь URL,
+делишься со коллегой, он видит ту же выборку и подсвеченную строку. Без JS
+поддерживается через query-параметры (часть уже есть для `status`); hash —
+прогрессивный enhancement через минимальный inline-script (≤20 строк).
+
+**Закрывает:** «как мне быстро сослаться на конкретное состояние UI?»
+
+**Стоимость:** ~30 LOC python + ~20 LOC inline JS.
+
+### P-2. Keyboard navigation (vim-style)
+
+`j/k` — следующая/предыдущая строка таблицы; `g`/`G` — прыжок в начало/конец;
+`enter` — открыть; `s` — sort; `/` — focus search. Реализуется одним инлайн-скриптом
+без deps (HTMX совместим), регистрируется только если документ имеет `<table data-keys>`.
+
+**Закрывает:** «мышью в таблице из 200 строк больно».
+
+**Стоимость:** ~60 LOC inline JS, no dep.
+
+### P-3. Command palette (Cmd+K)
+
+Открывается оверлей с input. Поиск по проектам/документам/задачам через
+существующий API (`/api/search` если будет, иначе SSR из БД). Action-list:
+«Перейти в …», «Создать задачу в …», «Изменить статус …». Без JS — fallback
+на `/search?q=…` страницу.
+
+**Закрывает:** разрыв «знаю что хочу — куда тыкать?» (особенно через 2-3 уровня
+табов).
+
+**Стоимость:** ~150 LOC python (search endpoint) + ~80 LOC inline JS.
+
+**Зависит от:** WEB-013 (engine cache, иначе latency убьёт UX).
+
+### P-4. Inline create (HTMX)
+
+`+ New task` прямо над/под таблицей: один input + Enter → POST + HTMX swap новой
+строки. То же для `+ New document`, `+ New plan section`.
+
+**Закрывает:** «зачем мне переходить на отдельную страницу ради одной задачи».
+
+**Стоимость:** ~40 LOC python + ~30 LOC HTML на каждую таблицу.
+
+**Зависит от:** WEB-022 (alerts: ошибка validation должна где-то рендериться).
+
+### P-5. Bulk operations
+
+Checkbox-колонка + панель действий: «mark done», «assign owner», «move to plan».
+Работает через `<form>` на не-HTMX и через HTMX `hx-post` на JS.
+
+**Закрывает:** ручной obhod 20 одинаковых задач после import-а.
+
+**Стоимость:** ~80 LOC, средняя сложность (нужно решить semantics для частичных
+ошибок: «5 успешно, 2 conflict» — куда показывать).
+
+### P-6. Live updates через SSE
+
+`hx-ext="sse"` подключение на `tasks_list.html`. Когда CLI/MCP/agent меняет
+задачу — браузер автоматически обновляет строку. Для multi-user работы и для
+прогресса агента в фоне.
+
+**Закрывает:** «изменил через CLI, переключился в браузер — стейл, F5».
+
+**Стоимость:** ~120 LOC python (SSE pub/sub в memory) + ~10 LOC HTML.
+
+**Зависит от:** WEB-030 (SSE-инфраструктура).
+
+### P-7. Recent / Pinned
+
+Sidebar-ленточка: «Recently viewed: AUTH-001, modules/M1/overview, …»;
+«Pinned: …». Хранится в cookie или в `Config.web_state` (JSON в БД, не критично).
+
+**Закрывает:** возврат в работу после паузы.
+
+**Стоимость:** ~50 LOC.
+
+### P-8. Diff view для ревизий
+
+`GET /p/{slug}/revisions/{revision_id}` — серверный side-by-side diff через
+`difflib.HtmlDiff` (stdlib, без deps). Параметры: full / unified / inline.
+
+**Закрывает:** «что изменилось между rev_3 и rev_4» (сейчас — raw JSON-patch).
+
+**Стоимость:** ~80 LOC python + ~40 LOC CSS.
+
+**Зависит от:** WEB-021.
+
+### P-9. Doc templates (quick-create)
+
+`/p/{slug}/docs/new?type=module-spec` рендерит форму с pre-filled frontmatter
+из шаблона `templates/doc-types/{type}.md.j2`. Заполняешь title/key/owner —
+POST → `doc_service.create` + первая section.
+
+**Закрывает:** копи-пастинг шапок документов из существующих.
+
+**Стоимость:** ~70 LOC python + ~40 LOC HTML + 4-5 шаблонов.
+
+### P-10. CLI hints в footer страницы
+
+Внизу каждой view — серым: `≡ CLI: cod-doc task list --status=pending --slug=demo`.
+Кликабельный — копирует в clipboard. Помогает учить CLI и переключаться.
+
+**Закрывает:** discoverability CLI у пользователя, который начал с web.
+
+**Стоимость:** ~10 LOC на view + ~5 LOC inline JS (`navigator.clipboard`).
+
+### P-11. AI summary / next-task hint
+
+Кнопка «🧠 Summarise this document» или «🧠 What should I do next on this plan?» —
+вызывает `Orchestrator.run_oneshot(prompt=…, context=this_doc/plan)` и
+рендерит ответ в expand-able блоке. Использует уже существующего агента —
+не новая dep.
+
+**Закрывает:** «у меня plan на 80 задач — что важнее?»
+
+**Стоимость:** ~120 LOC python + UI; **аккуратно с ценой**: явно показать
+оценку токенов до отправки.
+
+**Зависит от:** WEB-022 (ошибки модели), WEB-030 (SSE-стрим ответа).
+
+### P-12. Plan rebalancer (drag-n-drop секций)
+
+В plan view — drag-n-drop задач между секциями. POST через HTMX с порядком.
+Используется существующий `position` в `task` model. Без deps — HTML5 drag.
+
+**Закрывает:** ручное переписывание position'ов в plan'е.
+
+**Стоимость:** ~100 LOC inline JS + ~50 LOC python (batch reorder endpoint).
+
+**Зависит от:** WEB-004.
+
+### P-13. «Quick mode» для tasks_list (одна колонка, mobile)
+
+Toggle `?compact=1` или sticky-cookie: одна колонка `id · title · status` без
+фильтров и type-кружков. Полезно на узком экране и при чтении plan-а.
+
+**Закрывает:** мобильные/узкие экраны.
+
+**Стоимость:** ~30 LOC.
+
+### P-14. Section anchor in URL (back-link to source)
+
+После WEB-006: каждая section секции документа имеет «🔗»-ссылку, которая
+кладёт в clipboard `[[doc:KEY#anchor]]` — каноническая ссылка для использования
+в другом документе. Закрывает workflow «найти документ → скопировать ссылку
+для вставки в task description».
+
+**Зависит от:** WEB-006.
+
+**Стоимость:** ~15 LOC.
+
+### P-15. Auto-refresh stale state
+
+`GET /p/{slug}` — если master file mtime изменился с последнего render-а
+(сравнение с `If-Modified-Since`-подобным header'ом), показать banner
+«MASTER изменился, кликни для обновления». Пассивная подсказка, не блокирует.
+
+**Закрывает:** stale dashboards после внешних правок (git pull / другой
+инструмент).
+
+**Стоимость:** ~25 LOC.
+
+### Приоритизация backlog'а
+
+Если выбирать **3 идеи** для следующего спринта после Section F:
+1. **P-2** (keyboard nav) — биггест ratio impact/effort, прокачивает UX везде.
+2. **P-3** (command palette) — закрывает discoverability, разблокирует
+   масштабирование числа документов/задач.
+3. **P-10** (CLI hints) — обучает пользователя другому интерфейсу, мост между
+   surface'ами (capability §1: «equal surfaces»).
+
+**P-1, P-4, P-9, P-13, P-14** — дешёвые мелочи, можно вкручивать постепенно
+вместе с другими задачами.
+
+**P-6, P-11, P-12** — большие, требуют отдельного ADR (особенно P-11 —
+билинг/токены).

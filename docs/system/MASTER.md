@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-05-02
 audience: [contributors, agents]
 related_code:
   - cod_doc/core/project.py
@@ -71,15 +71,17 @@ docs/system/
 │   ├── 2026-04-25-section-a-data-core.md   ← аудит ядра (Section A)
 │   ├── 2026-04-25-section-b-services.md    ← аудит сервисов (Section B)
 │   ├── 2026-04-28-section-c-capabilities.md ← аудит capability-layer (Section C)
-│   └── 2026-05-01-section-g-hardening.md   ← закрытие hardening (Section G)
+│   ├── 2026-05-01-section-g-hardening.md   ← закрытие hardening (Section G)
+│   └── 2026-05-02-section-web-frontend.md  ← аудит web-секции (после WEB-001..011)
 │
 ├── migration/
 │   └── from-restate.md             ← как перевезти реальное состояние Restate
 │
 └── roadmap/
-    ├── cod-doc-task-plan.md        ← план внедрения (dogfood формата task-plan)
-    ├── web-frontend-task-plan.md   ← план Web UI поверх FastAPI
-    └── audit-followups-task-plan.md ← фиксы пакета по аудиту
+    ├── cod-doc-task-plan.md             ← план внедрения (dogfood формата task-plan)
+    ├── web-frontend-task-plan.md        ← план Web UI поверх FastAPI
+    ├── web-frontend-kickoff-2026-05-02.md ← brief на старт Section F (после аудита)
+    └── audit-followups-task-plan.md     ← фиксы пакета по аудиту
 ```
 
 ---
@@ -131,6 +133,8 @@ docs/system/
 | audit/2026-04-25-section-b-services | resolved | cod-doc core |
 | audit/2026-04-28-section-c-capabilities | active | cod-doc core |
 | audit/2026-05-01-section-g-hardening | resolved | cod-doc core |
+| audit/2026-05-02-section-web-frontend | active | cod-doc core |
+| capabilities/web-frontend | active | cod-doc core |
 
 Пока пакет в статусе `draft` — изменения допустимы без revision-истории. После `active` любая правка обязана вести к revision-записи (см. [standards/revision-history.md](standards/revision-history.md)). Статус `resolved` — для audit-отчётов, чьи задачи закрыты (см. [standards/frontmatter.md §7](standards/frontmatter.md)).
 
@@ -146,6 +150,7 @@ docs/system/
 | 2026-04-28 | Добавлен `standards/sensitive-data.md` в индекс §2; зафиксирован пробел: инфраструктура (scanner, redaction, фильтры контекста) пока отсутствует — вынесена в задачу COD-025. |
 | 2026-04-28 | Аудит capability-layer (Section C) — выявлены пробелы: нет CI workflow (COD-024), LinkService.rename не каскадит body (COD-014a), web-layer обходит сервисы (WEB-020), TUI без тестов (COD-026). |
 | 2026-05-01 | Section G (Hardening & DevX) закрыта целиком — 5/5 задач: COD-024a (strict ruff/mypy debt cleared, CI gates blocking), COD-014a (markdown-relative rename cascade), COD-025 (sensitive-data infrastructure: scanner+FM-007+SD-001 audit+SD-002 redaction+clearance helper), COD-026 (TUI smoke tests, попутно фикс bug в WizardScreen). Suite 402/402; см. [audit/2026-05-01-section-g-hardening.md](audit/2026-05-01-section-g-hardening.md). |
+| 2026-05-02 | Аудит web-секции после закрытия Section A (Scaffold) + WEB-010/011 — см. [audit/2026-05-02-section-web-frontend.md](audit/2026-05-02-section-web-frontend.md). 16 находок (4 high, 7 medium, 5 low); 13 новых задач заведены в [roadmap/web-frontend-task-plan.md](roadmap/web-frontend-task-plan.md) (новая Section F: Hardening — WEB-005, 013, 022 ↑, 050..053; Section E расширена WEB-041, 042; Section B — WEB-006, 014, 060). WEB-040 и WEB-022 повышены до `high`. capability `web-frontend` переведён в `active`, добавлены §11 «Текущее состояние» и DI-конвенция в §7. Реализовано 5/14 endpoints (~36 %). |
 
 ---
 
