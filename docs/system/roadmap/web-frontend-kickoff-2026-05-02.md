@@ -27,11 +27,13 @@ audience: [next-session-agent, contributors]
 - **Корень проблем — отсутствие фундамента**: engine на каждый запрос (perf),
   web → infra прямые импорты (architecture), `<div id="alerts">` без модели (UX).
 - **Batch-1 закрыт 2026-05-02:** WEB-005, WEB-040, WEB-022, WEB-041, WEB-013 ✅.
-  11 / 16 находок baseline-аудита закрыты; suite 418 → 441; checkpoint-аудит
-  → [audit/2026-05-02-checkpoint-web-batch-1.md](../audit/2026-05-02-checkpoint-web-batch-1.md).
-- **Следующий шаг:** WEB-006 (markdown render для doc_show — закрывает SW-ME-3)
-  или WEB-014 (overview agg). Рекомендация: WEB-006 (более видимый user-facing
-  фикс — anchor-навигация по документу сейчас сломана).
+  11 / 16 находок baseline закрыты; checkpoint #1 → [batch-1](../audit/2026-05-02-checkpoint-web-batch-1.md).
+- **Batch-2 закрыт 2026-05-02:** WEB-006 (markdown), polish (013b/022b/054),
+  WEB-014 (overview agg + complete), WEB-021 (revisions log) ✅.
+  13 / 16 находок baseline закрыты; suite 441 → 483; endpoints 5→8/14;
+  checkpoint #2 → [batch-2](../audit/2026-05-02-checkpoint-web-batch-2.md).
+- **Следующий шаг:** WEB-004 (plan view + Mermaid). Закрывает Section B
+  до 5/6, делает Plans-таб live. Самый объёмный из остатков.
 
 ## 2. Где что лежит
 
@@ -58,10 +60,13 @@ audience: [next-session-agent, contributors]
 | WEB-022 | Alerts/error model | C | ✅ done 2026-05-02 | high |
 | WEB-041 | Tabs include + disabled | E | ✅ done 2026-05-02 | medium |
 | WEB-013 | Index batch stats | F | ✅ done 2026-05-02 | high |
-| **WEB-006** | **Markdown render для doc_show** | **B** | **❌ next** | **medium** |
-| WEB-014 | Overview agg | B | ❌ pending | medium |
-| WEB-004 | Plan view + Mermaid | B | ❌ pending | high |
-| WEB-021 | Revisions log | B | ❌ pending | medium |
+| WEB-006 | Markdown render для doc_show | B | ✅ done 2026-05-02 | medium |
+| WEB-013b | empty-page summary clamp | F | ✅ done 2026-05-02 | low |
+| WEB-022b | log WebError events | C | ✅ done 2026-05-02 | low |
+| WEB-054 | flash_message length cap | F | ✅ done 2026-05-02 | low |
+| WEB-014 | Overview agg + complete | B | ✅ done 2026-05-02 | medium |
+| WEB-021 | Revisions log | B | ✅ done 2026-05-02 | medium |
+| **WEB-004** | **Plan view + Mermaid** | **B** | **❌ next** | **high** |
 | WEB-012 | Section patch HTMX | C | ❌ pending | high |
 | WEB-060 | Settings page | B | ❌ pending | medium |
 | WEB-030 | SSE run console | D | ❌ pending | medium |
@@ -71,13 +76,11 @@ audience: [next-session-agent, contributors]
 | WEB-051 | Asset versioning | F | ❌ pending | low |
 | WEB-052 | Error-branch tests | F | ❌ pending | low |
 | WEB-053 | Test hygiene (cache+alembic) | F | 🔄 partial | medium (↑) |
-| WEB-013b | empty-page summary clamp | F | ❌ pending | low |
-| WEB-022b | log WebError events | C | ❌ pending | low |
-| WEB-054 | flash_message length cap | F | ❌ pending | low |
+| WEB-053b | Tab fixture consolidation | F | ❌ pending | low (NEW from checkpoint #2) |
+| WEB-014b | task complete next_url | B | ❌ pending | low (NEW from checkpoint #2) |
 
-26 total · **10 done / 15 pending / 1 partial** · expected order:
-B-remainder (WEB-006, 014, 004, 021) → C (WEB-012) → D (WEB-030, 031) →
-F-tail (013b, 050..054) + E (042).
+26 total · **16 done / 9 pending / 1 partial** · expected order:
+WEB-004 → WEB-012 → WEB-060 → D (WEB-030, 031) → tail (042/050/051/052/053/053b/014b).
 
 ## 4. Первый tick — WEB-005 (Engine cache + DI helper)
 

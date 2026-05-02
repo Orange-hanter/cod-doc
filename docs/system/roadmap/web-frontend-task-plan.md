@@ -975,6 +975,45 @@ priority: low
 
 > ✅ **Implemented 2026-05-02** (commit `pending`): bundled с WEB-013b/054.
 
+### WEB-053b
+
+```yaml
+id: WEB-053b
+title: "Tests: consolidate tab-state expectations into a shared fixture"
+section: F-Hardening
+status: pending
+depends_on: [WEB-041]
+type: refactor
+priority: low
+```
+
+**Description:** При флипе таба `ready=False → True` (как в WEB-021) приходится
+обновлять ассерты в `test_web_tabs.py` + `test_web_scaffold.py`. Хочется одно
+место.
+
+**Acceptance:** общий fixture `expected_tabs_state()` в conftest или
+parametrize-helper, чтобы изменение одной таблицы tabs запускало re-evaluation
+ассертов автоматически.
+
+### WEB-014b
+
+```yaml
+id: WEB-014b
+title: "UX: task complete redirect respects Referer"
+section: B-Read-Views
+status: pending
+depends_on: [WEB-014]
+type: feature
+priority: low
+```
+
+**Description:** `POST /tasks/{id}/complete` без HTMX редиректит на
+`/p/{slug}` (overview), независимо от того, откуда пришёл запрос.
+Form-post с tasks-list лучше возвращать на /tasks.
+
+**Acceptance:** использовать `Referer` (как делает `web_error_handler`) или
+hidden `next` form field. 1 тест: form-post с tasks-list возвращает на /tasks.
+
 ### WEB-054
 
 ```yaml
