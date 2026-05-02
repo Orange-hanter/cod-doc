@@ -205,6 +205,95 @@ def update_status(
     return t
 
 
+def _update_text_field(
+    session: Session,
+    *,
+    task_id: str,
+    field: str,
+    new_value: str,
+    author: str,
+    reason: str | None,
+    expected_parent_revision_id: str | None | object,
+) -> Task:
+    """Shared body for update_description / update_acceptance.
+
+    No-ops when value is unchanged. Writes a TASK revision with
+    op=`<field>` carrying old/new content (length-only when very long).
+    """
+    model = _require_task(session, task_id)
+    old_value = getattr(model, field) or ""
+    if old_value == new_value:
+        t = TaskRepository(session).get_by_task_id(task_id)
+        assert t is not None
+        return t
+
+    setattr(model, field, new_value or None)
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+
+    rev.write(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff(
+            field,
+            old_len=len(old_value),
+            new_len=len(new_value),
+            old_preview=(old_value[:80] + "…") if len(old_value) > 80 else old_value,
+            new_preview=(new_value[:80] + "…") if len(new_value) > 80 else new_value,
+        ),
+        reason=reason,
+        expected_parent_revision_id=expected_parent_revision_id,
+    )
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return t
+
+
+def update_description(
+    session: Session,
+    *,
+    task_id: str,
+    new_description: str,
+    author: str,
+    reason: str | None = None,
+    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+) -> Task:
+    """Replace task.description; writes a TASK revision (op=description)."""
+    return _update_text_field(
+        session,
+        task_id=task_id,
+        field="description",
+        new_value=new_description,
+        author=author,
+        reason=reason,
+        expected_parent_revision_id=expected_parent_revision_id,
+    )
+
+
+def update_acceptance(
+    session: Session,
+    *,
+    task_id: str,
+    new_acceptance: str,
+    author: str,
+    reason: str | None = None,
+    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+) -> Task:
+    """Replace task.acceptance; writes a TASK revision (op=acceptance)."""
+    return _update_text_field(
+        session,
+        task_id=task_id,
+        field="acceptance",
+        new_value=new_acceptance,
+        author=author,
+        reason=reason,
+        expected_parent_revision_id=expected_parent_revision_id,
+    )
+
+
 def complete(
     session: Session,
     *,

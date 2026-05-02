@@ -1,0 +1,20 @@
+{# Read-only task field card. Reused by task_show.html and after a successful patch. #}
+<section id="task-field-{{ field }}" class="task-card task-field-card">
+  <header class="task-card-header">
+    <h2>{{ label }}</h2>
+    <button type="button"
+            class="card-edit-btn"
+            hx-get="/p/{{ project.name }}/tasks/{{ task.task_id }}/fields/{{ field }}/edit"
+            hx-target="#task-field-{{ field }}"
+            hx-swap="outerHTML"
+            title="Edit {{ label | lower }}">✎ Edit</button>
+  </header>
+  {% if raw %}
+    <div class="doc-body">{{ html | safe }}</div>
+  {% else %}
+    <p class="empty-hint">
+      <em>{{ label }} не задано.</em>
+      Кликни <strong>✎ Edit</strong>, чтобы добавить — поддерживается markdown.
+    </p>
+  {% endif %}
+</section>

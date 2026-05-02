@@ -149,12 +149,15 @@ def test_task_detail_renders_header_and_badges(task_detail_client) -> None:
     body = r.text
     assert "DET-001" in body
     assert "Set up DB schema" in body
-    # Badges
-    assert "badge-in-progress" in body  # status updated in fixture
-    assert "prio prio-high" in body
+    # Hero: status badge + priority chip + type chip
+    assert "badge-lg badge-in-progress" in body  # status badge prominent
+    assert "prio-chip prio-high" in body  # priority chip
     assert "type: feature" in body
-    # Plan breadcrumb link
+    # Plan link rendered as a meta-chip
+    assert 'class="meta-chip meta-chip-link"' in body
     assert 'href="/p/demo/plans/' in body
+    # Priority stripe class on hero (visual accent)
+    assert "prio-stripe-high" in body
 
 
 def test_task_detail_renders_description_markdown(task_detail_client) -> None:
@@ -199,8 +202,9 @@ def test_task_detail_shows_revision_history(task_detail_client) -> None:
     client, entry = task_detail_client
     r = client.get(f"/p/{entry.name}/tasks/DET-001")
     body = r.text
-    # 2 revisions: create + status update
-    assert "Revision history (2)" in body
+    # 2 revisions: create + status update — count rendered in <span class="count-chip">
+    assert "Revision history" in body
+    assert '<span class="count-chip">2</span>' in body
     assert "human:dakh" in body
 
 
@@ -264,3 +268,112 @@ def test_tasks_list_links_to_detail(task_detail_client) -> None:
     body = r.text
     assert 'href="/p/demo/tasks/DET-001"' in body
     assert 'href="/p/demo/tasks/DET-002"' in body
+
+
+# ── Inline edit (description / acceptance) ──────────────────────────────
+
+
+def test_field_edit_form_has_textarea_for_description(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(
+        f"/p/{entry.name}/tasks/DET-001/fields/description/edit",
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    body = r.text
+    assert '<textarea name="body"' in body
+    # Pre-fill with current description (markdown source)
+    assert "**payment_intent**" in body
+    assert "Save" in body
+    assert "Cancel" in body
+
+
+def test_field_view_renders_markdown_card(task_detail_client) -> None:
+    """Cancel button hits .../view → returns the read-only card."""
+    client, entry = task_detail_client
+    r = client.get(
+        f"/p/{entry.name}/tasks/DET-001/fields/description/view",
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="task-field-description"' in body
+    assert "<strong>payment_intent</strong>" in body  # rendered markdown
+    assert "✎ Edit" in body  # edit affordance back
+
+
+def test_field_patch_writes_description_and_swaps_view(task_detail_client) -> None:
+    client, entry = task_detail_client
+    new_md = "Updated description.\n\n- bullet **bold**\n- second"
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/fields/description",
+        data={"body": new_md},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    body = r.text
+    # Returns the view fragment with rendered new content
+    assert 'id="task-field-description"' in body
+    assert "<strong>bold</strong>" in body
+    assert "<li>second</li>" in body
+    # Persistence: full page reload still shows the new content
+    r2 = client.get(f"/p/{entry.name}/tasks/DET-001")
+    assert "Updated description" in r2.text
+    assert "<li>second</li>" in r2.text
+
+
+def test_field_patch_works_for_acceptance(task_detail_client) -> None:
+    client, entry = task_detail_client
+    new_md = "Acceptance v2:\n\n- `pytest -q` zero failures"
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/fields/acceptance",
+        data={"body": new_md},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="task-field-acceptance"' in body
+    assert "<code>pytest -q</code>" in body
+
+
+def test_field_patch_form_post_redirects(task_detail_client) -> None:
+    """Non-HTMX form post → 303 back to the task page."""
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/fields/description",
+        data={"body": "plain new text"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/p/{entry.name}/tasks/DET-001"
+
+
+def test_field_edit_unknown_field_404(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(
+        f"/p/{entry.name}/tasks/DET-001/fields/garbage/edit",
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 404
+
+
+def test_field_edit_unknown_task_404(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(
+        f"/p/{entry.name}/tasks/UNKNOWN-999/fields/description/edit",
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 404
+
+
+def test_empty_description_shows_edit_hint_with_button(task_detail_client) -> None:
+    """Tasks without description render an editable empty card, not a wall of dashes."""
+    client, entry = task_detail_client
+    # DET-002 was seeded without description
+    r = client.get(f"/p/{entry.name}/tasks/DET-002")
+    body = r.text
+    assert "не задано" in body
+    # Edit button is present even on empty cards
+    assert "✎ Edit" in body
+    # Hint mentions markdown
+    assert "markdown" in body.lower()

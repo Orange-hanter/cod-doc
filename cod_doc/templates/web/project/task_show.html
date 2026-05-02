@@ -10,33 +10,42 @@
 
 {% with slug=project.name, active="tasks" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<header class="task-header">
-  <h1><span class="mono">{{ task.task_id }}</span> · {{ task.title }}</h1>
-  <div class="task-badges">
-    <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
-    <span class="prio prio-{{ task.priority }}">{{ task.priority }}</span>
-    <span class="muted">type: {{ task.type }}</span>
-    {% if plan %}
-      <span class="muted">plan:
-        <a href="/p/{{ project.name }}/plans/{{ plan.plan_id }}" class="mono">{{ plan.scope }}</a>
+{# ── HERO ──────────────────────────────────────────────────────────── #}
+<header class="task-hero prio-stripe-{{ task.priority }} status-tone-{{ task.status }}">
+  <div class="task-hero-row task-hero-top">
+    <span class="task-hero-id mono">{{ task.task_id }}</span>
+    <span class="badge badge-lg badge-{{ task.status }}">{{ task.status }}</span>
+    <div class="task-hero-meta">
+      <span class="meta-chip prio-chip prio-{{ task.priority }}" title="priority">
+        ⚑ {{ task.priority }}
       </span>
-    {% endif %}
-    {% if task.completed_commit %}
-      <span class="muted">commit: <code>{{ task.completed_commit[:8] }}</code></span>
-    {% endif %}
+      <span class="meta-chip" title="type">⊞ type: {{ task.type }}</span>
+      {% if plan %}
+        <a class="meta-chip meta-chip-link"
+           href="/p/{{ project.name }}/plans/{{ plan.plan_id }}"
+           title="plan">
+          ↳ {{ plan.scope }}
+        </a>
+      {% endif %}
+      {% if task.completed_commit %}
+        <span class="meta-chip" title="commit">
+          ⌥ <code>{{ task.completed_commit[:8] }}</code>
+        </span>
+      {% endif %}
+    </div>
   </div>
+  <h1 class="task-hero-title">{{ task.title }}</h1>
 </header>
 
-<section class="task-quick-actions">
-  <form class="row-status"
+{# ── ACTIONS ────────────────────────────────────────────────────────── #}
+<aside class="task-actions">
+  <form class="task-status-form"
         method="post"
         action="/p/{{ project.name }}/tasks/{{ task.task_id }}/status">
-    <label class="muted">Set status:</label>
-    <select
-      name="status"
-      hx-post="/p/{{ project.name }}/tasks/{{ task.task_id }}/status"
-      hx-trigger="change"
-    >
+    <label class="muted-tiny">Set status</label>
+    <select name="status"
+            hx-post="/p/{{ project.name }}/tasks/{{ task.task_id }}/status"
+            hx-trigger="change">
       {% for s in task_status_options %}
         <option value="{{ s }}" {% if task.status == s %}selected{% endif %}>{{ s }}</option>
       {% endfor %}
@@ -53,66 +62,79 @@
       </button>
     </form>
   {% endif %}
-</section>
+</aside>
 
-<div class="task-grid">
-  <section class="task-block">
-    <h2>Description</h2>
-    {% if task.description %}
-      <div class="doc-body">{{ task.description_html | safe }}</div>
-    {% else %}
-      <p class="muted">— Описание не задано.</p>
-    {% endif %}
-  </section>
+{# ── BODY (2-col): content | deps sidebar ──────────────────────────── #}
+<div class="task-layout">
+  <main class="task-content">
+    {% with field="description", label="Description", raw=task.description, html=task.description_html %}
+      {% include "_frag/task_field_view.html" %}
+    {% endwith %}
+    {% with field="acceptance", label="Acceptance criteria", raw=task.acceptance, html=task.acceptance_html %}
+      {% include "_frag/task_field_view.html" %}
+    {% endwith %}
+  </main>
 
-  <section class="task-block">
-    <h2>Acceptance criteria</h2>
-    {% if task.acceptance %}
-      <div class="doc-body">{{ task.acceptance_html | safe }}</div>
-    {% else %}
-      <p class="muted">— Acceptance criteria не заданы.</p>
-    {% endif %}
-  </section>
+  <aside class="task-deps">
+    <section class="task-card task-deps-card">
+      <header class="task-card-header">
+        <h2>Blocked by <span class="count-chip">{{ forward | length }}</span></h2>
+        <span class="muted-tiny">↑ must complete BEFORE</span>
+      </header>
+      {% if forward %}
+        <ul class="dep-list">
+          {% for e in forward %}
+            <li class="dep-item">
+              <span class="dep-depth" title="depth {{ e.depth }}">{{ e.depth }}</span>
+              <span class="badge badge-{{ e.status }}">{{ e.status }}</span>
+              <a href="/p/{{ project.name }}/tasks/{{ e.task_id }}" class="dep-link">
+                <span class="mono dep-id">{{ e.task_id }}</span>
+                <span class="dep-title">{{ e.title }}</span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty-hint"><em>Зависимостей нет — задача готова к старту.</em></p>
+      {% endif %}
+    </section>
 
-  <section class="task-block">
-    <h2>Blocked by ({{ forward | length }})</h2>
-    {% if forward %}
-      <ul class="chain-list">
-        {% for e in forward %}
-          <li>
-            <span class="badge badge-{{ e.status }}">{{ e.status }}</span>
-            <a href="/p/{{ project.name }}/tasks/{{ e.task_id }}" class="mono">{{ e.task_id }}</a>
-            <span class="muted">— {{ e.title }}</span>
-            <span class="muted">depth&nbsp;{{ e.depth }}</span>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">Зависимостей нет — задача готова к старту.</p>
-    {% endif %}
-  </section>
-
-  <section class="task-block">
-    <h2>Unblocks ({{ reverse | length }})</h2>
-    {% if reverse %}
-      <ul class="chain-list">
-        {% for e in reverse %}
-          <li>
-            <span class="badge badge-{{ e.status }}">{{ e.status }}</span>
-            <a href="/p/{{ project.name }}/tasks/{{ e.task_id }}" class="mono">{{ e.task_id }}</a>
-            <span class="muted">— {{ e.title }}</span>
-            <span class="muted">depth&nbsp;{{ e.depth }}</span>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">Не блокирует никаких задач.</p>
-    {% endif %}
-  </section>
+    <section class="task-card task-deps-card">
+      <header class="task-card-header">
+        <h2>Unblocks <span class="count-chip">{{ reverse | length }}</span></h2>
+        <span class="muted-tiny">↓ depends on this</span>
+      </header>
+      {% if reverse %}
+        <ul class="dep-list">
+          {% for e in reverse %}
+            <li class="dep-item">
+              <span class="dep-depth" title="depth {{ e.depth }}">{{ e.depth }}</span>
+              <span class="badge badge-{{ e.status }}">{{ e.status }}</span>
+              <a href="/p/{{ project.name }}/tasks/{{ e.task_id }}" class="dep-link">
+                <span class="mono dep-id">{{ e.task_id }}</span>
+                <span class="dep-title">{{ e.title }}</span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty-hint"><em>— не блокирует никаких задач.</em></p>
+      {% endif %}
+    </section>
+  </aside>
 </div>
 
-<section class="task-history">
-  <h2>Revision history ({{ history | length }})</h2>
+{# ── HISTORY (full-width) ─────────────────────────────────────────── #}
+<section class="task-card task-history">
+  <header class="task-card-header">
+    <h2>Revision history <span class="count-chip">{{ history | length }}</span></h2>
+    {% if history %}
+      <a class="muted-tiny"
+         href="/p/{{ project.name }}/revisions?entity_kind=task">
+        all task revisions →
+      </a>
+    {% endif %}
+  </header>
   {% if history %}
     <table class="grid">
       <thead>
@@ -136,12 +158,8 @@
         {% endfor %}
       </tbody>
     </table>
-    <p class="muted">
-      Полный лог:
-      <a href="/p/{{ project.name }}/revisions?entity_kind=task">все ревизии задач этого проекта</a>.
-    </p>
   {% else %}
-    <p class="muted">Ревизий по этой задаче пока нет.</p>
+    <p class="empty-hint"><em>Ревизий по этой задаче пока нет.</em></p>
   {% endif %}
 </section>
 {% endblock %}

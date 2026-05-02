@@ -278,19 +278,47 @@ cod-doc serve  # или docker compose up -d cod-doc
 
 ![Task detail](assets/cod-doc/05b-task-detail.png)
 
-Полная карточка задачи:
+Композиция: **hero · actions · 2-column body · history**. Каждая зона визуально
+обособлена; цвета и формы несут смысл.
 
-- **Header** — `<id> · <title>` + бейджи (status, priority, type, plan-link).
-- **Quick actions** — change status (HTMX `<select>`), Mark done button.
-  Кнопка `Mark done` скрывается, если статус уже `done`.
-- **Description / Acceptance criteria** — пользовательский markdown из БД,
-  отрендерен mini-renderer'ом. Если поля пустые — `— … не заданы.`.
-- **Blocked by / Unblocks** — транзитивная цепь зависимостей через
-  `plan_service.forward_chain` / `reverse_chain` (рекурсивный CTE),
-  каждая строка — `badge + link to task + title + depth`.
-- **Revision history** — все ревизии этой задачи newest-first; таблица
-  `revision_id / author / at / reason / diff first line`. Внизу ссылка на
-  `/revisions?entity_kind=task` (полный лог).
+- **Hero (top stripe)** — большой `<id>` chip + status-badge на одной строке,
+  под ними title h1. **Border-left** окрашен по приоритету
+  (`critical` red, `high` orange, `medium` blue, `low` muted).
+  **Background gradient** мягко тонируется по статусу
+  (pending — амбер, in-progress — sky, done — green, failed — red,
+  blocked — orange). Справа в hero — meta-chips: priority, type, plan link
+  (как кликабельный pill), commit hash (когда есть).
+- **Actions stripe** — отделённая полоска: Set status `<select>` (HTMX) +
+  ✓ Mark done (зелёная кнопка, скрывается в статусе done).
+- **2-column body:**
+  - **Left (2/3 width)** — Description и Acceptance criteria как карточки.
+    Каждая карта имеет header c `✎ Edit`-кнопкой для **inline-редактирования**
+    (HTMX swap → textarea → Save/Cancel; см. ниже). Markdown рендерится через
+    mini-renderer; пустое состояние — italic-hint с приглашением кликнуть Edit.
+  - **Right (1/3 width)** — два компактных dep-card'а:
+    - **Blocked by** — что должно завершиться ДО (depth-chip, status-badge,
+      task-link с id + усечённый title).
+    - **Unblocks** — что зависит от этой (та же структура).
+- **Revision history** — full-width карточка снизу. Таблица + count-chip в
+  заголовке + link на полный `/revisions?entity_kind=task`. Если ревизий нет —
+  italic-hint без визуального шума.
+
+#### Inline-редактирование (Description / Acceptance)
+
+![Task detail — edit mode](assets/cod-doc/05c-task-detail-edit.png)
+
+`✎ Edit` → HTMX swap карточки в edit-mode:
+
+- Карточка получает мягкий blue tint, header меняется на `— editing`.
+- Textarea с monospace-шрифтом, autofocus, placeholder подсказывает синтаксис
+  (`**bold**`, `\`code\``, lists, `> quotes`).
+- **Save** (primary) → POST `.../fields/{description|acceptance}` с
+  optimistic-concurrency-friendly handler'ом; на success swap обратно во
+  view-fragment с уже отрендеренным markdown'ом.
+- **Cancel** (secondary) → GET `.../fields/{field}/view` → swap без записи.
+- Изменения пишутся как TASK revision (`op: description`/`acceptance` +
+  `old_len`/`new_len`/`old_preview`/`new_preview`). Без HTMX (form-post) →
+  303 на детальную страницу, история обновится при reload.
 
 ### 5.6. Планы — `GET /p/{slug}/plans` + `GET /p/{slug}/plans/{plan_id}`
 
