@@ -35,8 +35,9 @@ related_audits:
 | C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
-| F: Hardening (NEW 2026-05-02) | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-005, 013 ✅; 022 (in C), 050..053 pending) |
-| **TOTAL** |  | **23** | **11** | **12** | |
+| F: Hardening (NEW 2026-05-02) | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-005, 013 ✅; 050..053 pending) |
+| F-tail: Polish from checkpoint | inline | 3 | 3 | 0 | ✅ done (WEB-013b, 022b, 054) |
+| **TOTAL** |  | **26** | **14** | **12** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -896,18 +897,21 @@ affected_files:
 id: WEB-013b
 title: "Polish: clamp empty-page summary numerals on /"
 section: F-Hardening
-status: pending
+status: done
 depends_on: [WEB-013]
 type: bug
 priority: low
 ```
 
-**Description:** При `?offset >= total` на странице `/` summary показывает
-`"N+1 – N of N"` (например, `"11–10 of 10"` при offset=10/total=10).
-Numerals технически корректны, но визуально выглядит как баг.
+**Description:** При `?offset >= total` на странице `/` summary показывал
+`"N+1 – N of N"` (например, `"11–10 of 10"`).
 
-**Acceptance:** clamp `showing_from` и `showing_to` к разумным значениям
-когда страница пуста (например, оба к `total`). 1 unit-test.
+**Acceptance:**
+- ✅ В `pages.index()`: пустая страница → `showing_from = showing_to = 0`,
+  читается как `"0–0 of N"`. Не-пустые страницы без изменений.
+- ✅ 2 теста в `tests/api/test_web_polish.py`.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`): bundled с WEB-022b/054.
 
 ### WEB-022b
 
@@ -915,19 +919,20 @@ Numerals технически корректны, но визуально выг
 id: WEB-022b
 title: "Polish: log WebError events from server.web_error_handler"
 section: C-Write-Paths
-status: pending
+status: done
 depends_on: [WEB-022]
 type: feature
 priority: low
 ```
 
-**Description:** Exception-handler в `cod_doc/api/server.py` рендерит 4xx
-без логирования. Для деплойнутых инстансов нужен sluggish-trail
-повторяющихся NotFound/Conflict/Validation, чтобы видеть паттерны.
+**Description:** Exception-handler рендерил 4xx без логирования.
 
-**Acceptance:** `logger.info("WebError: %s %d", request.url.path,
-exc.status_code)`. Уровень `info` — это не баг приложения. Опционально
-включить `exc.message` под INFO.
+**Acceptance:**
+- ✅ `logger.info("WebError %s %d severity=%s msg=%s", path, code, sev, msg)`.
+  Уровень INFO — 4xx это не баг приложения, но видимость нужна для ops.
+- ✅ 1 тест в `tests/api/test_web_polish.py` через `caplog`.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`): bundled с WEB-013b/054.
 
 ### WEB-054
 
@@ -935,21 +940,23 @@ exc.status_code)`. Уровень `info` — это не баг приложен
 id: WEB-054
 title: "Hardening: cap flash_message cookie length"
 section: F-Hardening
-status: pending
+status: done
 depends_on: [WEB-022]
 type: feature
 priority: low
 ```
 
-**Description:** `flash_message` cookie кладётся целым `WebError.message`
-(после percent-encoding). Если сервис кинет multi-line traceback или
-длинный SQL diagnostic — cookie может превысить ~4 KB browser limit.
+**Description:** `flash_message` cookie мог превысить ~4 KB browser-limit
+после percent-encoding длинной message.
 
 **Acceptance:**
-- helper `truncate_for_cookie(msg, max_len=512)` в `cod_doc/api/web/errors.py`,
-  обрезающий с ellipsis.
-- Используется в `server.web_error_handler` и `fragments.task_status_update`.
-- 1 тест: длинная message → cookie ≤ 512 chars + ellipsis.
+- ✅ `truncate_for_cookie(msg, max_len=512)` в `cod_doc/api/web/errors.py`,
+  обрезает до `max_len-1` + `…` (1-char ellipsis экономит percent-encoded
+  байты vs `...`).
+- ✅ Используется в `server.web_error_handler` и `fragments.task_status_update`.
+- ✅ 4 теста (unit + integration) в `tests/api/test_web_polish.py`.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`): bundled с WEB-013b/022b.
 
 ---
 

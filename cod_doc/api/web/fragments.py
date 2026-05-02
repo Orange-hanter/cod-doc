@@ -23,7 +23,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
-from cod_doc.api.web.errors import NotFoundWebError, ValidationWebError
+from cod_doc.api.web.errors import (
+    NotFoundWebError,
+    ValidationWebError,
+    truncate_for_cookie,
+)
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import TaskStatus
 from cod_doc.services import task_service as tasks
@@ -124,5 +128,10 @@ def task_status_update(
     if inline_alert is not None:
         severity, message = inline_alert
         redirect.set_cookie("flash_severity", severity, max_age=30, path="/")
-        redirect.set_cookie("flash_message", quote(message), max_age=30, path="/")
+        redirect.set_cookie(
+            "flash_message",
+            quote(truncate_for_cookie(message)),
+            max_age=30,
+            path="/",
+        )
     return redirect

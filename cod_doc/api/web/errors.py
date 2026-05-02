@@ -17,6 +17,23 @@ from typing import Literal
 
 Severity = Literal["error", "warning", "info"]
 
+# Cookies are limited to ~4 KB browser-wide and must be latin-1 — we percent-
+# encode messages, but a single non-ASCII char becomes 9 bytes, so a multi-
+# line traceback can blow the limit fast. WEB-054: cap before encoding.
+COOKIE_FLASH_MAX_LEN = 512
+
+
+def truncate_for_cookie(message: str, *, max_len: int = COOKIE_FLASH_MAX_LEN) -> str:
+    """Truncate a flash message so it fits in a 4 KB cookie after percent-encoding.
+
+    Uses a one-char ellipsis (`…`) since percent-encoding triples its size
+    in the worst case — still cheaper than a 3-char "..." that survives
+    encoding verbatim plus another truncation pass.
+    """
+    if len(message) <= max_len:
+        return message
+    return message[: max_len - 1] + "…"
+
 
 class WebError(Exception):
     """Base class. Subclass to choose default severity + status code."""

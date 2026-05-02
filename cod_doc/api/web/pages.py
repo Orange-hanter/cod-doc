@@ -60,6 +60,15 @@ def index(
     prev_offset = max(0, offset - limit)
     next_offset = offset + limit
 
+    # Empty page (offset >= total OR no projects at all) → show "0–0 of N"
+    # rather than a backwards range like "11–10 of 10".
+    if projects:
+        showing_from = offset + 1
+        showing_to = offset + len(projects)
+    else:
+        showing_from = 0
+        showing_to = 0
+
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -74,8 +83,8 @@ def index(
                 "has_next": has_next,
                 "prev_offset": prev_offset,
                 "next_offset": next_offset,
-                "showing_from": offset + 1 if total else 0,
-                "showing_to": offset + len(projects),
+                "showing_from": showing_from,
+                "showing_to": showing_to,
             },
         },
     )
