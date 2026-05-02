@@ -36,9 +36,14 @@ audience: [next-session-agent, contributors]
   WEB-051 (asset versioning) ✅. **Section B closed (6/6).**
   14 / 16 находок baseline закрыты; suite 483 → 500; endpoints 8→10/14;
   checkpoint #3 → [batch-3](../audit/2026-05-02-checkpoint-web-batch-3.md).
-- **Следующий шаг:** WEB-012 (HTMX section patch). Закрывает Section C
-  до 3/3 и `POST /docs/.../sections/{anchor}` endpoint. Использует
-  готовые alert/Depends паттерны.
+- **Batch-4 закрыт 2026-05-02:** WEB-012 (section patch), polish bundle
+  (WEB-052/053/053b/014b) ✅. **Section C closed (3/3).**
+  **16 / 16 baseline findings закрыты — audit `2026-05-02-section-web-frontend`
+  переведён в `resolved`.** Suite 500 → 512; endpoints 10→13/14;
+  checkpoint #4 → [batch-4](../audit/2026-05-02-checkpoint-web-batch-4.md).
+- **Следующий шаг:** WEB-030 (SSE run console) — последний endpoint и
+  последний disabled-таб. Возможно, отдельной сессией — нужна
+  интеграция с `Orchestrator` и `hx-ext="sse"`.
 
 ## 2. Где что лежит
 
@@ -74,18 +79,18 @@ audience: [next-session-agent, contributors]
 | WEB-004 | Plan view + Mermaid | B | ✅ done 2026-05-02 | high |
 | WEB-060 | Settings page | B | ✅ done 2026-05-02 | medium |
 | WEB-051 | Asset versioning | F | ✅ done 2026-05-02 | low |
-| **WEB-012** | **Section patch HTMX** | **C** | **❌ next** | **high** |
-| WEB-030 | SSE run console | D | ❌ pending | medium |
+| WEB-012 | Section patch HTMX | C | ✅ done 2026-05-02 | high |
+| WEB-052 | Error-branch tests | F | ✅ done 2026-05-02 | low |
+| WEB-053 | Test hygiene (cache+alembic) | F | ✅ done 2026-05-02 | medium |
+| WEB-053b | Tab fixture consolidation | F | ✅ done 2026-05-02 | low |
+| WEB-014b | task complete next_url | B | ✅ done 2026-05-02 | low |
+| **WEB-030** | **SSE run console** | **D** | **❌ next** | **medium** |
 | WEB-031 | Import progress | D | ❌ pending | low |
 | WEB-042 | Doc/code §3 sync | E | ❌ pending | medium |
 | WEB-050 | Session DI pattern | F | ❌ pending | medium |
-| WEB-052 | Error-branch tests | F | ❌ pending | low |
-| WEB-053 | Test hygiene (cache+alembic) | F | 🔄 partial | medium (↑) |
-| WEB-053b | Tab fixture consolidation | F | ❌ pending | low (NEW from checkpoint #2) |
-| WEB-014b | task complete next_url | B | ❌ pending | low (NEW from checkpoint #2) |
 
-26 total · **19 done / 6 pending / 1 partial** · expected order:
-WEB-012 → D (WEB-030, 031) → tail (042/050/052/053/053b/014b).
+28 total · **24 done / 4 pending** · expected order:
+WEB-030 → WEB-031 → WEB-042 + WEB-050 (cleanup bundle).
 
 ## 4. Первый tick — WEB-005 (Engine cache + DI helper)
 

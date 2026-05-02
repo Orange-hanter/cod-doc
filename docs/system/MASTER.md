@@ -75,7 +75,8 @@ docs/system/
 │   ├── 2026-05-02-section-web-frontend.md  ← аудит web-секции (после WEB-001..011)
 │   ├── 2026-05-02-checkpoint-web-batch-1.md ← mid-section checkpoint (WEB-005/040/022/041/013)
 │   ├── 2026-05-02-checkpoint-web-batch-2.md ← mid-section checkpoint (WEB-006/polish/014/021)
-│   └── 2026-05-02-checkpoint-web-batch-3.md ← mid-section checkpoint (WEB-004/060/051; B closed)
+│   ├── 2026-05-02-checkpoint-web-batch-3.md ← mid-section checkpoint (WEB-004/060/051; B closed)
+│   └── 2026-05-02-checkpoint-web-batch-4.md ← mid-section checkpoint (WEB-012/polish; baseline 16/16)
 │
 ├── migration/
 │   └── from-restate.md             ← как перевезти реальное состояние Restate
@@ -136,10 +137,11 @@ docs/system/
 | audit/2026-04-25-section-b-services | resolved | cod-doc core |
 | audit/2026-04-28-section-c-capabilities | resolved | cod-doc core |
 | audit/2026-05-01-section-g-hardening | resolved | cod-doc core |
-| audit/2026-05-02-section-web-frontend | active | cod-doc core |
+| audit/2026-05-02-section-web-frontend | resolved | cod-doc core |
 | audit/2026-05-02-checkpoint-web-batch-1 | resolved | cod-doc core |
 | audit/2026-05-02-checkpoint-web-batch-2 | resolved | cod-doc core |
 | audit/2026-05-02-checkpoint-web-batch-3 | resolved | cod-doc core |
+| audit/2026-05-02-checkpoint-web-batch-4 | resolved | cod-doc core |
 | capabilities/web-frontend | active | cod-doc core |
 
 Пока пакет в статусе `draft` — изменения допустимы без revision-истории. После `active` любая правка обязана вести к revision-записи (см. [standards/revision-history.md](standards/revision-history.md)). Статус `resolved` — для audit-отчётов, чьи задачи закрыты (см. [standards/frontmatter.md §7](standards/frontmatter.md)).
@@ -160,6 +162,7 @@ docs/system/
 | 2026-05-02 | Section F batch-1 закрыт: 5 задач (WEB-005 engine cache + DI helpers, WEB-040 web→infra bypass снят, WEB-022 alert/error model, WEB-041 tab strip include + status_options Jinja global, WEB-013 batch stats + pagination). 11 / 16 находок baseline-аудита закрыты. Suite 418 → 441; web-tests 27 → 66. Audit-отчёт `2026-04-28-section-c-capabilities` переведён в `resolved` (последняя его задача SC-HI-3 закрыта в WEB-040). Сделан checkpoint-аудит [audit/2026-05-02-checkpoint-web-batch-1.md](audit/2026-05-02-checkpoint-web-batch-1.md): 4 новых внутренних item-а (WEB-013b/022b/053 ↑/054). |
 | 2026-05-02 | Section B batch-2 + полировка: 4 коммита (WEB-006 server-rendered markdown for doc_show, WEB-013b/022b/054 polish bundle из checkpoint #1, WEB-014 overview agg ready/progress/recent + POST .../complete, WEB-021 revisions log + filter). 13 / 16 находок baseline закрыты (SW-ME-3, SW-ME-7 в этом батче). Suite 441 → 483; web-tests 66 → 108. Endpoints shipped 5/14 → 8/14 (~57 %). Сделан checkpoint-аудит [audit/2026-05-02-checkpoint-web-batch-2.md](audit/2026-05-02-checkpoint-web-batch-2.md). |
 | 2026-05-02 | Batch-3 + Section B closed: 3 коммита (WEB-004 plan view + Mermaid `<pre>`, WEB-060 settings page, WEB-051 static asset versioning). **Section B (Read views) — 6/6 done.** 14 / 16 находок baseline закрыты (SW-LO-1 в этом батче). Suite 483 → 500; web-tests 108 → 125. Endpoints shipped 8/14 → 10/14 (~71 %). 5 из 6 табов live (только Run остался disabled). Checkpoint-аудит [audit/2026-05-02-checkpoint-web-batch-3.md](audit/2026-05-02-checkpoint-web-batch-3.md). Inline fix: documentированы lifespan-vs-set_config footgun в `tests/api/conftest.py`. |
+| 2026-05-02 | Batch-4 + Section C closed + baseline-аудит resolved: 2 коммита (WEB-012 HTMX section patch, polish bundle WEB-052/053/053b/014b). **Section C (Write paths) — 3/3 done.** **16 / 16 baseline-аудит findings закрыты** (SW-LO-2/3/5 в этом батче). Suite 500 → 512; web-tests 125 → 137. Endpoints shipped 10/14 → 13/14 (~93 %). Audit-отчёт `2026-05-02-section-web-frontend` переведён в `resolved`. Checkpoint-аудит [audit/2026-05-02-checkpoint-web-batch-4.md](audit/2026-05-02-checkpoint-web-batch-4.md). Остаётся только Section D (WEB-030/031 — SSE run console). |
 
 ---
 

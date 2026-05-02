@@ -1,7 +1,7 @@
 ---
 type: audit-report
 scope: cod_doc/api/web/* + cod_doc/templates/web/* + cod_doc/static/* (Web frontend)
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-02
@@ -12,6 +12,10 @@ related_docs:
   - ../capabilities/web-frontend.md
   - ../roadmap/web-frontend-task-plan.md
   - 2026-04-28-section-c-capabilities.md
+  - 2026-05-02-checkpoint-web-batch-1.md
+  - 2026-05-02-checkpoint-web-batch-2.md
+  - 2026-05-02-checkpoint-web-batch-3.md
+  - 2026-05-02-checkpoint-web-batch-4.md
 ---
 
 # Web Frontend — System Audit (2026-05-02)
@@ -386,3 +390,4 @@ write-path задач (WEB-012, WEB-014).
 | Дата | Событие |
 |---|---|
 | 2026-05-02 | Аудит проведён; 13 задач заведено (WEB-005, 006, 013, 014, 022 ↑, 040 ↑, 041, 042, 050..053, 060). Inline-фиксов нет — все замечания пробрасываются в отдельные таски, чтобы не создать долг. Документация capability/roadmap усилена параллельно. |
+| 2026-05-02 | **Resolved.** Все 16 / 16 находок закрыты в 4 batch'ах (см. checkpoint-аудиты #1..#4). Последние 2 LOW (SW-LO-2, SW-LO-3) закрыты в WEB-052; SW-LO-5 в WEB-053. 13 / 14 endpoints shipped; Section A/B/C закрыты целиком; Section D (Live ops) — единственный оставшийся endpoint scope, отслеживается отдельно. |
