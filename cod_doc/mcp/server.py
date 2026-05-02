@@ -28,6 +28,7 @@ mcp = FastMCP("COD-DOC", json_response=True)
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _config() -> Config:
     return Config.load()
 
@@ -56,6 +57,7 @@ def _project_summary(entry: ProjectEntry) -> dict[str, Any]:
 # ══════════════════════════════════════════════════════════════════════════════
 # TOOLS — Project Management
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @mcp.tool()
 def list_projects() -> list[dict[str, Any]]:
@@ -111,6 +113,7 @@ def remove_project(project_name: str) -> dict[str, Any]:
 # TOOLS — Task Management
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 @mcp.tool()
 def list_tasks(
     project_name: str,
@@ -132,7 +135,9 @@ def add_task(
 ) -> dict[str, Any]:
     """Create a documentation task for a COD-DOC project. Lower priority number = higher priority."""
     proj = _project(project_name)
-    task = Task(title=title, description=description, priority=priority, context_refs=context_refs or [])
+    task = Task(
+        title=title, description=description, priority=priority, context_refs=context_refs or []
+    )
     proj.add_task(task)
     log.info(
         "Task added via MCP",
@@ -182,6 +187,7 @@ def next_pending_task(project_name: str) -> dict[str, Any]:
 # TOOLS — MASTER.md & Documentation
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 @mcp.tool()
 def get_master(project_name: str) -> str:
     """Return raw MASTER.md content for a project."""
@@ -224,7 +230,15 @@ def check_stale_refs(project_name: str) -> dict[str, Any]:
 
     stale = sum(1 for r in results if r["status"] == "STALE")
     broken = sum(1 for r in results if r["status"] == "BROKEN")
-    return {"refs": results, "summary": {"total": len(results), "valid": len(results) - stale - broken, "stale": stale, "broken": broken}}
+    return {
+        "refs": results,
+        "summary": {
+            "total": len(results),
+            "valid": len(results) - stale - broken,
+            "stale": stale,
+            "broken": broken,
+        },
+    }
 
 
 @mcp.tool()
@@ -240,6 +254,7 @@ def generate_ref(project_name: str, file_path: str) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 # TOOLS — Context Delivery (file access via hybrid refs)
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @mcp.tool()
 def read_context(
@@ -269,7 +284,7 @@ def read_file(
     page_size = 200
     total_pages = max(1, (len(lines) + page_size - 1) // page_size)
     start = (page - 1) * page_size
-    content = "".join(lines[start:start + page_size])
+    content = "".join(lines[start : start + page_size])
 
     return {
         "path": file_path,
@@ -303,6 +318,7 @@ def list_files(
 # TOOLS — Hash Utilities
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 @mcp.tool()
 def hash_file(project_name: str, file_path: str) -> dict[str, str]:
     """Compute SHA-256 hash (first 12 hex chars) for a project file."""
@@ -332,6 +348,7 @@ def verify_hash(project_name: str, file_path: str, expected_hash: str) -> dict[s
 # ══════════════════════════════════════════════════════════════════════════════
 # TOOLS — Semantic Search (ChromaDB)
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @mcp.tool()
 def search_docs(
@@ -379,6 +396,7 @@ def reindex(project_name: str) -> dict[str, Any]:
 # TOOLS — Agent Orchestration
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 @mcp.tool()
 async def run_agent_once(project_name: str, autonomous: bool = True) -> list[dict[str, Any]]:
     """Run the COD-DOC agent: autonomous mode generates tasks from MASTER.md; non-autonomous runs the next pending task."""
@@ -424,6 +442,7 @@ def clear_agent_context(project_name: str) -> dict[str, str]:
 # TOOLS — Configuration
 # ══════════════════════════════════════════════════════════════════════════════
 
+
 @mcp.tool()
 def check_config() -> dict[str, Any]:
     """Check COD-DOC configuration status: whether API key is set and how many projects are registered."""
@@ -439,6 +458,7 @@ def check_config() -> dict[str, Any]:
 # ══════════════════════════════════════════════════════════════════════════════
 # RESOURCES
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @mcp.resource("cod-doc://config")
 def config_resource() -> str:
@@ -457,7 +477,11 @@ def projects_resource() -> str:
 @mcp.resource("cod-doc://project/{project_name}/master")
 def project_master_resource(project_name: str) -> str:
     """MASTER.md content for a specific project."""
-    return get_master(project_name)
+    proj = _project(project_name)
+    content = proj.read_master()
+    if content is None:
+        raise ValueError(f"MASTER.md не найден для проекта: {project_name}")
+    return content
 
 
 @mcp.resource("cod-doc://project/{project_name}/tasks")
@@ -470,6 +494,7 @@ def project_tasks_resource(project_name: str) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 # PROMPTS
 # ══════════════════════════════════════════════════════════════════════════════
+
 
 @mcp.prompt()
 def doc_review(project_name: str, focus: str = "structure and stale links") -> str:
@@ -540,13 +565,18 @@ revision_tools.register(mcp)
 @click.option("--port", default=8001, type=int, show_default=True)
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")
 @click.option("--log-format", default=None, envvar="LOG_FORMAT")
-def main(transport: str, host: str, port: int, log_level: str | None, log_format: str | None) -> None:
+def main(
+    transport: str, host: str, port: int, log_level: str | None, log_format: str | None
+) -> None:
     """Run the COD-DOC MCP server."""
     setup_logging(level=log_level, fmt=log_format)
     if transport == "streamable-http":
-        mcp.run(transport=transport, host=host, port=port, stateless_http=True)
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.settings.stateless_http = True
+        mcp.run(transport="streamable-http")
         return
-    mcp.run(transport=transport)
+    mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
