@@ -50,19 +50,25 @@ def _extract_tabs_block(html: str) -> str:
 
 
 def test_overview_tab_active_others_live_or_disabled(tabs_client) -> None:
+    """Each live tab → <a>; each disabled tab → <span class=tab-disabled>."""
+    from tests.api.conftest import EXPECTED_DISABLED_TABS, EXPECTED_LIVE_TABS
+
     client, entry = tabs_client
     r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
     block = _extract_tabs_block(r.text)
-    # Overview is active
+    # Overview is the active anchor (special-case the slug-less path)
     assert re.search(r'<a[^>]*class="active"[^>]*href="/p/demo"[^>]*>Overview</a>', block)
-    # Docs / Tasks / Plans / Revisions are live (anchors)
-    for live_path in ("docs", "tasks", "plans", "revisions"):
-        assert f'href="/p/demo/{live_path}"' in block
-    # Run is still disabled (no href)
-    assert 'class="tab-disabled"' in block
-    assert "coming soon" in block
-    assert ">Run</span>" in block
+    for live in EXPECTED_LIVE_TABS:
+        if live == "overview":
+            continue
+        assert f'href="/p/demo/{live}"' in block, f"live tab '{live}' missing"
+    if EXPECTED_DISABLED_TABS:
+        assert 'class="tab-disabled"' in block
+        assert "coming soon" in block
+        for disabled in EXPECTED_DISABLED_TABS:
+            assert f'href="/p/demo/{disabled}"' not in block
+            assert f">{disabled.capitalize()}</span>" in block
 
 
 def test_docs_list_tab_marks_docs_active(tabs_client) -> None:
@@ -83,11 +89,13 @@ def test_tasks_list_tab_marks_tasks_active(tabs_client) -> None:
 
 def test_disabled_tabs_have_no_href(tabs_client) -> None:
     """Regression: WEB-041 must NOT emit broken `href` for disabled tabs."""
+    from tests.api.conftest import EXPECTED_DISABLED_TABS
+
     client, entry = tabs_client
     r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
     block = _extract_tabs_block(r.text)
-    # Run is the only remaining disabled tab — no href.
-    assert 'href="/p/demo/run"' not in block, (
-        "disabled tab 'run' must not emit a href"
-    )
+    for disabled in EXPECTED_DISABLED_TABS:
+        assert f'href="/p/demo/{disabled}"' not in block, (
+            f"disabled tab '{disabled}' must not emit a href"
+        )

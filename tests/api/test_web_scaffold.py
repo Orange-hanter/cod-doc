@@ -91,21 +91,26 @@ def test_static_app_css_served(web_client) -> None:
 
 
 def test_project_show_renders(web_client) -> None:
+    """Tab strip drives off conftest constants — flip there when a tab goes live."""
+    from tests.api.conftest import EXPECTED_DISABLED_TABS, EXPECTED_LIVE_TABS
+
     client, entry = web_client
     r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/html")
     # heading + breadcrumb
     assert f">{entry.name}<" in r.text
-    # ready tabs link to live routes
-    assert f'href="/p/{entry.name}/docs"' in r.text
-    assert f'href="/p/{entry.name}/tasks"' in r.text
-    assert f'href="/p/{entry.name}/revisions"' in r.text
-    assert f'href="/p/{entry.name}/plans"' in r.text
-    # not-yet-implemented tabs render as disabled spans (WEB-041) — no href
-    assert f'href="/p/{entry.name}/run"' not in r.text
-    assert ">Run<" in r.text  # label still visible
-    assert 'class="tab-disabled"' in r.text
+    # live tabs render as anchors
+    for live in EXPECTED_LIVE_TABS:
+        if live == "overview":
+            continue  # path is /p/{slug} (no trailing segment)
+        assert f'href="/p/{entry.name}/{live}"' in r.text
+    # disabled tabs → no href, label visible inside <span>
+    if EXPECTED_DISABLED_TABS:
+        assert 'class="tab-disabled"' in r.text
+    for disabled in EXPECTED_DISABLED_TABS:
+        assert f'href="/p/{entry.name}/{disabled}"' not in r.text
+        assert f">{disabled.capitalize()}<" in r.text
     # stats card labels
     assert "Tasks total" in r.text
     assert "Last run" in r.text
@@ -177,3 +182,31 @@ def test_static_url_falls_back_for_missing_file() -> None:
         assert url.endswith("?v=")
     else:
         assert url == "/static/does-not-exist-xyz.js"
+
+
+# ── WEB-052 / SW-LO-3: missing MASTER.md doesn't crash project page ─────
+
+
+def test_project_show_handles_missing_master(tmp_path: Path) -> None:
+    """User can delete MASTER.md after init() — page still renders gracefully."""
+    repo = tmp_path / "no-master"
+    repo.mkdir()
+    entry = ProjectEntry(name="hollow", path=str(repo))
+    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg.add_project(entry)
+
+    import cod_doc.api.deps as deps
+
+    deps.set_config(cfg)
+
+    Project(entry).init()
+    # Delete MASTER.md after init (the user might do this by accident or design)
+    entry.master_path.unlink()
+
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get(f"/p/{entry.name}")
+    assert r.status_code == 200
+    # The template shows the "ещё не создан" warning instead of crashing.
+    assert "ещё не создан" in r.text

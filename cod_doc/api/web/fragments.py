@@ -358,7 +358,12 @@ def task_complete(
             task=updated,
             inline_alert=inline_alert,
         )
-    redirect = RedirectResponse(url=f"/p/{proj.entry.name}", status_code=303)
+    # Form-post: WEB-014b — return the user to where they came from when
+    # possible (Referer), falling back to the project overview. The complete
+    # button shows up on multiple pages (overview, plan view, tasks list)
+    # and a hard-coded redirect to /p/{slug} was disorienting on the others.
+    referer = request.headers.get("Referer") or f"/p/{proj.entry.name}"
+    redirect = RedirectResponse(url=referer, status_code=303)
     if inline_alert is not None:
         severity, message = inline_alert
         redirect.set_cookie("flash_severity", severity, max_age=30, path="/")

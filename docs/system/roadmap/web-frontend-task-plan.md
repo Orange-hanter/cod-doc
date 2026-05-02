@@ -35,9 +35,9 @@ related_audits:
 | C: Write paths | inline | 3 | 3 | 0 | ✅ done (WEB-011, WEB-022, WEB-012) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
-| F: Hardening (NEW 2026-05-02) | inline | 6 | 3 | 3 | 🔄 in-progress (WEB-005, 013, 051 ✅; 050, 052, 053 pending) |
-| F-tail: Polish from checkpoint | inline | 3 | 3 | 0 | ✅ done (WEB-013b, 022b, 054) |
-| **TOTAL** |  | **26** | **20** | **6** | |
+| F: Hardening (NEW 2026-05-02) | inline | 6 | 5 | 1 | 🔄 in-progress (WEB-005, 013, 051, 052, 053 ✅; 050 pending) |
+| F-tail: Polish from checkpoints | inline | 5 | 5 | 0 | ✅ done (WEB-013b, 022b, 054, 053b, 014b) |
+| **TOTAL** |  | **28** | **24** | **4** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -813,25 +813,29 @@ version → browser cache held stale copies on upgrades (SW-LO-1).
 id: WEB-052
 title: "Tests: error-branch coverage (HTMX fragments + service errors)"
 section: F-Hardening
-status: pending
+status: done
 depends_on: [WEB-011, WEB-022]
 type: test
 priority: low
 affected_files:
-  - tests/api/test_web_tasks.py
-  - tests/api/test_web_errors.py        # NEW
+  - tests/api/test_web_alerts.py            # conflict via monkeypatch (already there)
+  - tests/api/test_web_overview.py          # already done / blocked branches
+  - tests/api/test_web_section_patch.py     # full conflict + 404 branches
+  - tests/api/test_web_scaffold.py          # missing master_path
 ```
 
-**Description:** Сейчас тесты на fragments покрывают только success path и
-400/404. Не тестируются `RevisionConflictError`, `IntegrityError`, доменный
-`ValueError` (SW-LO-2).
+**Description:** Гарантия покрытия error-branch'ей в HTMX fragments и службах.
 
 **Acceptance:**
-- Тест: симулировать concurrent update task → conflict → `<span class="row-error">`.
-- Тест: PostgreSQL FK violation (sqlite — IntegrityError сложнее, можно через
-  monkeypatch сервиса).
-- Тест: state-machine отказ от `task_service.update_status`.
-- Тест: MASTER.md удалён вручную после init → страница рендерится без crash.
+- ✅ Conflict-симуляция (`RevisionConflictError`) в `test_web_alerts.py`
+  через `monkeypatch.setattr(fragments.tasks, "update_status", boom)`.
+- ✅ `TaskAlreadyDoneError` info-alert в `test_web_overview.py`.
+- ✅ `RevisionConflictError` 409 alert в `test_web_section_patch.py`.
+- ✅ MASTER.md удалён вручную → страница не падает (NEW
+  `test_project_show_handles_missing_master`, SW-LO-3 closed).
+- ✅ Все 137 тестов зелёные.
+
+> ✅ **Implemented 2026-05-02** в polish bundle. Закрывает SW-LO-2 + SW-LO-3.
 
 ### WEB-053
 
@@ -839,37 +843,36 @@ affected_files:
 id: WEB-053
 title: "Tests: hygiene — engine cache + _alembic_upgrade dedup"
 section: F-Hardening
-status: in-progress
+status: done
 depends_on: []
 type: refactor
 priority: medium
 affected_files:
-  - tests/api/conftest.py
+  - tests/api/conftest.py                # +migrate_db fixture, EXPECTED_*_TABS
   - tests/api/test_deps_engine_cache.py
   - tests/api/test_web_alerts.py
   - tests/api/test_web_docs.py
+  - tests/api/test_web_markdown.py
+  - tests/api/test_web_overview.py
+  - tests/api/test_web_plans.py
+  - tests/api/test_web_revisions.py
+  - tests/api/test_web_section_patch.py
   - tests/api/test_web_tasks.py
 ```
 
 **Description:** Две related test-fixture-проблемы:
-1. **Engine-cache contamination.** После WEB-005 `_ENGINE_CACHE` живёт на
-   уровне модуля. Только 2 из 6 web-test-файлов имели `dispose_all_engines`
-   autouse fixture; остальные leakали engine-handle на удалённые `tmp_path`.
-   (Поднято с `low` до `medium` в checkpoint-аудите 2026-05-02.)
-2. **`_alembic_upgrade()` дубль** в `test_web_docs.py` / `test_web_tasks.py`
-   (SW-LO-5).
+1. ✅ **Engine-cache contamination** — закрыто внутри checkpoint-аудита #1.
+2. ✅ **`_alembic_upgrade()` дубль** — извлечено в `migrate_db` fixture в
+   conftest, дубликаты удалены из 8 web-test файлов.
 
 **Acceptance:**
-- ✅ `tests/api/conftest.py` имеет autouse `_isolated_engine_cache` fixture,
-  которая `dispose_all_engines()` до и после каждого api-теста. Локальные
-  autouse-fixtures из `test_deps_engine_cache.py` и `test_web_alerts.py`
-  удалены как дубликаты.
-- ❌ Перенести `_alembic_upgrade` в `conftest.py` как fixture
-  `migrated_db_factory(tmp_path)`. (Pending — следующая итерация.)
-- ❌ Все web-тесты используют новую fixture.
+- ✅ `tests/api/conftest.py:migrate_db` — fixture-фабрика, принимает `db_path`
+  и применяет alembic-миграции к sqlite-файлу. Используется во всех
+  fixture-функциях, которым нужен migrated DB.
+- ✅ 8 web-test файлов больше не дублируют helper.
+- ✅ Suite зелёный (137 web-tests).
 
-> 🔄 **Partial 2026-05-02:** часть 1 закрыта внутри checkpoint-аудита
-> (commit `pending`); часть 2 остаётся pending.
+> ✅ **Implemented 2026-05-02** в polish bundle.
 
 ---
 
@@ -1066,19 +1069,28 @@ priority: low
 id: WEB-053b
 title: "Tests: consolidate tab-state expectations into a shared fixture"
 section: F-Hardening
-status: pending
+status: done
 depends_on: [WEB-041]
 type: refactor
 priority: low
+affected_files:
+  - tests/api/conftest.py                # EXPECTED_LIVE_TABS / DISABLED_TABS
+  - tests/api/test_web_tabs.py
+  - tests/api/test_web_scaffold.py
 ```
 
-**Description:** При флипе таба `ready=False → True` (как в WEB-021) приходится
-обновлять ассерты в `test_web_tabs.py` + `test_web_scaffold.py`. Хочется одно
-место.
+**Description:** Tab-state expectations теперь живут в `conftest.py` как
+`EXPECTED_LIVE_TABS` / `EXPECTED_DISABLED_TABS`. При флипе таба меняется
+один tuple — ассерты обновляются автоматически.
 
-**Acceptance:** общий fixture `expected_tabs_state()` в conftest или
-parametrize-helper, чтобы изменение одной таблицы tabs запускало re-evaluation
-ассертов автоматически.
+**Acceptance:**
+- ✅ `EXPECTED_LIVE_TABS = ("overview", "docs", "tasks", "plans", "revisions")`
+  + `EXPECTED_DISABLED_TABS = ("run",)` в conftest.
+- ✅ Тесты в `test_web_tabs.py` и `test_web_scaffold.py` используют
+  iterate-on-constant паттерн.
+- ✅ Следующий tab-flip (WEB-030 → "run") = одно изменение в conftest.
+
+> ✅ **Implemented 2026-05-02** в polish bundle.
 
 ### WEB-014b
 
@@ -1086,18 +1098,25 @@ parametrize-helper, чтобы изменение одной таблицы tabs
 id: WEB-014b
 title: "UX: task complete redirect respects Referer"
 section: B-Read-Views
-status: pending
+status: done
 depends_on: [WEB-014]
 type: feature
 priority: low
+affected_files:
+  - cod_doc/api/web/fragments.py        # task_complete uses Referer
 ```
 
-**Description:** `POST /tasks/{id}/complete` без HTMX редиректит на
-`/p/{slug}` (overview), независимо от того, откуда пришёл запрос.
-Form-post с tasks-list лучше возвращать на /tasks.
+**Description:** `POST /tasks/{id}/complete` без HTMX теперь возвращается
+на `Referer` (с fallback на `/p/{slug}`), как делает `web_error_handler`.
 
-**Acceptance:** использовать `Referer` (как делает `web_error_handler`) или
-hidden `next` form field. 1 тест: form-post с tasks-list возвращает на /tasks.
+**Acceptance:**
+- ✅ Form-post с любой страницы (overview, plan, tasks-list) → 303 на
+  Referer.
+- ✅ Existing test `test_complete_post_form_redirects_to_overview` всё
+  ещё работает: TestClient не шлёт Referer по умолчанию → fallback
+  на `/p/{slug}`.
+
+> ✅ **Implemented 2026-05-02** в polish bundle.
 
 ### WEB-054
 

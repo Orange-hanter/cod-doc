@@ -6,7 +6,6 @@ checks via TestClient + seeded DB.
 
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -27,9 +26,6 @@ from cod_doc.domain.entities import (
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
 
 # ── Renderer unit tests ──────────────────────────────────────────────────
 
@@ -131,24 +127,12 @@ def test_paragraph_adjacent_to_list_is_rendered_separately() -> None:
 # ── Integration: doc_show renders sections with anchors ──────────────────
 
 
-def _alembic_upgrade(db_url: str) -> None:
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        check=True,
-        env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": db_url},
-        capture_output=True,
-    )
-
-
 @pytest.fixture
-def md_doc_client(tmp_path: Path):
+def md_doc_client(tmp_path: Path, migrate_db):
     repo = tmp_path / "md-demo"
     (repo / ".cod-doc").mkdir(parents=True)
     db_path = repo / ".cod-doc" / "state.db"
-    _alembic_upgrade(f"sqlite:///{db_path}")
+    migrate_db(db_path)
 
     entry = ProjectEntry(name="demo", path=str(repo))
     cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")

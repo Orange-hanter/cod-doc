@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,27 +27,16 @@ from cod_doc.infra.repositories import (
 )
 from cod_doc.services import task_service as tasks
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _alembic_upgrade(db_url: str) -> None:
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        check=True,
-        env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": db_url},
-        capture_output=True,
-    )
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
-def plans_client(tmp_path: Path):
+def plans_client(tmp_path: Path, migrate_db):
     repo = tmp_path / "plans-demo"
     (repo / ".cod-doc").mkdir(parents=True)
     db_path = repo / ".cod-doc" / "state.db"
-    _alembic_upgrade(f"sqlite:///{db_path}")
+    migrate_db(db_path)
 
     entry = ProjectEntry(name="demo", path=str(repo))
     cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
@@ -198,7 +186,7 @@ def test_plan_show_404_unknown_plan(plans_client) -> None:
     assert r.status_code == 404
 
 
-def test_plan_show_cross_project_404(plans_client, tmp_path: Path) -> None:
+def test_plan_show_cross_project_404(plans_client, tmp_path: Path, migrate_db) -> None:
     """Plan from project A must not be accessible via project B's URL."""
     client, _entry_a, plan_id = plans_client
 
@@ -206,7 +194,7 @@ def test_plan_show_cross_project_404(plans_client, tmp_path: Path) -> None:
     repo_b = tmp_path / "other-proj"
     (repo_b / ".cod-doc").mkdir(parents=True)
     db_b = repo_b / ".cod-doc" / "state.db"
-    _alembic_upgrade(f"sqlite:///{db_b}")
+    migrate_db(db_b)
 
     import cod_doc.api.deps as deps
 

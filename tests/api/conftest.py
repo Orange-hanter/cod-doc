@@ -6,6 +6,8 @@
 - Каждый тест стартует с пустым `cod_doc.api.deps._ENGINE_CACHE`
   (после WEB-005 кэш живёт на уровне модуля и иначе утечёт между
   тестами engine-ссылками на удалённые `tmp_path` директории).
+- Общий `migrate_db` fixture для применения alembic-миграций к
+  embedded SQLite (раньше дублировался по тест-файлам — WEB-053).
 
 ⚠ Lifespan vs. set_config footgun:
 The FastAPI app lifespan calls `Config.load()` and OVERWRITES whatever
@@ -18,12 +20,42 @@ See `tests/api/test_web_settings.py:settings_client` for the pattern.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import subprocess
+from pathlib import Path
 
 import pytest
 
-if TYPE_CHECKING:
-    from pathlib import Path
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+# WEB-053b: single source of truth for project-tab expectations.
+# Flip one entry here when WEB-030 (Run) lands; all tab-state tests
+# pick up the change automatically.
+EXPECTED_LIVE_TABS: tuple[str, ...] = ("overview", "docs", "tasks", "plans", "revisions")
+EXPECTED_DISABLED_TABS: tuple[str, ...] = ("run",)
+
+
+@pytest.fixture
+def migrate_db():
+    """Apply Alembic migrations to a sqlite file, used to seed test DBs.
+
+    Returns a function `(db_path: Path) -> None` so callers can build
+    their own URL: `migrate_db(db_path)` runs `alembic upgrade head`
+    against `sqlite:///<db_path>`.
+    """
+    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
+    cmd_base = [str(venv_alembic) if venv_alembic.exists() else "alembic"]
+
+    def _apply(db_path: Path) -> None:
+        subprocess.run(
+            [*cmd_base, "upgrade", "head"],
+            cwd=REPO_ROOT,
+            check=True,
+            env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{db_path}"},
+            capture_output=True,
+        )
+
+    return _apply
 
 
 @pytest.fixture(autouse=True)

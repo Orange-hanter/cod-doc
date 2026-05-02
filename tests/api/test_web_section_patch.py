@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -25,27 +24,13 @@ from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as revisions
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _alembic_upgrade(db_url: str) -> None:
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        check=True,
-        env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": db_url},
-        capture_output=True,
-    )
-
 
 @pytest.fixture
-def section_client(tmp_path: Path):
+def section_client(tmp_path: Path, migrate_db):
     repo = tmp_path / "sec-demo"
     (repo / ".cod-doc").mkdir(parents=True)
     db_path = repo / ".cod-doc" / "state.db"
-    _alembic_upgrade(f"sqlite:///{db_path}")
+    migrate_db(db_path)
 
     entry = ProjectEntry(name="demo", path=str(repo))
     cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
