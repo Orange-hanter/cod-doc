@@ -494,12 +494,22 @@ def doc_show(
         raw_body = docs.render_body(session, doc.row_id) or doc.preamble or ""
     else:
         preamble_html = render_markdown(doc.preamble or "") or None
+        # WEB-012: expose head revision_id per section so the edit form can
+        # send it back as `expected_parent_revision_id` for optimistic
+        # concurrency. None when the section has no revisions yet (rare).
         sections_html = [
             {
                 "anchor": s.anchor,
                 "heading": s.heading,
                 "level": s.level,
+                "row_id": s.row_id,
+                "body": s.body or "",
                 "html": render_markdown(s.body or ""),
+                "head_rev": revisions.head_for_entity(
+                    session, EntityKind.SECTION, s.row_id
+                )
+                if s.row_id is not None
+                else None,
             }
             for s in sections_db
         ]
@@ -512,6 +522,7 @@ def doc_show(
             "doc": {
                 "doc_key": doc.doc_key,
                 "path": doc.path,
+                "doc_id": doc.row_id,
                 "title": doc.title,
                 "type": doc.type.value,
                 "status": doc.status.value,

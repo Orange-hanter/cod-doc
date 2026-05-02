@@ -212,13 +212,21 @@ def md_doc_client(tmp_path: Path):
 
 
 def test_doc_show_renders_sections_with_anchor_ids(md_doc_client) -> None:
-    """Each section becomes <section id="{anchor}"> so #anchor links work."""
+    """Each section becomes <section id="section-{anchor}"> with an inner <a id="{anchor}">.
+
+    The wrapper id is the HTMX swap target (WEB-012); the inner anchor preserves
+    the sidebar `#anchor` scroll behaviour (WEB-006).
+    """
     client, entry = md_doc_client
     r = client.get(f"/p/{entry.name}/docs/modules/M1/spec")
     assert r.status_code == 200
-    assert '<section id="data-model"' in r.text
-    assert '<section id="api"' in r.text
-    # Sidebar nav still references the same anchors.
+    # WEB-012 wrappers
+    assert '<section id="section-data-model"' in r.text
+    assert '<section id="section-api"' in r.text
+    # WEB-006 anchors (inner)
+    assert '<a id="data-model"' in r.text
+    assert '<a id="api"' in r.text
+    # Sidebar nav references the inner anchors
     assert 'href="#data-model"' in r.text
     assert 'href="#api"' in r.text
 

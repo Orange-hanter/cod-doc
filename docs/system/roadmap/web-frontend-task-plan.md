@@ -32,12 +32,12 @@ related_audits:
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
 | B: Read views | inline | 6 | 6 | 0 | ✅ done (WEB-010, 006, 014, 021, 004, 060) |
-| C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
+| C: Write paths | inline | 3 | 3 | 0 | ✅ done (WEB-011, WEB-022, WEB-012) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
 | F: Hardening (NEW 2026-05-02) | inline | 6 | 3 | 3 | 🔄 in-progress (WEB-005, 013, 051 ✅; 050, 052, 053 pending) |
 | F-tail: Polish from checkpoint | inline | 3 | 3 | 0 | ✅ done (WEB-013b, 022b, 054) |
-| **TOTAL** |  | **26** | **19** | **7** | |
+| **TOTAL** |  | **26** | **20** | **6** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -395,13 +395,50 @@ affected_files:
 id: WEB-012
 title: "Implement: HTMX inline section patch"
 section: C-Write-Paths
-status: pending
-depends_on: [WEB-003]
+status: done
+depends_on: [WEB-003, WEB-006, WEB-022]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/services/revision_service.py             # head_for_entity public helper
+  - cod_doc/api/web/pages.py                          # head_rev / row_id / body in doc_show ctx
+  - cod_doc/api/web/fragments.py                      # 3 endpoints + _resolve_section helper
+  - cod_doc/templates/web/_frag/section_view.html     # NEW
+  - cod_doc/templates/web/_frag/section_edit.html     # NEW
+  - cod_doc/templates/web/project/doc_show.html        # use section_view include
+  - cod_doc/static/app.css                             # .section-edit-* styles
+  - tests/api/test_web_section_patch.py                # NEW (11 tests)
 ```
 
-**Description:** Inline-edit body секции через `<textarea>` + `hx-post`. Optimistic concurrency через скрытый `expected_parent_revision_id`.
+**Description:** Inline-edit body секции: ✎-кнопка → swap в `<textarea>`-форму
+с hidden `expected_parent_revision_id` (оптимистическая блокировка) →
+submit POST → swap обратно в rendered view.
+
+**Acceptance:**
+- ✅ Три endpoint'а в `fragments.py`:
+  - `GET .../sections/{anchor}/edit` — возвращает edit-form fragment
+    (textarea + hidden parent rev + Save/Cancel buttons).
+  - `GET .../sections/{anchor}/view` — возвращает view-fragment (cancel-кнопка).
+  - `POST .../sections/{anchor}` — патчит через `doc_service.patch_section`
+    с `expected_parent_revision_id`. На success возвращает view-fragment.
+    HTMX-success: row swap. Form-post: 303 на anchor.
+- ✅ `revision_service.head_for_entity(session, kind, id)` — public helper для
+  hidden token (раньше private `_current_head`).
+- ✅ ✎-кнопка интегрирована в `_frag/section_view.html`. Cancel-кнопка в
+  `_frag/section_edit.html` swaps обратно через GET `.../view`.
+- ✅ Section wrapper changed from `<section id="{anchor}">` to
+  `<section id="section-{anchor}">` for HTMX target; sidebar `#anchor`-links
+  теперь работают через inner `<a id="{anchor}">` (test обновлён).
+- ✅ Errors через WebError pipeline: `RevisionConflictError` → `ConflictWebError 409`
+  + alert-warning; `SectionNotFoundError` → `NotFoundWebError 404`;
+  `IntegrityError`/`ValueError` → `ValidationWebError 400`.
+- ✅ 11 новых тестов: edit form render + 404, cancel → view fragment,
+  patch HTMX success, patch form-post 303 with anchor, conflict alert,
+  no-op on unchanged body, 404 unknown doc/anchor, ✎-button embedded
+  in doc_show.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`). Закрывает Section C
+> (Write paths) — 3/3 done. Suite 136 web-tests; ruff/mypy clean.
 
 ### WEB-022
 

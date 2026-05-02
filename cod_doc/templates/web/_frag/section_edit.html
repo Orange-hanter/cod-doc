@@ -1,0 +1,22 @@
+{# Editable section: <textarea> + form posting back to swap into section_view. #}
+<section id="section-{{ s.anchor }}" class="doc-section section-editing">
+  <a id="{{ s.anchor }}" class="section-anchor"></a>
+  <h{{ s.level }}>{{ s.heading }} <span class="muted">(editing)</span></h{{ s.level }}>
+  <form method="post"
+        action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/sections/{{ s.anchor }}"
+        hx-post="/p/{{ project.name }}/docs/{{ doc.doc_key }}/sections/{{ s.anchor }}"
+        hx-target="#section-{{ s.anchor }}"
+        hx-swap="outerHTML"
+        class="section-edit-form">
+    <textarea name="body" rows="10" autofocus>{{ s.body }}</textarea>
+    <input type="hidden" name="expected_parent_revision_id" value="{{ s.head_rev or '' }}">
+    <div class="section-edit-actions">
+      <button type="submit">Save</button>
+      <button type="button"
+              hx-get="/p/{{ project.name }}/docs/{{ doc.doc_key }}/sections/{{ s.anchor }}/view"
+              hx-target="#section-{{ s.anchor }}"
+              hx-swap="outerHTML"
+              class="section-cancel-btn">Cancel</button>
+    </div>
+  </form>
+</section>

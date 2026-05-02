@@ -54,10 +54,7 @@
       {% endif %}
       {% if sections_html %}
         {% for s in sections_html %}
-          <section id="{{ s.anchor }}" class="doc-section">
-            <h{{ s.level }}>{{ s.heading }}</h{{ s.level }}>
-            <div class="section-body">{{ s.html | safe }}</div>
-          </section>
+          {% include "_frag/section_view.html" %}
         {% endfor %}
       {% elif not preamble_html %}
         <p class="muted">Document body is empty.</p>

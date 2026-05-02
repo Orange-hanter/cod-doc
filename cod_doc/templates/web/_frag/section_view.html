@@ -1,0 +1,18 @@
+{# Read-only rendered section. Reused by doc_show.html and after a successful patch.
+
+`id="section-{anchor}"` is the HTMX swap target; `id="{anchor}"` on the inner
+container preserves the sidebar `#anchor` scroll behaviour.
+#}
+<section id="section-{{ s.anchor }}" class="doc-section">
+  <a id="{{ s.anchor }}" class="section-anchor"></a>
+  <h{{ s.level }}>
+    {{ s.heading }}
+    <button type="button"
+            class="section-edit-btn"
+            hx-get="/p/{{ project.name }}/docs/{{ doc.doc_key }}/sections/{{ s.anchor }}/edit"
+            hx-target="#section-{{ s.anchor }}"
+            hx-swap="outerHTML"
+            title="Edit section">✎</button>
+  </h{{ s.level }}>
+  <div class="section-body">{{ s.html | safe }}</div>
+</section>

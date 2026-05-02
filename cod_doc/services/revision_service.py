@@ -132,6 +132,21 @@ def list_for_entity(session: Session, entity_kind: EntityKind, entity_id: int) -
     return [_to_domain(m) for m in session.execute(stmt).scalars()]
 
 
+def head_for_entity(
+    session: Session,
+    entity_kind: EntityKind,
+    entity_id: int,
+) -> str | None:
+    """Return the current head revision_id for an entity, or None.
+
+    Used by web write-paths for optimistic concurrency tokens — the form
+    embeds this as a hidden `expected_parent_revision_id`, the handler
+    passes it to `patch_section` (or similar), and a mid-flight write
+    raises `RevisionConflictError`.
+    """
+    return _current_head(session, entity_kind, entity_id)
+
+
 def list_recent_for_project(
     session: Session,
     project_id: int,
