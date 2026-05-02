@@ -1,4 +1,4 @@
-"""Интерактивный мастер первоначальной настройки COD-DOC."""
+"""Main WizardScreen — the four-step interactive setup."""
 
 from __future__ import annotations
 
@@ -15,64 +15,14 @@ from textual.widgets import Button, Checkbox, Input, Label, RadioButton, RadioSe
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.logging_config import get_logger
 
+from ._models import MODELS, STEPS, _model_widget_id
+from ._stepbar import _StepBar
+from ._styles import WIZARD_CSS
+
 if TYPE_CHECKING:
     from textual.app import ComposeResult
 
 log = get_logger("tui.wizard")
-
-# (model_id, display_label)
-MODELS: list[tuple[str, str]] = [
-    ("anthropic/claude-sonnet-4-6", "Claude Sonnet 4.6  ⭐ рекомендуется"),
-    ("anthropic/claude-opus-4-6", "Claude Opus 4.6    💪 мощнее, дороже"),
-    ("anthropic/claude-haiku-4-5", "Claude Haiku 4.5   ⚡ быстрее, дешевле"),
-    ("openai/gpt-4o", "GPT-4o"),
-    ("openai/gpt-4o-mini", "GPT-4o Mini"),
-    ("meta-llama/llama-3.1-70b-instruct", "Llama 3.1 70B (open-source)"),
-    ("google/gemini-pro-1.5", "Gemini Pro 1.5"),
-]
-
-STEPS = ["Добро пожаловать", "API & модель", "Проект", "Готово"]
-
-
-def _model_widget_id(model_id: str) -> str:
-    """Build a textual-safe widget id from a model identifier (e.g. 'anthropic/claude-sonnet-4-6')."""
-    return "model-" + model_id.replace("/", "_").replace(".", "_")
-
-
-class _StepBar(Static):
-    """Горизонтальный индикатор шагов."""
-
-    DEFAULT_CSS = """
-    _StepBar {
-        height: 3;
-        content-align: center middle;
-        background: $surface-darken-1;
-        padding: 0 2;
-    }
-    """
-
-    def __init__(self, steps: list[str], current: int = 0) -> None:
-        super().__init__("")
-        self._steps = steps
-        self._current = current
-        self._refresh_label()
-
-    def update_step(self, current: int) -> None:
-        self._current = current
-        self._refresh_label()
-
-    def _refresh_label(self) -> None:
-        parts: list[str] = []
-        for i, name in enumerate(self._steps):
-            if i < self._current:
-                parts.append(f"[dim]✓ {name}[/dim]")
-            elif i == self._current:
-                parts.append(f"[bold $accent]● {name}[/bold $accent]")
-            else:
-                parts.append(f"[dim]○ {name}[/dim]")
-            if i < len(self._steps) - 1:
-                parts.append("[dim] → [/dim]")
-        self.update("".join(parts))
 
 
 class WizardScreen(Screen[Any]):
@@ -83,85 +33,7 @@ class WizardScreen(Screen[Any]):
         Binding("enter", "next_step", "Далее", show=False),
     ]
 
-    DEFAULT_CSS = """
-    WizardScreen {
-        align: center middle;
-    }
-
-    #wizard-frame {
-        width: 80;
-        height: auto;
-        max-height: 90vh;
-        border: double $primary;
-        background: $surface;
-        padding: 0;
-    }
-
-    #wizard-title-bar {
-        background: $primary;
-        color: $text;
-        text-style: bold;
-        padding: 1 2;
-        height: 3;
-        content-align: center middle;
-    }
-
-    #wizard-content {
-        padding: 2 4;
-        height: auto;
-    }
-
-    .step-heading {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
-
-    .field-label {
-        color: $text-muted;
-        margin-top: 1;
-    }
-
-    .hint {
-        color: $text-muted;
-        text-style: italic;
-        padding: 0 0 1 0;
-    }
-
-    .error-label {
-        color: $error;
-        text-style: bold;
-        height: 1;
-    }
-
-    #wizard-nav {
-        height: 5;
-        align: center middle;
-        padding: 1 2;
-        border-top: solid $surface-darken-2;
-    }
-
-    #wizard-nav Button { margin: 0 1; min-width: 18; }
-
-    RadioSet { height: auto; margin: 1 0; }
-    RadioButton { height: 1; }
-
-    #welcome-art {
-        color: $accent;
-        text-style: bold;
-        content-align: center middle;
-        height: 5;
-    }
-
-    #welcome-body { margin: 1 0; }
-
-    #done-art {
-        color: $success;
-        text-style: bold;
-        content-align: center middle;
-        height: 3;
-    }
-    """
+    DEFAULT_CSS = WIZARD_CSS
 
     def __init__(self, config: Config) -> None:
         super().__init__()
@@ -241,7 +113,8 @@ class WizardScreen(Screen[Any]):
                         yield Static("", id="err-project-name", classes="error-label")
 
                         yield Label(
-                            "Путь к MASTER.md  [dim](от корня проекта)[/dim]", classes="field-label"
+                            "Путь к MASTER.md  [dim](от корня проекта)[/dim]",
+                            classes="field-label",
                         )
                         yield Input(value="MASTER.md", id="input-master-md")
 
@@ -263,12 +136,9 @@ class WizardScreen(Screen[Any]):
 
     def on_mount(self) -> None:
         log.debug("Wizard mounted", extra={"event_type": "wizard_mount"})
-        # Выбрать первую модель по умолчанию
         self.query_one(f"#{_model_widget_id(MODELS[0][0])}", RadioButton).value = True
-        # Заполнить поле API-ключа если уже есть
         if self.config.api_key:
             self.query_one("#input-api-key", Input).value = self.config.api_key
-        # Модель из конфига
         for model_id, _ in MODELS:
             if model_id == self.config.model:
                 with contextlib.suppress(Exception):
@@ -311,7 +181,6 @@ class WizardScreen(Screen[Any]):
         else:
             next_btn.label = "Далее →"
 
-        # Фокус на первое поле ввода текущего шага
         self._focus_first_input(step)
 
     def _focus_first_input(self, step: int) -> None:
@@ -349,7 +218,6 @@ class WizardScreen(Screen[Any]):
     # ── Validation & saving ───────────────────────────────────────────────────
 
     def _set_error(self, widget_id: str, msg: str) -> None:
-        """Показать/скрыть инлайн-сообщение об ошибке."""
         with contextlib.suppress(Exception):
             self.query_one(f"#err-{widget_id}", Static).update(msg)
 
@@ -362,7 +230,6 @@ class WizardScreen(Screen[Any]):
             return False
         self._set_error("api-key", "")
 
-        # Определить выбранную модель
         model = MODELS[0][0]
         for model_id, _ in MODELS:
             try:
