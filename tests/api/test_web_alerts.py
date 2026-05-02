@@ -54,13 +54,6 @@ def _alembic_upgrade(db_url: str) -> None:
     )
 
 
-@pytest.fixture(autouse=True)
-def _clean_engine_cache():
-    deps.dispose_all_engines()
-    yield
-    deps.dispose_all_engines()
-
-
 @pytest.fixture
 def alerts_client(tmp_path: Path):
     repo = tmp_path / "alerts-demo"

@@ -44,14 +44,6 @@ def _alembic_upgrade(db_url: str) -> None:
     )
 
 
-@pytest.fixture(autouse=True)
-def _clean_engine_cache():
-    """Each test starts with a fresh cache, and we dispose at the end."""
-    dispose_all_engines()
-    yield
-    dispose_all_engines()
-
-
 @pytest.fixture
 def configured_project(tmp_path: Path):
     repo = tmp_path / "demo"

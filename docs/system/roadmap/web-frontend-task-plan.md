@@ -736,25 +736,39 @@ affected_files:
 
 ```yaml
 id: WEB-053
-title: "Tests: extract _alembic_upgrade to conftest"
+title: "Tests: hygiene — engine cache + _alembic_upgrade dedup"
 section: F-Hardening
-status: pending
+status: in-progress
 depends_on: []
 type: refactor
-priority: low
+priority: medium
 affected_files:
   - tests/api/conftest.py
+  - tests/api/test_deps_engine_cache.py
+  - tests/api/test_web_alerts.py
   - tests/api/test_web_docs.py
   - tests/api/test_web_tasks.py
 ```
 
-**Description:** Идентичная функция `_alembic_upgrade()` живёт в двух
-fixture-файлах (SW-LO-5).
+**Description:** Две related test-fixture-проблемы:
+1. **Engine-cache contamination.** После WEB-005 `_ENGINE_CACHE` живёт на
+   уровне модуля. Только 2 из 6 web-test-файлов имели `dispose_all_engines`
+   autouse fixture; остальные leakали engine-handle на удалённые `tmp_path`.
+   (Поднято с `low` до `medium` в checkpoint-аудите 2026-05-02.)
+2. **`_alembic_upgrade()` дубль** в `test_web_docs.py` / `test_web_tasks.py`
+   (SW-LO-5).
 
 **Acceptance:**
-- Перенести в `conftest.py` как fixture `migrated_db_factory(tmp_path)`.
-- Оба test-файла используют новую fixture.
-- Все 27 тестов остаются зелёными.
+- ✅ `tests/api/conftest.py` имеет autouse `_isolated_engine_cache` fixture,
+  которая `dispose_all_engines()` до и после каждого api-теста. Локальные
+  autouse-fixtures из `test_deps_engine_cache.py` и `test_web_alerts.py`
+  удалены как дубликаты.
+- ❌ Перенести `_alembic_upgrade` в `conftest.py` как fixture
+  `migrated_db_factory(tmp_path)`. (Pending — следующая итерация.)
+- ❌ Все web-тесты используют новую fixture.
+
+> 🔄 **Partial 2026-05-02:** часть 1 закрыта внутри checkpoint-аудита
+> (commit `pending`); часть 2 остаётся pending.
 
 ---
 
@@ -854,6 +868,74 @@ affected_files:
 - 4 теста: GET render, POST save, mask, empty-key keeps existing.
 
 > **WEB-020 deprecated** в пользу WEB-060.
+
+---
+
+## Section F — Sub-tickets surfaced by checkpoint (2026-05-02)
+
+> Заведены при checkpoint-аудите batch-1 ([audit/2026-05-02-checkpoint-web-batch-1.md](../audit/2026-05-02-checkpoint-web-batch-1.md)).
+> Не блокируют дальнейшие задачи; ждут своей очереди.
+
+### WEB-013b
+
+```yaml
+id: WEB-013b
+title: "Polish: clamp empty-page summary numerals on /"
+section: F-Hardening
+status: pending
+depends_on: [WEB-013]
+type: bug
+priority: low
+```
+
+**Description:** При `?offset >= total` на странице `/` summary показывает
+`"N+1 – N of N"` (например, `"11–10 of 10"` при offset=10/total=10).
+Numerals технически корректны, но визуально выглядит как баг.
+
+**Acceptance:** clamp `showing_from` и `showing_to` к разумным значениям
+когда страница пуста (например, оба к `total`). 1 unit-test.
+
+### WEB-022b
+
+```yaml
+id: WEB-022b
+title: "Polish: log WebError events from server.web_error_handler"
+section: C-Write-Paths
+status: pending
+depends_on: [WEB-022]
+type: feature
+priority: low
+```
+
+**Description:** Exception-handler в `cod_doc/api/server.py` рендерит 4xx
+без логирования. Для деплойнутых инстансов нужен sluggish-trail
+повторяющихся NotFound/Conflict/Validation, чтобы видеть паттерны.
+
+**Acceptance:** `logger.info("WebError: %s %d", request.url.path,
+exc.status_code)`. Уровень `info` — это не баг приложения. Опционально
+включить `exc.message` под INFO.
+
+### WEB-054
+
+```yaml
+id: WEB-054
+title: "Hardening: cap flash_message cookie length"
+section: F-Hardening
+status: pending
+depends_on: [WEB-022]
+type: feature
+priority: low
+```
+
+**Description:** `flash_message` cookie кладётся целым `WebError.message`
+(после percent-encoding). Если сервис кинет multi-line traceback или
+длинный SQL diagnostic — cookie может превысить ~4 KB browser limit.
+
+**Acceptance:**
+- helper `truncate_for_cookie(msg, max_len=512)` в `cod_doc/api/web/errors.py`,
+  обрезающий с ellipsis.
+- Используется в `server.web_error_handler` и `fragments.task_status_update`.
+- 1 тест: длинная message → cookie ≤ 512 chars + ellipsis.
 
 ---
 

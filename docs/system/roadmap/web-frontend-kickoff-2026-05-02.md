@@ -26,10 +26,12 @@ audience: [next-session-agent, contributors]
 - 2026-05-02 проведён аудит → 13 новых задач, 2 повышены до high.
 - **Корень проблем — отсутствие фундамента**: engine на каждый запрос (perf),
   web → infra прямые импорты (architecture), `<div id="alerts">` без модели (UX).
-- **Следующий шаг:** Section F (Hardening) — закрывает фундамент. Без него
-  любые новые страницы будут наследовать те же проблемы.
-- **Первая задача:** **WEB-005** (engine cache + DI helper). После него —
-  WEB-040 (snять архитектурный долг), WEB-022 (alert/error model).
+- **Batch-1 закрыт 2026-05-02:** WEB-005, WEB-040, WEB-022, WEB-041, WEB-013 ✅.
+  11 / 16 находок baseline-аудита закрыты; suite 418 → 441; checkpoint-аудит
+  → [audit/2026-05-02-checkpoint-web-batch-1.md](../audit/2026-05-02-checkpoint-web-batch-1.md).
+- **Следующий шаг:** WEB-006 (markdown render для doc_show — закрывает SW-ME-3)
+  или WEB-014 (overview agg). Рекомендация: WEB-006 (более видимый user-facing
+  фикс — anchor-навигация по документу сейчас сломана).
 
 ## 2. Где что лежит
 
@@ -51,16 +53,16 @@ audience: [next-session-agent, contributors]
 | WEB-003 | Docs view | A | ✅ done | high |
 | WEB-010 | Tasks list | B | ✅ done | high |
 | WEB-011 | Task status HTMX | C | ✅ done | high |
-| **WEB-005** | **Engine cache + DI** | **F** | **❌ next** | **high** |
-| WEB-040 | Remove infra bypass | E | ❌ pending | high (↑) |
-| WEB-022 | Alerts/error model | C | ❌ pending | high (↑) |
-| WEB-041 | Tabs include + disabled | E | ❌ pending | medium |
-| WEB-013 | Index batch stats | F | ❌ pending | high |
+| WEB-005 | Engine cache + DI | F | ✅ done 2026-05-02 | high |
+| WEB-040 | Remove infra bypass | E | ✅ done 2026-05-02 | high |
+| WEB-022 | Alerts/error model | C | ✅ done 2026-05-02 | high |
+| WEB-041 | Tabs include + disabled | E | ✅ done 2026-05-02 | medium |
+| WEB-013 | Index batch stats | F | ✅ done 2026-05-02 | high |
+| **WEB-006** | **Markdown render для doc_show** | **B** | **❌ next** | **medium** |
+| WEB-014 | Overview agg | B | ❌ pending | medium |
 | WEB-004 | Plan view + Mermaid | B | ❌ pending | high |
 | WEB-021 | Revisions log | B | ❌ pending | medium |
-| WEB-014 | Overview agg | B | ❌ pending | medium |
 | WEB-012 | Section patch HTMX | C | ❌ pending | high |
-| WEB-006 | Markdown render | B | ❌ pending | medium |
 | WEB-060 | Settings page | B | ❌ pending | medium |
 | WEB-030 | SSE run console | D | ❌ pending | medium |
 | WEB-031 | Import progress | D | ❌ pending | low |
@@ -68,9 +70,14 @@ audience: [next-session-agent, contributors]
 | WEB-050 | Session DI pattern | F | ❌ pending | medium |
 | WEB-051 | Asset versioning | F | ❌ pending | low |
 | WEB-052 | Error-branch tests | F | ❌ pending | low |
-| WEB-053 | conftest extract | F | ❌ pending | low |
+| WEB-053 | Test hygiene (cache+alembic) | F | 🔄 partial | medium (↑) |
+| WEB-013b | empty-page summary clamp | F | ❌ pending | low |
+| WEB-022b | log WebError events | C | ❌ pending | low |
+| WEB-054 | flash_message length cap | F | ❌ pending | low |
 
-23 total · **5 done / 18 pending** · expected order: F → E → B-remainder → C → D.
+26 total · **10 done / 15 pending / 1 partial** · expected order:
+B-remainder (WEB-006, 014, 004, 021) → C (WEB-012) → D (WEB-030, 031) →
+F-tail (013b, 050..054) + E (042).
 
 ## 4. Первый tick — WEB-005 (Engine cache + DI helper)
 
@@ -135,20 +142,21 @@ audience: [next-session-agent, contributors]
 
 Section F закрывается, когда:
 
-- [ ] WEB-005 done — engine кэшируется; `get_project_db` доступен.
-- [ ] WEB-040 done — `db_resolver.py` удалён; ruff banned-imports правило работает;
-      audit `2026-04-28-section-c-capabilities.md` переведён в `resolved`.
-- [ ] WEB-022 done — `WebError` + middleware + `_frag/alert.html`;
-      `<div id="alerts">` живой.
-- [ ] WEB-013 done — index загружается за один проход для N=20.
+- [x] WEB-005 done — engine кэшируется; `get_project_db` доступен. (2026-05-02)
+- [x] WEB-040 done — `db_resolver.py` удалён; ruff banned-imports правило работает;
+      audit `2026-04-28-section-c-capabilities.md` переведён в `resolved`. (2026-05-02)
+- [x] WEB-022 done — `WebError` + middleware + `_frag/alert.html`;
+      `<div id="alerts">` живой. (2026-05-02)
+- [x] WEB-013 done — index загружается за один проход для N=20. (2026-05-02)
 - [ ] WEB-050 done — DI-pattern зафиксирован в capability §7 как
       «единственно верный».
 - [ ] WEB-051, WEB-052, WEB-053 done — versioning, error-branch coverage,
       conftest extract.
-- [ ] Suite зелёный (>27 тестов, на каждой задаче пометить добавленные).
+- [ ] WEB-013b/022b/054 (sub-tickets из checkpoint-аудита) — закрыты.
+- [ ] Suite зелёный (>66 тестов, на каждой задаче пометить добавленные).
 - [ ] Audit-отчёт `2026-05-02-section-web-frontend.md` переведён в `resolved`.
 - [ ] Capability §11 «Текущее состояние» обновлено: endpoints shipped,
-      LOC, tests, удалён pыйрафраф «Архитектурный долг» (строчка-в-строчку).
+      LOC, tests; «Архитектурный долг» очищен от закрытых строк.
 
 ## 7. Известные ADR-вопросы (отложено до своего времени)
 
