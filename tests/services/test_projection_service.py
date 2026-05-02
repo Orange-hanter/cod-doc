@@ -68,9 +68,14 @@ def _make_doc(
     status: DocumentStatus = DocumentStatus.ACTIVE,
 ) -> int:
     doc = docs.create(
-        session, project_id=project_id, doc_key=doc_key,
-        type=DocumentType.GUIDE, status=status,
-        title=title, owner=owner, author="human:test",
+        session,
+        project_id=project_id,
+        doc_key=doc_key,
+        type=DocumentType.GUIDE,
+        status=status,
+        title=title,
+        owner=owner,
+        author="human:test",
     )
     return doc.row_id  # type: ignore[return-value]
 
@@ -99,9 +104,14 @@ def test_render_markdown_includes_section_body(engine_with_schema) -> None:  # t
         p = _seed_project(session)
         doc_id = _make_doc(session, p)
         docs.add_section(
-            session, document_id=doc_id, anchor="intro",
-            heading="Introduction", level=2, position=0,
-            body="Hello from section.\n", author="human:test",
+            session,
+            document_id=doc_id,
+            anchor="intro",
+            heading="Introduction",
+            level=2,
+            position=0,
+            body="Hello from section.\n",
+            author="human:test",
         )
 
         md = proj.render_markdown(session, doc_id)
@@ -134,6 +144,7 @@ def test_export_creates_file_and_updates_hash(engine_with_schema, root_path: Pat
         assert result.content_hash  # non-empty hash
 
         from cod_doc.infra.models import DocumentModel
+
         doc_model = session.get(DocumentModel, doc_id)
         assert doc_model.projection_hash == result.content_hash
 
@@ -184,9 +195,14 @@ def test_export_reruns_after_content_change(engine_with_schema, root_path: Path)
 
         # Modify the document; hash in DB should differ from projection_hash.
         docs.add_section(
-            session, document_id=doc_id, anchor="new-section",
-            heading="New", level=2, position=0,
-            body="Added content.\n", author="human:test",
+            session,
+            document_id=doc_id,
+            anchor="new-section",
+            heading="New",
+            level=2,
+            position=0,
+            body="Added content.\n",
+            author="human:test",
         )
 
         second = proj.export_document(session, doc_id, root_path=root_path)
@@ -230,8 +246,14 @@ def test_detect_drift_stale_export_after_db_change(engine_with_schema, root_path
 
         # Mutate DB without re-exporting.
         docs.add_section(
-            session, document_id=doc_id, anchor="s", heading="S", level=2,
-            position=0, body="X\n", author="human:test",
+            session,
+            document_id=doc_id,
+            anchor="s",
+            heading="S",
+            level=2,
+            position=0,
+            body="X\n",
+            author="human:test",
         )
 
         report = proj.detect_drift(session, doc_id, root_path=root_path)
@@ -277,8 +299,11 @@ def test_import_no_op_when_hash_matches(engine_with_schema, root_path: Path) -> 
         export_result = proj.export_document(session, doc_id, root_path=root_path)
 
         doc = proj.import_document(
-            session, p, export_result.path,
-            author="human:test", root_path=root_path,
+            session,
+            p,
+            export_result.path,
+            author="human:test",
+            root_path=root_path,
         )
         assert doc is not None
         assert doc.row_id == doc_id
@@ -298,8 +323,11 @@ def test_import_applies_frontmatter_field_changes(engine_with_schema, root_path:
         export_result.path.write_text(new_content, encoding="utf-8")
 
         doc = proj.import_document(
-            session, p, export_result.path,
-            author="human:test", root_path=root_path,
+            session,
+            p,
+            export_result.path,
+            author="human:test",
+            root_path=root_path,
         )
         assert doc is not None
         assert doc.status is DocumentStatus.ACTIVE
@@ -321,6 +349,7 @@ def test_export_refuses_absolute_path_in_db(engine_with_schema, root_path: Path)
 
         # Poison the DB directly to simulate a row that bypassed validate_doc_path.
         from cod_doc.infra.models import DocumentModel
+
         model = session.get(DocumentModel, doc_id)
         assert model is not None
         model.path = "/etc/cod_doc_pwned"
@@ -332,7 +361,9 @@ def test_export_refuses_absolute_path_in_db(engine_with_schema, root_path: Path)
         assert not Path("/etc/cod_doc_pwned").exists()
 
 
-def test_export_refuses_dotdot_path_in_db(engine_with_schema, root_path: Path, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+def test_export_refuses_dotdot_path_in_db(
+    engine_with_schema, root_path: Path, tmp_path: Path
+) -> None:  # type: ignore[no-untyped-def]
     """`..` segments must be rejected by the resolved-containment check."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -340,6 +371,7 @@ def test_export_refuses_dotdot_path_in_db(engine_with_schema, root_path: Path, t
         doc_id = _make_doc(session, p)
 
         from cod_doc.infra.models import DocumentModel
+
         model = session.get(DocumentModel, doc_id)
         assert model is not None
         model.path = "../escaped.md"
@@ -360,6 +392,7 @@ def test_drift_refuses_absolute_path_in_db(engine_with_schema, root_path: Path) 
         doc_id = _make_doc(session, p)
 
         from cod_doc.infra.models import DocumentModel
+
         model = session.get(DocumentModel, doc_id)
         assert model is not None
         model.path = "/etc/passwd"
@@ -372,6 +405,7 @@ def test_drift_refuses_absolute_path_in_db(engine_with_schema, root_path: Path) 
 def test_create_rejects_absolute_path() -> None:
     """The primary write-path guard: validate_doc_path is invoked from doc_service.create."""
     from cod_doc.services import validation
+
     with pytest.raises(validation.ValidationError) as exc:
         validation.validate_doc_path("/Users/victim/.ssh/authorized_keys")
     assert exc.value.code == "SD-100"

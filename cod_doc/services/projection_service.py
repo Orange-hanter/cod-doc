@@ -54,27 +54,27 @@ if TYPE_CHECKING:
 
 
 class DriftStatus(StrEnum):
-    IN_SYNC = "in_sync"                # file == projection_hash == DB content
-    STALE_EXPORT = "stale_export"      # DB changed but not yet exported
+    IN_SYNC = "in_sync"  # file == projection_hash == DB content
+    STALE_EXPORT = "stale_export"  # DB changed but not yet exported
     EDITED_IN_PLACE = "edited_in_place"  # file changed after last export
-    MISSING = "missing"                # file not on disk
+    MISSING = "missing"  # file not on disk
 
 
 @dataclass(slots=True)
 class ExportResult:
     document_id: int
     path: Path
-    written: bool       # False = skipped (hash already matched)
-    content_hash: str   # SHA-256 of exported content
+    written: bool  # False = skipped (hash already matched)
+    content_hash: str  # SHA-256 of exported content
 
 
 @dataclass(slots=True)
 class DriftReport:
     document_id: int
     status: DriftStatus
-    projection_hash: str | None    # stored in DB
-    db_content_hash: str           # SHA-256 of current DB content
-    file_hash: str | None          # SHA-256 of on-disk file; None if MISSING
+    projection_hash: str | None  # stored in DB
+    db_content_hash: str  # SHA-256 of current DB content
+    file_hash: str | None  # SHA-256 of on-disk file; None if MISSING
 
 
 # --------------------------------------------------------------------------- #
@@ -138,7 +138,17 @@ def _frontmatter_dict(model: DocumentModel) -> dict[str, Any]:
     extra = dict(model.frontmatter_json or {})
     # Never overwrite computed fields.
     # Never overwrite computed fields; also skip reserved fields not for users.
-    for key in ("type", "status", "source_of_truth", "sensitivity", "owner", "title", "projection_hash", "doc_key", "revision"):
+    for key in (
+        "type",
+        "status",
+        "source_of_truth",
+        "sensitivity",
+        "owner",
+        "title",
+        "projection_hash",
+        "doc_key",
+        "revision",
+    ):
         extra.pop(key, None)
     fm.update(extra)
     return fm
@@ -153,16 +163,56 @@ def _render_frontmatter(fm: dict[str, Any]) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def render_markdown(session: Session, document_id: int) -> str:
+_REDACTION_MARKER = "> [content redacted: {sensitivity} — see DB]"
+
+
+def _audience_blocks_sensitivity(audience: str | None, doc_sensitivity: str) -> bool:
+    """Return True if `audience` cannot see content of level `doc_sensitivity`.
+
+    Audience tiers (low → high clearance):
+        public < internal < confidential < restricted
+
+    Mapping: a `public` audience may only see `public` content; `internal`
+    sees public+internal; `confidential` adds confidential; the implicit
+    "owner"/None audience sees everything.
+    """
+    if not audience:
+        return False
+    rank = {
+        Sensitivity.PUBLIC.value: 0,
+        Sensitivity.INTERNAL.value: 1,
+        Sensitivity.CONFIDENTIAL.value: 2,
+        Sensitivity.RESTRICTED.value: 3,
+    }
+    audience_rank = rank.get(audience, 3)  # unknown audience → most restrictive
+    doc_rank = rank.get(doc_sensitivity, 1)
+    return doc_rank > audience_rank
+
+
+def render_markdown(
+    session: Session,
+    document_id: int,
+    *,
+    audience: str | None = None,
+) -> str:
     """Render the full document markdown: frontmatter + body.
 
     Uses `DocService.render_body` for the body (reads the `document_body` view).
     Does NOT modify the DB. Raises `DocumentNotFoundError` if unknown.
+
+    `audience` (COD-025 / SD-002) gates content by `document.sensitivity`.
+    When the audience cannot see the document's level, the body is replaced
+    with a single redaction marker line. The frontmatter still indicates the
+    sensitivity so consumers know why content is missing. `None` (default)
+    means owner-level access — no redaction is applied.
     """
     model = _require_doc_model(session, document_id)
     fm = _frontmatter_dict(model)
     frontmatter_block = _render_frontmatter(fm)
-    body = docs.render_body(session, document_id) or ""
+    if _audience_blocks_sensitivity(audience, model.sensitivity):
+        body = _REDACTION_MARKER.format(sensitivity=model.sensitivity) + "\n"
+    else:
+        body = docs.render_body(session, document_id) or ""
     return frontmatter_block + body
 
 
@@ -177,20 +227,27 @@ def export_document(
     *,
     root_path: Path,
     force: bool = False,
+    audience: str | None = None,
 ) -> ExportResult:
     """Write the document projection to disk and update `projection_hash`.
 
     Idempotent: skips the write if `projection_hash` already matches the current
     DB content (no changes since last export), unless `force=True`.
 
+    `audience` (COD-025 / SD-002) controls redaction in the rendered body —
+    see `render_markdown`. The `projection_hash` is only updated for the
+    canonical (audience=None) export, so an audience-specific export does NOT
+    overwrite the stored hash. This keeps `detect_drift` consistent against
+    the canonical projection.
+
     Returns `ExportResult` with `written=False` on a skipped export.
     """
     model = _require_doc_model(session, document_id)
     target = _safe_target(root_path, model.path)
-    content = render_markdown(session, document_id)
+    content = render_markdown(session, document_id, audience=audience)
     content_hash = _sha256(content)
 
-    if not force and model.projection_hash == content_hash:
+    if audience is None and not force and model.projection_hash == content_hash:
         return ExportResult(
             document_id=document_id,
             path=target,
@@ -200,8 +257,9 @@ def export_document(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
-    model.projection_hash = content_hash
-    session.flush()
+    if audience is None:
+        model.projection_hash = content_hash
+        session.flush()
 
     return ExportResult(
         document_id=document_id,
