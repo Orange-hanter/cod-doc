@@ -35,9 +35,9 @@ related_audits:
 | C: Write paths | inline | 3 | 3 | 0 | ✅ done (WEB-011, WEB-022, WEB-012) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
-| F: Hardening (NEW 2026-05-02) | inline | 6 | 5 | 1 | 🔄 in-progress (WEB-005, 013, 051, 052, 053 ✅; 050 pending) |
+| F: Hardening (NEW 2026-05-02) | inline | 6 | 6 | 0 | ✅ done (WEB-005, 013, 050, 051, 052, 053) |
 | F-tail: Polish from checkpoints | inline | 5 | 5 | 0 | ✅ done (WEB-013b, 022b, 054, 053b, 014b) |
-| **TOTAL** |  | **28** | **24** | **4** | |
+| **TOTAL** |  | **28** | **25** | **3** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -757,25 +757,30 @@ affected_files:
 id: WEB-050
 title: "Convention: project_db_id flow через DI (предотвратить регрессию WEB-040)"
 section: F-Hardening
-status: pending
+status: done
 depends_on: [WEB-040]
 type: refactor
 priority: medium
 affected_files:
-  - cod_doc/api/deps.py
-  - docs/system/capabilities/web-frontend.md
+  - docs/system/capabilities/web-frontend.md      # §7 + recipe block
 ```
 
-**Description:** После WEB-040 ввести структурный паттерн: каждая web-функция
-объявляет `project_db: tuple[Session, int] = Depends(get_project_db)` и
-никогда не имеет дела со slug→DB резолвом сама. Линт-правило (или явный
-`mypy` plugin / custom ruff rule) ловит ручной импорт `open_db_for_project`-подобных
-helper'ов.
+**Description:** После WEB-040 структурный паттерн уже зафиксирован: каждая
+web-функция использует `Depends(get_project_db)` (strict) или
+`try_open_project_db()` ctx-manager (graceful) и никогда не резолвит
+slug→DB сама. AST-тест `test_web_layer_imports.py` блокирует регрессию.
 
 **Acceptance:**
-- Pattern зафиксирован в capability §7 как «единственно верный».
-- Все существующие endpoints используют его.
-- Документ-обзор «как добавить новую web-страницу» (раздел в capability §13).
+- ✅ Pattern зафиксирован в capability §7 (DI-конвенция, разрешённые/запрещённые
+  модули, объяснение strict vs graceful).
+- ✅ Все существующие endpoints (15 в pages.py + 6 в fragments.py) используют
+  паттерн — проверено `test_web_layer_imports.py`.
+- ✅ Recipe «как добавить новую web-страницу» добавлен в §7 с примерами
+  для strict и graceful flows.
+- ✅ §11 metrics обновлены: 13 endpoints, 137 web-tests.
+
+> ✅ **Implemented 2026-05-02**. Closed because spec — было «зафиксировать
+> паттерн в документации» — сделано.
 
 ### WEB-051
 

@@ -187,10 +187,56 @@ def get_project_db(slug: str) -> tuple[Session, int]: ...
 > импортирует `cod_doc.infra.*`. Регрессии ловятся AST-тестом
 > [tests/api/test_web_layer_imports.py](../../../tests/api/test_web_layer_imports.py).
 
+### Как добавить новую web-страницу (DI-pattern)
+
+Recipe для нового handler'а в `cod_doc/api/web/pages.py` или `fragments.py`:
+
+```python
+from typing import Annotated
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.orm import Session
+
+from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
+from cod_doc.api.web.templates_env import templates
+from cod_doc.services import doc_service as docs
+
+router = APIRouter()
+
+# ── Strict (404 если БД не готова) ───────────────────────────────────
+@router.get("/p/{slug}/something")
+def page_strict(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+):
+    proj = get_project(slug)
+    session, project_db_id = db
+    # use session through services only — never `from cod_doc.infra...`
+    items = docs.list_for_project(session, project_db_id)
+    return templates.TemplateResponse(request, "..", {...})
+
+# ── Graceful (рендер с warning если БД не готова) ────────────────────
+@router.get("/p/{slug}/something-graceful")
+def page_graceful(request: Request, slug: str):
+    proj = get_project(slug)
+    items = []
+    db_available = False
+    with try_open_project_db(slug) as (session, project_db_id):
+        if session is not None and project_db_id is not None:
+            db_available = True
+            items = docs.list_for_project(session, project_db_id)
+    return templates.TemplateResponse(request, "..", {..., "db_available": db_available})
+```
+
+Choosing between strict and graceful: **detail pages** (entity-by-id) →
+strict (404 если БД нет). **List pages** (overview, table) → graceful
+(показать warning, не падать). Cross-project guard для entity-id
+endpoints — service-helper типа `plan_service.get_for_project(...)`.
+
 ## 8. Тестирование
 
 - **Smoke**: `fastapi.testclient.TestClient`, каждая страница 200 на seed-проекте.
-  Текущий suite — `tests/api/test_web_*.py`, **27 тестов, все зелёные**.
+  Текущий suite — `tests/api/test_web_*.py`, **137 тестов, все зелёные**.
 - **Error-branch coverage** (часть DoD каждой write-path задачи):
   - валидация формы (400 на garbage),
   - конфликт ревизий (`RevisionConflictError`),
@@ -235,11 +281,11 @@ def get_project_db(slug: str) -> tuple[Session, int]: ...
 
 | Метрика | Значение |
 |---|---:|
-| Endpoints shipped | **5 / 14** (~36 %) |
-| LOC python (`api/web`) | 363 |
-| LOC templates | 280 |
-| LOC `app.css` | 211 |
-| Web-tests | 27 (`pytest tests/api/ -q` ⇒ зелёные) |
+| Endpoints shipped | **13 / 14** (~93 %) |
+| LOC python (`api/web`) | ~900 |
+| LOC templates | ~600 |
+| LOC `app.css` | ~370 |
+| Web-tests | 137 (`pytest tests/api/ -q` ⇒ зелёные) |
 | Vendored JS | `htmx.min.js` v2.0.4 |
 | Зависимостей в `pyproject.toml` сверх baseline | **0** (как обещано §2) |
 
