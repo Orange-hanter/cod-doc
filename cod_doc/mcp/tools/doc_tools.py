@@ -171,7 +171,9 @@ def register(mcp: FastMCP) -> None:
             d = doc_service.get(session, project_id, doc_key)
             if d is None or d.row_id is None:
                 raise ValueError(f"Document '{doc_key}' not found.")
-            result = projection_service.export_document(session, d.row_id, root_path=root, force=force)
+            result = projection_service.export_document(
+                session, d.row_id, root_path=root, force=force
+            )
         return {
             "path": str(result.path),
             "written": result.written,

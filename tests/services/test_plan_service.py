@@ -106,9 +106,7 @@ def _seed_task(
         author="human:test",
     )
     if status is not TaskStatus.PENDING:
-        tasks.update_status(
-            session, task_id=task_id, new_status=status, author="human:test"
-        )
+        tasks.update_status(session, task_id=task_id, new_status=status, author="human:test")
     return t
 
 
@@ -144,7 +142,11 @@ def test_recalc_section_pending_and_in_progress(engine_with_schema) -> None:  # 
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-002")
         # B: 1 in-progress + 1 pending → status=in-progress
         _seed_task(
-            session, proj_id=p, plan_id=plan_id, section_id=secs["B"], task_id="PLN-010",
+            session,
+            proj_id=p,
+            plan_id=plan_id,
+            section_id=secs["B"],
+            task_id="PLN-010",
             status=TaskStatus.IN_PROGRESS,
         )
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["B"], task_id="PLN-011")
@@ -230,8 +232,12 @@ def test_ready_excludes_in_progress_and_done(engine_with_schema) -> None:  # typ
     with transactional(factory) as session:
         p, plan_id, secs = _seed_plan_with_sections(session)
         _seed_task(
-            session, proj_id=p, plan_id=plan_id, section_id=secs["A"],
-            task_id="PLN-001", status=TaskStatus.IN_PROGRESS,
+            session,
+            proj_id=p,
+            plan_id=plan_id,
+            section_id=secs["A"],
+            task_id="PLN-001",
+            status=TaskStatus.IN_PROGRESS,
         )
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-002")
         tasks.complete(session, task_id="PLN-002", author="x")
@@ -259,7 +265,9 @@ def test_ready_scoped_to_plan(engine_with_schema) -> None:  # type: ignore[no-un
         sec2 = PlanSectionModel(plan_id=plan2.row_id, letter="A", title="X", slug="A-X", position=0)
         session.add(sec2)
         session.flush()
-        _seed_task(session, proj_id=p, plan_id=plan2.row_id, section_id=sec2.row_id, task_id="QQ-001")
+        _seed_task(
+            session, proj_id=p, plan_id=plan2.row_id, section_id=sec2.row_id, task_id="QQ-001"
+        )
 
         ready = plans.ready(session, plan_id)
         assert {t.task_id for t in ready} == {"PLN-001"}
@@ -272,16 +280,28 @@ def test_ready_priority_order(engine_with_schema) -> None:  # type: ignore[no-un
     with transactional(factory) as session:
         p, plan_id, secs = _seed_plan_with_sections(session)
         _seed_task(
-            session, proj_id=p, plan_id=plan_id, section_id=secs["A"],
-            task_id="PLN-001", priority=Priority.LOW,
+            session,
+            proj_id=p,
+            plan_id=plan_id,
+            section_id=secs["A"],
+            task_id="PLN-001",
+            priority=Priority.LOW,
         )
         _seed_task(
-            session, proj_id=p, plan_id=plan_id, section_id=secs["A"],
-            task_id="PLN-002", priority=Priority.CRITICAL,
+            session,
+            proj_id=p,
+            plan_id=plan_id,
+            section_id=secs["A"],
+            task_id="PLN-002",
+            priority=Priority.CRITICAL,
         )
         _seed_task(
-            session, proj_id=p, plan_id=plan_id, section_id=secs["A"],
-            task_id="PLN-003", priority=Priority.MEDIUM,
+            session,
+            proj_id=p,
+            plan_id=plan_id,
+            section_id=secs["A"],
+            task_id="PLN-003",
+            priority=Priority.MEDIUM,
         )
 
         ready = plans.ready(session, plan_id)
@@ -295,7 +315,10 @@ def test_ready_respects_limit(engine_with_schema) -> None:  # type: ignore[no-un
         p, plan_id, secs = _seed_plan_with_sections(session)
         for n in range(1, 6):
             _seed_task(
-                session, proj_id=p, plan_id=plan_id, section_id=secs["A"],
+                session,
+                proj_id=p,
+                plan_id=plan_id,
+                section_id=secs["A"],
                 task_id=f"PLN-00{n}",
             )
         ready = plans.ready(session, plan_id, limit=3)
@@ -401,8 +424,8 @@ def test_export_progress_overview_has_section_rows(engine_with_schema) -> None: 
         assert "B: Services" in po
         assert "TOTAL" in po
         # Status column should reflect derived state.
-        assert "done" in po       # section A is done
-        assert "pending" in po    # section B is pending
+        assert "done" in po  # section A is done
+        assert "pending" in po  # section B is pending
 
 
 def test_export_next_batch_lists_ready_tasks(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -411,12 +434,20 @@ def test_export_next_batch_lists_ready_tasks(engine_with_schema) -> None:  # typ
     with transactional(factory) as session:
         p, plan_id, secs = _seed_plan_with_sections(session)
         _seed_task(
-            session, proj_id=p, plan_id=plan_id, section_id=secs["A"],
-            task_id="PLN-001", priority=Priority.CRITICAL,
+            session,
+            proj_id=p,
+            plan_id=plan_id,
+            section_id=secs["A"],
+            task_id="PLN-001",
+            priority=Priority.CRITICAL,
         )
         _seed_task(
-            session, proj_id=p, plan_id=plan_id, section_id=secs["A"],
-            task_id="PLN-002", priority=Priority.LOW,
+            session,
+            proj_id=p,
+            plan_id=plan_id,
+            section_id=secs["A"],
+            task_id="PLN-002",
+            priority=Priority.LOW,
         )
 
         out = plans.export(session, plan_id)

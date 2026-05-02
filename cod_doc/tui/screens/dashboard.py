@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from textual import on
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.message import Message
 from textual.screen import Screen
@@ -74,7 +74,7 @@ class ProjectCard(Static):
 class AddProjectDialog(Screen[Any]):
     """Диалог добавления нового проекта."""
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "dismiss", "Закрыть")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "dismiss", "Закрыть")]
 
     def __init__(self, config: Config) -> None:
         super().__init__()
@@ -122,7 +122,7 @@ class AddProjectDialog(Screen[Any]):
 class AddTaskDialog(Screen[Any]):
     """Диалог добавления задачи в проект."""
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "dismiss", "Закрыть")]
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "dismiss", "Закрыть")]
 
     def __init__(self, project: Project) -> None:
         super().__init__()
@@ -161,7 +161,7 @@ class AddTaskDialog(Screen[Any]):
 class DashboardScreen(Screen[Any]):
     """Главный экран — список проектов."""
 
-    BINDINGS: ClassVar[list[Binding]] = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("a", "add_project", "Добавить проект", show=True),
         Binding("r", "refresh", "Обновить", show=True),
         Binding("s", "settings", "Настройки", show=True),
@@ -187,9 +187,13 @@ class DashboardScreen(Screen[Any]):
                 yield Static("Выберите проект →", id="detail-header", classes="panel-title")
                 yield DataTable(id="tasks-table")
                 with Horizontal(id="detail-actions"):
-                    yield Button("▶ Запустить агент", id="btn-run-agent", disabled=True, variant="success")
+                    yield Button(
+                        "▶ Запустить агент", id="btn-run-agent", disabled=True, variant="success"
+                    )
                     yield Button("➕ Задача", id="btn-add-task", disabled=True)
-                    yield Button("🗑 Удалить проект", id="btn-remove-proj", disabled=True, variant="error")
+                    yield Button(
+                        "🗑 Удалить проект", id="btn-remove-proj", disabled=True, variant="error"
+                    )
         yield Footer()
 
         self._selected_project: Project | None = None

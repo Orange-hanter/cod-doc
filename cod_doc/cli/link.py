@@ -87,7 +87,9 @@ def link() -> None:
 @click.option("--section", "anchor", default=None, help="Restrict to one section anchor")
 @click.option("--json", "as_json", is_flag=True, default=False)
 @click.pass_context
-def link_list(ctx: click.Context, doc_key: str, project: str, anchor: str | None, as_json: bool) -> None:
+def link_list(
+    ctx: click.Context, doc_key: str, project: str, anchor: str | None, as_json: bool
+) -> None:
     """List links in a document (or a single section with --section)."""
     from sqlalchemy import select
 
@@ -116,9 +118,13 @@ def link_list(ctx: click.Context, doc_key: str, project: str, anchor: str | None
             sec_id = _resolve_section_id(session, project_id, doc_key, anchor)
             links = link_service.list_for_section(session, sec_id)
         else:
-            sec_ids = session.execute(
-                select(SectionModel.row_id).where(SectionModel.document_id == doc_row)
-            ).scalars().all()
+            sec_ids = (
+                session.execute(
+                    select(SectionModel.row_id).where(SectionModel.document_id == doc_row)
+                )
+                .scalars()
+                .all()
+            )
             for sid in sec_ids:
                 links.extend(link_service.list_for_section(session, sid))
 

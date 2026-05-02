@@ -44,8 +44,12 @@ class ProjectModel(Base):
     slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     root_path: Mapped[str] = mapped_column(Text, nullable=False)
-    created: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
     config_json: Mapped[dict[str, Any]] = mapped_column(
         JSON, nullable=False, default=dict, server_default=text("'{}'")
     )
@@ -81,8 +85,12 @@ class DocumentModel(Base):
         JSON, nullable=False, default=dict, server_default=text("'{}'")
     )
     projection_hash: Mapped[str | None] = mapped_column(String(64))
-    created: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    last_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
     last_reviewed: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     project: Mapped[ProjectModel] = relationship(back_populates="documents")
@@ -181,9 +189,7 @@ class PlanModel(Base):
 
 class PlanSectionModel(Base):
     __tablename__ = "plan_section"
-    __table_args__ = (
-        UniqueConstraint("plan_id", "letter", name="uq_plan_section_plan_letter"),
-    )
+    __table_args__ = (UniqueConstraint("plan_id", "letter", name="uq_plan_section_plan_letter"),)
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     plan_id: Mapped[int] = mapped_column(
@@ -432,9 +438,7 @@ class RevisionModel(Base):
     entity_id: Mapped[int] = mapped_column(Integer, nullable=False)
     parent_revision_id: Mapped[str | None] = mapped_column(String(26))
     author: Mapped[str] = mapped_column(String(128), nullable=False)
-    at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     diff: Mapped[str] = mapped_column(Text, nullable=False)
     reason: Mapped[str | None] = mapped_column(Text)
     commit_sha: Mapped[str | None] = mapped_column(String(64))
@@ -458,16 +462,12 @@ class AuditLogModel(Base):
         JSON, nullable=False, default=dict, server_default=text("'{}'")
     )
     result: Mapped[str] = mapped_column(Text, nullable=False)
-    at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
 class TagModel(Base):
     __tablename__ = "tag"
-    __table_args__ = (
-        UniqueConstraint("project_id", "name", name="uq_tag_project_name"),
-    )
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_tag_project_name"),)
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(

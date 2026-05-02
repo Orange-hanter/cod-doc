@@ -84,9 +84,7 @@ def register(mcp: FastMCP) -> None:
             )
             if section is None or section.row_id is None:
                 letters = ", ".join(s.letter for s in sections)
-                raise ValueError(
-                    f"Section '{section_letter}' not found. Available: {letters}"
-                )
+                raise ValueError(f"Section '{section_letter}' not found. Available: {letters}")
             plan_id, section_id = plan.row_id, section.row_id
 
         try:

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import asyncio
 import hashlib
 import hmac
 import json
 import logging
+from typing import Any
 
 from fastapi import (
     APIRouter,
@@ -31,6 +30,7 @@ router = APIRouter(prefix="/api")
 
 # ── Webhook management ────────────────────────────────────────────────────────
 
+
 @router.post("/webhooks", status_code=201)
 def register_webhook(data: WebhookRegister) -> dict[str, Any]:
     cfg = get_config()
@@ -44,7 +44,7 @@ def register_webhook(data: WebhookRegister) -> dict[str, Any]:
 
 
 @router.get("/webhooks")
-def list_webhooks() -> list[dict]:
+def list_webhooks() -> list[dict[str, Any]]:
     return [
         {"repo_url": url, "project": info["project"], "has_secret": bool(info["secret"])}
         for url, info in webhook_registry.items()
@@ -61,6 +61,7 @@ def delete_webhook(repo_url: str) -> dict[str, Any]:
 
 # ── GitHub webhook ────────────────────────────────────────────────────────────
 
+
 @router.post("/webhook/github")
 async def github_webhook(
     request: Request,
@@ -76,10 +77,9 @@ async def github_webhook(
     except json.JSONDecodeError as exc:
         raise HTTPException(400, "Невалидный JSON payload") from exc
 
-    repo_url: str = (
-        payload.get("repository", {}).get("html_url", "")
-        or payload.get("repository", {}).get("url", "")
-    )
+    repo_url: str = payload.get("repository", {}).get("html_url", "") or payload.get(
+        "repository", {}
+    ).get("url", "")
 
     entry = webhook_registry.get(repo_url)
     if not entry:
@@ -97,9 +97,7 @@ async def github_webhook(
     if secret:
         if not x_hub_signature_256:
             raise HTTPException(403, "Отсутствует подпись X-Hub-Signature-256")
-        expected = "sha256=" + hmac.new(
-            secret.encode(), body, hashlib.sha256
-        ).hexdigest()
+        expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, x_hub_signature_256):
             raise HTTPException(403, "Неверная подпись webhook")
 
@@ -132,6 +130,7 @@ async def github_webhook(
 
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────
+
 
 @router.websocket("/ws/projects/{name}/run")
 async def ws_run_agent(websocket: WebSocket, name: str) -> None:

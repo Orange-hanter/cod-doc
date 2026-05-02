@@ -19,12 +19,12 @@ REF_PATTERN = re.compile(
 INLINE_REF = re.compile(r"📁\s+\S+\s+\|\s+🗃️\s+\S+\s+\|\s+🔑\s+sha:[0-9a-f]{12}")
 PAGE_SIZE = 200  # строк
 
+
 def parse_ref(ref: str) -> dict[str, Any]:
     m = REF_PATTERN.search(ref)
     if not m:
         raise ValueError(
-            f"Неверный формат ссылки: {ref!r}\n"
-            "Ожидается: 📁 /path | 🗃️ doc:id | 🔑 sha:12hex"
+            f"Неверный формат ссылки: {ref!r}\nОжидается: 📁 /path | 🗃️ doc:id | 🔑 sha:12hex"
         )
     return m.groupdict()
 

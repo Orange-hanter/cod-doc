@@ -6,6 +6,7 @@ Revision ID: 0002_tasks
 Revises: 0001_core
 Create Date: 2026-04-25
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -163,9 +164,7 @@ def upgrade() -> None:
         ),
         sa.Column("kind", sa.String(16), nullable=False, server_default="blocks"),
         sa.Column("note", sa.Text),
-        sa.UniqueConstraint(
-            "from_task_id", "to_task_id", "kind", name="uq_dependency_edge"
-        ),
+        sa.UniqueConstraint("from_task_id", "to_task_id", "kind", name="uq_dependency_edge"),
     )
 
     op.create_table(

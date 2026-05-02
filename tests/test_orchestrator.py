@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def project(tmp_path: Path) -> Project:
     entry = ProjectEntry(name="test", path=str(tmp_path))
@@ -53,12 +54,14 @@ def _make_mock_response(content: str | None = None, tool_calls: list | None = No
 def _make_tool_call(name: str, args: dict, call_id: str = "call_1"):
     tc = MagicMock()
     tc.id = call_id
+    tc.type = "function"
     tc.function.name = name
     tc.function.arguments = json.dumps(args, ensure_ascii=False)
     return tc
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_run_task_simple_message(project: Project, config: Config) -> None:
@@ -98,7 +101,12 @@ async def test_run_task_with_tool_call(project: Project, config: Config) -> None
     tool_resp.choices[0].message.model_dump.return_value = {
         "role": "assistant",
         "content": None,
-        "tool_calls": [{"id": "call_1", "function": {"name": "read_file", "arguments": '{"path": "MASTER.md"}'}}],
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "function": {"name": "read_file", "arguments": '{"path": "MASTER.md"}'},
+            }
+        ],
     }
 
     # Второй ответ — финальное сообщение
@@ -155,8 +163,17 @@ async def test_async_on_ask_human(project: Project, config: Config) -> None:
     tool_resp = _make_mock_response(tool_calls=[ask_call])
     tool_resp.choices[0].message.content = None
     tool_resp.choices[0].message.model_dump.return_value = {
-        "role": "assistant", "content": None,
-        "tool_calls": [{"id": "call_1", "function": {"name": "ask_human", "arguments": '{"question": "Какой цвет?", "context": "тест"}'}}],
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "function": {
+                    "name": "ask_human",
+                    "arguments": '{"question": "Какой цвет?", "context": "тест"}',
+                },
+            }
+        ],
     }
     final_resp = _make_mock_response(content="Ответ получен.")
 
@@ -178,14 +195,25 @@ async def test_async_on_ask_human(project: Project, config: Config) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_autonomous_no_tasks_generates_from_master(project: Project, config: Config) -> None:
+async def test_run_autonomous_no_tasks_generates_from_master(
+    project: Project, config: Config
+) -> None:
     """Если задач нет, агент анализирует MASTER.md и создаёт задачи."""
     create_call = _make_tool_call("create_task", {"title": "Создать спецификацию", "priority": 1})
     gen_resp = _make_mock_response(tool_calls=[create_call])
     gen_resp.choices[0].message.content = "Создал задачу."
     gen_resp.choices[0].message.model_dump.return_value = {
-        "role": "assistant", "content": "Создал задачу.",
-        "tool_calls": [{"id": "call_1", "function": {"name": "create_task", "arguments": '{"title": "Создать спецификацию", "priority": 1}'}}],
+        "role": "assistant",
+        "content": "Создал задачу.",
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "function": {
+                    "name": "create_task",
+                    "arguments": '{"title": "Создать спецификацию", "priority": 1}',
+                },
+            }
+        ],
     }
 
     run_resp = _make_mock_response(content="Задача выполнена.")

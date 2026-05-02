@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def tmp_project(tmp_path: Path) -> tuple[Path, ProjectEntry]:
     repo = tmp_path / "my-repo"
@@ -47,6 +48,7 @@ def app_client(tmp_path: Path, tmp_project):
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
     deps.webhook_registry.clear()
 
@@ -54,11 +56,13 @@ def app_client(tmp_path: Path, tmp_project):
     Project(entry).init()
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         yield client, cfg, entry
 
 
 # ── API: health & config ──────────────────────────────────────────────────────
+
 
 def test_health(app_client) -> None:
     client, _cfg, _ = app_client
@@ -77,6 +81,7 @@ def test_get_config_hides_api_key(app_client) -> None:
 
 
 # ── API: projects ─────────────────────────────────────────────────────────────
+
 
 def test_list_projects(app_client) -> None:
     client, _, entry = app_client
@@ -121,6 +126,7 @@ def test_create_and_delete_project(app_client, tmp_path) -> None:
 
 
 # ── API: tasks ────────────────────────────────────────────────────────────────
+
 
 def test_create_and_list_tasks(app_client) -> None:
     client, _, entry = app_client
@@ -172,14 +178,18 @@ def test_filter_tasks_by_status(app_client) -> None:
 
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
+
 def test_register_and_list_webhook(app_client) -> None:
     client, _, entry = app_client
 
-    r = client.post("/api/webhooks", json={
-        "project_name": entry.name,
-        "repo_url": "https://github.com/owner/repo",
-        "secret": "mysecret",
-    })
+    r = client.post(
+        "/api/webhooks",
+        json={
+            "project_name": entry.name,
+            "repo_url": "https://github.com/owner/repo",
+            "secret": "mysecret",
+        },
+    )
     assert r.status_code == 201
 
     r = client.get("/api/webhooks")
@@ -190,22 +200,29 @@ def test_github_webhook_triggers_agent(app_client) -> None:
     client, _, entry = app_client
 
     secret = "test-secret"
-    client.post("/api/webhooks", json={
-        "project_name": entry.name,
-        "repo_url": "https://github.com/owner/repo",
-        "secret": secret,
-    })
+    client.post(
+        "/api/webhooks",
+        json={
+            "project_name": entry.name,
+            "repo_url": "https://github.com/owner/repo",
+            "secret": secret,
+        },
+    )
 
-    payload = json.dumps({
-        "ref": "refs/heads/main",
-        "repository": {"html_url": "https://github.com/owner/repo"},
-    }).encode()
+    payload = json.dumps(
+        {
+            "ref": "refs/heads/main",
+            "repository": {"html_url": "https://github.com/owner/repo"},
+        }
+    ).encode()
 
     sig = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
 
     with patch("cod_doc.api.webhooks.Orchestrator") as MockOrch:
+
         async def _fake_run():
             from cod_doc.agent.orchestrator import AgentEvent
+
             yield AgentEvent("done", "ok")
 
         MockOrch.return_value.run_autonomous = _fake_run
@@ -227,13 +244,18 @@ def test_github_webhook_triggers_agent(app_client) -> None:
 
 def test_github_webhook_wrong_signature(app_client) -> None:
     client, _, entry = app_client
-    client.post("/api/webhooks", json={
-        "project_name": entry.name,
-        "repo_url": "https://github.com/owner/repo2",
-        "secret": "real-secret",
-    })
+    client.post(
+        "/api/webhooks",
+        json={
+            "project_name": entry.name,
+            "repo_url": "https://github.com/owner/repo2",
+            "secret": "real-secret",
+        },
+    )
 
-    payload = json.dumps({"ref": "refs/heads/main", "repository": {"html_url": "https://github.com/owner/repo2"}}).encode()
+    payload = json.dumps(
+        {"ref": "refs/heads/main", "repository": {"html_url": "https://github.com/owner/repo2"}}
+    ).encode()
 
     r = client.post(
         "/api/webhook/github",
@@ -249,11 +271,14 @@ def test_github_webhook_wrong_signature(app_client) -> None:
 
 def test_github_webhook_skips_non_push(app_client) -> None:
     client, _, entry = app_client
-    client.post("/api/webhooks", json={
-        "project_name": entry.name,
-        "repo_url": "https://github.com/owner/repo3",
-        "secret": "",
-    })
+    client.post(
+        "/api/webhooks",
+        json={
+            "project_name": entry.name,
+            "repo_url": "https://github.com/owner/repo3",
+            "secret": "",
+        },
+    )
 
     payload = json.dumps({"repository": {"html_url": "https://github.com/owner/repo3"}}).encode()
 
@@ -267,6 +292,7 @@ def test_github_webhook_skips_non_push(app_client) -> None:
 
 
 # ── Полный цикл агента через API ──────────────────────────────────────────────
+
 
 def test_agent_run_full_cycle(app_client) -> None:
     """
@@ -285,8 +311,10 @@ def test_agent_run_full_cycle(app_client) -> None:
 
     # Запустить агента (background task в TestClient выполняется синхронно)
     with patch("cod_doc.api.routes.Orchestrator") as MockOrch:
+
         async def _fake_auto():
             from cod_doc.agent.orchestrator import AgentEvent
+
             yield AgentEvent("thinking", "start")
             yield AgentEvent("done", "Task complete")
 

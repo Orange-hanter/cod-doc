@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from textual import on
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Checkbox, Footer, Header, Label, RichLog, Static
@@ -38,7 +38,7 @@ EVENT_STYLES = {
 class AgentRunScreen(Screen[Any]):
     """Экран выполнения задачи агентом."""
 
-    BINDINGS: ClassVar[list[Binding]] = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "stop_agent", "Остановить", show=True),
         Binding("c", "clear_log", "Очистить лог", show=True),
     ]
@@ -59,8 +59,16 @@ class AgentRunScreen(Screen[Any]):
             )
             # Опции
             with Vertical(id="agent-options"):
-                yield Checkbox("Авто-коммит после задачи", id="cb-auto-commit", value=self.project.entry.auto_commit)
-                yield Checkbox("Автономный режим (генерировать задачи из MASTER.md)", id="cb-autonomous", value=True)
+                yield Checkbox(
+                    "Авто-коммит после задачи",
+                    id="cb-auto-commit",
+                    value=self.project.entry.auto_commit,
+                )
+                yield Checkbox(
+                    "Автономный режим (генерировать задачи из MASTER.md)",
+                    id="cb-autonomous",
+                    value=True,
+                )
 
             # Панель управления
             with Vertical(id="agent-controls"):
@@ -74,6 +82,7 @@ class AgentRunScreen(Screen[Any]):
             with Vertical(id="human-input-block", classes="hidden"):
                 yield Label("❓ Агент ожидает вашего ответа:", id="question-label")
                 from textual.widgets import Input
+
                 yield Input(placeholder="Введите ответ...", id="human-answer")
                 yield Button("Отправить →", id="btn-send-answer", variant="primary")
 
@@ -121,6 +130,7 @@ class AgentRunScreen(Screen[Any]):
         block.remove_class("hidden")
         self.query_one("#question-label", Label).update(f"❓ {question}")
         from textual.widgets import Input
+
         self.query_one("#human-answer", Input).focus()
 
     def _hide_human_input(self) -> None:
@@ -218,7 +228,10 @@ class AgentRunScreen(Screen[Any]):
                 if self._stop_event.is_set():
                     log.debug(
                         "Stop event detected during stream",
-                        extra={"event_type": "agent_stop_requested", "project": self.project.entry.name},
+                        extra={
+                            "event_type": "agent_stop_requested",
+                            "project": self.project.entry.name,
+                        },
                     )
                     break
                 self._log_event(event)

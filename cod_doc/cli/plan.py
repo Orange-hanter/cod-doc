@@ -144,7 +144,9 @@ def plan_show(ctx: click.Context, plan_scope: str, project: str, as_json: bool) 
 @click.option("--limit", default=10, show_default=True)
 @click.option("--json", "as_json", is_flag=True, default=False)
 @click.pass_context
-def plan_ready(ctx: click.Context, plan_scope: str, project: str, limit: int, as_json: bool) -> None:
+def plan_ready(
+    ctx: click.Context, plan_scope: str, project: str, limit: int, as_json: bool
+) -> None:
     """List tasks ready to work on (all blocking deps done)."""
     from cod_doc.infra.db import transactional
     from cod_doc.services import plan_service

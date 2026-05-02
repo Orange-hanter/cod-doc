@@ -61,9 +61,7 @@ def _to_domain(model: RevisionModel) -> Revision:
     )
 
 
-def _current_head(
-    session: Session, entity_kind: EntityKind, entity_id: int
-) -> str | None:
+def _current_head(session: Session, entity_kind: EntityKind, entity_id: int) -> str | None:
     """Latest `revision_id` for the entity, or None if no revisions yet."""
     stmt = (
         select(RevisionModel.revision_id)
@@ -121,9 +119,7 @@ def write(
     return _to_domain(model)
 
 
-def list_for_entity(
-    session: Session, entity_kind: EntityKind, entity_id: int
-) -> list[Revision]:
+def list_for_entity(session: Session, entity_kind: EntityKind, entity_id: int) -> list[Revision]:
     """Full history for the entity, oldest → newest."""
     stmt = (
         select(RevisionModel)
@@ -171,9 +167,7 @@ def revert(session: Session, revision_id: str, *, author: str) -> Revision:
         _revert_document(session, model, author=author)
 
     else:
-        raise RevertNotSupportedError(
-            f"revert not supported for entity_kind={kind.value!r}"
-        )
+        raise RevertNotSupportedError(f"revert not supported for entity_kind={kind.value!r}")
 
     return _to_domain(model)
 
@@ -192,9 +186,7 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
     elif op == "complete":
         old_status = TaskStatus(diff_obj["old_status"])
     else:
-        raise RevertNotSupportedError(
-            f"cannot auto-revert TASK revision with op={op!r}"
-        )
+        raise RevertNotSupportedError(f"cannot auto-revert TASK revision with op={op!r}")
 
     task_model = session.get(TaskModel, model.entity_id)
     if task_model is None:
@@ -232,7 +224,7 @@ def _restore_original_from_unified(diff: str) -> str:
     if not m:
         return ""
 
-    content = diff[m.end():]
+    content = diff[m.end() :]
     # Each content line starts with a diff prefix and runs to the next '\n'.
     # Use re.findall with a sentinel '\n' appended to catch the final line.
     content_lines = re.findall(r"(?:[-+ \\][^\n]*)(?:\n|$)", content + "\n")
@@ -274,9 +266,7 @@ def _revert_document(session: Session, model: RevisionModel, *, author: str) -> 
     op = diff_obj.get("op")
 
     if op != "rename":
-        raise RevertNotSupportedError(
-            f"cannot auto-revert DOCUMENT revision with op={op!r}"
-        )
+        raise RevertNotSupportedError(f"cannot auto-revert DOCUMENT revision with op={op!r}")
 
     old_doc_key = diff_obj["from"]["doc_key"]
     old_path = diff_obj["from"]["path"]

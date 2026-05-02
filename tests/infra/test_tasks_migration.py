@@ -97,16 +97,10 @@ def _seed_plan_with_tasks(session, statuses: list[str]) -> tuple[int, int, list[
 def test_migration_creates_tables_and_views(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     with engine_with_schema.connect() as conn:
         tables = {
-            r[0]
-            for r in conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='table'")
-            )
+            r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
         }
         views = {
-            r[0]
-            for r in conn.execute(
-                text("SELECT name FROM sqlite_master WHERE type='view'")
-            )
+            r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='view'"))
         }
     assert {"plan", "plan_section", "task", "dependency", "affected_file"} <= tables
     assert {"section_totals", "plan_totals", "ready_tasks"} <= views
@@ -151,9 +145,7 @@ def test_section_totals_zero_for_empty_section(engine_with_schema) -> None:  # t
         proj.updated = now
         session.add(proj)
         session.flush()
-        plan = PlanModel(
-            project_id=proj.row_id, scope="empty-plan", created=now, last_updated=now
-        )
+        plan = PlanModel(project_id=proj.row_id, scope="empty-plan", created=now, last_updated=now)
         session.add(plan)
         session.flush()
         sec = PlanSectionModel(
@@ -191,10 +183,7 @@ def test_ready_tasks_excludes_blocked_pending(engine_with_schema) -> None:  # ty
         session.get(TaskModel, t3).status = "done"
 
     with engine_with_schema.connect() as conn:
-        ready_ids = {
-            r[0]
-            for r in conn.execute(text("SELECT row_id FROM ready_tasks"))
-        }
+        ready_ids = {r[0] for r in conn.execute(text("SELECT row_id FROM ready_tasks"))}
 
     # T0 blocked by pending T1 → excluded
     # T1 has no deps → ready
@@ -212,10 +201,7 @@ def test_ready_tasks_ignores_non_blocks_kind(engine_with_schema) -> None:  # typ
         session.add(DependencyModel(from_task_id=t0, to_task_id=t1, kind="relates"))
 
     with engine_with_schema.connect() as conn:
-        ready_ids = {
-            r[0]
-            for r in conn.execute(text("SELECT row_id FROM ready_tasks"))
-        }
+        ready_ids = {r[0] for r in conn.execute(text("SELECT row_id FROM ready_tasks"))}
     assert ready_ids == {t0, t1}
 
 

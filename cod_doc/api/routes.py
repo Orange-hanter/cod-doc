@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import logging
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
@@ -20,6 +19,7 @@ router = APIRouter(prefix="/api")
 
 
 # ── Health / Config ───────────────────────────────────────────────────────────
+
 
 @router.get("/health")
 def health() -> dict[str, Any]:
@@ -46,8 +46,9 @@ def update_config(update: ConfigUpdate) -> dict[str, Any]:
 
 # ── Projects ──────────────────────────────────────────────────────────────────
 
+
 @router.get("/projects")
-def list_projects() -> list[dict]:
+def list_projects() -> list[dict[str, Any]]:
     cfg = get_config()
     result = []
     for entry in cfg.list_projects():
@@ -95,8 +96,9 @@ def read_master(name: str) -> dict[str, Any]:
 
 # ── Tasks ─────────────────────────────────────────────────────────────────────
 
+
 @router.get("/projects/{name}/tasks")
-def list_tasks(name: str, status: str | None = None) -> list[dict]:
+def list_tasks(name: str, status: str | None = None) -> list[dict[str, Any]]:
     proj = get_project(name)
     s = TaskStatus(status) if status else None
     return [t.to_dict() for t in proj.get_tasks(s)]
@@ -120,6 +122,7 @@ def update_task(name: str, task_id: str, body: dict[str, Any]) -> dict[str, Any]
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
+
 
 @router.post("/projects/{name}/run")
 async def run_agent(name: str, background_tasks: BackgroundTasks) -> dict[str, Any]:

@@ -18,6 +18,7 @@ def project(tmp_path: Path) -> Project:
 
 # ── Task CRUD ─────────────────────────────────────────────────────────────────
 
+
 def test_add_and_get_task(project: Project) -> None:
     task = Task(title="Написать спецификацию", priority=1)
     project.add_task(task)
@@ -81,6 +82,7 @@ def test_filter_tasks_by_status(project: Project) -> None:
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
+
 def test_set_status(project: Project) -> None:
     project.set_status("running")
     assert project.state["status"] == "running"
@@ -108,6 +110,7 @@ def test_clear_context(project: Project) -> None:
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
+
 def test_stats(project: Project) -> None:
     project.add_task(Task(title="A"))
     project.add_task(Task(title="B"))
@@ -121,6 +124,7 @@ def test_stats(project: Project) -> None:
 
 
 # ── Init ──────────────────────────────────────────────────────────────────────
+
 
 def test_init_creates_cod_doc_dir(tmp_path: Path) -> None:
     entry = ProjectEntry(name="new-proj", path=str(tmp_path))

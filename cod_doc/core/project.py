@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 
@@ -65,7 +65,7 @@ class Task:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any] ) -> Task:
+    def from_dict(cls, d: dict[str, Any]) -> Task:
         return cls(
             title=d["title"],
             description=d.get("description", ""),
@@ -178,7 +178,7 @@ class Project:
             return {}
         return yaml.safe_load(self._state_file.read_text(encoding="utf-8")) or {}
 
-    def _write_state(self, state: dict[str, Any] ) -> None:
+    def _write_state(self, state: dict[str, Any]) -> None:
         self._state_file.write_text(yaml.dump(state, allow_unicode=True), encoding="utf-8")
 
     @property
@@ -198,8 +198,9 @@ class Project:
         s["agent_context"] = ctx[-50:]
         self._write_state(s)
 
-    def get_context_messages(self) -> list[dict]:
-        return self._read_state().get("agent_context", [])
+    def get_context_messages(self) -> list[dict[str, Any]]:
+        messages = self._read_state().get("agent_context", [])
+        return list(messages)
 
     def clear_context(self) -> None:
         s = self._read_state()
@@ -221,7 +222,9 @@ class Project:
         m = re.search(r"```json\s*(\{[^`]+\"next_step\"[^`]+\})\s*```", content, re.DOTALL)
         if m:
             try:
-                return json.loads(m.group(1))
+                parsed = json.loads(m.group(1))
+                if isinstance(parsed, dict):
+                    return cast("dict[str, Any]", parsed)
             except json.JSONDecodeError:
                 pass
         return {}

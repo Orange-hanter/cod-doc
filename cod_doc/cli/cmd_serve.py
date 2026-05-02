@@ -43,6 +43,9 @@ def mcp_server(ctx: click.Context, transport: str, host: str, port: int) -> None
     from cod_doc.mcp.server import mcp
 
     if transport == "streamable-http":
-        mcp.run(transport=transport, host=host, port=port, stateless_http=True)
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.settings.stateless_http = True
+        mcp.run(transport="streamable-http")
         return
-    mcp.run(transport=transport)
+    mcp.run(transport="stdio")

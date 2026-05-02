@@ -236,7 +236,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Поисковый запрос на естественном языке"},
+                    "query": {
+                        "type": "string",
+                        "description": "Поисковый запрос на естественном языке",
+                    },
                     "n_results": {
                         "type": "integer",
                         "description": "Количество результатов (по умолчанию 5)",

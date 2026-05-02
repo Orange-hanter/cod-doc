@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +22,9 @@ from cod_doc.api.webhooks import router as webhook_router
 from cod_doc.config import Config
 from cod_doc.logging_config import setup_logging
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
 setup_logging()
 logger = logging.getLogger("cod_doc.api")
 
@@ -32,9 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     set_config(cfg)
     logger.info(f"COD-DOC API запущен. Проектов: {len(cfg.list_projects())}")
     if cfg.is_configured:
-        task = asyncio.create_task(
-            run_daemon(cfg, log_callback=lambda m: logger.info(m))
-        )
+        task = asyncio.create_task(run_daemon(cfg, log_callback=lambda m: logger.info(m)))
         set_daemon_task(task)
     yield
     daemon = get_daemon_task()

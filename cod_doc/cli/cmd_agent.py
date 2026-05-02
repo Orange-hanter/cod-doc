@@ -26,7 +26,9 @@ def agent() -> None:
 @agent.command("run")
 @click.argument("project_name")
 @click.option("--task", "-t", default=None, help="Заголовок новой задачи для выполнения")
-@click.option("--autonomous/--no-autonomous", default=True, help="Авто-генерация задач из MASTER.md")
+@click.option(
+    "--autonomous/--no-autonomous", default=True, help="Авто-генерация задач из MASTER.md"
+)
 @click.pass_context
 def agent_run(ctx: click.Context, project_name: str, task: str | None, autonomous: bool) -> None:
     """Запустить агент для проекта."""

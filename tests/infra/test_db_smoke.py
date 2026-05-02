@@ -233,7 +233,13 @@ def test_cascade_delete_project_drops_documents(engine_with_schema) -> None:  # 
         # Quick-and-dirty drop via ORM to validate cascade.
         proj_model = session.get(ProjectModel, sys.maxsize)  # not exists, just to import
         del proj_model
-        target = session.query(__import__("cod_doc.infra.models", fromlist=["ProjectModel"]).ProjectModel).filter_by(slug="todrop").one()
+        target = (
+            session.query(
+                __import__("cod_doc.infra.models", fromlist=["ProjectModel"]).ProjectModel
+            )
+            .filter_by(slug="todrop")
+            .one()
+        )
         session.delete(target)
 
     with transactional(factory) as session:
@@ -241,5 +247,7 @@ def test_cascade_delete_project_drops_documents(engine_with_schema) -> None:  # 
 
         from cod_doc.infra.models import DocumentModel
 
-        remaining = session.execute(_select(DocumentModel).where(DocumentModel.path == "d.md")).first()
+        remaining = session.execute(
+            _select(DocumentModel).where(DocumentModel.path == "d.md")
+        ).first()
         assert remaining is None

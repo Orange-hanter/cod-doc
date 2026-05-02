@@ -68,7 +68,9 @@ class Config(BaseSettings):
     # Агент
     auto_commit: bool = Field(default=False, description="Авто-коммит после задачи")
     max_iterations: int = Field(default=50, description="Макс. шагов за одну задачу")
-    agent_interval: int = Field(default=60, description="Интервал опроса задач (сек) в daemon-режиме")
+    agent_interval: int = Field(
+        default=60, description="Интервал опроса задач (сек) в daemon-режиме"
+    )
 
     # ChromaDB / Embeddings
     chroma_path: str = Field(default=str(CONFIG_DIR / "chroma"))

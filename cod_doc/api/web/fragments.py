@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from cod_doc.api.deps import get_project
 from cod_doc.api.web.db_resolver import open_db_for_project
 from cod_doc.api.web.templates_env import templates
-from cod_doc.domain.entities import Task, TaskStatus
+from cod_doc.domain.entities import TaskStatus
 from cod_doc.services import task_service as tasks
 from cod_doc.services.revision_service import RevisionConflictError
 
@@ -102,6 +102,4 @@ def task_status_update(
             )
         # Non-HTMX form post: redirect to the list page (303 See Other) so a
         # browser refresh doesn't re-submit the form.
-        return RedirectResponse(
-            url=f"/p/{proj.entry.name}/tasks", status_code=303
-        )
+        return RedirectResponse(url=f"/p/{proj.entry.name}/tasks", status_code=303)

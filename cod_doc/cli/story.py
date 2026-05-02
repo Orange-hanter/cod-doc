@@ -212,9 +212,12 @@ def story_show(ctx: click.Context, story_id: str, project: str, as_json: bool) -
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option("--id", "story_id", required=True, help="Story ID (e.g. US-001)")
 @click.option("--persona", required=True, help="User persona")
-@click.option("--narrative", required=True, help="Story narrative (as a ... I want ... so that ...)")
 @click.option(
-    "--priority", required=True,
+    "--narrative", required=True, help="Story narrative (as a ... I want ... so that ...)"
+)
+@click.option(
+    "--priority",
+    required=True,
     type=click.Choice(["critical", "high", "medium", "low"]),
 )
 @click.option(
@@ -224,7 +227,9 @@ def story_show(ctx: click.Context, story_id: str, project: str, as_json: bool) -
     show_default=True,
 )
 @click.option(
-    "--acceptance", "-a", "acceptance_criteria",
+    "--acceptance",
+    "-a",
+    "acceptance_criteria",
     multiple=True,
     help="Acceptance criterion (repeatable: -a 'crit 1' -a 'crit 2')",
 )
@@ -287,8 +292,11 @@ def story_create(
 
 @story.command("status")
 @click.argument("story_id")
-@click.argument("new_status", metavar="STATUS",
-                type=click.Choice(["draft", "accepted", "delivered", "deferred"]))
+@click.argument(
+    "new_status",
+    metavar="STATUS",
+    type=click.Choice(["draft", "accepted", "delivered", "deferred"]),
+)
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None)
@@ -362,9 +370,7 @@ def story_add_criterion(
         console.print(f"[red]Story '{story_id}' not found.[/red]")
         sys.exit(1)
 
-    console.print(
-        f"[green]✅ Added criterion [{ac.position}] to {story_id}: {criterion}[/green]"
-    )
+    console.print(f"[green]✅ Added criterion [{ac.position}] to {story_id}: {criterion}[/green]")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -376,13 +382,16 @@ def story_add_criterion(
 @click.argument("story_id")
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option(
-    "--kind", "to_kind", required=True,
+    "--kind",
+    "to_kind",
+    required=True,
     type=click.Choice(["task", "document", "module"]),
     help="Target entity kind",
 )
 @click.option("--ref", "to_ref", required=True, help="Target entity ID/key")
 @click.option(
-    "--relation", required=True,
+    "--relation",
+    required=True,
     type=click.Choice(["implemented_by", "specified_in", "owned_by"]),
 )
 @click.option("--author", default="cli", show_default=True)
@@ -477,6 +486,4 @@ def story_coverage(ctx: click.Context, story_id: str, project: str, as_json: boo
         f"  Tasks:       {cov.tasks_done}/{cov.tasks_total} done"
         + (f", {cov.tasks_in_progress} in-progress" if cov.tasks_in_progress else "")
     )
-    console.print(
-        f"  Acceptance:  {cov.acceptance_met}/{cov.acceptance_total} met"
-    )
+    console.print(f"  Acceptance:  {cov.acceptance_met}/{cov.acceptance_total} met")

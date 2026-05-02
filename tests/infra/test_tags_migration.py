@@ -72,9 +72,7 @@ def _seed_project_with_targets(session) -> dict[str, int]:
     plan = PlanModel(project_id=proj.row_id, scope="t-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="A", slug="A-A", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A-A", position=0)
     session.add(sec)
     session.flush()
 
@@ -116,8 +114,7 @@ def _seed_project_with_targets(session) -> dict[str, int]:
 def test_migration_creates_tag_tables(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     with engine_with_schema.connect() as conn:
         tables = {
-            r[0]
-            for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
         }
     assert {"tag", "document_tag", "task_tag", "story_tag"} <= tables
 
@@ -127,10 +124,7 @@ def test_link_partial_index_replaces_unresolved(engine_with_schema) -> None:
     with engine_with_schema.connect() as conn:
         rows = list(
             conn.execute(
-                text(
-                    "SELECT name, sql FROM sqlite_master "
-                    "WHERE type='index' AND tbl_name='link'"
-                )
+                text("SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name='link'")
             )
         )
     by_name = {name: sql for name, sql in rows}

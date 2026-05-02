@@ -221,23 +221,41 @@ def doc_show(ctx: click.Context, doc_key: str, project: str, sections: bool, as_
 
 @doc.command("create")
 @click.option("--project", "-p", required=True, help="Project slug")
-@click.option("--key", "doc_key", required=True, help="Unique document key (e.g. 'arch/data-model')")
 @click.option(
-    "--type", "doc_type", required=True,
-    type=click.Choice([
-        "module-spec", "module-subdoc", "execution-plan", "task-section",
-        "execution-log", "standard", "architecture", "vision", "guide",
-        "user-story", "decision", "open-question", "redirect",
-    ]),
+    "--key", "doc_key", required=True, help="Unique document key (e.g. 'arch/data-model')"
 )
 @click.option(
-    "--status", required=True,
+    "--type",
+    "doc_type",
+    required=True,
+    type=click.Choice(
+        [
+            "module-spec",
+            "module-subdoc",
+            "execution-plan",
+            "task-section",
+            "execution-log",
+            "standard",
+            "architecture",
+            "vision",
+            "guide",
+            "user-story",
+            "decision",
+            "open-question",
+            "redirect",
+        ]
+    ),
+)
+@click.option(
+    "--status",
+    required=True,
     type=click.Choice(["draft", "review", "active", "deprecated"]),
 )
 @click.option("--title", required=True)
 @click.option("--owner", default=None)
 @click.option(
-    "--sensitivity", default="internal",
+    "--sensitivity",
+    default="internal",
     type=click.Choice(["public", "internal", "confidential", "restricted"]),
 )
 @click.option("--path", default=None, help="Relative file path (default: <doc-key>.md)")
@@ -459,8 +477,12 @@ def doc_drift(ctx: click.Context, doc_key: str, project: str, as_json: bool) -> 
     console.rule(f"[bold]Drift — {doc_key}[/bold]")
     console.print(f"  Status: {icon} {report.status.value}")
     console.print(f"  DB hash:   {report.db_content_hash[:16]}…")
-    console.print(f"  Proj hash: {(report.projection_hash or '—')[:16]}{'…' if report.projection_hash else ''}")
-    console.print(f"  File hash: {(report.file_hash or '(missing)')[:16]}{'…' if report.file_hash else ''}")
+    console.print(
+        f"  Proj hash: {(report.projection_hash or '—')[:16]}{'…' if report.projection_hash else ''}"
+    )
+    console.print(
+        f"  File hash: {(report.file_hash or '(missing)')[:16]}{'…' if report.file_hash else ''}"
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -47,7 +47,10 @@ def _open_stdio_client(config_dir: Path):
 @pytest.mark.anyio
 async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     _, config_dir = mcp_project
-    async with _open_stdio_client(config_dir) as (read, write), ClientSession(read, write) as session:
+    async with (
+        _open_stdio_client(config_dir) as (read, write),
+        ClientSession(read, write) as session,
+    ):
         await session.initialize()
         tools = await session.list_tools()
 
@@ -78,7 +81,10 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
 @pytest.mark.anyio
 async def test_mcp_add_task_and_get_master(mcp_project: tuple[ProjectEntry, Path]) -> None:
     entry, config_dir = mcp_project
-    async with _open_stdio_client(config_dir) as (read, write), ClientSession(read, write) as session:
+    async with (
+        _open_stdio_client(config_dir) as (read, write),
+        ClientSession(read, write) as session,
+    ):
         await session.initialize()
         task_result = await session.call_tool(
             "add_task",

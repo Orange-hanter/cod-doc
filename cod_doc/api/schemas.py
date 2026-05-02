@@ -29,6 +29,7 @@ class ConfigUpdate(BaseModel):
 
 class WebhookRegister(BaseModel):
     """Регистрация webhook для проекта."""
+
     project_name: str
     repo_url: str
     secret: str = ""

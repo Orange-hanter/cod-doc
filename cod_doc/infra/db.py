@@ -45,6 +45,7 @@ def make_engine(url: str | None = None, *, echo: bool = False) -> Engine:
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA foreign_keys=ON")
             cur.close()
+
     return engine
 
 

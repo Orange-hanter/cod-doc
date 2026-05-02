@@ -75,16 +75,17 @@ def _seed_plan_with_section(session: Session, project_id: int) -> tuple[int, int
     plan = PlanModel(project_id=project_id, scope="p-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="X", slug="A-X", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="X", slug="A-X", position=0)
     session.add(sec)
     session.flush()
     return plan.row_id, sec.row_id
 
 
 def _make_story(
-    session: Session, project_id: int, *, story_id: str = "US-001",
+    session: Session,
+    project_id: int,
+    *,
+    story_id: str = "US-001",
     status: UserStoryStatus = UserStoryStatus.ACCEPTED,
     acceptance: list[str] | None = None,
 ):
@@ -127,7 +128,8 @@ def test_create_with_initial_acceptance(engine_with_schema) -> None:  # type: ig
     with transactional(factory) as session:
         proj = _seed_project(session)
         story = _make_story(
-            session, proj,
+            session,
+            proj,
             acceptance=["Invite link expires in 7 days.", "Revoked invite cannot be used."],
         )
         items = stories.list_acceptance(session, story.story_id)
@@ -187,8 +189,10 @@ def test_update_status_writes_revision_and_chains(engine_with_schema) -> None:  
         story = _make_story(session, proj)
 
         updated = stories.update_status(
-            session, story_id=story.story_id,
-            new_status=UserStoryStatus.DELIVERED, author="human:test",
+            session,
+            story_id=story.story_id,
+            new_status=UserStoryStatus.DELIVERED,
+            author="human:test",
         )
         assert updated.status is UserStoryStatus.DELIVERED
 
@@ -206,8 +210,10 @@ def test_update_status_no_op_writes_no_revision(engine_with_schema) -> None:  # 
         proj = _seed_project(session)
         story = _make_story(session, proj)
         stories.update_status(
-            session, story_id=story.story_id,
-            new_status=UserStoryStatus.ACCEPTED, author="human:test",
+            session,
+            story_id=story.story_id,
+            new_status=UserStoryStatus.ACCEPTED,
+            author="human:test",
         )
         assert len(rev.list_for_entity(session, EntityKind.STORY, story.row_id)) == 1
 
@@ -220,14 +226,18 @@ def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type
         head = rev.list_for_entity(session, EntityKind.STORY, story.row_id)[0].revision_id
 
         stories.update_status(
-            session, story_id=story.story_id,
-            new_status=UserStoryStatus.DELIVERED, author="other",
+            session,
+            story_id=story.story_id,
+            new_status=UserStoryStatus.DELIVERED,
+            author="other",
         )
 
         with pytest.raises(rev.RevisionConflictError):
             stories.update_status(
-                session, story_id=story.story_id,
-                new_status=UserStoryStatus.DEFERRED, author="human:test",
+                session,
+                story_id=story.story_id,
+                new_status=UserStoryStatus.DEFERRED,
+                author="human:test",
                 expected_parent_revision_id=head,
             )
 
@@ -244,11 +254,17 @@ def test_add_criterion_appends_at_next_position(engine_with_schema) -> None:  # 
         story = _make_story(session, proj, acceptance=["First."])
 
         a2 = stories.add_criterion(
-            session, story_id=story.story_id, criterion="Second.", author="human:test",
+            session,
+            story_id=story.story_id,
+            criterion="Second.",
+            author="human:test",
         )
         assert a2.position == 1
         a3 = stories.add_criterion(
-            session, story_id=story.story_id, criterion="Third.", author="human:test",
+            session,
+            story_id=story.story_id,
+            criterion="Third.",
+            author="human:test",
         )
         assert a3.position == 2
 
@@ -260,7 +276,11 @@ def test_set_criterion_met_writes_revision(engine_with_schema) -> None:  # type:
         story = _make_story(session, proj, acceptance=["AC1.", "AC2."])
 
         updated = stories.set_criterion_met(
-            session, story_id=story.story_id, position=0, met=True, author="human:test",
+            session,
+            story_id=story.story_id,
+            position=0,
+            met=True,
+            author="human:test",
         )
         assert updated.met is True
 
@@ -278,8 +298,11 @@ def test_set_criterion_met_unknown_position_raises(engine_with_schema) -> None: 
         story = _make_story(session, proj, acceptance=["Only."])
         with pytest.raises(stories.AcceptanceNotFoundError):
             stories.set_criterion_met(
-                session, story_id=story.story_id, position=99,
-                met=True, author="human:test",
+                session,
+                story_id=story.story_id,
+                position=99,
+                met=True,
+                author="human:test",
             )
 
 
@@ -294,16 +317,25 @@ def test_link_to_task_validates_target_exists(engine_with_schema) -> None:  # ty
         proj = _seed_project(session)
         plan_id, sec_id = _seed_plan_with_section(session, proj)
         tasks.create(
-            session, project_id=proj, plan_id=plan_id, section_id=sec_id,
-            task_id="AGN-012", title="t", type=TaskType.FEATURE,
-            priority=Priority.MEDIUM, author="human:test",
+            session,
+            project_id=proj,
+            plan_id=plan_id,
+            section_id=sec_id,
+            task_id="AGN-012",
+            title="t",
+            type=TaskType.FEATURE,
+            priority=Priority.MEDIUM,
+            author="human:test",
         )
         story = _make_story(session, proj)
 
         link = stories.link(
-            session, story_id=story.story_id,
-            to_kind=StoryLinkKind.TASK, to_ref="AGN-012",
-            relation=StoryRelation.IMPLEMENTED_BY, author="human:test",
+            session,
+            story_id=story.story_id,
+            to_kind=StoryLinkKind.TASK,
+            to_ref="AGN-012",
+            relation=StoryRelation.IMPLEMENTED_BY,
+            author="human:test",
         )
         assert link.row_id is not None
         assert link.to_ref == "AGN-012"
@@ -311,9 +343,12 @@ def test_link_to_task_validates_target_exists(engine_with_schema) -> None:  # ty
         # Unknown task → broken link error.
         with pytest.raises(stories.BrokenLinkError):
             stories.link(
-                session, story_id=story.story_id,
-                to_kind=StoryLinkKind.TASK, to_ref="GHOST-999",
-                relation=StoryRelation.IMPLEMENTED_BY, author="human:test",
+                session,
+                story_id=story.story_id,
+                to_kind=StoryLinkKind.TASK,
+                to_ref="GHOST-999",
+                relation=StoryRelation.IMPLEMENTED_BY,
+                author="human:test",
             )
 
 
@@ -322,16 +357,24 @@ def test_link_to_document_validates_target(engine_with_schema) -> None:  # type:
     with transactional(factory) as session:
         proj = _seed_project(session)
         docs.create(
-            session, project_id=proj, doc_key="modules/M1-auth/overview",
-            type=DocumentType.MODULE_SPEC, status=DocumentStatus.ACTIVE,
-            title="Auth Overview", author="human:test", owner="human:test",
+            session,
+            project_id=proj,
+            doc_key="modules/M1-auth/overview",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.ACTIVE,
+            title="Auth Overview",
+            author="human:test",
+            owner="human:test",
         )
         story = _make_story(session, proj)
 
         link = stories.link(
-            session, story_id=story.story_id,
-            to_kind=StoryLinkKind.DOCUMENT, to_ref="modules/M1-auth/overview",
-            relation=StoryRelation.SPECIFIED_IN, author="human:test",
+            session,
+            story_id=story.story_id,
+            to_kind=StoryLinkKind.DOCUMENT,
+            to_ref="modules/M1-auth/overview",
+            relation=StoryRelation.SPECIFIED_IN,
+            author="human:test",
         )
         assert link.to_ref == "modules/M1-auth/overview"
 
@@ -341,16 +384,21 @@ def test_link_to_module_validates_target(engine_with_schema) -> None:  # type: i
     with transactional(factory) as session:
         proj = _seed_project(session)
         m = ModuleModel(
-            project_id=proj, module_id="M1-auth", name="Auth",
+            project_id=proj,
+            module_id="M1-auth",
+            name="Auth",
             status=ModuleStatus.ACTIVE.value,
         )
         session.add(m)
         session.flush()
         story = _make_story(session, proj)
         link = stories.link(
-            session, story_id=story.story_id,
-            to_kind=StoryLinkKind.MODULE, to_ref="M1-auth",
-            relation=StoryRelation.OWNED_BY, author="human:test",
+            session,
+            story_id=story.story_id,
+            to_kind=StoryLinkKind.MODULE,
+            to_ref="M1-auth",
+            relation=StoryRelation.OWNED_BY,
+            author="human:test",
         )
         assert link.to_ref == "M1-auth"
 
@@ -361,21 +409,33 @@ def test_link_dedup_skips_existing_edge(engine_with_schema) -> None:  # type: ig
         proj = _seed_project(session)
         plan_id, sec_id = _seed_plan_with_section(session, proj)
         tasks.create(
-            session, project_id=proj, plan_id=plan_id, section_id=sec_id,
-            task_id="TST-001", title="t", type=TaskType.FEATURE,
-            priority=Priority.LOW, author="human:test",
+            session,
+            project_id=proj,
+            plan_id=plan_id,
+            section_id=sec_id,
+            task_id="TST-001",
+            title="t",
+            type=TaskType.FEATURE,
+            priority=Priority.LOW,
+            author="human:test",
         )
         story = _make_story(session, proj)
 
         first = stories.link(
-            session, story_id=story.story_id,
-            to_kind=StoryLinkKind.TASK, to_ref="TST-001",
-            relation=StoryRelation.IMPLEMENTED_BY, author="human:test",
+            session,
+            story_id=story.story_id,
+            to_kind=StoryLinkKind.TASK,
+            to_ref="TST-001",
+            relation=StoryRelation.IMPLEMENTED_BY,
+            author="human:test",
         )
         second = stories.link(
-            session, story_id=story.story_id,
-            to_kind=StoryLinkKind.TASK, to_ref="TST-001",
-            relation=StoryRelation.IMPLEMENTED_BY, author="human:test",
+            session,
+            story_id=story.story_id,
+            to_kind=StoryLinkKind.TASK,
+            to_ref="TST-001",
+            relation=StoryRelation.IMPLEMENTED_BY,
+            author="human:test",
         )
         assert first.row_id == second.row_id  # de-duped, same row returned
 
@@ -390,9 +450,12 @@ def test_link_dedup_skips_existing_edge(engine_with_schema) -> None:  # type: ig
 
 def _link_task(session, story_sid: str, task_id: str) -> None:  # type: ignore[no-untyped-def]
     stories.link(
-        session, story_id=story_sid,
-        to_kind=StoryLinkKind.TASK, to_ref=task_id,
-        relation=StoryRelation.IMPLEMENTED_BY, author="human:test",
+        session,
+        story_id=story_sid,
+        to_kind=StoryLinkKind.TASK,
+        to_ref=task_id,
+        relation=StoryRelation.IMPLEMENTED_BY,
+        author="human:test",
     )
 
 
@@ -403,18 +466,27 @@ def test_list_tasks_returns_only_implemented_by(engine_with_schema) -> None:  # 
         plan_id, sec_id = _seed_plan_with_section(session, proj)
         for tid in ("TST-001", "TST-002", "TST-003"):
             tasks.create(
-                session, project_id=proj, plan_id=plan_id, section_id=sec_id,
-                task_id=tid, title=tid, type=TaskType.FEATURE,
-                priority=Priority.LOW, author="human:test",
+                session,
+                project_id=proj,
+                plan_id=plan_id,
+                section_id=sec_id,
+                task_id=tid,
+                title=tid,
+                type=TaskType.FEATURE,
+                priority=Priority.LOW,
+                author="human:test",
             )
         story = _make_story(session, proj)
         _link_task(session, story.story_id, "TST-001")
         _link_task(session, story.story_id, "TST-002")
         # Add a non-implemented_by edge — should be ignored by list_tasks.
         stories.link(
-            session, story_id=story.story_id,
-            to_kind=StoryLinkKind.TASK, to_ref="TST-003",
-            relation=StoryRelation.SPECIFIED_IN, author="human:test",
+            session,
+            story_id=story.story_id,
+            to_kind=StoryLinkKind.TASK,
+            to_ref="TST-003",
+            relation=StoryRelation.SPECIFIED_IN,
+            author="human:test",
         )
 
         items = stories.list_tasks(session, story.story_id)
@@ -456,17 +528,25 @@ def test_coverage_in_progress_when_any_task_started(engine_with_schema) -> None:
         plan_id, sec_id = _seed_plan_with_section(session, proj)
         for tid in ("TST-001", "TST-002"):
             tasks.create(
-                session, project_id=proj, plan_id=plan_id, section_id=sec_id,
-                task_id=tid, title=tid, type=TaskType.FEATURE,
-                priority=Priority.LOW, author="human:test",
+                session,
+                project_id=proj,
+                plan_id=plan_id,
+                section_id=sec_id,
+                task_id=tid,
+                title=tid,
+                type=TaskType.FEATURE,
+                priority=Priority.LOW,
+                author="human:test",
             )
         story = _make_story(session, proj)
         _link_task(session, story.story_id, "TST-001")
         _link_task(session, story.story_id, "TST-002")
         # Move one to in-progress.
         tasks.update_status(
-            session, task_id="TST-001",
-            new_status=TaskStatus.IN_PROGRESS, author="human:test",
+            session,
+            task_id="TST-001",
+            new_status=TaskStatus.IN_PROGRESS,
+            author="human:test",
         )
         cov = stories.coverage(session, story.story_id)
         assert cov.status is stories.CoverageStatus.IN_PROGRESS
@@ -480,9 +560,15 @@ def test_coverage_delivered_requires_all_done_and_acceptance_met(engine_with_sch
         proj = _seed_project(session)
         plan_id, sec_id = _seed_plan_with_section(session, proj)
         tasks.create(
-            session, project_id=proj, plan_id=plan_id, section_id=sec_id,
-            task_id="TST-001", title="t", type=TaskType.FEATURE,
-            priority=Priority.LOW, author="human:test",
+            session,
+            project_id=proj,
+            plan_id=plan_id,
+            section_id=sec_id,
+            task_id="TST-001",
+            title="t",
+            type=TaskType.FEATURE,
+            priority=Priority.LOW,
+            author="human:test",
         )
         story = _make_story(session, proj, acceptance=["A1.", "A2."])
         _link_task(session, story.story_id, "TST-001")
@@ -490,16 +576,22 @@ def test_coverage_delivered_requires_all_done_and_acceptance_met(engine_with_sch
         # Task done, but only 1 of 2 acceptance criteria met — still in-progress.
         tasks.complete(session, task_id="TST-001", author="human:test")
         stories.set_criterion_met(
-            session, story_id=story.story_id, position=0,
-            met=True, author="human:test",
+            session,
+            story_id=story.story_id,
+            position=0,
+            met=True,
+            author="human:test",
         )
         cov = stories.coverage(session, story.story_id)
         assert cov.status is stories.CoverageStatus.IN_PROGRESS
 
         # Mark final criterion met → delivered.
         stories.set_criterion_met(
-            session, story_id=story.story_id, position=1,
-            met=True, author="human:test",
+            session,
+            story_id=story.story_id,
+            position=1,
+            met=True,
+            author="human:test",
         )
         cov = stories.coverage(session, story.story_id)
         assert cov.status is stories.CoverageStatus.DELIVERED

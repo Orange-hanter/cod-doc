@@ -9,6 +9,7 @@ Revision ID: 0005_links_tags
 Revises: 0004_revisions
 Create Date: 2026-04-25
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

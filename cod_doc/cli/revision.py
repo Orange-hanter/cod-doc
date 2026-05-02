@@ -97,7 +97,9 @@ def _resolve_entity_id(session, kind: str, ref: str, project_id: int) -> int:  #
 
     if kind == "section":
         if "#" not in ref:
-            console.print("[red]Section ref must be 'doc-key#anchor' (e.g. arch/data-model#overview).[/red]")
+            console.print(
+                "[red]Section ref must be 'doc-key#anchor' (e.g. arch/data-model#overview).[/red]"
+            )
             sys.exit(1)
         doc_key, anchor = ref.split("#", 1)
         doc_row = session.execute(
@@ -141,12 +143,14 @@ def revision() -> None:
 @revision.command("list")
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option(
-    "--kind", required=True,
+    "--kind",
+    required=True,
     type=click.Choice(_KIND_CHOICES),
     help="Entity kind",
 )
 @click.option(
-    "--ref", required=True,
+    "--ref",
+    required=True,
     help="Entity ref: task_id / doc_key / story_id / doc_key#anchor / row_id",
 )
 @click.option("--limit", default=20, show_default=True, help="Max revisions to show")

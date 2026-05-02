@@ -70,9 +70,13 @@ def register(mcp: FastMCP) -> None:
                 sec_id = _resolve_section_id(session, project_id, doc_key, anchor)
                 links = link_service.list_for_section(session, sec_id)
             else:
-                sec_ids = session.execute(
-                    select(SectionModel.row_id).where(SectionModel.document_id == doc_row)
-                ).scalars().all()
+                sec_ids = (
+                    session.execute(
+                        select(SectionModel.row_id).where(SectionModel.document_id == doc_row)
+                    )
+                    .scalars()
+                    .all()
+                )
                 for sid in sec_ids:
                     links.extend(link_service.list_for_section(session, int(sid)))
 

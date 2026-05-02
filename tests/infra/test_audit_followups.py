@@ -109,12 +109,7 @@ def test_document_body_assembles_preamble_and_sections(engine_with_schema) -> No
         )
         doc_id = doc.row_id
 
-    expected = (
-        "Intro line."
-        "## Alpha\n\nAlpha body."
-        "\n\n"
-        "### Beta\n\nBeta body."
-    )
+    expected = "Intro line.## Alpha\n\nAlpha body.\n\n### Beta\n\nBeta body."
 
     with engine_with_schema.connect() as conn:
         body = conn.execute(
@@ -173,9 +168,7 @@ def test_raw_insert_without_json_columns_uses_server_default(engine_with_schema)
             ),
             {"s": "raw", "t": "Raw", "r": "/tmp/raw", "c": now, "u": now},
         )
-        row = conn.execute(
-            text("SELECT config_json FROM project WHERE slug = 'raw'")
-        ).scalar_one()
+        row = conn.execute(text("SELECT config_json FROM project WHERE slug = 'raw'")).scalar_one()
     assert row == "{}"
 
 
@@ -188,20 +181,32 @@ def _seed_two_tasks(session) -> tuple[int, int]:
     plan = PlanModel(project_id=proj_id, scope="self-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="A", slug="A-A", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A-A", position=0)
     session.add(sec)
     session.flush()
     a = TaskModel(
-        project_id=proj_id, task_id="T-A", plan_id=plan.row_id, section_id=sec.row_id,
-        title="A", status="pending", type="feature", priority="medium",
-        created=now, last_updated=now,
+        project_id=proj_id,
+        task_id="T-A",
+        plan_id=plan.row_id,
+        section_id=sec.row_id,
+        title="A",
+        status="pending",
+        type="feature",
+        priority="medium",
+        created=now,
+        last_updated=now,
     )
     b = TaskModel(
-        project_id=proj_id, task_id="T-B", plan_id=plan.row_id, section_id=sec.row_id,
-        title="B", status="pending", type="feature", priority="medium",
-        created=now, last_updated=now,
+        project_id=proj_id,
+        task_id="T-B",
+        plan_id=plan.row_id,
+        section_id=sec.row_id,
+        title="B",
+        status="pending",
+        type="feature",
+        priority="medium",
+        created=now,
+        last_updated=now,
     )
     session.add_all([a, b])
     session.flush()
@@ -242,14 +247,23 @@ def test_module_spec_doc_id_set_null_on_doc_delete(engine_with_schema) -> None: 
     with transactional(factory) as session:
         proj_id = _add_project(session, "fknull")
         doc = DocumentModel(
-            project_id=proj_id, doc_key="spec", path="spec.md", type="module-spec",
-            status="active", title="Spec", frontmatter_json={},
-            created=now, last_updated=now,
+            project_id=proj_id,
+            doc_key="spec",
+            path="spec.md",
+            type="module-spec",
+            status="active",
+            title="Spec",
+            frontmatter_json={},
+            created=now,
+            last_updated=now,
         )
         session.add(doc)
         session.flush()
         m = ModuleModel(
-            project_id=proj_id, module_id="MFK", name="MFK", status="active",
+            project_id=proj_id,
+            module_id="MFK",
+            name="MFK",
+            status="active",
             spec_doc_id=doc.row_id,
         )
         session.add(m)
@@ -272,15 +286,24 @@ def test_plan_parent_doc_id_set_null_on_doc_delete(engine_with_schema) -> None: 
     with transactional(factory) as session:
         proj_id = _add_project(session, "pfk")
         doc = DocumentModel(
-            project_id=proj_id, doc_key="parent", path="parent.md", type="execution-plan",
-            status="active", title="Parent", frontmatter_json={},
-            created=now, last_updated=now,
+            project_id=proj_id,
+            doc_key="parent",
+            path="parent.md",
+            type="execution-plan",
+            status="active",
+            title="Parent",
+            frontmatter_json={},
+            created=now,
+            last_updated=now,
         )
         session.add(doc)
         session.flush()
         plan = PlanModel(
-            project_id=proj_id, scope="pfk-plan", parent_doc_id=doc.row_id,
-            created=now, last_updated=now,
+            project_id=proj_id,
+            scope="pfk-plan",
+            parent_doc_id=doc.row_id,
+            created=now,
+            last_updated=now,
         )
         session.add(plan)
         session.flush()
@@ -307,8 +330,14 @@ def test_story_acceptance_position_unique_within_story(engine_with_schema) -> No
     with transactional(factory) as session:
         proj_id = _add_project(session, "sapos")
         story = UserStoryModel(
-            project_id=proj_id, story_id="US-POS", persona="P", narrative="N",
-            status="draft", priority="low", created=now, last_updated=now,
+            project_id=proj_id,
+            story_id="US-POS",
+            persona="P",
+            narrative="N",
+            status="draft",
+            priority="low",
+            created=now,
+            last_updated=now,
         )
         session.add(story)
         session.flush()

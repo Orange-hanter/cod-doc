@@ -62,7 +62,10 @@ def task() -> None:
 @task.command("list")
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option(
-    "--status", "-s", "filter_status", default=None,
+    "--status",
+    "-s",
+    "filter_status",
+    default=None,
     type=click.Choice(["pending", "in-progress", "done"]),
     help="Filter by status",
 )
@@ -191,11 +194,14 @@ def task_show(ctx: click.Context, task_id: str, project: str, as_json: bool) -> 
 @click.option("--section", "section_letter", required=True, help="Section letter (e.g. 'A')")
 @click.option("--title", required=True, help="Task title")
 @click.option(
-    "--type", "task_type", required=True,
+    "--type",
+    "task_type",
+    required=True,
     type=click.Choice(["feature", "test", "bug", "refactor", "migration", "docs", "chore"]),
 )
 @click.option(
-    "--priority", required=True,
+    "--priority",
+    required=True,
     type=click.Choice(["critical", "high", "medium", "low"]),
 )
 @click.option("--id", "task_id", default=None, help="Explicit task ID (e.g. COD-042)")
@@ -242,9 +248,7 @@ def task_create(
             console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
             sys.exit(1)
         sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
-        section = next(
-            (s for s in sections if s.letter.upper() == section_letter.upper()), None
-        )
+        section = next((s for s in sections if s.letter.upper() == section_letter.upper()), None)
         if section is None or section.row_id is None:
             letters = ", ".join(s.letter for s in sections)
             console.print(f"[red]Section '{section_letter}' not found. Available: {letters}[/red]")
@@ -284,7 +288,9 @@ def task_create(
 
 @task.command("status")
 @click.argument("task_id")
-@click.argument("new_status", metavar="STATUS", type=click.Choice(["pending", "in-progress", "done"]))
+@click.argument(
+    "new_status", metavar="STATUS", type=click.Choice(["pending", "in-progress", "done"])
+)
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None)

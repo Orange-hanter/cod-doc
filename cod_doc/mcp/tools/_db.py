@@ -26,9 +26,7 @@ def require_project_id(session: Any, project: str) -> int:
 
     proj = ProjectRepository(session).get_by_slug(project)
     if proj is None or proj.row_id is None:
-        raise ValueError(
-            f"Project '{project}' not in DB — run 'cod-doc project add' first."
-        )
+        raise ValueError(f"Project '{project}' not in DB — run 'cod-doc project add' first.")
     return proj.row_id
 
 

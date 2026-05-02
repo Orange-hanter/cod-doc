@@ -58,7 +58,9 @@ def get_collection(
         raise ImportError("chromadb не установлен. Выполните: pip install chromadb") from e
 
     if not api_key:
-        raise ValueError("api_key обязателен для embeddings (OpenRouter / OpenAI-совместимый endpoint)")
+        raise ValueError(
+            "api_key обязателен для embeddings (OpenRouter / OpenAI-совместимый endpoint)"
+        )
 
     client = chromadb.PersistentClient(path=chroma_path)
     ef = OpenAIEmbeddingFunction(
@@ -68,7 +70,7 @@ def get_collection(
     )
     return client.get_or_create_collection(
         name="cod_doc",
-        embedding_function=ef,
+        embedding_function=ef,  # type: ignore[arg-type]
         metadata={"hnsw:space": "cosine"},
     )
 
@@ -125,7 +127,7 @@ def search_documents(
     embedding_model: str,
     project_root: str | None = None,
     n_results: int = 5,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """
     Семантический поиск по проиндексированным документам.
 
@@ -151,11 +153,13 @@ def search_documents(
     distances = results.get("distances", [[]])[0]
 
     for doc, meta, dist in zip(docs, metas, distances, strict=False):
-        hits.append({
-            "path": meta.get("path", ""),
-            "hash": meta.get("hash", ""),
-            "score": round(1 - dist, 4),  # cosine similarity
-            "snippet": doc[:300],
-        })
+        hits.append(
+            {
+                "path": meta.get("path", ""),
+                "hash": meta.get("hash", ""),
+                "score": round(1 - dist, 4),  # cosine similarity
+                "snippet": doc[:300],
+            }
+        )
 
     return hits

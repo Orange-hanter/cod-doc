@@ -39,8 +39,8 @@ _SEV_ICON = {"error": "❌", "warning": "⚠️", "info": "ℹ️"}
 @dataclass(slots=True)
 class AuditFinding:
     code: str
-    severity: str       # "error" | "warning" | "info"
-    subject: str        # e.g. "doc:arch/data-model"
+    severity: str  # "error" | "warning" | "info"
+    subject: str  # e.g. "doc:arch/data-model"
     message: str
     details: dict[str, Any] = field(default_factory=dict)
 
@@ -82,11 +82,7 @@ def _staged_md_paths(root: Path) -> set[str]:
             text=True,
             check=True,
         )
-        return {
-            line.strip()
-            for line in result.stdout.splitlines()
-            if line.strip().endswith(".md")
-        }
+        return {line.strip() for line in result.stdout.splitlines() if line.strip().endswith(".md")}
     except (subprocess.CalledProcessError, FileNotFoundError):
         return set()
 
@@ -172,15 +168,21 @@ def _check_drift(doc: Any, root: Path, session: Any, findings: list[AuditFinding
 @click.command("audit")
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option(
-    "--strict", is_flag=True, default=False,
+    "--strict",
+    is_flag=True,
+    default=False,
     help="Exit 1 if any error-severity issues are found (CI mode)",
 )
 @click.option(
-    "--staged", is_flag=True, default=False,
+    "--staged",
+    is_flag=True,
+    default=False,
     help="Check only git-staged .md files (pre-commit mode; implies --strict)",
 )
 @click.option(
-    "--drift", is_flag=True, default=False,
+    "--drift",
+    is_flag=True,
+    default=False,
     help="Also run DR-003 projection drift checks",
 )
 @click.option("--json", "as_json", is_flag=True, default=False)

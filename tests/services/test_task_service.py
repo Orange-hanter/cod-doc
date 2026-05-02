@@ -131,14 +131,26 @@ def test_create_auto_generates_task_id(engine_with_schema) -> None:  # type: ign
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         t1 = tasks.create(
-            session, project_id=p, plan_id=pl, section_id=s,
-            id_prefix="PLN", title="T1", type=TaskType.MIGRATION,
-            priority=Priority.HIGH, author="x",
+            session,
+            project_id=p,
+            plan_id=pl,
+            section_id=s,
+            id_prefix="PLN",
+            title="T1",
+            type=TaskType.MIGRATION,
+            priority=Priority.HIGH,
+            author="x",
         )
         t2 = tasks.create(
-            session, project_id=p, plan_id=pl, section_id=s,
-            id_prefix="PLN", title="T2", type=TaskType.MIGRATION,
-            priority=Priority.HIGH, author="x",
+            session,
+            project_id=p,
+            plan_id=pl,
+            section_id=s,
+            id_prefix="PLN",
+            title="T2",
+            type=TaskType.MIGRATION,
+            priority=Priority.HIGH,
+            author="x",
         )
         assert t1.task_id == "PLN-001"
         assert t2.task_id == "PLN-002"
@@ -151,8 +163,14 @@ def test_create_without_task_id_and_prefix_raises(engine_with_schema) -> None:  
         p, pl, s = _seed_plan(session)
         with pytest.raises(ValueError):
             tasks.create(
-                session, project_id=p, plan_id=pl, section_id=s,
-                title="X", type=TaskType.FEATURE, priority=Priority.LOW, author="x",
+                session,
+                project_id=p,
+                plan_id=pl,
+                section_id=s,
+                title="X",
+                type=TaskType.FEATURE,
+                priority=Priority.LOW,
+                author="x",
             )
 
 
@@ -167,10 +185,15 @@ def test_create_rejects_invalid_task_id(engine_with_schema) -> None:  # type: ig
         p, pl, s = _seed_plan(session)
         with pytest.raises(v.ValidationError) as exc:
             tasks.create(
-                session, project_id=p, plan_id=pl, section_id=s,
+                session,
+                project_id=p,
+                plan_id=pl,
+                section_id=s,
                 task_id="bad",  # lowercase + missing number
-                title="Test: x", type=TaskType.TEST,
-                priority=Priority.LOW, author="human:test",
+                title="Test: x",
+                type=TaskType.TEST,
+                priority=Priority.LOW,
+                author="human:test",
             )
         assert exc.value.code == "TP-001"
 
@@ -183,10 +206,15 @@ def test_create_rejects_invalid_id_prefix(engine_with_schema) -> None:  # type: 
         p, pl, s = _seed_plan(session)
         with pytest.raises(v.ValidationError) as exc:
             tasks.create(
-                session, project_id=p, plan_id=pl, section_id=s,
+                session,
+                project_id=p,
+                plan_id=pl,
+                section_id=s,
                 id_prefix="X",  # single letter
-                title="Implement: foo", type=TaskType.FEATURE,
-                priority=Priority.LOW, author="human:test",
+                title="Implement: foo",
+                type=TaskType.FEATURE,
+                priority=Priority.LOW,
+                author="human:test",
             )
         assert exc.value.code == "TP-002"
 
@@ -201,15 +229,16 @@ def test_create_with_affected_files(engine_with_schema) -> None:  # type: ignore
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(
-            session, p, pl, s,
+            session,
+            p,
+            pl,
+            s,
             affected_files=["cod_doc/infra/db.py", "tests/infra/test_smoke.py"],
         )
         paths = sorted(
             r[0]
             for r in session.execute(
-                _select(AffectedFileModel.path).where(
-                    AffectedFileModel.task_id == task.row_id
-                )
+                _select(AffectedFileModel.path).where(AffectedFileModel.task_id == task.row_id)
             )
         )
         assert paths == ["cod_doc/infra/db.py", "tests/infra/test_smoke.py"]
@@ -226,8 +255,10 @@ def test_update_status_pending_to_in_progress(engine_with_schema) -> None:  # ty
         task = _task(session, p, pl, s)
 
         updated = tasks.update_status(
-            session, task_id=task.task_id,
-            new_status=TaskStatus.IN_PROGRESS, author="human:dakh",
+            session,
+            task_id=task.task_id,
+            new_status=TaskStatus.IN_PROGRESS,
+            author="human:dakh",
         )
         assert updated.status == TaskStatus.IN_PROGRESS
 
@@ -244,7 +275,9 @@ def test_update_status_no_op_if_same(engine_with_schema) -> None:  # type: ignor
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
-        tasks.update_status(session, task_id=task.task_id, new_status=TaskStatus.PENDING, author="x")
+        tasks.update_status(
+            session, task_id=task.task_id, new_status=TaskStatus.PENDING, author="x"
+        )
         history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
         assert len(history) == 1  # no new revision
 
@@ -269,7 +302,9 @@ def test_complete_task_with_no_deps(engine_with_schema) -> None:  # type: ignore
         task = _task(session, p, pl, s)
 
         done = tasks.complete(
-            session, task_id=task.task_id, author="human:dakh",
+            session,
+            task_id=task.task_id,
+            author="human:dakh",
             commit_sha="abc1234",
         )
         assert done.status == TaskStatus.DONE
@@ -339,12 +374,16 @@ def test_complete_conflict_via_expected_parent(engine_with_schema) -> None:  # t
         original_head = first_history[0].revision_id
 
         # A concurrent update lands first.
-        tasks.update_status(session, task_id=task.task_id, new_status=TaskStatus.IN_PROGRESS, author="other")
+        tasks.update_status(
+            session, task_id=task.task_id, new_status=TaskStatus.IN_PROGRESS, author="other"
+        )
 
         # Now complete with stale expected_parent must conflict.
         with pytest.raises(rev.RevisionConflictError):
             tasks.complete(
-                session, task_id=task.task_id, author="x",
+                session,
+                task_id=task.task_id,
+                author="x",
                 expected_parent_revision_id=original_head,
             )
 
@@ -375,13 +414,18 @@ def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type
         head = rev.list_for_entity(session, EntityKind.TASK, task.row_id)[0].revision_id
 
         # Concurrent writer lands first.
-        tasks.update_status(session, task_id=task.task_id, new_status=TaskStatus.IN_PROGRESS, author="other")
+        tasks.update_status(
+            session, task_id=task.task_id, new_status=TaskStatus.IN_PROGRESS, author="other"
+        )
 
         # We still hold the stale head → must conflict.
         with pytest.raises(rev.RevisionConflictError):
             tasks.update_status(
-                session, task_id=task.task_id, new_status=TaskStatus.DONE,
-                author="x", expected_parent_revision_id=head,
+                session,
+                task_id=task.task_id,
+                new_status=TaskStatus.DONE,
+                author="x",
+                expected_parent_revision_id=head,
             )
 
 

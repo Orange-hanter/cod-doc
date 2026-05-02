@@ -122,9 +122,9 @@ class CriticalPathResult:
     """Longest sequential chain of blocks-edges in a plan."""
 
     plan_id: int
-    task_ids: list[str]       # ordered from source to sink
-    chain: list[ChainEntry]   # same order, with metadata
-    length: int               # number of tasks (0 = empty plan)
+    task_ids: list[str]  # ordered from source to sink
+    chain: list[ChainEntry]  # same order, with metadata
+    length: int  # number of tasks (0 = empty plan)
 
 
 # --------------------------------------------------------------------------- #
@@ -221,9 +221,7 @@ def ready(session: Session, plan_id: int, *, limit: int | None = None) -> list[T
     _require_plan(session, plan_id)
 
     rows = session.execute(
-        text(
-            "SELECT row_id FROM ready_tasks WHERE plan_id = :pid"
-        ),
+        text("SELECT row_id FROM ready_tasks WHERE plan_id = :pid"),
         {"pid": plan_id},
     ).all()
     if not rows:
@@ -305,9 +303,7 @@ def audit(session: Session, plan_id: int) -> PlanAuditReport:
             TaskModel.plan_id == plan_id
         )
     ).all()
-    row_id_to_task: dict[int, tuple[str, str]] = {
-        r[0]: (r[1], r[2]) for r in task_rows
-    }
+    row_id_to_task: dict[int, tuple[str, str]] = {r[0]: (r[1], r[2]) for r in task_rows}
 
     # Load `blocks` edges between tasks of this plan.
     plan_row_ids = list(row_id_to_task.keys())
@@ -326,8 +322,7 @@ def audit(session: Session, plan_id: int) -> PlanAuditReport:
     # Cycles.
     cycles_rids = _find_cycles(adjacency)
     cycles = [
-        [row_id_to_task[rid][0] for rid in cyc if rid in row_id_to_task]
-        for cyc in cycles_rids
+        [row_id_to_task[rid][0] for rid in cyc if rid in row_id_to_task] for cyc in cycles_rids
     ]
 
     # Drift: done tasks whose blocks-deps are not all done.
@@ -386,9 +381,7 @@ def _render_next_batch(ready_tasks: list[Task], *, limit: int = 7) -> str:
         lines.append("_No ready tasks._")
         return "\n".join(lines) + "\n"
     for t in ready_tasks[:limit]:
-        lines.append(
-            f"- **{t.task_id}** ({t.priority.value}/{t.type.value}) — {t.title}"
-        )
+        lines.append(f"- **{t.task_id}** ({t.priority.value}/{t.type.value}) — {t.title}")
     return "\n".join(lines) + "\n"
 
 
@@ -418,14 +411,9 @@ def _render_dependency_graph(
                 DependencyModel.to_task_id.in_(rids),
             )
         ).all()
-        edges = sorted(
-            (row_id_to_task_id[src], row_id_to_task_id[dst])
-            for src, dst in dep_rows
-        )
+        edges = sorted((row_id_to_task_id[src], row_id_to_task_id[dst]) for src, dst in dep_rows)
         for blocked_id, blocker_id in edges:
-            lines.append(
-                f"  {_mermaid_node_id(blocker_id)} --> {_mermaid_node_id(blocked_id)}"
-            )
+            lines.append(f"  {_mermaid_node_id(blocker_id)} --> {_mermaid_node_id(blocked_id)}")
     lines.append("```")
     return "\n".join(lines) + "\n"
 
@@ -444,18 +432,14 @@ def export(session: Session, plan_id: int) -> dict[str, str]:
 
     # Build row_id -> task_id map for the dependency graph.
     task_rows = session.execute(
-        select(TaskModel.row_id, TaskModel.task_id).where(
-            TaskModel.plan_id == plan_id
-        )
+        select(TaskModel.row_id, TaskModel.task_id).where(TaskModel.plan_id == plan_id)
     ).all()
     row_id_to_task_id = {r[0]: r[1] for r in task_rows}
 
     return {
         "progress_overview": _render_progress_overview(progress),
         "next_batch": _render_next_batch(ready_tasks),
-        "dependency_graph": _render_dependency_graph(
-            plan_id, session, row_id_to_task_id
-        ),
+        "dependency_graph": _render_dependency_graph(plan_id, session, row_id_to_task_id),
     }
 
 
@@ -561,8 +545,10 @@ def forward_chain(session: Session, task_id: str) -> list[ChainEntry]:
     rows = session.execute(_FORWARD_CHAIN_SQL, {"task_id": task_id}).all()
     return [
         ChainEntry(
-            task_id=r[1], title=r[2],
-            status=TaskStatus(r[3]), depth=r[4],
+            task_id=r[1],
+            title=r[2],
+            status=TaskStatus(r[3]),
+            depth=r[4],
         )
         for r in rows
     ]
@@ -584,8 +570,10 @@ def reverse_chain(session: Session, task_id: str) -> list[ChainEntry]:
     rows = session.execute(_REVERSE_CHAIN_SQL, {"task_id": task_id}).all()
     return [
         ChainEntry(
-            task_id=r[1], title=r[2],
-            status=TaskStatus(r[3]), depth=r[4],
+            task_id=r[1],
+            title=r[2],
+            status=TaskStatus(r[3]),
+            depth=r[4],
         )
         for r in rows
     ]
@@ -613,12 +601,11 @@ def critical_path(session: Session, plan_id: int) -> CriticalPathResult:
 
     # Load full task info for the plan.
     task_rows = session.execute(
-        select(TaskModel.row_id, TaskModel.task_id, TaskModel.title, TaskModel.status)
-        .where(TaskModel.plan_id == plan_id)
+        select(TaskModel.row_id, TaskModel.task_id, TaskModel.title, TaskModel.status).where(
+            TaskModel.plan_id == plan_id
+        )
     ).all()
-    info: dict[int, tuple[str, str, str]] = {
-        r[0]: (r[1], r[2], r[3]) for r in task_rows
-    }
+    info: dict[int, tuple[str, str, str]] = {r[0]: (r[1], r[2], r[3]) for r in task_rows}
 
     # Load blocks-edges within the plan.
     plan_rids = list(info.keys())
@@ -671,10 +658,14 @@ def critical_path(session: Session, plan_id: int) -> CriticalPathResult:
     chain = []
     for depth_idx, rid in enumerate(path_rids):
         task_id, title, status = info[rid]
-        chain.append(ChainEntry(
-            task_id=task_id, title=title,
-            status=TaskStatus(status), depth=depth_idx,
-        ))
+        chain.append(
+            ChainEntry(
+                task_id=task_id,
+                title=title,
+                status=TaskStatus(status),
+                depth=depth_idx,
+            )
+        )
 
     return CriticalPathResult(
         plan_id=plan_id,

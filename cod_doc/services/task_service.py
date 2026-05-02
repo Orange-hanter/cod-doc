@@ -235,9 +235,7 @@ def complete(
         if dep_task is not None and dep_task.status != TaskStatus.DONE.value:
             blocking.append(dep_task.task_id)
     if blocking:
-        raise TaskBlockedError(
-            f"{task_id} blocked by: {', '.join(blocking)}"
-        )
+        raise TaskBlockedError(f"{task_id} blocked by: {', '.join(blocking)}")
 
     now = datetime.now(UTC)
     old_status = model.status

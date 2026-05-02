@@ -53,12 +53,10 @@ def _add_project(session, slug: str = "p") -> int:
 def test_migration_creates_tables_and_indexes(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     with engine_with_schema.connect() as conn:
         tables = {
-            r[0]
-            for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
         }
         indexes = {
-            r[0]
-            for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='index'"))
+            r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='index'"))
         }
     assert {"revision", "audit_log"} <= tables
     assert {
@@ -108,11 +106,15 @@ def test_revision_chain_for_one_entity(engine_with_schema) -> None:  # type: ign
         )
 
     with transactional(factory) as session:
-        history = session.execute(
-            select(RevisionModel)
-            .where(RevisionModel.entity_kind == "task", RevisionModel.entity_id == 42)
-            .order_by(RevisionModel.at)
-        ).scalars().all()
+        history = (
+            session.execute(
+                select(RevisionModel)
+                .where(RevisionModel.entity_kind == "task", RevisionModel.entity_id == 42)
+                .order_by(RevisionModel.at)
+            )
+            .scalars()
+            .all()
+        )
 
         assert [r.revision_id for r in history] == [rid1, rid2]
         assert history[0].parent_revision_id is None

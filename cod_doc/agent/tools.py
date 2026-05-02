@@ -25,6 +25,7 @@ __all__ = ["TOOL_DEFINITIONS", "ToolExecutor"]
 
 # ── Обработчики инструментов ──────────────────────────────────────────────────
 
+
 class ToolExecutor:
     """Выполняет вызовы инструментов от имени агента."""
 
@@ -51,7 +52,7 @@ class ToolExecutor:
     def is_blocked(self) -> bool:
         return self._blocked
 
-    def execute(self, name: str, arguments: str | dict) -> str:
+    def execute(self, name: str, arguments: str | dict[str, Any]) -> str:
         """Вызвать инструмент по имени. Возвращает строку-результат."""
         args: dict[str, Any] = json.loads(arguments) if isinstance(arguments, str) else arguments
         handler = getattr(self, f"_tool_{name}", None)
@@ -59,7 +60,11 @@ class ToolExecutor:
             return json.dumps({"error": f"Неизвестный инструмент: {name}"})
         try:
             result = handler(**args)
-            return json.dumps(result, ensure_ascii=False, indent=2) if not isinstance(result, str) else result
+            return (
+                json.dumps(result, ensure_ascii=False, indent=2)
+                if not isinstance(result, str)
+                else result
+            )
         except Exception as e:
             return json.dumps({"error": str(e)})
 
@@ -127,9 +132,15 @@ class ToolExecutor:
     # ── Task tools ────────────────────────────────────────────────────────────
 
     def _tool_create_task(
-        self, title: str, description: str = "", priority: int = 5, context_refs: list[str] | None = None
+        self,
+        title: str,
+        description: str = "",
+        priority: int = 5,
+        context_refs: list[str] | None = None,
     ) -> dict[str, Any]:
-        task = Task(title=title, description=description, priority=priority, context_refs=context_refs or [])
+        task = Task(
+            title=title, description=description, priority=priority, context_refs=context_refs or []
+        )
         self.project.add_task(task)
         return {"created": task.id, "title": task.title}
 
@@ -147,11 +158,15 @@ class ToolExecutor:
 
     # ── Git tools ─────────────────────────────────────────────────────────────
 
-    def _tool_git_commit(self, message: str, files: list[str] | None = None, branch: str | None = None) -> dict[str, Any]:
+    def _tool_git_commit(
+        self, message: str, files: list[str] | None = None, branch: str | None = None
+    ) -> dict[str, Any]:
         root = str(self.root)
         try:
             if branch:
-                subprocess.run(["git", "checkout", "-b", branch], cwd=root, check=True, capture_output=True)
+                subprocess.run(
+                    ["git", "checkout", "-b", branch], cwd=root, check=True, capture_output=True
+                )
             if files:
                 subprocess.run(["git", "add", *files], cwd=root, check=True, capture_output=True)
             else:

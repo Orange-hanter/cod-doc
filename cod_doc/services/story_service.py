@@ -157,9 +157,12 @@ def create(
 ) -> UserStory:
     """Persist a story (+ optional acceptance criteria) and write its initial revision."""
     validation.validate_story_id(story_id)
-    if session.execute(
-        select(UserStoryModel.row_id).where(UserStoryModel.story_id == story_id)
-    ).scalar_one_or_none() is not None:
+    if (
+        session.execute(
+            select(UserStoryModel.row_id).where(UserStoryModel.story_id == story_id)
+        ).scalar_one_or_none()
+        is not None
+    ):
         raise StoryAlreadyExistsError(story_id)
 
     now = datetime.now(UTC)
@@ -196,7 +199,9 @@ def create(
         entity_id=story.row_id,
         author=author,
         diff=_diff(
-            "create", story_id=story_id, status=status.value,
+            "create",
+            story_id=story_id,
+            status=status.value,
             acceptance_count=len(acceptance or []),
         ),
         reason=reason or "create",
@@ -299,9 +304,7 @@ def add_criterion(
     next_pos = (max((a.position for a in existing), default=-1)) + 1
 
     ac = repo.add(
-        StoryAcceptance(
-            story_id=model.row_id, position=next_pos, criterion=criterion, met=False
-        )
+        StoryAcceptance(story_id=model.row_id, position=next_pos, criterion=criterion, met=False)
     )
     model.last_updated = datetime.now(UTC)
     session.flush()
@@ -389,7 +392,10 @@ def link(
 
     new_link = StoryLinkRepository(session).add(
         StoryLink(
-            story_id=model.row_id, to_kind=to_kind, to_ref=to_ref, relation=relation,
+            story_id=model.row_id,
+            to_kind=to_kind,
+            to_ref=to_ref,
+            relation=relation,
         )
     )
     model.last_updated = datetime.now(UTC)
@@ -433,11 +439,7 @@ def coverage(session: Session, story_id: str) -> StoryCoverage:
     pinned = {UserStoryStatus.DRAFT, UserStoryStatus.DEFERRED}
     if UserStoryStatus(model.status) in pinned:
         derived = CoverageStatus(model.status)
-    elif (
-        tasks_total > 0
-        and tasks_done == tasks_total
-        and acceptance_met == acceptance_total
-    ):
+    elif tasks_total > 0 and tasks_done == tasks_total and acceptance_met == acceptance_total:
         derived = CoverageStatus.DELIVERED
     elif tasks_done > 0 or tasks_in_progress > 0:
         derived = CoverageStatus.IN_PROGRESS

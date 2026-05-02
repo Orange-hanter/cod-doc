@@ -8,10 +8,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from collections.abc import Callable, Coroutine
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from openai import APIConnectionError, APIStatusError, RateLimitError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
 
 logger = logging.getLogger("cod_doc.agent.retry")
 
@@ -24,7 +26,9 @@ _FATAL_STATUSES = {400, 401, 403, 404, 422}
 class LLMError(Exception):
     """Обёртка ошибок LLM с человекочитаемым сообщением."""
 
-    def __init__(self, message: str, retryable: bool = False, status_code: int | None = None) -> None:
+    def __init__(
+        self, message: str, retryable: bool = False, status_code: int | None = None
+    ) -> None:
         super().__init__(message)
         self.retryable = retryable
         self.status_code = status_code
@@ -46,7 +50,11 @@ class LLMError(Exception):
                     400: f"Неверный запрос: {exc.message}",
                     422: f"Модель отклонила запрос: {exc.message}",
                 }
-                return cls(hints.get(status, f"HTTP {status}: {exc.message}"), retryable=False, status_code=status)
+                return cls(
+                    hints.get(status, f"HTTP {status}: {exc.message}"),
+                    retryable=False,
+                    status_code=status,
+                )
             return cls(f"HTTP {status}: {exc.message}", retryable=True, status_code=status)
         if isinstance(exc, APIConnectionError):
             return cls(
@@ -57,7 +65,9 @@ class LLMError(Exception):
 
 
 async def with_retry(
-    coro_factory: Callable[[], Coroutine[Any, Any, T]], max_attempts: int = 4, base_delay: float = 2.0
+    coro_factory: Callable[[], Coroutine[Any, Any, T]],
+    max_attempts: int = 4,
+    base_delay: float = 2.0,
 ) -> T:
     """
     Выполнить async-корутину с экспоненциальным backoff.
@@ -82,9 +92,7 @@ async def with_retry(
             if attempt == max_attempts:
                 break
             delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
-            logger.warning(
-                f"[retry {attempt}/{max_attempts}] {err} — повтор через {delay:.1f}s"
-            )
+            logger.warning(f"[retry {attempt}/{max_attempts}] {err} — повтор через {delay:.1f}s")
             await asyncio.sleep(delay)
         except Exception as exc:
             raise LLMError(str(exc), retryable=False) from exc

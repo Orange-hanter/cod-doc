@@ -6,6 +6,7 @@ Revision ID: 0003_stories
 Revises: 0002_tasks
 Create Date: 2026-04-25
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -109,9 +110,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("reason", sa.Text),
-        sa.UniqueConstraint(
-            "from_module", "to_module", name="uq_module_dependency_edge"
-        ),
+        sa.UniqueConstraint("from_module", "to_module", name="uq_module_dependency_edge"),
     )
 
     op.create_table(

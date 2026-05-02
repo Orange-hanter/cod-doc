@@ -11,6 +11,7 @@ Revision ID: 0006_views_and_defaults
 Revises: 0005_links_tags
 Create Date: 2026-04-25
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -98,9 +99,7 @@ def upgrade() -> None:
     # (depends on dependency) — drop and recreate around the alter.
     op.execute("DROP VIEW IF EXISTS ready_tasks")
     with op.batch_alter_table("dependency") as batch:
-        batch.create_check_constraint(
-            "ck_dependency_no_self_loop", "from_task_id <> to_task_id"
-        )
+        batch.create_check_constraint("ck_dependency_no_self_loop", "from_task_id <> to_task_id")
     op.execute(READY_TASKS_VIEW)
 
     with op.batch_alter_table("module_dependency") as batch:
@@ -110,9 +109,7 @@ def upgrade() -> None:
 
     # LO-7: UNIQUE acceptance position within a story.
     with op.batch_alter_table("story_acceptance") as batch:
-        batch.create_unique_constraint(
-            "uq_story_acceptance_position", ["story_id", "position"]
-        )
+        batch.create_unique_constraint("uq_story_acceptance_position", ["story_id", "position"])
 
     # HI-1: document_body view. Created LAST: SQLite's batch_alter on `document`
     # recreates the table via temp-rename, which would invalidate any view

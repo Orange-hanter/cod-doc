@@ -24,11 +24,13 @@ def web_client(tmp_path: Path):
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
 
     Project(entry).init()
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         yield client, entry
 
@@ -51,9 +53,11 @@ def test_index_warns_when_unconfigured(tmp_path: Path) -> None:
     cfg.add_project(ProjectEntry(name="p1", path=str(tmp_path)))
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get("/")
     assert r.status_code == 200
@@ -64,9 +68,11 @@ def test_index_empty_when_no_projects(tmp_path: Path) -> None:
     cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get("/")
     assert r.status_code == 200
@@ -82,6 +88,7 @@ def test_static_app_css_served(web_client) -> None:
 
 
 # ── WEB-002: project detail page ────────────────────────────────────────────
+
 
 def test_project_show_renders(web_client) -> None:
     client, entry = web_client
@@ -125,6 +132,7 @@ def test_project_show_master_truncated(tmp_path: Path) -> None:
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
 
     Project(entry).init()
@@ -133,6 +141,7 @@ def test_project_show_master_truncated(tmp_path: Path) -> None:
     entry.master_path.write_text(long_master, encoding="utf-8")
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200

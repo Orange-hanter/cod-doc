@@ -67,9 +67,15 @@ def _seed(session: Session) -> tuple[int, int, int]:
 
 def _make_task(session: Session, proj: int, plan: int, sec: int, tid: str) -> int:
     t = tasks.create(
-        session, project_id=proj, plan_id=plan, section_id=sec,
-        task_id=tid, title=f"Implement: {tid}", type=TaskType.FEATURE,
-        priority=Priority.MEDIUM, author="human:test",
+        session,
+        project_id=proj,
+        plan_id=plan,
+        section_id=sec,
+        task_id=tid,
+        title=f"Implement: {tid}",
+        type=TaskType.FEATURE,
+        priority=Priority.MEDIUM,
+        author="human:test",
     )
     return t.row_id  # type: ignore[return-value]
 
@@ -86,11 +92,14 @@ def test_revert_task_status_change(engine_with_schema) -> None:  # type: ignore[
         _make_task(session, p, pl, s, "CF-001")
 
         tasks.update_status(
-            session, task_id="CF-001",
-            new_status=TaskStatus.IN_PROGRESS, author="human:test",
+            session,
+            task_id="CF-001",
+            new_status=TaskStatus.IN_PROGRESS,
+            author="human:test",
         )
         history = rev.list_for_entity(
-            session, EntityKind.TASK,
+            session,
+            EntityKind.TASK,
             tasks.get(session, "CF-001").row_id,  # type: ignore[union-attr]
         )
         status_rev = history[-1]
@@ -111,7 +120,8 @@ def test_revert_task_complete(engine_with_schema) -> None:  # type: ignore[no-un
         tasks.complete(session, task_id="CF-001", author="human:test", commit_sha="abc")
 
         history = rev.list_for_entity(
-            session, EntityKind.TASK,
+            session,
+            EntityKind.TASK,
             tasks.get(session, "CF-001").row_id,  # type: ignore[union-attr]
         )
         complete_rev = history[-1]
@@ -129,7 +139,8 @@ def test_revert_task_unsupported_op_raises(engine_with_schema) -> None:  # type:
         _make_task(session, p, pl, s, "CF-001")
         # The initial 'create' revision has op='create' — not revertible.
         history = rev.list_for_entity(
-            session, EntityKind.TASK,
+            session,
+            EntityKind.TASK,
             tasks.get(session, "CF-001").row_id,  # type: ignore[union-attr]
         )
         create_rev = history[0]
@@ -147,21 +158,33 @@ def test_revert_section_patch_restores_old_body(engine_with_schema) -> None:  # 
     with transactional(factory) as session:
         p, _, _ = _seed(session)
         doc = docs.create(
-            session, project_id=p, doc_key="test-doc",
-            type=DocumentType.GUIDE, status=DocumentStatus.DRAFT,
-            title="Test", author="human:test",
+            session,
+            project_id=p,
+            doc_key="test-doc",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.DRAFT,
+            title="Test",
+            author="human:test",
         )
         # Use bodies with trailing '\n' (realistic: markdown files always end with newline).
         # Unified diffs for single-line strings without '\n' are not parseable by
         # _restore_original_from_unified; that edge case is addressed in COD-023.
         sec = docs.add_section(
-            session, document_id=doc.row_id, anchor="intro",
-            heading="Intro", level=2, position=0,
-            body="Original body.\n", author="human:test",
+            session,
+            document_id=doc.row_id,
+            anchor="intro",
+            heading="Intro",
+            level=2,
+            position=0,
+            body="Original body.\n",
+            author="human:test",
         )
         docs.patch_section(
-            session, document_id=doc.row_id, anchor="intro",
-            new_body="Updated body.\n", author="human:test",
+            session,
+            document_id=doc.row_id,
+            anchor="intro",
+            new_body="Updated body.\n",
+            author="human:test",
         )
         history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
         patch_rev = history[-1]
@@ -169,6 +192,7 @@ def test_revert_section_patch_restores_old_body(engine_with_schema) -> None:  # 
         rev.revert(session, patch_rev.revision_id, author="human:test")
 
         from cod_doc.infra.models import SectionModel
+
         sec_model = session.get(SectionModel, sec.row_id)
         assert sec_model is not None
         assert sec_model.body == "Original body.\n"
@@ -179,18 +203,30 @@ def test_revert_section_writes_new_revision(engine_with_schema) -> None:  # type
     with transactional(factory) as session:
         p, _, _ = _seed(session)
         doc = docs.create(
-            session, project_id=p, doc_key="test-doc",
-            type=DocumentType.GUIDE, status=DocumentStatus.DRAFT,
-            title="Test", author="human:test",
+            session,
+            project_id=p,
+            doc_key="test-doc",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.DRAFT,
+            title="Test",
+            author="human:test",
         )
         sec = docs.add_section(
-            session, document_id=doc.row_id, anchor="intro",
-            heading="Intro", level=2, position=0,
-            body="v1\n", author="human:test",
+            session,
+            document_id=doc.row_id,
+            anchor="intro",
+            heading="Intro",
+            level=2,
+            position=0,
+            body="v1\n",
+            author="human:test",
         )
         docs.patch_section(
-            session, document_id=doc.row_id, anchor="intro",
-            new_body="v2\n", author="human:test",
+            session,
+            document_id=doc.row_id,
+            anchor="intro",
+            new_body="v2\n",
+            author="human:test",
         )
         n_before = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id))
 
@@ -211,19 +247,26 @@ def test_revert_document_rename_restores_key(engine_with_schema) -> None:  # typ
     with transactional(factory) as session:
         p, _, _ = _seed(session)
         doc = docs.create(
-            session, project_id=p, doc_key="original-key",
-            type=DocumentType.GUIDE, status=DocumentStatus.DRAFT,
-            title="T", author="human:test",
+            session,
+            project_id=p,
+            doc_key="original-key",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.DRAFT,
+            title="T",
+            author="human:test",
         )
         docs.rename(
-            session, document_id=doc.row_id,
-            new_doc_key="renamed-key", author="human:test",
+            session,
+            document_id=doc.row_id,
+            new_doc_key="renamed-key",
+            author="human:test",
         )
         rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)[-1]
 
         rev.revert(session, rename_rev.revision_id, author="human:test")
 
         from cod_doc.infra.models import DocumentModel
+
         doc_model = session.get(DocumentModel, doc.row_id)
         assert doc_model is not None
         assert doc_model.doc_key == "original-key"

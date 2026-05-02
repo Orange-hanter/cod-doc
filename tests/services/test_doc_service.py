@@ -59,7 +59,9 @@ def _add_project(session, slug: str = "p") -> int:
     return proj.row_id
 
 
-def _new_doc(session: Session, project_id: int, doc_key: str = "modules/M1-auth/overview") -> Document:
+def _new_doc(
+    session: Session, project_id: int, doc_key: str = "modules/M1-auth/overview"
+) -> Document:
     return docs.create(
         session,
         project_id=project_id,
@@ -118,11 +120,9 @@ def test_create_duplicate_doc_key_violates_unique(engine_with_schema) -> None:  
         _new_doc(session, proj_id, "dup")
 
     with pytest.raises(IntegrityError), transactional(factory) as session:
-        proj_id2 = (
-            session.execute(
-                __import__("sqlalchemy").select(ProjectModel.row_id)
-            ).scalar_one()
-        )
+        proj_id2 = session.execute(
+            __import__("sqlalchemy").select(ProjectModel.row_id)
+        ).scalar_one()
         _new_doc(session, proj_id2, "dup")  # same project, same key
 
 
@@ -160,12 +160,24 @@ def test_get_sections_in_position_order(engine_with_schema) -> None:  # type: ig
         doc = _new_doc(session, proj_id)
         # Insert out of order — get_sections must return by position.
         docs.add_section(
-            session, document_id=doc.row_id, anchor="b", heading="B", level=2,
-            position=1, body="Bbody", author="x",
+            session,
+            document_id=doc.row_id,
+            anchor="b",
+            heading="B",
+            level=2,
+            position=1,
+            body="Bbody",
+            author="x",
         )
         docs.add_section(
-            session, document_id=doc.row_id, anchor="a", heading="A", level=2,
-            position=0, body="Abody", author="x",
+            session,
+            document_id=doc.row_id,
+            anchor="a",
+            heading="A",
+            level=2,
+            position=0,
+            body="Abody",
+            author="x",
         )
         anchors = [s.anchor for s in docs.get_sections(session, doc.row_id)]
         assert anchors == ["a", "b"]
@@ -178,8 +190,14 @@ def test_render_body_uses_view(engine_with_schema) -> None:  # type: ignore[no-u
         proj_id = _add_project(session)
         doc = _new_doc(session, proj_id)
         docs.add_section(
-            session, document_id=doc.row_id, anchor="a", heading="Alpha", level=2,
-            position=0, body="Alpha body.", author="x",
+            session,
+            document_id=doc.row_id,
+            anchor="a",
+            heading="Alpha",
+            level=2,
+            position=0,
+            body="Alpha body.",
+            author="x",
         )
         body = docs.render_body(session, doc.row_id)
         assert body is not None
@@ -204,13 +222,23 @@ def test_patch_section_updates_body_and_writes_revision(engine_with_schema) -> N
         proj_id = _add_project(session)
         doc = _new_doc(session, proj_id)
         sec = docs.add_section(
-            session, document_id=doc.row_id, anchor="x", heading="X", level=2,
-            position=0, body="old body", author="x",
+            session,
+            document_id=doc.row_id,
+            anchor="x",
+            heading="X",
+            level=2,
+            position=0,
+            body="old body",
+            author="x",
         )
 
         patched = docs.patch_section(
-            session, document_id=doc.row_id, anchor="x", new_body="new body",
-            author="human:dakh", reason="clarify",
+            session,
+            document_id=doc.row_id,
+            anchor="x",
+            new_body="new body",
+            author="human:dakh",
+            reason="clarify",
         )
         assert patched.body == "new body"
         assert patched.content_hash == hashlib.sha256(b"new body").hexdigest()
@@ -230,8 +258,11 @@ def test_patch_section_unknown_anchor_raises(engine_with_schema) -> None:  # typ
         doc = _new_doc(session, proj_id)
         with pytest.raises(docs.SectionNotFoundError):
             docs.patch_section(
-                session, document_id=doc.row_id, anchor="ghost",
-                new_body="x", author="x",
+                session,
+                document_id=doc.row_id,
+                anchor="ghost",
+                new_body="x",
+                author="x",
             )
 
 
@@ -239,9 +270,7 @@ def test_patch_section_unknown_document_raises(engine_with_schema) -> None:  # t
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session, pytest.raises(docs.DocumentNotFoundError):
-        docs.patch_section(
-            session, document_id=99999, anchor="x", new_body="x", author="x"
-        )
+        docs.patch_section(session, document_id=99999, anchor="x", new_body="x", author="x")
 
 
 def test_patch_section_no_op_when_body_unchanged(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -252,12 +281,21 @@ def test_patch_section_no_op_when_body_unchanged(engine_with_schema) -> None:  #
         proj_id = _add_project(session)
         doc = _new_doc(session, proj_id)
         sec = docs.add_section(
-            session, document_id=doc.row_id, anchor="x", heading="X", level=2,
-            position=0, body="same", author="x",
+            session,
+            document_id=doc.row_id,
+            anchor="x",
+            heading="X",
+            level=2,
+            position=0,
+            body="same",
+            author="x",
         )
 
         result = docs.patch_section(
-            session, document_id=doc.row_id, anchor="x", new_body="same",
+            session,
+            document_id=doc.row_id,
+            anchor="x",
+            new_body="same",
             author="x",
         )
         assert result.row_id == sec.row_id
@@ -273,20 +311,33 @@ def test_patch_section_optimistic_concurrency_conflict(engine_with_schema) -> No
         proj_id = _add_project(session)
         doc = _new_doc(session, proj_id)
         sec = docs.add_section(
-            session, document_id=doc.row_id, anchor="x", heading="X", level=2,
-            position=0, body="v1", author="x",
+            session,
+            document_id=doc.row_id,
+            anchor="x",
+            heading="X",
+            level=2,
+            position=0,
+            body="v1",
+            author="x",
         )
         first_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[0]
 
         # Concurrent patch lands first.
         docs.patch_section(
-            session, document_id=doc.row_id, anchor="x", new_body="v2", author="other",
+            session,
+            document_id=doc.row_id,
+            anchor="x",
+            new_body="v2",
+            author="other",
         )
 
         # We still think `first_rev` is head — must conflict.
         with pytest.raises(rev.RevisionConflictError):
             docs.patch_section(
-                session, document_id=doc.row_id, anchor="x", new_body="v3",
+                session,
+                document_id=doc.row_id,
+                anchor="x",
+                new_body="v3",
                 author="x",
                 expected_parent_revision_id=first_rev.revision_id,
             )
@@ -324,9 +375,7 @@ def test_rename_unknown_document_raises(engine_with_schema) -> None:  # type: ig
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session, pytest.raises(docs.DocumentNotFoundError):
-        docs.rename(
-            session, document_id=99999, new_doc_key="x", author="x"
-        )
+        docs.rename(session, document_id=99999, new_doc_key="x", author="x")
 
 
 def test_rename_no_op_when_target_equals_current(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -337,8 +386,11 @@ def test_rename_no_op_when_target_equals_current(engine_with_schema) -> None:  #
         doc = _new_doc(session, proj_id)
 
         result = docs.rename(
-            session, document_id=doc.row_id, new_doc_key=doc.doc_key,
-            new_path=doc.path, author="x",
+            session,
+            document_id=doc.row_id,
+            new_doc_key=doc.doc_key,
+            new_path=doc.path,
+            author="x",
         )
         assert result.row_id == doc.row_id
 
@@ -358,13 +410,25 @@ def test_add_section_duplicate_anchor_raises(engine_with_schema) -> None:  # typ
         proj_id = _add_project(session)
         doc = _new_doc(session, proj_id)
         docs.add_section(
-            session, document_id=doc.row_id, anchor="dup", heading="Dup", level=2,
-            position=0, body="x", author="x",
+            session,
+            document_id=doc.row_id,
+            anchor="dup",
+            heading="Dup",
+            level=2,
+            position=0,
+            body="x",
+            author="x",
         )
         with pytest.raises(SectionAlreadyExistsError):
             docs.add_section(
-                session, document_id=doc.row_id, anchor="dup", heading="Dup2", level=2,
-                position=1, body="y", author="x",
+                session,
+                document_id=doc.row_id,
+                anchor="dup",
+                heading="Dup2",
+                level=2,
+                position=1,
+                body="y",
+                author="x",
             )
 
 
@@ -436,6 +500,7 @@ def test_create_accepts_draft_without_owner(engine_with_schema) -> None:  # type
 def test_create_rejects_absolute_path(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """SD-100: doc_service.create must reject absolute paths (path traversal guard)."""
     from cod_doc.services import validation
+
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _add_project(session)
@@ -456,6 +521,7 @@ def test_create_rejects_absolute_path(engine_with_schema) -> None:  # type: igno
 def test_create_rejects_traversal_in_default_path(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """If path is not given, default `<doc_key>.md` is also validated."""
     from cod_doc.services import validation
+
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _add_project(session)
@@ -475,13 +541,18 @@ def test_create_rejects_traversal_in_default_path(engine_with_schema) -> None:  
 def test_rename_rejects_absolute_new_path(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """SD-100: doc_service.rename must reject absolute new_path."""
     from cod_doc.services import validation
+
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _add_project(session)
         doc = docs.create(
-            session, project_id=proj_id, doc_key="ok",
-            type=DocumentType.GUIDE, status=DocumentStatus.DRAFT,
-            title="ok", author="human:test",
+            session,
+            project_id=proj_id,
+            doc_key="ok",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.DRAFT,
+            title="ok",
+            author="human:test",
         )
         assert doc.row_id is not None
         with pytest.raises(validation.ValidationError) as exc:

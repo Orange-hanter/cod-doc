@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from textual.app import App
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 
 from cod_doc.logging_config import get_logger
 from cod_doc.tui.screens.dashboard import DashboardScreen
@@ -28,7 +28,7 @@ class CodDocApp(App[Any]):
     TITLE = "COD-DOC — Context Orchestrator for Documentation"
     CSS_PATH = str(Path(__file__).parent / "cod_doc.tcss")
 
-    BINDINGS: ClassVar[list[Binding]] = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "quit", "Выход", show=True),
         Binding("ctrl+c", "quit", "Выход", show=False),
     ]
@@ -68,5 +68,7 @@ class CodDocApp(App[Any]):
             log.debug("No API key configured, opening wizard", extra={"event_type": "open_wizard"})
             self.push_screen(WizardScreen(self.config))
         else:
-            log.debug("API key configured, opening dashboard", extra={"event_type": "open_dashboard"})
+            log.debug(
+                "API key configured, opening dashboard", extra={"event_type": "open_dashboard"}
+            )
             self.push_screen(DashboardScreen(self.config))

@@ -72,9 +72,15 @@ def _seed(session: Session) -> tuple[int, int, int]:
 
 def _task(session: Session, proj: int, plan: int, sec: int, tid: str) -> int:
     t = tasks.create(
-        session, project_id=proj, plan_id=plan, section_id=sec,
-        task_id=tid, title=f"Implement: {tid}", type=TaskType.FEATURE,
-        priority=Priority.MEDIUM, author="human:test",
+        session,
+        project_id=proj,
+        plan_id=plan,
+        section_id=sec,
+        task_id=tid,
+        title=f"Implement: {tid}",
+        type=TaskType.FEATURE,
+        priority=Priority.MEDIUM,
+        author="human:test",
     )
     assert t.row_id is not None
     return t.row_id
@@ -264,8 +270,8 @@ def test_critical_path_linear_chain(engine_with_schema) -> None:  # type: ignore
 
 def test_critical_path_picks_longest_branch(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Diamond: A → B → D and A → C → D, plus extra E → D.
-       Longest chain: E → D (depth-2), or A → B → D / A → C → D (depth-3).
-       Critical path = 3 tasks."""
+    Longest chain: E → D (depth-2), or A → B → D / A → C → D (depth-3).
+    Critical path = 3 tasks."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         p, pl, s = _seed(session)

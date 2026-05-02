@@ -123,9 +123,7 @@ def tasks_list(
     with open_db_for_project(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
             db_available = True
-            for t in tasks.list_for_project(
-                session, project_db_id, status=status_filter
-            ):
+            for t in tasks.list_for_project(session, project_db_id, status=status_filter):
                 rows.append(
                     {
                         "task_id": t.task_id,
@@ -177,8 +175,7 @@ def doc_show(request: Request, slug: str, doc_key: str) -> HTMLResponse:
                     "last_updated": doc.last_updated,
                 },
                 "sections": [
-                    {"anchor": s.anchor, "heading": s.heading, "level": s.level}
-                    for s in sections
+                    {"anchor": s.anchor, "heading": s.heading, "level": s.level} for s in sections
                 ],
                 "body": body,
             },

@@ -41,8 +41,7 @@ def register(mcp: FastMCP) -> None:
 
         result = story_to_dict(s)
         result["acceptance"] = [
-            {"position": a.position, "criterion": a.criterion, "met": a.met}
-            for a in acceptance
+            {"position": a.position, "criterion": a.criterion, "met": a.met} for a in acceptance
         ]
         result["links"] = [
             {"to_kind": lk.to_kind.value, "to_ref": lk.to_ref, "relation": lk.relation.value}
@@ -142,7 +141,12 @@ def register(mcp: FastMCP) -> None:
                 )
         except StoryNotFoundError:
             raise ValueError(f"Story '{story_id}' not found.") from None
-        return {"story_id": story_id, "position": ac.position, "criterion": ac.criterion, "met": ac.met}
+        return {
+            "story_id": story_id,
+            "position": ac.position,
+            "criterion": ac.criterion,
+            "met": ac.met,
+        }
 
     @mcp.tool(name="story.link")
     def story_link(

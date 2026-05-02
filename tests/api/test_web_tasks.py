@@ -56,6 +56,7 @@ def tasks_client(tmp_path: Path):
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
 
     Project(entry).init()
@@ -133,6 +134,7 @@ def tasks_client(tmp_path: Path):
     engine.dispose()
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         yield client, entry
 
@@ -197,11 +199,13 @@ def test_tasks_list_warns_when_db_absent(tmp_path: Path) -> None:
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
 
     Project(entry).init()
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get(f"/p/{entry.name}/tasks")
     assert r.status_code == 200
@@ -215,6 +219,7 @@ def test_tasks_list_404_unknown_project(tasks_client) -> None:
 
 
 # ── WEB-011: HTMX inline status update ──────────────────────────────────────
+
 
 def test_status_post_htmx_returns_row_fragment(tasks_client) -> None:
     client, entry = tasks_client
@@ -296,11 +301,13 @@ def test_status_post_404_db_absent(tmp_path: Path) -> None:
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
 
     Project(entry).init()
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.post(
             f"/p/{entry.name}/tasks/X-001/status",

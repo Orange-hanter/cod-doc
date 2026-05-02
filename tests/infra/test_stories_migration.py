@@ -56,8 +56,7 @@ def _add_project(session, slug: str = "p") -> int:
 def test_migration_creates_all_tables(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     with engine_with_schema.connect() as conn:
         names = {
-            r[0]
-            for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
         }
     assert {
         "user_story",
@@ -90,12 +89,8 @@ def test_user_story_with_acceptance_and_links(engine_with_schema) -> None:  # ty
 
         session.add_all(
             [
-                StoryAcceptanceModel(
-                    story_id=story.row_id, position=0, criterion="A1", met=True
-                ),
-                StoryAcceptanceModel(
-                    story_id=story.row_id, position=1, criterion="A2", met=False
-                ),
+                StoryAcceptanceModel(story_id=story.row_id, position=0, criterion="A1", met=True),
+                StoryAcceptanceModel(story_id=story.row_id, position=1, criterion="A2", met=False),
                 StoryLinkModel(
                     story_id=story.row_id,
                     to_kind="task",
@@ -179,9 +174,7 @@ def test_story_acceptance_cascade_delete(engine_with_schema) -> None:  # type: i
         )
         session.add(story)
         session.flush()
-        session.add(
-            StoryAcceptanceModel(story_id=story.row_id, position=0, criterion="C")
-        )
+        session.add(StoryAcceptanceModel(story_id=story.row_id, position=0, criterion="C"))
         session.add(
             StoryLinkModel(
                 story_id=story.row_id,
@@ -242,9 +235,7 @@ def test_module_with_dependencies_and_code(engine_with_schema) -> None:  # type:
         m2 = session.execute(
             select(ModuleModel).where(ModuleModel.module_id == "M2-billing")
         ).scalar_one()
-        assert [(d.from_module, d.to_module) for d in m2.outgoing_deps] == [
-            (m2.row_id, m1.row_id)
-        ]
+        assert [(d.from_module, d.to_module) for d in m2.outgoing_deps] == [(m2.row_id, m1.row_id)]
 
 
 def test_module_dependency_unique_edge(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -276,6 +267,4 @@ def test_module_id_unique_globally(engine_with_schema) -> None:  # type: ignore[
         session.add(ModuleModel(project_id=a, module_id="M1-auth", name="Auth A", status="active"))
 
     with pytest.raises(IntegrityError), transactional(factory) as session:
-        session.add(
-            ModuleModel(project_id=b, module_id="M1-auth", name="Auth B", status="active")
-        )
+        session.add(ModuleModel(project_id=b, module_id="M1-auth", name="Auth B", status="active"))

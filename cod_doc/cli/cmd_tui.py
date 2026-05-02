@@ -39,9 +39,7 @@ def _run_text_wizard(cfg: Config) -> None:
         "Path to first project", default=str(Path.cwd()), show_default=True
     ).strip()
     project_name = click.prompt("Project name").strip()
-    master_md = click.prompt(
-        "Path to MASTER.md", default="MASTER.md", show_default=True
-    ).strip()
+    master_md = click.prompt("Path to MASTER.md", default="MASTER.md", show_default=True).strip()
 
     path = Path(project_path).expanduser().resolve()
     if not path.exists():
@@ -83,7 +81,10 @@ def tui(ctx: click.Context, debug_log_file: str | None) -> None:
 @click.command()
 @click.option("--debug-log-file", default=None, help="Путь к файлу debug-лога wizard")
 @click.option(
-    "--text", "text_mode", is_flag=True, default=False,
+    "--text",
+    "text_mode",
+    is_flag=True,
+    default=False,
     help="Запустить текстовый wizard без TUI",
 )
 @click.pass_context
