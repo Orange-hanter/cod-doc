@@ -55,18 +55,36 @@ def index(
     offset = max(0, offset)
     page_entries = all_entries[offset : offset + limit]
 
-    # Parallelise the per-project stats() reads to avoid N×sequential I/O on
-    # the index page (WEB-013, audit SW-HI-3).
-    page_stats = Project.batch_stats(page_entries)
-    projects = [
-        {
-            "name": entry.name,
-            "path": entry.path,
-            "enabled": entry.enabled,
-            "stats": stats,
-        }
-        for entry, stats in zip(page_entries, page_stats, strict=True)
-    ]
+    # Prefer DB-aggregated plan stats; fall back to YAML stats if DB not ready.
+    yaml_stats = Project.batch_stats(page_entries)
+    projects = []
+    for entry, fallback in zip(page_entries, yaml_stats, strict=True):
+        stats = fallback
+        with try_open_project_db(entry.name) as (session, project_db_id):
+            if session is not None and project_db_id is not None:
+                project_plans = plans.list_for_project(session, project_db_id)
+                if project_plans:
+                    total_tasks = done_tasks = in_progress_tasks = 0
+                    for plan in project_plans:
+                        assert plan.row_id is not None
+                        p = plans.recalc(session, plan.row_id)
+                        total_tasks += p.total
+                        done_tasks += p.done
+                        in_progress_tasks += p.in_progress
+                    stats = {
+                        **fallback,
+                        "total": total_tasks,
+                        "done": done_tasks,
+                        "in_progress": in_progress_tasks,
+                    }
+        projects.append(
+            {
+                "name": entry.name,
+                "path": entry.path,
+                "enabled": entry.enabled,
+                "stats": stats,
+            }
+        )
 
     has_prev = offset > 0
     has_next = offset + limit < total
@@ -121,6 +139,13 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
     recent_revs: list[dict[str, Any]] = []
     db_available = False
 
+    # Header KPI cards: prefer DB-aggregated totals (single source of truth
+    # with the Plan-progress block below). Fall back to legacy YAML stats
+    # when the DB isn't initialised — same shape so the template doesn't
+    # need to branch.
+    yaml_stats: dict[str, Any] = proj.stats()
+    db_total = db_done = db_in_progress = 0
+
     with try_open_project_db(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
             db_available = True
@@ -131,6 +156,9 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                 # returns persisted rows.
                 assert plan.row_id is not None
                 progress = plans.recalc(session, plan.row_id)
+                db_total += progress.total
+                db_done += progress.done
+                db_in_progress += progress.in_progress
                 plan_rows.append(
                     {
                         "plan_id": plan.row_id,
@@ -180,6 +208,19 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                     }
                 )
 
+    if db_available and any((db_total, db_done, db_in_progress)):
+        # Override pending/failed only when the DB has tasks; status/last_run
+        # still come from the legacy state.yaml (the agent runtime writes there).
+        kpi = {
+            **yaml_stats,
+            "total": db_total,
+            "done": db_done,
+            "in_progress": db_in_progress,
+            "pending": db_total - db_done - db_in_progress,
+        }
+    else:
+        kpi = yaml_stats
+
     return templates.TemplateResponse(
         request,
         "project/show.html",
@@ -191,7 +232,7 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                 "master_md": proj.entry.master_md,
                 "master_exists": proj.entry.master_path.exists(),
             },
-            "stats": proj.stats(),
+            "stats": kpi,
             "master_preview": master_preview,
             "master_truncated": master_truncated,
             "db_available": db_available,
