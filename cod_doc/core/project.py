@@ -242,3 +242,24 @@ class Project:
             "status": self.state.get("status", "unknown"),
             "last_run": self.state.get("last_run"),
         }
+
+    @staticmethod
+    def batch_stats(
+        entries: list[ProjectEntry],
+        *,
+        max_workers: int = 8,
+    ) -> list[dict[str, Any]]:
+        """Read `stats()` for every entry in parallel via a thread pool.
+
+        File I/O releases the GIL, so threads give a meaningful speed-up over
+        the previous N×sequential pattern in `pages.py:index()`. Each call
+        creates a short-lived pool sized to `min(max_workers, len(entries))`.
+        Output preserves input order so callers can zip with `entries`.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        if not entries:
+            return []
+        workers = min(max_workers, len(entries))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            return list(ex.map(lambda e: Project(e).stats(), entries))

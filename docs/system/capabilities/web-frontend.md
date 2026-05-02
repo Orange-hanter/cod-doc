@@ -257,7 +257,7 @@ def get_project_db(slug: str) -> tuple[Session, int]: ...
 |---|---|---|
 | ~~Web → infra direct import~~ | ~~`db_resolver.py`~~ | ✅ **WEB-040** done 2026-05-02 |
 | ~~Engine на каждый запрос~~ | ~~`db_resolver.py`~~ | ✅ **WEB-005** done 2026-05-02 |
-| Index N+1 (`Project.stats()` per project) | `pages.py:27-35` | **WEB-013** (high) |
+| ~~Index N+1 (`Project.stats()` per project)~~ | ~~`pages.py:27-35`~~ | ✅ **WEB-013** done 2026-05-02 |
 | ~~Tabs дублируются в 3 шаблонах, в `doc_show` отсутствуют~~ | ~~`templates/web/project/*`~~ | ✅ **WEB-041** done 2026-05-02 |
 | ~~Tabs ведут на 404 для нереализованных страниц~~ | ~~shared~~ | ✅ **WEB-041** done 2026-05-02 |
 | ~~`<div id="alerts">` без модели — ошибки молча теряются~~ | ~~`base.html` + `fragments.py`~~ | ✅ **WEB-022** done 2026-05-02 |

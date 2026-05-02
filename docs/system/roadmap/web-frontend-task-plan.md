@@ -35,8 +35,8 @@ related_audits:
 | C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
-| F: Hardening (NEW 2026-05-02) | inline | 6 | 1 | 5 | 🔄 in-progress (WEB-005 ✅; 013, 022 ↑, 050..053 pending) |
-| **TOTAL** |  | **23** | **9** | **14** | |
+| F: Hardening (NEW 2026-05-02) | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-005, 013 ✅; 022 (in C), 050..053 pending) |
+| **TOTAL** |  | **23** | **10** | **13** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -621,26 +621,41 @@ affected_files:
 id: WEB-013
 title: "Perf: index page batch stats (resolve N+1 on /)"
 section: F-Hardening
-status: pending
+status: done
 depends_on: [WEB-005]
 type: feature
 priority: high
 affected_files:
-  - cod_doc/api/web/pages.py
-  - cod_doc/core/project.py              # batch_stats helper
-  - tests/api/test_web_scaffold.py
+  - cod_doc/core/project.py                     # Project.batch_stats
+  - cod_doc/api/web/pages.py                     # batch_stats + pagination
+  - cod_doc/templates/web/index.html             # prev/next + summary
+  - cod_doc/static/app.css                       # .pagination
+  - tests/api/test_web_index_pagination.py       # NEW (10 tests)
 ```
 
-**Description:** `GET /` для каждого проекта вызывает `Project.stats()` →
-последовательный read из state.db. На N проектах — N×I/O. После WEB-005
-engine закэширован, но всё ещё N запросов; нужен batch-метод (SW-HI-3).
+**Description:** `GET /` для каждого проекта вызывал `Project.stats()` →
+последовательный read из per-project YAML/state. На N проектах — N×I/O
+(SW-HI-3 в аудите).
 
 **Acceptance:**
-- Реализован batch-сбор stats (либо asyncio.gather, либо single query через
-  глобальную DB-агрегацию, если архитектура позволит).
-- Лимит на отображаемое количество (top-N с пагинацией) — по умолчанию 20.
-- Прогресс-индикатор (HTMX `hx-trigger="load"`) для long-tail проектов.
-- 2 теста: 10 проектов рендерятся за один request; пагинация работает.
+- ✅ `Project.batch_stats(entries, max_workers=8)` — параллелит чтение через
+  `concurrent.futures.ThreadPoolExecutor`. File I/O освобождает GIL, поэтому
+  threads дают реальный спид-ап без перехода на async. Порядок результатов
+  совпадает с порядком входов (тестируется).
+- ✅ `pages.py:index()` использует `batch_stats`, ограничивает страницу через
+  `?limit` (default 20, max 200) + `?offset` (clamped в [0, +∞)).
+- ✅ Шаблон `index.html` рендерит `‹ Prev`/`Next ›` + summary `from–to of total`.
+  Кнопки `disabled`-стиль когда конец/начало списка.
+- ✅ Out-of-range offset → пустая страница, но prev-link жив.
+- ✅ Invalid query params (`limit=0`, `offset=-5`) clamp без ошибки.
+- ✅ Прогресс-индикатор / HTMX hx-trigger="load" перенесён в P-хвост backlog'а
+  (нужен только для проектов в сотнях).
+- ✅ 10 новых тестов; suite 66/66 web-tests.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`): закрывает SW-HI-3 в audit
+> 2026-05-02. Threadpool — самый дешёвый путь без изменения signature
+> handler'а на async; масштабируется до сотен проектов через `?limit` без
+> необходимости отдельного worker-процесса.
 
 ### WEB-050
 

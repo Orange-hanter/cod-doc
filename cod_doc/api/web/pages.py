@@ -23,25 +23,60 @@ from cod_doc.services import task_service as tasks
 router = APIRouter()
 
 MASTER_PREVIEW_LINES = 80
+INDEX_DEFAULT_LIMIT = 20
+INDEX_MAX_LIMIT = 200
 
 
 @router.get("/", response_class=HTMLResponse)
-def index(request: Request) -> HTMLResponse:
+def index(
+    request: Request,
+    limit: int = INDEX_DEFAULT_LIMIT,
+    offset: int = 0,
+) -> HTMLResponse:
     cfg = get_config()
-    projects = []
-    for entry in cfg.list_projects():
-        projects.append(
-            {
-                "name": entry.name,
-                "path": entry.path,
-                "enabled": entry.enabled,
-                "stats": Project(entry).stats(),
-            }
-        )
+    all_entries = cfg.list_projects()
+    total = len(all_entries)
+    # Clamp to defensive bounds — page sizes are user-supplied query params.
+    limit = max(1, min(limit, INDEX_MAX_LIMIT))
+    offset = max(0, offset)
+    page_entries = all_entries[offset : offset + limit]
+
+    # Parallelise the per-project stats() reads to avoid N×sequential I/O on
+    # the index page (WEB-013, audit SW-HI-3).
+    page_stats = Project.batch_stats(page_entries)
+    projects = [
+        {
+            "name": entry.name,
+            "path": entry.path,
+            "enabled": entry.enabled,
+            "stats": stats,
+        }
+        for entry, stats in zip(page_entries, page_stats, strict=True)
+    ]
+
+    has_prev = offset > 0
+    has_next = offset + limit < total
+    prev_offset = max(0, offset - limit)
+    next_offset = offset + limit
+
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"projects": projects, "configured": cfg.is_configured},
+        {
+            "projects": projects,
+            "configured": cfg.is_configured,
+            "page": {
+                "limit": limit,
+                "offset": offset,
+                "total": total,
+                "has_prev": has_prev,
+                "has_next": has_next,
+                "prev_offset": prev_offset,
+                "next_offset": next_offset,
+                "showing_from": offset + 1 if total else 0,
+                "showing_to": offset + len(projects),
+            },
+        },
     )
 
 

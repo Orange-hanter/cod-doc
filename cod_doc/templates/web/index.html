@@ -32,7 +32,26 @@
     {% endfor %}
   </tbody>
 </table>
+
 {% else %}
   <p class="muted">No projects yet.</p>
+{% endif %}
+
+{% if page.has_prev or page.has_next %}
+<nav class="pagination" aria-label="projects pagination">
+  {% if page.has_prev %}
+    <a href="/?limit={{ page.limit }}&amp;offset={{ page.prev_offset }}">‹ Prev</a>
+  {% else %}
+    <span class="page-disabled">‹ Prev</span>
+  {% endif %}
+  <span class="page-summary muted">
+    {{ page.showing_from }}–{{ page.showing_to }} of {{ page.total }}
+  </span>
+  {% if page.has_next %}
+    <a href="/?limit={{ page.limit }}&amp;offset={{ page.next_offset }}">Next ›</a>
+  {% else %}
+    <span class="page-disabled">Next ›</span>
+  {% endif %}
+</nav>
 {% endif %}
 {% endblock %}
