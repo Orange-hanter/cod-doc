@@ -261,7 +261,7 @@ def get_project_db(slug: str) -> tuple[Session, int]: ...
 | ~~Tabs дублируются в 3 шаблонах, в `doc_show` отсутствуют~~ | ~~`templates/web/project/*`~~ | ✅ **WEB-041** done 2026-05-02 |
 | ~~Tabs ведут на 404 для нереализованных страниц~~ | ~~shared~~ | ✅ **WEB-041** done 2026-05-02 |
 | ~~`<div id="alerts">` без модели — ошибки молча теряются~~ | ~~`base.html` + `fragments.py`~~ | ✅ **WEB-022** done 2026-05-02 |
-| `doc_show` body — raw markdown без anchor'ов | `doc_show.html`, `pages.py:162` | **WEB-006** (medium) |
+| ~~`doc_show` body — raw markdown без anchor'ов~~ | ~~`doc_show.html`, `pages.py:162`~~ | ✅ **WEB-006** done 2026-05-02 |
 | ~~`status_options` дубль~~ | ~~`pages.py:147`, `fragments.py:52`~~ | ✅ **WEB-041** done 2026-05-02 (Jinja global) |
 
 Полный разбор — в audit-отчёте от 2026-05-02 (см. ссылку выше).

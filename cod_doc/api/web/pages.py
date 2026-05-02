@@ -14,6 +14,7 @@ from cod_doc.api.deps import (
     get_project_db,
     try_open_project_db,
 )
+from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import TaskStatus
@@ -194,14 +195,41 @@ def doc_show(
     slug: str,
     doc_key: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    raw: int = 0,
 ) -> HTMLResponse:
     proj = get_project(slug)
     session, project_db_id = db
     doc = docs.get(session, project_db_id, doc_key)
     if doc is None or doc.row_id is None:
         raise HTTPException(404, f"Документ не найден: {doc_key}")
-    sections = docs.get_sections(session, doc.row_id)
-    body = docs.render_body(session, doc.row_id) or doc.preamble or ""
+    sections_db = docs.get_sections(session, doc.row_id)
+
+    # Sidebar nav uses the section anchors regardless of mode — they match
+    # the `<section id>` we render below (or the in-page hash, harmless in
+    # raw mode since browsers tolerate non-existent fragments).
+    sections_nav = [
+        {"anchor": s.anchor, "heading": s.heading, "level": s.level} for s in sections_db
+    ]
+
+    is_raw = bool(raw)
+    raw_body: str | None = None
+    preamble_html: str | None = None
+    sections_html: list[dict[str, Any]] = []
+
+    if is_raw:
+        raw_body = docs.render_body(session, doc.row_id) or doc.preamble or ""
+    else:
+        preamble_html = render_markdown(doc.preamble or "") or None
+        sections_html = [
+            {
+                "anchor": s.anchor,
+                "heading": s.heading,
+                "level": s.level,
+                "html": render_markdown(s.body or ""),
+            }
+            for s in sections_db
+        ]
+
     return templates.TemplateResponse(
         request,
         "project/doc_show.html",
@@ -216,9 +244,10 @@ def doc_show(
                 "owner": doc.owner or "",
                 "last_updated": doc.last_updated,
             },
-            "sections": [
-                {"anchor": s.anchor, "heading": s.heading, "level": s.level} for s in sections
-            ],
-            "body": body,
+            "sections": sections_nav,
+            "is_raw": is_raw,
+            "raw_body": raw_body,
+            "preamble_html": preamble_html,
+            "sections_html": sections_html,
         },
     )

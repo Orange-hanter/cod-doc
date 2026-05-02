@@ -31,12 +31,12 @@ related_audits:
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
-| B: Read views | inline | 6 | 1 | 5 | 🔄 in-progress (+ WEB-006, WEB-014, WEB-060) |
+| B: Read views | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-010, 006 ✅; 004, 014, 021, 060) |
 | C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
 | F: Hardening (NEW 2026-05-02) | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-005, 013 ✅; 022 (in C), 050..053 pending) |
-| **TOTAL** |  | **23** | **10** | **13** | |
+| **TOTAL** |  | **23** | **11** | **12** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -780,30 +780,44 @@ affected_files:
 id: WEB-006
 title: "Implement: server-rendered markdown for doc_show body (anchors work)"
 section: B-Read-Views
-status: pending
+status: done
 depends_on: [WEB-003]
 type: feature
 priority: medium
 affected_files:
-  - cod_doc/services/doc_service.py        # render_html (новый)
+  - cod_doc/api/web/markdown.py             # NEW (~110 LOC)
   - cod_doc/api/web/pages.py
   - cod_doc/templates/web/project/doc_show.html
-  - cod_doc/static/app.css                  # .doc-html
-  - tests/api/test_web_docs.py
+  - cod_doc/static/app.css                   # .doc-section + inline elements
+  - tests/api/test_web_markdown.py           # NEW (20 tests)
 ```
 
-**Description:** `doc_show` сейчас показывает body как raw markdown в `<pre>`.
-Якоря `#data-model` в боковой нав-панели не работают (SW-ME-3).
+**Description:** `doc_show` показывал body как raw markdown в одном `<pre>`.
+Якоря `#data-model` в боковой нав-панели не работали (SW-ME-3).
 
 **Acceptance:**
-- Решение принять отдельным mini-ADR в capability/web-frontend §13:
-  собственный mini-renderer поверх `DocService` (структура секций уже
-  известна) **или** `markdown-it-py` (новая dep — требует обоснования).
-- Body рендерится как `<section id="{anchor}"><h{level}>...</h{level}>{html}</section>`.
-- Клик на боковую ссылку → scroll-to-anchor работает.
-- `?raw=1` query сохраняет текущее `<pre>` поведение.
-- 2 теста: anchor scroll работает (HTML содержит `<section id="data-model">`);
-  raw-mode возвращает `<pre>`.
+- ✅ Mini-renderer в `cod_doc/api/web/markdown.py` (paragraphs, fenced code,
+  bullet lists; inline `code`/**bold**/*italic*/[link](url)). HTML escapes
+  всех пользовательских данных. Markdown-active chars внутри `code`
+  shielded entities, чтобы не попадали под bold/italic regex'ы.
+- ✅ Каждая секция рендерится как `<section id="{anchor}" class="doc-section">
+  <h{level}>{heading}</h{level}><div class="section-body">{html}</div></section>` —
+  scroll-to-anchor работает.
+- ✅ `?raw=1` возвращает старый `<pre class="md-preview">` режим. Toggle-link
+  на странице переключает.
+- ✅ 20 новых тестов: 15 unit для renderer'а (включая HTML-injection escape,
+  shielding кода от вложенного markdown), 5 integration через TestClient
+  (sections с anchor, inline markdown в preamble/body, raw-mode, toggle-link,
+  no-html-smuggling).
+- ✅ ADR-резюме (зафиксировано здесь): выбрали custom mini-renderer вместо
+  `markdown-it-py` (~50 KB + transitive deps). Аргументы:
+  1) capability §2 запрещает новые deps без явного обоснования;
+  2) bodies секций короткие, mini-renderer покрывает их полностью;
+  3) при росте featureset (tables, footnotes) — переоткрыть выбор.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`): закрывает SW-ME-3 в audit
+> 2026-05-02. Suite 86 web-tests; ruff/mypy clean. Renderer ~110 LOC; полный
+> HTML-escape pipeline.
 
 ### WEB-014
 

@@ -18,6 +18,13 @@
   <span><strong>Status:</strong> {{ doc.status }}</span>
   {% if doc.owner %}<span><strong>Owner:</strong> {{ doc.owner }}</span>{% endif %}
   {% if doc.last_updated %}<span><strong>Updated:</strong> {{ doc.last_updated }}</span>{% endif %}
+  <span class="doc-mode-toggle">
+    {% if is_raw %}
+      <a href="/p/{{ project.name }}/docs/{{ doc.doc_key }}">View rendered</a>
+    {% else %}
+      <a href="/p/{{ project.name }}/docs/{{ doc.doc_key }}?raw=1">View raw</a>
+    {% endif %}
+  </span>
 </section>
 
 <div class="split">
@@ -35,10 +42,26 @@
   </aside>
 
   <article class="doc-body">
-    {% if body %}
-      <pre class="md-preview">{{ body }}</pre>
+    {% if is_raw %}
+      {% if raw_body %}
+        <pre class="md-preview">{{ raw_body }}</pre>
+      {% else %}
+        <p class="muted">Document body is empty.</p>
+      {% endif %}
     {% else %}
-      <p class="muted">Document body is empty.</p>
+      {% if preamble_html %}
+        <div class="doc-preamble">{{ preamble_html | safe }}</div>
+      {% endif %}
+      {% if sections_html %}
+        {% for s in sections_html %}
+          <section id="{{ s.anchor }}" class="doc-section">
+            <h{{ s.level }}>{{ s.heading }}</h{{ s.level }}>
+            <div class="section-body">{{ s.html | safe }}</div>
+          </section>
+        {% endfor %}
+      {% elif not preamble_html %}
+        <p class="muted">Document body is empty.</p>
+      {% endif %}
     {% endif %}
   </article>
 </div>

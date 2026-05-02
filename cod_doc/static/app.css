@@ -158,6 +158,26 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
 .sections-nav li.lvl-5 { padding-left: 36px; }
 .doc-body { min-width: 0; }
 .doc-body .md-preview { max-height: none; }
+.doc-section { padding: 8px 0 4px; border-top: 1px solid var(--border); margin-top: 12px; }
+.doc-section:first-child { border-top: 0; margin-top: 0; }
+.doc-section h2, .doc-section h3, .doc-section h4 {
+  margin: 0 0 6px;
+}
+.doc-section h2 { font-size: 16px; }
+.doc-section h3 { font-size: 14px; }
+.doc-section h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.section-body p, .doc-preamble p { margin: 0 0 8px; }
+.section-body code, .doc-preamble code {
+  background: var(--bg-alt); padding: 1px 4px; border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+}
+.section-body pre, .doc-preamble pre {
+  background: var(--bg-alt); border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px 10px; overflow-x: auto; font-size: 12px;
+}
+.section-body pre code, .doc-preamble pre code { background: transparent; padding: 0; }
+.section-body ul, .doc-preamble ul { margin: 0 0 8px; padding-left: 20px; }
+.doc-mode-toggle { margin-left: auto; }
 
 .filter-bar {
   display: flex;
