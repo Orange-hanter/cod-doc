@@ -32,11 +32,11 @@ related_audits:
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
 | B: Read views | inline | 6 | 1 | 5 | 🔄 in-progress (+ WEB-006, WEB-014, WEB-060) |
-| C: Write paths | inline | 3 | 1 | 2 | 🔄 in-progress |
+| C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 1 | 2 | 🔄 in-progress (WEB-040 ✅; 041, 042 pending) |
 | F: Hardening (NEW 2026-05-02) | inline | 6 | 1 | 5 | 🔄 in-progress (WEB-005 ✅; 013, 022 ↑, 050..053 pending) |
-| **TOTAL** |  | **23** | **7** | **16** | |
+| **TOTAL** |  | **23** | **8** | **15** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -352,26 +352,50 @@ priority: high
 id: WEB-022
 title: "Implement: alert/error model (HTMX target #alerts)"
 section: C-Write-Paths
-status: pending
+status: done
 depends_on: [WEB-040, WEB-005]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/api/web/errors.py             # NEW
+  - cod_doc/api/server.py                  # exception handler
+  - cod_doc/api/web/fragments.py           # raise WebError + inline OOB alerts
+  - cod_doc/api/web/templates_env.py       # urldecode filter
+  - cod_doc/templates/web/_frag/alert.html # NEW
+  - cod_doc/templates/web/_frag/task_row.html  # drop row-error span
+  - cod_doc/templates/web/base.html         # cookie-flash render
+  - cod_doc/static/app.css                  # alert styles
+  - tests/api/test_web_alerts.py            # NEW (7 tests)
 ```
 
-**Description:** Единый формат ошибок для web-роутера: `WebError` exception → middleware → render `_frag/alert.html` в `#alerts` (HTMX `hx-swap-oob`). Покрывает NotFound / Validation / Conflict.
-
-> **Поднято с `medium` до `high` (2026-05-02, аудит SW-HI-4):** сейчас ошибки в
-> `fragments.py` теряются как inline `row-error` без структуры; conflict ревизий
-> исчезает после следующего HTMX-обновления, инцидент пропадает. Развязана
-> зависимость `[WEB-011, WEB-012]` → `[WEB-040, WEB-005]` — шина для всех
-> будущих write-path должна быть готова до WEB-012.
+**Description:** Единый формат ошибок для web-роутера: `WebError` exception →
+exception handler в `server.py` → render `_frag/alert.html` в `#alerts` через
+HTMX `hx-swap-oob` либо cookie-flash + 303 на Referer для form-post клиентов.
 
 **Acceptance:**
-- `cod_doc.api.web.errors:WebError` (ValidationError / ConflictError / NotFoundError).
-- Middleware (или exception handler) ловит — рендерит `_frag/alert.html` с severity.
-- HTMX-ответ возвращает фрагмент с `hx-swap-oob="afterbegin:#alerts"`.
-- Не-HTMX → 4xx + alert flash в session/cookie + 303 на референера.
-- 2 теста: HTMX (alert виден) и не-HTMX (cookie + redirect).
+- ✅ `cod_doc.api.web.errors:WebError` (+ `ValidationWebError 400 warning`,
+  `NotFoundWebError 404 error`, `ConflictWebError 409 warning`).
+- ✅ Exception handler в `server.py` различает HTMX и form-post:
+  - HTMX: возвращает alert-фрагмент с `hx-swap-oob="afterbegin:#alerts"` +
+    `HX-Reswap: none` (главный target не подменяется).
+  - Form-post: 303 на `Referer` (или `/`) + cookies `flash_severity` /
+    `flash_message`. Cookies percent-encoded для latin-1 transport.
+- ✅ `base.html` подхватывает flash-cookie на следующем full-page load и
+  рендерит alert через `_frag/alert.html` (без OOB). Декодирование через
+  Jinja-фильтр `urldecode`.
+- ✅ Inline-alert path: `RevisionConflictError` / `IntegrityError` / `ValueError`
+  во время `update_status` → возвращает `<tr>` с прежним статусом плюс
+  отдельный OOB alert-фрагмент в одном HTMX-ответе.
+- ✅ Удалён inline-стиль `row-error` (был на task_row): теперь все ошибки идут
+  единым каналом через `#alerts`.
+- ✅ 7 новых тестов: HTMX validation/not-found alerts, form-post cookie-flash,
+  flash render на следующем GET, inline OOB alert на conflict, success-path
+  без alert.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`): Suite 52 web-tests
+> зелёные; mypy/ruff clean. Alert markup: `<div class="alert alert-{sev}"
+> hx-swap-oob>` с CSS-сидом (error/warning/info, sticky-top). Закрывает
+> SW-HI-4 в audit-отчёте 2026-05-02.
 
 ---
 

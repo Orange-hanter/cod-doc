@@ -1,0 +1,11 @@
+{# Alert fragment.
+
+When rendered as an OOB swap target, HTMX prepends it into #alerts.
+When rendered standalone (via cookie-flash on full page load), the same
+markup is embedded directly inside #alerts via base.html.
+#}
+<div class="alert alert-{{ severity }}"{% if oob %} hx-swap-oob="afterbegin:#alerts"{% endif %}>
+  <span class="alert-msg">{{ message }}</span>
+  <button type="button" class="alert-close" aria-label="dismiss"
+          onclick="this.parentNode.remove()">×</button>
+</div>

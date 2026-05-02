@@ -9,8 +9,10 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from cod_doc.agent.orchestrator import run_daemon
@@ -22,7 +24,8 @@ from cod_doc.api.deps import (
 )
 from cod_doc.api.routes import router as core_router
 from cod_doc.api.web import fragments_router, pages_router
-from cod_doc.api.web.templates_env import STATIC_DIR
+from cod_doc.api.web.errors import WebError
+from cod_doc.api.web.templates_env import STATIC_DIR, templates
 from cod_doc.api.webhooks import router as webhook_router
 from cod_doc.config import Config
 from cod_doc.logging_config import setup_logging
@@ -61,3 +64,29 @@ app.include_router(webhook_router)
 app.include_router(fragments_router)
 app.include_router(pages_router)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.exception_handler(WebError)
+async def web_error_handler(request: Request, exc: WebError) -> Response:
+    """Render WebError as alert fragment (HTMX) or cookie-flash + redirect (form)."""
+    htmx = request.headers.get("HX-Request", "").lower() == "true"
+    if htmx:
+        alert_html = templates.get_template("_frag/alert.html").render(
+            severity=exc.severity, message=exc.message, oob=True
+        )
+        # HX-Reswap: none — suppress main-target swap so only the OOB #alerts
+        # update lands. The handler that raised this WebError didn't render
+        # any meaningful main-target HTML.
+        return HTMLResponse(
+            alert_html,
+            status_code=exc.status_code,
+            headers={"HX-Reswap": "none"},
+        )
+    referer = request.headers.get("Referer") or "/"
+    response = RedirectResponse(url=referer, status_code=303)
+    # Plain cookies; flash is short-lived and not security-sensitive (the
+    # message comes from the same trust domain). Path "/" so any page reads it.
+    # Cookie headers are latin-1 only, so percent-encode the message.
+    response.set_cookie("flash_severity", exc.severity, max_age=30, path="/")
+    response.set_cookie("flash_message", quote(exc.message), max_age=30, path="/")
+    return response

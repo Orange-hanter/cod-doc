@@ -15,7 +15,15 @@
       <a href="/settings">Settings</a>
     </nav>
   </header>
-  <div id="alerts"></div>
+  <div id="alerts">
+    {%- set flash_msg = request.cookies.get("flash_message") -%}
+    {%- set flash_sev = request.cookies.get("flash_severity") or "error" -%}
+    {%- if flash_msg -%}
+      {%- with severity=flash_sev, message=(flash_msg | urldecode), oob=false -%}
+        {% include "_frag/alert.html" %}
+      {%- endwith -%}
+    {%- endif -%}
+  </div>
   <main class="content">
     {% block content %}{% endblock %}
   </main>

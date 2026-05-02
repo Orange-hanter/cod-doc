@@ -209,3 +209,39 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
   font-size: 12px;
 }
 .htmx-request select { opacity: 0.5; }
+
+/* ── Alerts (#alerts target — HTMX OOB or cookie-flash) ───────────────── */
+#alerts {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+#alerts:empty { display: none; }
+
+.alert {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: 4px;
+  font-size: 13px;
+  background: var(--bg-alt);
+}
+.alert-msg { flex: 1; word-break: break-word; }
+.alert-close {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  color: var(--muted);
+}
+.alert-close:hover { color: var(--fg); }
+.alert-error   { border-left-color: #cf222e; background: #ffebe9; color: #6e1620; }
+.alert-warning { border-left-color: #bc4c00; background: #fff8c5; color: #6a4f00; }
+.alert-info    { border-left-color: #0969da; background: #ddf4ff; color: #0a3069; }
