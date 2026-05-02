@@ -62,8 +62,11 @@ include = ["cod_doc*"]
     "tui/*.tcss",
     "templates/*.j2",
     "templates/web/*.html",
+    "templates/web/_layout/*.html",
+    "templates/web/_frag/*.html",
     "templates/web/project/*.html",
     "static/*.css",
+    "static/*.js",
     "py.typed",
 ]
 
