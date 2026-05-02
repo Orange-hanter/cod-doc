@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: cod_doc/* + docs/system/* (Section C — capability layer + system docs coherence)
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-28
-last_updated: 2026-04-28
+last_updated: 2026-05-02
 audit_target_revision: HEAD = 37c45b1 (post COD-013/014/020/022/023 + Section B/C done)
 related_docs:
   - ../MASTER.md
@@ -13,6 +13,7 @@ related_docs:
   - ../roadmap/audit-followups-task-plan.md
   - 2026-04-25-section-a-data-core.md
   - 2026-04-25-section-b-services.md
+  - 2026-05-02-section-web-frontend.md
 ---
 
 # Section C (Capability Layer) — System Audit
@@ -216,3 +217,4 @@ related_docs:
 |------|---------|
 | 2026-04-28 | Аудит проведён; 10 inline-фиксов применены, 5 задач заведено в roadmap (COD-024, COD-025, COD-026, COD-014a, WEB-040). 326+3 тестов зелёные. |
 | 2026-04-28 | COD-024 закрыт — `.github/workflows/ci.yml` создан (pytest blocking, ruff/mypy advisory). Заведена follow-up COD-024a (lint debt cleanup). |
+| 2026-05-02 | **Resolved.** Последняя задача SC-HI-3 (web → infra bypass) закрыта в WEB-040: удалён `cod_doc/api/web/db_resolver.py`, web-слой переведён на `cod_doc.api.deps.{get_project_db, try_open_project_db}`, архитектурное правило закреплено AST-тестами в `tests/api/test_web_layer_imports.py`. Suite 45 web-тестов зелёные. |

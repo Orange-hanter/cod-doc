@@ -131,7 +131,7 @@ docs/system/
 | audit/2026-04-19-initial-audit | active | cod-doc core |
 | audit/2026-04-25-section-a-data-core | resolved | cod-doc core |
 | audit/2026-04-25-section-b-services | resolved | cod-doc core |
-| audit/2026-04-28-section-c-capabilities | active | cod-doc core |
+| audit/2026-04-28-section-c-capabilities | resolved | cod-doc core |
 | audit/2026-05-01-section-g-hardening | resolved | cod-doc core |
 | audit/2026-05-02-section-web-frontend | active | cod-doc core |
 | capabilities/web-frontend | active | cod-doc core |

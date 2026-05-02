@@ -78,9 +78,11 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 
 **Принцип:** обработчик не знает про SQL/репозитории. Только сервисы (`cod_doc.services.*`) и существующие helper-ы (`get_config`, `get_project`, новый `get_project_db` после WEB-040). См. §7.
 
-> **Drift note (2026-05-02):** до закрытия WEB-040 в `cod_doc/api/web/db_resolver.py`
-> сохраняется прямой импорт `cod_doc.infra.db`/`infra.repositories` — известное
-> нарушение §7, отслеживается как `audit/2026-05-02-section-web-frontend.md::SW-HI-1`.
+> **Status (2026-05-02, post WEB-040):** правило восстановлено. `cod_doc/api/web/`
+> импортирует только `cod_doc.services.*`, `cod_doc.api.deps`, `cod_doc.config`,
+> `cod_doc.core`, `cod_doc.domain.entities`, `cod_doc.logging_config`. AST-тест
+> [tests/api/test_web_layer_imports.py](../../../tests/api/test_web_layer_imports.py)
+> блокирует регрессию.
 
 ## 4. HTML-структура
 
@@ -178,9 +180,9 @@ def get_project_db(slug: str) -> tuple[Session, int]: ...
 
 Прямой доступ из Web к `cod_doc.infra.db` или ORM-моделям — запрещён.
 
-> **Известное нарушение (2026-05-02):** [cod_doc/api/web/db_resolver.py](../../../cod_doc/api/web/db_resolver.py)
-> временно нарушает это правило, чтобы разблокировать WEB-001..011.
-> Закрывается в **WEB-040** + **WEB-005** одним PR (см. roadmap §F-Hardening).
+> **Закрыто (2026-05-02):** WEB-040 + WEB-005 закрыты; web-слой больше не
+> импортирует `cod_doc.infra.*`. Регрессии ловятся AST-тестом
+> [tests/api/test_web_layer_imports.py](../../../tests/api/test_web_layer_imports.py).
 
 ## 8. Тестирование
 
@@ -253,8 +255,8 @@ def get_project_db(slug: str) -> tuple[Session, int]: ...
 
 | Долг | Где | Закрывается в |
 |---|---|---|
-| Web → infra direct import | `db_resolver.py` | **WEB-040** (high) |
-| Engine на каждый запрос | `db_resolver.py` | **WEB-005** (high) |
+| ~~Web → infra direct import~~ | ~~`db_resolver.py`~~ | ✅ **WEB-040** done 2026-05-02 |
+| ~~Engine на каждый запрос~~ | ~~`db_resolver.py`~~ | ✅ **WEB-005** done 2026-05-02 |
 | Index N+1 (`Project.stats()` per project) | `pages.py:27-35` | **WEB-013** (high) |
 | Tabs дублируются в 3 шаблонах, в `doc_show` отсутствуют | `templates/web/project/*` | **WEB-041** (medium) |
 | Tabs ведут на 404 для нереализованных страниц | shared | **WEB-041** (medium) |

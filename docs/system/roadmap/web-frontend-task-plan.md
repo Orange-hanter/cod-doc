@@ -34,9 +34,9 @@ related_audits:
 | B: Read views | inline | 6 | 1 | 5 | 🔄 in-progress (+ WEB-006, WEB-014, WEB-060) |
 | C: Write paths | inline | 3 | 1 | 2 | 🔄 in-progress |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
-| E: Architecture Hygiene | inline | 3 | 0 | 3 | ❌ pending (+ WEB-041, WEB-042) |
+| E: Architecture Hygiene | inline | 3 | 1 | 2 | 🔄 in-progress (WEB-040 ✅; 041, 042 pending) |
 | F: Hardening (NEW 2026-05-02) | inline | 6 | 1 | 5 | 🔄 in-progress (WEB-005 ✅; 013, 022 ↑, 050..053 pending) |
-| **TOTAL** |  | **23** | **6** | **17** | |
+| **TOTAL** |  | **23** | **7** | **16** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -417,18 +417,15 @@ priority: low
 id: WEB-040
 title: "Refactor: remove web → infra direct access (db_resolver bypass)"
 section: E-Architecture-Hygiene
-status: pending
+status: done
 depends_on: [WEB-005]
 type: refactor
 priority: high
 affected_files:
-  - cod_doc/api/web/db_resolver.py    # удалить
-  - cod_doc/api/deps.py                # добавить get_project_db
-  - cod_doc/api/web/pages.py
-  - cod_doc/api/web/fragments.py
-  - pyproject.toml                      # ruff banned-module-level-imports
-  - tests/api/test_web_docs.py
-  - tests/api/test_web_tasks.py
+  - cod_doc/api/web/db_resolver.py             # удалён
+  - cod_doc/api/web/pages.py                   # try_open_project_db / Depends(get_project_db)
+  - cod_doc/api/web/fragments.py               # Depends(get_project_db)
+  - tests/api/test_web_layer_imports.py        # NEW (ban infra in web/)
   - docs/system/audit/2026-04-28-section-c-capabilities.md  # SC-HI-3 → resolved
 ```
 
@@ -446,18 +443,29 @@ Engine из WEB-005.
 > цикл сейчас.
 
 **Acceptance:**
-- `cod_doc/api/web/db_resolver.py` удалён.
-- `cod_doc.api.deps:get_project_db` существует, возвращает `(Session, int)` или
-  поднимает `HTTPException(404)`. Закрывает context-manager автоматически
-  через FastAPI dependency yield.
-- `pages.py` / `fragments.py` импортируют только `cod_doc.services.*`,
-  `cod_doc.api.deps`, `cod_doc.domain.entities` (enums).
-- `pyproject.toml`: ruff `flake8-tidy-imports` секция запрещает
-  `cod_doc.infra` внутри `cod_doc/api/web/`. Тест-кейс: `ruff check` падает
-  при попытке вернуть `from cod_doc.infra...` в `pages.py`.
-- Все 27 web-тестов зелёные. Добавлен 1 новый тест: import-ban работает.
-- Audit-отчёт `2026-04-28-section-c-capabilities.md` переведён в `resolved`
-  (последняя его задача).
+- ✅ `cod_doc/api/web/db_resolver.py` удалён.
+- ✅ `cod_doc.api.deps:get_project_db` (strict, 404) и `try_open_project_db`
+  (graceful) — обе уже на месте после WEB-005.
+- ✅ `pages.py` / `fragments.py` импортируют только `cod_doc.services.*`,
+  `cod_doc.api.deps`, `cod_doc.api.web.*`, `cod_doc.config`, `cod_doc.core`,
+  `cod_doc.domain.entities`, `cod_doc.logging_config`. Strict endpoints
+  (doc_show, task_status_update) используют `Depends(get_project_db)`;
+  graceful list pages — `try_open_project_db`-context manager.
+- ✅ Архитектурное правило закреплено двумя AST-тестами в
+  `tests/api/test_web_layer_imports.py`: банит `cod_doc.infra.*` в `web/`
+  и проверяет белый список `cod_doc.*` импортов. Этот подход выбран вместо
+  ruff `banned-api`, потому что последний — codebase-wide, а наш scope
+  per-directory: `cod_doc.api.deps` legitimately импортирует `infra`.
+- ✅ 45 web-тестов зелёные (было 27 + 16 cache + 2 import-lint).
+- ✅ Audit-отчёт `2026-04-28-section-c-capabilities.md` переведён в `resolved`
+  (последняя его задача — SC-HI-3 — закрыта).
+
+> ✅ **Implemented 2026-05-02** (commit `pending`): убраны последние 2 импорта
+> `cod_doc.infra.*` из `cod_doc/api/web/` (`db_resolver.py:22-23` →
+> делегирует через `deps.try_open_project_db`). Strict-pattern в fragments.py
+> теперь идиоматичен FastAPI: `Depends(get_project_db)` отдаёт уже валидный
+> `(session, project_db_id)` tuple, обработчик не пишет boilerplate-проверки.
+> Lint-test ловит регрессию на новых файлах автоматически.
 
 ### WEB-041
 
