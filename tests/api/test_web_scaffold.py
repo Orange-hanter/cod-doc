@@ -44,8 +44,8 @@ def test_index_renders_project_list(web_client) -> None:
     assert "Projects" in r.text
     # link to project page is present
     assert f'href="/p/{entry.name}"' in r.text
-    # base layout is wired
-    assert '<link rel="stylesheet" href="/static/app.css">' in r.text
+    # base layout is wired (URL is versioned via WEB-051: /static/app.css?v=...)
+    assert '<link rel="stylesheet" href="/static/app.css?v=' in r.text
 
 
 def test_index_warns_when_unconfigured(tmp_path: Path) -> None:
@@ -152,3 +152,28 @@ def test_project_show_master_truncated(tmp_path: Path) -> None:
     assert "line 0" in r.text
     assert "line 79" in r.text
     assert "line 80" not in r.text
+
+
+# ── WEB-051: static asset versioning ────────────────────────────────────
+
+
+def test_static_url_appends_version_query() -> None:
+    """`static_url('app.css')` must return /static/app.css?v=<hash>."""
+    from cod_doc.api.web.templates_env import static_url
+
+    url = static_url("app.css")
+    assert url.startswith("/static/app.css?v=")
+    # Sanity: the fingerprint segment is non-empty.
+    assert len(url.split("?v=")[1]) > 0
+
+
+def test_static_url_falls_back_for_missing_file() -> None:
+    """A missing file shouldn't 500 the page render — drop the ?v= silently."""
+    from cod_doc.api.web.templates_env import static_url
+
+    url = static_url("does-not-exist-xyz.js")
+    # Either no ?v= (graceful fallback) OR ?v= followed by empty (also OK).
+    if "?v=" in url:
+        assert url.endswith("?v=")
+    else:
+        assert url == "/static/does-not-exist-xyz.js"

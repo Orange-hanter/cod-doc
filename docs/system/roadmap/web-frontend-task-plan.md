@@ -35,9 +35,9 @@ related_audits:
 | C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
-| F: Hardening (NEW 2026-05-02) | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-005, 013 ✅; 050..053 pending) |
+| F: Hardening (NEW 2026-05-02) | inline | 6 | 3 | 3 | 🔄 in-progress (WEB-005, 013, 051 ✅; 050, 052, 053 pending) |
 | F-tail: Polish from checkpoint | inline | 3 | 3 | 0 | ✅ done (WEB-013b, 022b, 054) |
-| **TOTAL** |  | **26** | **18** | **8** | |
+| **TOTAL** |  | **26** | **19** | **7** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -744,24 +744,31 @@ helper'ов.
 
 ```yaml
 id: WEB-051
-title: "Static asset versioning (cache-bust by file hash)"
+title: "Static asset versioning (cache-bust by file mtime)"
 section: F-Hardening
-status: pending
+status: done
 depends_on: [WEB-001]
 type: feature
 priority: low
 affected_files:
-  - cod_doc/api/web/templates_env.py
-  - cod_doc/templates/web/base.html
+  - cod_doc/api/web/templates_env.py    # static_url helper + Jinja global
+  - cod_doc/templates/web/base.html      # use static_url('app.css'/'htmx.min.js')
+  - tests/api/test_web_scaffold.py       # +2 tests
 ```
 
-**Description:** Vendored `htmx.min.js` и `app.css` ссылаются без версии. При
-апгрейде htmx → старый файл из browser-кэша (SW-LO-1).
+**Description:** Vendored `htmx.min.js` and `app.css` referenced without
+version → browser cache held stale copies on upgrades (SW-LO-1).
 
 **Acceptance:**
-- Jinja-функция `static('app.css')` возвращает `/static/app.css?v={short_hash}`.
-- Hash вычисляется один раз при старте app и кэшируется.
-- 1 тест: `static('app.css')` содержит `?v=...`.
+- ✅ `static_url('app.css')` returns `/static/app.css?v=<8 hex chars of mtime>`.
+- ✅ Fingerprint computed lazily once per file, cached for the process lifetime.
+- ✅ Missing file degrades gracefully (`/static/foo.js?v=` — no crash).
+- ✅ Used in `base.html` for both `app.css` and `htmx.min.js`.
+- ✅ 2 unit tests + 1 updated integration assertion in
+  `test_index_renders_project_list`.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`). Closes SW-LO-1 from the
+> 2026-05-02 audit.
 
 ### WEB-052
 
