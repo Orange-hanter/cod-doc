@@ -86,6 +86,13 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
   color: var(--fg);
   border-bottom-color: var(--accent);
 }
+.tabs .tab-disabled {
+  padding: 8px 14px;
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.55;
+  border-bottom: 2px solid transparent;
+}
 
 .cards {
   display: grid;

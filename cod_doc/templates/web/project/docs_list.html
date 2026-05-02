@@ -5,14 +5,7 @@
 
 <h1>{{ project.name }} · Docs</h1>
 
-<nav class="tabs">
-  <a href="/p/{{ project.name }}">Overview</a>
-  <a class="active" href="/p/{{ project.name }}/docs">Docs</a>
-  <a href="/p/{{ project.name }}/tasks">Tasks</a>
-  <a href="/p/{{ project.name }}/plans">Plans</a>
-  <a href="/p/{{ project.name }}/revisions">Revisions</a>
-  <a href="/p/{{ project.name }}/run">Run</a>
-</nav>
+{% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
 {% if not db_available %}
   <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug проекта не совпадает с <code>project.slug</code> в БД. Документы появятся после <code>cod-doc project init</code> и первого <code>doc create</code>.</p>

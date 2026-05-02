@@ -15,7 +15,7 @@
         hx-swap="outerHTML"
         hx-trigger="change"
       >
-        {% for s in status_options %}
+        {% for s in task_status_options %}
           <option value="{{ s }}" {% if t.status == s %}selected{% endif %}>{{ s }}</option>
         {% endfor %}
       </select>

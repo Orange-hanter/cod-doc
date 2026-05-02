@@ -8,6 +8,8 @@
   <span>{{ doc.doc_key }}</span>
 </nav>
 
+{% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
 <h1>{{ doc.title }}</h1>
 <p class="mono muted">{{ doc.path }}</p>
 

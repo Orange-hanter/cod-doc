@@ -34,9 +34,9 @@ related_audits:
 | B: Read views | inline | 6 | 1 | 5 | 🔄 in-progress (+ WEB-006, WEB-014, WEB-060) |
 | C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
-| E: Architecture Hygiene | inline | 3 | 1 | 2 | 🔄 in-progress (WEB-040 ✅; 041, 042 pending) |
+| E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
 | F: Hardening (NEW 2026-05-02) | inline | 6 | 1 | 5 | 🔄 in-progress (WEB-005 ✅; 013, 022 ↑, 050..053 pending) |
-| **TOTAL** |  | **23** | **8** | **15** | |
+| **TOTAL** |  | **23** | **9** | **14** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -497,7 +497,7 @@ Engine из WEB-005.
 id: WEB-041
 title: "Refactor: extract _layout/project_tabs.html include + disabled tabs"
 section: E-Architecture-Hygiene
-status: pending
+status: done
 depends_on: [WEB-002]
 type: refactor
 priority: medium
@@ -505,27 +505,40 @@ affected_files:
   - cod_doc/templates/web/_layout/project_tabs.html  # NEW
   - cod_doc/templates/web/project/show.html
   - cod_doc/templates/web/project/docs_list.html
-  - cod_doc/templates/web/project/doc_show.html       # ← добавить tabs
+  - cod_doc/templates/web/project/doc_show.html       # tabs added
   - cod_doc/templates/web/project/tasks_list.html
-  - cod_doc/api/web/templates_env.py                  # PROJECT_TABS глобал
-  - cod_doc/static/app.css                            # .tab-disabled
+  - cod_doc/templates/web/_frag/task_row.html         # uses task_status_options global
+  - cod_doc/api/web/templates_env.py                  # task_status_options Jinja global
+  - cod_doc/api/web/pages.py                           # drop status_options ctx var
+  - cod_doc/api/web/fragments.py                       # drop status_options ctx var
+  - cod_doc/static/app.css                             # .tab-disabled
+  - tests/api/test_web_tabs.py                          # NEW
+  - tests/api/test_web_scaffold.py                      # update assertion (no broken hrefs)
 ```
 
-**Description:** Tab strip копипастится в 3 шаблонах, в `doc_show.html` он
-**отсутствует** (рассинхрон). Все целевые табы (`Plans`, `Revisions`, `Run`)
-ведут на 404, потому что страницы ещё не написаны — пользователь видит «битый
-сайт» вместо «функция в работе» (SW-ME-1, SW-ME-2 в аудите).
+**Description:** Tab strip копипастился в 3 шаблонах, в `doc_show.html` он
+отсутствовал (рассинхрон). Целевые табы `Plans`/`Revisions`/`Run` вели на
+404 — пользователь видел «битый сайт» вместо «функция в работе» (SW-ME-1,
+SW-ME-2 в аудите).
 
 **Acceptance:**
-- `_layout/project_tabs.html` принимает `slug` и `active`, рендерится через
-  `{% include 'project_tabs.html' with context %}` или макрос.
-- Список вкладок описан в `templates_env.py` как `PROJECT_TABS = [(slug, label, route, ready)]`,
-  доступен как Jinja-глобал.
-- Нереализованные табы (`ready=False`) рендерятся как `<span class="tab-disabled" title="coming soon">{label}</span>`.
-- `doc_show.html` показывает табы (Docs active).
-- `status_options` тоже вынесен в `templates_env` или `cod_doc/api/web/choices.py`.
-- 1 тест: на одной странице видна полная полоса табов; на нереализованных —
-  `class="tab-disabled"` без `<a href>`.
+- ✅ `_layout/project_tabs.html` — единственный источник таб-полосы. Принимает
+  `slug` и `active` через `{% with %}`; список вкладок описан inline.
+- ✅ Готовые табы (`overview`, `docs`, `tasks`) рендерятся как `<a>`; pending
+  (`plans`, `revisions`, `run`) — `<span class="tab-disabled" title="coming
+  soon">{label}</span>`. Открыть `WEB-004/021/030` = поменять одно `False` на
+  `True`.
+- ✅ `doc_show.html` теперь имеет ту же таб-полосу (Docs active).
+- ✅ `task_status_options` вынесен в Jinja-global через `templates_env.py`;
+  `pages.py` и `fragments.py` больше не передают `status_options` в context.
+- ✅ 4 новых теста в `tests/api/test_web_tabs.py` (overview/docs/tasks active
+  + disabled tabs не имеют href). Старый ассерт в `test_project_show_renders`
+  обновлён под новый контракт (broken-link → disabled span).
+- ✅ Suite 56 web-tests зелёные; ruff/mypy clean.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`): закрывает SW-ME-1 / SW-ME-2 /
+> SW-ME-6 в audit-отчёте 2026-05-02. Дальнейшие WEB-задачи на новые табы
+> сводятся к флипу `ready=False → True` в include + написанию обработчика.
 
 ### WEB-042
 

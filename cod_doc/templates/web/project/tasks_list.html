@@ -5,20 +5,13 @@
 
 <h1>{{ project.name }} · Tasks</h1>
 
-<nav class="tabs">
-  <a href="/p/{{ project.name }}">Overview</a>
-  <a href="/p/{{ project.name }}/docs">Docs</a>
-  <a class="active" href="/p/{{ project.name }}/tasks">Tasks</a>
-  <a href="/p/{{ project.name }}/plans">Plans</a>
-  <a href="/p/{{ project.name }}/revisions">Revisions</a>
-  <a href="/p/{{ project.name }}/run">Run</a>
-</nav>
+{% with slug=project.name, active="tasks" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
 <form class="filter-bar" method="get" action="/p/{{ project.name }}/tasks">
   <label>Status:
     <select name="status" onchange="this.form.submit()">
       <option value="" {% if not status_filter %}selected{% endif %}>(all)</option>
-      {% for s in status_options %}
+      {% for s in task_status_options %}
         <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
       {% endfor %}
     </select>

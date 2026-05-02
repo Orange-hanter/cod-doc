@@ -149,7 +149,6 @@ def tasks_list(
             "db_available": db_available,
             "status_filter": status_filter.value if status_filter else "",
             "status_invalid": status_invalid,
-            "status_options": [s.value for s in TaskStatus],
         },
     )
 

@@ -60,7 +60,6 @@ def _render_task_row(
             "plan_id": task.plan_id,
             "section_id": task.section_id,
         },
-        status_options=[s.value for s in TaskStatus],
     )
     if inline_alert is not None:
         severity, message = inline_alert

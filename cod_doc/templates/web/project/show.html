@@ -6,14 +6,7 @@
 <h1>{{ project.name }}{% if not project.enabled %} <span class="muted">(disabled)</span>{% endif %}</h1>
 <p class="mono muted">{{ project.path }}</p>
 
-<nav class="tabs">
-  <a class="active" href="/p/{{ project.name }}">Overview</a>
-  <a href="/p/{{ project.name }}/docs">Docs</a>
-  <a href="/p/{{ project.name }}/tasks">Tasks</a>
-  <a href="/p/{{ project.name }}/plans">Plans</a>
-  <a href="/p/{{ project.name }}/revisions">Revisions</a>
-  <a href="/p/{{ project.name }}/run">Run</a>
-</nav>
+{% with slug=project.name, active="overview" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
 <section class="cards">
   <div class="card">

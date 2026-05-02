@@ -1,0 +1,28 @@
+{# Project tab strip.
+
+Variables (set via `{% with %}`):
+- slug   — project name in URL
+- active — slug of the currently-active tab (or empty for none)
+
+Tabs marked `ready=False` render as <span class="tab-disabled"> with a
+"coming soon" tooltip — pointing into nothing is worse than no link.
+The list itself is configured below; when an endpoint is implemented,
+flip `ready` to True in the tuple.
+#}
+{% set tabs = [
+  ("overview",  "Overview",  "/p/" ~ slug,             True),
+  ("docs",      "Docs",      "/p/" ~ slug ~ "/docs",   True),
+  ("tasks",     "Tasks",     "/p/" ~ slug ~ "/tasks",  True),
+  ("plans",     "Plans",     "/p/" ~ slug ~ "/plans",  False),
+  ("revisions", "Revisions", "/p/" ~ slug ~ "/revisions", False),
+  ("run",       "Run",       "/p/" ~ slug ~ "/run",    False),
+] %}
+<nav class="tabs">
+  {%- for slug_id, label, href, ready in tabs -%}
+    {% if ready %}
+      <a class="{% if active == slug_id %}active{% endif %}" href="{{ href }}">{{ label }}</a>
+    {% else %}
+      <span class="tab-disabled" title="coming soon">{{ label }}</span>
+    {% endif %}
+  {%- endfor -%}
+</nav>
