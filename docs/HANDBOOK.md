@@ -212,16 +212,19 @@ cod-doc serve  # или docker compose up -d cod-doc
 
 ![Project overview](assets/cod-doc/02-overview.png)
 
-7 KPI-карточек + 3 агрегата:
+7 KPI-карточек + 3 агрегата + рендер MASTER.md:
 
 - **Status / Tasks total / Done / In progress / Pending / Failed / Last run** —
-  агрегаты из БД (синхронны с Plan-progress блоком ниже).
+  агрегаты из БД (синхронны с Plan-progress блоком ниже). Если БД ещё нет —
+  fallback на legacy YAML (`.cod-doc/tasks.yaml`).
 - **Ready to start** — top-5 задач, готовых к старту, через
   `plan_service.ready` (фильтр по unfulfilled blocks-deps). HTMX `✓`-кнопка
-  завершает задачу одним кликом.
-- **Plan progress** — мини-таблица планов с прогресс-бар.
+  завершает задачу одним кликом. Каждая строка кликабельна → детали задачи.
+- **Plan progress** — мини-таблица планов с прогресс-баром, scope-link → детали плана.
 - **Recent revisions** — top-5 последних ревизий (newest first).
-- **MASTER.md preview** — первые 80 строк, ссылка на полный документ.
+- **MASTER.md preview** — теперь рендерится через mini-markdown (заголовки,
+  blockquote, fenced code, lists, inline). Кнопка «View raw» наверху → `?raw=1`.
+  Первые 80 строк; «Открыть целиком» → полный документ под `/docs/{master_md}`.
 
 ### 5.3. Список документов — `GET /p/{slug}/docs`
 
@@ -268,7 +271,26 @@ cod-doc serve  # или docker compose up -d cod-doc
 - Filter: `?status=pending` (dropdown autosubmit, без JS работает как form).
 - HTMX inline status update: change `<select>` → `POST .../status` →
   swap row. Conflict / validation error → OOB alert.
+- ID и Title клиенкабельны — открывают детальную страницу задачи (см. §5.5b).
 - ✓-кнопка из «Ready to start» блока тоже сюда персистится.
+
+### 5.5b. Деталь задачи — `GET /p/{slug}/tasks/{task_id}`
+
+![Task detail](assets/cod-doc/05b-task-detail.png)
+
+Полная карточка задачи:
+
+- **Header** — `<id> · <title>` + бейджи (status, priority, type, plan-link).
+- **Quick actions** — change status (HTMX `<select>`), Mark done button.
+  Кнопка `Mark done` скрывается, если статус уже `done`.
+- **Description / Acceptance criteria** — пользовательский markdown из БД,
+  отрендерен mini-renderer'ом. Если поля пустые — `— … не заданы.`.
+- **Blocked by / Unblocks** — транзитивная цепь зависимостей через
+  `plan_service.forward_chain` / `reverse_chain` (рекурсивный CTE),
+  каждая строка — `badge + link to task + title + depth`.
+- **Revision history** — все ревизии этой задачи newest-first; таблица
+  `revision_id / author / at / reason / diff first line`. Внизу ссылка на
+  `/revisions?entity_kind=task` (полный лог).
 
 ### 5.6. Планы — `GET /p/{slug}/plans` + `GET /p/{slug}/plans/{plan_id}`
 

@@ -130,6 +130,7 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
     proj = get_project(slug)
     master = proj.read_master()
     master_preview, master_truncated = _preview(master, MASTER_PREVIEW_LINES)
+    master_html = render_markdown(master_preview or "") or None
 
     # WEB-014 — overview aggregator: ready-to-start tasks, plan-progress
     # mini-bars, recent revisions. Each block is independent and is left
@@ -234,6 +235,7 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
             },
             "stats": kpi,
             "master_preview": master_preview,
+            "master_html": master_html,
             "master_truncated": master_truncated,
             "db_available": db_available,
             "ready_tasks": ready_tasks,
@@ -500,6 +502,90 @@ def revisions_log(
             "kind_invalid": kind_invalid,
             "kind_options": [k.value for k in EntityKind],
             "limit": REVISIONS_PAGE_LIMIT,
+        },
+    )
+
+
+@router.get("/p/{slug}/tasks/{task_id}", response_class=HTMLResponse)
+def task_show(
+    request: Request,
+    slug: str,
+    task_id: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> HTMLResponse:
+    """Task detail: header + description + acceptance + chains + revisions."""
+    proj = get_project(slug)
+    session, project_db_id = db
+
+    task = tasks.get(session, task_id)
+    if task is None or task.project_id != project_db_id:
+        raise HTTPException(404, f"Задача не найдена: {task_id}")
+    assert task.row_id is not None
+
+    forward = plans.forward_chain(session, task_id)
+    reverse = plans.reverse_chain(session, task_id)
+    history = revisions.list_for_entity(session, EntityKind.TASK, task.row_id)
+
+    # Plan + section breadcrumb info.
+    plan = plans.get_for_project(session, project_db_id, task.plan_id)
+
+    return templates.TemplateResponse(
+        request,
+        "project/task_show.html",
+        {
+            "project": {"name": proj.entry.name},
+            "task": {
+                "task_id": task.task_id,
+                "title": task.title,
+                "type": task.type.value,
+                "status": task.status.value,
+                "priority": task.priority.value,
+                "description": task.description or "",
+                "description_html": render_markdown(task.description or ""),
+                "acceptance": task.acceptance or "",
+                "acceptance_html": render_markdown(task.acceptance or ""),
+                "plan_id": task.plan_id,
+                "section_id": task.section_id,
+                "created": task.created,
+                "last_updated": task.last_updated,
+                "completed_at": task.completed_at,
+                "completed_commit": task.completed_commit,
+            },
+            "plan": (
+                {"plan_id": plan.row_id, "scope": plan.scope}
+                if plan and plan.row_id is not None
+                else None
+            ),
+            "forward": [
+                {
+                    "task_id": e.task_id,
+                    "title": e.title,
+                    "status": e.status.value,
+                    "depth": e.depth,
+                }
+                for e in forward
+            ],
+            "reverse": [
+                {
+                    "task_id": e.task_id,
+                    "title": e.title,
+                    "status": e.status.value,
+                    "depth": e.depth,
+                }
+                for e in reverse
+            ],
+            "history": [
+                {
+                    "revision_id": r.revision_id,
+                    "author": r.author,
+                    "at": r.at,
+                    "reason": r.reason or "",
+                    "diff_first_line": (r.diff or "").splitlines()[0][:240]
+                    if r.diff
+                    else "",
+                }
+                for r in reversed(history)  # newest first for the timeline
+            ],
         },
     )
 

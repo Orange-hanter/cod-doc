@@ -70,6 +70,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `GET /p/{slug}/docs/{doc_key:path}/sections/{anchor}/edit` | Edit form fragment | `doc_service.get_sections + revisions.head_for_entity` | ✅ | WEB-012 |
 | `GET /p/{slug}/docs/{doc_key:path}/sections/{anchor}/view` | View fragment (cancel) | `doc_service.get_sections` | ✅ | WEB-012 |
 | `GET /p/{slug}/tasks` | Таблица задач (фильтр `?status=`, `?plan=`) | `task_service.list_for_project` | ✅ | WEB-010 |
+| `GET /p/{slug}/tasks/{task_id}` | Деталь задачи (header + chains + history) | `task_service.get` + `plan_service.forward_chain/reverse_chain` + `revision_service.list_for_entity` | ✅ | WEB-070 |
 | `POST /p/{slug}/tasks/{task_id}/status` | HTMX-смена статуса (radio/select) | `task_service.update_status` | ✅ | WEB-011 |
 | `POST /p/{slug}/tasks/{task_id}/complete` | HTMX-завершение задачи | `task_service.complete` | ✅ | WEB-014 |
 | `GET /p/{slug}/plans/{plan_id}` | Plan view: Progress Overview + Next Batch + Mermaid | `plan_service.recalc/ready/export` | ✅ | WEB-004 |

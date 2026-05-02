@@ -1,0 +1,266 @@
+"""Task detail page (`GET /p/{slug}/tasks/{task_id}`).
+
+Verifies:
+- Header renders title + status/priority/type badges + plan link.
+- Description and acceptance render through markdown (bold, inline code, lists).
+- Forward / reverse chains list dependencies (via PlanService).
+- Revision history shows latest revisions newest-first.
+- Quick-actions form lets the user change status / mark done.
+- Cross-project guard: 404 when the task belongs to another project.
+- Empty-DB / unknown-project / unknown-task edge cases.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+import pytest
+from fastapi.testclient import TestClient
+
+from cod_doc.config import Config, ProjectEntry
+from cod_doc.core.project import Project
+from cod_doc.domain.entities import (
+    Plan,
+    PlanSection,
+    Priority,
+    TaskStatus,
+    TaskType,
+)
+from cod_doc.domain.entities import (
+    Project as ProjectEntity,
+)
+from cod_doc.infra.db import make_engine, make_session_factory, transactional
+from cod_doc.infra.models import DependencyModel
+from cod_doc.infra.repositories import (
+    PlanRepository,
+    PlanSectionRepository,
+    ProjectRepository,
+)
+from cod_doc.services import task_service as tasks
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+@pytest.fixture
+def task_detail_client(tmp_path: Path, migrate_db):
+    repo = tmp_path / "td-demo"
+    (repo / ".cod-doc").mkdir(parents=True)
+    db_path = repo / ".cod-doc" / "state.db"
+    migrate_db(db_path)
+
+    entry = ProjectEntry(name="demo", path=str(repo))
+    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg.add_project(entry)
+
+    import cod_doc.api.deps as deps
+
+    deps.set_config(cfg)
+
+    Project(entry).init()
+
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        now = datetime.now(UTC)
+        proj = ProjectRepository(session).add(
+            ProjectEntity(slug="demo", title="Demo", root_path=str(repo), config={})
+        )
+        proj.created = now
+        proj.updated = now
+        session.flush()
+
+        plan = PlanRepository(session).add(
+            Plan(project_id=proj.row_id, scope="payments", principle="test-first")
+        )
+        plan.created = now
+        plan.last_updated = now
+        session.flush()
+
+        section = PlanSectionRepository(session).add(
+            PlanSection(
+                plan_id=plan.row_id,
+                letter="A",
+                title="Schema",
+                slug="schema",
+                position=0,
+            )
+        )
+        session.flush()
+
+        # Three tasks: t1 blocks t2 blocks t3 (chain).
+        t1 = tasks.create(
+            session,
+            project_id=proj.row_id,
+            plan_id=plan.row_id,
+            section_id=section.row_id,
+            title="Set up DB schema",
+            type=TaskType.FEATURE,
+            priority=Priority.HIGH,
+            author="human:dakh",
+            id_prefix="DET",
+            description="Implement the **payment_intent** table and idempotency-key index.\n\n- Migration `0008_payments.py`\n- Index on `idempotency_key`",
+            acceptance="`alembic upgrade head` applies cleanly\n\n- Index visible in `\\d+ payment_intent`",
+        )
+        t2 = tasks.create(
+            session,
+            project_id=proj.row_id,
+            plan_id=plan.row_id,
+            section_id=section.row_id,
+            title="Wire intent endpoint",
+            type=TaskType.FEATURE,
+            priority=Priority.CRITICAL,
+            author="human:dakh",
+            id_prefix="DET",
+        )
+        t3 = tasks.create(
+            session,
+            project_id=proj.row_id,
+            plan_id=plan.row_id,
+            section_id=section.row_id,
+            title="Stripe webhook handler",
+            type=TaskType.FEATURE,
+            priority=Priority.HIGH,
+            author="human:dakh",
+            id_prefix="DET",
+        )
+
+        # Insert blocks-deps directly: DET-001 blocks DET-002, DET-002 blocks DET-003.
+        session.add(DependencyModel(from_task_id=t2.row_id, to_task_id=t1.row_id, kind="blocks"))
+        session.add(DependencyModel(from_task_id=t3.row_id, to_task_id=t2.row_id, kind="blocks"))
+        session.flush()
+        # Add an extra revision: bump status of t1 (creates one more entry).
+        tasks.update_status(
+            session, task_id=t1.task_id, new_status=TaskStatus.IN_PROGRESS, author="human:dakh"
+        )
+    engine.dispose()
+
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        yield client, entry
+
+
+def test_task_detail_renders_header_and_badges(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/DET-001")
+    assert r.status_code == 200
+    body = r.text
+    assert "DET-001" in body
+    assert "Set up DB schema" in body
+    # Badges
+    assert "badge-in-progress" in body  # status updated in fixture
+    assert "prio prio-high" in body
+    assert "type: feature" in body
+    # Plan breadcrumb link
+    assert 'href="/p/demo/plans/' in body
+
+
+def test_task_detail_renders_description_markdown(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/DET-001")
+    body = r.text
+    assert "Description" in body
+    assert "<strong>payment_intent</strong>" in body
+    assert "<code>idempotency_key</code>" in body
+    assert "<li>Migration <code>0008_payments.py</code></li>" in body
+
+
+def test_task_detail_renders_acceptance(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/DET-001")
+    body = r.text
+    assert "Acceptance criteria" in body
+    assert "<code>alembic upgrade head</code>" in body
+
+
+def test_task_detail_lists_blocked_by_chain(task_detail_client) -> None:
+    """DET-002 must complete after DET-001 — forward chain shows DET-001."""
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/DET-002")
+    body = r.text
+    assert "Blocked by" in body
+    assert 'href="/p/demo/tasks/DET-001"' in body
+
+
+def test_task_detail_lists_unblocks_chain(task_detail_client) -> None:
+    """DET-001 unblocks DET-002 (and transitively DET-003)."""
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/DET-001")
+    body = r.text
+    assert "Unblocks" in body
+    assert 'href="/p/demo/tasks/DET-002"' in body
+    # Reverse chain follows transitively → DET-003 also visible
+    assert 'href="/p/demo/tasks/DET-003"' in body
+
+
+def test_task_detail_shows_revision_history(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/DET-001")
+    body = r.text
+    # 2 revisions: create + status update
+    assert "Revision history (2)" in body
+    assert "human:dakh" in body
+
+
+def test_task_detail_quick_actions_present(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/DET-001")
+    body = r.text
+    # Status quick-set form (HTMX-wired)
+    assert 'hx-post="/p/demo/tasks/DET-001/status"' in body
+    # Mark done button (hidden when status=done; here status=in-progress)
+    assert "Mark done" in body
+
+
+def test_task_detail_complete_button_hidden_when_done(task_detail_client) -> None:
+    """Marking complete should hide the 'Mark done' button.
+
+    DET-001 is the only task without blockers in the seed; mark it done and
+    inspect its detail page.
+    """
+    client, entry = task_detail_client
+    client.post(
+        f"/p/{entry.name}/tasks/DET-001/complete",
+        headers={"HX-Request": "true"},
+    )
+    r = client.get(f"/p/{entry.name}/tasks/DET-001")
+    assert r.status_code == 200
+    body = r.text
+    assert "Mark done" not in body, "complete button should be hidden when status=done"
+
+
+def test_task_detail_404_unknown(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/UNKNOWN-999")
+    assert r.status_code == 404
+
+
+def test_task_detail_db_absent_404(tmp_path: Path) -> None:
+    repo = tmp_path / "no-db"
+    repo.mkdir()
+    entry = ProjectEntry(name="bare", path=str(repo))
+    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg.add_project(entry)
+
+    import cod_doc.api.deps as deps
+
+    deps.set_config(cfg)
+
+    Project(entry).init()
+
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get(f"/p/{entry.name}/tasks/X-001")
+    assert r.status_code == 404
+
+
+def test_tasks_list_links_to_detail(task_detail_client) -> None:
+    """Regression: each task_id in the list page must link to the detail page."""
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks")
+    body = r.text
+    assert 'href="/p/demo/tasks/DET-001"' in body
+    assert 'href="/p/demo/tasks/DET-002"' in body

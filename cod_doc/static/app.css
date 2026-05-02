@@ -319,6 +319,108 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
 .section-anchor { display: block; height: 0; visibility: hidden; }
 .section-editing { background: var(--bg-alt); padding: 6px; border-radius: 4px; }
 
+/* ── Overview layout tightening ────────────────────────────────────── */
+.cards { gap: 10px; margin-bottom: 24px; }
+.cards .card { min-width: 0; }                  /* let cards shrink in narrow grids */
+.cards .card-value {
+  font-size: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Three agg-blocks on overview wrap cleanly when narrow */
+.overview-grid { gap: 16px; align-items: stretch; }
+.overview-block { display: flex; flex-direction: column; min-width: 0; }
+.overview-block .grid { font-size: 12px; }
+.overview-block .grid td.num { white-space: nowrap; }
+.overview-block .progress-bar { width: 80px; }
+
+/* MASTER.md preview block — header with "view raw" toggle, rendered body */
+.master-preview {
+  margin-top: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.master-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.master-header h2 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.master-raw-link { font-size: 12px; }
+.master-body { font-size: 13px; line-height: 1.55; }
+.master-body h1, .master-body h2, .master-body h3 { margin: 12px 0 6px; }
+.master-body h1 { font-size: 18px; }
+.master-body h2 { font-size: 15px; }
+.master-body h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+.master-body blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+  background: var(--bg-alt);
+}
+.master-body blockquote p { margin: 4px 0; }
+
+/* ── Task detail page ──────────────────────────────────────────────── */
+.task-header { margin: 8px 0 12px; }
+.task-header h1 { margin: 0 0 6px; }
+.task-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+}
+.task-quick-actions {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-alt);
+  font-size: 13px;
+}
+.task-complete-form { margin: 0; }
+.task-complete-form button {
+  padding: 4px 14px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #dafbe1;
+  color: #1a7f37;
+  cursor: pointer;
+}
+.task-complete-form button:hover { background: #b6e9c4; }
+
+.task-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin: 0 0 20px;
+}
+.task-block {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 14px;
+  background: var(--bg);
+}
+.task-block h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
+
+.chain-list { list-style: none; padding: 0; margin: 0; }
+.chain-list li { padding: 4px 0; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+.chain-list li:last-child { border-bottom: 0; }
+
+.task-history { margin-top: 16px; }
+.task-history h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
+
 .filter-bar {
   display: flex;
   align-items: center;

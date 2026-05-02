@@ -48,7 +48,7 @@
       {% for t in ready_tasks %}
       <li class="ready-row" id="task-{{ t.task_id }}">
         <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
-        <a class="ready-title" href="/p/{{ project.name }}/tasks">
+        <a class="ready-title" href="/p/{{ project.name }}/tasks/{{ t.task_id }}">
           <span class="mono">{{ t.task_id }}</span> · {{ t.title }}
         </a>
         <span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>
@@ -119,15 +119,22 @@
 <p class="muted">Дашборд агрегата пуст: <code>.cod-doc/state.db</code> ещё не создан.</p>
 {% endif %}
 
-<h2>{{ project.master_md }}</h2>
-{% if not project.master_exists %}
-  <p class="warn">{{ project.master_md }} ещё не создан.</p>
-{% elif master_preview is none %}
-  <p class="muted">Файл пуст.</p>
-{% else %}
-  <pre class="md-preview">{{ master_preview }}</pre>
-  {% if master_truncated %}
-    <p class="muted">Показаны первые строки. <a href="/p/{{ project.name }}/docs/{{ project.master_md }}">Открыть целиком</a>.</p>
+<section class="master-preview">
+  <header class="master-header">
+    <h2>{{ project.master_md }}</h2>
+    <a class="master-raw-link muted" href="/p/{{ project.name }}/docs/{{ project.master_md }}?raw=1">View raw</a>
+  </header>
+  {% if not project.master_exists %}
+    <p class="warn">{{ project.master_md }} ещё не создан.</p>
+  {% elif master_preview is none %}
+    <p class="muted">Файл пуст.</p>
+  {% else %}
+    <article class="master-body doc-body">
+      {{ master_html | safe }}
+    </article>
+    {% if master_truncated %}
+      <p class="muted">Показаны первые строки. <a href="/p/{{ project.name }}/docs/{{ project.master_md }}">Открыть целиком</a>.</p>
+    {% endif %}
   {% endif %}
-{% endif %}
+</section>
 {% endblock %}

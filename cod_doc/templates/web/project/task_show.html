@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}{{ task.task_id }} · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/tasks">Tasks</a> /
+  <span>{{ task.task_id }}</span>
+</nav>
+
+{% with slug=project.name, active="tasks" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<header class="task-header">
+  <h1><span class="mono">{{ task.task_id }}</span> · {{ task.title }}</h1>
+  <div class="task-badges">
+    <span class="badge badge-{{ task.status }}">{{ task.status }}</span>
+    <span class="prio prio-{{ task.priority }}">{{ task.priority }}</span>
+    <span class="muted">type: {{ task.type }}</span>
+    {% if plan %}
+      <span class="muted">plan:
+        <a href="/p/{{ project.name }}/plans/{{ plan.plan_id }}" class="mono">{{ plan.scope }}</a>
+      </span>
+    {% endif %}
+    {% if task.completed_commit %}
+      <span class="muted">commit: <code>{{ task.completed_commit[:8] }}</code></span>
+    {% endif %}
+  </div>
+</header>
+
+<section class="task-quick-actions">
+  <form class="row-status"
+        method="post"
+        action="/p/{{ project.name }}/tasks/{{ task.task_id }}/status">
+    <label class="muted">Set status:</label>
+    <select
+      name="status"
+      hx-post="/p/{{ project.name }}/tasks/{{ task.task_id }}/status"
+      hx-trigger="change"
+    >
+      {% for s in task_status_options %}
+        <option value="{{ s }}" {% if task.status == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button type="submit">set</button></noscript>
+  </form>
+  {% if task.status != "done" %}
+    <form method="post"
+          action="/p/{{ project.name }}/tasks/{{ task.task_id }}/complete"
+          class="task-complete-form">
+      <button type="submit"
+              hx-post="/p/{{ project.name }}/tasks/{{ task.task_id }}/complete">
+        ✓ Mark done
+      </button>
+    </form>
+  {% endif %}
+</section>
+
+<div class="task-grid">
+  <section class="task-block">
+    <h2>Description</h2>
+    {% if task.description %}
+      <div class="doc-body">{{ task.description_html | safe }}</div>
+    {% else %}
+      <p class="muted">— Описание не задано.</p>
+    {% endif %}
+  </section>
+
+  <section class="task-block">
+    <h2>Acceptance criteria</h2>
+    {% if task.acceptance %}
+      <div class="doc-body">{{ task.acceptance_html | safe }}</div>
+    {% else %}
+      <p class="muted">— Acceptance criteria не заданы.</p>
+    {% endif %}
+  </section>
+
+  <section class="task-block">
+    <h2>Blocked by ({{ forward | length }})</h2>
+    {% if forward %}
+      <ul class="chain-list">
+        {% for e in forward %}
+          <li>
+            <span class="badge badge-{{ e.status }}">{{ e.status }}</span>
+            <a href="/p/{{ project.name }}/tasks/{{ e.task_id }}" class="mono">{{ e.task_id }}</a>
+            <span class="muted">— {{ e.title }}</span>
+            <span class="muted">depth&nbsp;{{ e.depth }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">Зависимостей нет — задача готова к старту.</p>
+    {% endif %}
+  </section>
+
+  <section class="task-block">
+    <h2>Unblocks ({{ reverse | length }})</h2>
+    {% if reverse %}
+      <ul class="chain-list">
+        {% for e in reverse %}
+          <li>
+            <span class="badge badge-{{ e.status }}">{{ e.status }}</span>
+            <a href="/p/{{ project.name }}/tasks/{{ e.task_id }}" class="mono">{{ e.task_id }}</a>
+            <span class="muted">— {{ e.title }}</span>
+            <span class="muted">depth&nbsp;{{ e.depth }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">Не блокирует никаких задач.</p>
+    {% endif %}
+  </section>
+</div>
+
+<section class="task-history">
+  <h2>Revision history ({{ history | length }})</h2>
+  {% if history %}
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>Revision</th>
+          <th>Author</th>
+          <th>At</th>
+          <th>Reason</th>
+          <th>Diff (first line)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in history %}
+          <tr>
+            <td class="mono">{{ r.revision_id }}</td>
+            <td>{{ r.author }}</td>
+            <td class="muted">{{ r.at }}</td>
+            <td>{{ r.reason }}</td>
+            <td class="mono diff-preview">{{ r.diff_first_line }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">
+      Полный лог:
+      <a href="/p/{{ project.name }}/revisions?entity_kind=task">все ревизии задач этого проекта</a>.
+    </p>
+  {% else %}
+    <p class="muted">Ревизий по этой задаче пока нет.</p>
+  {% endif %}
+</section>
+{% endblock %}

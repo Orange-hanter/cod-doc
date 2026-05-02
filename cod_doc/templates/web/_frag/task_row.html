@@ -1,7 +1,7 @@
 {# Single task row — reused by tasks_list.html and POST /p/{slug}/tasks/{task_id}/status #}
 <tr id="task-{{ t.task_id }}" class="status-{{ t.status }}">
-  <td class="mono">{{ t.task_id }}</td>
-  <td>{{ t.title }}</td>
+  <td class="mono"><a href="/p/{{ project.name }}/tasks/{{ t.task_id }}">{{ t.task_id }}</a></td>
+  <td><a href="/p/{{ project.name }}/tasks/{{ t.task_id }}">{{ t.title }}</a></td>
   <td>{{ t.type }}</td>
   <td>
     <form class="row-status"

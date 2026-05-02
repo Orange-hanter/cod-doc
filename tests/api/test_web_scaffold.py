@@ -126,8 +126,8 @@ def test_project_show_master_preview_present(web_client) -> None:
     client, entry = web_client
     r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
-    # Project.init() created MASTER.md from the j2 template — should appear
-    assert "md-preview" in r.text
+    # MASTER.md now renders as markdown (not <pre>) — see request #3 (UI fix).
+    assert 'class="master-body' in r.text
     assert entry.name in r.text
 
 

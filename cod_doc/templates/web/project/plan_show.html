@@ -63,7 +63,7 @@
     {% for t in ready %}
     <li class="ready-row" id="task-{{ t.task_id }}">
       <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
-      <a class="ready-title" href="/p/{{ project.name }}/tasks">
+      <a class="ready-title" href="/p/{{ project.name }}/tasks/{{ t.task_id }}">
         <span class="mono">{{ t.task_id }}</span> · {{ t.title }}
       </a>
       <span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>

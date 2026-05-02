@@ -124,6 +124,69 @@ def test_paragraph_adjacent_to_list_is_rendered_separately() -> None:
     assert "<p>outro paragraph</p>" in out
 
 
+# ── Headings (extension for MASTER.md preview) ───────────────────────────
+
+
+def test_headings_render_h1_through_h6() -> None:
+    md = "# H1 title\n\n## H2 title\n\n### H3 title\n\n#### H4\n\n##### H5\n\n###### H6"
+    out = render_markdown(md)
+    for level in range(1, 7):
+        assert f"<h{level} " in out, f"missing h{level}"
+        assert f"</h{level}>" in out
+
+
+def test_heading_gets_slug_id_for_anchor_scroll() -> None:
+    out = render_markdown("## 2. Context Map")
+    # Slugified: lowercase, spaces → dashes, punctuation stripped.
+    assert '<h2 id="2-context-map">' in out
+    assert "2. Context Map" in out  # title rendered intact
+
+
+def test_heading_with_inline_markdown_is_rendered() -> None:
+    out = render_markdown("# Project **Foo** Navigator")
+    assert "<strong>Foo</strong>" in out
+    assert "<h1 " in out
+
+
+def test_heading_separates_from_following_paragraph() -> None:
+    md = "# Title\nFirst paragraph after heading."
+    out = render_markdown(md)
+    assert "<h1 " in out
+    assert "<p>First paragraph after heading.</p>" in out
+
+
+# ── Blockquotes ──────────────────────────────────────────────────────────
+
+
+def test_blockquote_renders() -> None:
+    out = render_markdown("> a quoted note")
+    assert "<blockquote>a quoted note</blockquote>" in out
+
+
+def test_consecutive_blockquote_lines_collapse() -> None:
+    md = "> first line\n> second line"
+    out = render_markdown(md)
+    assert "<blockquote>" in out
+    assert "first line" in out
+    assert "second line" in out
+    # Only ONE blockquote element (collapsed)
+    assert out.count("<blockquote>") == 1
+
+
+def test_blockquote_with_inline_code_and_bold() -> None:
+    out = render_markdown("> Use **`cod-doc serve`** to run the API.")
+    assert "<blockquote>" in out
+    assert "<strong>" in out
+    assert "<code>cod-doc serve</code>" in out
+
+
+def test_blockquote_then_paragraph_then_blockquote() -> None:
+    md = "> note one\n\nbody paragraph\n\n> note two"
+    out = render_markdown(md)
+    assert out.count("<blockquote>") == 2
+    assert "<p>body paragraph</p>" in out
+
+
 # ── Integration: doc_show renders sections with anchors ──────────────────
 
 
