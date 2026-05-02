@@ -120,9 +120,7 @@ def _gate_frontmatter(
     )
     for issue in issues:
         if issue.severity == "error":
-            raise validation.ValidationError(
-                issue.code, issue.message, **issue.details
-            )
+            raise validation.ValidationError(issue.code, issue.message, **issue.details)
 
 
 def create(
@@ -286,9 +284,7 @@ def patch_section(
         assert no_change is not None
         return no_change
 
-    diff = _unified_diff(
-        sec_model.body, new_body, label=f"section:{doc.doc_key}#{anchor}"
-    )
+    diff = _unified_diff(sec_model.body, new_body, label=f"section:{doc.doc_key}#{anchor}")
     sec_model.body = new_body
     sec_model.content_hash = _content_hash(new_body)
     doc.last_updated = datetime.now(UTC)
@@ -359,9 +355,11 @@ def rename(
         reason=reason or "rename",
     )
 
-    if cascade_links and old_key != new_doc_key:
+    path_changed = old_path != target_path
+    if cascade_links and (old_key != new_doc_key or path_changed):
         # Local import to avoid a cycle: link_service imports doc_service.
         from cod_doc.services import link_service as _links
+
         _links.rename_cascade(
             session,
             project_id=doc.project_id,
@@ -369,6 +367,7 @@ def rename(
             new_doc_key=new_doc_key,
             author=author,
             reason=reason,
+            path_map={old_path: target_path} if path_changed else None,
         )
 
     refreshed = DocumentRepository(session).get(document_id)
