@@ -7,12 +7,13 @@ from urllib.parse import unquote
 
 from fastapi.templating import Jinja2Templates
 
-from cod_doc.domain.entities import TaskStatus
+from cod_doc.domain.entities import DocumentType, TaskStatus
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates" / "web"
 STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
 
 TASK_STATUS_OPTIONS: list[str] = [s.value for s in TaskStatus]
+DOCUMENT_TYPES: list[str] = [t.value for t in DocumentType]
 
 
 # WEB-051: static asset cache-bust.
@@ -48,4 +49,5 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 templates.env.filters["urldecode"] = unquote
 # Avoid passing the same enum dump from every handler — make it a Jinja global.
 templates.env.globals["task_status_options"] = TASK_STATUS_OPTIONS
+templates.env.globals["document_types"] = DOCUMENT_TYPES
 templates.env.globals["static_url"] = static_url

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import (
@@ -14,12 +15,15 @@ from cod_doc.api.deps import (
     get_project_db,
     try_open_project_db,
 )
+from cod_doc.api.web.errors import ValidationWebError
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.core.project import Project
-from cod_doc.domain.entities import EntityKind, TaskStatus
+from cod_doc.domain.entities import DocumentType, EntityKind, TaskStatus
 from cod_doc.services import doc_service as docs
+from cod_doc.services import import_service as imports
 from cod_doc.services import plan_service as plans
+from cod_doc.services import project_service as projects
 from cod_doc.services import revision_service as revisions
 from cod_doc.services import task_service as tasks
 
@@ -242,6 +246,109 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
             "plan_rows": plan_rows,
             "recent_revs": recent_revs,
         },
+    )
+
+
+@router.post("/p/{slug}/init", response_class=HTMLResponse)
+def project_init_db(request: Request, slug: str) -> Response:
+    """Bootstrap the project's `.cod-doc/state.db` (alembic + ProjectModel row).
+
+    Idempotent — calling on an already-initialised project is a no-op aside
+    from a confirmation flash. After init, the engine cache is invalidated
+    so subsequent reads see the freshly-migrated schema immediately.
+    """
+    proj = get_project(slug)
+    result = projects.init_project(proj.entry)
+
+    # Engine cache invalidation: drop the (slug → engine) cache so the next
+    # request reopens against the migrated DB.
+    from cod_doc.api.deps import dispose_all_engines
+
+    dispose_all_engines()
+
+    if result.db_row_existed:
+        message = f"Проект «{slug}»: БД уже была инициализирована."
+        severity = "info"
+    elif result.db_existed:
+        message = f"Проект «{slug}»: миграции применены, project-row создан."
+        severity = "info"
+    else:
+        message = f"Проект «{slug}» инициализирован. Миграции применены, project-row создан."
+        severity = "info"
+
+    redirect = RedirectResponse(url=f"/p/{slug}", status_code=303)
+    redirect.set_cookie("flash_severity", severity, max_age=30, path="/")
+
+    from urllib.parse import quote
+
+    from cod_doc.api.web.errors import truncate_for_cookie
+
+    redirect.set_cookie(
+        "flash_message",
+        quote(truncate_for_cookie(message)),
+        max_age=30,
+        path="/",
+    )
+    return redirect
+
+
+@router.post("/p/{slug}/docs/import", response_class=HTMLResponse)
+def docs_import(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    doc_key: str = Form(""),
+    type: str = Form("module-spec"),
+    file: UploadFile = File(...),  # noqa: B008 — standard FastAPI form-upload pattern
+) -> Response:
+    """Upload a markdown file and create a Document + Sections.
+
+    Frontmatter (if present) supplies title / type / status / owner /
+    sensitivity; everything else falls back to defensible defaults.
+    Sections are split on `## ` headings; preamble is everything before
+    the first H2.
+    """
+    proj = get_project(slug)
+    session, project_db_id = db
+
+    if not doc_key.strip():
+        raise ValidationWebError("doc_key обязателен")
+
+    try:
+        doc_type = DocumentType(type)
+    except ValueError as exc:
+        raise ValidationWebError(f"Неизвестный type: {type}") from exc
+
+    raw_bytes = file.file.read()
+    try:
+        raw = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValidationWebError(
+            "Файл не в UTF-8 — ожидается markdown в кодировке UTF-8."
+        ) from exc
+
+    fallback_title = (file.filename or doc_key).rsplit("/", 1)[-1]
+    if fallback_title.endswith(".md"):
+        fallback_title = fallback_title[:-3]
+
+    try:
+        doc = imports.import_markdown(
+            session,
+            project_id=project_db_id,
+            doc_key=doc_key.strip(),
+            raw_markdown=raw,
+            fallback_title=fallback_title,
+            fallback_type=doc_type,
+            author="human:web",
+            reason="web import",
+        )
+        session.commit()
+    except (ValueError, IntegrityError) as exc:
+        session.rollback()
+        raise ValidationWebError(f"Импорт отклонён: {exc}") from exc
+
+    return RedirectResponse(
+        url=f"/p/{proj.entry.name}/docs/{doc.doc_key}", status_code=303
     )
 
 

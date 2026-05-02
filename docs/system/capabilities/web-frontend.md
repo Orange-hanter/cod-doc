@@ -64,6 +64,8 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 |--------------|-----------|--------|:------:|------|
 | `GET /` | Список проектов + ссылка на settings | `Config.list_projects()` + `Project.stats()` | ✅ | WEB-001 |
 | `GET /p/{slug}` | Дашборд проекта: stats, MASTER preview, табы | `Project.stats()` + `Project.read_master()` | ✅ | WEB-002 |
+| `POST /p/{slug}/init` | Bootstrap БД (alembic upgrade + ProjectModel) | `project_service.init_project` | ✅ | WEB-080 |
+| `POST /p/{slug}/docs/import` | Загрузка markdown-файла → Document + Sections | `import_service.import_markdown` | ✅ | WEB-081 |
 | `GET /p/{slug}/docs` | Список документов | `doc_service.list_for_project` | ✅ | WEB-003 |
 | `GET /p/{slug}/docs/{doc_key:path}` | Просмотр документа: секции + body | `doc_service.get` + `get_sections` + `render_body` | ✅ | WEB-003 |
 | `POST /p/{slug}/docs/{doc_key:path}/sections/{anchor}` | HTMX-патч секции (form-encoded body) | `doc_service.patch_section` | ✅ | WEB-012 |

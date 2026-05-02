@@ -656,6 +656,72 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
 .task-history table.grid { font-size: 12px; }
 .task-history table.grid td { padding: 6px 10px; }
 
+/* ── Empty-DB banner on overview ───────────────────────────────────── */
+.empty-db-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  margin: 12px 0 20px;
+  padding: 18px 22px;
+  border: 1px solid #c6dafc;
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #f3f7ff 0%, #e8f0fc 100%);
+}
+.empty-db-text { flex: 1; min-width: 0; }
+.empty-db-text h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--fg);
+}
+.empty-db-text p { margin: 0; font-size: 13px; line-height: 1.5; }
+.empty-db-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  margin: 0;
+  white-space: nowrap;
+}
+.btn-lg { padding: 8px 22px; font-size: 14px; }
+
+/* ── Docs import form (collapsible toolbar) ────────────────────────── */
+.docs-toolbar {
+  margin: 4px 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  background: var(--bg);
+}
+.docs-toolbar > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--accent);
+  list-style: none;
+  user-select: none;
+}
+.docs-toolbar > summary::marker { content: ""; }
+.docs-toolbar[open] > summary { margin-bottom: 8px; }
+.docs-import-form { display: flex; flex-direction: column; gap: 10px; }
+.docs-import-form .form-row {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 12px;
+}
+.docs-import-form .field { display: flex; flex-direction: column; gap: 4px; }
+.docs-import-form .field .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.docs-import-form input[type="text"],
+.docs-import-form select,
+.docs-import-form input[type="file"] {
+  padding: 6px 8px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+}
+.docs-import-form .form-actions { display: flex; align-items: center; gap: 12px; }
+
 .filter-bar {
   display: flex;
   align-items: center;

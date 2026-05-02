@@ -6,7 +6,8 @@
 
 **Status:** Web UI — 13/14 endpoints shipped (~93 %), 137 e2e tests green;
 CLI — все основные сурфейсы (`task`/`plan`/`doc`/`story`/`link`/`revision`/`project`/`agent`/`audit`/`hash`/`tui`);
-MCP сервер для интеграции с Claude/Cursor; Docker-stack production-ready.
+MCP сервер для интеграции с Claude/Cursor; ИИ-агент с автономным daemon-режимом;
+ChromaDB векторный индекс для семантического поиска; Docker-stack production-ready.
 
 ---
 
@@ -20,9 +21,11 @@ MCP сервер для интеграции с Claude/Cursor; Docker-stack prod
 6. [CLI справочник](#6-cli-справочник)
 7. [Конфигурация](#7-конфигурация)
 8. [MCP интеграция](#8-mcp-интеграция)
-9. [Типичные workflow](#9-типичные-workflow)
-10. [Troubleshooting](#10-troubleshooting)
-11. [Тестирование и разработка](#11-тестирование-и-разработка)
+9. [ИИ-агент (автономный режим)](#9-ии-агент-автономный-режим)
+10. [Векторная база данных (ChromaDB)](#10-векторная-база-данных-chromadb)
+11. [Типичные workflow](#11-типичные-workflow)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Тестирование и разработка](#13-тестирование-и-разработка)
 
 ---
 
@@ -208,6 +211,27 @@ cod-doc serve  # или docker compose up -d cod-doc
 - Пагинация: `?limit=20&offset=0`, поддерживает «N проектов» масштаб.
 - Static-asset versioning: `/static/app.css?v=<mtime-hex>` — кэш-буст на upgrade.
 
+### 5.1b. Initialize DB — empty project bootstrap
+
+![Empty DB banner](assets/cod-doc/02b-init-banner.png)
+
+Если проект зарегистрирован в `~/.cod-doc/config.yaml`, но `state.db` ещё нет
+(новый проект или пересоздан после `rm -rf .cod-doc`), на overview
+показывается баннер «**База проекта не инициализирована**» с кнопкой
+**Initialize DB**. Под капотом `POST /p/{slug}/init` через
+`project_service.init_project`:
+
+1. `Project(entry).init()` — создаёт `.cod-doc/`, `tasks.yaml`, `state.yaml`,
+   `MASTER.md` (если их нет — без перезаписи).
+2. `alembic.command.upgrade(cfg, "head")` — программно, без shell-out;
+   миграции лежат внутри пакета (`cod_doc/infra/migrations/versions/*.py`).
+3. Создаётся `ProjectModel` со `slug=<entry.name>` — без него
+   `try_open_project_db` не сможет найти проект в БД.
+4. Engine cache invalidated → следующий запрос видит свежую схему.
+
+Идемпотентно: повторный клик → «info» flash «БД уже инициализирована».
+Хинт под кнопкой даёт CLI-эквивалент: `cod-doc project init <slug>`.
+
 ### 5.2. Дашборд проекта — `GET /p/{slug}`
 
 ![Project overview](assets/cod-doc/02-overview.png)
@@ -233,6 +257,28 @@ cod-doc serve  # или docker compose up -d cod-doc
 Таблица с doc_key / title / type / status / owner / last_updated. Каждая
 строка — clickable. Если `.cod-doc/state.db` отсутствует — graceful warning
 вместо 500.
+
+#### Import markdown
+
+![Import markdown form](assets/cod-doc/03b-import-form.png)
+
+Над таблицей — collapsible toolbar **📥 Import markdown**. Загружает
+существующий `.md`-файл в БД через `POST /p/{slug}/docs/import`
+(multipart/form-data): `doc_key` (обязателен), `type` (dropdown по
+DocumentType), `file` (.md, UTF-8). Парсер:
+
+- **Frontmatter** между `---\n…\n---\n` (YAML) → fields документа: `title`,
+  `type`, `status`, `owner`, `sensitivity`. Любые отсутствующие — fallback
+  на форму или дефолт (`module-spec`/`draft`/`internal`).
+- **H1-line** сразу после frontmatter → fallback `title`, сама строка
+  отбрасывается (у документа есть отдельное поле title).
+- Всё до первого `## ` → `Document.preamble`.
+- Каждый `## heading` → новая `Section` (anchor — slugified heading,
+  duplicates получают `-2`, `-3`…). Heading'и в fenced code (` ``` `) НЕ
+  считаются разрывами секций.
+
+CLI-эквивалент: `cod-doc doc import` (тот же service-слой,
+`projection_service.import_document` для re-sync существующих доков).
 
 ### 5.4. Документ — `GET /p/{slug}/docs/{doc_key:path}`
 
@@ -535,7 +581,232 @@ Web UI `/settings` работает с тем же `Config.save()` — изме�
 
 ---
 
-## 9. Типичные workflow
+## 9. ИИ-агент (автономный режим)
+
+`cod_doc.agent.orchestrator.Orchestrator` — встроенный LLM-агент, который
+читает MASTER.md, составляет очередь задач и выполняет их через цикл
+«LLM → инструмент → результат». Использует любой OpenAI-совместимый эндпоинт
+(OpenRouter по умолчанию).
+
+### 9.1. Snowball Protocol — уровни контекста
+
+Агент работает по принципу минимального контекста:
+
+| Уровень | Что загружается | Когда |
+|---------|----------------|-------|
+| **L0** | Только MASTER.md (первые 4 000 символов) | Всегда — стартовая точка |
+| **L1** | L0 + один целевой файл (через `get_context`) | При работе с конкретным документом |
+| **L2** | L1 + зависимости | Только при явной необходимости |
+
+MASTER.md должен содержать гибридные ссылки в формате:
+
+```
+📁 /path/to/file.ext | 🗃️ doc:sanitized_path | 🔑 sha:12hexchars
+```
+
+Статусы документов, которые агент отслеживает:
+
+- 🟢 **VERIFIED** — хэш совпадает с файлом
+- 🟡 **DRAFT** — ещё не верифицирован
+- 🔴 **STALE** — хэш устарел (файл изменён вне агента)
+- 🔴 **BROKEN** — файл не найден
+
+### 9.2. Инструменты агента (15 штук)
+
+**Файловые операции:**
+
+| Инструмент | Что делает |
+|-----------|-----------|
+| `read_file(path, page)` | Читает файл постранично (200 строк / страница) |
+| `write_file(path, content)` | Создаёт / перезаписывает файл |
+| `list_files(directory, pattern)` | Glob-листинг директории |
+| `calc_hash(path)` | SHA-256 (12 символов) — для hybrid refs |
+| `get_context(ref, depth)` | Загружает документ по hybrid ref, валидирует хэш |
+| `update_master_hashes()` | Пересчитывает все хэши в MASTER.md |
+| `make_ref(path)` | Генерирует hybrid reference для нового файла |
+
+**Очередь задач:**
+
+| Инструмент | Что делает |
+|-----------|-----------|
+| `create_task(title, description, priority, context_refs)` | Добавить задачу в очередь |
+| `complete_task(task_id, result)` | Закрыть задачу с результатом |
+| `fail_task(task_id, reason)` | Провалить задачу с причиной |
+
+**Git и поиск:**
+
+| Инструмент | Что делает |
+|-----------|-----------|
+| `git_commit(message, files, branch)` | Сделать коммит (опционально в новую ветку) |
+| `search_documents(query, n_results)` | Семантический поиск по ChromaDB |
+| `reindex_project()` | Перестроить векторный индекс |
+| `get_project_status()` | Статистика + `next_actions` из MASTER.md |
+| `ask_human(question, context)` | Блокирующий вопрос к оператору |
+
+### 9.3. CLI — запуск агента
+
+```bash
+# Автономный режим: агент генерирует задачи из MASTER.md и выполняет их
+cod-doc agent run my-app
+
+# Принудительная задача: выполнить конкретный тайтл, затем обработать очередь
+cod-doc agent run my-app --task "Обновить раздел Data Model в payments/spec"
+
+# Только следующая задача из очереди без автогенерации
+cod-doc agent run my-app --no-autonomous
+```
+
+Вывод в консоли — потоковый (emoji-индикаторы по типу события):
+
+```
+🤔 thinking  — агент рассуждает
+🔧 tool_call — вызов инструмента
+📋 result    — результат инструмента
+💬 message   — финальный ответ
+✅ done      — задача завершена
+❌ error     — ошибка / провал
+⛔ blocked   — агент ждёт ответа человека
+```
+
+Если агент не может продолжить без человеческого ввода, он вызывает
+`ask_human` → CLI блокируется на `input()`. После ввода агент продолжает.
+
+### 9.4. Daemon-режим
+
+Daemon следит за всеми enabled-проектами в бесконечном цикле. В production
+запускается автоматически при старте API-сервера (`cod-doc serve`).
+
+```bash
+# Запустить сервер — daemon стартует автоматически в фоне
+cod-doc serve
+
+# Посмотреть активные задачи
+cod-doc task list my-app --status pending
+
+# Настроить интервал опроса (секунды)
+# В config.yaml:
+agent_interval: 60    # default
+# Или через env:
+COD_DOC_AGENT_INTERVAL=120 cod-doc serve
+```
+
+Ограничения безопасности:
+- `max_iterations: 50` — максимум шагов на одну задачу (защита от бесконечных петель)
+- `auto_commit: false` — агент не делает git-commit без явного разрешения
+
+### 9.5. Агент через MCP
+
+```python
+# Из Claude Desktop / Cursor:
+# Один прогон агента (автогенерация задач из MASTER.md)
+run_agent_once(project_name="my-app", autonomous=True)
+
+# Запустить следующую задачу из очереди
+run_agent_once(project_name="my-app", autonomous=False)
+
+# Посмотреть историю разговора агента
+get_agent_context(project_name="my-app")
+
+# Очистить историю (сброс контекста)
+clear_agent_context(project_name="my-app")
+```
+
+---
+
+## 10. Векторная база данных (ChromaDB)
+
+COD-DOC использует ChromaDB как персистентный векторный индекс для
+семантического поиска по документации проекта. Индекс хранится в
+`.cod-doc/chroma/` внутри директории проекта (отдельно для каждого проекта).
+
+### 10.1. Что индексируется
+
+Индексируются файлы из четырёх директорий проекта:
+
+```
+specs/      arch/       models/     docs/
+```
+
+Форматы: `.md`, `.yaml`, `.yml`, `.json`, `.txt`.
+
+Каждый файл разбивается на чанки по **8 000 символов**. Для каждого чанка
+сохраняются метаданные:
+
+```
+path     — относительный путь файла
+hash     — SHA-256 (12 символов) на момент индексирования
+project  — абсолютный путь к корню проекта
+```
+
+### 10.2. Как запустить индексирование
+
+```bash
+# Через CLI — явный запрос агенту переиндексировать
+cod-doc agent run my-app --task "reindex project docs"
+
+# Через MCP
+reindex(project_name="my-app")
+# → {"indexed": 42, "errors": []}
+
+# Агент делает это автоматически через инструмент reindex_project()
+# после записи новых файлов write_file()
+```
+
+Первое индексирование может занять несколько секунд — embeddings генерируются
+на внешнем эндпоинте (OpenRouter или OpenAI-совместимый).
+
+### 10.3. Семантический поиск
+
+```bash
+# Через MCP
+search_docs(
+    project_name="my-app",
+    query="как работает аутентификация пользователей",
+    n_results=5
+)
+# → [{"path": "specs/auth.md", "score": 0.87, "snippet": "...", "hash": "abc123"}, ...]
+```
+
+Агент вызывает `search_documents` самостоятельно, когда ему нужно найти
+связанные документы перед выполнением задачи.
+
+`score` — косинусное сходство (0..1, чем выше — тем релевантнее).
+
+### 10.4. Конфигурация ChromaDB
+
+```yaml
+# ~/.cod-doc/config.yaml
+chroma_path: ~/.cod-doc/chroma          # путь к персистентному хранилищу
+embedding_model: openai/text-embedding-ada-002  # модель эмбеддингов
+```
+
+Или через env:
+
+```bash
+COD_DOC_EMBEDDING_MODEL=openai/text-embedding-3-small
+```
+
+Модель эмбеддингов должна быть доступна через тот же `base_url`, что и LLM
+(OpenRouter поддерживает `openai/text-embedding-ada-002` и `...-3-small`
+напрямую). При использовании собственного OpenAI API:
+
+```yaml
+base_url: https://api.openai.com/v1
+embedding_model: text-embedding-3-small
+```
+
+### 10.5. Устранение проблем с индексом
+
+| Симптом | Причина | Решение |
+|---------|---------|---------|
+| `search_docs` возвращает пустой список | Индекс не создан | Запустить `reindex` |
+| Стale-результаты (старый контент) | Файлы изменились после последней индексации | Запустить `reindex` |
+| `ChromaDB connection error` | Повреждён `chroma/` каталог | `rm -rf .cod-doc/chroma && reindex` |
+| Медленное индексирование | Много файлов или медленный embedding эндпоинт | Уменьшить директории в `INDEX_DIRS` или сменить модель |
+
+---
+
+## 11. Типичные workflow
 
 ### 9.1. Документировать новый модуль
 
@@ -608,7 +879,7 @@ cod-doc audit my-app --strict
 
 ---
 
-## 10. Troubleshooting
+## 12. Troubleshooting
 
 ### Контейнер 500'ит на странице проекта
 
@@ -670,7 +941,7 @@ systemd. Стек-трейс покажет конкретную причину.
 
 ---
 
-## 11. Тестирование и разработка
+## 13. Тестирование и разработка
 
 ### 11.1. pytest
 

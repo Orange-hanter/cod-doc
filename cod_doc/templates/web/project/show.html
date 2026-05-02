@@ -116,7 +116,20 @@
   </div>
 </section>
 {% else %}
-<p class="muted">Дашборд агрегата пуст: <code>.cod-doc/state.db</code> ещё не создан.</p>
+<section class="empty-db-banner">
+  <div class="empty-db-text">
+    <h2>База проекта не инициализирована</h2>
+    <p class="muted">
+      <code>{{ project.path }}/.cod-doc/state.db</code> ещё не создан.
+      Нажми <strong>Initialize DB</strong> — выполнятся alembic-миграции,
+      добавится project-row, появятся таблицы для задач/документов/планов.
+    </p>
+  </div>
+  <form method="post" action="/p/{{ project.name }}/init" class="empty-db-form">
+    <button type="submit" class="btn-primary btn-lg">Initialize DB</button>
+    <span class="muted-tiny">или: <code>cod-doc project init {{ project.name }}</code></span>
+  </form>
+</section>
 {% endif %}
 
 <section class="master-preview">

@@ -8,8 +8,50 @@
 {% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
 {% if not db_available %}
-  <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug проекта не совпадает с <code>project.slug</code> в БД. Документы появятся после <code>cod-doc project init</code> и первого <code>doc create</code>.</p>
-{% elif not documents %}
+  <p class="warn">
+    DB-проект не инициализирован. Зайди на
+    <a href="/p/{{ project.name }}">обзор проекта</a> и нажми
+    <strong>Initialize DB</strong>.
+  </p>
+{% else %}
+
+<details class="docs-toolbar">
+  <summary>📥 Import markdown</summary>
+  <form method="post"
+        action="/p/{{ project.name }}/docs/import"
+        enctype="multipart/form-data"
+        class="docs-import-form">
+    <p class="muted-tiny">
+      Загрузит файл в БД как Document c секциями: frontmatter ↓ → fields,
+      lines до первого <code>##</code> → preamble, каждый <code>##</code> → section.
+    </p>
+    <div class="form-row">
+      <label class="field">
+        <span class="label">Doc key</span>
+        <input type="text" name="doc_key" required
+               placeholder="modules/M1-foo/overview">
+      </label>
+      <label class="field">
+        <span class="label">Type</span>
+        <select name="type">
+          {% for t in document_types %}
+            <option value="{{ t }}" {% if t == "module-spec" %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <label class="field">
+      <span class="label">File (.md)</span>
+      <input type="file" name="file" accept=".md,text/markdown,text/plain" required>
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">Import</button>
+      <span class="muted-tiny">или: <code>cod-doc doc import …</code></span>
+    </div>
+  </form>
+</details>
+
+{% if not documents %}
   <p class="muted">В этом проекте пока нет документов.</p>
 {% else %}
 <table class="grid">
@@ -36,5 +78,6 @@
     {% endfor %}
   </tbody>
 </table>
+{% endif %}
 {% endif %}
 {% endblock %}
