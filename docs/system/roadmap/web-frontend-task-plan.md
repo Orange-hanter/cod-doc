@@ -31,13 +31,13 @@ related_audits:
 | Section | File | Total | Done | Remaining | Status |
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
-| B: Read views | inline | 6 | 4 | 2 | 🔄 in-progress (WEB-010, 006, 014, 021 ✅; 004, 060) |
+| B: Read views | inline | 6 | 5 | 1 | 🔄 in-progress (WEB-010, 006, 014, 021, 004 ✅; 060) |
 | C: Write paths | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-011, WEB-022 ✅) |
 | D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
 | E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
 | F: Hardening (NEW 2026-05-02) | inline | 6 | 2 | 4 | 🔄 in-progress (WEB-005, 013 ✅; 050..053 pending) |
 | F-tail: Polish from checkpoint | inline | 3 | 3 | 0 | ✅ done (WEB-013b, 022b, 054) |
-| **TOTAL** |  | **26** | **16** | **10** | |
+| **TOTAL** |  | **26** | **17** | **9** | |
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -240,13 +240,41 @@ affected_files:
 id: WEB-004
 title: "Implement: plan view (Progress Overview + Next Batch + Mermaid)"
 section: B-Read-Views
-status: pending
+status: done
 depends_on: [WEB-002]
 type: feature
 priority: high
+affected_files:
+  - cod_doc/services/plan_service.py             # get_for_project guard
+  - cod_doc/api/web/pages.py                      # plans_list + plan_show
+  - cod_doc/templates/web/project/plans_list.html # NEW
+  - cod_doc/templates/web/project/plan_show.html  # NEW
+  - cod_doc/templates/web/_layout/project_tabs.html  # plans tab → ready
+  - tests/api/test_web_plans.py                   # NEW (7 tests)
 ```
 
-**Description:** `GET /p/{slug}/plans/{plan_id}`. Использует `PlanService.recalc / ready / export`. Mermaid-граф рендерится клиентским скриптом (`/static/mermaid.min.js`).
+**Description:** `GET /p/{slug}/plans` — list of plans with progress; `GET
+/p/{slug}/plans/{plan_id}` — detail с Progress Overview, Section progress,
+Next Batch (ready) + complete-кнопка, Mermaid-граф (как `<pre>` на этом
+этапе — interactive renderer ждёт ADR по `mermaid.min.js`).
+
+**Acceptance:**
+- ✅ `plan_service.get_for_project(session, project_id, plan_id)` — cross-project
+  guard helper. Возвращает domain `Plan` или `None`. Web-handler 404-ит при
+  `None` (не путает 404 unknown с 404 wrong-project).
+- ✅ `plans_list` — таблица плана со статусом, done/total, progress-bar,
+  last_updated. Пустой/no-DB → graceful warning.
+- ✅ `plan_show` — header (scope/principle/status/percent), Section progress
+  таблица, Next Batch блок с ✓-кнопкой completion (HTMX target),
+  Dependency Graph как `<pre>` с mermaid syntax, `<details>` с raw export.
+- ✅ Cross-project 404: plan from project A через slug B → 404 (test).
+- ✅ Plans tab переведён в `ready=True` в `_layout/project_tabs.html`.
+- ✅ 7 новых тестов; suite 115 web-tests; ruff/mypy clean.
+
+> ✅ **Implemented 2026-05-02** (commit `pending`). Mermaid interactive
+> rendering deferred: vendoring `mermaid.min.js` (~2.5 MB) — отдельный ADR.
+> До тех пор pre-formatted syntax, который читается глазом и копируется
+> в любой mermaid-renderer.
 
 ### WEB-010
 

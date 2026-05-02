@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Plans · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>Plans</span></nav>
+
+<h1>{{ project.name }} · Plans</h1>
+
+{% with slug=project.name, active="plans" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+{% if not db_available %}
+  <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug не совпадает с <code>project.slug</code> в БД.</p>
+{% elif not plans %}
+  <p class="muted">Планов в этом проекте пока нет.</p>
+{% else %}
+<table class="grid">
+  <thead>
+    <tr>
+      <th>Scope</th>
+      <th>Principle</th>
+      <th>Status</th>
+      <th class="num">Done</th>
+      <th class="num">Total</th>
+      <th>Progress</th>
+      <th>Last&nbsp;updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in plans %}
+    <tr>
+      <td><a href="/p/{{ project.name }}/plans/{{ p.plan_id }}" class="mono">{{ p.scope }}</a></td>
+      <td class="muted">{{ p.principle }}</td>
+      <td>{{ p.status }}</td>
+      <td class="num">{{ p.done }}</td>
+      <td class="num">{{ p.total }}</td>
+      <td>
+        <div class="progress-bar" title="{{ p.percent }}%">
+          <span class="progress-fill" style="width: {{ p.percent }}%"></span>
+        </div>
+      </td>
+      <td class="muted">{{ p.last_updated or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="muted">{{ plans | length }} plan{% if plans | length != 1 %}s{% endif %}.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.scope }} · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/plans">Plans</a> /
+  <span>{{ plan.scope }}</span>
+</nav>
+
+{% with slug=project.name, active="plans" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<h1>{{ plan.scope }}</h1>
+<section class="doc-meta">
+  <span><strong>Principle:</strong> {{ plan.principle }}</span>
+  <span><strong>Status:</strong> {{ plan.status }}</span>
+  <span><strong>Done:</strong> {{ plan.done }} / {{ plan.total }} ({{ plan.percent }}%)</span>
+  {% if plan.in_progress %}
+    <span><strong>In progress:</strong> {{ plan.in_progress }}</span>
+  {% endif %}
+</section>
+
+<section class="overview-block">
+  <h2>Section progress</h2>
+  {% if sections %}
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Letter</th>
+        <th>Title</th>
+        <th class="num">Done</th>
+        <th class="num">Total</th>
+        <th>Status</th>
+        <th>Progress</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sections %}
+      <tr>
+        <td class="mono">{{ s.letter }}</td>
+        <td>{{ s.title }}</td>
+        <td class="num">{{ s.done }}</td>
+        <td class="num">{{ s.total }}</td>
+        <td>{{ s.status }}</td>
+        <td>
+          <div class="progress-bar" title="{{ s.percent }}%">
+            <span class="progress-fill" style="width: {{ s.percent }}%"></span>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">У плана нет секций.</p>
+  {% endif %}
+</section>
+
+<section class="overview-block">
+  <h2>Next batch (ready to start)</h2>
+  {% if ready %}
+  <ul class="ready-list">
+    {% for t in ready %}
+    <li class="ready-row" id="task-{{ t.task_id }}">
+      <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
+      <a class="ready-title" href="/p/{{ project.name }}/tasks">
+        <span class="mono">{{ t.task_id }}</span> · {{ t.title }}
+      </a>
+      <span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>
+      <form class="ready-complete"
+            method="post"
+            action="/p/{{ project.name }}/tasks/{{ t.task_id }}/complete">
+        <button type="submit"
+                hx-post="/p/{{ project.name }}/tasks/{{ t.task_id }}/complete"
+                hx-target="#task-{{ t.task_id }}"
+                hx-swap="outerHTML"
+                title="Mark done">✓</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">Нет задач, готовых к старту.</p>
+  {% endif %}
+</section>
+
+<section class="overview-block">
+  <h2>Dependency graph</h2>
+  <p class="muted">
+    Mermaid-syntax (interactive rendering deferred — vendoring `mermaid.min.js`
+    awaits a deps decision):
+  </p>
+  <pre class="md-preview">{{ exported.dependency_graph }}</pre>
+</section>
+
+<details class="overview-block">
+  <summary>Raw export (markdown projections)</summary>
+  <h3>Progress overview</h3>
+  <pre class="md-preview">{{ exported.progress_overview }}</pre>
+  <h3>Next batch</h3>
+  <pre class="md-preview">{{ exported.next_batch }}</pre>
+</details>
+{% endblock %}

@@ -139,6 +139,27 @@ def _require_plan(session: Session, plan_id: int) -> PlanModel:
     return model
 
 
+def get_for_project(session: Session, project_id: int, plan_id: int) -> Plan | None:
+    """Return the plan iff it belongs to the project; None otherwise.
+
+    Used by web handlers to reject cross-project plan access (404).
+    """
+    model = session.get(PlanModel, plan_id)
+    if model is None or model.project_id != project_id:
+        return None
+    return Plan(
+        row_id=model.row_id,
+        project_id=model.project_id,
+        scope=model.scope,
+        principle=model.principle,
+        module_id=model.module_id,
+        parent_doc_id=model.parent_doc_id,
+        completed_log_id=model.completed_log_id,
+        created=model.created,
+        last_updated=model.last_updated,
+    )
+
+
 def list_for_project(session: Session, project_id: int) -> list[Plan]:
     """All plans owned by the project, ordered by `created` (oldest first).
 
