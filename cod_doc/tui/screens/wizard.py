@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from textual import on
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, Checkbox, Input, Label, RadioButton, RadioSet, Static
@@ -23,15 +23,20 @@ log = get_logger("tui.wizard")
 # (model_id, display_label)
 MODELS: list[tuple[str, str]] = [
     ("anthropic/claude-sonnet-4-6", "Claude Sonnet 4.6  ⭐ рекомендуется"),
-    ("anthropic/claude-opus-4-6",   "Claude Opus 4.6    💪 мощнее, дороже"),
-    ("anthropic/claude-haiku-4-5",  "Claude Haiku 4.5   ⚡ быстрее, дешевле"),
-    ("openai/gpt-4o",               "GPT-4o"),
-    ("openai/gpt-4o-mini",          "GPT-4o Mini"),
+    ("anthropic/claude-opus-4-6", "Claude Opus 4.6    💪 мощнее, дороже"),
+    ("anthropic/claude-haiku-4-5", "Claude Haiku 4.5   ⚡ быстрее, дешевле"),
+    ("openai/gpt-4o", "GPT-4o"),
+    ("openai/gpt-4o-mini", "GPT-4o Mini"),
     ("meta-llama/llama-3.1-70b-instruct", "Llama 3.1 70B (open-source)"),
-    ("google/gemini-pro-1.5",       "Gemini Pro 1.5"),
+    ("google/gemini-pro-1.5", "Gemini Pro 1.5"),
 ]
 
 STEPS = ["Добро пожаловать", "API & модель", "Проект", "Готово"]
+
+
+def _model_widget_id(model_id: str) -> str:
+    """Build a textual-safe widget id from a model identifier (e.g. 'anthropic/claude-sonnet-4-6')."""
+    return "model-" + model_id.replace("/", "_").replace(".", "_")
 
 
 class _StepBar(Static):
@@ -50,13 +55,13 @@ class _StepBar(Static):
         super().__init__("")
         self._steps = steps
         self._current = current
-        self._render()
+        self._refresh_label()
 
     def update_step(self, current: int) -> None:
         self._current = current
-        self._render()
+        self._refresh_label()
 
-    def _render(self) -> None:
+    def _refresh_label(self) -> None:
         parts: list[str] = []
         for i, name in enumerate(self._steps):
             if i < self._current:
@@ -73,7 +78,7 @@ class _StepBar(Static):
 class WizardScreen(Screen[Any]):
     """Интерактивный экран первоначальной настройки."""
 
-    BINDINGS: ClassVar[list[Binding]] = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "quit_wizard", "Выход"),
         Binding("enter", "next_step", "Далее", show=False),
     ]
@@ -201,7 +206,7 @@ class WizardScreen(Screen[Any]):
                     yield Label("Модель LLM", classes="field-label")
                     with RadioSet(id="model-set"):
                         for model_id, label in MODELS:
-                            yield RadioButton(label, id=f"model-{model_id}")
+                            yield RadioButton(label, id=_model_widget_id(model_id))
 
                     yield Label("Base URL  [dim](необязательно)[/dim]", classes="field-label")
                     yield Input(
@@ -235,7 +240,9 @@ class WizardScreen(Screen[Any]):
                         )
                         yield Static("", id="err-project-name", classes="error-label")
 
-                        yield Label("Путь к MASTER.md  [dim](от корня проекта)[/dim]", classes="field-label")
+                        yield Label(
+                            "Путь к MASTER.md  [dim](от корня проекта)[/dim]", classes="field-label"
+                        )
                         yield Input(value="MASTER.md", id="input-master-md")
 
                         yield Static(
@@ -257,7 +264,7 @@ class WizardScreen(Screen[Any]):
     def on_mount(self) -> None:
         log.debug("Wizard mounted", extra={"event_type": "wizard_mount"})
         # Выбрать первую модель по умолчанию
-        self.query_one(f"#model-{MODELS[0][0]}", RadioButton).value = True
+        self.query_one(f"#{_model_widget_id(MODELS[0][0])}", RadioButton).value = True
         # Заполнить поле API-ключа если уже есть
         if self.config.api_key:
             self.query_one("#input-api-key", Input).value = self.config.api_key
@@ -265,7 +272,7 @@ class WizardScreen(Screen[Any]):
         for model_id, _ in MODELS:
             if model_id == self.config.model:
                 with contextlib.suppress(Exception):
-                    self.query_one(f"#model-{model_id}", RadioButton).value = True
+                    self.query_one(f"#{_model_widget_id(model_id)}", RadioButton).value = True
                 break
         self._show_step(0)
 
@@ -359,7 +366,7 @@ class WizardScreen(Screen[Any]):
         model = MODELS[0][0]
         for model_id, _ in MODELS:
             try:
-                rb = self.query_one(f"#model-{model_id}", RadioButton)
+                rb = self.query_one(f"#{_model_widget_id(model_id)}", RadioButton)
                 if rb.value:
                     model = model_id
                     break
@@ -410,15 +417,21 @@ class WizardScreen(Screen[Any]):
         self.config.add_project(entry)
 
         from cod_doc.core.project import Project
+
         Project(entry).init()
-        log.debug("Project step saved", extra={"event_type": "wizard_save_project", "project": name})
+        log.debug(
+            "Project step saved", extra={"event_type": "wizard_save_project", "project": name}
+        )
         return True
 
     # ── Done summary ──────────────────────────────────────────────────────────
 
     def _build_done_summary(self) -> None:
         projects = self.config.list_projects()
-        proj_list = "\n".join(f"  • [cyan]{p.name}[/cyan]  {p.path}" for p in projects) or "  [dim](нет проектов)[/dim]"
+        proj_list = (
+            "\n".join(f"  • [cyan]{p.name}[/cyan]  {p.path}" for p in projects)
+            or "  [dim](нет проектов)[/dim]"
+        )
         summary = (
             f"[bold]Модель:[/bold]   [cyan]{self.config.model}[/cyan]\n"
             f"[bold]Base URL:[/bold] [dim]{self.config.base_url}[/dim]\n\n"
@@ -432,5 +445,6 @@ class WizardScreen(Screen[Any]):
 
     def _finish(self) -> None:
         from cod_doc.tui.screens.dashboard import DashboardScreen
+
         log.debug("Wizard finished, switching to dashboard", extra={"event_type": "wizard_finish"})
         self.app.switch_screen(DashboardScreen(self.config))
