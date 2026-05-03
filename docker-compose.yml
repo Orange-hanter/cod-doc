@@ -17,7 +17,8 @@ services:
     volumes:
       - cod_doc_data:/data/cod-doc
       - /Users/dakh/Git/cod-doc:/projects/cod-doc:rw
-      - /Users/dakh/Git/Restate:/projects/Restate:rw
+      - /Users/dakh/Git/Restate:/projects/Restate:ro
+      - /Users/dakh/Git/Restate-docs:/projects/Restate-docs:rw
     networks:
       - cod_doc_net
     healthcheck:
