@@ -404,8 +404,14 @@ def test_field_improve_swaps_textarea_with_suggestion(
 
     monkeypatch.setattr(
         ai_text,
-        "improve_text",
-        lambda text, intent, *, cfg: f"AI-improved ({intent or 'default'}):\n{text.strip()}",
+        "improve_text_traced",
+        lambda text, intent, *, cfg: ai_text.ImproveResult(
+            text=f"AI-improved ({intent or 'default'}):\n{text.strip()}",
+            model=cfg.model,
+            input_tokens=10,
+            output_tokens=20,
+            duration_ms=100,
+        ),
     )
     r = client.post(
         f"/p/{entry.name}/tasks/DET-001/fields/description/improve",
@@ -432,10 +438,10 @@ def test_field_improve_surfaces_backend_error_inline(
     client, entry = task_detail_client
     from cod_doc.services import ai_text
 
-    def boom(text: str, intent: str, *, cfg) -> str:
+    def boom(text: str, intent: str, *, cfg):  # noqa: ANN202
         raise ai_text.AIBackendError("network down")
 
-    monkeypatch.setattr(ai_text, "improve_text", boom)
+    monkeypatch.setattr(ai_text, "improve_text_traced", boom)
 
     r = client.post(
         f"/p/{entry.name}/tasks/DET-001/fields/description/improve",
@@ -447,6 +453,35 @@ def test_field_improve_surfaces_backend_error_inline(
     assert "AI error: network down" in body
     # Original draft preserved verbatim
     assert "Original draft." in body
+
+
+def test_field_improve_records_a_trace_row(task_detail_client, monkeypatch) -> None:
+    """A successful improve auto-logs a trace row visible in the AI trace tab."""
+    client, entry = task_detail_client
+    from cod_doc.services import ai_text
+
+    monkeypatch.setattr(
+        ai_text,
+        "improve_text_traced",
+        lambda text, intent, *, cfg: ai_text.ImproveResult(
+            text="suggestion",
+            model="anthropic/claude-sonnet-4-6",
+            input_tokens=33,
+            output_tokens=44,
+            duration_ms=250,
+        ),
+    )
+    client.post(
+        f"/p/{entry.name}/tasks/DET-001/fields/description/improve",
+        data={"body": "draft", "intent": "x"},
+        headers={"HX-Request": "true"},
+    )
+    # Reload the task page — the trace section now lists the call.
+    r = client.get(f"/p/{entry.name}/tasks/DET-001")
+    body = r.text
+    assert "anthropic/claude-sonnet-4-6" in body
+    assert "improve_text:description" in body
+    assert "33" in body and "44" in body  # in/out tokens
 
 
 def test_field_improve_unknown_field_404(task_detail_client) -> None:
@@ -467,3 +502,65 @@ def test_field_improve_unknown_task_404(task_detail_client) -> None:
         headers={"HX-Request": "true"},
     )
     assert r.status_code == 404
+
+
+# ── COD-063: AI trace tab ──────────────────────────────────────────────
+
+
+def test_task_detail_trace_section_empty(task_detail_client) -> None:
+    """Trace section renders with an empty hint when no LLM calls logged."""
+    client, entry = task_detail_client
+    r = client.get(f"/p/{entry.name}/tasks/DET-001")
+    body = r.text
+    assert "AI trace" in body
+    assert "Ещё не было вызовов ИИ" in body
+
+
+def test_task_detail_trace_section_lists_calls(task_detail_client) -> None:
+    """A logged trace row shows up with model, tokens, duration, and tool calls."""
+    client, entry = task_detail_client
+    db_path = entry.cod_doc_dir / "state.db"
+
+    from cod_doc.infra.db import make_engine, make_session_factory, transactional
+    from cod_doc.services import task_service as task_svc
+    from cod_doc.services import trace_service as trace_svc
+
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        task = task_svc.get(session, "DET-001")
+        assert task is not None and task.row_id is not None
+        trace_svc.record(
+            session,
+            model="anthropic/claude-sonnet-4-6",
+            task_id=task.row_id,
+            input_tokens=120,
+            output_tokens=42,
+            duration_ms=850,
+            tool_calls=[{"name": "task.list", "args": {"project": "demo"}}],
+        )
+        trace_svc.record(
+            session,
+            model="anthropic/claude-haiku-4-5",
+            task_id=task.row_id,
+            input_tokens=50,
+            output_tokens=10,
+            duration_ms=120,
+            error="rate limited",
+        )
+    engine.dispose()
+
+    r = client.get(f"/p/{entry.name}/tasks/DET-001")
+    body = r.text
+    assert "anthropic/claude-sonnet-4-6" in body
+    assert "anthropic/claude-haiku-4-5" in body
+    # Aggregate footer (sum across the two calls)
+    assert "170" in body  # 120 + 50 input tokens
+    assert "52" in body  # 42 + 10 output tokens
+    # Duration column entry
+    assert "850 ms" in body
+    # Tool call name surfaces
+    assert "task.list" in body
+    # Error row gets the error notice
+    assert "rate limited" in body
+    assert "trace-err" in body

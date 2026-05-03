@@ -11,6 +11,7 @@ from cod_doc.infra.repositories.story_repo import (
     UserStoryRepository,
 )
 from cod_doc.infra.repositories.task_repo import TaskRepository
+from cod_doc.infra.repositories.trace_repo import TraceCallRepository
 
 __all__ = [
     "BaseRepository",
@@ -23,5 +24,6 @@ __all__ = [
     "StoryAcceptanceRepository",
     "StoryLinkRepository",
     "TaskRepository",
+    "TraceCallRepository",
     "UserStoryRepository",
 ]

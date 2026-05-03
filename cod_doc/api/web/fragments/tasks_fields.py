@@ -20,6 +20,7 @@ from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import ai_text
 from cod_doc.services import task_service as tasks
+from cod_doc.services import trace_service
 from cod_doc.services.ai_text import AIBackendError
 from cod_doc.services.revision_service import RevisionConflictError
 
@@ -156,12 +157,33 @@ def task_field_improve(
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 
     cfg = get_config()
+    assert task.row_id is not None
     try:
-        improved = ai_text.improve_text(body, intent, cfg=cfg)
+        result = ai_text.improve_text_traced(body, intent, cfg=cfg)
+        improved = result.text
         notice = "AI suggestion ready — review, then Save to apply."
+        trace_service.record(
+            session,
+            model=result.model,
+            task_id=task.row_id,
+            kind="chat",
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            duration_ms=result.duration_ms,
+            tool_calls=[{"name": f"improve_text:{field}"}],
+        )
+        session.commit()
     except AIBackendError as exc:
         improved = body
         notice = f"AI error: {exc}"
+        trace_service.record(
+            session,
+            model=cfg.model,
+            task_id=task.row_id,
+            kind="chat",
+            error=str(exc),
+        )
+        session.commit()
 
     return _render_task_field_edit(
         request,

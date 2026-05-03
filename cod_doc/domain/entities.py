@@ -346,3 +346,23 @@ class Tag:
     project_id: int
     name: str
     row_id: int | None = None
+
+
+@dataclass(slots=True)
+class TraceCall:
+    """One LLM round-trip — chat completion or embedding call (COD-063)."""
+
+    model: str
+    kind: str = "chat"
+    task_id: int | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    duration_ms: int = 0
+    tool_calls: list[dict[str, Any]] | None = None
+    error: str | None = None
+    ts: datetime | None = None
+    row_id: int | None = None
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens

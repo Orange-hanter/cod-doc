@@ -124,6 +124,64 @@
   </aside>
 </div>
 
+{# ── AI TRACE (full-width) ─────────────────────────────────────────── #}
+<section class="task-card task-trace">
+  <header class="task-card-header">
+    <h2>AI trace <span class="count-chip">{{ trace_totals.calls }}</span></h2>
+    {% if trace_totals.calls %}
+      <span class="muted-tiny">
+        ∑ {{ trace_totals.input_tokens }} in / {{ trace_totals.output_tokens }} out tok
+        · {{ trace_totals.duration_ms }} ms
+      </span>
+    {% endif %}
+  </header>
+  {% if trace %}
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Model</th>
+          <th>Kind</th>
+          <th class="num">In tok</th>
+          <th class="num">Out tok</th>
+          <th class="num">Duration</th>
+          <th>Tools</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in trace %}
+          <tr {% if t.error %}class="trace-err"{% endif %}>
+            <td class="muted mono">{{ t.ts }}</td>
+            <td class="mono">{{ t.model }}</td>
+            <td>{{ t.kind }}</td>
+            <td class="num">{{ t.input_tokens }}</td>
+            <td class="num">{{ t.output_tokens }}</td>
+            <td class="num">{{ t.duration_ms }} ms</td>
+            <td>
+              {% if t.tool_calls %}
+                <span class="muted-tiny">
+                  {{ t.tool_calls | length }} call{% if t.tool_calls | length != 1 %}s{% endif %}:
+                </span>
+                {% for tc in t.tool_calls %}
+                  <code>{{ tc.name or tc.tool or "?" }}</code>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+              {% else %}
+                <span class="muted-tiny">—</span>
+              {% endif %}
+            </td>
+            <td class="diff-preview">
+              {% if t.error %}<span class="warn">{{ t.error }}</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty-hint"><em>Ещё не было вызовов ИИ для этой задачи.</em></p>
+  {% endif %}
+</section>
+
 {# ── HISTORY (full-width) ─────────────────────────────────────────── #}
 <section class="task-card task-history">
   <header class="task-card-header">

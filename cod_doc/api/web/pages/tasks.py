@@ -16,6 +16,7 @@ from cod_doc.domain.entities import EntityKind, TaskStatus
 from cod_doc.services import plan_service as plans
 from cod_doc.services import revision_service as revisions
 from cod_doc.services import task_service as tasks
+from cod_doc.services import trace_service as traces
 
 router = APIRouter()
 
@@ -149,6 +150,7 @@ def task_show(
     forward = plans.forward_chain(session, task_id)
     reverse = plans.reverse_chain(session, task_id)
     history = revisions.list_for_entity(session, EntityKind.TASK, task.row_id)
+    trace = traces.list_for_task(session, task.row_id)
 
     # Plan + section breadcrumb info.
     plan = plans.get_for_project(session, project_db_id, task.plan_id)
@@ -210,5 +212,25 @@ def task_show(
                 }
                 for r in reversed(history)  # newest first for the timeline
             ],
+            "trace": [
+                {
+                    "ts": t.ts,
+                    "model": t.model,
+                    "kind": t.kind,
+                    "input_tokens": t.input_tokens,
+                    "output_tokens": t.output_tokens,
+                    "total_tokens": t.total_tokens,
+                    "duration_ms": t.duration_ms,
+                    "tool_calls": t.tool_calls or [],
+                    "error": t.error,
+                }
+                for t in trace
+            ],
+            "trace_totals": {
+                "calls": len(trace),
+                "input_tokens": sum(t.input_tokens for t in trace),
+                "output_tokens": sum(t.output_tokens for t in trace),
+                "duration_ms": sum(t.duration_ms for t in trace),
+            },
         },
     )
