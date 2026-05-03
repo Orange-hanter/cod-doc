@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from cod_doc.api.deps import get_project, get_project_db
+from cod_doc.api.deps import get_config, get_project, get_project_db
 from cod_doc.api.web.errors import (
     ConflictWebError,
     NotFoundWebError,
@@ -18,7 +18,9 @@ from cod_doc.api.web.errors import (
 )
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
+from cod_doc.services import ai_text
 from cod_doc.services import task_service as tasks
+from cod_doc.services.ai_text import AIBackendError
 from cod_doc.services.revision_service import RevisionConflictError
 
 from ._shared import _is_htmx
@@ -50,10 +52,23 @@ def _render_task_field_view(
 
 
 def _render_task_field_edit(
-    request: Request, *, project_name: str, task: Any, field: str
+    request: Request,
+    *,
+    project_name: str,
+    task: Any,
+    field: str,
+    raw_override: str | None = None,
+    intent: str = "",
+    notice: str = "",
 ) -> HTMLResponse:
+    """Render the edit fragment.
+
+    ``raw_override`` lets the AI-improve flow swap in suggested text while
+    keeping the user's intent in the input box. ``notice`` carries an inline
+    success/error string (e.g. "AI suggestion ready" / "LLM error: …").
+    """
     attr, label, _svc = _TASK_FIELDS[field]
-    raw = getattr(task, attr) or ""
+    raw = raw_override if raw_override is not None else (getattr(task, attr) or "")
     html = templates.get_template("_frag/task_field_edit.html").render(
         request=request,
         project={"name": project_name},
@@ -61,6 +76,8 @@ def _render_task_field_edit(
         field=field,
         label=label,
         raw=raw,
+        intent=intent,
+        notice=notice,
     )
     return HTMLResponse(html)
 
@@ -108,6 +125,52 @@ def task_field_view_fragment(
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
     return _render_task_field_view(
         request, project_name=proj.entry.name, task=task, field=field
+    )
+
+
+@router.post(
+    "/p/{slug}/tasks/{task_id}/fields/{field}/improve",
+    response_class=HTMLResponse,
+)
+def task_field_improve(
+    request: Request,
+    slug: str,
+    task_id: str,
+    field: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    body: str = Form(""),
+    intent: str = Form(""),
+) -> Response:
+    """Run the current draft through the LLM "improve" pass and return
+    a refreshed edit fragment with the suggestion swapped into the textarea.
+
+    The DB is NOT touched — the user can still hit Save (which writes the
+    suggestion) or keep editing.
+    """
+    if field not in _TASK_FIELDS:
+        raise NotFoundWebError(f"Unknown task field: {field}")
+    proj = get_project(slug)
+    session, project_db_id = db
+    task = tasks.get(session, task_id)
+    if task is None or task.project_id != project_db_id:
+        raise NotFoundWebError(f"Задача не найдена: {task_id}")
+
+    cfg = get_config()
+    try:
+        improved = ai_text.improve_text(body, intent, cfg=cfg)
+        notice = "AI suggestion ready — review, then Save to apply."
+    except AIBackendError as exc:
+        improved = body
+        notice = f"AI error: {exc}"
+
+    return _render_task_field_edit(
+        request,
+        project_name=proj.entry.name,
+        task=task,
+        field=field,
+        raw_override=improved,
+        intent=intent,
+        notice=notice,
     )
 
 

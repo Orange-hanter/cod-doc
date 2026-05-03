@@ -377,3 +377,93 @@ def test_empty_description_shows_edit_hint_with_button(task_detail_client) -> No
     assert "✎ Edit" in body
     # Hint mentions markdown
     assert "markdown" in body.lower()
+
+
+# ── COD-067: AI improve-text flow ──────────────────────────────────────────
+
+
+def test_field_edit_form_has_improve_button_and_intent_input(task_detail_client) -> None:
+    """The edit fragment exposes an Improve via AI button and intent input."""
+    client, entry = task_detail_client
+    r = client.get(
+        f"/p/{entry.name}/tasks/DET-001/fields/description/edit",
+        headers={"HX-Request": "true"},
+    )
+    body = r.text
+    assert "Improve via AI" in body
+    assert 'name="intent"' in body
+    assert "/fields/description/improve" in body
+
+
+def test_field_improve_swaps_textarea_with_suggestion(
+    task_detail_client, monkeypatch
+) -> None:
+    """The improve endpoint returns the edit fragment with the AI suggestion in textarea."""
+    client, entry = task_detail_client
+    from cod_doc.services import ai_text
+
+    monkeypatch.setattr(
+        ai_text,
+        "improve_text",
+        lambda text, intent, *, cfg: f"AI-improved ({intent or 'default'}):\n{text.strip()}",
+    )
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/fields/description/improve",
+        data={"body": "Quick draft.", "intent": "make it more formal"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    body = r.text
+    # Edit fragment with new content in the textarea
+    assert 'id="task-field-description"' in body
+    assert "AI-improved (make it more formal)" in body
+    assert "AI suggestion ready" in body
+    # Intent input keeps the user's prompt
+    assert 'value="make it more formal"' in body
+    # DB unchanged — full page still shows original text
+    r2 = client.get(f"/p/{entry.name}/tasks/DET-001")
+    assert "AI-improved" not in r2.text
+
+
+def test_field_improve_surfaces_backend_error_inline(
+    task_detail_client, monkeypatch
+) -> None:
+    """When the LLM call fails, return the original draft + an inline error notice."""
+    client, entry = task_detail_client
+    from cod_doc.services import ai_text
+
+    def boom(text: str, intent: str, *, cfg) -> str:
+        raise ai_text.AIBackendError("network down")
+
+    monkeypatch.setattr(ai_text, "improve_text", boom)
+
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/fields/description/improve",
+        data={"body": "Original draft.", "intent": ""},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    body = r.text
+    assert "AI error: network down" in body
+    # Original draft preserved verbatim
+    assert "Original draft." in body
+
+
+def test_field_improve_unknown_field_404(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/fields/garbage/improve",
+        data={"body": "x"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 404
+
+
+def test_field_improve_unknown_task_404(task_detail_client) -> None:
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/NO-999/fields/description/improve",
+        data={"body": "x"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 404

@@ -1,8 +1,11 @@
-{# Editable task field — textarea + save/cancel buttons. #}
+{# Editable task field — textarea + save/cancel + AI-improve buttons. #}
 <section id="task-field-{{ field }}" class="task-card task-field-card editing">
   <header class="task-card-header">
     <h2>{{ label }} <span class="muted-tiny">— editing</span></h2>
   </header>
+  {% if notice %}
+    <p class="ai-notice muted">{{ notice }}</p>
+  {% endif %}
   <form method="post"
         action="/p/{{ project.name }}/tasks/{{ task.task_id }}/fields/{{ field }}"
         hx-post="/p/{{ project.name }}/tasks/{{ task.task_id }}/fields/{{ field }}"
@@ -10,8 +13,22 @@
         hx-swap="outerHTML"
         class="card-edit-form">
     <textarea name="body" rows="8" autofocus placeholder="Markdown supported: **bold**, `code`, lists, > quotes…">{{ raw }}</textarea>
+    <label class="field ai-improve">
+      <span class="muted-tiny">Improvement intent (optional):</span>
+      <input type="text" name="intent" value="{{ intent or '' }}"
+             placeholder="e.g. make it more concise, add bullet points, fix grammar…">
+    </label>
     <div class="card-edit-actions">
       <button type="submit" class="btn-primary">Save</button>
+      <button type="button"
+              hx-post="/p/{{ project.name }}/tasks/{{ task.task_id }}/fields/{{ field }}/improve"
+              hx-include="closest form"
+              hx-target="#task-field-{{ field }}"
+              hx-swap="outerHTML"
+              class="btn-secondary"
+              title="Send the current draft through the LLM and replace it with the suggestion">
+        ✨ Improve via AI
+      </button>
       <button type="button"
               hx-get="/p/{{ project.name }}/tasks/{{ task.task_id }}/fields/{{ field }}/view"
               hx-target="#task-field-{{ field }}"
