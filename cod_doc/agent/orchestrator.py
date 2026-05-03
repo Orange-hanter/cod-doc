@@ -21,7 +21,11 @@ from typing import TYPE_CHECKING, Any
 from openai import AsyncOpenAI
 
 from cod_doc.agent.prompts import SYSTEM_PROMPT
-from cod_doc.agent.retry import LLMError, with_retry
+from cod_doc.agent.retry import (
+    LLMError,
+    ContextLengthExceededError,
+    with_retry,
+)
 from cod_doc.agent.tools import TOOL_DEFINITIONS, ToolExecutor
 from cod_doc.core.project import Project, Task, TaskStatus
 
@@ -32,6 +36,9 @@ if TYPE_CHECKING:
 AskHumanAsync = Callable[[str, str], Awaitable[str]]
 
 logger = logging.getLogger("cod_doc.agent")
+
+# Максимальное число retry-попыток при context_length_exceeded
+_MAX_CONTEXT_RETRIES = 2
 
 
 class AgentEvent:
@@ -134,9 +141,41 @@ class Orchestrator:
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
-    def _build_messages(self, task: Task) -> list[dict[str, Any]]:
-        """Построить начальные сообщения для задачи."""
+    def _build_messages(
+        self, task: Task, context_mode: str = "full"
+    ) -> list[dict[str, Any]]:
+        """Построить начальные сообщения для задачи.
+
+        context_mode:
+          - "full": полный MASTER.md (первые 3000 символов)
+          - "no_refs": только title + description задачи, без MASTER.md
+          - "truncated": MASTER.md первые 500 строк, без context_refs
+        """
+        if context_mode == "no_refs":
+            user_message = (
+                f"## Задача [{task.id}]: {task.title}\n\n"
+                f"{task.description}\n\n"
+                "Выполни задачу, используя доступные инструменты. "
+                "В конце завершения обнови хэши и добавь запись в changelog MASTER.md."
+            )
+            return [{"role": "user", "content": user_message}]
+
         master_content = self.project.read_master() or "MASTER.md не найден."
+
+        if context_mode == "truncated":
+            # Берём только первые 500 строк MASTER.md
+            lines = master_content.split("\n")
+            truncated = "\n".join(lines[:500])
+            user_message = (
+                f"## Задача [{task.id}]: {task.title}\n\n"
+                f"{task.description}\n\n"
+                f"## MASTER.md (L0, truncated)\n\n```markdown\n{truncated}\n```\n\n"
+                "Выполни задачу, используя доступные инструменты. "
+                "В конце завершения обнови хэши и добавь запись в changelog MASTER.md."
+            )
+            return [{"role": "user", "content": user_message}]
+
+        # full mode
         user_message = (
             f"## Задача [{task.id}]: {task.title}\n\n"
             f"{task.description}\n\n"
@@ -149,7 +188,14 @@ class Orchestrator:
     async def _agent_loop(
         self, messages: list[dict[str, Any]], task: Task
     ) -> AsyncGenerator[AgentEvent, None]:
-        """Основной цикл агент ↔ LLM ↔ инструменты."""
+        """Основной цикл агент ↔ LLM ↔ инструменты.
+
+        При ошибке context_length_exceeded: повтор с урезанным контекстом.
+        """
+        context_retry = 0
+        # Флаг: задача выполняется в degraded mode (контекст урезан)
+        degraded_mode = False
+
         while True:
             if self.executor.is_blocked:
                 yield AgentEvent("blocked", self.executor._blocked_question)
@@ -167,6 +213,55 @@ class Orchestrator:
                         max_tokens=self.config.max_tokens,
                     )
                 )
+            except ContextLengthExceededError as e:
+                if context_retry < _MAX_CONTEXT_RETRIES:
+                    context_retry += 1
+                    degraded_mode = True
+
+                    # Первый retry: без context_refs, только title + description
+                    if context_retry == 1:
+                        logger.warning(
+                            f"[task {task.id}] context_length_exceeded, "
+                            f"retry {context_retry}/{_MAX_CONTEXT_RETRIES}: "
+                            "урезаю контекст — только title + description (без MASTER.md)"
+                        )
+                        yield AgentEvent(
+                            "thinking",
+                            f"⚠️ Контекст превышен (1.7M+ токенов). "
+                            f"Retry {context_retry}/{_MAX_CONTEXT_RETRIES}: "
+                            "повторяю без MASTER.md (degraded mode).",
+                        )
+                        messages = self._build_messages(task, "no_refs")
+
+                    # Второй retry: первые 500 строк MASTER.md
+                    elif context_retry == 2:
+                        logger.warning(
+                            f"[task {task.id}] context_length_exceeded, "
+                            f"retry {context_retry}/{_MAX_CONTEXT_RETRIES}: "
+                            "MASTER.md первые 500 строк (L0 truncated)"
+                        )
+                        yield AgentEvent(
+                            "thinking",
+                            f"⚠️ Контекст снова превышен. "
+                            f"Retry {context_retry}/{_MAX_CONTEXT_RETRIES}: "
+                            "повторяю с урезанным MASTER.md (первые 500 строк).",
+                        )
+                        messages = self._build_messages(task, "truncated")
+
+                    continue  # Повторяем цикл с урезанными сообщениями
+
+                # Исчерпаны retry-попытки
+                logger.error(
+                    f"[task {task.id}] context_length_exceeded исчерпаны все "
+                    f"{_MAX_CONTEXT_RETRIES} retry-попыток"
+                )
+                yield AgentEvent("error", str(e))
+                self.project.update_task(
+                    task.id,
+                    status=TaskStatus.FAILED,
+                    result=f"Context overflow после {_MAX_CONTEXT_RETRIES} retry-попыток: {e}",
+                )
+                return
             except LLMError as e:
                 yield AgentEvent("error", str(e))
                 self.project.update_task(task.id, status=TaskStatus.FAILED, result=str(e))
@@ -183,10 +278,15 @@ class Orchestrator:
                 yield AgentEvent("message", content)
                 # Пометить задачу как выполненную если агент не сделал это сам
                 if self.project._load_tasks():
-                    tasks = [t for t in self.project._load_tasks() if t.id == task.id]
-                    if tasks and tasks[0].status == TaskStatus.IN_PROGRESS:
+                    tasks_list = [t for t in self.project._load_tasks() if t.id == task.id]
+                    if tasks_list and tasks_list[0].status == TaskStatus.IN_PROGRESS:
+                        result = content[:500]
+                        if degraded_mode:
+                            result = (
+                                "выполнено в degraded mode (контекст урезан): " + result
+                            )
                         self.project.update_task(
-                            task.id, status=TaskStatus.DONE, result=content[:500]
+                            task.id, status=TaskStatus.DONE, result=result
                         )
                 return
 

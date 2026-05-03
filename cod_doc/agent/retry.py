@@ -1,11 +1,13 @@
 """
 Retry-логика для вызовов OpenRouter API.
 Экспоненциальный backoff с jitter для rate limits и сетевых ошибок.
+Специальная обработка ошибок context_length_exceeded.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -20,7 +22,7 @@ logger = logging.getLogger("cod_doc.agent.retry")
 T = TypeVar("T")
 
 # Ошибки, после которых смысла повторять нет
-_FATAL_STATUSES = {400, 401, 403, 404, 422}
+_FATAL_STATUSES = {401, 403, 404, 422}
 
 
 class LLMError(Exception):
@@ -43,11 +45,25 @@ class LLMError(Exception):
             )
         if isinstance(exc, APIStatusError):
             status = exc.status_code
+            # Проверяем context_length_exceeded внутри 400
+            if status == 400:
+                error_code = _extract_error_code(exc)
+                if error_code == "context_length_exceeded":
+                    return ContextLengthExceededError(
+                        f"Контекст превышен (context_length_exceeded): {exc.message}",
+                        retryable=True,
+                        status_code=400,
+                    )
+                return cls(
+                    f"Неверный запрос (400): {exc.message}",
+                    retryable=False,
+                    status_code=400,
+                )
             if status in _FATAL_STATUSES:
                 hints = {
                     401: "Неверный API-ключ. Проверьте COD_DOC_API_KEY.",
                     403: "Нет доступа. Проверьте права API-ключа.",
-                    400: f"Неверный запрос: {exc.message}",
+                    404: "Не найдено. Проверьте URL и модель.",
                     422: f"Модель отклонила запрос: {exc.message}",
                 }
                 return cls(
@@ -62,6 +78,31 @@ class LLMError(Exception):
                 retryable=True,
             )
         return cls(str(exc), retryable=False)
+
+
+class ContextLengthExceededError(LLMError):
+    """Ошибка превышения контекстного окна модели.
+
+    Может быть поймана оркестратором для повторной попытки
+    с урезанным контекстом (degraded mode).
+    """
+
+    def __init__(
+        self, message: str, retryable: bool = True, status_code: int = 400
+    ) -> None:
+        super().__init__(message, retryable=retryable, status_code=status_code)
+
+
+def _extract_error_code(exc: APIStatusError) -> str | None:
+    """Извлечь код ошибки из тела ответа 400."""
+    try:
+        body_str = exc.body
+        if isinstance(body_str, (bytes, bytearray)):
+            body_str = body_str.decode("utf-8", errors="replace")
+        body: dict[str, Any] = json.loads(body_str) if isinstance(body_str, str) else {}
+        return body.get("error", {}).get("code")
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return None
 
 
 async def with_retry(
