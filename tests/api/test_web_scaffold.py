@@ -84,7 +84,13 @@ def test_static_app_css_served(web_client) -> None:
     r = client.get("/static/app.css")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/css")
-    assert ".topbar" in r.text
+    # app.css is a thin entry point that @imports the partials in css/.
+    assert "@import" in r.text and "css/_base.css" in r.text
+    # The original .topbar rule lives in the base partial — ensure it's
+    # actually served (not just referenced).
+    base = client.get("/static/css/_base.css")
+    assert base.status_code == 200
+    assert ".topbar" in base.text
 
 
 # ── WEB-002: project detail page ────────────────────────────────────────────

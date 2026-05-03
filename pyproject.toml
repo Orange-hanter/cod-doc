@@ -67,6 +67,7 @@ include = ["cod_doc*"]
     "templates/web/project/*.html",
     "static/*.css",
     "static/*.js",
+    "static/css/*.css",
     "py.typed",
 ]
 
