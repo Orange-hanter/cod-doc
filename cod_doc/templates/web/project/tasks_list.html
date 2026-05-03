@@ -7,6 +7,13 @@
 
 {% with slug=project.name, active="tasks" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
+{% if legacy_count and legacy_count > 0 %}
+  <p class="muted">
+    📁 <a href="/p/{{ project.name }}/tasks/legacy">Legacy YAML tasks ({{ legacy_count }})</a>
+    — stored in <code>.cod-doc/tasks.yaml</code>, not yet migrated.
+  </p>
+{% endif %}
+
 <form class="filter-bar" method="get" action="/p/{{ project.name }}/tasks">
   <label>Status:
     <select name="status" onchange="this.form.submit()">

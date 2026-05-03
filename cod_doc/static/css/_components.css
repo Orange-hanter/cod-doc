@@ -52,6 +52,45 @@
   overflow: hidden;
   vertical-align: middle;
 }
+
+.section-block {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 8px 0;
+  padding: 4px 8px;
+  background: var(--bg);
+}
+.section-block > summary {
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 0;
+  list-style: none;
+}
+.section-block > summary::-webkit-details-marker { display: none; }
+.section-block > summary::before {
+  content: "▸";
+  display: inline-block;
+  width: 12px;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.section-block[open] > summary::before { transform: rotate(90deg); }
+.section-block .section-title { font-weight: 600; flex: 1; }
+.section-block .section-stats { font-size: 12px; }
+.section-block .section-tasks { margin-top: 8px; }
+
+.mermaid {
+  display: block;
+  text-align: center;
+  margin: 12px 0;
+  padding: 8px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow-x: auto;
+}
 .progress-fill {
   display: block;
   height: 100%;

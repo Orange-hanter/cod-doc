@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from cod_doc.api.deps import get_config
 from cod_doc.api.web.templates_env import templates
+from cod_doc.services import model_catalog
 
 from ._helpers import _masked_api_key
 
@@ -31,6 +32,16 @@ def settings_show(request: Request) -> HTMLResponse:
                 "agent_interval": cfg.agent_interval,
                 "embedding_model": cfg.embedding_model,
             },
+            "model_catalog": [
+                {
+                    "model_id": m.model_id,
+                    "label": m.label,
+                    "describe": m.describe(),
+                    "notes": m.notes,
+                }
+                for m in model_catalog.CATALOG
+            ],
+            "model_is_custom": not model_catalog.is_known(cfg.model),
         },
     )
 

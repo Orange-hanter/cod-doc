@@ -173,17 +173,82 @@ def test_plan_show_renders_ready_block(plans_client) -> None:
 
 
 def test_plan_show_renders_mermaid_export(plans_client) -> None:
+    """COD-061: dependency graph renders as <div class="mermaid"> for client-side mermaid.js."""
     client, entry, plan_id = plans_client
     r = client.get(f"/p/{entry.name}/plans/{plan_id}")
-    # Mermaid syntax appears in a <pre> block (interactive renderer deferred).
+    assert 'class="mermaid"' in r.text
     assert "graph TD" in r.text
-    assert "```mermaid" in r.text
+    # Raw markdown fence markers are consumed by the renderer.
+    assert "```mermaid" not in r.text
+
+
+def test_base_loads_mermaid_when_diagram_present(plans_client) -> None:
+    """COD-061: mermaid.js loader is in <head>, gated on .mermaid presence."""
+    client, entry, plan_id = plans_client
+    r = client.get(f"/p/{entry.name}/plans/{plan_id}")
+    assert "mermaid.esm.min.mjs" in r.text
+    assert "querySelector('.mermaid')" in r.text
 
 
 def test_plan_show_404_unknown_plan(plans_client) -> None:
     client, entry, _ = plans_client
     r = client.get(f"/p/{entry.name}/plans/9999")
     assert r.status_code == 404
+
+
+def test_plan_show_section_lists_tasks_inside(plans_client) -> None:
+    """COD-064: each section block expands to show its tasks (id + title)."""
+    client, entry, plan_id = plans_client
+    r = client.get(f"/p/{entry.name}/plans/{plan_id}")
+    assert r.status_code == 200
+    # All three task IDs from the seed appear inside a section-tasks table
+    assert 'class="grid section-tasks"' in r.text
+    assert "PAY-001" in r.text
+    assert "PAY-002" in r.text
+    assert "PAY-003" in r.text
+    # Done task gets the "done" badge in the section table
+    assert "badge-done" in r.text
+    # Each section is wrapped in <details>
+    assert '<details class="section-block"' in r.text
+    # Section with in-progress/pending tasks opens by default (1+ pending)
+    assert "open" in r.text
+
+
+def test_plan_show_section_with_no_tasks_says_so(plans_client, tmp_path: Path, migrate_db) -> None:
+    """A plan section without tasks still renders, with an empty placeholder."""
+    client, entry, _plan_id = plans_client
+
+    # Add a fresh empty plan with one section, no tasks.
+    repo = tmp_path / "plans-demo"
+    db_path = repo / ".cod-doc" / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    new_plan_id: int | None = None
+    with transactional(factory) as session:
+        proj = ProjectRepository(session).get_by_slug(entry.name)
+        assert proj is not None and proj.row_id is not None
+        now = datetime.now(UTC)
+        plan = PlanRepository(session).add(
+            Plan(project_id=proj.row_id, scope="empty-plan", principle="test-first")
+        )
+        plan.created = now
+        plan.last_updated = now
+        session.flush()
+        new_plan_id = plan.row_id
+        PlanSectionRepository(session).add(
+            PlanSection(
+                plan_id=plan.row_id,
+                letter="A",
+                title="Empty",
+                slug="empty",
+                position=0,
+            )
+        )
+    engine.dispose()
+
+    r = client.get(f"/p/{entry.name}/plans/{new_plan_id}")
+    assert r.status_code == 200
+    assert "В этой секции нет задач" in r.text
 
 
 def test_plan_show_cross_project_404(plans_client, tmp_path: Path, migrate_db) -> None:

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Legacy tasks · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/tasks">Tasks</a> /
+  <span>Legacy</span>
+</nav>
+
+<h1>{{ project.name }} · Legacy YAML tasks</h1>
+
+{% with slug=project.name, active="tasks" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<p class="muted">
+  Stored in <code>.cod-doc/tasks.yaml</code> — predate the DB schema.
+  Read-only here; use the importer to bring them into the DB.
+</p>
+
+<form class="filter-bar" method="get" action="/p/{{ project.name }}/tasks/legacy">
+  <label>Status:
+    <select name="status" onchange="this.form.submit()">
+      <option value="" {% if not status_filter %}selected{% endif %}>(all)</option>
+      {% for s in legacy_status_options %}
+        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <noscript><button type="submit">Apply</button></noscript>
+  {% if status_filter %}
+    <a class="muted" href="/p/{{ project.name }}/tasks/legacy">clear</a>
+  {% endif %}
+</form>
+
+{% if status_invalid %}
+  <p class="warn">Неизвестное значение status — фильтр проигнорирован.</p>
+{% endif %}
+
+{% if total == 0 %}
+  <p class="muted">
+    {% if status_filter %}
+      Нет legacy-задач со статусом <code>{{ status_filter }}</code>.
+    {% else %}
+      В этом проекте нет legacy YAML-задач.
+    {% endif %}
+  </p>
+{% else %}
+<table class="grid">
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Title</th>
+      <th>Status</th>
+      <th class="num">Priority</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tasks %}
+      <tr class="status-{{ t.status }}">
+        <td class="mono">{{ t.id }}</td>
+        <td>{{ t.title }}</td>
+        <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
+        <td class="num"><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span></td>
+        <td class="mono">{{ t.updated }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% set start = offset + 1 %}
+{% set end = offset + (tasks | length) %}
+<p class="muted">
+  Showing {{ start }}–{{ end }} of {{ total }}
+  legacy task{% if total != 1 %}s{% endif %}.
+</p>
+
+{% set has_prev = offset > 0 %}
+{% set has_next = (offset + limit) < total %}
+{% if has_prev or has_next %}
+  <nav class="pager">
+    {% if has_prev %}
+      {% set prev_offset = [offset - limit, 0] | max %}
+      <a href="/p/{{ project.name }}/tasks/legacy?{% if status_filter %}status={{ status_filter }}&{% endif %}limit={{ limit }}&offset={{ prev_offset }}">← prev</a>
+    {% else %}
+      <span class="muted">← prev</span>
+    {% endif %}
+    {% if has_next %}
+      <a href="/p/{{ project.name }}/tasks/legacy?{% if status_filter %}status={{ status_filter }}&{% endif %}limit={{ limit }}&offset={{ offset + limit }}">next →</a>
+    {% else %}
+      <span class="muted">next →</span>
+    {% endif %}
+  </nav>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -174,6 +174,47 @@ def test_settings_post_new_api_key_replaces(settings_client) -> None:
     assert cfg.api_key == "sk-newer-secret-9876"
 
 
+def test_settings_get_renders_model_preset_dropdown(settings_client) -> None:
+    """COD-059: settings page exposes a curated <select> of LLM presets."""
+    client, _ = settings_client
+    r = client.get("/settings")
+    # Dropdown is wired
+    assert 'id="model-preset"' in r.text
+    assert "syncModelPreset" in r.text
+    # At least the default Sonnet entry is listed with context + price tags
+    assert "Claude Sonnet 4.6" in r.text
+    assert "200K ctx" in r.text
+    assert "per 1M tok" in r.text
+    # Custom-fallback option exists
+    assert "__custom__" in r.text
+
+
+def test_settings_get_marks_unknown_model_as_custom(settings_client) -> None:
+    """A model not in the catalog → custom option selected."""
+    client, _ = settings_client
+    # Fixture sets model="anthropic/claude-3-haiku", which is NOT in the catalog.
+    r = client.get("/settings")
+    # The "Custom" <option> is selected
+    assert 'value="__custom__" selected' in r.text
+
+
+def test_settings_get_marks_known_preset_selected() -> None:
+    """A model in the catalog → that preset is the selected option."""
+    Config(
+        api_key="sk-test",
+        model="anthropic/claude-sonnet-4-6",
+        base_url="https://x",
+    ).save()
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get("/settings")
+    assert r.status_code == 200
+    # The catalog option for Sonnet 4.6 is rendered with selected attribute
+    assert 'value="anthropic/claude-sonnet-4-6"' in r.text
+    assert "selected" in r.text
+
+
 def test_settings_post_uncheck_auto_commit_clears_it(settings_client) -> None:
     """Checkbox absent in form → auto_commit becomes False."""
     client, cfg = settings_client

@@ -9,8 +9,10 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
+from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import plan_service as plans
+from cod_doc.services import task_service as tasks
 
 router = APIRouter()
 
@@ -77,6 +79,21 @@ def plan_show(
     ready_tasks = plans.ready(session, plan_id, limit=PLAN_READY_LIMIT)
     exported = plans.export(session, plan_id)
 
+    # Group tasks by section so the template can render one collapsible
+    # block per section without re-querying. list_for_plan is already
+    # ordered by (section_id, task_id) so iteration preserves layout.
+    tasks_by_section: dict[int, list[dict[str, Any]]] = {}
+    for t in tasks.list_for_plan(session, plan_id):
+        tasks_by_section.setdefault(t.section_id, []).append(
+            {
+                "task_id": t.task_id,
+                "title": t.title,
+                "type": t.type.value,
+                "status": t.status.value,
+                "priority": t.priority.value,
+            }
+        )
+
     return templates.TemplateResponse(
         request,
         "project/plan_show.html",
@@ -99,6 +116,7 @@ def plan_show(
             },
             "sections": [
                 {
+                    "section_id": s.section_id,
                     "letter": s.letter,
                     "title": s.title,
                     "slug": s.slug,
@@ -110,6 +128,7 @@ def plan_show(
                     "percent": (
                         round(100 * s.done / s.total) if s.total else 0
                     ),
+                    "tasks": tasks_by_section.get(s.section_id, []),
                 }
                 for s in progress.sections
             ],
@@ -125,5 +144,6 @@ def plan_show(
                 for t in ready_tasks
             ],
             "exported": exported,
+            "dependency_graph_html": render_markdown(exported.get("dependency_graph", "")),
         },
     )

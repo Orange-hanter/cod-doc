@@ -21,36 +21,49 @@
 </section>
 
 <section class="overview-block">
-  <h2>Section progress</h2>
+  <h2>Sections</h2>
   {% if sections %}
-  <table class="grid">
-    <thead>
-      <tr>
-        <th>Letter</th>
-        <th>Title</th>
-        <th class="num">Done</th>
-        <th class="num">Total</th>
-        <th>Status</th>
-        <th>Progress</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for s in sections %}
-      <tr>
-        <td class="mono">{{ s.letter }}</td>
-        <td>{{ s.title }}</td>
-        <td class="num">{{ s.done }}</td>
-        <td class="num">{{ s.total }}</td>
-        <td>{{ s.status }}</td>
-        <td>
-          <div class="progress-bar" title="{{ s.percent }}%">
+    {% for s in sections %}
+      <details class="section-block" id="section-{{ s.section_id }}"
+               {% if s.done < s.total %}open{% endif %}>
+        <summary>
+          <span class="mono">{{ s.letter }}</span>
+          <span class="section-title">{{ s.title }}</span>
+          <span class="section-stats muted">
+            {{ s.done }} / {{ s.total }} · {{ s.status }}
+          </span>
+          <span class="progress-bar" title="{{ s.percent }}%">
             <span class="progress-fill" style="width: {{ s.percent }}%"></span>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+          </span>
+        </summary>
+        {% if s.tasks %}
+          <table class="grid section-tasks">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Priority</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in s.tasks %}
+                <tr class="status-{{ t.status }}">
+                  <td class="mono"><a href="/p/{{ project.name }}/tasks/{{ t.task_id }}">{{ t.task_id }}</a></td>
+                  <td><a href="/p/{{ project.name }}/tasks/{{ t.task_id }}">{{ t.title }}</a></td>
+                  <td>{{ t.type }}</td>
+                  <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
+                  <td><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="muted">В этой секции нет задач.</p>
+        {% endif %}
+      </details>
+    {% endfor %}
   {% else %}
   <p class="muted">У плана нет секций.</p>
   {% endif %}
@@ -86,11 +99,7 @@
 
 <section class="overview-block">
   <h2>Dependency graph</h2>
-  <p class="muted">
-    Mermaid-syntax (interactive rendering deferred — vendoring `mermaid.min.js`
-    awaits a deps decision):
-  </p>
-  <pre class="md-preview">{{ exported.dependency_graph }}</pre>
+  {{ dependency_graph_html | safe }}
 </section>
 
 <details class="overview-block">

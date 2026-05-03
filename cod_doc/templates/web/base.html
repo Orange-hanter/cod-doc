@@ -6,6 +6,14 @@
   <title>{% block title %}COD-DOC{% endblock %}</title>
   <link rel="stylesheet" href="{{ static_url('app.css') }}">
   <script defer src="{{ static_url('htmx.min.js') }}"></script>
+  <script type="module">
+    // Mermaid is loaded lazily and only when the page actually contains a
+    // diagram, so pages without graphs don't pay the network cost.
+    if (document.querySelector('.mermaid')) {
+      const m = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
+      m.default.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'strict' });
+    }
+  </script>
 </head>
 <body>
   <header class="topbar">

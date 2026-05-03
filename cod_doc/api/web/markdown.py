@@ -64,6 +64,7 @@ def render_markdown(text: str) -> str:
 
     blocks: list[str] = []
     in_fence = False
+    fence_lang: str = ""
     fence_lines: list[str] = []
     paragraph_lines: list[str] = []
     list_items: list[str] = []
@@ -96,11 +97,19 @@ def render_markdown(text: str) -> str:
         if line.startswith("```"):
             flush_all()
             if in_fence:
-                code_html = html_escape("\n".join(fence_lines))
-                blocks.append(f"<pre><code>{code_html}</code></pre>")
+                content = "\n".join(fence_lines)
+                if fence_lang == "mermaid":
+                    # Mermaid graphs render client-side via mermaid.js;
+                    # the diagram source is escaped so untrusted input
+                    # cannot inject HTML.
+                    blocks.append(f'<div class="mermaid">{html_escape(content)}</div>')
+                else:
+                    blocks.append(f"<pre><code>{html_escape(content)}</code></pre>")
                 fence_lines.clear()
+                fence_lang = ""
                 in_fence = False
             else:
+                fence_lang = line[3:].strip().lower()
                 in_fence = True
             continue
         if in_fence:
@@ -137,8 +146,11 @@ def render_markdown(text: str) -> str:
     flush_all()
     if in_fence and fence_lines:
         # Unclosed fence — close gracefully so we never lose content.
-        code_html = html_escape("\n".join(fence_lines))
-        blocks.append(f"<pre><code>{code_html}</code></pre>")
+        content = "\n".join(fence_lines)
+        if fence_lang == "mermaid":
+            blocks.append(f'<div class="mermaid">{html_escape(content)}</div>')
+        else:
+            blocks.append(f"<pre><code>{html_escape(content)}</code></pre>")
 
     return "\n".join(blocks)
 

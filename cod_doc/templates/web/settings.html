@@ -26,9 +26,45 @@
       <input type="text" name="base_url" value="{{ config.base_url }}" required>
     </label>
     <label class="field">
-      <span class="label">Model</span>
-      <input type="text" name="model" value="{{ config.model }}" required>
+      <span class="label">Model preset</span>
+      <select id="model-preset" onchange="syncModelPreset(this)">
+        {% for m in model_catalog %}
+          <option value="{{ m.model_id }}"
+                  data-notes="{{ m.notes }}"
+                  {% if config.model == m.model_id %}selected{% endif %}>
+            {{ m.describe }}
+          </option>
+        {% endfor %}
+        <option value="__custom__" {% if model_is_custom %}selected{% endif %}>
+          Custom — type model ID below
+        </option>
+      </select>
+      <small class="muted" id="model-notes">
+        {% for m in model_catalog %}{% if config.model == m.model_id %}{{ m.notes }}{% endif %}{% endfor %}
+      </small>
     </label>
+    <label class="field">
+      <span class="label">Model ID</span>
+      <input type="text" id="model-id" name="model" value="{{ config.model }}" required>
+      <small class="muted">
+        OpenRouter route slug (e.g. <code>anthropic/claude-sonnet-4-6</code>).
+        Pricing/context above are informational — provider invoice wins.
+      </small>
+    </label>
+    <script>
+      function syncModelPreset(select) {
+        const input = document.getElementById('model-id');
+        const notes = document.getElementById('model-notes');
+        if (select.value === '__custom__') {
+          input.focus();
+          notes.textContent = 'Введи custom model ID вручную.';
+        } else {
+          input.value = select.value;
+          const opt = select.options[select.selectedIndex];
+          notes.textContent = opt.dataset.notes || '';
+        }
+      }
+    </script>
     <label class="field">
       <span class="label">Max tokens</span>
       <input type="number" name="max_tokens" value="{{ config.max_tokens }}" min="1" required>

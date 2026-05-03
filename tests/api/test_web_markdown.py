@@ -116,6 +116,38 @@ def test_unclosed_code_fence_does_not_lose_content() -> None:
     assert "<pre><code>" in out
 
 
+def test_mermaid_fence_emits_div_for_clientside_render() -> None:
+    """COD-061: ```mermaid blocks become <div class="mermaid"> for mermaid.js."""
+    md = "```mermaid\ngraph TD\n  A --> B\n```"
+    out = render_markdown(md)
+    assert '<div class="mermaid">' in out
+    assert "graph TD" in out
+    # Plain code-fence path is NOT used.
+    assert "<pre><code>" not in out
+
+
+def test_mermaid_fence_escapes_diagram_source() -> None:
+    """User-supplied diagram text must be HTML-escaped — no raw HTML injection."""
+    md = "```mermaid\ngraph TD\n  A[\"<script>alert(1)</script>\"]\n```"
+    out = render_markdown(md)
+    assert "&lt;script&gt;" in out
+    assert "<script>alert(1)" not in out
+
+
+def test_unclosed_mermaid_fence_still_emits_div() -> None:
+    out = render_markdown("```mermaid\ngraph TD\n  A --> B")
+    assert '<div class="mermaid">' in out
+    assert "graph TD" in out
+
+
+def test_non_mermaid_lang_still_uses_pre_code() -> None:
+    """Other language tags keep the existing pre/code rendering."""
+    md = "```python\nprint('hi')\n```"
+    out = render_markdown(md)
+    assert "<pre><code>" in out
+    assert '<div class="mermaid">' not in out
+
+
 def test_paragraph_adjacent_to_list_is_rendered_separately() -> None:
     md = "intro paragraph\n\n- item one\n- item two\n\noutro paragraph"
     out = render_markdown(md)
