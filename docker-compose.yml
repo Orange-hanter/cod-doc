@@ -19,6 +19,7 @@ services:
       - /Users/dakh/Git/cod-doc:/projects/cod-doc:rw
       - /Users/dakh/Git/Restate:/projects/Restate:ro
       - /Users/dakh/Git/Restate-docs:/projects/Restate-docs:rw
+      - /Users/dakh/Git/GatewayDemo:/projects/GatewayDemo:rw
     networks:
       - cod_doc_net
     healthcheck:

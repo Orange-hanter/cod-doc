@@ -26,6 +26,24 @@ cod-doc --help
 
 ---
 
+## Шаг 0a. Подключение MCP-сервера (для Claude Code / Claude Desktop)
+
+```bash
+# В корне репозитория cod-doc:
+cp .mcp.json.example .mcp.json
+# Откройте .mcp.json и оставьте ОДНУ из двух конфигураций (docker или native).
+# Перезапустите MCP-клиент.
+```
+
+`.mcp.json` уже в `.gitignore` — каждый разработчик держит свою копию. Готовый шаблон содержит два варианта запуска:
+
+- **`cod-doc-docker`** — подключается к работающему `docker compose up` контейнеру (рекомендуется; проекты монтируются через `docker-compose.yml`).
+- **`cod-doc-native`** — использует CLI-скрипт `cod-doc-mcp` (требует `pip install -e .`).
+
+После подключения клиент получает доступ ко всем `mcp__cod-doc__*` тулам (`task.list`, `task.summary`, `context.get`, `doc.create`, …).
+
+---
+
 ## Шаг 1. Создаём демо-проект
 
 Для этого гайда создадим простой Python CLI — прогноз погоды.

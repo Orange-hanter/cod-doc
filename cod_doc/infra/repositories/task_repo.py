@@ -31,6 +31,7 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
             last_updated=model.last_updated,
             completed_at=model.completed_at,
             completed_commit=model.completed_commit,
+            blocked_reason=model.blocked_reason,
         )
 
     def _to_model(self, entity: Task) -> TaskModel:
@@ -46,6 +47,7 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
             "description": entity.description,
             "acceptance": entity.acceptance,
             "completed_commit": entity.completed_commit,
+            "blocked_reason": entity.blocked_reason,
         }
         if entity.row_id is not None:
             kwargs["row_id"] = entity.row_id
@@ -75,9 +77,18 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
         project_id: int,
         *,
         status: TaskStatus | None = None,
+        priority: Priority | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[Task]:
         stmt = select(TaskModel).where(TaskModel.project_id == project_id)
         if status is not None:
             stmt = stmt.where(TaskModel.status == status.value)
+        if priority is not None:
+            stmt = stmt.where(TaskModel.priority == priority.value)
         stmt = stmt.order_by(TaskModel.plan_id, TaskModel.section_id, TaskModel.task_id)
+        if offset:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]

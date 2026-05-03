@@ -108,6 +108,7 @@ class TaskModel(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_commit: Mapped[str | None] = mapped_column(String(64))
+    blocked_reason: Mapped[str | None] = mapped_column(Text)
 
     plan: Mapped[PlanModel] = relationship(back_populates="tasks")
     section: Mapped[PlanSectionModel] = relationship(back_populates="tasks")

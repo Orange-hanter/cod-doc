@@ -90,6 +90,57 @@ def _task_diff(op: str, **fields: object) -> str:
 # --------------------------------------------------------------------------- #
 
 
+_TITLE_PUNCT_RE = re.compile(r"[^\w\s]+", re.UNICODE)
+_TITLE_WS_RE = re.compile(r"\s+", re.UNICODE)
+
+
+def _normalize_title(title: str) -> str:
+    """Lowercase, strip punctuation and collapse whitespace.
+
+    Used by ``find_duplicate_by_title`` to compare task titles ignoring
+    case, punctuation and minor whitespace differences. The same canonical
+    form is used both at create-time and by the lookup helper.
+    """
+    s = _TITLE_PUNCT_RE.sub(" ", title.lower())
+    return _TITLE_WS_RE.sub(" ", s).strip()
+
+
+class DuplicateTaskError(ValueError):
+    """Raised by `create()` when an existing task has the same normalized title.
+
+    Carries the colliding task's `task_id` so callers can either reference
+    the existing task or retry with `allow_duplicate=True`.
+    """
+
+    def __init__(self, *, existing_task_id: str, normalized_title: str) -> None:
+        super().__init__(
+            f"task with similar title already exists: {existing_task_id} "
+            f"(normalized: {normalized_title!r})"
+        )
+        self.existing_task_id = existing_task_id
+        self.normalized_title = normalized_title
+
+
+def find_duplicate_by_title(
+    session: Session, project_id: int, title: str
+) -> Task | None:
+    """Return an existing task in the project with the same normalized title.
+
+    Returns ``None`` if no candidate is found. Comparison is exact on
+    `_normalize_title(title)` — case/punctuation/whitespace insensitive.
+    """
+    normalized = _normalize_title(title)
+    if not normalized:
+        return None
+
+    repo = TaskRepository(session)
+    stmt = select(TaskModel).where(TaskModel.project_id == project_id)
+    for model in session.execute(stmt).scalars():
+        if _normalize_title(model.title) == normalized:
+            return repo._to_domain(model)
+    return None
+
+
 def create(
     session: Session,
     *,
@@ -105,13 +156,29 @@ def create(
     description: str | None = None,
     acceptance: str | None = None,
     affected_files: list[str] | None = None,
+    blocked_reason: str | None = None,
     reason: str | None = None,
+    allow_duplicate: bool = True,
 ) -> Task:
     """Persist a task and write its initial revision.
 
     If `task_id` is None, `id_prefix` must be provided; the service assigns
     `{prefix}-NNN` where NNN is the next sequence within the plan.
+
+    When `allow_duplicate=False`, `find_duplicate_by_title` is consulted
+    before insert; a match raises `DuplicateTaskError`. The default `True`
+    preserves legacy callers and tests; new MCP/CLI surfaces flip it to
+    `False` so duplicate prevention is the default at the user boundary.
     """
+    if not allow_duplicate:
+        existing = find_duplicate_by_title(session, project_id, title)
+        if existing is not None:
+            assert existing.task_id is not None
+            raise DuplicateTaskError(
+                existing_task_id=existing.task_id,
+                normalized_title=_normalize_title(title),
+            )
+
     if task_id is None:
         if not id_prefix:
             raise ValueError("provide task_id or id_prefix")
@@ -134,6 +201,7 @@ def create(
             priority=priority,
             description=description,
             acceptance=acceptance,
+            blocked_reason=blocked_reason,
             created=now,
             last_updated=now,
         )
@@ -372,5 +440,225 @@ def list_for_project(
     project_id: int,
     *,
     status: TaskStatus | None = None,
+    priority: Priority | None = None,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[Task]:
-    return TaskRepository(session).list_for_project(project_id, status=status)
+    """List tasks for a project with optional status/priority filters and pagination.
+
+    A `limit=None` returns all matching tasks (legacy behaviour). Callers
+    fronted by MCP/REST should pass a finite limit to bound payload size.
+    """
+    return TaskRepository(session).list_for_project(
+        project_id,
+        status=status,
+        priority=priority,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def count_for_project(
+    session: Session,
+    project_id: int,
+    *,
+    status: TaskStatus | None = None,
+    priority: Priority | None = None,
+) -> int:
+    """Return the count of matching tasks (paired with list_for_project)."""
+    from sqlalchemy import func
+
+    stmt = select(func.count(TaskModel.row_id)).where(TaskModel.project_id == project_id)
+    if status is not None:
+        stmt = stmt.where(TaskModel.status == status.value)
+    if priority is not None:
+        stmt = stmt.where(TaskModel.priority == priority.value)
+    return int(session.execute(stmt).scalar_one() or 0)
+
+
+def set_blocker(
+    session: Session,
+    *,
+    task_id: str,
+    reason: str,
+    author: str,
+) -> Task:
+    """Mark a task as externally blocked (free-text reason).
+
+    Stored in ``task.blocked_reason``. Independent of the ``dependency`` edge
+    graph (which models task→task blocks). Writes a TASK revision with
+    op=set_blocker.
+    """
+    if not reason or not reason.strip():
+        raise ValueError("reason must be non-empty")
+
+    model = _require_task(session, task_id)
+    old_reason = model.blocked_reason
+    model.blocked_reason = reason
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+
+    rev.write(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff("set_blocker", old=old_reason, new=reason),
+        reason="set_blocker",
+    )
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return t
+
+
+def clear_blocker(
+    session: Session,
+    *,
+    task_id: str,
+    author: str,
+) -> Task:
+    """Clear the external blocker on a task (no-op if already clear)."""
+    model = _require_task(session, task_id)
+    if model.blocked_reason is None:
+        t = TaskRepository(session).get(model.row_id)
+        assert t is not None
+        return t
+
+    old_reason = model.blocked_reason
+    model.blocked_reason = None
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+
+    rev.write(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff("clear_blocker", old=old_reason),
+        reason="clear_blocker",
+    )
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return t
+
+
+def list_blocked(
+    session: Session,
+    project_id: int,
+) -> list[Task]:
+    """Return tasks that have an external blocker set (blocked_reason IS NOT NULL).
+
+    DONE tasks are excluded — once a task is finished its old blocker is
+    historical noise.
+    """
+    stmt = (
+        select(TaskModel)
+        .where(
+            TaskModel.project_id == project_id,
+            TaskModel.blocked_reason.is_not(None),
+            TaskModel.status != TaskStatus.DONE.value,
+        )
+        .order_by(TaskModel.priority, TaskModel.task_id)
+    )
+    repo = TaskRepository(session)
+    return [repo._to_domain(m) for m in session.execute(stmt).scalars()]
+
+
+def list_stale_in_progress(
+    session: Session,
+    project_id: int,
+    *,
+    threshold_hours: float = 24.0,
+) -> list[Task]:
+    """Return in-progress tasks whose ``last_updated`` is older than the threshold.
+
+    Used to surface "stuck" agents — a task in IN_PROGRESS without any
+    revision activity for ``threshold_hours`` is treated as stale and
+    deserves human attention (or an automatic reset to PENDING).
+    """
+    from datetime import timedelta
+
+    cutoff = datetime.now(UTC) - timedelta(hours=threshold_hours)
+    stmt = (
+        select(TaskModel)
+        .where(
+            TaskModel.project_id == project_id,
+            TaskModel.status == TaskStatus.IN_PROGRESS.value,
+            TaskModel.last_updated < cutoff,
+        )
+        .order_by(TaskModel.last_updated)
+    )
+    repo = TaskRepository(session)
+    return [repo._to_domain(m) for m in session.execute(stmt).scalars()]
+
+
+def log_progress(
+    session: Session,
+    *,
+    task_id: str,
+    message: str,
+    author: str,
+) -> Task:
+    """Record a progress note on an in-progress task.
+
+    Touches ``last_updated`` (so the task no longer looks stale) and writes
+    a revision with ``op=progress`` carrying the message. Does not change
+    status — the caller already moved the task to IN_PROGRESS.
+    """
+    if not message or not message.strip():
+        raise ValueError("message must be non-empty")
+
+    model = _require_task(session, task_id)
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+
+    rev.write(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff("progress", message=message),
+        reason="progress",
+    )
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return t
+
+
+def summarize_for_project(session: Session, project_id: int) -> dict:  # type: ignore[type-arg]
+    """Aggregate counts by status and priority — cheap overview for big projects.
+
+    Returns: {
+      "total": int,
+      "by_status": {"pending": N, "in-progress": N, "done": N, ...},
+      "by_priority": {"critical": N, "high": N, "medium": N, "low": N},
+    }
+    """
+    from sqlalchemy import func
+
+    by_status: dict[str, int] = {}
+    rows = session.execute(
+        select(TaskModel.status, func.count(TaskModel.row_id))
+        .where(TaskModel.project_id == project_id)
+        .group_by(TaskModel.status)
+    ).all()
+    for s, n in rows:
+        by_status[s] = int(n)
+
+    by_priority: dict[str, int] = {}
+    rows = session.execute(
+        select(TaskModel.priority, func.count(TaskModel.row_id))
+        .where(TaskModel.project_id == project_id)
+        .group_by(TaskModel.priority)
+    ).all()
+    for p, n in rows:
+        by_priority[p] = int(n)
+
+    return {
+        "total": sum(by_status.values()),
+        "by_status": by_status,
+        "by_priority": by_priority,
+    }

@@ -24,7 +24,10 @@ RUN python -c "import tomllib; deps=tomllib.load(open('pyproject.toml','rb'))['p
 # ── 4. Application source (invalidated on every code change) ─────────────────
 #    pip install --no-deps registers entry-points without re-downloading deps.
 COPY cod_doc/ ./cod_doc/
-RUN pip install --no-cache-dir --no-deps .
+COPY alembic.ini ./
+COPY entrypoint.sh ./
+RUN chmod +x ./entrypoint.sh \
+    && pip install --no-cache-dir --no-deps .
 
 # ── 5. Runtime directories & env defaults ────────────────────────────────────
 RUN mkdir -p /data/cod-doc /projects
@@ -43,4 +46,4 @@ EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
     CMD curl -f http://localhost:${COD_DOC_API_PORT}/api/health || exit 1
 
-CMD ["cod-doc", "serve"]
+ENTRYPOINT ["/app/entrypoint.sh"]

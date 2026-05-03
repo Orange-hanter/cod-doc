@@ -31,19 +31,36 @@ def register(mcp: FastMCP) -> None:
         return [project_summary(entry) for entry in cfg.list_projects()]
 
     @mcp.tool()
-    def get_project_status(project_name: str) -> dict[str, Any]:
-        """Return full project status: tasks, next actions, broken links."""
+    def get_project_status(
+        project_name: str,
+        include_tasks: bool = False,
+        task_limit: int = 50,
+    ) -> dict[str, Any]:
+        """Return project status: stats, next actions, broken links.
+
+        Parameters
+        ----------
+        include_tasks: if True, include the YAML task list (capped at task_limit).
+                       Default False to keep payload small for big projects.
+        task_limit:    cap on tasks when include_tasks=True (default 50).
+        """
         import re
 
         proj = open_project(project_name)
         master_content = proj.read_master() or ""
         broken_links = re.findall(r"[^\n]*📁[^\n]*🔴[^\n]*", master_content)
-        return {
+
+        result: dict[str, Any] = {
             "project": project_summary(proj.entry),
-            "tasks": [task.to_dict() for task in proj.get_tasks()],
             "next_actions": proj.extract_next_actions(),
             "broken_links": broken_links,
         }
+        if include_tasks:
+            all_tasks = proj.get_tasks()
+            result["tasks"] = [t.to_dict() for t in all_tasks[:task_limit]]
+            result["task_count"] = len(all_tasks)
+            result["task_truncated"] = len(all_tasks) > task_limit
+        return result
 
     @mcp.tool()
     def add_project(
@@ -78,11 +95,28 @@ def register(mcp: FastMCP) -> None:
     def list_tasks(
         project_name: str,
         status: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """List YAML-side tasks for a project, optionally filtered by status."""
+        limit: int = 50,
+        offset: int = 0,
+        include_description: bool = False,
+    ) -> dict[str, Any]:
+        """List YAML-side tasks for a project — paginated, optionally filtered by status.
+
+        Returns {"items": [...], "total": N, "limit": L, "offset": O}.
+        With include_description=False (default) the description/result fields
+        are omitted to keep payload bounded.
+        """
         proj = open_project(project_name)
         filter_status = TaskStatus(status) if status else None
-        return [t.to_dict() for t in proj.get_tasks(filter_status)]
+        all_tasks = proj.get_tasks(filter_status)
+        page = all_tasks[offset : offset + limit]
+        items: list[dict[str, Any]] = []
+        for t in page:
+            row = t.to_dict()
+            if not include_description:
+                row.pop("description", None)
+                row.pop("result", None)
+            items.append(row)
+        return {"items": items, "total": len(all_tasks), "limit": limit, "offset": offset}
 
     @mcp.tool()
     def add_task(

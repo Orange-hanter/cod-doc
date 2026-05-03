@@ -1,0 +1,22 @@
+{
+  "_doc": "Copy this file to .mcp.json (gitignored) and pick ONE of the two server entries below. Then restart your MCP client (Claude Code / Claude Desktop / VS Code).",
+
+  "mcpServers": {
+    "_pick_one_of": [
+      "cod-doc-docker — uses the running docker container (recommended; see docker-compose.yml)",
+      "cod-doc-native — uses the locally-installed cod-doc-mcp script (pip install -e .)"
+    ],
+
+    "cod-doc-docker": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["exec", "-i", "cod-doc", "cod-doc", "mcp"]
+    },
+
+    "cod-doc-native": {
+      "type": "stdio",
+      "command": "cod-doc-mcp",
+      "args": ["--transport", "stdio"]
+    }
+  }
+}

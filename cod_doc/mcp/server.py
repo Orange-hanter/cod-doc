@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 
 from cod_doc.logging_config import setup_logging
 from cod_doc.mcp.tools import (
+    context_tools,
     doc_tools,
     legacy_agent_tools,
     legacy_master_tools,
@@ -44,6 +45,8 @@ for _module in (
     story_tools,
     link_tools,
     revision_tools,
+    # COD-033 context.get
+    context_tools,
 ):
     _module.register(mcp)
 

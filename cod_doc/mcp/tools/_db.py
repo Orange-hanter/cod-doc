@@ -41,6 +41,7 @@ def task_to_dict(t: Any) -> dict[str, Any]:
         "section_id": t.section_id,
         "description": t.description,
         "acceptance": t.acceptance,
+        "blocked_reason": t.blocked_reason,
         "created": t.created.isoformat() if t.created else None,
         "last_updated": t.last_updated.isoformat() if t.last_updated else None,
         "completed_at": t.completed_at.isoformat() if t.completed_at else None,

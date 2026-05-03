@@ -236,6 +236,7 @@ class Task:
     last_updated: datetime | None = None
     completed_at: datetime | None = None
     completed_commit: str | None = None
+    blocked_reason: str | None = None
 
 
 @dataclass(slots=True)
