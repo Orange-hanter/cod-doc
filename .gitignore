@@ -17,3 +17,12 @@ venv/
 
 # COD-DOC
 *.pyc
+
+# Local dev tooling
+.claude/
+.mcp.json
+models/
+
+# Local playwright scripts
+.cod-doc-playwright-*.py
+.cod-doc-pw-*.py
