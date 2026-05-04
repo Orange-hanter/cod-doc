@@ -33,6 +33,7 @@ def register(mcp: FastMCP) -> None:
             api_key=cfg.api_key,
             base_url=cfg.base_url,
             embedding_model=cfg.embedding_model,
+            embedding_backend=cfg.embedding_backend,
             project_root=str(proj.entry.root),
             n_results=n_results,
         )
@@ -51,4 +52,5 @@ def register(mcp: FastMCP) -> None:
             api_key=cfg.api_key,
             base_url=cfg.base_url,
             embedding_model=cfg.embedding_model,
+            embedding_backend=cfg.embedding_backend,
         )

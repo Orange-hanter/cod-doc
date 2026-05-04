@@ -215,6 +215,64 @@ def test_settings_get_marks_known_preset_selected() -> None:
     assert "selected" in r.text
 
 
+def test_settings_get_renders_embedding_backend_dropdown(settings_client) -> None:
+    """COD-043: settings page exposes a backend <select> with openai + local."""
+    client, _ = settings_client
+    r = client.get("/settings")
+    body = r.text
+    assert 'name="embedding_backend"' in body
+    assert "OpenAI-compatible" in body
+    assert "Local sentence-transformers" in body
+    # By default, the openai option is selected.
+    assert 'value="openai"\n                selected' in body or (
+        '<option value="openai"' in body and "selected" in body
+    )
+
+
+def test_settings_post_persists_embedding_backend(settings_client) -> None:
+    client, cfg = settings_client
+    client.post(
+        "/settings",
+        data={
+            "api_key": "",
+            "base_url": cfg.base_url,
+            "model": cfg.model,
+            "max_tokens": str(cfg.max_tokens),
+            "auto_commit": "" if not cfg.auto_commit else "on",
+            "max_iterations": str(cfg.max_iterations),
+            "agent_interval": str(cfg.agent_interval),
+            "embedding_model": "all-MiniLM-L6-v2",
+            "embedding_backend": "local",
+        },
+        follow_redirects=False,
+    )
+    assert cfg.embedding_backend == "local"
+    assert cfg.embedding_model == "all-MiniLM-L6-v2"
+
+
+def test_settings_post_rejects_unknown_backend_falling_back_to_openai(settings_client) -> None:
+    client, cfg = settings_client
+    cfg.embedding_backend = "openai"
+    client.post(
+        "/settings",
+        data={
+            "api_key": "",
+            "base_url": cfg.base_url,
+            "model": cfg.model,
+            "max_tokens": str(cfg.max_tokens),
+            "auto_commit": "" if not cfg.auto_commit else "on",
+            "max_iterations": str(cfg.max_iterations),
+            "agent_interval": str(cfg.agent_interval),
+            "embedding_model": cfg.embedding_model,
+            "embedding_backend": "weird",
+        },
+        follow_redirects=False,
+    )
+    # Unknown values fall back to openai (no validation error to the user —
+    # the form is constrained to the dropdown's options anyway).
+    assert cfg.embedding_backend == "openai"
+
+
 def test_settings_post_uncheck_auto_commit_clears_it(settings_client) -> None:
     """Checkbox absent in form → auto_commit becomes False."""
     client, cfg = settings_client

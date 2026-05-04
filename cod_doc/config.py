@@ -74,9 +74,21 @@ class Config(BaseSettings):
 
     # ChromaDB / Embeddings
     chroma_path: str = Field(default=str(CONFIG_DIR / "chroma"))
+    embedding_backend: str = Field(
+        default="openai",
+        description=(
+            "'openai' — OpenAI-compatible /embeddings (default, needs api_key); "
+            "'local' — sentence-transformers via torch (no api_key, requires "
+            "the embeddings-local extra)."
+        ),
+    )
     embedding_model: str = Field(
         default="openai/text-embedding-ada-002",
-        description="Embeddings model slug (OpenRouter route, OpenAI-compatible /embeddings)",
+        description=(
+            "Embeddings model slug. For 'openai' backend: OpenRouter/OpenAI route "
+            "(e.g. 'openai/text-embedding-ada-002'). For 'local' backend: a "
+            "sentence-transformers model name (e.g. 'all-MiniLM-L6-v2')."
+        ),
     )
 
     # Проекты

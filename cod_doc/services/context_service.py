@@ -453,7 +453,8 @@ def _enrich_l3_semantic(
         from cod_doc.core.reindex import search_documents
 
         cfg = Config.load()
-        if not cfg.api_key:
+        # Local backend doesn't need an api_key; the openai backend does.
+        if cfg.embedding_backend == "openai" and not cfg.api_key:
             return  # no embedding backend → graceful skip
 
         hits = search_documents(
@@ -462,6 +463,7 @@ def _enrich_l3_semantic(
             api_key=cfg.api_key,
             base_url=cfg.base_url,
             embedding_model=cfg.embedding_model,
+            embedding_backend=cfg.embedding_backend,
             n_results=_MAX_SEMANTIC_HITS,
         )
         related["semantic"] = hits

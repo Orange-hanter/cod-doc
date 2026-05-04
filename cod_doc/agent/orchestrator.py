@@ -83,6 +83,7 @@ class Orchestrator:
             api_key=config.api_key,
             base_url=config.base_url,
             embedding_model=config.embedding_model,
+            embedding_backend=config.embedding_backend,
         )
 
     # ── Public API ───────────────────────────────────────────────────────────

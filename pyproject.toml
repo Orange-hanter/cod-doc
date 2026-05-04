@@ -49,6 +49,12 @@ dev = [
     "mypy>=1.11",
     "pre-commit>=3.8",
 ]
+# COD-043: opt-in local embeddings backend. Pulls torch (~200 MB on first
+# install) and sentence-transformers. Use when offline or when the OpenAI
+# embeddings cost is unacceptable.
+embeddings-local = [
+    "sentence-transformers>=3.0",
+]
 
 [project.scripts]
 cod-doc = "cod_doc.cli:main"

@@ -31,6 +31,7 @@ def settings_show(request: Request) -> HTMLResponse:
                 "max_iterations": cfg.max_iterations,
                 "agent_interval": cfg.agent_interval,
                 "embedding_model": cfg.embedding_model,
+                "embedding_backend": cfg.embedding_backend,
             },
             "model_catalog": [
                 {
@@ -57,6 +58,7 @@ def settings_save(
     max_iterations: int = Form(...),
     agent_interval: int = Form(...),
     embedding_model: str = Form(...),
+    embedding_backend: str = Form("openai"),
 ) -> Response:
     cfg = get_config()
     # Empty api_key on POST means "leave existing untouched" — typical web UX
@@ -73,5 +75,9 @@ def settings_save(
     cfg.max_iterations = max_iterations
     cfg.agent_interval = agent_interval
     cfg.embedding_model = embedding_model.strip()
+    backend = embedding_backend.strip().lower()
+    if backend not in {"openai", "local"}:
+        backend = "openai"
+    cfg.embedding_backend = backend
     cfg.save()
     return RedirectResponse(url="/settings", status_code=303)

@@ -40,34 +40,80 @@ def _collect_files(repo_root: Path) -> list[Path]:
     return files
 
 
+def _build_embedding_function(
+    backend: str,
+    api_key: str,
+    base_url: str,
+    embedding_model: str,
+) -> Any:
+    """Pick the right ChromaDB embedding function for the configured backend.
+
+    - ``openai``: OpenAI-compatible /embeddings endpoint (default; needs api_key).
+    - ``local``: sentence-transformers via torch (no api_key; requires the
+      `embeddings-local` extra — install with `pip install cod-doc[embeddings-local]`).
+    """
+    if backend == "local":
+        try:
+            from chromadb.utils.embedding_functions import (
+                SentenceTransformerEmbeddingFunction,
+            )
+        except ImportError as exc:
+            raise ImportError(
+                "Local embeddings require sentence-transformers. Install with: "
+                "pip install 'cod-doc[embeddings-local]'"
+            ) from exc
+        # Default to a tiny CPU-friendly model when the slug looks like an
+        # OpenAI route — saves the user from a config error after a backend
+        # switch.
+        model_name = (
+            "all-MiniLM-L6-v2" if "/" in embedding_model else embedding_model
+        )
+        return SentenceTransformerEmbeddingFunction(model_name=model_name)
+
+    if backend != "openai":
+        raise ValueError(
+            f"Unknown embedding_backend {backend!r}: expected 'openai' or 'local'"
+        )
+
+    from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+
+    if not api_key:
+        raise ValueError(
+            "api_key обязателен для embedding_backend='openai' "
+            "(OpenRouter / OpenAI-совместимый endpoint). Either set the API key "
+            "or switch embedding_backend to 'local'."
+        )
+    return OpenAIEmbeddingFunction(
+        api_key=api_key,
+        api_base=base_url,
+        model_name=embedding_model,
+    )
+
+
 def get_collection(
     chroma_path: str,
     api_key: str,
     base_url: str,
     embedding_model: str,
+    embedding_backend: str = "openai",
 ) -> Any:
     """Получить или создать ChromaDB коллекцию.
 
-    Embeddings идут через OpenAI-совместимый /embeddings endpoint (по умолчанию
-    OpenRouter). Локальные torch-бекенды отключены — см. roadmap COD-043.
+    The embedding backend is selected by ``embedding_backend``:
+    - ``openai`` (default): OpenAI-compatible /embeddings endpoint.
+    - ``local``: sentence-transformers via torch (CPU). See COD-043.
     """
     try:
-        import chromadb
-        from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
+        import chromadb  # noqa: F401
     except ImportError as e:
-        raise ImportError("chromadb не установлен. Выполните: pip install chromadb") from e
+        raise ImportError(
+            "chromadb не установлен. Выполните: pip install chromadb"
+        ) from e
 
-    if not api_key:
-        raise ValueError(
-            "api_key обязателен для embeddings (OpenRouter / OpenAI-совместимый endpoint)"
-        )
+    import chromadb as _chromadb
 
-    client = chromadb.PersistentClient(path=chroma_path)
-    ef = OpenAIEmbeddingFunction(
-        api_key=api_key,
-        api_base=base_url,
-        model_name=embedding_model,
-    )
+    ef = _build_embedding_function(embedding_backend, api_key, base_url, embedding_model)
+    client = _chromadb.PersistentClient(path=chroma_path)
     return client.get_or_create_collection(
         name="cod_doc",
         embedding_function=ef,  # type: ignore[arg-type]
@@ -82,12 +128,15 @@ def reindex_project(
     base_url: str,
     embedding_model: str,
     single_file: Path | None = None,
+    embedding_backend: str = "openai",
 ) -> dict[str, Any]:
     """
     Проиндексировать файлы проекта в ChromaDB.
     Возвращает {'indexed': int, 'errors': list[str]}.
     """
-    collection = get_collection(chroma_path, api_key, base_url, embedding_model)
+    collection = get_collection(
+        chroma_path, api_key, base_url, embedding_model, embedding_backend
+    )
     files = [single_file] if single_file else _collect_files(repo_root)
     indexed = 0
     errors: list[str] = []
@@ -127,13 +176,16 @@ def search_documents(
     embedding_model: str,
     project_root: str | None = None,
     n_results: int = 5,
+    embedding_backend: str = "openai",
 ) -> list[dict[str, Any]]:
     """
     Семантический поиск по проиндексированным документам.
 
     Returns список dict: {path, score, snippet, hash}.
     """
-    collection = get_collection(chroma_path, api_key, base_url, embedding_model)
+    collection = get_collection(
+        chroma_path, api_key, base_url, embedding_model, embedding_backend
+    )
     where = {"project": project_root} if project_root else None
 
     try:

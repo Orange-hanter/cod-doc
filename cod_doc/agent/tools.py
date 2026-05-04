@@ -37,6 +37,7 @@ class ToolExecutor:
         api_key: str = "",
         base_url: str = "",
         embedding_model: str = "",
+        embedding_backend: str = "openai",
     ) -> None:
         self.project = project
         self.root = project.entry.root
@@ -45,6 +46,7 @@ class ToolExecutor:
         self.api_key = api_key
         self.base_url = base_url
         self.embedding_model = embedding_model
+        self.embedding_backend = embedding_backend
         self._blocked = False
         self._blocked_question: str | None = None
 
@@ -210,6 +212,7 @@ class ToolExecutor:
                 api_key=self.api_key,
                 base_url=self.base_url,
                 embedding_model=self.embedding_model,
+                embedding_backend=self.embedding_backend,
                 project_root=str(self.root),
                 n_results=n_results,
             )
@@ -229,6 +232,7 @@ class ToolExecutor:
                 api_key=self.api_key,
                 base_url=self.base_url,
                 embedding_model=self.embedding_model,
+                embedding_backend=self.embedding_backend,
             )
             return result
         except ImportError as e:
