@@ -1,21 +1,27 @@
-"""Project overview + DB-init handler."""
+"""Project overview + DB-init handler + AI MASTER.md import (COD-060)."""
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sqlalchemy.orm import Session
 
-from cod_doc.api.deps import get_project, try_open_project_db
+from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
 from cod_doc.api.web.errors import truncate_for_cookie
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
-from cod_doc.domain.entities import EntityKind
+from cod_doc.domain.entities import EntityKind, Priority, TaskType
+from cod_doc.services import ai_generate
 from cod_doc.services import plan_service as plans
 from cod_doc.services import project_service as projects
 from cod_doc.services import revision_service as revisions
+from cod_doc.services import task_service as task_svc
+from cod_doc.services import trace_service
+from cod_doc.services.ai_text import AIBackendError
 
 from ._helpers import MASTER_PREVIEW_LINES, _preview
 
@@ -176,3 +182,176 @@ def project_init_db(request: Request, slug: str) -> Response:
         path="/",
     )
     return redirect
+
+
+# ── COD-060: AI-driven Import from folder ────────────────────────────────
+
+
+_DOC_EXTS = {".md", ".rst", ".txt"}
+_IMPORT_SCAN_LIMIT = 40
+_IMPORT_FILE_BYTES = 4000
+_IMPORT_SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".cod-doc", "dist", "build"}
+
+
+def _walk_doc_files(root: Path) -> list[tuple[str, str]]:
+    """Walk repo_root for .md/.rst/.txt files. Skip vendor/build dirs."""
+    files: list[tuple[str, str]] = []
+    for path in sorted(root.rglob("*")):
+        if len(files) >= _IMPORT_SCAN_LIMIT:
+            break
+        if not path.is_file() or path.suffix.lower() not in _DOC_EXTS:
+            continue
+        rel_parts = path.relative_to(root).parts
+        if any(p in _IMPORT_SKIP_DIRS or p.startswith(".") for p in rel_parts[:-1]):
+            continue
+        try:
+            body = path.read_text(encoding="utf-8", errors="replace")[:_IMPORT_FILE_BYTES]
+        except OSError:
+            continue
+        files.append((str(path.relative_to(root)), body))
+    return files
+
+
+@router.post("/p/{slug}/import_master/scan", response_class=HTMLResponse)
+def import_master_scan(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    intent: str = Form(""),
+) -> Response:
+    """Scan the repo, run AI, return a preview of MASTER.md + coverage tasks."""
+    proj = get_project(slug)
+    session, _project_db_id = db
+    cfg = get_config()
+    files = _walk_doc_files(Path(proj.entry.path))
+
+    try:
+        draft, meta = ai_generate.generate_master_from_folder(
+            files, cfg=cfg, intent=intent
+        )
+        notice = (
+            f"Scanned {len(draft.files_seen)} files; "
+            f"{len(draft.coverage_tasks)} coverage tasks proposed."
+        )
+        trace_service.record(
+            session,
+            model=meta.model,
+            input_tokens=meta.input_tokens,
+            output_tokens=meta.output_tokens,
+            duration_ms=meta.duration_ms,
+            tool_calls=[{"name": "generate_master_from_folder"}],
+        )
+        session.commit()
+    except AIBackendError as exc:
+        draft = ai_generate.MasterDraft(
+            master_md="", coverage_tasks=[], files_seen=[p for p, _ in files]
+        )
+        notice = f"AI error: {exc}"
+        trace_service.record(session, model=cfg.model, error=str(exc))
+        session.commit()
+
+    return templates.TemplateResponse(
+        request,
+        "_frag/master_draft.html",
+        {
+            "project": {"name": proj.entry.name},
+            "files_seen": draft.files_seen,
+            "master_md": draft.master_md,
+            "coverage_tasks": [
+                {
+                    "i": i,
+                    "title": t.title,
+                    "type": t.type,
+                    "priority": t.priority,
+                    "section_letter": t.section_letter,
+                    "description": t.description or "",
+                }
+                for i, t in enumerate(draft.coverage_tasks)
+            ],
+            "notice": notice,
+            "intent": intent,
+        },
+    )
+
+
+@router.post("/p/{slug}/import_master/save", response_class=HTMLResponse)
+async def import_master_save(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> Response:
+    """Write MASTER.md and create selected coverage tasks under a plan section."""
+    proj = get_project(slug)
+    session, project_db_id = db
+
+    form = await request.form()
+    master_md = str(form.get("master_md") or "")
+    if not master_md.strip():
+        raise HTTPException(400, "master_md is empty")
+
+    write_master = form.get("write_master") == "on"
+    if write_master:
+        proj.entry.master_path.parent.mkdir(parents=True, exist_ok=True)
+        proj.entry.master_path.write_text(master_md, encoding="utf-8")
+
+    plan_scope = str(form.get("plan_scope") or "").strip()
+    saved_tasks = 0
+    if plan_scope:
+        plan = plans.get_by_scope(session, plan_scope)
+        if plan is None or plan.row_id is None:
+            raise HTTPException(404, f"Plan '{plan_scope}' not found")
+        sections = plans.list_sections(session, plan.row_id)
+        if not sections:
+            raise HTTPException(400, f"Plan '{plan_scope}' has no sections")
+        section_by_letter = {s.letter.upper(): s for s in sections}
+
+        selected = set(form.getlist("selected"))
+        titles = form.getlist("title")
+        types = form.getlist("type")
+        priorities = form.getlist("priority")
+        section_letters = form.getlist("section_letter")
+        descriptions = form.getlist("description")
+
+        for i, title in enumerate(titles):
+            if str(i) not in selected:
+                continue
+            type_ = types[i] if i < len(types) else "docs"
+            priority = priorities[i] if i < len(priorities) else "medium"
+            letter = (
+                str(section_letters[i] if i < len(section_letters) else "").upper().strip()
+            )
+            description = str(descriptions[i] if i < len(descriptions) else "")
+            section = section_by_letter.get(letter) or sections[0]
+            if section.row_id is None:
+                continue
+            try:
+                task_svc.create(
+                    session,
+                    project_id=project_db_id,
+                    plan_id=plan.row_id,
+                    section_id=section.row_id,
+                    title=str(title).strip(),
+                    type=TaskType(str(type_)),
+                    priority=Priority(str(priority)),
+                    author="human:web",
+                    description=description.strip() or None,
+                    id_prefix=_id_prefix_from_scope(plan_scope),
+                    allow_duplicate=True,
+                    reason="ai-import-master",
+                )
+                saved_tasks += 1
+            except Exception:
+                session.rollback()
+                continue
+    session.commit()
+
+    return RedirectResponse(
+        url=f"/p/{slug}?master_written={'1' if write_master else '0'}"
+        f"&tasks_saved={saved_tasks}",
+        status_code=303,
+    )
+
+
+def _id_prefix_from_scope(scope: str) -> str:
+    letters = [c for c in scope.upper() if c.isalpha()]
+    return "".join(letters[:3]) or "TSK"

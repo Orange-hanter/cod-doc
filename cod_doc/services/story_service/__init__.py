@@ -36,6 +36,7 @@ from .crud import (
     list_for_project,
     list_links,
     list_tasks,
+    next_story_id,
     update_status,
 )
 from .links import link
@@ -56,6 +57,7 @@ __all__ = [
     "list_for_project",
     "list_links",
     "list_tasks",
+    "next_story_id",
     "set_criterion_met",
     "update_status",
 ]

@@ -6,15 +6,33 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select, text
 
-from cod_doc.domain.entities import Plan, Task
+from cod_doc.domain.entities import Plan, PlanSection, Task
 from cod_doc.infra.models import PlanModel
-from cod_doc.infra.repositories import TaskRepository
+from cod_doc.infra.repositories import (
+    PlanRepository,
+    PlanSectionRepository,
+    TaskRepository,
+)
 
 from ._internals import _PRIORITY_ORDER, _derive_status, _require_plan
 from ._types import PlanProgress, SectionProgress
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+
+def get_by_scope(session: Session, scope: str) -> Plan | None:
+    """Return a Plan by its unique ``scope`` slug, or None.
+
+    Web handlers (story task-decomposition, master import) use this to look
+    up a target plan by name without reaching into infra.repositories.
+    """
+    return PlanRepository(session).get_by_scope(scope)
+
+
+def list_sections(session: Session, plan_id: int) -> list[PlanSection]:
+    """Return the plan's sections in their stored order."""
+    return PlanSectionRepository(session).list_for_plan(plan_id)
 
 
 def get_for_project(session: Session, project_id: int, plan_id: int) -> Plan | None:

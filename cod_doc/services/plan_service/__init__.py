@@ -34,7 +34,14 @@ from ._types import (
 from .audit import audit
 from .export import export
 from .graph import critical_path, forward_chain, reverse_chain
-from .reads import get_for_project, list_for_project, ready, recalc
+from .reads import (
+    get_by_scope,
+    get_for_project,
+    list_for_project,
+    list_sections,
+    ready,
+    recalc,
+)
 
 __all__ = [
     "ChainEntry",
@@ -49,8 +56,10 @@ __all__ = [
     "critical_path",
     "export",
     "forward_chain",
+    "get_by_scope",
     "get_for_project",
     "list_for_project",
+    "list_sections",
     "ready",
     "recalc",
     "reverse_chain",

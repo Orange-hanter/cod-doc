@@ -1,0 +1,82 @@
+{# COD-060: AI-proposed MASTER.md + coverage tasks. #}
+{% if notice %}
+  <p class="ai-notice muted">{{ notice }}</p>
+{% endif %}
+
+{% if master_md %}
+  <form method="post" action="/p/{{ project.name }}/import_master/save" class="draft-form">
+    <details open class="overview-block">
+      <summary><strong>Files scanned</strong> ({{ files_seen | length }})</summary>
+      <ul>
+        {% for f in files_seen %}
+          <li><code>{{ f }}</code></li>
+        {% endfor %}
+      </ul>
+    </details>
+
+    <fieldset class="draft-card">
+      <legend>Proposed MASTER.md</legend>
+      <label class="field">
+        <textarea name="master_md" rows="20" class="mono">{{ master_md }}</textarea>
+      </label>
+      <label class="field-checkbox">
+        <input type="checkbox" name="write_master" checked>
+        <span>Overwrite existing MASTER.md on Save</span>
+      </label>
+    </fieldset>
+
+    <fieldset class="draft-card">
+      <legend>Coverage tasks ({{ coverage_tasks | length }})</legend>
+      {% if coverage_tasks %}
+        <label class="field">
+          <span class="muted-tiny">Plan scope to attach tasks to (e.g. <code>cod-doc</code>)</span>
+          <input type="text" name="plan_scope" placeholder="leave blank to skip task creation">
+        </label>
+        {% for d in coverage_tasks %}
+          <fieldset class="draft-card">
+            <legend>
+              <label>
+                <input type="checkbox" name="selected" value="{{ d.i }}" checked>
+                Coverage task #{{ d.i + 1 }}
+              </label>
+            </legend>
+            <label class="field">
+              <span class="muted-tiny">Title</span>
+              <input type="text" name="title" value="{{ d.title }}">
+            </label>
+            <label class="field">
+              <span class="muted-tiny">Type</span>
+              <select name="type">
+                {% for t in ["docs", "feature", "test", "bug", "refactor", "migration", "chore"] %}
+                  <option value="{{ t }}" {% if d.type == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="field">
+              <span class="muted-tiny">Priority</span>
+              <select name="priority">
+                {% for p in ["critical", "high", "medium", "low"] %}
+                  <option value="{{ p }}" {% if d.priority == p %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="field">
+              <span class="muted-tiny">Section letter</span>
+              <input type="text" name="section_letter" value="{{ d.section_letter or '' }}">
+            </label>
+            <label class="field">
+              <span class="muted-tiny">Description</span>
+              <textarea name="description" rows="2">{{ d.description }}</textarea>
+            </label>
+          </fieldset>
+        {% endfor %}
+      {% else %}
+        <p class="muted">No coverage gaps proposed by the AI.</p>
+      {% endif %}
+    </fieldset>
+
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">Save MASTER.md &amp; tasks</button>
+    </div>
+  </form>
+{% endif %}

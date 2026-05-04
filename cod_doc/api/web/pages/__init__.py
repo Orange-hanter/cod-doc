@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import docs, index, plans, project, revisions, settings, tasks
+from . import docs, index, plans, project, revisions, settings, stories, tasks
 
 router = APIRouter()
 router.include_router(index.router)
@@ -18,6 +18,7 @@ router.include_router(project.router)
 router.include_router(plans.router)
 router.include_router(revisions.router)
 router.include_router(tasks.router)
+router.include_router(stories.router)
 router.include_router(settings.router)
 # `docs.router` last — its `/p/{slug}/docs/{doc_key:path}` route is a
 # greedy catch-all that would shadow more-specific siblings if registered

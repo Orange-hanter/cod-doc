@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -113,6 +114,27 @@ def get(session: Session, story_id: str) -> UserStory | None:
 
 def list_for_project(session: Session, project_id: int) -> list[UserStory]:
     return UserStoryRepository(session).list_for_project(project_id)
+
+
+def next_story_id(session: Session, project_id: int, prefix: str = "US") -> str:
+    """Auto-numbered story_id (e.g. ``US-007``) for a project + prefix.
+
+    Used by AI-driven story generation flows where the LLM proposes drafts
+    and the route persists them with sequential ids.
+    """
+    rows = session.execute(
+        select(UserStoryModel.story_id).where(
+            UserStoryModel.project_id == project_id,
+            UserStoryModel.story_id.like(f"{prefix}-%"),
+        )
+    ).scalars()
+    pat = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
+    max_n = 0
+    for sid in rows:
+        m = pat.match(sid)
+        if m:
+            max_n = max(max_n, int(m.group(1)))
+    return f"{prefix}-{max_n + 1:03d}"
 
 
 def list_acceptance(session: Session, story_id: str) -> list[StoryAcceptance]:

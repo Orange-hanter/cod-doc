@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Stories · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Stories</span>
+</nav>
+
+<h1>{{ project.name }} · User stories</h1>
+
+{% with slug=project.name, active="stories" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<section class="overview-block">
+  <h2>Generate from docs</h2>
+  <form hx-post="/p/{{ project.name }}/stories/generate"
+        hx-target="#story-drafts"
+        hx-swap="innerHTML"
+        class="ai-gen-form">
+    <label class="field">
+      <span class="muted-tiny">Generation intent (optional):</span>
+      <input type="text" name="intent"
+             placeholder="e.g. focus on the import flow, prioritize ops personas">
+    </label>
+    <button type="submit" class="btn-primary">✨ Generate stories from MASTER.md</button>
+  </form>
+  <div id="story-drafts"></div>
+</section>
+
+<section class="overview-block">
+  <h2>Existing stories <span class="count-chip">{{ stories | length }}</span></h2>
+  {% if stories %}
+    <table class="grid">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Persona</th>
+          <th>Narrative</th>
+          <th>Status</th>
+          <th>Priority</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in stories %}
+          <tr>
+            <td class="mono">
+              <a href="/p/{{ project.name }}/stories/{{ s.story_id }}">{{ s.story_id }}</a>
+            </td>
+            <td>{{ s.persona }}</td>
+            <td>{{ s.narrative }}</td>
+            <td><span class="badge badge-{{ s.status }}">{{ s.status }}</span></td>
+            <td><span class="prio prio-{{ s.priority }}">{{ s.priority }}</span></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Stories ещё не созданы. Сгенерируй из документации выше.</p>
+  {% endif %}
+</section>
+{% endblock %}

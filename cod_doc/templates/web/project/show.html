@@ -132,6 +132,27 @@
 </section>
 {% endif %}
 
+{% if db_available %}
+<section class="overview-block">
+  <header class="task-card-header">
+    <h2>Import from folder</h2>
+    <span class="muted-tiny">AI scans the repo and proposes a fresh MASTER.md + coverage tasks.</span>
+  </header>
+  <form hx-post="/p/{{ project.name }}/import_master/scan"
+        hx-target="#master-draft"
+        hx-swap="innerHTML"
+        class="ai-gen-form">
+    <label class="field">
+      <span class="muted-tiny">Scan intent (optional)</span>
+      <input type="text" name="intent"
+             placeholder="e.g. focus on architecture, ignore changelogs">
+    </label>
+    <button type="submit" class="btn-primary">✨ Scan &amp; propose</button>
+  </form>
+  <div id="master-draft"></div>
+</section>
+{% endif %}
+
 <section class="master-preview">
   <header class="master-header">
     <h2>{{ project.master_md }}</h2>

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ story.story_id }} · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/stories">Stories</a> /
+  <span>{{ story.story_id }}</span>
+</nav>
+
+{% with slug=project.name, active="stories" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<header class="task-hero status-tone-{{ story.status }}">
+  <div class="task-hero-row task-hero-top">
+    <span class="task-hero-id mono">{{ story.story_id }}</span>
+    <span class="badge badge-lg badge-{{ story.status }}">{{ story.status }}</span>
+    <div class="task-hero-meta">
+      <span class="meta-chip prio-chip prio-{{ story.priority }}">⚑ {{ story.priority }}</span>
+      <span class="meta-chip">As a <strong>{{ story.persona }}</strong></span>
+    </div>
+  </div>
+  <h1 class="task-hero-title">{{ story.narrative }}</h1>
+</header>
+
+<section class="task-card">
+  <header class="task-card-header">
+    <h2>Acceptance criteria <span class="count-chip">{{ acceptance | length }}</span></h2>
+  </header>
+  {% if acceptance %}
+    <ul>
+      {% for a in acceptance %}
+        <li>
+          {% if a.met %}<span class="badge badge-done">met</span>{% endif %}
+          {{ a.criterion }}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">— нет критериев.</p>
+  {% endif %}
+</section>
+
+<section class="task-card">
+  <header class="task-card-header">
+    <h2>
+      Linked tasks
+      <span class="count-chip">{{ linked_done }}/{{ linked_total }}</span>
+    </h2>
+  </header>
+  {% if linked_tasks %}
+    <ul>
+      {% for t in linked_tasks %}
+        <li>
+          <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
+          <a href="/p/{{ project.name }}/tasks/{{ t.task_id }}" class="mono">{{ t.task_id }}</a>
+          — {{ t.title }}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">— ещё нет задач.</p>
+  {% endif %}
+</section>
+
+<section class="task-card">
+  <header class="task-card-header">
+    <h2>Generate tasks via AI</h2>
+  </header>
+  <form hx-post="/p/{{ project.name }}/stories/{{ story.story_id }}/tasks/generate"
+        hx-target="#task-drafts"
+        hx-swap="innerHTML"
+        class="ai-gen-form">
+    <label class="field">
+      <span class="muted-tiny">Plan scope (e.g. <code>cod-doc</code>)</span>
+      <input type="text" name="plan_scope" placeholder="cod-doc" required>
+    </label>
+    <label class="field">
+      <span class="muted-tiny">Decomposition intent (optional)</span>
+      <input type="text" name="intent"
+             placeholder="e.g. include integration tests, prefer small migrations">
+    </label>
+    <button type="submit" class="btn-primary">✨ Generate tasks</button>
+  </form>
+  <div id="task-drafts"></div>
+</section>
+{% endblock %}

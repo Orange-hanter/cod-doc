@@ -1,0 +1,60 @@
+{# COD-069: preview of AI-generated task drafts; user picks which to save. #}
+{% if notice %}
+  <p class="ai-notice muted">{{ notice }}</p>
+{% endif %}
+
+{% if drafts %}
+  <form method="post"
+        action="/p/{{ project.name }}/stories/{{ story.story_id }}/tasks/save"
+        class="draft-form">
+    <input type="hidden" name="plan_scope" value="{{ plan_scope }}">
+    {% if section_layout %}
+      <p class="muted-tiny">
+        Sections in plan <code>{{ plan_scope }}</code>:
+        {% for letter, title in section_layout %}<code>{{ letter }}</code> {{ title }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </p>
+    {% endif %}
+    {% for d in drafts %}
+      <fieldset class="draft-card">
+        <legend>
+          <label>
+            <input type="checkbox" name="selected" value="{{ d.i }}" checked>
+            Task #{{ d.i + 1 }}
+          </label>
+        </legend>
+        <label class="field">
+          <span class="muted-tiny">Title</span>
+          <input type="text" name="title" value="{{ d.title }}">
+        </label>
+        <label class="field">
+          <span class="muted-tiny">Type</span>
+          <select name="type">
+            {% for t in ["feature", "test", "bug", "refactor", "migration", "docs", "chore"] %}
+              <option value="{{ t }}" {% if d.type == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="muted-tiny">Priority</span>
+          <select name="priority">
+            {% for p in ["critical", "high", "medium", "low"] %}
+              <option value="{{ p }}" {% if d.priority == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="muted-tiny">Section letter</span>
+          <input type="text" name="section_letter" value="{{ d.section_letter or '' }}"
+                 placeholder="A | B | C …">
+        </label>
+        <label class="field">
+          <span class="muted-tiny">Description (optional)</span>
+          <textarea name="description" rows="2">{{ d.description }}</textarea>
+        </label>
+      </fieldset>
+    {% endfor %}
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">Save tasks &amp; link to story</button>
+    </div>
+  </form>
+{% endif %}

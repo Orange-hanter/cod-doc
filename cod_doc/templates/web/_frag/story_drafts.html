@@ -1,0 +1,43 @@
+{# COD-068: preview of AI-generated story drafts; user picks which to save. #}
+{% if notice %}
+  <p class="ai-notice muted">{{ notice }}</p>
+{% endif %}
+
+{% if drafts %}
+  <form method="post" action="/p/{{ project.name }}/stories/save" class="draft-form">
+    {% for d in drafts %}
+      <fieldset class="draft-card">
+        <legend>
+          <label>
+            <input type="checkbox" name="selected" value="{{ d.i }}" checked>
+            Story #{{ d.i + 1 }}
+          </label>
+        </legend>
+        <label class="field">
+          <span class="muted-tiny">Persona</span>
+          <input type="text" name="persona" value="{{ d.persona }}">
+        </label>
+        <label class="field">
+          <span class="muted-tiny">Narrative</span>
+          <input type="text" name="narrative" value="{{ d.narrative }}">
+        </label>
+        <label class="field">
+          <span class="muted-tiny">Priority</span>
+          <select name="priority">
+            {% for p in ["critical", "high", "medium", "low"] %}
+              <option value="{{ p }}" {% if d.priority == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="muted-tiny">Acceptance criteria (one per line)</span>
+          <textarea name="acceptance" rows="3">{% for a in d.acceptance %}{{ a }}
+{% endfor %}</textarea>
+        </label>
+      </fieldset>
+    {% endfor %}
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">Save selected</button>
+    </div>
+  </form>
+{% endif %}
