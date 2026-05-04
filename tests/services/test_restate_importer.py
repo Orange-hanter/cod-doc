@@ -1,0 +1,264 @@
+"""COD-051: bulk-import pipelines (docs + legacy tasks)."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
+import yaml
+
+from cod_doc.domain.entities import Project as ProjectEntity
+from cod_doc.infra.db import make_session_factory, transactional
+from cod_doc.infra.repositories import (
+    DocumentRepository,
+    ProjectRepository,
+)
+from cod_doc.services import plan_service
+from cod_doc.services import restate_importer
+from cod_doc.services import task_service
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from sqlalchemy.orm import Session
+
+
+def _seed_project(session: Session, slug: str, root: Path) -> int:
+    """Insert a Project row, return its row_id."""
+    now = datetime.now(UTC)
+    proj = ProjectRepository(session).add(
+        ProjectEntity(slug=slug, title=slug, root_path=str(root), config={})
+    )
+    proj.created = now
+    proj.updated = now
+    session.flush()
+    assert proj.row_id is not None
+    return proj.row_id
+
+
+# ── docs walker ────────────────────────────────────────────────────────
+
+
+def test_walk_doc_files_picks_md_skips_dotdirs(tmp_path: Path) -> None:
+    (tmp_path / "README.md").write_text("# r")
+    (tmp_path / "Docs").mkdir()
+    (tmp_path / "Docs" / "arch.md").write_text("# a")
+    (tmp_path / "Docs" / "image.png").write_text("png")
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".git" / "HEAD.md").write_text("ignored")
+    (tmp_path / "node_modules").mkdir()
+    (tmp_path / "node_modules" / "x.md").write_text("ignored")
+
+    out = restate_importer._walk_doc_files(tmp_path)
+    rels = {p.relative_to(tmp_path).as_posix() for p in out}
+    assert "README.md" in rels
+    assert "Docs/arch.md" in rels
+    assert ".git/HEAD.md" not in rels
+    assert "node_modules/x.md" not in rels
+    assert "Docs/image.png" not in rels
+
+
+def test_import_docs_creates_documents(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    (tmp_path / "README.md").write_text("# Hello\n\nIntro paragraph.")
+    (tmp_path / "Docs").mkdir()
+    (tmp_path / "Docs" / "arch.md").write_text("# Arch\n\n## Modules\n\nFoo bar.")
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+        summary = restate_importer.import_docs(
+            session, repo_root=tmp_path, project_id=project_id
+        )
+    assert summary.imported == 2
+    assert summary.skipped == 0
+    assert summary.errors == []
+
+    with transactional(factory) as session:
+        repo = DocumentRepository(session)
+        docs = repo.list_for_project(project_id)
+        keys = {d.doc_key for d in docs}
+    assert "README" in keys
+    assert "Docs/arch" in keys
+
+
+def test_import_docs_is_idempotent(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Re-running over the same files counts them as skipped, not errors."""
+    (tmp_path / "README.md").write_text("# Hello")
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+        first = restate_importer.import_docs(
+            session, repo_root=tmp_path, project_id=project_id
+        )
+    assert first.imported == 1
+
+    with transactional(factory) as session:
+        again = restate_importer.import_docs(
+            session, repo_root=tmp_path, project_id=project_id
+        )
+    assert again.imported == 0
+    assert again.skipped == 1
+    assert again.errors == []
+
+
+def test_import_docs_handles_empty_repo(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "empty", tmp_path)
+        summary = restate_importer.import_docs(
+            session, repo_root=tmp_path, project_id=project_id
+        )
+    assert summary.imported == 0
+    assert summary.skipped == 0
+
+
+def test_import_docs_dry_run_via_rollback(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Caller rolling back the transaction means the DB is untouched."""
+    (tmp_path / "a.md").write_text("# a")
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+        summary = restate_importer.import_docs(
+            session, repo_root=tmp_path, project_id=project_id
+        )
+        assert summary.imported == 1
+        session.rollback()
+
+    # New transaction → no documents persisted because rollback also dropped
+    # the project insert above. Re-seed and check from scratch.
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+        repo = DocumentRepository(session)
+        assert repo.list_for_project(project_id) == []
+
+
+# ── legacy tasks ───────────────────────────────────────────────────────
+
+
+def _write_legacy_yaml(path: Path, entries: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.dump({"tasks": entries}, allow_unicode=True))
+
+
+def test_import_legacy_tasks_creates_plan_and_tasks(
+    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+) -> None:
+    yaml_path = tmp_path / ".cod-doc" / "tasks.yaml"
+    _write_legacy_yaml(
+        yaml_path,
+        [
+            {
+                "id": "abc12345",
+                "title": "Document API auth",
+                "description": "Cover the JWT flow",
+                "priority": 2,
+                "status": "in_progress",
+                "result": None,
+            },
+            {
+                "id": "def67890",
+                "title": "Fix flaky test",
+                "description": "",
+                "priority": 5,
+                "status": "done",
+                "result": "merged",
+            },
+            {
+                "id": "ghi11111",
+                "title": "Investigate spike",
+                "priority": 1,
+                "status": "blocked",
+            },
+        ],
+    )
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "legacy", tmp_path)
+        summary = restate_importer.import_legacy_tasks(
+            session, yaml_path=yaml_path, project_id=project_id
+        )
+    assert summary.imported == 3
+    assert summary.errors == []
+    assert summary.plan_scope == "imported-legacy"
+
+    with transactional(factory) as session:
+        plans = plan_service.list_for_project(session, project_id)
+        assert any(p.scope == "imported-legacy" for p in plans)
+        all_tasks = task_service.list_for_project(session, project_id)
+        titles = {t.title for t in all_tasks}
+        assert {"Document API auth", "Fix flaky test", "Investigate spike"} == titles
+        # Status mapping: legacy 'in_progress' → DB 'in-progress'.
+        in_progress = [t for t in all_tasks if t.status.value == "in-progress"]
+        assert len(in_progress) == 1
+        # Legacy 'blocked' → PENDING + blocked_reason set.
+        blocked = next(t for t in all_tasks if t.title == "Investigate spike")
+        assert blocked.status.value == "pending"
+        assert blocked.blocked_reason and "blocked" in blocked.blocked_reason
+        # Description carries the legacy id + result.
+        flaky = next(t for t in all_tasks if t.title == "Fix flaky test")
+        assert flaky.description and "def67890" in flaky.description
+        assert "merged" in flaky.description
+
+
+def test_import_legacy_tasks_missing_yaml_returns_error(
+    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+) -> None:
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "no-yaml", tmp_path)
+        summary = restate_importer.import_legacy_tasks(
+            session,
+            yaml_path=tmp_path / ".cod-doc" / "tasks.yaml",
+            project_id=project_id,
+        )
+    assert summary.imported == 0
+    assert any("not found" in e for e in summary.errors)
+
+
+def test_import_legacy_tasks_skips_entries_without_title(
+    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+) -> None:
+    yaml_path = tmp_path / ".cod-doc" / "tasks.yaml"
+    _write_legacy_yaml(
+        yaml_path,
+        [
+            {"id": "1", "title": ""},
+            {"id": "2"},
+            {"id": "3", "title": "Real task", "priority": 3},
+        ],
+    )
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+        summary = restate_importer.import_legacy_tasks(
+            session, yaml_path=yaml_path, project_id=project_id
+        )
+    assert summary.imported == 1
+    assert summary.skipped == 2
+
+
+def test_import_legacy_tasks_reuses_existing_plan(
+    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+) -> None:
+    """A second import run does not create another 'imported-legacy' plan."""
+    yaml1 = tmp_path / ".cod-doc" / "tasks.yaml"
+    _write_legacy_yaml(yaml1, [{"id": "a", "title": "First"}])
+    yaml2 = tmp_path / ".cod-doc" / "tasks2.yaml"
+    _write_legacy_yaml(yaml2, [{"id": "b", "title": "Second"}])
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+        restate_importer.import_legacy_tasks(
+            session, yaml_path=yaml1, project_id=project_id
+        )
+    with transactional(factory) as session:
+        restate_importer.import_legacy_tasks(
+            session, yaml_path=yaml2, project_id=project_id
+        )
+    with transactional(factory) as session:
+        plans = [
+            p for p in plan_service.list_for_project(session, project_id)
+            if p.scope == "imported-legacy"
+        ]
+    assert len(plans) == 1

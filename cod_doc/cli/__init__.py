@@ -44,6 +44,9 @@ cod-doc revision list    — история ревизий сущности
 cod-doc revision show    — детали ревизии
 cod-doc revision revert  — откатить ревизию
 cod-doc audit            — проверка frontmatter + дрейфа (FM-*/DR-*)
+cod-doc import docs      — импорт .md/.rst/.txt из репо как Documents
+cod-doc import legacy-tasks — миграция .cod-doc/tasks.yaml в DB
+cod-doc import all       — оба пайплайна подряд
 """
 
 from __future__ import annotations
@@ -53,6 +56,7 @@ import click
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_audit import audit
 from cod_doc.cli.cmd_hash import hash
+from cod_doc.cli.cmd_import import import_cmd
 from cod_doc.cli.cmd_project import project
 from cod_doc.cli.cmd_serve import mcp_server, serve
 from cod_doc.cli.cmd_tui import tui, wizard
@@ -92,6 +96,7 @@ main.add_command(doc)
 main.add_command(link)
 main.add_command(revision)
 main.add_command(audit)
+main.add_command(import_cmd)
 
 
 if __name__ == "__main__":
