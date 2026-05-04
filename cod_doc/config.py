@@ -29,6 +29,7 @@ class ProjectEntry(BaseSettings):
     master_md: str = "MASTER.md"
     auto_commit: bool = False
     enabled: bool = True
+    daemon_enabled: bool = True
 
     @property
     def root(self) -> Path:
@@ -67,6 +68,9 @@ class Config(BaseSettings):
 
     # Агент
     auto_commit: bool = Field(default=False, description="Авто-коммит после задачи")
+    agent_enabled: bool = Field(
+        default=True, description="Глобальный kill-switch автономного агента"
+    )
     max_iterations: int = Field(default=50, description="Макс. шагов за одну задачу")
     agent_interval: int = Field(
         default=60, description="Интервал опроса задач (сек) в daemon-режиме"

@@ -28,6 +28,7 @@ def settings_show(request: Request) -> HTMLResponse:
                 "model": cfg.model,
                 "max_tokens": cfg.max_tokens,
                 "auto_commit": cfg.auto_commit,
+                "agent_enabled": cfg.agent_enabled,
                 "max_iterations": cfg.max_iterations,
                 "agent_interval": cfg.agent_interval,
                 "embedding_model": cfg.embedding_model,
@@ -54,7 +55,8 @@ def settings_save(
     base_url: str = Form(...),
     model: str = Form(...),
     max_tokens: int = Form(...),
-    auto_commit: str = Form(""),  # checkbox: "on" or absent
+    auto_commit: str = Form(""),      # checkbox: "on" or absent
+    agent_enabled: str = Form(""),    # checkbox: "on" or absent
     max_iterations: int = Form(...),
     agent_interval: int = Form(...),
     embedding_model: str = Form(...),
@@ -72,6 +74,7 @@ def settings_save(
     cfg.model = model.strip()
     cfg.max_tokens = max_tokens
     cfg.auto_commit = auto_commit == "on"
+    cfg.agent_enabled = agent_enabled == "on"
     cfg.max_iterations = max_iterations
     cfg.agent_interval = agent_interval
     cfg.embedding_model = embedding_model.strip()

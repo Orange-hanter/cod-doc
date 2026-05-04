@@ -6,7 +6,7 @@ import asyncio
 import logging
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +42,36 @@ def set_daemon_task(task: asyncio.Task[Any] | None) -> None:
 
 def get_daemon_task() -> asyncio.Task[Any] | None:
     return _daemon_task
+
+
+def stop_daemon() -> bool:
+    """Cancel the running daemon task. Returns True if there was a task to cancel."""
+    global _daemon_task
+    if _daemon_task and not _daemon_task.done():
+        _daemon_task.cancel()
+        _daemon_task = None
+        return True
+    _daemon_task = None
+    return False
+
+
+def start_daemon(log_callback: Callable[[str], None] | None = None) -> bool:
+    """Create and launch the daemon task. Returns False if already running or not configured."""
+    global _daemon_task
+    from cod_doc.agent.orchestrator import run_daemon
+
+    if _config is None or not _config.is_configured:
+        return False
+    if not _config.agent_enabled:
+        return False
+    if _daemon_task and not _daemon_task.done():
+        return False
+    _daemon_task = asyncio.create_task(run_daemon(_config, log_callback=log_callback))
+    return True
+
+
+def daemon_is_running() -> bool:
+    return _daemon_task is not None and not _daemon_task.done()
 
 
 def get_config() -> Config:

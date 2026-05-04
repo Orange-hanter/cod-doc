@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from cod_doc.api.deps import get_config, try_open_project_db
+from cod_doc.api.deps import daemon_is_running, get_config, try_open_project_db
 from cod_doc.api.web.templates_env import templates
 from cod_doc.core.project import Project
 from cod_doc.services import plan_service as plans
@@ -57,6 +57,7 @@ def index(
                 "name": entry.name,
                 "path": entry.path,
                 "enabled": entry.enabled,
+                "daemon_enabled": entry.daemon_enabled,
                 "stats": stats,
             }
         )
@@ -81,6 +82,8 @@ def index(
         {
             "projects": projects,
             "configured": cfg.is_configured,
+            "daemon_running": daemon_is_running(),
+            "agent_enabled": cfg.agent_enabled,
             "page": {
                 "limit": limit,
                 "offset": offset,

@@ -111,6 +111,14 @@
       <input type="checkbox" name="auto_commit"{% if config.auto_commit %} checked{% endif %}>
       <span>Auto-commit after task</span>
     </label>
+    <label class="field-checkbox">
+      <input type="checkbox" name="agent_enabled"{% if config.agent_enabled %} checked{% endif %}>
+      <span>Autonomous agent enabled</span>
+    </label>
+    <small class="muted field-hint">
+      Если снять галку — агент не запустится при следующем старте контейнера.
+      Для немедленной остановки используй кнопку <strong>Stop</strong> на главной странице.
+    </small>
   </fieldset>
 
   <div class="form-actions">

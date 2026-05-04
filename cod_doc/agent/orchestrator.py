@@ -417,7 +417,7 @@ async def run_daemon(config: Config, log_callback: Callable[[str], None] | None 
 
     while True:
         for entry in config.list_projects():
-            if not entry.enabled:
+            if not entry.enabled or not entry.daemon_enabled:
                 continue
             project = Project(entry)
             try:

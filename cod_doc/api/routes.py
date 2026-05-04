@@ -8,7 +8,13 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from cod_doc.agent.orchestrator import Orchestrator
-from cod_doc.api.deps import get_config, get_project
+from cod_doc.api.deps import (
+    daemon_is_running,
+    get_config,
+    get_project,
+    start_daemon,
+    stop_daemon,
+)
 from cod_doc.api.schemas import ConfigUpdate, ProjectCreate, TaskCreate
 from cod_doc.config import ProjectEntry
 from cod_doc.core.project import Project, Task, TaskStatus
@@ -139,3 +145,39 @@ async def run_agent(name: str, background_tasks: BackgroundTasks) -> dict[str, A
 
     background_tasks.add_task(_run)
     return {"started": True, "project": name}
+
+
+# ── Daemon control ────────────────────────────────────────────────────────────
+
+
+@router.get("/daemon/status")
+def daemon_status() -> dict[str, Any]:
+    """Статус автономного агента."""
+    cfg = get_config()
+    return {
+        "running": daemon_is_running(),
+        "agent_enabled": cfg.agent_enabled,
+        "projects": [
+            {"name": e.name, "daemon_enabled": e.daemon_enabled}
+            for e in cfg.list_projects()
+        ],
+    }
+
+
+@router.post("/daemon/stop")
+async def daemon_stop() -> dict[str, Any]:
+    """Остановить автономного агента (без перезапуска контейнера)."""
+    was_running = stop_daemon()
+    return {"stopped": was_running, "running": False}
+
+
+@router.post("/daemon/start")
+async def daemon_start() -> dict[str, Any]:
+    """Запустить автономного агента (если был остановлен)."""
+    cfg = get_config()
+    if not cfg.is_configured:
+        raise HTTPException(400, "API-ключ не настроен")
+    if not cfg.agent_enabled:
+        raise HTTPException(400, "agent_enabled=False в конфиге — измени настройку сначала")
+    started = start_daemon(log_callback=lambda m: logger.info(m))
+    return {"started": started, "running": daemon_is_running()}

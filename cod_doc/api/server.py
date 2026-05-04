@@ -5,7 +5,6 @@ FastAPI REST API для production-режима COD-DOC.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
@@ -15,12 +14,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from cod_doc.agent.orchestrator import run_daemon
 from cod_doc.api.deps import (
+    daemon_is_running,
     dispose_all_engines,
-    get_daemon_task,
     set_config,
-    set_daemon_task,
+    start_daemon,
+    stop_daemon,
 )
 from cod_doc.api.routes import router as core_router
 from cod_doc.api.web import fragments_router, pages_router
@@ -42,14 +41,16 @@ logger = logging.getLogger("cod_doc.api")
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cfg = Config.load()
     set_config(cfg)
-    logger.info(f"COD-DOC API запущен. Проектов: {len(cfg.list_projects())}")
-    if cfg.is_configured:
-        task = asyncio.create_task(run_daemon(cfg, log_callback=lambda m: logger.info(m)))
-        set_daemon_task(task)
+    projects = cfg.list_projects()
+    logger.info(f"COD-DOC API запущен. Проектов: {len(projects)}")
+    if cfg.is_configured and cfg.agent_enabled:
+        started = start_daemon(log_callback=lambda m: logger.info(m))
+        if not started:
+            logger.warning("Daemon не запущен (agent_enabled=False или нет api_key)")
+    else:
+        logger.info("Автономный агент отключён (agent_enabled=False)")
     yield
-    daemon = get_daemon_task()
-    if daemon:
-        daemon.cancel()
+    stop_daemon()
     dispose_all_engines()
 
 

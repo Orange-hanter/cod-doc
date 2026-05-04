@@ -1,7 +1,26 @@
 {% extends "base.html" %}
 {% block title %}Projects — COD-DOC{% endblock %}
 {% block content %}
-<h1>Projects</h1>
+<div class="page-header">
+  <h1>Projects</h1>
+  <div id="daemon-bar" class="daemon-bar {% if daemon_running %}daemon-running{% else %}daemon-stopped{% endif %}">
+    <span class="daemon-dot" aria-hidden="true">●</span>
+    <span class="daemon-label">
+      Agent: <strong>{% if daemon_running %}running{% else %}stopped{% endif %}</strong>
+    </span>
+    {% if not agent_enabled %}
+      <span class="muted" title="Установи agent_enabled=true в Settings чтобы запустить">(disabled in config)</span>
+    {% elif daemon_running %}
+      <button class="daemon-btn"
+              hx-post="/api/daemon/stop"
+              hx-on::after-request="window.location.reload()">Stop</button>
+    {% else %}
+      <button class="daemon-btn daemon-btn-start"
+              hx-post="/api/daemon/start"
+              hx-on::after-request="window.location.reload()">Start</button>
+    {% endif %}
+  </div>
+</div>
 
 {% if not configured %}
   <p class="warn">API-ключ не настроен. Перейдите в <a href="/settings">Settings</a>.</p>
@@ -17,6 +36,7 @@
       <th class="num">Done</th>
       <th class="num">In&nbsp;progress</th>
       <th>Last&nbsp;run</th>
+      <th title="Участвует ли проект в автономном цикле агента">Agent</th>
     </tr>
   </thead>
   <tbody>
@@ -28,6 +48,13 @@
       <td class="num">{{ p.stats.done }}</td>
       <td class="num">{{ p.stats.in_progress }}</td>
       <td class="muted">{{ p.stats.last_run or "—" }}</td>
+      <td>
+        {% if p.daemon_enabled %}
+          <span class="daemon-proj-on" title="Участвует в автономном цикле">●</span>
+        {% else %}
+          <span class="daemon-proj-off" title="Исключён из автономного цикла">○</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
