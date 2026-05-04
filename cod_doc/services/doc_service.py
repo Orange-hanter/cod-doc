@@ -305,6 +305,62 @@ def patch_section(
     return refreshed
 
 
+def update_status(
+    session: Session,
+    *,
+    document_id: int,
+    new_status: DocumentStatus,
+    author: str,
+    reason: str | None = None,
+) -> Document:
+    """Promote/demote a document's lifecycle status — DRAFT → REVIEW → ACTIVE
+    (and DEPRECATED). Writes a DOCUMENT revision capturing the transition.
+
+    No-op when the new status equals the current one (no revision written).
+    """
+    doc = _require_doc(session, document_id)
+    if doc.status == new_status.value:
+        cached = DocumentRepository(session).get(document_id)
+        assert cached is not None
+        return cached
+
+    old_status = doc.status
+    doc.status = new_status.value
+    doc.last_updated = datetime.now(UTC)
+    session.flush()
+
+    diff = json.dumps({"op": "status", "from": old_status, "to": new_status.value})
+    rev.write(
+        session,
+        project_id=doc.project_id,
+        entity_kind=EntityKind.DOCUMENT,
+        entity_id=document_id,
+        author=author,
+        diff=diff,
+        reason=reason or "status",
+    )
+    refreshed = DocumentRepository(session).get(document_id)
+    assert refreshed is not None
+    return refreshed
+
+
+def accept(
+    session: Session,
+    *,
+    document_id: int,
+    author: str,
+    reason: str | None = None,
+) -> Document:
+    """Promote DRAFT/REVIEW → ACTIVE (the COD-052 'accept' transition)."""
+    return update_status(
+        session,
+        document_id=document_id,
+        new_status=DocumentStatus.ACTIVE,
+        author=author,
+        reason=reason or "accept",
+    )
+
+
 def rename(
     session: Session,
     *,

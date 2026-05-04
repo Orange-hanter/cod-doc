@@ -32,7 +32,7 @@ from ._types import (
     TaskNotFoundInPlanError,
 )
 from .audit import audit
-from .export import export
+from .export import export, freeze_projection
 from .graph import critical_path, forward_chain, reverse_chain
 from .reads import (
     get_by_scope,
@@ -56,6 +56,7 @@ __all__ = [
     "critical_path",
     "export",
     "forward_chain",
+    "freeze_projection",
     "get_by_scope",
     "get_for_project",
     "list_for_project",

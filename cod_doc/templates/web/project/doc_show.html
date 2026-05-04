@@ -15,7 +15,9 @@
 
 <section class="doc-meta">
   <span><strong>Type:</strong> {{ doc.type }}</span>
-  <span><strong>Status:</strong> {{ doc.status }}</span>
+  <span><strong>Status:</strong>
+    <span class="badge badge-{{ doc.status }}">{{ doc.status }}</span>
+  </span>
   {% if doc.owner %}<span><strong>Owner:</strong> {{ doc.owner }}</span>{% endif %}
   {% if doc.last_updated %}<span><strong>Updated:</strong> {{ doc.last_updated }}</span>{% endif %}
   <span class="doc-mode-toggle">
@@ -26,6 +28,17 @@
     {% endif %}
   </span>
 </section>
+
+{% if doc.status in ("draft", "review") %}
+  <form method="post" action="/p/{{ project.name }}/docs-accept" class="form-actions">
+    <input type="hidden" name="doc_key" value="{{ doc.doc_key }}">
+    <input type="hidden" name="new_status" value="active">
+    <button type="submit" class="btn-primary"
+            title="Promote this document to ACTIVE status (COD-052 accept flow).">
+      ✓ Accept (status → active)
+    </button>
+  </form>
+{% endif %}
 
 <div class="split">
   <aside class="sections-nav">

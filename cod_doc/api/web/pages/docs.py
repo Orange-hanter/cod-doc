@@ -13,12 +13,51 @@ from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
 from cod_doc.api.web.errors import ValidationWebError
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
-from cod_doc.domain.entities import DocumentType, EntityKind
+from cod_doc.domain.entities import DocumentStatus, DocumentType, EntityKind
 from cod_doc.services import doc_service as docs
 from cod_doc.services import import_service as imports
 from cod_doc.services import revision_service as revisions
 
 router = APIRouter()
+
+
+@router.post("/p/{slug}/docs-accept", response_class=HTMLResponse)
+async def doc_accept(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> Response:
+    """COD-052: promote a Document's status to ACTIVE (the 'accept' transition).
+
+    Form fields: ``doc_key`` (required), ``new_status`` (optional, defaults to
+    'active'; can also send 'review'/'deprecated' to demote).
+    """
+    proj = get_project(slug)
+    session, project_db_id = db
+    form = await request.form()
+    doc_key = str(form.get("doc_key") or "").strip()
+    if not doc_key:
+        raise HTTPException(400, "doc_key is required")
+    target = str(form.get("new_status") or "active").strip().lower()
+    try:
+        new_status = DocumentStatus(target)
+    except ValueError as exc:
+        raise HTTPException(400, f"Unknown status: {target}") from exc
+
+    doc = docs.get(session, project_db_id, doc_key)
+    if doc is None or doc.row_id is None:
+        raise HTTPException(404, f"Документ не найден: {doc_key}")
+    docs.update_status(
+        session,
+        document_id=doc.row_id,
+        new_status=new_status,
+        author="human:web",
+        reason="accept" if new_status == DocumentStatus.ACTIVE else "status",
+    )
+    session.commit()
+    return RedirectResponse(
+        url=f"/p/{proj.entry.name}/docs/{doc_key}", status_code=303
+    )
 
 
 @router.get("/p/{slug}/docs", response_class=HTMLResponse)

@@ -20,6 +20,16 @@
   {% endif %}
 </section>
 
+<form method="post"
+      action="/p/{{ project.name }}/plans/{{ plan.plan_id }}/freeze"
+      class="form-actions"
+      onsubmit="return confirm('Freeze the current projection? A new immutable EXECUTION_LOG document will be created.');">
+  <button type="submit" class="btn-secondary"
+          title="Snapshot current progress + ready batch + dependency graph as an EXECUTION_LOG document.">
+    🔒 Freeze projection
+  </button>
+</form>
+
 <section class="overview-block">
   <h2>Sections</h2>
   {% if sections %}

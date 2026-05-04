@@ -106,3 +106,56 @@ def export(session: Session, plan_id: int) -> dict[str, str]:
         "next_batch": _render_next_batch(ready_tasks),
         "dependency_graph": _render_dependency_graph(plan_id, session, row_id_to_task_id),
     }
+
+
+def freeze_projection(
+    session,  # type: ignore[no-untyped-def]
+    plan_id: int,
+    *,
+    author: str,
+    reason: str | None = None,
+):
+    """COD-052: snapshot the current projection markdown into a Document.
+
+    Creates an immutable EXECUTION_LOG document with status=ACTIVE under the
+    ``frozen/<scope>/<UTC timestamp>`` key. The document body is the three
+    projection sections joined with H2 separators. Subsequent freezes create
+    new entries — frozen snapshots are append-only history.
+
+    Returns the new ``Document`` (so the caller can redirect / link).
+    """
+    from datetime import UTC, datetime
+
+    from cod_doc.domain.entities import (
+        DocumentStatus,
+        DocumentType,
+        Sensitivity,
+    )
+    from cod_doc.services import doc_service
+
+    plan = _require_plan(session, plan_id)
+    parts = export(session, plan_id)
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    body = (
+        f"# Frozen projection — {plan.scope} ({ts})\n\n"
+        "## Progress overview\n\n"
+        f"{parts['progress_overview'].strip()}\n\n"
+        "## Next batch\n\n"
+        f"{parts['next_batch'].strip()}\n\n"
+        "## Dependency graph\n\n"
+        f"{parts['dependency_graph'].strip()}\n"
+    )
+    doc_key = f"frozen/{plan.scope}/{ts}"
+    return doc_service.create(
+        session,
+        project_id=plan.project_id,
+        doc_key=doc_key,
+        type=DocumentType.EXECUTION_LOG,
+        status=DocumentStatus.ACTIVE,
+        title=f"Frozen projection — {plan.scope} @ {ts}",
+        author=author,
+        owner=author,
+        sensitivity=Sensitivity.INTERNAL,
+        preamble=body,
+        reason=reason or f"freeze:{plan.scope}",
+    )

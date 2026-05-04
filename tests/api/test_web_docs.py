@@ -171,3 +171,86 @@ def test_doc_show_404_when_db_absent(tmp_path: Path) -> None:
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get(f"/p/{entry.name}/docs/anything")
     assert r.status_code == 404
+
+
+# ── COD-052: doc accept flow ────────────────────────────────────────────
+
+
+def test_doc_show_renders_accept_button_when_draft(docs_client) -> None:
+    """Draft docs surface an 'Accept' button; active docs do not."""
+    client, entry = docs_client
+    # Seed a DRAFT doc.
+    db_path = entry.cod_doc_dir / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        proj = ProjectRepository(session).get_by_slug(entry.name)
+        docs.create(
+            session,
+            project_id=proj.row_id,
+            doc_key="drafts/spec",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.DRAFT,
+            title="Draft spec",
+            author="human:dakh",
+            owner="human:dakh",
+            sensitivity=Sensitivity.INTERNAL,
+        )
+    engine.dispose()
+
+    r = client.get(f"/p/{entry.name}/docs/drafts/spec")
+    assert "Accept (status → active)" in r.text
+    assert f'/p/{entry.name}/docs-accept' in r.text
+
+    # ACTIVE doc seeded by fixture should NOT have the button.
+    r2 = client.get(f"/p/{entry.name}/docs/modules/M1-auth/overview")
+    assert "Accept (status → active)" not in r2.text
+
+
+def test_doc_accept_endpoint_promotes_status(docs_client) -> None:
+    client, entry = docs_client
+    db_path = entry.cod_doc_dir / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        proj = ProjectRepository(session).get_by_slug(entry.name)
+        docs.create(
+            session,
+            project_id=proj.row_id,
+            doc_key="drafts/another",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.DRAFT,
+            title="Another",
+            author="human:dakh",
+            owner="human:dakh",
+            sensitivity=Sensitivity.INTERNAL,
+        )
+    engine.dispose()
+
+    r = client.post(
+        f"/p/{entry.name}/docs-accept",
+        data={"doc_key": "drafts/another"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].endswith("/docs/drafts/another")
+
+    # The doc now reports ACTIVE on its detail page.
+    follow = client.get(f"/p/{entry.name}/docs/drafts/another")
+    assert "badge-active" in follow.text
+
+
+def test_doc_accept_endpoint_400_on_missing_doc_key(docs_client) -> None:
+    client, entry = docs_client
+    r = client.post(f"/p/{entry.name}/docs-accept", data={})
+    assert r.status_code == 400
+
+
+def test_doc_accept_endpoint_404_on_unknown_doc(docs_client) -> None:
+    client, entry = docs_client
+    r = client.post(
+        f"/p/{entry.name}/docs-accept",
+        data={"doc_key": "ghost"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 404

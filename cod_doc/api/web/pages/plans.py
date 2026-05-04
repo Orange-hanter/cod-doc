@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
@@ -146,4 +146,26 @@ def plan_show(
             "exported": exported,
             "dependency_graph_html": render_markdown(exported.get("dependency_graph", "")),
         },
+    )
+
+
+@router.post("/p/{slug}/plans/{plan_id}/freeze", response_class=HTMLResponse)
+def plan_freeze(
+    request: Request,
+    slug: str,
+    plan_id: int,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> Response:
+    """COD-052: snapshot the current projection into an EXECUTION_LOG document."""
+    proj = get_project(slug)
+    session, project_db_id = db
+    plan_dom = plans.get_for_project(session, project_db_id, plan_id)
+    if plan_dom is None:
+        raise HTTPException(404, f"Plan не найден в проекте: {plan_id}")
+    frozen = plans.freeze_projection(session, plan_id, author="human:web")
+    session.commit()
+    # Redirect to the new frozen document so the user can read/share it.
+    return RedirectResponse(
+        url=f"/p/{proj.entry.name}/docs/{frozen.doc_key}",
+        status_code=303,
     )
