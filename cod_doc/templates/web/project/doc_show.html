@@ -75,4 +75,59 @@
     {% endif %}
   </article>
 </div>
+
+{# COD-078: links panel — discoverability for cross-doc references. #}
+<section class="task-card doc-links">
+  <header class="task-card-header">
+    <h2>
+      Links
+      <span class="count-chip">
+        ↑ {{ outgoing_links | length }} · ↓ {{ incoming_links | length }}
+      </span>
+    </h2>
+    <span class="muted-tiny">
+      Markdown <code>[label](other-doc-key)</code> in section bodies builds these.
+    </span>
+  </header>
+  <div class="doc-links-grid">
+    <section>
+      <h3>Outgoing <span class="muted-tiny">— this doc points to</span></h3>
+      {% if outgoing_links %}
+        <ul>
+          {% for link in outgoing_links %}
+            <li>
+              <a href="/p/{{ project.name }}/docs/{{ link.to_doc_key }}{% if link.to_anchor %}#{{ link.to_anchor }}{% endif %}"
+                 class="mono">{{ link.to_doc_key }}{% if link.to_anchor %}#{{ link.to_anchor }}{% endif %}</a>
+              <span class="muted-tiny">from § {{ link.from_section }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">No outgoing links yet.</p>
+      {% endif %}
+    </section>
+    <section>
+      <h3>Incoming <span class="muted-tiny">— points to this doc</span></h3>
+      {% if incoming_links %}
+        <ul>
+          {% for grp in incoming_links %}
+            <li>
+              <a href="/p/{{ project.name }}/docs/{{ grp.doc_key }}" class="mono">{{ grp.doc_key }}</a>
+              — {{ grp.title }}
+              {% if grp.sections %}
+                <ul class="muted-tiny">
+                  {% for sec in grp.sections %}
+                    <li>§ {{ sec.heading }}</li>
+                  {% endfor %}
+                </ul>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Nobody links here yet.</p>
+      {% endif %}
+    </section>
+  </div>
+</section>
 {% endblock %}

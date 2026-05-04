@@ -56,6 +56,22 @@ class MasterDraft:
 
 
 @dataclass
+class DocDraft:
+    """COD-078: a proposed Document built from existing-doc context.
+
+    Sections are ordered tuples of ``(heading, body)`` ready to feed into
+    ``doc_service.add_section``.
+    """
+
+    doc_key: str
+    title: str
+    type: str = "module-spec"
+    preamble: str = ""
+    sections: list[tuple[str, str]] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
+
+
+@dataclass
 class GenerationMeta:
     """Token + duration stats for trace logging."""
 
@@ -93,6 +109,24 @@ _TASK_SYSTEM_PROMPT = (
     "- Include at least one test-type task per story.\n"
     "- Pick section_letter from the provided plan layout when given; else leave null.\n"
     "- Prefer imperative title in English: 'Implement X', 'Test Y', 'Migrate Z'."
+)
+
+
+_DOC_SYSTEM_PROMPT = (
+    "You are a documentation author. The user gives you a set of existing "
+    "project docs as context and an intent for the new doc to write. Produce "
+    "a structured document that builds on (without duplicating) the source "
+    "material.\n\n"
+    "Reply with ONLY a JSON object of the shape:\n"
+    '  {"doc_key": str, "title": str, "type": "module-spec"|"module-subdoc"|'
+    '"execution-plan"|"task-section"|"execution-log"|"standard"|"architecture"|'
+    '"vision"|"guide"|"user-story"|"decision"|"open-question"|"redirect", '
+    '"preamble": str, "sections": [{"heading": str, "body": str}, ...]}\n\n'
+    "Rules:\n"
+    "- doc_key uses kebab/slash style (no spaces, e.g. 'guides/onboarding').\n"
+    "- 2-6 sections, each with a non-empty heading and a markdown body.\n"
+    "- Preserve the language of the source documents.\n"
+    "- Do NOT verbatim-copy source paragraphs; cite them in the preamble."
 )
 
 
@@ -167,6 +201,61 @@ def generate_tasks_for_story(
     except (TypeError, AttributeError) as exc:
         raise AIBackendError(f"LLM tasks payload malformed: {exc}") from exc
     return drafts, meta
+
+
+def generate_doc_from_sources(
+    sources: list[tuple[str, str]],
+    *,
+    cfg: Config,
+    intent: str = "",
+    target_type: str = "module-spec",
+) -> tuple[DocDraft, GenerationMeta]:
+    """COD-078: produce a DocDraft seeded by ``sources`` + ``intent``.
+
+    ``sources`` is a list of ``(doc_key, body)`` pairs — caller supplies
+    rendered bodies; the prompt uses them verbatim as context.
+    """
+    if not sources:
+        raise AIBackendError("No source documents selected.")
+    excerpt = "\n\n".join(
+        f"## {key}\n```\n{body[:6000]}\n```" for key, body in sources[:8]
+    )
+    user_msg = (
+        f"Intent: {intent.strip() or '(default)'}\n"
+        f"Preferred type: {target_type or '(default)'}\n\n"
+        f"Source documents:\n{excerpt}"
+    )
+    payload, meta = _chat_json(_DOC_SYSTEM_PROMPT, user_msg, cfg=cfg)
+
+    doc_key = str(payload.get("doc_key") or "").strip()
+    title = str(payload.get("title") or "").strip()
+    if not doc_key or not title:
+        raise AIBackendError("LLM payload missing doc_key/title.")
+    raw_type = str(payload.get("type") or target_type).strip().lower()
+    raw_sections = payload.get("sections")
+    if not isinstance(raw_sections, list):
+        raise AIBackendError("LLM payload missing 'sections' array.")
+    sections: list[tuple[str, str]] = []
+    try:
+        for item in raw_sections:
+            if not isinstance(item, dict):
+                continue
+            heading = str(item.get("heading") or "").strip()
+            body = str(item.get("body") or "").strip()
+            if heading:
+                sections.append((heading, body))
+    except (TypeError, AttributeError) as exc:
+        raise AIBackendError(f"LLM sections payload malformed: {exc}") from exc
+
+    draft = DocDraft(
+        doc_key=doc_key,
+        title=title,
+        type=raw_type,
+        preamble=str(payload.get("preamble") or "").strip(),
+        sections=sections,
+        sources=[k for k, _ in sources],
+    )
+    return draft, meta
 
 
 def generate_master_from_folder(

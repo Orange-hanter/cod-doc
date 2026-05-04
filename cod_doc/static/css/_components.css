@@ -53,6 +53,92 @@
   vertical-align: middle;
 }
 
+/* COD-078: Docs page UI — toolbar / filters / tree. */
+.docs-stats {
+  margin: 8px 0 12px;
+  font-size: 13px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.docs-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.docs-toolbar a.btn-primary,
+.docs-toolbar a.btn-secondary {
+  padding: 6px 12px;
+  border-radius: 4px;
+  text-decoration: none;
+  border: 1px solid var(--border);
+}
+.docs-toolbar a.btn-primary {
+  background: #0969da;
+  color: white;
+  border-color: #0969da;
+}
+.docs-toolbar a.btn-secondary {
+  background: var(--bg);
+  color: var(--fg);
+}
+.docs-filterbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 8px 0 16px;
+}
+.docs-filterbar .docs-search { flex: 1 1 240px; min-width: 200px; }
+.docs-filterbar a.active { font-weight: 600; }
+.docs-tree { display: flex; flex-direction: column; gap: 4px; }
+.docs-tree-node { padding: 4px 8px; border-left: 3px solid var(--border); margin-left: 4px; }
+.docs-tree-node > summary {
+  cursor: pointer; padding: 4px 0; list-style: none;
+  display: flex; gap: 8px; align-items: center;
+}
+.docs-tree-node > summary::-webkit-details-marker { display: none; }
+.docs-tree-node > summary::before {
+  content: "📁";
+  display: inline-block;
+  width: 16px;
+  transition: transform 0.15s ease;
+}
+.docs-tree-node[open] > summary::before { content: "📂"; }
+.docs-folder { font-weight: 600; }
+.docs-tree-files { margin: 4px 0 8px 24px; width: calc(100% - 24px); }
+.docs-tree-files td { padding: 4px 8px; }
+.docs-toolbar-old { margin-top: 24px; }
+.doc-links-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.doc-links-grid h3 { margin: 0 0 6px 0; font-size: 14px; }
+.doc-links-grid ul { margin: 0; padding-left: 18px; }
+@media (max-width: 800px) {
+  .doc-links-grid { grid-template-columns: 1fr; }
+}
+.docs-source-picker {
+  max-height: 400px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.docs-source-picker .field-checkbox {
+  display: block;
+  padding: 2px 0;
+}
+
 .section-block {
   border: 1px solid var(--border);
   border-radius: 4px;

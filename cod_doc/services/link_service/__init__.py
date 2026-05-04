@@ -32,11 +32,18 @@ from __future__ import annotations
 
 from cod_doc.domain.entities import EntityKind  # re-exported for convenience
 
-from ._types import LinkNotFoundError, ParsedLink, RenameCascadeReport, VerifyReport
+from ._types import (
+    IncomingLink,
+    LinkNotFoundError,
+    ParsedLink,
+    RenameCascadeReport,
+    VerifyReport,
+)
 from .parser import parse
 from .rename_cascade import rename_cascade
 from .resolver import (
     list_for_section,
+    list_incoming_for_doc,
     resolve,
     resolve_section,
     sync_section,
@@ -45,11 +52,13 @@ from .resolver import (
 
 __all__ = [
     "EntityKind",
+    "IncomingLink",
     "LinkNotFoundError",
     "ParsedLink",
     "RenameCascadeReport",
     "VerifyReport",
     "list_for_section",
+    "list_incoming_for_doc",
     "parse",
     "rename_cascade",
     "resolve",

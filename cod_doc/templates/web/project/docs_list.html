@@ -15,7 +15,117 @@
   </p>
 {% else %}
 
-<details class="docs-toolbar">
+{# COD-078: stats + toolbar + filter bar replacing the old single-action header. #}
+<section class="docs-stats muted">
+  <strong>{{ counts.total }}</strong> docs ·
+  <span class="badge badge-active">active {{ counts.active }}</span>
+  <span class="badge badge-draft">draft {{ counts.draft }}</span>
+  <span class="badge badge-review">review {{ counts.review }}</span>
+  <span class="badge badge-deprecated">deprecated {{ counts.deprecated }}</span>
+</section>
+
+<nav class="docs-toolbar">
+  <a class="btn-primary" href="/p/{{ project.name }}/docs/new">➕ New blank</a>
+  <a class="btn-secondary" href="/p/{{ project.name }}/docs/generate">✨ Generate via AI</a>
+  <a class="btn-secondary" href="#import-section">📥 Import markdown</a>
+</nav>
+
+<form method="get" action="/p/{{ project.name }}/docs" class="docs-filterbar">
+  <input type="search" name="q" value="{{ filters.q }}"
+         placeholder="Search by title or doc key…" class="docs-search">
+  <select name="type">
+    <option value="">— Type —</option>
+    {% for t in document_types %}
+      <option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>
+    {% endfor %}
+  </select>
+  <select name="status">
+    <option value="">— Status —</option>
+    {% for s in doc_status_options %}
+      <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Apply</button>
+  {% if filters.q or filters.type or filters.status %}
+    <a class="muted" href="/p/{{ project.name }}/docs?view={{ view }}">clear</a>
+  {% endif %}
+  <span class="muted-tiny" style="margin-left:auto">View:</span>
+  <a class="{{ 'active' if view == 'tree' else '' }}"
+     href="/p/{{ project.name }}/docs?view=tree{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.type %}&type={{ filters.type }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}">tree</a>
+  ·
+  <a class="{{ 'active' if view == 'flat' else '' }}"
+     href="/p/{{ project.name }}/docs?view=flat{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.type %}&type={{ filters.type }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}">flat</a>
+</form>
+
+{% if not documents %}
+  <p class="muted">
+    {% if filters.q or filters.type or filters.status %}
+      Под фильтр ничего не попало.
+    {% else %}
+      В этом проекте пока нет документов. Создай первый через <strong>➕ New blank</strong>.
+    {% endif %}
+  </p>
+{% elif view == 'tree' %}
+  {% macro render_node(node) %}
+    {# Recursive folder/file rendering. #}
+    <details class="docs-tree-node" open>
+      <summary>
+        <span class="docs-folder">{{ node.name }}</span>
+        <span class="muted-tiny">{{ node.total }}</span>
+      </summary>
+      {% for sub in node.subfolders %}
+        {{ render_node(sub) }}
+      {% endfor %}
+      {% if node.files %}
+        <table class="grid docs-tree-files">
+          <tbody>
+            {% for d in node.files %}
+              <tr>
+                <td class="mono"><a href="/p/{{ project.name }}/docs/{{ d.doc_key }}">{{ d.doc_key.split('/')[-1] }}</a></td>
+                <td>{{ d.title }}</td>
+                <td><span class="badge badge-{{ d.status }}">{{ d.status }}</span></td>
+                <td class="muted-tiny">{{ d.type }}</td>
+                <td class="muted">{{ d.owner or "—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </details>
+  {% endmacro %}
+  <section class="docs-tree">
+    {% for node in tree %}
+      {{ render_node(node) }}
+    {% endfor %}
+  </section>
+{% else %}
+  <table class="grid">
+    <thead>
+      <tr>
+        <th>Doc&nbsp;key</th>
+        <th>Title</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Owner</th>
+        <th>Last&nbsp;updated</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in documents %}
+      <tr>
+        <td class="mono"><a href="/p/{{ project.name }}/docs/{{ d.doc_key }}">{{ d.doc_key }}</a></td>
+        <td>{{ d.title }}</td>
+        <td>{{ d.type }}</td>
+        <td><span class="badge badge-{{ d.status }}">{{ d.status }}</span></td>
+        <td class="muted">{{ d.owner or "—" }}</td>
+        <td class="muted">{{ d.last_updated or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+
+<details id="import-section" class="docs-toolbar-old">
   <summary>📥 Import markdown</summary>
   <form method="post"
         action="/p/{{ project.name }}/docs/import"
@@ -51,33 +161,5 @@
   </form>
 </details>
 
-{% if not documents %}
-  <p class="muted">В этом проекте пока нет документов.</p>
-{% else %}
-<table class="grid">
-  <thead>
-    <tr>
-      <th>Doc&nbsp;key</th>
-      <th>Title</th>
-      <th>Type</th>
-      <th>Status</th>
-      <th>Owner</th>
-      <th>Last&nbsp;updated</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for d in documents %}
-    <tr>
-      <td class="mono"><a href="/p/{{ project.name }}/docs/{{ d.doc_key }}">{{ d.doc_key }}</a></td>
-      <td>{{ d.title }}</td>
-      <td>{{ d.type }}</td>
-      <td>{{ d.status }}</td>
-      <td class="muted">{{ d.owner or "—" }}</td>
-      <td class="muted">{{ d.last_updated or "—" }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
 {% endif %}
 {% endblock %}

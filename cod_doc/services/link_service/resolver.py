@@ -23,7 +23,7 @@ from cod_doc.infra.models import (
 from cod_doc.infra.repositories import LinkRepository
 
 from ._section_helpers import _link_or_raise, _project_id_for_section, _section_or_raise
-from ._types import ParsedLink, VerifyReport
+from ._types import IncomingLink, ParsedLink, VerifyReport
 from .parser import parse
 
 if TYPE_CHECKING:
@@ -283,3 +283,38 @@ def verify_section(session: Session, section_id: int) -> VerifyReport:
 
 def list_for_section(session: Session, section_id: int) -> list[Link]:
     return LinkRepository(session).list_for_section(section_id)
+
+
+def list_incoming_for_doc(
+    session: Session, project_id: int, doc_key: str
+) -> list["IncomingLink"]:
+    """COD-078: enumerate links pointing at ``doc_key`` with enough source
+    context for UI rendering.
+
+    The web layer used to reach into LinkRepository + DocumentModel + SectionModel
+    directly for this; that violated the layering test. Service-side helper
+    keeps the SQLAlchemy imports in infra-aware code.
+
+    Self-links (source doc == target doc) are excluded.
+    """
+    rows = LinkRepository(session).list_for_doc_key(project_id, doc_key)
+    out: list[IncomingLink] = []
+    for link in rows:
+        if link.from_section_id is None:
+            continue
+        section = session.get(SectionModel, link.from_section_id)
+        if section is None:
+            continue
+        source_doc = session.get(DocumentModel, section.document_id)
+        if source_doc is None or source_doc.doc_key == doc_key:
+            continue
+        out.append(
+            IncomingLink(
+                source_doc_key=source_doc.doc_key,
+                source_doc_title=source_doc.title,
+                section_heading=section.heading,
+                section_anchor=section.anchor,
+                label=link.label,
+            )
+        )
+    return out

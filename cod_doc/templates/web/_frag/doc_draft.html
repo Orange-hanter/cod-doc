@@ -1,0 +1,58 @@
+{# COD-078: AI-generated document draft preview. #}
+{% if notice %}
+  <p class="ai-notice muted">{{ notice }}</p>
+{% endif %}
+
+{% if draft %}
+<form method="post" action="/p/{{ project.name }}/docs/generate/save" class="draft-form">
+  <fieldset class="draft-card">
+    <legend>Identity</legend>
+    <label class="field">
+      <span class="muted-tiny">Doc key</span>
+      <input type="text" name="doc_key" value="{{ draft.doc_key }}">
+    </label>
+    <label class="field">
+      <span class="muted-tiny">Title</span>
+      <input type="text" name="title" value="{{ draft.title }}">
+    </label>
+    <label class="field">
+      <span class="muted-tiny">Type</span>
+      <select name="type">
+        {% for t in document_types %}
+          <option value="{{ t }}" {% if t == draft.type %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </fieldset>
+
+  <fieldset class="draft-card">
+    <legend>Preamble</legend>
+    <textarea name="preamble" rows="6">{{ draft.preamble }}</textarea>
+  </fieldset>
+
+  {% for heading, body in draft.sections %}
+    <fieldset class="draft-card">
+      <legend>Section #{{ loop.index }}</legend>
+      <label class="field">
+        <span class="muted-tiny">Heading</span>
+        <input type="text" name="section_heading" value="{{ heading }}">
+      </label>
+      <label class="field">
+        <span class="muted-tiny">Body (markdown)</span>
+        <textarea name="section_body" rows="8">{{ body }}</textarea>
+      </label>
+    </fieldset>
+  {% endfor %}
+
+  {% for src in draft.sources %}
+    <input type="hidden" name="source" value="{{ src }}">
+  {% endfor %}
+
+  <div class="form-actions">
+    <button type="submit" class="btn-primary">Save document</button>
+    <span class="muted-tiny">
+      Будет создан как <code>draft</code>; принять можно через ✓ Accept на странице документа.
+    </span>
+  </div>
+</form>
+{% endif %}

@@ -39,3 +39,19 @@ class RenameCascadeReport:
     new_doc_key: str
     updated_links: int
     rewritten_sections: int
+
+
+@dataclass(slots=True)
+class IncomingLink:
+    """COD-078: a link pointing AT the inspected document.
+
+    Carries enough source-doc context (doc_key + title) and source-section
+    context (heading + anchor) for the doc-show "Incoming" panel to render
+    without the web layer reaching into the infra repositories.
+    """
+
+    source_doc_key: str
+    source_doc_title: str
+    section_heading: str
+    section_anchor: str
+    label: str | None = None

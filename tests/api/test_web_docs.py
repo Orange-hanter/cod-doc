@@ -173,6 +173,215 @@ def test_doc_show_404_when_db_absent(tmp_path: Path) -> None:
     assert r.status_code == 404
 
 
+# ── COD-078: redesigned docs page ──────────────────────────────────────
+
+
+def test_docs_list_renders_tree_view_by_default(docs_client) -> None:
+    client, entry = docs_client
+    r = client.get(f"/p/{entry.name}/docs")
+    body = r.text
+    # Toolbar with three create actions and an import section.
+    assert "New blank" in body
+    assert "Generate via AI" in body
+    assert "Import markdown" in body
+    # Filter bar
+    assert 'name="q"' in body
+    # Tree node for the seeded doc's first path component
+    assert 'class="docs-folder"' in body
+    assert "modules" in body
+    # Counts row
+    assert "active" in body and "draft" in body
+
+
+def test_docs_list_search_filter_drops_non_matches(docs_client) -> None:
+    client, entry = docs_client
+    r = client.get(f"/p/{entry.name}/docs?q=auth")
+    assert r.status_code == 200
+    assert "modules/M1-auth/overview" in r.text
+
+    r2 = client.get(f"/p/{entry.name}/docs?q=does-not-exist")
+    assert r2.status_code == 200
+    assert "Под фильтр ничего не попало" in r2.text
+
+
+def test_docs_list_status_filter_only_active(docs_client) -> None:
+    client, entry = docs_client
+    # Seed an extra DRAFT doc so the filter has something to remove.
+    db_path = entry.cod_doc_dir / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        proj = ProjectRepository(session).get_by_slug(entry.name)
+        docs.create(
+            session,
+            project_id=proj.row_id,
+            doc_key="drafts/extra",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.DRAFT,
+            title="Extra",
+            author="human:dakh",
+            owner="human:dakh",
+            sensitivity=Sensitivity.INTERNAL,
+        )
+    engine.dispose()
+
+    r = client.get(f"/p/{entry.name}/docs?status=active")
+    assert "modules/M1-auth/overview" in r.text
+    assert "drafts/extra" not in r.text
+
+
+def test_doc_new_form_renders(docs_client) -> None:
+    client, entry = docs_client
+    r = client.get(f"/p/{entry.name}/docs/new")
+    assert r.status_code == 200
+    assert 'name="doc_key"' in r.text
+    assert 'name="preamble"' in r.text
+
+
+def test_doc_new_creates_and_redirects(docs_client) -> None:
+    client, entry = docs_client
+    r = client.post(
+        f"/p/{entry.name}/docs/new",
+        data={
+            "doc_key": "guides/onboarding",
+            "title": "Onboarding",
+            "type": "guide",
+            "status": "draft",
+            "sensitivity": "internal",
+            "owner": "human:dakh",
+            "preamble": "Welcome.",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"].endswith("/docs/guides/onboarding")
+
+    follow = client.get(f"/p/{entry.name}/docs/guides/onboarding")
+    assert "Onboarding" in follow.text
+
+
+def test_doc_new_rejects_duplicate_key(docs_client) -> None:
+    client, entry = docs_client
+    r = client.post(
+        f"/p/{entry.name}/docs/new",
+        data={
+            "doc_key": "modules/M1-auth/overview",  # already seeded
+            "title": "Dup",
+            "type": "module-spec",
+            "status": "draft",
+            "sensitivity": "internal",
+            "owner": "",
+            "preamble": "",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code in (303, 422)
+    if r.status_code == 303:
+        # Falls back to flash-cookie error redirect — location may be
+        # the Referer or "/" when no Referer is set in the test client.
+        assert r.cookies.get("flash_message")
+
+
+def test_doc_generate_form_lists_sources(docs_client) -> None:
+    client, entry = docs_client
+    r = client.get(f"/p/{entry.name}/docs/generate")
+    body = r.text
+    assert "Generate document via AI" in body
+    assert "modules/M1-auth/overview" in body
+    assert 'name="source"' in body
+    assert 'name="intent"' in body
+
+
+def test_doc_generate_preview_then_save(docs_client, monkeypatch) -> None:
+    """Mock ai_generate.generate_doc_from_sources, run through preview→save."""
+    client, entry = docs_client
+    from cod_doc.services import ai_generate
+
+    def fake(sources, *, cfg, intent="", target_type="module-spec"):
+        return ai_generate.DocDraft(
+            doc_key="guides/derived",
+            title="Derived guide",
+            type="guide",
+            preamble="Derived from sources.",
+            sections=[
+                ("Overview", "## Overview body"),
+                ("Steps", "1. step\n2. step"),
+            ],
+            sources=[k for k, _ in sources],
+        ), ai_generate.GenerationMeta(
+            model="test/m", input_tokens=10, output_tokens=20, duration_ms=5
+        )
+
+    monkeypatch.setattr(ai_generate, "generate_doc_from_sources", fake)
+
+    preview = client.post(
+        f"/p/{entry.name}/docs/generate",
+        data={
+            "source": "modules/M1-auth/overview",
+            "type": "guide",
+            "intent": "make a quickstart",
+        },
+        headers={"HX-Request": "true"},
+    )
+    assert preview.status_code == 200
+    body = preview.text
+    assert "Derived guide" in body
+    assert "Overview" in body
+    assert 'name="section_heading"' in body
+    assert 'name="section_body"' in body
+
+    save = client.post(
+        f"/p/{entry.name}/docs/generate/save",
+        data={
+            "doc_key": "guides/derived",
+            "title": "Derived guide",
+            "type": "guide",
+            "preamble": "Derived from sources.",
+            "section_heading": ["Overview", "Steps"],
+            "section_body": ["body", "1. one"],
+            "source": ["modules/M1-auth/overview"],
+        },
+        follow_redirects=False,
+    )
+    assert save.status_code == 303
+    follow = client.get(f"/p/{entry.name}/docs/guides/derived")
+    assert "Derived guide" in follow.text
+    assert "Overview" in follow.text
+
+
+def test_doc_generate_preview_handles_ai_error(docs_client, monkeypatch) -> None:
+    client, entry = docs_client
+    from cod_doc.services import ai_generate
+    from cod_doc.services.ai_text import AIBackendError
+
+    monkeypatch.setattr(
+        ai_generate,
+        "generate_doc_from_sources",
+        lambda *a, **kw: (_ for _ in ()).throw(AIBackendError("budget exceeded")),
+    )
+    r = client.post(
+        f"/p/{entry.name}/docs/generate",
+        data={
+            "source": "modules/M1-auth/overview",
+            "type": "guide",
+            "intent": "x",
+        },
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert "AI error: budget exceeded" in r.text
+
+
+def test_doc_show_links_panel_renders(docs_client) -> None:
+    """Outgoing/incoming sections render even with zero links seeded."""
+    client, entry = docs_client
+    r = client.get(f"/p/{entry.name}/docs/modules/M1-auth/overview")
+    body = r.text
+    assert "Outgoing" in body
+    assert "Incoming" in body
+    assert "No outgoing links yet" in body or "Nobody links here yet" in body
+
+
 # ── COD-052: doc accept flow ────────────────────────────────────────────
 
 

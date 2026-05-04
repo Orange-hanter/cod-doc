@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Generate doc · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/docs">Docs</a> /
+  <span>Generate</span>
+</nav>
+
+<h1>✨ Generate document via AI</h1>
+
+{% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<p class="muted">
+  Pick one or more existing documents as context, describe the target
+  document's intent, and the LLM will propose a draft (preamble + sections).
+  Nothing is persisted until you press <strong>Save</strong> on the preview.
+</p>
+
+<form hx-post="/p/{{ project.name }}/docs/generate"
+      hx-target="#doc-draft"
+      hx-swap="innerHTML"
+      class="ai-gen-form">
+  <fieldset>
+    <legend>Source documents</legend>
+    {% if not sources %}
+      <p class="muted">В проекте нет документов — добавь хотя бы один через ➕ New blank или Import markdown.</p>
+    {% else %}
+      <div class="docs-source-picker">
+        {% for s in sources %}
+          <label class="field-checkbox">
+            <input type="checkbox" name="source" value="{{ s.doc_key }}">
+            <span class="mono">{{ s.doc_key }}</span> — {{ s.title }} <span class="muted-tiny">({{ s.type }})</span>
+          </label>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </fieldset>
+
+  <fieldset>
+    <legend>Target</legend>
+    <label class="field">
+      <span class="label">Type</span>
+      <select name="type">
+        {% for t in document_types %}
+          <option value="{{ t }}" {% if t == "guide" %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span class="label">Intent (что должен описывать новый документ)</span>
+      <input type="text" name="intent"
+             placeholder="e.g. квикстарт для нового разработчика, опираясь на API + Architecture">
+    </label>
+  </fieldset>
+
+  <div class="form-actions">
+    <button type="submit" class="btn-primary">✨ Generate draft</button>
+    <a class="btn-secondary" href="/p/{{ project.name }}/docs">Cancel</a>
+  </div>
+</form>
+
+<div id="doc-draft"></div>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}New doc · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/docs">Docs</a> /
+  <span>New</span>
+</nav>
+
+<h1>New document</h1>
+
+{% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<form method="post" action="/p/{{ project.name }}/docs/new" class="settings-form">
+  <fieldset>
+    <legend>Identity</legend>
+    <label class="field">
+      <span class="label">Doc key</span>
+      <input type="text" name="doc_key" required
+             placeholder="modules/M1-foo/overview">
+      <small class="muted">Unique slash-path used for routing and links.</small>
+    </label>
+    <label class="field">
+      <span class="label">Title</span>
+      <input type="text" name="title" required>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Classification</legend>
+    <label class="field">
+      <span class="label">Type</span>
+      <select name="type">
+        {% for t in document_types %}
+          <option value="{{ t }}" {% if t == "module-spec" %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span class="label">Status</span>
+      <select name="status">
+        {% for s in doc_status_options %}
+          <option value="{{ s }}" {% if s == "draft" %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span class="label">Sensitivity</span>
+      <select name="sensitivity">
+        {% for s in sensitivity_options %}
+          <option value="{{ s }}" {% if s == "internal" %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span class="label">Owner</span>
+      <input type="text" name="owner" placeholder="human:dakh, team:platform, …">
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Body</legend>
+    <label class="field">
+      <span class="label">Preamble (markdown)</span>
+      <textarea name="preamble" rows="10" placeholder="One-paragraph summary, then links to sections…"></textarea>
+      <small class="muted">Sections can be added after the document is created.</small>
+    </label>
+  </fieldset>
+
+  <div class="form-actions">
+    <button type="submit" class="btn-primary">Create</button>
+    <a class="btn-secondary" href="/p/{{ project.name }}/docs">Cancel</a>
+  </div>
+</form>
+{% endblock %}
