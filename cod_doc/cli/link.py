@@ -201,6 +201,62 @@ def link_sync(ctx: click.Context, doc_key: str, project: str, anchor: str) -> No
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+@link.command("backfill")
+@click.option("--project", "-p", required=True, help="Project slug")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be synced without persisting.",
+)
+@click.pass_context
+def link_backfill(ctx: click.Context, project: str, dry_run: bool) -> None:
+    """COD-079: re-parse links for every section in the project.
+
+    Existing imports skipped link extraction; this walks all sections and
+    runs ``sync_section`` so the in-memory + UI link panels show real data.
+    """
+    from sqlalchemy import select
+
+    from cod_doc.infra.db import transactional
+    from cod_doc.infra.models import DocumentModel, SectionModel
+    from cod_doc.services import link_service
+
+    cfg: Config = ctx.obj["config"]
+    sf = _make_session(project, cfg)
+
+    sections_done = 0
+    links_total = 0
+    docs_seen: set[str] = set()
+    with transactional(sf) as session:
+        project_id = _require_project_id(session, project)
+        rows = (
+            session.execute(
+                select(SectionModel.row_id, DocumentModel.doc_key)
+                .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
+                .where(DocumentModel.project_id == project_id)
+                .order_by(DocumentModel.doc_key, SectionModel.position)
+            )
+            .all()
+        )
+        for sec_id, doc_key in rows:
+            try:
+                links = link_service.sync_section(session, int(sec_id))
+            except Exception as exc:  # noqa: BLE001 — best-effort backfill
+                log.warning("backfill skipped %s: %s", doc_key, exc)
+                continue
+            sections_done += 1
+            links_total += len(links)
+            docs_seen.add(doc_key)
+        if dry_run:
+            session.rollback()
+
+    note = "(dry-run, rolled back)" if dry_run else ""
+    console.print(
+        f"[green]✅[/green] backfilled {links_total} link(s) across "
+        f"{sections_done} section(s) in {len(docs_seen)} doc(s) {note}".strip()
+    )
+
+
 @link.command("verify")
 @click.argument("doc_key")
 @click.option("--project", "-p", required=True, help="Project slug")

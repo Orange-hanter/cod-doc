@@ -96,8 +96,15 @@
         <ul>
           {% for link in outgoing_links %}
             <li>
-              <a href="/p/{{ project.name }}/docs/{{ link.to_doc_key }}{% if link.to_anchor %}#{{ link.to_anchor }}{% endif %}"
-                 class="mono">{{ link.to_doc_key }}{% if link.to_anchor %}#{{ link.to_anchor }}{% endif %}</a>
+              {% if link.to_doc_key %}
+                <a href="/p/{{ project.name }}/docs/{{ link.to_doc_key }}"
+                   class="mono">{{ link.to_doc_key }}</a>
+              {% else %}
+                <code>{{ link.raw }}</code>
+                {% if link.broken_reason %}
+                  <span class="warn">— {{ link.broken_reason }}</span>
+                {% endif %}
+              {% endif %}
               <span class="muted-tiny">from § {{ link.from_section }}</span>
             </li>
           {% endfor %}

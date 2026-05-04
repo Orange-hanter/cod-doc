@@ -6,6 +6,7 @@ to section bodies. Block-level features:
 - Bullet lists (`- ` / `* `)
 - Code fences ``` … ``` (language tag discarded; preserves whitespace)
 - Blockquotes `> …` (collapsible consecutive lines)
+- GFM tables: header `|`-row + delimiter `|---|:--:|` + body rows (COD-079)
 - Paragraphs separated by blank lines
 
 Inline features (escaped first, then matched):
@@ -13,10 +14,9 @@ Inline features (escaped first, then matched):
 - Markdown-active chars inside backticks are entity-shielded so `*foo*`
   inside `\`code\`` doesn't become italics inside <code>.
 
-What we explicitly DO NOT render: tables, footnotes, images, nested
-lists. Adopted instead of pulling in `markdown-it-py` (~50 KB + transitive
-deps) to honor capability §2 («no new deps without justification»). When
-section bodies start needing tables, revisit the ADR.
+What we still DO NOT render: footnotes, images, nested lists. Adopted
+instead of pulling in `markdown-it-py` (~50 KB + transitive deps) to
+honor capability §2 («no new deps without justification»).
 
 Safety: every line is HTML-escaped before any markdown pattern runs — raw
 HTML in user input cannot smuggle through.
@@ -32,6 +32,8 @@ _BOLD = re.compile(r"\*\*([^*]+)\*\*")
 _ITALIC = re.compile(r"(?<!\*)\*([^*\n]+)\*(?!\*)")
 _LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
+# GFM table delimiter cell: optional leading/trailing colon (alignment), 1+ dashes.
+_TABLE_DELIM_CELL = re.compile(r"^\s*:?-{3,}:?\s*$")
 
 
 def _shield_inline_code(match: re.Match[str]) -> str:
@@ -55,6 +57,92 @@ def _render_inline(text: str) -> str:
     text = _ITALIC.sub(r"<em>\1</em>", text)
     text = _LINK.sub(r'<a href="\2">\1</a>', text)
     return text
+
+
+def _split_pipe_row(line: str) -> list[str]:
+    """Split a GFM table row on `|`, ignoring leading/trailing pipe."""
+    s = line.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|"):
+        s = s[:-1]
+    return [c.strip() for c in s.split("|")]
+
+
+def _parse_table_alignments(delim_line: str) -> list[str] | None:
+    """Return per-column alignment ('left'|'right'|'center'|None) or None
+    when ``delim_line`` is not a valid GFM delimiter row."""
+    cells = _split_pipe_row(delim_line)
+    if not cells or any(not _TABLE_DELIM_CELL.match(c) for c in cells):
+        return None
+    aligns: list[str] = []
+    for raw in cells:
+        c = raw.strip()
+        left = c.startswith(":")
+        right = c.endswith(":")
+        if left and right:
+            aligns.append("center")
+        elif right:
+            aligns.append("right")
+        elif left:
+            aligns.append("left")
+        else:
+            aligns.append("")
+    return aligns
+
+
+def _try_render_table(lines: list[str], i: int) -> tuple[str, int] | None:
+    """If ``lines[i:]`` starts with a GFM table, render it; return
+    ``(html, end_index_exclusive)``. Otherwise None.
+
+    The caller should fall back to its normal line-by-line dispatch.
+    """
+    if i + 1 >= len(lines):
+        return None
+    head = lines[i]
+    if "|" not in head or not head.strip():
+        return None
+    aligns = _parse_table_alignments(lines[i + 1])
+    if aligns is None:
+        return None
+    headers = _split_pipe_row(head)
+    if len(headers) != len(aligns):
+        return None
+
+    rows: list[list[str]] = []
+    j = i + 2
+    while j < len(lines):
+        line = lines[j]
+        if not line.strip() or "|" not in line:
+            break
+        cells = _split_pipe_row(line)
+        # Pad / trim to the header width so jagged rows still render.
+        if len(cells) < len(headers):
+            cells.extend([""] * (len(headers) - len(cells)))
+        elif len(cells) > len(headers):
+            cells = cells[: len(headers)]
+        rows.append(cells)
+        j += 1
+
+    def _cell_attr(idx: int) -> str:
+        align = aligns[idx] if idx < len(aligns) else ""
+        return f' style="text-align:{align}"' if align else ""
+
+    out: list[str] = ['<table class="md-table">']
+    out.append("<thead><tr>")
+    for idx, h in enumerate(headers):
+        out.append(f"<th{_cell_attr(idx)}>{_render_inline(h)}</th>")
+    out.append("</tr></thead>")
+    if rows:
+        out.append("<tbody>")
+        for row in rows:
+            out.append("<tr>")
+            for idx, cell in enumerate(row):
+                out.append(f"<td{_cell_attr(idx)}>{_render_inline(cell)}</td>")
+            out.append("</tr>")
+        out.append("</tbody>")
+    out.append("</table>")
+    return "".join(out), j
 
 
 def render_markdown(text: str) -> str:
@@ -93,7 +181,10 @@ def render_markdown(text: str) -> str:
         flush_list()
         flush_blockquote()
 
-    for line in text.splitlines():
+    raw_lines = text.splitlines()
+    i = 0
+    while i < len(raw_lines):
+        line = raw_lines[i]
         if line.startswith("```"):
             flush_all()
             if in_fence:
@@ -111,12 +202,25 @@ def render_markdown(text: str) -> str:
             else:
                 fence_lang = line[3:].strip().lower()
                 in_fence = True
+            i += 1
             continue
         if in_fence:
             fence_lines.append(line)
+            i += 1
             continue
         if line.strip() == "":
             flush_all()
+            i += 1
+            continue
+        # COD-079: GFM table — header row + delimiter row + body rows.
+        # Tried before paragraphs / lists so leading `|` doesn't get
+        # swallowed as plain text.
+        table_render = _try_render_table(raw_lines, i)
+        if table_render is not None:
+            flush_all()
+            html, end_idx = table_render
+            blocks.append(html)
+            i = end_idx
             continue
         # Heading? Slugify into id-attribute so anchor scroll works on TOC links.
         m = _HEADING.match(line)
@@ -126,22 +230,26 @@ def render_markdown(text: str) -> str:
             content = _render_inline(m.group(2))
             slug = _slugify(m.group(2))
             blocks.append(f'<h{level} id="{slug}">{content}</h{level}>')
+            i += 1
             continue
         # Blockquote? Collapse consecutive `> …` lines into one <blockquote>.
         if line.startswith(">"):
             flush_paragraph()
             flush_list()
             blockquote_lines.append(line[1:].lstrip(" "))
+            i += 1
             continue
         # Bullet list?
         if line.startswith(("- ", "* ")):
             flush_paragraph()
             flush_blockquote()
             list_items.append(line[2:])
+            i += 1
             continue
         flush_list()
         flush_blockquote()
         paragraph_lines.append(line)
+        i += 1
 
     flush_all()
     if in_fence and fence_lines:

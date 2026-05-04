@@ -119,6 +119,162 @@ def test_cli_import_legacy_tasks_runs_end_to_end(tmp_path: Path) -> None:
     assert "Plan scope:" in result.output
 
 
+def test_cli_link_backfill_syncs_sections(tmp_path: Path) -> None:
+    """COD-079: `cod-doc link backfill` walks every section and calls
+    sync_section so existing imports gain link rows."""
+    cfg, entry = _bootstrap(tmp_path)
+
+    from datetime import UTC, datetime
+
+    from cod_doc.cli.link import link as link_group
+    from cod_doc.domain.entities import (
+        DocumentStatus,
+        DocumentType,
+        Sensitivity,
+    )
+    from cod_doc.infra.db import make_engine, make_session_factory, transactional
+    from cod_doc.infra.repositories import LinkRepository
+    from cod_doc.services import doc_service
+
+    db_path = tmp_path / "repo" / ".cod-doc" / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    section_id: int | None = None
+    with transactional(factory) as session:
+        from cod_doc.infra.repositories import ProjectRepository
+
+        proj = ProjectRepository(session).get_by_slug(entry.name)
+        # Two docs; doc-a links to doc-b.
+        doc_a = doc_service.create(
+            session,
+            project_id=proj.row_id,
+            doc_key="doc-a",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.ACTIVE,
+            title="A",
+            author="human:test",
+            owner="human:test",
+            sensitivity=Sensitivity.INTERNAL,
+        )
+        doc_service.create(
+            session,
+            project_id=proj.row_id,
+            doc_key="doc-b",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.ACTIVE,
+            title="B",
+            author="human:test",
+            owner="human:test",
+            sensitivity=Sensitivity.INTERNAL,
+        )
+        sec = doc_service.add_section(
+            session,
+            document_id=doc_a.row_id,
+            anchor="ref",
+            heading="Ref",
+            level=2,
+            position=0,
+            body="See [B](doc-b).",
+            author="human:test",
+        )
+        section_id = sec.row_id
+        # Wipe link rows to simulate pre-COD-079 state.
+        LinkRepository(session).delete_for_section(section_id)
+    engine.dispose()
+
+    runner = CliRunner()
+    result = runner.invoke(
+        link_group,
+        ["backfill", "-p", "restate"],
+        obj={"config": cfg},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "backfilled 1 link" in result.output
+
+    # Verify the row landed.
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        rows = LinkRepository(session).list_for_section(section_id)
+    engine.dispose()
+    assert len(rows) == 1
+
+
+def test_cli_link_backfill_dry_run_does_not_persist(tmp_path: Path) -> None:
+    cfg, entry = _bootstrap(tmp_path)
+
+    from cod_doc.cli.link import link as link_group
+    from cod_doc.domain.entities import (
+        DocumentStatus,
+        DocumentType,
+        Sensitivity,
+    )
+    from cod_doc.infra.db import make_engine, make_session_factory, transactional
+    from cod_doc.infra.repositories import LinkRepository, ProjectRepository
+    from cod_doc.services import doc_service
+
+    db_path = tmp_path / "repo" / ".cod-doc" / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    section_id: int | None = None
+    with transactional(factory) as session:
+        proj = ProjectRepository(session).get_by_slug(entry.name)
+        doc = doc_service.create(
+            session,
+            project_id=proj.row_id,
+            doc_key="d",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.ACTIVE,
+            title="D",
+            author="human:test",
+            owner="human:test",
+            sensitivity=Sensitivity.INTERNAL,
+        )
+        doc_service.create(
+            session,
+            project_id=proj.row_id,
+            doc_key="other",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.ACTIVE,
+            title="O",
+            author="human:test",
+            owner="human:test",
+            sensitivity=Sensitivity.INTERNAL,
+        )
+        sec = doc_service.add_section(
+            session,
+            document_id=doc.row_id,
+            anchor="x",
+            heading="X",
+            level=2,
+            position=0,
+            body="See [O](other).",
+            author="human:test",
+        )
+        section_id = sec.row_id
+        LinkRepository(session).delete_for_section(section_id)
+    engine.dispose()
+
+    runner = CliRunner()
+    result = runner.invoke(
+        link_group,
+        ["backfill", "-p", "restate", "--dry-run"],
+        obj={"config": cfg},
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "dry-run" in result.output
+
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        rows = LinkRepository(session).list_for_section(section_id)
+    engine.dispose()
+    # Dry-run rolled back — section still has zero links.
+    assert rows == []
+
+
 def test_cli_import_unknown_project_errors() -> None:
     cfg = Config(api_key="sk-test", model="m", base_url="https://x")
     runner = CliRunner()

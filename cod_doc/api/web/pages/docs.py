@@ -557,12 +557,17 @@ def doc_show(
         if s.row_id is None:
             continue
         for link in links.list_for_section(session, s.row_id):
+            # COD-079: anchor + label aren't persisted on Link; the schema
+            # only carries to_doc_key / to_task_id / to_story_id. The raw
+            # parsed string is enough for the panel since the user can
+            # follow the doc link.
             outgoing.append(
                 {
                     "to_doc_key": link.to_doc_key,
-                    "to_anchor": link.to_anchor,
+                    "raw": link.raw,
                     "from_section": s.heading,
-                    "label": link.label,
+                    "resolved": link.resolved,
+                    "broken_reason": link.broken_reason,
                 }
             )
 

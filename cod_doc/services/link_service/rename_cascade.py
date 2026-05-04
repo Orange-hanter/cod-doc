@@ -128,8 +128,44 @@ def rename_cascade(
             rewritten_sections=0,
         )
 
-    effective_path_map = {o: n for o, n in path_map.items() if o != n} if path_map else {}
+    effective_path_map = (
+        {o: n for o, n in path_map.items() if o != n} if path_map else {}
+    )
 
+    # COD-079: rename_cascade pre-updates link rows in step 1 and patches
+    # section bodies in step 3. doc_service.patch_section's auto-sync would
+    # wipe and re-resolve rows from raw body — but cascade has already
+    # staged the new resolved state, so the auto-sync is redundant and
+    # destructive. Toggle the opt-out flag for the duration of cascade.
+    from cod_doc.services.doc_service import SKIP_AUTO_LINK_SYNC
+
+    session.info[SKIP_AUTO_LINK_SYNC] = True
+    try:
+        return _rename_cascade_locked(
+            session,
+            project_id=project_id,
+            old_doc_key=old_doc_key,
+            new_doc_key=new_doc_key,
+            author=author,
+            reason=reason,
+            no_key_change=no_key_change,
+            effective_path_map=effective_path_map,
+        )
+    finally:
+        session.info.pop(SKIP_AUTO_LINK_SYNC, None)
+
+
+def _rename_cascade_locked(
+    session: Session,
+    *,
+    project_id: int,
+    old_doc_key: str,
+    new_doc_key: str,
+    author: str,
+    reason: str | None,
+    no_key_change: bool,
+    effective_path_map: dict[str, str],
+) -> RenameCascadeReport:
     # 1. Update link rows whose target was the old doc_key.
     affected_links: list[LinkModel] = []
     affected_section_ids: set[int] = set()

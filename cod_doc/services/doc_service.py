@@ -253,7 +253,46 @@ def add_section(
         diff=_create_diff(body, label=f"section:{doc.doc_key}#{anchor}"),
         reason=reason or "add_section",
     )
+    _sync_section_links_safe(session, section.row_id)
     return section
+
+
+SKIP_AUTO_LINK_SYNC = "_cod_doc_skip_auto_link_sync"
+
+
+def _sync_section_links_safe(session: Session, section_id: int) -> None:
+    """COD-079: refresh the parsed-link rows for a section after a write.
+
+    Best-effort: any error is logged but never bubbles up — the document
+    write is the primary operation, links are derived data we can rebuild
+    later via `cod-doc link backfill`.
+
+    Callers that manage link rows themselves (e.g. ``rename_cascade``,
+    which pre-updates link.raw + to_doc_key in place before patching the
+    body) can opt out by setting ``session.info[SKIP_AUTO_LINK_SYNC] = True``
+    for the duration of their work; the cascade re-asserts the resolved
+    state on its own and a redundant auto-sync would wipe it.
+    """
+    if session.info.get(SKIP_AUTO_LINK_SYNC):
+        return
+    try:
+        from cod_doc.services import link_service as _links
+
+        # sync first (delete + re-parse from body) so a body change invalidates
+        # stale rows; resolve_section then walks the fresh rows and populates
+        # to_doc_key / to_task_id where the target exists. resolve_section
+        # alone would not pick up body changes when rows already existed.
+        _links.sync_section(session, section_id)
+        _links.resolve_section(session, section_id)
+    except Exception:  # noqa: BLE001 — derived-data refresh, not load-bearing
+        import logging
+
+        logging.getLogger("cod_doc.services.doc_service").warning(
+            "sync_section failed for section_id=%s — links will be out of date "
+            "until next manual sync",
+            section_id,
+            exc_info=True,
+        )
 
 
 def patch_section(
@@ -300,6 +339,7 @@ def patch_section(
         reason=reason,
         expected_parent_revision_id=expected_parent_revision_id,
     )
+    _sync_section_links_safe(session, sec_model.row_id)
     refreshed = SectionRepository(session).get(sec_model.row_id)
     assert refreshed is not None
     return refreshed

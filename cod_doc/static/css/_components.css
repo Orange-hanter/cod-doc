@@ -139,6 +139,26 @@
   padding: 2px 0;
 }
 
+/* COD-079: GFM tables rendered inside doc bodies. */
+.md-table {
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.md-table th, .md-table td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  vertical-align: top;
+}
+.md-table th {
+  background: var(--bg-alt);
+  text-align: left;
+  font-weight: 600;
+}
+.md-table tr:nth-child(even) td {
+  background: var(--bg-alt);
+}
+
 .section-block {
   border: 1px solid var(--border);
   border-radius: 4px;

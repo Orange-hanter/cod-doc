@@ -148,6 +148,68 @@ def test_non_mermaid_lang_still_uses_pre_code() -> None:
     assert '<div class="mermaid">' not in out
 
 
+# ── COD-079: GFM tables ────────────────────────────────────────────────
+
+
+def test_gfm_table_renders_header_and_rows() -> None:
+    md = (
+        "| Field | Meaning |\n"
+        "| --- | --- |\n"
+        "| `agency_id` | Ensures delegation remains workspace-local |\n"
+        "| `user_id` | Employee receiving the grant |"
+    )
+    out = render_markdown(md)
+    assert '<table class="md-table">' in out
+    assert "<thead>" in out and "<tbody>" in out
+    assert "<th>Field</th>" in out
+    assert "<th>Meaning</th>" in out
+    assert "<code>agency_id</code>" in out
+    assert "Ensures delegation remains workspace-local" in out
+    # Pipe-soup raw text must NOT leak into output.
+    assert "| Field | Meaning |" not in out
+
+
+def test_gfm_table_alignment_via_colon() -> None:
+    md = (
+        "| L | C | R |\n"
+        "| :--- | :---: | ---: |\n"
+        "| a | b | c |"
+    )
+    out = render_markdown(md)
+    assert 'style="text-align:left"' in out
+    assert 'style="text-align:center"' in out
+    assert 'style="text-align:right"' in out
+
+
+def test_table_without_delimiter_falls_back_to_paragraph() -> None:
+    """Pipes inside a paragraph must not be misread as a 1-row table."""
+    md = "| not | a table |"
+    out = render_markdown(md)
+    assert "<table" not in out
+    assert "<p>" in out
+
+
+def test_jagged_rows_pad_to_header_width() -> None:
+    md = (
+        "| A | B | C |\n"
+        "| --- | --- | --- |\n"
+        "| 1 | 2 |\n"
+        "| 1 | 2 | 3 | extra |"
+    )
+    out = render_markdown(md)
+    # First row gets a third <td> (empty); second row trims the extra cell.
+    assert out.count("<tr>") == 3  # 1 header + 2 body
+    # Padding: short row still has 3 cells.
+    assert out.count("<td") == 6
+
+
+def test_table_delim_must_have_3plus_dashes() -> None:
+    """A single dash in the delimiter row is too sloppy — fall through."""
+    md = "| a | b |\n| - | - |\n| 1 | 2 |"
+    out = render_markdown(md)
+    assert "<table" not in out
+
+
 def test_paragraph_adjacent_to_list_is_rendered_separately() -> None:
     md = "intro paragraph\n\n- item one\n- item two\n\noutro paragraph"
     out = render_markdown(md)
