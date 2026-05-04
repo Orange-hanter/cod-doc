@@ -81,6 +81,7 @@ class TaskModel(Base):
     __table_args__ = (
         Index("ix_task_status", "status", "priority"),
         Index("ix_task_plan", "plan_id", "section_id"),
+        Index("ix_task_project_normtitle", "project_id", "normalized_title"),
     )
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -109,6 +110,7 @@ class TaskModel(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_commit: Mapped[str | None] = mapped_column(String(64))
     blocked_reason: Mapped[str | None] = mapped_column(Text)
+    normalized_title: Mapped[str | None] = mapped_column(Text)
 
     plan: Mapped[PlanModel] = relationship(back_populates="tasks")
     section: Mapped[PlanSectionModel] = relationship(back_populates="tasks")

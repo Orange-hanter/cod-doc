@@ -10,8 +10,13 @@ across projects. It serves the "tell connected browsers what just
 happened" use-case; missing an event because the browser was offline
 is fine, the client refetches on reconnect.
 
-This module has zero infra/web imports so it stays at the bottom of
-the dependency graph.
+COD-072: callers that emit inside an open SQLAlchemy transaction should
+prefer ``queue_emit(session, …)`` over ``emit(…)`` so events are deferred
+until the transaction actually commits — otherwise a rollback would leave
+browsers showing state that never landed in the DB.
+
+This module has zero infra/web imports beyond the SQLAlchemy after_commit /
+after_rollback hooks for the queue helper.
 """
 
 from __future__ import annotations
@@ -20,9 +25,16 @@ import asyncio
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from sqlalchemy import event
+from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    pass
 
 _QUEUE_MAXSIZE = 256
+_PENDING_KEY = "_cod_doc_pending_events"
 
 
 @dataclass(slots=True)
@@ -48,24 +60,30 @@ _lock = asyncio.Lock()
 
 
 async def publish(project: str, kind: str, payload: dict[str, Any] | None = None) -> Event:
-    """Broadcast an event to every active subscriber of ``project``."""
+    """Broadcast an event to every active subscriber of ``project``.
+
+    COD-073: dispatch happens under ``_lock`` so a subscriber that just
+    exited cannot receive an event into its (now orphaned) queue. ``put_nowait``
+    is non-blocking, so holding the lock for the duration of the loop is
+    O(subscribers) of microseconds — fine for in-process pub/sub.
+    """
     event = Event(project=project, kind=kind, payload=payload or {}, ts=time.time())
     async with _lock:
-        targets = list(_subscribers.get(project, ()))
-    for q in targets:
-        try:
-            q.put_nowait(event)
-        except asyncio.QueueFull:
-            # Slow consumer — drop oldest to make room. Better than blocking the
-            # producer, since the producer holds DB locks elsewhere.
-            try:
-                q.get_nowait()
-            except asyncio.QueueEmpty:
-                pass
+        targets = tuple(_subscribers.get(project, ()))
+        for q in targets:
             try:
                 q.put_nowait(event)
             except asyncio.QueueFull:
-                pass
+                # Slow consumer — drop oldest to make room. Better than blocking
+                # the producer, since the producer holds DB locks elsewhere.
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    q.put_nowait(event)
+                except asyncio.QueueFull:
+                    pass
     return event
 
 
@@ -85,6 +103,35 @@ def publish_sync(project: str, kind: str, payload: dict[str, Any] | None = None)
 def emit(project: str, kind: str, **payload: Any) -> None:
     """Convenience wrapper preferred by service callers."""
     publish_sync(project, kind, payload or None)
+
+
+def queue_emit(session: Session, project: str, kind: str, **payload: Any) -> None:
+    """Defer ``emit`` until ``session`` commits successfully.
+
+    Events accumulate on ``session.info[_PENDING_KEY]`` and are flushed by
+    the after-commit listener below. On rollback they are discarded.
+
+    Use this from any service-layer write path so browsers never see state
+    that didn't actually persist.
+    """
+    pending: list[tuple[str, str, dict[str, Any]]] = session.info.setdefault(
+        _PENDING_KEY, []
+    )
+    pending.append((project, kind, dict(payload)))
+
+
+@event.listens_for(Session, "after_commit")
+def _flush_pending_events(session: Session) -> None:  # pragma: no cover via integration
+    pending = session.info.pop(_PENDING_KEY, None)
+    if not pending:
+        return
+    for project, kind, payload in pending:
+        publish_sync(project, kind, payload or None)
+
+
+@event.listens_for(Session, "after_rollback")
+def _drop_pending_events(session: Session) -> None:  # pragma: no cover via integration
+    session.info.pop(_PENDING_KEY, None)
 
 
 class Subscription:

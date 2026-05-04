@@ -40,6 +40,7 @@ from cod_doc.infra.models import (
     TaskModel,
 )
 from cod_doc.infra.repositories import TaskRepository
+from cod_doc.infra.sql_helpers import priority_sql_order
 from cod_doc.services import event_bus
 from cod_doc.services import revision_service as rev
 from cod_doc.services import validation
@@ -104,19 +105,7 @@ def _task_diff(op: str, **fields: object) -> str:
 # --------------------------------------------------------------------------- #
 
 
-_TITLE_PUNCT_RE = re.compile(r"[^\w\s]+", re.UNICODE)
-_TITLE_WS_RE = re.compile(r"\s+", re.UNICODE)
-
-
-def _normalize_title(title: str) -> str:
-    """Lowercase, strip punctuation and collapse whitespace.
-
-    Used by ``find_duplicate_by_title`` to compare task titles ignoring
-    case, punctuation and minor whitespace differences. The same canonical
-    form is used both at create-time and by the lookup helper.
-    """
-    s = _TITLE_PUNCT_RE.sub(" ", title.lower())
-    return _TITLE_WS_RE.sub(" ", s).strip()
+from cod_doc.domain.text import normalize_title as _normalize_title  # noqa: E402
 
 
 class DuplicateTaskError(ValueError):
@@ -140,18 +129,37 @@ def find_duplicate_by_title(
 ) -> Task | None:
     """Return an existing task in the project with the same normalized title.
 
-    Returns ``None`` if no candidate is found. Comparison is exact on
-    `_normalize_title(title)` — case/punctuation/whitespace insensitive.
+    Uses the indexed ``task.normalized_title`` column (COD-076). Returns
+    ``None`` if no candidate is found. Comparison is exact on
+    ``_normalize_title(title)`` — case/punctuation/whitespace insensitive.
+
+    Falls back to a per-row scan for legacy rows that haven't been
+    backfilled (NULL normalized_title) — this should be empty after the
+    0009 migration runs.
     """
     normalized = _normalize_title(title)
     if not normalized:
         return None
 
     repo = TaskRepository(session)
-    stmt = select(TaskModel).where(TaskModel.project_id == project_id)
-    for model in session.execute(stmt).scalars():
-        if _normalize_title(model.title) == normalized:
-            return repo._to_domain(model)
+    stmt = select(TaskModel).where(
+        TaskModel.project_id == project_id,
+        TaskModel.normalized_title == normalized,
+    )
+    model = session.execute(stmt).scalar_one_or_none()
+    if model is not None:
+        return repo._to_domain(model)
+
+    # Fallback for un-backfilled rows.
+    legacy = session.execute(
+        select(TaskModel).where(
+            TaskModel.project_id == project_id,
+            TaskModel.normalized_title.is_(None),
+        )
+    ).scalars()
+    for m in legacy:
+        if _normalize_title(m.title) == normalized:
+            return repo._to_domain(m)
     return None
 
 
@@ -222,6 +230,13 @@ def create(
     )
     assert task.row_id is not None
 
+    # COD-076: backfill the indexed dedupe column. Title is immutable after
+    # create (no update_title path exists), so this single write is enough.
+    inserted_model = session.get(TaskModel, task.row_id)
+    if inserted_model is not None:
+        inserted_model.normalized_title = _normalize_title(title)
+        session.flush()
+
     if affected_files:
         for path in affected_files:
             session.add(
@@ -243,7 +258,8 @@ def create(
         reason=reason or "create",
     )
     if (slug := _project_slug(session, project_id)) is not None:
-        event_bus.emit(
+        event_bus.queue_emit(
+            session,
             slug,
             "task.created",
             task_id=task.task_id,
@@ -293,7 +309,8 @@ def update_status(
         expected_parent_revision_id=expected_parent_revision_id,
     )
     if (slug := _project_slug(session, model.project_id)) is not None:
-        event_bus.emit(
+        event_bus.queue_emit(
+            session,
             slug,
             "task.status_changed",
             task_id=task_id,
@@ -455,7 +472,8 @@ def complete(
     session.flush()
 
     if (slug := _project_slug(session, model.project_id)) is not None:
-        event_bus.emit(
+        event_bus.queue_emit(
+            session,
             slug,
             "task.status_changed",
             task_id=task_id,
@@ -601,7 +619,7 @@ def list_blocked(
             TaskModel.blocked_reason.is_not(None),
             TaskModel.status != TaskStatus.DONE.value,
         )
-        .order_by(TaskModel.priority, TaskModel.task_id)
+        .order_by(priority_sql_order(TaskModel.priority), TaskModel.task_id)
     )
     repo = TaskRepository(session)
     return [repo._to_domain(m) for m in session.execute(stmt).scalars()]

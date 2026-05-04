@@ -90,6 +90,13 @@ def _build_embedding_function(
     )
 
 
+# COD-077: cache PersistentClient instances keyed by chroma_path. Without
+# this, every search reopens the on-disk index — chromadb's docs explicitly
+# recommend reusing the client. We cache process-wide; the typical workload
+# is a handful of distinct chroma_path values per server lifetime.
+_client_cache: dict[str, Any] = {}
+
+
 def get_collection(
     chroma_path: str,
     api_key: str,
@@ -113,7 +120,10 @@ def get_collection(
     import chromadb as _chromadb
 
     ef = _build_embedding_function(embedding_backend, api_key, base_url, embedding_model)
-    client = _chromadb.PersistentClient(path=chroma_path)
+    client = _client_cache.get(chroma_path)
+    if client is None:
+        client = _chromadb.PersistentClient(path=chroma_path)
+        _client_cache[chroma_path] = client
     return client.get_or_create_collection(
         name="cod_doc",
         embedding_function=ef,  # type: ignore[arg-type]

@@ -69,13 +69,15 @@ def _open_tasks_for_plan(
     session: Session, plan_id: int
 ) -> list[dict[str, Any]]:
     """Return pending + in_progress tasks for a plan (priority-ordered, capped)."""
+    from cod_doc.infra.sql_helpers import priority_sql_order
+
     stmt = (
         select(TaskModel)
         .where(
             TaskModel.plan_id == plan_id,
             TaskModel.status.in_([TaskStatus.PENDING.value, TaskStatus.IN_PROGRESS.value]),
         )
-        .order_by(TaskModel.priority, TaskModel.task_id)
+        .order_by(priority_sql_order(TaskModel.priority), TaskModel.task_id)
         .limit(_MAX_RELATED_TASKS)
     )
     rows = session.execute(stmt).scalars().all()

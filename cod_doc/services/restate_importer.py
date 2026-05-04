@@ -103,6 +103,10 @@ def _walk_doc_files(repo_root: Path, *, max_files: int = 1000) -> list[Path]:
             break
         if not path.is_file() or path.suffix.lower() not in _DOC_EXTENSIONS:
             continue
+        # COD-077: skip dotfiles by their own name, not just dotted parents,
+        # so .gitignore.md / .env.txt don't sneak through.
+        if path.name.startswith("."):
+            continue
         rel_parts = path.relative_to(repo_root).parts
         if any(p in _SKIP_DIRS or p.startswith(".") for p in rel_parts[:-1]):
             continue
@@ -299,32 +303,35 @@ def import_legacy_tasks(
             body_parts.append(f"**Result**\n{result}")
         full_description = "\n\n".join(body_parts) or None
 
+        # COD-071: savepoint per legacy entry — a single bad row should not
+        # take down the rest of the migration batch.
         try:
-            task = task_service.create(
-                session,
-                project_id=project_id,
-                plan_id=plan_id,
-                section_id=section_id,
-                title=title,
-                type=TaskType.CHORE,
-                priority=priority,
-                author=author,
-                id_prefix=_IMPORT_TASK_PREFIX,
-                description=full_description,
-                blocked_reason=blocked_reason,
-                allow_duplicate=True,
-                reason=f"restate-import:{legacy_id or '?'}",
-            )
-            if status != TaskStatus.PENDING:
-                task_service.update_status(
+            with session.begin_nested():
+                task = task_service.create(
                     session,
-                    task_id=task.task_id,
-                    new_status=status,
+                    project_id=project_id,
+                    plan_id=plan_id,
+                    section_id=section_id,
+                    title=title,
+                    type=TaskType.CHORE,
+                    priority=priority,
                     author=author,
-                    reason="restate-import:status",
+                    id_prefix=_IMPORT_TASK_PREFIX,
+                    description=full_description,
+                    blocked_reason=blocked_reason,
+                    allow_duplicate=True,
+                    reason=f"restate-import:{legacy_id or '?'}",
                 )
-            summary.imported += 1
+                if status != TaskStatus.PENDING:
+                    task_service.update_status(
+                        session,
+                        task_id=task.task_id,
+                        new_status=status,
+                        author=author,
+                        reason="restate-import:status",
+                    )
         except Exception as exc:
             summary.errors.append(f"{title!r}: {exc}")
-            session.rollback()
+            continue
+        summary.imported += 1
     return summary

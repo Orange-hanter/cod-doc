@@ -189,6 +189,43 @@ def test_stories_generate_surfaces_error(stories_client, monkeypatch) -> None:
     assert "AI error: rate limited" in r.text
 
 
+def test_stories_save_one_failure_does_not_kill_others(stories_client, monkeypatch) -> None:
+    """COD-071: savepoint isolation — second draft fails, first + third land."""
+    client, entry, _pid, _ = stories_client
+
+    from cod_doc.services import story_service
+
+    real_create = story_service.create
+    call_count = {"n": 0}
+
+    def flaky(session, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            raise RuntimeError("boom on second draft")
+        return real_create(session, **kwargs)
+
+    monkeypatch.setattr(story_service, "create", flaky)
+
+    r = client.post(
+        f"/p/{entry.name}/stories/save",
+        data={
+            "selected": ["0", "1", "2"],
+            "persona": ["a", "b", "c"],
+            "narrative": ["I want A", "I want B", "I want C"],
+            "priority": ["high", "medium", "low"],
+            "acceptance": ["", "", ""],
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    # 1 + 3 saved, 2 dropped — saved counter must reflect only persisted rows.
+    assert "saved=2" in r.headers["location"]
+    follow = client.get(f"/p/{entry.name}/stories")
+    assert "I want A" in follow.text
+    assert "I want C" in follow.text
+    assert "I want B" not in follow.text
+
+
 def test_stories_save_persists_selected(stories_client) -> None:
     client, entry, _pid, _ = stories_client
     r = client.post(

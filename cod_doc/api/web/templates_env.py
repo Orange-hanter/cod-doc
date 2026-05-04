@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -51,3 +52,9 @@ templates.env.filters["urldecode"] = unquote
 templates.env.globals["task_status_options"] = TASK_STATUS_OPTIONS
 templates.env.globals["document_types"] = DOCUMENT_TYPES
 templates.env.globals["static_url"] = static_url
+# COD-077 (d): operators behind a corp firewall can point at a vendored
+# Mermaid build (e.g. /static/mermaid.esm.min.mjs); default = jsDelivr CDN.
+templates.env.globals["mermaid_src"] = os.environ.get(
+    "COD_DOC_MERMAID_SRC",
+    "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs",
+)

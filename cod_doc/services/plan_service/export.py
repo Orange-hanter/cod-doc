@@ -135,7 +135,9 @@ def freeze_projection(
 
     plan = _require_plan(session, plan_id)
     parts = export(session, plan_id)
-    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    # Millisecond resolution: two freezes back-to-back must yield distinct
+    # doc_keys to avoid IntegrityError on UniqueConstraint(project_id, doc_key).
+    ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S_%f")[:-3] + "Z"
     body = (
         f"# Frozen projection — {plan.scope} ({ts})\n\n"
         "## Progress overview\n\n"

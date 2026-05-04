@@ -83,6 +83,73 @@ def list_for_project(session: Session, project_id: int) -> list[Plan]:
     ]
 
 
+def recalc_for_project(session: Session, project_id: int) -> dict[int, PlanProgress]:
+    """COD-075: O(1)-query progress for every plan in a project.
+
+    Avoids the N+1 of calling ``recalc()`` per-plan during the overview
+    render. Sections are *not* populated — overview only needs totals.
+    Returns ``{plan_id: PlanProgress}`` keyed by ``Plan.row_id``.
+    """
+    rows = session.execute(
+        text(
+            "SELECT p.row_id, p.scope, "
+            "       COALESCE(pt.tasks_total, 0), "
+            "       COALESCE(pt.tasks_done, 0), "
+            "       COALESCE(pt.tasks_in_progress, 0) "
+            "FROM plan p "
+            "LEFT JOIN plan_totals pt ON pt.plan_id = p.row_id "
+            "WHERE p.project_id = :pid"
+        ),
+        {"pid": project_id},
+    ).all()
+    return {
+        int(r[0]): PlanProgress(
+            plan_id=int(r[0]),
+            scope=str(r[1]),
+            total=int(r[2]),
+            done=int(r[3]),
+            in_progress=int(r[4]),
+            status=_derive_status(int(r[2]), int(r[3]), int(r[4])),
+            sections=[],
+        )
+        for r in rows
+    }
+
+
+def ready_for_project(
+    session: Session, project_id: int, *, limit: int | None = None
+) -> list[Task]:
+    """COD-075: ready batch across all plans of a project — single SQL.
+
+    Avoids the per-plan ``ready()`` loop on the overview page.
+    """
+    repo = TaskRepository(session)
+    sql = (
+        "SELECT t.row_id "
+        "FROM ready_tasks rt "
+        "JOIN task t ON t.row_id = rt.row_id "
+        "JOIN plan p ON p.row_id = t.plan_id "
+        "WHERE p.project_id = :pid "
+        "ORDER BY CASE t.priority "
+        "WHEN 'critical' THEN 0 "
+        "WHEN 'high' THEN 1 "
+        "WHEN 'medium' THEN 2 "
+        "WHEN 'low' THEN 3 ELSE 99 END, "
+        "t.task_id"
+    )
+    if limit is not None and limit > 0:
+        sql += " LIMIT :lim"
+        rows = session.execute(text(sql), {"pid": project_id, "lim": limit}).all()
+    else:
+        rows = session.execute(text(sql), {"pid": project_id}).all()
+    out: list[Task] = []
+    for r in rows:
+        task = repo.get(int(r[0]))
+        if task is not None:
+            out.append(task)
+    return out
+
+
 def recalc(session: Session, plan_id: int) -> PlanProgress:
     """Read derived progress from `section_totals` + `plan_totals` views."""
     plan = _require_plan(session, plan_id)

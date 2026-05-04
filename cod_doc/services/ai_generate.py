@@ -127,7 +127,10 @@ def generate_stories(
     payload, meta = _chat_json(_STORY_SYSTEM_PROMPT, user_msg, cfg=cfg)
     if "stories" not in payload or not isinstance(payload["stories"], list):
         raise AIBackendError("LLM payload missing 'stories' array.")
-    drafts = [_coerce_story(item) for item in payload["stories"]]
+    try:
+        drafts = [_coerce_story(item) for item in payload["stories"]]
+    except (TypeError, AttributeError) as exc:  # COD-077: bad shape = bus-error
+        raise AIBackendError(f"LLM stories payload malformed: {exc}") from exc
     return drafts, meta
 
 
@@ -159,7 +162,10 @@ def generate_tasks_for_story(
     payload, meta = _chat_json(_TASK_SYSTEM_PROMPT, user_msg, cfg=cfg)
     if "tasks" not in payload or not isinstance(payload["tasks"], list):
         raise AIBackendError("LLM payload missing 'tasks' array.")
-    drafts = [_coerce_task(item) for item in payload["tasks"]]
+    try:
+        drafts = [_coerce_task(item) for item in payload["tasks"]]
+    except (TypeError, AttributeError) as exc:
+        raise AIBackendError(f"LLM tasks payload malformed: {exc}") from exc
     return drafts, meta
 
 
@@ -188,7 +194,12 @@ def generate_master_from_folder(
     raw_tasks = payload.get("coverage_tasks") or []
     if not isinstance(raw_tasks, list):
         raw_tasks = []
-    coverage = [_coerce_task(item) for item in raw_tasks]
+    try:
+        coverage = [_coerce_task(item) for item in raw_tasks]
+    except (TypeError, AttributeError) as exc:
+        raise AIBackendError(
+            f"LLM coverage_tasks payload malformed: {exc}"
+        ) from exc
     return (
         MasterDraft(
             master_md=master_md.strip(),

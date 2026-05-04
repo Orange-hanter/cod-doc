@@ -152,24 +152,26 @@ async def stories_save(
         priority = priorities[i] if i < len(priorities) else "medium"
         acc_text = acc_blobs[i] if i < len(acc_blobs) else ""
         acceptance = [ln.strip() for ln in str(acc_text).splitlines() if ln.strip()]
-        story_id = stories.next_story_id(session, project_db_id)
+        # COD-071: savepoint per draft so a single bad row doesn't roll
+        # back the previously-created stories in this batch.
         try:
-            stories.create(
-                session,
-                project_id=project_db_id,
-                story_id=story_id,
-                persona=str(persona).strip(),
-                narrative=str(narrative).strip(),
-                priority=Priority(str(priority)),
-                author="human:web",
-                status=UserStoryStatus.DRAFT,
-                acceptance=acceptance,
-                reason="ai-generate",
-            )
-            saved += 1
+            with session.begin_nested():
+                story_id = stories.next_story_id(session, project_db_id)
+                stories.create(
+                    session,
+                    project_id=project_db_id,
+                    story_id=story_id,
+                    persona=str(persona).strip(),
+                    narrative=str(narrative).strip(),
+                    priority=Priority(str(priority)),
+                    author="human:web",
+                    status=UserStoryStatus.DRAFT,
+                    acceptance=acceptance,
+                    reason="ai-generate",
+                )
         except Exception:
-            session.rollback()
             continue
+        saved += 1
     session.commit()
     return RedirectResponse(
         url=f"/p/{proj.entry.name}/stories?saved={saved}", status_code=303
@@ -356,36 +358,35 @@ async def story_tasks_save(
             section = sections[0] if sections else None
         if section is None or section.row_id is None:
             continue
+        # COD-071: task + link share one savepoint — either both land or
+        # neither does, and the rest of the batch survives a single failure.
         try:
-            task = task_svc.create(
-                session,
-                project_id=project_db_id,
-                plan_id=plan.row_id,
-                section_id=section.row_id,
-                title=str(title).strip(),
-                type=TaskType(str(type_)),
-                priority=Priority(str(priority)),
-                author="human:web",
-                description=description.strip() or None,
-                id_prefix=_id_prefix_from_plan_scope(plan_scope),
-                allow_duplicate=True,
-                reason=f"story:{story_id}",
-            )
+            with session.begin_nested():
+                task = task_svc.create(
+                    session,
+                    project_id=project_db_id,
+                    plan_id=plan.row_id,
+                    section_id=section.row_id,
+                    title=str(title).strip(),
+                    type=TaskType(str(type_)),
+                    priority=Priority(str(priority)),
+                    author="human:web",
+                    description=description.strip() or None,
+                    id_prefix=_id_prefix_from_plan_scope(plan_scope),
+                    allow_duplicate=True,
+                    reason=f"story:{story_id}",
+                )
+                stories.link(
+                    session,
+                    story_id=story_id,
+                    to_kind=StoryLinkKind.TASK,
+                    to_ref=task.task_id,
+                    relation=StoryRelation.IMPLEMENTED_BY,
+                    author="human:web",
+                    reason=f"ai-generate:{story_id}",
+                )
         except Exception:
-            session.rollback()
             continue
-        try:
-            stories.link(
-                session,
-                story_id=story_id,
-                to_kind=StoryLinkKind.TASK,
-                to_ref=task.task_id,
-                relation=StoryRelation.IMPLEMENTED_BY,
-                author="human:web",
-                reason=f"ai-generate:{story_id}",
-            )
-        except Exception:
-            session.rollback()
         saved += 1
     session.commit()
     return RedirectResponse(

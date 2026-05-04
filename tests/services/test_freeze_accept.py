@@ -169,8 +169,8 @@ def test_freeze_projection_creates_execution_log_doc(
 def test_freeze_projection_creates_distinct_snapshots_per_call(
     tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
 ) -> None:
-    """Two freezes within the same second still get different keys (or fail
-    cleanly with a duplicate-key error). At least one must succeed."""
+    """Two freezes back-to-back must produce distinct doc_keys (millisecond
+    resolution prevents UniqueConstraint collisions even within the same second)."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         project_id, plan_id = _seed(session, "p2", tmp_path)
@@ -178,10 +178,7 @@ def test_freeze_projection_creates_distinct_snapshots_per_call(
             session, plan_id, author="human:test"
         )
     assert first.row_id is not None
-    # Second freeze: different timestamp (UTC second resolution; we sleep ~1s).
-    import time
-
-    time.sleep(1.1)
+    # NB: no sleep — relies on ms-precision in the timestamp.
     with transactional(factory) as session:
         second = plan_service.freeze_projection(
             session, plan_id, author="human:test"

@@ -21,7 +21,11 @@
   function setDot(state) {
     if (!dot) return;
     dot.className = 'cod-ws-dot cod-ws-' + state;
-    dot.title = 'Live updates: ' + state;
+    const label = 'Live updates: ' + state;
+    dot.title = label;
+    // COD-077 (f): keep aria-label in sync so screen readers
+    // announce state changes via the role=status / aria-live region.
+    dot.setAttribute('aria-label', label);
   }
 
   function buildUrl() {
@@ -78,6 +82,15 @@
       const row = document.getElementById('task-' + msg.payload.task_id);
       if (row && window.htmx) {
         window.htmx.trigger(row, 'cod_doc:reload-row', msg.payload);
+      }
+    }
+    if (msg.kind === 'task.created') {
+      // COD-077 (e): a brand-new task is on the way; the existing list
+      // can't render it without a server round-trip, so trigger a soft
+      // refresh of the tasks-tab body if we're looking at it.
+      const list = document.querySelector('table.grid');
+      if (list && window.location.pathname.endsWith('/tasks') && window.htmx) {
+        window.htmx.trigger(document.body, 'cod_doc:reload-tasks-list', msg.payload);
       }
     }
     if (msg.kind === 'agent.started') {

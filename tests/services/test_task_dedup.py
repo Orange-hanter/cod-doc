@@ -9,7 +9,7 @@ import pytest
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
-from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
+from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, TaskModel
 from cod_doc.services import task_service
 from cod_doc.services.task_service import (
     DuplicateTaskError,
@@ -194,3 +194,57 @@ def test_create_default_allows_duplicate_for_legacy_callers(engine_with_schema) 
 
         rows = task_service.list_for_project(session, p)
         assert len(rows) == 2
+
+
+# ── COD-076: normalized_title column is populated + indexed lookup ──────
+
+
+def test_create_populates_normalized_title(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed(session)
+        task_service.create(
+            session,
+            project_id=p,
+            plan_id=pl,
+            section_id=s,
+            task_id="PR-001",
+            title="Implement: Search BY tag!!",
+            type=TaskType.FEATURE,
+            priority=Priority.HIGH,
+            author="human:test",
+        )
+        model = session.execute(
+            __import__("sqlalchemy").select(TaskModel).where(TaskModel.task_id == "PR-001")
+        ).scalar_one()
+    assert model.normalized_title == "implement search by tag"
+
+
+def test_find_duplicate_falls_back_to_legacy_null_rows(
+    engine_with_schema,  # type: ignore[no-untyped-def]
+) -> None:
+    """Pre-migration tasks have NULL normalized_title; the helper still finds them."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed(session)
+        task_service.create(
+            session,
+            project_id=p,
+            plan_id=pl,
+            section_id=s,
+            task_id="PR-001",
+            title="Implement: legacy task",
+            type=TaskType.FEATURE,
+            priority=Priority.HIGH,
+            author="human:test",
+        )
+        # Simulate a pre-migration state by clearing the column.
+        session.execute(
+            TaskModel.__table__.update()
+            .where(TaskModel.task_id == "PR-001")
+            .values(normalized_title=None)
+        )
+        session.flush()
+
+        match = find_duplicate_by_title(session, p, "Implement: legacy task!!!")
+    assert match is not None and match.task_id == "PR-001"

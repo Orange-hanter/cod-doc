@@ -57,9 +57,14 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
         if session is not None and project_db_id is not None:
             db_available = True
             project_plans = plans.list_for_project(session, project_db_id)
+            # COD-075: aggregate progress for every plan in one SQL — was N+1.
+            progress_by_plan = plans.recalc_for_project(session, project_db_id)
             for plan in project_plans:
                 assert plan.row_id is not None
-                progress = plans.recalc(session, plan.row_id)
+                progress = progress_by_plan.get(plan.row_id)
+                if progress is None:
+                    # Plan exists but plan_totals view has no row (zero tasks).
+                    continue
                 db_total += progress.total
                 db_done += progress.done
                 db_in_progress += progress.in_progress
@@ -79,22 +84,22 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                         ),
                     }
                 )
-                # Top-N ready-to-start across all plans, capped overall.
-                if len(ready_tasks) < OVERVIEW_READY_LIMIT:
-                    for t in plans.ready(
-                        session, plan.row_id, limit=OVERVIEW_READY_LIMIT - len(ready_tasks)
-                    ):
-                        ready_tasks.append(
-                            {
-                                "task_id": t.task_id,
-                                "title": t.title,
-                                "type": t.type.value,
-                                "status": t.status.value,
-                                "priority": t.priority.value,
-                                "plan_id": t.plan_id,
-                                "section_id": t.section_id,
-                            }
-                        )
+
+            # COD-075: ready batch across all plans in one SQL — was N+1.
+            for t in plans.ready_for_project(
+                session, project_db_id, limit=OVERVIEW_READY_LIMIT
+            ):
+                ready_tasks.append(
+                    {
+                        "task_id": t.task_id,
+                        "title": t.title,
+                        "type": t.type.value,
+                        "status": t.status.value,
+                        "priority": t.priority.value,
+                        "plan_id": t.plan_id,
+                        "section_id": t.section_id,
+                    }
+                )
 
             for r in revisions.list_recent_for_project(
                 session, project_db_id, limit=OVERVIEW_REVISIONS_LIMIT
@@ -200,6 +205,10 @@ def _walk_doc_files(root: Path) -> list[tuple[str, str]]:
         if len(files) >= _IMPORT_SCAN_LIMIT:
             break
         if not path.is_file() or path.suffix.lower() not in _DOC_EXTS:
+            continue
+        # COD-077: skip dotfiles (.env, .gitignore, .DS_Store.md…) — these
+        # are project metadata, not documentation.
+        if path.name.startswith("."):
             continue
         rel_parts = path.relative_to(root).parts
         if any(p in _IMPORT_SKIP_DIRS or p.startswith(".") for p in rel_parts[:-1]):
@@ -324,25 +333,27 @@ async def import_master_save(
             section = section_by_letter.get(letter) or sections[0]
             if section.row_id is None:
                 continue
+            # COD-071: savepoint per row so one duplicate-title rejection
+            # doesn't roll back the rest of the batch.
             try:
-                task_svc.create(
-                    session,
-                    project_id=project_db_id,
-                    plan_id=plan.row_id,
-                    section_id=section.row_id,
-                    title=str(title).strip(),
-                    type=TaskType(str(type_)),
-                    priority=Priority(str(priority)),
-                    author="human:web",
-                    description=description.strip() or None,
-                    id_prefix=_id_prefix_from_scope(plan_scope),
-                    allow_duplicate=True,
-                    reason="ai-import-master",
-                )
-                saved_tasks += 1
+                with session.begin_nested():
+                    task_svc.create(
+                        session,
+                        project_id=project_db_id,
+                        plan_id=plan.row_id,
+                        section_id=section.row_id,
+                        title=str(title).strip(),
+                        type=TaskType(str(type_)),
+                        priority=Priority(str(priority)),
+                        author="human:web",
+                        description=description.strip() or None,
+                        id_prefix=_id_prefix_from_scope(plan_scope),
+                        allow_duplicate=True,
+                        reason="ai-import-master",
+                    )
             except Exception:
-                session.rollback()
                 continue
+            saved_tasks += 1
     session.commit()
 
     return RedirectResponse(
