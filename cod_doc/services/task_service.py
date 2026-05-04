@@ -32,8 +32,15 @@ from cod_doc.domain.entities import (
     TaskStatus,
     TaskType,
 )
-from cod_doc.infra.models import AffectedFileModel, DependencyModel, PlanModel, TaskModel
+from cod_doc.infra.models import (
+    AffectedFileModel,
+    DependencyModel,
+    PlanModel,
+    ProjectModel,
+    TaskModel,
+)
 from cod_doc.infra.repositories import TaskRepository
+from cod_doc.services import event_bus
 from cod_doc.services import revision_service as rev
 from cod_doc.services import validation
 
@@ -56,6 +63,13 @@ class TaskAlreadyDoneError(RuntimeError):
 # --------------------------------------------------------------------------- #
 # Helpers                                                                       #
 # --------------------------------------------------------------------------- #
+
+
+def _project_slug(session: Session, project_id: int) -> str | None:
+    """Resolve a project's slug for live-event routing. Returns None if unknown."""
+    return session.execute(
+        select(ProjectModel.slug).where(ProjectModel.row_id == project_id)
+    ).scalar_one_or_none()
 
 
 def _require_task(session: Session, task_id: str) -> TaskModel:
@@ -228,6 +242,16 @@ def create(
         diff=_task_diff("create", task_id=task_id, status="pending"),
         reason=reason or "create",
     )
+    if (slug := _project_slug(session, project_id)) is not None:
+        event_bus.emit(
+            slug,
+            "task.created",
+            task_id=task.task_id,
+            title=task.title,
+            status=task.status.value,
+            priority=task.priority.value,
+            type=task.type.value,
+        )
     return task
 
 
@@ -268,6 +292,14 @@ def update_status(
         reason=reason,
         expected_parent_revision_id=expected_parent_revision_id,
     )
+    if (slug := _project_slug(session, model.project_id)) is not None:
+        event_bus.emit(
+            slug,
+            "task.status_changed",
+            task_id=task_id,
+            old=old_status,
+            new=new_status.value,
+        )
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t
@@ -421,6 +453,15 @@ def complete(
     if plan_model is not None:
         plan_model.last_updated = now
     session.flush()
+
+    if (slug := _project_slug(session, model.project_id)) is not None:
+        event_bus.emit(
+            slug,
+            "task.status_changed",
+            task_id=task_id,
+            old=old_status,
+            new=TaskStatus.DONE.value,
+        )
 
     t = TaskRepository(session).get(model.row_id)
     assert t is not None

@@ -14,14 +14,20 @@
       m.default.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'strict' });
     }
   </script>
+  <script defer src="{{ static_url('cod_doc_ws.js') }}"></script>
 </head>
-<body>
+{% set _slug = (project.name if project is defined and project else None) or (request.path_params.slug if request is defined else None) %}
+<body{% if _slug %} data-project="{{ _slug }}"{% endif %}>
   <header class="topbar">
     <a class="brand" href="/">COD-DOC</a>
     <nav>
       <a href="/">Projects</a>
       <a href="/settings">Settings</a>
     </nav>
+    {% if _slug %}
+      <span id="cod-ws-dot" class="cod-ws-dot cod-ws-disconnected"
+            title="Live updates: idle">●</span>
+    {% endif %}
   </header>
   <div id="alerts">
     {%- set flash_msg = request.cookies.get("flash_message") -%}

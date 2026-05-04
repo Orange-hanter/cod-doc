@@ -90,14 +90,26 @@ class Orchestrator:
 
     async def run_task(self, task: Task) -> AsyncGenerator[AgentEvent, None]:
         """Выполнить одну задачу. Стримит AgentEvent."""
+        from cod_doc.services import event_bus
+
+        slug = self.project.entry.name
         self.project.update_task(task.id, status=TaskStatus.IN_PROGRESS)
         self.project.set_status("running")
         messages = self._build_messages(task)
 
+        await event_bus.publish(
+            slug, "agent.started", {"task_id": task.id, "title": task.title}
+        )
         yield AgentEvent("thinking", f"Начинаю задачу: {task.title}")
 
         iterations = 0
         async for event in self._agent_loop(messages, task):
+            # Mirror thinking/tool events to the UI as agent.step.
+            await event_bus.publish(
+                slug,
+                f"agent.{event.type}",
+                {"task_id": task.id, "data": event.data, "iteration": iterations},
+            )
             yield event
             iterations += 1
             if iterations > self.config.max_iterations:
@@ -105,7 +117,16 @@ class Orchestrator:
                 self.project.update_task(
                     task.id, status=TaskStatus.FAILED, result="Max iterations exceeded"
                 )
+                await event_bus.publish(
+                    slug,
+                    "agent.stopped",
+                    {"task_id": task.id, "reason": "max_iterations"},
+                )
                 break
+        else:
+            await event_bus.publish(
+                slug, "agent.stopped", {"task_id": task.id, "reason": "completed"}
+            )
 
         self.project.set_status("idle")
 

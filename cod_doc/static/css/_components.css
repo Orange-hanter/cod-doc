@@ -81,6 +81,34 @@
 .section-block .section-stats { font-size: 12px; }
 .section-block .section-tasks { margin-top: 8px; }
 
+.cod-ws-dot {
+  display: inline-block;
+  font-size: 12px;
+  margin-left: auto;
+  padding: 0 6px;
+  user-select: none;
+  cursor: default;
+}
+.cod-ws-connected { color: #1a7f37; }
+.cod-ws-connecting,
+.cod-ws-reconnecting { color: #c08a00; }
+.cod-ws-disconnected { color: var(--muted); }
+
+.cod-agent-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 8px 0;
+  background: var(--bg-alt);
+}
+.cod-agent-status .cod-agent-step { color: inherit; }
+.cod-agent-status[hidden] { display: none; }
+
 .mermaid {
   display: block;
   text-align: center;
