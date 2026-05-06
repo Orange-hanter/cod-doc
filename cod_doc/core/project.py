@@ -40,6 +40,10 @@ class Task:
         updated: str | None = None,
         result: str | None = None,
         context_refs: list[str] | None = None,
+        blocked_by: list[str] | None = None,
+        affects_files: list[str] | None = None,
+        acceptance: str | None = None,
+        story_id: str | None = None,
     ) -> None:
         self.id = task_id or str(uuid.uuid4())[:8]
         self.title = title
@@ -50,6 +54,10 @@ class Task:
         self.updated = updated or self.created
         self.result = result
         self.context_refs: list[str] = context_refs or []
+        self.blocked_by: list[str] = blocked_by or []
+        self.affects_files: list[str] = affects_files or []
+        self.acceptance: str | None = acceptance
+        self.story_id: str | None = story_id
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -62,10 +70,36 @@ class Task:
             "updated": self.updated,
             "result": self.result,
             "context_refs": self.context_refs,
+            "blocked_by": self.blocked_by,
+            "affects_files": self.affects_files,
+            "acceptance": self.acceptance,
+            "story_id": self.story_id,
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Task:
+        blocked_by: list[str] = d.get("blocked_by", [])
+        # C2: if no explicit blocked_by, extract IDs from description text
+        if not blocked_by:
+            import re
+
+            desc = d.get("description", "")
+            for pattern in (
+                r"[Зз]ависит\s+от[:\s]+([^\n]+)",
+                r"[Bb]locked\s+by[:\s]+([^\n]+)",
+                r"[Dd]epends\s+on[:\s]+([^\n]+)",
+            ):
+                m = re.search(pattern, desc)
+                if m:
+                    raw = m.group(1)
+                    # Match known ID formats: 8-char hex, COD-NNN, T-NNN, US-NNN, A1..Z9
+                    blocked_by = re.findall(
+                        r"`([0-9a-f]{8})`|([A-Z]+-\d+)|([A-Za-z]\d+(?=[^\w]|$))", raw
+                    )
+                    # Flatten non-empty groups
+                    blocked_by = [g for tup in blocked_by for g in tup if g]
+                    break
+
         return cls(
             title=d["title"],
             description=d.get("description", ""),
@@ -76,6 +110,10 @@ class Task:
             updated=d.get("updated"),
             result=d.get("result"),
             context_refs=d.get("context_refs", []),
+            blocked_by=blocked_by,
+            affects_files=d.get("affects_files", []),
+            acceptance=d.get("acceptance"),
+            story_id=d.get("story_id"),
         )
 
 

@@ -65,6 +65,13 @@ class Config(BaseSettings):
         description="Модель (OpenRouter model ID)",
     )
     max_tokens: int = Field(default=8192)
+    max_context_tokens: int = Field(
+        default=100_000,
+        description=(
+            "Soft cap on input context tokens per task (approx len/4). "
+            "Blocks exceeding the budget are skipped with a marker."
+        ),
+    )
 
     # Агент
     auto_commit: bool = Field(default=False, description="Авто-коммит после задачи")
