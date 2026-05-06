@@ -102,7 +102,7 @@ def register(mcp: FastMCP) -> None:
         """List YAML-side tasks for a project — paginated, optionally filtered by status.
 
         Returns {"items": [...], "total": N, "limit": L, "offset": O}.
-        With include_description=False (default) the description/result fields
+        With include_description=False (default) the description/result/acceptance fields
         are omitted to keep payload bounded.
         """
         proj = open_project(project_name)
@@ -115,6 +115,7 @@ def register(mcp: FastMCP) -> None:
             if not include_description:
                 row.pop("description", None)
                 row.pop("result", None)
+                row.pop("acceptance", None)
             items.append(row)
         return {"items": items, "total": len(all_tasks), "limit": limit, "offset": offset}
 
@@ -125,14 +126,29 @@ def register(mcp: FastMCP) -> None:
         description: str = "",
         priority: int = 5,
         context_refs: list[str] | None = None,
+        blocked_by: list[str] | None = None,
+        affects_files: list[str] | None = None,
+        acceptance: str | None = None,
+        story_id: str | None = None,
     ) -> dict[str, Any]:
-        """Create a documentation task. Lower priority number = higher priority."""
+        """Create a documentation task. Lower priority number = higher priority.
+
+        New structured fields (optional):
+        - blocked_by: list of blocking task IDs
+        - affects_files: list of file paths this task touches
+        - acceptance: acceptance criterion (free-text)
+        - story_id: related user story ID (e.g. US-004)
+        """
         proj = open_project(project_name)
         task = Task(
             title=title,
             description=description,
             priority=priority,
             context_refs=context_refs or [],
+            blocked_by=blocked_by or [],
+            affects_files=affects_files or [],
+            acceptance=acceptance,
+            story_id=story_id,
         )
         proj.add_task(task)
         log.info(

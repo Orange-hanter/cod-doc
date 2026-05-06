@@ -132,14 +132,32 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="task.get")
     def task_get(project: str, task_id: str) -> dict[str, Any] | None:
-        """Get a single DB task by its task_id (e.g. COD-011). Returns null if not found."""
+        """Get a single DB task by its task_id (e.g. COD-011). Returns null if not found.
+
+        Also accepts an 8-char YAML-hash ID (e.g. 'a27d4e9e') as a fallback —
+        searches the project's tasks.yaml when not found in the DB.
+        """
+        import re
+
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
 
-        sf, _ = session_factory(project)
+        sf, entry = session_factory(project)
         with transactional(sf) as session:
             t = task_service.get(session, task_id)
-        return task_to_dict(t) if t else None
+        if t is not None:
+            return task_to_dict(t)
+
+        # Fallback: search YAML tasks when task_id looks like an 8-char hex hash
+        if re.match(r"^[0-9a-f]{8}$", task_id, re.IGNORECASE):
+            from cod_doc.core.project import Project
+
+            proj = Project(entry)
+            for yaml_task in proj._load_tasks():
+                if yaml_task.id == task_id:
+                    return yaml_task.to_dict()
+
+        return None
 
     @mcp.tool(name="task.create")
     def task_create(
@@ -153,6 +171,9 @@ def register(mcp: FastMCP) -> None:
         id_prefix: str | None = None,
         description: str | None = None,
         acceptance: str | None = None,
+        blocked_by: list[str] | None = None,
+        affects_files: list[str] | None = None,
+        story_id: str | None = None,
         author: str = "mcp",
         reason: str | None = None,
         allow_duplicate: bool = False,
@@ -162,6 +183,12 @@ def register(mcp: FastMCP) -> None:
         Provide either task_id (explicit, e.g. 'COD-042') or id_prefix (e.g. 'COD')
         for auto-numbering. type: feature|test|bug|refactor|migration|docs|chore.
         priority: critical|high|medium|low.
+
+        Structured fields (C1):
+        - blocked_by: list of blocking task IDs (e.g. ['COD-034'])
+        - affects_files: list of paths this task touches
+        - acceptance: acceptance criterion (free-text)
+        - story_id: related user story ID (e.g. 'US-004')
 
         Duplicate guard: by default (allow_duplicate=False) the service
         rejects a new task whose normalized title matches an existing task
@@ -209,6 +236,7 @@ def register(mcp: FastMCP) -> None:
                     id_prefix=id_prefix,
                     description=description,
                     acceptance=acceptance,
+                    affected_files=affects_files,
                     reason=reason,
                     allow_duplicate=allow_duplicate,
                 )
@@ -220,7 +248,13 @@ def register(mcp: FastMCP) -> None:
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
 
-        return task_to_dict(t)
+        result = task_to_dict(t)
+        # Echo back the structured fields the caller provided (C1).
+        if blocked_by:
+            result["blocked_by"] = blocked_by
+        if story_id:
+            result["story_id"] = story_id
+        return result
 
     @mcp.tool(name="task.set_blocker")
     def task_set_blocker(
