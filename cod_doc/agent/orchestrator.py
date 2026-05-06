@@ -38,7 +38,7 @@ AskHumanAsync = Callable[[str, str], Awaitable[str]]
 logger = logging.getLogger("cod_doc.agent")
 
 # Максимальное число retry-попыток при context_length_exceeded
-_MAX_CONTEXT_RETRIES = 2
+_MAX_CONTEXT_RETRIES = 3
 
 
 class AgentEvent:
@@ -163,49 +163,215 @@ class Orchestrator:
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
+    # ── Context-building helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_ref_path(ref: str) -> str | None:
+        """Extract the file path from a hybrid ref string (📁 /path | ...)."""
+        import re
+
+        m = re.match(r"📁\s*([^|]+?)(?:\s*\||\s*$)", ref)
+        return m.group(1).strip() if m else None
+
+    def _render_context_refs(self, refs: list[str], max_lines: int = 200) -> str:
+        """Render context_refs as fenced file previews (≤max_lines each)."""
+        if not refs:
+            return ""
+        blocks: list[str] = ["## Файлы задачи (context_refs):"]
+        for ref in refs:
+            path = self._parse_ref_path(ref)
+            if not path:
+                blocks.append(f"- {ref} [путь не распознан]")
+                continue
+            read = self.executor._tool_read_file(path)
+            if "error" in read:
+                blocks.append(f"**`{path}`** [не найден: {read['error']}]")
+                continue
+            content = read.get("content", "")
+            lines = content.splitlines()
+            preview = "\n".join(lines[:max_lines])
+            tail = f"\n[... +{len(lines) - max_lines} строк пропущено]" if len(lines) > max_lines else ""
+            blocks.append(f"**`{path}`**\n```\n{preview}{tail}\n```")
+        return "\n\n".join(blocks)
+
+    def _render_context_refs_compact(self, refs: list[str]) -> str:
+        """Render context_refs as a compact path-only list (no file content)."""
+        if not refs:
+            return ""
+        lines = ["## Файлы задачи (context_refs, без превью):"]
+        lines.extend(f"- {ref}" for ref in refs)
+        return "\n".join(lines)
+
+    def _render_prerequisites(self, task: Task) -> str:
+        """Render blocked_by tasks with their result (≤500 chars each)."""
+        if not task.blocked_by:
+            return ""
+        task_map = {t.id: t for t in self.project._load_tasks()}
+        blocks: list[str] = ["## Prerequisites (что завершено до этой задачи):"]
+        for prereq_id in task.blocked_by:
+            prereq = task_map.get(prereq_id)
+            if prereq is None:
+                blocks.append(f"⚠️ [{prereq_id}] (задача не найдена)")
+                continue
+            icon = "✅" if prereq.status == TaskStatus.DONE else "🔄"
+            result = prereq.result or "(нет результата)"
+            if len(result) > 500:
+                result = result[:500] + "…"
+            blocks.append(f"{icon} **[{prereq.id}] {prereq.title}** [{prereq.status}]\n{result}")
+        return "\n\n".join(blocks)
+
+    @staticmethod
+    def _extract_relevant_master_sections(master_content: str, task: Task) -> str:
+        """Return only MASTER.md sections relevant to the task, not a blind [:3000] slice."""
+        import re
+
+        # Split into (header, body) pairs
+        parts = re.split(r"(^#{1,3} .+$)", master_content, flags=re.MULTILINE)
+        sections: list[tuple[str, str]] = []
+        header, body = "(preface)", parts[0]
+        for i in range(1, len(parts), 2):
+            sections.append((header, body))
+            header = parts[i]
+            body = parts[i + 1] if i + 1 < len(parts) else ""
+        sections.append((header, body))
+
+        task_text = (task.title + " " + task.description).lower()
+        task_paths = set()
+        for ref in task.context_refs:
+            m = re.match(r"📁\s*([^|]+?)(?:\s*\||\s*$)", ref)
+            if m:
+                task_paths.add(m.group(1).strip().lower())
+
+        always = {"executive", "summary", "context map", "навигат", "цель", "overview"}
+        hash_kw = {"hash", "хэш", "sha:", "verify", "stale", "broken", "validation"}
+        action_kw = {"commit", "changelog", "docker", "lint", "test"}
+
+        selected: list[str] = []
+        omitted = 0
+        for hdr, bdy in sections:
+            h_lo = hdr.lower()
+            combined = (hdr + bdy).lower()
+
+            if any(kw in h_lo for kw in always):
+                selected.append(hdr + bdy)
+                continue
+            if task_paths and any(p in combined for p in task_paths):
+                selected.append(hdr + bdy)
+                continue
+            if any(kw in task_text for kw in hash_kw) and "validation" in h_lo:
+                selected.append(hdr + bdy)
+                continue
+            if any(kw in task_text for kw in action_kw) and "quick actions" in h_lo:
+                selected.append(hdr + bdy)
+                continue
+            omitted += 1
+
+        if omitted:
+            selected.append(f"[... {omitted} секций MASTER.md пропущено как нерелевантные]")
+        return "".join(selected)
+
+    # ── Story rendering (A3) ─────────────────────────────────────────────────
+
+    def _render_story(self, story_id: str) -> str:
+        """Render linked story with acceptance criteria as a prompt block."""
+        data = self.executor._tool_story_get(story_id)
+        if "error" in data:
+            return f"[Story {story_id}: {data['error']}]"
+        criteria = data.get("acceptance_criteria", [])
+        lines = [
+            f"## User Story [{data['story_id']}]: "
+            f"{data['persona']} — {data['narrative']}",
+            "### Acceptance Criteria:",
+        ]
+        for c in criteria:
+            mark = "x" if c.get("met") else " "
+            lines.append(f"- [{mark}] {c['criterion']}")
+        return "\n".join(lines)
+
+    # ── Budget-aware joining (A5) ─────────────────────────────────────────────
+
+    def _budget_join(
+        self,
+        header: str,
+        optional: list[tuple[str, str]],
+        footer: str,
+        budget_chars: int,
+    ) -> str:
+        """Join blocks respecting a character budget.
+
+        ``optional`` is a list of ``(name, content)`` in *priority order*
+        (first = highest priority). Blocks that would exceed the budget are
+        replaced with a one-line skip marker.
+        """
+        used = len(header) + len(footer) + 2  # two separators
+        parts = [header]
+        for name, block in optional:
+            cost = len(block) + 2  # "\n\n" separator
+            if used + cost <= budget_chars:
+                parts.append(block)
+                used += cost
+            else:
+                avail = max(0, budget_chars - used - 60)
+                parts.append(
+                    f"[блок «{name}» пропущен — "
+                    f"бюджет {budget_chars // 1000}K символов, "
+                    f"осталось ≈{avail // 4} токенов]"
+                )
+        parts.append(footer)
+        return "\n\n".join(parts)
+
+    # ── Message builder ───────────────────────────────────────────────────────
+
     def _build_messages(
         self, task: Task, context_mode: str = "full"
     ) -> list[dict[str, Any]]:
         """Построить начальные сообщения для задачи.
 
         context_mode:
-          - "full": полный MASTER.md (первые 3000 символов)
-          - "no_refs": только title + description задачи, без MASTER.md
-          - "truncated": MASTER.md первые 500 строк, без context_refs
+          - "full":      MASTER.md (релевантные секции) + context_refs превью + prerequisites + story
+          - "no_master": context_refs превью + prerequisites + story (без MASTER.md)
+          - "refs_only": только пути context_refs (без превью, без MASTER, без story)
+          - "minimal":   только title + description + acceptance
         """
-        if context_mode == "no_refs":
-            user_message = (
-                f"## Задача [{task.id}]: {task.title}\n\n"
-                f"{task.description}\n\n"
-                "Выполни задачу, используя доступные инструменты. "
-                "В конце завершения обнови хэши и добавь запись в changelog MASTER.md."
-            )
-            return [{"role": "user", "content": user_message}]
-
-        master_content = self.project.read_master() or "MASTER.md не найден."
-
-        if context_mode == "truncated":
-            # Берём только первые 500 строк MASTER.md
-            lines = master_content.split("\n")
-            truncated = "\n".join(lines[:500])
-            user_message = (
-                f"## Задача [{task.id}]: {task.title}\n\n"
-                f"{task.description}\n\n"
-                f"## MASTER.md (L0, truncated)\n\n```markdown\n{truncated}\n```\n\n"
-                "Выполни задачу, используя доступные инструменты. "
-                "В конце завершения обнови хэши и добавь запись в changelog MASTER.md."
-            )
-            return [{"role": "user", "content": user_message}]
-
-        # full mode
-        user_message = (
-            f"## Задача [{task.id}]: {task.title}\n\n"
-            f"{task.description}\n\n"
-            f"## MASTER.md (L0)\n\n```markdown\n{master_content[:3000]}\n```\n\n"
+        _FOOTER = (
             "Выполни задачу, используя доступные инструменты. "
             "В конце завершения обнови хэши и добавь запись в changelog MASTER.md."
         )
-        return [{"role": "user", "content": user_message}]
+        budget_chars = self.config.max_context_tokens * 4
+
+        header = f"## Задача [{task.id}]: {task.title}\n\n{task.description}"
+        if task.acceptance:
+            header += f"\n\n**Критерий приёмки:** {task.acceptance}"
+
+        if context_mode == "minimal":
+            return [{"role": "user", "content": f"{header}\n\n{_FOOTER}"}]
+
+        if context_mode == "refs_only":
+            optional: list[tuple[str, str]] = []
+            prereqs = self._render_prerequisites(task)
+            if prereqs:
+                optional.append(("prerequisites", prereqs))
+            refs = self._render_context_refs_compact(task.context_refs)
+            if refs:
+                optional.append(("context_refs", refs))
+            return [{"role": "user", "content": self._budget_join(header, optional, _FOOTER, budget_chars)}]
+
+        # full / no_master — build optional blocks in priority order
+        optional = []
+        prereqs = self._render_prerequisites(task)
+        if prereqs:
+            optional.append(("prerequisites", prereqs))
+        refs = self._render_context_refs(task.context_refs)
+        if refs:
+            optional.append(("context_refs", refs))
+        if context_mode == "full":
+            master_content = self.project.read_master() or "MASTER.md не найден."
+            master_block = self._extract_relevant_master_sections(master_content, task)
+            optional.append(("MASTER.md", f"## MASTER.md (L0)\n\n```markdown\n{master_block}\n```"))
+        if task.story_id:
+            optional.append(("story", self._render_story(task.story_id)))
+
+        return [{"role": "user", "content": self._budget_join(header, optional, _FOOTER, budget_chars)}]
 
     async def _agent_loop(
         self, messages: list[dict[str, Any]], task: Task
@@ -226,6 +392,18 @@ class Orchestrator:
             # Запрос к LLM с retry
             try:
                 llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
+                # G1: log token budget before sending
+                approx_tokens = sum(len(str(m.get("content", ""))) for m in llm_messages) // 4
+                logger.debug(
+                    "[task %s] iter=%d context≈%d t messages=%d",
+                    task.id, iterations, approx_tokens, len(llm_messages),
+                )
+                if approx_tokens > self.config.max_context_tokens * 2:
+                    logger.warning(
+                        "[task %s] context ≈%d t exceeds 2× budget (%d t). "
+                        "Consider decomposing this task.",
+                        task.id, approx_tokens, self.config.max_context_tokens,
+                    )
                 response = await with_retry(
                     lambda msgs=llm_messages: self.client.chat.completions.create(  # type: ignore[call-overload,misc]
                         model=self.config.model,
@@ -240,37 +418,30 @@ class Orchestrator:
                     context_retry += 1
                     degraded_mode = True
 
-                    # Первый retry: без context_refs, только title + description
+                    # retry 1: drop MASTER.md, keep context_refs previews + prerequisites
                     if context_retry == 1:
-                        logger.warning(
-                            f"[task {task.id}] context_length_exceeded, "
-                            f"retry {context_retry}/{_MAX_CONTEXT_RETRIES}: "
-                            "урезаю контекст — только title + description (без MASTER.md)"
-                        )
-                        yield AgentEvent(
-                            "thinking",
-                            f"⚠️ Контекст превышен (1.7M+ токенов). "
-                            f"Retry {context_retry}/{_MAX_CONTEXT_RETRIES}: "
-                            "повторяю без MASTER.md (degraded mode).",
-                        )
-                        messages = self._build_messages(task, "no_refs")
-
-                    # Второй retry: первые 500 строк MASTER.md
+                        mode = "no_master"
+                        hint = "убрал MASTER.md, сохранил context_refs"
+                    # retry 2: drop file previews, keep ref paths only
                     elif context_retry == 2:
-                        logger.warning(
-                            f"[task {task.id}] context_length_exceeded, "
-                            f"retry {context_retry}/{_MAX_CONTEXT_RETRIES}: "
-                            "MASTER.md первые 500 строк (L0 truncated)"
-                        )
-                        yield AgentEvent(
-                            "thinking",
-                            f"⚠️ Контекст снова превышен. "
-                            f"Retry {context_retry}/{_MAX_CONTEXT_RETRIES}: "
-                            "повторяю с урезанным MASTER.md (первые 500 строк).",
-                        )
-                        messages = self._build_messages(task, "truncated")
+                        mode = "refs_only"
+                        hint = "убрал превью файлов, оставил пути refs"
+                    # retry 3: minimal — only task fields
+                    else:
+                        mode = "minimal"
+                        hint = "оставил только title + description + acceptance"
 
-                    continue  # Повторяем цикл с урезанными сообщениями
+                    logger.warning(
+                        f"[task {task.id}] context_length_exceeded, "
+                        f"retry {context_retry}/{_MAX_CONTEXT_RETRIES}: {hint}"
+                    )
+                    yield AgentEvent(
+                        "thinking",
+                        f"⚠️ Контекст превышен. "
+                        f"Retry {context_retry}/{_MAX_CONTEXT_RETRIES} ({hint}).",
+                    )
+                    messages = self._build_messages(task, mode)
+                    continue
 
                 # Исчерпаны retry-попытки
                 logger.error(
@@ -304,9 +475,7 @@ class Orchestrator:
                     if tasks_list and tasks_list[0].status == TaskStatus.IN_PROGRESS:
                         result = content[:500]
                         if degraded_mode:
-                            result = (
-                                "выполнено в degraded mode (контекст урезан): " + result
-                            )
+                            result = f"[degraded-{context_retry}] " + result
                         self.project.update_task(
                             task.id, status=TaskStatus.DONE, result=result
                         )
