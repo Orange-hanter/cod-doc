@@ -258,4 +258,132 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    # ── Plan graph tools (B1) ─────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_forward_chain",
+            "description": (
+                "Получить prerequisites задачи: задачи, которые должны быть завершены ДО неё. "
+                "Возвращает chain с task_id, title, status, depth (1 = прямой prerequisite). "
+                "Используй чтобы понять, что уже сделано до текущей задачи."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "ID задачи в DB-формате (COD-NNN) или YAML-hash (8 hex chars)",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_reverse_chain",
+            "description": (
+                "Получить dependents задачи: задачи, которые разблокируются после её завершения. "
+                "depth=1 — прямые зависимые. Используй чтобы понять влияние своих изменений."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "ID задачи в DB-формате (COD-NNN) или YAML-hash (8 hex chars)",
+                    },
+                },
+                "required": ["task_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "plan_ready",
+            "description": (
+                "Список задач, готовых к запуску прямо сейчас: статус pending, "
+                "все blocking deps завершены, отсортировано по приоритету."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plan_scope": {
+                        "type": "string",
+                        "description": "Скоуп плана (например 'audit-2026-05')",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Максимум задач (по умолчанию 5)",
+                        "default": 5,
+                    },
+                },
+                "required": ["plan_scope"],
+            },
+        },
+    },
+    # ── Story / doc tools (B2) ────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "story_get",
+            "description": (
+                "Получить user story с acceptance criteria. "
+                "Используй чтобы узнать 'определение готово' перед выполнением задачи."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "story_id": {
+                        "type": "string",
+                        "description": "ID истории (US-NNN)",
+                    },
+                },
+                "required": ["story_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "doc_body",
+            "description": (
+                "Получить тело зарегистрированного документа (preamble + секции, ≤300 строк). "
+                "Используй для чтения spec-файлов, ADR, handbook из doc-реестра проекта."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc_key": {
+                        "type": "string",
+                        "description": "Ключ документа (например 'specs/rest' или 'docs/HANDBOOK')",
+                    },
+                },
+                "required": ["doc_key"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "link_list",
+            "description": (
+                "Список ссылок в документе: resolved/broken статус, target, kind. "
+                "Используй чтобы найти битые ссылки или проверить cross-refs."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc_key": {
+                        "type": "string",
+                        "description": "Ключ документа",
+                    },
+                },
+                "required": ["doc_key"],
+            },
+        },
+    },
 ]

@@ -239,3 +239,182 @@ class ToolExecutor:
             return {"error": str(e)}
         except Exception as e:
             return {"error": f"Reindex ошибка: {e}"}
+
+    # ── Plan graph tools (B1) ─────────────────────────────────────────────────
+
+    def _make_db_session(self):  # type: ignore[no-untyped-def]
+        from cod_doc.mcp.tools._db import session_factory
+
+        sf, _ = session_factory(self.project.entry.name)
+        return sf
+
+    def _tool_plan_forward_chain(self, task_id: str) -> dict[str, Any]:
+        try:
+            from cod_doc.infra.db import transactional
+            from cod_doc.services import plan_service
+            from cod_doc.services.plan_service import TaskNotFoundInPlanError
+
+            sf = self._make_db_session()
+            try:
+                with transactional(sf) as session:
+                    chain = plan_service.forward_chain(session, task_id)
+            except TaskNotFoundInPlanError:
+                return {"error": f"Task '{task_id}' not found in any DB plan"}
+            return {
+                "chain": [
+                    {
+                        "task_id": e.task_id,
+                        "title": e.title,
+                        "status": e.status.value,
+                        "depth": e.depth,
+                    }
+                    for e in chain
+                ]
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _tool_plan_reverse_chain(self, task_id: str) -> dict[str, Any]:
+        try:
+            from cod_doc.infra.db import transactional
+            from cod_doc.services import plan_service
+            from cod_doc.services.plan_service import TaskNotFoundInPlanError
+
+            sf = self._make_db_session()
+            try:
+                with transactional(sf) as session:
+                    chain = plan_service.reverse_chain(session, task_id)
+            except TaskNotFoundInPlanError:
+                return {"error": f"Task '{task_id}' not found in any DB plan"}
+            return {
+                "chain": [
+                    {
+                        "task_id": e.task_id,
+                        "title": e.title,
+                        "status": e.status.value,
+                        "depth": e.depth,
+                    }
+                    for e in chain
+                ]
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _tool_plan_ready(self, plan_scope: str, limit: int = 5) -> dict[str, Any]:
+        try:
+            from cod_doc.infra.db import transactional
+            from cod_doc.mcp.tools._db import task_to_dict
+            from cod_doc.services import plan_service
+
+            sf = self._make_db_session()
+            with transactional(sf) as session:
+                from cod_doc.infra.repositories import PlanRepository
+
+                plan = PlanRepository(session).get_by_scope(plan_scope)
+                if plan is None or plan.row_id is None:
+                    return {"error": f"Plan '{plan_scope}' not found"}
+                tasks = plan_service.ready(session, plan.row_id, limit=limit)
+            return {"tasks": [task_to_dict(t) for t in tasks]}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ── Story / doc tools (B2) ────────────────────────────────────────────────
+
+    def _tool_doc_body(self, doc_key: str) -> dict[str, Any]:
+        try:
+            from sqlalchemy import select
+
+            from cod_doc.infra.db import transactional
+            from cod_doc.infra.models import DocumentModel
+            from cod_doc.mcp.tools._db import require_project_id
+            from cod_doc.services import doc_service
+
+            sf = self._make_db_session()
+            with transactional(sf) as session:
+                project_id = require_project_id(session, self.project.entry.name)
+                doc = doc_service.get(session, project_id, doc_key)
+                if doc is None or doc.row_id is None:
+                    return {"error": f"Document '{doc_key}' not found"}
+                body = doc_service.render_body(session, doc.row_id)
+
+            if body is None:
+                return {"error": f"Document '{doc_key}' has no body"}
+            lines = body.splitlines()
+            preview = "\n".join(lines[:300])
+            tail = f"\n[... +{len(lines) - 300} строк пропущено]" if len(lines) > 300 else ""
+            return {"doc_key": doc_key, "body": preview + tail, "total_lines": len(lines)}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _tool_link_list(self, doc_key: str) -> dict[str, Any]:
+        try:
+            from sqlalchemy import select
+
+            from cod_doc.infra.db import transactional
+            from cod_doc.infra.models import DocumentModel, SectionModel
+            from cod_doc.mcp.tools._db import require_project_id
+            from cod_doc.services import link_service
+
+            sf = self._make_db_session()
+            with transactional(sf) as session:
+                project_id = require_project_id(session, self.project.entry.name)
+                doc_row = session.execute(
+                    select(DocumentModel.row_id).where(
+                        DocumentModel.project_id == project_id,
+                        DocumentModel.doc_key == doc_key,
+                    )
+                ).scalar_one_or_none()
+                if doc_row is None:
+                    return {"error": f"Document '{doc_key}' not found"}
+                sec_ids = (
+                    session.execute(
+                        select(SectionModel.row_id).where(SectionModel.document_id == doc_row)
+                    )
+                    .scalars()
+                    .all()
+                )
+                links = []
+                for sid in sec_ids:
+                    links.extend(link_service.list_for_section(session, int(sid)))
+
+            return {
+                "doc_key": doc_key,
+                "links": [
+                    {
+                        "raw": lk.raw,
+                        "kind": lk.kind.value,
+                        "resolved": lk.resolved,
+                        "to_doc_key": lk.to_doc_key,
+                        "to_task_id": lk.to_task_id,
+                        "broken_reason": lk.broken_reason,
+                    }
+                    for lk in links
+                ],
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _tool_story_get(self, story_id: str) -> dict[str, Any]:
+        try:
+            from cod_doc.infra.db import transactional
+            from cod_doc.services import story_service
+
+            sf = self._make_db_session()
+            with transactional(sf) as session:
+                story = story_service.get(session, story_id)
+                if story is None:
+                    return {"error": f"Story '{story_id}' not found"}
+                criteria = story_service.list_acceptance(session, story_id)
+            return {
+                "story_id": story.story_id,
+                "persona": story.persona,
+                "narrative": story.narrative,
+                "status": story.status.value,
+                "priority": story.priority.value,
+                "acceptance_criteria": [
+                    {"position": c.position, "criterion": c.criterion, "met": c.met}
+                    for c in criteria
+                ],
+            }
+        except Exception as e:
+            return {"error": str(e)}
