@@ -69,6 +69,9 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "plan.progress" in tool_names
     assert "plan.ready" in tool_names
     assert "plan.critical_path" in tool_names
+    # PCA-901: plan-create surface
+    assert "plan.create" in tool_names
+    assert "plan.section_create" in tool_names
     assert "story.list" in tool_names
     assert "story.create" in tool_names
     assert "story.coverage" in tool_names

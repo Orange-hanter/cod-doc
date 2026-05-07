@@ -22,6 +22,130 @@ def _require_plan_id(session: Any, plan_scope: str) -> int:
 def register(mcp: FastMCP) -> None:
     """Register plan.* tools on the given FastMCP instance."""
 
+    @mcp.tool(name="plan.create")
+    def plan_create(
+        project: str,
+        scope: str,
+        principle: str = "from-rfc",
+        sections: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Create a new Plan in the project, optionally with initial sections.
+
+        Closes cycle-2 gap G1 (PCA-901): no MCP-API for bootstrapping a plan.
+        Without this, callers had to use ``PlanRepository.add()`` directly via
+        Python — broke MCP-only sessions trying to seed a new direction.
+
+        Parameters
+        ----------
+        project:    project slug (must exist in DB).
+        scope:      plan scope identifier (unique per DB, e.g.
+                    ``paperclip-adoption-task-plan``).
+        principle:  free-text origin tag (e.g. ``from-rfc`` / ``from-capability``).
+        sections:   optional list of ``{"letter", "title", "slug", "position"}`` to
+                    seed at create time. Each section gets validated by service.
+
+        Returns ``{"plan_id", "scope", "principle", "sections": [...]}``.
+        Raises ``ValueError`` if scope already exists.
+        """
+        from cod_doc.domain.entities import Plan, PlanSection
+        from cod_doc.infra.db import transactional
+        from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            plan_repo = PlanRepository(session)
+            existing = plan_repo.get_by_scope(scope)
+            if existing is not None:
+                raise ValueError(f"Plan with scope '{scope}' already exists.")
+            new_plan = plan_repo.add(
+                Plan(project_id=project_id, scope=scope, principle=principle)
+            )
+            assert new_plan.row_id is not None
+            plan_id = new_plan.row_id
+
+            sec_repo = PlanSectionRepository(session)
+            seeded: list[dict[str, Any]] = []
+            for spec in sections or []:
+                if not spec.get("letter") or not spec.get("title"):
+                    raise ValueError(
+                        "section spec must include 'letter' and 'title' (got "
+                        f"{spec!r})"
+                    )
+                sec = sec_repo.add(
+                    PlanSection(
+                        plan_id=plan_id,
+                        letter=str(spec["letter"]).upper(),
+                        title=str(spec["title"]),
+                        slug=str(spec.get("slug") or spec["title"]).strip(),
+                        position=int(spec.get("position", len(seeded))),
+                    )
+                )
+                seeded.append(
+                    {
+                        "section_id": sec.row_id,
+                        "letter": sec.letter,
+                        "title": sec.title,
+                        "slug": sec.slug,
+                        "position": sec.position,
+                    }
+                )
+
+        return {
+            "plan_id": plan_id,
+            "scope": scope,
+            "principle": principle,
+            "sections": seeded,
+        }
+
+    @mcp.tool(name="plan.section_create")
+    def plan_section_create(
+        project: str,
+        plan_scope: str,
+        letter: str,
+        title: str,
+        slug: str | None = None,
+        position: int | None = None,
+    ) -> dict[str, Any]:
+        """Append a section to an existing plan.
+
+        Closes cycle-2 gap G1 (PCA-901), section-create half. Position
+        defaults to ``count(existing) + 0`` so callers can omit it for tail
+        appends.
+        """
+        from cod_doc.domain.entities import PlanSection
+        from cod_doc.infra.db import transactional
+        from cod_doc.infra.repositories import PlanSectionRepository
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            require_project_id(session, project)
+            plan_id = _require_plan_id(session, plan_scope)
+            sec_repo = PlanSectionRepository(session)
+            current = sec_repo.list_for_plan(plan_id)
+            if any(s.letter.upper() == letter.upper() for s in current):
+                raise ValueError(
+                    f"Section letter '{letter}' already exists in plan "
+                    f"'{plan_scope}'."
+                )
+            sec = sec_repo.add(
+                PlanSection(
+                    plan_id=plan_id,
+                    letter=letter.upper(),
+                    title=title,
+                    slug=slug or title.strip(),
+                    position=position if position is not None else len(current),
+                )
+            )
+        return {
+            "section_id": sec.row_id,
+            "plan_scope": plan_scope,
+            "letter": sec.letter,
+            "title": sec.title,
+            "slug": sec.slug,
+            "position": sec.position,
+        }
+
     @mcp.tool(name="plan.progress")
     def plan_progress(project: str, plan_scope: str) -> dict[str, Any]:
         """Return derived progress for a plan: total/done/remaining per section and overall."""

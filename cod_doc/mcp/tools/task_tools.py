@@ -57,14 +57,13 @@ def register(mcp: FastMCP) -> None:
                 limit=limit,
                 offset=offset,
             )
-
-        items = []
-        for t in tasks:
-            row = task_to_dict(t)
-            if not include_body:
-                row.pop("description", None)
-                row.pop("acceptance", None)
-            items.append(row)
+            items = []
+            for t in tasks:
+                row = task_to_dict(t, session=session)
+                if not include_body:
+                    row.pop("description", None)
+                    row.pop("acceptance", None)
+                items.append(row)
 
         return {"items": items, "total": total, "limit": limit, "offset": offset}
 
@@ -145,8 +144,8 @@ def register(mcp: FastMCP) -> None:
         sf, entry = session_factory(project)
         with transactional(sf) as session:
             t = task_service.get(session, task_id)
-        if t is not None:
-            return task_to_dict(t)
+            if t is not None:
+                return task_to_dict(t, session=session)
 
         # Fallback: search YAML tasks when task_id looks like an 8-char hex hash
         if re.match(r"^[0-9a-f]{8}$", task_id, re.IGNORECASE):
@@ -237,9 +236,12 @@ def register(mcp: FastMCP) -> None:
                     description=description,
                     acceptance=acceptance,
                     affected_files=affects_files,
+                    blocked_by=blocked_by,
+                    story_id=story_id,
                     reason=reason,
                     allow_duplicate=allow_duplicate,
                 )
+                result = task_to_dict(t, session=session)
         except DuplicateTaskError as exc:
             raise ValueError(
                 f"duplicate_of={exc.existing_task_id} "
@@ -248,12 +250,6 @@ def register(mcp: FastMCP) -> None:
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
 
-        result = task_to_dict(t)
-        # Echo back the structured fields the caller provided (C1).
-        if blocked_by:
-            result["blocked_by"] = blocked_by
-        if story_id:
-            result["story_id"] = story_id
         return result
 
     @mcp.tool(name="task.set_blocker")
