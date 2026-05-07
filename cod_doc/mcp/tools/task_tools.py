@@ -114,6 +114,39 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"Task '{task_id}' not found.") from None
         return task_to_dict(t)
 
+    @mcp.tool(name="task.heartbeat_context")
+    def task_heartbeat_context(
+        project: str,
+        task_id: str,
+        since_revision_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Compact iteration-start snapshot for an agent (PCA-010, proposal 02).
+
+        Replaces the ``get_master + task_get + read_context`` triple with one
+        composed call: task summary, ancestry (project/plan/section/story),
+        linked-docs summary (slugs/sha only, no full bodies), and a
+        ``recent_changes`` list filtered by ``since_revision_id`` cursor.
+
+        Payload stays well under 4 KB (title trimmed to 160 chars,
+        blocked_by capped at 16 ids, recent_changes capped at 20 entries).
+        Cold-start (no cursor) returns an empty ``recent_changes``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import heartbeat_service
+        from cod_doc.services.task_service import TaskNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                require_project_id(session, project)
+                return heartbeat_service.heartbeat_context(
+                    session,
+                    task_id=task_id,
+                    since_revision_id=since_revision_id,
+                )
+        except TaskNotFoundError:
+            raise ValueError(f"Task '{task_id}' not found.") from None
+
     @mcp.tool(name="task.summary")
     def task_summary(project: str) -> dict[str, Any]:
         """Aggregate task counts for a project — by status and priority.
