@@ -75,6 +75,7 @@ include = ["cod_doc*"]
     "static/*.css",
     "static/*.js",
     "static/css/*.css",
+    "skills/**/*.md",
     "py.typed",
 ]
 
