@@ -79,6 +79,9 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "run.get" in tool_names
     # PCA-033: run-revert dry-run
     assert "run.revert" in tool_names
+    # PCA-003: agent-skill catalog
+    assert "skill.list" in tool_names
+    assert "skill.get" in tool_names
     assert "story.list" in tool_names
     assert "story.create" in tool_names
     assert "story.coverage" in tool_names
