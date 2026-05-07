@@ -58,6 +58,7 @@ def _to_domain(model: RevisionModel) -> Revision:
         at=model.at,
         reason=model.reason,
         commit_sha=model.commit_sha,
+        run_id=model.run_id,
     )
 
 
@@ -102,6 +103,10 @@ def write(
         )
 
     rid_obj = ULID.from_datetime(datetime.now(UTC))
+    # PCA-031: stamp the active run_id (set by Orchestrator.run_task or
+    # tests via run_context.run_scope). NULL = human / external mutation.
+    from cod_doc.services.run_context import get_current_run_id
+
     model = RevisionModel(
         revision_id=str(rid_obj),
         project_id=project_id,
@@ -113,6 +118,7 @@ def write(
         diff=diff,
         reason=reason,
         commit_sha=commit_sha,
+        run_id=get_current_run_id(),
     )
     session.add(model)
     session.flush()
