@@ -12,6 +12,7 @@ the protocol level are enough for our reverse proxy setup).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -46,7 +47,5 @@ async def project_event_stream(websocket: WebSocket, slug: str) -> None:
         return
     except Exception:  # pragma: no cover — defensive
         logger.exception("ws/projects/%s stream crashed", slug)
-        try:
+        with contextlib.suppress(Exception):
             await websocket.close(code=1011, reason="server error")
-        except Exception:
-            pass

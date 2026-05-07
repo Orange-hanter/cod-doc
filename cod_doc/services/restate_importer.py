@@ -18,7 +18,6 @@ callers wrap the call in a savepoint and roll back instead of committing.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -39,6 +38,8 @@ from cod_doc.infra.repositories import (
 from cod_doc.services import import_service, task_service
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from sqlalchemy.orm import Session
 
 

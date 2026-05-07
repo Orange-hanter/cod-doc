@@ -22,6 +22,7 @@ after_rollback hooks for the queue helper.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -54,6 +55,7 @@ class Event:
 
 _subscribers: dict[str, set[asyncio.Queue[Event]]] = defaultdict(set)
 _lock = asyncio.Lock()
+_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
 
 
 async def publish(project: str, kind: str, payload: dict[str, Any] | None = None) -> Event:
@@ -73,14 +75,10 @@ async def publish(project: str, kind: str, payload: dict[str, Any] | None = None
             except asyncio.QueueFull:
                 # Slow consumer — drop oldest to make room. Better than blocking
                 # the producer, since the producer holds DB locks elsewhere.
-                try:
+                with contextlib.suppress(asyncio.QueueEmpty):
                     q.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
-                try:
+                with contextlib.suppress(asyncio.QueueFull):
                     q.put_nowait(event)
-                except asyncio.QueueFull:
-                    pass
     return event
 
 
@@ -94,7 +92,11 @@ def publish_sync(project: str, kind: str, payload: dict[str, Any] | None = None)
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return
-    loop.create_task(publish(project, kind, payload))
+    task = loop.create_task(publish(project, kind, payload))
+    # Hold a reference until the task finishes — otherwise the GC may
+    # collect the only ref and the publish silently drops (RUF006).
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
 
 
 def emit(project: str, kind: str, **payload: Any) -> None:

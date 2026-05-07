@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
 
-from cod_doc.config import Config
 from cod_doc.infra.db import make_engine, make_session_factory, resolve_db_url, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import restate_importer
+
+if TYPE_CHECKING:
+    from cod_doc.config import Config
 
 console = Console()
 
