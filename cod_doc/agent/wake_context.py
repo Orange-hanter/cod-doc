@@ -14,7 +14,10 @@ import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 PAYLOAD_BUDGET_BYTES = 4096
 """Hard limit on the JSON-encoded ``WakeContext.payload``.
@@ -161,3 +164,96 @@ class WakeContext:
             lines.append("")
             lines.append("Acknowledge this wake first; do NOT call get_master.")
         return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Builder (PCA-021)                                                            #
+# --------------------------------------------------------------------------- #
+
+
+def _trim_payload_to_budget(payload: dict[str, Any]) -> dict[str, Any]:
+    """If payload exceeds budget, drop the most variable fields until it fits.
+
+    Strategy: heartbeat_context payload has fixed-shape skeleton + variable
+    ``recent_changes``. Drop ``recent_changes`` first, then ``ancestry``
+    if still over. Keeps the essential ``task`` block.
+    """
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    if len(encoded) <= PAYLOAD_BUDGET_BYTES:
+        return payload
+
+    trimmed = dict(payload)
+    if "recent_changes" in trimmed:
+        trimmed["recent_changes"] = []
+    encoded = json.dumps(trimmed, ensure_ascii=False).encode("utf-8")
+    if len(encoded) <= PAYLOAD_BUDGET_BYTES:
+        return trimmed
+
+    if "linked_docs_summary" in trimmed:
+        trimmed["linked_docs_summary"] = []
+    encoded = json.dumps(trimmed, ensure_ascii=False).encode("utf-8")
+    if len(encoded) <= PAYLOAD_BUDGET_BYTES:
+        return trimmed
+
+    return {"task": trimmed.get("task", {}), "_trimmed": True}
+
+
+def build_wake_context(
+    session: Session,
+    *,
+    reason: WakeReason,
+    task_id: str | None = None,
+    triggering_doc_ref: str | None = None,
+    triggering_revision_id: str | None = None,
+    skills_to_preload: list[str] | None = None,
+) -> WakeContext:
+    """Assemble a :class:`WakeContext` for the orchestrator.
+
+    Composition rules per :class:`WakeReason`:
+
+    - ``cold_start`` / ``manual`` — empty payload, ``skills_to_preload``
+      defaults to ``["orchestrator"]`` if caller doesn't pass one. Cold
+      start is the only path that lets the orchestrator call ``get_master``.
+    - ``task_assigned`` / ``approval_resolved`` — requires ``task_id``.
+      Builds the payload via :func:`heartbeat_service.heartbeat_context`
+      with the optional cursor; trimmed to fit ``PAYLOAD_BUDGET_BYTES``.
+    - ``doc_drift`` — requires ``triggering_doc_ref``. Payload contains a
+      compact doc snippet and the trigger metadata; the agent will pull
+      the full doc on demand if it actually needs it.
+
+    Unknown ``task_id`` propagates :class:`task_service.TaskNotFoundError`.
+    Payload exceeding budget after trimming raises
+    :class:`WakePayloadTooLargeError` (let it propagate — the operator
+    needs to widen scope manually).
+    """
+    skills_to_preload = list(skills_to_preload) if skills_to_preload else ["orchestrator"]
+    payload: dict[str, Any] = {}
+
+    if reason in (WakeReason.TASK_ASSIGNED, WakeReason.APPROVAL_RESOLVED):
+        if not task_id:
+            raise ValueError(f"reason={reason.value} requires task_id")
+        from cod_doc.services import heartbeat_service
+
+        payload = heartbeat_service.heartbeat_context(
+            session,
+            task_id=task_id,
+            since_revision_id=triggering_revision_id,
+        )
+        payload = _trim_payload_to_budget(payload)
+    elif reason is WakeReason.DOC_DRIFT:
+        if not triggering_doc_ref:
+            raise ValueError("reason=doc_drift requires triggering_doc_ref")
+        payload = {
+            "doc_ref": triggering_doc_ref,
+            "since_revision_id": triggering_revision_id,
+        }
+    # cold_start / manual → payload stays empty.
+
+    return WakeContext(
+        reason=reason,
+        task_id=task_id,
+        triggering_doc_ref=triggering_doc_ref,
+        triggering_revision_id=triggering_revision_id,
+        payload=payload,
+        skills_to_preload=skills_to_preload,
+    )
