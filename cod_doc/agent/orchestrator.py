@@ -395,8 +395,8 @@ class Orchestrator:
                 # G1: log token budget before sending
                 approx_tokens = sum(len(str(m.get("content", ""))) for m in llm_messages) // 4
                 logger.debug(
-                    "[task %s] iter=%d context≈%d t messages=%d",
-                    task.id, iterations, approx_tokens, len(llm_messages),
+                    "[task %s] retry=%d context≈%d t messages=%d",
+                    task.id, context_retry, approx_tokens, len(llm_messages),
                 )
                 if approx_tokens > self.config.max_context_tokens * 2:
                     logger.warning(
