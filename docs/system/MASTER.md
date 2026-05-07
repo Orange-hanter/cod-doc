@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-05-02
+last_updated: 2026-05-07
 audience: [contributors, agents]
 related_code:
   - cod_doc/core/project.py
@@ -60,7 +60,8 @@ docs/system/
 │   ├── context-retrieval.md
 │   ├── plan-management.md
 │   ├── user-stories-graph.md
-│   ├── decisions-and-questions.md  ← ADR + Open Questions
+│   ├── decisions-and-questions.md  ← ADR + Open Questions (free-form)
+│   ├── adr-system.md               ← ADR как first-class entity (визуально + MCP)
 │   ├── agents-and-skills.md        ← каталог агентов
 │   ├── project-bootstrap.md        ← `cod-doc project new`
 │   ├── web-frontend.md             ← server-rendered Web UI (Jinja + HTMX)
@@ -73,19 +74,23 @@ docs/system/
 │   ├── 2026-04-28-section-c-capabilities.md ← аудит capability-layer (Section C)
 │   ├── 2026-05-01-section-g-hardening.md   ← закрытие hardening (Section G)
 │   ├── 2026-05-02-section-web-frontend.md  ← аудит web-секции (после WEB-001..011)
-│   ├── 2026-05-02-checkpoint-web-batch-1.md ← mid-section checkpoint (WEB-005/040/022/041/013)
-│   ├── 2026-05-02-checkpoint-web-batch-2.md ← mid-section checkpoint (WEB-006/polish/014/021)
-│   ├── 2026-05-02-checkpoint-web-batch-3.md ← mid-section checkpoint (WEB-004/060/051; B closed)
-│   └── 2026-05-02-checkpoint-web-batch-4.md ← mid-section checkpoint (WEB-012/polish; baseline 16/16)
+│   ├── 2026-05-02-checkpoint-web-batch-1..4.md ← mid-section checkpoints
+│   ├── 2026-05-06-ai-usage-audit.md        ← аудит usage AI в системе
+│   ├── 2026-05-06-cli-vs-web-parity.md     ← сравнение CLI и Web UI surface'ов
+│   └── 2026-05-07-doc-consolidation-cycle-{1..5}.md ← цикловые аудиты консолидации
 │
 ├── migration/
 │   └── from-restate.md             ← как перевезти реальное состояние Restate
 │
 └── roadmap/
-    ├── cod-doc-task-plan.md             ← план внедрения (dogfood формата task-plan)
-    ├── web-frontend-task-plan.md        ← план Web UI поверх FastAPI
-    ├── web-frontend-kickoff-2026-05-02.md ← brief на старт Section F (после аудита)
-    └── audit-followups-task-plan.md     ← фиксы пакета по аудиту
+    ├── cod-doc-task-plan.md                  ← план внедрения (dogfood формата task-plan)
+    ├── web-frontend-task-plan.md             ← план Web UI поверх FastAPI
+    ├── web-frontend-kickoff-2026-05-02.md    ← brief на старт Section F (после аудита)
+    ├── audit-followups-task-plan.md          ← фиксы пакета по аудиту
+    ├── refactor-large-files-task-plan.md     ← план рефакторинга крупных файлов
+    ├── paperclip-adoption-task-plan.md       ← план заимствований из paperclip (15 RFC → 44 задачи)
+    ├── paperclip-adoption-kickoff-2026-05-07.md ← brief на Phase 1 paperclip
+    └── adr-system-task-plan.md               ← план ADR-системы (capability + visual UI, 8 задач)
 ```
 
 ---
@@ -163,8 +168,12 @@ docs/system/
 | 2026-05-02 | Section B batch-2 + полировка: 4 коммита (WEB-006 server-rendered markdown for doc_show, WEB-013b/022b/054 polish bundle из checkpoint #1, WEB-014 overview agg ready/progress/recent + POST .../complete, WEB-021 revisions log + filter). 13 / 16 находок baseline закрыты (SW-ME-3, SW-ME-7 в этом батче). Suite 441 → 483; web-tests 66 → 108. Endpoints shipped 5/14 → 8/14 (~57 %). Сделан checkpoint-аудит [audit/2026-05-02-checkpoint-web-batch-2.md](audit/2026-05-02-checkpoint-web-batch-2.md). |
 | 2026-05-02 | Batch-3 + Section B closed: 3 коммита (WEB-004 plan view + Mermaid `<pre>`, WEB-060 settings page, WEB-051 static asset versioning). **Section B (Read views) — 6/6 done.** 14 / 16 находок baseline закрыты (SW-LO-1 в этом батче). Suite 483 → 500; web-tests 108 → 125. Endpoints shipped 8/14 → 10/14 (~71 %). 5 из 6 табов live (только Run остался disabled). Checkpoint-аудит [audit/2026-05-02-checkpoint-web-batch-3.md](audit/2026-05-02-checkpoint-web-batch-3.md). Inline fix: documentированы lifespan-vs-set_config footgun в `tests/api/conftest.py`. |
 | 2026-05-02 | Batch-4 + Section C closed + baseline-аудит resolved: 2 коммита (WEB-012 HTMX section patch, polish bundle WEB-052/053/053b/014b). **Section C (Write paths) — 3/3 done.** **16 / 16 baseline-аудит findings закрыты** (SW-LO-2/3/5 в этом батче). Suite 500 → 512; web-tests 125 → 137. Endpoints shipped 10/14 → 13/14 (~93 %). Audit-отчёт `2026-05-02-section-web-frontend` переведён в `resolved`. Checkpoint-аудит [audit/2026-05-02-checkpoint-web-batch-4.md](audit/2026-05-02-checkpoint-web-batch-4.md). Остаётся только Section D (WEB-030/031 — SSE run console). |
-
----
+| 2026-05-07 | **Documentation Consolidation — Cycle 1 (Anchor & Disambiguate).** Корневой `/MASTER.md` переписан как тонкий L0-навигатор → `docs/system/MASTER.md` + `proposals/README.md` + L0 bootstrap docs (фикстурный `integration-test`-заголовок устранён). Frontmatter обновлён в `arch/architecture.md`, `specs/modules.md`, `models/domain.md` (status: legacy-overview, canonical_source, last_updated 2026-05-07; хеши пересчитаны через `update_master_hashes` — 3/3 obs). Stories US-001..US-004 переведены в `delivered` после code-verification (orchestrator/_render_context_refs+_render_prerequisites, tool_defs.py 6/6, Task struct fields), привязаны к capability/standards-докам через `story_link`. Аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-1.md](audit/2026-05-07-doc-consolidation-cycle-1.md). |
+| 2026-05-07 | **Documentation Consolidation — Cycle 2 (Phase 1 backlog).** Заведён `paperclip-adoption-task-plan` + Section A в БД (через прямой `PlanRepository.add` — gap G1 в MCP-API), kickoff brief в `roadmap/`, 4 stories US-005..US-008 (`accepted`), 17 задач PCA-001..PCA-034. Зафиксированы 3 API-gap'а в Cycle-2 audit: G1 нет MCP-API создания плана, G2 task_create.blocked_by не персистится в dependency-edges, G3 task_create.story_id и .affects_files не персистятся. Аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-2.md](audit/2026-05-07-doc-consolidation-cycle-2.md). |
+| 2026-05-07 | **Documentation Consolidation — Cycle 3 (Phase 2-4 + UX + Tooling).** Все 15 RFC из `/proposals/` теперь имеют структурированный беклог: 11 новых stories US-009..US-019, 5 новых секций B/C/D/E/F в DB plan, 26 новых задач PCA-100..PCA-422 + PCA-901..PCA-903. Section F вынесена для tooling-фиксов G1/G2/G3 (PCA-901..PCA-903; PCA-902 `critical` как блокер базовых plan_ready/plan_audit/critical_path сценариев). Plan total: **43 задачи** (17/6/7/3/7/3 по секциям A..F). Аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-3.md](audit/2026-05-07-doc-consolidation-cycle-3.md). |
+| 2026-05-07 | **Documentation Consolidation — Cycle 4 (Cross-links & Integrity).** `link_list` показал 39 broken markdown-refs на `docs/system/MASTER` — обнаружен gap **G4** (link_service не резолвит relative-paths против source-doc directory) → расширил scope PCA-421 в plan paperclip-adoption. Doc-record `arch/arch/architecture` идентифицирован как фикстурный реликт (commit e51e85f, 2026-04-05). `doc_drift` для root `MASTER` и `docs/system/MASTER` — `stale_export` после edit-in-place (известное состояние). Cycle-2/3 audit-доки зарегистрированы как doc-records (active). `check_stale_refs` остаётся 10/10 VALID. Аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-4.md](audit/2026-05-07-doc-consolidation-cycle-4.md). |
+| 2026-05-07 | **Documentation Consolidation — Cycle 5 (Final Close-out).** Сводка по 5 циклам: +44 pending tasks (44 задачи в paperclip-adoption-task-plan), +15 stories (US-005..US-019, всего 19), +5 audit-отчётов, +6 doc-records, +2 roadmap-файлов. Заведён PCA-911 (low) для уборки `arch/arch/architecture.md` фикстуры. Memory обогащена двумя feedback-патернами: `mcp_field_persistence_gap` (echo-but-no-persist) и `consolidation_cycle_pattern` (N циклов → N audit-отчётов). Реализация PCA-001..PCA-911 намеренно не запущена в этом сеансе — это отдельный длинный фронт работ. Финальный аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-5-final.md](audit/2026-05-07-doc-consolidation-cycle-5-final.md). |
+| 2026-05-07 | **ADR System capability добавлена.** Заведена capability [adr-system](capabilities/adr-system.md) (Architecture Decision Records как first-class entity с автонумерацией, supersede-DAG, визуальным редактором и Mermaid-графом в Web UI). Story US-020 (`accepted`). Новый план [adr-system-task-plan](roadmap/adr-system-task-plan.md), 3 секции (Domain & MCP, Web UI, Templates & Migration), 8 задач ADR-001..ADR-008. Старт реализации после закрытия Section F paperclip-плана. |
 
 ## 7. Соглашения об оформлении
 
