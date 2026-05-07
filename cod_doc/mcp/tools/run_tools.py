@@ -60,6 +60,81 @@ def list_runs_for_project(
     }
 
 
+def plan_run_revert(
+    session: Session, run_id: str
+) -> dict[str, Any] | None:
+    """PCA-033: enumerate inverse operations for a run, with conflict detection.
+
+    Read-only. Returns ``None`` if the run_id is unknown.
+
+    For each revision stamped with ``run_id``, walks the entity's revision
+    chain and reports:
+    - ``op``: a label of the reverse step (revision_id of the candidate undo).
+    - ``conflicts``: revisions written *after* this run on the same entity —
+      those mean a later run already touched the artifact, and a real revert
+      would have to be a 3-way merge (out of scope here). Empty list = clean
+      revert candidate.
+
+    The actual destructive revert (`revision_revert`) is wired entity-by-
+    entity in COD-022 and is invoked by the operator when the dry-run
+    output looks acceptable. PCA-033 only assembles the proposal.
+    """
+    from sqlalchemy import select
+
+    run = session.execute(
+        select(AgentRunModel).where(AgentRunModel.run_id == run_id)
+    ).scalar_one_or_none()
+    if run is None:
+        return None
+
+    revs = list(
+        session.execute(
+            select(RevisionModel)
+            .where(RevisionModel.run_id == run_id)
+            .order_by(RevisionModel.at.asc(), RevisionModel.row_id.asc())
+        ).scalars()
+    )
+
+    operations: list[dict[str, Any]] = []
+    for r in revs:
+        # Conflict = a revision on the same entity strictly newer than this
+        # one and stamped with a *different* run_id (or None — human edit).
+        conflicts_q = (
+            select(RevisionModel.revision_id, RevisionModel.run_id, RevisionModel.author)
+            .where(
+                RevisionModel.entity_kind == r.entity_kind,
+                RevisionModel.entity_id == r.entity_id,
+                (RevisionModel.at > r.at)
+                | ((RevisionModel.at == r.at) & (RevisionModel.row_id > r.row_id)),
+            )
+            .order_by(RevisionModel.at.asc(), RevisionModel.row_id.asc())
+        )
+        conflicts = [
+            {"revision_id": rev_id, "run_id": rid, "author": author}
+            for rev_id, rid, author in session.execute(conflicts_q)
+            if rid != run_id  # mutations from the same run are part of the rollback, not conflicts
+        ]
+        operations.append(
+            {
+                "revision_id": r.revision_id,
+                "entity_kind": r.entity_kind,
+                "entity_id": r.entity_id,
+                "author": r.author,
+                "at": r.at.isoformat() if r.at else None,
+                "conflicts": conflicts,
+            }
+        )
+
+    return {
+        "run_id": run_id,
+        "status": run.status,
+        "operations": operations,
+        "total_operations": len(operations),
+        "total_conflicts": sum(1 for op in operations if op["conflicts"]),
+        "dry_run": True,
+    }
+
+
 def get_run_with_mutations(
     session: Session, run_id: str
 ) -> dict[str, Any] | None:
@@ -170,3 +245,32 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             require_project_id(session, project)
             return get_run_with_mutations(session, run_id)
+
+    @mcp.tool(name="run.revert")
+    def run_revert(
+        project: str,
+        run_id: str,
+        dry_run: bool = True,
+    ) -> dict[str, Any] | None:
+        """PCA-033: enumerate inverse ops for a run (read-only dry_run).
+
+        ``dry_run=True`` is the only supported mode for now: returns the
+        list of revisions that would be reverted plus any conflicts
+        (newer revisions on the same entity from other runs / humans).
+        Real destructive revert is wired entity-by-entity in COD-022 and
+        is invoked by the operator after reviewing the dry-run output.
+        ``dry_run=False`` raises ``NotImplementedError`` for safety until
+        the wrapper that walks ``revision_revert`` per op lands.
+        """
+        if not dry_run:
+            raise NotImplementedError(
+                "run.revert dry_run=False is not yet supported — review the "
+                "dry_run output and call revision.revert per row."
+            )
+
+        from cod_doc.infra.db import transactional
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            require_project_id(session, project)
+            return plan_run_revert(session, run_id)

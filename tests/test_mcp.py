@@ -77,6 +77,8 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     # PCA-032: run-id audit trail
     assert "run.list" in tool_names
     assert "run.get" in tool_names
+    # PCA-033: run-revert dry-run
+    assert "run.revert" in tool_names
     assert "story.list" in tool_names
     assert "story.create" in tool_names
     assert "story.coverage" in tool_names
