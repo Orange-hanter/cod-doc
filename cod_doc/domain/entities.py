@@ -327,6 +327,7 @@ class Revision:
     at: datetime | None = None
     reason: str | None = None
     commit_sha: str | None = None
+    run_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -339,6 +340,35 @@ class AuditLog:
     result: str
     row_id: int | None = None
     at: datetime | None = None
+    run_id: str | None = None
+
+
+class AgentRunStatus(StrEnum):
+    """PCA-030: lifecycle of a single Orchestrator.run_task invocation."""
+
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+@dataclass(slots=True)
+class AgentRun:
+    """PCA-030: per-orchestrator-heartbeat run record (proposal 04)."""
+
+    run_id: str
+    project_id: int
+    row_id: int | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    wake_reason: str | None = None
+    triggering_task_id: str | None = None
+    triggering_doc_ref: str | None = None
+    llm_calls: int = 0
+    llm_tokens_in: int = 0
+    llm_tokens_out: int = 0
+    status: AgentRunStatus = AgentRunStatus.RUNNING
+    summary: str | None = None
 
 
 @dataclass(slots=True)

@@ -28,13 +28,14 @@ from .plans import (
     TaskModel,
 )
 from .project import ProjectModel
-from .revisions import AuditLogModel, RevisionModel
+from .revisions import AgentRunModel, AuditLogModel, RevisionModel
 from .stories import StoryAcceptanceModel, StoryLinkModel, UserStoryModel
 from .tags import DocumentTagModel, StoryTagModel, TagModel, TaskTagModel
 from .traces import TraceCallModel
 
 __all__ = [
     "AffectedFileModel",
+    "AgentRunModel",
     "AuditLogModel",
     "Base",
     "DependencyModel",
