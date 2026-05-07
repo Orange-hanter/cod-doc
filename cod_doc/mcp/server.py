@@ -23,6 +23,7 @@ from cod_doc.mcp.tools import (
     link_tools,
     plan_tools,
     revision_tools,
+    run_tools,
     story_tools,
     task_tools,
 )
@@ -47,6 +48,8 @@ for _module in (
     revision_tools,
     # COD-033 context.get
     context_tools,
+    # PCA-032 run.list / run.get
+    run_tools,
 ):
     _module.register(mcp)
 

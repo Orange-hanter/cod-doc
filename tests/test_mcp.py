@@ -74,6 +74,9 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "plan.section_create" in tool_names
     # PCA-010: heartbeat-context surface
     assert "task.heartbeat_context" in tool_names
+    # PCA-032: run-id audit trail
+    assert "run.list" in tool_names
+    assert "run.get" in tool_names
     assert "story.list" in tool_names
     assert "story.create" in tool_names
     assert "story.coverage" in tool_names
