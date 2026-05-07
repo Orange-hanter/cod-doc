@@ -1,85 +1,126 @@
-# 🧭 Project Navigator: integration-test
+# 🧭 Project Navigator: cod-doc
 
-> 📊 Meta: `{"version": "1.0", "last_updated": "2026-04-05", "context_depth": "L0", "repo": "/private/var/folders/kn/nwnn_7597fbb155wsjrb452r0000gn/T/pytest-of-dakh/pytest-17/test_agent_run_full_cycle0/my-repo"}`
+> 📊 Meta: `{"version": "2.0", "last_updated": "2026-05-07", "context_depth": "L0", "repo": "/Users/dakh/Git/cod-doc"}`
+
+> **Этот файл — тонкий L0-навигатор для агента и нового контрибьютора.**
+> Source of truth целевого состояния системы — [`docs/system/MASTER.md`](docs/system/MASTER.md).
+> Каталог RFC и заимствований — [`proposals/README.md`](proposals/README.md).
 
 ## 1. 🎯 Executive Summary
-- **Цель:** Модульное приложение с многоуровневой архитектурой (Presentation → Application → Domain → Infrastructure), обеспечивающее изоляцию бизнес-логики и независимую масштабируемость компонентов
-- **Текущий статус:** `🟢 VERIFIED`
-- **Ключевые ограничения:**
-  - Domain Layer не имеет внешних зависимостей (чистая бизнес-логика)
-  - Все межслойные зависимости инвертированы через интерфейсы (DIP)
+
+- **Проект:** COD-DOC (Context Orchestrator for Documentation) — автономный
+  агент и MCP-сервер управления проектной документацией с БД-бэкендом и
+  markdown-проекциями.
+- **Архитектура:** многоуровневая модульная (Presentation → Application →
+  Domain ← Infrastructure) с DIP-инверсией.
+- **Текущий статус:** 🟢 ACTIVE — закрыты Sections A/B/C/G и Web-секция (16/16
+  baseline-аудит resolved); открытые направления — Section D (MCP context.get),
+  Section E (ContextService L0/L1), Section F (Restate importer), интеграция
+  предложений из `/proposals/`.
 
 ## 2. 🗺️ Context Map
+
 ```mermaid
 graph TD
-    Root[MASTER.md] --> S[📁 /specs/]
-    Root --> A[📁 /arch/]
-    Root --> M[📁 /models/]
-    Root --> D[📁 /docs/]
-    Root --> CI[📁 .github/workflows/]
+    Root["MASTER.md (L0 navigator)"] --> Sys["docs/system/MASTER.md (system-of-truth)"]
+    Root --> Prop["proposals/README.md (RFC backlog)"]
+    Root --> Legacy["L0 bootstrap docs"]
 
-    S --> SM[specs/modules.md]
-    A --> AA[arch/architecture.md]
-    M --> MD[models/domain.md]
-    D --> DH[docs/HANDBOOK.md]
-    D --> DG[docs/cod-doc-guide.md]
-    D --> DM[docs/mcp-integration.md]
-    CI --> CIC[ci.yml]
-    CI --> CDC[cd.yml]
+    Sys --> Vision["docs/system/VISION.md"]
+    Sys --> ArchSys["docs/system/ARCHITECTURE.md"]
+    Sys --> Data["docs/system/DATA_MODEL.md"]
+    Sys --> Caps["docs/system/capabilities/*"]
+    Sys --> Stand["docs/system/standards/*"]
+    Sys --> Audit["docs/system/audit/*"]
+    Sys --> Road["docs/system/roadmap/*"]
+    Sys --> Migr["docs/system/migration/from-restate.md"]
+
+    Legacy --> Arch["arch/architecture.md"]
+    Legacy --> Specs["specs/modules.md"]
+    Legacy --> Models["models/domain.md"]
+
+    Root --> Hand["docs/HANDBOOK.md"]
+    Root --> Guide["docs/cod-doc-guide.md"]
+    Root --> MCP["docs/mcp-integration.md"]
+    Root --> CI[".github/workflows/ci.yml"]
+    Root --> CD[".github/workflows/cd.yml"]
 ```
 
 ## 3. 🧩 Modular Sections
 
-> Каждый раздел — ссылка на один файл.
-> Загружать только при явном запросе: `@Orchestrator: раскрой раздел "..."`.
+> Каждый раздел — ссылка на один файл. Для агента: `@Orchestrator: раскрой раздел "..."`.
+> Хеши проверены `check_stale_refs(cod-doc)` 2026-05-07 → 10/10 VALID.
+
+### System Documentation Index (canonical) ⭐
+- **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
+  capabilities/*, standards/*, audit/*, roadmap/*, migration/. Это source of
+  truth для поведения системы и единая точка входа для контрибьютора.
+- **Ссылка:** [`📁 docs/system/MASTER.md`](docs/system/MASTER.md)
+- **Статус:** `🟢 ACTIVE`
+
+### Proposals (RFC backlog)
+- **Описание:** 15 RFC по адаптации паттернов из paperclipai/paperclip
+  (Skills layer, Heartbeat-context, Wake-payload, Run-id audit, Issue documents,
+  Activity log, Approvals и др.). Дорожная карта — Phase 1..4. Конкретные
+  задачи живут в `docs/system/roadmap/paperclip-adoption-task-plan.md`.
+- **Ссылка:** [`📁 proposals/README.md`](proposals/README.md)
+- **Статус:** `🟢 ACTIVE`
 
 ### CI Pipeline (GitHub Actions)
-- **Описание:** Непрерывная интеграция: ruff-линтинг, mypy-проверка типов, pytest (матрица Python 3.11/3.12/3.13), docker build + smoke test. Триггеры: push/PR в main и develop.
+- **Описание:** Непрерывная интеграция: ruff-линтинг (blocking), mypy strict
+  (blocking), pytest matrix Python 3.11/3.12/3.13, Docker build + smoke test.
 - **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:2b0809be8fcc`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
 
 ### CD Pipeline (GitHub Actions)
-- **Описание:** Доставка: сборка Docker-образа и публикация в GHCR при тегировании версии (v*). Семантическое версионирование тегов.
+- **Описание:** Доставка: сборка Docker-образа и публикация в GHCR при
+  тегировании v* (semver).
 - **Ссылка:** `📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:bec2cea789cd`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
 
-### Архитектура приложения
-- **Описание:** Многоуровневая модульная архитектура: Presentation / Application / Domain / Infrastructure. Диаграммы, ADR, нефункциональные требования.
-- **Ссылка:** `📁 /arch/architecture.md | 🗃️ doc:arch_architecture_md | 🔑 sha:a641cd2bf5e7`
-- **Статус:** `🟢 VERIFIED`
+### Архитектура (L0 bootstrap, обзорная) — legacy
+- **Описание:** Многоуровневая архитектура Presentation/Application/Domain/
+  Infrastructure, ADR, нефункциональные требования. Сжатый обзор для агента.
+  Канонический source — [`docs/system/ARCHITECTURE.md`](docs/system/ARCHITECTURE.md).
+- **Ссылка:** `📁 /arch/architecture.md | 🗃️ doc:arch_architecture_md | 🔑 sha:242b25d6bfd3`
+- **Статус:** `🟡 LEGACY` — обзор, актуальные детали см. в canonical.
 - **Ответственный агент:** `@Orchestrator`
 
-### Спецификация модулей
-- **Описание:** Контракты и интерфейсы каждого модуля (api, app, domain, infra). Схема зависимостей.
-- **Ссылка:** `📁 /specs/modules.md | 🗃️ doc:specs_modules_md | 🔑 sha:4f9997a25c6c`
-- **Статус:** `🟢 VERIFIED`
+### Спецификация модулей (L0 bootstrap) — legacy
+- **Описание:** Контракты api/app/domain/infra, схема зависимостей. Карта
+  bootstrap-контрактов. Canonical-разбивка функциональности — в
+  [`docs/system/capabilities/`](docs/system/capabilities/).
+- **Ссылка:** `📁 /specs/modules.md | 🗃️ doc:specs_modules_md | 🔑 sha:5c335c97fd99`
+- **Статус:** `🟡 LEGACY`
 - **Ответственный агент:** `@Orchestrator`
 
-### Доменные модели
-- **Описание:** Агрегаты (Project, Task, Document), Value Objects (HybridRef, ProjectStatus, TaskStatus, DocStatus), доменные события, интерфейсы репозиториев (порты).
-- **Ссылка:** `📁 /models/domain.md | 🗃️ doc:models_domain_md | 🔑 sha:4a6c60b604d7`
-- **Статус:** `🟢 VERIFIED`
+### Доменные модели (L0 bootstrap) — legacy
+- **Описание:** Aggregates (Project, Task, Document), Value Objects, доменные
+  события, порты-репозитории. Canonical schema-описание — в
+  [`docs/system/DATA_MODEL.md`](docs/system/DATA_MODEL.md).
+- **Ссылка:** `📁 /models/domain.md | 🗃️ doc:models_domain_md | 🔑 sha:2e5d66877b50`
+- **Статус:** `🟡 LEGACY`
 - **Ответственный агент:** `@Orchestrator`
 
-### Справочное руководство (Handbook)
-- **Описание:** Полное руководство по COD-DOC: архитектура, установка, Quick Start, Web UI tour, CLI, конфигурация, MCP, ИИ-агент, ChromaDB, workflow, troubleshooting.
+### Handbook (пользовательский справочник)
+- **Описание:** Полное руководство: установка, Quick Start, Web UI tour, CLI,
+  конфигурация, MCP, ИИ-агент, ChromaDB, troubleshooting.
 - **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:81fac3e1c061`
 - **Статус:** `🟢 VERIFIED`
-- **Ответственный агент:** `@Orchestrator`
 
-### Гайд по документированию
-- **Описание:** Пошаговое руководство по созданию документации проекта с нуля через COD-DOC (~30 минут, реальный пример weather-cli).
+### Гайд по документированию (tutorial)
+- **Описание:** Пошаговое руководство по созданию документации проекта с нуля
+  через COD-DOC (~30 минут, пример weather-cli).
 - **Ссылка:** `📁 /docs/cod-doc-guide.md | 🗃️ doc:docs_cod-doc-guide_md | 🔑 sha:e2ff564ecab5`
 - **Статус:** `🟢 VERIFIED`
-- **Ответственный агент:** `@Orchestrator`
 
-### MCP-интеграция
-- **Описание:** Интеграция cod-doc с VS Code Copilot, Claude Desktop, Claude Code и другими LLM-системами через MCP (23 инструмента).
+### MCP-интеграция (catalog)
+- **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
+  Code, другим LLM-системам через MCP. Каталог инструментов.
 - **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:9087378db933`
 - **Статус:** `🟢 VERIFIED`
-- **Ответственный агент:** `@Orchestrator`
 
 ## 4. ⚡ Quick Actions & Handoffs
 ```json
@@ -98,8 +139,11 @@ graph TD
     "docker": [
       {"cmd": "docker build -t cod-doc .", "desc": "Локальная сборка образа (python:3.12-slim)"},
       {"cmd": "docker compose up -d", "desc": "Запуск сервиса (порт 8765, healthcheck через 15s)"},
-      {"cmd": "docker compose down", "desc": "Остановка и удаление контейнера"},
-      {"cmd": "docker run --rm -d --name cod-doc-smoke -p 8765:8765 -e COD_DOC_API_KEY=sk-test cod-doc:ci && sleep 10 && curl -f http://localhost:8765/api/health && docker stop cod-doc-smoke", "desc": "Smoke test (как в CI: healthcheck через curl)"}
+      {"cmd": "docker compose down", "desc": "Остановка и удаление контейнера"}
+    ],
+    "docs": [
+      {"cmd": "open docs/system/MASTER.md", "desc": "Открыть system-of-truth"},
+      {"cmd": "open proposals/README.md", "desc": "RFC backlog (paperclip adoption)"}
     ]
   },
   "handoffs": {
@@ -115,10 +159,11 @@ graph TD
     }
   },
   "handoff_rules": {
-    "on_missing_file": "Искать файл на диске → если отсутствует, создать по контракту из specs/modules.md",
-    "on_hash_mismatch": "Пересчитать хэш через calc_hash → обновить ссылку в MASTER.md → статус 🔴 STALE до синхронизации",
-    "on_broken_section": "Пометить 🔴 BROKEN, запросить восстановление через create_task",
-    "context_gate": "L0 (MASTER.md) — старт сессии; L1 — при явном запросе раздела; L2 — только при анализе зависимостей (запрещено без необходимости)"
+    "on_missing_file": "Искать файл на диске → если отсутствует, поднять задачу через task_create",
+    "on_hash_mismatch": "Пересчитать хэш через hash_file → обновить ссылку в MASTER.md → статус 🔴 STALE до синхронизации",
+    "on_broken_section": "Пометить 🔴 BROKEN, запросить восстановление через task_create",
+    "on_legacy_doc": "L0 bootstrap-документы (arch/specs/models) дают обзор; за деталями идти в docs/system/",
+    "context_gate": "L0 (этот файл) — старт сессии; L1 — при явном запросе раздела; L2 — только при анализе зависимостей"
   }
 }
 ```
@@ -129,17 +174,20 @@ graph TD
 
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
-| 1 | MASTER.md | `doc:MASTER_md` | `944aef87a7d1` | 2026-04-05 | 🟢 VERIFIED |
-| 2 | CI Pipeline | `doc:github_workflows_ci_yml` | `2b0809be8fcc` | 2026-04-05 | 🟢 VERIFIED |
-| 3 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-04-05 | 🟢 VERIFIED |
-| 4 | Архитектура | `doc:arch_architecture_md` | `a641cd2bf5e7` | 2026-04-05 | 🟢 VERIFIED |
-| 5 | Спецификация модулей | `doc:specs_modules_md` | `4f9997a25c6c` | 2026-04-05 | 🟢 VERIFIED |
-| 6 | Доменные модели | `doc:models_domain_md` | `4a6c60b604d7` | 2026-04-05 | 🟢 VERIFIED |
-| 7 | Handbook | `doc:docs_HANDBOOK_md` | `81fac3e1c061` | 2026-04-05 | 🟢 VERIFIED |
-| 8 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `e2ff564ecab5` | 2026-04-05 | 🟢 VERIFIED |
-| 9 | MCP-интеграция | `doc:docs_mcp-integration_md` | `9087378db933` | 2026-04-05 | 🟢 VERIFIED |
+| 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-05-07 | 🟢 VERIFIED |
+| 2 | CI Pipeline | `doc:github_workflows_ci_yml` | `2b0809be8fcc` | 2026-05-07 | 🟢 VERIFIED |
+| 3 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-05-07 | 🟢 VERIFIED |
+| 4 | Архитектура (legacy) | `doc:arch_architecture_md` | `242b25d6bfd3` | 2026-05-07 | 🟡 LEGACY |
+| 5 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-05-07 | 🟡 LEGACY |
+| 6 | Доменные модели (legacy) | `doc:models_domain_md` | `2e5d66877b50` | 2026-05-07 | 🟡 LEGACY |
+| 7 | Handbook | `doc:docs_HANDBOOK_md` | `81fac3e1c061` | 2026-05-07 | 🟢 VERIFIED |
+| 8 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `e2ff564ecab5` | 2026-05-07 | 🟢 VERIFIED |
+| 9 | MCP-интеграция | `doc:docs_mcp-integration_md` | `9087378db933` | 2026-05-07 | 🟢 VERIFIED |
 
-> **Всего:** 9 документов | 🟢 VERIFIED: 9 | 🟡 DRAFT: 0 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+> **Всего:** 9 документов | 🟢 VERIFIED: 6 | 🟡 LEGACY: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+>
+> **Canonical-пакет** (`docs/system/`) — отдельный реестр документов, см.
+> [`docs/system/MASTER.md §5`](docs/system/MASTER.md).
 
 ### 5.2 🤖 Agent Self-Check
 ```json
@@ -148,10 +196,9 @@ graph TD
     "links_verified": true,
     "hashes_match": true,
     "no_hallucinations": true,
-    "context_depth": "L1",
+    "context_depth": "L0",
     "missing_info": [
-      "API-спецификация (specs/api.md) не создана",
-      "Технологический стек не зафиксирован"
+      "В корне нет ROADMAP — пользоваться docs/system/roadmap/ + proposals/README.md"
     ]
   }
 }
@@ -162,123 +209,19 @@ graph TD
 {
   "changelog": [
     {
-      "date": "2026-04-05",
-      "version": "0.1",
-      "action": "Init project",
-      "author": "COD-DOC",
-      "scope": "master"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.2",
-      "action": "Created arch/architecture.md: модульная архитектура, диаграммы, интерфейсы, ADR",
-      "author": "COD-DOC Orchestrator",
-      "scope": "arch",
-      "task": "1cf87ee5"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.2",
-      "action": "Created specs/modules.md: контракты и зависимости модулей api/app/domain/infra",
-      "author": "COD-DOC Orchestrator",
-      "scope": "specs",
-      "task": "1cf87ee5"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.2",
-      "action": "Updated MASTER.md: Executive Summary, разделы архитектуры, обновлён Context Map",
-      "author": "COD-DOC Orchestrator",
+      "date": "2026-05-07",
+      "version": "2.0",
+      "action": "Cycle-1 consolidation: rewrote root MASTER as thin L0 navigator → docs/system + proposals; removed integration-test fixture leak; legacy L0 bootstrap (arch/specs/models) marked 🟡 LEGACY with canonical pointers; verified hash registry (10/10 VALID)",
+      "author": "Cod-Doc Consolidation Cycle 1",
       "scope": "master",
-      "task": "1cf87ee5"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.3",
-      "action": "Added Modular Sections for /models/ (domain.md) and /docs/ (HANDBOOK, cod-doc-guide, mcp-integration); expanded Context Map; marked arch/architecture.md and specs/modules.md as 🔴 BROKEN (files missing on disk)",
-      "author": "COD-DOC Orchestrator",
-      "scope": "master",
-      "task": "bf638f79"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.4",
-      "action": "Created .github/workflows/ci.yml: ruff lint, mypy typecheck, pytest matrix (3.11/3.12/3.13), Docker build + smoke test",
-      "author": "COD-DOC Orchestrator",
-      "scope": "ci",
-      "task": "a0e28b45"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.4",
-      "action": "Created .github/workflows/cd.yml: Docker build & push to GHCR on tag v* (semantic versioning)",
-      "author": "COD-DOC Orchestrator",
-      "scope": "cd",
-      "task": "a0e28b45"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.4",
-      "action": "Updated MASTER.md: added CI/CD modular sections, expanded Context Map, removed CI/CD from next_step",
-      "author": "COD-DOC Orchestrator",
-      "scope": "master",
-      "task": "a0e28b45"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.5",
-      "action": "Finalized 4 DRAFT sections → VERIFIED: models/domain.md (агрегаты, VO, события, порты), docs/HANDBOOK.md (6 стр., 13 разделов), docs/cod-doc-guide.md (3 стр., 11 шагов), docs/mcp-integration.md (2 стр., 6 вариантов + каталог 23 тулов). Все хэши совпали, контент полный и связный.",
-      "author": "COD-DOC Orchestrator",
-      "scope": "master",
-      "task": "a50532c2"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.6",
-      "action": "Fixed Quick Actions JSON: replaced stale 'Создать' with 'Восстановить' for BROKEN arch/architecture.md and specs/modules.md, clarified next_step to reflect current disk state",
-      "author": "COD-DOC Orchestrator",
-      "scope": "master",
-      "task": "aa795b54"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.7",
-      "action": "Restored arch/architecture.md (🔴 BROKEN → 🟢 VERIFIED): 7 разделов — Overview, слои Presentation/Application/Domain/Infrastructure, 5 ADR, нефункциональные требования, контракты, структура пакетов, стек. Хэш: a641cd2bf5e7.",
-      "author": "COD-DOC Orchestrator",
-      "scope": "arch",
-      "task": "f51532a4"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.7",
-      "action": "Restored specs/modules.md (🔴 BROKEN → 🟢 VERIFIED): 8 разделов — обзор, модули api/app/domain/infra с контрактами и правилами, схема зависимостей (Mermaid), матрица импортов, статус реализации. Хэш: 4f9997a25c6c.",
-      "author": "COD-DOC Orchestrator",
-      "scope": "specs",
-      "task": "15a28f27"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.8",
-      "action": "Fixed truncated Quick Actions JSON block: завершён валидными handoff-правилами и списком available_actions. Все Modular Sections VERIFIED.",
-      "author": "COD-DOC Orchestrator",
-      "scope": "master",
-      "task": "d503d8b1"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "0.9",
-      "action": "Refactored Quick Actions & Handoffs (секция 4): заменил абстрактные available_actions на конкретные quick_actions (lint/test/docker) и handoffs (ci/cd с workflow-ссылками). Сохранены handoff_rules.",
-      "author": "COD-DOC Orchestrator",
-      "scope": "master",
-      "task": "86830839"
+      "audit": "docs/system/audit/2026-05-07-doc-consolidation-cycle-1.md"
     },
     {
       "date": "2026-04-05",
       "version": "1.0",
-      "action": "Added Validation Table (5.1) to Section 5: таблица всех 9 документов с хэшами, датами проверки и статусами. Переструктурирован раздел Validation & Changelog: 5.1 Validation Table, 5.2 Agent Self-Check, 5.3 Changelog. Добавлен столбец version во все записи changelog.",
+      "action": "Bootstrap MASTER.md (см. предыдущую историю в git log MASTER.md)",
       "author": "COD-DOC Orchestrator",
-      "scope": "master",
-      "task": "aa67e02a"
+      "scope": "master"
     }
   ]
 }
@@ -290,9 +233,17 @@ graph TD
 
 | Уровень | Загружено | Когда |
 |---------|-----------|-------|
-| `L0` | Только `MASTER.md` | Старт сессии (по умолчанию) |
+| `L0` | Только `MASTER.md` (этот файл) | Старт сессии (по умолчанию) |
 | `L1` | MASTER.md + 1 целевой файл | Явный запрос раздела |
 | `L2` | L1 + зависимости | Запрос анализа зависимостей |
 
-**Формат ссылки:** `📁 {path} | 🗃️ doc:{id} | 🔑 sha:{12hex}`
-**Статусы:** `🟢 VERIFIED` | `🟡 DRAFT` | `🔴 STALE` | `🔴 BROKEN`
+**Формат гибридной ссылки:** `📁 {path} | 🗃️ doc:{id} | 🔑 sha:{12hex}`
+**Статусы:** `🟢 VERIFIED` | `🟡 LEGACY` | `🟡 DRAFT` | `🔴 STALE` | `🔴 BROKEN`
+
+**Где что искать:**
+- Целевая архитектура и DATA_MODEL → [`docs/system/`](docs/system/)
+- Capability-описания (одна возможность = один файл) → [`docs/system/capabilities/`](docs/system/capabilities/)
+- Стандарты frontmatter / task-plan / link / sensitive-data → [`docs/system/standards/`](docs/system/standards/)
+- Audit-отчёты по секциям → [`docs/system/audit/`](docs/system/audit/)
+- Планы выполнения (execution-plan) → [`docs/system/roadmap/`](docs/system/roadmap/)
+- Заимствования и идеи на внедрение → [`proposals/`](proposals/)

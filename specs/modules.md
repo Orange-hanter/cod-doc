@@ -1,6 +1,10 @@
 # 🧩 Спецификация модулей: COD-DOC
 
-> 📊 Meta: `{"version": "0.2", "last_updated": "2026-04-05", "scope": "specs", "layer": "modules"}`
+> 📊 Meta: `{"version": "0.3", "last_updated": "2026-05-07", "scope": "specs", "layer": "modules", "status": "legacy-overview", "canonical_source": "docs/system/capabilities/"}`
+
+> **🟡 LEGACY (обзорный документ).** Контракт api/app/domain/infra здесь —
+> compact bootstrap-обзор. Активная capability-разбивка по одному файлу на
+> возможность — в [`docs/system/capabilities/`](../docs/system/capabilities/).
 
 ## 1. Обзор
 

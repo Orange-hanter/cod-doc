@@ -1,6 +1,11 @@
 # 🏛️ Архитектура: COD-DOC
 
-> 📊 Meta: `{"version": "0.2", "last_updated": "2026-04-05", "layer": "arch", "context_depth": "L1"}`
+> 📊 Meta: `{"version": "0.3", "last_updated": "2026-05-07", "layer": "arch", "context_depth": "L1", "status": "legacy-overview", "canonical_source": "docs/system/ARCHITECTURE.md"}`
+
+> **🟡 LEGACY (обзорный документ).** Этот файл — компактный L0/L1-обзор для
+> агентского Snowball-протокола. Канонический и постоянно обновляемый источник
+> архитектуры — [`docs/system/ARCHITECTURE.md`](../docs/system/ARCHITECTURE.md).
+> При расхождении приоритет у canonical.
 
 ## 1. Overview
 
