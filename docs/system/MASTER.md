@@ -62,6 +62,7 @@ docs/system/
 │   ├── user-stories-graph.md
 │   ├── decisions-and-questions.md  ← ADR + Open Questions (free-form)
 │   ├── adr-system.md               ← ADR как first-class entity (визуально + MCP)
+│   ├── observability-and-indexing.md ← метрики, commit-integration, code-refs, repo+DB index (опционально)
 │   ├── agents-and-skills.md        ← каталог агентов
 │   ├── project-bootstrap.md        ← `cod-doc project new`
 │   ├── web-frontend.md             ← server-rendered Web UI (Jinja + HTMX)
@@ -90,7 +91,8 @@ docs/system/
     ├── refactor-large-files-task-plan.md     ← план рефакторинга крупных файлов
     ├── paperclip-adoption-task-plan.md       ← план заимствований из paperclip (15 RFC → 44 задачи)
     ├── paperclip-adoption-kickoff-2026-05-07.md ← brief на Phase 1 paperclip
-    └── adr-system-task-plan.md               ← план ADR-системы (capability + visual UI, 8 задач)
+    ├── adr-system-task-plan.md               ← план ADR-системы (capability + visual UI, 8 задач)
+    └── observability-and-indexing-task-plan.md ← опциональный план: метрики/commits/code-refs/repo-index/DB-index (8 задач, 5 stories US-021..US-025)
 ```
 
 ---
@@ -174,6 +176,7 @@ docs/system/
 | 2026-05-07 | **Documentation Consolidation — Cycle 4 (Cross-links & Integrity).** `link_list` показал 39 broken markdown-refs на `docs/system/MASTER` — обнаружен gap **G4** (link_service не резолвит relative-paths против source-doc directory) → расширил scope PCA-421 в plan paperclip-adoption. Doc-record `arch/arch/architecture` идентифицирован как фикстурный реликт (commit e51e85f, 2026-04-05). `doc_drift` для root `MASTER` и `docs/system/MASTER` — `stale_export` после edit-in-place (известное состояние). Cycle-2/3 audit-доки зарегистрированы как doc-records (active). `check_stale_refs` остаётся 10/10 VALID. Аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-4.md](audit/2026-05-07-doc-consolidation-cycle-4.md). |
 | 2026-05-07 | **Documentation Consolidation — Cycle 5 (Final Close-out).** Сводка по 5 циклам: +44 pending tasks (44 задачи в paperclip-adoption-task-plan), +15 stories (US-005..US-019, всего 19), +5 audit-отчётов, +6 doc-records, +2 roadmap-файлов. Заведён PCA-911 (low) для уборки `arch/arch/architecture.md` фикстуры. Memory обогащена двумя feedback-патернами: `mcp_field_persistence_gap` (echo-but-no-persist) и `consolidation_cycle_pattern` (N циклов → N audit-отчётов). Реализация PCA-001..PCA-911 намеренно не запущена в этом сеансе — это отдельный длинный фронт работ. Финальный аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-5-final.md](audit/2026-05-07-doc-consolidation-cycle-5-final.md). |
 | 2026-05-07 | **ADR System capability добавлена.** Заведена capability [adr-system](capabilities/adr-system.md) (Architecture Decision Records как first-class entity с автонумерацией, supersede-DAG, визуальным редактором и Mermaid-графом в Web UI). Story US-020 (`accepted`). Новый план [adr-system-task-plan](roadmap/adr-system-task-plan.md), 3 секции (Domain & MCP, Web UI, Templates & Migration), 8 задач ADR-001..ADR-008. Старт реализации после закрытия Section F paperclip-плана. |
+| 2026-05-07 | **Observability & Indexing capability добавлена (опциональная).** Capability [observability-and-indexing](capabilities/observability-and-indexing.md) — метрики выполнения задач, commit→task linkage для истории работ, code-refs `[label](src/path.py)` в markdown, RepoIndex (.gitignore-aware symbols/imports), DBObjectIndex (FTS5 unified search). 5 stories US-021..US-025 (`accepted`), новый план [observability-and-indexing-task-plan](roadmap/observability-and-indexing-task-plan.md): 5 секций (Metrics/Commits/Code-Refs/Repo-Index/DB-Object-Index), 8 задач OBI-001..OBI-040. Помечено опциональным — не блокирует Phase 1 paperclip-adoption. |
 
 ## 7. Соглашения об оформлении
 
