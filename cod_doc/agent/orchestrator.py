@@ -102,10 +102,32 @@ class Orchestrator:
         первом round-trip; агент действует по wake-payload и ``context_refs``.
         Cold-start (wake is None или wake.reason in {COLD_START, MANUAL})
         — прежний flow с full MASTER-секциями.
+
+        PCA-034: на старте run_task вписывается ``agent_run`` row + ставится
+        contextvar run_id; все мутации сервисов внутри heartbeat'а
+        автоматически получают этот run_id (см. PCA-031). На выходе — row
+        помечается ``done``/``failed`` + contextvar reset'ится.
         """
+        from datetime import UTC, datetime
+
+        from ulid import ULID
+
         from cod_doc.services import event_bus
+        from cod_doc.services.run_context import (
+            finalize_orchestrator_run,
+            start_orchestrator_run,
+        )
 
         slug = self.project.entry.name
+        run_id = str(ULID.from_datetime(datetime.now(UTC)))
+        run_token = start_orchestrator_run(
+            project_path=str(self.project.entry.path),
+            run_id=run_id,
+            wake_reason=(wake.reason.value if wake is not None else None),
+            triggering_task_id=task.id,
+            triggering_doc_ref=(wake.triggering_doc_ref if wake is not None else None),
+        )
+
         self.project.update_task(task.id, status=TaskStatus.IN_PROGRESS)
         self.project.set_status("running")
         scoped = wake is not None and wake.is_scoped
@@ -116,37 +138,49 @@ class Orchestrator:
             messages.insert(0, {"role": "user", "content": wake.to_message_block()})
 
         await event_bus.publish(
-            slug, "agent.started", {"task_id": task.id, "title": task.title}
+            slug, "agent.started", {"task_id": task.id, "title": task.title, "run_id": run_id}
         )
         yield AgentEvent("thinking", f"Начинаю задачу: {task.title}")
 
-        iterations = 0
-        async for event in self._agent_loop(messages, task):
-            # Mirror thinking/tool events to the UI as agent.step.
-            await event_bus.publish(
-                slug,
-                f"agent.{event.type}",
-                {"task_id": task.id, "data": event.data, "iteration": iterations},
-            )
-            yield event
-            iterations += 1
-            if iterations > self.config.max_iterations:
-                yield AgentEvent("error", "Превышен лимит итераций")
-                self.project.update_task(
-                    task.id, status=TaskStatus.FAILED, result="Max iterations exceeded"
-                )
+        run_status = "done"
+        try:
+            iterations = 0
+            async for event in self._agent_loop(messages, task):
+                # Mirror thinking/tool events to the UI as agent.step.
                 await event_bus.publish(
                     slug,
-                    "agent.stopped",
-                    {"task_id": task.id, "reason": "max_iterations"},
+                    f"agent.{event.type}",
+                    {"task_id": task.id, "data": event.data, "iteration": iterations},
                 )
-                break
-        else:
-            await event_bus.publish(
-                slug, "agent.stopped", {"task_id": task.id, "reason": "completed"}
+                yield event
+                iterations += 1
+                if iterations > self.config.max_iterations:
+                    yield AgentEvent("error", "Превышен лимит итераций")
+                    self.project.update_task(
+                        task.id, status=TaskStatus.FAILED, result="Max iterations exceeded"
+                    )
+                    await event_bus.publish(
+                        slug,
+                        "agent.stopped",
+                        {"task_id": task.id, "reason": "max_iterations"},
+                    )
+                    run_status = "failed"
+                    break
+            else:
+                await event_bus.publish(
+                    slug, "agent.stopped", {"task_id": task.id, "reason": "completed"}
+                )
+        except BaseException:
+            run_status = "failed"
+            raise
+        finally:
+            finalize_orchestrator_run(
+                run_token,
+                project_path=str(self.project.entry.path),
+                run_id=run_id,
+                status=run_status,
             )
-
-        self.project.set_status("idle")
+            self.project.set_status("idle")
 
     async def run_autonomous(self) -> AsyncGenerator[AgentEvent, None]:
         """

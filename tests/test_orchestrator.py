@@ -332,3 +332,93 @@ async def test_run_task_cold_start_wake_still_reads_master(
     assert user_msgs[0]["content"].startswith("WAKE PAYLOAD")
     full_user_text = "\n".join(m["content"] for m in user_msgs)
     assert "MASTER.md (L0)" in full_user_text
+
+
+# --------------------------------------------------------------------------- #
+# PCA-034: run_id propagates through the heartbeat                              #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_run_task_sets_run_id_during_heartbeat(
+    project: Project, config: Config
+) -> None:
+    """During Orchestrator.run_task, get_current_run_id() returns the heartbeat run_id."""
+    from cod_doc.services.run_context import get_current_run_id
+
+    captured: list[str | None] = []
+
+    async def _capture_then_complete(*args, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(get_current_run_id())
+        return _make_mock_response(content="ack")
+
+    task = Task(title="run-id propagation")
+    project.add_task(task)
+
+    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
+        MockClient.return_value.chat.completions.create = AsyncMock(
+            side_effect=_capture_then_complete
+        )
+        orch = Orchestrator(project, config)
+        async for _ in orch.run_task(task):
+            pass
+
+    # Each LLM call captured a non-None run_id (set by start_orchestrator_run).
+    assert captured, "expected at least one LLM call"
+    assert all(r is not None for r in captured), captured
+    # Same run_id across all LLM calls in the heartbeat.
+    assert len(set(captured)) == 1, f"run_id changed mid-heartbeat: {captured}"
+
+
+@pytest.mark.asyncio
+async def test_run_task_resets_run_id_after_heartbeat(
+    project: Project, config: Config
+) -> None:
+    """After Orchestrator.run_task returns, get_current_run_id() is None."""
+    from cod_doc.services.run_context import get_current_run_id
+
+    task = Task(title="reset check")
+    project.add_task(task)
+    mock_resp = _make_mock_response(content="done")
+
+    assert get_current_run_id() is None
+    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
+        MockClient.return_value.chat.completions.create = AsyncMock(return_value=mock_resp)
+        orch = Orchestrator(project, config)
+        async for _ in orch.run_task(task):
+            pass
+    assert get_current_run_id() is None
+
+
+@pytest.mark.asyncio
+async def test_run_task_resets_run_id_after_max_iterations(
+    project: Project, config: Config
+) -> None:
+    """Max-iterations branch hits `finalize_orchestrator_run` via the finally block."""
+    from cod_doc.services.run_context import get_current_run_id
+
+    task = Task(title="max-iter check")
+    project.add_task(task)
+    # Always return a tool-call → loop never terminates on its own.
+    tool_resp = _make_mock_response(
+        tool_calls=[_make_tool_call("read_file", {"path": "MASTER.md"})]
+    )
+    tool_resp.choices[0].message.content = None
+    tool_resp.choices[0].message.model_dump.return_value = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_1",
+                "function": {"name": "read_file", "arguments": '{"path": "MASTER.md"}'},
+            }
+        ],
+    }
+
+    config.max_iterations = 1  # force the limit-hit branch quickly
+    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
+        MockClient.return_value.chat.completions.create = AsyncMock(return_value=tool_resp)
+        orch = Orchestrator(project, config)
+        async for _ in orch.run_task(task):
+            pass
+    assert get_current_run_id() is None

@@ -187,3 +187,71 @@ def test_set_current_run_id_overrides_contextvar(engine_with_schema) -> None:  #
             select(RevisionModel).where(RevisionModel.revision_id == rid)
         ).scalar_one()
         assert r.run_id == "manual-override"
+
+
+# --------------------------------------------------------------------------- #
+# Orchestrator hooks (PCA-034)                                                 #
+# --------------------------------------------------------------------------- #
+
+
+def test_start_finalize_orchestrator_run_no_db_path() -> None:
+    """No project_path → still sets/resets contextvar; agent_run row skipped."""
+    from cod_doc.services.run_context import (
+        finalize_orchestrator_run,
+        start_orchestrator_run,
+    )
+
+    assert get_current_run_id() is None
+    token = start_orchestrator_run(project_path=None, run_id="orch-noprojectpath")
+    assert get_current_run_id() == "orch-noprojectpath"
+    finalize_orchestrator_run(
+        token, project_path=None, run_id="orch-noprojectpath", status="done"
+    )
+    assert get_current_run_id() is None
+
+
+def test_start_finalize_propagates_run_id_to_revisions(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Acceptance: revisions written between start_/finalize_ carry run_id."""
+    from cod_doc.services.run_context import (
+        finalize_orchestrator_run,
+        start_orchestrator_run,
+    )
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _add_project(session)
+
+    # No project_path so we skip DB-row insert; we just need contextvar.
+    token = start_orchestrator_run(project_path=None, run_id="orch-prop")
+    try:
+        with transactional(factory) as session:
+            rid_a = _write_rev(session, proj_id, entity_id=10)
+            rid_b = _write_rev(session, proj_id, entity_id=11)
+    finally:
+        finalize_orchestrator_run(
+            token, project_path=None, run_id="orch-prop", status="done"
+        )
+
+    with transactional(factory) as session:
+        for rid in (rid_a, rid_b):
+            r = session.execute(
+                select(RevisionModel).where(RevisionModel.revision_id == rid)
+            ).scalar_one()
+            assert r.run_id == "orch-prop"
+
+
+def test_finalize_resets_contextvar_even_on_failed_status() -> None:
+    """finalize_orchestrator_run must clear the contextvar regardless of status."""
+    from cod_doc.services.run_context import (
+        finalize_orchestrator_run,
+        start_orchestrator_run,
+    )
+
+    token = start_orchestrator_run(project_path=None, run_id="orch-failed")
+    try:
+        assert get_current_run_id() == "orch-failed"
+    finally:
+        finalize_orchestrator_run(
+            token, project_path=None, run_id="orch-failed", status="failed"
+        )
+    assert get_current_run_id() is None

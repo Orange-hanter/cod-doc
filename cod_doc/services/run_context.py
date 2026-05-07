@@ -93,3 +93,130 @@ def run_scope(
         session.flush()
     finally:
         _current_run_id.reset(token)
+
+
+# --------------------------------------------------------------------------- #
+# Orchestrator hooks (PCA-034)                                                 #
+# --------------------------------------------------------------------------- #
+
+
+def _open_session_for_project(project_path: str | None):  # type: ignore[no-untyped-def]
+    """Best-effort session factory for a project on disk.
+
+    Returns ``(session_factory, project_db_id)`` or ``(None, None)`` if
+    the project has no DB (legacy YAML-only projects, fixture paths etc.).
+    Used by the orchestrator hooks below — failures are silent so legacy
+    test environments without a migrated DB don't break.
+    """
+    if not project_path:
+        return None, None
+    try:
+        from pathlib import Path
+
+        from cod_doc.infra.db import (
+            make_engine,
+            make_session_factory,
+            resolve_db_url,
+            transactional,
+        )
+        from cod_doc.infra.repositories import ProjectRepository
+
+        url = resolve_db_url(Path(project_path))
+        engine = make_engine(url)
+        sf = make_session_factory(engine)
+        with transactional(sf) as session:
+            # Project lookup by slug — assumes the project is registered in
+            # the slug-keyed cod-doc config; fixtures often skip this and
+            # we silently fall through.
+            from cod_doc.config import Config
+
+            cfg = Config.load()
+            for entry in cfg.list_projects():
+                if entry.path == project_path:
+                    proj = ProjectRepository(session).get_by_slug(entry.name)
+                    if proj is not None and proj.row_id is not None:
+                        return sf, proj.row_id
+        return None, None
+    except Exception:  # pragma: no cover — degraded path
+        return None, None
+
+
+def start_orchestrator_run(
+    *,
+    project_path: str | None,
+    run_id: str,
+    wake_reason: str | None = None,
+    triggering_task_id: str | None = None,
+    triggering_doc_ref: str | None = None,
+) -> object:
+    """Begin an orchestrator run: set the contextvar + best-effort DB row.
+
+    Returns the contextvar :class:`Token` to pass back into
+    :func:`finalize_orchestrator_run`. Caller is responsible for calling
+    finalize on every exit path so the contextvar resets cleanly.
+
+    The agent_run DB row is best-effort — if the project has no DB, the
+    contextvar still flows through revisions written elsewhere. This
+    keeps proposal 04 working in legacy / fixture environments.
+    """
+    from cod_doc.infra.db import transactional
+    from cod_doc.infra.models import AgentRunModel
+
+    sf, project_db_id = _open_session_for_project(project_path)
+    if sf is not None and project_db_id is not None:
+        try:
+            with transactional(sf) as session:
+                session.add(
+                    AgentRunModel(
+                        run_id=run_id,
+                        project_id=project_db_id,
+                        wake_reason=wake_reason,
+                        triggering_task_id=triggering_task_id,
+                        triggering_doc_ref=triggering_doc_ref,
+                        status="running",
+                    )
+                )
+        except Exception:  # pragma: no cover — degraded path
+            pass
+    return _current_run_id.set(run_id)
+
+
+def finalize_orchestrator_run(
+    token: object,
+    *,
+    project_path: str | None,
+    run_id: str,
+    status: str = "done",
+    summary: str | None = None,
+) -> None:
+    """End an orchestrator run: best-effort row update + contextvar reset.
+
+    Always resets the contextvar (so the heartbeat doesn't leak its
+    run_id into a subsequent task). DB update is best-effort.
+    """
+    from sqlalchemy import select
+
+    from cod_doc.infra.db import transactional
+    from cod_doc.infra.models import AgentRunModel
+
+    sf, project_db_id = _open_session_for_project(project_path)
+    if sf is not None and project_db_id is not None:
+        try:
+            with transactional(sf) as session:
+                run = session.execute(
+                    select(AgentRunModel).where(AgentRunModel.run_id == run_id)
+                ).scalar_one_or_none()
+                if run is not None:
+                    run.status = status
+                    run.finished_at = datetime.now(UTC)
+                    if summary is not None:
+                        run.summary = summary
+        except Exception:  # pragma: no cover — degraded path
+            pass
+
+    from contextvars import Token
+
+    if isinstance(token, Token):
+        _current_run_id.reset(token)
+    else:
+        _current_run_id.set(None)
