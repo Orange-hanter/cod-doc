@@ -232,3 +232,103 @@ async def test_run_autonomous_no_tasks_generates_from_master(
     # Задача была создана
     all_tasks = project.get_tasks()
     assert len(all_tasks) >= 1
+
+
+# --------------------------------------------------------------------------- #
+# PCA-022 / PCA-024: WakeContext injection + scoped fast-path                  #
+# --------------------------------------------------------------------------- #
+
+
+def _capture_first_user_message(call_args_list) -> str:  # type: ignore[no-untyped-def]
+    """Pull the first ``role=user`` message from the first LLM call's kwargs."""
+    first_call = call_args_list[0]
+    msgs = first_call.kwargs["messages"]
+    for m in msgs:
+        if m["role"] == "user":
+            return m["content"]
+    raise AssertionError("no user message in first LLM call")
+
+
+@pytest.mark.asyncio
+async def test_run_task_cold_start_includes_master_block(
+    project: Project, config: Config
+) -> None:
+    """Без WakeContext — _build_messages идёт по 'full' пути с MASTER.md (L0) блоком."""
+    task = Task(title="Cold start task", description="do thing")
+    project.add_task(task)
+    mock_resp = _make_mock_response(content="done")
+
+    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
+        create = AsyncMock(return_value=mock_resp)
+        MockClient.return_value.chat.completions.create = create
+        orch = Orchestrator(project, config)
+        async for _ in orch.run_task(task):
+            pass
+
+    first_user = _capture_first_user_message(create.call_args_list)
+    assert "MASTER.md (L0)" in first_user
+    assert "WAKE PAYLOAD" not in first_user
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reason,extra_kw",
+    [
+        ("task_assigned", {"task_id": "stub"}),
+        ("approval_resolved", {"task_id": "stub"}),
+        ("doc_drift", {"triggering_doc_ref": "doc:foo"}),
+    ],
+)
+async def test_run_task_scoped_wake_skips_master_and_prepends_payload(
+    project: Project,
+    config: Config,
+    reason: str,
+    extra_kw: dict,  # type: ignore[type-arg]
+) -> None:
+    """Scoped wake_reason → MASTER.md (L0) НЕ грузится; WAKE PAYLOAD идёт первым."""
+    from cod_doc.agent.wake_context import WakeContext, WakeReason
+
+    task = Task(title="scoped wake task")
+    project.add_task(task)
+    mock_resp = _make_mock_response(content="ack")
+    wake = WakeContext(reason=WakeReason(reason), **extra_kw)
+
+    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
+        create = AsyncMock(return_value=mock_resp)
+        MockClient.return_value.chat.completions.create = create
+        orch = Orchestrator(project, config)
+        async for _ in orch.run_task(task, wake=wake):
+            pass
+
+    msgs = create.call_args_list[0].kwargs["messages"]
+    user_msgs = [m for m in msgs if m["role"] == "user"]
+    # Wake payload is the first user message; MASTER.md must be absent everywhere.
+    assert user_msgs[0]["content"].startswith("WAKE PAYLOAD"), user_msgs[0]["content"][:120]
+    full_user_text = "\n".join(m["content"] for m in user_msgs)
+    assert "MASTER.md (L0)" not in full_user_text
+
+
+@pytest.mark.asyncio
+async def test_run_task_cold_start_wake_still_reads_master(
+    project: Project, config: Config
+) -> None:
+    """Wake с reason=cold_start не считается scoped: MASTER грузится, WAKE PAYLOAD остаётся."""
+    from cod_doc.agent.wake_context import WakeContext, WakeReason
+
+    task = Task(title="cold wake")
+    project.add_task(task)
+    mock_resp = _make_mock_response(content="ack")
+    wake = WakeContext(reason=WakeReason.COLD_START)
+
+    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
+        create = AsyncMock(return_value=mock_resp)
+        MockClient.return_value.chat.completions.create = create
+        orch = Orchestrator(project, config)
+        async for _ in orch.run_task(task, wake=wake):
+            pass
+
+    msgs = create.call_args_list[0].kwargs["messages"]
+    user_msgs = [m for m in msgs if m["role"] == "user"]
+    assert user_msgs[0]["content"].startswith("WAKE PAYLOAD")
+    full_user_text = "\n".join(m["content"] for m in user_msgs)
+    assert "MASTER.md (L0)" in full_user_text

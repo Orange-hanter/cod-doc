@@ -22,14 +22,15 @@ from openai import AsyncOpenAI
 
 from cod_doc.agent.prompts import SYSTEM_PROMPT
 from cod_doc.agent.retry import (
-    LLMError,
     ContextLengthExceededError,
+    LLMError,
     with_retry,
 )
 from cod_doc.agent.tools import TOOL_DEFINITIONS, ToolExecutor
 from cod_doc.core.project import Project, Task, TaskStatus
 
 if TYPE_CHECKING:
+    from cod_doc.agent.wake_context import WakeContext
     from cod_doc.config import Config
 
 # Тип async-callback для запроса к человеку
@@ -88,14 +89,31 @@ class Orchestrator:
 
     # ── Public API ───────────────────────────────────────────────────────────
 
-    async def run_task(self, task: Task) -> AsyncGenerator[AgentEvent, None]:
-        """Выполнить одну задачу. Стримит AgentEvent."""
+    async def run_task(
+        self,
+        task: Task,
+        wake: WakeContext | None = None,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        """Выполнить одну задачу. Стримит AgentEvent.
+
+        ``wake`` (PCA-022): опциональный WakeContext, инжектится первым
+        сообщением conversation. Для scoped-причин (task_assigned /
+        doc_drift / approval_resolved) — ``MASTER.md`` не читается на
+        первом round-trip; агент действует по wake-payload и ``context_refs``.
+        Cold-start (wake is None или wake.reason in {COLD_START, MANUAL})
+        — прежний flow с full MASTER-секциями.
+        """
         from cod_doc.services import event_bus
 
         slug = self.project.entry.name
         self.project.update_task(task.id, status=TaskStatus.IN_PROGRESS)
         self.project.set_status("running")
-        messages = self._build_messages(task)
+        scoped = wake is not None and wake.is_scoped
+        messages = self._build_messages(
+            task, context_mode="no_master" if scoped else "full"
+        )
+        if wake is not None:
+            messages.insert(0, {"role": "user", "content": wake.to_message_block()})
 
         await event_bus.publish(
             slug, "agent.started", {"task_id": task.id, "title": task.title}
