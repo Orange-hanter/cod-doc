@@ -199,7 +199,7 @@ def _trim_payload_to_budget(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_wake_context(
-    session: Session,
+    session: Session | None,
     *,
     reason: WakeReason,
     task_id: str | None = None,
@@ -232,6 +232,10 @@ def build_wake_context(
     if reason in (WakeReason.TASK_ASSIGNED, WakeReason.APPROVAL_RESOLVED):
         if not task_id:
             raise ValueError(f"reason={reason.value} requires task_id")
+        if session is None:
+            raise ValueError(
+                f"reason={reason.value} requires a DB session for heartbeat lookup"
+            )
         from cod_doc.services import heartbeat_service
 
         payload = heartbeat_service.heartbeat_context(
