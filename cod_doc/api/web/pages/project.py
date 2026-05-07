@@ -15,12 +15,11 @@ from cod_doc.api.web.errors import truncate_for_cookie
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import EntityKind, Priority, TaskType
-from cod_doc.services import ai_generate
+from cod_doc.services import ai_generate, trace_service
 from cod_doc.services import plan_service as plans
 from cod_doc.services import project_service as projects
 from cod_doc.services import revision_service as revisions
 from cod_doc.services import task_service as task_svc
-from cod_doc.services import trace_service
 from cod_doc.services.ai_text import AIBackendError
 
 from ._helpers import MASTER_PREVIEW_LINES, _preview

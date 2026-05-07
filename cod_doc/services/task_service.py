@@ -43,9 +43,8 @@ from cod_doc.infra.models import (
 )
 from cod_doc.infra.repositories import TaskRepository
 from cod_doc.infra.sql_helpers import priority_sql_order
-from cod_doc.services import event_bus
+from cod_doc.services import event_bus, validation
 from cod_doc.services import revision_service as rev
-from cod_doc.services import validation
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

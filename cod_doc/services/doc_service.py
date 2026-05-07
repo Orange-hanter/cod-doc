@@ -284,7 +284,7 @@ def _sync_section_links_safe(session: Session, section_id: int) -> None:
         # alone would not pick up body changes when rows already existed.
         _links.sync_section(session, section_id)
         _links.resolve_section(session, section_id)
-    except Exception:  # noqa: BLE001 — derived-data refresh, not load-bearing
+    except Exception:
         import logging
 
         logging.getLogger("cod_doc.services.doc_service").warning(

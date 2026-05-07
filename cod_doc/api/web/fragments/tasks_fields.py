@@ -18,9 +18,8 @@ from cod_doc.api.web.errors import (
 )
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
-from cod_doc.services import ai_text
+from cod_doc.services import ai_text, trace_service
 from cod_doc.services import task_service as tasks
-from cod_doc.services import trace_service
 from cod_doc.services.ai_text import AIBackendError
 from cod_doc.services.revision_service import RevisionConflictError
 

@@ -126,7 +126,7 @@ def get_collection(
         _client_cache[chroma_path] = client
     return client.get_or_create_collection(
         name="cod_doc",
-        embedding_function=ef,  # type: ignore[arg-type]
+        embedding_function=ef,
         metadata={"hnsw:space": "cosine"},
     )
 

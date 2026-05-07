@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
@@ -20,7 +20,7 @@ class TraceCallRepository(BaseRepository[TraceCall, TraceCallModel]):
     model_cls = TraceCallModel
 
     def _to_domain(self, model: TraceCallModel) -> TraceCall:
-        tool_calls: list[dict] | None = None
+        tool_calls: list[dict[str, Any]] | None = None
         if model.tool_calls:
             try:
                 tool_calls = json.loads(model.tool_calls)

@@ -242,7 +242,7 @@ class ToolExecutor:
 
     # ── Plan graph tools (B1) ─────────────────────────────────────────────────
 
-    def _make_db_session(self):  # type: ignore[no-untyped-def]
+    def _make_db_session(self) -> Any:
         from cod_doc.mcp.tools._db import session_factory
 
         sf, _ = session_factory(self.project.entry.name)
@@ -322,10 +322,8 @@ class ToolExecutor:
 
     def _tool_doc_body(self, doc_key: str) -> dict[str, Any]:
         try:
-            from sqlalchemy import select
 
             from cod_doc.infra.db import transactional
-            from cod_doc.infra.models import DocumentModel
             from cod_doc.mcp.tools._db import require_project_id
             from cod_doc.services import doc_service
 

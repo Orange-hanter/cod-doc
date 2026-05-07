@@ -241,7 +241,7 @@ def link_backfill(ctx: click.Context, project: str, dry_run: bool) -> None:
         for sec_id, doc_key in rows:
             try:
                 links = link_service.sync_section(session, int(sec_id))
-            except Exception as exc:  # noqa: BLE001 — best-effort backfill
+            except Exception as exc:
                 log.warning("backfill skipped %s: %s", doc_key, exc)
                 continue
             sections_done += 1

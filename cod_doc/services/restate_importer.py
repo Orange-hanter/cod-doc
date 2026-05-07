@@ -36,8 +36,7 @@ from cod_doc.infra.repositories import (
     PlanRepository,
     PlanSectionRepository,
 )
-from cod_doc.services import import_service
-from cod_doc.services import task_service
+from cod_doc.services import import_service, task_service
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

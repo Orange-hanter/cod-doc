@@ -100,7 +100,8 @@ def _extract_error_code(exc: APIStatusError) -> str | None:
         if isinstance(body_str, (bytes, bytearray)):
             body_str = body_str.decode("utf-8", errors="replace")
         body: dict[str, Any] = json.loads(body_str) if isinstance(body_str, str) else {}
-        return body.get("error", {}).get("code")
+        code = body.get("error", {}).get("code")
+        return str(code) if code is not None else None
     except (json.JSONDecodeError, AttributeError, TypeError):
         return None
 

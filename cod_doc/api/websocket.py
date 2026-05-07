@@ -13,15 +13,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from cod_doc.api.deps import get_config
 from cod_doc.services import event_bus
-
-if TYPE_CHECKING:
-    pass
 
 router = APIRouter()
 logger = logging.getLogger("cod_doc.api.ws")

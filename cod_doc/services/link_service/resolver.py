@@ -7,6 +7,7 @@ looks each link's target up in the DB and stamps `to_*` / `resolved` /
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,20 @@ from .parser import parse
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+
+_MD_LABEL_RE = re.compile(r"\[([^\]]+)\]")
+
+
+def _extract_label(raw: str) -> str | None:
+    """Extract `[label](...)` text from a parsed link's raw string.
+
+    Returns the first bracketed-label group, or None if the raw form has
+    no brackets (e.g. bare URL or `[[doc:KEY]]` canonical refs — those
+    shouldn't reach IncomingLink rendering anyway).
+    """
+    m = _MD_LABEL_RE.match(raw)
+    return m.group(1) if m else None
 
 
 def _resolve_canonical(
@@ -287,7 +302,7 @@ def list_for_section(session: Session, section_id: int) -> list[Link]:
 
 def list_incoming_for_doc(
     session: Session, project_id: int, doc_key: str
-) -> list["IncomingLink"]:
+) -> list[IncomingLink]:
     """COD-078: enumerate links pointing at ``doc_key`` with enough source
     context for UI rendering.
 
@@ -314,7 +329,7 @@ def list_incoming_for_doc(
                 source_doc_title=source_doc.title,
                 section_heading=section.heading,
                 section_anchor=section.anchor,
-                label=link.label,
+                label=_extract_label(link.raw),
             )
         )
     return out

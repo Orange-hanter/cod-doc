@@ -17,11 +17,10 @@ from cod_doc.domain.entities import (
     TaskType,
     UserStoryStatus,
 )
-from cod_doc.services import ai_generate
+from cod_doc.services import ai_generate, trace_service
 from cod_doc.services import plan_service as plans
 from cod_doc.services import story_service as stories
 from cod_doc.services import task_service as task_svc
-from cod_doc.services import trace_service
 from cod_doc.services.ai_text import AIBackendError
 
 router = APIRouter()

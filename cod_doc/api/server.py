@@ -15,7 +15,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from cod_doc.api.deps import (
-    daemon_is_running,
     dispose_all_engines,
     set_config,
     start_daemon,

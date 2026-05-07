@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
@@ -109,12 +109,12 @@ def export(session: Session, plan_id: int) -> dict[str, str]:
 
 
 def freeze_projection(
-    session,  # type: ignore[no-untyped-def]
+    session: Session,
     plan_id: int,
     *,
     author: str,
     reason: str | None = None,
-):
+) -> Any:
     """COD-052: snapshot the current projection markdown into a Document.
 
     Creates an immutable EXECUTION_LOG document with status=ACTIVE under the

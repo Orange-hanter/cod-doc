@@ -108,7 +108,10 @@ def _group_by_folder(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return node
 
     _sort(root)
-    return root["subfolders"] + ([root] if root["files"] else [])
+    result: list[dict[str, Any]] = root["subfolders"] + (
+        [root] if root["files"] else []
+    )
+    return result
 
 
 @router.get("/p/{slug}/docs", response_class=HTMLResponse)
@@ -116,7 +119,7 @@ def docs_list(
     request: Request,
     slug: str,
     q: str = "",
-    type: str = "",  # noqa: A002 — query-string field name
+    type: str = "",
     status: str = "",
     view: str = "tree",
 ) -> HTMLResponse:
@@ -204,7 +207,7 @@ def doc_new_submit(
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
     doc_key: str = Form(...),
     title: str = Form(...),
-    type: str = Form("module-spec"),  # noqa: A002
+    type: str = Form("module-spec"),
     status: str = Form("draft"),
     sensitivity: str = Form("internal"),
     owner: str = Form(""),
@@ -252,7 +255,7 @@ def doc_new_submit(
         raise ValidationWebError(
             f"Документ с таким doc_key уже существует: {doc_key}"
         ) from exc
-    except (ValueError,) as exc:
+    except ValueError as exc:
         session.rollback()
         raise ValidationWebError(str(exc)) from exc
     return RedirectResponse(
@@ -399,6 +402,7 @@ async def doc_generate_save(
             frontmatter={"generated_from": list(sources)},
             reason="web:ai-generate",
         )
+        assert doc.row_id is not None  # docs.create always assigns a row_id
         for i, (heading, body) in enumerate(
             zip(section_headings, section_bodies, strict=False)
         ):

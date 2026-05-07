@@ -25,13 +25,10 @@ import asyncio
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from sqlalchemy import event
 from sqlalchemy.orm import Session
-
-if TYPE_CHECKING:
-    pass
 
 _QUEUE_MAXSIZE = 256
 _PENDING_KEY = "_cod_doc_pending_events"
