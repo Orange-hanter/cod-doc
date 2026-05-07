@@ -37,7 +37,9 @@ from cod_doc.infra.models import (
     DependencyModel,
     PlanModel,
     ProjectModel,
+    StoryLinkModel,
     TaskModel,
+    UserStoryModel,
 )
 from cod_doc.infra.repositories import TaskRepository
 from cod_doc.infra.sql_helpers import priority_sql_order
@@ -178,6 +180,8 @@ def create(
     description: str | None = None,
     acceptance: str | None = None,
     affected_files: list[str] | None = None,
+    blocked_by: list[str] | None = None,
+    story_id: str | None = None,
     blocked_reason: str | None = None,
     reason: str | None = None,
     allow_duplicate: bool = True,
@@ -186,6 +190,14 @@ def create(
 
     If `task_id` is None, `id_prefix` must be provided; the service assigns
     `{prefix}-NNN` where NNN is the next sequence within the plan.
+
+    Structured links (PCA-902/903 — close cycle-2 G2/G3 gaps):
+    - ``blocked_by``: list of task_id strings; each becomes a `dependency`
+      row (kind='blocks', from=new_task → to=blocker). Unknown task_id
+      raises ``ValueError``.
+    - ``story_id``: a story_id string; becomes a `story_link` row
+      (story → to_kind='task', to_ref=task_id, relation='implemented_by').
+      Unknown story_id raises ``ValueError``.
 
     When `allow_duplicate=False`, `find_duplicate_by_title` is consulted
     before insert; a match raises `DuplicateTaskError`. The default `True`
@@ -246,6 +258,45 @@ def create(
                     kind=AffectedFileKind.SOURCE.value,
                 )
             )
+        session.flush()
+
+    if blocked_by:
+        for blocker_task_id in blocked_by:
+            blocker_model = session.execute(
+                select(TaskModel).where(TaskModel.task_id == blocker_task_id)
+            ).scalar_one_or_none()
+            if blocker_model is None:
+                raise ValueError(
+                    f"blocked_by references unknown task_id: {blocker_task_id!r}"
+                )
+            session.add(
+                DependencyModel(
+                    from_task_id=task.row_id,
+                    to_task_id=blocker_model.row_id,
+                    kind="blocks",
+                )
+            )
+        session.flush()
+
+    if story_id is not None:
+        story_model = session.execute(
+            select(UserStoryModel).where(
+                UserStoryModel.project_id == project_id,
+                UserStoryModel.story_id == story_id,
+            )
+        ).scalar_one_or_none()
+        if story_model is None:
+            raise ValueError(
+                f"story_id references unknown story: {story_id!r}"
+            )
+        session.add(
+            StoryLinkModel(
+                story_id=story_model.row_id,
+                to_kind="task",
+                to_ref=task_id,
+                relation="implemented_by",
+            )
+        )
         session.flush()
 
     rev.write(
