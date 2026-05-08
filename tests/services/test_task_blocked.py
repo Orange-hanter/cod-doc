@@ -181,6 +181,7 @@ def test_list_blocked_excludes_done_tasks(engine_with_schema) -> None:  # type: 
             task_id="PR-001",
             new_status=TaskStatus.DONE,
             author="human:test",
+            force=True,
         )
 
         assert task_service.list_blocked(session, p) == []

@@ -174,6 +174,51 @@ def _next_action_guess(task: TaskModel, blocked_by_ids: list[str]) -> str:
     return ""
 
 
+def _resolve_task_documents(session: "Session", task_row_id: int) -> list[dict[str, Any]]:
+    """PCA-916: compact list of task-bound docs (key/title/doc_type)."""
+    try:
+        from cod_doc.services import task_doc_service
+        docs = task_doc_service.list_for_task(session, task_row_id)
+        return [
+            {"key": d.key, "title": d.title or "", "doc_type": d.doc_type or ""}
+            for d in docs
+        ]
+    except Exception:
+        return []
+
+
+def _resolve_pending_approvals(
+    session: "Session", project_id: int, task_id: str
+) -> list[dict[str, Any]]:
+    """PCA-916: approvals linked to task_id with status='pending'."""
+    try:
+        from cod_doc.infra.models.approvals import ApprovalModel, ApprovalTaskLinkModel
+
+        rows = session.execute(
+            select(ApprovalModel)
+            .join(
+                ApprovalTaskLinkModel,
+                ApprovalTaskLinkModel.approval_id == ApprovalModel.row_id,
+            )
+            .where(
+                ApprovalModel.project_id == project_id,
+                ApprovalModel.status == "pending",
+                ApprovalTaskLinkModel.task_ref == task_id,
+            )
+        ).scalars().all()
+        return [
+            {
+                "approval_id": a.approval_id,
+                "approval_type": a.approval_type,
+                "requested_by": a.requested_by,
+                "expires_at": a.expires_at.isoformat() if a.expires_at else None,
+            }
+            for a in rows
+        ]
+    except Exception:
+        return []
+
+
 # --------------------------------------------------------------------------- #
 # Public API                                                                  #
 # --------------------------------------------------------------------------- #
@@ -203,6 +248,10 @@ def heartbeat_context(
 
     blocked_by_ids = _resolve_blocked_by_ids(session, model.row_id)
 
+    # PCA-916: include task-bound docs and pending approvals.
+    task_documents = _resolve_task_documents(session, model.row_id)
+    pending_approvals = _resolve_pending_approvals(session, model.project_id, task_id)
+
     return {
         "task": {
             "id": model.task_id,
@@ -215,6 +264,8 @@ def heartbeat_context(
         },
         "ancestry": _resolve_ancestry(session, model),
         "linked_docs_summary": [],
+        "task_documents": task_documents,
+        "pending_approvals": pending_approvals,
         "recent_changes": _recent_changes_for_task(
             session, model.row_id, since_revision_id
         ),

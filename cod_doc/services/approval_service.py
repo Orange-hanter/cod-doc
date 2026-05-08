@@ -195,6 +195,27 @@ def request(
         session.add(ApprovalDocRevisionLinkModel(approval_id=m.row_id, revision_id=rev_id))
     session.flush()
 
+    # PCA-913: auto-transition linked in_progress tasks → in_review so the
+    # agent knows the task is paused pending human decision.
+    from cod_doc.services import task_service as _task_svc
+    from cod_doc.domain.entities import TaskStatus
+
+    _IN_PROGRESS_STATUSES = {"in_progress", "in-progress"}
+    for ref in task_refs:
+        try:
+            task = _task_svc.get(session, ref)
+            if task is not None and task.status.value in _IN_PROGRESS_STATUSES:
+                _task_svc.update_status(
+                    session,
+                    task_id=ref,
+                    new_status=TaskStatus.IN_REVIEW,
+                    author=f"approval:{m.approval_id}",
+                    reason="approval_requested",
+                    strict=False,
+                )
+        except Exception:
+            pass  # best-effort; approval creation must not fail due to this
+
     return _to_domain(m, session)
 
 

@@ -139,7 +139,7 @@ def test_audit_flags_done_with_unfinished_blocks(engine_with_schema) -> None:
         b = _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-002")
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
         session.flush()
-        tasks.update_status(session, task_id="PLN-002", new_status=TaskStatus.DONE, author="drift")
+        tasks.update_status(session, task_id="PLN-002", new_status=TaskStatus.DONE, author="drift", force=True)
 
         report = plans.audit(session, plan_id)
         assert "PLN-002" in report.done_with_unfinished_blocks

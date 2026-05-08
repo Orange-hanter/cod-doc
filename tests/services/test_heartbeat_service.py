@@ -72,6 +72,8 @@ def test_heartbeat_returns_full_shape_for_pending_task(engine_with_schema) -> No
         "task",
         "ancestry",
         "linked_docs_summary",
+        "task_documents",
+        "pending_approvals",
         "recent_changes",
         "active_skills_hint",
         "next_action_guess",

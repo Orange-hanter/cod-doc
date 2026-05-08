@@ -400,6 +400,7 @@ def register(mcp: FastMCP) -> None:
         from cod_doc.infra.db import transactional
         from cod_doc.services import activity_service, task_service
         from cod_doc.services.task_service import TaskNotFoundError
+        from cod_doc.services.task_status_machine import StatusTransitionError
 
         sf, _ = session_factory(project)
         try:
@@ -423,6 +424,8 @@ def register(mcp: FastMCP) -> None:
                 )
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
+        except StatusTransitionError as exc:
+            raise ValueError(f"Invalid status transition: {exc}") from exc
         return task_to_dict(t)
 
     @mcp.tool(name="task.complete")

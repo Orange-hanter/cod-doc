@@ -330,7 +330,7 @@ def update_status(
     reason: str | None = None,
     expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
     via_checkout: bool = False,
-    strict: bool = False,
+    strict: bool = True,
     force: bool = False,
 ) -> Task:
     """Set task.status directly; no dep-gate.
