@@ -18,18 +18,16 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
-from openai import AsyncOpenAI
-
 from cod_doc.agent.prompts import SYSTEM_PROMPT
 from cod_doc.agent.retry import (
     ContextLengthExceededError,
     LLMError,
-    with_retry,
 )
 from cod_doc.agent.tools import TOOL_DEFINITIONS, ToolExecutor
 from cod_doc.core.project import Project, Task, TaskStatus
 
 if TYPE_CHECKING:
+    from cod_doc.agent.adapters.base import LLMAdapter
     from cod_doc.agent.wake_context import WakeContext
     from cod_doc.config import Config
 
@@ -64,18 +62,24 @@ class Orchestrator:
         config: Config,
         on_ask_human: Callable[[str, str], str] | None = None,
         async_on_ask_human: AskHumanAsync | None = None,
+        adapter: "LLMAdapter | None" = None,
     ) -> None:
         self.project = project
         self.config = config
         self._async_on_ask_human = async_on_ask_human
-        self.client = AsyncOpenAI(
-            api_key=config.api_key,
-            base_url=config.base_url,
-            default_headers={
-                "HTTP-Referer": "https://github.com/cod-doc",
-                "X-Title": "COD-DOC Orchestrator",
-            },
-        )
+
+        # PCA-302: use DI adapter when provided; otherwise select from registry.
+        # Falls back to openai_compat (identical to the old hardcoded behavior).
+        if adapter is not None:
+            self.adapter = adapter
+        else:
+            from cod_doc.agent.adapters.registry import get_adapter_from_config
+            self.adapter = get_adapter_from_config(config)
+
+        # Keep self.client as a legacy shim so any external code that still
+        # accesses orchestrator.client doesn't break immediately. Deprecated.
+        self.client = getattr(self.adapter, "_client", None)
+
         # Передаём sync-callback только в daemon/CLI режиме
         self.executor = ToolExecutor(
             project,
@@ -467,14 +471,12 @@ class Orchestrator:
                         "Consider decomposing this task.",
                         task.id, approx_tokens, self.config.max_context_tokens,
                     )
-                response = await with_retry(
-                    lambda msgs=llm_messages: self.client.chat.completions.create(  # type: ignore[call-overload,misc]
-                        model=self.config.model,
-                        messages=msgs,
-                        tools=TOOL_DEFINITIONS,
-                        tool_choice="auto",
-                        max_tokens=self.config.max_tokens,
-                    )
+                # PCA-302: dispatch through the adapter (default: openai_compat).
+                response = await self.adapter.chat(
+                    llm_messages,
+                    TOOL_DEFINITIONS,
+                    model=self.config.model,
+                    max_tokens=self.config.max_tokens,
                 )
             except ContextLengthExceededError as e:
                 if context_retry < _MAX_CONTEXT_RETRIES:
@@ -604,14 +606,11 @@ class Orchestrator:
                 if t["function"]["name"] in ("create_task", "get_project_status")
             }
             tools_subset = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in allowed]
-            response = await with_retry(
-                lambda: self.client.chat.completions.create(  # type: ignore[call-overload]
-                    model=self.config.model,
-                    messages=llm_msgs,
-                    tools=tools_subset,
-                    tool_choice="auto",
-                    max_tokens=2048,
-                )
+            response = await self.adapter.chat(
+                llm_msgs,
+                tools_subset,
+                model=self.config.model,
+                max_tokens=2048,
             )
         except LLMError as e:
             yield AgentEvent("error", f"Ошибка генерации задач: {e}")

@@ -54,7 +54,15 @@ class Config(BaseSettings):
         extra="allow",
     )
 
-    # OpenRouter
+    # LLM adapter selection (PCA-302, proposal 10).
+    # Built-in choices: "openai_compat" (default) | "anthropic" | "mock"
+    # External adapters: register in ~/.cod-doc/adapters.json
+    llm_adapter: str = Field(
+        default="openai_compat",
+        description="LLM adapter name (openai_compat | anthropic | mock | custom)",
+    )
+
+    # OpenRouter / OpenAI-compat backend
     api_key: str = Field(default="", description="OpenRouter API key")
     base_url: str = Field(
         default="https://openrouter.ai/api/v1",
@@ -63,6 +71,12 @@ class Config(BaseSettings):
     model: str = Field(
         default="anthropic/claude-sonnet-4-6",
         description="Модель (OpenRouter model ID)",
+    )
+    # Optional dedicated Anthropic API key (for the 'anthropic' adapter).
+    # Falls back to api_key when absent.
+    anthropic_api_key: str = Field(
+        default="",
+        description="Anthropic API key (for llm_adapter='anthropic')",
     )
     max_tokens: int = Field(default=8192)
     max_context_tokens: int = Field(

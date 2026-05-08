@@ -1,13 +1,15 @@
-"""Тесты cod_doc.agent.orchestrator с моком LLM"""
+"""Тесты cod_doc.agent.orchestrator с MockAdapter (PCA-302)."""
 
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from cod_doc.agent.adapters.mock import MockAdapter
+from cod_doc.agent.adapters.base import ChatResponse
 from cod_doc.agent.orchestrator import Orchestrator
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project, Task, TaskStatus
@@ -36,28 +38,11 @@ def config() -> Config:
     )
 
 
-def _make_mock_response(content: str | None = None, tool_calls: list | None = None):
-    """Создать мок ответа от OpenAI."""
-    msg = MagicMock()
-    msg.content = content
-    msg.tool_calls = tool_calls or []
-    msg.model_dump.return_value = {"role": "assistant", "content": content, "tool_calls": []}
-
-    choice = MagicMock()
-    choice.message = msg
-
-    resp = MagicMock()
-    resp.choices = [choice]
-    return resp
-
-
-def _make_tool_call(name: str, args: dict, call_id: str = "call_1"):
-    tc = MagicMock()
-    tc.id = call_id
-    tc.type = "function"
-    tc.function.name = name
-    tc.function.arguments = json.dumps(args, ensure_ascii=False)
-    return tc
+def _orch(project: Project, config: Config, responses: list[ChatResponse], **kw: Any) -> Orchestrator:
+    """Create an Orchestrator backed by a MockAdapter."""
+    adapter = MockAdapter(responses=responses)
+    orch = Orchestrator(project, config, adapter=adapter, **kw)
+    return orch
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
@@ -69,20 +54,14 @@ async def test_run_task_simple_message(project: Project, config: Config) -> None
     task = Task(title="Тестовая задача")
     project.add_task(task)
 
-    mock_resp = _make_mock_response(content="Задача выполнена успешно.")
-
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        MockClient.return_value.chat.completions.create = AsyncMock(return_value=mock_resp)
-        orch = Orchestrator(project, config)
-
-        events = []
-        async for event in orch.run_task(task):
-            events.append(event)
+    orch = _orch(project, config, [MockAdapter.text_response("Задача выполнена успешно.")])
+    events = []
+    async for event in orch.run_task(task):
+        events.append(event)
 
     types = [e.type for e in events]
     assert "thinking" in types
     assert "message" in types
-    # Задача должна быть помечена как выполненная
     tasks = project.get_tasks(TaskStatus.DONE)
     assert len(tasks) == 1
 
@@ -93,33 +72,13 @@ async def test_run_task_with_tool_call(project: Project, config: Config) -> None
     task = Task(title="Прочитать файл")
     project.add_task(task)
 
-    # Первый ответ — вызов инструмента
-    tool_resp = _make_mock_response(
-        tool_calls=[_make_tool_call("read_file", {"path": "MASTER.md"})]
-    )
-    tool_resp.choices[0].message.content = None
-    tool_resp.choices[0].message.model_dump.return_value = {
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [
-            {
-                "id": "call_1",
-                "function": {"name": "read_file", "arguments": '{"path": "MASTER.md"}'},
-            }
-        ],
-    }
-
-    # Второй ответ — финальное сообщение
-    final_resp = _make_mock_response(content="Файл прочитан.")
-
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        MockClient.return_value.chat.completions.create = AsyncMock(
-            side_effect=[tool_resp, final_resp]
-        )
-        orch = Orchestrator(project, config)
-        events = []
-        async for event in orch.run_task(task):
-            events.append(event)
+    orch = _orch(project, config, [
+        MockAdapter.tool_call_response("read_file", {"path": "MASTER.md"}, call_id="call_1"),
+        MockAdapter.text_response("Файл прочитан."),
+    ])
+    events = []
+    async for event in orch.run_task(task):
+        events.append(event)
 
     types = [e.type for e in events]
     assert "tool_call" in types
@@ -135,22 +94,18 @@ async def test_run_task_llm_error(project: Project, config: Config) -> None:
     task = Task(title="Задача с ошибкой")
     project.add_task(task)
 
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        MockClient.return_value.chat.completions.create = AsyncMock(
-            side_effect=LLMError("Неверный ключ", retryable=False)
-        )
-        with patch("cod_doc.agent.orchestrator.with_retry", side_effect=LLMError("Неверный ключ")):
-            orch = Orchestrator(project, config)
-            events = []
-            async for event in orch.run_task(task):
-                events.append(event)
+    adapter = MockAdapter()
+    adapter.chat = AsyncMock(side_effect=LLMError("Неверный ключ", retryable=False))  # type: ignore[method-assign]
+
+    orch = Orchestrator(project, config, adapter=adapter)
+    events = []
+    async for event in orch.run_task(task):
+        events.append(event)
 
     error_events = [e for e in events if e.type == "error"]
     assert len(error_events) == 1
     assert "Неверный ключ" in str(error_events[0].data)
-
-    failed_tasks = project.get_tasks(TaskStatus.FAILED)
-    assert len(failed_tasks) == 1
+    assert len(project.get_tasks(TaskStatus.FAILED)) == 1
 
 
 @pytest.mark.asyncio
@@ -159,35 +114,20 @@ async def test_async_on_ask_human(project: Project, config: Config) -> None:
     task = Task(title="Задача с вопросом")
     project.add_task(task)
 
-    ask_call = _make_tool_call("ask_human", {"question": "Какой цвет?", "context": "тест"})
-    tool_resp = _make_mock_response(tool_calls=[ask_call])
-    tool_resp.choices[0].message.content = None
-    tool_resp.choices[0].message.model_dump.return_value = {
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [
-            {
-                "id": "call_1",
-                "function": {
-                    "name": "ask_human",
-                    "arguments": '{"question": "Какой цвет?", "context": "тест"}',
-                },
-            }
-        ],
-    }
-    final_resp = _make_mock_response(content="Ответ получен.")
-
     async def fake_ask(question: str, context: str) -> str:
         return "синий"
 
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        MockClient.return_value.chat.completions.create = AsyncMock(
-            side_effect=[tool_resp, final_resp]
-        )
-        orch = Orchestrator(project, config, async_on_ask_human=fake_ask)
-        events = []
-        async for event in orch.run_task(task):
-            events.append(event)
+    orch = _orch(project, config, [
+        MockAdapter.tool_call_response(
+            "ask_human",
+            {"question": "Какой цвет?", "context": "тест"},
+            call_id="call_1",
+        ),
+        MockAdapter.text_response("Ответ получен."),
+    ], async_on_ask_human=fake_ask)
+    events = []
+    async for event in orch.run_task(task):
+        events.append(event)
 
     blocked = [e for e in events if e.type == "blocked"]
     assert len(blocked) == 1
@@ -199,37 +139,21 @@ async def test_run_autonomous_no_tasks_generates_from_master(
     project: Project, config: Config
 ) -> None:
     """Если задач нет, агент анализирует MASTER.md и создаёт задачи."""
-    create_call = _make_tool_call("create_task", {"title": "Создать спецификацию", "priority": 1})
-    gen_resp = _make_mock_response(tool_calls=[create_call])
-    gen_resp.choices[0].message.content = "Создал задачу."
-    gen_resp.choices[0].message.model_dump.return_value = {
-        "role": "assistant",
-        "content": "Создал задачу.",
-        "tool_calls": [
-            {
-                "id": "call_1",
-                "function": {
-                    "name": "create_task",
-                    "arguments": '{"title": "Создать спецификацию", "priority": 1}',
-                },
-            }
-        ],
-    }
-
-    run_resp = _make_mock_response(content="Задача выполнена.")
-
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        MockClient.return_value.chat.completions.create = AsyncMock(
-            side_effect=[gen_resp, run_resp]
-        )
-        orch = Orchestrator(project, config)
-        events = []
-        async for event in orch.run_autonomous():
-            events.append(event)
+    orch = _orch(project, config, [
+        MockAdapter.tool_call_response(
+            "create_task",
+            {"title": "Создать спецификацию", "priority": 1},
+            call_id="call_1",
+        ),
+        MockAdapter.text_response("Создал задачу."),
+        MockAdapter.text_response("Задача выполнена."),
+    ])
+    events = []
+    async for event in orch.run_autonomous():
+        events.append(event)
 
     types = [e.type for e in events]
     assert "thinking" in types
-    # Задача была создана
     all_tasks = project.get_tasks()
     assert len(all_tasks) >= 1
 
@@ -239,14 +163,9 @@ async def test_run_autonomous_no_tasks_generates_from_master(
 # --------------------------------------------------------------------------- #
 
 
-def _capture_first_user_message(call_args_list) -> str:  # type: ignore[no-untyped-def]
-    """Pull the first ``role=user`` message from the first LLM call's kwargs."""
-    first_call = call_args_list[0]
-    msgs = first_call.kwargs["messages"]
-    for m in msgs:
-        if m["role"] == "user":
-            return m["content"]
-    raise AssertionError("no user message in first LLM call")
+def _get_sent_messages(adapter: MockAdapter) -> list[dict]:  # type: ignore[no-untyped-def]
+    """Return messages sent on the first LLM call."""
+    return adapter.calls[0]["messages"]
 
 
 @pytest.mark.asyncio
@@ -256,16 +175,15 @@ async def test_run_task_cold_start_includes_master_block(
     """Без WakeContext — _build_messages идёт по 'full' пути с MASTER.md (L0) блоком."""
     task = Task(title="Cold start task", description="do thing")
     project.add_task(task)
-    mock_resp = _make_mock_response(content="done")
 
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        create = AsyncMock(return_value=mock_resp)
-        MockClient.return_value.chat.completions.create = create
-        orch = Orchestrator(project, config)
-        async for _ in orch.run_task(task):
-            pass
+    adapter = MockAdapter([MockAdapter.text_response("done")])
+    orch = Orchestrator(project, config, adapter=adapter)
+    async for _ in orch.run_task(task):
+        pass
 
-    first_user = _capture_first_user_message(create.call_args_list)
+    msgs = _get_sent_messages(adapter)
+    user_msgs = [m for m in msgs if m.get("role") == "user"]
+    first_user = user_msgs[0]["content"]
     assert "MASTER.md (L0)" in first_user
     assert "WAKE PAYLOAD" not in first_user
 
@@ -290,19 +208,15 @@ async def test_run_task_scoped_wake_skips_master_and_prepends_payload(
 
     task = Task(title="scoped wake task")
     project.add_task(task)
-    mock_resp = _make_mock_response(content="ack")
     wake = WakeContext(reason=WakeReason(reason), **extra_kw)
 
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        create = AsyncMock(return_value=mock_resp)
-        MockClient.return_value.chat.completions.create = create
-        orch = Orchestrator(project, config)
-        async for _ in orch.run_task(task, wake=wake):
-            pass
+    adapter = MockAdapter([MockAdapter.text_response("ack")])
+    orch = Orchestrator(project, config, adapter=adapter)
+    async for _ in orch.run_task(task, wake=wake):
+        pass
 
-    msgs = create.call_args_list[0].kwargs["messages"]
-    user_msgs = [m for m in msgs if m["role"] == "user"]
-    # Wake payload is the first user message; MASTER.md must be absent everywhere.
+    msgs = _get_sent_messages(adapter)
+    user_msgs = [m for m in msgs if m.get("role") == "user"]
     assert user_msgs[0]["content"].startswith("WAKE PAYLOAD"), user_msgs[0]["content"][:120]
     full_user_text = "\n".join(m["content"] for m in user_msgs)
     assert "MASTER.md (L0)" not in full_user_text
@@ -317,18 +231,15 @@ async def test_run_task_cold_start_wake_still_reads_master(
 
     task = Task(title="cold wake")
     project.add_task(task)
-    mock_resp = _make_mock_response(content="ack")
     wake = WakeContext(reason=WakeReason.COLD_START)
 
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        create = AsyncMock(return_value=mock_resp)
-        MockClient.return_value.chat.completions.create = create
-        orch = Orchestrator(project, config)
-        async for _ in orch.run_task(task, wake=wake):
-            pass
+    adapter = MockAdapter([MockAdapter.text_response("ack")])
+    orch = Orchestrator(project, config, adapter=adapter)
+    async for _ in orch.run_task(task, wake=wake):
+        pass
 
-    msgs = create.call_args_list[0].kwargs["messages"]
-    user_msgs = [m for m in msgs if m["role"] == "user"]
+    msgs = _get_sent_messages(adapter)
+    user_msgs = [m for m in msgs if m.get("role") == "user"]
     assert user_msgs[0]["content"].startswith("WAKE PAYLOAD")
     full_user_text = "\n".join(m["content"] for m in user_msgs)
     assert "MASTER.md (L0)" in full_user_text
@@ -348,25 +259,23 @@ async def test_run_task_sets_run_id_during_heartbeat(
 
     captured: list[str | None] = []
 
-    async def _capture_then_complete(*args, **kwargs):  # type: ignore[no-untyped-def]
+    async def _capture_then_complete(  # type: ignore[no-untyped-def]
+        messages, tools, *, model, max_tokens, temperature=None
+    ):
         captured.append(get_current_run_id())
-        return _make_mock_response(content="ack")
+        return MockAdapter.text_response("ack")
 
     task = Task(title="run-id propagation")
     project.add_task(task)
 
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        MockClient.return_value.chat.completions.create = AsyncMock(
-            side_effect=_capture_then_complete
-        )
-        orch = Orchestrator(project, config)
-        async for _ in orch.run_task(task):
-            pass
+    adapter = MockAdapter()
+    adapter.chat = _capture_then_complete  # type: ignore[method-assign]
+    orch = Orchestrator(project, config, adapter=adapter)
+    async for _ in orch.run_task(task):
+        pass
 
-    # Each LLM call captured a non-None run_id (set by start_orchestrator_run).
     assert captured, "expected at least one LLM call"
     assert all(r is not None for r in captured), captured
-    # Same run_id across all LLM calls in the heartbeat.
     assert len(set(captured)) == 1, f"run_id changed mid-heartbeat: {captured}"
 
 
@@ -379,14 +288,11 @@ async def test_run_task_resets_run_id_after_heartbeat(
 
     task = Task(title="reset check")
     project.add_task(task)
-    mock_resp = _make_mock_response(content="done")
 
     assert get_current_run_id() is None
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        MockClient.return_value.chat.completions.create = AsyncMock(return_value=mock_resp)
-        orch = Orchestrator(project, config)
-        async for _ in orch.run_task(task):
-            pass
+    orch = _orch(project, config, [MockAdapter.text_response("done")])
+    async for _ in orch.run_task(task):
+        pass
     assert get_current_run_id() is None
 
 
@@ -394,31 +300,19 @@ async def test_run_task_resets_run_id_after_heartbeat(
 async def test_run_task_resets_run_id_after_max_iterations(
     project: Project, config: Config
 ) -> None:
-    """Max-iterations branch hits `finalize_orchestrator_run` via the finally block."""
+    """Max-iterations branch hits finalize_orchestrator_run via the finally block."""
     from cod_doc.services.run_context import get_current_run_id
 
     task = Task(title="max-iter check")
     project.add_task(task)
-    # Always return a tool-call → loop never terminates on its own.
-    tool_resp = _make_mock_response(
-        tool_calls=[_make_tool_call("read_file", {"path": "MASTER.md"})]
-    )
-    tool_resp.choices[0].message.content = None
-    tool_resp.choices[0].message.model_dump.return_value = {
-        "role": "assistant",
-        "content": None,
-        "tool_calls": [
-            {
-                "id": "call_1",
-                "function": {"name": "read_file", "arguments": '{"path": "MASTER.md"}'},
-            }
-        ],
-    }
+    config.max_iterations = 1
 
-    config.max_iterations = 1  # force the limit-hit branch quickly
-    with patch("cod_doc.agent.orchestrator.AsyncOpenAI") as MockClient:
-        MockClient.return_value.chat.completions.create = AsyncMock(return_value=tool_resp)
-        orch = Orchestrator(project, config)
-        async for _ in orch.run_task(task):
-            pass
+    # Always return a tool call so the loop never terminates on its own.
+    adapter = MockAdapter()
+    adapter.chat = AsyncMock(  # type: ignore[method-assign]
+        return_value=MockAdapter.tool_call_response("read_file", {"path": "MASTER.md"})
+    )
+    orch = Orchestrator(project, config, adapter=adapter)
+    async for _ in orch.run_task(task):
+        pass
     assert get_current_run_id() is None
