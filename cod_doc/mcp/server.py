@@ -13,6 +13,8 @@ from mcp.server.fastmcp import FastMCP
 
 from cod_doc.logging_config import setup_logging
 from cod_doc.mcp.tools import (
+    activity_tools,
+    approval_tools,
     context_tools,
     doc_tools,
     legacy_agent_tools,
@@ -26,6 +28,7 @@ from cod_doc.mcp.tools import (
     run_tools,
     skill_tools,
     story_tools,
+    task_doc_tools,
     task_tools,
 )
 
@@ -53,6 +56,12 @@ for _module in (
     run_tools,
     # PCA-003 skill.list / skill.get
     skill_tools,
+    # PCA-101 task_doc.* (task-bound docs)
+    task_doc_tools,
+    # PCA-111 activity.* (unified audit timeline)
+    activity_tools,
+    # PCA-121 approval.* (first-class approvals)
+    approval_tools,
 ):
     _module.register(mcp)
 

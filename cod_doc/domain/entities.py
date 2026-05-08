@@ -123,6 +123,7 @@ class EntityKind(StrEnum):
     DOCUMENT = "document"
     SECTION = "section"
     TASK = "task"
+    TASK_DOC = "task_doc"
     PLAN = "plan"
     STORY = "story"
     LINK = "link"

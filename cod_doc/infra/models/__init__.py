@@ -17,6 +17,8 @@ point.
 
 from __future__ import annotations
 
+from .activity import ActivityEventModel
+from .approvals import ApprovalDocRevisionLinkModel, ApprovalModel, ApprovalTaskLinkModel
 from .base import Base, _utcnow
 from .documents import DocumentModel, LinkModel, SectionModel
 from .modules import ModuleCodeModel, ModuleDependencyModel, ModuleModel
@@ -31,11 +33,16 @@ from .project import ProjectModel
 from .revisions import AgentRunModel, AuditLogModel, RevisionModel
 from .stories import StoryAcceptanceModel, StoryLinkModel, UserStoryModel
 from .tags import DocumentTagModel, StoryTagModel, TagModel, TaskTagModel
+from .task_docs import TaskDocumentModel
 from .traces import TraceCallModel
 
 __all__ = [
+    "ActivityEventModel",
     "AffectedFileModel",
     "AgentRunModel",
+    "ApprovalDocRevisionLinkModel",
+    "ApprovalModel",
+    "ApprovalTaskLinkModel",
     "AuditLogModel",
     "Base",
     "DependencyModel",
@@ -54,6 +61,7 @@ __all__ = [
     "StoryLinkModel",
     "StoryTagModel",
     "TagModel",
+    "TaskDocumentModel",
     "TaskModel",
     "TaskTagModel",
     "TraceCallModel",
