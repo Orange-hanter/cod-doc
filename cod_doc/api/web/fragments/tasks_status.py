@@ -55,6 +55,7 @@ def task_status_update(
             new_status=new_status,
             author="human:web",
             reason="web inline status",
+            strict=False,  # web UI allows direct jumps (user may skip steps)
         )
         session.commit()
     except RevisionConflictError as exc:
