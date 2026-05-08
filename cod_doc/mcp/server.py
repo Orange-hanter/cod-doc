@@ -15,6 +15,7 @@ from cod_doc.logging_config import setup_logging
 from cod_doc.mcp.tools import (
     activity_tools,
     approval_tools,
+    checkout_tools,
     context_tools,
     doc_tools,
     legacy_agent_tools,
@@ -25,6 +26,7 @@ from cod_doc.mcp.tools import (
     link_tools,
     plan_tools,
     revision_tools,
+    routine_tools,
     run_tools,
     skill_tools,
     story_tools,
@@ -62,6 +64,10 @@ for _module in (
     activity_tools,
     # PCA-121 approval.* (first-class approvals)
     approval_tools,
+    # PCA-200 task_checkout / task_release
+    checkout_tools,
+    # PCA-211 routine.* (cron-style health checks)
+    routine_tools,
 ):
     _module.register(mcp)
 

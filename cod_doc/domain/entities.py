@@ -51,6 +51,24 @@ class LinkKind(StrEnum):
 
 
 class TaskStatus(StrEnum):
+    """7-state taxonomy from proposal 08.
+
+    Legacy aliases (kept for backward compat with existing tasks/tests):
+    - PENDING ≡ TODO  (semantically — "ready to work, not picked up")
+    - IN_PROGRESS uses hyphen ("in-progress") for legacy; new code may
+      use IN_PROGRESS_NEW ("in_progress") interchangeably via the
+      state-machine normaliser.
+    """
+
+    # New canonical taxonomy (proposal 08).
+    BACKLOG = "backlog"
+    TODO = "todo"
+    IN_PROGRESS_NEW = "in_progress"
+    IN_REVIEW = "in_review"
+    BLOCKED = "blocked"
+    CANCELLED = "cancelled"
+
+    # Legacy values — still valid, mapped to new semantics.
     PENDING = "pending"
     IN_PROGRESS = "in-progress"
     DONE = "done"

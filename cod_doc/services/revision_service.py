@@ -260,6 +260,10 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
         new_status=old_status,
         author=author,
         reason=f"revert revision {model.revision_id}",
+        # Reverts may produce transitions that aren't in the forward state
+        # machine (e.g. in_progress → pending). Bypass validation since the
+        # original transition was already validated when first applied.
+        force=True,
     )
 
 

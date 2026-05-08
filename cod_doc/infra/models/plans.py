@@ -111,6 +111,11 @@ class TaskModel(Base):
     completed_commit: Mapped[str | None] = mapped_column(String(64))
     blocked_reason: Mapped[str | None] = mapped_column(Text)
     normalized_title: Mapped[str | None] = mapped_column(Text)
+    # PCA-200: atomic checkout fields. NULL = no active lock.
+    # `checked_out_by` is either an agent run_id or 'human:<id>'.
+    checked_out_by: Mapped[str | None] = mapped_column(String(128))
+    checked_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expected_status_at_checkout: Mapped[str | None] = mapped_column(String(16))
 
     plan: Mapped[PlanModel] = relationship(back_populates="tasks")
     section: Mapped[PlanSectionModel] = relationship(back_populates="tasks")

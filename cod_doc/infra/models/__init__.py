@@ -31,6 +31,7 @@ from .plans import (
 )
 from .project import ProjectModel
 from .revisions import AgentRunModel, AuditLogModel, RevisionModel
+from .routines import RoutineModel, RoutineRunModel
 from .stories import StoryAcceptanceModel, StoryLinkModel, UserStoryModel
 from .tags import DocumentTagModel, StoryTagModel, TagModel, TaskTagModel
 from .task_docs import TaskDocumentModel
@@ -56,6 +57,8 @@ __all__ = [
     "PlanSectionModel",
     "ProjectModel",
     "RevisionModel",
+    "RoutineModel",
+    "RoutineRunModel",
     "SectionModel",
     "StoryAcceptanceModel",
     "StoryLinkModel",

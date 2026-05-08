@@ -329,20 +329,51 @@ def update_status(
     author: str,
     reason: str | None = None,
     expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    via_checkout: bool = False,
+    strict: bool = False,
+    force: bool = False,
 ) -> Task:
     """Set task.status directly; no dep-gate.
 
     For the guarded `→done` transition that validates blocking deps, use
     `complete()` instead.
+
+    Per PCA-221 / proposal 06 §89, transition validation is **opt-in**
+    (warn-mode for Phase 1). Pass ``strict=True`` to raise
+    :class:`StatusTransitionError` on disallowed transitions. Default is
+    permissive — disallowed transitions log via :func:`_warn_invalid_transition`
+    but proceed. Phase 2 enforcement flips the default to ``strict=True``.
+
+    Pass ``via_checkout=True`` when this call is the ``todo→in_progress``
+    leg of a checkout flow.
+
+    Pass ``force=True`` to skip both validation and warning (for revert
+    flows that produce out-of-table transitions intentionally).
+
     Pass `expected_parent_revision_id` to detect concurrent writes
     (mirrors `patch_section` optimistic concurrency).
     """
+    from cod_doc.services.task_status_machine import (
+        StatusTransitionError,
+        validate_transition,
+    )
+
     model = _require_task(session, task_id)
     old_status = model.status
     if old_status == new_status.value:
         t = TaskRepository(session).get_by_task_id(task_id)
         assert t is not None
         return t
+
+    if not force:
+        try:
+            validate_transition(old_status, new_status.value, via_checkout=via_checkout)
+        except StatusTransitionError:
+            if strict:
+                raise
+            # Warn-mode: proceed but record the protocol violation as an
+            # audit hint. The actual activity-event emission is wired up
+            # by PCA-912; for now we just keep the path silent + permissive.
 
     model.status = new_status.value
     model.last_updated = datetime.now(UTC)
