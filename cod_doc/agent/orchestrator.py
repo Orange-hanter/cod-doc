@@ -443,7 +443,18 @@ class Orchestrator:
 
             # Запрос к LLM с retry
             try:
-                llm_messages = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
+                # PCA-002: подмешиваем триггерные SKILL.md в system-prompt
+                # на каждой итерации. Матчер чистый и кеширован, so this is
+                # cheap; в случае пустого вывода возвращается base SYSTEM_PROMPT.
+                from cod_doc.agent.skill_matcher import (
+                    compose_system_prompt,
+                    select_skills,
+                )
+
+                _system_text = compose_system_prompt(
+                    SYSTEM_PROMPT, select_skills(task)
+                )
+                llm_messages = [{"role": "system", "content": _system_text}, *messages]
                 # G1: log token budget before sending
                 approx_tokens = sum(len(str(m.get("content", ""))) for m in llm_messages) // 4
                 logger.debug(
