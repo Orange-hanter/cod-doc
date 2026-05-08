@@ -156,9 +156,17 @@ def suggest_for_section(
             config.embedding_model,
             config.embedding_backend,
         )
+        # PCA-930: explicit check — querying an empty collection raises an error.
+        if collection.count() == 0:
+            log.info(
+                "ChromaDB collection is empty — run 'cod-doc reindex' before suggest. "
+                "section_id=%s skipped.",
+                section_id,
+            )
+            return []
         results = collection.query(
             query_texts=[sec.body[:4096]],
-            n_results=min(k, 100),
+            n_results=min(k, max(1, collection.count())),
             include=["documents", "metadatas", "distances"],
         )
     except Exception as exc:

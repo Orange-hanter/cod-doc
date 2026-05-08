@@ -22,7 +22,7 @@ from cod_doc.domain.entities import DocumentStatus, DocumentType, EntityKind
 from cod_doc.services import doc_service as docs
 from cod_doc.services import import_service as imports
 from cod_doc.services import revision_service as revisions
-from cod_doc.services.import_service import scan_folder
+from cod_doc.services.import_service import import_or_update_markdown, scan_folder
 
 router = APIRouter()
 
@@ -596,14 +596,14 @@ async def docs_import_apply(
         doc_key = imports._derive_doc_key(str(fpath.relative_to(proj.entry.root)))
         fallback_title = fpath.stem
         try:
-            imports.import_markdown(
+            _, created = import_or_update_markdown(
                 session,
                 project_id=project_db_id,
                 doc_key=doc_key,
                 raw_markdown=raw,
                 fallback_title=fallback_title,
                 author="human:web",
-                reason="bulk import",
+                reason="bulk import (new)" if True else "bulk import (update)",
             )
             imported += 1
         except (ValueError, Exception) as exc:

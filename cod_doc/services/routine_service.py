@@ -25,9 +25,13 @@ Public API
 
 from __future__ import annotations
 
+import re as _re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from sqlalchemy import select, func
 
@@ -148,25 +152,139 @@ def _check_approval_stale(session: Session, project_id: int, **_: Any) -> dict[s
     return {"expired_count": len(expired_ids), "expired_ids": expired_ids}
 
 
-def _check_noop(session: Session, project_id: int, **_: Any) -> dict[str, Any]:
-    """Placeholder — real check delegates to existing MCP tool wrappers.
+def _get_project_root(session: Session, project_id: int) -> "Path | None":
+    """Return the on-disk root for a project_id via the project.root_path column."""
+    from pathlib import Path
+    from cod_doc.infra.models.project import ProjectModel
 
-    The cron daemon should bind these names to existing entry points
-    (``check_stale_refs``, ``link.verify``, ``doc.drift``, ``task.stale``).
-    Wiring those is intentionally not in PCA-211 scope; this stub keeps
-    routines runnable for tests and for the activity emission flow.
+    proj_model = session.get(ProjectModel, project_id)
+    if proj_model is None:
+        return None
+    return Path(proj_model.root_path).expanduser().resolve()
+
+
+def _check_stale_refs(session: Session, project_id: int, **_: Any) -> dict[str, Any]:
+    """PCA-920: Scan MASTER.md hybrid references; report stale/missing files.
+
+    Delegates to the same logic as the ``check_stale_refs`` MCP tool.
     """
-    return {"findings": [], "note": "noop check — daemon wiring pending"}
+    from cod_doc.core.hash_calc import LINK_PATTERN, calc_hash, check_hash
+
+    root = _get_project_root(session, project_id)
+    if root is None:
+        return {"findings": [], "note": "project not found"}
+
+    master_path = root / "MASTER.md"
+    content = master_path.read_text(encoding="utf-8") if master_path.exists() else ""
+    findings: list[dict[str, Any]] = []
+
+    for m in LINK_PATTERN.finditer(content):
+        rel = m.group("path").lstrip("/")
+        expected = m.group("hash")
+        target = root / rel
+        if not target.exists():
+            findings.append({"path": rel, "status": "BROKEN", "expected": expected})
+        elif not check_hash(target, expected):
+            actual = calc_hash(target)
+            findings.append({"path": rel, "status": "STALE", "expected": expected, "actual": actual})
+
+    return {"findings": findings, "findings_count": len(findings)}
+
+
+def _check_link_integrity(
+    session: Session,
+    project_id: int,
+    *,
+    limit: int = 500,
+    **_: Any,
+) -> dict[str, Any]:
+    """PCA-920: Verify resolved links for all sections; report broken ones.
+
+    Delegates to ``link_service.verify_section`` for each section.
+    """
+    from sqlalchemy import select as _select
+    from cod_doc.infra.models.documents import DocumentModel, SectionModel
+    from cod_doc.services import link_service
+
+    sec_ids = session.execute(
+        _select(SectionModel.row_id)
+        .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
+        .where(DocumentModel.project_id == project_id)
+        .limit(limit)
+    ).scalars().all()
+
+    total_broken = 0
+    broken_detail: list[dict[str, Any]] = []
+    for sid in sec_ids:
+        report = link_service.verify_section(session, int(sid))
+        if report.broken:
+            broken_detail.append({"section_id": sid, "broken": report.broken})
+            total_broken += report.broken
+
+    return {
+        "findings": broken_detail,
+        "findings_count": total_broken,
+        "sections_checked": len(sec_ids),
+    }
+
+
+def _check_doc_drift(
+    session: Session,
+    project_id: int,
+    *,
+    limit: int = 200,
+    **_: Any,
+) -> dict[str, Any]:
+    """PCA-920: Detect drift for all documents; report stale/missing exports.
+
+    Delegates to ``projection_service.detect_drift``.
+    """
+    from cod_doc.services import doc_service, projection_service
+
+    root = _get_project_root(session, project_id)
+    all_docs = doc_service.list_for_project(session, project_id)[:limit]
+    findings: list[dict[str, Any]] = []
+    for doc in all_docs:
+        if doc.row_id is None or root is None:
+            continue
+        try:
+            report = projection_service.detect_drift(session, doc.row_id, root_path=root)
+            if report.status.value not in ("in_sync", "no_export"):
+                findings.append({"doc_key": doc.doc_key, "status": report.status.value})
+        except Exception:
+            pass
+
+    return {"findings": findings, "findings_count": len(findings)}
+
+
+def _check_task_stale(
+    session: Session,
+    project_id: int,
+    *,
+    threshold_hours: float = 24.0,
+    **_: Any,
+) -> dict[str, Any]:
+    """PCA-920: List in-progress tasks idle longer than threshold_hours.
+
+    Delegates to ``task_service.list_stale_in_progress``.
+    """
+    from cod_doc.services import task_service
+
+    stale = task_service.list_stale_in_progress(
+        session, project_id, threshold_hours=threshold_hours
+    )
+    findings = [{"task_id": t.task_id, "title": t.title} for t in stale]
+    return {"findings": findings, "findings_count": len(findings)}
 
 
 CheckFn = Callable[..., dict[str, Any]]
 
 CHECK_CATALOG: dict[str, CheckFn] = {
     "approval_stale": _check_approval_stale,
-    "stale_refs":     _check_noop,
-    "link_integrity": _check_noop,
-    "doc_drift":      _check_noop,
-    "task_stale":     _check_noop,
+    "stale_refs":     _check_stale_refs,
+    "link_integrity": _check_link_integrity,
+    "doc_drift":      _check_doc_drift,
+    "task_stale":     _check_task_stale,
 }
 
 
@@ -341,6 +459,79 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
         session.flush()
 
     return _run_to_domain(run_row)
+
+
+# --------------------------------------------------------------------------- #
+# Scheduler tick (PCA-919)                                                     #
+# --------------------------------------------------------------------------- #
+
+_EVERY_N_MINUTES = _re.compile(r"^\*/(\d+)\s")      # */15 * * * *
+_EVERY_N_HOURS   = _re.compile(r"^0\s\*/(\d+)\s")   # 0 */2 * * *
+_DAILY           = _re.compile(r"^0\s0\s")           # 0 0 * * *
+
+
+def _cron_interval_minutes(cron: str | None) -> int:
+    """Parse a simple cron expression into an interval in minutes.
+
+    Supported patterns (no external library required):
+    - ``*/N * * * *``   → every N minutes
+    - ``0 */N * * *``   → every N hours
+    - ``0 0 * * *``     → every 1440 minutes (daily)
+
+    Unknown expressions default to 60 minutes.
+    """
+    if not cron:
+        return 60
+    if m := _EVERY_N_MINUTES.match(cron):
+        return max(1, int(m.group(1)))
+    if m := _EVERY_N_HOURS.match(cron):
+        return max(1, int(m.group(1))) * 60
+    if _DAILY.match(cron):
+        return 1440
+    return 60  # safe default for unrecognised patterns
+
+
+def tick(session: "Session", project_id: int) -> list[str]:
+    """PCA-919: Fire all overdue cron routines for a project.
+
+    Called once per daemon cycle.  For each enabled routine with
+    ``trigger='cron'``, compares the last ``started_at`` with the
+    interval derived from the ``cron`` field.  Fires via ``run_now``
+    when the interval has elapsed (or the routine has never run).
+
+    Returns the list of routine names that were fired.
+    """
+    now = datetime.now(UTC)
+    fired: list[str] = []
+
+    routines = list(session.execute(
+        select(RoutineModel).where(
+            RoutineModel.project_id == project_id,
+            RoutineModel.trigger == "cron",
+            RoutineModel.enabled.is_(True),
+        )
+    ).scalars())
+
+    for routine in routines:
+        interval = timedelta(minutes=_cron_interval_minutes(routine.cron))
+
+        last_run = session.execute(
+            select(RoutineRunModel.started_at)
+            .where(RoutineRunModel.routine_id == routine.row_id)
+            .order_by(RoutineRunModel.started_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+
+        if last_run is not None and (now - last_run) < interval:
+            continue  # not yet due
+
+        try:
+            run_now(session, project_id, routine.name)
+            fired.append(routine.name)
+        except Exception:
+            pass  # run_now handles its own error logging / status
+
+    return fired
 
 
 def history(

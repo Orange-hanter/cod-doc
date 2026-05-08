@@ -100,6 +100,16 @@ def register(mcp: FastMCP) -> None:
                     preamble=preamble,
                     reason=reason,
                 )
+                from cod_doc.services import activity_service
+                activity_service.emit(
+                    session, project_id, "doc.created",
+                    actor_kind="agent" if author.startswith("agent") else "human",
+                    actor_id=author,
+                    scope_kind="document",
+                    scope_id=doc_key,
+                    payload={"type": type, "status": status},
+                    summary=f"Document {doc_key!r} created by {author}",
+                )
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
         return doc_to_dict(d)
@@ -132,6 +142,16 @@ def register(mcp: FastMCP) -> None:
                 new_path=new_path,
                 reason=reason,
                 cascade_links=cascade_links,
+            )
+            from cod_doc.services import activity_service
+            activity_service.emit(
+                session, project_id, "doc.renamed",
+                actor_kind="agent" if author.startswith("agent") else "human",
+                actor_id=author,
+                scope_kind="document",
+                scope_id=new_key,
+                payload={"old_key": doc_key, "new_key": new_key},
+                summary=f"Document renamed {doc_key!r} → {new_key!r}",
             )
         return doc_to_dict(updated)
 

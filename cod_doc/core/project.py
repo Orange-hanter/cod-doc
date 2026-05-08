@@ -212,8 +212,17 @@ class Project:
         return None
 
     def next_pending_task(self) -> Task | None:
-        tasks = self.get_tasks(TaskStatus.PENDING)
-        return tasks[0] if tasks else None
+        # PCA-923: accept both 'pending' (legacy) and 'todo' (new taxonomy).
+        pending = self.get_tasks(TaskStatus.PENDING)
+        if pending:
+            return pending[0]
+        # 'todo' is the canonical new-taxonomy equivalent of 'pending'.
+        try:
+            todo_status = TaskStatus("todo")
+            todo = self.get_tasks(todo_status)
+            return todo[0] if todo else None
+        except ValueError:
+            return None
 
     # ── State ─────────────────────────────────────────────────────────────────
 

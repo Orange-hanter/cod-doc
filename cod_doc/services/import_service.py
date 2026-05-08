@@ -213,6 +213,71 @@ def import_markdown(
     return doc
 
 
+def import_or_update_markdown(
+    session: "Session",
+    *,
+    project_id: int,
+    doc_key: str,
+    raw_markdown: str,
+    fallback_title: str | None = None,
+    author: str = "human:web",
+    reason: str | None = None,
+) -> tuple["Document", bool]:
+    """PCA-929: Idempotent import — create new doc or update existing one.
+
+    Returns ``(document, created)`` where ``created`` is True for new docs
+    and False when an existing doc's sections were patched.
+    """
+    existing = docs.get(session, project_id, doc_key)
+    if existing is None:
+        doc = import_markdown(
+            session,
+            project_id=project_id,
+            doc_key=doc_key,
+            raw_markdown=raw_markdown,
+            fallback_title=fallback_title,
+            author=author,
+            reason=reason or "bulk import (new)",
+        )
+        return doc, True
+
+    # Doc exists — patch each section body to create a new revision.
+    assert existing.row_id is not None
+    parsed = parse_markdown(raw_markdown)
+
+    for section in parsed.sections:
+        try:
+            docs.patch_section(
+                session,
+                document_id=existing.row_id,
+                anchor=section.anchor,
+                new_body=section.body,
+                author=author,
+                reason=reason or "bulk import (update)",
+            )
+        except Exception:
+            # Section may not exist yet — add it.
+            try:
+                existing_sections = docs.get_sections(session, existing.row_id)
+                position = len(existing_sections)
+                docs.add_section(
+                    session,
+                    document_id=existing.row_id,
+                    anchor=section.anchor,
+                    heading=section.heading,
+                    level=section.level,
+                    position=position,
+                    body=section.body,
+                    author=author,
+                    reason=reason or "bulk import (new section)",
+                )
+            except Exception:
+                pass
+
+    _resolve_all_sections(session, existing.row_id)
+    return existing, False
+
+
 def _resolve_all_sections(session: "Session", document_id: int) -> None:
     """Best-effort second-pass resolve for every section of *document_id*.
 

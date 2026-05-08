@@ -305,8 +305,19 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
+                project_id = require_project_id(session, project)
                 t = task_service.set_blocker(
                     session, task_id=task_id, reason=reason, author=author
+                )
+                from cod_doc.services import activity_service
+                activity_service.emit(
+                    session, project_id, "task.blocked",
+                    actor_kind="human",
+                    actor_id=author,
+                    scope_kind="task",
+                    scope_id=task_id,
+                    payload={"reason": reason},
+                    summary=f"Task {task_id} blocked: {reason[:120]}",
                 )
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
@@ -320,13 +331,22 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Clear the external blocker on a task (no-op if already clear)."""
         from cod_doc.infra.db import transactional
-        from cod_doc.services import task_service
+        from cod_doc.services import activity_service, task_service
         from cod_doc.services.task_service import TaskNotFoundError
 
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
+                project_id = require_project_id(session, project)
                 t = task_service.clear_blocker(session, task_id=task_id, author=author)
+                activity_service.emit(
+                    session, project_id, "task.unblocked",
+                    actor_kind="human",
+                    actor_id=author,
+                    scope_kind="task",
+                    scope_id=task_id,
+                    summary=f"Task {task_id} unblocked by {author}",
+                )
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
         return task_to_dict(t)
@@ -378,18 +398,28 @@ def register(mcp: FastMCP) -> None:
         """
         from cod_doc.domain.entities import TaskStatus
         from cod_doc.infra.db import transactional
-        from cod_doc.services import task_service
+        from cod_doc.services import activity_service, task_service
         from cod_doc.services.task_service import TaskNotFoundError
 
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
+                project_id = require_project_id(session, project)
                 t = task_service.update_status(
                     session,
                     task_id=task_id,
                     new_status=TaskStatus(new_status),
                     author=author,
                     reason=reason,
+                )
+                activity_service.emit(
+                    session, project_id, "task.status_changed",
+                    actor_kind="agent" if author.startswith("agent") else "human",
+                    actor_id=author,
+                    scope_kind="task",
+                    scope_id=task_id,
+                    payload={"new_status": new_status, "reason": reason},
+                    summary=f"Task {task_id} → {new_status}",
                 )
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
@@ -407,6 +437,7 @@ def register(mcp: FastMCP) -> None:
         Raises if the task is already done or any blocker is not yet complete.
         """
         from cod_doc.infra.db import transactional
+        from cod_doc.services import activity_service
         from cod_doc.services.task_service import (
             TaskAlreadyDoneError,
             TaskBlockedError,
@@ -417,12 +448,22 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
+                project_id = require_project_id(session, project)
                 t = complete(
                     session,
                     task_id=task_id,
                     author=author,
                     commit_sha=commit_sha,
                     reason=reason,
+                )
+                activity_service.emit(
+                    session, project_id, "task.completed",
+                    actor_kind="agent" if author.startswith("agent") else "human",
+                    actor_id=author,
+                    scope_kind="task",
+                    scope_id=task_id,
+                    payload={"commit_sha": commit_sha},
+                    summary=f"Task {task_id} completed by {author}",
                 )
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None

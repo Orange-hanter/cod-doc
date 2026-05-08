@@ -76,9 +76,15 @@ class Orchestrator:
             from cod_doc.agent.adapters.registry import get_adapter_from_config
             self.adapter = get_adapter_from_config(config)
 
-        # Keep self.client as a legacy shim so any external code that still
-        # accesses orchestrator.client doesn't break immediately. Deprecated.
-        self.client = getattr(self.adapter, "_client", None)
+        # PCA-926: adapter must support tool_use (orchestrator unconditionally uses tools).
+        if not self.adapter.capabilities.tool_use:
+            raise ValueError(
+                f"Adapter {self.adapter.name!r} must support tool_use "
+                "(set capabilities.tool_use=True or switch to a compatible adapter)"
+            )
+
+        # PCA-927: legacy shim — access orchestrator.client via property below.
+        self._legacy_client = getattr(self.adapter, "_client", None)
 
         # Передаём sync-callback только в daemon/CLI режиме
         self.executor = ToolExecutor(
@@ -92,6 +98,22 @@ class Orchestrator:
         )
 
     # ── Public API ───────────────────────────────────────────────────────────
+
+    @property
+    def client(self) -> object:  # PCA-927
+        """Deprecated: access the underlying SDK client directly.
+
+        This shim exists to avoid immediate breakage in code that used
+        ``orchestrator.client``.  It will be removed in a future release;
+        use ``orchestrator.adapter`` instead.
+        """
+        import warnings
+        warnings.warn(
+            "orchestrator.client is deprecated — use orchestrator.adapter instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._legacy_client
 
     async def run_task(
         self,
@@ -656,6 +678,26 @@ async def run_daemon(config: Config, log_callback: Callable[[str], None] | None 
             except Exception as e:
                 log(f"[{entry.name}] Ошибка инициализации: {e}")
                 continue
+
+            # PCA-919: tick routine scheduler before running agent tasks.
+            try:
+                from cod_doc.infra.db import make_engine, make_session_factory, transactional
+                from cod_doc.infra.repositories import ProjectRepository
+                from cod_doc.services import routine_service
+
+                db_path = entry.cod_doc_dir / "state.db"
+                if db_path.exists():  # skip if DB not yet initialised
+                    db_url = f"sqlite:///{db_path}"
+                    engine = make_engine(db_url)
+                    sf = make_session_factory(engine)
+                    with transactional(sf) as session:
+                        proj_db = ProjectRepository(session).get_by_slug(entry.name)
+                        if proj_db and proj_db.row_id is not None:
+                            fired = routine_service.tick(session, proj_db.row_id)
+                            if fired:
+                                log(f"[{entry.name}] routines fired: {fired}")
+            except Exception as e:
+                log(f"[{entry.name}] routine tick error: {e}")
 
             orch = Orchestrator(project, config)
             async for event in orch.run_autonomous():
