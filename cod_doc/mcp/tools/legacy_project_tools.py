@@ -131,14 +131,18 @@ def register(mcp: FastMCP) -> None:
         acceptance: str | None = None,
         story_id: str | None = None,
     ) -> dict[str, Any]:
-        """Create a documentation task. Lower priority number = higher priority.
+        """DEPRECATED — use mcp__cod-doc__task_create instead.
 
-        New structured fields (optional):
-        - blocked_by: list of blocking task IDs
-        - affects_files: list of file paths this task touches
-        - acceptance: acceptance criterion (free-text)
-        - story_id: related user story ID (e.g. US-004)
+        Writes to the legacy YAML store (.cod-doc/tasks.yaml).  This tool
+        will be removed in a future release; switch to ``task_create`` which
+        persists tasks in the DB with full dependency tracking.
         """
+        import warnings
+        warnings.warn(
+            "add_task (legacy) is deprecated — use task_create (DB-backed) instead",
+            DeprecationWarning,
+            stacklevel=1,
+        )
         proj = open_project(project_name)
         task = Task(
             title=title,
@@ -152,10 +156,10 @@ def register(mcp: FastMCP) -> None:
         )
         proj.add_task(task)
         log.info(
-            "Task added via MCP",
-            extra={"project": project_name, "task_id": task.id, "event_type": "mcp_add_task"},
+            "Task added via legacy MCP (deprecated)",
+            extra={"project": project_name, "task_id": task.id, "event_type": "mcp_add_task_legacy"},
         )
-        return task.to_dict()
+        return {**task.to_dict(), "_deprecated": "Use task_create instead"}
 
     @mcp.tool()
     def update_task(
@@ -166,7 +170,17 @@ def register(mcp: FastMCP) -> None:
         description: str | None = None,
         priority: int | None = None,
     ) -> dict[str, Any]:
-        """Update fields of an existing YAML task. Only provided fields are changed."""
+        """DEPRECATED — use mcp__cod-doc__task_update_status or update_task (DB) instead.
+
+        Updates a legacy YAML task. This tool will be removed in a future
+        release; switch to the DB-backed ``task_update_status`` MCP tool.
+        """
+        import warnings
+        warnings.warn(
+            "update_task (legacy) is deprecated — use task_update_status (DB-backed) instead",
+            DeprecationWarning,
+            stacklevel=1,
+        )
         changes: dict[str, Any] = {}
         if status is not None:
             changes["status"] = status
@@ -181,7 +195,7 @@ def register(mcp: FastMCP) -> None:
         task = proj.update_task(task_id, **changes)
         if not task:
             raise ValueError(f"Задача не найдена: {task_id}")
-        return task.to_dict()
+        return {**task.to_dict(), "_deprecated": "Use task_update_status instead"}
 
     @mcp.tool()
     def next_pending_task(project_name: str) -> dict[str, Any]:

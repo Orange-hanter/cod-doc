@@ -4,18 +4,20 @@ Scope grew to cover MASTER.md preview on the project overview, in addition
 to section bodies. Block-level features:
 - ATX headings `# … ######`
 - Bullet lists (`- ` / `* `)
+- Ordered lists (`1. ` / `1) `, respects start number for resumed lists)
 - Code fences ``` … ``` (language tag discarded; preserves whitespace)
 - Blockquotes `> …` (collapsible consecutive lines)
 - GFM tables: header `|`-row + delimiter `|---|:--:|` + body rows (COD-079)
 - Paragraphs separated by blank lines
+
+What we still DO NOT render: footnotes, images, nested lists, GFM task-lists.
 
 Inline features (escaped first, then matched):
 - `code`, **bold**, *italic*, [text](url)
 - Markdown-active chars inside backticks are entity-shielded so `*foo*`
   inside `\`code\`` doesn't become italics inside <code>.
 
-What we still DO NOT render: footnotes, images, nested lists. Adopted
-instead of pulling in `markdown-it-py` (~50 KB + transitive deps) to
+Adopted instead of pulling in `markdown-it-py` (~50 KB + transitive deps) to
 honor capability §2 («no new deps without justification»).
 
 Safety: every line is HTML-escaped before any markdown pattern runs — raw
@@ -32,6 +34,7 @@ _BOLD = re.compile(r"\*\*([^*]+)\*\*")
 _ITALIC = re.compile(r"(?<!\*)\*([^*\n]+)\*(?!\*)")
 _LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
+_OL_ITEM = re.compile(r"^(\d+)[.)]\s+(.+)$")
 # GFM table delimiter cell: optional leading/trailing colon (alignment), 1+ dashes.
 _TABLE_DELIM_CELL = re.compile(r"^\s*:?-{3,}:?\s*$")
 
@@ -156,6 +159,8 @@ def render_markdown(text: str) -> str:
     fence_lines: list[str] = []
     paragraph_lines: list[str] = []
     list_items: list[str] = []
+    ol_items: list[str] = []
+    ol_start: list[int] = [1]  # mutable so inner closures can write without nonlocal
     blockquote_lines: list[str] = []
 
     def flush_paragraph() -> None:
@@ -170,6 +175,14 @@ def render_markdown(text: str) -> str:
             blocks.append(f"<ul>{rendered}</ul>")
             list_items.clear()
 
+    def flush_ol_list() -> None:
+        if ol_items:
+            rendered = "".join(f"<li>{_render_inline(item)}</li>" for item in ol_items)
+            start_attr = f' start="{ol_start[0]}"' if ol_start[0] != 1 else ""
+            blocks.append(f"<ol{start_attr}>{rendered}</ol>")
+            ol_items.clear()
+            ol_start[0] = 1
+
     def flush_blockquote() -> None:
         if blockquote_lines:
             inline = _render_inline("\n".join(blockquote_lines))
@@ -179,6 +192,7 @@ def render_markdown(text: str) -> str:
     def flush_all() -> None:
         flush_paragraph()
         flush_list()
+        flush_ol_list()
         flush_blockquote()
 
     raw_lines = text.splitlines()
@@ -236,17 +250,31 @@ def render_markdown(text: str) -> str:
         if line.startswith(">"):
             flush_paragraph()
             flush_list()
+            flush_ol_list()
             blockquote_lines.append(line[1:].lstrip(" "))
+            i += 1
+            continue
+        # Ordered list? (`1. item` or `1) item`)
+        m_ol = _OL_ITEM.match(line)
+        if m_ol:
+            flush_paragraph()
+            flush_blockquote()
+            flush_list()
+            if not ol_items:
+                ol_start[0] = int(m_ol.group(1))
+            ol_items.append(m_ol.group(2))
             i += 1
             continue
         # Bullet list?
         if line.startswith(("- ", "* ")):
             flush_paragraph()
             flush_blockquote()
+            flush_ol_list()
             list_items.append(line[2:])
             i += 1
             continue
         flush_list()
+        flush_ol_list()
         flush_blockquote()
         paragraph_lines.append(line)
         i += 1

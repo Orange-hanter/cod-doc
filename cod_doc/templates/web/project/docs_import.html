@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Bulk import · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/docs">Docs</a> /
+  <span>Bulk import</span>
+</nav>
+
+<h1>Bulk import from folder</h1>
+
+{% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<section class="card" style="margin-bottom:1rem">
+  <h2 style="margin-top:0">Scan folder</h2>
+  <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+    <label for="scan-path-input" style="white-space:nowrap">Relative path (. = project root):</label>
+    <input id="scan-path-input" type="text" value="{{ scan_path }}"
+           style="flex:1;min-width:12rem;padding:.25rem .5rem;font-family:monospace">
+    <button id="scan-btn" class="btn btn-secondary">🔍 Scan</button>
+  </div>
+  <p id="scan-status" class="muted" style="margin:.5rem 0 0"></p>
+</section>
+
+<section id="manifest-section" style="display:none">
+  <div style="display:flex;gap:.5rem;margin-bottom:.5rem;align-items:center;flex-wrap:wrap">
+    <strong id="manifest-summary"></strong>
+    <button id="sel-new" class="btn btn-secondary btn-sm">Select all NEW</button>
+    <button id="sel-changed" class="btn btn-secondary btn-sm">Select all CHANGED</button>
+    <button id="sel-none" class="btn btn-secondary btn-sm">Deselect all</button>
+  </div>
+
+  <table class="table" id="manifest-table">
+    <thead>
+      <tr>
+        <th style="width:2rem"></th>
+        <th>Status</th>
+        <th>Path</th>
+        <th>Doc key</th>
+        <th>Title</th>
+        <th>Type</th>
+      </tr>
+    </thead>
+    <tbody id="manifest-body">
+    </tbody>
+  </table>
+
+  <div style="margin-top:1rem;display:flex;gap:.5rem;align-items:center">
+    <button id="import-btn" class="btn btn-primary" disabled>📥 Import selected</button>
+    <span id="import-status" class="muted"></span>
+  </div>
+</section>
+
+<script>
+(function () {
+  const slug = {{ project.name | tojson }};
+  const scanBtn = document.getElementById('scan-btn');
+  const scanInput = document.getElementById('scan-path-input');
+  const scanStatus = document.getElementById('scan-status');
+  const manifestSection = document.getElementById('manifest-section');
+  const manifestBody = document.getElementById('manifest-body');
+  const manifestSummary = document.getElementById('manifest-summary');
+  const importBtn = document.getElementById('import-btn');
+  const importStatus = document.getElementById('import-status');
+
+  const STATUS_BADGE = {
+    new:       '<span class="badge badge-success">NEW</span>',
+    changed:   '<span class="badge badge-warning">CHANGED</span>',
+    unchanged: '<span class="badge badge-muted">UNCHANGED</span>',
+    missing:   '<span class="badge badge-error">MISSING</span>',
+  };
+
+  let manifest = [];
+
+  function updateImportBtn() {
+    const checked = manifestBody.querySelectorAll('input[type=checkbox]:checked');
+    importBtn.disabled = checked.length === 0;
+    importBtn.textContent = checked.length
+      ? `📥 Import ${checked.length} selected`
+      : '📥 Import selected';
+  }
+
+  function renderManifest(entries) {
+    manifest = entries;
+    manifestBody.innerHTML = '';
+    const counts = {new:0, changed:0, unchanged:0, missing:0};
+    entries.forEach(e => counts[e.status]++);
+    manifestSummary.textContent =
+      `${entries.length} files · ${counts.new} new · ${counts.changed} changed · ${counts.unchanged} unchanged · ${counts.missing} missing`;
+
+    entries.forEach(e => {
+      const tr = document.createElement('tr');
+      const selectable = e.status === 'new' || e.status === 'changed';
+      tr.innerHTML = `
+        <td><input type="checkbox" data-path="${escHtml(e.path)}"
+             ${selectable ? '' : 'disabled'} ${e.status === 'new' ? 'checked' : ''}></td>
+        <td>${STATUS_BADGE[e.status] || e.status}</td>
+        <td><code style="font-size:.85em">${escHtml(e.path || '—')}</code></td>
+        <td><code style="font-size:.85em">${escHtml(e.doc_key)}</code></td>
+        <td>${escHtml(e.title)}</td>
+        <td>${escHtml(e.doc_type || '—')}</td>
+      `;
+      manifestBody.appendChild(tr);
+    });
+    manifestBody.querySelectorAll('input[type=checkbox]').forEach(cb =>
+      cb.addEventListener('change', updateImportBtn)
+    );
+    manifestSection.style.display = '';
+    updateImportBtn();
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  scanBtn.addEventListener('click', async () => {
+    const path = scanInput.value.trim() || '.';
+    scanStatus.textContent = 'Scanning…';
+    scanBtn.disabled = true;
+    try {
+      const r = await fetch(`/p/${slug}/docs/import/scan?path=${encodeURIComponent(path)}`);
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      scanStatus.textContent = `Scan complete — ${data.length} files found.`;
+      renderManifest(data);
+    } catch (err) {
+      scanStatus.textContent = `Error: ${err.message}`;
+    } finally {
+      scanBtn.disabled = false;
+    }
+  });
+
+  document.getElementById('sel-new').addEventListener('click', () => {
+    manifestBody.querySelectorAll('input[type=checkbox]:not(:disabled)').forEach(cb => {
+      const path = cb.dataset.path;
+      const entry = manifest.find(e => e.path === path);
+      cb.checked = entry && entry.status === 'new';
+    });
+    updateImportBtn();
+  });
+  document.getElementById('sel-changed').addEventListener('click', () => {
+    manifestBody.querySelectorAll('input[type=checkbox]:not(:disabled)').forEach(cb => {
+      const path = cb.dataset.path;
+      const entry = manifest.find(e => e.path === path);
+      cb.checked = entry && entry.status === 'changed';
+    });
+    updateImportBtn();
+  });
+  document.getElementById('sel-none').addEventListener('click', () => {
+    manifestBody.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+    updateImportBtn();
+  });
+
+  importBtn.addEventListener('click', async () => {
+    const paths = Array.from(
+      manifestBody.querySelectorAll('input[type=checkbox]:checked')
+    ).map(cb => cb.dataset.path);
+    if (!paths.length) return;
+
+    importBtn.disabled = true;
+    importStatus.textContent = `Importing ${paths.length} files…`;
+    try {
+      const r = await fetch(`/p/${slug}/docs/import/apply`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({paths}),
+      });
+      const result = await r.json();
+      if (!r.ok) throw new Error(result.detail || JSON.stringify(result));
+      importStatus.textContent =
+        `✓ Imported ${result.imported}` +
+        (result.errors.length ? ` · ${result.errors.length} errors: ${result.errors.join('; ')}` : '');
+      // Rescan to reflect new state
+      scanBtn.click();
+    } catch (err) {
+      importStatus.textContent = `Error: ${err.message}`;
+      importBtn.disabled = false;
+    }
+  });
+
+  // Auto-scan if a path was pre-filled from URL
+  if ({{ (scan_path != '.') | tojson }}) {
+    scanBtn.click();
+  }
+})();
+</script>
+{% endblock %}

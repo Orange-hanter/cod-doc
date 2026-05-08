@@ -14,8 +14,70 @@
 
 <p class="muted">
   Stored in <code>.cod-doc/tasks.yaml</code> — predate the DB schema.
-  Read-only here; use the importer to bring them into the DB.
+  Import to migrate into the DB, or archive to dismiss this banner.
 </p>
+
+<!-- PCA-410: Migration action bar -->
+<div class="card" style="margin-bottom:1rem;padding:.75rem 1rem;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+  <button id="btn-preview" class="btn btn-secondary">🔍 Preview import</button>
+  <button id="btn-import" class="btn btn-primary">📥 Import all ({{ total }})</button>
+  <button id="btn-archive" class="btn btn-secondary" style="margin-left:auto">❄ Mark as archived</button>
+  <span id="migration-status" class="muted"></span>
+</div>
+<div id="migration-result" style="display:none;margin-bottom:1rem" class="card"></div>
+
+<script>
+(function () {
+  const slug = {{ project.name | tojson }};
+  const status = document.getElementById('migration-status');
+  const result = document.getElementById('migration-result');
+
+  async function doImport(dryRun) {
+    status.textContent = dryRun ? 'Previewing…' : 'Importing…';
+    try {
+      const r = await fetch(
+        `/p/${slug}/tasks/legacy/import${dryRun ? '?dry_run=true' : ''}`,
+        {method: 'POST'}
+      );
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+      const tag = dryRun ? '(dry-run)' : '';
+      status.textContent = `${dryRun ? 'Preview' : 'Done'}: ${data.imported} imported, ${data.skipped} skipped ${tag}`;
+      result.style.display = '';
+      result.innerHTML = `<strong>${dryRun ? 'Preview (no changes written)' : 'Import result'}</strong>
+        <ul style="margin:.5rem 0 0">
+          <li>Would import / imported: <strong>${data.imported}</strong></li>
+          <li>Skipped: ${data.skipped}</li>
+          ${data.errors.length ? `<li style="color:var(--color-error)">Errors: ${data.errors.join('; ')}</li>` : ''}
+          ${data.plan_scope ? `<li>Plan scope: <code>${data.plan_scope}</code></li>` : ''}
+        </ul>
+        ${!dryRun && data.imported > 0 ? `<p><a href="/p/${slug}/tasks">→ View imported tasks</a></p>` : ''}`;
+      if (!dryRun && data.imported > 0) setTimeout(() => location.reload(), 3000);
+    } catch (e) {
+      status.textContent = `Error: ${e.message}`;
+    }
+  }
+
+  document.getElementById('btn-preview').addEventListener('click', () => doImport(true));
+  document.getElementById('btn-import').addEventListener('click', async () => {
+    if (!confirm(`Import all {{ total }} legacy tasks into the DB?\nThis can be undone via git if needed.`)) return;
+    await doImport(false);
+  });
+  document.getElementById('btn-archive').addEventListener('click', async () => {
+    if (!confirm('Mark tasks.yaml as archived? The file is renamed, not deleted.')) return;
+    status.textContent = 'Archiving…';
+    try {
+      const r = await fetch(`/p/${slug}/tasks/legacy/archive`, {method: 'POST'});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+      status.textContent = 'Archived. Redirecting…';
+      setTimeout(() => location.href = `/p/${slug}/tasks`, 1500);
+    } catch (e) {
+      status.textContent = `Error: ${e.message}`;
+    }
+  });
+})();
+</script>
 
 <form class="filter-bar" method="get" action="/p/{{ project.name }}/tasks/legacy">
   <label>Status:

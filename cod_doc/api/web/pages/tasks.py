@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db, try_open_project_db
@@ -129,6 +129,73 @@ def tasks_legacy_list(
             "legacy_status_options": LEGACY_TASK_STATUS_OPTIONS,
         },
     )
+
+
+@router.post("/p/{slug}/tasks/legacy/import")
+def legacy_tasks_import(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    dry_run: bool = Query(default=False),
+) -> JSONResponse:
+    """PCA-410: Migrate (or preview) legacy YAML tasks → DB.
+
+    With ``?dry_run=true`` the session is rolled back and a diff is returned
+    without writing anything.  Without it, tasks are committed.
+
+    Returns JSON:
+    ``{"imported": N, "skipped": N, "errors": [...], "plan_scope": "...", "dry_run": bool}``
+    """
+    from cod_doc.services import restate_importer
+
+    proj = get_project(slug)
+    session, project_db_id = db
+
+    yaml_path = proj.entry.cod_doc_dir / "tasks.yaml"
+    if not yaml_path.exists():
+        archived = proj.entry.cod_doc_dir / "tasks.archived.yaml"
+        if archived.exists():
+            raise HTTPException(409, "tasks.yaml already archived — legacy tasks already migrated")
+        raise HTTPException(404, "tasks.yaml not found in .cod-doc/")
+
+    summary = restate_importer.import_legacy_tasks(
+        session,
+        yaml_path=yaml_path,
+        project_id=project_db_id,
+        author="human:web",
+    )
+
+    if dry_run:
+        session.rollback()
+    else:
+        session.commit()
+
+    result = summary.to_dict()
+    result["dry_run"] = dry_run
+    return JSONResponse(result)
+
+
+@router.post("/p/{slug}/tasks/legacy/archive")
+def legacy_tasks_archive(
+    request: Request,
+    slug: str,
+) -> JSONResponse:
+    """PCA-410: Rename tasks.yaml → tasks.archived.yaml to mark as archived.
+
+    Idempotent: if already archived returns 200 with archived=true.
+    """
+    proj = get_project(slug)
+    yaml_path = proj.entry.cod_doc_dir / "tasks.yaml"
+    archived_path = proj.entry.cod_doc_dir / "tasks.archived.yaml"
+
+    if archived_path.exists():
+        return JSONResponse({"archived": True, "message": "Already archived"})
+
+    if not yaml_path.exists():
+        raise HTTPException(404, "tasks.yaml not found")
+
+    yaml_path.rename(archived_path)
+    return JSONResponse({"archived": True, "path": str(archived_path)})
 
 
 @router.get("/p/{slug}/tasks/{task_id}", response_class=HTMLResponse)

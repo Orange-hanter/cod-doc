@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from cod_doc.domain.entities import DocumentStatus, DocumentType, EntityKind
 from cod_doc.services import doc_service as docs
 from cod_doc.services import import_service as imports
 from cod_doc.services import revision_service as revisions
+from cod_doc.services.import_service import scan_folder
 
 router = APIRouter()
 
@@ -498,6 +499,125 @@ def docs_import(
     return RedirectResponse(
         url=f"/p/{proj.entry.name}/docs/{doc.doc_key}", status_code=303
     )
+
+
+@router.get("/p/{slug}/docs/import/scan")
+def docs_import_scan(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    path: str = Query(default="."),
+) -> JSONResponse:
+    """PCA-400: Scan project folder and return manifest diff vs DB.
+
+    Returns a JSON array of manifest entries:
+    ``[{path, doc_key, title, doc_type, sha256_head, status, reason}]``
+    where ``status`` ∈ ``new | changed | unchanged | missing``.
+    """
+    proj = get_project(slug)
+    session, project_db_id = db
+    try:
+        entries = scan_folder(
+            session,
+            project_id=project_db_id,
+            root=proj.entry.root,
+            sub_dir=path,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    return JSONResponse([
+        {
+            "path": e.path,
+            "doc_key": e.doc_key,
+            "title": e.title,
+            "doc_type": e.doc_type,
+            "sha256_head": e.sha256_head,
+            "status": e.status,
+            "reason": e.reason,
+        }
+        for e in entries
+    ])
+
+
+@router.get("/p/{slug}/docs/import", response_class=HTMLResponse)
+def docs_import_page(
+    request: Request,
+    slug: str,
+    path: str = Query(default="."),
+) -> HTMLResponse:
+    """PCA-401: Bulk import UI — folder manifest with checkboxes."""
+    proj = get_project(slug)
+    return templates.TemplateResponse(
+        "project/docs_import.html",
+        {
+            "request": request,
+            "project": proj.entry,
+            "scan_path": path,
+            "slug": slug,
+        },
+    )
+
+
+@router.post("/p/{slug}/docs/import/apply", response_class=HTMLResponse)
+async def docs_import_apply(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> Response:
+    """PCA-401: Apply selected files from the bulk-import manifest.
+
+    Expects a JSON body ``{"paths": ["rel/path/file.md", ...]}``.
+    Each file is parsed and imported (idempotent: reimport = new revision).
+    Returns a JSON summary ``{"imported": N, "errors": [...]}``.
+    """
+    proj = get_project(slug)
+    session, project_db_id = db
+
+    body = await request.json()
+    paths: list[str] = body.get("paths", [])
+    if not paths:
+        raise HTTPException(400, "paths must be a non-empty list")
+
+    imported = 0
+    errors: list[str] = []
+
+    for rel_path in paths:
+        fpath = proj.entry.root / rel_path
+        if not fpath.is_file():
+            errors.append(f"{rel_path}: file not found")
+            continue
+        try:
+            raw = fpath.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            errors.append(f"{rel_path}: {exc}")
+            continue
+
+        doc_key = imports._derive_doc_key(str(fpath.relative_to(proj.entry.root)))
+        fallback_title = fpath.stem
+        try:
+            imports.import_markdown(
+                session,
+                project_id=project_db_id,
+                doc_key=doc_key,
+                raw_markdown=raw,
+                fallback_title=fallback_title,
+                author="human:web",
+                reason="bulk import",
+            )
+            imported += 1
+        except (ValueError, Exception) as exc:
+            session.rollback()
+            errors.append(f"{rel_path}: {exc}")
+            continue
+
+    try:
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        raise HTTPException(500, f"Commit failed: {exc}") from exc
+
+    return JSONResponse({"imported": imported, "errors": errors})
 
 
 @router.get("/p/{slug}/docs/{doc_key:path}", response_class=HTMLResponse)

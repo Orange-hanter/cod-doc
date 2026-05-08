@@ -302,3 +302,94 @@ def link_verify(ctx: click.Context, doc_key: str, project: str, anchor: str, as_
     )
     if report.broken:
         sys.exit(1)
+
+
+@link.command("suggest")
+@click.argument("project")
+@click.option("--threshold", type=float, default=0.78, show_default=True,
+              help="Minimum similarity score for a suggestion to be stored.")
+@click.option("--apply-above", type=float, default=None,
+              help="Auto-accept suggestions scoring above this value.")
+@click.option("--dry-run", is_flag=True, default=False,
+              help="Preview only — do not write to the database.")
+@click.option("--doc-key", default=None,
+              help="Limit to one document's sections instead of whole project.")
+@click.pass_context
+def link_suggest(
+    ctx: click.Context,
+    project: str,
+    threshold: float,
+    apply_above: float | None,
+    dry_run: bool,
+    doc_key: str | None,
+) -> None:
+    """PCA-422: Generate semantic link suggestions for a project.
+
+    Uses ChromaDB embeddings to find candidate link targets for sections
+    that have no outgoing links. Suggestions are stored in link_suggestion
+    and can be accepted/rejected from the web UI or MCP.
+    """
+    from cod_doc.config import Config
+    from cod_doc.services.link_service import semantic
+
+    cfg = Config.load()
+    session_factory, project_id_fn = _make_session(project, cfg)
+
+    from cod_doc.infra.db import transactional
+
+    with transactional(session_factory) as session:
+        try:
+            from cod_doc.infra.repositories import ProjectRepository
+            project_id = ProjectRepository(session).get_id_by_name(project)
+        except Exception:
+            project_id = None
+
+        if project_id is None:
+            console.print(f"[red]Project not found in DB: {project}[/red]")
+            sys.exit(1)
+
+        if doc_key:
+            from sqlalchemy import select
+            from cod_doc.infra.models.documents import DocumentModel, SectionModel
+
+            doc_stmt = select(DocumentModel.row_id).where(
+                DocumentModel.project_id == project_id,
+                DocumentModel.doc_key == doc_key,
+            )
+            doc_row_id = session.execute(doc_stmt).scalar_one_or_none()
+            if doc_row_id is None:
+                console.print(f"[red]Document not found: {doc_key}[/red]")
+                sys.exit(1)
+            sec_ids = session.execute(
+                select(SectionModel.row_id).where(SectionModel.document_id == doc_row_id)
+            ).scalars().all()
+            total_suggestions = 0
+            for sid in sec_ids:
+                suggs = semantic.suggest_for_section(
+                    session, int(sid), cfg,
+                    threshold=threshold, dry_run=dry_run,
+                )
+                total_suggestions += len(suggs)
+            result_summary = {"sections_processed": len(sec_ids), "suggestions_created": total_suggestions}
+        else:
+            result = semantic.backfill_project(
+                session, project_id, cfg,
+                apply_above=apply_above,
+                dry_run=dry_run,
+                threshold=threshold,
+            )
+            result_summary = result.to_dict()
+
+        if not dry_run:
+            session.commit()
+
+    tag = " [dim](dry-run)[/dim]" if dry_run else ""
+    console.print(
+        f"[green]Semantic suggest complete{tag}[/green]\n"
+        f"  Sections processed: {result_summary.get('sections_processed', '?')}\n"
+        f"  Suggestions created/updated: {result_summary.get('suggestions_created', '?')}"
+    )
+    if result_summary.get("errors"):
+        console.print(f"[yellow]Errors ({len(result_summary['errors'])}):[/yellow]")
+        for e in result_summary["errors"][:10]:
+            console.print(f"  [red]{e}[/red]")

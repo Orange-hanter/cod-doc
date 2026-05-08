@@ -186,6 +186,12 @@ class Project:
         return sorted(tasks, key=lambda t: t.priority)
 
     def add_task(self, task: Task) -> Task:
+        archived = self._tasks_file.with_suffix(".archived.yaml")
+        if archived.exists():
+            raise RuntimeError(
+                "Legacy tasks.yaml has been archived. "
+                "Use the DB-backed task_create tool instead."
+            )
         tasks = self._load_tasks()
         tasks.append(task)
         self._save_tasks(tasks)

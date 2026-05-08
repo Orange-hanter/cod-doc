@@ -126,3 +126,30 @@ def register(mcp: FastMCP) -> None:
             "broken": report.broken,
             "skipped": report.skipped,
         }
+
+    @mcp.tool(name="link_suggest_for_section")
+    def link_suggest_for_section(
+        project: str,
+        doc_key: str,
+        anchor: str,
+        dry_run: bool = True,
+    ) -> list[dict[str, Any]]:
+        """PCA-422: Generate semantic link suggestions for one section.
+
+        Uses the ChromaDB embedding index to find candidate link targets.
+        When dry_run=True (default) suggestions are returned but not stored.
+        Set dry_run=False to persist them in the link_suggestion table.
+        """
+        from cod_doc.config import Config
+        from cod_doc.infra.db import transactional
+        from cod_doc.services.link_service import semantic
+
+        cfg = Config.load()
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            sec_id = _resolve_section_id(session, project_id, doc_key, anchor)
+            suggestions = semantic.suggest_for_section(
+                session, sec_id, cfg, dry_run=dry_run
+            )
+        return suggestions

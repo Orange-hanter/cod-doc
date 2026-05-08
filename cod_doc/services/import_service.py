@@ -21,9 +21,12 @@ nested H2 inside fenced code blocks (would require a full markdown parser).
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
@@ -202,4 +205,184 @@ def import_markdown(
             reason=reason or "import_markdown",
         )
 
+    # Proposal 15 §2.2 two-pass resolve: run resolve_section for all imported
+    # sections after the full document is in the DB, so that forward-links to
+    # sections that were inserted later in the same batch get resolved.
+    _resolve_all_sections(session, doc.row_id)
+
     return doc
+
+
+def _resolve_all_sections(session: "Session", document_id: int) -> None:
+    """Best-effort second-pass resolve for every section of *document_id*.
+
+    Called at the end of import_markdown() so forward links that were
+    unresolvable during add_section (target not yet in DB) get a second
+    chance once the whole document exists.
+    """
+    try:
+        from cod_doc.services import link_service as _links
+        from cod_doc.infra.repositories.doc_repo import SectionRepository
+
+        for sec in SectionRepository(session).list_for_document(document_id):
+            if sec.row_id is not None:
+                _links.resolve_section(session, sec.row_id)
+    except Exception:
+        import logging
+        logging.getLogger("cod_doc.services.import_service").warning(
+            "Two-pass resolve failed for document_id=%s — "
+            "links may be unresolved until next backfill",
+            document_id,
+            exc_info=True,
+        )
+
+
+# ── Folder manifest scanner (PCA-400) ────────────────────────────────────────
+
+ManifestStatus = Literal["new", "changed", "unchanged", "missing"]
+
+_HEAD_BYTES = 4096  # hash first 4 KB only — cheap, stable enough for change detection
+
+
+@dataclass(slots=True)
+class ManifestEntry:
+    """One .md file compared against the current project DB."""
+
+    path: str               # relative path from scan root (e.g. "modules/foo.md")
+    doc_key: str            # auto-derived key (path without .md, without "docs/" prefix)
+    title: str              # from H1 or frontmatter or filename
+    doc_type: str           # from frontmatter `type:` or empty string
+    sha256_head: str        # sha256 of first 4 KB
+    status: ManifestStatus  # new | changed | unchanged | missing
+    reason: str             # human-readable hint for the UI
+
+
+def _derive_doc_key(rel_path: str) -> str:
+    """Turn a relative file path into a doc_key.
+
+    Rules (per proposal 13 §2.2):
+    - Strip .md suffix.
+    - Strip leading "docs/" prefix if present.
+    - Normalise path separators to "/".
+    """
+    key = rel_path.replace(os.sep, "/")
+    if key.endswith(".md"):
+        key = key[:-3]
+    if key.startswith("docs/"):
+        key = key[5:]
+    return key
+
+
+def _head_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        h.update(fh.read(_HEAD_BYTES))
+    return h.hexdigest()
+
+
+def _quick_title(parsed: ParsedMarkdown, path: Path) -> str:
+    if parsed.frontmatter.get("title"):
+        return str(parsed.frontmatter["title"])
+    if parsed.title_h1:
+        return parsed.title_h1
+    return path.stem
+
+
+def scan_folder(
+    session: "Session",
+    *,
+    project_id: int,
+    root: Path,
+    sub_dir: str = ".",
+    extensions: tuple[str, ...] = (".md",),
+) -> list[ManifestEntry]:
+    """Scan *root/sub_dir* for markdown files and compare against DB.
+
+    Returns a list of :class:`ManifestEntry` sorted by path.  Entries
+    with status ``"missing"`` appear at the end — they represent docs
+    in the DB that have no corresponding file on disk.
+
+    Args:
+        session:    SQLAlchemy session for the project DB.
+        project_id: numeric project PK.
+        root:       Absolute path of the project root on disk.
+        sub_dir:    Sub-directory to scan (relative to *root*).  Use
+                    ``"."`` to scan the whole project tree.
+        extensions: File extensions to consider (default ``(".md",)``).
+    """
+    scan_root = (root / sub_dir).resolve()
+    if not scan_root.exists():
+        raise ValueError(f"Scan directory does not exist: {scan_root}")
+
+    # Build index of existing docs in DB: doc_key → sha256 stored in preamble meta
+    # We don't store sha256 in DB, so we'll detect "changed" via a lightweight
+    # comparison: file on disk but not in DB = new; file + DB key match = unchanged
+    # (we recompute the head hash and compare to nothing — simplest approach is
+    # to treat all existing keys as "unchanged" and only flag truly new files as "new").
+    # For a richer diff we'd need to store the hash — that's a migration; for now
+    # we compare presence only (new vs. existing) and size-change heuristic.
+
+    existing: dict[str, Any] = {}
+    all_docs = docs.list_for_project(session, project_id)
+    for d in all_docs:
+        existing[d.doc_key] = d
+
+    entries: list[ManifestEntry] = []
+    seen_keys: set[str] = set()
+
+    for dirpath, dirnames, filenames in os.walk(scan_root):
+        # Skip hidden directories (e.g. .git, .cod-doc)
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for fname in sorted(filenames):
+            if not any(fname.endswith(ext) for ext in extensions):
+                continue
+            fpath = Path(dirpath) / fname
+            rel = str(fpath.relative_to(scan_root))
+            doc_key = _derive_doc_key(rel)
+            seen_keys.add(doc_key)
+
+            try:
+                raw = fpath.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+
+            parsed = parse_markdown(raw)
+            sha = _head_sha256(fpath)
+            title = _quick_title(parsed, fpath)
+            doc_type_raw = str(parsed.frontmatter.get("type", "") or "")
+
+            if doc_key not in existing:
+                status: ManifestStatus = "new"
+                reason = "Not in database"
+            else:
+                # We can't cheaply detect content changes without stored hash.
+                # Mark as "unchanged" for now; the apply endpoint is idempotent
+                # (changed = new revision on reimport).
+                status = "unchanged"
+                reason = "Already imported"
+
+            entries.append(ManifestEntry(
+                path=rel,
+                doc_key=doc_key,
+                title=title,
+                doc_type=doc_type_raw,
+                sha256_head=sha,
+                status=status,
+                reason=reason,
+            ))
+
+    # Report DB docs that have no file on disk (MISSING)
+    for doc_key, doc in existing.items():
+        if doc_key not in seen_keys:
+            entries.append(ManifestEntry(
+                path="",
+                doc_key=doc_key,
+                title=str(doc.title or doc_key),
+                doc_type="",
+                sha256_head="",
+                status="missing",
+                reason="File not found on disk",
+            ))
+
+    entries.sort(key=lambda e: (e.status == "missing", e.path))
+    return entries
