@@ -58,22 +58,34 @@ def _bootstrap_default_routines(session, project_id: int) -> None:  # type: igno
 
     Default routines:
     - approval_stale (every 15 min): auto-expire pending approvals past expires_at.
+
+    Uses an explicit existence check (instead of try/except + UniqueConstraint)
+    because IntegrityError invalidates the surrounding session.
     """
+    from sqlalchemy import select
+    from cod_doc.infra.models import RoutineModel
     from cod_doc.services import routine_service
-    try:
-        routine_service.create(
-            session,
-            project_id=project_id,
-            name="approval_stale_default",
-            check_name="approval_stale",
-            trigger="cron",
-            cron="*/15 * * * *",
-            on_finding="comment_only",
-            enabled=True,
+
+    existing = session.execute(
+        select(RoutineModel.row_id)
+        .where(
+            RoutineModel.project_id == project_id,
+            RoutineModel.name == "approval_stale_default",
         )
-    except Exception:
-        # Already exists (UniqueConstraint on project_id+name) — idempotent.
-        pass
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+
+    routine_service.create(
+        session,
+        project_id=project_id,
+        name="approval_stale_default",
+        check_name="approval_stale",
+        trigger="cron",
+        cron="*/15 * * * *",
+        on_finding="comment_only",
+        enabled=True,
+    )
 
 
 def init_project(entry: ProjectEntry) -> InitResult:
