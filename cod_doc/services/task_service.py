@@ -398,6 +398,24 @@ def update_status(
             old=old_status,
             new=new_status.value,
         )
+
+    # PCA-912 (extension): persist to activity_event so CLI/programmatic
+    # callers participate in the audit timeline (the MCP wrapper used to be
+    # the only emit site).
+    try:
+        from cod_doc.services import activity_service
+        activity_service.emit(
+            session, model.project_id, "task.status_changed",
+            actor_kind="agent" if author.startswith("agent") else "human",
+            actor_id=author,
+            scope_kind="task",
+            scope_id=task_id,
+            payload={"old_status": old_status, "new_status": new_status.value, "reason": reason},
+            summary=f"Task {task_id}: {old_status} → {new_status.value}",
+        )
+    except Exception:
+        pass
+
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t
@@ -546,6 +564,24 @@ def complete(
         reason=reason or "complete",
         expected_parent_revision_id=expected_parent_revision_id,
     )
+
+    # PCA-912 (extension): emit activity event from the service layer so
+    # CLI / programmatic callers don't bypass the audit timeline.  The MCP
+    # wrapper used to do this; moving the emit here covers all entry points.
+    try:
+        from cod_doc.services import activity_service
+        activity_service.emit(
+            session, model.project_id, "task.completed",
+            actor_kind="agent" if author.startswith("agent") else "human",
+            actor_id=author,
+            scope_kind="task",
+            scope_id=task_id,
+            payload={"commit_sha": commit_sha, "reason": reason},
+            summary=f"Task {task_id} completed by {author}",
+        )
+    except Exception:  # never break completion on audit-emit failure
+        pass
+
     # COD-022: signal plan staleness so callers know projection may be outdated.
     plan_model = session.get(PlanModel, model.plan_id)
     if plan_model is not None:
