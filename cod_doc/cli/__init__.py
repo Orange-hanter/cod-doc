@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import click
 
+from cod_doc.cli.cmd_adapter import adapter
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_audit import audit
 from cod_doc.cli.cmd_hash import hash
@@ -97,6 +98,7 @@ main.add_command(link)
 main.add_command(revision)
 main.add_command(audit)
 main.add_command(import_cmd)
+main.add_command(adapter)
 
 
 if __name__ == "__main__":

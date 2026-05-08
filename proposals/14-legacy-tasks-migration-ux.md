@@ -1,5 +1,5 @@
 ---
-status: draft
+status: implemented
 type: ux-proposal
 author: human:dakh
 date: 2026-05-06

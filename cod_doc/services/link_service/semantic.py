@@ -348,6 +348,68 @@ def list_suggestions(
     ]
 
 
+def list_suggestions_for_document(
+    session: "Session",
+    *,
+    project_id: int,
+    document_id: int,
+    state: str = "pending",
+) -> list[dict[str, Any]]:
+    """Return suggestion rows grouped per section for a single document.
+
+    Each row carries ``section_id`` so the caller can group by section.
+    Used by the web doc-show page to render the «Suggested links» panel.
+    """
+    from sqlalchemy import select
+    from cod_doc.infra.models.documents import SectionModel
+    from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
+
+    sec_ids = session.execute(
+        select(SectionModel.row_id).where(SectionModel.document_id == document_id)
+    ).scalars().all()
+    if not sec_ids:
+        return []
+
+    rows = session.execute(
+        select(LinkSuggestionModel)
+        .where(
+            LinkSuggestionModel.from_section_id.in_(sec_ids),
+            LinkSuggestionModel.state == state,
+        )
+        .order_by(
+            LinkSuggestionModel.from_section_id,
+            LinkSuggestionModel.score.desc(),
+        )
+    ).scalars().all()
+
+    return [
+        {
+            "row_id": r.row_id,
+            "from_section_id": r.from_section_id,
+            "to_doc_key": r.to_doc_key,
+            "to_section_id": r.to_section_id,
+            "score": r.score,
+        }
+        for r in rows
+    ]
+
+
+def get_suggestion(session: "Session", row_id: int) -> dict[str, Any] | None:
+    """Return a single suggestion row as a plain dict, or None."""
+    from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
+    r = session.get(LinkSuggestionModel, row_id)
+    if r is None:
+        return None
+    return {
+        "row_id": r.row_id,
+        "from_section_id": r.from_section_id,
+        "to_doc_key": r.to_doc_key,
+        "to_section_id": r.to_section_id,
+        "score": r.score,
+        "state": r.state,
+    }
+
+
 def update_suggestion_state(
     session: "Session",
     row_id: int,

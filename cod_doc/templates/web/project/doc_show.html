@@ -137,4 +137,94 @@
     </section>
   </div>
 </section>
+
+{# PCA-422 UI: semantic link suggestions panel #}
+<section class="task-card doc-suggestions" style="margin-top:1rem">
+  <header style="display:flex;align-items:center;gap:.5rem">
+    <h2 style="margin:0">💡 Suggested links</h2>
+    <span class="muted" id="sugg-count">
+      {% set total = namespace(n=0) %}
+      {% for grp in suggestions_by_section %}{% set total.n = total.n + (grp.items | length) %}{% endfor %}
+      {{ total.n }} pending
+    </span>
+    <button id="run-suggestions-btn" class="btn btn-secondary btn-sm" style="margin-left:auto">
+      🔍 Run suggestions
+    </button>
+  </header>
+  <p class="muted" style="margin:.5rem 0">
+    Semantic candidates based on the ChromaDB embedding index. Accepting
+    appends the link to a managed «See also» block in the source section.
+  </p>
+
+  {% if suggestions_by_section %}
+    {% for grp in suggestions_by_section %}
+      <div style="margin-top:.75rem">
+        <strong>§ {{ grp.section_heading }}</strong>
+        <ul class="suggestion-list" style="list-style:none;padding-left:1rem">
+          {% for s in grp.items %}
+            <li id="sugg-row-{{ s.row_id }}" style="margin:.25rem 0;display:flex;gap:.5rem;align-items:center">
+              <code style="font-size:.85em">{{ s.to_doc_key }}</code>
+              <span class="muted">score {{ s.score }}</span>
+              <button class="btn btn-success btn-sm sugg-accept" data-row-id="{{ s.row_id }}">✓ Accept</button>
+              <button class="btn btn-secondary btn-sm sugg-reject" data-row-id="{{ s.row_id }}">✗ Reject</button>
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">No pending suggestions. Click «Run suggestions» to generate from the embedding index.</p>
+  {% endif %}
+  <p id="sugg-status" class="muted" style="margin-top:.5rem"></p>
+</section>
+
+<script>
+(function () {
+  const slug = {{ project.name | tojson }};
+  const docKey = {{ doc.doc_key | tojson }};
+  const status = document.getElementById('sugg-status');
+
+  document.getElementById('run-suggestions-btn').addEventListener('click', async () => {
+    status.textContent = 'Running suggester (this may take a few seconds)…';
+    try {
+      const fd = new FormData();
+      fd.append('doc_key', docKey);
+      const r = await fetch(`/p/${slug}/suggestions/run`, {method: 'POST', body: fd});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+      status.textContent = `Processed ${data.sections_processed} section(s); created ${data.suggestions_created} suggestions.`;
+      if (data.suggestions_created > 0) setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+      status.textContent = 'Error: ' + e.message;
+    }
+  });
+
+  async function actOnSuggestion(rowId, action) {
+    status.textContent = `${action === 'accept' ? 'Accepting' : 'Rejecting'} suggestion #${rowId}…`;
+    try {
+      const r = await fetch(`/p/${slug}/suggestions/${rowId}/${action}`, {method: 'POST'});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+      const row = document.getElementById('sugg-row-' + rowId);
+      if (row) row.remove();
+      status.textContent = `Suggestion #${rowId} ${action}ed.`;
+      const remaining = document.querySelectorAll('.suggestion-list li').length;
+      document.getElementById('sugg-count').textContent = remaining + ' pending';
+      if (action === 'accept') {
+        // Body changed — reload to pick up the new See-also block.
+        setTimeout(() => location.reload(), 800);
+      }
+    } catch (e) {
+      status.textContent = 'Error: ' + e.message;
+    }
+  }
+
+  document.querySelectorAll('.sugg-accept').forEach(b =>
+    b.addEventListener('click', () => actOnSuggestion(b.dataset.rowId, 'accept'))
+  );
+  document.querySelectorAll('.sugg-reject').forEach(b =>
+    b.addEventListener('click', () => actOnSuggestion(b.dataset.rowId, 'reject'))
+  );
+})();
+</script>
 {% endblock %}

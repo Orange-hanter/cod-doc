@@ -186,6 +186,19 @@ def list_for_project(session: Session, project_id: int) -> list[Document]:
     return DocumentRepository(session).list_for_project(project_id)
 
 
+def get_section_by_id(session: Session, section_id: int) -> Section | None:
+    """Return one Section domain object by its row_id, or None."""
+    sec_model = session.get(SectionModel, section_id)
+    if sec_model is None:
+        return None
+    return SectionRepository(session).get(sec_model.row_id)
+
+
+def get_doc_by_id(session: Session, document_id: int) -> Document | None:
+    """Return one Document domain object by its row_id, or None."""
+    return DocumentRepository(session).get(document_id)
+
+
 def get_sections(session: Session, document_id: int) -> list[Section]:
     return SectionRepository(session).list_for_document(document_id)
 

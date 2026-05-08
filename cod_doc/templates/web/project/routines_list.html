@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Routines · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Routines</span>
+</nav>
+
+<h1>Routines</h1>
+
+{% with slug=project.name, active="routines" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<p class="muted">
+  Cron-style health checks. Wired into the daemon scheduler — see
+  <code>routine_service.tick()</code> and the 5 built-in checks
+  (approval_stale, stale_refs, link_integrity, doc_drift, task_stale).
+</p>
+
+{% if routines %}
+<table class="grid">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Check</th>
+      <th>Cron</th>
+      <th>On finding</th>
+      <th>Enabled</th>
+      <th>Last run</th>
+      <th>Findings</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in routines %}
+      <tr id="routine-{{ r.name }}">
+        <td><strong>{{ r.name }}</strong></td>
+        <td><code>{{ r.check_name }}</code></td>
+        <td class="mono">{{ r.cron or "—" }}</td>
+        <td>{{ r.on_finding }}</td>
+        <td>
+          <span class="badge badge-{{ 'success' if r.enabled else 'muted' }}">
+            {{ "ON" if r.enabled else "OFF" }}
+          </span>
+        </td>
+        <td class="mono">{{ r.last_run_at.strftime("%Y-%m-%d %H:%M") if r.last_run_at else "—" }}</td>
+        <td class="num">
+          {% if r.last_findings is not none %}
+            <span class="badge badge-{{ 'warning' if r.last_findings else 'success' }}">
+              {{ r.last_findings }}
+            </span>
+          {% else %} — {% endif %}
+        </td>
+        <td>
+          <button class="btn btn-sm btn-secondary" data-action="run" data-name="{{ r.name }}">▶ Run now</button>
+          <button class="btn btn-sm btn-secondary" data-action="toggle" data-name="{{ r.name }}">
+            {{ "Disable" if r.enabled else "Enable" }}
+          </button>
+          <button class="btn btn-sm btn-secondary" data-action="delete" data-name="{{ r.name }}">🗑</button>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No routines yet. Create one below.</p>
+{% endif %}
+
+<details style="margin-top:1.5rem">
+  <summary><strong>+ Create routine</strong></summary>
+  <form method="post" action="/p/{{ project.name }}/routines/create" class="settings-form" style="margin-top:.75rem">
+    <label class="field">
+      <span class="label">Name</span>
+      <input type="text" name="name" required placeholder="my_check">
+    </label>
+    <label class="field">
+      <span class="label">Check</span>
+      <select name="check_name" required>
+        {% for c in available_checks %}
+          <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span class="label">Cron (e.g. <code>*/15 * * * *</code>)</span>
+      <input type="text" name="cron" value="*/15 * * * *">
+    </label>
+    <label class="field">
+      <span class="label">On finding</span>
+      <select name="on_finding">
+        {% for opt in on_finding_options %}
+          <option value="{{ opt }}" {% if opt == "comment_only" %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn btn-primary">Create</button>
+  </form>
+</details>
+
+<p id="routine-status" class="muted" style="margin-top:1rem"></p>
+
+<script>
+(function () {
+  const slug = {{ project.name | tojson }};
+  const status = document.getElementById('routine-status');
+
+  async function runAction(name, action) {
+    status.textContent = `${action}...`;
+    try {
+      let url, opts = {method: 'POST'};
+      if (action === 'run') url = `/p/${slug}/routines/${name}/run`;
+      else if (action === 'toggle') url = `/p/${slug}/routines/${name}/toggle`;
+      else if (action === 'delete') {
+        if (!confirm(`Delete routine "${name}"?`)) return;
+        const fd = new FormData();
+        const res = await fetch(`/p/${slug}/routines/${name}/delete`, {method: 'POST'});
+        if (res.ok || res.status === 303) location.reload();
+        else status.textContent = 'Delete failed';
+        return;
+      }
+      const r = await fetch(url, opts);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+      if (action === 'run') {
+        status.textContent = `Routine "${name}" ran: status=${data.status}, findings=${data.findings_count}`;
+      } else if (action === 'toggle') {
+        status.textContent = `Routine "${name}" → ${data.enabled ? 'enabled' : 'disabled'}`;
+      }
+      setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+      status.textContent = 'Error: ' + e.message;
+    }
+  }
+
+  document.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => runAction(btn.dataset.name, btn.dataset.action));
+  });
+})();
+</script>
+{% endblock %}

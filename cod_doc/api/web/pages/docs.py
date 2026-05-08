@@ -623,6 +623,122 @@ async def docs_import_apply(
     return JSONResponse({"imported": imported, "errors": errors})
 
 
+@router.post("/p/{slug}/suggestions/run")
+def suggestions_run(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    doc_key: str = Form(...),
+) -> JSONResponse:
+    """PCA-422 UI: Generate semantic suggestions for one document's sections.
+
+    Form-posted from the doc page «Run suggestions» button.  Best-effort:
+    ChromaDB index must already be populated; otherwise returns an empty
+    summary with a note.
+    """
+    from cod_doc.config import Config
+    from cod_doc.services import doc_service
+    from cod_doc.services.link_service import semantic
+
+    session, project_db_id = db
+    doc = doc_service.get(session, project_db_id, doc_key)
+    if doc is None or doc.row_id is None:
+        raise HTTPException(404, f"Документ не найден: {doc_key}")
+
+    sections = doc_service.get_sections(session, doc.row_id)
+    sec_ids = [s.row_id for s in sections if s.row_id is not None]
+
+    cfg = Config.load()
+    total = 0
+    for sid in sec_ids:
+        try:
+            suggs = semantic.suggest_for_section(session, int(sid), cfg)
+            total += len(suggs)
+        except Exception:
+            pass
+    session.commit()
+    return JSONResponse({"sections_processed": len(sec_ids), "suggestions_created": total})
+
+
+@router.post("/p/{slug}/suggestions/{row_id}/accept", response_class=HTMLResponse)
+def suggestion_accept(
+    request: Request,
+    slug: str,
+    row_id: int,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> JSONResponse:
+    """PCA-422 UI: Accept a link suggestion.
+
+    Appends ``[title](doc-key)`` to a managed «See also» footer of the
+    source section's body via ``patch_section`` (which triggers link
+    sync), then sets the suggestion's state to 'accepted'.
+    """
+    from cod_doc.services import doc_service
+    from cod_doc.services.link_service import semantic
+
+    session, project_db_id = db
+    sugg = semantic.get_suggestion(session, row_id)
+    if sugg is None or sugg["state"] != "pending":
+        raise HTTPException(404, "Suggestion not found or already resolved")
+
+    sec = doc_service.get_section_by_id(session, sugg["from_section_id"])
+    if sec is None:
+        raise HTTPException(404, "Section not found")
+    parent_doc = doc_service.get_doc_by_id(session, sec.document_id)
+    if parent_doc is None or parent_doc.project_id != project_db_id:
+        raise HTTPException(404, "Document not found in project")
+
+    target_doc = doc_service.get(session, project_db_id, sugg["to_doc_key"])
+    if target_doc is None:
+        raise HTTPException(404, f"Target doc not found: {sugg['to_doc_key']}")
+
+    label = target_doc.title or target_doc.doc_key
+    new_link_md = f"[{label}](/{target_doc.doc_key})"
+    marker_open = "<!-- cod-doc:see-also -->"
+    marker_close = "<!-- /cod-doc:see-also -->"
+
+    body = sec.body or ""
+    if marker_open in body and marker_close in body:
+        # Append to existing managed block (idempotent — skip if already present)
+        if new_link_md not in body:
+            body = body.replace(
+                marker_close,
+                f"- {new_link_md}\n{marker_close}",
+            )
+    else:
+        block = f"\n\n{marker_open}\n**See also:**\n- {new_link_md}\n{marker_close}\n"
+        body = body.rstrip() + block
+
+    doc_service.patch_section(
+        session,
+        document_id=parent_doc.row_id,
+        anchor=sec.anchor,
+        new_body=body,
+        author="human:web",
+        reason=f"accept suggestion #{row_id}",
+    )
+    semantic.update_suggestion_state(session, row_id, "accepted")
+    session.commit()
+    return JSONResponse({"accepted": True, "row_id": row_id})
+
+
+@router.post("/p/{slug}/suggestions/{row_id}/reject", response_class=HTMLResponse)
+def suggestion_reject(
+    request: Request,
+    slug: str,
+    row_id: int,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> JSONResponse:
+    """PCA-422 UI: Mark a suggestion as rejected (no body change)."""
+    from cod_doc.services.link_service import semantic
+
+    session, _ = db
+    if not semantic.update_suggestion_state(session, row_id, "rejected"):
+        raise HTTPException(404, "Suggestion not found")
+    session.commit()
+    return JSONResponse({"rejected": True, "row_id": row_id})
+
+
 @router.get("/p/{slug}/docs/{doc_key:path}", response_class=HTMLResponse)
 def doc_show(
     request: Request,
@@ -713,6 +829,32 @@ def doc_show(
         )
     incoming = sorted(incoming_groups.values(), key=lambda x: x["doc_key"])
 
+    # PCA-422 follow-up: Suggested links — pending semantic-similarity hits
+    # for sections of this document, with Accept/Reject controls.
+    suggestions_by_section: list[dict[str, Any]] = []
+    try:
+        from cod_doc.services.link_service import semantic as _semantic
+        sec_id_to_heading = {s.row_id: s.heading for s in sections_db if s.row_id is not None}
+        rows = _semantic.list_suggestions_for_document(
+            session, project_id=project_db_id, document_id=doc.row_id,
+        )
+        # Group by from_section
+        grouped: dict[int, list[dict[str, Any]]] = {}
+        for r in rows:
+            grouped.setdefault(r["from_section_id"], []).append({
+                "row_id": r["row_id"],
+                "to_doc_key": r["to_doc_key"],
+                "score": round(r["score"], 3),
+            })
+        for sec_id, items in grouped.items():
+            suggestions_by_section.append({
+                "section_id": sec_id,
+                "section_heading": sec_id_to_heading.get(sec_id, "?"),
+                "items": items,
+            })
+    except Exception:
+        suggestions_by_section = []
+
     return templates.TemplateResponse(
         request,
         "project/doc_show.html",
@@ -735,5 +877,6 @@ def doc_show(
             "sections_html": sections_html,
             "outgoing_links": outgoing,
             "incoming_links": incoming,
+            "suggestions_by_section": suggestions_by_section,
         },
     )

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Costs · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Costs</span>
+</nav>
+
+<h1>LLM costs</h1>
+
+{% with slug=project.name, active="costs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<p class="muted">
+  Per-model breakdown of LLM calls recorded in <code>trace_call</code>.
+  USD estimates use the static pricing dict in <code>openai_compat._PRICING_USD_PER_MTOK</code>;
+  models without a pricing entry show "—".
+</p>
+
+{% if rows %}
+<table class="grid">
+  <thead>
+    <tr>
+      <th>Model</th>
+      <th class="num">Calls</th>
+      <th class="num">Input tokens</th>
+      <th class="num">Output tokens</th>
+      <th class="num">Total tokens</th>
+      <th class="num">Duration</th>
+      <th class="num">Estimated cost (USD)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><code>{{ r.model }}</code></td>
+        <td class="num">{{ r.calls }}</td>
+        <td class="num">{{ "{:,}".format(r.input_tokens) }}</td>
+        <td class="num">{{ "{:,}".format(r.output_tokens) }}</td>
+        <td class="num">{{ "{:,}".format(r.total_tokens) }}</td>
+        <td class="num mono">{{ "{:,}".format(r.duration_ms) }} ms</td>
+        <td class="num">
+          {% if r.priced %}
+            <strong>${{ "%.4f"|format(r.cost_usd) }}</strong>
+          {% else %}
+            <span class="muted">— <small>(no pricing)</small></span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <th>Total</th>
+      <th class="num">{{ totals.calls }}</th>
+      <th class="num">{{ "{:,}".format(totals.input_tokens) }}</th>
+      <th class="num">{{ "{:,}".format(totals.output_tokens) }}</th>
+      <th class="num">{{ "{:,}".format(totals.input_tokens + totals.output_tokens) }}</th>
+      <th class="num mono">{{ "{:,}".format(totals.duration_ms) }} ms</th>
+      <th class="num"><strong>${{ "%.4f"|format(totals.cost_usd) }}</strong></th>
+    </tr>
+  </tfoot>
+</table>
+{% else %}
+<p class="muted">No LLM calls recorded yet for this project. Trace rows are written by the agent during <code>chat()</code> calls.</p>
+{% endif %}
+{% endblock %}
