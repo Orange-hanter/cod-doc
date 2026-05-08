@@ -53,6 +53,29 @@ def _alembic_config_for(db_url: str) -> AlembicConfig:
     return cfg
 
 
+def _bootstrap_default_routines(session, project_id: int) -> None:  # type: ignore[no-untyped-def]
+    """PCA-914: Idempotently create default routines for a project.
+
+    Default routines:
+    - approval_stale (every 15 min): auto-expire pending approvals past expires_at.
+    """
+    from cod_doc.services import routine_service
+    try:
+        routine_service.create(
+            session,
+            project_id=project_id,
+            name="approval_stale_default",
+            check_name="approval_stale",
+            trigger="cron",
+            cron="*/15 * * * *",
+            on_finding="comment_only",
+            enabled=True,
+        )
+    except Exception:
+        # Already exists (UniqueConstraint on project_id+name) — idempotent.
+        pass
+
+
 def init_project(entry: ProjectEntry) -> InitResult:
     """Idempotent bootstrap. Safe to call repeatedly.
 
@@ -91,6 +114,14 @@ def init_project(entry: ProjectEntry) -> InitResult:
             )
             row.created = now
             row.updated = now
+            project_id = row.row_id
+        else:
+            project_id = existing.row_id
+
+        # PCA-914: bootstrap default approval_stale routine (every 15 min).
+        # Idempotent — uses unique (project_id, name) constraint.
+        if project_id is not None:
+            _bootstrap_default_routines(session, project_id)
     engine.dispose()
 
     return InitResult(

@@ -595,6 +595,8 @@ async def docs_import_apply(
 
         doc_key = imports._derive_doc_key(str(fpath.relative_to(proj.entry.root)))
         fallback_title = fpath.stem
+        # PCA-928: capture sha256 head for change detection on next scan.
+        source_sha = imports._head_sha256(fpath)
         try:
             _, created = import_or_update_markdown(
                 session,
@@ -603,7 +605,8 @@ async def docs_import_apply(
                 raw_markdown=raw,
                 fallback_title=fallback_title,
                 author="human:web",
-                reason="bulk import (new)" if True else "bulk import (update)",
+                reason="bulk import",
+                source_sha256=source_sha,
             )
             imported += 1
         except (ValueError, Exception) as exc:

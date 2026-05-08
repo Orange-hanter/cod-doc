@@ -13,6 +13,7 @@ adapter converts Anthropic's response INTO this format.
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
@@ -85,6 +86,16 @@ class ChatResponse:
     model: str = ""
 
 
+# PCA-924: streaming chunk type — emitted by adapter.stream_chat() during
+# incremental decoding of an LLM response. ``content_delta`` carries the
+# new text fragment; ``finish_reason`` is set on the final chunk only.
+@dataclass
+class ChatChunk:
+    content_delta: str | None = None
+    tool_call_delta: ToolCall | None = None
+    finish_reason: str | None = None  # "stop" | "tool_calls" | None
+
+
 # --------------------------------------------------------------------------- #
 # Capabilities                                                                  #
 # --------------------------------------------------------------------------- #
@@ -136,3 +147,8 @@ class LLMAdapter(Protocol):
     ) -> Decimal:
         """Estimated cost in USD (may be zero if unknown)."""
         ...
+
+
+def supports_streaming(adapter: "LLMAdapter") -> bool:
+    """PCA-924: True iff the adapter implements stream_chat() (and advertises it)."""
+    return getattr(adapter.capabilities, "streaming", False) and hasattr(adapter, "stream_chat")

@@ -89,8 +89,46 @@ class OpenAICompatAdapter:
     def cost_estimate(
         self, input_tokens: int, output_tokens: int, *, model: str
     ) -> Decimal:
-        # Per-model pricing is backend-specific; return 0 as a safe default.
-        return Decimal(0)
+        """PCA-925: Estimate USD cost from a static pricing table.
+
+        Falls back to ``Decimal(0)`` for unknown models.  The table is
+        manually maintained — see ``_PRICING_USD_PER_MTOK`` below.
+        Prices represent USD per 1 million tokens.
+        """
+        rates = _PRICING_USD_PER_MTOK.get(model)
+        if rates is None:
+            # Strip provider prefix (e.g. "anthropic/claude-3-5-sonnet" → "claude-3-5-sonnet")
+            stripped = model.rsplit("/", 1)[-1]
+            rates = _PRICING_USD_PER_MTOK.get(stripped)
+        if rates is None:
+            return Decimal(0)
+        in_rate, out_rate = rates
+        per_mtok = Decimal(1_000_000)
+        return (
+            (Decimal(input_tokens) * in_rate / per_mtok)
+            + (Decimal(output_tokens) * out_rate / per_mtok)
+        )
+
+
+# PCA-925: USD per 1M tokens (input, output). Manually maintained snapshot
+# of OpenRouter / OpenAI / Anthropic pricing.  Update as needed.
+_PRICING_USD_PER_MTOK: dict[str, tuple[Decimal, Decimal]] = {
+    # OpenRouter routes
+    "anthropic/claude-sonnet-4-6":  (Decimal("3.00"),  Decimal("15.00")),
+    "anthropic/claude-opus-4":      (Decimal("15.00"), Decimal("75.00")),
+    "anthropic/claude-3-5-sonnet":  (Decimal("3.00"),  Decimal("15.00")),
+    "anthropic/claude-3-5-haiku":   (Decimal("0.80"),  Decimal("4.00")),
+    "openai/gpt-4o":                (Decimal("2.50"),  Decimal("10.00")),
+    "openai/gpt-4o-mini":           (Decimal("0.15"),  Decimal("0.60")),
+    "openai/o1":                    (Decimal("15.00"), Decimal("60.00")),
+    "google/gemini-2.0-flash":      (Decimal("0.10"),  Decimal("0.40")),
+    "google/gemini-pro":            (Decimal("1.25"),  Decimal("5.00")),
+    # Bare model names (no provider prefix)
+    "claude-sonnet-4-6":            (Decimal("3.00"),  Decimal("15.00")),
+    "claude-3-5-sonnet":            (Decimal("3.00"),  Decimal("15.00")),
+    "gpt-4o":                       (Decimal("2.50"),  Decimal("10.00")),
+    "gpt-4o-mini":                  (Decimal("0.15"),  Decimal("0.60")),
+}
 
 
 def _from_openai(raw: Any) -> ChatResponse:

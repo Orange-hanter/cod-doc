@@ -116,6 +116,46 @@ class TestMockAdapter:
     def test_capabilities(self) -> None:
         assert MockAdapter.capabilities.tool_use is True
         assert MockAdapter.capabilities.parallel_tool_calls is True
+        # PCA-924: MockAdapter advertises streaming for tests of stream_chat.
+        assert MockAdapter.capabilities.streaming is True
+
+    def test_stream_chat_yields_chunks(self) -> None:
+        # PCA-924
+        from cod_doc.agent.adapters.base import ChatChunk, supports_streaming
+
+        adapter = MockAdapter([MockAdapter.text_response("ABCDEFGHIJK")])
+        assert supports_streaming(adapter)
+
+        async def collect() -> list[ChatChunk]:
+            out = []
+            async for c in adapter.stream_chat([], [], model="m", max_tokens=100):
+                out.append(c)
+            return out
+
+        chunks = run(collect())
+        text = "".join(c.content_delta or "" for c in chunks)
+        assert text == "ABCDEFGHIJK"
+        assert chunks[-1].finish_reason == "stop"
+
+    def test_stream_chat_tool_call(self) -> None:
+        # PCA-924
+        from cod_doc.agent.adapters.base import ChatChunk
+
+        adapter = MockAdapter([
+            MockAdapter.tool_call_response("read_file", {"path": "x.md"}, call_id="c1"),
+        ])
+
+        async def collect() -> list[ChatChunk]:
+            out = []
+            async for c in adapter.stream_chat([], [], model="m", max_tokens=100):
+                out.append(c)
+            return out
+
+        chunks = run(collect())
+        # Expect: 1 tool_call chunk + 1 finish chunk.
+        assert chunks[0].tool_call_delta is not None
+        assert chunks[0].tool_call_delta.function.name == "read_file"
+        assert chunks[-1].finish_reason == "tool_calls"
 
 
 # --------------------------------------------------------------------------- #

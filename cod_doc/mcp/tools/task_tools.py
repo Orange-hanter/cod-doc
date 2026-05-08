@@ -101,12 +101,13 @@ def register(mcp: FastMCP) -> None:
         writes a TASK revision with op=progress carrying the message.
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import task_service
+        from cod_doc.services import checkout_service, task_service
         from cod_doc.services.task_service import TaskNotFoundError
 
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
+                checkout_service.warn_if_no_checkout(session, task_id, author)
                 t = task_service.log_progress(
                     session, task_id=task_id, message=message, author=author
                 )
@@ -306,6 +307,8 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
+                from cod_doc.services import checkout_service as _co
+                _co.warn_if_no_checkout(session, task_id, author)
                 t = task_service.set_blocker(
                     session, task_id=task_id, reason=reason, author=author
                 )
@@ -440,7 +443,7 @@ def register(mcp: FastMCP) -> None:
         Raises if the task is already done or any blocker is not yet complete.
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import activity_service
+        from cod_doc.services import activity_service, checkout_service
         from cod_doc.services.task_service import (
             TaskAlreadyDoneError,
             TaskBlockedError,
@@ -452,6 +455,7 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
+                checkout_service.warn_if_no_checkout(session, task_id, author)
                 t = complete(
                     session,
                     task_id=task_id,

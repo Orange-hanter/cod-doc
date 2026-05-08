@@ -22,9 +22,10 @@ Public API
 
 from __future__ import annotations
 
+import os
+import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
-from uuid import uuid4
 
 from sqlalchemy import select, func
 
@@ -35,9 +36,27 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
+def _uuid7() -> str:
+    """Generate a UUIDv7 (RFC 9562 §5.7) — time-sortable.
+
+    Layout (128 bits total):
+      unix_ts_ms (48) | ver=7 (4) | rand_a (12) | var=10 (2) | rand_b (62)
+
+    Sortable by creation time without relying on database row_id.
+    """
+    ts_ms = int(time.time() * 1000) & ((1 << 48) - 1)
+    rand = int.from_bytes(os.urandom(10), "big")  # 80 random bits
+    rand_a = (rand >> 64) & 0xFFF                 # 12 bits
+    rand_b = rand & ((1 << 62) - 1)               # 62 bits
+
+    val = (ts_ms << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
+    hex_str = f"{val:032x}"
+    return f"{hex_str[0:8]}-{hex_str[8:12]}-{hex_str[12:16]}-{hex_str[16:20]}-{hex_str[20:32]}"
+
+
 def _make_id() -> str:
-    """Generate a time-sortable event ID (UUID4 for now; swap to UUID7 when available)."""
-    return str(uuid4())
+    """Generate a UUIDv7-formatted, time-sortable event ID (PCA-915)."""
+    return _uuid7()
 
 
 def emit(

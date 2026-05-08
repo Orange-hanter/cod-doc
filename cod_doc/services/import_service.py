@@ -222,11 +222,15 @@ def import_or_update_markdown(
     fallback_title: str | None = None,
     author: str = "human:web",
     reason: str | None = None,
+    source_sha256: str | None = None,
 ) -> tuple["Document", bool]:
     """PCA-929: Idempotent import — create new doc or update existing one.
 
     Returns ``(document, created)`` where ``created`` is True for new docs
     and False when an existing doc's sections were patched.
+
+    PCA-928: when ``source_sha256`` is provided, it is stored on the
+    DocumentModel.content_sha256_head column for change detection later.
     """
     existing = docs.get(session, project_id, doc_key)
     if existing is None:
@@ -239,6 +243,8 @@ def import_or_update_markdown(
             author=author,
             reason=reason or "bulk import (new)",
         )
+        if source_sha256 is not None and doc.row_id is not None:
+            _set_content_sha(session, doc.row_id, source_sha256)
         return doc, True
 
     # Doc exists — patch each section body to create a new revision.
@@ -275,7 +281,20 @@ def import_or_update_markdown(
                 pass
 
     _resolve_all_sections(session, existing.row_id)
+    if source_sha256 is not None:
+        _set_content_sha(session, existing.row_id, source_sha256)
     return existing, False
+
+
+def _set_content_sha(session: "Session", document_id: int, sha: str) -> None:
+    """PCA-928: store sha256 of imported file head on DocumentModel."""
+    from cod_doc.infra.models.documents import DocumentModel
+    from sqlalchemy import update as _update
+    session.execute(
+        _update(DocumentModel)
+        .where(DocumentModel.row_id == document_id)
+        .values(content_sha256_head=sha)
+    )
 
 
 def _resolve_all_sections(session: "Session", document_id: int) -> None:
@@ -387,9 +406,16 @@ def scan_folder(
     # For a richer diff we'd need to store the hash — that's a migration; for now
     # we compare presence only (new vs. existing) and size-change heuristic.
 
+    # PCA-928: load DocumentModel directly so we can read content_sha256_head
+    # for content-change detection.
+    from cod_doc.infra.models.documents import DocumentModel
+    from sqlalchemy import select as _select
+
     existing: dict[str, Any] = {}
-    all_docs = docs.list_for_project(session, project_id)
-    for d in all_docs:
+    rows = session.execute(
+        _select(DocumentModel).where(DocumentModel.project_id == project_id)
+    ).scalars()
+    for d in rows:
         existing[d.doc_key] = d
 
     entries: list[ManifestEntry] = []
@@ -420,11 +446,17 @@ def scan_folder(
                 status: ManifestStatus = "new"
                 reason = "Not in database"
             else:
-                # We can't cheaply detect content changes without stored hash.
-                # Mark as "unchanged" for now; the apply endpoint is idempotent
-                # (changed = new revision on reimport).
-                status = "unchanged"
-                reason = "Already imported"
+                # PCA-928: compare stored sha256 with on-disk file head.
+                stored_sha = getattr(existing[doc_key], "content_sha256_head", None)
+                if stored_sha is None:
+                    status = "unchanged"
+                    reason = "Imported (no sha recorded — pre-PCA-928)"
+                elif stored_sha == sha:
+                    status = "unchanged"
+                    reason = "File unchanged since last import"
+                else:
+                    status = "changed"
+                    reason = "File modified since last import"
 
             entries.append(ManifestEntry(
                 path=rel,

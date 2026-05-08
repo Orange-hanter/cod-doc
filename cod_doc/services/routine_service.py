@@ -450,6 +450,13 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
                 payload={"findings_count": findings_count, "result": result},
                 summary=f"Routine {routine.name!r}: {findings_count} finding(s)",
             )
+            # PCA-922: on_finding policy
+            if routine.on_finding == "update_existing_task":
+                created_task_id = _update_or_create_finding_task(
+                    session, project_id, routine, result,
+                )
+                if created_task_id:
+                    run_row.created_task_id = created_task_id
     except Exception as exc:  # pragma: no cover — defensive guard
         run_row.status = "failed"
         run_row.error = repr(exc)
@@ -551,3 +558,95 @@ def history(
         .limit(limit)
     ).scalars()
     return [_run_to_domain(r) for r in rows]
+
+
+# --------------------------------------------------------------------------- #
+# on_finding=update_existing_task helper (PCA-922)                              #
+# --------------------------------------------------------------------------- #
+
+
+def _signature_for_routine(routine_name: str) -> str:
+    """Stable signature embedded in finding-task descriptions for dedup."""
+    return f"<!-- routine:{routine_name} -->"
+
+
+def _update_or_create_finding_task(
+    session: "Session",
+    project_id: int,
+    routine: RoutineModel,
+    result: dict[str, Any],
+) -> str | None:
+    """PCA-922: Find an open task with the routine's signature; update it.
+
+    If no such task exists, create one. The signature is a hidden HTML
+    comment in the description so it survives re-renders without affecting
+    visible text.
+
+    Returns the task_id of the touched task, or None on failure.
+    """
+    from sqlalchemy import select as _select
+    from cod_doc.domain.entities import Priority, TaskStatus, TaskType
+    from cod_doc.infra.models import TaskModel
+    from cod_doc.services import task_service
+
+    sig = _signature_for_routine(routine.name)
+    findings = result.get("findings", [])
+    summary = (
+        f"Routine `{routine.name}` reported {len(findings)} finding(s).\n\n"
+        f"Latest result: {findings[:5]!r}\n\n{sig}"
+    )
+
+    # Look for an existing OPEN task with the signature in description.
+    open_statuses = ("pending", "todo", "in-progress", "in_progress", "in_review", "blocked")
+    existing = session.execute(
+        _select(TaskModel)
+        .where(
+            TaskModel.project_id == project_id,
+            TaskModel.status.in_(open_statuses),
+            TaskModel.description.like(f"%{sig}%"),
+        )
+        .order_by(TaskModel.row_id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        existing.description = summary
+        existing.last_updated = datetime.now(UTC)
+        session.flush()
+        activity_service.emit(
+            session, project_id, "task.updated_by_routine",
+            actor_kind="routine",
+            actor_id=routine.name,
+            scope_kind="task",
+            scope_id=existing.task_id,
+            summary=f"Routine {routine.name!r} updated open task {existing.task_id}",
+        )
+        return existing.task_id
+
+    # No open task — create one.  Pick the routine's plan/section by latest task
+    # in the project (best-effort) so the new task lands somewhere sensible.
+    fallback = session.execute(
+        _select(TaskModel)
+        .where(TaskModel.project_id == project_id)
+        .order_by(TaskModel.row_id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if fallback is None:
+        return None
+
+    try:
+        new_task = task_service.create(
+            session,
+            project_id=project_id,
+            plan_id=fallback.plan_id,
+            section_id=fallback.section_id,
+            title=f"Routine finding: {routine.name}",
+            type=TaskType.CHORE,
+            priority=Priority.MEDIUM,
+            description=summary,
+            author=f"routine:{routine.name}",
+            id_prefix="ROU",
+        )
+        return new_task.task_id
+    except Exception:
+        return None

@@ -20,12 +20,14 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import AsyncIterator
 from decimal import Decimal
 from typing import Any
 
 from cod_doc.agent.adapters.base import (
     AdapterCapabilities,
     ChatChoice,
+    ChatChunk,
     ChatMessage,
     ChatResponse,
     ChatUsage,
@@ -45,9 +47,10 @@ class MockAdapter:
     """
 
     name: str = "mock"
+    # PCA-924: streaming=True so the orchestrator can opt into stream_chat.
     capabilities: AdapterCapabilities = AdapterCapabilities(
         tool_use=True,
-        streaming=False,
+        streaming=True,
         json_mode=True,
         vision=False,
         parallel_tool_calls=True,
@@ -70,6 +73,38 @@ class MockAdapter:
         if self._queue:
             return self._queue.pop(0)
         return self.text_response("Task complete.")
+
+    async def stream_chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        *,
+        model: str,
+        max_tokens: int,
+        temperature: float | None = None,
+    ) -> AsyncIterator[ChatChunk]:
+        """PCA-924: yield the next queued response as a sequence of chunks.
+
+        For text responses, splits content into ~5-char chunks so tests
+        can assert incremental delivery.  For tool calls, yields the
+        whole tool_call as one chunk followed by a finish chunk.
+        """
+        self.calls.append({"messages": messages, "tools": tools, "model": model, "_streaming": True})
+        resp = self._queue.pop(0) if self._queue else self.text_response("Task complete.")
+        choice = resp.choices[0]
+        msg = choice.message
+
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                yield ChatChunk(tool_call_delta=tc)
+            yield ChatChunk(finish_reason=choice.finish_reason)
+            return
+
+        text = msg.content or ""
+        # Stream in 5-char chunks for testability.
+        for i in range(0, len(text), 5):
+            yield ChatChunk(content_delta=text[i : i + 5])
+        yield ChatChunk(finish_reason=choice.finish_reason)
 
     def estimate_tokens(self, text: str) -> int:
         return len(text) // 4

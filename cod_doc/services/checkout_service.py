@@ -179,6 +179,34 @@ def has_active_checkout(session: Session, task_id: str, agent: str) -> bool:
     return m == agent
 
 
+def warn_if_no_checkout(session: Session, task_id: str, agent: str) -> str | None:
+    """PCA-921: Return a warning string if ``agent`` does not currently hold
+    the lock for ``task_id``, otherwise None.
+
+    Used by write-tools (task.complete / task.set_blocker / task.log_progress)
+    to surface drift between MCP-driven mutations and the checkout discipline
+    documented in proposal 06.  Logged + returned; never raises.
+    """
+    import logging
+    locked_by = session.execute(
+        select(TaskModel.checked_out_by).where(TaskModel.task_id == task_id)
+    ).scalar_one_or_none()
+    if locked_by == agent:
+        return None
+    if locked_by is None:
+        msg = (
+            f"task {task_id!r} mutated by {agent!r} without an active checkout "
+            "(call task.checkout first to claim the lock)"
+        )
+    else:
+        msg = (
+            f"task {task_id!r} mutated by {agent!r} but locked by {locked_by!r}; "
+            "two agents may be racing — release+reclaim the lock or align workflows"
+        )
+    logging.getLogger("cod_doc.services.checkout").warning(msg)
+    return msg
+
+
 def release_stale(session: Session, *, ttl_minutes: int = 30) -> list[str]:
     """Force-release locks older than ``ttl_minutes``; return released task_ids."""
     cutoff = datetime.now(UTC) - timedelta(minutes=ttl_minutes)

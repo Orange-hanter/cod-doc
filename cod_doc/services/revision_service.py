@@ -225,6 +225,9 @@ def revert(session: Session, revision_id: str, *, author: str) -> Revision:
     elif kind is EntityKind.DOCUMENT:
         _revert_document(session, model, author=author)
 
+    elif kind is EntityKind.TASK_DOC:
+        _revert_task_doc(session, model, author=author)
+
     else:
         raise RevertNotSupportedError(f"revert not supported for entity_kind={kind.value!r}")
 
@@ -343,4 +346,28 @@ def _revert_document(session: Session, model: RevisionModel, *, author: str) -> 
         new_path=old_path,
         author=author,
         reason=f"revert revision {model.revision_id}",
+    )
+
+
+def _revert_task_doc(session: Session, model: RevisionModel, *, author: str) -> None:
+    """PCA-917: Restore task-bound doc body from a revision snapshot.
+
+    Delegates to ``task_doc_service.revert`` which handles snapshot lookup
+    and writes the inverse revision via ``put`` with optimistic locking.
+    """
+    from cod_doc.infra.models import TaskDocumentModel
+    from cod_doc.services import task_doc_service
+
+    td = session.get(TaskDocumentModel, model.entity_id)
+    if td is None:
+        raise RevertNotSupportedError(
+            f"TASK_DOC entity #{model.entity_id} not found"
+        )
+    task_doc_service.revert(
+        session,
+        project_id=model.project_id,
+        task_row_id=td.task_id,
+        key=td.key,
+        revision_id=model.revision_id,
+        author=author,
     )

@@ -50,6 +50,9 @@ class DocumentModel(Base):
         JSON, nullable=False, default=dict, server_default=text("'{}'")
     )
     projection_hash: Mapped[str | None] = mapped_column(String(64))
+    # PCA-928: sha256 of the first 4 KB of the source file at last import.
+    # Used by scan_folder() to detect "changed" status without re-parsing.
+    content_sha256_head: Mapped[str | None] = mapped_column(String(64))
     created: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
