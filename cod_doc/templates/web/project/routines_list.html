@@ -7,97 +7,147 @@
   <span>Routines</span>
 </nav>
 
-<h1>Routines</h1>
+<div class="page-header">
+  <h1>Routines</h1>
+  <div class="page-header-actions">
+    <a class="btn btn-secondary btn-sm" href="/p/{{ project.name }}/run">View agent →</a>
+  </div>
+</div>
 
 {% with slug=project.name, active="routines" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
 <p class="muted">
-  Cron-style health checks. Wired into the daemon scheduler — see
-  <code>routine_service.tick()</code> and the 5 built-in checks
-  (approval_stale, stale_refs, link_integrity, doc_drift, task_stale).
+  Cron health-checks. Scheduled tick на <code>routine_service.tick()</code>; финдинги создают
+  задачи или комментарии в зависимости от <code>on_finding</code>.
 </p>
 
+{# ── Schedule timeline (next 60 minutes) ─────────────────────────────── #}
 {% if routines %}
-<table class="grid">
-  <thead>
-    <tr>
-      <th>Name</th>
-      <th>Check</th>
-      <th>Cron</th>
-      <th>On finding</th>
-      <th>Enabled</th>
-      <th>Last run</th>
-      <th>Findings</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for r in routines %}
-      <tr id="routine-{{ r.name }}">
-        <td><strong>{{ r.name }}</strong></td>
-        <td><code>{{ r.check_name }}</code></td>
-        <td class="mono">{{ r.cron or "—" }}</td>
-        <td>{{ r.on_finding }}</td>
-        <td>
-          <span class="badge badge-{{ 'success' if r.enabled else 'muted' }}">
-            {{ "ON" if r.enabled else "OFF" }}
-          </span>
-        </td>
-        <td class="mono">{{ r.last_run_at.strftime("%Y-%m-%d %H:%M") if r.last_run_at else "—" }}</td>
-        <td class="num">
-          {% if r.last_findings is not none %}
-            <span class="badge badge-{{ 'warning' if r.last_findings else 'success' }}">
-              {{ r.last_findings }}
-            </span>
-          {% else %} — {% endif %}
-        </td>
-        <td>
-          <button class="btn btn-sm btn-secondary" data-action="run" data-name="{{ r.name }}">▶ Run now</button>
-          <button class="btn btn-sm btn-secondary" data-action="toggle" data-name="{{ r.name }}">
-            {{ "Disable" if r.enabled else "Enable" }}
-          </button>
-          <button class="btn btn-sm btn-secondary" data-action="delete" data-name="{{ r.name }}">🗑</button>
-        </td>
-      </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="muted">No routines yet. Create one below.</p>
+<section class="routines-timeline">
+  <h2>Schedule · next 60m</h2>
+  {% for r in routines %}
+    {% if r.enabled and r.next_fire_pct is not none %}
+      <div class="timeline-row">
+        <span class="name" title="{{ r.check_name }}">{{ r.name }}</span>
+        <div class="timeline-track">
+          <span class="timeline-marker is-now" style="left: 0;" title="now"></span>
+          {% if r.next_fire_pct > 0 and r.next_fire_pct < 100 %}
+            <span class="timeline-marker is-next" style="left: {{ r.next_fire_pct }}%;" title="{{ r.next_fire_fmt }}"></span>
+          {% elif r.next_fire_pct == 0 %}
+            <span class="timeline-marker is-fired" style="left: 0;" title="overdue — will fire next tick"></span>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
+  {% endfor %}
+  <div class="timeline-axis">
+    <span></span>
+    <span class="axis-labels">
+      <span>now</span>
+      <span>+15m</span>
+      <span>+30m</span>
+      <span>+45m</span>
+      <span>+60m</span>
+    </span>
+  </div>
+</section>
 {% endif %}
 
-<details style="margin-top:1.5rem">
-  <summary><strong>+ Create routine</strong></summary>
-  <form method="post" action="/p/{{ project.name }}/routines/create" class="settings-form" style="margin-top:.75rem">
-    <label class="field">
-      <span class="label">Name</span>
-      <input type="text" name="name" required placeholder="my_check">
-    </label>
-    <label class="field">
-      <span class="label">Check</span>
-      <select name="check_name" required>
-        {% for c in available_checks %}
-          <option value="{{ c }}">{{ c }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="field">
-      <span class="label">Cron (e.g. <code>*/15 * * * *</code>)</span>
-      <input type="text" name="cron" value="*/15 * * * *">
-    </label>
-    <label class="field">
-      <span class="label">On finding</span>
-      <select name="on_finding">
-        {% for opt in on_finding_options %}
-          <option value="{{ opt }}" {% if opt == "comment_only" %}selected{% endif %}>{{ opt }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button type="submit" class="btn btn-primary">Create</button>
+{# ── Routine cards ───────────────────────────────────────────────────── #}
+{% if routines %}
+<div class="routines-grid">
+  {% for r in routines %}
+    <div class="routine-card {% if not r.enabled %}is-disabled{% endif %} {% if r.last_run_status == 'failed' %}last-run-failed{% elif r.last_findings %}has-findings{% endif %}"
+         id="routine-{{ r.name }}">
+      <label class="routine-toggle" title="{{ 'Enabled' if r.enabled else 'Disabled' }}">
+        <input type="checkbox" {% if r.enabled %}checked{% endif %}
+               data-action="toggle" data-name="{{ r.name }}">
+        <span class="slider"></span>
+      </label>
+
+      <div class="routine-info">
+        <div class="name">
+          {{ r.name }}
+          <span class="check">{{ r.check_name }}</span>
+          {% if r.last_findings is not none and r.last_findings > 0 %}
+            <span class="badge badge-warning">{{ r.last_findings }} findings</span>
+          {% endif %}
+          {% if r.last_run_status == 'failed' %}
+            <span class="badge badge-failed">last failed</span>
+          {% endif %}
+        </div>
+        <div class="meta">
+          <span><strong>cron:</strong> <span class="cron">{{ r.cron or "—" }}</span></span>
+          <span><strong>on finding:</strong> {{ r.on_finding }}</span>
+          <span class="last-run-meta">
+            <strong>last:</strong>
+            {% if r.last_run_at %}
+              {{ r.last_run_at_fmt }}
+              {% if r.last_run_status %}<span class="badge badge-{{ r.last_run_status }}">{{ r.last_run_status }}</span>{% endif %}
+            {% else %}<span class="muted">never</span>{% endif %}
+          </span>
+          {% if r.enabled %}
+            <span class="last-run-meta">
+              <strong>next:</strong> {{ r.next_fire_fmt or "—" }}
+            </span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="routine-actions">
+        <button class="btn btn-sm btn-secondary" data-action="run" data-name="{{ r.name }}" title="Run now">▶ Run</button>
+        <button class="btn btn-sm btn-ghost" data-action="delete" data-name="{{ r.name }}" title="Delete">🗑</button>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="routine-empty">
+  <div class="icon">⏱</div>
+  <p>No routines configured.</p>
+  <p class="muted-tiny">Create one below to start scheduled health checks.</p>
+</div>
+{% endif %}
+
+<details class="docs-toolbar" style="margin-top: var(--space-5);">
+  <summary>Create routine</summary>
+  <form method="post" action="/p/{{ project.name }}/routines/create" class="settings-form" style="margin-top: var(--space-3);">
+    <fieldset>
+      <legend>New routine</legend>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);">
+        <label class="field">
+          <span class="label">Name</span>
+          <input type="text" name="name" required placeholder="my_check">
+        </label>
+        <label class="field">
+          <span class="label">Check</span>
+          <select name="check_name" required>
+            {% for c in available_checks %}
+              <option value="{{ c }}">{{ c }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="label">Cron <code>(*/15 * * * *)</code></span>
+          <input type="text" name="cron" value="*/15 * * * *">
+        </label>
+        <label class="field">
+          <span class="label">On finding</span>
+          <select name="on_finding">
+            {% for opt in on_finding_options %}
+              <option value="{{ opt }}" {% if opt == "comment_only" %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create</button>
+      </div>
+    </fieldset>
   </form>
 </details>
 
-<p id="routine-status" class="muted" style="margin-top:1rem"></p>
+<p id="routine-status" class="muted" style="margin-top: var(--space-3);"></p>
 
 <script>
 (function () {
@@ -112,7 +162,6 @@
       else if (action === 'toggle') url = `/p/${slug}/routines/${name}/toggle`;
       else if (action === 'delete') {
         if (!confirm(`Delete routine "${name}"?`)) return;
-        const fd = new FormData();
         const res = await fetch(`/p/${slug}/routines/${name}/delete`, {method: 'POST'});
         if (res.ok || res.status === 303) location.reload();
         else status.textContent = 'Delete failed';
@@ -126,14 +175,18 @@
       } else if (action === 'toggle') {
         status.textContent = `Routine "${name}" → ${data.enabled ? 'enabled' : 'disabled'}`;
       }
-      setTimeout(() => location.reload(), 1500);
+      setTimeout(() => location.reload(), 800);
     } catch (e) {
       status.textContent = 'Error: ' + e.message;
     }
   }
 
   document.querySelectorAll('[data-action]').forEach(btn => {
-    btn.addEventListener('click', () => runAction(btn.dataset.name, btn.dataset.action));
+    if (btn.tagName === 'INPUT') {
+      btn.addEventListener('change', () => runAction(btn.dataset.name, btn.dataset.action));
+    } else {
+      btn.addEventListener('click', () => runAction(btn.dataset.name, btn.dataset.action));
+    }
   });
 })();
 </script>

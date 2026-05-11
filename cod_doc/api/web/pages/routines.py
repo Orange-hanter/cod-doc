@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -13,6 +14,36 @@ from cod_doc.api.web.templates_env import templates
 from cod_doc.services import routine_service
 
 router = APIRouter()
+
+
+def _next_fire(last_run_at: datetime | None, cron: str | None) -> datetime | None:
+    """Estimate next firing time using the same interval logic as the daemon tick."""
+    if not cron:
+        return None
+    interval = timedelta(minutes=routine_service._cron_interval_minutes(cron))
+    if last_run_at is None:
+        return datetime.now(UTC)
+    base = last_run_at if last_run_at.tzinfo else last_run_at.replace(tzinfo=UTC)
+    return base + interval
+
+
+def _fmt_age(ts: datetime | None) -> str:
+    if ts is None:
+        return "—"
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    now = datetime.now(UTC)
+    delta = ts - now if ts > now else now - ts
+    secs = int(delta.total_seconds())
+    suffix = "" if ts > now else " ago"
+    prefix = "in " if ts > now else ""
+    if secs < 60:
+        return f"{prefix}{secs}s{suffix}"
+    if secs < 3600:
+        return f"{prefix}{secs // 60}m{suffix}"
+    if secs < 86_400:
+        return f"{prefix}{secs // 3600}h{suffix}"
+    return f"{prefix}{secs // 86_400}d{suffix}"
 
 
 @router.get("/p/{slug}/routines", response_class=HTMLResponse)
@@ -29,11 +60,21 @@ def routines_list(
     rows: list[dict[str, Any]] = []
     for r in routines:
         try:
-            history = routine_service.history(session, project_db_id, r.name, limit=1)
+            history = routine_service.history(session, project_db_id, r.name, limit=5)
         except Exception:
             history = []
         last_run = history[0] if history else None
+        next_fire = _next_fire(last_run.started_at if last_run else None, r.cron) if r.enabled else None
+        next_fire_pct: int | None = None
+        if next_fire is not None:
+            now = datetime.now(UTC)
+            delta_s = (next_fire - now).total_seconds()
+            if 0 < delta_s < 3600:
+                next_fire_pct = int(round(delta_s / 3600 * 100))
+            elif delta_s <= 0:
+                next_fire_pct = 0
         rows.append({
+            "next_fire_pct": next_fire_pct,
             "name": r.name,
             "check_name": r.check_name,
             "trigger": r.trigger,
@@ -41,8 +82,20 @@ def routines_list(
             "on_finding": r.on_finding,
             "enabled": r.enabled,
             "last_run_at": last_run.started_at if last_run else None,
+            "last_run_at_fmt": _fmt_age(last_run.started_at if last_run else None),
             "last_run_status": last_run.status if last_run else None,
             "last_findings": last_run.findings_count if last_run else None,
+            "next_fire_at": next_fire,
+            "next_fire_fmt": _fmt_age(next_fire) if next_fire else "—",
+            "interval_min": routine_service._cron_interval_minutes(r.cron) if r.cron else None,
+            "history": [
+                {
+                    "started_at": h.started_at,
+                    "status": h.status,
+                    "findings_count": h.findings_count,
+                }
+                for h in history
+            ],
         })
 
     available_checks = sorted(routine_service.CHECK_CATALOG)

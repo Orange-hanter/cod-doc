@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Agent · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Agent</span>
+</nav>
+
+<div class="page-header">
+  <h1>Agent Console</h1>
+  <div class="page-header-actions">
+    <a class="btn btn-secondary btn-sm" href="/p/{{ project.name }}/run">Reset view</a>
+    <a class="btn btn-secondary btn-sm" href="/p/{{ project.name }}/costs">Costs →</a>
+  </div>
+</div>
+
+{% with slug=project.name, active="run" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<p class="muted">
+  Live timeline оркестратора: thinking, tool_call, tool_result, errors. Подключение по WebSocket
+  <code>/ws/projects/{{ project.name }}</code>; история ниже — из таблицы <code>agent_run</code>.
+</p>
+
+{% set _is_replay = selected_run is not none %}
+
+<div id="agent-console" class="agent-console">
+  <div class="agent-main">
+
+    {# ── Status card ─────────────────────────────────────────────────── #}
+    {% set _running = active_run is not none and not _is_replay %}
+    <div class="agent-status-card {% if _running %}is-running{% else %}is-idle{% endif %}">
+      <span class="agent-status-icon" aria-hidden="true">
+        {% if _running %}⚙{% elif _is_replay %}↺{% else %}○{% endif %}
+      </span>
+      <div class="agent-status-meta">
+        <span class="label">
+          {% if _is_replay %}Replay{% elif _running %}Running{% else %}Idle{% endif %}
+        </span>
+        <div class="value">
+          {% if _is_replay %}
+            Run {{ selected_run.run_id }}
+          {% elif _running %}
+            {{ active_run.triggering_task_id or "(no task)" }}
+          {% else %}
+            No active run
+          {% endif %}
+        </div>
+        <div class="sub">
+          {% if _is_replay %}
+            Status: {{ selected_run.status }}
+            {% if selected_run.wake_reason %} · {{ selected_run.wake_reason }}{% endif %}
+            {% if selected_run.duration_s %} · {{ "%.1f"|format(selected_run.duration_s) }}s{% endif %}
+          {% elif _running %}
+            Wake: {{ active_run.wake_reason or "—" }} ·
+            Run: <code>{{ active_run.run_id[:12] }}…</code>
+          {% else %}
+            Подключись к WebSocket — события начнут стримиться сразу как агент возьмёт задачу.
+          {% endif %}
+        </div>
+      </div>
+      <div class="agent-status-runtime">
+        <span class="label muted-tiny">Runtime</span>
+        <span class="timer">
+          {% if _is_replay and selected_run.duration_s %}
+            {{ "%d:%02d"|format(selected_run.duration_s // 60, selected_run.duration_s % 60) }}
+          {% elif _running %}
+            …
+          {% else %}—{% endif %}
+        </span>
+      </div>
+    </div>
+
+    {# ── Live event stream ───────────────────────────────────────────── #}
+    <section class="agent-stream">
+      <header class="agent-stream-header">
+        <h2>{% if _is_replay %}Run timeline{% else %}Live timeline{% endif %}</h2>
+        <div class="agent-stream-filters" role="group" aria-label="Filter events">
+          <button type="button" class="agent-stream-filter active" data-kind="all" aria-pressed="true">All</button>
+          <button type="button" class="agent-stream-filter" data-kind="thinking" aria-pressed="false">Thinking <span class="count">0</span></button>
+          <button type="button" class="agent-stream-filter" data-kind="tool_call" aria-pressed="false">Tool <span class="count">0</span></button>
+          <button type="button" class="agent-stream-filter" data-kind="error" aria-pressed="false">Error <span class="count">0</span></button>
+        </div>
+      </header>
+      <div class="agent-stream-body" id="agent-stream-body">
+        {% if _is_replay %}
+          {% if selected_events %}
+            {% for ev in selected_events %}
+              <div class="agent-event kind-{{ ev.kind|replace('agent.', '') }}" data-kind="{{ ev.kind|replace('agent.', '') }}">
+                <span class="ts">{{ ev.ts_short or "" }}</span>
+                <span class="kind">{{ ev.kind|replace('agent.', '')|replace('_', ' ') }}</span>
+                <span class="body">
+                  {% if ev.summary %}{{ ev.summary }}{% elif ev.payload and ev.payload.data %}{{ ev.payload.data|string|truncate(800) }}{% else %}<span class="muted">—</span>{% endif %}
+                </span>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="agent-stream-empty">
+              <div class="icon">∅</div>
+              <div>В этом run нет записанных activity-событий.</div>
+              <div class="muted-tiny" style="margin-top: 4px;">Возможно, run упал до первого write-tool вызова.</div>
+            </div>
+          {% endif %}
+        {% else %}
+          <div class="agent-stream-empty">
+            <div class="icon">⌁</div>
+            <div>Жду первое событие от агента…</div>
+            <div class="muted-tiny" style="margin-top: 4px;">Запусти задачу через <code>cod-doc agent run</code> или дай агенту тикнуть.</div>
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+  </div>
+
+  {# ── Right rail: run history ───────────────────────────────────────── #}
+  <aside class="agent-side">
+    <div class="runs-history">
+      <div class="runs-history-header">
+        <span>Recent runs</span>
+        <span class="muted-tiny">{{ runs|length }}</span>
+      </div>
+      {% if runs %}
+        <ul class="runs-history-list">
+          {% for r in runs %}
+            <li>
+              <a class="runs-history-item {% if selected_run and selected_run.run_id == r.run_id %}is-active{% endif %}"
+                 href="/p/{{ project.name }}/run/{{ r.run_id }}"
+                 style="text-decoration: none; color: inherit; display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-2); align-items: center; padding: var(--space-2) var(--space-3);">
+                <span class="status-dot s-{{ r.status }}"></span>
+                <span class="meta">
+                  <span class="title">
+                    {% if r.triggering_task_id %}{{ r.triggering_task_id }}{% else %}<span class="muted">(no task)</span>{% endif %}
+                  </span>
+                  <span class="sub">
+                    {% if r.wake_reason %}{{ r.wake_reason }}{% else %}—{% endif %}
+                    {% if r.duration_s %} · {{ "%.0fs"|format(r.duration_s) }}{% endif %}
+                  </span>
+                </span>
+                <span class="age">{{ r.age }}</span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="runs-history-empty">
+          Нет сохранённых runs.<br>
+          <span class="muted-tiny">Первый прогон агента появится здесь автоматически.</span>
+        </div>
+      {% endif %}
+    </div>
+
+    {# ── Quick stats ────────────────────────────────────────────────── #}
+    {% if runs %}
+      {% set _done = runs|selectattr('status', 'equalto', 'done')|list|length %}
+      {% set _failed = runs|selectattr('status', 'equalto', 'failed')|list|length %}
+      {% set _running_n = runs|selectattr('status', 'equalto', 'running')|list|length %}
+      <div class="overview-block" style="margin: 0;">
+        <h2>Last {{ runs|length }} runs</h2>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2);">
+          <div>
+            <div class="muted-tiny">Done</div>
+            <div style="font-size: 18px; font-weight: 600; color: var(--success);">{{ _done }}</div>
+          </div>
+          <div>
+            <div class="muted-tiny">Failed</div>
+            <div style="font-size: 18px; font-weight: 600; color: var(--danger);">{{ _failed }}</div>
+          </div>
+          <div>
+            <div class="muted-tiny">Running</div>
+            <div style="font-size: 18px; font-weight: 600; color: var(--info);">{{ _running_n }}</div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}
