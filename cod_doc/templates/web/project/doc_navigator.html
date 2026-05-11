@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block title %}Doc Navigator · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/docs">Docs</a> /
+  <span>Navigator</span>
+</nav>
+
+{% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="nav-page">
+
+  {# ── Header ─────────────────────────────────────────────────────────── #}
+  <div class="nav-header">
+    <div class="nav-header-icon">🗺</div>
+    <div>
+      <h1 class="nav-title">Documentation Navigator</h1>
+      <p class="nav-subtitle muted">
+        Follow the recommended path to build comprehensive project documentation.
+        Each step builds on the previous one — the AI analyzes what's missing and
+        suggests what to create next.
+      </p>
+    </div>
+  </div>
+
+  {# ── Journey track ───────────────────────────────────────────────────── #}
+  <div class="nav-track-wrap">
+    <div class="nav-track">
+      {% for step in journey %}
+      <div class="nav-step nav-step-{{ step.status }}"
+           title="{{ step.description }}">
+        <div class="nav-step-num">{{ step.step_num }}</div>
+        <div class="nav-step-icon">{{ step.icon }}</div>
+        <div class="nav-step-label">{{ step.label }}</div>
+        <div class="nav-step-desc">{{ step.description }}</div>
+
+        <div class="nav-step-status">
+          {% if step.status == "complete" %}
+            <span class="nav-badge nav-badge-complete">✓ {{ step.count }} doc{{ "s" if step.count != 1 else "" }}</span>
+          {% elif step.status == "partial" %}
+            <span class="nav-badge nav-badge-partial">⚠ {{ step.count }} doc</span>
+          {% elif step.status == "next" %}
+            <span class="nav-badge nav-badge-next">✨ Next</span>
+          {% else %}
+            <span class="nav-badge nav-badge-missing">○ Missing</span>
+          {% endif %}
+        </div>
+
+        {% if step.status in ("next", "missing") %}
+        {% set step_type = step.id if step.id not in ('data-model', 'modules') else 'module-spec' %}
+        {% if total_docs == 0 %}
+          {# Empty project — generate page needs sources, send user to blank-form-with-prefill instead #}
+          <a class="nav-step-action"
+             href="/p/{{ project.name }}/docs/new?description={{ step.generate_hint | urlencode }}&type={{ step_type }}">
+            Create →
+          </a>
+        {% else %}
+          <a class="nav-step-action"
+             href="/p/{{ project.name }}/docs/generate?intent={{ step.generate_hint | urlencode }}&type={{ step_type }}">
+            Create →
+          </a>
+        {% endif %}
+        {% elif step.doc_keys %}
+        <div class="nav-step-keys">
+          {% for k in step.doc_keys[:2] %}
+            <a href="/p/{{ project.name }}/docs/{{ k }}" class="nav-step-key mono">{{ k.split("/")[-1] }}</a>
+          {% endfor %}
+          {% if step.doc_keys | length > 2 %}
+            <span class="muted-tiny">+{{ step.doc_keys | length - 2 }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+
+      {% if not loop.last %}
+        <div class="nav-arrow {% if step.status == 'complete' %}nav-arrow-done{% endif %}">›</div>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ── Legend ──────────────────────────────────────────────────────────── #}
+  <div class="nav-legend">
+    <span><span class="nav-badge nav-badge-complete">✓</span> Complete (2+ docs)</span>
+    <span><span class="nav-badge nav-badge-partial">⚠</span> Partial (1 doc)</span>
+    <span><span class="nav-badge nav-badge-next">✨</span> Recommended next</span>
+    <span><span class="nav-badge nav-badge-missing">○</span> Missing</span>
+  </div>
+
+  {# ── AI Analysis (HTMX lazy load) ────────────────────────────────────── #}
+  <div class="nav-analysis-wrap">
+    <div class="nav-analysis-header">
+      <div class="nav-analysis-title">
+        <span class="nav-analysis-icon">🤖</span>
+        AI Gap Analysis
+      </div>
+      <form hx-post="/p/{{ project.name }}/docs/navigator/analyze"
+            hx-target="#nav-analysis"
+            hx-swap="innerHTML"
+            hx-indicator="#nav-refresh-spinner"
+            style="display:inline">
+        <input type="hidden" name="force" value="true">
+        <button type="submit" class="btn btn-secondary btn-sm">
+          <span id="nav-refresh-spinner" class="htmx-indicator spinner" style="margin-right:4px;"></span>
+          Refresh
+        </button>
+      </form>
+    </div>
+
+    {% if cached_analysis %}
+      {# Hot path: render cached analysis inline — no spinner, no round-trip. #}
+      <div id="nav-analysis">
+        {% with analysis=cached_analysis %}
+          {% include "_frag/nav_analysis.html" %}
+        {% endwith %}
+      </div>
+    {% else %}
+      {# Cold path: lazy-load via HTMX (will call AI on first ever visit). #}
+      <div id="nav-analysis"
+           hx-post="/p/{{ project.name }}/docs/navigator/analyze"
+           hx-trigger="load"
+           hx-swap="innerHTML"
+           hx-indicator="#nav-analysis-loader">
+        <div id="nav-analysis-loader" class="nav-analysis-loading">
+          <div class="spinner"></div>
+          <span>Analyzing documentation…</span>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<style>
+.nav-page { max-width: 1000px; margin: 0 auto; }
+
+/* Header */
+.nav-header {
+  display: flex; align-items: flex-start; gap: var(--space-4);
+  margin: var(--space-2) 0 var(--space-5);
+}
+.nav-header-icon {
+  width: 48px; height: 48px; border-radius: var(--radius-lg); flex-shrink: 0;
+  background: linear-gradient(135deg, var(--purple-soft-bg) 0%, var(--accent-soft-bg) 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; border: 1px solid var(--border);
+}
+.nav-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; color: var(--fg-strong); }
+.nav-subtitle { font-size: 13px; margin: 0; line-height: 1.55; }
+
+/* Track */
+.nav-track-wrap {
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.nav-track {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-width: max-content;
+}
+
+/* Step card */
+.nav-step {
+  width: 148px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2) var(--space-3);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  position: relative;
+  transition: border-color var(--motion-fast), background var(--motion-fast);
+}
+.nav-step-complete {
+  border-color: var(--accent);
+  background: var(--accent-soft-bg);
+}
+.nav-step-partial {
+  border-color: var(--warning-border);
+  background: var(--warning-soft-bg);
+}
+.nav-step-next {
+  border-color: var(--purple);
+  background: var(--purple-soft-bg);
+  box-shadow: 0 0 0 3px var(--purple-soft-bg), 0 0 0 5px var(--purple);
+  animation: nav-pulse 2s ease-in-out infinite;
+}
+.nav-step-missing {
+  border-color: var(--border-soft);
+  background: var(--bg-alt);
+  opacity: 0.7;
+}
+@keyframes nav-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px var(--purple-soft-bg), 0 0 0 5px var(--purple); }
+  50% { box-shadow: 0 0 0 5px var(--purple-soft-bg), 0 0 0 8px var(--purple); }
+}
+
+.nav-step-num {
+  position: absolute; top: 8px; left: 10px;
+  font-size: 10px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.nav-step-icon { font-size: 26px; margin-top: var(--space-1); }
+.nav-step-label { font-size: 13px; font-weight: 700; color: var(--fg-strong); }
+.nav-step-desc { font-size: 10px; color: var(--muted); line-height: 1.4; min-height: 28px; }
+
+/* Badges */
+.nav-badge {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px; border-radius: 10px;
+  font-size: 10px; font-weight: 700;
+}
+.nav-badge-complete { background: var(--success-soft-bg); color: var(--success-soft-fg); border: 1px solid var(--success-border); }
+.nav-badge-partial { background: var(--warning-soft-bg); color: var(--warning-soft-fg); border: 1px solid var(--warning-border); }
+.nav-badge-next { background: var(--purple-soft-bg); color: var(--purple); border: 1px solid var(--purple); }
+.nav-badge-missing { background: var(--bg-alt); color: var(--muted); border: 1px solid var(--border-soft); }
+
+.nav-step-action {
+  margin-top: var(--space-1);
+  display: inline-flex; align-items: center;
+  padding: 4px 10px; border-radius: var(--radius-sm);
+  font-size: 11px; font-weight: 600;
+  background: var(--purple); color: white;
+  text-decoration: none;
+  transition: opacity var(--motion-fast);
+}
+.nav-step-action:hover { opacity: .85; }
+.nav-step-missing .nav-step-action { background: var(--muted); }
+
+.nav-step-keys {
+  display: flex; flex-direction: column; gap: 2px;
+  margin-top: var(--space-1); max-width: 100%;
+}
+.nav-step-key {
+  font-size: 10px; color: var(--accent); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 130px;
+  display: block;
+  text-decoration: none;
+}
+.nav-step-key:hover { text-decoration: underline; }
+
+/* Arrow between steps */
+.nav-arrow {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; flex-shrink: 0;
+  font-size: 20px; color: var(--border-strong);
+  padding-bottom: 30px; /* align with card center */
+}
+.nav-arrow-done { color: var(--accent); }
+
+/* Legend */
+.nav-legend {
+  display: flex; gap: var(--space-4); flex-wrap: wrap;
+  font-size: 11px; color: var(--muted);
+  margin-bottom: var(--space-5);
+}
+.nav-legend span { display: flex; align-items: center; gap: 6px; }
+
+/* Analysis wrapper */
+.nav-analysis-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  overflow: hidden;
+}
+.nav-analysis-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border-soft);
+}
+.nav-analysis-title {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-size: 14px; font-weight: 700; color: var(--fg-strong);
+}
+.nav-analysis-icon {
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  background: var(--purple-soft-bg); border: 1px solid var(--purple);
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+
+.nav-analysis-loading {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-5);
+  color: var(--muted); font-size: 13px;
+}
+</style>
+{% endblock %}

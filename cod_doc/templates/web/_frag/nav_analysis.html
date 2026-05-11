@@ -1,0 +1,202 @@
+{# COD navigator: AI gap analysis fragment. Loaded via HTMX on page mount and on Refresh. #}
+
+{% if analysis.error %}
+  <div class="nav-analysis-error">
+    <span>⚠</span>
+    <span>Analysis unavailable: {{ analysis.error }}</span>
+  </div>
+{% else %}
+
+  <div class="nav-analysis-body">
+
+    {# ── Summary ─────────────────────────────────────────────────────── #}
+    {% if analysis.summary %}
+      <p class="nav-summary">{{ analysis.summary }}</p>
+    {% endif %}
+
+    {# ── Recommended next step (spotlight) ───────────────────────────── #}
+    {% if analysis.next_title %}
+      <div class="nav-next-card">
+        <div class="nav-next-label">
+          <span class="nav-next-star">✨</span>
+          Recommended next
+        </div>
+        <div class="nav-next-title">{{ analysis.next_title }}</div>
+        {% if analysis.next_intent %}
+          <div class="nav-next-intent">{{ analysis.next_intent }}</div>
+        {% endif %}
+        <div class="nav-next-action">
+          {% if analysis.next_sources %}
+            {% set src_params = analysis.next_sources | map("urlencode") | join("&source=") %}
+            <a class="btn btn-primary"
+               href="/p/{{ project.name }}/docs/generate?intent={{ analysis.next_intent | urlencode }}&type={{ analysis.next_type }}&source={{ src_params }}">
+              ✨ Generate this document
+            </a>
+          {% else %}
+            <a class="btn btn-primary"
+               href="/p/{{ project.name }}/docs/new?description={{ analysis.next_intent | urlencode }}&type={{ analysis.next_type }}">
+              ✨ Create this document
+            </a>
+          {% endif %}
+          <span class="ds-chip ds-chip-type">{{ analysis.next_type }}</span>
+        </div>
+      </div>
+    {% endif %}
+
+    {# ── Gaps list ────────────────────────────────────────────────────── #}
+    {% if analysis.gaps %}
+      <div class="nav-section">
+        <div class="nav-section-title">📋 Documentation gaps</div>
+        <div class="nav-gaps">
+          {% for gap in analysis.gaps | sort(attribute="priority") %}
+            <div class="nav-gap-row">
+              <span class="nav-priority nav-priority-{{ gap.priority }}" title="Priority {{ gap.priority }}">P{{ gap.priority }}</span>
+              <div class="nav-gap-body">
+                <div class="nav-gap-title">{{ gap.suggested_title }}</div>
+                <div class="nav-gap-reason">{{ gap.reason }}</div>
+              </div>
+              <div class="nav-gap-actions">
+                <span class="ds-chip ds-chip-type">{{ gap.type }}</span>
+                {% if gap.suggested_sources %}
+                  {% set gap_sources = gap.suggested_sources | join("&source=") %}
+                  <a class="btn btn-secondary btn-sm"
+                     href="/p/{{ project.name }}/docs/generate?intent={{ gap.reason | urlencode }}&type={{ gap.type }}&source={{ gap_sources }}">
+                    Create →
+                  </a>
+                {% else %}
+                  <a class="btn btn-secondary btn-sm"
+                     href="/p/{{ project.name }}/docs/new?description={{ gap.suggested_title | urlencode }} — {{ gap.reason | urlencode }}&type={{ gap.type }}">
+                    Create →
+                  </a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
+    {# ── Strengths ────────────────────────────────────────────────────── #}
+    {% if analysis.strengths %}
+      <details class="nav-strengths">
+        <summary>✅ Strengths ({{ analysis.strengths | length }})</summary>
+        <ul>
+          {% for s in analysis.strengths %}
+            <li>{{ s }}</li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+
+    {# ── Footer ───────────────────────────────────────────────────────── #}
+    <div class="nav-analysis-footer">
+      {% if analysis.cached %}
+        <span class="nav-cache-badge">💾 from cache</span>
+      {% else %}
+        <span class="nav-cache-badge nav-cache-fresh">⚡ fresh analysis</span>
+      {% endif %}
+      <span class="muted-tiny" title="{{ analysis.analyzed_at[:19] | replace('T', ' ') }} UTC">
+        {{ analysis.analyzed_at | relative_time }}
+      </span>
+    </div>
+
+  </div>
+
+{% endif %}
+
+<style>
+.nav-analysis-error {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  color: var(--danger-soft-fg);
+  font-size: 13px;
+}
+
+.nav-analysis-body {
+  display: flex; flex-direction: column; gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+}
+
+.nav-summary {
+  font-size: 13px; line-height: 1.6; color: var(--fg);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-alt);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--accent);
+}
+
+/* Next step spotlight */
+.nav-next-card {
+  border: 2px solid var(--purple);
+  border-radius: var(--radius-lg);
+  background: var(--purple-soft-bg);
+  padding: var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-2);
+}
+.nav-next-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--purple);
+}
+.nav-next-star { font-size: 14px; }
+.nav-next-title { font-size: 17px; font-weight: 700; color: var(--fg-strong); }
+.nav-next-intent { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.nav-next-action { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-1); }
+
+/* Gaps */
+.nav-section { display: flex; flex-direction: column; gap: var(--space-2); }
+.nav-section-title { font-size: 12px; font-weight: 700; color: var(--fg-strong); margin-bottom: 2px; }
+.nav-gaps { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.nav-gap-row {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.nav-priority {
+  flex-shrink: 0;
+  width: 24px; height: 24px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800;
+  margin-top: 1px;
+}
+.nav-priority-1 { background: var(--danger-soft-bg); color: var(--danger-soft-fg); border: 1px solid var(--danger-border); }
+.nav-priority-2 { background: var(--warning-soft-bg); color: var(--warning-soft-fg); border: 1px solid var(--warning-border); }
+.nav-priority-3 { background: var(--bg-alt); color: var(--muted); border: 1px solid var(--border-soft); }
+
+.nav-gap-body { flex: 1; min-width: 0; }
+.nav-gap-title { font-size: 13px; font-weight: 600; color: var(--fg-strong); }
+.nav-gap-reason { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.nav-gap-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+
+/* Strengths */
+.nav-strengths {
+  font-size: 12px; color: var(--muted);
+}
+.nav-strengths summary {
+  cursor: pointer; font-weight: 600; color: var(--success-soft-fg);
+  padding: var(--space-2); border-radius: var(--radius-sm);
+  user-select: none;
+}
+.nav-strengths ul { padding-left: var(--space-5); margin: var(--space-2) 0 0; }
+.nav-strengths li { margin-bottom: 3px; }
+
+/* Footer */
+.nav-analysis-footer {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-soft);
+  font-size: 11px;
+}
+.nav-cache-badge {
+  padding: 2px 8px; border-radius: 10px;
+  background: var(--bg-alt); border: 1px solid var(--border-soft);
+  color: var(--muted);
+}
+.nav-cache-fresh {
+  background: var(--accent-soft-bg); color: var(--accent); border-color: var(--accent);
+}
+</style>

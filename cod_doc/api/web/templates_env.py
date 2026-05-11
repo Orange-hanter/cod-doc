@@ -48,6 +48,10 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # `urldecode` lets base.html surface percent-encoded flash cookies (which we
 # encode at write time because cookie headers are latin-1).
 templates.env.filters["urldecode"] = unquote
+
+# Relative-time filter for short timestamp displays ("5 min ago").
+from cod_doc.services.nav_service import fmt_relative as _fmt_relative
+templates.env.filters["relative_time"] = _fmt_relative
 # Avoid passing the same enum dump from every handler — make it a Jinja global.
 templates.env.globals["task_status_options"] = TASK_STATUS_OPTIONS
 templates.env.globals["document_types"] = DOCUMENT_TYPES
