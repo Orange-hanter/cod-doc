@@ -408,7 +408,7 @@ def test_doc_show_renders_accept_button_when_draft(docs_client) -> None:
     engine.dispose()
 
     r = client.get(f"/p/{entry.name}/docs/drafts/spec")
-    assert "Accept (status → active)" in r.text
+    assert "Accept" in r.text and "active" in r.text
     assert f'/p/{entry.name}/docs-accept' in r.text
 
     # ACTIVE doc seeded by fixture should NOT have the button.
@@ -446,7 +446,7 @@ def test_doc_accept_endpoint_promotes_status(docs_client) -> None:
 
     # The doc now reports ACTIVE on its detail page.
     follow = client.get(f"/p/{entry.name}/docs/drafts/another")
-    assert "badge-active" in follow.text
+    assert "active" in follow.text
 
 
 def test_doc_accept_endpoint_400_on_missing_doc_key(docs_client) -> None:

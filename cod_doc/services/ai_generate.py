@@ -113,20 +113,63 @@ _TASK_SYSTEM_PROMPT = (
 
 
 _DOC_SYSTEM_PROMPT = (
-    "You are a documentation author. The user gives you a set of existing "
-    "project docs as context and an intent for the new doc to write. Produce "
-    "a structured document that builds on (without duplicating) the source "
-    "material.\n\n"
+    "You are a senior technical documentation author. The user gives you a set "
+    "of existing project docs as context and an intent for the new doc to write. "
+    "Produce a thorough, substantive document that builds on (without duplicating) "
+    "the source material.\n\n"
     "Reply with ONLY a JSON object of the shape:\n"
     '  {"doc_key": str, "title": str, "type": "module-spec"|"module-subdoc"|'
     '"execution-plan"|"task-section"|"execution-log"|"standard"|"architecture"|'
     '"vision"|"guide"|"user-story"|"decision"|"open-question"|"redirect", '
     '"preamble": str, "sections": [{"heading": str, "body": str}, ...]}\n\n'
+    "Length and depth requirements:\n"
+    "- For architecture / module-spec / module-subdoc types: 6-12 sections, "
+    "each body 400-900 words with subsections (### Subheading), data models, "
+    "sequence flows (use mermaid ```mermaid``` fences for diagrams), code "
+    "examples, tables of fields/columns/responsibilities, edge cases, and "
+    "concrete API/interface signatures. Aim for production-grade depth.\n"
+    "- For vision / guide / execution-plan types: 5-8 sections, each body "
+    "250-500 words, with concrete steps, tables, and examples.\n"
+    "- For standard / decision / open-question / other types: 3-6 sections, "
+    "each body 150-350 words.\n\n"
+    "Formatting:\n"
+    "- Use markdown headings (### for subsections inside a section body).\n"
+    "- Use ```mermaid fences for flow/sequence/ER diagrams in architecture docs.\n"
+    "- Use tables for field lists, response shapes, comparison matrices.\n"
+    "- Use ```language fenced code blocks for examples.\n"
+    "- Use bullet/numbered lists for enumerations.\n\n"
     "Rules:\n"
     "- doc_key uses kebab/slash style (no spaces, e.g. 'guides/onboarding').\n"
-    "- 2-6 sections, each with a non-empty heading and a markdown body.\n"
+    "- Every section heading must be non-empty and reflect distinct content.\n"
     "- Preserve the language of the source documents.\n"
-    "- Do NOT verbatim-copy source paragraphs; cite them in the preamble."
+    "- Do NOT verbatim-copy source paragraphs; cite them in the preamble.\n"
+    "- Do NOT pad with filler — every paragraph must carry concrete information.\n"
+    "- When 'Type-specific content rules' appear in the user message, follow "
+    "them STRICTLY — they describe what content belongs in this doc type and "
+    "what must NOT appear (e.g. a vision doc must contain no code/API/JSON).\n"
+    "\n"
+    "Cross-doc references (MANDATORY):\n"
+    "- Whenever you reference another document, use MARKDOWN LINK SYNTAX: "
+    "`[short label](doc/key/here)` — the system parses this to register a "
+    "real link between the two documents.\n"
+    "- NEVER write doc references as plain backticks (`doc/key`) — those are "
+    "invisible to the link tracker and the reader cannot click them.\n"
+    "- If you mention any source document by name in the preamble or a section "
+    "body, link it via [label](key) inline.\n"
+    "\n"
+    "Mermaid diagrams (architecture / module-spec only):\n"
+    "- Each statement on its OWN LINE inside the ```mermaid fence — never "
+    "concatenate node/edge declarations with spaces. mermaid.js will refuse "
+    "to render a single-line graph.\n"
+    "- Example of CORRECT formatting:\n"
+    "  ```mermaid\n"
+    "  graph TD\n"
+    "    User[\"User\"] --> App[\"App\"]\n"
+    "    App --> DB[(Database)]\n"
+    "    App --> Cache[(Cache)]\n"
+    "  ```\n"
+    "- Open the fence with ```mermaid and close with ```. Body MUST contain "
+    "real \\n line breaks between every node / arrow declaration."
 )
 
 
@@ -220,12 +263,25 @@ def generate_doc_from_sources(
     excerpt = "\n\n".join(
         f"## {key}\n```\n{body[:6000]}\n```" for key, body in sources[:8]
     )
+    from cod_doc.services.doc_type_guides import guide_for
+
+    type_guide = guide_for(target_type)
+    type_block = (
+        f"\n\n=== Type-specific content rules for '{target_type}' ===\n{type_guide}\n"
+        "These rules OVERRIDE generic length guidance when in conflict.\n"
+        if type_guide
+        else ""
+    )
     user_msg = (
         f"Intent: {intent.strip() or '(default)'}\n"
-        f"Preferred type: {target_type or '(default)'}\n\n"
+        f"Preferred type: {target_type or '(default)'}"
+        f"{type_block}\n"
         f"Source documents:\n{excerpt}"
     )
-    payload, meta = _chat_json(_DOC_SYSTEM_PROMPT, user_msg, cfg=cfg)
+    budget = cfg.doc_token_budget(target_type)
+    payload, meta = _chat_json(
+        _DOC_SYSTEM_PROMPT, user_msg, cfg=cfg, max_tokens=budget
+    )
 
     doc_key = str(payload.get("doc_key") or "").strip()
     title = str(payload.get("title") or "").strip()
@@ -303,9 +359,13 @@ def generate_master_from_folder(
 
 
 def _chat_json(
-    system_prompt: str, user_msg: str, *, cfg: Config
+    system_prompt: str, user_msg: str, *, cfg: Config, max_tokens: int | None = None
 ) -> tuple[dict[str, Any], GenerationMeta]:
-    """Run a single chat completion that must return JSON; parse + return."""
+    """Run a single chat completion that must return JSON; parse + return.
+
+    ``max_tokens`` lets callers override the default ``cfg.max_tokens`` cap —
+    useful for doc generation where outputs benefit from a much larger budget.
+    """
     if not cfg.api_key:
         raise AIBackendError("LLM backend not configured: set the API key in /settings.")
 
@@ -323,7 +383,7 @@ def _chat_json(
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},
             ],
-            max_tokens=cfg.max_tokens,
+            max_tokens=max_tokens if max_tokens is not None else cfg.max_tokens,
             response_format={"type": "json_object"},
         )
     except Exception as exc:  # network, rate-limit, etc.

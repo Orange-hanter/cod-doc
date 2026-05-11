@@ -10,221 +10,566 @@
 
 {% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<h1>{{ doc.title }}</h1>
-<p class="mono muted">{{ doc.path }}</p>
-
-<section class="doc-meta">
-  <span><strong>Type:</strong> {{ doc.type }}</span>
-  <span><strong>Status:</strong>
-    <span class="badge badge-{{ doc.status }}">{{ doc.status }}</span>
-  </span>
-  {% if doc.owner %}<span><strong>Owner:</strong> {{ doc.owner }}</span>{% endif %}
-  {% if doc.last_updated %}<span><strong>Updated:</strong> {{ doc.last_updated }}</span>{% endif %}
-  <span class="doc-mode-toggle">
-    {% if is_raw %}
-      <a href="/p/{{ project.name }}/docs/{{ doc.doc_key }}">View rendered</a>
-    {% else %}
-      <a href="/p/{{ project.name }}/docs/{{ doc.doc_key }}?raw=1">View raw</a>
-    {% endif %}
-  </span>
-</section>
-
-{% if doc.status in ("draft", "review") %}
-  <form method="post" action="/p/{{ project.name }}/docs-accept" class="form-actions">
+{# ── Status banner ─────────────────────────────────────────────────────── #}
+{% if doc.status == "draft" %}
+<div class="ds-banner ds-banner-warning">
+  <span class="ds-banner-icon">✏</span>
+  <div class="ds-banner-body">
+    <strong>Draft</strong> — this document is a work in progress.
+    When ready, promote it to active:
+  </div>
+  <form method="post" action="/p/{{ project.name }}/docs-accept" class="ds-banner-action">
     <input type="hidden" name="doc_key" value="{{ doc.doc_key }}">
     <input type="hidden" name="new_status" value="active">
-    <button type="submit" class="btn-primary"
-            title="Promote this document to ACTIVE status (COD-052 accept flow).">
-      ✓ Accept (status → active)
-    </button>
+    <button type="submit" class="btn btn-sm btn-success">✓ Accept → active</button>
   </form>
+</div>
+{% elif doc.status == "review" %}
+<div class="ds-banner ds-banner-info">
+  <span class="ds-banner-icon">👁</span>
+  <div class="ds-banner-body"><strong>In review</strong> — awaiting sign-off.</div>
+  <form method="post" action="/p/{{ project.name }}/docs-accept" class="ds-banner-action">
+    <input type="hidden" name="doc_key" value="{{ doc.doc_key }}">
+    <input type="hidden" name="new_status" value="active">
+    <button type="submit" class="btn btn-sm btn-success">✓ Accept → active</button>
+  </form>
+</div>
+{% elif doc.status == "deprecated" %}
+<div class="ds-banner ds-banner-danger">
+  <span class="ds-banner-icon">⚠</span>
+  <div class="ds-banner-body"><strong>Deprecated</strong> — this document is no longer maintained.</div>
+</div>
 {% endif %}
 
-<div class="split">
-  <aside class="sections-nav">
-    <h2>Sections</h2>
-    {% if sections %}
-    <ul>
-      {% for s in sections %}
-      <li class="lvl-{{ s.level }}"><a href="#{{ s.anchor }}">{{ s.heading }}</a></li>
-      {% endfor %}
-    </ul>
+{# ── Document header ────────────────────────────────────────────────────── #}
+<div class="ds-header">
+  <div class="ds-header-main">
+    <h1 class="ds-title">{{ doc.title }}</h1>
+    <code class="ds-path">{{ doc.path }}</code>
+  </div>
+  <div class="ds-header-actions">
+    {% if is_raw %}
+      <a class="btn btn-sm btn-secondary" href="/p/{{ project.name }}/docs/{{ doc.doc_key }}">Rendered</a>
     {% else %}
-    <p class="muted">No sections.</p>
+      <a class="btn btn-sm btn-secondary" href="/p/{{ project.name }}/docs/{{ doc.doc_key }}?raw=1">Raw</a>
+    {% endif %}
+  </div>
+</div>
+
+{# ── Metadata chips ─────────────────────────────────────────────────────── #}
+<div class="ds-meta">
+  <span class="ds-chip ds-chip-type">{{ doc.type }}</span>
+  <span class="ds-chip ds-chip-status ds-chip-{{ doc.status }}">{{ doc.status }}</span>
+  {% if doc.sensitivity and doc.sensitivity != "internal" %}
+    <span class="ds-chip ds-chip-sensitivity">{{ doc.sensitivity }}</span>
+  {% endif %}
+  {% if doc.owner %}
+    <span class="ds-chip ds-chip-owner">
+      <svg viewBox="0 0 12 12" fill="currentColor" width="11" height="11" style="margin-right:3px;opacity:.7;">
+        <circle cx="6" cy="4" r="2.5"/><path d="M1 10.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/>
+      </svg>{{ doc.owner }}</span>
+  {% endif %}
+  {% if doc.last_updated %}
+    <span class="ds-meta-updated muted-tiny">Updated {{ doc.last_updated }}</span>
+  {% endif %}
+</div>
+
+{# ── Main body ──────────────────────────────────────────────────────────── #}
+<div class="ds-layout">
+
+  {# Sidebar #}
+  <aside class="ds-sidebar">
+    {% if sections %}
+    <nav class="ds-toc">
+      <div class="ds-toc-label">Sections</div>
+      <ul>
+        {% for s in sections %}
+        <li class="toc-lvl-{{ s.level }}">
+          <a href="#{{ s.anchor }}">{{ s.heading }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </nav>
+    {% else %}
+    <div class="ds-sidebar-empty">
+      <span class="muted-tiny">No sections yet</span>
+    </div>
+    {% endif %}
+
+    {# AI expand block #}
+    {% if not has_sections and doc.preamble %}
+    <div class="ds-ai-expand" id="ai-expand-block">
+      <div class="ds-ai-expand-header">
+        <span class="ds-ai-expand-icon">✨</span>
+        <div>
+          <div style="font-weight:600;font-size:13px;">Expand with AI</div>
+          <div class="muted-tiny">Generate sections from the preamble</div>
+        </div>
+      </div>
+      <input type="text" id="expand-intent"
+             class="ds-expand-input"
+             placeholder="Focus (optional, e.g. «add code examples»)">
+      <button type="button" class="btn btn-primary btn-sm" id="btn-expand"
+              style="width:100%;" onclick="runExpand()">
+        <span class="btn-label">✨ Generate sections</span>
+        <span class="btn-loading" hidden>Generating…</span>
+      </button>
+      <div id="expand-status" class="muted-tiny" style="margin-top:var(--space-1);"></div>
+    </div>
+    {% elif has_sections %}
+    <div class="ds-ai-expand-mini">
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-expand-more"
+              onclick="document.getElementById('ai-expand-full').hidden=false; this.hidden=true;">
+        ✨ AI: add more sections
+      </button>
+      <div id="ai-expand-full" hidden style="margin-top:var(--space-2);">
+        <input type="text" id="expand-intent-more" class="ds-expand-input"
+               placeholder="What to add?">
+        <button type="button" class="btn btn-primary btn-sm" onclick="runExpand('expand-intent-more')"
+                style="width:100%;margin-top:var(--space-1);">✨ Generate</button>
+        <div id="expand-status-more" class="muted-tiny" style="margin-top:var(--space-1);"></div>
+      </div>
+    </div>
     {% endif %}
   </aside>
 
-  <article class="doc-body">
+  {# Body #}
+  <article class="ds-body" id="doc-body">
     {% if is_raw %}
       {% if raw_body %}
         <pre class="md-preview">{{ raw_body }}</pre>
       {% else %}
-        <p class="muted">Document body is empty.</p>
+        <div class="ds-empty-body">
+          <div class="ds-empty-icon">📄</div>
+          <p>Document body is empty.</p>
+        </div>
       {% endif %}
     {% else %}
       {% if preamble_html %}
-        <div class="doc-preamble">{{ preamble_html | safe }}</div>
+        <div class="ds-preamble">{{ preamble_html | safe }}</div>
       {% endif %}
       {% if sections_html %}
-        {% for s in sections_html %}
-          {% include "_frag/section_view.html" %}
-        {% endfor %}
+        <div class="ds-sections">
+          {% for s in sections_html %}
+            {% include "_frag/section_view.html" %}
+          {% endfor %}
+        </div>
       {% elif not preamble_html %}
-        <p class="muted">Document body is empty.</p>
+        <div class="ds-empty-body">
+          <div class="ds-empty-icon">📄</div>
+          <p class="muted">Document body is empty.</p>
+          <p class="muted-tiny">Add a preamble when creating, or use ✨ AI expand.</p>
+        </div>
       {% endif %}
     {% endif %}
   </article>
+
 </div>
 
-{# COD-078: links panel — discoverability for cross-doc references. #}
-<section class="task-card doc-links">
-  <header class="task-card-header">
-    <h2>
-      Links
-      <span class="count-chip">
-        ↑ {{ outgoing_links | length }} · ↓ {{ incoming_links | length }}
-      </span>
+{# ── Links ──────────────────────────────────────────────────────────────── #}
+<section class="ds-panel" id="doc-links">
+  <header class="ds-panel-header">
+    <h2>Links
+      <span class="count-chip">↑ {{ outgoing_links | length }} · ↓ {{ incoming_links | length }}</span>
     </h2>
-    <span class="muted-tiny">
-      Markdown <code>[label](other-doc-key)</code> in section bodies builds these.
-    </span>
+    <span class="muted-tiny">Use <code>[label](other-doc-key)</code> in section bodies to build links.</span>
   </header>
-  <div class="doc-links-grid">
-    <section>
-      <h3>Outgoing <span class="muted-tiny">— this doc points to</span></h3>
+  <div class="ds-links-grid">
+    <div class="ds-links-col">
+      <h3 class="ds-links-col-title">Outgoing <span class="muted-tiny">— this doc points to</span></h3>
       {% if outgoing_links %}
-        <ul>
+        <ul class="ds-link-list">
           {% for link in outgoing_links %}
-            <li>
+            <li class="ds-link-item {% if link.broken_reason %}ds-link-broken{% endif %}">
               {% if link.to_doc_key %}
-                <a href="/p/{{ project.name }}/docs/{{ link.to_doc_key }}"
-                   class="mono">{{ link.to_doc_key }}</a>
+                <a class="mono" href="/p/{{ project.name }}/docs/{{ link.to_doc_key }}">{{ link.to_doc_key }}</a>
               {% else %}
                 <code>{{ link.raw }}</code>
-                {% if link.broken_reason %}
-                  <span class="warn">— {{ link.broken_reason }}</span>
-                {% endif %}
               {% endif %}
-              <span class="muted-tiny">from § {{ link.from_section }}</span>
+              <span class="ds-link-section muted-tiny">§ {{ link.from_section }}</span>
+              {% if link.broken_reason %}
+                <span class="badge badge-warning">broken</span>
+              {% endif %}
             </li>
           {% endfor %}
         </ul>
       {% else %}
-        <p class="muted">No outgoing links yet.</p>
+        <p class="muted-tiny" style="padding: var(--space-2) 0;">No outgoing links yet.</p>
       {% endif %}
-    </section>
-    <section>
-      <h3>Incoming <span class="muted-tiny">— points to this doc</span></h3>
+    </div>
+    <div class="ds-links-col">
+      <h3 class="ds-links-col-title">Incoming <span class="muted-tiny">— points to this doc</span></h3>
       {% if incoming_links %}
-        <ul>
+        <ul class="ds-link-list">
           {% for grp in incoming_links %}
-            <li>
-              <a href="/p/{{ project.name }}/docs/{{ grp.doc_key }}" class="mono">{{ grp.doc_key }}</a>
-              — {{ grp.title }}
+            <li class="ds-link-item">
+              <a class="mono" href="/p/{{ project.name }}/docs/{{ grp.doc_key }}">{{ grp.doc_key }}</a>
+              {% if grp.title %}<span class="muted-tiny">— {{ grp.title }}</span>{% endif %}
               {% if grp.sections %}
-                <ul class="muted-tiny">
-                  {% for sec in grp.sections %}
-                    <li>§ {{ sec.heading }}</li>
-                  {% endfor %}
-                </ul>
+                <div class="ds-link-sections">
+                  {% for sec in grp.sections %}<span class="muted-tiny">§ {{ sec.heading }}</span>{% endfor %}
+                </div>
               {% endif %}
             </li>
           {% endfor %}
         </ul>
       {% else %}
-        <p class="muted">Nobody links here yet.</p>
+        <p class="muted-tiny" style="padding: var(--space-2) 0;">Nobody links here yet.</p>
       {% endif %}
-    </section>
+    </div>
   </div>
 </section>
 
-{# PCA-422 UI: semantic link suggestions panel #}
-<section class="task-card doc-suggestions" style="margin-top:1rem">
-  <header style="display:flex;align-items:center;gap:.5rem">
-    <h2 style="margin:0">💡 Suggested links</h2>
-    <span class="muted" id="sugg-count">
-      {% set total = namespace(n=0) %}
-      {% for grp in suggestions_by_section %}{% set total.n = total.n + (grp.items | length) %}{% endfor %}
-      {{ total.n }} pending
-    </span>
-    <button id="run-suggestions-btn" class="btn btn-secondary btn-sm" style="margin-left:auto">
+{# ── Suggested links ────────────────────────────────────────────────────── #}
+<section class="ds-panel" id="doc-suggestions">
+  <header class="ds-panel-header">
+    <h2>💡 Suggested links
+      <span class="count-chip" id="sugg-count">
+        {% set total = namespace(n=0) %}
+        {% for grp in suggestions_by_section %}{% set total.n = total.n + (grp.items | length) %}{% endfor %}
+        {{ total.n }} pending
+      </span>
+    </h2>
+    <button id="run-suggestions-btn" class="btn btn-secondary btn-sm" style="margin-left:auto;">
       🔍 Run suggestions
     </button>
   </header>
-  <p class="muted" style="margin:.5rem 0">
-    Semantic candidates based on the ChromaDB embedding index. Accepting
-    appends the link to a managed «See also» block in the source section.
+  <p class="muted-tiny" style="margin: var(--space-1) 0 var(--space-3);">
+    Semantic candidates from the ChromaDB index — accepting appends a «See also» block.
   </p>
-
   {% if suggestions_by_section %}
     {% for grp in suggestions_by_section %}
-      <div style="margin-top:.75rem">
-        <strong>§ {{ grp.section_heading }}</strong>
-        <ul class="suggestion-list" style="list-style:none;padding-left:1rem">
+      <div class="ds-sugg-group">
+        <div class="ds-sugg-section-label">§ {{ grp.section_heading }}</div>
+        <ul class="ds-sugg-list">
           {% for s in grp.items %}
-            <li id="sugg-row-{{ s.row_id }}" style="margin:.25rem 0;display:flex;gap:.5rem;align-items:center">
-              <code style="font-size:.85em">{{ s.to_doc_key }}</code>
-              <span class="muted">score {{ s.score }}</span>
-              <button class="btn btn-success btn-sm sugg-accept" data-row-id="{{ s.row_id }}">✓ Accept</button>
-              <button class="btn btn-secondary btn-sm sugg-reject" data-row-id="{{ s.row_id }}">✗ Reject</button>
+            <li id="sugg-row-{{ s.row_id }}" class="ds-sugg-item">
+              <code class="mono">{{ s.to_doc_key }}</code>
+              <span class="ds-sugg-score">{{ s.score }}</span>
+              <div class="ds-sugg-actions">
+                <button class="btn btn-success btn-sm sugg-accept" data-row-id="{{ s.row_id }}">✓ Accept</button>
+                <button class="btn btn-secondary btn-sm sugg-reject" data-row-id="{{ s.row_id }}">✗</button>
+              </div>
             </li>
           {% endfor %}
         </ul>
       </div>
     {% endfor %}
   {% else %}
-    <p class="muted">No pending suggestions. Click «Run suggestions» to generate from the embedding index.</p>
+    <p class="muted-tiny">No pending suggestions. Click «Run suggestions» to generate.</p>
   {% endif %}
-  <p id="sugg-status" class="muted" style="margin-top:.5rem"></p>
+  <p id="sugg-status" class="muted-tiny" style="margin-top: var(--space-2);"></p>
 </section>
+
+{# ── Styles (page-scoped, no conflicts with global) ─────────────────────── #}
+<style>
+/* Banner */
+.ds-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  margin: 0 0 var(--space-4);
+  font-size: 13px;
+  border: 1px solid var(--border);
+}
+.ds-banner-warning { background: var(--warning-soft-bg); border-color: var(--warning-border); color: var(--warning-soft-fg); }
+.ds-banner-info    { background: var(--info-soft-bg); border-color: var(--info-border); color: var(--info-soft-fg); }
+.ds-banner-danger  { background: var(--danger-soft-bg); border-color: var(--danger-border); color: var(--danger-soft-fg); }
+.ds-banner-icon { font-size: 18px; flex-shrink: 0; }
+.ds-banner-body { flex: 1; }
+.ds-banner-action { margin-left: auto; flex-shrink: 0; }
+
+/* Header */
+.ds-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: 0 0 var(--space-3);
+  flex-wrap: wrap;
+}
+.ds-header-main { flex: 1; min-width: 0; }
+.ds-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--fg-strong);
+  margin: 0 0 var(--space-1);
+  line-height: 1.25;
+}
+.ds-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  display: block;
+}
+.ds-header-actions { display: flex; gap: var(--space-2); align-items: center; flex-shrink: 0; }
+
+/* Meta chips */
+.ds-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5);
+}
+.ds-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--muted-strong);
+}
+.ds-chip-type { background: var(--purple-soft-bg); color: var(--purple); border-color: var(--purple); opacity: .85; }
+.ds-chip-draft { background: var(--warning-soft-bg); color: var(--warning-soft-fg); border-color: var(--warning-border); }
+.ds-chip-active { background: var(--success-soft-bg); color: var(--success-soft-fg); border-color: var(--success-border); }
+.ds-chip-review { background: var(--info-soft-bg); color: var(--info-soft-fg); border-color: var(--info-border); }
+.ds-chip-deprecated { background: var(--bg-alt); color: var(--muted); border-color: var(--border); }
+.ds-chip-owner { background: var(--bg-soft); }
+.ds-chip-sensitivity { background: var(--danger-soft-bg); color: var(--danger-soft-fg); border-color: var(--danger-border); }
+.ds-meta-updated { margin-left: auto; }
+
+/* Layout */
+.ds-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-5);
+  align-items: start;
+  margin: 0 0 var(--space-5);
+}
+@media (max-width: 860px) { .ds-layout { grid-template-columns: 1fr; } }
+
+/* Sidebar */
+.ds-sidebar {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--space-3));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.ds-toc {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+.ds-toc-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: var(--space-2);
+}
+.ds-toc ul { list-style: none; padding: 0; margin: 0; }
+.ds-toc li { padding: 2px 0; }
+.ds-toc li.toc-lvl-2 { padding-left: 0; }
+.ds-toc li.toc-lvl-3 { padding-left: var(--space-3); }
+.ds-toc li.toc-lvl-4 { padding-left: var(--space-5); }
+.ds-toc a { font-size: 12px; color: var(--muted); }
+.ds-toc a:hover { color: var(--accent); text-decoration: none; }
+.ds-sidebar-empty { font-size: 12px; color: var(--muted); padding: var(--space-1) 0; }
+
+/* AI expand */
+.ds-ai-expand {
+  background: linear-gradient(135deg, var(--accent-soft-bg) 0%, var(--bg) 100%);
+  border: 1px solid var(--accent-soft-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ds-ai-expand-header { display: flex; gap: var(--space-2); align-items: flex-start; }
+.ds-ai-expand-icon { font-size: 18px; flex-shrink: 0; }
+.ds-expand-input {
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  width: 100%;
+}
+.ds-ai-expand-mini { padding: var(--space-1) 0; }
+
+/* Body */
+.ds-body { min-width: 0; }
+.ds-preamble {
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-4);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.ds-preamble p { margin: 0 0 var(--space-2); }
+.ds-preamble p:last-child { margin-bottom: 0; }
+.ds-sections { display: flex; flex-direction: column; gap: var(--space-1); }
+.ds-empty-body {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-7) var(--space-5);
+  text-align: center;
+  color: var(--muted);
+}
+.ds-empty-icon { font-size: 36px; margin-bottom: var(--space-2); opacity: .5; }
+
+/* Section override for doc-show */
+.ds-body .doc-section {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg);
+  margin-bottom: var(--space-2);
+}
+.ds-body .doc-section:first-child { margin-top: 0; }
+.ds-body .doc-section h2 { font-size: 17px; font-weight: 600; color: var(--fg-strong); }
+.ds-body .doc-section h3 { font-size: 14px; font-weight: 600; color: var(--fg-strong); }
+.ds-body .section-body { font-size: 14px; line-height: 1.65; margin-top: var(--space-2); }
+.ds-body .section-body p:last-child { margin-bottom: 0; }
+.section-edit-btn { opacity: .5; }
+.section-edit-btn:hover { opacity: 1; }
+
+/* Panel (links + suggestions) */
+.ds-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-4);
+}
+.ds-panel-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-soft);
+}
+.ds-panel-header h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-strong); font-weight: 700; }
+
+/* Links */
+.ds-links-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+@media (max-width: 700px) { .ds-links-grid { grid-template-columns: 1fr; } }
+.ds-links-col-title { font-size: 12px; font-weight: 600; color: var(--fg-strong); margin: 0 0 var(--space-2); }
+.ds-link-list { list-style: none; padding: 0; margin: 0; }
+.ds-link-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+.ds-link-item:last-child { border-bottom: 0; }
+.ds-link-broken { color: var(--danger); }
+.ds-link-section { margin-left: auto; }
+.ds-link-sections { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: 2px; width: 100%; }
+
+/* Suggestions */
+.ds-sugg-group { margin-bottom: var(--space-3); }
+.ds-sugg-section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: var(--space-1); }
+.ds-sugg-list { list-style: none; padding: 0; margin: 0; }
+.ds-sugg-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12px;
+}
+.ds-sugg-item:last-child { border-bottom: 0; }
+.ds-sugg-score { background: var(--bg-alt); border-radius: var(--radius-pill); padding: 1px 8px; font-size: 10px; font-family: var(--font-mono); color: var(--muted); }
+.ds-sugg-actions { margin-left: auto; display: flex; gap: var(--space-1); }
+
+/* AI expand button states */
+.btn .btn-label { display: inline; }
+.btn .btn-loading { display: none; }
+.btn.is-loading .btn-label { display: none; }
+.btn.is-loading .btn-loading { display: inline; }
+.btn.is-loading { opacity: 0.75; cursor: not-allowed; pointer-events: none; }
+</style>
 
 <script>
 (function () {
   const slug = {{ project.name | tojson }};
   const docKey = {{ doc.doc_key | tojson }};
-  const status = document.getElementById('sugg-status');
 
-  document.getElementById('run-suggestions-btn').addEventListener('click', async () => {
-    status.textContent = 'Running suggester (this may take a few seconds)…';
+  // ── AI expand ─────────────────────────────────────────────────────────
+  async function runExpand(intentInputId) {
+    intentInputId = intentInputId || 'expand-intent';
+    const statusId = intentInputId === 'expand-intent' ? 'expand-status' : 'expand-status-more';
+    const intent = (document.getElementById(intentInputId) || {}).value || '';
+    const btn = event.target.closest('button');
+
+    btn.classList.add('is-loading');
+    document.getElementById(statusId).textContent = 'Generating sections…';
+
     try {
       const fd = new FormData();
-      fd.append('doc_key', docKey);
-      const r = await fetch(`/p/${slug}/suggestions/run`, {method: 'POST', body: fd});
+      fd.append('intent', intent);
+      const r = await fetch(`/p/${slug}/docs/${docKey}/expand`, { method: 'POST', body: fd });
+      const data = await r.json();
+      if (!r.ok || data.error) {
+        document.getElementById(statusId).textContent = data.error || 'Error';
+        return;
+      }
+      document.getElementById(statusId).textContent = `Created ${data.created} section(s). Reloading…`;
+      setTimeout(() => location.reload(), 1000);
+    } catch (e) {
+      document.getElementById(statusId).textContent = 'Error: ' + e.message;
+    } finally {
+      btn.classList.remove('is-loading');
+    }
+  }
+  window.runExpand = runExpand;
+
+  // ── Suggestions ────────────────────────────────────────────────────────
+  const suggStatus = document.getElementById('sugg-status');
+
+  document.getElementById('run-suggestions-btn').addEventListener('click', async () => {
+    suggStatus.textContent = 'Running suggester…';
+    try {
+      const fd = new FormData(); fd.append('doc_key', docKey);
+      const r = await fetch(`/p/${slug}/suggestions/run`, { method: 'POST', body: fd });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
-      status.textContent = `Processed ${data.sections_processed} section(s); created ${data.suggestions_created} suggestions.`;
+      suggStatus.textContent = `${data.sections_processed} section(s); ${data.suggestions_created} suggestions.`;
       if (data.suggestions_created > 0) setTimeout(() => location.reload(), 1500);
-    } catch (e) {
-      status.textContent = 'Error: ' + e.message;
-    }
+    } catch (e) { suggStatus.textContent = 'Error: ' + e.message; }
   });
 
   async function actOnSuggestion(rowId, action) {
-    status.textContent = `${action === 'accept' ? 'Accepting' : 'Rejecting'} suggestion #${rowId}…`;
+    suggStatus.textContent = `${action === 'accept' ? 'Accepting' : 'Rejecting'} #${rowId}…`;
     try {
-      const r = await fetch(`/p/${slug}/suggestions/${rowId}/${action}`, {method: 'POST'});
+      const r = await fetch(`/p/${slug}/suggestions/${rowId}/${action}`, { method: 'POST' });
       const data = await r.json();
       if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
       const row = document.getElementById('sugg-row-' + rowId);
       if (row) row.remove();
-      status.textContent = `Suggestion #${rowId} ${action}ed.`;
-      const remaining = document.querySelectorAll('.suggestion-list li').length;
+      suggStatus.textContent = `#${rowId} ${action}ed.`;
+      const remaining = document.querySelectorAll('.ds-sugg-item').length;
       document.getElementById('sugg-count').textContent = remaining + ' pending';
-      if (action === 'accept') {
-        // Body changed — reload to pick up the new See-also block.
-        setTimeout(() => location.reload(), 800);
-      }
-    } catch (e) {
-      status.textContent = 'Error: ' + e.message;
-    }
+      if (action === 'accept') setTimeout(() => location.reload(), 800);
+    } catch (e) { suggStatus.textContent = 'Error: ' + e.message; }
   }
 
   document.querySelectorAll('.sugg-accept').forEach(b =>
-    b.addEventListener('click', () => actOnSuggestion(b.dataset.rowId, 'accept'))
-  );
+    b.addEventListener('click', () => actOnSuggestion(b.dataset.rowId, 'accept')));
   document.querySelectorAll('.sugg-reject').forEach(b =>
-    b.addEventListener('click', () => actOnSuggestion(b.dataset.rowId, 'reject'))
-  );
+    b.addEventListener('click', () => actOnSuggestion(b.dataset.rowId, 'reject')));
 })();
 </script>
 {% endblock %}

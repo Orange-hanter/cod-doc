@@ -66,8 +66,37 @@
       }
     </script>
     <label class="field">
-      <span class="label">Max tokens</span>
+      <span class="label">Lite model <span class="muted-tiny">(AI autocomplete)</span></span>
+      <input type="text" name="lite_model" value="{{ config.lite_model }}"
+             placeholder="e.g. openai/gpt-4o-mini — defaults to main model if empty">
+      <small class="muted">
+        Used for fast UI helpers (doc suggest, quick meta-fill). Cheap, low-latency.
+        Leave empty to use the main model.
+      </small>
+    </label>
+    <label class="field">
+      <span class="label">Max tokens (global)</span>
       <input type="number" name="max_tokens" value="{{ config.max_tokens }}" min="1" required>
+      <small class="muted">
+        Default cap for agent steps and improve-text. Doc generation uses the two budgets below instead.
+      </small>
+    </label>
+    <label class="field">
+      <span class="label">Doc gen — heavy (architecture / module-spec)</span>
+      <input type="number" name="doc_max_tokens_heavy"
+             value="{{ config.doc_max_tokens_heavy }}" min="1024" step="1024" required>
+      <small class="muted">
+        Output budget for deep technical docs. 64K is comfortable for Deepseek V3 / Claude Sonnet 4.6;
+        raise to 100K+ if your model supports it and you want maximum depth.
+      </small>
+    </label>
+    <label class="field">
+      <span class="label">Doc gen — default (vision / guide / standard / other)</span>
+      <input type="number" name="doc_max_tokens_default"
+             value="{{ config.doc_max_tokens_default }}" min="1024" step="1024" required>
+      <small class="muted">
+        Output budget for all other doc types. 16K covers a thorough multi-section doc.
+      </small>
     </label>
     <label class="field">
       <span class="label">Embedding backend</span>

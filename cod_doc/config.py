@@ -78,7 +78,28 @@ class Config(BaseSettings):
         default="",
         description="Anthropic API key (for llm_adapter='anthropic')",
     )
+    lite_model: str = Field(
+        default="",
+        description=(
+            "Fast / cheap model for UI autocomplete (doc suggest, quick fills). "
+            "Falls back to `model` when empty."
+        ),
+    )
     max_tokens: int = Field(default=8192)
+    doc_max_tokens_heavy: int = Field(
+        default=64_000,
+        description=(
+            "Max output tokens for deep technical docs (architecture, module-spec, "
+            "module-subdoc). Modern models like Deepseek V3 / Claude Sonnet handle 64K+."
+        ),
+    )
+    doc_max_tokens_default: int = Field(
+        default=16_000,
+        description=(
+            "Max output tokens for all other doc types (vision, guide, standard, "
+            "decision, etc.). 16K covers a thorough multi-section doc."
+        ),
+    )
     max_context_tokens: int = Field(
         default=100_000,
         description=(
@@ -173,3 +194,17 @@ class Config(BaseSettings):
     @property
     def is_configured(self) -> bool:
         return bool(self.api_key)
+
+    _HEAVY_DOC_TYPES = frozenset({"architecture", "module-spec", "module-subdoc"})
+
+    def doc_token_budget(self, doc_type: str) -> int:
+        """Output token budget for the given doc type.
+
+        Architecture / module-spec / module-subdoc → ``doc_max_tokens_heavy``;
+        everything else → ``doc_max_tokens_default``.
+        """
+        return (
+            self.doc_max_tokens_heavy
+            if doc_type in self._HEAVY_DOC_TYPES
+            else self.doc_max_tokens_default
+        )

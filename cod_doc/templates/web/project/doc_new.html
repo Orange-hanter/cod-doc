@@ -8,69 +8,343 @@
   <span>New</span>
 </nav>
 
-<h1>New document</h1>
+<div class="page-header">
+  <h1>New document</h1>
+</div>
 
 {% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<form method="post" action="/p/{{ project.name }}/docs/new" class="settings-form">
-  <fieldset>
-    <legend>Identity</legend>
-    <label class="field">
-      <span class="label">Doc key</span>
-      <input type="text" name="doc_key" required
-             placeholder="modules/M1-foo/overview">
-      <small class="muted">Unique slash-path used for routing and links.</small>
-    </label>
-    <label class="field">
-      <span class="label">Title</span>
-      <input type="text" name="title" required>
-    </label>
-  </fieldset>
+<div class="doc-new-layout">
 
-  <fieldset>
-    <legend>Classification</legend>
-    <label class="field">
-      <span class="label">Type</span>
-      <select name="type">
-        {% for t in document_types %}
-          <option value="{{ t }}" {% if t == "module-spec" %}selected{% endif %}>{{ t }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="field">
-      <span class="label">Status</span>
-      <select name="status">
-        {% for s in doc_status_options %}
-          <option value="{{ s }}" {% if s == "draft" %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="field">
-      <span class="label">Sensitivity</span>
-      <select name="sensitivity">
-        {% for s in sensitivity_options %}
-          <option value="{{ s }}" {% if s == "internal" %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="field">
-      <span class="label">Owner</span>
-      <input type="text" name="owner" placeholder="human:dakh, team:platform, …">
-    </label>
-  </fieldset>
+  {# ── Step 1: AI description ──────────────────────────────────────────── #}
+  <section class="doc-new-step" id="step-describe">
+    <div class="doc-new-step-header">
+      <span class="doc-new-step-num">1</span>
+      <div>
+        <div class="doc-new-step-title">Describe the document</div>
+        <div class="doc-new-step-hint">Write what this doc is about — AI fills in the rest</div>
+      </div>
+    </div>
+    <div class="doc-new-describe-area">
+      <textarea id="doc-description"
+                rows="4"
+                class="doc-new-textarea"
+                placeholder="e.g. «Архитектура модуля аутентификации: JWT, refresh tokens, RBAC. Нужно описать структуру таблиц и endpoints.»"
+                autofocus>{{ prefill_description }}</textarea>
+      <div class="doc-new-describe-actions">
+        <button type="button" class="btn btn-primary" id="btn-suggest" onclick="runSuggest()">
+          <span class="btn-label">✨ Generate meta</span>
+          <span class="btn-loading" hidden>Generating…</span>
+        </button>
+        <span id="suggest-error" class="muted" style="font-size:13px;"></span>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-skip" onclick="showForm()"
+                style="margin-left:auto;">Skip → fill manually</button>
+      </div>
+    </div>
+  </section>
 
-  <fieldset>
-    <legend>Body</legend>
-    <label class="field">
-      <span class="label">Preamble (markdown)</span>
-      <textarea name="preamble" rows="10" placeholder="One-paragraph summary, then links to sections…"></textarea>
-      <small class="muted">Sections can be added after the document is created.</small>
-    </label>
-  </fieldset>
+  {# ── Step 2: Form (hidden initially, revealed after suggest or manual skip) #}
+  <section class="doc-new-step" id="step-form" hidden>
+    <div class="doc-new-step-header">
+      <span class="doc-new-step-num">2</span>
+      <div>
+        <div class="doc-new-step-title">Review &amp; save</div>
+        <div class="doc-new-step-hint">Check the generated fields, edit if needed, then create</div>
+      </div>
+    </div>
 
-  <div class="form-actions">
-    <button type="submit" class="btn-primary">Create</button>
-    <a class="btn-secondary" href="/p/{{ project.name }}/docs">Cancel</a>
-  </div>
-</form>
+    <form method="post" action="/p/{{ project.name }}/docs/new" class="doc-new-form" id="create-form">
+
+      {# Main fields #}
+      <div class="doc-new-grid">
+        <div class="doc-new-field doc-new-field-full">
+          <label for="f-title">Title</label>
+          <input type="text" id="f-title" name="title" required
+                 placeholder="E.g. «Auth Module — Architecture»">
+        </div>
+        <div class="doc-new-field">
+          <label for="f-doc-key">
+            Doc key
+            <span class="field-hint-inline muted-tiny">kebab/slash path, no extension</span>
+          </label>
+          <input type="text" id="f-doc-key" name="doc_key" required
+                 placeholder="e.g. guides/auth-module">
+        </div>
+        <div class="doc-new-field">
+          <label for="f-type">Type</label>
+          <select id="f-type" name="type">
+            {% for t in document_types %}
+              <option value="{{ t }}" {% if t == "module-spec" %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="doc-new-field doc-new-field-full">
+          <label for="f-preamble">
+            Preamble
+            <span class="field-hint-inline muted-tiny">markdown, one-paragraph summary</span>
+          </label>
+          <textarea id="f-preamble" name="preamble" rows="5"
+                    placeholder="One-paragraph summary, then links to sections…"></textarea>
+          <span class="muted-tiny">Sections can be added after the document is created.</span>
+        </div>
+      </div>
+
+      {# Advanced toggle #}
+      <details class="doc-new-advanced">
+        <summary>Advanced (status, sensitivity, owner)</summary>
+        <div class="doc-new-grid" style="margin-top: var(--space-3);">
+          <div class="doc-new-field">
+            <label for="f-status">Status</label>
+            <select id="f-status" name="status">
+              {% for s in doc_status_options %}
+                <option value="{{ s }}" {% if s == "draft" %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="doc-new-field">
+            <label for="f-sensitivity">Sensitivity</label>
+            <select id="f-sensitivity" name="sensitivity">
+              {% for s in sensitivity_options %}
+                <option value="{{ s }}" {% if s == "internal" %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="doc-new-field doc-new-field-full">
+            <label for="f-owner">Owner</label>
+            <input type="text" id="f-owner" name="owner"
+                   placeholder="human:dakh, team:platform, …">
+          </div>
+        </div>
+      </details>
+
+      <div class="doc-new-actions">
+        <button type="submit" class="btn btn-primary btn-lg">Create document</button>
+        <a class="btn btn-secondary" href="/p/{{ project.name }}/docs">Cancel</a>
+      </div>
+    </form>
+  </section>
+
+</div>
+
+<style>
+/* Doc new page — local styles, extends design tokens */
+.doc-new-layout { display: flex; flex-direction: column; gap: var(--space-4); max-width: 760px; margin: var(--space-2) 0; }
+
+.doc-new-step {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  padding: var(--space-5);
+  transition: border-color var(--motion-fast);
+}
+.doc-new-step:focus-within { border-color: var(--border-strong); }
+
+.doc-new-step-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.doc-new-step-num {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.doc-new-step-title { font-weight: 600; font-size: 15px; color: var(--fg-strong); }
+.doc-new-step-hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.doc-new-textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-alt);
+  color: var(--fg);
+  resize: vertical;
+  transition: border-color var(--motion-fast), background var(--motion-fast);
+}
+.doc-new-textarea:focus {
+  border-color: var(--accent);
+  background: var(--bg);
+  outline: 2px solid var(--accent-soft-bg);
+  outline-offset: -1px;
+}
+
+.doc-new-describe-area { display: flex; flex-direction: column; gap: var(--space-3); }
+.doc-new-describe-actions { display: flex; align-items: center; gap: var(--space-2); }
+
+/* Two-column grid for form fields */
+.doc-new-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3) var(--space-4);
+}
+@media (max-width: 600px) { .doc-new-grid { grid-template-columns: 1fr; } }
+.doc-new-field-full { grid-column: 1 / -1; }
+
+.doc-new-field { display: flex; flex-direction: column; gap: var(--space-1); }
+.doc-new-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.field-hint-inline { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+.doc-new-field input[type="text"],
+.doc-new-field select,
+.doc-new-field textarea {
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  transition: border-color var(--motion-fast);
+}
+.doc-new-field input:focus,
+.doc-new-field select:focus,
+.doc-new-field textarea:focus {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent-soft-bg);
+  outline-offset: -1px;
+}
+.doc-new-field textarea { resize: vertical; line-height: 1.55; }
+
+/* Advanced section */
+.doc-new-advanced {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-alt);
+}
+.doc-new-advanced > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.doc-new-advanced > summary::before {
+  content: "▸";
+  font-size: 11px;
+  transition: transform var(--motion-fast);
+  color: var(--muted);
+}
+.doc-new-advanced[open] > summary::before { transform: rotate(90deg); }
+.doc-new-advanced > summary::-webkit-details-marker { display: none; }
+
+.doc-new-form { display: flex; flex-direction: column; gap: var(--space-3); }
+.doc-new-actions { display: flex; gap: var(--space-2); align-items: center; padding-top: var(--space-2); }
+
+/* Generating state */
+.btn .btn-label { display: inline; }
+.btn .btn-loading { display: none; }
+.btn.is-loading .btn-label { display: none; }
+.btn.is-loading .btn-loading { display: inline; }
+.btn.is-loading { opacity: 0.75; cursor: not-allowed; }
+
+/* Filled-field highlight */
+.doc-new-field input.ai-filled,
+.doc-new-field select.ai-filled,
+.doc-new-field textarea.ai-filled {
+  border-color: var(--success-border);
+  background: var(--success-soft-bg);
+  transition: all 0.4s ease;
+}
+</style>
+
+<script>
+(function () {
+  const slug = {{ project.name | tojson }};
+
+  function showForm() {
+    document.getElementById('step-form').hidden = false;
+    document.getElementById('f-title').focus();
+  }
+  window.showForm = showForm;
+
+  function setField(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = value;
+    el.classList.add('ai-filled');
+    setTimeout(() => el.classList.remove('ai-filled'), 2500);
+  }
+
+  function setSelectField(id, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    // Try to match value against options
+    for (const opt of el.options) {
+      if (opt.value === value) { el.value = value; break; }
+    }
+    el.classList.add('ai-filled');
+    setTimeout(() => el.classList.remove('ai-filled'), 2500);
+  }
+
+  async function runSuggest() {
+    const desc = document.getElementById('doc-description').value.trim();
+    if (!desc) {
+      document.getElementById('suggest-error').textContent = 'Write a description first.';
+      document.getElementById('doc-description').focus();
+      return;
+    }
+    document.getElementById('suggest-error').textContent = '';
+
+    const btn = document.getElementById('btn-suggest');
+    btn.classList.add('is-loading');
+    btn.disabled = true;
+
+    try {
+      const fd = new FormData();
+      fd.append('description', desc);
+      const r = await fetch(`/p/${slug}/docs/suggest`, { method: 'POST', body: fd });
+      const data = await r.json();
+      if (!r.ok || data.error) {
+        document.getElementById('suggest-error').textContent = data.error || 'AI unavailable — fill manually.';
+        showForm();
+        return;
+      }
+      showForm();
+      setField('f-title', data.title);
+      setField('f-doc-key', data.doc_key);
+      setSelectField('f-type', data.type);
+      setField('f-preamble', data.preamble);
+    } catch (e) {
+      document.getElementById('suggest-error').textContent = 'Network error — fill manually.';
+      showForm();
+    } finally {
+      btn.classList.remove('is-loading');
+      btn.disabled = false;
+    }
+  }
+  window.runSuggest = runSuggest;
+
+  // Allow Ctrl+Enter / Cmd+Enter in description textarea to trigger suggest
+  document.getElementById('doc-description').addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runSuggest(); }
+  });
+})();
+</script>
 {% endblock %}

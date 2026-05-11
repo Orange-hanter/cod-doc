@@ -8,58 +8,251 @@
   <span>Generate</span>
 </nav>
 
-<h1>✨ Generate document via AI</h1>
-
 {% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<p class="muted">
-  Pick one or more existing documents as context, describe the target
-  document's intent, and the LLM will propose a draft (preamble + sections).
-  Nothing is persisted until you press <strong>Save</strong> on the preview.
-</p>
+<div class="gen-page">
 
-<form hx-post="/p/{{ project.name }}/docs/generate"
-      hx-target="#doc-draft"
-      hx-swap="innerHTML"
-      class="ai-gen-form">
-  <fieldset>
-    <legend>Source documents</legend>
-    {% if not sources %}
-      <p class="muted">В проекте нет документов — добавь хотя бы один через ➕ New blank или Import markdown.</p>
-    {% else %}
-      <div class="docs-source-picker">
-        {% for s in sources %}
-          <label class="field-checkbox">
-            <input type="checkbox" name="source" value="{{ s.doc_key }}">
-            <span class="mono">{{ s.doc_key }}</span> — {{ s.title }} <span class="muted-tiny">({{ s.type }})</span>
-          </label>
-        {% endfor %}
-      </div>
-    {% endif %}
-  </fieldset>
-
-  <fieldset>
-    <legend>Target</legend>
-    <label class="field">
-      <span class="label">Type</span>
-      <select name="type">
-        {% for t in document_types %}
-          <option value="{{ t }}" {% if t == "guide" %}selected{% endif %}>{{ t }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="field">
-      <span class="label">Intent (что должен описывать новый документ)</span>
-      <input type="text" name="intent"
-             placeholder="e.g. квикстарт для нового разработчика, опираясь на API + Architecture">
-    </label>
-  </fieldset>
-
-  <div class="form-actions">
-    <button type="submit" class="btn-primary">✨ Generate draft</button>
-    <a class="btn-secondary" href="/p/{{ project.name }}/docs">Cancel</a>
+  {# ── Intro ──────────────────────────────────────────────────────────── #}
+  <div class="gen-intro">
+    <div class="gen-intro-icon">✨</div>
+    <div>
+      <h1 class="gen-title">Generate document via AI</h1>
+      <p class="gen-subtitle muted">
+        Select existing docs as context, describe what you want — the AI produces a full draft
+        (preamble + sections). Nothing is saved until you review and click <strong>Save</strong>.
+      </p>
+    </div>
   </div>
-</form>
 
-<div id="doc-draft"></div>
+  <form hx-post="/p/{{ project.name }}/docs/generate"
+        hx-target="#gen-preview"
+        hx-swap="innerHTML"
+        hx-indicator="#gen-spinner"
+        class="gen-form">
+
+    {# ── Sources ───────────────────────────────────────────────────────── #}
+    <section class="gen-section">
+      <div class="gen-section-label">
+        <span class="gen-step">1</span>
+        <div>
+          <div class="gen-section-title">Context documents</div>
+          <div class="gen-section-hint">Select existing docs the AI should build upon</div>
+        </div>
+      </div>
+
+      {% if not sources %}
+        <div class="gen-empty">
+          <span class="gen-empty-icon">📄</span>
+          <p>No documents yet.</p>
+          <p class="muted-tiny">
+            Add at least one via
+            <a href="/p/{{ project.name }}/docs/new">+ New blank</a> or import markdown.
+          </p>
+        </div>
+      {% else %}
+        <div class="gen-source-grid">
+          {% for s in sources %}
+            <label class="gen-source-card" title="{{ s.doc_key }}">
+              <input type="checkbox" name="source" value="{{ s.doc_key }}" {% if s.preselected %}checked{% endif %}>
+              <div class="gen-source-check">✓</div>
+              <div class="gen-source-meta">
+                <span class="gen-source-key mono">{{ s.doc_key }}</span>
+                <span class="gen-source-title">{{ s.title }}</span>
+                <span class="gen-source-type">{{ s.type }}</span>
+              </div>
+            </label>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+
+    {# ── Intent ───────────────────────────────────────────────────────── #}
+    <section class="gen-section">
+      <div class="gen-section-label">
+        <span class="gen-step">2</span>
+        <div>
+          <div class="gen-section-title">Intent &amp; type</div>
+          <div class="gen-section-hint">Describe the document you want to create</div>
+        </div>
+      </div>
+
+      <div class="gen-intent-row">
+        <div class="gen-field gen-field-type">
+          <label for="gen-type">Type</label>
+          <select id="gen-type" name="type">
+            {% for t in document_types %}
+              <option value="{{ t }}" {% if t == (prefill_type or "guide") %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="gen-field gen-field-intent">
+          <label for="gen-intent">Intent</label>
+          <input type="text" id="gen-intent" name="intent" required
+                 value="{{ prefill_intent }}"
+                 placeholder="e.g. Quickstart for new developers, based on API + Architecture docs"
+                 autofocus>
+        </div>
+      </div>
+    </section>
+
+    {# ── Actions ──────────────────────────────────────────────────────── #}
+    <div class="gen-actions">
+      <button type="submit" class="btn btn-primary btn-lg" {% if not sources %}disabled{% endif %}>
+        <span id="gen-spinner" class="htmx-indicator spinner" style="margin-right:6px;"></span>
+        ✨ Generate draft
+      </button>
+      <a class="btn btn-secondary" href="/p/{{ project.name }}/docs">Cancel</a>
+      {% if not sources %}
+        <span class="muted-tiny">Add documents first to enable generation.</span>
+      {% endif %}
+    </div>
+
+  </form>
+
+  {# ── Preview target ────────────────────────────────────────────────── #}
+  <div id="gen-preview"></div>
+
+</div>
+
+<style>
+.gen-page { max-width: 900px; margin: 0 auto; }
+
+.gen-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin: var(--space-2) 0 var(--space-5);
+}
+.gen-intro-icon {
+  width: 48px; height: 48px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--accent-soft-bg) 0%, var(--purple-soft-bg) 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+.gen-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; color: var(--fg-strong); }
+.gen-subtitle { font-size: 13px; margin: 0; line-height: 1.55; }
+
+.gen-form { display: flex; flex-direction: column; gap: var(--space-4); }
+
+.gen-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.gen-section-label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.gen-step {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.gen-section-title { font-weight: 600; font-size: 14px; color: var(--fg-strong); }
+.gen-section-hint { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+.gen-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  color: var(--muted);
+  font-size: 13px;
+  gap: var(--space-1);
+  text-align: center;
+}
+.gen-empty-icon { font-size: 28px; opacity: .5; }
+
+.gen-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-2);
+}
+.gen-source-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--motion-fast);
+  background: var(--bg);
+}
+.gen-source-card:hover { border-color: var(--border-strong); background: var(--bg-alt); }
+.gen-source-card input[type="checkbox"] { display: none; }
+.gen-source-check {
+  width: 18px; height: 18px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  color: transparent;
+  flex-shrink: 0;
+  margin-top: 1px;
+  transition: all var(--motion-fast);
+  background: var(--bg);
+}
+.gen-source-card:has(input:checked) { border-color: var(--accent); background: var(--accent-soft-bg); }
+.gen-source-card:has(input:checked) .gen-source-check {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+}
+.gen-source-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.gen-source-key { font-size: 12px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gen-source-title { font-size: 12px; color: var(--fg); font-weight: 500; }
+.gen-source-type { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+
+.gen-intent-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: var(--space-3);
+  align-items: end;
+}
+@media (max-width: 600px) { .gen-intent-row { grid-template-columns: 1fr; } }
+.gen-field { display: flex; flex-direction: column; gap: var(--space-1); }
+.gen-field label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.gen-field select,
+.gen-field input[type="text"] {
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  transition: border-color var(--motion-fast);
+}
+.gen-field select:focus, .gen-field input:focus {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent-soft-bg);
+  outline-offset: -1px;
+}
+
+.gen-actions { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) 0; }
+
+/* Preview panel */
+#gen-preview:not(:empty) {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  padding: var(--space-5);
+  margin-top: var(--space-2);
+}
+</style>
 {% endblock %}

@@ -1,58 +1,209 @@
-{# COD-078: AI-generated document draft preview. #}
+{# COD-078: AI-generated document draft preview fragment.
+   Injected into #gen-preview via HTMX after generation. #}
+
 {% if notice %}
-  <p class="ai-notice muted">{{ notice }}</p>
+  <div class="draft-notice {% if 'error' in notice.lower() or 'AI error' in notice %}draft-notice-error{% else %}draft-notice-ok{% endif %}">
+    {% if 'error' in notice.lower() or 'AI error' in notice %}
+      <span>⚠</span>
+    {% else %}
+      <span>✓</span>
+    {% endif %}
+    {{ notice }}
+  </div>
 {% endif %}
 
 {% if draft %}
+<div class="draft-header">
+  <div>
+    <div class="draft-label">AI Draft</div>
+    <div class="draft-title-preview">{{ draft.title }}</div>
+    {% if intent %}
+      <div class="muted-tiny">Intent: <em>{{ intent }}</em></div>
+    {% endif %}
+  </div>
+  <div class="draft-meta-chips">
+    <span class="ds-chip ds-chip-type">{{ draft.type }}</span>
+    <span class="ds-chip" style="background:var(--warning-soft-bg);color:var(--warning-soft-fg);border-color:var(--warning-border);">draft</span>
+  </div>
+</div>
+
 <form method="post" action="/p/{{ project.name }}/docs/generate/save" class="draft-form">
-  <fieldset class="draft-card">
-    <legend>Identity</legend>
-    <label class="field">
-      <span class="muted-tiny">Doc key</span>
-      <input type="text" name="doc_key" value="{{ draft.doc_key }}">
-    </label>
-    <label class="field">
-      <span class="muted-tiny">Title</span>
-      <input type="text" name="title" value="{{ draft.title }}">
-    </label>
-    <label class="field">
-      <span class="muted-tiny">Type</span>
+
+  {# Identity row #}
+  <div class="draft-identity">
+    <div class="draft-field">
+      <label>Doc key</label>
+      <input type="text" name="doc_key" value="{{ draft.doc_key }}" required>
+    </div>
+    <div class="draft-field">
+      <label>Title</label>
+      <input type="text" name="title" value="{{ draft.title }}" required>
+    </div>
+    <div class="draft-field draft-field-sm">
+      <label>Type</label>
       <select name="type">
         {% for t in document_types %}
           <option value="{{ t }}" {% if t == draft.type %}selected{% endif %}>{{ t }}</option>
         {% endfor %}
       </select>
-    </label>
-  </fieldset>
+    </div>
+  </div>
 
-  <fieldset class="draft-card">
-    <legend>Preamble</legend>
-    <textarea name="preamble" rows="6">{{ draft.preamble }}</textarea>
-  </fieldset>
+  {# Preamble #}
+  <div class="draft-block">
+    <div class="draft-block-header">
+      <span class="draft-block-icon">¶</span>
+      <span class="draft-block-title">Preamble</span>
+    </div>
+    <textarea name="preamble" rows="4" class="draft-textarea">{{ draft.preamble }}</textarea>
+  </div>
 
+  {# Sections #}
   {% for heading, body in draft.sections %}
-    <fieldset class="draft-card">
-      <legend>Section #{{ loop.index }}</legend>
-      <label class="field">
-        <span class="muted-tiny">Heading</span>
-        <input type="text" name="section_heading" value="{{ heading }}">
-      </label>
-      <label class="field">
-        <span class="muted-tiny">Body (markdown)</span>
-        <textarea name="section_body" rows="8">{{ body }}</textarea>
-      </label>
-    </fieldset>
+    <div class="draft-block draft-section-block">
+      <div class="draft-block-header">
+        <span class="draft-block-icon">§</span>
+        <span class="draft-block-title">Section {{ loop.index }}</span>
+        <button type="button" class="draft-collapse-btn" onclick="toggleSection(this)">▴</button>
+      </div>
+      <div class="draft-section-body">
+        <div class="draft-field">
+          <label>Heading</label>
+          <input type="text" name="section_heading" value="{{ heading }}">
+        </div>
+        <div class="draft-field">
+          <label>Body (markdown)</label>
+          <textarea name="section_body" rows="7" class="draft-textarea">{{ body }}</textarea>
+        </div>
+      </div>
+    </div>
   {% endfor %}
 
   {% for src in draft.sources %}
     <input type="hidden" name="source" value="{{ src }}">
   {% endfor %}
 
-  <div class="form-actions">
-    <button type="submit" class="btn-primary">Save document</button>
-    <span class="muted-tiny">
-      Будет создан как <code>draft</code>; принять можно через ✓ Accept на странице документа.
-    </span>
+  <div class="draft-actions">
+    <button type="submit" class="btn btn-primary btn-lg">💾 Save document</button>
+    <span class="muted-tiny">Saved as <code>draft</code> — promote via ✓ Accept on the doc page.</span>
   </div>
+
 </form>
+
+<style>
+.draft-notice {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--border);
+}
+.draft-notice-ok { background: var(--success-soft-bg); color: var(--success-soft-fg); border-color: var(--success-border); }
+.draft-notice-error { background: var(--danger-soft-bg); color: var(--danger-soft-fg); border-color: var(--danger-border); }
+
+.draft-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+.draft-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; margin-bottom: 3px; }
+.draft-title-preview { font-size: 18px; font-weight: 700; color: var(--fg-strong); }
+.draft-meta-chips { display: flex; gap: var(--space-2); flex-shrink: 0; margin-top: 4px; }
+
+.draft-form { display: flex; flex-direction: column; gap: var(--space-3); }
+
+.draft-identity {
+  display: grid;
+  grid-template-columns: 1fr 1fr 160px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+}
+@media (max-width: 700px) { .draft-identity { grid-template-columns: 1fr; } }
+
+.draft-field { display: flex; flex-direction: column; gap: var(--space-1); }
+.draft-field label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); font-weight: 700;
+}
+.draft-field input[type="text"],
+.draft-field select,
+.draft-field .draft-textarea {
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  transition: border-color var(--motion-fast);
+}
+.draft-field input:focus, .draft-field select:focus, .draft-field .draft-textarea:focus {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent-soft-bg);
+  outline-offset: -1px;
+}
+.draft-textarea { resize: vertical; line-height: 1.55; width: 100%; font-family: var(--font-mono); font-size: 12px; }
+
+.draft-block {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  overflow: hidden;
+}
+.draft-block-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border-soft);
+}
+.draft-block-icon {
+  width: 22px; height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-fg);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; flex-shrink: 0;
+}
+.draft-section-block .draft-block-icon { background: var(--purple); }
+.draft-block-title { font-size: 12px; font-weight: 600; color: var(--fg-strong); }
+.draft-collapse-btn {
+  margin-left: auto;
+  background: transparent; border: 0;
+  cursor: pointer; font-size: 12px;
+  color: var(--muted); padding: 0 var(--space-1);
+  transition: transform var(--motion-fast);
+}
+.draft-section-body { padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.draft-section-body.collapsed { display: none; }
+
+.draft-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+</style>
+
+<script>
+function toggleSection(btn) {
+  const body = btn.closest('.draft-section-block').querySelector('.draft-section-body');
+  body.classList.toggle('collapsed');
+  btn.textContent = body.classList.contains('collapsed') ? '▾' : '▴';
+}
+</script>
+
+{% elif not notice %}
+  <div class="muted-tiny" style="text-align:center;padding:var(--space-5);">
+    Fill in the form above and click ✨ Generate draft.
+  </div>
 {% endif %}

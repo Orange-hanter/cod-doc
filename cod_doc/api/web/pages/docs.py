@@ -109,9 +109,15 @@ def _group_by_folder(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return node
 
     _sort(root)
-    result: list[dict[str, Any]] = root["subfolders"] + (
-        [root] if root["files"] else []
-    )
+    result: list[dict[str, Any]] = list(root["subfolders"])
+    if root["files"]:
+        result.append({
+            "name": "(root)",
+            "path": "",
+            "subfolders": [],
+            "files": root["files"],
+            "total": len(root["files"]),
+        })
     return result
 
 
@@ -143,21 +149,33 @@ def docs_list(
                 )
 
     # Filter (server-side) before grouping.
+    # status="" (default) hides deprecated docs — most projects accumulate stale
+    # deprecated entries that just create noise. Specific values isolate to a
+    # single status; "all" disables the filter entirely.
     q_lower = q.strip().lower()
     type_filter = type.strip()
     status_filter = status.strip()
+
+    def _status_visible(d_status: str) -> bool:
+        if status_filter == "" or status_filter == "live":
+            return d_status != "deprecated"
+        if status_filter == "all":
+            return True
+        return d_status == status_filter
+
     filtered = [
         d
         for d in documents
         if (
             (not q_lower or q_lower in d["doc_key"].lower() or q_lower in d["title"].lower())
             and (not type_filter or d["type"] == type_filter)
-            and (not status_filter or d["status"] == status_filter)
+            and _status_visible(d["status"])
         )
     ]
 
     counts = {
         "total": len(documents),
+        "live": sum(1 for d in documents if d["status"] != "deprecated"),
         "active": sum(1 for d in documents if d["status"] == "active"),
         "draft": sum(1 for d in documents if d["status"] == "draft"),
         "review": sum(1 for d in documents if d["status"] == "review"),
@@ -182,12 +200,20 @@ def docs_list(
 
 # ── COD-078: New blank doc ─────────────────────────────────────────────
 
+_DOCUMENT_TYPES = [
+    "module-spec", "guide", "architecture", "vision", "standard",
+    "execution-plan", "decision", "open-question",
+    "module-subdoc", "task-section", "execution-log", "user-story", "redirect",
+]
+
 
 @router.get("/p/{slug}/docs/new", response_class=HTMLResponse)
 def doc_new_form(
     request: Request,
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    description: str = Query(""),
+    type: str = Query(""),
 ) -> HTMLResponse:
     proj = get_project(slug)
     return templates.TemplateResponse(
@@ -195,10 +221,36 @@ def doc_new_form(
         "project/doc_new.html",
         {
             "project": {"name": proj.entry.name},
+            "document_types": _DOCUMENT_TYPES,
             "doc_status_options": ["draft", "review", "active", "deprecated"],
             "sensitivity_options": ["public", "internal", "confidential", "restricted"],
+            "prefill_description": description,
+            "prefill_type": type,
         },
     )
+
+
+@router.post("/p/{slug}/docs/suggest", response_class=JSONResponse)
+def doc_suggest(
+    request: Request,
+    slug: str,
+    description: str = Form(...),
+) -> JSONResponse:
+    """AI-powered meta suggestion: infer title/doc_key/type/preamble from a description."""
+    from cod_doc.api.deps import get_config
+    from cod_doc.services.ai_text import AIBackendError, suggest_doc_meta
+
+    cfg = get_config()
+    try:
+        suggestion = suggest_doc_meta(description, cfg=cfg)
+    except AIBackendError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+    return JSONResponse({
+        "title": suggestion.title,
+        "doc_key": suggestion.doc_key,
+        "type": suggestion.type,
+        "preamble": suggestion.preamble,
+    })
 
 
 @router.post("/p/{slug}/docs/new", response_class=HTMLResponse)
@@ -272,13 +324,21 @@ def doc_generate_form(
     request: Request,
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    intent: str = Query(""),
+    type: str = Query(""),
+    source: list[str] = Query(default=[]),
 ) -> HTMLResponse:
     proj = get_project(slug)
     session, project_db_id = db
     sources: list[dict[str, Any]] = []
     for d in docs.list_for_project(session, project_db_id):
         sources.append(
-            {"doc_key": d.doc_key, "title": d.title, "type": d.type.value}
+            {
+                "doc_key": d.doc_key,
+                "title": d.title,
+                "type": d.type.value,
+                "preselected": d.doc_key in source,
+            }
         )
     return templates.TemplateResponse(
         request,
@@ -286,6 +346,9 @@ def doc_generate_form(
         {
             "project": {"name": proj.entry.name},
             "sources": sources,
+            "document_types": _DOCUMENT_TYPES,
+            "prefill_intent": intent,
+            "prefill_type": type,
         },
     )
 
@@ -359,6 +422,7 @@ async def doc_generate_preview(
             ),
             "intent": intent,
             "notice": notice,
+            "document_types": _DOCUMENT_TYPES,
         },
     )
 
@@ -404,8 +468,9 @@ async def doc_generate_save(
             reason="web:ai-generate",
         )
         assert doc.row_id is not None  # docs.create always assigns a row_id
+        section_bodies_str = [str(b) for b in section_bodies]
         for i, (heading, body) in enumerate(
-            zip(section_headings, section_bodies, strict=False)
+            zip(section_headings, section_bodies_str, strict=False)
         ):
             heading = str(heading).strip()
             if not heading:
@@ -423,10 +488,43 @@ async def doc_generate_save(
                 heading=heading,
                 level=2,
                 position=i,
-                body=str(body),
+                body=body,
                 author="human:web",
                 reason="ai-generate",
             )
+
+        # Auto-register every source doc as an outgoing link. The AI is asked to
+        # use [label](key) markdown, but it often forgets — sources were explicitly
+        # chosen as context, so we guarantee the link exists by appending a
+        # "Источники" section listing any source that wasn't already linked in
+        # the generated bodies. The link parser picks markdown links up on insert.
+        all_body_text = "\n".join(section_bodies_str) + "\n" + preamble
+        missing_sources = [
+            s for s in sources
+            if s and f"]({s})" not in all_body_text and f"]({s}#" not in all_body_text
+        ]
+        if missing_sources:
+            source_lines = []
+            for src_key in missing_sources:
+                src_doc = docs.get(session, project_db_id, str(src_key))
+                label = src_doc.title if src_doc else str(src_key)
+                source_lines.append(f"- [{label}]({src_key})")
+            sources_body = (
+                "Документ построен на основе следующих контекстных материалов:\n\n"
+                + "\n".join(source_lines)
+            )
+            docs.add_section(
+                session,
+                document_id=doc.row_id,
+                anchor="sources",
+                heading="Источники",
+                level=2,
+                position=len(section_headings),
+                body=sources_body,
+                author="human:web",
+                reason="ai-generate:auto-sources",
+            )
+
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -867,7 +965,9 @@ def doc_show(
                 "title": doc.title,
                 "type": doc.type.value,
                 "status": doc.status.value,
+                "sensitivity": doc.sensitivity.value if doc.sensitivity else "internal",
                 "owner": doc.owner or "",
+                "preamble": doc.preamble or "",
                 "last_updated": doc.last_updated,
             },
             "sections": sections_nav,
@@ -878,5 +978,63 @@ def doc_show(
             "outgoing_links": outgoing,
             "incoming_links": incoming,
             "suggestions_by_section": suggestions_by_section,
+            "has_sections": bool(sections_db),
         },
     )
+
+
+@router.post("/p/{slug}/docs/{doc_key:path}/expand", response_class=JSONResponse)
+def doc_expand(
+    request: Request,
+    slug: str,
+    doc_key: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    intent: str = Form(""),
+) -> JSONResponse:
+    """AI-expand: generate sections for an empty or sparse document."""
+    from cod_doc.api.deps import get_config
+    from cod_doc.services.ai_text import AIBackendError, expand_doc_sections
+
+    session, project_db_id = db
+    doc = docs.get(session, project_db_id, doc_key)
+    if doc is None or doc.row_id is None:
+        return JSONResponse({"error": "Document not found"}, status_code=404)
+
+    cfg = get_config()
+    try:
+        section_drafts = expand_doc_sections(
+            doc.preamble or "",
+            intent=intent,
+            cfg=cfg,
+            doc_type=doc.type.value,
+        )
+    except AIBackendError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+
+    import re as _re
+
+    def _make_anchor(heading: str, idx: int) -> str:
+        slug = _re.sub(r"[^\w\s-]", "", heading.lower()).strip()
+        slug = _re.sub(r"[\s_]+", "-", slug)
+        return slug or f"section-{idx}"
+
+    created = 0
+    for idx, draft in enumerate(section_drafts):
+        if draft.heading and draft.body:
+            try:
+                docs.add_section(
+                    session,
+                    document_id=doc.row_id,
+                    anchor=_make_anchor(draft.heading, idx),
+                    heading=draft.heading,
+                    level=2,
+                    position=idx,
+                    body=draft.body,
+                    author="ai:expand",
+                    reason="ai-expand",
+                )
+                created += 1
+            except Exception:
+                pass
+    session.commit()
+    return JSONResponse({"created": created, "sections": [{"heading": s.heading} for s in section_drafts]})
