@@ -1,11 +1,21 @@
-# 🏛️ Архитектура: COD-DOC
+---
+type: architecture
+scope: cod-doc-system
+status: deprecated
+source_of_truth: false
+canonical_source: docs/system/ARCHITECTURE.md
+owner: cod-doc core
+last_updated: 2026-05-07
+---
+
+# 🏛️ Архитектура: COD-DOC (LEGACY)
+
+> ⚠️ **DEPRECATED.** Этот файл — устаревший L0/L1-обзор для агентского Snowball-протокола.
+> Актуальный источник истины: [`docs/system/ARCHITECTURE.md`](../docs/system/ARCHITECTURE.md).
+> При расхождении приоритет у canonical. Этот файл сохранён только для совместимости
+> со старыми ссылками из context_refs задач.
 
 > 📊 Meta: `{"version": "0.3", "last_updated": "2026-05-07", "layer": "arch", "context_depth": "L1", "status": "legacy-overview", "canonical_source": "docs/system/ARCHITECTURE.md"}`
-
-> **🟡 LEGACY (обзорный документ).** Этот файл — компактный L0/L1-обзор для
-> агентского Snowball-протокола. Канонический и постоянно обновляемый источник
-> архитектуры — [`docs/system/ARCHITECTURE.md`](../docs/system/ARCHITECTURE.md).
-> При расхождении приоритет у canonical.
 
 ## 1. Overview
 
