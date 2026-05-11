@@ -14,20 +14,24 @@
   </p>
 {% endif %}
 
-<form class="filter-bar" method="get" action="/p/{{ project.name }}/tasks">
-  <label>Status:
-    <select name="status" onchange="this.form.submit()">
-      <option value="" {% if not status_filter %}selected{% endif %}>(all)</option>
-      {% for s in task_status_options %}
-        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <noscript><button type="submit">Apply</button></noscript>
+{% if db_available %}
+<nav class="view-toggle" aria-label="Filter tasks by status">
+  {% for view_id, label in view_labels %}
+    {% set is_active = (not status_filter) and (view == view_id) %}
+    <a class="view-btn{% if is_active %} view-btn-active{% endif %} view-btn-{{ view_id }}"
+       href="/p/{{ project.name }}/tasks?view={{ view_id }}">
+      <span class="view-btn-label">{{ label }}</span>
+      <span class="view-btn-count">{{ counts[view_id] }}</span>
+    </a>
+  {% endfor %}
   {% if status_filter %}
-    <a class="muted" href="/p/{{ project.name }}/tasks">clear</a>
+    <span class="view-toggle-explicit">
+      filter: <code>{{ status_filter }}</code>
+      <a class="muted-tiny" href="/p/{{ project.name }}/tasks">clear</a>
+    </span>
   {% endif %}
-</form>
+</nav>
+{% endif %}
 
 {% if status_invalid %}
   <p class="warn">Неизвестное значение status — фильтр проигнорирован.</p>
@@ -36,7 +40,12 @@
 {% if not db_available %}
   <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug не совпадает с <code>project.slug</code> в БД.</p>
 {% elif not tasks %}
-  <p class="muted">{% if status_filter %}Нет задач со статусом <code>{{ status_filter }}</code>.{% else %}В этом проекте пока нет задач.{% endif %}</p>
+  <p class="muted">
+    {% if status_filter %}Нет задач со статусом <code>{{ status_filter }}</code>.
+    {% elif view == "active" %}Все задачи закрыты — нечего показывать в <strong>Active</strong>. Переключись на <a href="/p/{{ project.name }}/tasks?view=done">Done</a> или <a href="/p/{{ project.name }}/tasks?view=all">All</a>.
+    {% else %}Нет задач в виде <strong>{{ view }}</strong>.
+    {% endif %}
+  </p>
 {% else %}
 <table class="grid">
   <thead>

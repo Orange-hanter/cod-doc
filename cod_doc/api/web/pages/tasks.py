@@ -24,15 +24,44 @@ LEGACY_TASK_STATUS_OPTIONS = [s.value for s in LegacyTaskStatus]
 LEGACY_PAGE_SIZE_DEFAULT = 100
 LEGACY_PAGE_SIZE_MAX = 500
 
+# View → set of task status values shown in that view.
+# `active` is the default — everything that still needs attention (excludes done
+# and cancelled). `all` shows everything; `done` / `blocked` etc. are narrow drills.
+_TASK_VIEW_FILTERS: dict[str, set[str] | None] = {
+    "active": {"backlog", "todo", "pending", "in_progress", "in-progress", "in_review", "blocked"},
+    "in_progress": {"in_progress", "in-progress"},
+    "in_review": {"in_review"},
+    "blocked": {"blocked"},
+    "todo": {"backlog", "todo", "pending"},
+    "done": {"done"},
+    "cancelled": {"cancelled"},
+    "all": None,
+}
+
+# Ordered list of (view_id, display_label) tuples for rendering the button bar.
+_TASK_VIEW_LABELS: list[tuple[str, str]] = [
+    ("active", "Active"),
+    ("in_progress", "In progress"),
+    ("in_review", "In review"),
+    ("blocked", "Blocked"),
+    ("todo", "Todo"),
+    ("done", "Done"),
+    ("cancelled", "Cancelled"),
+    ("all", "All"),
+]
+
 
 @router.get("/p/{slug}/tasks", response_class=HTMLResponse)
 def tasks_list(
     request: Request,
     slug: str,
+    view: str = "active",
     status: str | None = None,
 ) -> HTMLResponse:
     proj = get_project(slug)
 
+    # Back-compat: an explicit single-status query param (used by deep-links
+    # from MCP / CLI / older bookmarks) overrides the view button bar.
     status_filter: TaskStatus | None = None
     status_invalid = False
     if status:
@@ -41,13 +70,18 @@ def tasks_list(
         except ValueError:
             status_invalid = True
 
-    rows: list[dict[str, Any]] = []
+    if view not in _TASK_VIEW_FILTERS:
+        view = "active"
+
+    # Fetch all tasks once, then bucket + filter in Python so the button bar can
+    # display accurate per-view counts without N+1 round-trips.
+    all_rows: list[dict[str, Any]] = []
     db_available = False
     with try_open_project_db(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
             db_available = True
-            for t in tasks.list_for_project(session, project_db_id, status=status_filter):
-                rows.append(
+            for t in tasks.list_for_project(session, project_db_id):
+                all_rows.append(
                     {
                         "task_id": t.task_id,
                         "title": t.title,
@@ -58,6 +92,20 @@ def tasks_list(
                         "section_id": t.section_id,
                     }
                 )
+
+    counts: dict[str, int] = {}
+    for view_id, members in _TASK_VIEW_FILTERS.items():
+        counts[view_id] = (
+            len(all_rows) if members is None
+            else sum(1 for r in all_rows if r["status"] in members)
+        )
+
+    if status_filter is not None:
+        rows = [r for r in all_rows if r["status"] == status_filter.value]
+    else:
+        members = _TASK_VIEW_FILTERS[view]
+        rows = all_rows if members is None else [r for r in all_rows if r["status"] in members]
+
     legacy_count = len(proj.get_tasks())
     return templates.TemplateResponse(
         request,
@@ -66,6 +114,9 @@ def tasks_list(
             "project": {"name": proj.entry.name},
             "tasks": rows,
             "db_available": db_available,
+            "view": view,
+            "view_labels": _TASK_VIEW_LABELS,
+            "counts": counts,
             "status_filter": status_filter.value if status_filter else "",
             "status_invalid": status_invalid,
             "legacy_count": legacy_count,

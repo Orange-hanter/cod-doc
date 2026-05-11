@@ -15,19 +15,49 @@
   </p>
 {% else %}
 
-{# COD-078: stats + toolbar + filter bar replacing the old single-action header. #}
-<section class="docs-stats muted">
-  <strong>{{ counts.total }}</strong> docs ·
-  <span class="badge badge-active">active {{ counts.active }}</span>
-  <span class="badge badge-draft">draft {{ counts.draft }}</span>
-  <span class="badge badge-review">review {{ counts.review }}</span>
-  <span class="badge badge-deprecated">deprecated {{ counts.deprecated }}</span>
-</section>
+{% set _active_status = filters.status or "live" %}
 
-<nav class="docs-toolbar">
-  <a class="btn-primary" href="/p/{{ project.name }}/docs/new">➕ New blank</a>
-  <a class="btn-secondary" href="/p/{{ project.name }}/docs/generate">✨ Generate via AI</a>
-  <a class="btn-secondary" href="#import-section">📥 Import markdown</a>
+<nav class="docs-action-bar">
+  <a class="btn btn-primary" href="/p/{{ project.name }}/docs/new">➕ New blank</a>
+  <a class="btn btn-secondary" href="/p/{{ project.name }}/docs/generate">✨ Generate via AI</a>
+  <a class="btn btn-secondary" href="#import-section">📥 Import markdown</a>
+  <a class="btn docs-nav-btn" href="/p/{{ project.name }}/docs/navigator">🗺 Navigator</a>
+</nav>
+
+{# Status filter button bar — default 'Live' hides deprecated docs from the listing. #}
+<nav class="view-toggle" aria-label="Filter documents by status">
+  {% set _q = "&q=" ~ filters.q if filters.q else "" %}
+  {% set _t = "&type=" ~ filters.type if filters.type else "" %}
+  <a class="view-btn{% if _active_status == 'live' %} view-btn-active{% endif %}"
+     href="/p/{{ project.name }}/docs?status=live{{ _q }}{{ _t }}">
+    <span class="view-btn-label">Live</span>
+    <span class="view-btn-count">{{ counts.live }}</span>
+  </a>
+  <a class="view-btn view-btn-in_progress{% if _active_status == 'active' %} view-btn-active{% endif %}"
+     href="/p/{{ project.name }}/docs?status=active{{ _q }}{{ _t }}">
+    <span class="view-btn-label">Active</span>
+    <span class="view-btn-count">{{ counts.active }}</span>
+  </a>
+  <a class="view-btn{% if _active_status == 'draft' %} view-btn-active{% endif %}"
+     href="/p/{{ project.name }}/docs?status=draft{{ _q }}{{ _t }}">
+    <span class="view-btn-label">Draft</span>
+    <span class="view-btn-count">{{ counts.draft }}</span>
+  </a>
+  <a class="view-btn{% if _active_status == 'review' %} view-btn-active{% endif %}"
+     href="/p/{{ project.name }}/docs?status=review{{ _q }}{{ _t }}">
+    <span class="view-btn-label">Review</span>
+    <span class="view-btn-count">{{ counts.review }}</span>
+  </a>
+  <a class="view-btn view-btn-deprecated{% if _active_status == 'deprecated' %} view-btn-active{% endif %}"
+     href="/p/{{ project.name }}/docs?status=deprecated{{ _q }}{{ _t }}">
+    <span class="view-btn-label">Deprecated</span>
+    <span class="view-btn-count">{{ counts.deprecated }}</span>
+  </a>
+  <a class="view-btn{% if _active_status == 'all' %} view-btn-active{% endif %}"
+     href="/p/{{ project.name }}/docs?status=all{{ _q }}{{ _t }}">
+    <span class="view-btn-label">All</span>
+    <span class="view-btn-count">{{ counts.total }}</span>
+  </a>
 </nav>
 
 <form method="get" action="/p/{{ project.name }}/docs" class="docs-filterbar">
@@ -39,12 +69,7 @@
       <option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>
     {% endfor %}
   </select>
-  <select name="status">
-    <option value="">— Status —</option>
-    {% for s in doc_status_options %}
-      <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s }}</option>
-    {% endfor %}
-  </select>
+  <input type="hidden" name="status" value="{{ filters.status }}">
   <button type="submit">Apply</button>
   {% if filters.q or filters.type or filters.status %}
     <a class="muted" href="/p/{{ project.name }}/docs?view={{ view }}">clear</a>

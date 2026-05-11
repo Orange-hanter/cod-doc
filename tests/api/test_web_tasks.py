@@ -128,8 +128,9 @@ def tasks_client(tmp_path: Path, migrate_db):
 
 
 def test_tasks_list_renders_all(tasks_client) -> None:
+    """The 'All' view button shows every task regardless of status."""
     client, entry = tasks_client
-    r = client.get(f"/p/{entry.name}/tasks")
+    r = client.get(f"/p/{entry.name}/tasks?view=all")
     assert r.status_code == 200
     assert "AUTH-001" in r.text
     assert "AUTH-002" in r.text
@@ -146,6 +147,22 @@ def test_tasks_list_renders_all(tasks_client) -> None:
     assert 'class="active" href="/p/demo/tasks"' in r.text
     # count footer
     assert "3 tasks." in r.text
+
+
+def test_tasks_list_active_view_hides_done_by_default(tasks_client) -> None:
+    """Default landing page = 'Active' view, which excludes done/cancelled."""
+    client, entry = tasks_client
+    r = client.get(f"/p/{entry.name}/tasks")
+    assert r.status_code == 200
+    # The two non-done tasks are present.
+    assert "AUTH-001" in r.text  # pending
+    assert "AUTH-002" in r.text  # in-progress
+    # The done task is NOT in the default Active view.
+    assert "AUTH-003" not in r.text
+    # Active button shows count 2; All button shows total 3.
+    assert "view-btn-active" in r.text
+    # Footer reflects the filtered count.
+    assert "2 tasks." in r.text
 
 
 def test_tasks_list_status_filter(tasks_client) -> None:
@@ -169,10 +186,10 @@ def test_tasks_list_status_filter_in_progress(tasks_client) -> None:
 
 def test_tasks_list_invalid_status_warns(tasks_client) -> None:
     client, entry = tasks_client
-    r = client.get(f"/p/{entry.name}/tasks?status=garbage")
+    r = client.get(f"/p/{entry.name}/tasks?status=garbage&view=all")
     assert r.status_code == 200
     assert "Неизвестное значение status" in r.text
-    # falls back to "all" — every task visible
+    # falls back to the requested view — `view=all` shows every task.
     assert "AUTH-001" in r.text
     assert "AUTH-002" in r.text
     assert "AUTH-003" in r.text
