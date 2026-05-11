@@ -29,10 +29,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # WEB-053b: single source of truth for project-tab expectations.
-# Flip one entry here when WEB-030 (Run) lands; all tab-state tests
-# pick up the change automatically.
-EXPECTED_LIVE_TABS: tuple[str, ...] = ("overview", "docs", "tasks", "plans", "revisions")
-EXPECTED_DISABLED_TABS: tuple[str, ...] = ("run",)
+# All currently-rendered tabs ("Agent" included) are live.
+EXPECTED_LIVE_TABS: tuple[str, ...] = ("overview", "run", "docs", "tasks", "plans", "revisions")
+EXPECTED_DISABLED_TABS: tuple[str, ...] = ()
 
 
 @pytest.fixture

@@ -26,3 +26,4 @@ models/
 # Local playwright scripts
 .cod-doc-playwright-*.py
 .cod-doc-pw-*.py
+.playwright-mcp/

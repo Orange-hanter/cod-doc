@@ -1,37 +1,63 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}COD-DOC{% endblock %}</title>
   <link rel="stylesheet" href="{{ static_url('app.css') }}">
+  <script>
+    // Theme bootstrap — runs before <body> renders to avoid flash.
+    // Order: localStorage override > prefers-color-scheme > "light".
+    (function () {
+      try {
+        var stored = localStorage.getItem('cod-doc-theme');
+        var resolved = stored;
+        if (!resolved || (resolved !== 'light' && resolved !== 'dark')) {
+          resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', resolved);
+      } catch (e) { /* localStorage may be denied — fall back to default */ }
+    })();
+  </script>
   <script defer src="{{ static_url('htmx.min.js') }}"></script>
   <script type="module">
-    // Mermaid is loaded lazily and only when the page actually contains a
-    // diagram, so pages without graphs don't pay the network cost.
-    // Source URL is configurable via COD_DOC_MERMAID_SRC (env) — operators
-    // behind a corp firewall can vendor /static/mermaid.esm.min.mjs.
     if (document.querySelector('.mermaid')) {
       const m = await import('{{ mermaid_src }}');
-      m.default.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'strict' });
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      m.default.initialize({
+        startOnLoad: true,
+        theme: isDark ? 'dark' : 'default',
+        securityLevel: 'strict',
+      });
     }
   </script>
   <script defer src="{{ static_url('cod_doc_ws.js') }}"></script>
+  <script defer src="{{ static_url('cod_doc_app.js') }}"></script>
 </head>
 {% set _slug = (project.name if project is defined and project else None) or (request.path_params.slug if request is defined else None) %}
 <body{% if _slug %} data-project="{{ _slug }}"{% endif %}>
   <header class="topbar">
     <a class="brand" href="/">COD-DOC</a>
     <nav>
-      <a href="/">Projects</a>
-      <a href="/settings">Settings</a>
+      <a href="/"{% if request and request.url.path == '/' %} class="active"{% endif %}>Projects</a>
+      <a href="/settings"{% if request and request.url.path == '/settings' %} class="active"{% endif %}>Settings</a>
     </nav>
+    <span class="topbar-spacer"></span>
     {% if _slug %}
       <span id="cod-ws-dot" class="cod-ws-dot cod-ws-disconnected"
             role="status" aria-live="polite"
             aria-label="Live updates: idle"
-            title="Live updates: idle">●</span>
+            title="Live updates: idle">idle</span>
     {% endif %}
+    <button type="button" class="theme-toggle" id="theme-toggle"
+            aria-label="Toggle theme" title="Toggle theme">
+      <svg class="icon-sun" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM7 0h2v2H7V0zm0 14h2v2H7v-2zM0 7v2h2V7H0zm14 0v2h2V7h-2zM2.222 2.222l1.414 1.414L2.222 5.05.808 3.636l1.414-1.414zm9.342 9.342 1.414 1.414-1.414 1.414-1.414-1.414 1.414-1.414zM12.95 2.222l1.414 1.414-1.414 1.414-1.414-1.414 1.414-1.414zm-9.342 9.342 1.414 1.414L3.636 14.4 2.222 12.99l1.414-1.414z"/>
+      </svg>
+      <svg class="icon-moon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M6 .278a.77.77 0 0 1 .08.858A7.2 7.2 0 0 0 5.5 4.5a7.5 7.5 0 0 0 7.5 7.5 7.2 7.2 0 0 0 3.364-.78.77.77 0 0 1 .858.08.77.77 0 0 1 .085.987A8 8 0 1 1 5.013.193.77.77 0 0 1 6 .278z"/>
+      </svg>
+    </button>
   </header>
   <div id="alerts">
     {%- set flash_msg = request.cookies.get("flash_message") -%}

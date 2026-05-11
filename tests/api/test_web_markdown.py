@@ -396,13 +396,13 @@ def test_doc_show_raw_mode_returns_pre(md_doc_client) -> None:
     # Specifically: no rendered <section id> wrapper in body
     assert '<section id="data-model"' not in r.text
     # Toggle link points back to rendered mode
-    assert ">View rendered<" in r.text
+    assert "Rendered" in r.text
 
 
 def test_doc_show_rendered_mode_shows_view_raw_link(md_doc_client) -> None:
     client, entry = md_doc_client
     r = client.get(f"/p/{entry.name}/docs/modules/M1/spec")
-    assert ">View raw<" in r.text
+    assert "Raw" in r.text
 
 
 def test_doc_show_does_not_smuggle_raw_html(md_doc_client) -> None:

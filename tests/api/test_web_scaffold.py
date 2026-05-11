@@ -76,7 +76,7 @@ def test_index_empty_when_no_projects(tmp_path: Path) -> None:
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get("/")
     assert r.status_code == 200
-    assert "No projects yet." in r.text
+    assert "Add your first project" in r.text
 
 
 def test_static_app_css_served(web_client) -> None:

@@ -11,6 +11,7 @@ flip `ready` to True in the tuple.
 #}
 {% set tabs = [
   ("overview",  "Overview",  "/p/" ~ slug,             True),
+  ("run",       "Agent",     "/p/" ~ slug ~ "/run",    True),
   ("docs",      "Docs",      "/p/" ~ slug ~ "/docs",   True),
   ("tasks",     "Tasks",     "/p/" ~ slug ~ "/tasks",  True),
   ("stories",   "Stories",   "/p/" ~ slug ~ "/stories", True),
@@ -18,7 +19,6 @@ flip `ready` to True in the tuple.
   ("routines",  "Routines",  "/p/" ~ slug ~ "/routines", True),
   ("costs",     "Costs",     "/p/" ~ slug ~ "/costs",  True),
   ("revisions", "Revisions", "/p/" ~ slug ~ "/revisions", True),
-  ("run",       "Run",       "/p/" ~ slug ~ "/run",    False),
 ] %}
 <nav class="tabs">
   {%- for slug_id, label, href, ready in tabs -%}

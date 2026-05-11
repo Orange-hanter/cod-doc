@@ -3,22 +3,24 @@
 {% block content %}
 <div class="page-header">
   <h1>Projects</h1>
-  <div id="daemon-bar" class="daemon-bar {% if daemon_running %}daemon-running{% else %}daemon-stopped{% endif %}">
-    <span class="daemon-dot" aria-hidden="true">●</span>
-    <span class="daemon-label">
-      Agent: <strong>{% if daemon_running %}running{% else %}stopped{% endif %}</strong>
-    </span>
-    {% if not agent_enabled %}
-      <span class="muted" title="Установи agent_enabled=true в Settings чтобы запустить">(disabled in config)</span>
-    {% elif daemon_running %}
-      <button class="daemon-btn"
-              hx-post="/api/daemon/stop"
-              hx-on::after-request="window.location.reload()">Stop</button>
-    {% else %}
-      <button class="daemon-btn daemon-btn-start"
-              hx-post="/api/daemon/start"
-              hx-on::after-request="window.location.reload()">Start</button>
-    {% endif %}
+  <div class="page-header-actions">
+    <div id="daemon-bar" class="daemon-bar {% if daemon_running %}daemon-running{% else %}daemon-stopped{% endif %}">
+      <span class="daemon-dot" aria-hidden="true">●</span>
+      <span class="daemon-label">
+        Daemon · <strong>{% if daemon_running %}running{% else %}stopped{% endif %}</strong>
+      </span>
+      {% if not agent_enabled %}
+        <span class="muted" title="Set agent_enabled=true in Settings to enable">(disabled)</span>
+      {% elif daemon_running %}
+        <button class="daemon-btn"
+                hx-post="/api/daemon/stop"
+                hx-on::after-request="window.location.reload()">Stop</button>
+      {% else %}
+        <button class="daemon-btn daemon-btn-start"
+                hx-post="/api/daemon/start"
+                hx-on::after-request="window.location.reload()">Start</button>
+      {% endif %}
+    </div>
   </div>
 </div>
 
@@ -26,42 +28,157 @@
   <p class="warn">API-ключ не настроен. Перейдите в <a href="/settings">Settings</a>.</p>
 {% endif %}
 
+{# ── Add project drawer ──────────────────────────────────────────────────── #}
+<details class="add-project-drawer" id="add-project-drawer">
+  <summary>
+    <span class="chevron">▶</span>
+    Add project
+  </summary>
+  <form id="add-project-form" class="add-project-form">
+    <div class="field">
+      <label for="ap-name">Name</label>
+      <input type="text" id="ap-name" name="name" required placeholder="my-project" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="ap-path">Path on host</label>
+      <input type="text" id="ap-path" name="path" required placeholder="/projects/my-project" autocomplete="off">
+      <small class="muted" id="ap-path-hint" style="font-size:12px; margin-top:4px; display:block;">
+        Use a path inside <code>/projects/</code> (bind-mounted) or <code>/data/cod-doc/</code> (named volume).
+        Anywhere else lives only inside the container and is wiped on rebuild.
+      </small>
+      <div id="ap-path-warning" hidden
+           style="margin-top:6px; padding:6px 10px; border-radius:var(--radius-sm);
+                  background:var(--warning-soft-bg); color:var(--warning-soft-fg);
+                  border:1px solid var(--warning-border); font-size:12px;">
+        ⚠ Этот путь не примонтирован к хосту — проект исчезнет при пересборке контейнера.
+        Используй <code>/projects/&lt;name&gt;</code> или <code>/data/cod-doc/&lt;name&gt;</code>.
+      </div>
+    </div>
+    <div class="field">
+      <label for="ap-master">MASTER.md</label>
+      <input type="text" id="ap-master" name="master_md" value="MASTER.md" placeholder="MASTER.md">
+    </div>
+    <div class="field">
+      <label>&nbsp;</label>
+      <div style="display:flex; align-items:center; gap:var(--space-2); padding-top:6px;">
+        <input type="checkbox" id="ap-commit" name="auto_commit" value="true">
+        <label for="ap-commit" style="font-size:13px; text-transform:none; letter-spacing:0; color:var(--fg); cursor:pointer;">Auto-commit changes</label>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Create project</button>
+      <span id="add-project-status" class="muted" style="font-size:13px;"></span>
+    </div>
+  </form>
+</details>
+
+{# ── Project grid ─────────────────────────────────────────────────────────── #}
 {% if projects %}
-<table class="grid">
-  <thead>
-    <tr>
-      <th>Name</th>
-      <th>Path</th>
-      <th class="num">Tasks</th>
-      <th class="num">Done</th>
-      <th class="num">In&nbsp;progress</th>
-      <th>Last&nbsp;run</th>
-      <th title="Участвует ли проект в автономном цикле агента">Agent</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for p in projects %}
-    <tr>
-      <td><a href="/p/{{ p.name }}">{{ p.name }}</a>{% if not p.enabled %} <span class="muted">(disabled)</span>{% endif %}</td>
-      <td class="mono">{{ p.path }}</td>
-      <td class="num">{{ p.stats.total }}</td>
-      <td class="num">{{ p.stats.done }}</td>
-      <td class="num">{{ p.stats.in_progress }}</td>
-      <td class="muted">{{ p.stats.last_run or "—" }}</td>
-      <td>
-        {% if p.daemon_enabled %}
-          <span class="daemon-proj-on" title="Участвует в автономном цикле">●</span>
+<div class="project-grid">
+  {% for p in projects %}
+    {% set s = p.stats %}
+    {% set total = s.total or 0 %}
+    {% set done = s.done or 0 %}
+    {% set in_prog = s.in_progress or 0 %}
+    {% set failed = s.failed or 0 %}
+    {% set pending = s.pending or 0 %}
+    {% set pct = s.pct or 0 %}
+    {% set done_w = (done / total * 100) if total else 0 %}
+    {% set inprog_w = (in_prog / total * 100) if total else 0 %}
+    {% set failed_w = (failed / total * 100) if total else 0 %}
+    {% set proj_status = s.status or "unknown" %}
+
+    <a class="project-card {% if proj_status == 'running' %}is-running{% endif %} {% if not p.enabled %}is-disabled{% endif %}"
+       href="/p/{{ p.name }}">
+
+      {# Header — name + status pill #}
+      <div class="project-card-header">
+        <div style="min-width:0;">
+          <div class="project-card-name">{{ p.name }}</div>
+          <div class="project-card-path" title="{{ p.path }}">{{ p.path }}</div>
+        </div>
+        {% if not p.daemon_enabled %}
+          <span class="project-card-status s-no-agent" title="Excluded from autonomous agent cycle">no agent</span>
+        {% elif proj_status == 'running' %}
+          <span class="project-card-status s-running"><span class="dot"></span>running</span>
+        {% elif proj_status == 'idle' %}
+          <span class="project-card-status s-idle"><span class="dot"></span>idle</span>
         {% else %}
-          <span class="daemon-proj-off" title="Исключён из автономного цикла">○</span>
+          <span class="project-card-status s-unknown">{{ proj_status }}</span>
         {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+      </div>
+
+      {# Progress bar: done | in_progress | failed #}
+      <div class="project-card-progress">
+        <div class="project-card-progress-track" title="{{ done }} done · {{ in_prog }} in progress · {{ failed }} failed">
+          {% if total %}
+            <div class="project-card-progress-done" style="width: {{ done_w | round(1) }}%"></div>
+            <div class="project-card-progress-inprogress" style="width: {{ inprog_w | round(1) }}%"></div>
+            <div class="project-card-progress-failed" style="width: {{ failed_w | round(1) }}%"></div>
+          {% endif %}
+        </div>
+        <div class="project-card-progress-label">
+          <span class="muted" style="font-size:11px;">{{ done }}/{{ total }} tasks done</span>
+          <span class="project-card-progress-pct">{{ pct }}%</span>
+        </div>
+      </div>
+
+      {# Stats row #}
+      <div class="project-card-stats">
+        <div class="project-card-stat">
+          <span class="val">{{ total }}</span>
+          <span class="lbl">Total</span>
+        </div>
+        <div class="project-card-stat stat-done">
+          <span class="val">{{ done }}</span>
+          <span class="lbl">Done</span>
+        </div>
+        <div class="project-card-stat stat-inprog">
+          <span class="val">{{ in_prog }}</span>
+          <span class="lbl">Active</span>
+        </div>
+        <div class="project-card-stat stat-fail">
+          <span class="val">{{ failed }}</span>
+          <span class="lbl">Failed</span>
+        </div>
+      </div>
+
+      {# Footer — last run #}
+      <div class="project-card-footer">
+        {% if not p.enabled %}
+          <span class="badge badge-warning">disabled</span>
+        {% endif %}
+        {% if pending %}
+          <span class="muted">{{ pending }} pending</span>
+        {% endif %}
+        <span class="last-run">
+          {% if s.last_run %}
+            {{ s.last_run | replace("T", " ") | truncate(16, True, "") }}
+          {% else %}
+            never run
+          {% endif %}
+        </span>
+      </div>
+
+    </a>
+  {% endfor %}
+
+  {# "Add project" placeholder card #}
+  <button type="button" class="project-card-add"
+          onclick="document.getElementById('add-project-drawer').open = true; document.getElementById('ap-name').focus();">
+    <span class="add-icon">+</span>
+    Add project
+  </button>
+</div>
 
 {% else %}
-  <p class="muted">No projects yet.</p>
+<div class="project-grid">
+  <button type="button" class="project-card-add"
+          onclick="document.getElementById('add-project-drawer').open = true; document.getElementById('ap-name').focus();">
+    <span class="add-icon">+</span>
+    Add your first project
+  </button>
+</div>
 {% endif %}
 
 {% if page.has_prev or page.has_next %}
@@ -71,9 +188,7 @@
   {% else %}
     <span class="page-disabled">‹ Prev</span>
   {% endif %}
-  <span class="page-summary muted">
-    {{ page.showing_from }}–{{ page.showing_to }} of {{ page.total }}
-  </span>
+  <span class="page-summary muted">{{ page.showing_from }}–{{ page.showing_to }} of {{ page.total }}</span>
   {% if page.has_next %}
     <a href="/?limit={{ page.limit }}&amp;offset={{ page.next_offset }}">Next ›</a>
   {% else %}
@@ -81,4 +196,50 @@
   {% endif %}
 </nav>
 {% endif %}
+
+<script>
+(function () {
+  const form = document.getElementById('add-project-form');
+  const status = document.getElementById('add-project-status');
+  if (!form) return;
+
+  // Live warning when the user types an ephemeral path
+  const pathInput = document.getElementById('ap-path');
+  const pathWarning = document.getElementById('ap-path-warning');
+  const isPersistent = (p) => {
+    if (!p) return true;
+    const norm = p.trim();
+    return norm.startsWith('/projects/') || norm.startsWith('/data/cod-doc/');
+  };
+  pathInput.addEventListener('input', () => {
+    pathWarning.hidden = isPersistent(pathInput.value);
+  });
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const body = {
+      name: fd.get('name').trim(),
+      path: fd.get('path').trim(),
+      master_md: fd.get('master_md') || 'MASTER.md',
+      auto_commit: fd.get('auto_commit') === 'true',
+    };
+    if (!body.name || !body.path) { status.textContent = 'Name and path are required.'; return; }
+    status.textContent = 'Creating…';
+    try {
+      const r = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok) { status.textContent = data.detail || JSON.stringify(data); return; }
+      status.textContent = `Project "${data.created}" created.`;
+      setTimeout(() => window.location.reload(), 800);
+    } catch (e) {
+      status.textContent = 'Error: ' + e.message;
+    }
+  });
+})();
+</script>
 {% endblock %}
