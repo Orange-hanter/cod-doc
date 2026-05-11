@@ -226,7 +226,7 @@
     <h2>💡 Suggested links
       <span class="count-chip" id="sugg-count">
         {% set total = namespace(n=0) %}
-        {% for grp in suggestions_by_section %}{% set total.n = total.n + (grp.items | length) %}{% endfor %}
+        {% for grp in suggestions_by_section %}{% set total.n = total.n + (grp.suggestions | length) %}{% endfor %}
         {{ total.n }} pending
       </span>
     </h2>
@@ -242,7 +242,7 @@
       <div class="ds-sugg-group">
         <div class="ds-sugg-section-label">§ {{ grp.section_heading }}</div>
         <ul class="ds-sugg-list">
-          {% for s in grp.items %}
+          {% for s in grp.suggestions %}
             <li id="sugg-row-{{ s.row_id }}" class="ds-sugg-item">
               <code class="mono">{{ s.to_doc_key }}</code>
               <span class="ds-sugg-score">{{ s.score }}</span>

@@ -948,7 +948,10 @@ def doc_show(
             suggestions_by_section.append({
                 "section_id": sec_id,
                 "section_heading": sec_id_to_heading.get(sec_id, "?"),
-                "items": items,
+                # Renamed from "items" → "suggestions": Jinja's attribute lookup
+                # resolves `grp.items` to the dict.items builtin method, not the
+                # dict key, raising TypeError on `| length`.
+                "suggestions": items,
             })
     except Exception:
         suggestions_by_section = []
