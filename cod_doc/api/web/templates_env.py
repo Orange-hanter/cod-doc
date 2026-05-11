@@ -62,3 +62,19 @@ templates.env.globals["mermaid_src"] = os.environ.get(
     "COD_DOC_MERMAID_SRC",
     "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs",
 )
+
+# highlight.js for syntax-highlighted code blocks in rendered markdown.
+# Operators behind a firewall can vendor the assets and point the env vars
+# at /static/<file> — defaults are CDNs.
+templates.env.globals["hljs_src"] = os.environ.get(
+    "COD_DOC_HLJS_SRC",
+    "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/highlight.min.js",
+)
+templates.env.globals["hljs_light_css"] = os.environ.get(
+    "COD_DOC_HLJS_LIGHT_CSS",
+    "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/styles/github.min.css",
+)
+templates.env.globals["hljs_dark_css"] = os.environ.get(
+    "COD_DOC_HLJS_DARK_CSS",
+    "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.10.0/build/styles/github-dark.min.css",
+)

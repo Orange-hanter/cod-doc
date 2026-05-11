@@ -99,8 +99,16 @@ def test_bullet_list() -> None:
 def test_code_fence_renders_pre_code() -> None:
     md = "```python\ndef f(): pass\n```"
     out = render_markdown(md)
-    assert "<pre><code>" in out
+    # Language is emitted as a `language-<lang>` class so highlight.js can colourise.
+    assert '<pre><code class="language-python">' in out
     assert "def f(): pass" in out
+
+
+def test_code_fence_without_lang_omits_class() -> None:
+    """Plain ``` fences (no lang) emit a bare <code> — highlight.js auto-detects."""
+    md = "```\nplain\n```"
+    out = render_markdown(md)
+    assert "<pre><code>plain</code></pre>" in out
 
 
 def test_code_fence_escapes_html() -> None:
@@ -141,10 +149,10 @@ def test_unclosed_mermaid_fence_still_emits_div() -> None:
 
 
 def test_non_mermaid_lang_still_uses_pre_code() -> None:
-    """Other language tags keep the existing pre/code rendering."""
+    """Other language tags keep the existing pre/code rendering (with language class)."""
     md = "```python\nprint('hi')\n```"
     out = render_markdown(md)
-    assert "<pre><code>" in out
+    assert '<pre><code class="language-python">' in out
     assert '<div class="mermaid">' not in out
 
 

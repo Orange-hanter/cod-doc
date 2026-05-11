@@ -31,6 +31,41 @@
       });
     }
   </script>
+
+  {# Syntax highlighting — both light and dark themes loaded; the non-matching
+     one is disabled on boot and re-toggled when the user flips the theme. #}
+  <link id="hljs-light" rel="stylesheet" href="{{ hljs_light_css }}">
+  <link id="hljs-dark"  rel="stylesheet" href="{{ hljs_dark_css }}" disabled>
+  <script>
+    (function () {
+      function syncHljsTheme() {
+        const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const light = document.getElementById('hljs-light');
+        const darkLink = document.getElementById('hljs-dark');
+        if (light) light.disabled = dark;
+        if (darkLink) darkLink.disabled = !dark;
+      }
+      syncHljsTheme();
+      // Re-sync when cod_doc_app.js toggles data-theme on <html>.
+      new MutationObserver(syncHljsTheme).observe(document.documentElement, {
+        attributes: true, attributeFilter: ['data-theme'],
+      });
+    })();
+  </script>
+  <script defer src="{{ hljs_src }}"></script>
+  <script defer>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.hljs) {
+        document.querySelectorAll('pre code').forEach((el) => {
+          // Skip already-processed and explicit no-highlight blocks.
+          if (el.dataset.highlighted === 'yes') return;
+          if (el.classList.contains('language-mermaid') || el.classList.contains('nohighlight')) return;
+          try { window.hljs.highlightElement(el); } catch (e) { /* fail silently */ }
+        });
+      }
+    });
+  </script>
+
   <script defer src="{{ static_url('cod_doc_ws.js') }}"></script>
   <script defer src="{{ static_url('cod_doc_app.js') }}"></script>
 </head>
