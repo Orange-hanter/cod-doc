@@ -72,3 +72,14 @@ class CodDocApp(App[Any]):
                 "API key configured, opening dashboard", extra={"event_type": "open_dashboard"}
             )
             self.push_screen(DashboardScreen(self.config))
+        # Surface deprecation in the running TUI as a one-shot toast so users
+        # who land here directly (skipping the CLI banner) still notice.
+        try:
+            self.notify(
+                "TUI is deprecated — use `cod-doc web` for the live agent console.",
+                title="Deprecated",
+                severity="warning",
+                timeout=10,
+            )
+        except Exception:
+            pass

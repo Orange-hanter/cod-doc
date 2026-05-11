@@ -61,11 +61,20 @@ def _run_text_wizard(cfg: Config) -> None:
     console.print(f"[green]✅ Настройка завершена. Проект '{project_name}' добавлен.[/green]")
 
 
+_TUI_DEPRECATION = (
+    "[yellow]⚠ TUI is deprecated.[/yellow] "
+    "All TUI features are available in the web UI ([cyan]cod-doc web[/cyan]) "
+    "with live agent stream, run history, theme switcher and more. "
+    "TUI may be removed in a future release.\n"
+)
+
+
 @click.command()
 @click.option("--debug-log-file", default=None, help="Путь к файлу debug-лога TUI")
 @click.pass_context
 def tui(ctx: click.Context, debug_log_file: str | None) -> None:
-    """Запустить полный TUI (dashboard + wizard)."""
+    """[DEPRECATED] Запустить TUI. Используйте `cod-doc web` вместо."""
+    console.print(_TUI_DEPRECATION)
     from cod_doc.tui.app import CodDocApp
 
     app = CodDocApp(ctx.obj["config"], debug_log_file=debug_log_file)
