@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Annotated, Any
 
@@ -176,14 +177,66 @@ def stories_list(
             context_docs_fresh += 1
         context_docs.append({
             "doc_key": d.doc_key,
+            "type": d.type.value,
+            "status": d.status.value,
             "updated_at": d.last_updated.isoformat() if d.last_updated else "",
             "is_fresh": is_fresh,
         })
-    # Sort: fresh docs first (they're what changed since last gen), then by
-    # recency. Stable so within each freshness bucket the most recent shows up
-    # at the top.
-    context_docs.sort(key=lambda x: x["updated_at"] or "", reverse=True)
-    context_docs.sort(key=lambda x: not x["is_fresh"])
+
+    # Group docs by type for the inventory display — each bucket pairs with a
+    # role label from doc_type_guides so the user knows what that type is FOR.
+    # Sort buckets in priority order: types that materially help story
+    # generation (vision, architecture, module-spec, guide) come first.
+    _type_priority = {
+        "vision": 1, "architecture": 2, "module-spec": 3, "module-subdoc": 4,
+        "guide": 5, "standard": 6, "adr": 7, "decision": 8,
+        "execution-plan": 9, "user-story": 10, "open-question": 11,
+        "execution-log": 12, "task-section": 13, "redirect": 14,
+    }
+    _type_roles = {
+        "vision": "Strategic intent — purpose, audience, goals.",
+        "architecture": "System structure, components, technology choices.",
+        "module-spec": "Implementation-grade module details, interfaces, data model.",
+        "module-subdoc": "Deep dive into one aspect of a module.",
+        "guide": "How-to walkthroughs and onboarding.",
+        "standard": "Normative rules and conventions.",
+        "adr": "Architecture Decision Records.",
+        "decision": "Single design / product choices.",
+        "execution-plan": "Multi-task initiative plans.",
+        "user-story": "User-facing requirements.",
+        "open-question": "Unresolved technical questions.",
+        "execution-log": "Chronological journal of shipped work.",
+        "task-section": "Coherent groups of implementation tasks.",
+        "redirect": "Stubs pointing at canonical homes.",
+    }
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    for d in context_docs:
+        by_type.setdefault(d["type"], []).append(d)
+    # Sort docs within each type bucket by recency, then put fresh ones first.
+    # Two-pass with a stable sort: the second pass becomes the primary key.
+    for type_docs in by_type.values():
+        type_docs.sort(key=lambda x: x["updated_at"] or "", reverse=True)
+        type_docs.sort(key=lambda x: not x["is_fresh"])
+
+    context_types: list[dict[str, Any]] = [
+        {
+            "type": t,
+            "role": _type_roles.get(t, ""),
+            "docs": by_type[t],
+            "fresh_count": sum(1 for d in by_type[t] if d["is_fresh"]),
+        }
+        for t in sorted(by_type.keys(), key=lambda x: _type_priority.get(x, 99))
+    ]
+
+    # Coverage cache — populated by POST /stories/coverage/analyze, displayed
+    # inline so the user can see prior recommendations without re-running.
+    coverage_path = proj.entry.cod_doc_dir / "context_coverage.json"
+    coverage: dict[str, Any] | None = None
+    if coverage_path.exists():
+        try:
+            coverage = json.loads(coverage_path.read_text())
+        except Exception:
+            coverage = None
 
     # Lookups for task counts + the set of plans linked tasks live in.
     # One pass per story — N+1, but story counts in real projects are small.
@@ -221,25 +274,55 @@ def stories_list(
 
     # Build groups for the template — always emit a sorted list so the order
     # is deterministic across renders.
+    from cod_doc.services import section_summary_service as summaries
+
+    summary_path = proj.entry.cod_doc_dir / "section_summaries.json"
     groups: list[dict[str, Any]] = []
     if group_by == "persona":
         bucket: dict[str, list[dict[str, Any]]] = {}
         for st in enriched:
             bucket.setdefault(st["persona"], []).append(st)
         for key in sorted(bucket.keys()):
-            groups.append({"label": key, "hue": _persona_hue(key), "stories": bucket[key]})
+            groups.append({
+                "key": key, "label": key, "hue": _persona_hue(key),
+                "stories": bucket[key], "summary": None,
+            })
     elif group_by == "none":
-        groups = [{"label": "", "hue": "accent", "stories": enriched}]
+        groups = [{
+            "key": "", "label": "", "hue": "accent",
+            "stories": enriched, "summary": None,
+        }]
     else:  # section (default)
         bucket: dict[str, list[dict[str, Any]]] = {}
         for st in enriched:
             bucket.setdefault(st["section"], []).append(st)
+
         # Natural sort: numeric sections first ("1", "2", …), then "?" last.
         def _sort_key(k: str) -> tuple[int, str]:
             return (0 if k.isdigit() else 1, f"{int(k):04}" if k.isdigit() else k)
+
+        # Load all section summaries in one pass (cheap JSON read).
+        section_map = {sec: [s["story_id"] for s in items] for sec, items in bucket.items()}
+        loaded_summaries = summaries.load_all(summary_path, section_map)
+
         for key in sorted(bucket.keys(), key=_sort_key):
             label = f"Section {key}" if key.isdigit() else "Unsorted"
-            groups.append({"label": label, "hue": "accent", "stories": bucket[key]})
+            summary = loaded_summaries.get(key)
+            groups.append({
+                "key": key,
+                "label": label,
+                "hue": "accent",
+                "stories": bucket[key],
+                "summary": (
+                    {
+                        "text": summary.text,
+                        "generated_at": summary.generated_at,
+                        "stale": summary.stale,
+                    }
+                    if summary
+                    else None
+                ),
+            })
 
     return templates.TemplateResponse(
         request,
@@ -256,6 +339,8 @@ def stories_list(
             },
             "context_docs": context_docs,
             "context_docs_fresh": context_docs_fresh,
+            "context_types": context_types,
+            "coverage": coverage,
             "last_gen_at": last_gen.isoformat() if last_gen else "",
         },
     )
@@ -415,6 +500,156 @@ def story_show(
             ],
             "linked_done": sum(1 for t in linked_tasks if t.status.value == "done"),
             "linked_total": len(linked_tasks),
+        },
+    )
+
+
+@router.post(
+    "/p/{slug}/stories/coverage/analyze",
+    response_class=HTMLResponse,
+)
+def stories_coverage_analyze(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> Response:
+    """Run AI coverage analysis over the project's doc inventory.
+
+    Returns a fragment with structured recommendations:
+    {"summary": str, "gaps": [str], "strengths": [str], "recommendation": str}
+    The result is cached in ``.cod-doc/context_coverage.json`` so subsequent
+    page loads can render it without re-running the AI call.
+    """
+    from cod_doc.services import doc_service as docs_svc
+    from cod_doc.services.ai_text import _call_lite_raw
+
+    proj = get_project(slug)
+    session, project_db_id = db
+    cfg = get_config()
+
+    # Build a compact inventory snapshot for the prompt.
+    inventory_lines = []
+    for d in docs_svc.list_for_project(session, project_db_id):
+        preamble = (d.preamble or "")[:120].replace("\n", " ")
+        inventory_lines.append(f"- [{d.type.value}] {d.doc_key}: {d.title} — {preamble}")
+    inventory = "\n".join(inventory_lines) or "(no documents)"
+
+    prompt = (
+        "You are advising a product analyst who is about to run AI story "
+        "generation against this project's documentation. Assess the doc "
+        "coverage and answer:\n"
+        "1. Which doc types are strong / weak for story generation?\n"
+        "2. What specific gaps would most improve generated stories?\n"
+        "3. Which existing docs should be prioritised as context, beyond MASTER.md?\n\n"
+        f"Doc inventory:\n{inventory}\n\n"
+        "Return ONLY a valid JSON object (no markdown fences):\n"
+        "{\n"
+        '  "summary": "2-3 sentence assessment of overall coverage",\n'
+        '  "strengths": ["short phrase", ...],\n'
+        '  "gaps": ["doc_type — concrete description of what is missing", ...],\n'
+        '  "recommendation": "1-2 sentence next-action suggestion"\n'
+        "}\n"
+        "Max 5 strengths, max 5 gaps. Same language as the doc titles."
+    )
+
+    coverage_path = proj.entry.cod_doc_dir / "context_coverage.json"
+    try:
+        raw = _call_lite_raw(prompt, cfg, max_tokens=1200).strip()
+        if raw.startswith("```"):
+            raw_lines = raw.splitlines()
+            raw = "\n".join(
+                raw_lines[1:-1] if raw_lines[-1].strip() == "```" else raw_lines[1:]
+            )
+        data = json.loads(raw)
+        coverage = {
+            "summary": str(data.get("summary", "")),
+            "strengths": [str(x) for x in data.get("strengths", [])][:5],
+            "gaps": [str(x) for x in data.get("gaps", [])][:5],
+            "recommendation": str(data.get("recommendation", "")),
+            "generated_at": __import__("datetime").datetime.now(
+                __import__("datetime").UTC
+            ).isoformat(),
+        }
+        coverage_path.parent.mkdir(parents=True, exist_ok=True)
+        coverage_path.write_text(json.dumps(coverage, ensure_ascii=False, indent=2))
+    except (AIBackendError, json.JSONDecodeError, Exception) as exc:
+        coverage = {
+            "summary": "",
+            "strengths": [],
+            "gaps": [],
+            "recommendation": "",
+            "generated_at": "",
+            "error": str(exc),
+        }
+
+    return templates.TemplateResponse(
+        request,
+        "_frag/context_coverage.html",
+        {"project": {"name": proj.entry.name}, "coverage": coverage},
+    )
+
+
+@router.post(
+    "/p/{slug}/stories/section/{section_key}/analyze",
+    response_class=HTMLResponse,
+)
+def stories_section_analyze(
+    request: Request,
+    slug: str,
+    section_key: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> Response:
+    """Run AI summary for a single section and persist it.
+
+    Returns an HTML fragment (just the summary block) so HTMX can swap it
+    into place inside the section header without re-rendering the whole grid.
+    """
+    from cod_doc.services import section_summary_service as summaries_svc
+
+    proj = get_project(slug)
+    session, project_db_id = db
+    cfg = get_config()
+    summary_path = proj.entry.cod_doc_dir / "section_summaries.json"
+
+    # Collect every story whose parsed id_hint sits in the requested section.
+    rows = stories.list_for_project(session, project_db_id)
+    section_stories: dict[str, str] = {}
+    for s in rows:
+        parsed = _parse_narrative(s.narrative)
+        if _section_of(parsed.get("id_hint", "") or "") == section_key:
+            section_stories[s.story_id] = s.narrative
+
+    if not section_stories:
+        raise HTTPException(404, f"No stories in section {section_key}")
+
+    try:
+        summary = summaries_svc.generate(
+            summary_path, section_key, section_stories, cfg
+        )
+    except AIBackendError as exc:
+        return templates.TemplateResponse(
+            request,
+            "_frag/section_summary.html",
+            {
+                "project": {"name": proj.entry.name},
+                "section": section_key,
+                "summary": None,
+                "error": str(exc),
+            },
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "_frag/section_summary.html",
+        {
+            "project": {"name": proj.entry.name},
+            "section": section_key,
+            "summary": {
+                "text": summary.text,
+                "generated_at": summary.generated_at,
+                "stale": False,
+            },
+            "error": "",
         },
     )
 

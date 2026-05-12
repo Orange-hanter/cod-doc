@@ -1,0 +1,62 @@
+{# AI coverage analysis fragment. Returned by POST /stories/coverage/analyze, also
+   rendered inline on page load when a cached result exists. #}
+
+<div class="coverage-panel" id="coverage-panel">
+  {% if coverage.error %}
+    <div class="coverage-error">
+      ⚠ Analysis failed: {{ coverage.error }}
+    </div>
+  {% elif coverage.summary %}
+    <div class="coverage-summary">
+      <span class="coverage-icon">🤖</span>
+      <p>{{ coverage.summary }}</p>
+    </div>
+
+    {% if coverage.recommendation %}
+      <div class="coverage-recommendation">
+        <span class="coverage-rec-label">✨ Next action</span>
+        <p>{{ coverage.recommendation }}</p>
+      </div>
+    {% endif %}
+
+    <div class="coverage-cols">
+      {% if coverage.strengths %}
+        <div class="coverage-col coverage-col-strengths">
+          <h4>✅ Strengths</h4>
+          <ul>
+            {% for s in coverage.strengths %}
+              <li>{{ s }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      {% if coverage.gaps %}
+        <div class="coverage-col coverage-col-gaps">
+          <h4>📋 Gaps</h4>
+          <ul>
+            {% for g in coverage.gaps %}
+              <li>{{ g }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="coverage-footer">
+      <span class="muted-tiny" title="{{ coverage.generated_at[:19] | replace('T', ' ') }} UTC">
+        Analysed {{ coverage.generated_at | relative_time }}
+      </span>
+      <form hx-post="/p/{{ project.name }}/stories/coverage/analyze"
+            hx-target="#coverage-panel"
+            hx-swap="outerHTML"
+            hx-indicator="#coverage-spinner"
+            style="margin-left:auto;">
+        <button type="submit" class="btn btn-sm btn-ghost">
+          <span id="coverage-spinner" class="htmx-indicator spinner" style="margin-right:4px;"></span>
+          ↻ Re-analyse
+        </button>
+      </form>
+    </div>
+  {% endif %}
+</div>

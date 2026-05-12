@@ -51,25 +51,65 @@
 
     {# Doc-context hints. Surfaces which docs the AI sees so the user can spot
        stale / missing context BEFORE running generation. #}
-    {% if context_docs %}
-      <details class="stories-context-docs">
+    {% if context_types %}
+      <details class="stories-context-docs" {% if context_docs_fresh %}open{% endif %}>
         <summary>
           📚 Context inventory <span class="count-chip">{{ context_docs | length }}</span>
+          <span class="muted-tiny">in {{ context_types | length }} types</span>
           {% if context_docs_fresh %}
             <span class="ds-chip ds-chip-active" title="Modified since last story generation">
               ⚡ {{ context_docs_fresh }} fresh
             </span>
           {% endif %}
         </summary>
-        <ul class="stories-context-list">
-          {% for d in context_docs %}
-            <li class="stories-context-row {% if d.is_fresh %}stories-context-fresh{% endif %}">
-              <a href="/p/{{ project.name }}/docs/{{ d.doc_key }}" class="mono">{{ d.doc_key }}</a>
-              <span class="muted-tiny">{{ d.updated_at | relative_time }}</span>
-              {% if d.is_fresh %}<span class="stories-context-badge">⚡ fresh</span>{% endif %}
-            </li>
+
+        {# AI coverage analysis trigger / cached result. #}
+        {% if coverage %}
+          {% include "_frag/context_coverage.html" %}
+        {% else %}
+          <div class="coverage-cta">
+            <form hx-post="/p/{{ project.name }}/stories/coverage/analyze"
+                  hx-target="#coverage-panel-placeholder"
+                  hx-swap="outerHTML"
+                  hx-indicator="#coverage-cta-spinner">
+              <button type="submit" class="btn btn-sm btn-primary">
+                <span id="coverage-cta-spinner" class="htmx-indicator spinner" style="margin-right:4px;"></span>
+                🤖 Analyse coverage with AI
+              </button>
+              <span class="muted-tiny">Get gap / strength assessment + recommended next action</span>
+            </form>
+            <div id="coverage-panel-placeholder"></div>
+          </div>
+        {% endif %}
+
+        {# Type-grouped inventory list. Each type bucket carries a role label
+           from doc_type_guides so the user knows what that type is FOR. #}
+        <div class="context-types">
+          {% for t in context_types %}
+            <details class="context-type" {% if t.fresh_count %}open{% endif %}>
+              <summary class="context-type-head">
+                <span class="ds-chip ds-chip-type">{{ t.type }}</span>
+                <span class="context-type-role muted-tiny">{{ t.role }}</span>
+                <span class="context-type-count">
+                  {{ t.docs | length }}
+                  {% if t.fresh_count %}
+                    <span class="stories-context-badge">⚡ {{ t.fresh_count }}</span>
+                  {% endif %}
+                </span>
+              </summary>
+              <ul class="stories-context-list">
+                {% for d in t.docs %}
+                  <li class="stories-context-row {% if d.is_fresh %}stories-context-fresh{% endif %}">
+                    <a href="/p/{{ project.name }}/docs/{{ d.doc_key }}" class="mono">{{ d.doc_key }}</a>
+                    <span class="ds-chip ds-chip-{{ d.status }}" style="font-size:9px; padding:0 6px;">{{ d.status }}</span>
+                    <span class="muted-tiny">{{ d.updated_at | relative_time }}</span>
+                    {% if d.is_fresh %}<span class="stories-context-badge">⚡ fresh</span>{% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            </details>
           {% endfor %}
-        </ul>
+        </div>
       </details>
     {% endif %}
 
@@ -112,6 +152,16 @@
               <span class="story-group-label">{{ grp.label }}</span>
               <span class="count-chip">{{ grp.stories | length }}</span>
             </summary>
+
+            {# Section AI summary — only for section grouping (each section
+               has a stable key the summary service can use). Persona / flat
+               views skip this. #}
+            {% if group_by == 'section' and grp.key and grp.key != '?' %}
+              {% with section=grp.key, summary=grp.summary, error='' %}
+                {% include "_frag/section_summary.html" %}
+              {% endwith %}
+            {% endif %}
+
             <div class="story-grid">
               {% for s in grp.stories %}{% include "_frag/story_card.html" %}{% endfor %}
             </div>

@@ -1,0 +1,51 @@
+{# Section summary fragment. Re-rendered on demand by HTMX swap of #section-summary-<key>. #}
+
+<div class="section-summary{% if summary and summary.stale %} section-summary-stale{% endif %}"
+     id="section-summary-{{ section }}">
+  {% if error %}
+    <div class="section-summary-error">
+      <span>⚠</span> {{ error }}
+      <form hx-post="/p/{{ project.name }}/stories/section/{{ section }}/analyze"
+            hx-target="#section-summary-{{ section }}"
+            hx-swap="outerHTML"
+            style="display:inline; margin-left:auto">
+        <button type="submit" class="btn btn-sm btn-secondary">↻ Retry</button>
+      </form>
+    </div>
+  {% elif summary %}
+    <div class="section-summary-body">
+      <p class="section-summary-text">{{ summary.text }}</p>
+      <div class="section-summary-meta">
+        {% if summary.stale %}
+          <span class="ds-chip ds-chip-warning">⚡ stale — stories changed</span>
+        {% endif %}
+        <span class="muted-tiny" title="{{ summary.generated_at[:19] | replace('T', ' ') }} UTC">
+          🤖 {{ summary.generated_at | relative_time }}
+        </span>
+        <form hx-post="/p/{{ project.name }}/stories/section/{{ section }}/analyze"
+              hx-target="#section-summary-{{ section }}"
+              hx-swap="outerHTML"
+              hx-indicator="#section-summary-spinner-{{ section }}"
+              style="display:inline; margin-left:auto">
+          <button type="submit" class="btn btn-sm btn-ghost" title="Regenerate summary">
+            <span id="section-summary-spinner-{{ section }}" class="htmx-indicator spinner" style="margin-right:4px;"></span>
+            ↻ Regenerate
+          </button>
+        </form>
+      </div>
+    </div>
+  {% else %}
+    {# No summary yet — show the trigger button. #}
+    <form hx-post="/p/{{ project.name }}/stories/section/{{ section }}/analyze"
+          hx-target="#section-summary-{{ section }}"
+          hx-swap="outerHTML"
+          hx-indicator="#section-summary-spinner-{{ section }}"
+          class="section-summary-trigger">
+      <button type="submit" class="btn btn-sm btn-secondary">
+        <span id="section-summary-spinner-{{ section }}" class="htmx-indicator spinner" style="margin-right:4px;"></span>
+        ✨ Analyze section
+      </button>
+      <span class="muted-tiny">AI generates a 2-3 sentence summary of this section's theme</span>
+    </form>
+  {% endif %}
+</div>

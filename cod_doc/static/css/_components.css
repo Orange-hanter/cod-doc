@@ -515,6 +515,44 @@
 
 .stories-group-toggle { margin-left: auto; margin-bottom: 0; }
 
+/* ── Section AI summary ───────────────────────────────────────────────── */
+.section-summary {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft-bg);
+  border: 1px solid var(--accent);
+  border-left: 4px solid var(--purple);
+  position: relative;
+}
+.section-summary-stale {
+  background: var(--warning-soft-bg);
+  border-color: var(--warning);
+  border-left-color: var(--warning);
+}
+.section-summary-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.section-summary-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fg-strong);
+}
+.section-summary-meta {
+  display: flex; align-items: center; gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border-soft);
+}
+.section-summary-trigger {
+  display: flex; align-items: center; gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.section-summary-error {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-size: 12px;
+  color: var(--danger);
+}
+
 /* ── Context inventory hints ──────────────────────────────────────────── */
 .stories-context-docs {
   background: var(--bg-alt);
@@ -547,6 +585,95 @@
   color: var(--accent);
   border: 1px solid var(--accent);
   font-weight: 700;
+}
+
+/* Type-grouped context inventory */
+.context-types {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: var(--space-2);
+}
+.context-type {
+  background: var(--bg);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.context-type-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: 6px var(--space-2);
+  cursor: pointer; user-select: none;
+  list-style: none;
+}
+.context-type-head::-webkit-details-marker { display: none; }
+.context-type-role { flex: 1; }
+.context-type-count {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  display: inline-flex; gap: 4px; align-items: center;
+}
+.context-type .stories-context-list {
+  margin: 0;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  list-style: none;
+  border-top: 1px solid var(--border-soft);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* AI coverage panel */
+.coverage-cta {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) 0;
+  flex-wrap: wrap;
+}
+.coverage-panel {
+  margin: var(--space-2) 0;
+  padding: var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-left: 4px solid var(--purple);
+  border-radius: var(--radius-md);
+  display: flex; flex-direction: column; gap: var(--space-2);
+}
+.coverage-summary {
+  display: flex; gap: var(--space-2); align-items: flex-start;
+}
+.coverage-summary p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--fg-strong); }
+.coverage-icon { font-size: 18px; flex-shrink: 0; }
+.coverage-recommendation {
+  padding: var(--space-2);
+  background: var(--purple-soft-bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--purple);
+}
+.coverage-rec-label {
+  display: inline-block;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--purple);
+  margin-bottom: 4px;
+}
+.coverage-recommendation p { margin: 0; font-size: 12.5px; line-height: 1.5; }
+.coverage-cols {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);
+}
+@media (max-width: 700px) { .coverage-cols { grid-template-columns: 1fr; } }
+.coverage-col h4 {
+  margin: 0 0 var(--space-1);
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted);
+}
+.coverage-col ul { margin: 0; padding-left: var(--space-4); }
+.coverage-col li { font-size: 12px; line-height: 1.5; margin-bottom: 4px; }
+.coverage-col-strengths li::marker { color: var(--success); }
+.coverage-col-gaps li::marker { color: var(--warning); }
+.coverage-footer {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border-soft);
+  font-size: 11px;
+}
+.coverage-error {
+  padding: var(--space-2);
+  color: var(--danger); font-size: 12px;
 }
 
 /* ── story_show promote bar ──────────────────────────────────────────── */
