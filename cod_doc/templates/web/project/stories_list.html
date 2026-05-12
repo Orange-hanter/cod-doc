@@ -7,55 +7,112 @@
   <span>Stories</span>
 </nav>
 
-<h1>{{ project.name }} · User stories</h1>
-
 {% with slug=project.name, active="stories" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<section class="overview-block">
-  <h2>Generate from docs</h2>
-  <form hx-post="/p/{{ project.name }}/stories/generate"
-        hx-target="#story-drafts"
-        hx-swap="innerHTML"
-        class="ai-gen-form">
-    <label class="field">
-      <span class="muted-tiny">Generation intent (optional):</span>
-      <input type="text" name="intent"
-             placeholder="e.g. focus on the import flow, prioritize ops personas">
-    </label>
-    <button type="submit" class="btn-primary">✨ Generate stories from MASTER.md</button>
-  </form>
-  <div id="story-drafts"></div>
-</section>
+<div class="stories-page">
 
-<section class="overview-block">
-  <h2>Existing stories <span class="count-chip">{{ stories | length }}</span></h2>
-  {% if stories %}
-    <table class="grid">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Persona</th>
-          <th>Narrative</th>
-          <th>Status</th>
-          <th>Priority</th>
-        </tr>
-      </thead>
-      <tbody>
+  <header class="stories-header">
+    <div class="stories-header-icon">📖</div>
+    <div>
+      <h1 class="stories-title">{{ project.name }} · User stories</h1>
+      <p class="stories-subtitle muted">
+        Stories capture user-facing requirements in
+        <em>As a … I want … so that …</em> form. Tasks are spawned from
+        accepted stories to track concrete implementation.
+      </p>
+    </div>
+  </header>
+
+  {# ── Generate from docs ─────────────────────────────────────────────── #}
+  <section class="stories-generate-card">
+    <div class="stories-generate-head">
+      <span class="stories-generate-icon">✨</span>
+      <div>
+        <div class="stories-generate-title">Generate from docs</div>
+        <div class="stories-generate-hint muted-tiny">
+          AI reads MASTER.md and proposes draft stories. Nothing is saved
+          until you review and click <strong>Save</strong>.
+        </div>
+      </div>
+    </div>
+    <form hx-post="/p/{{ project.name }}/stories/generate"
+          hx-target="#story-drafts"
+          hx-swap="innerHTML"
+          hx-indicator="#story-gen-spinner"
+          class="stories-generate-form">
+      <input type="text" name="intent"
+             placeholder="Intent (optional) — e.g. focus on the import flow"
+             class="stories-generate-intent">
+      <button type="submit" class="btn btn-primary">
+        <span id="story-gen-spinner" class="htmx-indicator spinner" style="margin-right:6px;"></span>
+        ✨ Generate
+      </button>
+    </form>
+    <div id="story-drafts"></div>
+  </section>
+
+  {# ── Existing stories ───────────────────────────────────────────────── #}
+  <section class="stories-section">
+    <div class="stories-section-head">
+      <h2 class="stories-section-title">
+        Existing stories <span class="count-chip">{{ stories | length }}</span>
+      </h2>
+    </div>
+
+    {% if stories %}
+      <div class="story-grid">
         {% for s in stories %}
-          <tr>
-            <td class="mono">
-              <a href="/p/{{ project.name }}/stories/{{ s.story_id }}">{{ s.story_id }}</a>
-            </td>
-            <td>{{ s.persona }}</td>
-            <td>{{ s.narrative }}</td>
-            <td><span class="badge badge-{{ s.status }}">{{ s.status }}</span></td>
-            <td><span class="prio prio-{{ s.priority }}">{{ s.priority }}</span></td>
-          </tr>
+          <article class="story-card story-hue-{{ s.persona_hue }}">
+            <header class="story-card-head">
+              <a class="story-id mono" href="/p/{{ project.name }}/stories/{{ s.story_id }}">
+                {{ s.story_id }}
+              </a>
+              <div class="story-card-chips">
+                <span class="ds-chip ds-chip-{{ s.status }}">{{ s.status }}</span>
+                <span class="story-prio story-prio-{{ s.priority }}" title="priority: {{ s.priority }}">
+                  {{ s.priority }}
+                </span>
+              </div>
+            </header>
+
+            {% if s.parsed.title %}
+              <h3 class="story-title">
+                {% if s.parsed.id_hint %}<span class="story-id-hint mono">{{ s.parsed.id_hint }}</span>{% endif %}
+                {{ s.parsed.title }}
+              </h3>
+            {% endif %}
+
+            <div class="story-persona">
+              <span class="story-persona-icon">👤</span>
+              <span class="story-persona-name">{{ s.persona }}</span>
+            </div>
+
+            {% if s.parsed.want or s.parsed.so_that %}
+              <div class="story-body">
+                {% if s.parsed.want %}
+                  <div class="story-line story-line-want">
+                    <span class="story-line-label">Хочет</span>
+                    <span class="story-line-text">{{ s.parsed.want }}</span>
+                  </div>
+                {% endif %}
+                {% if s.parsed.so_that %}
+                  <div class="story-line story-line-so-that">
+                    <span class="story-line-label">Чтобы</span>
+                    <span class="story-line-text">{{ s.parsed.so_that }}</span>
+                  </div>
+                {% endif %}
+              </div>
+            {% else %}
+              {# Parser couldn't extract structured parts — show the raw narrative. #}
+              <p class="story-narrative-raw">{{ s.narrative }}</p>
+            {% endif %}
+          </article>
         {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p class="muted">Stories ещё не созданы. Сгенерируй из документации выше.</p>
-  {% endif %}
-</section>
+      </div>
+    {% else %}
+      <p class="muted">Stories ещё не созданы. Сгенерируй из документации выше или импортируй вручную.</p>
+    {% endif %}
+  </section>
+
+</div>
 {% endblock %}

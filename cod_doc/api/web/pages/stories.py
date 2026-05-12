@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -40,6 +41,63 @@ def _id_prefix_from_plan_scope(scope: str) -> str:
     return "".join(letters[:3]) or "TSK"
 
 
+# Splits an AI-generated narrative back into its semantic parts so the UI can
+# render them with hierarchy instead of a wall of text. The canonical shape we
+# emit is "[Section-N.M Title] As a Role, I want X, so that Y" — but the model
+# does occasionally drop the section header or use "As an", so the regex makes
+# the framing optional and accepts both articles.
+_NARRATIVE_PARSER = re.compile(
+    r"^\s*"
+    r"(?:\[\s*(?P<header>[^\]]+)\]\s*)?"  # optional [Section-N.M Title]
+    r"(?:As an?\s+(?P<role>[^,]+?),\s*)?"  # optional "As a/an Role,"
+    r"I want\s+(?P<want>.+?)"
+    r",\s*so that\s+(?P<so_that>.+?)\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Header inside the brackets is sometimes "US-1.1 Title", sometimes just "Title".
+_HEADER_SPLIT = re.compile(r"^([A-Z]{2,5}-?\d+(?:\.\d+)?)\s+(.+)$")
+
+
+def _parse_narrative(text: str) -> dict[str, str]:
+    """Split a user-story narrative into header / role / want / so_that.
+
+    Returns the empty-string default for any part the parser cannot find;
+    the template falls back to ``raw`` when the parse fails entirely.
+    """
+    if not text:
+        return {"raw": "", "id_hint": "", "title": "", "role": "", "want": "", "so_that": ""}
+    m = _NARRATIVE_PARSER.match(text)
+    if not m:
+        return {"raw": text, "id_hint": "", "title": "", "role": "", "want": "", "so_that": ""}
+    header = (m.group("header") or "").strip()
+    id_hint = ""
+    title = header
+    hm = _HEADER_SPLIT.match(header)
+    if hm:
+        id_hint = hm.group(1)
+        title = hm.group(2).strip()
+    return {
+        "raw": text,
+        "id_hint": id_hint,
+        "title": title,
+        "role": (m.group("role") or "").strip(),
+        "want": (m.group("want") or "").strip(),
+        "so_that": (m.group("so_that") or "").strip(),
+    }
+
+
+# Stable palette for persona chips — assigned by hash so the same persona keeps
+# the same colour across renders. Aligned with the design-token CSS variables.
+_PERSONA_HUES = ("accent", "purple", "success", "warning", "danger")
+
+
+def _persona_hue(persona: str) -> str:
+    if not persona:
+        return _PERSONA_HUES[0]
+    return _PERSONA_HUES[sum(ord(c) for c in persona) % len(_PERSONA_HUES)]
+
+
 # ── Stories list ───────────────────────────────────────────────────────
 
 
@@ -52,21 +110,24 @@ def stories_list(
     proj = get_project(slug)
     session, project_db_id = db
     rows = stories.list_for_project(session, project_db_id)
+    enriched = [
+        {
+            "story_id": s.story_id,
+            "persona": s.persona,
+            "persona_hue": _persona_hue(s.persona),
+            "narrative": s.narrative,
+            "parsed": _parse_narrative(s.narrative),
+            "status": s.status.value,
+            "priority": s.priority.value,
+        }
+        for s in rows
+    ]
     return templates.TemplateResponse(
         request,
         "project/stories_list.html",
         {
             "project": {"name": proj.entry.name},
-            "stories": [
-                {
-                    "story_id": s.story_id,
-                    "persona": s.persona,
-                    "narrative": s.narrative,
-                    "status": s.status.value,
-                    "priority": s.priority.value,
-                }
-                for s in rows
-            ],
+            "stories": enriched,
         },
     )
 

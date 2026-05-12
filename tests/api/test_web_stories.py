@@ -100,7 +100,7 @@ def test_stories_list_renders_empty(stories_client) -> None:
     r = client.get(f"/p/{entry.name}/stories")
     assert r.status_code == 200
     assert "User stories" in r.text
-    assert "Generate stories from MASTER.md" in r.text
+    assert "Generate from docs" in r.text
     assert "ещё не создан" in r.text.lower() or "stories" in r.text.lower()
     # Tab strip — Stories active
     assert 'class="active" href="/p/demo/stories"' in r.text
