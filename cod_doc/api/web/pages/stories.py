@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -33,6 +33,39 @@ def _gather_master_text(slug: str) -> str:
     if proj.entry.master_path.exists():
         return proj.entry.master_path.read_text(encoding="utf-8", errors="replace")
     return ""
+
+
+def _last_gen_path(slug: str) -> "Path":
+    """Per-project marker file for the last story-generation time."""
+    from pathlib import Path
+
+    proj = get_project(slug)
+    return proj.entry.cod_doc_dir / "story_last_gen.json"
+
+
+def _read_last_gen(slug: str) -> "datetime | None":
+    """Return the timestamp of the last successful story generation, or None."""
+    import json
+    from datetime import datetime
+
+    path = _last_gen_path(slug)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+        return datetime.fromisoformat(data["last_at"])
+    except Exception:
+        return None
+
+
+def _write_last_gen(slug: str) -> None:
+    """Stamp the marker file — called after a successful generation."""
+    import json
+    from datetime import UTC, datetime
+
+    path = _last_gen_path(slug)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"last_at": datetime.now(UTC).isoformat()}))
 
 
 def _id_prefix_from_plan_scope(scope: str) -> str:
@@ -101,33 +134,129 @@ def _persona_hue(persona: str) -> str:
 # ── Stories list ───────────────────────────────────────────────────────
 
 
+# US-1.x → "1", US-1 → "1", anything else → "?".
+_SECTION_PREFIX = re.compile(r"^([A-Z]{2,5}-?)(\d+)(?:\.\d+)?")
+
+
+def _section_of(id_hint: str) -> str:
+    m = _SECTION_PREFIX.match(id_hint or "")
+    return m.group(2) if m else ""
+
+
 @router.get("/p/{slug}/stories", response_class=HTMLResponse)
 def stories_list(
     request: Request,
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    group_by: str = "section",
 ) -> HTMLResponse:
+    """Stories list with parsed narratives, task counts, plan chips, grouping.
+
+    ``group_by`` ∈ {section, persona, none}: section groups by US-N (the
+    section number in the id_hint), persona by literal persona name, none
+    shows a single flat grid.
+    """
+    from cod_doc.services import doc_service as docs_svc
+
     proj = get_project(slug)
     session, project_db_id = db
     rows = stories.list_for_project(session, project_db_id)
-    enriched = [
-        {
+
+    # Doc-context hints: which docs the AI will see + which are newer than the
+    # last generation, so the user can spot stale / missing context BEFORE
+    # spending tokens.
+    last_gen = _read_last_gen(slug)
+    context_docs: list[dict[str, Any]] = []
+    context_docs_fresh = 0
+    for d in docs_svc.list_for_project(session, project_db_id):
+        is_fresh = bool(
+            last_gen and d.last_updated and d.last_updated > last_gen
+        )
+        if is_fresh:
+            context_docs_fresh += 1
+        context_docs.append({
+            "doc_key": d.doc_key,
+            "updated_at": d.last_updated.isoformat() if d.last_updated else "",
+            "is_fresh": is_fresh,
+        })
+    # Sort: fresh docs first (they're what changed since last gen), then by
+    # recency. Stable so within each freshness bucket the most recent shows up
+    # at the top.
+    context_docs.sort(key=lambda x: x["updated_at"] or "", reverse=True)
+    context_docs.sort(key=lambda x: not x["is_fresh"])
+
+    # Lookups for task counts + the set of plans linked tasks live in.
+    # One pass per story — N+1, but story counts in real projects are small.
+    enriched: list[dict[str, Any]] = []
+    for s in rows:
+        linked = stories.list_tasks(session, s.story_id) if s.row_id else []
+        tasks_total = len(linked)
+        tasks_done = sum(1 for t in linked if t.status.value == "done")
+        plan_ids_seen: set[int] = set()
+        plan_scopes: list[str] = []
+        for t in linked:
+            if t.plan_id in plan_ids_seen:
+                continue
+            plan_ids_seen.add(t.plan_id)
+            plan = plans.get_for_project(session, project_db_id, t.plan_id)
+            if plan is not None and plan.scope:
+                plan_scopes.append(plan.scope)
+
+        parsed = _parse_narrative(s.narrative)
+        section = _section_of(parsed.get("id_hint", "")) or "?"
+
+        enriched.append({
             "story_id": s.story_id,
             "persona": s.persona,
             "persona_hue": _persona_hue(s.persona),
             "narrative": s.narrative,
-            "parsed": _parse_narrative(s.narrative),
+            "parsed": parsed,
+            "section": section,
             "status": s.status.value,
             "priority": s.priority.value,
-        }
-        for s in rows
-    ]
+            "tasks_total": tasks_total,
+            "tasks_done": tasks_done,
+            "plan_scopes": plan_scopes,
+        })
+
+    # Build groups for the template — always emit a sorted list so the order
+    # is deterministic across renders.
+    groups: list[dict[str, Any]] = []
+    if group_by == "persona":
+        bucket: dict[str, list[dict[str, Any]]] = {}
+        for st in enriched:
+            bucket.setdefault(st["persona"], []).append(st)
+        for key in sorted(bucket.keys()):
+            groups.append({"label": key, "hue": _persona_hue(key), "stories": bucket[key]})
+    elif group_by == "none":
+        groups = [{"label": "", "hue": "accent", "stories": enriched}]
+    else:  # section (default)
+        bucket: dict[str, list[dict[str, Any]]] = {}
+        for st in enriched:
+            bucket.setdefault(st["section"], []).append(st)
+        # Natural sort: numeric sections first ("1", "2", …), then "?" last.
+        def _sort_key(k: str) -> tuple[int, str]:
+            return (0 if k.isdigit() else 1, f"{int(k):04}" if k.isdigit() else k)
+        for key in sorted(bucket.keys(), key=_sort_key):
+            label = f"Section {key}" if key.isdigit() else "Unsorted"
+            groups.append({"label": label, "hue": "accent", "stories": bucket[key]})
+
     return templates.TemplateResponse(
         request,
         "project/stories_list.html",
         {
             "project": {"name": proj.entry.name},
             "stories": enriched,
+            "groups": groups,
+            "group_by": group_by if group_by in ("section", "persona", "none") else "section",
+            "totals": {
+                "stories": len(enriched),
+                "draft": sum(1 for s in enriched if s["status"] == "draft"),
+                "active": sum(1 for s in enriched if s["status"] == "active"),
+            },
+            "context_docs": context_docs,
+            "context_docs_fresh": context_docs_fresh,
+            "last_gen_at": last_gen.isoformat() if last_gen else "",
         },
     )
 
@@ -160,6 +289,9 @@ def stories_generate(
             tool_calls=[{"name": "generate_stories"}],
         )
         session.commit()
+        # Stamp the marker so the next stories-list render can highlight which
+        # docs have changed since the AI last "saw" the project.
+        _write_last_gen(slug)
     except AIBackendError as exc:
         drafts = []
         notice = f"AI error: {exc}"
@@ -284,6 +416,40 @@ def story_show(
             "linked_done": sum(1 for t in linked_tasks if t.status.value == "done"),
             "linked_total": len(linked_tasks),
         },
+    )
+
+
+@router.post(
+    "/p/{slug}/stories/{story_id}/status",
+    response_class=HTMLResponse,
+)
+def story_update_status(
+    request: Request,
+    slug: str,
+    story_id: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    new_status: str = Form(...),
+) -> Response:
+    """Promote a story between statuses (draft → accepted, etc.)."""
+    proj = get_project(slug)
+    session, project_db_id = db
+    story = stories.get(session, story_id)
+    if story is None or story.project_id != project_db_id:
+        raise HTTPException(404, f"Story не найдена: {story_id}")
+    try:
+        target = UserStoryStatus(new_status.strip().lower())
+    except ValueError as exc:
+        raise HTTPException(400, f"Unknown status: {new_status}") from exc
+    stories.update_status(
+        session,
+        story_id=story_id,
+        new_status=target,
+        author="human:web",
+        reason="status-promote",
+    )
+    session.commit()
+    return RedirectResponse(
+        url=f"/p/{proj.entry.name}/stories/{story_id}", status_code=303
     )
 
 

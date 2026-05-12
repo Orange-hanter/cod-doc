@@ -1,0 +1,79 @@
+{# Single user-story card. Expects `s` (enriched story dict) + `project` in context. #}
+
+<article class="story-card story-hue-{{ s.persona_hue }}" data-story-id="{{ s.story_id }}">
+  {# Whole card is clickable via this absolute-positioned link — inner <a>/<button>
+     elements (status chips, plan chips) override the overlay because their
+     z-index is higher. #}
+  <a class="story-card-overlay"
+     href="/p/{{ project.name }}/stories/{{ s.story_id }}"
+     aria-label="Open story {{ s.story_id }}"></a>
+
+  <header class="story-card-head">
+    <span class="story-id mono">{{ s.story_id }}</span>
+    <div class="story-card-chips">
+      <span class="ds-chip ds-chip-{{ s.status }}">{{ s.status }}</span>
+      <span class="story-prio story-prio-{{ s.priority }}" title="priority: {{ s.priority }}">
+        {{ s.priority }}
+      </span>
+    </div>
+  </header>
+
+  {% if s.parsed.title %}
+    <h3 class="story-title">
+      {% if s.parsed.id_hint %}<span class="story-id-hint mono">{{ s.parsed.id_hint }}</span>{% endif %}
+      {{ s.parsed.title }}
+    </h3>
+  {% endif %}
+
+  <div class="story-persona">
+    <span class="story-persona-icon">👤</span>
+    <span class="story-persona-name">{{ s.persona }}</span>
+  </div>
+
+  {% if s.parsed.want or s.parsed.so_that %}
+    <div class="story-body">
+      {% if s.parsed.want %}
+        <div class="story-line story-line-want">
+          <span class="story-line-label">Хочет</span>
+          <span class="story-line-text">{{ s.parsed.want }}</span>
+        </div>
+      {% endif %}
+      {% if s.parsed.so_that %}
+        <div class="story-line story-line-so-that">
+          <span class="story-line-label">Чтобы</span>
+          <span class="story-line-text">{{ s.parsed.so_that }}</span>
+        </div>
+      {% endif %}
+    </div>
+  {% else %}
+    <p class="story-narrative-raw">{{ s.narrative }}</p>
+  {% endif %}
+
+  {# ── Footer: task progress + plan scope chips ───────────────────────── #}
+  <footer class="story-card-foot">
+    {% if s.tasks_total %}
+      {% set pct = (s.tasks_done * 100 // s.tasks_total) if s.tasks_total else 0 %}
+      <a class="story-tasks-chip" href="/p/{{ project.name }}/stories/{{ s.story_id }}#tasks"
+         title="{{ s.tasks_done }}/{{ s.tasks_total }} tasks done">
+        <span class="story-tasks-icon">📋</span>
+        <span class="story-tasks-count">{{ s.tasks_done }}/{{ s.tasks_total }}</span>
+        <span class="story-tasks-bar"><span class="story-tasks-fill" style="width:{{ pct }}%"></span></span>
+      </a>
+    {% else %}
+      <span class="story-tasks-chip story-tasks-chip-empty" title="No tasks yet">
+        <span class="story-tasks-icon">📋</span>
+        <span class="muted-tiny">0 tasks</span>
+      </span>
+    {% endif %}
+
+    {% if s.plan_scopes %}
+      <div class="story-plans">
+        {% for scope in s.plan_scopes %}
+          <a class="story-plan-chip mono"
+             href="/p/{{ project.name }}/plans"
+             title="Plan scope">{{ scope }}</a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </footer>
+</article>

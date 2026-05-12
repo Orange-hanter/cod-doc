@@ -18,6 +18,27 @@
       <span class="meta-chip prio-chip prio-{{ story.priority }}">⚑ {{ story.priority }}</span>
       <span class="meta-chip">As a <strong>{{ story.persona }}</strong></span>
     </div>
+
+    {# Inline status promotion. Available transitions depend on current state. #}
+    {% set transitions = {
+      "draft":     [("accepted", "✓ Accept"), ("deferred", "⏸ Defer")],
+      "accepted":  [("delivered", "✓ Delivered"), ("deferred", "⏸ Defer"), ("draft", "↩ Back to draft")],
+      "delivered": [("accepted", "↩ Reopen")],
+      "deferred":  [("draft", "↩ Reactivate"), ("accepted", "✓ Accept")],
+    } %}
+    {% if transitions[story.status] %}
+      <div class="story-promote-bar">
+        {% for new_status, label in transitions[story.status] %}
+          <form method="post" action="/p/{{ project.name }}/stories/{{ story.story_id }}/status" style="display:inline">
+            <input type="hidden" name="new_status" value="{{ new_status }}">
+            <button type="submit"
+                    class="btn btn-sm {% if new_status == 'accepted' or new_status == 'delivered' %}btn-success{% else %}btn-secondary{% endif %}">
+              {{ label }}
+            </button>
+          </form>
+        {% endfor %}
+      </div>
+    {% endif %}
   </div>
   <h1 class="task-hero-title">{{ story.narrative }}</h1>
 </header>

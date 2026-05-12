@@ -17,8 +17,8 @@
       <h1 class="stories-title">{{ project.name }} · User stories</h1>
       <p class="stories-subtitle muted">
         Stories capture user-facing requirements in
-        <em>As a … I want … so that …</em> form. Tasks are spawned from
-        accepted stories to track concrete implementation.
+        <em>As a … I want … so that …</em> form. Each story spawns tasks
+        inside a plan; plans are tied to stories via implementation links.
       </p>
     </div>
   </header>
@@ -48,6 +48,31 @@
         ✨ Generate
       </button>
     </form>
+
+    {# Doc-context hints. Surfaces which docs the AI sees so the user can spot
+       stale / missing context BEFORE running generation. #}
+    {% if context_docs %}
+      <details class="stories-context-docs">
+        <summary>
+          📚 Context inventory <span class="count-chip">{{ context_docs | length }}</span>
+          {% if context_docs_fresh %}
+            <span class="ds-chip ds-chip-active" title="Modified since last story generation">
+              ⚡ {{ context_docs_fresh }} fresh
+            </span>
+          {% endif %}
+        </summary>
+        <ul class="stories-context-list">
+          {% for d in context_docs %}
+            <li class="stories-context-row {% if d.is_fresh %}stories-context-fresh{% endif %}">
+              <a href="/p/{{ project.name }}/docs/{{ d.doc_key }}" class="mono">{{ d.doc_key }}</a>
+              <span class="muted-tiny">{{ d.updated_at | relative_time }}</span>
+              {% if d.is_fresh %}<span class="stories-context-badge">⚡ fresh</span>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+
     <div id="story-drafts"></div>
   </section>
 
@@ -55,62 +80,48 @@
   <section class="stories-section">
     <div class="stories-section-head">
       <h2 class="stories-section-title">
-        Existing stories <span class="count-chip">{{ stories | length }}</span>
+        Existing stories
+        <span class="count-chip">{{ totals.stories }}</span>
+        {% if totals.draft %}
+          <span class="ds-chip ds-chip-draft">{{ totals.draft }} draft</span>
+        {% endif %}
+        {% if totals.active %}
+          <span class="ds-chip ds-chip-active">{{ totals.active }} active</span>
+        {% endif %}
       </h2>
+
+      <nav class="view-toggle stories-group-toggle" aria-label="Group stories">
+        <span class="muted-tiny" style="padding: 0 var(--space-2); align-self:center;">Group:</span>
+        <a class="view-btn {% if group_by == 'section' %}view-btn-active{% endif %}"
+           href="/p/{{ project.name }}/stories?group_by=section">Section</a>
+        <a class="view-btn {% if group_by == 'persona' %}view-btn-active{% endif %}"
+           href="/p/{{ project.name }}/stories?group_by=persona">Persona</a>
+        <a class="view-btn {% if group_by == 'none' %}view-btn-active{% endif %}"
+           href="/p/{{ project.name }}/stories?group_by=none">Flat</a>
+      </nav>
     </div>
 
-    {% if stories %}
-      <div class="story-grid">
-        {% for s in stories %}
-          <article class="story-card story-hue-{{ s.persona_hue }}">
-            <header class="story-card-head">
-              <a class="story-id mono" href="/p/{{ project.name }}/stories/{{ s.story_id }}">
-                {{ s.story_id }}
-              </a>
-              <div class="story-card-chips">
-                <span class="ds-chip ds-chip-{{ s.status }}">{{ s.status }}</span>
-                <span class="story-prio story-prio-{{ s.priority }}" title="priority: {{ s.priority }}">
-                  {{ s.priority }}
-                </span>
-              </div>
-            </header>
-
-            {% if s.parsed.title %}
-              <h3 class="story-title">
-                {% if s.parsed.id_hint %}<span class="story-id-hint mono">{{ s.parsed.id_hint }}</span>{% endif %}
-                {{ s.parsed.title }}
-              </h3>
-            {% endif %}
-
-            <div class="story-persona">
-              <span class="story-persona-icon">👤</span>
-              <span class="story-persona-name">{{ s.persona }}</span>
-            </div>
-
-            {% if s.parsed.want or s.parsed.so_that %}
-              <div class="story-body">
-                {% if s.parsed.want %}
-                  <div class="story-line story-line-want">
-                    <span class="story-line-label">Хочет</span>
-                    <span class="story-line-text">{{ s.parsed.want }}</span>
-                  </div>
-                {% endif %}
-                {% if s.parsed.so_that %}
-                  <div class="story-line story-line-so-that">
-                    <span class="story-line-label">Чтобы</span>
-                    <span class="story-line-text">{{ s.parsed.so_that }}</span>
-                  </div>
-                {% endif %}
-              </div>
-            {% else %}
-              {# Parser couldn't extract structured parts — show the raw narrative. #}
-              <p class="story-narrative-raw">{{ s.narrative }}</p>
-            {% endif %}
-          </article>
-        {% endfor %}
-      </div>
-    {% else %}
+    {% if not stories %}
       <p class="muted">Stories ещё не созданы. Сгенерируй из документации выше или импортируй вручную.</p>
+    {% else %}
+      {% for grp in groups %}
+        {% if grp.label %}
+          <details class="story-group" open>
+            <summary class="story-group-head story-hue-{{ grp.hue }}">
+              <span class="story-group-chevron">▾</span>
+              <span class="story-group-label">{{ grp.label }}</span>
+              <span class="count-chip">{{ grp.stories | length }}</span>
+            </summary>
+            <div class="story-grid">
+              {% for s in grp.stories %}{% include "_frag/story_card.html" %}{% endfor %}
+            </div>
+          </details>
+        {% else %}
+          <div class="story-grid">
+            {% for s in grp.stories %}{% include "_frag/story_card.html" %}{% endfor %}
+          </div>
+        {% endif %}
+      {% endfor %}
     {% endif %}
   </section>
 
