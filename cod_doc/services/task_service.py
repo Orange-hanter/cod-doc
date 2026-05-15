@@ -588,6 +588,17 @@ def complete(
         plan_model.last_updated = now
     session.flush()
 
+    # OBI-001: record per-task completion metrics for /p/<slug>/metrics
+    # dashboard. Idempotent — safe under re-completion.
+    import logging as _log
+    try:
+        from cod_doc.services import metrics_service
+        metrics_service.record_on_complete(session, model)
+    except Exception as _exc:  # never break completion on metrics failure
+        _log.getLogger("cod_doc.metrics").warning(
+            "metrics_service.record_on_complete failed for %s: %s", task_id, _exc,
+        )
+
     if (slug := _project_slug(session, model.project_id)) is not None:
         event_bus.queue_emit(
             session,

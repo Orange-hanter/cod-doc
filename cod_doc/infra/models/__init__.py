@@ -23,6 +23,7 @@ from .approvals import ApprovalDocRevisionLinkModel, ApprovalModel, ApprovalTask
 from .base import Base, _utcnow
 from .comments import DocCommentModel
 from .documents import DocumentModel, LinkModel, SectionModel
+from .metrics import TaskMetricsModel
 from .modules import ModuleCodeModel, ModuleDependencyModel, ModuleModel
 from .plans import (
     AffectedFileModel,
@@ -72,6 +73,7 @@ __all__ = [
     "StoryTagModel",
     "TagModel",
     "TaskDocumentModel",
+    "TaskMetricsModel",
     "TaskModel",
     "TaskTagModel",
     "TraceCallModel",

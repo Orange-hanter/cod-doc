@@ -16,6 +16,7 @@ from . import (
     costs,
     docs,
     index,
+    metrics,
     navigator,
     plans,
     project,
@@ -46,6 +47,8 @@ router.include_router(standards.router)
 # greedy match that wouldn't shadow `/adr` anyway, but keep next to its
 # read-only siblings for clarity.
 router.include_router(adr.router)
+# OBI-002 metrics dashboard
+router.include_router(metrics.router)
 # `comments.router` before `docs.router`: comments routes are nested under
 # `/p/{slug}/docs/{doc_key:path}/comments` but each pins the trailing
 # `/comments…` suffix, so they would not shadow the docs catch-all on

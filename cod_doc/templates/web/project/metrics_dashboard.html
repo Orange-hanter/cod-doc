@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}Metrics · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Metrics</span>
+</nav>
+
+{% with slug=project.name, active="metrics" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="metrics-page">
+  <header class="metrics-header">
+    <h1>📊 Task completion metrics</h1>
+    <p class="muted">
+      Last <strong>{{ days }} days</strong>. Auto-recorded on
+      <code>task_service.complete</code>. Counts include all completed tasks
+      in this project's DB regardless of priority or type.
+    </p>
+    <form method="get" class="metrics-range">
+      <label>
+        Window:
+        <select name="days" onchange="this.form.submit()">
+          {% for d in [7, 14, 30, 60, 90] %}
+            <option value="{{ d }}" {% if d == days %}selected{% endif %}>{{ d }} days</option>
+          {% endfor %}
+        </select>
+      </label>
+    </form>
+  </header>
+
+  {% if not has_data %}
+    <p class="muted">No completed tasks in this window. Complete a task to start populating the dashboard.</p>
+  {% else %}
+    <section class="metrics-card">
+      <h2>Overall (last {{ days }} days)</h2>
+      <div class="metrics-grid">
+        <div class="metric-tile">
+          <div class="metric-tile-label">Completed</div>
+          <div class="metric-tile-value">{{ summary.completed }}</div>
+        </div>
+        <div class="metric-tile">
+          <div class="metric-tile-label">Duration p50</div>
+          <div class="metric-tile-value">
+            {%- if summary.duration_hours.p50 is not none -%}
+              {{ '%.1f' | format(summary.duration_hours.p50) }} h
+            {%- else %}—{% endif %}
+          </div>
+        </div>
+        <div class="metric-tile">
+          <div class="metric-tile-label">Duration p90</div>
+          <div class="metric-tile-value">
+            {%- if summary.duration_hours.p90 is not none -%}
+              {{ '%.1f' | format(summary.duration_hours.p90) }} h
+            {%- else %}—{% endif %}
+          </div>
+        </div>
+        <div class="metric-tile">
+          <div class="metric-tile-label">Mean</div>
+          <div class="metric-tile-value">
+            {%- if summary.duration_hours.mean is not none -%}
+              {{ '%.1f' | format(summary.duration_hours.mean) }} h
+            {%- else %}—{% endif %}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="metrics-card">
+      <h2>Completions per day</h2>
+      <div class="sparkline" role="img" aria-label="Completions per day, last {{ days }} days">
+        {% for b in buckets %}
+          <div class="sparkline-bar-wrap" title="{{ b.date }}: {{ b.count }}{% if b.p50_hours is not none %}, p50 {{ '%.1f' | format(b.p50_hours) }}h{% endif %}">
+            <div class="sparkline-bar"
+                 style="height: {{ ((b.count / max_count) * 100) | round(0, 'common') if max_count else 0 }}%">
+            </div>
+            <div class="sparkline-bar-count">{{ b.count if b.count > 0 else '' }}</div>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="sparkline-axis muted-tiny">
+        <span>{{ buckets[0].date }}</span>
+        <span>{{ buckets[-1].date }}</span>
+      </div>
+    </section>
+
+    <section class="metrics-card">
+      <h2>By task type</h2>
+      <table class="metrics-by-type">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th class="num">Count</th>
+            <th class="num">p50, h</th>
+            <th class="num">p90, h</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ttype, stats in summary.by_type.items() %}
+            <tr>
+              <td><code>{{ ttype }}</code></td>
+              <td class="num">{{ stats.n }}</td>
+              <td class="num">
+                {%- if stats.p50 is not none %}{{ '%.1f' | format(stats.p50) }}{% else %}—{% endif -%}
+              </td>
+              <td class="num">
+                {%- if stats.p90 is not none %}{{ '%.1f' | format(stats.p90) }}{% else %}—{% endif -%}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+</div>
+
+<style>
+.metrics-page { padding: 16px; }
+.metrics-header h1 { margin-bottom: 4px; }
+.metrics-range { margin-top: 12px; }
+.metrics-card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+  box-shadow: var(--card-shadow);
+}
+.metrics-card h2 { margin: 0 0 12px 0; font-size: 1.05rem; }
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+.metric-tile {
+  padding: 12px;
+  background: var(--bg-subtle);
+  border-radius: 8px;
+}
+.metric-tile-label { font-size: 0.75rem; color: var(--text-muted); }
+.metric-tile-value { font-size: 1.5rem; font-weight: 600; margin-top: 4px; }
+
+.sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 80px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.sparkline-bar-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  position: relative;
+}
+.sparkline-bar {
+  width: 80%;
+  background: linear-gradient(180deg, #a78bfa, #2f81f7);
+  border-radius: 2px 2px 0 0;
+  min-height: 1px;
+}
+.sparkline-bar-count {
+  position: absolute;
+  bottom: 100%;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.sparkline-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.metrics-by-type { width: 100%; border-collapse: collapse; }
+.metrics-by-type th, .metrics-by-type td {
+  padding: 6px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.metrics-by-type .num { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
