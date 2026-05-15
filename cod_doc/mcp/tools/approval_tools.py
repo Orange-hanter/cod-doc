@@ -31,6 +31,7 @@ def register(mcp: FastMCP) -> None:
         linked_task_refs: list[str] | None = None,
         linked_doc_revision_ids: list[str] | None = None,
         expires_in_hours: int | None = 48,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """Create a new approval request.
 
@@ -42,9 +43,18 @@ def register(mcp: FastMCP) -> None:
 
         Enforces single-pending-per-task: if a task already has a pending approval,
         that approval is auto-cancelled with reason='superseded'.
+
+        ``idempotency_key`` (PCA-948): retry-safe key (process-memory cache).
+        Repeat call with the same key returns the original approval and
+        sets ``idempotent_replay: True``.
         """
         from cod_doc.infra.db import transactional
+        from cod_doc.mcp.tools import _idempotency
         from cod_doc.services import approval_service, activity_service
+
+        cached = _idempotency.check("approval_request", idempotency_key)
+        if cached is not None:
+            return dict(cached, idempotent_replay=True)
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
@@ -74,13 +84,15 @@ def register(mcp: FastMCP) -> None:
                 summary=f"Approval requested: {approval_type} by {requested_by}",
             )
 
-        return {
+        out = {
             "approval_id": approval.approval_id,
             "status": approval.status,
             "approval_type": approval.approval_type,
             "expires_at": approval.expires_at.isoformat() if approval.expires_at else None,
             "linked_task_refs": approval.linked_task_refs,
         }
+        _idempotency.store("approval_request", idempotency_key, out)
+        return out
 
     @mcp.tool(name="approval_list")
     def approval_list(

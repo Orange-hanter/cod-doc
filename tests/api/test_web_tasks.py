@@ -128,60 +128,102 @@ def tasks_client(tmp_path: Path, migrate_db):
 
 
 def test_tasks_list_renders_all(tasks_client) -> None:
-    """The 'All' view button shows every task regardless of status."""
-    client, entry = tasks_client
-    r = client.get(f"/p/{entry.name}/tasks?view=all")
-    assert r.status_code == 200
-    assert "AUTH-001" in r.text
-    assert "AUTH-002" in r.text
-    assert "AUTH-003" in r.text
-    assert "Implement: account deactivation flow" in r.text
-    # status badges present (rendered inside each row's status cell)
-    assert "badge-pending" in r.text
-    assert "badge-in-progress" in r.text
-    assert "badge-done" in r.text
-    # HTMX inline status form is wired
-    assert 'hx-post="/p/demo/tasks/AUTH-001/status"' in r.text
-    assert 'hx-target="#task-AUTH-001"' in r.text
-    # tab strip: Tasks active
-    assert 'class="active" href="/p/demo/tasks"' in r.text
-    # count footer
-    assert "3 tasks." in r.text
-
-
-def test_tasks_list_active_view_hides_done_by_default(tasks_client) -> None:
-    """Default landing page = 'Active' view, which excludes done/cancelled."""
+    """Default landing page shows every task on the kanban board."""
     client, entry = tasks_client
     r = client.get(f"/p/{entry.name}/tasks")
     assert r.status_code == 200
-    # The two non-done tasks are present.
-    assert "AUTH-001" in r.text  # pending
-    assert "AUTH-002" in r.text  # in-progress
-    # The done task is NOT in the default Active view.
-    assert "AUTH-003" not in r.text
-    # Active button shows count 2; All button shows total 3.
-    assert "view-btn-active" in r.text
-    # Footer reflects the filtered count.
-    assert "2 tasks." in r.text
+    # All three tasks present, each as a kanban card with anchor id.
+    assert 'id="card-AUTH-001"' in r.text
+    assert 'id="card-AUTH-002"' in r.text
+    assert 'id="card-AUTH-003"' in r.text
+    assert "Implement: account deactivation flow" in r.text
+    # Kanban columns rendered (status = column).
+    assert "kanban-col-todo" in r.text
+    assert "kanban-col-in_progress" in r.text
+    assert "kanban-col-done" in r.text
+    # Card carries status + priority classes used by CSS.
+    assert "status-pending" in r.text
+    assert "status-in-progress" in r.text
+    assert "status-done" in r.text
+    # tab strip: Tasks active
+    assert 'class="active" href="/p/demo/tasks"' in r.text
+    # count footer
+    assert "3 tasks shown." in r.text
 
 
-def test_tasks_list_status_filter(tasks_client) -> None:
+def test_tasks_list_done_column_collapsed_by_default(tasks_client) -> None:
+    """Done/Cancelled lanes are pre-collapsed so the eye lands on open work."""
+    client, entry = tasks_client
+    r = client.get(f"/p/{entry.name}/tasks")
+    assert r.status_code == 200
+
+    # Find the Done column markup and confirm it has no `open` attribute.
+    # Other columns with tasks should be open.
+    import re
+    done_block = re.search(
+        r'<details class="kanban-col kanban-col-done[^"]*"([^>]*)>', r.text
+    )
+    assert done_block is not None, "Done column must render"
+    assert "open" not in done_block.group(1), "Done column should be collapsed by default"
+
+    in_progress_block = re.search(
+        r'<details class="kanban-col kanban-col-in_progress[^"]*"([^>]*)>', r.text
+    )
+    assert in_progress_block is not None
+    assert "open" in in_progress_block.group(1), "Non-empty active lane should start open"
+
+
+def test_tasks_list_status_highlights_column(tasks_client) -> None:
+    """`?status=done` highlights the Done column but keeps every task visible."""
     client, entry = tasks_client
     r = client.get(f"/p/{entry.name}/tasks?status=done")
     assert r.status_code == 200
-    assert "AUTH-003" in r.text
-    assert "AUTH-001" not in r.text
-    assert "AUTH-002" not in r.text
-    assert "1 task." in r.text
+    # Highlight applied to the Done column.
+    assert "kanban-col-done kanban-col-highlighted" in r.text
+    # Other tasks are still on the board (kanban shows everything).
+    assert 'id="card-AUTH-001"' in r.text
+    assert 'id="card-AUTH-003"' in r.text
 
 
-def test_tasks_list_status_filter_in_progress(tasks_client) -> None:
+def test_tasks_list_status_in_progress_highlights_column(tasks_client) -> None:
     client, entry = tasks_client
     r = client.get(f"/p/{entry.name}/tasks?status=in-progress")
     assert r.status_code == 200
-    assert "AUTH-002" in r.text
-    assert "AUTH-001" not in r.text
-    assert "AUTH-003" not in r.text
+    assert "kanban-col-in_progress kanban-col-highlighted" in r.text
+    assert 'id="card-AUTH-002"' in r.text
+
+
+def test_tasks_list_plan_filter(tasks_client) -> None:
+    """`?plan=<scope>` restricts the board to one plan; unknown plan → empty."""
+    client, entry = tasks_client
+    # All three demo tasks belong to plan `auth-bootstrap` — they remain visible.
+    r = client.get(f"/p/{entry.name}/tasks?plan=auth-bootstrap")
+    assert r.status_code == 200
+    assert "plan-chip-active" in r.text
+    assert 'id="card-AUTH-001"' in r.text
+    # Unknown plan → no tasks shown.
+    r2 = client.get(f"/p/{entry.name}/tasks?plan=does-not-exist")
+    assert r2.status_code == 200
+    assert "AUTH-001" not in r2.text
+
+
+def test_tasks_list_chains_view(tasks_client) -> None:
+    """`?view=chains` renders the dependency-graph layout per plan."""
+    client, entry = tasks_client
+    r = client.get(f"/p/{entry.name}/tasks?view=chains")
+    assert r.status_code == 200
+    # View toggle present and chains tab active.
+    assert "tasks-view-toggle" in r.text
+    assert "tasks-view-btn-active" in r.text
+    # Chain section for the demo plan rendered.
+    assert 'id="chain-auth-bootstrap"' in r.text
+    assert "chain-lane" in r.text
+    # All tasks are nodes on the chain board.
+    assert 'id="card-AUTH-001"' in r.text
+    assert 'id="card-AUTH-002"' in r.text
+    assert 'id="card-AUTH-003"' in r.text
+    # With no dependency edges set, the "no edges" notice is shown.
+    assert "нет зависимостей" in r.text
 
 
 def test_tasks_list_invalid_status_warns(tasks_client) -> None:

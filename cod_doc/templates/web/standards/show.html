@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ skill.name }} · Standards — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/standards">Standards</a> /
+  <span>{{ skill.name }}</span>
+</nav>
+
+<div class="standards-page standard-detail">
+  <header class="standards-header">
+    <div class="standards-header-icon">📐</div>
+    <div>
+      <h1 class="standards-title">{{ skill.name }}</h1>
+      <p class="standards-subtitle muted">
+        {% if skill.is_base %}
+          <span class="standard-badge standard-badge-base">base</span>
+          Загружается агенту всегда.
+        {% else %}
+          <span class="standard-badge standard-badge-triggered">triggered</span>
+          Загружается агенту при срабатывании триггер-keywords.
+        {% endif %}
+      </p>
+    </div>
+  </header>
+
+  <pre class="standard-triggers">{{ skill.description }}</pre>
+
+  <article class="markdown-body standard-body">
+    {{ skill.body_html | safe }}
+  </article>
+</div>
+{% endblock %}

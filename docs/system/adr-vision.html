@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>COD-DOC — ADR System · Vision &amp; Integration Concepts</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --fg: #1a1a1a;
+    --muted: #555;
+    --line: #e2e0d8;
+    --card: #ffffff;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --green: #15803d;
+    --green-bg: #dcfce7;
+    --amber: #b45309;
+    --amber-bg: #fef3c7;
+    --slate: #475569;
+    --slate-bg: #e2e8f0;
+    --grey: #525252;
+    --grey-bg: #e5e5e5;
+    --code-bg: #f4f4ee;
+    --warn: #b91c1c;
+    --warn-bg: #fee2e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14141a;
+      --fg: #e6e6ea;
+      --muted: #9da3ad;
+      --line: #2c2c34;
+      --card: #1c1c24;
+      --accent: #60a5fa;
+      --accent-soft: #1e3a8a;
+      --green: #4ade80;
+      --green-bg: #14532d;
+      --amber: #fbbf24;
+      --amber-bg: #78350f;
+      --slate: #94a3b8;
+      --slate-bg: #1f2937;
+      --grey: #9ca3af;
+      --grey-bg: #262626;
+      --code-bg: #0f0f14;
+      --warn: #fca5a5;
+      --warn-bg: #450a0a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+  body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 28px 96px; }
+  header.h0 { padding: 12px 0 24px; border-bottom: 1px solid var(--line); margin-bottom: 28px; }
+  header.h0 .eyebrow { color: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
+  header.h0 h1 { font-size: 32px; line-height: 1.15; margin: 8px 0 6px; letter-spacing: -0.01em; }
+  header.h0 .lede { color: var(--muted); font-size: 16px; max-width: 720px; }
+  h2 { font-size: 22px; letter-spacing: -0.005em; margin: 40px 0 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+  h2:first-of-type { border-top: 0; padding-top: 0; }
+  h3 { font-size: 17px; margin: 22px 0 8px; }
+  h4 { font-size: 14px; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  p { margin: 8px 0 12px; }
+  ul, ol { margin: 8px 0 14px; padding-left: 22px; }
+  li { margin: 4px 0; }
+  code, pre { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+  pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.5; border: 1px solid var(--line); }
+  pre code { background: transparent; padding: 0; }
+  .tldr { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 16px 18px; margin: 0 0 22px; }
+  .tldr h4 { margin-top: 0; color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  .card h4 { margin-top: 0; color: var(--fg); text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 600; }
+  .card p { color: var(--muted); margin: 4px 0; font-size: 13.5px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+  .b-prop { color: var(--amber); background: var(--amber-bg); }
+  .b-acc { color: var(--green); background: var(--green-bg); }
+  .b-dep { color: var(--grey); background: var(--grey-bg); }
+  .b-sup { color: var(--slate); background: var(--slate-bg); }
+  .b-new { color: var(--accent); background: var(--accent-soft); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 16px; font-size: 13.5px; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  .lifecycle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 18px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; margin: 8px 0 14px; font-size: 13px; }
+  .lifecycle .node { padding: 6px 12px; border-radius: 18px; border: 1px solid var(--line); font-weight: 600; }
+  .lifecycle .arrow { color: var(--muted); font-family: ui-monospace, monospace; }
+  .lifecycle .label { font-size: 11px; color: var(--muted); padding: 0 2px; }
+  .phase { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; margin: 12px 0; }
+  .phase header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  .phase header .num { font-family: ui-monospace, monospace; font-size: 12px; color: var(--accent); background: var(--accent-soft); padding: 2px 8px; border-radius: 4px; font-weight: 700; }
+  .phase header .title { font-size: 16px; font-weight: 600; }
+  .phase header .dur { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .phase ul { font-size: 13.5px; }
+  .alt { background: var(--card); border-left: 3px solid var(--amber); border-radius: 0 6px 6px 0; padding: 12px 14px; margin: 10px 0; font-size: 13.5px; }
+  .alt strong { color: var(--amber); }
+  .rec { background: var(--card); border-left: 3px solid var(--green); border-radius: 0 6px 6px 0; padding: 12px 14px; margin: 10px 0; font-size: 13.5px; }
+  .rec strong { color: var(--green); }
+  .risk { background: var(--card); border-left: 3px solid var(--warn); border-radius: 0 6px 6px 0; padding: 12px 14px; margin: 10px 0; font-size: 13.5px; }
+  .risk strong { color: var(--warn); }
+  .toc { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; margin: 0 0 26px; }
+  .toc ol { margin: 0; padding-left: 24px; columns: 2; column-gap: 28px; font-size: 13.5px; }
+  .toc a { color: var(--fg); text-decoration: none; border-bottom: 1px solid transparent; }
+  .toc a:hover { border-bottom-color: var(--accent); color: var(--accent); }
+  .mermaid-stub { background: var(--code-bg); border: 1px dashed var(--line); border-radius: 8px; padding: 14px; font-family: ui-monospace, monospace; font-size: 12.5px; white-space: pre; overflow-x: auto; color: var(--muted); }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 12px; }
+  .pill { display: inline-block; padding: 3px 9px; border-radius: 12px; font-size: 12px; background: var(--accent-soft); color: var(--accent); }
+  footer { color: var(--muted); font-size: 12px; padding-top: 24px; margin-top: 36px; border-top: 1px solid var(--line); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) {
+    .two-col { grid-template-columns: 1fr; }
+    .toc ol { columns: 1; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="h0">
+    <div class="eyebrow">COD-DOC · Vision document · 2026-05-14</div>
+    <h1>ADR System — Видение и концепции интеграции</h1>
+    <p class="lede">
+      First-class реестр архитектурных решений с автонумерацией, supersede-DAG,
+      визуальным редактором и Mermaid-графом. Документ описывает не «что писать
+      в коде», а <em>как</em> ADR-сущность должна жить в существующей экосистеме
+      COD-DOC, какие альтернативы я взвешивал и какие предложения по интеграции
+      хочу зафиксировать <strong>перед</strong> стартом реализации.
+    </p>
+  </header>
+
+  <div class="tldr">
+    <h4>TL;DR</h4>
+    <p>
+      Реализуем capability <code>adr-system</code> в три фазы: <strong>Domain &amp; MCP</strong>
+      (модель, сервис, 9 MCP-тулов, CLI) → <strong>Web UI</strong> (список / редактор
+      с live-Mermaid / detail / supersede-граф) → <strong>Migration</strong>
+      (шаблон + перенос 5 ADR из <code>arch/architecture.md §3</code>).
+      Ключевое решение, требующее твоего апрува: <strong>как соотносить новую
+      сущность ADR с уже специфицированной <code>Decision</code> из
+      <code>decisions-and-questions</code></strong> — три варианта, рекомендация в §9.
+      Никакого кода до апрува не пишу.
+    </p>
+  </div>
+
+  <nav class="toc">
+    <h4 style="margin-top:0">Содержание</h4>
+    <ol>
+      <li><a href="#why">Зачем сейчас</a></li>
+      <li><a href="#promise">Обещания системы</a></li>
+      <li><a href="#model">Доменная модель</a></li>
+      <li><a href="#lifecycle">Lifecycle статусов</a></li>
+      <li><a href="#integration">Карта интеграций</a></li>
+      <li><a href="#surfaces">CLI · MCP · Web · Agent</a></li>
+      <li><a href="#editor">Концепция визуального редактора</a></li>
+      <li><a href="#graph">Граф решений и его роль</a></li>
+      <li><a href="#decision-dec">Развилка ADR ↔ Decision</a></li>
+      <li><a href="#plan">План реализации</a></li>
+      <li><a href="#open">Открытые вопросы</a></li>
+      <li><a href="#risks">Риски и митигации</a></li>
+      <li><a href="#future">Что оставляем на потом</a></li>
+    </ol>
+  </nav>
+
+  <section id="why">
+    <h2>1. Зачем сейчас</h2>
+    <p>Архитектурные решения в COD-DOC живут разрознено:</p>
+    <ul>
+      <li><code>arch/architecture.md §3</code> — пять ADR в markdown-таблице, без статуса/supersede.</li>
+      <li><code>proposals/*.md</code> — RFC-стиль; решения по ним фиксируются <em>ad-hoc</em>.</li>
+      <li>Audit-отчёты в <code>docs/system/audit/</code> — обоснование разовых решений (например, validation-pattern).</li>
+      <li>Commit-сообщения — контекст теряется через 3–6 месяцев.</li>
+    </ul>
+    <p>Боль:</p>
+    <ul>
+      <li>Нет единого реестра «<em>какое</em> решение принято, <em>когда</em>, <em>кем</em>».</li>
+      <li>Невозможно отследить supersede-цепочку («ADR-005 заменён ADR-012, который частично откатывает ADR-003»).</li>
+      <li>У авторов нет визуального инструмента — markdown-таблицы и Mermaid-блоки приходится размечать руками.</li>
+      <li>Агент, принимающий решение, не имеет «слота» куда его записать — оно теряется в commit-меседже.</li>
+    </ul>
+  </section>
+
+  <section id="promise">
+    <h2>2. Обещания системы</h2>
+    <table>
+      <thead><tr><th style="width: 38%">Обещание</th><th>Как поддерживается</th></tr></thead>
+      <tbody>
+        <tr><td>ID без коллизий, монотонные</td><td>autonumber per-project через repo-pattern + UNIQUE-индекс</td></tr>
+        <tr><td>История изменений восстановима</td><td>каждое мутирующее действие пишет revision (<code>entity_kind=ADR</code>)</td></tr>
+        <tr><td>Supersede — DAG, не цикл</td><td>cycle-detection (DFS) в <code>adr_service.supersede()</code> до записи</td></tr>
+        <tr><td>ADR можно создать без терминала</td><td>визуальный редактор + live Mermaid-preview в Web UI</td></tr>
+        <tr><td>Удалить ADR нельзя</td><td>только <em>deprecate</em> / <em>supersede</em>; append-only history</td></tr>
+        <tr><td>Каждая ссылка <code>[ADR-NNN]</code> резолвится</td><td>интеграция с <code>link_service</code>: новый <code>LinkKind.ADR</code></td></tr>
+        <tr><td>Решение и его последствия связаны с кодом</td><td>edges ADR ↔ Task, ADR ↔ Module, ADR ↔ Document</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="model">
+    <h2>3. Доменная модель</h2>
+    <p>Чистый dataclass в <code>cod_doc/domain/entities.py</code>, без зависимости от инфраструктуры:</p>
+    <pre><code>@dataclass(slots=True)
+class Adr:
+    project_id: int
+    adr_id: str                       # ADR-NNN, autonumbered per project
+    title: str
+    status: AdrStatus                 # PROPOSED | ACCEPTED | DEPRECATED | SUPERSEDED
+    context: str                      # markdown
+    decision: str                     # markdown
+    consequences: str                 # markdown
+    decided_by: str                   # human:&lt;email&gt; | agent:&lt;run-id&gt;
+    decided_at: datetime
+    row_id: int | None = None
+    superseded_by: str | None = None  # ADR-id, заменивший этот
+    created: datetime | None = None
+    last_updated: datetime | None = None</code></pre>
+    <p>Отдельные сущности для рёбер графа:</p>
+    <div class="grid">
+      <div class="card">
+        <h4>AdrDiagram</h4>
+        <p>0..N Mermaid-блоков с подписью. <code>adr_id FK + position + mermaid_source + caption</code>. Render через client-side Mermaid.js (тот же, что для plan-graphs).</p>
+      </div>
+      <div class="card">
+        <h4>AdrSupersedes</h4>
+        <p>Ребро <code>from_adr_id → to_adr_id</code> + <code>reason</code>. DAG, цикл отвергается на write-path.</p>
+      </div>
+      <div class="card">
+        <h4>AdrTask</h4>
+        <p>ADR может предписывать задачи: <code>adr_id ↔ task_id</code>. Полезно для «эта задача — следствие ADR-007».</p>
+      </div>
+      <div class="card">
+        <h4>AdrLink (новый)</h4>
+        <p>Полиморфная связь ADR ↔ Document/Module/Story. Параллель <code>StoryLink</code>. Альтернатива — переиспользовать <code>Link</code> с <code>LinkKind.ADR</code>; см. §5.</p>
+      </div>
+    </div>
+
+    <h4>Где это в инфре</h4>
+    <ul>
+      <li>SQLA-модели — <code>cod_doc/infra/models/adr.py</code> (4 таблицы).</li>
+      <li>Migration — <code>20260514_0017_adr_tables.py</code> (Alembic).</li>
+      <li>Repository — <code>cod_doc/infra/repositories/adr_repo.py</code> с методами под autonumber + cycle-check.</li>
+      <li>Service — <code>cod_doc/services/adr_service/</code> (пакет, по примеру <code>story_service/</code>).</li>
+    </ul>
+  </section>
+
+  <section id="lifecycle">
+    <h2>4. Lifecycle статусов</h2>
+    <div class="lifecycle">
+      <span class="node b-prop">PROPOSED</span>
+      <span class="arrow">─ accept ─▶</span>
+      <span class="node b-acc">ACCEPTED</span>
+      <span class="arrow">─ supersede ─▶</span>
+      <span class="node b-sup">SUPERSEDED</span>
+    </div>
+    <div class="lifecycle">
+      <span class="node b-prop">PROPOSED</span>
+      <span class="arrow">─ reject ─▶</span>
+      <span class="node b-dep">DEPRECATED</span>
+      <span class="label">или</span>
+      <span class="node b-acc">ACCEPTED</span>
+      <span class="arrow">─ deprecate ─▶</span>
+      <span class="node b-dep">DEPRECATED</span>
+    </div>
+    <h4>Инварианты</h4>
+    <ul>
+      <li><strong>PROPOSED</strong> мутируется свободно (тело редактируемое).</li>
+      <li><strong>ACCEPTED</strong> делается immutable: <code>context/decision/consequences</code> править нельзя; добавление diagram — да, изменение title — нет. Только supersede/deprecate.</li>
+      <li><strong>SUPERSEDED</strong> — следствие записи ребра <code>adr_supersedes</code>: статус выставляется сервисом транзакционно, не вручную.</li>
+      <li><strong>DEPRECATED</strong> — терминал, обратного пути нет (новый ADR — это новый ID, не «revive»).</li>
+    </ul>
+    <div class="alt">
+      <strong>Альтернатива.</strong> Не делать ACCEPTED immutable, а полагаться на revision-history. <em>Контраргумент:</em> ACCEPTED-ADR — обещание системе, его слом без следа в supersede-графе ломает «обоснованность решений». Immutable + supersede строже и эксплицитнее.
+    </div>
+  </section>
+
+  <section id="integration">
+    <h2>5. Карта интеграций</h2>
+    <p>ADR — не остров: он касается почти каждой существующей capability. Ниже — точки соприкосновения и моё предложение по каждой.</p>
+
+    <h3>5.1 Revision history</h3>
+    <p>Добавляем <code>EntityKind.ADR</code>. Все мутации (<code>create / update / supersede / deprecate / add_diagram / link_task</code>) пишут revision через <code>revision_service.write()</code> — единый паттерн с doc/task/story. <em>Бонус:</em> <code>revision_revert</code> из коробки откатывает ADR.</p>
+
+    <h3>5.2 Auto-linking</h3>
+    <p>Добавляем <code>LinkKind.ADR</code> и резолвер для <code>[[ADR-NNN]]</code> / <code>[ADR-NNN]</code>. Любой markdown в проекте (план, спека, task-doc) автоматически получает кликабельную ссылку на ADR. Стейл-линки (битые ID) ловятся <code>link_verify</code>.</p>
+    <div class="rec"><strong>Рекомендация.</strong> Реализовать парсинг паттерна <code>ADR-\d{3,}</code> отдельным правилом — он короткий и не пересекается с задачами (<code>COD-NNN</code>) или сторями (<code>US-NNN</code>).</div>
+
+    <h3>5.3 Tasks</h3>
+    <p><code>adr_link_task(adr_id, task_id)</code> создаёт ребро «эта задача — следствие ADR». В Web-странице задачи появляется чип «<span class="badge b-acc">ADR-007</span> Use SQLite by default» как hover-tooltip с decision-полем.</p>
+
+    <h3>5.4 Stories</h3>
+    <p>User Story связывается с ADR в одну сторону: «story ставит вопрос → ADR его закрывает». Реализация — через существующий <code>StoryLink</code> с новым <code>StoryLinkKind.ADR</code>, либо через симметричный <code>adr_link_story()</code>. Я бы выбрал второй вариант: меньше развилок в существующем story-сервисе.</p>
+
+    <h3>5.5 Modules / specs</h3>
+    <p>ADR может затрагивать модуль (<code>cod_doc/domain</code>, <code>services/plan_service</code> и т.д.). Поле <code>affects_modules: list[str]</code> в ADR + индекс в <code>adr_link</code>. На странице capability/module появляется блок «ADRs, governing this module» — это даёт читателю быстрый context.</p>
+
+    <h3>5.6 Plans</h3>
+    <p>Execution-plan может декларировать «<em>implements</em> ADR-007, ADR-009». <code>plan_audit</code> добавляет правило: если плановая задача меняет файл в модуле, охваченном ACCEPTED-ADR, и нет линка <code>task↔adr</code> — warning.</p>
+
+    <h3>5.7 Approvals</h3>
+    <p>Переход <code>PROPOSED → ACCEPTED</code> опционально требует <code>approval_request</code> (configurable per project). Удобно, когда ADR пишет агент: оно лежит как proposal, человек кликает «accept», approval-service делает резолв.</p>
+
+    <h3>5.8 Activity log</h3>
+    <p>Каждое мутирующее действие на ADR публикует <code>ActivityEvent(kind=ADR_*)</code> через <code>activity_service</code>. В web-странице runs/activity появляется человекочитаемая лента.</p>
+
+    <h3>5.9 Routines</h3>
+    <p>Новая рутина <code>adr-stale</code>: ADR в PROPOSED &gt; 14 дней → warning. Другая — <code>adr-orphan</code>: ACCEPTED ADR без единого <code>task↔adr</code> или <code>doc↔adr</code> ребра.</p>
+
+    <h3>5.10 Skills / agents</h3>
+    <p>Новый skill <code>adr-author</code> — гайд для LLM-агента: «когда писать ADR (≥2 модуля задеты или меняется схема БД), что в Context vs Decision vs Consequences, как формулировать supersede».</p>
+
+    <h3>5.11 Context retrieval (Snowball)</h3>
+    <p>L1-контекст агента получает <em>список</em> ACCEPTED-ADR проекта (id+title+1-line context). L2 подгружает тело конкретного ADR по id. Не загружаем DEPRECATED по умолчанию.</p>
+
+    <h3>5.12 Templates</h3>
+    <p>Default <code>templates/adr_default.md.j2</code>. Per-project override: <code>&lt;project&gt;/templates/adr.md.j2</code>. Web-форма — визуальное представление этого шаблона: одно изменение схемы шаблона → автоматически в форме (через введение field-описателя поверх Jinja).</p>
+
+    <h3>5.13 Search / projections</h3>
+    <p>ADR проецируется в markdown (под <code>docs/adr/ADR-NNN.md</code>) для git-видимости и индексируется в ChromaDB через существующий <code>projection_service</code>. Semantic-search «найди ADR про PostgreSQL» работает «из коробки».</p>
+  </section>
+
+  <section id="surfaces">
+    <h2>6. CLI · MCP · Web · Agent</h2>
+    <p>Парность поверхностей — обязательная инвариант проекта. Все операции доступны со всех трёх (плюс агент через MCP).</p>
+    <table>
+      <thead><tr><th>Операция</th><th>CLI</th><th>MCP</th><th>Web</th></tr></thead>
+      <tbody>
+        <tr><td>create</td><td><code>adr new</code></td><td><code>adr_create</code></td><td>/adr/new — форма</td></tr>
+        <tr><td>get</td><td><code>adr show</code></td><td><code>adr_get</code></td><td>/adr/&lt;id&gt;</td></tr>
+        <tr><td>list</td><td><code>adr list</code></td><td><code>adr_list</code></td><td>/adr (filters)</td></tr>
+        <tr><td>update</td><td><code>adr edit</code></td><td><code>adr_update</code></td><td>edit-button на /adr/&lt;id&gt; (только PROPOSED)</td></tr>
+        <tr><td>accept</td><td><code>adr accept</code></td><td><code>adr_accept</code></td><td>«Accept» кнопка</td></tr>
+        <tr><td>supersede</td><td><code>adr supersede A B</code></td><td><code>adr_supersede</code></td><td>multi-select в форме нового ADR</td></tr>
+        <tr><td>deprecate</td><td><code>adr deprecate</code></td><td><code>adr_deprecate</code></td><td>«Deprecate» кнопка</td></tr>
+        <tr><td>add diagram</td><td><code>adr diagram add</code></td><td><code>adr_add_diagram</code></td><td>«+ Diagram» в редакторе</td></tr>
+        <tr><td>link task</td><td><code>adr link &lt;task&gt;</code></td><td><code>adr_link_task</code></td><td>combobox на /adr/&lt;id&gt;</td></tr>
+        <tr><td>graph</td><td><code>adr graph</code></td><td><code>adr_graph</code></td><td>/adr/graph</td></tr>
+      </tbody>
+    </table>
+    <p>Итого: 10 операций (исходный план называл 7, я добавил <code>accept</code> отдельной операцией и <code>list</code> как полноценную сущность с фильтрами — это важно для парности).</p>
+  </section>
+
+  <section id="editor">
+    <h2>7. Концепция визуального редактора</h2>
+    <p>Главное различие ADR от прочих markdown-документов в COD-DOC — структурированный шаблон. Это даёт нам право <em>не</em> показывать сырой markdown, а сделать <strong>форму с предпросмотром</strong>.</p>
+
+    <div class="two-col">
+      <div class="card">
+        <h4>Левая колонка — форма</h4>
+        <ul>
+          <li>Title (input)</li>
+          <li>Context (textarea, markdown)</li>
+          <li>Decision (textarea)</li>
+          <li>Consequences (textarea)</li>
+          <li>Diagrams (1..N Mermaid-блоков с inline-preview)</li>
+          <li>Supersedes (multi-select из ACCEPTED ADR)</li>
+          <li>Affects modules / files (combobox)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>Правая колонка — preview</h4>
+        <ul>
+          <li>Server-side markdown render (тот же <code>cod_doc/api/web/markdown.py</code>)</li>
+          <li>Mermaid через клиентский <code>mermaid.js</code> (уже в проекте для plan-graph)</li>
+          <li>Live-debounce 300 мс, обновление через HTMX-fragment</li>
+          <li>Badge с целевым статусом (PROPOSED по умолчанию)</li>
+        </ul>
+      </div>
+    </div>
+
+    <h4>UI-инварианты</h4>
+    <ul>
+      <li>Supersede-form не позволяет выбрать <em>себя</em> или создать цикл — серверная проверка перед сохранением.</li>
+      <li>Mermaid с синтаксической ошибкой → блок не сохраняется (валидатор на стороне сервера через subprocess или <code>mermaid-cli</code>; если тяжело — fallback: сохраняем как есть, помечаем <code>render_status=error</code>).</li>
+      <li>«Save as PROPOSED» (draft) vs «Save &amp; Accept» (один клик). Второй требует подтверждения, поднимает approval, если включён.</li>
+    </ul>
+
+    <div class="alt">
+      <strong>Альтернатива №1 — WYSIWYG-редактор</strong> (TipTap/ProseMirror). Контраргумент: COD-DOC хранит markdown канонично; WYSIWYG усложняет roundtrip и indexing. Откладываем.
+    </div>
+    <div class="alt">
+      <strong>Альтернатива №2 — single big textarea</strong> с server-side парсингом разделов. Хуже UX (нет live-preview по секциям), легко сломать формат. Не делаем.
+    </div>
+  </section>
+
+  <section id="graph">
+    <h2>8. Граф решений</h2>
+    <p>Граф supersede — главная визуальная фича. Он же — диагностический инструмент: если у тебя 30 ADR и 12 SUPERSEDED-цепочек, граф мгновенно показывает «зрелые» области и «горячие» (где решения постоянно переписываются).</p>
+
+    <h4>MVP</h4>
+    <pre class="mermaid-stub">graph TD
+    A001["ADR-001 Layered DI<br/>ACCEPTED"]:::accepted
+    A002["ADR-002 FastAPI<br/>ACCEPTED"]:::accepted
+    A005["ADR-005 PostgreSQL<br/>ACCEPTED"]:::accepted
+    A005 --> A012["ADR-012 SQLite default<br/>ACCEPTED"]:::accepted
+    classDef accepted fill:#dcfce7,stroke:#15803d
+    classDef superseded fill:#e2e8f0,stroke:#475569</pre>
+
+    <h4>Эволюции (не MVP, но проектируем под них)</h4>
+    <ul>
+      <li><strong>Layered view</strong>: ADR → Modules → Tasks → Documents. Один граф, четыре уровня. Полезно для «impact» — нажал на ADR, увидел всё, что от него зависит.</li>
+      <li><strong>Timeline view</strong>: ADR по оси X = время, цветом — статус. Видно, когда система входила в фазы пересмотра.</li>
+      <li><strong>Coverage view</strong>: матрица «модули × ADR» — какие модули регулируются, какие нет (≈ aerial-view технического долга).</li>
+    </ul>
+  </section>
+
+  <section id="decision-dec">
+    <h2>9. Развилка ADR ↔ Decision (требует апрува)</h2>
+    <p>В <code>docs/system/capabilities/decisions-and-questions.md</code> уже есть сущность <code>Decision (DEC-NNN)</code> со схожей семантикой (status, context, decision, consequences, supersedes). <code>adr-system</code> ввёл вторую сущность <code>Adr (ADR-NNN)</code> с почти тем же набором полей.</p>
+    <p><strong>Это коллизия, и её надо разрешить до миграции, а не после.</strong> Три варианта:</p>
+
+    <div class="grid">
+      <div class="card" style="border-left: 3px solid var(--green)">
+        <h4>A. ADR <em>есть</em> Decision (рекомендую)</h4>
+        <p>Сливаем сущности. Реализуем как <code>Adr</code> с префиксом <code>ADR-NNN</code>. Capability <code>decisions-and-questions</code> упрощается: «Decisions = ADR system», «Open Questions» — остаётся отдельной мелкой сущностью.</p>
+        <p><strong>Плюсы:</strong> одна модель, одна страница, одна история. Меньше путаницы у пользователя.</p>
+        <p><strong>Минусы:</strong> нужно обновить <code>decisions-and-questions.md</code>; это лёгкое.</p>
+      </div>
+      <div class="card" style="border-left: 3px solid var(--amber)">
+        <h4>B. ADR — это <em>tech</em>, DEC — <em>product</em></h4>
+        <p>Параллельные сущности с разной семантикой: ADR — техрешения, DEC — продуктовые / процессные. Префиксы разные.</p>
+        <p><strong>Плюсы:</strong> разделение по уровню абстракции, как в Restate.</p>
+        <p><strong>Минусы:</strong> две модели, две UI-страницы, два MCP-набора. На малом проекте — оверкилл.</p>
+      </div>
+      <div class="card" style="border-left: 3px solid var(--warn)">
+        <h4>C. Дроп <code>decisions-and-questions</code></h4>
+        <p>Удаляем capability как нереализованную. ADR закрывает всю функциональность, кроме <code>OpenQuestion</code> — её выносим в отдельный thin-capability «open-questions» (или присоединяем к ADR как «PROPOSED без decision»).</p>
+        <p><strong>Плюсы:</strong> самая чистая декомпозиция.</p>
+        <p><strong>Минусы:</strong> требует ревизии MASTER.md и нескольких докстрингов.</p>
+      </div>
+    </div>
+
+    <div class="rec">
+      <strong>Моя рекомендация — A с уклоном в C.</strong> ADR-сущность <em>становится</em> реализацией «Decision»; capability <code>decisions-and-questions</code> переписывается так, чтобы её «Decision» ссылалась на <code>adr-system</code>, а <code>OpenQuestion</code> остаётся отдельной маленькой сущностью (это тот случай, когда вопросы и решения — действительно разные графы). Префикс — <code>ADR-NNN</code>, не <code>DEC-NNN</code> (короче, общепринят).
+    </div>
+  </section>
+
+  <section id="plan">
+    <h2>10. План реализации</h2>
+    <p>Текущий roadmap <code>adr-system-task-plan.md</code> делит работу на 8 задач. Ниже — то же самое, но переупакованное в фазы с маленькими, проверяемыми шагами, и с явными точками интеграции по §5.</p>
+
+    <div class="phase">
+      <header>
+        <span class="num">Phase 1</span>
+        <span class="title">Domain &amp; persistence</span>
+        <span class="dur">~1.5 дня</span>
+      </header>
+      <ol>
+        <li>Доменные enum/dataclass: <code>AdrStatus</code>, <code>Adr</code>, <code>AdrDiagram</code>, <code>AdrSupersedes</code>, <code>AdrLink</code>. Добавить <code>EntityKind.ADR</code>.</li>
+        <li>SQLA-модели в <code>infra/models/adr.py</code> (4 таблицы). Регистрация в <code>infra/models/__init__.py</code>.</li>
+        <li>Migration <code>20260514_0017_adr_tables.py</code> (up/down).</li>
+        <li>Repository <code>infra/repositories/adr_repo.py</code>: autonumber, get_by_adr_id, list_for_project, supersede-edge ops.</li>
+        <li>Acceptance: smoke-CRUD тест + автонумерация под нагрузкой (concurrent inserts → нет коллизий).</li>
+      </ol>
+    </div>
+
+    <div class="phase">
+      <header>
+        <span class="num">Phase 2</span>
+        <span class="title">Service layer</span>
+        <span class="dur">~1 день</span>
+      </header>
+      <ol>
+        <li>Пакет <code>services/adr_service/</code> по структуре <code>story_service/</code>: <code>crud.py</code>, <code>supersede.py</code>, <code>diagrams.py</code>, <code>links.py</code>, <code>graph.py</code>, <code>_types.py</code>.</li>
+        <li>Cycle-detection (DFS) перед <code>supersede</code>.</li>
+        <li>Immutability ACCEPTED: <code>update()</code> запрещён, кроме add_diagram / link_task / supersede / deprecate.</li>
+        <li>Revision-write на каждой мутации.</li>
+        <li>Acceptance: 15+ unit-тестов на сервис; cycle и concurrent-autonumber кейсы покрыты.</li>
+      </ol>
+    </div>
+
+    <div class="phase">
+      <header>
+        <span class="num">Phase 3</span>
+        <span class="title">MCP-tools + CLI + tool_defs</span>
+        <span class="dur">~1 день</span>
+      </header>
+      <ol>
+        <li><code>mcp/tools/adr_tools.py</code>: 10 операций (см. §6). Регистрация в <code>mcp/server.py</code>.</li>
+        <li><code>cli/adr.py</code>: 10 команд через click.</li>
+        <li><code>agent/tool_defs.py</code>: описания инструментов для агентских контекстов.</li>
+        <li>Acceptance: integration-тест «create → list → show → supersede → graph» end-to-end через CLI.</li>
+      </ol>
+    </div>
+
+    <div class="phase">
+      <header>
+        <span class="num">Phase 4</span>
+        <span class="title">Web UI — list &amp; detail</span>
+        <span class="dur">~1.5 дня</span>
+      </header>
+      <ol>
+        <li><code>api/web/pages/adr.py</code>: <code>/p/&lt;slug&gt;/adr</code> (list, filters), <code>/p/&lt;slug&gt;/adr/&lt;id&gt;</code> (detail).</li>
+        <li>Шаблоны <code>templates/web/project/adr_list.html</code>, <code>adr_show.html</code>.</li>
+        <li>Status-badge styles в <code>static/css/_components.css</code>.</li>
+        <li>Фрагменты для HTMX-фильтров (status, year).</li>
+        <li>Регистрация в <code>api/web/pages/__init__.py</code>.</li>
+        <li>Acceptance: list 100 ADR за &lt;100мс; фильтры без full-reload.</li>
+      </ol>
+    </div>
+
+    <div class="phase">
+      <header>
+        <span class="num">Phase 5</span>
+        <span class="title">Web UI — editor + supersede flow</span>
+        <span class="dur">~2 дня</span>
+      </header>
+      <ol>
+        <li><code>/p/&lt;slug&gt;/adr/new</code> — форма с разделами Context/Decision/Consequences.</li>
+        <li>Mermaid live-preview (debounce 300мс) — <code>static/js/adr_editor.js</code>.</li>
+        <li>Supersede multi-select из ACCEPTED-ADR (HTMX combobox).</li>
+        <li>Server-side cycle-validate перед сохранением (показ ошибки inline).</li>
+        <li>«Save as PROPOSED» / «Save &amp; Accept».</li>
+        <li>На странице старого ADR — баннер «Заменён: ADR-NNN».</li>
+        <li>Acceptance: создание полноценного ADR с диаграммой через UI, без CLI/MCP.</li>
+      </ol>
+    </div>
+
+    <div class="phase">
+      <header>
+        <span class="num">Phase 6</span>
+        <span class="title">Graph page</span>
+        <span class="dur">~0.5 дня</span>
+      </header>
+      <ol>
+        <li><code>/p/&lt;slug&gt;/adr/graph</code> — серверный рендер <code>adr_graph(format='mermaid')</code> → клиентский render → SVG.</li>
+        <li>Кликабельные узлы → <code>/adr/&lt;id&gt;</code>.</li>
+        <li>Фильтр «только последние в supersede-цепочках».</li>
+        <li>Acceptance: 50+ ADR рендерятся &lt;1с.</li>
+      </ol>
+    </div>
+
+    <div class="phase">
+      <header>
+        <span class="num">Phase 7</span>
+        <span class="title">Integration touchpoints</span>
+        <span class="dur">~1 день</span>
+      </header>
+      <ol>
+        <li>Auto-linking: <code>LinkKind.ADR</code> + регекс-резолвер.</li>
+        <li><code>activity_service</code> hooks для ADR-мутаций.</li>
+        <li>Snowball L1 включает список ACCEPTED ADR.</li>
+        <li>Skill <code>adr-author</code> для агентов (<code>cod_doc/skills/adr-author/SKILL.md</code>).</li>
+        <li>Acceptance: <code>[ADR-007]</code> в любом markdown → кликабельная ссылка.</li>
+      </ol>
+    </div>
+
+    <div class="phase">
+      <header>
+        <span class="num">Phase 8</span>
+        <span class="title">Templates + migration + docs</span>
+        <span class="dur">~0.5 дня</span>
+      </header>
+      <ol>
+        <li><code>templates/adr_default.md.j2</code>.</li>
+        <li><code>services/adr_migrator.py</code> — разовый перенос 5 ADR из <code>arch/architecture.md §3</code> → БД. Idempotent.</li>
+        <li>Замена <code>arch/architecture.md §3</code> на ссылку «См. <code>/p/&lt;slug&gt;/adr</code>».</li>
+        <li>HANDBOOK раздел «ADR — как принимать архитектурные решения».</li>
+        <li>Обновление <code>decisions-and-questions.md</code> по итогам §9 этого видения.</li>
+        <li>Module-audit (5 измерений по skill <code>module-audit</code>).</li>
+      </ol>
+    </div>
+
+    <h4>Зависимости</h4>
+    <p>Phase 1 → 2 → (3 ∥ 4) → 5 → 6 → 7 → 8. Параллелить можно 3 и 4 (CLI/MCP и Web list — независимы).</p>
+  </section>
+
+  <section id="open">
+    <h2>11. Открытые вопросы (на твою сторону)</h2>
+    <ol>
+      <li><strong>ADR vs Decision</strong> — какой из трёх вариантов §9 выбираем?</li>
+      <li><strong>Approval gating</strong> — делаем <code>PROPOSED → ACCEPTED</code> опциональным через approvals (рекомендую <em>да, опционально</em>, выключено по умолчанию)?</li>
+      <li><strong>Markdown projection</strong> — генерируем ли <code>docs/adr/ADR-NNN.md</code> для git-видимости, или ADR живёт только в БД + Web UI? Я бы делал — это «free» semantic-search и diff в PR.</li>
+      <li><strong>Server-side Mermaid validation</strong> — допустимо ли поставить <code>mermaid-cli</code> в Dockerfile, или валидируем только клиентом и принимаем риск битых блоков?</li>
+      <li><strong>Префикс ID</strong> — фиксируем <code>ADR-</code> (общепринят) или хотим что-то проектно-специфичное?</li>
+      <li><strong>Authorship для агентов</strong> — формат <code>agent:&lt;run-id&gt;</code> ок? Это даст возможность кликнуть в <code>decided_by</code> и попасть на страницу run-а.</li>
+    </ol>
+  </section>
+
+  <section id="risks">
+    <h2>12. Риски и митигации</h2>
+    <div class="risk">
+      <strong>Риск 1.</strong> Двойная сущность ADR/Decision создаст user-confusion. <em>Митигация:</em> закрыть §9 до Phase 1.
+    </div>
+    <div class="risk">
+      <strong>Риск 2.</strong> Cycle-detection становится дорогой на больших проектах (DFS по <code>adr_supersedes</code>). <em>Митигация:</em> вероятный размер — десятки, не тысячи. DFS in-memory ок до 10⁴ узлов.
+    </div>
+    <div class="risk">
+      <strong>Риск 3.</strong> Mermaid live-preview лагает в браузере для больших диаграмм. <em>Митигация:</em> render debounce 300мс + лимит ≤200 строк на блок.
+    </div>
+    <div class="risk">
+      <strong>Риск 4.</strong> Autonumber race при concurrent create. <em>Митигация:</em> SELECT FOR UPDATE на row проекта или advisory lock; либо <code>UNIQUE(project_id, adr_id)</code> + retry-on-conflict.
+    </div>
+    <div class="risk">
+      <strong>Риск 5.</strong> Шаблон ADR через 2 года перестанет влезать в три textarea (захочется доп. полей: «Alternatives», «Rollback»). <em>Митигация:</em> хранить в БД <em>typed body</em> (<code>context</code>, <code>decision</code>, <code>consequences</code>) <em>и</em> <code>extra: JSON</code> для расширений без миграции.
+    </div>
+  </section>
+
+  <section id="future">
+    <h2>13. Что оставляем на потом</h2>
+    <ul>
+      <li><strong>Voting / quorum</strong> — ADR в COD-DOC принимает один человек или агент; полноценный RFC-процесс не нужен.</li>
+      <li><strong>Comment-threads</strong> — обсуждение идёт во внешнем issue-tracker.</li>
+      <li><strong>Auto-suggest «нужен ADR здесь»</strong> — соблазнительно, но шумно. Лучше через skill <code>adr-author</code>, чем через автодетектор.</li>
+      <li><strong>Cross-project ADR</strong> — multi-project поле <code>shared_with</code>. Пока — per-project, замкнуто.</li>
+      <li><strong>Diff между ADR-revisions</strong> в UI — пока через generic <code>revision_get</code>.</li>
+      <li><strong>Эмбеддинги «similar ADRs»</strong> — поверх ChromaDB-проекций. Easy add-on, не MVP.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p>Источники: <code>docs/system/capabilities/adr-system.md</code>, <code>docs/system/roadmap/adr-system-task-plan.md</code>, <code>docs/system/capabilities/decisions-and-questions.md</code>, <code>arch/architecture.md §3</code>. Документ для апрува; реализацию не начинаем до подтверждения § 9, 11, и фазового плана § 10.</p>
+  </footer>
+</main>
+</body>
+</html>

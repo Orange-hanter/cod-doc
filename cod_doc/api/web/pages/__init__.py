@@ -10,7 +10,22 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import costs, docs, index, navigator, plans, project, revisions, routines, run, settings, stories, tasks
+from . import (
+    comments,
+    costs,
+    docs,
+    index,
+    navigator,
+    plans,
+    project,
+    revisions,
+    routines,
+    run,
+    settings,
+    standards,
+    stories,
+    tasks,
+)
 
 router = APIRouter()
 router.include_router(index.router)
@@ -24,6 +39,13 @@ router.include_router(routines.router)
 router.include_router(costs.router)
 router.include_router(run.router)
 router.include_router(navigator.router)
+router.include_router(standards.router)
+# `comments.router` before `docs.router`: comments routes are nested under
+# `/p/{slug}/docs/{doc_key:path}/comments` but each pins the trailing
+# `/comments…` suffix, so they would not shadow the docs catch-all on
+# their own. Register them earlier anyway for clarity — the docs
+# catch-all `/p/{slug}/docs/{doc_key:path}` always matches last.
+router.include_router(comments.router)
 # `docs.router` last — its `/p/{slug}/docs/{doc_key:path}` route is a
 # greedy catch-all that would shadow more-specific siblings if registered
 # first.

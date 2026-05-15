@@ -927,6 +927,37 @@ def doc_show(
         )
     incoming = sorted(incoming_groups.values(), key=lambda x: x["doc_key"])
 
+    # Comments on this document — section-anchored bubbles + doc-level zone.
+    from cod_doc.services import comment_service as _comments
+
+    comments_rows = _comments.list_for_document(session, doc.row_id)
+    comments_by_anchor: dict[str, list[dict[str, Any]]] = {}
+    doc_level_comments: list[dict[str, Any]] = []
+    open_count = 0
+    for c in comments_rows:
+        c_view = {
+            "row_id": c.row_id,
+            "section_id": c.section_id,
+            "anchor": c.anchor,
+            "quote": c.quote or "",
+            "body": c.body,
+            "author": c.author,
+            "status": c.status,
+            "created": c.created,
+        }
+        if c.status == "open":
+            open_count += 1
+        if c.anchor:
+            comments_by_anchor.setdefault(c.anchor, []).append(c_view)
+        else:
+            doc_level_comments.append(c_view)
+    # Attach per-section comment counts onto the rendered section dicts.
+    for s in sections_html:
+        s["comments"] = comments_by_anchor.get(s["anchor"], [])
+        s["open_comments"] = sum(
+            1 for c in s["comments"] if c["status"] == "open"
+        )
+
     # PCA-422 follow-up: Suggested links — pending semantic-similarity hits
     # for sections of this document, with Accept/Reject controls.
     suggestions_by_section: list[dict[str, Any]] = []
@@ -982,6 +1013,10 @@ def doc_show(
             "incoming_links": incoming,
             "suggestions_by_section": suggestions_by_section,
             "has_sections": bool(sections_db),
+            "comments_by_anchor": comments_by_anchor,
+            "doc_level_comments": doc_level_comments,
+            "open_comment_count": open_count,
+            "comment_total": len(comments_rows),
         },
     )
 

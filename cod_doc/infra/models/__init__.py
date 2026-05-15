@@ -20,6 +20,7 @@ from __future__ import annotations
 from .activity import ActivityEventModel
 from .approvals import ApprovalDocRevisionLinkModel, ApprovalModel, ApprovalTaskLinkModel
 from .base import Base, _utcnow
+from .comments import DocCommentModel
 from .documents import DocumentModel, LinkModel, SectionModel
 from .modules import ModuleCodeModel, ModuleDependencyModel, ModuleModel
 from .plans import (
@@ -47,6 +48,7 @@ __all__ = [
     "AuditLogModel",
     "Base",
     "DependencyModel",
+    "DocCommentModel",
     "DocumentModel",
     "DocumentTagModel",
     "LinkModel",

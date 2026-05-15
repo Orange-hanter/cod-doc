@@ -13,7 +13,64 @@ if TYPE_CHECKING:
 def register(mcp: FastMCP) -> None:
     """Register task.* tools on the given FastMCP instance."""
 
-    @mcp.tool(name="task.list")
+    @mcp.tool(name="task_next_ready")
+    def task_next_ready(
+        project: str,
+        plan_scope: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Cycle-4: return the highest-priority **ready** task, or ``None``.
+
+        Drop-in replacement for legacy ``next_pending_task`` with a
+        semantically correct name (the legacy name is misleading — it
+        returns *ready* tasks, not just *pending* ones).
+
+        A task is *ready* when:
+        - status is ``pending`` / ``todo``,
+        - all ``blocked_by`` dependencies are ``done``,
+        - it is not currently locked via ``task_checkout``.
+
+        ``plan_scope`` (optional) restricts to a single plan.
+
+        Use this as the input to ``task_checkout``. Returns ``None`` when
+        the ready-set is empty.
+        """
+        from sqlalchemy import select as _select
+
+        from cod_doc.infra.db import transactional
+        from cod_doc.infra.models import TaskModel
+        from cod_doc.services.plan_service import reads as plan_reads
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            try:
+                project_id = require_project_id(session, project)
+            except (LookupError, ValueError):
+                return None
+
+            ready = plan_reads.ready_for_project(session, project_id)
+            if plan_scope is not None:
+                from cod_doc.infra.repositories import PlanRepository
+
+                plan = PlanRepository(session).get_by_scope(plan_scope)
+                plan_id = plan.row_id if plan is not None else -1
+                ready = [t for t in ready if getattr(t, "plan_id", None) == plan_id]
+            if not ready:
+                return None
+            ready_ids = [t.row_id for t in ready if t.row_id is not None]
+            locked = set(
+                session.execute(
+                    _select(TaskModel.row_id).where(
+                        TaskModel.row_id.in_(ready_ids),
+                        TaskModel.checked_out_by.isnot(None),
+                    )
+                ).scalars()
+            )
+            ready = [t for t in ready if t.row_id not in locked]
+            if not ready:
+                return None
+            return task_to_dict(ready[0], session=session)
+
+    @mcp.tool(name="task_list")
     def task_list(
         project: str,
         status: str | None = None,
@@ -26,7 +83,12 @@ def register(mcp: FastMCP) -> None:
 
         Parameters
         ----------
-        status:        pending | in-progress | done
+        status:        Any canonical TaskStatus or legacy alias. Canonical:
+                       backlog | todo | in_progress | in_review | blocked |
+                       done | cancelled. Legacy aliases: pending ≡ todo,
+                       in-progress ≡ in_progress. Single source of truth:
+                       cod_doc/services/task_status_machine.py +
+                       skill `task-standard`.
         priority:      critical | high | medium | low
         limit:         max rows to return (default 50; cap large projects)
         offset:        rows to skip (for pagination)
@@ -67,7 +129,7 @@ def register(mcp: FastMCP) -> None:
 
         return {"items": items, "total": total, "limit": limit, "offset": offset}
 
-    @mcp.tool(name="task.stale")
+    @mcp.tool(name="task_stale")
     def task_stale(
         project: str,
         threshold_hours: float = 24.0,
@@ -88,7 +150,7 @@ def register(mcp: FastMCP) -> None:
             )
         return [task_to_dict(t) for t in tasks]
 
-    @mcp.tool(name="task.log_progress")
+    @mcp.tool(name="task_log_progress")
     def task_log_progress(
         project: str,
         task_id: str,
@@ -115,7 +177,7 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"Task '{task_id}' not found.") from None
         return task_to_dict(t)
 
-    @mcp.tool(name="task.heartbeat_context")
+    @mcp.tool(name="task_heartbeat_context")
     def task_heartbeat_context(
         project: str,
         task_id: str,
@@ -148,7 +210,7 @@ def register(mcp: FastMCP) -> None:
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
 
-    @mcp.tool(name="task.summary")
+    @mcp.tool(name="task_summary")
     def task_summary(project: str) -> dict[str, Any]:
         """Aggregate task counts for a project — by status and priority.
 
@@ -163,9 +225,23 @@ def register(mcp: FastMCP) -> None:
             project_id = require_project_id(session, project)
             return task_service.summarize_for_project(session, project_id)
 
-    @mcp.tool(name="task.get")
-    def task_get(project: str, task_id: str) -> dict[str, Any] | None:
-        """Get a single DB task by its task_id (e.g. COD-011). Returns null if not found.
+    @mcp.tool(name="task_get")
+    def task_get(project: str, task_id: str) -> dict[str, Any]:
+        """Get a single DB task by its task_id (e.g. COD-011).
+
+        On hit returns the task dict (``task_id`` field present).
+
+        On miss (PCA-938) returns a structured hint payload — never bare ``null``
+        — so agents can recover without reading docs::
+
+            {
+              "task_id": null,
+              "found": false,
+              "requested_task_id": "<what you passed>",
+              "hint": "task_id 'X' not found in project 'Y'. Try task_list to "
+                      "browse or task_find_duplicate to search by title.",
+              "related_tools": ["task_list", "task_find_duplicate"]
+            }
 
         Also accepts an 8-char YAML-hash ID (e.g. 'a27d4e9e') as a fallback —
         searches the project's tasks.yaml when not found in the DB.
@@ -190,9 +266,19 @@ def register(mcp: FastMCP) -> None:
                 if yaml_task.id == task_id:
                     return yaml_task.to_dict()
 
-        return None
+        return {
+            "task_id": None,
+            "found": False,
+            "requested_task_id": task_id,
+            "hint": (
+                f"task_id {task_id!r} not found in project {project!r}. "
+                "Try task_list to browse pending tasks, or "
+                "task_find_duplicate(title=...) to search by title."
+            ),
+            "related_tools": ["task_list", "task_find_duplicate"],
+        }
 
-    @mcp.tool(name="task.create")
+    @mcp.tool(name="task_create")
     def task_create(
         project: str,
         plan_scope: str,
@@ -210,12 +296,17 @@ def register(mcp: FastMCP) -> None:
         author: str = "mcp",
         reason: str | None = None,
         allow_duplicate: bool = False,
+        dry_run: bool = False,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """Create a new DB task in a plan section.
 
         Provide either task_id (explicit, e.g. 'COD-042') or id_prefix (e.g. 'COD')
         for auto-numbering. type: feature|test|bug|refactor|migration|docs|chore.
         priority: critical|high|medium|low.
+
+        To discover valid ``section_letter`` values for a plan, call
+        ``plan_sections_list(project, plan_scope)`` (PCA-941).
 
         Structured fields (C1):
         - blocked_by: list of blocking task IDs (e.g. ['COD-034'])
@@ -231,12 +322,19 @@ def register(mcp: FastMCP) -> None:
         from cod_doc.domain.entities import Priority, TaskType
         from cod_doc.infra.db import transactional
         from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
+        from cod_doc.mcp.tools import _idempotency
         from cod_doc.services import task_service
         from cod_doc.services.task_service import DuplicateTaskError
         from cod_doc.services.validation import ValidationError
 
         if task_id is None and id_prefix is None:
             raise ValueError("Provide task_id or id_prefix.")
+
+        # Idempotency short-circuit: if we've already seen this key for
+        # task_create in this process, return the cached result.
+        cached = _idempotency.check("task_create", idempotency_key)
+        if cached is not None:
+            return dict(cached, idempotent_replay=True)
 
         sf, _ = session_factory(project)
 
@@ -255,7 +353,7 @@ def register(mcp: FastMCP) -> None:
             plan_id, section_id = plan.row_id, section.row_id
 
         try:
-            with transactional(sf) as session:
+            with transactional(sf, commit=not dry_run) as session:
                 t = task_service.create(
                     session,
                     project_id=project_id,
@@ -284,9 +382,124 @@ def register(mcp: FastMCP) -> None:
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
 
+        if dry_run:
+            result["dry_run"] = True
+        else:
+            _idempotency.store("task_create", idempotency_key, result)
+        # PCA-949: recommended skills based on tool-name triggers.
+        from cod_doc.services.skill_service import recommend_for_tool
+        recs = recommend_for_tool("task_create")
+        if recs:
+            result["recommended_skills"] = recs[:3]
         return result
 
-    @mcp.tool(name="task.set_blocker")
+    @mcp.tool(name="task_create_many")
+    def task_create_many(
+        project: str,
+        plan_scope: str,
+        section_letter: str,
+        items: list[dict[str, Any]],
+        author: str = "mcp",
+        continue_on_error: bool = False,
+    ) -> dict[str, Any]:
+        """Create many tasks in a single transaction (PCA-946).
+
+        Each ``items`` element accepts the same keys as ``task_create`` except
+        ``project / plan_scope / section_letter / author`` (taken from outer
+        args). Common shape::
+
+            {"title": "...", "type": "feature", "priority": "medium",
+             "id_prefix": "FOO", "description": "...",
+             "blocked_by": [...], "story_id": "US-1"}
+
+        Default behaviour: one transaction — any item error rolls back
+        the whole batch. With ``continue_on_error=True`` errors are
+        collected per-item; successful items still commit.
+
+        Returns ``{"created": [task_dict, ...], "errors": [{"index", "title",
+        "message"}, ...], "committed": bool}``.
+        """
+        from cod_doc.domain.entities import Priority, TaskType
+        from cod_doc.infra.db import transactional
+        from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
+        from cod_doc.services import task_service
+        from cod_doc.services.task_service import DuplicateTaskError
+        from cod_doc.services.validation import ValidationError
+
+        sf, _ = session_factory(project)
+
+        # Resolve plan + section once.
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            plan = PlanRepository(session).get_by_scope(plan_scope)
+            if plan is None or plan.row_id is None:
+                raise ValueError(f"Plan '{plan_scope}' not found.")
+            sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
+            section = next(
+                (s for s in sections if s.letter.upper() == section_letter.upper()),
+                None,
+            )
+            if section is None or section.row_id is None:
+                raise ValueError(
+                    f"Section '{section_letter}' not found in plan {plan_scope!r}"
+                )
+            plan_id, section_id = plan.row_id, section.row_id
+
+        created: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+        committed = False
+
+        def _run_in_session(session: Any) -> None:
+            nonlocal created, errors
+            for i, spec in enumerate(items):
+                title = spec.get("title")
+                if not title:
+                    errors.append({"index": i, "title": None, "message": "missing 'title'"})
+                    if not continue_on_error:
+                        raise ValueError(f"items[{i}]: missing 'title'")
+                    continue
+                try:
+                    t = task_service.create(
+                        session,
+                        project_id=project_id,
+                        plan_id=plan_id,
+                        section_id=section_id,
+                        title=title,
+                        type=TaskType(spec.get("type", "feature")),
+                        priority=Priority(spec.get("priority", "medium")),
+                        author=author,
+                        task_id=spec.get("task_id"),
+                        id_prefix=spec.get("id_prefix"),
+                        description=spec.get("description"),
+                        acceptance=spec.get("acceptance"),
+                        affected_files=spec.get("affects_files"),
+                        blocked_by=spec.get("blocked_by"),
+                        story_id=spec.get("story_id"),
+                        reason=spec.get("reason"),
+                        allow_duplicate=spec.get("allow_duplicate", False),
+                    )
+                    created.append(task_to_dict(t, session=session))
+                except (
+                    DuplicateTaskError,
+                    ValidationError,
+                    ValueError,
+                ) as exc:
+                    errors.append(
+                        {"index": i, "title": title, "message": str(exc)}
+                    )
+                    if not continue_on_error:
+                        raise
+
+        try:
+            with transactional(sf) as session:
+                _run_in_session(session)
+            committed = True
+        except Exception:
+            committed = False
+
+        return {"created": created, "errors": errors, "committed": committed}
+
+    @mcp.tool(name="task_set_blocker")
     def task_set_blocker(
         project: str,
         task_id: str,
@@ -326,7 +539,7 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"Task '{task_id}' not found.") from None
         return task_to_dict(t)
 
-    @mcp.tool(name="task.clear_blocker")
+    @mcp.tool(name="task_clear_blocker")
     def task_clear_blocker(
         project: str,
         task_id: str,
@@ -354,7 +567,7 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"Task '{task_id}' not found.") from None
         return task_to_dict(t)
 
-    @mcp.tool(name="task.list_blocked")
+    @mcp.tool(name="task_list_blocked")
     def task_list_blocked(
         project: str,
     ) -> list[dict[str, Any]]:
@@ -368,7 +581,7 @@ def register(mcp: FastMCP) -> None:
             tasks = task_service.list_blocked(session, project_id)
         return [task_to_dict(t) for t in tasks]
 
-    @mcp.tool(name="task.find_duplicate")
+    @mcp.tool(name="task_find_duplicate")
     def task_find_duplicate(
         project: str,
         title: str,
@@ -388,16 +601,38 @@ def register(mcp: FastMCP) -> None:
             existing = task_service.find_duplicate_by_title(session, project_id, title)
         return task_to_dict(existing) if existing else None
 
-    @mcp.tool(name="task.update_status")
+    @mcp.tool(name="task_update_status")
     def task_update_status(
         project: str,
         task_id: str,
         new_status: str,
         author: str = "mcp",
         reason: str | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Update a task's status directly. new_status: pending | in-progress | done.
-        Does not validate blocking dependencies — use task.complete for guarded done transition.
+        """Update a task's status directly.
+
+        new_status accepts the full 7-state TaskStatus taxonomy (proposal 08):
+
+            backlog       — parked, not on the active heartbeat
+            todo          — ready to work, not picked up (≡ legacy ``pending``)
+            in_progress   — owned by a worker via task_checkout
+                            (≡ legacy ``in-progress``; transition todo → in_progress
+                             MUST go through task_checkout, not this tool)
+            in_review     — explicit waiting posture (approval / review)
+            blocked       — waiting on another task / external state
+            done          — closed (use task.complete for guarded transition)
+            cancelled     — intentionally abandoned
+
+        Legal transitions and aliases are the single source of truth in
+        cod_doc/services/task_status_machine.py (ALLOWED_TRANSITIONS).
+        Raises ValueError("Invalid status transition: …") on illegal edges.
+
+        Does not validate blocking dependencies — use task.complete for the
+        guarded done transition.
+
+        See also: skill ``task-standard`` (status semantics + when to dispatch
+        a task into each bucket).
         """
         from cod_doc.domain.entities import TaskStatus
         from cod_doc.infra.db import transactional
@@ -407,7 +642,7 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         try:
-            with transactional(sf) as session:
+            with transactional(sf, commit=not dry_run) as session:
                 project_id = require_project_id(session, project)
                 t = task_service.update_status(
                     session,
@@ -429,18 +664,25 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"Task '{task_id}' not found.") from None
         except StatusTransitionError as exc:
             raise ValueError(f"Invalid status transition: {exc}") from exc
-        return task_to_dict(t)
+        out = task_to_dict(t)
+        if dry_run:
+            out["dry_run"] = True
+        return out
 
-    @mcp.tool(name="task.complete")
+    @mcp.tool(name="task_complete")
     def task_complete(
         project: str,
         task_id: str,
         commit_sha: str | None = None,
         author: str = "mcp",
         reason: str | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Mark a task done. Validates all blocking dependencies are done first.
         Raises if the task is already done or any blocker is not yet complete.
+
+        ``dry_run=True`` (PCA-944) validates the transition (blockers etc.)
+        and returns the would-be result but rolls back the transaction.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import activity_service, checkout_service
@@ -453,7 +695,7 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         try:
-            with transactional(sf) as session:
+            with transactional(sf, commit=not dry_run) as session:
                 project_id = require_project_id(session, project)
                 checkout_service.warn_if_no_checkout(session, task_id, author)
                 t = complete(
@@ -478,4 +720,7 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"Task '{task_id}' is already done.") from None
         except TaskBlockedError as exc:
             raise ValueError(str(exc)) from exc
-        return task_to_dict(t)
+        out = task_to_dict(t)
+        if dry_run:
+            out["dry_run"] = True
+        return out

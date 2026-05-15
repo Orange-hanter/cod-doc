@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 def register(mcp: FastMCP) -> None:
     """Register doc.* tools on the given FastMCP instance."""
 
-    @mcp.tool(name="doc.list")
+    @mcp.tool(name="doc_list")
     def doc_list(project: str) -> list[dict[str, Any]]:
         """List all documents for a project."""
         from cod_doc.infra.db import transactional
@@ -25,7 +25,7 @@ def register(mcp: FastMCP) -> None:
             docs = doc_service.list_for_project(session, project_id)
         return [doc_to_dict(d) for d in docs]
 
-    @mcp.tool(name="doc.get")
+    @mcp.tool(name="doc_get")
     def doc_get(
         project: str,
         doc_key: str,
@@ -55,7 +55,7 @@ def register(mcp: FastMCP) -> None:
                 ]
         return result
 
-    @mcp.tool(name="doc.create")
+    @mcp.tool(name="doc_create")
     def doc_create(
         project: str,
         doc_key: str,
@@ -68,6 +68,8 @@ def register(mcp: FastMCP) -> None:
         preamble: str = "",
         author: str = "mcp",
         reason: str | None = None,
+        dry_run: bool = False,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """Create a new document record.
 
@@ -79,12 +81,17 @@ def register(mcp: FastMCP) -> None:
         """
         from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
         from cod_doc.infra.db import transactional
+        from cod_doc.mcp.tools import _idempotency
         from cod_doc.services import doc_service
         from cod_doc.services.validation import ValidationError
 
+        cached = _idempotency.check("doc_create", idempotency_key)
+        if cached is not None:
+            return dict(cached, idempotent_replay=True)
+
         sf, _ = session_factory(project)
         try:
-            with transactional(sf) as session:
+            with transactional(sf, commit=not dry_run) as session:
                 project_id = require_project_id(session, project)
                 d = doc_service.create(
                     session,
@@ -112,9 +119,18 @@ def register(mcp: FastMCP) -> None:
                 )
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
-        return doc_to_dict(d)
+        out = doc_to_dict(d)
+        if dry_run:
+            out["dry_run"] = True
+        else:
+            _idempotency.store("doc_create", idempotency_key, out)
+        from cod_doc.services.skill_service import recommend_for_tool
+        recs = recommend_for_tool("doc_create")
+        if recs:
+            out["recommended_skills"] = recs[:3]
+        return out
 
-    @mcp.tool(name="doc.rename")
+    @mcp.tool(name="doc_rename")
     def doc_rename(
         project: str,
         doc_key: str,
@@ -155,7 +171,7 @@ def register(mcp: FastMCP) -> None:
             )
         return doc_to_dict(updated)
 
-    @mcp.tool(name="doc.body")
+    @mcp.tool(name="doc_body")
     def doc_body(project: str, doc_key: str) -> str:
         """Return the full rendered body of a document (preamble + all sections)."""
         from cod_doc.infra.db import transactional
@@ -170,7 +186,7 @@ def register(mcp: FastMCP) -> None:
             body = doc_service.render_body(session, d.row_id)
         return body or ""
 
-    @mcp.tool(name="doc.export")
+    @mcp.tool(name="doc_export")
     def doc_export(
         project: str,
         doc_key: str,
@@ -200,7 +216,7 @@ def register(mcp: FastMCP) -> None:
             "content_hash": result.content_hash,
         }
 
-    @mcp.tool(name="doc.drift")
+    @mcp.tool(name="doc_drift")
     def doc_drift(project: str, doc_key: str) -> dict[str, Any]:
         """Detect drift between DB content, projection_hash, and the on-disk file.
         status: in_sync | stale_export | edited_in_place | missing.

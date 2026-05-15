@@ -85,7 +85,7 @@ def _resolve_entity_id(session: Any, kind: str, ref: str, project_id: int) -> in
 def register(mcp: FastMCP) -> None:
     """Register revision.* tools on the given FastMCP instance."""
 
-    @mcp.tool(name="revision.list")
+    @mcp.tool(name="revision_list")
     def revision_list(
         project: str,
         kind: str,
@@ -123,7 +123,7 @@ def register(mcp: FastMCP) -> None:
             for r in revisions
         ]
 
-    @mcp.tool(name="revision.get")
+    @mcp.tool(name="revision_get")
     def revision_get(project: str, revision_id: str) -> dict[str, Any] | None:
         """Get a single revision by its ULID revision_id. Returns null if not found."""
         from sqlalchemy import select
@@ -154,7 +154,7 @@ def register(mcp: FastMCP) -> None:
             "diff": r.diff,
         }
 
-    @mcp.tool(name="revision.revert")
+    @mcp.tool(name="revision_revert")
     def revision_revert(
         project: str,
         revision_id: str,

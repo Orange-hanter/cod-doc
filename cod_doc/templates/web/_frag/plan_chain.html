@@ -1,0 +1,127 @@
+{# Dependency-chain view for one plan.
+   - Header strip:  plan scope · counts · critical path length · ready count
+   - Critical path: clickable chip sequence (T-001 → T-003 → T-005)
+   - Ready batch:   priority-sorted chips of tasks unblocked right now
+   - Levels:        horizontal grid, one column per topological depth
+   - Cards:         compact, with explicit prereq (↑) and dependent (↓) chips
+#}
+<section class="chain" id="chain-{{ chain.scope }}">
+
+  <header class="chain-head">
+    <div class="chain-head-title">
+      <span class="chain-head-icon">⇄</span>
+      <h3 class="chain-scope">{{ chain.scope }}</h3>
+      <span class="chain-counts">
+        <span class="chain-count" title="Tasks in this plan">
+          <strong>{{ chain.task_count }}</strong> tasks
+        </span>
+        <span class="chain-count" title="Dependency edges (blocks-relations)">
+          <strong>{{ chain.edge_count }}</strong> edges
+        </span>
+        <span class="chain-count chain-count-cp"
+              title="Length of the critical path (longest sequential chain)">
+          CP: <strong>{{ chain.critical_path | length }}</strong>
+        </span>
+        <span class="chain-count chain-count-ready"
+              title="Tasks ready to start now (all prerequisites done)">
+          Ready: <strong>{{ chain.ready_ids | length }}</strong>
+        </span>
+      </span>
+    </div>
+  </header>
+
+  {# Critical path strip: visualises the longest sequential chain. #}
+  {% if chain.critical_path | length > 1 %}
+    <div class="chain-cp-strip" aria-label="Critical path">
+      <span class="chain-cp-label">🔥 Critical path</span>
+      <div class="chain-cp-flow">
+        {% for tid in chain.critical_path %}
+          <a class="chain-cp-node" href="#card-{{ tid }}">{{ tid }}</a>
+          {% if not loop.last %}<span class="chain-cp-arrow">→</span>{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# Ready batch strip: what can be picked up right now. #}
+  {% if chain.ready_ids %}
+    <div class="chain-ready-strip" aria-label="Ready batch">
+      <span class="chain-ready-label">🟢 Ready now</span>
+      <div class="chain-ready-flow">
+        {% for level in chain.levels %}
+          {% for t in level.tasks %}
+            {% if t.is_ready %}
+              <a class="chain-ready-chip prio-{{ t.priority }}"
+                 href="#card-{{ t.task_id }}"
+                 title="{{ t.title }}">{{ t.task_id }}</a>
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# Topological lanes: one column per dependency depth. #}
+  <div class="chain-grid"
+       style="grid-template-columns: repeat({{ (chain.max_level + 1) }}, minmax(220px, 1fr));">
+    {% for level in chain.levels %}
+      <div class="chain-lane" data-level="{{ level.level }}">
+        <div class="chain-lane-head">
+          <span class="chain-lane-num">L{{ level.level }}</span>
+          <span class="chain-lane-count">{{ level.tasks | length }}</span>
+        </div>
+        <div class="chain-lane-body">
+          {% for t in level.tasks %}
+            <a id="card-{{ t.task_id }}"
+               class="chain-card prio-{{ t.priority }} status-{{ t.status }}{% if t.is_critical %} chain-card-critical{% endif %}{% if t.is_ready %} chain-card-ready{% endif %}"
+               href="/p/{{ project.name }}/tasks/{{ t.task_id }}"
+               title="{{ t.task_id }} — {{ t.title }}">
+
+              {# Prereq references (incoming edges) #}
+              {% if t.prereq_ids %}
+                <div class="chain-card-prereqs">
+                  {% for pid in t.prereq_ids %}
+                    <a class="chain-ref chain-ref-up" href="#card-{{ pid }}"
+                       onclick="event.stopPropagation()">↑ {{ pid }}</a>
+                  {% endfor %}
+                </div>
+              {% endif %}
+
+              <div class="chain-card-body">
+                <span class="chain-card-type type-{{ t.type }}" title="{{ t.type }}">{{ t.type_glyph }}</span>
+                <span class="chain-card-title">{{ t.title }}</span>
+              </div>
+
+              <div class="chain-card-meta">
+                <span class="chain-card-id mono">{{ t.task_id }}</span>
+                <span class="chain-card-status badge badge-{{ t.status }}">{{ t.status }}</span>
+                <span class="chain-card-flags">
+                  {% if t.is_critical %}<span class="chain-flag flag-critical-path" title="On critical path">CP</span>{% endif %}
+                  {% if t.is_ready %}<span class="chain-flag flag-ready" title="Ready to start">▶</span>{% endif %}
+                  {% if t.priority == 'critical' %}<span class="chain-flag flag-critical">!!</span>{% endif %}
+                  {% if not t.has_acceptance and t.status != 'done' %}<span class="chain-flag flag-warn" title="No acceptance criteria">AC</span>{% endif %}
+                </span>
+              </div>
+
+              {# Dependent references (outgoing edges) #}
+              {% if t.dep_ids %}
+                <div class="chain-card-deps">
+                  {% for did in t.dep_ids %}
+                    <a class="chain-ref chain-ref-down" href="#card-{{ did }}"
+                       onclick="event.stopPropagation()">↓ {{ did }}</a>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  {% if chain.edge_count == 0 %}
+    <p class="chain-no-deps muted">
+      ⓘ В этом плане нет зависимостей между задачами — все задачи независимы.
+    </p>
+  {% endif %}
+</section>

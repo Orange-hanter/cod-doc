@@ -38,7 +38,7 @@ def _resolve_section_id(session: Any, project_id: int, doc_key: str, anchor: str
 def register(mcp: FastMCP) -> None:
     """Register link.* tools on the given FastMCP instance."""
 
-    @mcp.tool(name="link.list")
+    @mcp.tool(name="link_list")
     def link_list(
         project: str,
         doc_key: str,
@@ -93,20 +93,36 @@ def register(mcp: FastMCP) -> None:
             for lk in links
         ]
 
-    @mcp.tool(name="link.sync")
-    def link_sync(project: str, doc_key: str, anchor: str) -> dict[str, Any]:
+    @mcp.tool(name="link_sync")
+    def link_sync(
+        project: str,
+        doc_key: str,
+        anchor: str,
+        dry_run: bool = False,
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
         """Re-parse section body and sync link rows. Returns count of synced links."""
         from cod_doc.infra.db import transactional
+        from cod_doc.mcp.tools import _idempotency
         from cod_doc.services import link_service
 
+        cached = _idempotency.check("link_sync", idempotency_key)
+        if cached is not None:
+            return dict(cached, idempotent_replay=True)
+
         sf, _ = session_factory(project)
-        with transactional(sf) as session:
+        with transactional(sf, commit=not dry_run) as session:
             project_id = require_project_id(session, project)
             sec_id = _resolve_section_id(session, project_id, doc_key, anchor)
             links = link_service.sync_section(session, sec_id)
-        return {"doc_key": doc_key, "anchor": anchor, "synced": len(links)}
+        out: dict[str, Any] = {"doc_key": doc_key, "anchor": anchor, "synced": len(links)}
+        if dry_run:
+            out["dry_run"] = True
+        else:
+            _idempotency.store("link_sync", idempotency_key, out)
+        return out
 
-    @mcp.tool(name="link.verify")
+    @mcp.tool(name="link_verify")
     def link_verify(project: str, doc_key: str, anchor: str) -> dict[str, Any]:
         """Verify link resolution for a section. Returns ok/broken/skipped counts.
         broken > 0 indicates broken references that need attention.

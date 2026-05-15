@@ -139,6 +139,120 @@ def test_resolve_canonical_finds_doc(engine_with_schema) -> None:  # type: ignor
         assert resolved.broken_reason is None
 
 
+def test_resolve_markdown_strips_docs_prefix(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Importer strips a leading ``docs/`` from doc_keys (`_derive_doc_key`).
+
+    Links written as ``[x](docs/foo/bar.md)`` from a root-level doc must still
+    resolve to the imported key ``foo/bar``. The resolver applies the same
+    normalization as a candidate fallback.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        _add_doc(session, proj, doc_key="architecture/polyglot")
+        host = _add_doc(session, proj, doc_key="CLAUDE")
+        sec = docs.add_section(
+            session,
+            document_id=host,
+            anchor="i",
+            heading="I",
+            level=2,
+            position=0,
+            body="See [polyglot](docs/architecture/polyglot.md).",
+            author="human:test",
+        )
+        rows = links.sync_section(session, section_id=sec.row_id)
+        resolved = links.resolve(session, rows[0].row_id)
+        assert resolved.resolved is True
+        assert resolved.to_doc_key == "architecture/polyglot"
+
+
+def test_resolve_markdown_relative_to_source_dir(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Bare-filename refs like ``[x](concept.md)`` are relative to the source
+    doc's directory: from ``architecture/overview`` they target ``architecture/concept``.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        _add_doc(session, proj, doc_key="architecture/concept")
+        host = _add_doc(session, proj, doc_key="architecture/overview")
+        sec = docs.add_section(
+            session,
+            document_id=host,
+            anchor="i",
+            heading="I",
+            level=2,
+            position=0,
+            body="See [concept](concept.md).",
+            author="human:test",
+        )
+        rows = links.sync_section(session, section_id=sec.row_id)
+        resolved = links.resolve(session, rows[0].row_id)
+        assert resolved.resolved is True
+        assert resolved.to_doc_key == "architecture/concept"
+
+
+def test_resolve_intra_doc_anchor(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """``[X](#anchor)`` is an intra-doc anchor — the parser sees no doc_key,
+    so the resolver must fall back to the source doc.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        host = _add_doc(session, proj, doc_key="business/requirements")
+        docs.add_section(
+            session,
+            document_id=host,
+            anchor="target-anchor",
+            heading="Target",
+            level=2,
+            position=0,
+            body="Target section.",
+            author="human:test",
+        )
+        sec = docs.add_section(
+            session,
+            document_id=host,
+            anchor="src",
+            heading="Src",
+            level=2,
+            position=1,
+            body="Jump to [Target](#target-anchor).",
+            author="human:test",
+        )
+        rows = links.sync_section(session, section_id=sec.row_id)
+        resolved = links.resolve(session, rows[0].row_id)
+        assert resolved.resolved is True
+        assert resolved.to_doc_key == "business/requirements"
+
+
+def test_resolve_markdown_walks_up_source_dir(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Parser eats ``../`` blindly without counting levels, so a target like
+    ``[x](../polyglot.md)`` from ``architecture/v2/cloud_connectivity`` arrives
+    at the resolver as ``polyglot``. The resolver tries each ancestor dir of
+    the source doc as a candidate prefix and finds ``architecture/polyglot``.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        _add_doc(session, proj, doc_key="architecture/polyglot")
+        host = _add_doc(session, proj, doc_key="architecture/v2/cloud_connectivity")
+        sec = docs.add_section(
+            session,
+            document_id=host,
+            anchor="i",
+            heading="I",
+            level=2,
+            position=0,
+            body="See [Polyglot](../polyglot.md).",
+            author="human:test",
+        )
+        rows = links.sync_section(session, section_id=sec.row_id)
+        resolved = links.resolve(session, rows[0].row_id)
+        assert resolved.resolved is True
+        assert resolved.to_doc_key == "architecture/polyglot"
+
+
 def test_resolve_canonical_unknown_marks_unresolved(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:

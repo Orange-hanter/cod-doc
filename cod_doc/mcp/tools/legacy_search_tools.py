@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from cod_doc.config import Config
 
-from ._legacy import open_project
+from ._legacy import open_project, resolve_project_name
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -17,14 +17,19 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def search_docs(
-        project_name: str,
         query: str,
+        project: str | None = None,
+        project_name: str | None = None,
         n_results: int = 5,
     ) -> list[dict[str, Any]]:
-        """Semantic search across indexed documentation files."""
+        """Semantic search across indexed documentation files.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
         from cod_doc.core.reindex import search_documents
 
-        proj = open_project(project_name)
+        name = resolve_project_name(project, project_name, "search_docs")
+        proj = open_project(name)
         cfg = Config.load()
         chroma_path = str(proj.entry.cod_doc_dir / "chroma")
         return search_documents(
@@ -39,11 +44,18 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
-    def reindex(project_name: str) -> dict[str, Any]:
-        """Rebuild the ChromaDB vector index for a project's documentation files."""
+    def reindex(
+        project: str | None = None,
+        project_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Rebuild the ChromaDB vector index for a project's documentation files.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
         from cod_doc.core.reindex import reindex_project
 
-        proj = open_project(project_name)
+        name = resolve_project_name(project, project_name, "reindex")
+        proj = open_project(name)
         cfg = Config.load()
         chroma_path = str(proj.entry.cod_doc_dir / "chroma")
         return reindex_project(

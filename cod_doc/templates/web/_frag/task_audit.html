@@ -1,0 +1,84 @@
+{# AI task-audit panel — rendered by POST /p/{slug}/tasks/audit.
+   Issue task_ids render as `#card-<id>` anchors so clicking jumps the
+   user to that card on the board, with a CSS flash via `:target`. #}
+<section class="audit-panel" id="task-audit-result">
+  {% if audit.error %}
+    <div class="audit-error">
+      <strong>⚠ Audit failed.</strong> {{ audit.error }}
+    </div>
+  {% else %}
+    <header class="audit-head">
+      <div class="audit-score-block">
+        <div class="audit-score score-{{ audit.score }}">
+          <span class="audit-score-num">{{ audit.score }}</span>
+          <span class="audit-score-of">/10</span>
+        </div>
+        <span class="muted-tiny">{{ audit.task_count }} task{% if audit.task_count != 1 %}s{% endif %}</span>
+      </div>
+      <p class="audit-summary">{{ audit.summary }}</p>
+      <form hx-post="/p/{{ project.name }}/tasks/audit"
+            hx-target="#task-audit-result"
+            hx-swap="outerHTML"
+            hx-indicator="#re-audit-spinner">
+        <button type="submit" class="btn btn-sm btn-ghost" title="Re-run audit">
+          <span id="re-audit-spinner" class="htmx-indicator spinner" style="margin-right:4px;"></span>
+          ↻
+        </button>
+      </form>
+    </header>
+
+    {% if audit.issues %}
+      <div class="audit-issues">
+        {% for issue in audit.issues %}
+          <div class="audit-issue audit-sev-{{ issue.severity }}">
+            <span class="audit-sev-badge">{{ issue.severity[0] | upper }}</span>
+            <div class="audit-issue-body">
+              <div class="audit-issue-head">
+                <strong class="audit-issue-cat">{{ issue.category }}</strong>
+                <span class="audit-issue-msg">{{ issue.message }}</span>
+              </div>
+              {% if issue.task_ids %}
+                <div class="audit-issue-tasks">
+                  {% for tid in issue.task_ids %}
+                    <a href="#card-{{ tid }}" class="audit-issue-task mono">{{ tid }}</a>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="audit-clean">✓ Никаких проблем не обнаружено.</p>
+    {% endif %}
+
+    {% if audit.strengths or audit.recommendations %}
+      <div class="audit-cols">
+        {% if audit.recommendations %}
+          <div class="audit-col audit-col-recs">
+            <h4>📋 Recommendations</h4>
+            <ul>
+              {% for r in audit.recommendations %}<li>{{ r }}</li>{% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+        {% if audit.strengths %}
+          <div class="audit-col audit-col-strengths">
+            <h4>✅ Strengths</h4>
+            <ul>
+              {% for s in audit.strengths %}<li>{{ s }}</li>{% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {% if audit.generated_at %}
+      <footer class="audit-foot">
+        <span class="muted-tiny" title="{{ audit.generated_at[:19] | replace('T', ' ') }} UTC">
+          Audited {{ audit.generated_at | relative_time }}
+        </span>
+      </footer>
+    {% endif %}
+  {% endif %}
+</section>

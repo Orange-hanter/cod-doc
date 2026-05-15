@@ -6,27 +6,48 @@ from pathlib import Path
 from typing import Any
 
 
-def session_factory(project: str):  # type: ignore[no-untyped-def]
-    """Return (sessionmaker, ProjectEntry) for the given project slug."""
+def _resolve(project: str | None) -> str:
+    """Cycle-4: resolve ``project`` (or fall back to workspace default).
+
+    Raises ValueError with a hint when neither argument nor default is set —
+    so a fresh agent sees actionable guidance, not a None-key lookup.
+    """
+    from cod_doc.mcp.tools._workspace import resolve as _ws_resolve
+
+    return _ws_resolve(project)
+
+
+def session_factory(project: str | None):  # type: ignore[no-untyped-def]
+    """Return (sessionmaker, ProjectEntry) for the given project slug.
+
+    Cycle-4: ``project=None`` triggers fallback to
+    :func:`cod_doc.mcp.tools._workspace.get` (set via ``set_default_project``).
+    Falsy value with no default raises ValueError with a hint.
+    """
     from cod_doc.config import Config
     from cod_doc.infra.db import make_engine, make_session_factory, resolve_db_url
 
+    name = _resolve(project)
     cfg = Config.load()
-    entry = cfg.get_project(project)
+    entry = cfg.get_project(name)
     if not entry:
-        raise ValueError(f"Project not found: {project!r}")
+        raise ValueError(f"Project not found: {name!r}")
     url = resolve_db_url(Path(entry.path))
     engine = make_engine(url)
     return make_session_factory(engine), entry
 
 
-def require_project_id(session: Any, project: str) -> int:
-    """Look up DB project row_id by slug; raise ValueError if missing."""
+def require_project_id(session: Any, project: str | None) -> int:
+    """Look up DB project row_id by slug; raise ValueError if missing.
+
+    Cycle-4: ``project=None`` falls back to workspace default.
+    """
     from cod_doc.infra.repositories import ProjectRepository
 
-    proj = ProjectRepository(session).get_by_slug(project)
+    name = _resolve(project)
+    proj = ProjectRepository(session).get_by_slug(name)
     if proj is None or proj.row_id is None:
-        raise ValueError(f"Project '{project}' not in DB — run 'cod-doc project add' first.")
+        raise ValueError(f"Project '{name}' not in DB — run 'cod-doc project add' first.")
     return proj.row_id
 
 

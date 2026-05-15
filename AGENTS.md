@@ -4,6 +4,14 @@
 > первого commit'а. Дополняет `MASTER.md` (что есть в проекте) ответом на «как
 > с этим работать».
 
+> ⚠️ **Cycle-5 in progress** (2026-05-15). MCP API переписывается task-centric:
+> agent profile экспонирует ~6 task-centric тулов (`agent_pick`, `agent_report`,
+> `agent_complete`, `agent_release`, `agent_get`, `agent_capabilities`).
+> 104-tool CRUD surface (`task_*`, `doc_*`, `plan_*`, …) остаётся для
+> `--profile full|standard` (admin / CLI / web). Tracked в plan
+> `paperclip-adoption-task-plan` section H. Новые agent-features → секция H,
+> не plan_create-style расширения internal surface.
+
 ## 1. Цель проекта
 
 COD-DOC — система управления документацией с MCP-интеграцией: docs, tasks,
@@ -74,7 +82,20 @@ pytest tests/ -v --tb=short     # run the suite
 8. **MCP echo-without-persist gap.** При добавлении новых полей в
    `task_create` / `doc_create` — проверь, что они **персистятся** в
    связанных таблицах (dependency / story_link / affected_file), а не
-   только эхо-возвращаются. См. memory `mcp_field_persistence_gap.md`.
+   только эхо-возвращаются. См. `tests/services/test_task_create.py`
+   (полное покрытие после PCA-936).
+9. **MCP server profiles** (PCA-951, cycle-4 default-switch). Запуск:
+   ```
+   cod-doc-mcp                                # standard (default)
+   cod-doc-mcp --profile minimal              # 15-tool cold-start
+   cod-doc-mcp --profile full                 # все ~102, включая legacy
+   COD_DOC_PROFILE=full cod-doc-mcp           # через env
+   ```
+   - ``minimal`` — 15-tool cold-start surface для свежих интеграций.
+   - ``standard`` — **default**: ~80 DB-backed тулов без legacy YAML.
+   - ``full`` — все ~102 тула, включая legacy. Только для админ-сценариев
+     и обратной совместимости с до-cycle-3 интеграциями.
+   См. `cod_doc/mcp/profiles.py`.
 
 ## 6. DB schema change workflow
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ._legacy import load_config, open_project
+from ._legacy import load_config, open_project, resolve_project_name
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -87,7 +87,8 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     async def run_agent_once(
-        project_name: str,
+        project: str | None = None,
+        project_name: str | None = None,
         autonomous: bool = True,
         task_id: str | None = None,
         wake_reason: str | None = None,
@@ -95,6 +96,8 @@ def register(mcp: FastMCP) -> None:
         since_revision_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Run the COD-DOC agent once.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
 
         Modes:
         - autonomous=True (default) — agent reads MASTER, picks tasks, runs.
@@ -119,7 +122,8 @@ def register(mcp: FastMCP) -> None:
         if not cfg.is_configured:
             raise ValueError("API-ключ не настроен. Запустите cod-doc wizard")
 
-        proj = open_project(project_name)
+        name = resolve_project_name(project, project_name, "run_agent_once")
+        proj = open_project(name)
         orch = Orchestrator(proj, cfg)
         events: list[dict[str, Any]] = []
 
@@ -144,17 +148,31 @@ def register(mcp: FastMCP) -> None:
         return events
 
     @mcp.tool()
-    def get_agent_context(project_name: str) -> list[dict[str, str]]:
-        """Return the agent's conversation history (last 50 messages) for a project."""
-        proj = open_project(project_name)
+    def get_agent_context(
+        project: str | None = None,
+        project_name: str | None = None,
+    ) -> list[dict[str, str]]:
+        """Return the agent's conversation history (last 50 messages) for a project.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
+        name = resolve_project_name(project, project_name, "get_agent_context")
+        proj = open_project(name)
         return proj.get_context_messages()
 
     @mcp.tool()
-    def clear_agent_context(project_name: str) -> dict[str, str]:
-        """Clear the agent's conversation history for a project."""
-        proj = open_project(project_name)
+    def clear_agent_context(
+        project: str | None = None,
+        project_name: str | None = None,
+    ) -> dict[str, str]:
+        """Clear the agent's conversation history for a project.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
+        name = resolve_project_name(project, project_name, "clear_agent_context")
+        proj = open_project(name)
         proj.clear_context()
-        return {"cleared": project_name}
+        return {"cleared": name}
 
     @mcp.tool()
     def check_config() -> dict[str, Any]:

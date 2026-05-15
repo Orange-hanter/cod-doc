@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}AI rework preview · {{ doc.doc_key }}{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/docs">Docs</a> /
+  <a href="/p/{{ project.name }}/docs/{{ doc.doc_key }}">{{ doc.doc_key }}</a> /
+  <span>AI rework</span>
+</nav>
+
+<h1>✨ Apply comments with AI — preview</h1>
+
+{% if error %}
+  <div class="ds-banner ds-banner-danger">
+    <span class="ds-banner-icon">⚠</span>
+    <div class="ds-banner-body"><strong>AI error:</strong> {{ error }}</div>
+  </div>
+  <p><a href="/p/{{ project.name }}/docs/{{ doc.doc_key }}#comments" class="btn btn-secondary">← Back to document</a></p>
+{% else %}
+  <p class="muted-tiny">
+    Каждый блок ниже — предложенная переработка секции на основе открытых комментариев.
+    Отметьте галочками те, что хотите применить, и нажмите «Применить выбранные».
+    Комментарии помеченных секций будут отмечены как «applied».
+  </p>
+
+  <form method="post"
+        action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/apply/commit">
+
+    {% if reworks %}
+      {% for r in reworks %}
+        <section class="ds-panel">
+          <header class="ds-panel-header">
+            <label style="display:flex; gap: var(--space-2); align-items:center;">
+              <input type="checkbox" name="apply_anchor" value="{{ r.anchor }}" checked>
+              <strong>§ {{ r.heading }}</strong>
+              <code class="mono muted-tiny">#{{ r.anchor }}</code>
+            </label>
+            <span class="muted-tiny" style="margin-left:auto;">
+              комментариев: {{ r.comment_ids | length }}
+            </span>
+          </header>
+
+          <details>
+            <summary class="muted-tiny">Показать текущее тело</summary>
+            <pre class="md-preview" style="background: var(--bg-alt);">{{ r.old_body }}</pre>
+          </details>
+
+          <div class="muted-tiny" style="margin-top:var(--space-2);">Предложенное новое тело:</div>
+          <div class="ds-preamble">{{ r.new_html | safe }}</div>
+
+          <details>
+            <summary class="muted-tiny">Редактировать перед применением</summary>
+            <textarea name="new_body__{{ r.anchor }}" rows="14"
+                      style="width:100%; font-family:var(--font-mono); font-size:12px;">{{ r.new_body }}</textarea>
+          </details>
+
+          {# Hidden mirror used when the user doesn't open the editor —
+             the textarea inside <details> still posts because details
+             elements do not unmount their children. So we don't actually
+             need a hidden copy; the textarea above always submits. #}
+          <input type="hidden" name="comment_ids__{{ r.anchor }}"
+                 value="{{ r.comment_ids | join(',') }}">
+        </section>
+      {% endfor %}
+    {% else %}
+      <p class="muted">Нет секций, которые модель смогла переработать.</p>
+    {% endif %}
+
+    {% if doc_level_summary %}
+      <section class="ds-panel">
+        <header class="ds-panel-header">
+          <h2>Общие замечания к документу</h2>
+        </header>
+        <p class="muted-tiny">
+          Эти комментарии не привязаны к конкретной секции — модель не правит документ автоматически.
+          Используйте их как чек-лист и пометьте «applied», когда учтёте.
+        </p>
+        <pre class="md-preview">{{ doc_level_summary }}</pre>
+        <label>
+          <input type="checkbox" name="doc_level_comment_ids_chk" value="all" checked
+                 onchange="document.getElementById('doc-level-ids').value = this.checked ? '{{ doc_level_comment_ids | join(',') }}' : ''">
+          Пометить общие замечания как «applied»
+        </label>
+        <input type="hidden" name="doc_level_comment_ids" id="doc-level-ids"
+               value="{{ doc_level_comment_ids | join(',') }}">
+      </section>
+    {% endif %}
+
+    {% if skipped %}
+      <section class="ds-panel">
+        <header class="ds-panel-header">
+          <h2 style="color: var(--danger);">Пропущенные</h2>
+        </header>
+        <ul>
+          {% for s in skipped %}
+            <li class="muted-tiny">
+              {% if s.heading %}§ {{ s.heading }} — {% endif %}{{ s.reason }}
+              <code class="mono">[comments: {{ s.comment_ids | join(',') }}]</code>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+
+    <div style="display:flex; gap:var(--space-2); margin-top: var(--space-3);">
+      <button type="submit" class="btn btn-primary">✓ Применить выбранные</button>
+      <a class="btn btn-secondary"
+         href="/p/{{ project.name }}/docs/{{ doc.doc_key }}#comments">Отмена</a>
+    </div>
+  </form>
+{% endif %}
+{% endblock %}

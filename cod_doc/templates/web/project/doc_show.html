@@ -220,6 +220,120 @@
   </div>
 </section>
 
+{# ── Comments ──────────────────────────────────────────────────────────── #}
+<section class="ds-panel" id="comments">
+  <header class="ds-panel-header">
+    <h2>💬 Comments
+      <span class="count-chip">{{ open_comment_count }} open · {{ comment_total }} total</span>
+    </h2>
+    {% if open_comment_count and open_comment_count > 0 %}
+      <form method="post"
+            action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/apply"
+            id="comments-apply-form"
+            style="margin-left:auto;">
+        <button type="submit" class="btn btn-primary btn-sm" id="comments-apply-btn"
+                title="Use AI to rework the document using all open comments">
+          <span class="btn-label">✨ Apply with AI</span>
+          <span class="btn-loading" hidden>
+            <span class="spinner-inline"></span>
+            AI обрабатывает {{ open_comment_count }} комментарий(ев)…
+          </span>
+        </button>
+      </form>
+    {% endif %}
+  </header>
+  <p class="muted-tiny" style="margin: var(--space-1) 0 var(--space-3);">
+    Выделите фрагмент секции и нажмите «💬 Добавить» — комментарий появится облачком справа.
+    Внизу — общая зона для замечаний ко всему документу.
+  </p>
+
+  {# Doc-level comments — the "review zone" #}
+  {% if doc_level_comments %}
+    <div class="ds-comment-doclevel-list">
+      <h3 class="ds-links-col-title">Общие замечания</h3>
+      {% for c in doc_level_comments %}
+        <div class="comment-bubble comment-{{ c.status }} comment-doclevel" id="comment-{{ c.row_id }}">
+          <div class="comment-bubble-head">
+            <span class="comment-author">{{ c.author }}</span>
+            <span class="comment-status status-{{ c.status }}">{{ c.status }}</span>
+            <span class="muted-tiny" style="margin-left:auto;">{{ c.created.strftime('%Y-%m-%d %H:%M') if c.created else '' }}</span>
+          </div>
+          <div class="comment-body">{{ c.body }}</div>
+          <div class="comment-actions">
+            {% if c.status == "open" %}
+              <form method="post"
+                    action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/{{ c.row_id }}/resolve"
+                    class="inline-form">
+                <button type="submit" class="btn btn-ghost btn-xs">✓ Resolve</button>
+              </form>
+            {% else %}
+              <form method="post"
+                    action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/{{ c.row_id }}/reopen"
+                    class="inline-form">
+                <button type="submit" class="btn btn-ghost btn-xs">↺ Reopen</button>
+              </form>
+            {% endif %}
+            <form method="post"
+                  action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/{{ c.row_id }}/delete"
+                  class="inline-form"
+                  onsubmit="return confirm('Удалить комментарий?');">
+              <button type="submit" class="btn btn-ghost btn-xs">✕</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {# New doc-level comment form #}
+  <form method="post"
+        action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments"
+        class="ds-comment-doclevel-form">
+    <h3 class="ds-links-col-title">Добавить общий комментарий к документу</h3>
+    <textarea name="body"
+              rows="3"
+              placeholder="Например: «упростить раздел про rate limiting, добавить пример с redis»"
+              required></textarea>
+    <button type="submit" class="btn btn-primary btn-sm">💬 Сохранить</button>
+  </form>
+</section>
+
+{# Full-page veil shown during the AI-apply round-trip — the rework request
+   can take tens of seconds and otherwise looks like a frozen page. #}
+<div id="ai-apply-veil" class="ai-apply-veil" hidden>
+  <div class="veil-spinner"></div>
+  <div><strong>AI перерабатывает документ…</strong></div>
+  <div class="veil-hint">Группируем открытые комментарии по секциям и просим модель переписать каждую. Это может занять до минуты.</div>
+</div>
+
+{# Floating selection toolbar — appears when the user highlights text inside a section. #}
+<div id="comment-selection-toolbar" hidden>
+  <button type="button" class="btn btn-primary btn-xs" id="comment-add-btn">💬 Комментарий</button>
+</div>
+
+{# Modal for entering the comment body once the user clicks "💬 Комментарий" #}
+<div id="comment-modal" class="comment-modal" hidden>
+  <div class="comment-modal-card">
+    <h3 style="margin:0 0 var(--space-2);">Новый комментарий</h3>
+    <form method="post"
+          id="comment-modal-form"
+          action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments">
+      <input type="hidden" name="anchor" id="comment-modal-anchor">
+      <div id="comment-modal-quote-wrap" hidden>
+        <div class="muted-tiny">Цитата:</div>
+        <blockquote id="comment-modal-quote-preview"></blockquote>
+        <input type="hidden" name="quote" id="comment-modal-quote">
+      </div>
+      <textarea name="body" id="comment-modal-body" rows="4"
+                placeholder="Замечание или предложение…" required></textarea>
+      <div style="display:flex; gap:var(--space-2); margin-top:var(--space-2);">
+        <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="comment-modal-cancel">Отмена</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {# ── Suggested links ────────────────────────────────────────────────────── #}
 <section class="ds-panel" id="doc-suggestions">
   <header class="ds-panel-header">
@@ -440,6 +554,17 @@
 .ds-body .section-body p:last-child { margin-bottom: 0; }
 .section-edit-btn { opacity: .5; }
 .section-edit-btn:hover { opacity: 1; }
+.section-comment-btn {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: .5;
+  font-size: 12px;
+  margin-left: 4px;
+  padding: 0 4px;
+}
+.section-comment-btn:hover { opacity: 1; color: var(--accent); }
 
 /* Panel (links + suggestions) */
 .ds-panel {
@@ -493,6 +618,223 @@
 .ds-sugg-item:last-child { border-bottom: 0; }
 .ds-sugg-score { background: var(--bg-alt); border-radius: var(--radius-pill); padding: 1px 8px; font-size: 10px; font-family: var(--font-mono); color: var(--muted); }
 .ds-sugg-actions { margin-left: auto; display: flex; gap: var(--space-1); }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Comments — section side-bubbles + doc-level zone + selection toolbar.
+   ───────────────────────────────────────────────────────────────────── */
+
+.section-comment-badge {
+  display: inline-block;
+  margin-left: var(--space-2);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--warning-soft-fg);
+  background: var(--warning-soft-bg);
+  border: 1px solid var(--warning-border);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  text-decoration: none;
+  vertical-align: middle;
+}
+.section-comment-badge:hover { background: var(--warning-border); text-decoration:none; }
+
+/* Bubbles flow inline at the bottom of the section. The original
+   absolute-positioned "right margin" layout pushed bubbles past the
+   viewport edge on narrow doc widths and forced horizontal scroll —
+   the inline variant always stays inside the section box. */
+.section-comments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--warning-border);
+}
+
+.comment-bubble {
+  background: var(--warning-soft-bg);
+  border: 1px solid var(--warning-border);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.comment-bubble.comment-resolved {
+  background: var(--bg-alt);
+  border-color: var(--border);
+  opacity: .65;
+}
+.comment-bubble.comment-applied {
+  background: var(--success-soft-bg);
+  border-color: var(--success-border);
+}
+.comment-bubble.comment-doclevel {
+  background: var(--bg);
+  border-left-color: var(--accent);
+}
+
+.comment-bubble-head {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-1);
+}
+.comment-author {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted-strong);
+}
+.comment-status {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--muted);
+}
+.status-open      { color: var(--warning-soft-fg); }
+.status-resolved  { color: var(--muted); }
+.status-applied   { color: var(--success-soft-fg); }
+
+.comment-quote {
+  margin: 0 0 var(--space-1);
+  padding: 2px var(--space-2);
+  border-left: 2px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+.comment-body { white-space: pre-wrap; }
+.comment-actions {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: flex-end;
+  margin-top: var(--space-1);
+}
+.inline-form { display: inline; }
+
+/* Doc-level comments list — full-width cards stacked vertically. */
+.ds-comment-doclevel-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.ds-comment-doclevel-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-alt);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+.ds-comment-doclevel-form textarea {
+  font: inherit;
+  font-size: 13px;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+}
+
+/* Selection toolbar (floats next to the cursor on text selection). */
+#comment-selection-toolbar {
+  position: absolute;
+  z-index: 30;
+  box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  border-radius: var(--radius-sm);
+}
+
+/* Modal for entering the comment body.
+   NB: the explicit `[hidden]` override is required — `display: flex`
+   on the class beats the user-agent `[hidden] { display: none }` rule
+   because class and attribute selectors have equal specificity and
+   ours is declared later. Same trick on the selection toolbar. */
+.comment-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.comment-modal[hidden],
+#comment-selection-toolbar[hidden] { display: none; }
+.comment-modal-card {
+  background: var(--bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  width: min(480px, 92vw);
+  box-shadow: 0 8px 32px rgba(0,0,0,.2);
+}
+.comment-modal-card textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+  margin-top: var(--space-2);
+}
+.comment-modal-card blockquote {
+  margin: 4px 0 var(--space-2);
+  padding: 4px var(--space-2);
+  border-left: 2px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Inline spinner used inside buttons and the AI-apply overlay. */
+.spinner-inline {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Full-page veil shown while the AI-apply request is in flight. The
+   request can take 10-30s depending on how many sections the model
+   has to rewrite — without this the page just looks frozen. */
+.ai-apply-veil {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 14px;
+  gap: var(--space-3);
+}
+.ai-apply-veil[hidden] { display: none; }
+.ai-apply-veil .veil-spinner {
+  width: 38px; height: 38px;
+  border: 3px solid #fff;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+.ai-apply-veil .veil-hint { opacity: .8; font-size: 12px; max-width: 380px; text-align:center; }
 
 /* AI expand button states */
 .btn .btn-label { display: inline; }
@@ -570,6 +912,114 @@
     b.addEventListener('click', () => actOnSuggestion(b.dataset.rowId, 'accept')));
   document.querySelectorAll('.sugg-reject').forEach(b =>
     b.addEventListener('click', () => actOnSuggestion(b.dataset.rowId, 'reject')));
+
+  // ── Comments: selection toolbar + modal ────────────────────────────────
+  const toolbar = document.getElementById('comment-selection-toolbar');
+  const addBtn = document.getElementById('comment-add-btn');
+  const modal = document.getElementById('comment-modal');
+  const modalAnchor = document.getElementById('comment-modal-anchor');
+  const modalQuote = document.getElementById('comment-modal-quote');
+  const modalQuoteWrap = document.getElementById('comment-modal-quote-wrap');
+  const modalQuotePreview = document.getElementById('comment-modal-quote-preview');
+  const modalBody = document.getElementById('comment-modal-body');
+  const modalCancel = document.getElementById('comment-modal-cancel');
+
+  let pending = { anchor: null, quote: '' };
+
+  function hideToolbar() { toolbar.hidden = true; }
+  function showToolbarAt(rect) {
+    toolbar.style.top = (window.scrollY + rect.bottom + 6) + 'px';
+    toolbar.style.left = (window.scrollX + rect.left) + 'px';
+    toolbar.hidden = false;
+  }
+
+  document.addEventListener('mouseup', (ev) => {
+    // Ignore clicks that originate inside the toolbar itself.
+    if (ev.target.closest('#comment-selection-toolbar')) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) { hideToolbar(); return; }
+    const text = sel.toString().trim();
+    if (!text) { hideToolbar(); return; }
+    // Walk up from the anchor node to find a doc-section parent.
+    let node = sel.anchorNode;
+    if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const section = node ? node.closest('.doc-section') : null;
+    if (!section) { hideToolbar(); return; }
+    pending.anchor = section.dataset.anchor || '';
+    pending.quote = text.length > 280 ? text.slice(0, 280) + '…' : text;
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    showToolbarAt(rect);
+  });
+
+  document.addEventListener('mousedown', (ev) => {
+    if (ev.target.closest('#comment-selection-toolbar')) return;
+    hideToolbar();
+  });
+
+  addBtn.addEventListener('click', () => {
+    modalAnchor.value = pending.anchor || '';
+    if (pending.quote) {
+      modalQuote.value = pending.quote;
+      modalQuotePreview.textContent = pending.quote;
+      modalQuoteWrap.hidden = false;
+    } else {
+      modalQuote.value = '';
+      modalQuoteWrap.hidden = true;
+    }
+    modalBody.value = '';
+    modal.hidden = false;
+    setTimeout(() => modalBody.focus(), 30);
+    hideToolbar();
+  });
+
+  modalCancel.addEventListener('click', () => {
+    modal.hidden = true;
+  });
+  modal.addEventListener('click', (ev) => {
+    if (ev.target === modal) modal.hidden = true;
+  });
+
+  // Visible per-section "💬+" button — opens the modal pre-bound to the
+  // section. This is the always-discoverable path; the selection toolbar
+  // above is an enhancement for users who want to anchor a quote.
+  function openModalForSection(anchor, quote) {
+    modalAnchor.value = anchor || '';
+    if (quote) {
+      modalQuote.value = quote;
+      modalQuotePreview.textContent = quote;
+      modalQuoteWrap.hidden = false;
+    } else {
+      modalQuote.value = '';
+      modalQuoteWrap.hidden = true;
+    }
+    modalBody.value = '';
+    modal.hidden = false;
+    setTimeout(() => modalBody.focus(), 30);
+  }
+
+  // Delegated click — survives htmx swaps that replace `<section>` nodes.
+  document.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.section-comment-btn');
+    if (!btn) return;
+    ev.preventDefault();
+    openModalForSection(btn.dataset.anchor || '', '');
+  });
+
+  // AI apply — show full-page veil + switch button to loading state while
+  // the (synchronous, multi-second) round-trip is in flight. The form
+  // still submits normally; we just give the user feedback that it's
+  // working and prevent double-submits.
+  const applyForm = document.getElementById('comments-apply-form');
+  const applyBtn = document.getElementById('comments-apply-btn');
+  const applyVeil = document.getElementById('ai-apply-veil');
+  if (applyForm && applyBtn && applyVeil) {
+    applyForm.addEventListener('submit', () => {
+      applyBtn.disabled = true;
+      applyBtn.classList.add('is-loading');
+      applyVeil.hidden = false;
+    });
+  }
 })();
 </script>
 {% endblock %}

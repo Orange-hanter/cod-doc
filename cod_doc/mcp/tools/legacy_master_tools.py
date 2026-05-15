@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from cod_doc.core.context import get_context
 from cod_doc.core.hash_calc import calc_hash, check_hash, make_ref, update_hashes
 
-from ._legacy import open_project
+from ._legacy import open_project, resolve_project_name
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -17,27 +17,49 @@ def register(mcp: FastMCP) -> None:
     """Register MASTER.md, hash, and context-delivery tools."""
 
     @mcp.tool()
-    def get_master(project_name: str) -> str:
-        """Return raw MASTER.md content for a project."""
-        proj = open_project(project_name)
+    def get_master(
+        project: str | None = None,
+        project_name: str | None = None,
+    ) -> str:
+        """Return raw MASTER.md content for a project.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias);
+        passing the legacy form emits a DeprecationWarning. See PCA-934.
+        """
+        name = resolve_project_name(project, project_name, "get_master")
+        proj = open_project(name)
         content = proj.read_master()
         if content is None:
-            raise ValueError(f"MASTER.md не найден для проекта: {project_name}")
+            raise ValueError(f"MASTER.md не найден для проекта: {name}")
         return content
 
     @mcp.tool()
-    def update_master_hashes(project_name: str) -> dict[str, Any]:
-        """Recalculate all SHA-256 hashes in MASTER.md hybrid references."""
-        proj = open_project(project_name)
+    def update_master_hashes(
+        project: str | None = None,
+        project_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Recalculate all SHA-256 hashes in MASTER.md hybrid references.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
+        name = resolve_project_name(project, project_name, "update_master_hashes")
+        proj = open_project(name)
         updated, warnings = update_hashes(proj.entry.master_path)
         return {"updated": updated, "warnings": warnings}
 
     @mcp.tool()
-    def check_stale_refs(project_name: str) -> dict[str, Any]:
-        """Scan MASTER.md for hybrid references; flag stale/missing files."""
+    def check_stale_refs(
+        project: str | None = None,
+        project_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Scan MASTER.md for hybrid references; flag stale/missing files.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
         from cod_doc.core.hash_calc import LINK_PATTERN
 
-        proj = open_project(project_name)
+        name = resolve_project_name(project, project_name, "check_stale_refs")
+        proj = open_project(name)
         content = proj.read_master() or ""
         repo_root = proj.entry.root
 
@@ -69,9 +91,17 @@ def register(mcp: FastMCP) -> None:
         }
 
     @mcp.tool()
-    def generate_ref(project_name: str, file_path: str) -> str:
-        """Generate a hybrid reference for a file relative to the project root."""
-        proj = open_project(project_name)
+    def generate_ref(
+        file_path: str,
+        project: str | None = None,
+        project_name: str | None = None,
+    ) -> str:
+        """Generate a hybrid reference for a file relative to the project root.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
+        name = resolve_project_name(project, project_name, "generate_ref")
+        proj = open_project(name)
         target = proj.entry.root / file_path
         if not target.exists():
             raise ValueError(f"Файл не найден: {file_path}")
@@ -79,23 +109,33 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def read_context(
-        project_name: str,
         ref: str,
         depth: str = "L1",
         page: int = 1,
+        project: str | None = None,
+        project_name: str | None = None,
     ) -> dict[str, Any]:
-        """Read file content by hybrid reference with hash validation."""
-        proj = open_project(project_name)
+        """Read file content by hybrid reference with hash validation.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
+        name = resolve_project_name(project, project_name, "read_context")
+        proj = open_project(name)
         return get_context(ref, proj.entry.root, depth=depth, page=page)
 
     @mcp.tool()
     def read_file(
-        project_name: str,
         file_path: str,
         page: int = 1,
+        project: str | None = None,
+        project_name: str | None = None,
     ) -> dict[str, Any]:
-        """Read file content by relative path (no hash validation)."""
-        proj = open_project(project_name)
+        """Read file content by relative path (no hash validation).
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
+        name = resolve_project_name(project, project_name, "read_file")
+        proj = open_project(name)
         target = proj.entry.root / file_path
         if not target.exists():
             raise ValueError(f"Файл не найден: {file_path}")
@@ -117,12 +157,17 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     def list_files(
-        project_name: str,
         directory: str = ".",
         pattern: str = "*",
+        project: str | None = None,
+        project_name: str | None = None,
     ) -> list[str]:
-        """List files in a project directory matching a glob pattern."""
-        proj = open_project(project_name)
+        """List files in a project directory matching a glob pattern.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
+        name = resolve_project_name(project, project_name, "list_files")
+        proj = open_project(name)
         target = proj.entry.root / directory
         if not target.exists():
             raise ValueError(f"Директория не найдена: {directory}")
@@ -133,18 +178,35 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
-    def hash_file(project_name: str, file_path: str) -> dict[str, str]:
-        """Compute SHA-256 hash (first 12 hex chars) for a project file."""
-        proj = open_project(project_name)
+    def hash_file(
+        file_path: str,
+        project: str | None = None,
+        project_name: str | None = None,
+    ) -> dict[str, str]:
+        """Compute SHA-256 hash (first 12 hex chars) for a project file.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
+        name = resolve_project_name(project, project_name, "hash_file")
+        proj = open_project(name)
         target = proj.entry.root / file_path
         if not target.exists():
             raise ValueError(f"Файл не найден: {file_path}")
         return {"path": file_path, "hash": calc_hash(target)}
 
     @mcp.tool()
-    def verify_hash(project_name: str, file_path: str, expected_hash: str) -> dict[str, Any]:
-        """Check if a file's current hash matches the expected value."""
-        proj = open_project(project_name)
+    def verify_hash(
+        file_path: str,
+        expected_hash: str,
+        project: str | None = None,
+        project_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Check if a file's current hash matches the expected value.
+
+        Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
+        """
+        name = resolve_project_name(project, project_name, "verify_hash")
+        proj = open_project(name)
         target = proj.entry.root / file_path
         if not target.exists():
             raise ValueError(f"Файл не найден: {file_path}")

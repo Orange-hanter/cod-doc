@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Standards — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <span>Standards</span>
+</nav>
+
+<div class="standards-page">
+  <header class="standards-header">
+    <div class="standards-header-icon">📐</div>
+    <div>
+      <h1 class="standards-title">Default standards</h1>
+      <p class="standards-subtitle muted">
+        Конвенции и стандарты, встроенные в COD-DOC и автоматически
+        подгружаемые агенту по триггер-keywords. Применяются ко
+        <strong>всем проектам</strong>. Источник — пакет, редактируется
+        в <code>cod_doc/skills/&lt;name&gt;/SKILL.md</code>.
+      </p>
+    </div>
+  </header>
+
+  <p class="standards-count muted-tiny">
+    {{ skills | length }} standard{% if skills | length != 1 %}s{% endif %} installed.
+  </p>
+
+  <div class="standards-list">
+    {% for s in skills %}
+      <details class="standard-item{% if s.is_base %} standard-item-base{% endif %}"
+               id="skill-{{ s.name }}">
+        <summary class="standard-head">
+          <span class="standard-chevron">▸</span>
+          <span class="standard-name">{{ s.name }}</span>
+          {% if s.is_base %}
+            <span class="standard-badge standard-badge-base" title="Always loaded">base</span>
+          {% else %}
+            <span class="standard-badge standard-badge-triggered" title="Loaded by keyword match">triggered</span>
+          {% endif %}
+          <span class="standard-summary muted-tiny">{{ s.short_description | truncate(140) }}</span>
+          <a class="standard-deeplink mono" href="/standards/{{ s.name }}"
+             title="Open in dedicated page"
+             onclick="event.stopPropagation()">↗</a>
+        </summary>
+
+        <div class="standard-body">
+          {% if s.rest_description %}
+            <pre class="standard-triggers">{{ s.rest_description }}</pre>
+          {% endif %}
+          <div class="markdown-body">
+            {{ s.body_html | safe }}
+          </div>
+        </div>
+      </details>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -213,7 +213,7 @@ def _run_to_dict(run: AgentRunModel) -> dict[str, Any]:
 def register(mcp: FastMCP) -> None:
     """Register run.* tools on the given FastMCP instance."""
 
-    @mcp.tool(name="run.list")
+    @mcp.tool(name="run_list")
     def run_list(
         project: str,
         status: str | None = None,
@@ -233,7 +233,7 @@ def register(mcp: FastMCP) -> None:
                 session, project_id, status=status, limit=limit, offset=offset
             )
 
-    @mcp.tool(name="run.get")
+    @mcp.tool(name="run_get")
     def run_get(project: str, run_id: str) -> dict[str, Any] | None:
         """Get one run with its linked mutations (revisions + audit_log).
 
@@ -246,7 +246,7 @@ def register(mcp: FastMCP) -> None:
             require_project_id(session, project)
             return get_run_with_mutations(session, run_id)
 
-    @mcp.tool(name="run.revert")
+    @mcp.tool(name="run_revert")
     def run_revert(
         project: str,
         run_id: str,

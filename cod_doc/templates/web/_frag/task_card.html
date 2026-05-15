@@ -1,0 +1,26 @@
+{# Compact task card for the kanban board.  The whole card is one anchor —
+   no inline status editing, just click to drill into the task detail. #}
+<a id="card-{{ t.task_id }}"
+   class="kanban-card prio-{{ t.priority }} status-{{ t.status }}"
+   href="/p/{{ project.name }}/tasks/{{ t.task_id }}"
+   title="{{ t.task_id }} — {{ t.title }}">
+
+  <div class="kanban-card-title">{{ t.title }}</div>
+
+  <div class="kanban-card-meta">
+    <span class="kanban-card-type type-{{ t.type }}" title="{{ t.type }}">{{ t.type_glyph }}</span>
+    <span class="kanban-card-id mono">{{ t.task_id }}</span>
+    {% if t.section_letter %}
+      <span class="kanban-card-sect" title="{{ t.section_title or 'Section' }}">§{{ t.section_letter }}</span>
+    {% endif %}
+    {% if t.plan_scope %}
+      <span class="kanban-card-plan muted-tiny">{{ t.plan_scope }}</span>
+    {% endif %}
+    <span class="kanban-card-flags">
+      {% if t.priority == 'critical' %}<span class="kanban-flag flag-critical" title="Critical">!!</span>{% endif %}
+      {% if t.priority == 'high' and t.priority != 'critical' %}<span class="kanban-flag flag-high" title="High priority">!</span>{% endif %}
+      {% if not t.has_acceptance and t.status != 'done' %}<span class="kanban-flag flag-warn" title="No acceptance criteria">AC</span>{% endif %}
+      {% if t.blocked_reason %}<span class="kanban-flag flag-blocked" title="{{ t.blocked_reason }}">⊘</span>{% endif %}
+    </span>
+  </div>
+</a>

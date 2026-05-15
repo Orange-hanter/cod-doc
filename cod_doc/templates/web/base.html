@@ -78,6 +78,7 @@
     <a class="brand" href="/">COD-DOC</a>
     <nav>
       <a href="/"{% if request and request.url.path == '/' %} class="active"{% endif %}>Projects</a>
+      <a href="/standards"{% if request and request.url.path.startswith('/standards') %} class="active"{% endif %}>Standards</a>
       <a href="/settings"{% if request and request.url.path == '/settings' %} class="active"{% endif %}>Settings</a>
     </nav>
     <span class="topbar-spacer"></span>

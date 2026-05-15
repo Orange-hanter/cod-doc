@@ -22,7 +22,7 @@ def _require_plan_id(session: Any, plan_scope: str) -> int:
 def register(mcp: FastMCP) -> None:
     """Register plan.* tools on the given FastMCP instance."""
 
-    @mcp.tool(name="plan.create")
+    @mcp.tool(name="plan_create")
     def plan_create(
         project: str,
         scope: str,
@@ -98,7 +98,60 @@ def register(mcp: FastMCP) -> None:
             "sections": seeded,
         }
 
-    @mcp.tool(name="plan.section_create")
+    @mcp.tool(name="plan_sections_list")
+    def plan_sections_list(project: str, plan_scope: str) -> list[dict[str, Any]]:
+        """List all sections of a plan with task counts (PCA-941).
+
+        Closes a discoverability gap: ``task_create`` requires a ``section_letter``
+        argument, but before this tool an agent had to call ``plan_export`` and
+        parse markdown to discover valid letters. Now one cheap call returns
+        ``[{section_id, letter, title, slug, position, task_count, done_count}]``
+        sorted by ``position``.
+
+        Use this before ``task_create`` to confirm the section_letter exists
+        in the target plan.
+        """
+        from sqlalchemy import case, func, select
+
+        from cod_doc.infra.db import transactional
+        from cod_doc.infra.models import TaskModel
+        from cod_doc.infra.repositories import PlanSectionRepository
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            require_project_id(session, project)
+            plan_id = _require_plan_id(session, plan_scope)
+            sections = PlanSectionRepository(session).list_for_plan(plan_id)
+
+            rows = session.execute(
+                select(
+                    TaskModel.section_id,
+                    func.count(TaskModel.row_id).label("total"),
+                    func.sum(
+                        case((TaskModel.status == "done", 1), else_=0)
+                    ).label("done"),
+                )
+                .where(TaskModel.plan_id == plan_id)
+                .group_by(TaskModel.section_id)
+            ).all()
+            counts: dict[int, tuple[int, int]] = {
+                r.section_id: (int(r.total or 0), int(r.done or 0)) for r in rows
+            }
+
+            return [
+                {
+                    "section_id": s.row_id,
+                    "letter": s.letter,
+                    "title": s.title,
+                    "slug": s.slug,
+                    "position": s.position,
+                    "task_count": counts.get(s.row_id or -1, (0, 0))[0],
+                    "done_count": counts.get(s.row_id or -1, (0, 0))[1],
+                }
+                for s in sorted(sections, key=lambda x: x.position)
+            ]
+
+    @mcp.tool(name="plan_section_create")
     def plan_section_create(
         project: str,
         plan_scope: str,
@@ -106,6 +159,7 @@ def register(mcp: FastMCP) -> None:
         title: str,
         slug: str | None = None,
         position: int | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Append a section to an existing plan.
 
@@ -118,7 +172,7 @@ def register(mcp: FastMCP) -> None:
         from cod_doc.infra.repositories import PlanSectionRepository
 
         sf, _ = session_factory(project)
-        with transactional(sf) as session:
+        with transactional(sf, commit=not dry_run) as session:
             require_project_id(session, project)
             plan_id = _require_plan_id(session, plan_scope)
             sec_repo = PlanSectionRepository(session)
@@ -137,7 +191,7 @@ def register(mcp: FastMCP) -> None:
                     position=position if position is not None else len(current),
                 )
             )
-        return {
+        out = {
             "section_id": sec.row_id,
             "plan_scope": plan_scope,
             "letter": sec.letter,
@@ -145,8 +199,11 @@ def register(mcp: FastMCP) -> None:
             "slug": sec.slug,
             "position": sec.position,
         }
+        if dry_run:
+            out["dry_run"] = True
+        return out
 
-    @mcp.tool(name="plan.progress")
+    @mcp.tool(name="plan_progress")
     def plan_progress(project: str, plan_scope: str) -> dict[str, Any]:
         """Return derived progress for a plan: total/done/remaining per section and overall."""
         from cod_doc.infra.db import transactional
@@ -177,7 +234,7 @@ def register(mcp: FastMCP) -> None:
             ],
         }
 
-    @mcp.tool(name="plan.ready")
+    @mcp.tool(name="plan_ready")
     def plan_ready(
         project: str,
         plan_scope: str,
@@ -194,7 +251,7 @@ def register(mcp: FastMCP) -> None:
             tasks = plan_service.ready(session, plan_id, limit=limit)
         return [task_to_dict(t) for t in tasks]
 
-    @mcp.tool(name="plan.audit")
+    @mcp.tool(name="plan_audit")
     def plan_audit(project: str, plan_scope: str) -> dict[str, Any]:
         """Run integrity checks: cycle detection + done-drift.
         Returns cycles (task_id lists) and done tasks with unfinished blocking deps.
@@ -214,7 +271,7 @@ def register(mcp: FastMCP) -> None:
             "critical_path_length": report.critical_path_length,
         }
 
-    @mcp.tool(name="plan.export")
+    @mcp.tool(name="plan_export")
     def plan_export(project: str, plan_scope: str) -> dict[str, str]:
         """Export markdown projections for a plan.
         Returns dict with keys: progress_overview, next_batch, dependency_graph.
@@ -229,7 +286,7 @@ def register(mcp: FastMCP) -> None:
             projections = plan_service.export(session, plan_id)
         return projections
 
-    @mcp.tool(name="plan.critical_path")
+    @mcp.tool(name="plan_critical_path")
     def plan_critical_path(project: str, plan_scope: str) -> dict[str, Any]:
         """Return the longest sequential dependency chain in the plan."""
         from cod_doc.infra.db import transactional
@@ -254,7 +311,7 @@ def register(mcp: FastMCP) -> None:
             ],
         }
 
-    @mcp.tool(name="plan.forward_chain")
+    @mcp.tool(name="plan_forward_chain")
     def plan_forward_chain(project: str, task_id: str) -> list[dict[str, Any]]:
         """Return prerequisites of task_id: tasks that must complete BEFORE it.
         Each entry has task_id, title, status, depth (1 = direct prerequisite).
@@ -275,7 +332,7 @@ def register(mcp: FastMCP) -> None:
             for e in chain
         ]
 
-    @mcp.tool(name="plan.reverse_chain")
+    @mcp.tool(name="plan_reverse_chain")
     def plan_reverse_chain(project: str, task_id: str) -> list[dict[str, Any]]:
         """Return dependents of task_id: tasks that become unblocked when it completes.
         Each entry has task_id, title, status, depth (1 = directly unblocked).

@@ -109,7 +109,7 @@ def get_skill_record(name: str) -> dict[str, Any] | None:
 def register(mcp: FastMCP) -> None:
     """Register skill.* tools on the given FastMCP instance."""
 
-    @mcp.tool(name="skill.list")
+    @mcp.tool(name="skill_list")
     def skill_list() -> list[dict[str, Any]]:
         """List the agent skill catalog (name + description + path).
 
@@ -119,7 +119,7 @@ def register(mcp: FastMCP) -> None:
         """
         return iter_skill_records()
 
-    @mcp.tool(name="skill.get")
+    @mcp.tool(name="skill_get")
     def skill_get(name: str) -> dict[str, Any] | None:
         """Return one skill's full body (markdown without YAML fences).
 

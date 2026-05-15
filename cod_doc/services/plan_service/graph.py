@@ -150,6 +150,130 @@ def reverse_chain(session: Session, task_id: str) -> list[ChainEntry]:
     ]
 
 
+def chain_layout(session: Session, plan_id: int) -> dict:
+    """Topological-level layout of a plan's task graph (COD-021 follow-up).
+
+    Returns ``{"levels", "critical_path", "ready_ids", "edge_count",
+    "task_count", "max_level"}``:
+
+    * ``levels`` — list of ``{"level": int, "tasks": [TaskNode]}`` in increasing
+      depth order.  Each ``TaskNode`` is a flat dict carrying ``task_id``,
+      ``title``, ``status``, ``priority``, ``type``, ``has_acceptance``,
+      ``blocked_reason``, ``prereq_ids`` (tasks that must finish first),
+      ``dep_ids`` (tasks this one unblocks), and the booleans ``is_critical``,
+      ``is_ready``.
+    * ``critical_path`` — ordered list of task_ids on the longest blocks-chain.
+    * ``ready_ids`` — set of task_ids unblocked right now (non-done tasks whose
+      every prerequisite is done).
+
+    Level 0 = sources (no prereqs in this plan).  Level N = tasks whose deepest
+    prereq sits at level N-1.  Tasks involved in cycles get pushed past the
+    deepest computed level so the layout still renders without aborting.
+    """
+    _require_plan(session, plan_id)
+
+    task_rows = session.execute(
+        select(
+            TaskModel.row_id, TaskModel.task_id, TaskModel.title,
+            TaskModel.status, TaskModel.priority, TaskModel.type,
+            TaskModel.section_id, TaskModel.acceptance, TaskModel.blocked_reason,
+        ).where(TaskModel.plan_id == plan_id)
+    ).all()
+
+    if not task_rows:
+        return {
+            "levels": [], "critical_path": [], "ready_ids": set(),
+            "edge_count": 0, "task_count": 0, "max_level": 0,
+        }
+
+    by_rid: dict[int, dict] = {}
+    for r in task_rows:
+        by_rid[r[0]] = {
+            "row_id": r[0],
+            "task_id": r[1],
+            "title": r[2],
+            "status": r[3],
+            "priority": r[4],
+            "type": r[5],
+            "section_id": r[6],
+            "has_acceptance": bool(r[7] and r[7].strip()),
+            "blocked_reason": r[8] or "",
+        }
+
+    rids = list(by_rid.keys())
+
+    # Load blocks edges within this plan and invert into prereq/dependent maps.
+    # Per file header semantics: (from=B, to=A) ⇒ A is a prereq of B.
+    dep_rows = session.execute(
+        select(DependencyModel.from_task_id, DependencyModel.to_task_id).where(
+            DependencyModel.kind == "blocks",
+            DependencyModel.from_task_id.in_(rids),
+            DependencyModel.to_task_id.in_(rids),
+        )
+    ).all()
+
+    prereqs: dict[int, list[int]] = {rid: [] for rid in rids}
+    deps: dict[int, list[int]] = {rid: [] for rid in rids}
+    for blocked_rid, blocker_rid in dep_rows:
+        prereqs[blocked_rid].append(blocker_rid)
+        deps[blocker_rid].append(blocked_rid)
+
+    # Iterative longest-path level assignment.
+    level: dict[int, int] = {rid: 0 for rid in rids if not prereqs[rid]}
+    for _ in range(len(rids) + 1):
+        changed = False
+        for rid in rids:
+            if not all(p in level for p in prereqs[rid]):
+                continue
+            new_level = max((level[p] for p in prereqs[rid]), default=-1) + 1
+            if rid not in level or level[rid] < new_level:
+                level[rid] = new_level
+                changed = True
+        if not changed:
+            break
+
+    # Stragglers (cycle members) get pushed past the deepest computed level.
+    max_assigned = max(level.values(), default=0)
+    for rid in rids:
+        if rid not in level:
+            max_assigned += 1
+            level[rid] = max_assigned
+
+    cp = critical_path(session, plan_id)
+    critical_ids: set[str] = set(cp.task_ids)
+
+    ready_ids: set[str] = set()
+    for rid, info in by_rid.items():
+        if info["status"] == "done":
+            continue
+        if all(by_rid[p]["status"] == "done" for p in prereqs[rid]):
+            ready_ids.add(info["task_id"])
+
+    by_level: dict[int, list[dict]] = {}
+    for rid, info in by_rid.items():
+        lvl = level[rid]
+        by_level.setdefault(lvl, []).append({
+            **info,
+            "is_critical": info["task_id"] in critical_ids,
+            "is_ready": info["task_id"] in ready_ids,
+            "prereq_ids": sorted(by_rid[p]["task_id"] for p in prereqs[rid]),
+            "dep_ids": sorted(by_rid[d]["task_id"] for d in deps[rid]),
+        })
+
+    levels: list[dict] = []
+    for lvl in sorted(by_level.keys()):
+        levels.append({"level": lvl, "tasks": by_level[lvl]})
+
+    return {
+        "levels": levels,
+        "critical_path": cp.task_ids,
+        "ready_ids": ready_ids,
+        "edge_count": len(dep_rows),
+        "task_count": len(rids),
+        "max_level": max(level.values(), default=0),
+    }
+
+
 def critical_path(session: Session, plan_id: int) -> CriticalPathResult:
     """Longest sequential `blocks`-chain in the plan.
 

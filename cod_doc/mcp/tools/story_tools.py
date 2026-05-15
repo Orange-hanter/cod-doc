@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 def register(mcp: FastMCP) -> None:
     """Register story.* tools on the given FastMCP instance."""
 
-    @mcp.tool(name="story.list")
+    @mcp.tool(name="story_list")
     def story_list(project: str) -> list[dict[str, Any]]:
         """List all user stories for a project."""
         from cod_doc.infra.db import transactional
@@ -25,7 +25,7 @@ def register(mcp: FastMCP) -> None:
             stories = story_service.list_for_project(session, project_id)
         return [story_to_dict(s) for s in stories]
 
-    @mcp.tool(name="story.get")
+    @mcp.tool(name="story_get")
     def story_get(project: str, story_id: str) -> dict[str, Any] | None:
         """Get a story with its acceptance criteria and links. Returns null if not found."""
         from cod_doc.infra.db import transactional
@@ -49,7 +49,7 @@ def register(mcp: FastMCP) -> None:
         ]
         return result
 
-    @mcp.tool(name="story.create")
+    @mcp.tool(name="story_create")
     def story_create(
         project: str,
         story_id: str,
@@ -60,6 +60,7 @@ def register(mcp: FastMCP) -> None:
         acceptance: list[str] | None = None,
         author: str = "mcp",
         reason: str | None = None,
+        dry_run: bool = False,
     ) -> dict[str, Any]:
         """Create a user story. story_id format: US-NNN (e.g. US-001).
         priority: critical|high|medium|low. status: draft|accepted|delivered|deferred.
@@ -73,7 +74,7 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         try:
-            with transactional(sf) as session:
+            with transactional(sf, commit=not dry_run) as session:
                 project_id = require_project_id(session, project)
                 s = story_service.create(
                     session,
@@ -91,9 +92,12 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(str(exc)) from exc
         except StoryAlreadyExistsError:
             raise ValueError(f"Story '{story_id}' already exists.") from None
-        return story_to_dict(s)
+        out = story_to_dict(s)
+        if dry_run:
+            out["dry_run"] = True
+        return out
 
-    @mcp.tool(name="story.update_status")
+    @mcp.tool(name="story_update_status")
     def story_update_status(
         project: str,
         story_id: str,
@@ -121,7 +125,7 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"Story '{story_id}' not found.") from None
         return story_to_dict(s)
 
-    @mcp.tool(name="story.add_criterion")
+    @mcp.tool(name="story_add_criterion")
     def story_add_criterion(
         project: str,
         story_id: str,
@@ -148,7 +152,7 @@ def register(mcp: FastMCP) -> None:
             "met": ac.met,
         }
 
-    @mcp.tool(name="story.link")
+    @mcp.tool(name="story_link")
     def story_link(
         project: str,
         story_id: str,
@@ -189,7 +193,7 @@ def register(mcp: FastMCP) -> None:
             "relation": lk.relation.value,
         }
 
-    @mcp.tool(name="story.coverage")
+    @mcp.tool(name="story_coverage")
     def story_coverage(project: str, story_id: str) -> dict[str, Any]:
         """Return derived coverage status for a story (task progress + acceptance met).
         status: draft | accepted | in-progress | delivered | deferred.

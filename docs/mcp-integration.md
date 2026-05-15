@@ -16,7 +16,11 @@ cod-doc предоставляет 4 слоя доступа:
 | REST API | Внешние системы | Dashboards, CI, веб-интерфейсы |
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
-MCP (Model Context Protocol) — стандартный протокол для подключения LLM к внешним инструментам. cod-doc реализует MCP server с 23 инструментами.
+MCP (Model Context Protocol) — стандартный протокол для подключения LLM
+к внешним инструментам. cod-doc реализует MCP server с **104 инструментами**
+(точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`).
+Полный live-каталог — `skill_list` + `tools/list` через любого MCP-клиента;
+карта по семействам — раздел [Каталог MCP-инструментов](#каталог-mcp-инструментов).
 
 ---
 
@@ -44,7 +48,7 @@ MCP (Model Context Protocol) — стандартный протокол для 
 
 ### Что можно делать
 
-После подключения в Copilot Chat доступны все 23 инструмента. Примеры запросов:
+После подключения в Copilot Chat доступна вся MCP-поверхность (104 тула на текущий релиз). Примеры запросов:
 
 - "Покажи статус проекта weather-cli"
 - "Какие задачи не закрыты?"
@@ -95,7 +99,7 @@ Copilot сам выбирает нужные инструменты и вызы�
 
 ### Что можно делать
 
-Те же 23 инструмента: управление проектами, задачами, хэшами, поиск, агент. Claude Desktop хорошо работает с инструментами — можно вести диалог о документации:
+Та же MCP-поверхность: docs, tasks, plans, stories, links, revisions, runs, approvals, routines, activity, skills. Claude Desktop хорошо работает с инструментами — можно вести диалог о документации:
 
 ```
 Ты: Покажи список проектов
@@ -219,62 +223,39 @@ LLM может разобрать MASTER.md и выстроить карту п�
 
 ---
 
-## Каталог MCP-инструментов (23 шт.)
+## Каталог MCP-инструментов
 
-### Управление проектами
-| Инструмент | Действие | Параметры |
-|-----------|---------|-----------|
-| `list_projects` | Список проектов | — |
-| `get_project_status` | Детальный статус | `project_name` |
-| `add_project` | Регистрация проекта | `name`, `path` |
-| `remove_project` | Удаление проекта | `name` |
+> Источник истины — `tools/list` MCP-клиента и `skill_list` для гайдов.
+> Эта таблица — навигатор «что в каком семействе» на текущий релиз.
+> Числа сверяются с реальным каталогом через
+> [`tests/test_mcp_integration_doc.py`](../tests/test_mcp_integration_doc.py).
 
-### Управление задачами
-| Инструмент | Действие | Параметры |
-|-----------|---------|-----------|
-| `list_tasks` | Список задач | `project_name`, `status?` |
-| `add_task` | Создать задачу | `project_name`, `title`, `priority?` |
-| `update_task` | Обновить задачу | `project_name`, `task_id`, `status?`, `title?` |
-| `next_pending_task` | Следующая задача | `project_name` |
+| Семейство | Кол-во | Назначение | Ключевые тулы |
+|-----------|-------:|------------|---------------|
+| **doc.\*** | 7 | DB-backed документы | `doc_list`, `doc_body`, `doc_create`, `doc_rename`, `doc_export`, `doc_drift`, `doc_get` |
+| **task.\*** | 15 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_complete`, `task_set_blocker`, `task_find_duplicate`, `task_log_progress`, … |
+| **task_doc.\*** | 5 | Артефакты, связанные с задачей | `task_doc_put`, `task_doc_get`, `task_doc_list`, `task_doc_revisions`, `task_doc_revert` |
+| **task_checkout / task_release** | 2 | Атомарный захват задачи (PCA-200) | `task_checkout`, `task_release` |
+| **plan.\*** | 10 | Планы исполнения и графы зависимостей | `plan_create`, `plan_section_create`, `plan_sections_list`, `plan_ready`, `plan_progress`, `plan_critical_path`, `plan_forward_chain`, `plan_reverse_chain`, `plan_audit`, `plan_export` |
+| **story.\*** | 7 | User stories + acceptance criteria | `story_create`, `story_list`, `story_get`, `story_link`, `story_add_criterion`, `story_update_status`, `story_coverage` |
+| **link.\*** | 4 | Гибридные ссылки между документами | `link_list`, `link_sync`, `link_verify`, `link_suggest_for_section` |
+| **revision.\*** | 3 | История изменений сущностей | `revision_list`, `revision_get`, `revision_revert` |
+| **run.\*** | 3 | Идентифицированные run-scope мутации | `run_list`, `run_get`, `run_revert` |
+| **approval.\*** | 5 | Human-in-the-loop одобрения | `approval_request`, `approval_list`, `approval_get`, `approval_resolve`, `approval_cancel` |
+| **activity.\*** | 2 | Единый audit-таймлайн | `activity_list`, `activity_for_run` |
+| **routine.\*** | 7 | Cron-style health checks | `routine_create`, `routine_list`, `routine_get`, `routine_update_status`, `routine_delete`, `routine_run_now`, `routine_history` |
+| **skill.\*** | 2 | Каталог skill-инструкций для агента | `skill_list`, `skill_get` |
+| **context / capabilities / session** | 9 | Snowball-сборка контекста, L0 bootstrap, tool discovery + per-tool describe, change-log, safe-call envelope, workspace defaults | `context_get`, `capabilities`, `tool_search`, `tool_describe`, `tools_diff`, `tool_call_safe`, `set_default_project`, `get_default_project`, `clear_default_project` |
+| **hash / verify** | 2 | Контроль целостности файлов | `hash_file`, `verify_hash` |
+| **check_config** | 1 | Самодиагностика сервера | `check_config` |
+| **Legacy (YAML)** | 20 | Проекты / задачи / MASTER / поиск / агент — depending on `tasks_yaml` стора | `list_projects`, `add_project`, `remove_project`, `get_project_status`, `list_tasks`, `add_task`, `update_task`, `next_pending_task`, `get_master`, `update_master_hashes`, `check_stale_refs`, `generate_ref`, `read_file`, `read_context`, `list_files`, `search_docs`, `reindex`, `run_agent_once`, `get_agent_context`, `clear_agent_context` |
+| **ИТОГО** | **104** | | |
 
-### MASTER.md и документация
-| Инструмент | Действие | Параметры |
-|-----------|---------|-----------|
-| `get_master` | Прочитать MASTER.md | `project_name` |
-| `update_master_hashes` | Пересчитать хэши | `project_name` |
-| `check_stale_refs` | Найти устаревшие ссылки | `project_name` |
-| `generate_ref` | Создать гибридную ссылку | `project_name`, `file_path` |
-
-### Контекст и файлы
-| Инструмент | Действие | Параметры |
-|-----------|---------|-----------|
-| `read_context` | Чтение по гибридной ссылке | `project_name`, `hybrid_ref` |
-| `read_file` | Чтение файла по пути | `project_name`, `file_path` |
-| `list_files` | Список файлов (с glob) | `project_name`, `pattern?` |
-
-### Хэши
-| Инструмент | Действие | Параметры |
-|-----------|---------|-----------|
-| `hash_file` | Вычислить хэш файла | `project_name`, `file_path` |
-| `verify_hash` | Проверить хэш | `project_name`, `file_path`, `expected_hash` |
-
-### Семантический поиск
-| Инструмент | Действие | Параметры |
-|-----------|---------|-----------|
-| `search_docs` | Поиск по смыслу | `project_name`, `query`, `n_results?` |
-| `reindex` | Переиндексация | `project_name` |
-
-### Агент
-| Инструмент | Действие | Параметры |
-|-----------|---------|-----------|
-| `run_agent_once` | Одна итерация агента | `project_name`, `autonomous?` |
-| `get_agent_context` | Контекст агента | `project_name` |
-| `clear_agent_context` | Сброс контекста | `project_name` |
-
-### Конфигурация
-| Инструмент | Действие | Параметры |
-|-----------|---------|-----------|
-| `check_config` | Статус конфигурации | — |
+Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
+`task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
+docstring соответствующих тулов. Для новых интеграций — игнорируй legacy
+и опирайся на DB-поверхность; будущий профиль `--profile standard` (PCA-951)
+скроет legacy полностью.
 
 ## MCP Resources
 
@@ -303,7 +284,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | Copilot Chat | ✅ | ✅ | ❌ | Частично |
 | Claude Desktop | ✅ | ✅ | ❌ | Через copy-paste |
 | CI/CD | ❌ | ✅ | ✅ | ❌ |
-| Кол-во инструментов | 23 | 23 | ~8 | 0 |
+| Кол-во инструментов | 104 | 104 | ~8 | 0 |
 | Семантический поиск | ✅ | ✅ | ❌ | ❌ |
 | Запуск агента | ✅ | ✅ | ✅ (WS) | ❌ |
 

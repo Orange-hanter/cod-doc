@@ -23,16 +23,25 @@ def register(mcp: FastMCP) -> None:
         agent: str,
         expected_statuses: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Atomically lock a task and transition to in_progress.
+        """Atomically lock a task and transition it to ``in_progress``.
+
+        This is the ONLY legal path for the ``todo → in_progress`` transition
+        per proposal 06 — call this instead of ``task_update_status``.
 
         agent: 'orchestrator-run-<run_id>' or 'human:<id>'.
-        expected_statuses: list of allowed pre-checkout statuses;
-            defaults to ['todo', 'pending'].
+        expected_statuses: list of allowed pre-checkout statuses; defaults to
+            ['todo', 'pending']. ``pending`` is the legacy alias of ``todo``
+            (see cod_doc/services/task_status_machine.py for the full 7-state
+            TaskStatus taxonomy and aliases).
 
         Behaviours:
         - already locked by same agent → idempotent OK
         - already locked by another → ValueError (409 conflict — never retry)
         - status not in expected → ValueError (caller's plan is stale)
+
+        On success the task's status becomes ``in_progress`` (canonical bucket).
+
+        See also: skill ``task-standard``; cod_doc/services/task_status_machine.py.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import checkout_service, activity_service

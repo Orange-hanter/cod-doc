@@ -2,8 +2,11 @@
 
 `id="section-{anchor}"` is the HTMX swap target; `id="{anchor}"` on the inner
 container preserves the sidebar `#anchor` scroll behaviour.
+
+`data-anchor` is consumed by the comments JS in doc_show.html — it lets the
+"add comment" floating button know which section the user has selected text in.
 #}
-<section id="section-{{ s.anchor }}" class="doc-section">
+<section id="section-{{ s.anchor }}" class="doc-section" data-anchor="{{ s.anchor }}">
   <a id="{{ s.anchor }}" class="section-anchor"></a>
   <h{{ s.level }}>
     {{ s.heading }}
@@ -13,6 +16,55 @@ container preserves the sidebar `#anchor` scroll behaviour.
             hx-target="#section-{{ s.anchor }}"
             hx-swap="outerHTML"
             title="Edit section">✎</button>
+    <button type="button"
+            class="section-comment-btn"
+            data-anchor="{{ s.anchor }}"
+            title="Add comment to this section">💬+</button>
+    {% if s.open_comments and s.open_comments > 0 %}
+      <a class="section-comment-badge"
+         href="#comment-anchor-{{ s.anchor }}"
+         title="{{ s.open_comments }} open comment(s)">💬 {{ s.open_comments }}</a>
+    {% endif %}
   </h{{ s.level }}>
   <div class="section-body">{{ s.html | safe }}</div>
+
+  {# Side bubbles — one per anchored comment on this section. Rendered in the
+     normal flow but absolutely positioned by CSS to the right margin. #}
+  {% if s.comments %}
+    <aside class="section-comments" id="comment-anchor-{{ s.anchor }}">
+      {% for c in s.comments %}
+        <div class="comment-bubble comment-{{ c.status }}" id="comment-{{ c.row_id }}">
+          <div class="comment-bubble-head">
+            <span class="comment-author">{{ c.author }}</span>
+            <span class="comment-status status-{{ c.status }}">{{ c.status }}</span>
+          </div>
+          {% if c.quote %}
+            <blockquote class="comment-quote">{{ c.quote }}</blockquote>
+          {% endif %}
+          <div class="comment-body">{{ c.body }}</div>
+          <div class="comment-actions">
+            {% if c.status == "open" %}
+              <form method="post"
+                    action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/{{ c.row_id }}/resolve"
+                    class="inline-form">
+                <button type="submit" class="btn btn-ghost btn-xs" title="Resolve">✓</button>
+              </form>
+            {% else %}
+              <form method="post"
+                    action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/{{ c.row_id }}/reopen"
+                    class="inline-form">
+                <button type="submit" class="btn btn-ghost btn-xs" title="Reopen">↺</button>
+              </form>
+            {% endif %}
+            <form method="post"
+                  action="/p/{{ project.name }}/docs/{{ doc.doc_key }}/comments/{{ c.row_id }}/delete"
+                  class="inline-form"
+                  onsubmit="return confirm('Удалить комментарий?');">
+              <button type="submit" class="btn btn-ghost btn-xs" title="Delete">✕</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    </aside>
+  {% endif %}
 </section>

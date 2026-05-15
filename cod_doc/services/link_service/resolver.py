@@ -7,6 +7,7 @@ looks each link's target up in the DB and stamps `to_*` / `resolved` /
 
 from __future__ import annotations
 
+import posixpath
 import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -45,36 +46,100 @@ def _extract_label(raw: str) -> str | None:
     return m.group(1) if m else None
 
 
-def _resolve_canonical(
-    session: Session, project_id: int, doc_key: str | None
-) -> tuple[bool, str | None, str | None]:
-    """Return (resolved, to_doc_key_to_stamp, broken_reason)."""
-    if not doc_key:
-        return False, None, "missing doc_key"
-    stmt = select(DocumentModel.row_id).where(
-        DocumentModel.project_id == project_id,
-        DocumentModel.doc_key == doc_key,
-    )
-    if session.execute(stmt).scalar_one_or_none() is None:
-        return False, None, f"document not found: {doc_key}"
-    return True, doc_key, None
+def _target_candidates(parsed_key: str, source_doc_key: str | None) -> list[str]:
+    """Generate doc_key candidates to try, mirroring importer normalization.
+
+    The parser is purely lexical and cannot know:
+    1. that the importer strips a leading ``docs/`` segment from doc_keys
+       (see ``import_service._derive_doc_key``), so links written as
+       ``docs/foo/bar.md`` from a root-level doc must also match ``foo/bar``;
+    2. that bare-filename refs like ``[x](concept.md)`` are relative to the
+       source doc's directory, so they should resolve against that prefix.
+
+    Return ordered candidates: the parsed key first, then the docs/-stripped
+    variant, then source-dir-prefixed variants. Resolver tries each in order.
+    """
+    if not parsed_key:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def _add(k: str) -> None:
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+
+    _add(parsed_key)
+    if parsed_key.startswith("docs/"):
+        _add(parsed_key[5:])
+
+    # Walk up the source-doc directory tree. The parser eats ``../`` segments
+    # without tracking how many were consumed, so a bare ``polyglot`` from
+    # ``architecture/v2/cloud_connectivity`` may target any of:
+    #   architecture/v2/polyglot, architecture/polyglot, polyglot.
+    # Trying each level is cheap and bounded by directory depth.
+    if source_doc_key and "/" in source_doc_key:
+        parts = source_doc_key.split("/")[:-1]  # drop filename component
+        while parts:
+            prefixed = "/".join(parts) + "/" + parsed_key
+            _add(prefixed)
+            if prefixed.startswith("docs/"):
+                _add(prefixed[5:])
+            parts.pop()
+    return out
 
 
-def _resolve_section_anchor(
-    session: Session, project_id: int, doc_key: str | None, anchor: str | None
-) -> tuple[bool, str | None, str | None]:
-    if not doc_key:
-        return False, None, "missing doc_key"
-    doc_row = session.execute(
+def _lookup_doc_id(
+    session: Session, project_id: int, doc_key: str
+) -> int | None:
+    return session.execute(
         select(DocumentModel.row_id).where(
             DocumentModel.project_id == project_id,
             DocumentModel.doc_key == doc_key,
         )
     ).scalar_one_or_none()
-    if doc_row is None:
+
+
+def _resolve_canonical(
+    session: Session,
+    project_id: int,
+    doc_key: str | None,
+    source_doc_key: str | None = None,
+) -> tuple[bool, str | None, str | None]:
+    """Return (resolved, to_doc_key_to_stamp, broken_reason)."""
+    if not doc_key:
+        return False, None, "missing doc_key"
+    for cand in _target_candidates(doc_key, source_doc_key):
+        if _lookup_doc_id(session, project_id, cand) is not None:
+            return True, cand, None
+    return False, None, f"document not found: {doc_key}"
+
+
+def _resolve_section_anchor(
+    session: Session,
+    project_id: int,
+    doc_key: str | None,
+    anchor: str | None,
+    source_doc_key: str | None = None,
+) -> tuple[bool, str | None, str | None]:
+    # Intra-doc anchor refs `[X](#anchor)` arrive with no doc_key — the parser
+    # has no source context. Resolve them against the source doc.
+    if not doc_key and source_doc_key:
+        doc_key = source_doc_key
+    if not doc_key:
+        return False, None, "missing doc_key"
+    matched_key: str | None = None
+    doc_row: int | None = None
+    for cand in _target_candidates(doc_key, source_doc_key):
+        row_id = _lookup_doc_id(session, project_id, cand)
+        if row_id is not None:
+            matched_key = cand
+            doc_row = row_id
+            break
+    if doc_row is None or matched_key is None:
         return False, None, f"document not found: {doc_key}"
     if not anchor:
-        return False, doc_key, "missing anchor"
+        return False, matched_key, "missing anchor"
     sec = session.execute(
         select(SectionModel.row_id).where(
             SectionModel.document_id == doc_row,
@@ -82,9 +147,8 @@ def _resolve_section_anchor(
         )
     ).scalar_one_or_none()
     if sec is None:
-        # Stamp doc_key (we know the target doc) but flag broken.
-        return False, doc_key, f"anchor not found: {anchor}"
-    return True, doc_key, None
+        return False, matched_key, f"anchor not found: {anchor}"
+    return True, matched_key, None
 
 
 def _resolve_task(
@@ -146,6 +210,14 @@ def _reparse_link(model: LinkModel) -> ParsedLink:
     return items[0]
 
 
+def _source_doc_key_for_section(session: Session, section_id: int) -> str | None:
+    return session.execute(
+        select(DocumentModel.doc_key)
+        .join(SectionModel, SectionModel.document_id == DocumentModel.row_id)
+        .where(SectionModel.row_id == section_id)
+    ).scalar_one_or_none()
+
+
 def _apply_resolution(
     session: Session,
     *,
@@ -166,16 +238,22 @@ def _apply_resolution(
             model.broken_reason = None
         return (mark_checked, model.resolved)
 
+    source_doc_key = _source_doc_key_for_section(session, model.from_section_id)
+
     if kind is LinkKind.CANONICAL:
-        ok, to_key, reason = _resolve_canonical(session, project_id, parsed.target_doc_key)
+        ok, to_key, reason = _resolve_canonical(
+            session, project_id, parsed.target_doc_key, source_doc_key
+        )
         model.to_doc_key = to_key
     elif kind is LinkKind.SECTION:
         ok, to_key, reason = _resolve_section_anchor(
-            session, project_id, parsed.target_doc_key, parsed.anchor
+            session, project_id, parsed.target_doc_key, parsed.anchor, source_doc_key
         )
         model.to_doc_key = to_key
     elif kind is LinkKind.MARKDOWN:
-        ok, to_key, reason = _resolve_canonical(session, project_id, parsed.target_doc_key)
+        ok, to_key, reason = _resolve_canonical(
+            session, project_id, parsed.target_doc_key, source_doc_key
+        )
         model.to_doc_key = to_key
     elif kind is LinkKind.WIKI:
         ok, to_key, reason = _resolve_wiki(session, project_id, parsed.target_label)

@@ -37,7 +37,10 @@ def mcp_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Projec
 def _open_stdio_client(config_dir: Path):
     params = StdioServerParameters(
         command=str(Path(__file__).resolve().parents[1] / ".venv" / "bin" / "python"),
-        args=["-m", "cod_doc.mcp.server", "--transport", "stdio"],
+        # Tests assert presence of legacy tools (list_projects, add_task,
+        # get_master, …) which are hidden under the cycle-4 'standard'
+        # default. Pin --profile full for back-compat coverage.
+        args=["-m", "cod_doc.mcp.server", "--transport", "stdio", "--profile", "full"],
         env={**os.environ, "COD_DOC_HOME": str(config_dir)},
         cwd=str(Path(__file__).resolve().parents[1]),
     )
@@ -60,35 +63,35 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "add_task" in tool_names
     assert "get_master" in tool_names
     # COD-032: DB-backed tool groups
-    assert "task.list" in tool_names
-    assert "task.create" in tool_names
-    assert "task.complete" in tool_names
-    assert "doc.list" in tool_names
-    assert "doc.get" in tool_names
-    assert "doc.export" in tool_names
-    assert "plan.progress" in tool_names
-    assert "plan.ready" in tool_names
-    assert "plan.critical_path" in tool_names
+    assert "task_list" in tool_names
+    assert "task_create" in tool_names
+    assert "task_complete" in tool_names
+    assert "doc_list" in tool_names
+    assert "doc_get" in tool_names
+    assert "doc_export" in tool_names
+    assert "plan_progress" in tool_names
+    assert "plan_ready" in tool_names
+    assert "plan_critical_path" in tool_names
     # PCA-901: plan-create surface
-    assert "plan.create" in tool_names
-    assert "plan.section_create" in tool_names
+    assert "plan_create" in tool_names
+    assert "plan_section_create" in tool_names
     # PCA-010: heartbeat-context surface
-    assert "task.heartbeat_context" in tool_names
+    assert "task_heartbeat_context" in tool_names
     # PCA-032: run-id audit trail
-    assert "run.list" in tool_names
-    assert "run.get" in tool_names
+    assert "run_list" in tool_names
+    assert "run_get" in tool_names
     # PCA-033: run-revert dry-run
-    assert "run.revert" in tool_names
+    assert "run_revert" in tool_names
     # PCA-003: agent-skill catalog
-    assert "skill.list" in tool_names
-    assert "skill.get" in tool_names
-    assert "story.list" in tool_names
-    assert "story.create" in tool_names
-    assert "story.coverage" in tool_names
-    assert "link.list" in tool_names
-    assert "link.verify" in tool_names
-    assert "revision.list" in tool_names
-    assert "revision.revert" in tool_names
+    assert "skill_list" in tool_names
+    assert "skill_get" in tool_names
+    assert "story_list" in tool_names
+    assert "story_create" in tool_names
+    assert "story_coverage" in tool_names
+    assert "link_list" in tool_names
+    assert "link_verify" in tool_names
+    assert "revision_list" in tool_names
+    assert "revision_revert" in tool_names
 
 
 @pytest.mark.anyio

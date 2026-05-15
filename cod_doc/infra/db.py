@@ -54,12 +54,26 @@ def make_session_factory(engine: Engine) -> sessionmaker[Session]:
 
 
 @contextmanager
-def transactional(session_factory: sessionmaker[Session]) -> Iterator[Session]:
-    """Context manager: open session, commit on success, rollback on error."""
+def transactional(
+    session_factory: sessionmaker[Session],
+    *,
+    commit: bool = True,
+) -> Iterator[Session]:
+    """Context manager: open session, commit on success, rollback on error.
+
+    ``commit=False`` (PCA-944) is the ``dry_run`` shape: the block runs and
+    validation/errors still bubble up, but the session is rolled back at
+    the end instead of committed. Useful for ``dry_run=True`` MCP-tool
+    paths that want to validate plus return the would-be result without
+    persisting any rows.
+    """
     session = session_factory()
     try:
         yield session
-        session.commit()
+        if commit:
+            session.commit()
+        else:
+            session.rollback()
     except Exception:
         session.rollback()
         raise
