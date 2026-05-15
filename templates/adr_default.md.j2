@@ -1,0 +1,69 @@
+{# ADR-007: default markdown template for export / new-ADR scaffolding. #}
+# {{ adr_id }}: {{ title }}
+
+| Поле | Значение |
+|------|----------|
+| **Статус** | {{ status_icon }} {{ status }} |
+{%- if decided_at %}
+| **Дата** | {{ decided_at }} |
+{%- endif %}
+{%- if author %}
+| **Автор** | {{ author }} |
+{%- endif %}
+
+{% if context -%}
+## Контекст
+
+{{ context }}
+
+{% endif -%}
+
+{% if decision -%}
+## Решение
+
+{{ decision }}
+
+{% endif -%}
+
+{% if alternatives -%}
+## Альтернативы
+
+{{ alternatives }}
+
+{% endif -%}
+
+{% if consequences -%}
+## Последствия
+
+{{ consequences }}
+
+{% endif -%}
+
+{% if diagrams %}
+## Диаграммы
+
+{% for d in diagrams -%}
+{% if d.title %}**{{ d.title }}**{% endif %}
+
+```mermaid
+{{ d.mermaid }}
+```
+
+{% endfor %}
+{%- endif %}
+
+{% if task_links %}
+## Связанные задачи
+
+{% for link in task_links -%}
+- `{{ link.relation }}` → [{{ link.task_id }}](#)
+{% endfor %}
+{%- endif %}
+
+{% if supersedes %}
+## Supersedes
+
+{% for s in supersedes -%}
+- ⟵ {{ s.adr_id }}{% if s.reason %} ({{ s.reason }}){% endif %}
+{% endfor %}
+{%- endif %}

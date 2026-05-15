@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import click
 
+from cod_doc.cli.adr import adr
 from cod_doc.cli.cmd_adapter import adapter
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_audit import audit
@@ -99,6 +100,7 @@ main.add_command(revision)
 main.add_command(audit)
 main.add_command(import_cmd)
 main.add_command(adapter)
+main.add_command(adr)
 
 
 if __name__ == "__main__":
