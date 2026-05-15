@@ -350,6 +350,7 @@ def link_suggest(
 
         if doc_key:
             from sqlalchemy import select
+
             from cod_doc.infra.models.documents import DocumentModel, SectionModel
 
             doc_stmt = select(DocumentModel.row_id).where(

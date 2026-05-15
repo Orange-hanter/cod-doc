@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from cod_doc.mcp.server import mcp as live_mcp
 
 

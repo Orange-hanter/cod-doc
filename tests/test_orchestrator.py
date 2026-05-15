@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
-from cod_doc.agent.adapters.mock import MockAdapter
 from cod_doc.agent.adapters.base import ChatResponse
+from cod_doc.agent.adapters.mock import MockAdapter
 from cod_doc.agent.orchestrator import Orchestrator
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project, Task, TaskStatus

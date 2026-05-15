@@ -10,27 +10,23 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-import pytest
 from sqlalchemy import select
 
 from cod_doc.domain.entities import LinkKind
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    DocumentModel, LinkModel, ProjectModel, SectionModel,
+    DocumentModel,
+    LinkModel,
+    ProjectModel,
+    SectionModel,
 )
 from cod_doc.services.link_service.parser import (
-    _CODE_EXTENSIONS,
     _is_code_href,
     _split_code_href,
     parse,
 )
 from cod_doc.services.link_service.resolver import sync_section
-
-if TYPE_CHECKING:
-    pass
-
 
 # ----------------------------------------------------------------- #
 # Parser unit tests (no DB)                                          #

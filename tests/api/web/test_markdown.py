@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from cod_doc.api.web.markdown import render_markdown
 
 

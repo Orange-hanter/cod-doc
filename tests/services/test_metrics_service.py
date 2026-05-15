@@ -2,21 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
 from cod_doc.domain.entities import Priority, TaskStatus, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    PlanModel, PlanSectionModel, ProjectModel,
-    TaskMetricsModel, TaskModel,
+    PlanModel,
+    PlanSectionModel,
+    ProjectModel,
+    TaskMetricsModel,
+    TaskModel,
 )
 from cod_doc.services import metrics_service, task_service
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
 
 
 def _seed(session) -> tuple[int, int, int]:  # type: ignore[no-untyped-def]

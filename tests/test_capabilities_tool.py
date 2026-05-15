@@ -16,7 +16,7 @@ from mcp.server.fastmcp import FastMCP
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.mcp.server import mcp as live_mcp
-from cod_doc.services.task_status_machine import ALLOWED_TRANSITIONS, _LEGACY_ALIASES
+from cod_doc.services.task_status_machine import _LEGACY_ALIASES, ALLOWED_TRANSITIONS
 
 
 def _get_tool(mcp: FastMCP, name: str) -> Any:

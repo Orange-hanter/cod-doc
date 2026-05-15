@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
-
 import pytest
 
 from cod_doc.mcp import server as mcp_server
 from cod_doc.mcp.profiles import (
     LEGACY_TOOLS,
     MINIMAL_TOOLS,
-    VALID_PROFILES,
     keep_tool,
 )
 

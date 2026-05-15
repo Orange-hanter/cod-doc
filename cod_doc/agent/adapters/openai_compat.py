@@ -12,7 +12,7 @@ llama-cpp-python, etc.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from cod_doc.agent.adapters.base import (
     AdapterCapabilities,
@@ -23,10 +23,7 @@ from cod_doc.agent.adapters.base import (
     FunctionCall,
     ToolCall,
 )
-from cod_doc.agent.retry import ContextLengthExceededError, LLMError, with_retry
-
-if TYPE_CHECKING:
-    pass
+from cod_doc.agent.retry import with_retry
 
 
 class OpenAICompatAdapter:

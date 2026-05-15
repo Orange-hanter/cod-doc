@@ -124,8 +124,7 @@ def test_timed_call_measures_duration_and_captures_error() -> None:
     assert c.error is None
 
     c2 = traces.TraceCollector()
-    with pytest.raises(RuntimeError):
-        with traces.timed_call(c2):
-            raise RuntimeError("boom")
+    with pytest.raises(RuntimeError), traces.timed_call(c2):
+        raise RuntimeError("boom")
     assert c2.error is not None and "RuntimeError" in c2.error and "boom" in c2.error
     assert c2.duration_ms >= 0

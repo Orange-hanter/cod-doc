@@ -21,19 +21,17 @@ Public API
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
 from cod_doc.infra.models import (
     ApprovalDocRevisionLinkModel,
     ApprovalModel,
     ApprovalTaskLinkModel,
-    TaskModel,
 )
 from cod_doc.services.run_context import get_current_run_id
 
@@ -197,8 +195,8 @@ def request(
 
     # PCA-913: auto-transition linked in_progress tasks → in_review so the
     # agent knows the task is paused pending human decision.
-    from cod_doc.services import task_service as _task_svc
     from cod_doc.domain.entities import TaskStatus
+    from cod_doc.services import task_service as _task_svc
 
     _IN_PROGRESS_STATUSES = {"in_progress", "in-progress"}
     for ref in task_refs:

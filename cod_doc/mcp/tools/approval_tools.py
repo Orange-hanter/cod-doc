@@ -50,7 +50,7 @@ def register(mcp: FastMCP) -> None:
         """
         from cod_doc.infra.db import transactional
         from cod_doc.mcp.tools import _idempotency
-        from cod_doc.services import approval_service, activity_service
+        from cod_doc.services import activity_service, approval_service
 
         cached = _idempotency.check("approval_request", idempotency_key)
         if cached is not None:
@@ -176,7 +176,7 @@ def register(mcp: FastMCP) -> None:
         task_id=wake_hint.task_id.
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import approval_service, activity_service
+        from cod_doc.services import activity_service, approval_service
 
         sf, _ = session_factory(project)
         try:
@@ -214,7 +214,7 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Cancel a pending approval."""
         from cod_doc.infra.db import transactional
-        from cod_doc.services import approval_service, activity_service
+        from cod_doc.services import activity_service, approval_service
 
         sf, _ = session_factory(project)
         try:

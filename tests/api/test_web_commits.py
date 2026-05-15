@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,17 +12,19 @@ from fastapi.testclient import TestClient
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import (
-    Plan, PlanSection, Priority, TaskType,
+    Plan,
+    PlanSection,
+    Priority,
+    TaskType,
 )
 from cod_doc.domain.entities import Project as ProjectEntity
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import (
-    PlanRepository, PlanSectionRepository, ProjectRepository,
+    PlanRepository,
+    PlanSectionRepository,
+    ProjectRepository,
 )
 from cod_doc.services import task_service as tasks
-
-if TYPE_CHECKING:
-    pass
 
 
 def _init_git(repo: Path) -> None:

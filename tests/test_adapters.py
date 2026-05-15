@@ -11,7 +11,6 @@ import pytest
 from cod_doc.agent.adapters.base import (
     AdapterCapabilities,
     ChatMessage,
-    ChatResponse,
     LLMAdapter,
 )
 from cod_doc.agent.adapters.mock import MockAdapter
@@ -20,7 +19,6 @@ from cod_doc.agent.adapters.registry import (
     list_adapters,
     register_adapter,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                       #
@@ -274,6 +272,7 @@ class TestAnthropicFormatConversion:
 
     def test_from_anthropic_text_block(self) -> None:
         from unittest.mock import MagicMock
+
         from cod_doc.agent.adapters.anthropic import _from_anthropic
 
         block = MagicMock()
@@ -294,6 +293,7 @@ class TestAnthropicFormatConversion:
 
     def test_from_anthropic_tool_use_block(self) -> None:
         from unittest.mock import MagicMock
+
         from cod_doc.agent.adapters.anthropic import _from_anthropic
 
         block = MagicMock()

@@ -29,7 +29,6 @@ from cod_doc.core.project import Project
 from cod_doc.mcp.server import mcp
 from cod_doc.mcp.tools._legacy import resolve_project_name
 
-
 # --------------------------------------------------------------------------- #
 # Unit tests for the resolver                                                  #
 # --------------------------------------------------------------------------- #

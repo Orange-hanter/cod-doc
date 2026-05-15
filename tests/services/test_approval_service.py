@@ -6,10 +6,9 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import select
 
 from cod_doc.infra.db import make_session_factory, transactional
-from cod_doc.infra.models import ApprovalModel, ProjectModel
+from cod_doc.infra.models import ProjectModel
 from cod_doc.services import approval_service as approvals
 from cod_doc.services.run_context import set_current_run_id
 

@@ -6,9 +6,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from cod_doc.infra.db import make_session_factory, transactional
-from cod_doc.infra.models import ADRModel, ProjectModel
+from cod_doc.infra.models import ProjectModel
 from cod_doc.services import adr_migrator, adr_service
-
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LEGACY_MD = REPO_ROOT / "arch" / "architecture.md"

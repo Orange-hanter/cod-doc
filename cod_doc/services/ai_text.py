@@ -138,7 +138,7 @@ Rules:
 - Respond ONLY with the JSON object, nothing else."""
 
 
-def suggest_doc_meta(description: str, *, cfg: "Config") -> DocMetaSuggestion:
+def suggest_doc_meta(description: str, *, cfg: Config) -> DocMetaSuggestion:
     """Call lite model to infer doc title, doc_key, type, and preamble from a free-form description.
 
     Uses ``cfg.lite_model`` when set, falls back to ``cfg.model``.
@@ -257,7 +257,7 @@ def expand_doc_sections(
     preamble: str,
     *,
     intent: str = "",
-    cfg: "Config",
+    cfg: Config,
     doc_type: str = "",
 ) -> list[SectionDraft]:
     """Ask the model to generate sections that expand a document preamble.
@@ -343,7 +343,7 @@ def expand_doc_sections(
 # ── Low-level lite-model helper ────────────────────────────────────────────
 
 
-def _call_lite_raw(prompt: str, cfg: "Config", *, max_tokens: int = 1024) -> str:
+def _call_lite_raw(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> str:
     """Call the lite model with a single user message and return the raw string.
 
     Uses ``cfg.lite_model`` when set, falls back to ``cfg.model``.

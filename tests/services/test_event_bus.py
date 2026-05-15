@@ -8,7 +8,6 @@ import pytest
 
 from cod_doc.services import event_bus
 
-
 pytestmark = pytest.mark.asyncio
 
 
@@ -31,11 +30,10 @@ async def test_publish_to_other_project_is_not_seen() -> None:
 
 
 async def test_multiple_subscribers_each_get_events() -> None:
-    async with event_bus.subscribe("demo") as a:
-        async with event_bus.subscribe("demo") as b:
-            await event_bus.publish("demo", "k", {})
-            ea = await asyncio.wait_for(a.__anext__(), timeout=1)
-            eb = await asyncio.wait_for(b.__anext__(), timeout=1)
+    async with event_bus.subscribe("demo") as a, event_bus.subscribe("demo") as b:
+        await event_bus.publish("demo", "k", {})
+        ea = await asyncio.wait_for(a.__anext__(), timeout=1)
+        eb = await asyncio.wait_for(b.__anext__(), timeout=1)
     assert ea.kind == "k"
     assert eb.kind == "k"
 

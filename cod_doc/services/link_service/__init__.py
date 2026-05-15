@@ -42,6 +42,7 @@ from ._types import (
 from .parser import parse
 from .rename_cascade import rename_cascade
 from .resolver import (
+    list_code_refs,
     list_for_section,
     list_incoming_for_doc,
     resolve,
@@ -57,6 +58,7 @@ __all__ = [
     "ParsedLink",
     "RenameCascadeReport",
     "VerifyReport",
+    "list_code_refs",
     "list_for_section",
     "list_incoming_for_doc",
     "parse",

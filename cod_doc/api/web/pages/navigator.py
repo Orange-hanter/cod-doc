@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
+from cod_doc.api.deps import get_config, get_project, get_project_db
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import nav_service
 

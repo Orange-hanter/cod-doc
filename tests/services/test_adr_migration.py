@@ -80,10 +80,9 @@ def test_adr_diagram_unique_position(engine_with_schema) -> None:  # type: ignor
         session.add(ADRDiagramModel(adr_id=adr.row_id, position=0, title="layers", mermaid="graph TD;A-->B"))
         session.add(ADRDiagramModel(adr_id=adr.row_id, position=1, title="flow", mermaid="graph LR;X-->Y"))
         session.flush()
-    with pytest.raises(Exception):
-        with transactional(factory) as session:
-            adr = session.execute(select(ADRModel).where(ADRModel.adr_id == "ADR-020")).scalar_one()
-            session.add(ADRDiagramModel(adr_id=adr.row_id, position=0, title="dup", mermaid="x"))
+    with pytest.raises(Exception), transactional(factory) as session:
+        adr = session.execute(select(ADRModel).where(ADRModel.adr_id == "ADR-020")).scalar_one()
+        session.add(ADRDiagramModel(adr_id=adr.row_id, position=0, title="dup", mermaid="x"))
 
 
 def test_adr_supersede_no_self_loop(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -126,7 +125,6 @@ def test_adr_task_link_relation_check(engine_with_schema) -> None:  # type: igno
         session.add(adr); session.flush()
         session.add(ADRTaskModel(adr_row_id=adr.row_id, task_id="COD-001", relation="implements"))
         session.flush()
-    with pytest.raises(Exception):
-        with transactional(factory) as session:
-            adr = session.execute(select(ADRModel).where(ADRModel.adr_id == "ADR-050")).scalar_one()
-            session.add(ADRTaskModel(adr_row_id=adr.row_id, task_id="COD-002", relation="weird"))
+    with pytest.raises(Exception), transactional(factory) as session:
+        adr = session.execute(select(ADRModel).where(ADRModel.adr_id == "ADR-050")).scalar_one()
+        session.add(ADRTaskModel(adr_row_id=adr.row_id, task_id="COD-002", relation="weird"))

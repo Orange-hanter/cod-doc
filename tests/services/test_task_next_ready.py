@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from sqlalchemy import select
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional

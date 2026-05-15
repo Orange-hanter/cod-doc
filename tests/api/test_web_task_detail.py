@@ -438,7 +438,7 @@ def test_field_improve_surfaces_backend_error_inline(
     client, entry = task_detail_client
     from cod_doc.services import ai_text
 
-    def boom(text: str, intent: str, *, cfg):  # noqa: ANN202
+    def boom(text: str, intent: str, *, cfg):
         raise ai_text.AIBackendError("network down")
 
     monkeypatch.setattr(ai_text, "improve_text_traced", boom)

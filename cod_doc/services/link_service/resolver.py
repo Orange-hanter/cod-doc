@@ -7,7 +7,6 @@ looks each link's target up in the DB and stamps `to_*` / `resolved` /
 
 from __future__ import annotations
 
-import posixpath
 import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -441,6 +440,32 @@ def verify_section(session: Session, section_id: int) -> VerifyReport:
 
 def list_for_section(session: Session, section_id: int) -> list[Link]:
     return LinkRepository(session).list_for_section(section_id)
+
+
+def list_code_refs(
+    session: Session, project_id: int,
+) -> list[dict[str, object]]:
+    """OBI-021 (web): all ``kind='code'`` links in the project, plain dicts.
+
+    Returns dicts (not LinkModel objects) so the web layer doesn't have to
+    import infra models — closes F1 of the 2026-05-15 audit.
+    """
+    rows = list(session.execute(
+        select(LinkModel)
+        .where(LinkModel.project_id == project_id, LinkModel.kind == "code")
+        .order_by(LinkModel.to_file_path, LinkModel.to_symbol)
+    ).scalars())
+    return [
+        {
+            "file_path": r.to_file_path or "",
+            "symbol": r.to_symbol or None,
+            "resolved": r.resolved,
+            "broken_reason": r.broken_reason,
+            "raw": r.raw,
+            "from_section_id": r.from_section_id,
+        }
+        for r in rows
+    ]
 
 
 def list_incoming_for_doc(

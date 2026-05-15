@@ -314,7 +314,7 @@ def peek_cached_analysis(
 def analyze_gaps(
     session: Session,
     project_id: int,
-    cfg: "Config",
+    cfg: Config,
     cache_path: Path,
     *,
     force: bool = False,

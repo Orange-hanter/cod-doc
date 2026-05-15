@@ -21,8 +21,6 @@ import asyncio
 import re
 from pathlib import Path
 
-import pytest
-
 from cod_doc.mcp.server import mcp
 
 DOC = Path(__file__).resolve().parents[1] / "docs" / "mcp-integration.md"
@@ -56,8 +54,8 @@ def test_doc_total_claims_match_real_tool_count() -> None:
     text = DOC.read_text(encoding="utf-8")
     claims = _TOTAL_CLAIM_RE.findall(text)
     assert claims, (
-        f"docs/mcp-integration.md should claim a tool count via pattern "
-        f"`**N инструментов**` / `**N тула**`. None found."
+        "docs/mcp-integration.md should claim a tool count via pattern "
+        "`**N инструментов**` / `**N тула**`. None found."
     )
 
     real = _real_tool_count()

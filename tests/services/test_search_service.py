@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 import pytest
 from sqlalchemy import text
@@ -203,11 +202,10 @@ def test_search_invalid_scope_raises(engine_with_schema) -> None:  # type: ignor
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed(session)
-    with pytest.raises(ValueError, match="invalid scope"):
-        with transactional(factory) as session:
-            search_service.search(
-                session, project_id=1, query="x", scope="weird",
-            )
+    with pytest.raises(ValueError, match="invalid scope"), transactional(factory) as session:
+        search_service.search(
+            session, project_id=1, query="x", scope="weird",
+        )
 
 
 def test_search_empty_query_returns_zero_hits(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

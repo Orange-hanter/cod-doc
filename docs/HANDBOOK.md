@@ -1007,7 +1007,51 @@ alembic history --verbose
 `COD_DOC_DB_URL` управляет таргетом: `sqlite:///path/to/state.db` для
 embedded, `postgresql://...` для server mode.
 
-### 11.5. Architectural rules (auto-enforced)
+### 11.5. Architecture Decision Records (ADR)
+
+Closes ADR-008. ADRs capture decisions that survived design review and
+should outlive contributor turnover.
+
+**When to write one.** Anytime the answer to "why is it _this way_ and
+not the obvious alternative?" is non-trivial and would cost more than 30
+minutes to rederive. Examples: storage layer choice, async vs. sync,
+build tool, message format, embedding model. Bug fixes don't get ADRs.
+
+**Lifecycle.**
+
+```
+proposed  ─→  accepted  ─→  superseded   (replaced by another ADR)
+              │             deprecated   (abandoned without replacement)
+              └─→  rejected (decided not to do)
+```
+
+**Storage.** ADRs live in the project DB (tables `adr`, `adr_diagram`,
+`adr_supersedes`, `adr_task` — migration `0018_adr_tables`). The
+canonical 5-row table layout from `arch/architecture.md §5` was the
+historical source of truth; running
+`cod_doc.services.adr_migrator.migrate_from_file` back-ports legacy
+markdown ADRs into the DB. Idempotent — re-running skips already-imported
+ids.
+
+**Entry points.**
+
+| Surface | How to use it |
+|---|---|
+| **Web** | `/p/<slug>/adr` (list), `/adr/new` (form), `/adr/<id>` (detail + edit + diagram-attach + supersede), `/adr/graph` (Mermaid supersede DAG) |
+| **CLI** | `cod-doc adr new -p <slug> --title "..." --status accepted` · `adr list` · `adr show <id>` · `adr supersede <new> <old>` · `adr graph --format mermaid\|json` |
+| **MCP** | 8 tools under `--profile standard\|full`: `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_add_diagram`, `adr_supersede`, `adr_link_task`, `adr_graph` |
+| **Migrator** | `cod_doc.services.adr_migrator.migrate_from_file(session, project_id, md_path)` |
+
+**ADR ↔ task link.** When a task implements / invalidates / discovers
+an ADR, record it via `adr_link_task` (or the web supersede form) with
+relation `implements | invalidates | discovers | relates`. The link
+surfaces on both the task page and the ADR detail page.
+
+**Supersede semantics.** `adr_supersede(new, old)` is idempotent: it
+creates the DAG edge AND auto-flips the old ADR's status to
+`superseded` in one transaction. Self-supersede (`new == old`) raises.
+
+### 11.6. Architectural rules (auto-enforced)
 
 - **Web layer не импортирует `cod_doc.infra.*`** —
   `tests/api/test_web_layer_imports.py` ловит регрессию AST-сканированием.

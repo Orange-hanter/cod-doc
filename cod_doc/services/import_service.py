@@ -214,7 +214,7 @@ def import_markdown(
 
 
 def import_or_update_markdown(
-    session: "Session",
+    session: Session,
     *,
     project_id: int,
     doc_key: str,
@@ -223,7 +223,7 @@ def import_or_update_markdown(
     author: str = "human:web",
     reason: str | None = None,
     source_sha256: str | None = None,
-) -> tuple["Document", bool]:
+) -> tuple[Document, bool]:
     """PCA-929: Idempotent import — create new doc or update existing one.
 
     Returns ``(document, created)`` where ``created`` is True for new docs
@@ -286,10 +286,11 @@ def import_or_update_markdown(
     return existing, False
 
 
-def _set_content_sha(session: "Session", document_id: int, sha: str) -> None:
+def _set_content_sha(session: Session, document_id: int, sha: str) -> None:
     """PCA-928: store sha256 of imported file head on DocumentModel."""
-    from cod_doc.infra.models.documents import DocumentModel
     from sqlalchemy import update as _update
+
+    from cod_doc.infra.models.documents import DocumentModel
     session.execute(
         _update(DocumentModel)
         .where(DocumentModel.row_id == document_id)
@@ -297,7 +298,7 @@ def _set_content_sha(session: "Session", document_id: int, sha: str) -> None:
     )
 
 
-def _resolve_all_sections(session: "Session", document_id: int) -> None:
+def _resolve_all_sections(session: Session, document_id: int) -> None:
     """Best-effort second-pass resolve for every section of *document_id*.
 
     Called at the end of import_markdown() so forward links that were
@@ -305,8 +306,8 @@ def _resolve_all_sections(session: "Session", document_id: int) -> None:
     chance once the whole document exists.
     """
     try:
-        from cod_doc.services import link_service as _links
         from cod_doc.infra.repositories.doc_repo import SectionRepository
+        from cod_doc.services import link_service as _links
 
         for sec in SectionRepository(session).list_for_document(document_id):
             if sec.row_id is not None:
@@ -373,7 +374,7 @@ def _quick_title(parsed: ParsedMarkdown, path: Path) -> str:
 
 
 def scan_folder(
-    session: "Session",
+    session: Session,
     *,
     project_id: int,
     root: Path,
@@ -408,8 +409,9 @@ def scan_folder(
 
     # PCA-928: load DocumentModel directly so we can read content_sha256_head
     # for content-change detection.
-    from cod_doc.infra.models.documents import DocumentModel
     from sqlalchemy import select as _select
+
+    from cod_doc.infra.models.documents import DocumentModel
 
     existing: dict[str, Any] = {}
     rows = session.execute(

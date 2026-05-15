@@ -116,7 +116,7 @@ def _parse_acceptance_checklist(acceptance: str | None) -> list[str]:
 def _build_task_card(
     session: Session,
     project_id: int,
-    task,  # cod_doc.domain.entities.Task
+    task: Any,  # cod_doc.domain.entities.Task — Any to avoid circular import
 ) -> dict[str, Any]:
     """Assemble the agent_pick payload for an already-checked-out task."""
     from cod_doc.infra.models import (
@@ -449,7 +449,9 @@ def complete(
     """AGT-006: validate blockers, mark done, release lock in one transaction."""
     from cod_doc.services import activity_service, checkout_service, task_service
     from cod_doc.services.task_service import (
-        TaskAlreadyDoneError, TaskBlockedError, TaskNotFoundError,
+        TaskAlreadyDoneError,
+        TaskBlockedError,
+        TaskNotFoundError,
     )
 
     try:
@@ -465,10 +467,19 @@ def complete(
         return {"ok": False, "hint": str(exc), "code": "blocked"}
 
     # Release lock if held by this agent (idempotent if not).
+    # F3 (2026-05-15 audit): log if release fails — silent pass made it
+    # hard to spot leaking locks (e.g. when admin closes someone else's
+    # checked-out task with a different agent_id).
     try:
         checkout_service.release(session, task_id, agent=agent_id, force=False)
-    except Exception:
-        pass  # not fatal — task is done regardless
+    except Exception as exc:
+        import logging
+        logging.getLogger("cod_doc.agent").warning(
+            "agent_complete: lock release failed for %s (agent=%s): %s — "
+            "task is done but checkout may have leaked; caller may need "
+            "force=True via task_release",
+            task_id, agent_id, exc,
+        )
 
     activity_service.emit(
         session, project_id, "task.completed",
@@ -534,17 +545,22 @@ def pick(
     - When the ready set is empty: ``{"task": None, "reason": "no_ready_tasks"}``.
     """
     from cod_doc.infra.models import TaskModel
+    from cod_doc.infra.repositories import TaskRepository
     from cod_doc.services import checkout_service
     from cod_doc.services.plan_service import reads as plan_reads
-    from cod_doc.infra.repositories import TaskRepository
 
     repo = TaskRepository(session)
 
-    # 1. Idempotency: already-held lock?
+    # 1. Idempotency: already-held lock on an OPEN task?
+    # F2 (2026-05-15 audit): exclude done/cancelled so a stale lock on a
+    # closed task doesn't replay as the next pick. Lock survives raw-SQL
+    # status flips (which the audit-cycle migration scripts do); without
+    # this filter the next agent_pick returns the dead task.
     existing_lock = session.execute(
         select(TaskModel).where(
             TaskModel.project_id == project_id,
             TaskModel.checked_out_by == agent_id,
+            TaskModel.status.notin_(("done", "cancelled")),
         )
         .limit(1)
     ).scalar_one_or_none()

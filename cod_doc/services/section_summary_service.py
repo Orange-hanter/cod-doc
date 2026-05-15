@@ -119,7 +119,7 @@ def generate(
     path: Path,
     section: str,
     story_id_to_narrative: dict[str, str],
-    cfg: "Config",
+    cfg: Config,
 ) -> SectionSummary:
     """Run AI summary for ``section`` and persist it.
 

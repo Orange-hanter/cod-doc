@@ -26,7 +26,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from pathlib import Path
 
     from sqlalchemy.orm import Session
 
@@ -76,7 +75,7 @@ def _rerank_score(
 
 
 def _upsert_suggestion(
-    session: "Session",
+    session: Session,
     *,
     from_section_id: int,
     to_doc_key: str,
@@ -86,6 +85,7 @@ def _upsert_suggestion(
 ) -> bool:
     """Insert or update a suggestion row.  Returns True if created, False if updated."""
     from sqlalchemy import select, update
+
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
     now = datetime.now(UTC)
@@ -119,9 +119,9 @@ def _upsert_suggestion(
 
 
 def suggest_for_section(
-    session: "Session",
+    session: Session,
     section_id: int,
-    config: "Config",
+    config: Config,
     *,
     k: int = DEFAULT_K,
     threshold: float = DEFAULT_THRESHOLD,
@@ -134,8 +134,9 @@ def suggest_for_section(
     When *dry_run* is False, suggestions are upserted into ``link_suggestion``.
     """
     from sqlalchemy import select
-    from cod_doc.infra.models.documents import SectionModel, DocumentModel
+
     from cod_doc.core import reindex as _reindex
+    from cod_doc.infra.models.documents import DocumentModel, SectionModel
 
     # 1. Load section body
     sec = session.get(SectionModel, section_id)
@@ -250,9 +251,9 @@ def suggest_for_section(
 
 
 def backfill_project(
-    session: "Session",
+    session: Session,
     project_id: int,
-    config: "Config",
+    config: Config,
     *,
     apply_above: float | None = None,
     dry_run: bool = False,
@@ -267,7 +268,8 @@ def backfill_project(
     When *dry_run* is True, nothing is written to the DB.
     """
     from sqlalchemy import select
-    from cod_doc.infra.models.documents import SectionModel, DocumentModel
+
+    from cod_doc.infra.models.documents import DocumentModel, SectionModel
 
     result = SuggestionResult()
 
@@ -300,9 +302,10 @@ def backfill_project(
     return result
 
 
-def _auto_accept_above(session: "Session", from_section_id: int, threshold: float) -> None:
+def _auto_accept_above(session: Session, from_section_id: int, threshold: float) -> None:
     """Accept pending suggestions with score > threshold for a section."""
     from sqlalchemy import update
+
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
     session.execute(
@@ -317,7 +320,7 @@ def _auto_accept_above(session: "Session", from_section_id: int, threshold: floa
 
 
 def list_suggestions(
-    session: "Session",
+    session: Session,
     *,
     from_section_id: int | None = None,
     state: str = "pending",
@@ -325,6 +328,7 @@ def list_suggestions(
 ) -> list[dict[str, Any]]:
     """Return suggestion rows as plain dicts."""
     from sqlalchemy import select
+
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
     stmt = select(LinkSuggestionModel).where(LinkSuggestionModel.state == state)
@@ -349,7 +353,7 @@ def list_suggestions(
 
 
 def list_suggestions_for_document(
-    session: "Session",
+    session: Session,
     *,
     project_id: int,
     document_id: int,
@@ -361,6 +365,7 @@ def list_suggestions_for_document(
     Used by the web doc-show page to render the «Suggested links» panel.
     """
     from sqlalchemy import select
+
     from cod_doc.infra.models.documents import SectionModel
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
@@ -394,7 +399,7 @@ def list_suggestions_for_document(
     ]
 
 
-def get_suggestion(session: "Session", row_id: int) -> dict[str, Any] | None:
+def get_suggestion(session: Session, row_id: int) -> dict[str, Any] | None:
     """Return a single suggestion row as a plain dict, or None."""
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
     r = session.get(LinkSuggestionModel, row_id)
@@ -411,12 +416,13 @@ def get_suggestion(session: "Session", row_id: int) -> dict[str, Any] | None:
 
 
 def update_suggestion_state(
-    session: "Session",
+    session: Session,
     row_id: int,
     new_state: str,
 ) -> bool:
     """Change state of a suggestion (pending → accepted | rejected).  Returns True if found."""
-    from sqlalchemy import select, update
+    from sqlalchemy import update
+
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
     if new_state not in ("accepted", "rejected", "pending"):

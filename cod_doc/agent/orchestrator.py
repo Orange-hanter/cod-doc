@@ -62,7 +62,7 @@ class Orchestrator:
         config: Config,
         on_ask_human: Callable[[str, str], str] | None = None,
         async_on_ask_human: AskHumanAsync | None = None,
-        adapter: "LLMAdapter | None" = None,
+        adapter: LLMAdapter | None = None,
     ) -> None:
         self.project = project
         self.config = config

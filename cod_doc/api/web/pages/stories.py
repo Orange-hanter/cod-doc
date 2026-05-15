@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
+
+if TYPE_CHECKING:
+    from datetime import datetime
+    from pathlib import Path
+
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
@@ -36,15 +41,14 @@ def _gather_master_text(slug: str) -> str:
     return ""
 
 
-def _last_gen_path(slug: str) -> "Path":
+def _last_gen_path(slug: str) -> Path:
     """Per-project marker file for the last story-generation time."""
-    from pathlib import Path
 
     proj = get_project(slug)
     return proj.entry.cod_doc_dir / "story_last_gen.json"
 
 
-def _read_last_gen(slug: str) -> "datetime | None":
+def _read_last_gen(slug: str) -> datetime | None:
     """Return the timestamp of the last successful story generation, or None."""
     import json
     from datetime import datetime

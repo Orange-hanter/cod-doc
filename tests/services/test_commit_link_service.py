@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 from sqlalchemy import select
@@ -13,14 +12,12 @@ from sqlalchemy import select
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    CommitLinkModel, PlanModel, PlanSectionModel, ProjectModel,
+    PlanModel,
+    PlanSectionModel,
+    ProjectModel,
     TaskMetricsModel,
 )
 from cod_doc.services import commit_link_service, task_service
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
-
 
 # ----------------------------------------------------------------- #
 # parse_task_refs                                                    #
@@ -201,8 +198,7 @@ def test_import_rejects_non_git_path(engine_with_schema, tmp_path) -> None:  # t
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed(session)
-    with pytest.raises(ValueError, match="not a git"):
-        with transactional(factory) as session:
-            commit_link_service.import_from_git_log(
-                session, project_id=1, repo_path=tmp_path,
-            )
+    with pytest.raises(ValueError, match="not a git"), transactional(factory) as session:
+        commit_link_service.import_from_git_log(
+            session, project_id=1, repo_path=tmp_path,
+        )

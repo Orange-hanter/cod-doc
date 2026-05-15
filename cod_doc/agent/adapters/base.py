@@ -12,12 +12,9 @@ adapter converts Anthropic's response INTO this format.
 
 from __future__ import annotations
 
-import json
-from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
-
 
 # --------------------------------------------------------------------------- #
 # Neutral response types                                                        #
@@ -149,6 +146,6 @@ class LLMAdapter(Protocol):
         ...
 
 
-def supports_streaming(adapter: "LLMAdapter") -> bool:
+def supports_streaming(adapter: LLMAdapter) -> bool:
     """PCA-924: True iff the adapter implements stream_chat() (and advertises it)."""
     return getattr(adapter.capabilities, "streaming", False) and hasattr(adapter, "stream_chat")

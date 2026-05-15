@@ -174,7 +174,7 @@ def _next_action_guess(task: TaskModel, blocked_by_ids: list[str]) -> str:
     return ""
 
 
-def _resolve_task_documents(session: "Session", task_row_id: int) -> list[dict[str, Any]]:
+def _resolve_task_documents(session: Session, task_row_id: int) -> list[dict[str, Any]]:
     """PCA-916: compact list of task-bound docs (key/title/doc_type)."""
     try:
         from cod_doc.services import task_doc_service
@@ -188,7 +188,7 @@ def _resolve_task_documents(session: "Session", task_row_id: int) -> list[dict[s
 
 
 def _resolve_pending_approvals(
-    session: "Session", project_id: int, task_id: str
+    session: Session, project_id: int, task_id: str
 ) -> list[dict[str, Any]]:
     """PCA-916: approvals linked to task_id with status='pending'."""
     try:

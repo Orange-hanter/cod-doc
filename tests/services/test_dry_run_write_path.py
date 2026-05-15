@@ -17,10 +17,7 @@ from mcp.server.fastmcp import FastMCP
 from sqlalchemy import select
 
 from cod_doc.domain.entities import (
-    DocumentStatus,
-    DocumentType,
     Priority,
-    Sensitivity,
     TaskStatus,
     TaskType,
 )

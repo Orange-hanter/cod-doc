@@ -41,7 +41,7 @@ def test_calls_openai_and_returns_content(monkeypatch) -> None:
         choices = [FakeChoice()]
 
     class FakeChat:
-        def create(self, **kwargs):  # noqa: ANN001
+        def create(self, **kwargs):
             captured.update(kwargs)
             return FakeCompletion()
 
@@ -49,7 +49,7 @@ def test_calls_openai_and_returns_content(monkeypatch) -> None:
         completions = FakeChat()
 
     class FakeClient:
-        def __init__(self, **kwargs):  # noqa: ANN001
+        def __init__(self, **kwargs):
             captured["init"] = kwargs
             self.chat = FakeChatNamespace()
 
@@ -72,7 +72,7 @@ def test_calls_openai_and_returns_content(monkeypatch) -> None:
 
 def test_wraps_backend_exception_in_aibackend_error(monkeypatch) -> None:
     class Boom:
-        def __init__(self, **kwargs):  # noqa: ANN001
+        def __init__(self, **kwargs):
             self.chat = type(
                 "_C",
                 (),
@@ -106,7 +106,7 @@ def test_raises_when_completion_is_empty(monkeypatch) -> None:
         choices = [FakeChoice()]
 
     class FakeClient:
-        def __init__(self, **kwargs):  # noqa: ANN001
+        def __init__(self, **kwargs):
             self.chat = type(
                 "_C",
                 (),

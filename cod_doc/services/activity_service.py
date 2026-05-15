@@ -27,7 +27,7 @@ import time
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
 from cod_doc.infra.models import ActivityEventModel
 from cod_doc.services.run_context import get_current_run_id

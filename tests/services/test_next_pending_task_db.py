@@ -14,7 +14,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from cod_doc.domain.entities import Priority, TaskStatus, TaskType
+from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
     DependencyModel,
@@ -67,8 +67,8 @@ def _make_task(session, proj_id, plan_id, sec_id, task_id, *, priority=Priority.
 
 def _register_tool(monkeypatch, factory):
     # Stub session_factory + open_project + require_project_id.
-    from cod_doc.mcp.tools import legacy_project_tools as lpt
     from cod_doc.mcp.tools import _db
+    from cod_doc.mcp.tools import legacy_project_tools as lpt
 
     monkeypatch.setattr(_db, "session_factory", lambda project: (factory, None))
 

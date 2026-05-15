@@ -63,6 +63,7 @@ def _bootstrap_default_routines(session, project_id: int) -> None:  # type: igno
     because IntegrityError invalidates the surrounding session.
     """
     from sqlalchemy import select
+
     from cod_doc.infra.models import RoutineModel
     from cod_doc.services import routine_service
 

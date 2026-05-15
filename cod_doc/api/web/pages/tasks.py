@@ -6,7 +6,7 @@ import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db

@@ -11,12 +11,17 @@ from fastapi.testclient import TestClient
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import (
-    Plan, PlanSection, Priority, TaskType,
+    Plan,
+    PlanSection,
+    Priority,
+    TaskType,
 )
 from cod_doc.domain.entities import Project as ProjectEntity
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import (
-    PlanRepository, PlanSectionRepository, ProjectRepository,
+    PlanRepository,
+    PlanSectionRepository,
+    ProjectRepository,
 )
 from cod_doc.services import task_service as tasks
 
@@ -124,7 +129,7 @@ def test_metrics_page_no_data_state(metrics_client, tmp_path: Path, migrate_db) 
 
     from cod_doc.api.server import app
     with TestClient(app, raise_server_exceptions=True) as client:
-        r = client.get(f"/p/empty-metp/metrics")
+        r = client.get("/p/empty-metp/metrics")
     assert r.status_code == 200
     assert "No completed tasks" in r.text
 

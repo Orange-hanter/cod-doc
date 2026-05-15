@@ -26,14 +26,15 @@ Public API
 from __future__ import annotations
 
 import re as _re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from cod_doc.infra.models import (
     ApprovalModel,
@@ -152,9 +153,10 @@ def _check_approval_stale(session: Session, project_id: int, **_: Any) -> dict[s
     return {"expired_count": len(expired_ids), "expired_ids": expired_ids}
 
 
-def _get_project_root(session: Session, project_id: int) -> "Path | None":
+def _get_project_root(session: Session, project_id: int) -> Path | None:
     """Return the on-disk root for a project_id via the project.root_path column."""
     from pathlib import Path
+
     from cod_doc.infra.models.project import ProjectModel
 
     proj_model = session.get(ProjectModel, project_id)
@@ -203,6 +205,7 @@ def _check_link_integrity(
     Delegates to ``link_service.verify_section`` for each section.
     """
     from sqlalchemy import select as _select
+
     from cod_doc.infra.models.documents import DocumentModel, SectionModel
     from cod_doc.services import link_service
 
@@ -498,7 +501,7 @@ def _cron_interval_minutes(cron: str | None) -> int:
     return 60  # safe default for unrecognised patterns
 
 
-def tick(session: "Session", project_id: int) -> list[str]:
+def tick(session: Session, project_id: int) -> list[str]:
     """PCA-919: Fire all overdue cron routines for a project.
 
     Called once per daemon cycle.  For each enabled routine with
@@ -571,7 +574,7 @@ def _signature_for_routine(routine_name: str) -> str:
 
 
 def _update_or_create_finding_task(
-    session: "Session",
+    session: Session,
     project_id: int,
     routine: RoutineModel,
     result: dict[str, Any],
@@ -585,7 +588,8 @@ def _update_or_create_finding_task(
     Returns the task_id of the touched task, or None on failure.
     """
     from sqlalchemy import select as _select
-    from cod_doc.domain.entities import Priority, TaskStatus, TaskType
+
+    from cod_doc.domain.entities import Priority, TaskType
     from cod_doc.infra.models import TaskModel
     from cod_doc.services import task_service
 

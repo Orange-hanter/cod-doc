@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 from sqlalchemy import select
 
@@ -150,3 +149,28 @@ def test_agent_pick_empty_returns_structured_reason(engine_with_schema) -> None:
     with transactional(factory) as session:
         card = agent_service.pick(session, project_id=1, agent_id="me")
     assert card == {"task": None, "reason": "no_ready_tasks"}
+
+
+def test_agent_pick_ignores_stale_lock_on_done_task(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """F2 regression (2026-05-15 audit): a done task with a dangling
+    ``checked_out_by`` must not replay as ``idempotent_replay`` — the next
+    pick should pick a fresh ready task instead.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        a = _make(session, pid, plid, sid, "APK-100", prio=Priority.HIGH)
+        _make(session, pid, plid, sid, "APK-101", prio=Priority.MEDIUM)
+    # Mark APK-100 as done WHILE keeping the lock — simulates a SQL bypass.
+    with transactional(factory) as session:
+        row = session.execute(
+            select(TaskModel).where(TaskModel.task_id == "APK-100")
+        ).scalar_one()
+        row.status = "done"
+        row.checked_out_by = "stale-agent"
+        row.checked_out_at = datetime.now(UTC)
+    with transactional(factory) as session:
+        card = agent_service.pick(session, project_id=1, agent_id="stale-agent")
+    # Must NOT replay APK-100; must pick the still-open APK-101.
+    assert card["task"]["task_id"] == "APK-101"
+    assert card.get("idempotent_replay") is not True

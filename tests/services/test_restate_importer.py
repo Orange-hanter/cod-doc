@@ -13,9 +13,7 @@ from cod_doc.infra.repositories import (
     DocumentRepository,
     ProjectRepository,
 )
-from cod_doc.services import plan_service
-from cod_doc.services import restate_importer
-from cod_doc.services import task_service
+from cod_doc.services import plan_service, restate_importer, task_service
 
 if TYPE_CHECKING:
     from pathlib import Path

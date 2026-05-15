@@ -44,7 +44,7 @@ def register(mcp: FastMCP) -> None:
         See also: skill ``task-standard``; cod_doc/services/task_status_machine.py.
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import checkout_service, activity_service
+        from cod_doc.services import activity_service, checkout_service
         from cod_doc.services.checkout_service import (
             CheckoutConflictError,
             CheckoutStatusError,
@@ -95,7 +95,7 @@ def register(mcp: FastMCP) -> None:
         Status is unchanged — call task_complete or task_update_status separately.
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import checkout_service, activity_service
+        from cod_doc.services import activity_service, checkout_service
         from cod_doc.services.checkout_service import CheckoutConflictError
 
         sf, _ = session_factory(project)

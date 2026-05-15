@@ -24,10 +24,7 @@ from cod_doc.infra.repositories import (
     PlanSectionRepository,
     ProjectRepository,
 )
-from cod_doc.services import doc_service
-from cod_doc.services import plan_service
-from cod_doc.services import revision_service
-from cod_doc.services import task_service
+from cod_doc.services import doc_service, plan_service, revision_service, task_service
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -191,6 +188,5 @@ def test_freeze_projection_unknown_plan_raises(
     tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        with pytest.raises(plan_service.PlanNotFoundError):
-            plan_service.freeze_projection(session, 9999, author="human:test")
+    with transactional(factory) as session, pytest.raises(plan_service.PlanNotFoundError):
+        plan_service.freeze_projection(session, 9999, author="human:test")

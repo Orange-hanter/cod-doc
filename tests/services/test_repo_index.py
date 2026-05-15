@@ -5,19 +5,14 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
     ProjectModel,
     RepoFileModel,
-    RepoImportModel,
     RepoSymbolModel,
 )
 from cod_doc.services import repo_index_service
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
 
 
 def _seed(session) -> int:  # type: ignore[no-untyped-def]
@@ -178,11 +173,10 @@ def test_scan_rejects_non_directory(engine_with_schema, tmp_path: Path) -> None:
     with transactional(factory) as session:
         _seed(session)
     import pytest as _pytest
-    with _pytest.raises(ValueError, match="not a directory"):
-        with transactional(factory) as session:
-            repo_index_service.scan_project(
-                session, project_id=1, repo_path=tmp_path / "no_such",
-            )
+    with _pytest.raises(ValueError, match="not a directory"), transactional(factory) as session:
+        repo_index_service.scan_project(
+            session, project_id=1, repo_path=tmp_path / "no_such",
+        )
 
 
 # ----------------------------------------------------------------- #

@@ -9,7 +9,7 @@ import pytest
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
-from cod_doc.infra.models import ProjectModel, PlanModel, PlanSectionModel, TaskModel
+from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, TaskModel
 from cod_doc.services import checkout_service as checkout
 from cod_doc.services import task_service as tasks
 from cod_doc.services.checkout_service import (
@@ -175,6 +175,5 @@ def test_release_stale_skips_fresh_locks(engine_with_schema) -> None:  # type: i
 
 def test_checkout_unknown_task_raises_lookup(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        with pytest.raises(LookupError):
-            checkout.checkout(session, "NO-SUCH", agent="A")
+    with transactional(factory) as session, pytest.raises(LookupError):
+        checkout.checkout(session, "NO-SUCH", agent="A")

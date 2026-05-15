@@ -148,7 +148,7 @@ def register(mcp: FastMCP) -> None:
 
         On unknown ``name`` returns a structured hint with related_tools=[tool_search].
         """
-        tools = mcp._tool_manager._tools  # noqa: SLF001
+        tools = mcp._tool_manager._tools
         if name not in tools:
             return {
                 "name": name,
@@ -502,8 +502,8 @@ def register(mcp: FastMCP) -> None:
         from cod_doc.mcp.tools import _workspace
         from cod_doc.mcp.tools.skill_tools import iter_skill_records
         from cod_doc.services.task_status_machine import (
-            ALLOWED_TRANSITIONS,
             _LEGACY_ALIASES,
+            ALLOWED_TRANSITIONS,
         )
 
         all_tools = asyncio.run(mcp.list_tools())

@@ -8,14 +8,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 import pytest
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    PlanModel, PlanSectionModel, ProjectModel,
+    PlanModel,
+    PlanSectionModel,
+    ProjectModel,
 )
 from cod_doc.services import agent_service, task_service
 

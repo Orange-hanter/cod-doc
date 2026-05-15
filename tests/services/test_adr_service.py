@@ -9,11 +9,14 @@ from sqlalchemy import select
 
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    ADRDiagramModel, ADRModel, ADRSupersedeModel, ADRTaskModel, ProjectModel,
+    ADRSupersedeModel,
+    ADRTaskModel,
+    ProjectModel,
 )
 from cod_doc.services import adr_service
 from cod_doc.services.adr_service import (
-    ADRAlreadyExistsError, ADRNotFoundError,
+    ADRAlreadyExistsError,
+    ADRNotFoundError,
 )
 
 
@@ -61,10 +64,9 @@ def test_create_duplicate_explicit_id_raises(engine_with_schema) -> None:  # typ
     with transactional(factory) as session:
         pid = _seed(session)
         adr_service.create(session, project_id=pid, title="A", adr_id="ADR-099")
-    with pytest.raises(ADRAlreadyExistsError):
-        with transactional(factory) as session:
-            pid = session.execute(select(ProjectModel.row_id)).scalar_one()
-            adr_service.create(session, project_id=pid, title="dup", adr_id="ADR-099")
+    with pytest.raises(ADRAlreadyExistsError), transactional(factory) as session:
+        pid = session.execute(select(ProjectModel.row_id)).scalar_one()
+        adr_service.create(session, project_id=pid, title="dup", adr_id="ADR-099")
 
 
 def test_create_with_full_payload(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -136,9 +138,8 @@ def test_update_unknown_raises(engine_with_schema) -> None:  # type: ignore[no-u
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed(session)
-    with pytest.raises(ADRNotFoundError):
-        with transactional(factory) as session:
-            adr_service.update(session, project_id=1, adr_id="ADR-999", title="x")
+    with pytest.raises(ADRNotFoundError), transactional(factory) as session:
+        adr_service.update(session, project_id=1, adr_id="ADR-999", title="x")
 
 
 # ----------------------------------------------------------------- #
@@ -213,12 +214,11 @@ def test_supersede_self_loop_raises(engine_with_schema) -> None:  # type: ignore
     with transactional(factory) as session:
         pid = _seed(session)
         adr_service.create(session, project_id=pid, title="x")
-    with pytest.raises(ValueError, match="itself"):
-        with transactional(factory) as session:
-            adr_service.supersede(
-                session, project_id=1,
-                superseding_adr_id="ADR-001", superseded_adr_id="ADR-001",
-            )
+    with pytest.raises(ValueError, match="itself"), transactional(factory) as session:
+        adr_service.supersede(
+            session, project_id=1,
+            superseding_adr_id="ADR-001", superseded_adr_id="ADR-001",
+        )
 
 
 # ----------------------------------------------------------------- #
@@ -244,11 +244,10 @@ def test_link_task_invalid_relation(engine_with_schema) -> None:  # type: ignore
     with transactional(factory) as session:
         pid = _seed(session)
         adr_service.create(session, project_id=pid, title="x")
-    with pytest.raises(ValueError, match="invalid relation"):
-        with transactional(factory) as session:
-            adr_service.link_task(
-                session, project_id=1, adr_id="ADR-001", task_id="t", relation="weird",
-            )
+    with pytest.raises(ValueError, match="invalid relation"), transactional(factory) as session:
+        adr_service.link_task(
+            session, project_id=1, adr_id="ADR-001", task_id="t", relation="weird",
+        )
 
 
 # ----------------------------------------------------------------- #

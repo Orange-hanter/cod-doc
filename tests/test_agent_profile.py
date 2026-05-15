@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
-
 import pytest
 
 from cod_doc.mcp.profiles import AGENT_TOOLS, VALID_PROFILES, keep_tool
 from cod_doc.mcp.server import (
     apply_profile,
-    get_active_profile,
+)
+from cod_doc.mcp.server import (
     mcp as live_mcp,
 )
 
@@ -50,7 +48,7 @@ def test_agent_tools_frozenset_has_six_names() -> None:
         "agent_complete",
         "agent_release",
     }
-    assert AGENT_TOOLS == expected
+    assert expected == AGENT_TOOLS
 
 
 def test_keep_tool_agent_profile() -> None:

@@ -12,10 +12,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-import pytest
 from mcp.server.fastmcp import FastMCP
 
-from cod_doc.domain.entities import Priority, Task, TaskStatus, TaskType
+from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.mcp.tools import task_tools

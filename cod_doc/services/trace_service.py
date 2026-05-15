@@ -62,10 +62,12 @@ def aggregate_by_model_for_project(
     Used by the cost dashboard.  Cost is computed via the OpenAI-compat
     pricing dict (best-effort; unknown models return 0).
     """
-    from sqlalchemy import select, func
-    from cod_doc.infra.models import TraceCallModel, TaskModel
-    from cod_doc.agent.adapters.openai_compat import _PRICING_USD_PER_MTOK
     from decimal import Decimal
+
+    from sqlalchemy import func, select
+
+    from cod_doc.agent.adapters.openai_compat import _PRICING_USD_PER_MTOK
+    from cod_doc.infra.models import TaskModel, TraceCallModel
 
     rows = session.execute(
         select(

@@ -124,7 +124,6 @@ def test_cli_link_backfill_syncs_sections(tmp_path: Path) -> None:
     sync_section so existing imports gain link rows."""
     cfg, entry = _bootstrap(tmp_path)
 
-    from datetime import UTC, datetime
 
     from cod_doc.cli.link import link as link_group
     from cod_doc.domain.entities import (

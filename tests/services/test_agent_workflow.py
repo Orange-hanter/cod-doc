@@ -7,12 +7,20 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 
 from cod_doc.domain.entities import (
-    DocumentStatus, DocumentType, Priority, Sensitivity, TaskType,
-    UserStory, UserStoryStatus,
+    DocumentStatus,
+    DocumentType,
+    Priority,
+    Sensitivity,
+    TaskType,
+    UserStory,
+    UserStoryStatus,
 )
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    PlanModel, PlanSectionModel, ProjectModel, TaskModel,
+    PlanModel,
+    PlanSectionModel,
+    ProjectModel,
+    TaskModel,
 )
 from cod_doc.infra.repositories import UserStoryRepository
 from cod_doc.services import agent_service, doc_service, task_service

@@ -15,8 +15,8 @@ from cod_doc.infra.models import (
     ProjectModel,
     RoutineModel,
 )
-from cod_doc.services import routine_service as routines
 from cod_doc.services import approval_service as approvals
+from cod_doc.services import routine_service as routines
 from cod_doc.services.routine_service import RoutineNotFoundError
 
 if TYPE_CHECKING:

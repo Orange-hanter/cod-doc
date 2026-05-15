@@ -18,12 +18,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
 from cod_doc.api.web.templates_env import templates
-from cod_doc.infra.models import LinkModel
+from cod_doc.services import link_service
 
 router = APIRouter()
 
@@ -53,23 +52,7 @@ def code_refs_index(
     proj = get_project(slug)
     session, project_id = db
 
-    rows = list(session.execute(
-        select(LinkModel)
-        .where(LinkModel.project_id == project_id, LinkModel.kind == "code")
-        .order_by(LinkModel.to_file_path, LinkModel.to_symbol)
-    ).scalars())
-
-    items = [
-        {
-            "file_path": r.to_file_path or "",
-            "symbol": r.to_symbol or None,
-            "resolved": r.resolved,
-            "broken_reason": r.broken_reason,
-            "raw": r.raw,
-            "from_section_id": r.from_section_id,
-        }
-        for r in rows
-    ]
+    items = link_service.list_code_refs(session, project_id)
 
     # Group by file_path for cleaner display.
     by_file: dict[str, list[dict]] = {}
