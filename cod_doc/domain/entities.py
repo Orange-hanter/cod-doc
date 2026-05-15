@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from datetime import datetime
+    from datetime import date, datetime
 
 
 class DocumentType(StrEnum):
@@ -121,6 +121,29 @@ class StoryRelation(StrEnum):
     IMPLEMENTED_BY = "implemented_by"
     SPECIFIED_IN = "specified_in"
     OWNED_BY = "owned_by"
+
+
+class ADRStatus(StrEnum):
+    """ADR lifecycle (ADR-001 / cycle-5).
+
+    Canonical: proposed → accepted → (optionally) superseded | deprecated.
+    Rejected is for "considered but explicitly declined" decisions.
+    """
+
+    PROPOSED = "proposed"
+    ACCEPTED = "accepted"
+    SUPERSEDED = "superseded"
+    DEPRECATED = "deprecated"
+    REJECTED = "rejected"
+
+
+class ADRTaskRelation(StrEnum):
+    """How a task relates to an ADR (ADR-001 / cycle-5)."""
+
+    IMPLEMENTS = "implements"
+    INVALIDATES = "invalidates"
+    DISCOVERS = "discovers"
+    RELATES = "relates"
 
 
 class ModuleStatus(StrEnum):
@@ -415,3 +438,54 @@ class TraceCall:
     @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
+
+
+@dataclass(slots=True)
+class Adr:
+    """Architecture Decision Record (ADR-001)."""
+
+    project_id: int
+    adr_id: str  # 'ADR-NNN'
+    title: str
+    status: ADRStatus = ADRStatus.PROPOSED
+    decided_at: date | None = None
+    context: str | None = None
+    decision: str | None = None
+    alternatives: str | None = None
+    consequences: str | None = None
+    author: str = "human"
+    created: datetime | None = None
+    last_updated: datetime | None = None
+    row_id: int | None = None
+
+
+@dataclass(slots=True)
+class AdrDiagram:
+    """Mermaid diagram attached to an ADR."""
+
+    adr_id: int  # row_id of parent ADR
+    position: int = 0
+    title: str | None = None
+    mermaid: str = ""
+    row_id: int | None = None
+
+
+@dataclass(slots=True)
+class AdrSupersede:
+    """Edge in the ADR supersede DAG: ``superseding`` replaces ``superseded``."""
+
+    superseding_id: int  # row_id
+    superseded_id: int  # row_id
+    reason: str | None = None
+    at: datetime | None = None
+    row_id: int | None = None
+
+
+@dataclass(slots=True)
+class AdrTaskLink:
+    """Link between an ADR and a task — by task_id string (not row_id)."""
+
+    adr_row_id: int
+    task_id: str
+    relation: ADRTaskRelation = ADRTaskRelation.IMPLEMENTS
+    row_id: int | None = None

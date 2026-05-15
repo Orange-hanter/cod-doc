@@ -21,6 +21,7 @@ from cod_doc.logging_config import get_logger, setup_logging
 from cod_doc.mcp.profiles import VALID_PROFILES, keep_tool
 from cod_doc.mcp.tools import (
     activity_tools,
+    adr_tools,
     agent_tools,
     approval_tools,
     checkout_tools,
@@ -78,6 +79,8 @@ for _module in (
     routine_tools,
     # AGT-001..AGT-007 agent.* (cycle-5 task-centric surface)
     agent_tools,
+    # ADR-002 adr.* (Architecture Decision Records)
+    adr_tools,
 ):
     _module.register(mcp)
 

@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **110 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **118 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -99,7 +99,7 @@ COD_DOC_PROFILE=full cod-doc-mcp         # через env
 
 ### Что можно делать
 
-После подключения в Copilot Chat доступна вся MCP-поверхность (110 тулов на текущий релиз). Примеры запросов:
+После подключения в Copilot Chat доступна вся MCP-поверхность (118 тулов на текущий релиз). Примеры запросов:
 
 - "Покажи статус проекта weather-cli"
 - "Какие задачи не закрыты?"
@@ -297,11 +297,12 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **routine.\*** | 7 | Cron-style health checks | `routine_create`, `routine_list`, `routine_get`, `routine_update_status`, `routine_delete`, `routine_run_now`, `routine_history` |
 | **skill.\*** | 2 | Каталог skill-инструкций для агента | `skill_list`, `skill_get` |
 | **agent.\* (cycle-5)** | 6 | Task-centric surface для AI-агентов: pick → work → complete за 3 вызова | `agent_capabilities`, `agent_pick`, `agent_get`, `agent_report`, `agent_complete`, `agent_release` |
+| **adr.\* (ADR-002)** | 8 | Architecture Decision Records: CRUD + supersede DAG + task links + Mermaid diagrams | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_add_diagram`, `adr_supersede`, `adr_link_task`, `adr_graph` |
 | **context / capabilities / session** | 9 | Admin: snowball-сборка контекста, L0 bootstrap, tool discovery + per-tool describe, change-log, safe-call envelope, workspace defaults | `context_get`, `capabilities`, `tool_search`, `tool_describe`, `tools_diff`, `tool_call_safe`, `set_default_project`, `get_default_project`, `clear_default_project` |
 | **hash / verify** | 2 | Контроль целостности файлов | `hash_file`, `verify_hash` |
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
 | **Legacy (YAML)** | 20 | Проекты / задачи / MASTER / поиск / агент — depending on `tasks_yaml` стора | `list_projects`, `add_project`, `remove_project`, `get_project_status`, `list_tasks`, `add_task`, `update_task`, `next_pending_task`, `get_master`, `update_master_hashes`, `check_stale_refs`, `generate_ref`, `read_file`, `read_context`, `list_files`, `search_docs`, `reindex`, `run_agent_once`, `get_agent_context`, `clear_agent_context` |
-| **ИТОГО** | **110** | | |
+| **ИТОГО** | **118** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
@@ -336,7 +337,7 @@ docstring соответствующих тулов. Для новых инте�
 | Copilot Chat | ✅ | ✅ | ❌ | Частично |
 | Claude Desktop | ✅ | ✅ | ❌ | Через copy-paste |
 | CI/CD | ❌ | ✅ | ✅ | ❌ |
-| Кол-во инструментов | 110 | 110 | ~8 | 0 |
+| Кол-во инструментов | 118 | 118 | ~8 | 0 |
 | Семантический поиск | ✅ | ✅ | ❌ | ❌ |
 | Запуск агента | ✅ | ✅ | ✅ (WS) | ❌ |
 

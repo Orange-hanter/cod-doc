@@ -18,6 +18,7 @@ point.
 from __future__ import annotations
 
 from .activity import ActivityEventModel
+from .adrs import ADRDiagramModel, ADRModel, ADRSupersedeModel, ADRTaskModel
 from .approvals import ApprovalDocRevisionLinkModel, ApprovalModel, ApprovalTaskLinkModel
 from .base import Base, _utcnow
 from .comments import DocCommentModel
@@ -39,6 +40,10 @@ from .task_docs import TaskDocumentModel
 from .traces import TraceCallModel
 
 __all__ = [
+    "ADRDiagramModel",
+    "ADRModel",
+    "ADRSupersedeModel",
+    "ADRTaskModel",
     "ActivityEventModel",
     "AffectedFileModel",
     "AgentRunModel",
