@@ -18,6 +18,56 @@ _WIKI_RE = re.compile(r"\[\[([^\]\n]+)\]\]")
 _MD_LINK_RE = re.compile(r"\[([^\]\n]+)\]\(([^)\n]+)\)")
 _BARE_URL_RE = re.compile(r"https?://[^\s)\]]+")
 
+# OBI-020: code-ref extensions. A markdown link whose href ends in one of
+# these is classified as LinkKind.CODE (not LinkKind.MARKDOWN). The list
+# covers the languages COD-DOC's own codebase + projects it's expected to
+# document: Python, JS/TS, Go, Rust, JVM family, C/C++, Ruby, PHP, Swift,
+# shell, SQL, common config formats, web frontend.
+_CODE_EXTENSIONS: frozenset[str] = frozenset({
+    ".py", ".pyi", ".pyx",
+    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+    ".vue", ".svelte",
+    ".go", ".rs",
+    ".java", ".kt", ".kts", ".scala", ".groovy",
+    ".c", ".h", ".cpp", ".hpp", ".cc", ".hh", ".cxx",
+    ".rb", ".php", ".swift", ".m", ".mm",
+    ".sh", ".bash", ".zsh", ".fish",
+    ".sql",
+    ".yaml", ".yml", ".toml", ".json", ".ini",
+    ".html", ".htm", ".css", ".scss", ".sass", ".less",
+    ".dockerfile", ".lua", ".pl", ".r",
+})
+
+
+def _is_code_href(href: str) -> bool:
+    """OBI-020: is this href a code file (vs markdown doc / URL)?"""
+    if not href:
+        return False
+    if href.startswith(("http://", "https://", "mailto:", "tel:")):
+        return False
+    path = href.split("#", 1)[0]
+    path = path.split("?", 1)[0]
+    # Reduce to extension — handles paths like 'cod_doc/services/foo.py'.
+    if "." not in path:
+        return False
+    ext_idx = path.rfind(".")
+    ext = path[ext_idx:].lower()
+    return ext in _CODE_EXTENSIONS
+
+
+def _split_code_href(href: str) -> tuple[str, str | None]:
+    """Return (file_path, symbol) for a code-ref href.
+
+    Symbol comes from the ``#fragment`` after the path; ``None`` if absent.
+    Path normalization mirrors ``_href_to_doc_key`` for ``./``/``../`` chains.
+    """
+    file_path, _, symbol = href.partition("#")
+    while file_path.startswith("../") or file_path.startswith("./"):
+        file_path = file_path[3:] if file_path.startswith("../") else file_path[2:]
+    if file_path.startswith("/"):
+        file_path = file_path[1:]
+    return file_path, (symbol or None)
+
 
 def _strip_fenced_code(body: str) -> str:
     """Replace fenced code blocks with same-length whitespace to keep offsets."""
@@ -98,6 +148,20 @@ def parse(body: str) -> list[ParsedLink]:
         md_spans.append((m.start(), m.end()))
         if href.startswith(("http://", "https://")):
             out.append(ParsedLink(raw=m.group(0), kind=LinkKind.URL, start=m.start()))
+            continue
+        # OBI-020: code-ref detection BEFORE doc-key parsing — files like
+        # `src/auth.py` should not be treated as document keys.
+        if _is_code_href(href):
+            file_path, symbol = _split_code_href(href)
+            out.append(
+                ParsedLink(
+                    raw=m.group(0),
+                    kind=LinkKind.CODE,
+                    target_file_path=file_path or None,
+                    target_symbol=symbol,
+                    start=m.start(),
+                )
+            )
             continue
         doc_key, anchor = _href_to_doc_key(href)
         if anchor:

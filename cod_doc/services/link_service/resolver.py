@@ -18,6 +18,7 @@ from cod_doc.domain.entities import Link, LinkKind
 from cod_doc.infra.models import (
     DocumentModel,
     LinkModel,
+    ProjectModel,
     SectionModel,
     TaskModel,
     UserStoryModel,
@@ -195,6 +196,57 @@ def _resolve_wiki(
     return True, doc_key, None
 
 
+def _resolve_code_ref(
+    session: Session,
+    project_id: int,
+    file_path: str | None,
+    symbol: str | None,
+) -> tuple[bool, str | None, str | None]:
+    """OBI-020: resolve a code-ref by checking the file exists on disk.
+
+    Returns (ok, file_path_back, reason). ``file_path`` is taken as-is —
+    the parser already normalized (no ``./``, no leading ``/``). Resolution
+    is fail-fast: if the file is missing under the project root,
+    ``broken_reason`` carries an actionable message.
+
+    Symbol-level verification (does the file contain ``#symbol``?) is
+    a future enhancement — for now we only verify file existence.
+    """
+    from pathlib import Path
+
+    if not file_path:
+        return (False, None, "missing file_path")
+
+    proj = session.execute(
+        select(ProjectModel).where(ProjectModel.row_id == project_id)
+    ).scalar_one_or_none()
+    if proj is None or not proj.root_path:
+        return (False, file_path, f"project root unknown for project_id={project_id}")
+
+    target = Path(proj.root_path) / file_path
+    if not target.exists():
+        return (
+            False, file_path,
+            f"file not found under project root: {file_path!r}",
+        )
+    if not target.is_file():
+        return (False, file_path, f"target is not a regular file: {file_path!r}")
+    # Optionally also check that ``symbol`` appears in the file. We don't
+    # parse AST (different per language) — just substring match, which
+    # catches typos without false-positive on similar prefixes.
+    if symbol:
+        try:
+            text = target.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return (False, file_path, f"unreadable: {exc}")
+        if symbol not in text:
+            return (
+                False, file_path,
+                f"symbol {symbol!r} not found in {file_path!r}",
+            )
+    return (True, file_path, None)
+
+
 def _reparse_link(model: LinkModel) -> ParsedLink:
     """Re-derive a ParsedLink from a stored row's `raw` field.
 
@@ -264,6 +316,15 @@ def _apply_resolution(
     elif kind is LinkKind.STORY:
         ok, to_id, reason = _resolve_story(session, project_id, parsed.target_story_id)
         model.to_story_id = to_id
+    elif kind is LinkKind.CODE:
+        # OBI-020: code refs resolve to a file path on disk relative to the
+        # project root. ``parsed.target_file_path`` is what the parser
+        # produced; ``parsed.target_symbol`` is the optional ``#fragment``.
+        ok, file_path, reason = _resolve_code_ref(
+            session, project_id, parsed.target_file_path, parsed.target_symbol,
+        )
+        model.to_file_path = file_path
+        model.to_symbol = parsed.target_symbol
     else:
         ok, reason = False, f"unsupported kind: {kind.value}"
 
@@ -297,6 +358,10 @@ def sync_section(session: Session, section_id: int) -> list[Link]:
             to_doc_key=None,
             to_task_id=None,
             to_story_id=None,
+            # OBI-020: code-ref payload preserved through sync so resolver
+            # has access without re-parsing.
+            to_file_path=p.target_file_path,
+            to_symbol=p.target_symbol,
             resolved=False,
             last_checked=None,
             broken_reason=None,

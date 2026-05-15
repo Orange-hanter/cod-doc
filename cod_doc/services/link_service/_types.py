@@ -23,6 +23,9 @@ class ParsedLink:
     target_label: str | None = None  # wiki-link label (pre-resolution)
     anchor: str | None = None
     start: int = 0  # position in the (code-block-stripped) body
+    # OBI-020: code-ref fields. Populated when kind == LinkKind.CODE.
+    target_file_path: str | None = None
+    target_symbol: str | None = None  # '#symbol_name' fragment
 
 
 @dataclass(slots=True)

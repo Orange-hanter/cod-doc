@@ -12,6 +12,7 @@ from fastapi import APIRouter
 
 from . import (
     adr,
+    code_refs,
     comments,
     commits,
     costs,
@@ -52,6 +53,8 @@ router.include_router(adr.router)
 router.include_router(metrics.router)
 # OBI-011 commit↔task links
 router.include_router(commits.router)
+# OBI-021 code-refs panel + preview endpoint
+router.include_router(code_refs.router)
 # `comments.router` before `docs.router`: comments routes are nested under
 # `/p/{slug}/docs/{doc_key:path}/comments` but each pins the trailing
 # `/comments…` suffix, so they would not shadow the docs catch-all on

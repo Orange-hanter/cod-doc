@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Code refs · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Code refs</span>
+</nav>
+
+{% with slug=project.name, active="code_refs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="code-refs-page">
+  <header class="code-refs-header">
+    <h1>📎 Code references</h1>
+    <p class="muted">
+      Markdown links of the form
+      <code>[label](path.py#symbol)</code> parsed from document bodies.
+      Hover a row to preview the first 20 lines of the file.
+    </p>
+    <p class="muted-tiny">
+      <strong>{{ total }}</strong> refs · ✅ {{ resolved_count }} resolved ·
+      ⚠️ {{ broken_count }} broken
+    </p>
+  </header>
+
+  {% if not grouped %}
+    <p class="muted">
+      No code refs parsed yet. Add a markdown link like
+      <code>[task_service.complete](cod_doc/services/task_service.py#complete)</code>
+      to any document section and run <code>link_sync</code>.
+    </p>
+  {% else %}
+    <table class="code-refs-table" data-project="{{ project.name }}">
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Symbol</th>
+          <th>Status</th>
+          <th>Issue</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for group in grouped %}
+          {% for ref in group.refs %}
+            <tr class="code-ref-row" data-path="{{ group.file_path }}"
+                {% if loop.first %}data-first="1"{% endif %}>
+              <td>
+                {% if loop.first %}
+                  <code class="code-ref-path">{{ group.file_path }}</code>
+                {% else %}
+                  <span class="muted-tiny">↳</span>
+                {% endif %}
+              </td>
+              <td>{% if ref.symbol %}<code>{{ ref.symbol }}</code>{% else %}—{% endif %}</td>
+              <td>
+                {% if ref.resolved %}
+                  <span title="resolved" class="status-ok">✅</span>
+                {% else %}
+                  <span title="{{ ref.broken_reason }}" class="status-broken">⚠️</span>
+                {% endif %}
+              </td>
+              <td class="muted-tiny">{{ ref.broken_reason or '' }}</td>
+            </tr>
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div id="code-ref-preview" class="code-ref-preview" hidden>
+      <div class="code-ref-preview-path" data-path></div>
+      <pre class="code-ref-preview-body"><code></code></pre>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  const project = document.querySelector('.code-refs-table')?.dataset.project;
+  if (!project) return;
+  const preview = document.getElementById('code-ref-preview');
+  const pathEl = preview?.querySelector('.code-ref-preview-path');
+  const bodyEl = preview?.querySelector('.code-ref-preview-body code');
+  const cache = new Map();
+
+  async function load(path) {
+    if (cache.has(path)) return cache.get(path);
+    const r = await fetch(`/p/${encodeURIComponent(project)}/code-refs/preview?path=${encodeURIComponent(path)}`);
+    if (!r.ok) return { lines: [], missing: true };
+    const data = await r.json();
+    cache.set(path, data);
+    return data;
+  }
+
+  document.querySelectorAll('.code-ref-row').forEach((row) => {
+    row.addEventListener('mouseenter', async () => {
+      const path = row.dataset.path;
+      if (!path) return;
+      const data = await load(path);
+      pathEl.textContent = path + (data.missing ? '  (missing)' : '');
+      bodyEl.textContent = data.lines.join('\n');
+      const rect = row.getBoundingClientRect();
+      preview.style.left = `${rect.right + 10}px`;
+      preview.style.top = `${window.scrollY + rect.top}px`;
+      preview.hidden = false;
+    });
+    row.addEventListener('mouseleave', () => { preview.hidden = true; });
+  });
+})();
+</script>
+
+<style>
+.code-refs-page { padding: 16px; }
+.code-refs-header { margin-bottom: 16px; }
+.code-refs-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+.code-refs-table th, .code-refs-table td {
+  padding: 6px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.code-ref-path { font-weight: 500; }
+.status-ok { color: var(--success, #16a34a); }
+.status-broken { color: var(--warning, #f59e0b); cursor: help; }
+.code-ref-preview {
+  position: absolute;
+  z-index: 1000;
+  max-width: 600px;
+  max-height: 480px;
+  overflow: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.12);
+  font-size: 0.78rem;
+}
+.code-ref-preview-path {
+  font-family: monospace;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.code-ref-preview-body { margin: 0; }
+.code-ref-preview-body code { white-space: pre; }
+</style>
+{% endblock %}

@@ -99,6 +99,7 @@ class LinkModel(Base):
     __table_args__ = (
         Index("ix_link_target_doc", "to_doc_key"),
         Index("ix_link_target_task", "to_task_id"),
+        Index("ix_link_target_file", "to_file_path"),
         Index("ix_link_unresolved", "resolved"),
     )
 
@@ -114,6 +115,9 @@ class LinkModel(Base):
     to_doc_key: Mapped[str | None] = mapped_column(String(255))
     to_task_id: Mapped[str | None] = mapped_column(String(32))
     to_story_id: Mapped[str | None] = mapped_column(String(32))
+    # OBI-020: code-ref fields (kind == 'code')
+    to_file_path: Mapped[str | None] = mapped_column(String(512))
+    to_symbol: Mapped[str | None] = mapped_column(String(128))
     resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_checked: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     broken_reason: Mapped[str | None] = mapped_column(Text)

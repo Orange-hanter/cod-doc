@@ -48,6 +48,7 @@ class LinkKind(StrEnum):
     TASK = "task"
     STORY = "story"
     SECTION = "section"
+    CODE = "code"
 
 
 class TaskStatus(StrEnum):
