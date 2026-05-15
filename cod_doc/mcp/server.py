@@ -21,6 +21,7 @@ from cod_doc.logging_config import get_logger, setup_logging
 from cod_doc.mcp.profiles import VALID_PROFILES, keep_tool
 from cod_doc.mcp.tools import (
     activity_tools,
+    agent_tools,
     approval_tools,
     checkout_tools,
     context_tools,
@@ -75,6 +76,8 @@ for _module in (
     checkout_tools,
     # PCA-211 routine.* (cron-style health checks)
     routine_tools,
+    # AGT-001..AGT-007 agent.* (cycle-5 task-centric surface)
+    agent_tools,
 ):
     _module.register(mcp)
 
@@ -118,8 +121,9 @@ def get_active_profile() -> str:
     type=click.Choice(sorted(VALID_PROFILES)),
     default=os.environ.get("COD_DOC_PROFILE", "standard"),
     show_default=True,
-    help="Tool-surface profile (PCA-951). minimal=cold-start 15 tools, "
-    "standard=DB-only ~80 (default), full=all ~102 including legacy.",
+    help="Tool-surface profile. agent=6 task-centric tools (AI workflows), "
+    "minimal=~18 cold-start, standard=DB-only ~85 (default), full=all ~110 "
+    "including legacy. AGT-001 introduces the agent profile.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")
 @click.option("--log-format", default=None, envvar="LOG_FORMAT")

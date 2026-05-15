@@ -1,22 +1,47 @@
-"""PCA-951: MCP server profiles — control which tools are exposed.
+"""PCA-951 / AGT-001: MCP server profiles — control which tools are exposed.
 
-Three profiles:
+Four profiles:
 
-- ``minimal`` — 13-tool cold-start surface: agent has just what's needed
-  to onboard, discover, pick a task, and execute it. Aimed at fresh
-  integrations / lightweight orchestrators.
-- ``standard`` — ``minimal`` + the full DB-backed surface; drops the
-  legacy YAML-backed tools (add_task, list_tasks, get_master, …) that
-  are deprecated. Recommended default for new integrations.
+- ``agent`` (cycle-5) — 6-tool task-centric surface for AI agents. Each
+  call returns a self-sufficient payload (task card with inlined skills,
+  related docs, navigation) so the agent doesn't need 5-10 round-trips
+  to collect context. The recommended profile for AI-driven workflows.
+- ``minimal`` — ~18-tool cold-start surface for non-agent integrations
+  that still want a curated subset of CRUD tools.
+- ``standard`` (current default) — full DB-backed surface; drops only
+  the legacy YAML-backed tools (add_task, list_tasks, get_master, …).
 - ``full`` — every tool the server registers, including legacy.
   For admin / migration / debugging sessions.
 
 Active profile is chosen at server start via CLI ``--profile`` or env
-``COD_DOC_PROFILE``. Defaults to ``full`` for backward compatibility
-with existing integrations.
+``COD_DOC_PROFILE``.
 """
 
 from __future__ import annotations
+
+# --------------------------------------------------------------------------- #
+# Agent — 6 task-centric tools for AI workflows (AGT-001).                    #
+# Each tool returns a self-sufficient payload so the agent doesn't need to    #
+# chain calls for context. Internal CRUD lives under standard/full.           #
+# --------------------------------------------------------------------------- #
+
+AGENT_TOOLS: frozenset[str] = frozenset(
+    {
+        # L0 entry-point: what server / skills / enums / session state.
+        "agent_capabilities",
+        # Atomic: ready-set → checkout → assemble task card.
+        "agent_pick",
+        # Opt-in deep fetch when card didn't include something.
+        "agent_get",
+        # Unified dispatcher: progress | blocker | approval_request.
+        "agent_report",
+        # Guarded done: validates blockers, releases lock.
+        "agent_complete",
+        # Give up without done; releases lock, status → todo.
+        "agent_release",
+    }
+)
+
 
 # --------------------------------------------------------------------------- #
 # Minimal — small enough to fit in an agent's "what tools do you have" prompt. #
@@ -94,13 +119,15 @@ LEGACY_TOOLS: frozenset[str] = frozenset(
 # Profile resolution                                                            #
 # --------------------------------------------------------------------------- #
 
-VALID_PROFILES: frozenset[str] = frozenset({"minimal", "standard", "full"})
+VALID_PROFILES: frozenset[str] = frozenset({"agent", "minimal", "standard", "full"})
 
 
 def keep_tool(name: str, profile: str) -> bool:
     """Return True iff ``name`` should be exposed under ``profile``."""
     if profile == "full":
         return True
+    if profile == "agent":
+        return name in AGENT_TOOLS
     if profile == "minimal":
         return name in MINIMAL_TOOLS
     if profile == "standard":
