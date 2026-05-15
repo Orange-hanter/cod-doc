@@ -34,6 +34,7 @@ from .plans import (
     TaskModel,
 )
 from .project import ProjectModel
+from .repo_index import RepoFileModel, RepoImportModel, RepoSymbolModel
 from .revisions import AgentRunModel, AuditLogModel, RevisionModel
 from .routines import RoutineModel, RoutineRunModel
 from .stories import StoryAcceptanceModel, StoryLinkModel, UserStoryModel
@@ -66,6 +67,9 @@ __all__ = [
     "PlanModel",
     "PlanSectionModel",
     "ProjectModel",
+    "RepoFileModel",
+    "RepoImportModel",
+    "RepoSymbolModel",
     "RevisionModel",
     "RoutineModel",
     "RoutineRunModel",

@@ -25,6 +25,7 @@ from . import (
     revisions,
     routines,
     run,
+    search,
     settings,
     standards,
     stories,
@@ -55,6 +56,8 @@ router.include_router(metrics.router)
 router.include_router(commits.router)
 # OBI-021 code-refs panel + preview endpoint
 router.include_router(code_refs.router)
+# OBI-040 unified FTS5 search
+router.include_router(search.router)
 # `comments.router` before `docs.router`: comments routes are nested under
 # `/p/{slug}/docs/{doc_key:path}/comments` but each pins the trailing
 # `/comments…` suffix, so they would not shadow the docs catch-all on

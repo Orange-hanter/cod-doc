@@ -60,6 +60,8 @@ from cod_doc.cli.cmd_audit import audit
 from cod_doc.cli.cmd_hash import hash
 from cod_doc.cli.cmd_import import import_cmd
 from cod_doc.cli.cmd_project import project
+from cod_doc.cli.cmd_reindex import reindex
+from cod_doc.cli.cmd_search import search as search_cmd
 from cod_doc.cli.cmd_serve import mcp_server, serve
 from cod_doc.cli.cmd_tui import tui, wizard
 from cod_doc.cli.doc import doc
@@ -101,6 +103,8 @@ main.add_command(audit)
 main.add_command(import_cmd)
 main.add_command(adapter)
 main.add_command(adr)
+main.add_command(reindex)
+main.add_command(search_cmd)
 
 
 if __name__ == "__main__":

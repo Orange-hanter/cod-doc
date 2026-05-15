@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Search · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Search</span>
+</nav>
+
+{% with slug=project.name, active="search" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="search-page">
+  <header class="search-header">
+    <h1>🔍 Unified search</h1>
+    <p class="muted">
+      FTS5 over tasks · docs · stories · ADRs. Snippets highlight matches.
+    </p>
+  </header>
+
+  <form method="get" class="search-form">
+    <input type="search" name="q" value="{{ q }}" autofocus
+           placeholder="e.g. checkout idempotency"
+           class="search-input">
+    <select name="scope">
+      <option value="" {% if not scope %}selected{% endif %}>All scopes</option>
+      {% for s in scopes %}
+        <option value="{{ s }}" {% if scope == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+
+  <form method="post" action="/p/{{ project.name }}/search/reindex" class="search-reindex">
+    <button type="submit" class="btn">Rebuild FTS index</button>
+    <span class="muted-tiny">Run after bulk changes if hits look stale.</span>
+  </form>
+
+  {% if result is none %}
+    <p class="muted">Enter a query above to start.</p>
+  {% elif result.total == 0 %}
+    <p class="muted">No hits for <code>{{ q }}</code>.</p>
+  {% else %}
+    <p class="muted-tiny"><strong>{{ result.total }}</strong> hits</p>
+
+    {% for kind, hits in result.by_kind.items() %}
+      {% if hits %}
+        <section class="search-section">
+          <h2>{{ kind|upper }} <span class="muted-tiny">({{ hits|length }})</span></h2>
+          <ul class="search-hits">
+            {% for h in hits %}
+              <li class="search-hit">
+                <div>
+                  {% if h.url %}<a href="{{ h.url }}"><code>{{ h.ref }}</code></a>
+                  {% else %}<code>{{ h.ref }}</code>{% endif %}
+                  — {{ h.title }}
+                </div>
+                <div class="search-snippet">{{ h.snippet|safe }}</div>
+                <div class="muted-tiny">score: {{ h.score }}</div>
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+</div>
+
+<style>
+.search-page { padding: 16px; }
+.search-form { display: flex; gap: 8px; margin-bottom: 8px; }
+.search-input { flex: 1; min-width: 200px; padding: 6px 8px; }
+.search-reindex { margin-bottom: 16px; }
+.search-section { margin-top: 20px; }
+.search-hits { list-style: none; padding: 0; }
+.search-hit {
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  background: var(--bg-subtle);
+  border-radius: 6px;
+}
+.search-snippet { font-size: 0.9rem; line-height: 1.4; margin: 4px 0; }
+.search-snippet mark { background: rgba(250, 204, 21, 0.4); padding: 0 2px; border-radius: 2px; }
+</style>
+{% endblock %}
