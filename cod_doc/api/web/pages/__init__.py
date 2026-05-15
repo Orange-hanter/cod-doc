@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from . import (
+    adr,
     comments,
     costs,
     docs,
@@ -40,6 +41,11 @@ router.include_router(costs.router)
 router.include_router(run.router)
 router.include_router(navigator.router)
 router.include_router(standards.router)
+# ADRs — list/show/new/graph + supersede form (ADR-004/005/006).
+# Registered BEFORE docs.router because docs has a `/p/{slug}/docs/...`
+# greedy match that wouldn't shadow `/adr` anyway, but keep next to its
+# read-only siblings for clarity.
+router.include_router(adr.router)
 # `comments.router` before `docs.router`: comments routes are nested under
 # `/p/{slug}/docs/{doc_key:path}/comments` but each pins the trailing
 # `/comments…` suffix, so they would not shadow the docs catch-all on

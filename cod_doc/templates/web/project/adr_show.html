@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}{{ adr.adr_id }} · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/adr">ADRs</a> /
+  <span>{{ adr.adr_id }}</span>
+</nav>
+
+{% with slug=project.name, active="adr" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="adr-page">
+  <header class="adr-detail-header">
+    <h1>{{ adr.status_icon }} {{ adr.adr_id }} — {{ adr.title }}</h1>
+    <p class="muted">
+      <strong>Status:</strong> {{ adr.status }} ·
+      <strong>Decided:</strong> {{ adr.decided_at or "—" }} ·
+      <strong>Author:</strong> {{ adr.author }}
+    </p>
+  </header>
+
+  <details open class="adr-block">
+    <summary><strong>Edit</strong></summary>
+    <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/edit" class="adr-form">
+      <label>
+        Title
+        <input name="title" required value="{{ adr.title }}">
+      </label>
+      <div class="adr-form-row">
+        <label>
+          Status
+          <select name="status">
+            {% for s in status_options %}
+              <option value="{{ s }}" {% if s == adr.status %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Decided at
+          <input name="decided_at" type="date" value="{{ adr.decided_at or '' }}">
+        </label>
+      </div>
+      <label>
+        Context
+        <textarea name="context" rows="4">{{ adr.context or '' }}</textarea>
+      </label>
+      <label>
+        Decision
+        <textarea name="decision" rows="4">{{ adr.decision or '' }}</textarea>
+      </label>
+      <label>
+        Alternatives
+        <textarea name="alternatives" rows="3">{{ adr.alternatives or '' }}</textarea>
+      </label>
+      <label>
+        Consequences
+        <textarea name="consequences" rows="3">{{ adr.consequences or '' }}</textarea>
+      </label>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </form>
+  </details>
+
+  {% if adr.context %}
+  <section class="adr-block">
+    <h2>Context</h2>
+    <div class="adr-prose">{{ adr.context }}</div>
+  </section>
+  {% endif %}
+
+  {% if adr.decision %}
+  <section class="adr-block">
+    <h2>Decision</h2>
+    <div class="adr-prose">{{ adr.decision }}</div>
+  </section>
+  {% endif %}
+
+  {% if adr.alternatives %}
+  <section class="adr-block">
+    <h2>Alternatives considered</h2>
+    <div class="adr-prose">{{ adr.alternatives }}</div>
+  </section>
+  {% endif %}
+
+  {% if adr.consequences %}
+  <section class="adr-block">
+    <h2>Consequences</h2>
+    <div class="adr-prose">{{ adr.consequences }}</div>
+  </section>
+  {% endif %}
+
+  <section class="adr-block">
+    <h2>Diagrams ({{ adr.diagrams|length }})</h2>
+    {% for d in adr.diagrams %}
+      <div class="adr-diagram">
+        {% if d.title %}<h3>{{ d.title }}</h3>{% endif %}
+        <div class="mermaid">{{ d.mermaid }}</div>
+      </div>
+    {% endfor %}
+    <details>
+      <summary>+ Attach diagram</summary>
+      <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/diagram" class="adr-form">
+        <label>
+          Title (optional)
+          <input name="title">
+        </label>
+        <label>
+          Mermaid source
+          <textarea name="mermaid" rows="6" required placeholder="graph TD;A-->B"></textarea>
+        </label>
+        <button type="submit" class="btn">Add diagram</button>
+      </form>
+    </details>
+  </section>
+
+  <section class="adr-block">
+    <h2>Task links ({{ adr.task_links|length }})</h2>
+    {% if adr.task_links %}
+      <ul class="adr-tasks">
+        {% for link in adr.task_links %}
+          <li><code>{{ link.relation }}</code> → <a href="/p/{{ project.name }}/tasks/{{ link.task_id }}">{{ link.task_id }}</a></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No tasks linked yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="adr-block">
+    <h2>Supersede</h2>
+    <p class="muted">
+      Record that this ADR ({{ adr.adr_id }}) replaces an older one. The old
+      ADR's status will be auto-flipped to <code>superseded</code>.
+    </p>
+    <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/supersede" class="adr-form">
+      <label>
+        Old ADR (will be marked superseded)
+        <select name="superseded_adr_id" required>
+          <option value="">—</option>
+          {% for c in candidates %}
+            <option value="{{ c.adr_id }}">{{ c.adr_id }} — {{ c.title }} ({{ c.status }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Reason (optional)
+        <input name="reason" placeholder="why the replacement">
+      </label>
+      <button type="submit" class="btn">Mark as superseding</button>
+    </form>
+  </section>
+
+  <p><a href="/p/{{ project.name }}/adr">← Back to ADR list</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}ADRs · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>ADRs</span>
+</nav>
+
+{% with slug=project.name, active="adr" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="adr-page">
+  <header class="adr-header">
+    <h1>🏛️ Architecture Decision Records</h1>
+    <p class="muted">
+      Important design decisions, their context, consequences, and a DAG of
+      what replaces what. Use ADRs when «why we built it this way» needs to
+      survive turnover.
+    </p>
+    <div class="adr-actions">
+      <a class="btn btn-primary" href="/p/{{ project.name }}/adr/new">+ New ADR</a>
+      <a class="btn" href="/p/{{ project.name }}/adr/graph">🔁 Supersede graph</a>
+    </div>
+  </header>
+
+  <form method="get" class="adr-filter">
+    <label>
+      Status:
+      <select name="status" onchange="this.form.submit()">
+        <option value="" {% if not status_filter %}selected{% endif %}>any</option>
+        {% for s in status_options %}
+          <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  {% if not items %}
+    <p class="muted">No ADRs yet. Click <a href="/p/{{ project.name }}/adr/new">+ New ADR</a> to add one.</p>
+  {% else %}
+    <table class="adr-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>
+          <th>Decided</th>
+          <th>Title</th>
+          <th>Author</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for it in items %}
+          <tr>
+            <td><a href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.adr_id }}</a></td>
+            <td>{{ it.status_icon }} {{ it.status }}</td>
+            <td>{{ it.decided_at or "—" }}</td>
+            <td>{{ it.title }}</td>
+            <td class="muted">{{ it.author }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+{% endblock %}

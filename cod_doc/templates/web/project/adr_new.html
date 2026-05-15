@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}New ADR · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/adr">ADRs</a> /
+  <span>New</span>
+</nav>
+
+{% with slug=project.name, active="adr" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="adr-page">
+  <h1>🏛️ New ADR</h1>
+  <form method="post" action="{{ form_action }}" class="adr-form">
+    <label>
+      Title (required)
+      <input name="title" required autofocus placeholder="e.g. Use SQLite for local-first deployment">
+    </label>
+
+    <div class="adr-form-row">
+      <label>
+        Status
+        <select name="status">
+          {% for s in status_options %}
+            <option value="{{ s }}" {% if s == default_status %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Decided at (optional)
+        <input name="decided_at" type="date">
+      </label>
+      <label>
+        Explicit ADR id (optional, otherwise auto-allocated)
+        <input name="adr_id" placeholder="ADR-NNN" pattern="^ADR-\d{3}$">
+      </label>
+    </div>
+
+    <label>
+      Context — what problem are we solving?
+      <textarea name="context" rows="4"></textarea>
+    </label>
+
+    <label>
+      Decision — what did we choose?
+      <textarea name="decision" rows="4"></textarea>
+    </label>
+
+    <label>
+      Alternatives considered
+      <textarea name="alternatives" rows="3"></textarea>
+    </label>
+
+    <label>
+      Consequences (+ pros / − cons)
+      <textarea name="consequences" rows="3"></textarea>
+    </label>
+
+    <div class="adr-form-actions">
+      <button type="submit" class="btn btn-primary">Create ADR</button>
+      <a href="/p/{{ project.name }}/adr" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}ADR graph · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/adr">ADRs</a> /
+  <span>Graph</span>
+</nav>
+
+{% with slug=project.name, active="adr" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="adr-page">
+  <h1>🔁 Supersede DAG</h1>
+  <p class="muted">
+    Each arrow points from the <em>new</em> ADR to the <em>old</em> ADR it
+    replaces. Click a node title to open the detail page.
+  </p>
+
+  {% if has_nodes %}
+    <div class="mermaid">{{ mermaid }}</div>
+
+    <details>
+      <summary>Mermaid source</summary>
+      <pre><code class="language-mermaid">{{ mermaid }}</code></pre>
+    </details>
+
+    <h2>Nodes</h2>
+    <ul class="adr-graph-nodes">
+      {% for n in graph.nodes %}
+        <li>
+          <a href="/p/{{ project.name }}/adr/{{ n.adr_id }}">{{ n.adr_id }}</a>
+          — {{ n.title }} ({{ n.status }})
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No ADRs yet — nothing to graph.</p>
+  {% endif %}
+</div>
+{% endblock %}
