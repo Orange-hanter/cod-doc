@@ -22,6 +22,7 @@ from .adrs import ADRDiagramModel, ADRModel, ADRSupersedeModel, ADRTaskModel
 from .approvals import ApprovalDocRevisionLinkModel, ApprovalModel, ApprovalTaskLinkModel
 from .base import Base, _utcnow
 from .comments import DocCommentModel
+from .commits import CommitLinkModel
 from .documents import DocumentModel, LinkModel, SectionModel
 from .metrics import TaskMetricsModel
 from .modules import ModuleCodeModel, ModuleDependencyModel, ModuleModel
@@ -51,6 +52,7 @@ __all__ = [
     "ApprovalDocRevisionLinkModel",
     "ApprovalModel",
     "ApprovalTaskLinkModel",
+    "CommitLinkModel",
     "AuditLogModel",
     "Base",
     "DependencyModel",

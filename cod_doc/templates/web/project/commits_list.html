@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Commits · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Commits</span>
+</nav>
+
+{% with slug=project.name, active="commits" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="commits-page">
+  <header class="commits-header">
+    <h1>🔗 Task ↔ commit links</h1>
+    <p class="muted">
+      Commits whose messages reference task IDs (<code>COD-042</code>,
+      <code>ADR-003</code>, etc.). Scanned from <code>git log</code> in the
+      project root. Click <strong>Re-scan</strong> after pushing new commits.
+    </p>
+    <form method="post" action="/p/{{ project.name }}/commits/import" class="commits-actions">
+      <button type="submit" class="btn btn-primary">Re-scan git log</button>
+    </form>
+  </header>
+
+  {% if not has_data %}
+    <p class="muted">
+      No linked commits yet. Either the repo has no task-tagged commits
+      (try <code>git commit -m "feat(COD-042): X"</code>), or the importer
+      hasn't run. Click <strong>Re-scan git log</strong> above.
+    </p>
+  {% else %}
+    <table class="commits-table">
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Task</th>
+          <th>Commit</th>
+          <th>Author</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in items %}
+          <tr>
+            <td class="muted-tiny">{{ c.ts[:10] if c.ts else "—" }}</td>
+            <td><a href="/p/{{ project.name }}/tasks/{{ c.task_id }}">{{ c.task_id }}</a></td>
+            <td><code>{{ c.short_sha }}</code></td>
+            <td class="muted">{{ c.author }}</td>
+            <td>{{ c.message[:120] }}{% if c.message|length > 120 %}…{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted-tiny">Showing up to {{ limit }} newest links.</p>
+  {% endif %}
+</div>
+
+<style>
+.commits-page { padding: 16px; }
+.commits-header { margin-bottom: 16px; }
+.commits-actions { margin-top: 8px; }
+.commits-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+.commits-table th, .commits-table td {
+  padding: 6px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.commits-table code {
+  background: var(--bg-subtle);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+</style>
+{% endblock %}
