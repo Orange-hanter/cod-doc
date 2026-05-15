@@ -99,6 +99,12 @@ def register(mcp: FastMCP) -> None:
         tools may consult this default when ``project`` is omitted (the
         auto-resolution rollout is staged across releases — see
         ``cod_doc/mcp/tools/_workspace.py``).
+
+        **Admin-only for agent flow (AGT-010).** Agents using the
+        ``--profile agent`` surface pass ``agent_id`` per call to
+        ``agent_pick`` — they don't need a workspace state for project.
+        These tools remain available under ``--profile standard|full``
+        for CLI / web / multi-step admin sessions.
         """
         from cod_doc.mcp.tools import _workspace
 
@@ -202,6 +208,14 @@ def register(mcp: FastMCP) -> None:
         args: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Call any MCP tool and return a uniform envelope (PCA-943).
+
+        **Admin-only for agent flow (AGT-010).** Agents using the
+        ``--profile agent`` surface get unified error shapes natively
+        from ``agent_pick`` / ``agent_complete`` / ``agent_report`` /
+        ``agent_release`` (each returns ``{ok, ...}`` with a ``hint``
+        on failure). This proxy is for admin sessions calling raw
+        CRUD tools that don't share that contract.
+
 
         Wraps the named tool so the caller gets ONE error shape across
         the whole surface instead of writing 5 different handlers:

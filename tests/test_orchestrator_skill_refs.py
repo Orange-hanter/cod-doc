@@ -46,6 +46,13 @@ NON_MCP_ALLOWED: frozenset[str] = frozenset(
         "validation",
         "module-audit",
         "audit-cadence",
+        # Cycle-5: SKILL.md обращается к 4 admin-tier тулам названиями
+        # как пример «избыточно для agent flow». Они существуют, но в
+        # agent профиле не доступны.
+        "skill_get",
+        "task_create",
+        "doc_body",
+        "plan_ready",
     }
 )
 

@@ -387,6 +387,9 @@ def register(mcp: FastMCP) -> None:
         else:
             _idempotency.store("task_create", idempotency_key, result)
         # PCA-949: recommended skills based on tool-name triggers.
+        # Admin-only for agent flow (AGT-010): agents using --profile agent
+        # see skill bodies inlined in agent_pick().navigation.applicable_skills
+        # — they don't need separate recommended_skills hints.
         from cod_doc.services.skill_service import recommend_for_tool
         recs = recommend_for_tool("task_create")
         if recs:

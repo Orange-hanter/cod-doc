@@ -78,11 +78,12 @@ def test_capabilities_reports_active_profile() -> None:
     assert result["profile"] == "standard"
 
 
-def test_default_profile_is_standard() -> None:
-    """Cycle-4 change: default --profile must be 'standard' (not 'full').
+def test_default_profile_is_agent() -> None:
+    """Cycle-5 change: default --profile is 'agent' (was 'standard' in cycle-4).
 
-    Standard hides legacy YAML tools, giving fresh integrations a clean
-    surface without per-integration configuration.
+    Agent profile gives AI clients a 6-tool task-centric surface where each
+    call returns a self-sufficient payload. Standard/full remain available
+    for admin/CLI/web integrations.
     """
     import os as _os
     from unittest.mock import patch
@@ -95,8 +96,8 @@ def test_default_profile_is_standard() -> None:
 
         runner = CliRunner()
         result = runner.invoke(main, ["--help"])
-        assert "default: standard" in result.output, (
-            f"--profile must default to 'standard' (cycle-4). Help output:\n{result.output}"
+        assert "default: agent" in result.output, (
+            f"--profile must default to 'agent' (cycle-5). Help output:\n{result.output}"
         )
 
 

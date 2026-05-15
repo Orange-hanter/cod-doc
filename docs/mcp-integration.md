@@ -18,9 +18,60 @@ cod-doc предоставляет 4 слоя доступа:
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
 к внешним инструментам. cod-doc реализует MCP server с **110 инструментами**
-(точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`).
-Полный live-каталог — `skill_list` + `tools/list` через любого MCP-клиента;
-карта по семействам — раздел [Каталог MCP-инструментов](#каталог-mcp-инструментов).
+(точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
+сгруппированных в 4 профиля.
+
+---
+
+## Agent profile — 6-tool surface (cycle-5, по умолчанию)
+
+> AI-агент работает task-centric, не CRUD-centric. Agent profile —
+> 6 тулов, где каждый возвращает self-sufficient payload. Один вызов
+> заменяет 5-10 round-trips.
+
+| Тул | Что делает |
+|-----|------------|
+| `agent_capabilities()` | L0 entry-point: server version, доступные skills, валидные TaskStatus, default_project, рекомендованный next-action. <4KB. |
+| `agent_pick(project, agent_id, plan_scope?)` | Атомарно: ready-set → checkout → assemble **task card** = `{task, context{plan, story, related_docs, siblings, affected_files, recent_history}, navigation{applicable_skills (с ТЕЛАМИ), next_actions, success_criteria, legal_status_transitions}}`. Идемпотентен. |
+| `agent_get(project, task_id, what, ref?)` | Opt-in deep fetch. `what ∈ {full_doc_body, related_task, story_full, plan_export}`. |
+| `agent_report(project, task_id, kind, message, agent_id?, payload?)` | Dispatcher. `kind ∈ {progress, blocker, approval_request, needs_context}`. |
+| `agent_complete(project, task_id, agent_id, commit_sha?, summary?)` | Guarded done + release lock в одной транзакции. |
+| `agent_release(project, task_id, agent_id, reason?)` | Drop lock без done; status → todo. |
+
+### Жизненный цикл задачи (canonical 3-step)
+
+```text
+1. agent_capabilities()              # кто я / какие skills / какой профиль
+2. agent_pick(project, agent_id)     # task + context + navigation card
+   ↓ (выполнить работу)
+3a. agent_complete(...)              # успех
+3b. agent_report(kind='blocker',..)  # застрял
+3c. agent_release(reason=...)        # отказ без done
+```
+
+### Запуск под agent-профилем
+
+```bash
+cod-doc-mcp                              # agent (default cycle-5)
+cod-doc-mcp --profile standard           # CRUD ~85 tools (без legacy)
+cod-doc-mcp --profile full               # все 110 (включая legacy)
+COD_DOC_PROFILE=full cod-doc-mcp         # через env
+```
+
+### Migration guide (cycle-3/4 → cycle-5)
+
+Если ваша интеграция уже зовёт `task_checkout` / `context_get` /
+`task_complete` напрямую — она продолжит работать под `--profile standard`
+или `--profile full`. Никаких deprecation на самих CRUD-тулах нет.
+
+Для **новых** агентских интеграций рекомендуется agent profile:
+
+| Cycle-3/4 паттерн (6 calls) | Cycle-5 эквивалент (3 calls) |
+|---|---|
+| `capabilities()` → `skill_list()` → `skill_get('orchestrator')` → `list_projects()` → ... | `agent_capabilities()` |
+| `task_next_ready()` → `task_checkout()` → `context_get('task',id)` → `skill_get('task-standard')` | `agent_pick(project, agent_id)` |
+| `task_complete()` → `task_release()` → `activity_emit()` | `agent_complete(project, task_id, agent_id)` |
+| `task_set_blocker()` + `task_update_status(blocked)` + `activity_emit()` | `agent_report(kind='blocker', message=...)` |
 
 ---
 

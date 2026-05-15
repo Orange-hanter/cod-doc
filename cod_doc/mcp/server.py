@@ -119,11 +119,11 @@ def get_active_profile() -> str:
 @click.option(
     "--profile",
     type=click.Choice(sorted(VALID_PROFILES)),
-    default=os.environ.get("COD_DOC_PROFILE", "standard"),
+    default=os.environ.get("COD_DOC_PROFILE", "agent"),
     show_default=True,
-    help="Tool-surface profile. agent=6 task-centric tools (AI workflows), "
-    "minimal=~18 cold-start, standard=DB-only ~85 (default), full=all ~110 "
-    "including legacy. AGT-001 introduces the agent profile.",
+    help="Tool-surface profile (default: agent — cycle-5). agent=6 task-centric "
+    "tools for AI workflows; minimal=~18 cold-start curated CRUD; "
+    "standard=DB-only ~85; full=all ~110 including legacy.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")
 @click.option("--log-format", default=None, envvar="LOG_FORMAT")
