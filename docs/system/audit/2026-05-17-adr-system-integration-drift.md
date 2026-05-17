@@ -63,9 +63,9 @@ audience: [contributors, agents]
 | AC | Реализация | Статус |
 |----|------------|:------:|
 | ID без коллизий | `_next_adr_id` уже было; теперь revision на create фиксирует автонумерацию | 🟢 |
-| История восстановима | revisions пишутся во всех 5 мутациях | 🟢 |
+| История восстановима | revisions пишутся во всех 6 мутациях (create / update / supersede / add_diagram / link_task / deprecate) | 🟢 |
 | Supersede — DAG, не цикл | DFS `_has_path` + тест `test_supersede_rejects_cycle` | 🟢 |
-| ACCEPTED immutable | **N/A для этой итерации.** Vision §4 говорил «делать immutable». В сервисе `update()` сейчас разрешён на любом статусе. Это сознательно — введение immutable создаст breaking change для существующих 17 service-тестов. Эскалирую как F1. | 🟡 |
+| ACCEPTED immutable | `update()` отвергает body/title/decided_at для ACCEPTED; terminal-статусы — все правки. Новая op `deprecate()` — единственный путь ACCEPTED→DEPRECATED. Web UI прячет edit-форму. 14 новых тестов. **F1 закрыт.** | 🟢 |
 | Каждая `[ADR-NNN]` ссылка резолвится | Парсер + резолвер + autolink → renderer; тесты покрывают bare/wiki/explicit + skip inside code | 🟢 |
 | Markdown-проекция в `docs/adr/ADR-NNN.md` | `export_to_disk` + CLI; idempotent; тест на повтор | 🟢 |
 | Approval gating опциональный | **Не реализован** (deferred, см. F2). Vision §11.2 явно отметил «опционально, выкл по умолчанию». | 🟡 |
@@ -73,9 +73,10 @@ audience: [contributors, agents]
 
 **Findings:**
 
-- **F1 [logic] ACCEPTED-ADR не immutable.** Vision §4 обещает immutable
-  тело после accept; сейчас `update()` его меняет. Severity **M** (не
-  критично — revision-history восстановит, но обещание не выполнено).
+- ~~**F1 [logic] ACCEPTED-ADR не immutable.**~~ **Закрыт 2026-05-17**:
+  `ADRImmutableError` гейтит `update()`/`add_diagram()`; добавлена
+  `deprecate()` op; Web UI прячет edit-форму для ACCEPTED и показывает
+  «locked»-баннер с кнопкой Deprecate; терминальные статусы — read-only.
 - **F2 [logic] Approval gating не реализован.** Vision §11.2. Severity **L**
   (опциональная фича, выкл по умолчанию).
 - **F3 [logic] Server-side Mermaid validation отсутствует.** Vision §11.4.
@@ -133,35 +134,53 @@ audience: [contributors, agents]
 | Измерение | F-count | Severity |
 |-----------|--------:|----------|
 | code  | 0 | — |
-| logic | 3 | M: 1 / L: 2 |
+| logic | 2 | L: 2 |
 | style | 0 | — |
 | test  | 0 | — |
 | docs  | 0 | — |
-| **TOTAL** | **3** | **M: 1 / L: 2** |
+| **TOTAL** | **2** | **L: 2** |
 
 ## Remediation plan
 
-Три finding — все осознанные defer'ы (видение §11 явно помечало их как
-«open questions» с возможностью отложить). Они **не блокируют** перевод
-модуля в `active`.
+После закрытия F1 остались два осознанных defer'а из видения §11:
 
-- **F1 (M)** — immutable ACCEPTED-ADR. Reqs ревизию 17 service-тестов
-  + обновление web-формы (disable редактирования для accepted). Создавать
-  отдельный plan для следующего цикла.
 - **F2 (L)** — approval gating. Зависит от `approval_service` + project
-  config flag. Также — следующий цикл.
+  config flag. Опциональная фича, выкл по умолчанию.
 - **F3 (L)** — server-side Mermaid validation. Нужен `mermaid-cli` в
-  Dockerfile (ты подтвердил в видении §11). Включить в plan на отдельной
-  задаче в Dockerfile / CI.
+  Dockerfile (ты подтвердил в видении §11). Отдельная задача в Dockerfile / CI.
 
-Plan не открываю автоматически — три finding ≠ блокер, severity ≤ M, и
-все три уже задокументированы в видении и `adr-vision.html §11`. Если
-нужен явный roadmap-документ — скажи.
+Plan не открываю автоматически — оба finding L-severity и явно
+задокументированы в `adr-vision.html §11`.
 
 ## Закрытие
 
-ADR System интеграция: **closed with 3 deferred findings**. Capability
-`adr-system` переходит в `active` (после ручного подтверждения).
+ADR System интеграция: **closed with 2 deferred findings** (оба L).
+Capability `adr-system` готова к переводу в `active`.
 
-Тестовая база: **147 ADR/Link тестов зелёные, 22 новых**, полный прогон
-**1293 passed**.
+### Закрытие F1 (2026-05-17, добавлено повторным проходом)
+
+После первого прохода аудита (3 finding, M: 1 / L: 2) пользователь
+запросил закрытие F1. Изменения:
+
+- `adr_service.update()`: гейт `_TERMINAL_STATUSES` + ACCEPTED-проверка
+  на body/title/status. Возвращает `ADRImmutableError` (наследует
+  `ValueError`).
+- `adr_service.add_diagram()`: терминальные статусы отвергаются;
+  ACCEPTED по-прежнему разрешён (vision §4).
+- `adr_service.deprecate(...)`: новая операция, единственный путь
+  ACCEPTED→DEPRECATED через `update`-эквивалент. Идемпотентна на
+  уже-deprecated. Пишет revision.
+- MCP: новый тул `adr_deprecate`.
+- CLI: новая команда `cod-doc adr deprecate ADR-NNN [--reason ...]`.
+- Web: `POST /p/<slug>/adr/<id>/deprecate` route + UI-flow
+  (edit-форма только для PROPOSED; ACCEPTED видит «locked»-баннер +
+  Deprecate-кнопку; терминальные — read-only).
+- Тесты: +14 unit + 3 web (`test_adr_show_edit_form_for_proposed`,
+  `test_adr_edit_rejected_on_accepted`, `test_adr_deprecate_post_transitions`).
+
+Существующие тесты не сломались (один скорректирован:
+`test_adr_show_renders_full_record` — для ACCEPTED ADR-001 теперь нет
+edit-action; вместо него — deprecate-action).
+
+Тестовая база после F1: **ADR scope 71/71 зелёные, +17 новых тестов
+сверх первого прохода**.

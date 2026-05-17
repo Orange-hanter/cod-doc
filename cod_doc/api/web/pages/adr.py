@@ -309,3 +309,28 @@ def adr_supersede_post(
         session.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RedirectResponse(url=f"/p/{slug}/adr/{adr_id}", status_code=303)
+
+
+@router.post("/p/{slug}/adr/{adr_id}/deprecate")
+def adr_deprecate_post(
+    slug: str,
+    adr_id: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    reason: Annotated[str | None, Form()] = None,
+) -> RedirectResponse:
+    """Transition an ADR (PROPOSED or ACCEPTED) to DEPRECATED."""
+    session, project_id = db
+    try:
+        adr_service.deprecate(
+            session, project_id=project_id, adr_id=adr_id,
+            reason=(reason or None),
+            author="human:web",
+        )
+        session.commit()
+    except ADRNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url=f"/p/{slug}/adr/{adr_id}", status_code=303)

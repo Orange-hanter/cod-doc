@@ -57,6 +57,18 @@ class ADRAlreadyExistsError(ValueError):
     pass
 
 
+class ADRImmutableError(ValueError):
+    """Raised when ``update()`` is called on a non-mutable ADR.
+
+    ADR mutability rules (vision §4):
+    - PROPOSED — fully mutable.
+    - ACCEPTED — only ``supersede()`` and ``deprecate()`` may change state;
+      title / body fields are frozen. ``add_diagram`` is still allowed.
+    - SUPERSEDED / DEPRECATED / REJECTED — terminal; nothing changes via
+      ``update()``.
+    """
+
+
 # ----------------------------------------------------------------- #
 # Helpers                                                            #
 # ----------------------------------------------------------------- #
@@ -181,6 +193,9 @@ def list_for_project(
     return list(session.execute(stmt.order_by(ADRModel.adr_id)).scalars())
 
 
+_TERMINAL_STATUSES = {"superseded", "deprecated", "rejected"}
+
+
 def update(
     session: Session,
     *,
@@ -196,36 +211,81 @@ def update(
     author: str = "human",
     reason: str | None = None,
 ) -> ADRModel:
+    """Patch fields on an ADR. Mutability is gated by current status.
+
+    - ``PROPOSED``: any field may change, including ``status`` (accept it
+      via ``status="accepted"``, reject it via ``status="rejected"``).
+    - ``ACCEPTED``: ``ADRImmutableError`` unless the caller is a no-op.
+      Use :func:`supersede` to transition to ``SUPERSEDED``, or
+      :func:`deprecate` to transition to ``DEPRECATED``.
+    - Terminal (``SUPERSEDED``/``DEPRECATED``/``REJECTED``): any change
+      raises ``ADRImmutableError``.
+    """
     row = _require(session, project_id, adr_id)
     changed: dict[str, Any] = {}
+    # Tentatively collect every requested change (no-op fields are dropped).
     if status is not None and status != row.status:
         if status not in _LEGAL_STATUSES:
             raise ValueError(f"invalid status {status!r}")
         changed["status"] = {"old": row.status, "new": status}
-        row.status = status
     if title is not None and title != row.title:
         changed["title"] = {"old": row.title, "new": title}
-        row.title = title
     if decided_at is not None and decided_at != row.decided_at:
         changed["decided_at"] = {
             "old": row.decided_at.isoformat() if row.decided_at else None,
             "new": decided_at.isoformat(),
         }
-        row.decided_at = decided_at
     if context is not None and context != row.context:
         changed["context"] = {"changed": True}
-        row.context = context
     if decision is not None and decision != row.decision:
         changed["decision"] = {"changed": True}
-        row.decision = decision
     if alternatives is not None and alternatives != row.alternatives:
         changed["alternatives"] = {"changed": True}
-        row.alternatives = alternatives
     if consequences is not None and consequences != row.consequences:
         changed["consequences"] = {"changed": True}
-        row.consequences = consequences
+
     if not changed:
         return row
+
+    # Immutability gate: terminal states reject everything; ACCEPTED rejects
+    # body/title/decided_at and any status change (use supersede/deprecate).
+    if row.status in _TERMINAL_STATUSES:
+        raise ADRImmutableError(
+            f"ADR {adr_id} is in terminal status {row.status!r}; cannot update"
+        )
+    if row.status == "accepted":
+        body_fields = set(changed) - {"status"}
+        # An ACCEPTED ADR may not change any body/title field via update().
+        if body_fields:
+            raise ADRImmutableError(
+                f"ADR {adr_id} is ACCEPTED; body/title fields are frozen "
+                f"(attempted to change: {sorted(body_fields)}). "
+                f"Create a superseding ADR to amend the decision."
+            )
+        # Status changes from ACCEPTED must go through supersede()/deprecate(),
+        # not through update().
+        if "status" in changed:
+            raise ADRImmutableError(
+                f"ADR {adr_id} is ACCEPTED; use supersede() or deprecate() "
+                f"to leave this state (attempted status change to "
+                f"{changed['status']['new']!r})."
+            )
+
+    # All gates passed — apply changes.
+    if "status" in changed:
+        row.status = changed["status"]["new"]
+    if "title" in changed:
+        row.title = changed["title"]["new"]
+    if "decided_at" in changed:
+        row.decided_at = decided_at
+    if "context" in changed:
+        row.context = context
+    if "decision" in changed:
+        row.decision = decision
+    if "alternatives" in changed:
+        row.alternatives = alternatives
+    if "consequences" in changed:
+        row.consequences = consequences
     row.last_updated = datetime.now(UTC)
     session.flush()
     rev.write(
@@ -236,6 +296,43 @@ def update(
         author=author,
         diff=_diff("update", adr_id=adr_id, **changed),
         reason=reason or "update",
+    )
+    return row
+
+
+def deprecate(
+    session: Session,
+    *,
+    project_id: int,
+    adr_id: str,
+    reason: str | None = None,
+    author: str = "human",
+) -> ADRModel:
+    """Transition ``ACCEPTED`` (or ``PROPOSED``) → ``DEPRECATED``.
+
+    The only legitimate way to retire an ADR without replacing it.
+    Re-applying to an already-DEPRECATED ADR is idempotent (no-op).
+    Terminal statuses other than DEPRECATED raise ``ADRImmutableError``.
+    """
+    row = _require(session, project_id, adr_id)
+    if row.status == "deprecated":
+        return row
+    if row.status in _TERMINAL_STATUSES:
+        raise ADRImmutableError(
+            f"ADR {adr_id} is in terminal status {row.status!r}; cannot deprecate"
+        )
+    old_status = row.status
+    row.status = "deprecated"
+    row.last_updated = datetime.now(UTC)
+    session.flush()
+    rev.write(
+        session,
+        project_id=project_id,
+        entity_kind=EntityKind.ADR,
+        entity_id=row.row_id,
+        author=author,
+        diff=_diff("deprecate", adr_id=adr_id, old=old_status, reason=reason),
+        reason=reason or "deprecate",
     )
     return row
 
@@ -251,6 +348,11 @@ def add_diagram(
     author: str = "human",
 ) -> ADRDiagramModel:
     adr = _require(session, project_id, adr_id)
+    if adr.status in _TERMINAL_STATUSES:
+        raise ADRImmutableError(
+            f"ADR {adr_id} is in terminal status {adr.status!r}; "
+            f"diagrams can only be added to PROPOSED or ACCEPTED ADRs"
+        )
     if position is None:
         # Append at end.
         max_pos = session.execute(

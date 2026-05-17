@@ -105,10 +105,51 @@ def test_adr_show_renders_full_record(adr_client) -> None:  # type: ignore[no-un
     assert "ADR-001" in r.text
     assert "Layered architecture with DIP" in r.text
     assert "4-layer + DIP" in r.text
-    # Edit form present.
-    assert 'action="/p/adr-demo/adr/ADR-001/edit"' in r.text
+    # ADR-001 is ACCEPTED — edit form is hidden, deprecate + supersede shown.
+    assert 'action="/p/adr-demo/adr/ADR-001/edit"' not in r.text
+    assert 'action="/p/adr-demo/adr/ADR-001/deprecate"' in r.text
     # Supersede form lists OTHER ADRs as candidates (ADR-002), not self.
     assert "ADR-002" in r.text
+
+
+def test_adr_show_edit_form_for_proposed(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """PROPOSED ADRs surface the full edit form."""
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-002")  # status=proposed in fixture
+    assert r.status_code == 200
+    assert 'action="/p/adr-demo/adr/ADR-002/edit"' in r.text
+    # Deprecate / Supersede affordances are NOT shown for PROPOSED.
+    assert 'action="/p/adr-demo/adr/ADR-002/deprecate"' not in r.text
+    assert 'action="/p/adr-demo/adr/ADR-002/supersede"' not in r.text
+
+
+def test_adr_edit_rejected_on_accepted(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """POST to /edit on an ACCEPTED ADR returns 400 (immutable)."""
+    client, entry = adr_client
+    r = client.post(
+        f"/p/{entry.name}/adr/ADR-001/edit",  # ADR-001 is ACCEPTED
+        data={
+            "title": "tampering with accepted",
+            "status": "accepted",
+            "context": "should fail",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 400
+
+
+def test_adr_deprecate_post_transitions(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.post(
+        f"/p/{entry.name}/adr/ADR-001/deprecate",
+        data={"reason": "obsolete"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    after = client.get(f"/p/{entry.name}/adr/ADR-001")
+    assert "deprecated" in after.text
+    # Locked-state notice now appears (terminal status).
+    assert "terminal status" in after.text
 
 
 def test_adr_show_404_for_missing(adr_client) -> None:  # type: ignore[no-untyped-def]

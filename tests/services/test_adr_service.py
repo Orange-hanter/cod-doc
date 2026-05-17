@@ -457,3 +457,152 @@ def test_export_to_disk_idempotent(engine_with_schema, tmp_path) -> None:  # typ
     # First pass writes both, second pass is no-op.
     assert {p.name for p in written1} == {"ADR-001.md", "ADR-002.md"}
     assert written2 == []
+
+
+# ----------------------------------------------------------------- #
+# Immutability (F1 closure)                                          #
+# ----------------------------------------------------------------- #
+
+
+from cod_doc.services.adr_service import ADRImmutableError  # noqa: E402
+
+
+def test_proposed_update_allowed(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """PROPOSED ADRs are fully mutable (baseline)."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="t")  # status=proposed
+    with transactional(factory) as session:
+        r = adr_service.update(
+            session, project_id=1, adr_id="ADR-001",
+            title="new", context="ctx", status="accepted",
+        )
+    assert r.title == "new"
+    assert r.context == "ctx"
+    assert r.status == "accepted"
+
+
+def test_accepted_body_change_rejected(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="accepted")
+    with pytest.raises(ADRImmutableError, match="frozen"), transactional(factory) as session:
+        adr_service.update(session, project_id=1, adr_id="ADR-001", context="new ctx")
+
+
+def test_accepted_title_change_rejected(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="accepted")
+    with pytest.raises(ADRImmutableError, match="frozen"), transactional(factory) as session:
+        adr_service.update(session, project_id=1, adr_id="ADR-001", title="y")
+
+
+def test_accepted_status_change_via_update_rejected(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ACCEPTED → SUPERSEDED/DEPRECATED must go through dedicated ops."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="accepted")
+    with pytest.raises(ADRImmutableError, match="supersede"), transactional(factory) as session:
+        adr_service.update(session, project_id=1, adr_id="ADR-001", status="deprecated")
+
+
+def test_accepted_noop_update_is_silent(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Passing the same values to update() on ACCEPTED must NOT raise."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="accepted",
+                           context="c")
+    with transactional(factory) as session:
+        r = adr_service.update(
+            session, project_id=1, adr_id="ADR-001",
+            title="x", context="c", status="accepted",  # all no-ops
+        )
+    assert r.status == "accepted"
+
+
+def test_terminal_status_update_rejected(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="superseded")
+    with pytest.raises(ADRImmutableError, match="terminal"), transactional(factory) as session:
+        adr_service.update(session, project_id=1, adr_id="ADR-001", title="y")
+
+
+def test_deprecate_transitions_accepted_to_deprecated(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="accepted")
+    with transactional(factory) as session:
+        r = adr_service.deprecate(
+            session, project_id=1, adr_id="ADR-001", reason="obsolete",
+        )
+    assert r.status == "deprecated"
+
+
+def test_deprecate_writes_revision(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="accepted")
+    with transactional(factory) as session:
+        adr_service.deprecate(session, project_id=1, adr_id="ADR-001")
+    with transactional(factory) as session:
+        revs = _adr_revisions(session, project_id=1)
+    dep_revs = [r for r in revs if '"op": "deprecate"' in r.diff]
+    assert len(dep_revs) == 1
+
+
+def test_deprecate_idempotent_on_deprecated(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="deprecated")
+    with transactional(factory) as session:
+        r = adr_service.deprecate(session, project_id=1, adr_id="ADR-001")
+    assert r.status == "deprecated"
+    with transactional(factory) as session:
+        revs = _adr_revisions(session, project_id=1)
+    # Only create revision; deprecate was no-op.
+    assert all('"op": "deprecate"' not in r.diff for r in revs)
+
+
+def test_deprecate_rejects_superseded(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="superseded")
+    with pytest.raises(ADRImmutableError, match="terminal"), transactional(factory) as session:
+        adr_service.deprecate(session, project_id=1, adr_id="ADR-001")
+
+
+def test_add_diagram_rejected_on_terminal(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="deprecated")
+    with pytest.raises(ADRImmutableError, match="terminal"), transactional(factory) as session:
+        adr_service.add_diagram(
+            session, project_id=1, adr_id="ADR-001", mermaid="graph TD;A-->B",
+        )
+
+
+def test_add_diagram_allowed_on_accepted(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Per vision §4: diagrams may still be attached to ACCEPTED ADRs."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="accepted")
+    with transactional(factory) as session:
+        d = adr_service.add_diagram(
+            session, project_id=1, adr_id="ADR-001",
+            mermaid="graph TD;A-->B", title="post-accept",
+        )
+    assert d.position == 0

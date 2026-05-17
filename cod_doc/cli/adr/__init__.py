@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # Importing the cmd modules registers each click command on the `adr` group.
 from . import (  # noqa: F401 — registration side-effects
+    cmd_deprecate,
     cmd_export,
     cmd_graph,
     cmd_list,

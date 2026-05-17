@@ -242,6 +242,33 @@ def register(mcp: FastMCP) -> None:
         except ADRNotFoundError as exc:
             raise ValueError(str(exc)) from exc
 
+    @mcp.tool(name="adr_deprecate")
+    def adr_deprecate(
+        project: str,
+        adr_id: str,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Transition an ADR (PROPOSED or ACCEPTED) to DEPRECATED.
+
+        Idempotent on already-deprecated ADRs. Rejects terminal statuses
+        other than ``deprecated`` (e.g. ``superseded``/``rejected``).
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_service
+        from cod_doc.services.adr_service import ADRNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                row = adr_service.deprecate(
+                    session, project_id=project_id, adr_id=adr_id,
+                    reason=reason, author="agent",
+                )
+                return adr_service.adr_to_dict(session, row)
+        except ADRNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+
     @mcp.tool(name="adr_graph")
     def adr_graph(project: str) -> dict[str, Any]:
         """Return the full supersede DAG: ``{nodes: [...], edges: [...]}``.
