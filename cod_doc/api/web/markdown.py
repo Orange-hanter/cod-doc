@@ -311,3 +311,42 @@ def _slugify(text: str) -> str:
     s = text.strip().lower().replace(" ", "-")
     s = _SLUG_BAD.sub("", s)
     return s or "section"
+
+
+# Autolink rewriter for bare ADR refs ('ADR-007') in already-rendered HTML.
+# Skips matches inside <a ...>...</a>, <code>...</code>, and <pre>...</pre>
+# so we don't rewrite already-linked text or in-code snippets.
+_ADR_AUTOLINK_RE = re.compile(r"\bADR-\d{3,}\b")
+_HTML_SKIP_RE = re.compile(
+    r"(<a\b[^>]*>.*?</a>|<code\b[^>]*>.*?</code>|<pre\b[^>]*>.*?</pre>)",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def autolink_adr_refs(html: str, *, slug: str) -> str:
+    """Wrap bare ``ADR-NNN`` mentions in already-rendered HTML with anchors
+    to ``/p/<slug>/adr/<ADR-NNN>``.
+
+    Used post-``render_markdown`` on pages where ADR cross-refs are likely
+    (doc body, task description, ADR detail). Skips text inside ``<a>``,
+    ``<code>``, ``<pre>`` so we never double-link or corrupt code samples.
+    """
+    if not html or "ADR-" not in html:
+        return html
+
+    parts: list[str] = []
+    pos = 0
+    for skip in _HTML_SKIP_RE.finditer(html):
+        # Rewrite the chunk before the skipped span, leave the span as-is.
+        parts.append(_rewrite_chunk(html[pos : skip.start()], slug))
+        parts.append(skip.group(0))
+        pos = skip.end()
+    parts.append(_rewrite_chunk(html[pos:], slug))
+    return "".join(parts)
+
+
+def _rewrite_chunk(chunk: str, slug: str) -> str:
+    return _ADR_AUTOLINK_RE.sub(
+        lambda m: f'<a class="adr-ref" href="/p/{slug}/adr/{m.group(0)}">{m.group(0)}</a>',
+        chunk,
+    )

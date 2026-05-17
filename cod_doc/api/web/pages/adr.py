@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
+from cod_doc.api.web.markdown import autolink_adr_refs, render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import adr_service
 from cod_doc.services.adr_service import ADRAlreadyExistsError, ADRNotFoundError
@@ -35,6 +36,13 @@ _STATUS_ICON = {
     "deprecated": "⚠️",
     "rejected": "❌",
 }
+
+
+def _render_prose(text: str | None, slug: str) -> str:
+    """Markdown-render an ADR body field and autolink bare ``ADR-NNN`` refs."""
+    if not text:
+        return ""
+    return autolink_adr_refs(render_markdown(text), slug=slug)
 
 
 def _parse_date(s: str | None) -> date | None:
@@ -195,6 +203,10 @@ def adr_show(
         raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
     payload = adr_service.adr_to_dict(session, row)
     payload["status_icon"] = _STATUS_ICON.get(payload["status"], "•")
+    payload["context_html"] = _render_prose(payload.get("context"), slug)
+    payload["decision_html"] = _render_prose(payload.get("decision"), slug)
+    payload["alternatives_html"] = _render_prose(payload.get("alternatives"), slug)
+    payload["consequences_html"] = _render_prose(payload.get("consequences"), slug)
 
     # Candidate ADRs for the supersede dropdown (everything except self).
     candidates = [
@@ -238,6 +250,7 @@ def adr_edit(
             decision=(decision or None),
             alternatives=(alternatives or None),
             consequences=(consequences or None),
+            author="human:web",
         )
         session.commit()
     except ADRNotFoundError as exc:
@@ -262,6 +275,7 @@ def adr_add_diagram(
         adr_service.add_diagram(
             session, project_id=project_id, adr_id=adr_id,
             mermaid=mermaid, title=(title or None),
+            author="human:web",
         )
         session.commit()
     except ADRNotFoundError as exc:
@@ -285,6 +299,7 @@ def adr_supersede_post(
             session, project_id=project_id,
             superseding_adr_id=adr_id, superseded_adr_id=superseded_adr_id,
             reason=(reason or None),
+            author="human:web",
         )
         session.commit()
     except ADRNotFoundError as exc:

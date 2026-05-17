@@ -503,3 +503,61 @@ def test_verify_skips_url_kind(engine_with_schema) -> None:  # type: ignore[no-u
         assert report.skipped == 1
         rows = links.list_for_section(session, sec.row_id)
         assert rows[0].resolved is True
+
+
+def test_resolve_adr_ref(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """[[adr:ADR-NNN]] resolves to an existing ADR row in the same project."""
+    from cod_doc.services import adr_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        adr_service.create(session, project_id=proj, title="layered", status="accepted")
+        host = _add_doc(session, proj, doc_key="src")
+        sec = docs.add_section(
+            session,
+            document_id=host,
+            anchor="i",
+            heading="I",
+            level=2,
+            position=0,
+            body="Governed by [[adr:ADR-001]] and [[adr:ADR-999]].",
+            author="human:test",
+        )
+        rows = links.resolve_section(session, sec.row_id)
+        # Two ADR links, one good one broken.
+        adrs = [r for r in rows if r.kind is LinkKind.ADR]
+        assert len(adrs) == 2
+        by_id = {r.to_adr_id or "broken": r for r in adrs}
+        # ADR-001 resolved
+        assert any(r.resolved is True and r.to_adr_id == "ADR-001" for r in adrs)
+        # ADR-999 broken
+        ghost = next(r for r in adrs if r.to_adr_id != "ADR-001")
+        assert ghost.resolved is False
+        assert ghost.broken_reason and "adr not found" in ghost.broken_reason
+
+
+def test_resolve_adr_bare_token(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Bare ADR-007 in prose resolves to ADR-007."""
+    from cod_doc.services import adr_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        adr_service.create(session, project_id=proj, title="X", status="accepted")
+        host = _add_doc(session, proj, doc_key="src")
+        sec = docs.add_section(
+            session,
+            document_id=host,
+            anchor="i",
+            heading="I",
+            level=2,
+            position=0,
+            body="This is governed by ADR-001.",
+            author="human:test",
+        )
+        rows = links.resolve_section(session, sec.row_id)
+        adrs = [r for r in rows if r.kind is LinkKind.ADR]
+        assert len(adrs) == 1
+        assert adrs[0].to_adr_id == "ADR-001"
+        assert adrs[0].resolved is True

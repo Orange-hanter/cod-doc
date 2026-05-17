@@ -20,6 +20,7 @@ class ParsedLink:
     target_doc_key: str | None = None
     target_task_id: str | None = None
     target_story_id: str | None = None
+    target_adr_id: str | None = None
     target_label: str | None = None  # wiki-link label (pre-resolution)
     anchor: str | None = None
     start: int = 0  # position in the (code-block-stripped) body

@@ -64,28 +64,28 @@
   {% if adr.context %}
   <section class="adr-block">
     <h2>Context</h2>
-    <div class="adr-prose">{{ adr.context }}</div>
+    <div class="adr-prose">{{ adr.context_html | safe }}</div>
   </section>
   {% endif %}
 
   {% if adr.decision %}
   <section class="adr-block">
     <h2>Decision</h2>
-    <div class="adr-prose">{{ adr.decision }}</div>
+    <div class="adr-prose">{{ adr.decision_html | safe }}</div>
   </section>
   {% endif %}
 
   {% if adr.alternatives %}
   <section class="adr-block">
     <h2>Alternatives considered</h2>
-    <div class="adr-prose">{{ adr.alternatives }}</div>
+    <div class="adr-prose">{{ adr.alternatives_html | safe }}</div>
   </section>
   {% endif %}
 
   {% if adr.consequences %}
   <section class="adr-block">
     <h2>Consequences</h2>
-    <div class="adr-prose">{{ adr.consequences }}</div>
+    <div class="adr-prose">{{ adr.consequences_html | safe }}</div>
   </section>
   {% endif %}
 

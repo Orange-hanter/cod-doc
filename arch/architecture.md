@@ -142,6 +142,16 @@ graph TB
 
 ## 3. Архитектурные решения (ADR)
 
+> **Источник правды переехал.** ADR живут в БД как first-class сущность
+> (см. [capability adr-system](../docs/system/capabilities/adr-system.md))
+> с автонумерацией, supersede-цепочкой и Web-UI редактором.
+> Канонический список: `/p/<slug>/adr` в Web UI; markdown-проекция —
+> `docs/adr/ADR-NNN.md` (генерируется `cod-doc adr export`).
+> Таблицы ниже остаются как **bootstrap-источник** для одноразовой
+> миграции через [`adr_migrator.py`](../cod_doc/services/adr_migrator.py)
+> при инициализации нового проекта. Любые правки делать **в Web UI / CLI**,
+> не здесь.
+
 ### ADR-001: Многослойная архитектура с DIP
 
 | Поле | Значение |

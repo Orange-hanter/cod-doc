@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from cod_doc.domain.entities import Link, LinkKind
 from cod_doc.infra.models import (
+    ADRModel,
     DocumentModel,
     LinkModel,
     ProjectModel,
@@ -179,6 +180,20 @@ def _resolve_story(
     return True, story_id, None
 
 
+def _resolve_adr(
+    session: Session, project_id: int, adr_id: str | None
+) -> tuple[bool, str | None, str | None]:
+    if not adr_id:
+        return False, None, "missing adr_id"
+    stmt = select(ADRModel.row_id).where(
+        ADRModel.project_id == project_id,
+        ADRModel.adr_id == adr_id,
+    )
+    if session.execute(stmt).scalar_one_or_none() is None:
+        return False, None, f"adr not found: {adr_id}"
+    return True, adr_id, None
+
+
 def _resolve_wiki(
     session: Session, project_id: int, label: str | None
 ) -> tuple[bool, str | None, str | None]:
@@ -315,6 +330,9 @@ def _apply_resolution(
     elif kind is LinkKind.STORY:
         ok, to_id, reason = _resolve_story(session, project_id, parsed.target_story_id)
         model.to_story_id = to_id
+    elif kind is LinkKind.ADR:
+        ok, to_id, reason = _resolve_adr(session, project_id, parsed.target_adr_id)
+        model.to_adr_id = to_id
     elif kind is LinkKind.CODE:
         # OBI-020: code refs resolve to a file path on disk relative to the
         # project root. ``parsed.target_file_path`` is what the parser

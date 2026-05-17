@@ -13,25 +13,40 @@ and CLI in ``cod_doc.cli.adr``):
   mark old as ``superseded`` in one transaction.
 - ``link_task(adr_id, task_id, relation='implements')``.
 - ``graph(project_id)`` — full supersede DAG + status-by-node payload.
+- ``render_markdown(...)`` — project one ADR through the default Jinja
+  template into a markdown string (for export / git-visibility).
+- ``export_to_disk(...)`` — write all ADRs of a project to
+  ``<project_root>/docs/adr/ADR-NNN.md`` (idempotent: same content =>
+  same file, no spurious diffs).
 """
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy import func, select
 
+from cod_doc.domain.entities import EntityKind
 from cod_doc.infra.models import (
     ADRDiagramModel,
     ADRModel,
     ADRSupersedeModel,
     ADRTaskModel,
+    ProjectModel,
 )
+from cod_doc.services import revision_service as rev
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+
+def _diff(op: str, **fields: object) -> str:
+    return json.dumps({"op": op, **fields})
 
 
 class ADRNotFoundError(LookupError):
@@ -131,6 +146,15 @@ def create(
     )
     session.add(row)
     session.flush()
+    rev.write(
+        session,
+        project_id=project_id,
+        entity_kind=EntityKind.ADR,
+        entity_id=row.row_id,
+        author=author,
+        diff=_diff("create", adr_id=adr_id, status=status, title=title),
+        reason="create",
+    )
     return row
 
 
@@ -169,26 +193,50 @@ def update(
     decision: str | None = None,
     alternatives: str | None = None,
     consequences: str | None = None,
+    author: str = "human",
+    reason: str | None = None,
 ) -> ADRModel:
     row = _require(session, project_id, adr_id)
-    if status is not None:
+    changed: dict[str, Any] = {}
+    if status is not None and status != row.status:
         if status not in _LEGAL_STATUSES:
             raise ValueError(f"invalid status {status!r}")
+        changed["status"] = {"old": row.status, "new": status}
         row.status = status
-    if title is not None:
+    if title is not None and title != row.title:
+        changed["title"] = {"old": row.title, "new": title}
         row.title = title
-    if decided_at is not None:
+    if decided_at is not None and decided_at != row.decided_at:
+        changed["decided_at"] = {
+            "old": row.decided_at.isoformat() if row.decided_at else None,
+            "new": decided_at.isoformat(),
+        }
         row.decided_at = decided_at
-    if context is not None:
+    if context is not None and context != row.context:
+        changed["context"] = {"changed": True}
         row.context = context
-    if decision is not None:
+    if decision is not None and decision != row.decision:
+        changed["decision"] = {"changed": True}
         row.decision = decision
-    if alternatives is not None:
+    if alternatives is not None and alternatives != row.alternatives:
+        changed["alternatives"] = {"changed": True}
         row.alternatives = alternatives
-    if consequences is not None:
+    if consequences is not None and consequences != row.consequences:
+        changed["consequences"] = {"changed": True}
         row.consequences = consequences
+    if not changed:
+        return row
     row.last_updated = datetime.now(UTC)
     session.flush()
+    rev.write(
+        session,
+        project_id=project_id,
+        entity_kind=EntityKind.ADR,
+        entity_id=row.row_id,
+        author=author,
+        diff=_diff("update", adr_id=adr_id, **changed),
+        reason=reason or "update",
+    )
     return row
 
 
@@ -200,6 +248,7 @@ def add_diagram(
     mermaid: str,
     title: str | None = None,
     position: int | None = None,
+    author: str = "human",
 ) -> ADRDiagramModel:
     adr = _require(session, project_id, adr_id)
     if position is None:
@@ -217,6 +266,21 @@ def add_diagram(
     )
     session.add(row)
     session.flush()
+    rev.write(
+        session,
+        project_id=project_id,
+        entity_kind=EntityKind.ADR,
+        entity_id=adr.row_id,
+        author=author,
+        diff=_diff(
+            "add_diagram",
+            adr_id=adr_id,
+            position=position,
+            title=title,
+            diagram_id=row.row_id,
+        ),
+        reason="add_diagram",
+    )
     return row
 
 
@@ -227,17 +291,28 @@ def supersede(
     superseding_adr_id: str,
     superseded_adr_id: str,
     reason: str | None = None,
+    author: str = "human",
 ) -> ADRSupersedeModel:
     """Mark ``superseded_adr_id`` as superseded BY ``superseding_adr_id``.
 
     Two effects in one transaction:
     1. New row in ``adr_supersedes`` table (the DAG edge).
     2. Old ADR's status flipped to ``superseded`` (idempotent).
+
+    Cycle detection: rejects an edge that would close a cycle in the
+    supersede DAG (e.g. ``A → B`` exists, refuse ``B → A``).
     """
     if superseding_adr_id == superseded_adr_id:
         raise ValueError("an ADR cannot supersede itself")
     new = _require(session, project_id, superseding_adr_id)
     old = _require(session, project_id, superseded_adr_id)
+    # Cycle check: walk supersedes from `old` (downstream); if we reach `new`,
+    # the new edge would close a cycle.
+    if _has_path(session, start_id=old.row_id, target_id=new.row_id):
+        raise ValueError(
+            f"supersede {superseding_adr_id} → {superseded_adr_id} "
+            f"would create a cycle in the supersede DAG"
+        )
     # Idempotency: don't create duplicate edge.
     existing = session.execute(
         select(ADRSupersedeModel).where(
@@ -245,6 +320,7 @@ def supersede(
             ADRSupersedeModel.superseded_id == old.row_id,
         )
     ).scalar_one_or_none()
+    is_new_edge = existing is None
     if existing is None:
         edge = ADRSupersedeModel(
             superseding_id=new.row_id,
@@ -258,11 +334,54 @@ def supersede(
         if reason and not edge.reason:
             edge.reason = reason
     # Flip old status.
+    flipped = False
     if old.status != "superseded":
         old.status = "superseded"
         old.last_updated = datetime.now(UTC)
+        flipped = True
     session.flush()
+    if is_new_edge:
+        # Write a revision against the OLD ADR (the affected one).
+        rev.write(
+            session,
+            project_id=project_id,
+            entity_kind=EntityKind.ADR,
+            entity_id=old.row_id,
+            author=author,
+            diff=_diff(
+                "supersede",
+                old=superseded_adr_id,
+                new=superseding_adr_id,
+                reason=reason,
+                status_flipped=flipped,
+            ),
+            reason=reason or "supersede",
+        )
     return edge
+
+
+def _has_path(session: Session, *, start_id: int, target_id: int) -> bool:
+    """DFS over `adr_supersedes` from ``start_id``; True iff ``target_id`` is reachable."""
+    if start_id == target_id:
+        return True
+    seen: set[int] = set()
+    stack: list[int] = [start_id]
+    while stack:
+        node = stack.pop()
+        if node in seen:
+            continue
+        seen.add(node)
+        if node == target_id:
+            return True
+        next_ids = session.execute(
+            select(ADRSupersedeModel.superseded_id).where(
+                ADRSupersedeModel.superseding_id == node
+            )
+        ).scalars().all()
+        for nid in next_ids:
+            if nid not in seen:
+                stack.append(nid)
+    return False
 
 
 def link_task(
@@ -272,6 +391,7 @@ def link_task(
     adr_id: str,
     task_id: str,
     relation: str = "implements",
+    author: str = "human",
 ) -> ADRTaskModel:
     if relation not in _LEGAL_RELATIONS:
         raise ValueError(f"invalid relation {relation!r}; expected one of {sorted(_LEGAL_RELATIONS)}")
@@ -289,6 +409,15 @@ def link_task(
     row = ADRTaskModel(adr_row_id=adr.row_id, task_id=task_id, relation=relation)
     session.add(row)
     session.flush()
+    rev.write(
+        session,
+        project_id=project_id,
+        entity_kind=EntityKind.ADR,
+        entity_id=adr.row_id,
+        author=author,
+        diff=_diff("link_task", adr_id=adr_id, task_id=task_id, relation=relation),
+        reason="link_task",
+    )
     return row
 
 
@@ -374,3 +503,94 @@ def adr_to_dict(
             for link in links
         ]
     return out
+
+
+# ----------------------------------------------------------------- #
+# Markdown projection (P2-1)                                          #
+# ----------------------------------------------------------------- #
+
+
+_STATUS_ICON = {
+    "proposed": "✏️",
+    "accepted": "✅",
+    "superseded": "🔁",
+    "deprecated": "⚠️",
+    "rejected": "❌",
+}
+
+# Locate the bundled default template relative to the package root.
+_PKG_ROOT = Path(__file__).resolve().parents[2]
+_TEMPLATES_DIR = _PKG_ROOT / "templates"
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(_TEMPLATES_DIR)),
+    autoescape=select_autoescape(disabled_extensions=("j2",), default=False),
+    keep_trailing_newline=True,
+    trim_blocks=False,
+    lstrip_blocks=False,
+)
+
+
+def render_markdown(
+    session: Session,
+    *,
+    project_id: int,
+    adr_id: str,
+    template: str = "adr_default.md.j2",
+) -> str:
+    """Render one ADR through the Jinja template into markdown.
+
+    Pure function: no I/O beyond reading the template. The DB session
+    is used only to fetch the ADR + diagrams + task-links.
+    """
+    row = _require(session, project_id, adr_id)
+    payload = adr_to_dict(session, row)
+    payload["status_icon"] = _STATUS_ICON.get(payload["status"], "•")
+    # Resolve the supersedes chain: list of ADR-NNN ids that THIS one replaces.
+    superseded_rows = session.execute(
+        select(ADRSupersedeModel, ADRModel.adr_id)
+        .join(ADRModel, ADRModel.row_id == ADRSupersedeModel.superseded_id)
+        .where(ADRSupersedeModel.superseding_id == row.row_id)
+    ).all()
+    payload["supersedes"] = [
+        {"adr_id": adr_id_str, "reason": edge.reason}
+        for edge, adr_id_str in superseded_rows
+    ]
+    payload["adr_id"] = row.adr_id
+    tmpl = _jinja_env.get_template(template)
+    return tmpl.render(**payload)
+
+
+def export_to_disk(
+    session: Session,
+    *,
+    project_id: int,
+    out_dir: Path | str | None = None,
+) -> list[Path]:
+    """Project every ADR of ``project_id`` into ``<out_dir>/ADR-NNN.md``.
+
+    ``out_dir`` defaults to ``<project.root_path>/docs/adr``. Idempotent:
+    files whose content matches the new rendering are skipped, so re-running
+    produces no spurious diffs. Returns the list of paths that were written
+    (new or changed). Caller is responsible for any commit / cleanup.
+    """
+    proj = session.execute(
+        select(ProjectModel).where(ProjectModel.row_id == project_id)
+    ).scalar_one_or_none()
+    if proj is None:
+        raise LookupError(f"project not found: id={project_id}")
+    if out_dir is None:
+        out_dir = Path(proj.root_path) / "docs" / "adr"
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    written: list[Path] = []
+    for adr in list_for_project(session, project_id):
+        rendered = render_markdown(
+            session, project_id=project_id, adr_id=adr.adr_id,
+        )
+        target = out_path / f"{adr.adr_id}.md"
+        if target.exists() and target.read_text(encoding="utf-8") == rendered:
+            continue
+        target.write_text(rendered, encoding="utf-8")
+        written.append(target)
+    return written

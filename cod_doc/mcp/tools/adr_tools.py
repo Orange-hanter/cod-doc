@@ -142,6 +142,7 @@ def register(mcp: FastMCP) -> None:
                     decided_at=_parse_date(decided_at), context=context,
                     decision=decision, alternatives=alternatives,
                     consequences=consequences,
+                    author="agent",
                 )
                 return adr_service.adr_to_dict(session, row)
         except ADRNotFoundError as exc:
@@ -167,6 +168,7 @@ def register(mcp: FastMCP) -> None:
                 d = adr_service.add_diagram(
                     session, project_id=project_id, adr_id=adr_id,
                     mermaid=mermaid, title=title, position=position,
+                    author="agent",
                 )
                 return {
                     "adr_id": adr_id, "position": d.position,
@@ -201,6 +203,7 @@ def register(mcp: FastMCP) -> None:
                     superseding_adr_id=superseding_adr_id,
                     superseded_adr_id=superseded_adr_id,
                     reason=reason,
+                    author="agent",
                 )
                 return {
                     "superseding": superseding_adr_id,
@@ -230,6 +233,7 @@ def register(mcp: FastMCP) -> None:
                 link = adr_service.link_task(
                     session, project_id=project_id, adr_id=adr_id,
                     task_id=task_id, relation=relation,
+                    author="agent",
                 )
                 return {
                     "adr_id": adr_id, "task_id": link.task_id,

@@ -49,6 +49,7 @@ class LinkKind(StrEnum):
     STORY = "story"
     SECTION = "section"
     CODE = "code"
+    ADR = "adr"
 
 
 class TaskStatus(StrEnum):
@@ -170,6 +171,7 @@ class EntityKind(StrEnum):
     STORY = "story"
     LINK = "link"
     MODULE = "module"
+    ADR = "adr"
 
 
 class AuditSurface(StrEnum):
@@ -233,6 +235,7 @@ class Link:
     to_doc_key: str | None = None
     to_task_id: str | None = None
     to_story_id: str | None = None
+    to_adr_id: str | None = None
     resolved: bool = False
     last_checked: datetime | None = None
     broken_reason: str | None = None

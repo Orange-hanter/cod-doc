@@ -17,6 +17,10 @@ _FENCE_RE = re.compile(r"```[A-Za-z0-9_+\-]*\n.*?```", re.DOTALL)
 _WIKI_RE = re.compile(r"\[\[([^\]\n]+)\]\]")
 _MD_LINK_RE = re.compile(r"\[([^\]\n]+)\]\(([^)\n]+)\)")
 _BARE_URL_RE = re.compile(r"https?://[^\s)\]]+")
+# Bare ADR references: ADR-007, ADR-1234, etc. (3+ digits).  The pattern
+# is unambiguous — does not collide with task ids (COD-NNN) or story ids
+# (US-NNN). Matched only OUTSIDE existing wiki/markdown spans.
+_ADR_BARE_RE = re.compile(r"\bADR-\d{3,}\b")
 
 # OBI-020: code-ref extensions. A markdown link whose href ends in one of
 # these is classified as LinkKind.CODE (not LinkKind.MARKDOWN). The list
@@ -126,6 +130,20 @@ def _classify_wiki_inner(inner: str, raw: str, start: int) -> ParsedLink:
             target_story_id=inner[6:] or None,
             start=start,
         )
+    if inner.startswith("adr:"):
+        return ParsedLink(
+            raw=raw,
+            kind=LinkKind.ADR,
+            target_adr_id=inner[4:] or None,
+            start=start,
+        )
+    if _ADR_BARE_RE.fullmatch(inner):
+        return ParsedLink(
+            raw=raw,
+            kind=LinkKind.ADR,
+            target_adr_id=inner,
+            start=start,
+        )
     return ParsedLink(raw=raw, kind=LinkKind.WIKI, target_label=inner, start=start)
 
 
@@ -139,8 +157,10 @@ def parse(body: str) -> list[ParsedLink]:
     text = _strip_fenced_code(body)
     out: list[ParsedLink] = []
     md_spans: list[tuple[int, int]] = []
+    wiki_spans: list[tuple[int, int]] = []
 
     for m in _WIKI_RE.finditer(text):
+        wiki_spans.append((m.start(), m.end()))
         out.append(_classify_wiki_inner(m.group(1).strip(), m.group(0), m.start()))
 
     for m in _MD_LINK_RE.finditer(text):
@@ -192,6 +212,24 @@ def parse(body: str) -> list[ParsedLink]:
             continue
         url = m.group(0).rstrip(".,;:!?")  # trim trailing punctuation
         out.append(ParsedLink(raw=url, kind=LinkKind.URL, start=m.start()))
+
+    def _inside_span(pos: int, spans: list[tuple[int, int]]) -> bool:
+        return any(s <= pos < e for s, e in spans)
+
+    for m in _ADR_BARE_RE.finditer(text):
+        # Skip if already inside a wiki / markdown link span — that path
+        # already created a ParsedLink (LinkKind.ADR via wiki, or LinkKind.MARKDOWN
+        # if someone wrote `[ADR-007](some-url)`).
+        if _inside_span(m.start(), wiki_spans) or _inside_span(m.start(), md_spans):
+            continue
+        out.append(
+            ParsedLink(
+                raw=m.group(0),
+                kind=LinkKind.ADR,
+                target_adr_id=m.group(0),
+                start=m.start(),
+            )
+        )
 
     out.sort(key=lambda p: p.start)
     return out

@@ -118,3 +118,42 @@ def test_parse_skips_code_blocks() -> None:
     assert "fake" not in keys
     assert "real" in keys
     assert "TST-002" in task_ids
+
+
+def test_parse_adr_wiki_explicit() -> None:
+    parsed = links.parse("See [[adr:ADR-007]] for rationale.")
+    assert len(parsed) == 1
+    assert parsed[0].kind is LinkKind.ADR
+    assert parsed[0].target_adr_id == "ADR-007"
+
+
+def test_parse_adr_wiki_bare() -> None:
+    """A wiki-form `[[ADR-NNN]]` (without the `adr:` prefix) is also recognized."""
+    parsed = links.parse("Refer to [[ADR-007]] above.")
+    assert len(parsed) == 1
+    assert parsed[0].kind is LinkKind.ADR
+    assert parsed[0].target_adr_id == "ADR-007"
+
+
+def test_parse_adr_bare_token() -> None:
+    """Plain prose `ADR-007` outside code/links is autodetected as ADR ref."""
+    parsed = links.parse("This is governed by ADR-007 since April.")
+    adr = [p for p in parsed if p.kind is LinkKind.ADR]
+    assert len(adr) == 1
+    assert adr[0].target_adr_id == "ADR-007"
+    assert adr[0].raw == "ADR-007"
+
+
+def test_parse_adr_bare_skips_inside_code_fence() -> None:
+    """`ADR-007` inside a fenced code block must NOT be auto-linked."""
+    body = "Real ADR-001 here.\n\n```\nADR-002 in code\n```\n"
+    parsed = links.parse(body)
+    adr_ids = [p.target_adr_id for p in parsed if p.kind is LinkKind.ADR]
+    assert adr_ids == ["ADR-001"]
+
+
+def test_parse_adr_does_not_double_count_in_wiki_form() -> None:
+    """`[[ADR-007]]` should produce ONE ParsedLink, not also a bare-token one."""
+    parsed = links.parse("[[ADR-007]] is supreme.")
+    adrs = [p for p in parsed if p.kind is LinkKind.ADR]
+    assert len(adrs) == 1
