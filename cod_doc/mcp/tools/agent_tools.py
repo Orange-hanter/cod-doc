@@ -113,9 +113,13 @@ def register(mcp: FastMCP) -> None:
         }
 
     # ----------------------------------------------------------------- #
-    # AGT-003..AGT-007 stubs — present in tools/list under --profile agent #
-    # so the contract "list_tools returns 6 names" holds today. Bodies   #
-    # will be implemented in their respective tasks.                     #
+    # AGT-003..AGT-007 — MCP wrappers over services.agent_service.      #
+    # Bodies live in ``cod_doc.services.agent_service`` and have full   #
+    # test coverage (see tests/services/test_agent_pick.py and          #
+    # tests/services/test_agent_workflow.py). This module is the        #
+    # thin wrapper layer: open a session, resolve the project, and      #
+    # delegate to the service. See proposal 20 (Multi-Agent Standup)    #
+    # for the agent-coordination patterns built on top.                 #
     # ----------------------------------------------------------------- #
 
     @mcp.tool(name="agent_pick")

@@ -4,11 +4,15 @@
 > первого commit'а. Дополняет `MASTER.md` (что есть в проекте) ответом на «как
 > с этим работать».
 
-> ⚠️ **Cycle-5 in progress** (2026-05-15). MCP API переписывается task-centric:
-> agent profile экспонирует ~6 task-centric тулов (`agent_pick`, `agent_report`,
+> ⚠️ **Cycle-5 implemented (2026-05-15, closed 2026-06-04 by AGN-001).** MCP API
+> task-centric: agent profile экспонирует 6 тулов (`agent_pick`, `agent_report`,
 > `agent_complete`, `agent_release`, `agent_get`, `agent_capabilities`).
-> 104-tool CRUD surface (`task_*`, `doc_*`, `plan_*`, …) остаётся для
-> `--profile full|standard` (admin / CLI / web). Tracked в plan
+> Bodies реализованы в `cod_doc/services/agent_service.py`; MCP-обёртки в
+> `cod_doc/mcp/tools/agent_tools.py` (тонкий wrapper-слой, не stubs). Покрытие:
+> `tests/services/test_agent_pick.py`, `tests/services/test_agent_workflow.py`,
+> `tests/services/test_agent_profile_contract.py`. 104-tool CRUD surface
+> (`task_*`, `doc_*`, `plan_*`, …) остаётся для `--profile full|standard`
+> (admin / CLI / web). Tracked в plan
 > `paperclip-adoption-task-plan` section H. Новые agent-features → секция H,
 > не plan_create-style расширения internal surface.
 

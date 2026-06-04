@@ -37,11 +37,15 @@ related_docs:
 | D | 4 — Adapter | 10 | US-014 | 3 | 🟡 pending |
 | E | UX & Migration | 13, 14, 15 | US-017..US-019 | 7 | 🟡 pending |
 | F | Tooling fixes (cycle-2 gaps) | — | — (internal) | 3 | 🟡 pending |
-| **TOTAL** | | 15 | 15 | **43** | 🟡 pending |
+| H | Agent tools completion (cycle-5 cleanup) | 16, 20 | — (AGN-001..003, 010..013, 020..021) | 9 | 🟡 pending |
+| **TOTAL** | | 15 | 15 | **52** | 🟡 pending |
 
 > Cycle 2 наполнил Section A (PCA-001..PCA-034). Cycle 3 (2026-05-07) расширил
 > план Sections B/C/D/E (Phase 2-4 + UX) и добавил Section F с tooling-фиксами
-> по результатам cycle-2 audit (G1-G3).
+> по результатам cycle-2 audit (G1-G3). Section H добавлен 2026-06-04 после
+> [self-improvement audit](../audit/2026-06-04-self-improvement-compared.md):
+> cycle-5 agent profile функционален, но нужны docstring-фикс и integration tests.
+> План — [agent-tools-completion-task-plan.md](agent-tools-completion-task-plan.md).
 
 ## Dependency Graph
 
