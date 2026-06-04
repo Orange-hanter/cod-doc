@@ -42,6 +42,7 @@
 | 18  | [Vibecoder's Diary](18-vibecoders-diary.md)             | 🟡 Адаптация   | activity_log → human-friendly daily doc          | низкий  |
 | 19  | [Context-Scout](19-context-scout.md)                    | 🟡 Адаптация   | «Умный grep» через cod-doc MCP, ranked evidence  | низкий  |
 | 20  | [Multi-Agent Standup](20-multi-agent-standup.md)        | 🔵 Архитектура | 2+ агента в одной инстанции без race             | высокий |
+| 21  | [Degraded-Path Auditability + Error Audit Trail](21-degraded-path-auditability.md) | 🟡 Адаптация | Видимость degraded paths и hard exceptions     | средний |
 
 ### Рекомендуемый порядок для hackathon-track
 
