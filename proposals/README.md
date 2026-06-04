@@ -25,6 +25,34 @@
 | 10  | [Adapter pattern для LLM](10-adapter-pattern.md)          | 🔵 Архитектура  | Plug-in Claude/локальных моделей без переписи   | высокий |
 | 11  | [AGENTS.md как контракт](11-agents-md.md)                 | 🔵 Архитектура  | Правила вклада для людей и агентов              | низкий  |
 | 12  | [First-class approvals](12-approvals.md)                  | 🔵 Архитектура  | Структурный заменитель ad-hoc эскалаций         | средний |
+| 13  | [Import UX redesign](13-import-ux-redesign.md)            | 🟡 Адаптация    | Современный wizard для импорта YAML/JSON         | средний |
+| 14  | [Legacy tasks migration UX](14-legacy-tasks-migration-ux.md) | 🟡 Адаптация | Миграция legacy-задач в DB-формат               | средний |
+| 15  | [Link system and rendering](15-link-system-and-rendering.md) | 🟡 Адаптация | Гибкие cross-refs между сущностями              | средний |
+
+## 🔌 Hackathon-track (внешние RFC, 2026-06-04)
+
+> Набор RFC, рождённых из brainstorm по vibecoding-идеям. Не про paperclip —
+> про применение cod-doc как infrastructure для vibecoder'ов и multi-agent систем.
+> Каждая идея ложится на существующие proposal 01-15, расширяя их пользовательский value.
+
+| #   | Документ                                                | Категория      | Эффект                                            | Риск    |
+| --- | ------------------------------------------------------- | -------------- | ------------------------------------------------- | ------- |
+| 16  | [AI-Pair-Hacker](16-ai-pair-hacker.md)                  | 🔵 Архитектура | cod-doc в git-hooks vibecoder'а, авто-документирование | средний |
+| 17  | [Living Specification](17-living-specification.md)      | 🟡 Адаптация   | ADR ↔ tasks ↔ code ↔ docs drift detector          | средний |
+| 18  | [Vibecoder's Diary](18-vibecoders-diary.md)             | 🟡 Адаптация   | activity_log → human-friendly daily doc          | низкий  |
+| 19  | [Context-Scout](19-context-scout.md)                    | 🟡 Адаптация   | «Умный grep» через cod-doc MCP, ranked evidence  | низкий  |
+| 20  | [Multi-Agent Standup](20-multi-agent-standup.md)        | 🔵 Архитектура | 2+ агента в одной инстанции без race             | высокий |
+
+### Рекомендуемый порядок для hackathon-track
+
+**Быстрые победы (1-2 недели каждая):**
+- 18 Vibecoder's Diary (закрывает `09-activity-log` пользовательским value)
+- 19 Context-Scout (CLI + FTS5, минимум нового кода)
+- 17 Living Specification (routines + ADR-system = естественное расширение)
+
+**Тяжёлые (3-4 недели):**
+- 16 AI-Pair-Hacker (нужна интеграция с vibecoder-инструментами)
+- 20 Multi-Agent Standup (нужен registry, demo, документация)
 
 ## Рекомендуемый порядок внедрения
 
@@ -40,12 +68,22 @@ graph LR
     H[08 Status] --> G
     I[06 Checkout] --> H
     J[07 Routines] -.fits anywhere.-> K[11 AGENTS.md]
+    
+    %% Hackathon-track
+    E --> L[18 Vibecoder's Diary]
+    L --> M[17 Living Specification]
+    J --> M
+    M --> N[19 Context-Scout]
+    N --> O[16 AI-Pair-Hacker]
+    O --> P[20 Multi-Agent Standup]
 ```
 
 **Фаза 1 (быстрые победы):** 01 → 03 → 02 → 04
 **Фаза 2 (структурный аудит):** 09 → 05 → 12
 **Фаза 3 (расширения):** 06 → 08 → 07 → 11
-**Фаза 4 (по необходимости):** 10
+**Фаза 4 (hackathon-track MVP):** 18 → 19 → 17
+**Фаза 5 (hackathon-track scale-up):** 16 → 20
+**Фаза 6 (по необходимости):** 10
 
 ## Что осталось за скобками
 
