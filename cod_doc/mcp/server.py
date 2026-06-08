@@ -28,10 +28,6 @@ from cod_doc.mcp.tools import (
     context_tools,
     doc_tools,
     legacy_agent_tools,
-    legacy_master_tools,
-    legacy_project_tools,
-    legacy_resources,
-    legacy_search_tools,
     link_tools,
     plan_tools,
     revision_tools,
@@ -48,12 +44,11 @@ mcp = FastMCP("COD-DOC", json_response=True)
 # Order doesn't matter for FastMCP — tool/resource/prompt names live in a
 # flat namespace. Group registrations by surface for grep-ability.
 for _module in (
-    # Legacy YAML-backed surfaces (project mgmt, MASTER.md, agent, search).
-    legacy_project_tools,
-    legacy_master_tools,
-    legacy_search_tools,
+    # Legacy YAML-backed agent surface (run_agent_once + context helpers).
+    # YAML CRUD tools (project/master/search/resources) removed 2026-06-08
+    # under STB-002 now that the DB is the source of truth; run_agent_once
+    # is kept as the approval/resume entry point.
     legacy_agent_tools,
-    legacy_resources,
     # COD-032 DB-backed tools (doc.*, task.*, plan.*, story.*, link.*, revision.*).
     doc_tools,
     task_tools,
@@ -125,7 +120,7 @@ def get_active_profile() -> str:
     show_default=True,
     help="Tool-surface profile (default: agent — cycle-5). agent=6 task-centric "
     "tools for AI workflows; minimal=~18 cold-start curated CRUD; "
-    "standard=DB-only ~85; full=all ~110 including legacy.",
+    "standard=DB-only; full=all including legacy agent tools.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")
 @click.option("--log-format", default=None, envvar="LOG_FORMAT")

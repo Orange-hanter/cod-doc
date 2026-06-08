@@ -78,30 +78,11 @@ def test_resolver_rejects_neither() -> None:
 #  - resources / prompts (URI-template arg name is part of the template).
 #  - tools without any project arg (list_projects, add_project, check_config).
 LEGACY_TOOLS_WITH_BOTH_ALIASES: tuple[str, ...] = (
-    # legacy_master_tools
-    "get_master",
-    "update_master_hashes",
-    "check_stale_refs",
-    "generate_ref",
-    "read_context",
-    "read_file",
-    "list_files",
-    "hash_file",
-    "verify_hash",
-    # legacy_project_tools
-    "get_project_status",
-    "remove_project",
-    "list_tasks",
-    "add_task",
-    "update_task",
-    "next_pending_task",
-    # legacy_agent_tools
+    # legacy_agent_tools — the only legacy surface kept after STB-002
+    # (2026-06-08); the YAML CRUD tools were removed.
     "run_agent_once",
     "get_agent_context",
     "clear_agent_context",
-    # legacy_search_tools
-    "search_docs",
-    "reindex",
 )
 
 
@@ -159,24 +140,25 @@ def _open_stdio_client(config_dir: Path):
 
 
 @pytest.mark.anyio
-async def test_get_master_accepts_canonical_project(
+async def test_legacy_tool_accepts_canonical_project(
     mcp_project: tuple[ProjectEntry, Path],
 ) -> None:
+    # STB-002: get_master removed; clear_agent_context is a kept legacy tool
+    # that exercises the same resolve_project_name alias path.
     entry, config_dir = mcp_project
     async with (
         _open_stdio_client(config_dir) as (read, write),
         ClientSession(read, write) as session,
     ):
         await session.initialize()
-        result = await session.call_tool("get_master", {"project": entry.name})
+        result = await session.call_tool("clear_agent_context", {"project": entry.name})
 
-    # Один из текстовых блоков должен содержать MASTER.md заголовок.
-    assert result.content, "get_master returned no content"
-    assert not result.isError, f"get_master errored on project=: {result.content}"
+    assert result.content, "clear_agent_context returned no content"
+    assert not result.isError, f"errored on project=: {result.content}"
 
 
 @pytest.mark.anyio
-async def test_get_master_accepts_legacy_project_name(
+async def test_legacy_tool_accepts_legacy_project_name(
     mcp_project: tuple[ProjectEntry, Path],
 ) -> None:
     entry, config_dir = mcp_project
@@ -185,10 +167,10 @@ async def test_get_master_accepts_legacy_project_name(
         ClientSession(read, write) as session,
     ):
         await session.initialize()
-        result = await session.call_tool("get_master", {"project_name": entry.name})
+        result = await session.call_tool("clear_agent_context", {"project_name": entry.name})
 
-    assert result.content, "get_master returned no content for project_name="
-    assert not result.isError, f"get_master errored on project_name=: {result.content}"
+    assert result.content, "clear_agent_context returned no content for project_name="
+    assert not result.isError, f"errored on project_name=: {result.content}"
 
 
 @pytest.mark.anyio
@@ -201,6 +183,6 @@ async def test_legacy_tool_rejects_missing_project(
         ClientSession(read, write) as session,
     ):
         await session.initialize()
-        result = await session.call_tool("get_master", {})
+        result = await session.call_tool("clear_agent_context", {})
 
     assert result.isError, "expected error when neither project nor project_name passed"

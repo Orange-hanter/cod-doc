@@ -101,8 +101,8 @@ def test_keep_tool_pure_logic() -> None:
     assert keep_tool("task_create", "full") is True
     assert keep_tool("task_create", "standard") is True
     assert keep_tool("task_create", "minimal") is True
-    assert keep_tool("add_task", "standard") is False
-    assert keep_tool("add_task", "minimal") is False
-    assert keep_tool("add_task", "full") is True
+    assert keep_tool("run_agent_once", "standard") is False
+    assert keep_tool("run_agent_once", "minimal") is False
+    assert keep_tool("run_agent_once", "full") is True
     assert keep_tool("plan_audit", "minimal") is False
     assert keep_tool("plan_audit", "standard") is True

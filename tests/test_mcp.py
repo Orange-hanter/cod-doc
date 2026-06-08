@@ -37,9 +37,9 @@ def mcp_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Projec
 def _open_stdio_client(config_dir: Path):
     params = StdioServerParameters(
         command=str(Path(__file__).resolve().parents[1] / ".venv" / "bin" / "python"),
-        # Tests assert presence of legacy tools (list_projects, add_task,
-        # get_master, …) which are hidden under the cycle-4 'standard'
-        # default. Pin --profile full for back-compat coverage.
+        # Tests assert presence of the kept legacy agent tools (run_agent_once,
+        # …) which are hidden under the cycle-4 'standard' default. Pin
+        # --profile full for back-compat coverage.
         args=["-m", "cod_doc.mcp.server", "--transport", "stdio", "--profile", "full"],
         env={**os.environ, "COD_DOC_HOME": str(config_dir)},
         cwd=str(Path(__file__).resolve().parents[1]),
@@ -58,10 +58,8 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
         tools = await session.list_tools()
 
     tool_names = [tool.name for tool in tools.tools]
-    # legacy tools
-    assert "list_projects" in tool_names
-    assert "add_task" in tool_names
-    assert "get_master" in tool_names
+    # legacy agent tools kept after STB-002 (YAML CRUD removed)
+    assert "run_agent_once" in tool_names
     # COD-032: DB-backed tool groups
     assert "task_list" in tool_names
     assert "task_create" in tool_names
@@ -94,21 +92,8 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "revision_revert" in tool_names
 
 
-@pytest.mark.anyio
-async def test_mcp_add_task_and_get_master(mcp_project: tuple[ProjectEntry, Path]) -> None:
-    entry, config_dir = mcp_project
-    async with (
-        _open_stdio_client(config_dir) as (read, write),
-        ClientSession(read, write) as session,
-    ):
-        await session.initialize()
-        task_result = await session.call_tool(
-            "add_task",
-            {"project_name": entry.name, "title": "Проверить MCP workflow", "priority": 2},
-        )
-        master_result = await session.call_tool("get_master", {"project_name": entry.name})
-
-    task_text = task_result.content[0].text
-    master_text = master_result.content[0].text
-    assert "Проверить MCP workflow" in task_text
-    assert "MASTER" in master_text or "Navigator" in master_text
+# STB-002 (2026-06-08): removed test_mcp_add_task_and_get_master — it exercised
+# the legacy YAML add_task + get_master tools, both deleted now that the DB is
+# the source of truth. DB-backed task creation is covered by
+# tests/test_mcp_task_create_field_passthrough.py and
+# tests/integration/test_agent_profile_mcp.py.

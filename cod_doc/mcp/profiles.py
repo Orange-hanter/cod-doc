@@ -9,9 +9,11 @@ Four profiles:
 - ``minimal`` — ~18-tool cold-start surface for non-agent integrations
   that still want a curated subset of CRUD tools.
 - ``standard`` (current default) — full DB-backed surface; drops only
-  the legacy YAML-backed tools (add_task, list_tasks, get_master, …).
-- ``full`` — every tool the server registers, including legacy.
-  For admin / migration / debugging sessions.
+  the remaining legacy YAML-backed agent tools (run_agent_once,
+  get_agent_context, …). The legacy YAML CRUD tools were removed in
+  STB-002 (2026-06-08) once the DB became the source of truth.
+- ``full`` — every tool the server registers, including the remaining
+  legacy agent tools. For admin / migration / debugging sessions.
 
 Active profile is chosen at server start via CLI ``--profile`` or env
 ``COD_DOC_PROFILE``.
@@ -84,33 +86,14 @@ MINIMAL_TOOLS: frozenset[str] = frozenset(
 
 LEGACY_TOOLS: frozenset[str] = frozenset(
     {
-        # legacy_project_tools
-        "list_projects",
-        "get_project_status",
-        "add_project",
-        "remove_project",
-        "list_tasks",
-        "add_task",
-        "update_task",
-        "next_pending_task",
-        # legacy_master_tools
-        "get_master",
-        "update_master_hashes",
-        "check_stale_refs",
-        "generate_ref",
-        "read_context",
-        "read_file",
-        "list_files",
-        "hash_file",
-        "verify_hash",
-        # legacy_agent_tools
+        # legacy_agent_tools — kept after STB-002 (2026-06-08). The YAML CRUD
+        # surfaces (legacy_project/master/search/resources) were removed once
+        # the DB became the source of truth; run_agent_once remains the
+        # approval/resume entry point.
         "run_agent_once",
         "get_agent_context",
         "clear_agent_context",
         "check_config",
-        # legacy_search_tools
-        "search_docs",
-        "reindex",
     }
 )
 

@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **120 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **101 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -299,10 +299,9 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **agent.\* (cycle-5)** | 6 | Task-centric surface для AI-агентов: pick → work → complete за 3 вызова | `agent_capabilities`, `agent_pick`, `agent_get`, `agent_report`, `agent_complete`, `agent_release` |
 | **adr.\* (ADR-002)** | 9 | Architecture Decision Records: CRUD + supersede DAG + task links + Mermaid diagrams + deprecate | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_add_diagram`, `adr_supersede`, `adr_deprecate`, `adr_link_task`, `adr_graph` |
 | **context / capabilities / session** | 9 | Admin: snowball-сборка контекста, L0 bootstrap, tool discovery + per-tool describe, change-log, safe-call envelope, workspace defaults | `context_get`, `capabilities`, `tool_search`, `tool_describe`, `tools_diff`, `tool_call_safe`, `set_default_project`, `get_default_project`, `clear_default_project` |
-| **hash / verify** | 2 | Контроль целостности файлов | `hash_file`, `verify_hash` |
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
-| **Legacy (YAML)** | 20 | Проекты / задачи / MASTER / поиск / агент — depending on `tasks_yaml` стора | `list_projects`, `add_project`, `remove_project`, `get_project_status`, `list_tasks`, `add_task`, `update_task`, `next_pending_task`, `get_master`, `update_master_hashes`, `check_stale_refs`, `generate_ref`, `read_file`, `read_context`, `list_files`, `search_docs`, `reindex`, `run_agent_once`, `get_agent_context`, `clear_agent_context` |
-| **ИТОГО** | **120** | | |
+| **Legacy (YAML агент)** | 3 | Остаток legacy-surface после STB-002 (2026-06-08): resume-вход + context-хелперы. YAML CRUD (проекты/задачи/MASTER/поиск + hash/verify) удалён — БД источник истины. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
+| **ИТОГО** | **101** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в

@@ -43,8 +43,10 @@ def test_describe_includes_related_tools_from_same_family() -> None:
     assert "task_create" not in related
 
 
-def test_describe_deprecated_legacy_tool_flagged() -> None:
+def test_describe_deprecated_tool_flagged() -> None:
+    # STB-002 removed the legacy YAML CRUD tools; adr_deprecate's description
+    # trips the DEPRECATED heuristic and stands in as the deprecated example.
     describe = _get_tool("tool_describe")
-    result = describe(name="add_task")  # DEPRECATED legacy
+    result = describe(name="adr_deprecate")
     assert result["found"] is True
     assert result["deprecated"] is True

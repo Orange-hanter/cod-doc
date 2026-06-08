@@ -52,10 +52,14 @@ def test_empty_query_returns_empty_list() -> None:
     assert results == []
 
 
-def test_deprecated_legacy_tool_flagged() -> None:
-    """add_task is legacy/deprecated — must surface that flag."""
+def test_deprecated_tool_flagged() -> None:
+    """A tool whose description marks DEPRECATED must surface that flag.
+
+    STB-002 removed the legacy YAML CRUD tools; adr_deprecate now stands in as
+    a stable tool whose description trips the ``DEPRECATED`` heuristic.
+    """
     search = _get_tool("tool_search")
-    results = search(query="DEPRECATED legacy", limit=10)
-    assert any(r["name"] == "add_task" and r["deprecated"] for r in results), (
-        f"add_task should appear with deprecated=True. Got: {results}"
+    results = search(query="DEPRECATED", limit=10)
+    assert any(r["name"] == "adr_deprecate" and r["deprecated"] for r in results), (
+        f"adr_deprecate should appear with deprecated=True. Got: {results}"
     )
