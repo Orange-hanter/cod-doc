@@ -41,7 +41,9 @@ def adr_export(ctx: click.Context, project: str, out_dir: str | None) -> None:
     with transactional(sf) as session:
         project_id = require_project_id(session, project)
         written = adr_service.export_to_disk(
-            session, project_id=project_id, out_dir=target,
+            session,
+            project_id=project_id,
+            out_dir=target,
         )
 
     if not written:

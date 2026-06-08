@@ -16,8 +16,10 @@ LEGACY_MD = REPO_ROOT / "arch" / "architecture.md"
 def _seed(session) -> int:
     now = datetime.now(UTC)
     proj = ProjectModel(slug="adr_mig", title="P", root_path="/tmp", config_json={})
-    proj.created = now; proj.updated = now
-    session.add(proj); session.flush()
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
     return proj.row_id
 
 
@@ -56,7 +58,9 @@ def test_parser_captures_context_and_decision() -> None:
     by_id = {r["adr_id"]: r for r in records}
     # ADR-001: 4-layer architecture; context mentions LLM providers.
     assert "LLM" in (by_id["ADR-001"]["context"] or "")
-    assert "DIP" in (by_id["ADR-001"]["decision"] or "") or "4-слойная" in (by_id["ADR-001"]["decision"] or "")
+    assert "DIP" in (by_id["ADR-001"]["decision"] or "") or "4-слойная" in (
+        by_id["ADR-001"]["decision"] or ""
+    )
     # ADR-005: PostgreSQL decision.
     assert "PostgreSQL" in (by_id["ADR-005"]["decision"] or "")
 
@@ -71,7 +75,9 @@ def test_migrate_from_file_creates_five_adrs(engine_with_schema) -> None:  # typ
     with transactional(factory) as session:
         pid = _seed(session)
         result = adr_migrator.migrate_from_file(
-            session, project_id=pid, md_path=LEGACY_MD,
+            session,
+            project_id=pid,
+            md_path=LEGACY_MD,
         )
     assert len(result["created"]) == 5
     assert result["skipped"] == []

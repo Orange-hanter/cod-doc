@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from cod_doc.config import Config
@@ -38,7 +40,7 @@ def test_calls_openai_and_returns_content(monkeypatch) -> None:
         message = FakeMessage()
 
     class FakeCompletion:
-        choices = [FakeChoice()]
+        choices: ClassVar[list[FakeChoice]] = [FakeChoice()]
 
     class FakeChat:
         def create(self, **kwargs):
@@ -103,7 +105,7 @@ def test_raises_when_completion_is_empty(monkeypatch) -> None:
         message = FakeMessage()
 
     class FakeCompletion:
-        choices = [FakeChoice()]
+        choices: ClassVar[list[FakeChoice]] = [FakeChoice()]
 
     class FakeClient:
         def __init__(self, **kwargs):

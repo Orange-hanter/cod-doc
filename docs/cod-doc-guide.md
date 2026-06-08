@@ -344,7 +344,8 @@ await session.call_tool("search_docs", {
 
 ## Шаг 10. Интеграция с Copilot / LLM
 
-Полный раздел — в [docs/llm-integration.md](docs/llm-integration.md).
+Полный раздел планировался как `docs/llm-integration.md`; пока canonical
+материал живёт в системных capability/RFC-доках.
 
 Кратко:
 

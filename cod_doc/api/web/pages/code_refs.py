@@ -14,7 +14,7 @@ checked against directory traversal. Anything outside the root → 400.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -55,12 +55,13 @@ def code_refs_index(
     items = link_service.list_code_refs(session, project_id)
 
     # Group by file_path for cleaner display.
-    by_file: dict[str, list[dict]] = {}
+    by_file: dict[str, list[dict[str, Any]]] = {}
     for it in items:
-        by_file.setdefault(it["file_path"] or "(missing path)", []).append(it)
-    grouped = sorted(
+        file_path = str(it.get("file_path") or "(missing path)")
+        by_file.setdefault(file_path, []).append(it)
+    grouped: list[dict[str, Any]] = sorted(
         ({"file_path": fp, "refs": refs} for fp, refs in by_file.items()),
-        key=lambda x: x["file_path"],
+        key=lambda x: str(x["file_path"]),
     )
 
     return templates.TemplateResponse(

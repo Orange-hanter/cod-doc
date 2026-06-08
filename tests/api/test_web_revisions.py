@@ -140,9 +140,7 @@ def test_revisions_filter_by_entity_kind(revisions_client) -> None:
 
 def test_revisions_filter_by_entity_kind_and_id(revisions_client) -> None:
     client, entry, task_row_id = revisions_client
-    r = client.get(
-        f"/p/{entry.name}/revisions?entity_kind=task&entity_id={task_row_id}"
-    )
+    r = client.get(f"/p/{entry.name}/revisions?entity_kind=task&entity_id={task_row_id}")
     assert r.status_code == 200
     assert f"task#{task_row_id}" in r.text
 

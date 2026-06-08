@@ -164,7 +164,7 @@ _DOC_SYSTEM_PROMPT = (
     "- Example of CORRECT formatting:\n"
     "  ```mermaid\n"
     "  graph TD\n"
-    "    User[\"User\"] --> App[\"App\"]\n"
+    '    User["User"] --> App["App"]\n'
     "    App --> DB[(Database)]\n"
     "    App --> Cache[(Cache)]\n"
     "  ```\n"
@@ -198,9 +198,7 @@ def generate_stories(
     """Produce StoryDraft list from concatenated documentation excerpts."""
     if not docs_text.strip():
         raise AIBackendError("Nothing to read — docs are empty.")
-    user_msg = (
-        f"Intent: {intent.strip() or '(default)'}\n\nDocs:\n{docs_text[:60_000]}"
-    )
+    user_msg = f"Intent: {intent.strip() or '(default)'}\n\nDocs:\n{docs_text[:60_000]}"
     payload, meta = _chat_json(_STORY_SYSTEM_PROMPT, user_msg, cfg=cfg)
     if "stories" not in payload or not isinstance(payload["stories"], list):
         raise AIBackendError("LLM payload missing 'stories' array.")
@@ -225,8 +223,7 @@ def generate_tasks_for_story(
     pick from when assigning section_letter.
     """
     layout_str = (
-        "Sections: "
-        + ", ".join(f"{letter}={title}" for letter, title in (section_layout or []))
+        "Sections: " + ", ".join(f"{letter}={title}" for letter, title in (section_layout or []))
         if section_layout
         else "Sections: (none provided — leave section_letter null)"
     )
@@ -260,9 +257,7 @@ def generate_doc_from_sources(
     """
     if not sources:
         raise AIBackendError("No source documents selected.")
-    excerpt = "\n\n".join(
-        f"## {key}\n```\n{body[:6000]}\n```" for key, body in sources[:8]
-    )
+    excerpt = "\n\n".join(f"## {key}\n```\n{body[:6000]}\n```" for key, body in sources[:8])
     from cod_doc.services.doc_type_guides import guide_for
 
     type_guide = guide_for(target_type)
@@ -279,9 +274,7 @@ def generate_doc_from_sources(
         f"Source documents:\n{excerpt}"
     )
     budget = cfg.doc_token_budget(target_type)
-    payload, meta = _chat_json(
-        _DOC_SYSTEM_PROMPT, user_msg, cfg=cfg, max_tokens=budget
-    )
+    payload, meta = _chat_json(_DOC_SYSTEM_PROMPT, user_msg, cfg=cfg, max_tokens=budget)
 
     doc_key = str(payload.get("doc_key") or "").strip()
     title = str(payload.get("title") or "").strip()
@@ -328,9 +321,7 @@ def generate_master_from_folder(
     """
     if not files:
         raise AIBackendError("No files to scan.")
-    excerpt = "\n\n".join(
-        f"## {path}\n```\n{body[:2000]}\n```" for path, body in files[:40]
-    )
+    excerpt = "\n\n".join(f"## {path}\n```\n{body[:2000]}\n```" for path, body in files[:40])
     user_msg = f"Intent: {intent.strip() or '(default)'}\n\nFiles:\n{excerpt}"
     payload, meta = _chat_json(_MASTER_SYSTEM_PROMPT, user_msg, cfg=cfg)
     master_md = payload.get("master_md") or ""
@@ -342,9 +333,7 @@ def generate_master_from_folder(
     try:
         coverage = [_coerce_task(item) for item in raw_tasks]
     except (TypeError, AttributeError) as exc:
-        raise AIBackendError(
-            f"LLM coverage_tasks payload malformed: {exc}"
-        ) from exc
+        raise AIBackendError(f"LLM coverage_tasks payload malformed: {exc}") from exc
     return (
         MasterDraft(
             master_md=master_md.strip(),

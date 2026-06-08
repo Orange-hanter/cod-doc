@@ -35,9 +35,7 @@ def _seed(session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="X", slug="A-X", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="X", slug="A-X", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -48,6 +46,7 @@ def test_task_get_miss_returns_structured_hint(engine_with_schema, monkeypatch) 
 
     # Stub session_factory + require_project_id so the MCP wrapper uses our DB.
     from cod_doc.mcp.tools import task_tools as tt
+
     monkeypatch.setattr(tt, "session_factory", lambda project: (factory, None))
 
     mcp = FastMCP("test")
@@ -84,6 +83,7 @@ def test_task_get_hit_returns_task_dict_unchanged(engine_with_schema, monkeypatc
         )
 
     from cod_doc.mcp.tools import task_tools as tt
+
     monkeypatch.setattr(tt, "session_factory", lambda project: (factory, None))
 
     mcp = FastMCP("test")

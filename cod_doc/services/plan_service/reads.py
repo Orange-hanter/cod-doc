@@ -116,9 +116,7 @@ def recalc_for_project(session: Session, project_id: int) -> dict[int, PlanProgr
     }
 
 
-def ready_for_project(
-    session: Session, project_id: int, *, limit: int | None = None
-) -> list[Task]:
+def ready_for_project(session: Session, project_id: int, *, limit: int | None = None) -> list[Task]:
     """COD-075: ready batch across all plans of a project — single SQL.
 
     Avoids the per-plan ``ready()`` loop on the overview page.

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
-from typing import Any
+from typing import Any, ClassVar
 
 from cod_doc.agent.adapters.base import (
     AdapterCapabilities,
@@ -52,10 +52,10 @@ class AnthropicAdapter:
     )
 
     # USD per 1k tokens (approximate, as of 2026-05).
-    _PRICING: dict[str, tuple[float, float]] = {
-        "claude-opus-4-7":   (0.015, 0.075),
+    _PRICING: ClassVar[dict[str, tuple[float, float]]] = {
+        "claude-opus-4-7": (0.015, 0.075),
         "claude-sonnet-4-6": (0.003, 0.015),
-        "claude-haiku-4-5":  (0.00025, 0.00125),
+        "claude-haiku-4-5": (0.00025, 0.00125),
     }
 
     def __init__(self, *, api_key: str, model: str | None = None, **kwargs: Any) -> None:
@@ -103,9 +103,7 @@ class AnthropicAdapter:
     def estimate_tokens(self, text: str) -> int:
         return len(text) // 4
 
-    def cost_estimate(
-        self, input_tokens: int, output_tokens: int, *, model: str
-    ) -> Decimal:
+    def cost_estimate(self, input_tokens: int, output_tokens: int, *, model: str) -> Decimal:
         # Fuzzy match on model slug.
         for key, (inp_rate, out_rate) in self._PRICING.items():
             if key in model:
@@ -125,11 +123,13 @@ def _to_anthropic_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for t in tools:
         if t.get("type") == "function":
             fn = t["function"]
-            out.append({
-                "name": fn["name"],
-                "description": fn.get("description", ""),
-                "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
-            })
+            out.append(
+                {
+                    "name": fn["name"],
+                    "description": fn.get("description", ""),
+                    "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
+                }
+            )
     return out
 
 
@@ -149,14 +149,18 @@ def _to_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any
             continue
         if role == "tool":
             # Convert tool result to Anthropic format.
-            out.append({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": m.get("tool_call_id", ""),
-                    "content": m.get("content", ""),
-                }],
-            })
+            out.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": m.get("tool_call_id", ""),
+                            "content": m.get("content", ""),
+                        }
+                    ],
+                }
+            )
             continue
         if role == "assistant" and m.get("tool_calls"):
             content: list[dict[str, Any]] = []
@@ -164,14 +168,16 @@ def _to_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any
                 content.append({"type": "text", "text": m["content"]})
             for tc in m["tool_calls"]:
                 fn = tc["function"]
-                content.append({
-                    "type": "tool_use",
-                    "id": tc["id"],
-                    "name": fn["name"],
-                    "input": json.loads(fn["arguments"])
-                    if isinstance(fn["arguments"], str)
-                    else fn["arguments"],
-                })
+                content.append(
+                    {
+                        "type": "tool_use",
+                        "id": tc["id"],
+                        "name": fn["name"],
+                        "input": json.loads(fn["arguments"])
+                        if isinstance(fn["arguments"], str)
+                        else fn["arguments"],
+                    }
+                )
             out.append({"role": "assistant", "content": content})
             continue
         out.append(m)

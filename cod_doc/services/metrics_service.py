@@ -60,7 +60,8 @@ def _percentile(values: list[float], p: float) -> float | None:
 
 
 def _derive_state_durations(
-    session: Session, task: TaskModel,
+    session: Session,
+    task: TaskModel,
 ) -> tuple[float | None, float | None]:
     """Walk the task's status_changed revisions to compute time in
     ``in_progress`` and ``blocked``.
@@ -68,14 +69,16 @@ def _derive_state_durations(
     Returns (in_progress_hours, blocked_hours). Either may be None if
     the revision timeline is too sparse to derive.
     """
-    revs = list(session.execute(
-        select(RevisionModel)
-        .where(
-            RevisionModel.entity_kind == "task",
-            RevisionModel.entity_id == task.row_id,
-        )
-        .order_by(RevisionModel.at)
-    ).scalars())
+    revs = list(
+        session.execute(
+            select(RevisionModel)
+            .where(
+                RevisionModel.entity_kind == "task",
+                RevisionModel.entity_id == task.row_id,
+            )
+            .order_by(RevisionModel.at)
+        ).scalars()
+    )
     if not revs:
         return (None, None)
 
@@ -148,8 +151,7 @@ def record_on_complete(session: Session, task: TaskModel) -> TaskMetricsModel:
     ip_h, bl_h = _derive_state_durations(session, task)
 
     rev_count = session.execute(
-        select(RevisionModel)
-        .where(
+        select(RevisionModel).where(
             RevisionModel.entity_kind == "task",
             RevisionModel.entity_id == task.row_id,
         )
@@ -184,10 +186,7 @@ def list_for_project(
     since: datetime | None = None,
     limit: int = 200,
 ) -> list[TaskMetricsModel]:
-    stmt = (
-        select(TaskMetricsModel)
-        .where(TaskMetricsModel.project_id == project_id)
-    )
+    stmt = select(TaskMetricsModel).where(TaskMetricsModel.project_id == project_id)
     if since is not None:
         stmt = stmt.where(TaskMetricsModel.completed_at >= since)
     stmt = stmt.order_by(TaskMetricsModel.completed_at.desc()).limit(limit)
@@ -204,7 +203,8 @@ def summary(
     rows = list_for_project(session, project_id, since=since, limit=10_000)
     if not rows:
         return {
-            "completed": 0, "since": since.isoformat() if since else None,
+            "completed": 0,
+            "since": since.isoformat() if since else None,
             "duration_hours": {"p50": None, "p90": None, "mean": None},
             "by_type": {},
         }
@@ -247,7 +247,10 @@ def sparkline_buckets(
     """
     now = datetime.now(UTC)
     start = (now - timedelta(days=days - 1)).replace(
-        hour=0, minute=0, second=0, microsecond=0,
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
     )
     rows = list_for_project(session, project_id, since=start, limit=10_000)
     buckets: dict[str, list[float]] = {}
@@ -259,9 +262,11 @@ def sparkline_buckets(
     for i in range(days):
         d = (start + timedelta(days=i)).date().isoformat()
         vals = buckets.get(d, [])
-        out.append({
-            "date": d,
-            "count": len(vals),
-            "p50_hours": _percentile(vals, 0.5) if vals else None,
-        })
+        out.append(
+            {
+                "date": d,
+                "count": len(vals),
+                "p50_hours": _percentile(vals, 0.5) if vals else None,
+            }
+        )
     return out

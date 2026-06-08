@@ -25,14 +25,10 @@ def _seed(session) -> tuple[int, int, int]:
     proj.updated = now
     session.add(proj)
     session.flush()
-    plan = PlanModel(
-        project_id=proj.row_id, scope="agpck-plan", created=now, last_updated=now
-    )
+    plan = PlanModel(project_id=proj.row_id, scope="agpck-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="A", slug="A", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -41,9 +37,14 @@ def _seed(session) -> tuple[int, int, int]:
 def _make(session, pid, plid, sid, tid, *, prio=Priority.MEDIUM, acceptance=None):
     return task_service.create(
         session,
-        project_id=pid, plan_id=plid, section_id=sid,
-        task_id=tid, title=f"Implement {tid}",
-        type=TaskType.FEATURE, priority=prio, author="t",
+        project_id=pid,
+        plan_id=plid,
+        section_id=sid,
+        task_id=tid,
+        title=f"Implement {tid}",
+        type=TaskType.FEATURE,
+        priority=prio,
+        author="t",
         acceptance=acceptance,
     )
 
@@ -52,8 +53,15 @@ def test_agent_pick_returns_full_card(engine_with_schema) -> None:  # type: igno
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid, plid, sid = _seed(session)
-        _make(session, pid, plid, sid, "APK-001", prio=Priority.HIGH,
-              acceptance="✓ A done; ✓ B done; ✓ C done")
+        _make(
+            session,
+            pid,
+            plid,
+            sid,
+            "APK-001",
+            prio=Priority.HIGH,
+            acceptance="✓ A done; ✓ B done; ✓ C done",
+        )
         _make(session, pid, plid, sid, "APK-002")
 
     with transactional(factory) as session:
@@ -84,12 +92,8 @@ def test_agent_pick_returns_full_card(engine_with_schema) -> None:  # type: igno
     assert isinstance(skills, list) and skills, "must inline at least one skill"
     # Each skill carries name + description + body (not just name).
     for s in skills:
-        assert {"name", "description", "body"} <= set(s.keys()), (
-            f"skill missing body: {s}"
-        )
-        assert isinstance(s["body"], str) and s["body"], (
-            f"skill {s['name']} has empty body"
-        )
+        assert {"name", "description", "body"} <= set(s.keys()), f"skill missing body: {s}"
+        assert isinstance(s["body"], str) and s["body"], f"skill {s['name']} has empty body"
 
     # Parsed acceptance into checklist (3 items from ✓).
     assert len(nav["success_criteria"]) == 3
@@ -159,13 +163,11 @@ def test_agent_pick_ignores_stale_lock_on_done_task(engine_with_schema) -> None:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid, plid, sid = _seed(session)
-        a = _make(session, pid, plid, sid, "APK-100", prio=Priority.HIGH)
+        _make(session, pid, plid, sid, "APK-100", prio=Priority.HIGH)
         _make(session, pid, plid, sid, "APK-101", prio=Priority.MEDIUM)
     # Mark APK-100 as done WHILE keeping the lock — simulates a SQL bypass.
     with transactional(factory) as session:
-        row = session.execute(
-            select(TaskModel).where(TaskModel.task_id == "APK-100")
-        ).scalar_one()
+        row = session.execute(select(TaskModel).where(TaskModel.task_id == "APK-100")).scalar_one()
         row.status = "done"
         row.checked_out_by = "stale-agent"
         row.checked_out_at = datetime.now(UTC)

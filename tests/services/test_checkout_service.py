@@ -32,7 +32,11 @@ def _seed_task(session: Session, task_id: str = "CO-001", status: str = "pending
     session.add(plan)
     session.flush()
     sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="Sec", slug="A-Sec", position=0,
+        plan_id=plan.row_id,
+        letter="A",
+        title="Sec",
+        slug="A-Sec",
+        position=0,
     )
     session.add(sec)
     session.flush()
@@ -85,7 +89,9 @@ def test_checkout_idempotent_same_agent(engine_with_schema) -> None:  # type: ig
         assert second.idempotent is True
         assert second.checked_out_by == first.checked_out_by
         # SQLite strips tzinfo on round-trip; compare naive timestamps.
-        assert second.checked_out_at.replace(tzinfo=None) == first.checked_out_at.replace(tzinfo=None)
+        assert second.checked_out_at.replace(tzinfo=None) == first.checked_out_at.replace(
+            tzinfo=None
+        )
 
 
 def test_checkout_conflict_different_agent_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -102,8 +108,7 @@ def test_checkout_status_mismatch_raises(engine_with_schema) -> None:  # type: i
     with transactional(factory) as session:
         _seed_task(session, status="done")
         with pytest.raises(CheckoutStatusError, match="done"):
-            checkout.checkout(session, "CO-001", agent="A",
-                              expected_statuses=["todo", "pending"])
+            checkout.checkout(session, "CO-001", agent="A", expected_statuses=["todo", "pending"])
 
 
 def test_release_clears_lock(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

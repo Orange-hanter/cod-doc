@@ -33,9 +33,7 @@ def test_family_filter_restricts_results() -> None:
     search = _get_tool("tool_search")
     results = search(query="list", limit=10, family="plan")
     for r in results:
-        assert r["family"] == "plan", (
-            f"family filter broken: got {r['family']} for {r['name']}"
-        )
+        assert r["family"] == "plan", f"family filter broken: got {r['family']} for {r['name']}"
 
 
 def test_results_carry_required_params_and_flags() -> None:
@@ -58,6 +56,6 @@ def test_deprecated_legacy_tool_flagged() -> None:
     """add_task is legacy/deprecated — must surface that flag."""
     search = _get_tool("tool_search")
     results = search(query="DEPRECATED legacy", limit=10)
-    assert any(
-        r["name"] == "add_task" and r["deprecated"] for r in results
-    ), f"add_task should appear with deprecated=True. Got: {results}"
+    assert any(r["name"] == "add_task" and r["deprecated"] for r in results), (
+        f"add_task should appear with deprecated=True. Got: {results}"
+    )

@@ -9,6 +9,7 @@ a preview the user can accept or discard.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -75,9 +76,7 @@ async def comment_create(
     # zone. Without this the user was always teleported to the bottom of
     # the doc after each comment submit.
     fragment = anchor if anchor else "comments"
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303)
 
 
 @router.post(
@@ -104,9 +103,7 @@ def comment_resolve(
     fragment = existing.anchor or "comments"
     comments.update_status(session, comment_id=comment_id, new_status="resolved")
     session.commit()
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303)
 
 
 @router.post(
@@ -133,9 +130,7 @@ def comment_reopen(
     fragment = existing.anchor or "comments"
     comments.update_status(session, comment_id=comment_id, new_status="open")
     session.commit()
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303)
 
 
 @router.post(
@@ -162,9 +157,7 @@ def comment_delete(
     fragment = existing.anchor or "comments"
     comments.delete(session, comment_id)
     session.commit()
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303)
 
 
 @router.post(
@@ -193,9 +186,7 @@ def comments_apply(
     error: str | None = None
     rework = None
     try:
-        rework = comments.apply_open_with_ai(
-            session, document_id=doc.row_id, cfg=cfg
-        )
+        rework = comments.apply_open_with_ai(session, document_id=doc.row_id, cfg=cfg)
     except Exception as exc:  # AIBackendError, ValueError, etc.
         error = str(exc)
 
@@ -203,15 +194,17 @@ def comments_apply(
     reworks_view = []
     if rework:
         for r in rework.section_reworks:
-            reworks_view.append({
-                "section_id": r.section_id,
-                "anchor": r.anchor,
-                "heading": r.heading,
-                "comment_ids": r.comment_ids,
-                "old_body": r.old_body,
-                "new_body": r.new_body,
-                "new_html": render_markdown(r.new_body),
-            })
+            reworks_view.append(
+                {
+                    "section_id": r.section_id,
+                    "anchor": r.anchor,
+                    "heading": r.heading,
+                    "comment_ids": r.comment_ids,
+                    "old_body": r.old_body,
+                    "new_body": r.new_body,
+                    "new_html": render_markdown(r.new_body),
+                }
+            )
 
     return templates.TemplateResponse(
         request,
@@ -286,16 +279,12 @@ async def comments_apply_commit(
         if cid.isdigit():
             applied_comment_ids.add(int(cid))
 
-    for cid in applied_comment_ids:
-        try:
-            comments.update_status(session, comment_id=cid, new_status="applied")
-        except comments.CommentNotFoundError:
-            pass
+    for cid_int in applied_comment_ids:
+        with contextlib.suppress(comments.CommentNotFoundError):
+            comments.update_status(session, comment_id=cid_int, new_status="applied")
 
     session.commit()
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/docs/{doc_key}#comments", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}#comments", status_code=303)
 
 
 @router.get(
@@ -315,16 +304,18 @@ def comments_json(
         raise HTTPException(404, f"Документ не найден: {doc_key}")
 
     rows = comments.list_for_document(session, doc.row_id)
-    return JSONResponse([
-        {
-            "row_id": c.row_id,
-            "section_id": c.section_id,
-            "anchor": c.anchor,
-            "quote": c.quote,
-            "body": c.body,
-            "author": c.author,
-            "status": c.status,
-            "created": c.created.isoformat(),
-        }
-        for c in rows
-    ])
+    return JSONResponse(
+        [
+            {
+                "row_id": c.row_id,
+                "section_id": c.section_id,
+                "anchor": c.anchor,
+                "quote": c.quote,
+                "body": c.body,
+                "author": c.author,
+                "status": c.status,
+                "created": c.created.isoformat(),
+            }
+            for c in rows
+        ]
+    )

@@ -10,13 +10,14 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
-
-from mcp.server.fastmcp import FastMCP
+from typing import TYPE_CHECKING, Any
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.mcp.server import mcp as live_mcp
 from cod_doc.services.task_status_machine import _LEGACY_ALIASES, ALLOWED_TRANSITIONS
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
 
 def _get_tool(mcp: FastMCP, name: str) -> Any:
@@ -28,9 +29,7 @@ def test_capabilities_is_registered_no_required_params() -> None:
     by_name = {t.name: t for t in tools}
     assert "capabilities" in by_name
     required = by_name["capabilities"].inputSchema.get("required", [])
-    assert required == [], (
-        "capabilities() must take no required params (it's the L0 entry point)"
-    )
+    assert required == [], "capabilities() must take no required params (it's the L0 entry point)"
 
 
 def test_capabilities_returns_version_tools_skills_enums_references() -> None:

@@ -120,6 +120,17 @@ curl http://localhost:8765/api/health
 # {"status":"ok","configured":false,"projects":0}
 ```
 
+Для DB-backed проекта есть компактная health-сводка для автоматик и
+дашбордов:
+
+```bash
+curl http://localhost:8765/api/projects/my-project/health
+```
+
+Ответ объединяет текущий DB↔markdown drift, unresolved links и последний
+`doc_drift` routine run. Если `.cod-doc/state.db` ещё не создана, endpoint
+возвращает `status: "uninitialized"` без 500.
+
 API-ключ для LLM передаётся через env (см. §7):
 ```bash
 COD_DOC_API_KEY=sk-or-v1-... docker compose up -d cod-doc
@@ -452,7 +463,8 @@ cod-doc doc show my-app modules/auth/spec
 cod-doc doc body my-app modules/auth/spec    # full rendered markdown
 cod-doc doc rename my-app modules/auth/spec modules/identity/spec
 cod-doc doc export my-app modules/auth/spec  # → projection .md file
-cod-doc doc drift my-app                      # find docs that diverged from DB
+cod-doc doc drift modules/auth/spec -p my-app # check one DB↔markdown projection
+cod-doc doc drift --all -p my-app             # project-wide drift monitor
 cod-doc doc import my-app path/to/file.md     # import existing markdown
 ```
 
@@ -1009,7 +1021,7 @@ embedded, `postgresql://...` для server mode.
 
 ### 11.5. Architecture Decision Records (ADR)
 
-Closes ADR-008. ADRs capture decisions that survived design review and
+Closes task `ADR-008`. ADRs capture decisions that survived design review and
 should outlive contributor turnover.
 
 **When to write one.** Anytime the answer to "why is it _this way_ and

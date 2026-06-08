@@ -24,9 +24,7 @@ def _seed(session: Session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -99,9 +97,7 @@ def test_count_for_project_matches_filter(engine_with_schema) -> None:  # type: 
 
         assert task_service.count_for_project(session, p) == 3
         assert task_service.count_for_project(session, p, priority=Priority.HIGH) == 2
-        assert (
-            task_service.count_for_project(session, p, status=TaskStatus.DONE) == 0
-        )
+        assert task_service.count_for_project(session, p, status=TaskStatus.DONE) == 0
 
 
 def test_summarize_aggregates_by_status_and_priority(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

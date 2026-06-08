@@ -26,7 +26,7 @@ from cod_doc.agent.adapters.registry import (
 
 
 def run(coro):  # type: ignore[no-untyped-def]
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # --------------------------------------------------------------------------- #
@@ -44,7 +44,9 @@ class TestChatMessageModelDump:
     def test_tool_calls_serialised(self) -> None:
         from cod_doc.agent.adapters.base import FunctionCall, ToolCall
 
-        tc = ToolCall(id="c1", type="function", function=FunctionCall(name="foo", arguments='{"x":1}'))
+        tc = ToolCall(
+            id="c1", type="function", function=FunctionCall(name="foo", arguments='{"x":1}')
+        )
         msg = ChatMessage(content=None, tool_calls=[tc])
         d = msg.model_dump()
         assert d["tool_calls"][0]["id"] == "c1"
@@ -79,10 +81,12 @@ class TestMockAdapter:
         assert r.choices[0].finish_reason == "tool_calls"
 
     def test_queue_consumed_in_order(self) -> None:
-        adapter = MockAdapter(responses=[
-            MockAdapter.text_response("first"),
-            MockAdapter.text_response("second"),
-        ])
+        adapter = MockAdapter(
+            responses=[
+                MockAdapter.text_response("first"),
+                MockAdapter.text_response("second"),
+            ]
+        )
         r1 = run(adapter.chat([], [], model="m", max_tokens=100))
         r2 = run(adapter.chat([], [], model="m", max_tokens=100))
         assert r1.choices[0].message.content == "first"
@@ -139,9 +143,11 @@ class TestMockAdapter:
         # PCA-924
         from cod_doc.agent.adapters.base import ChatChunk
 
-        adapter = MockAdapter([
-            MockAdapter.tool_call_response("read_file", {"path": "x.md"}, call_id="c1"),
-        ])
+        adapter = MockAdapter(
+            [
+                MockAdapter.tool_call_response("read_file", {"path": "x.md"}, call_id="c1"),
+            ]
+        )
 
         async def collect() -> list[ChatChunk]:
             out = []
@@ -187,6 +193,7 @@ class TestRegistry:
 
     def test_get_mock_adapter(self) -> None:
         from unittest.mock import MagicMock
+
         config = MagicMock()
         config.llm_adapter = "mock"
         adapter = get_adapter("mock", config)
@@ -194,18 +201,21 @@ class TestRegistry:
 
     def test_get_unknown_raises_key_error(self) -> None:
         from unittest.mock import MagicMock
+
         config = MagicMock()
         with pytest.raises(KeyError, match="no_such_adapter"):
             get_adapter("no_such_adapter", config)
 
     def test_register_and_retrieve_custom(self) -> None:
         from unittest.mock import MagicMock
+
         config = MagicMock()
         register_adapter("test_custom", lambda _cfg: MockAdapter())
         adapter = get_adapter("test_custom", config)
         assert adapter.name == "mock"
         # cleanup
         from cod_doc.agent.adapters import registry
+
         del registry._REGISTRY["test_custom"]
 
 
@@ -257,14 +267,18 @@ class TestAnthropicFormatConversion:
     def test_to_anthropic_messages_converts_assistant_tool_calls(self) -> None:
         from cod_doc.agent.adapters.anthropic import _to_anthropic_messages
 
-        msgs = [{
-            "role": "assistant",
-            "tool_calls": [{
-                "id": "c1",
-                "type": "function",
-                "function": {"name": "fn", "arguments": '{"x":1}'},
-            }],
-        }]
+        msgs = [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "c1",
+                        "type": "function",
+                        "function": {"name": "fn", "arguments": '{"x":1}'},
+                    }
+                ],
+            }
+        ]
         out = _to_anthropic_messages(msgs)
         assert out[0]["content"][0]["type"] == "tool_use"
         assert out[0]["content"][0]["name"] == "fn"
@@ -339,6 +353,7 @@ class TestOrchestratorAdapterDI:
         adapter = MockAdapter()
         with patch("cod_doc.agent.orchestrator.ToolExecutor"):
             from cod_doc.agent.orchestrator import Orchestrator
+
             orch = Orchestrator(mock_project, mock_config, adapter=adapter)
 
         assert orch.adapter is adapter
@@ -353,6 +368,7 @@ class TestOrchestratorAdapterDI:
 
         with patch("cod_doc.agent.orchestrator.ToolExecutor"):
             from cod_doc.agent.adapters.registry import get_adapter_from_config
+
             adapter = get_adapter_from_config(mock_config)
 
         assert adapter.name == "mock"

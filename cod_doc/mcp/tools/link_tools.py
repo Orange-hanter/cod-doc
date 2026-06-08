@@ -165,7 +165,5 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             sec_id = _resolve_section_id(session, project_id, doc_key, anchor)
-            suggestions = semantic.suggest_for_section(
-                session, sec_id, cfg, dry_run=dry_run
-            )
+            suggestions = semantic.suggest_for_section(session, sec_id, cfg, dry_run=dry_run)
         return suggestions

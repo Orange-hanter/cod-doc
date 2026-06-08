@@ -64,16 +64,20 @@ class Approval:
 
 
 def _to_domain(m: ApprovalModel, session: Session) -> Approval:
-    task_refs = list(session.execute(
-        select(ApprovalTaskLinkModel.task_ref)
-        .where(ApprovalTaskLinkModel.approval_id == m.row_id)
-        .order_by(ApprovalTaskLinkModel.row_id)
-    ).scalars())
-    doc_revs = list(session.execute(
-        select(ApprovalDocRevisionLinkModel.revision_id)
-        .where(ApprovalDocRevisionLinkModel.approval_id == m.row_id)
-        .order_by(ApprovalDocRevisionLinkModel.row_id)
-    ).scalars())
+    task_refs = list(
+        session.execute(
+            select(ApprovalTaskLinkModel.task_ref)
+            .where(ApprovalTaskLinkModel.approval_id == m.row_id)
+            .order_by(ApprovalTaskLinkModel.row_id)
+        ).scalars()
+    )
+    doc_revs = list(
+        session.execute(
+            select(ApprovalDocRevisionLinkModel.revision_id)
+            .where(ApprovalDocRevisionLinkModel.approval_id == m.row_id)
+            .order_by(ApprovalDocRevisionLinkModel.row_id)
+        ).scalars()
+    )
     return Approval(
         row_id=m.row_id,
         approval_id=m.approval_id,
@@ -122,19 +126,22 @@ def _cancel_existing_pending(
         return
     # Find pending approval rows that have at least one link to these tasks.
     existing_links = session.execute(
-        select(ApprovalTaskLinkModel.approval_id)
-        .where(ApprovalTaskLinkModel.task_ref.in_(task_refs))
+        select(ApprovalTaskLinkModel.approval_id).where(
+            ApprovalTaskLinkModel.task_ref.in_(task_refs)
+        )
     ).scalars()
     pending_ids = set(existing_links)
     if not pending_ids:
         return
-    pending = list(session.execute(
-        select(ApprovalModel).where(
-            ApprovalModel.row_id.in_(pending_ids),
-            ApprovalModel.project_id == project_id,
-            ApprovalModel.status == "pending",
-        )
-    ).scalars())
+    pending = list(
+        session.execute(
+            select(ApprovalModel).where(
+                ApprovalModel.row_id.in_(pending_ids),
+                ApprovalModel.project_id == project_id,
+                ApprovalModel.status == "pending",
+            )
+        ).scalars()
+    )
     now = datetime.now(UTC)
     for a in pending:
         a.status = "cancelled"
@@ -254,12 +261,13 @@ def list_approvals(
         count_q = count_q.where(ApprovalModel.requested_at >= since)
 
     total = int(session.execute(count_q).scalar_one() or 0)
-    rows = list(session.execute(
-        base
-        .order_by(ApprovalModel.requested_at.desc(), ApprovalModel.row_id.desc())
-        .limit(limit)
-        .offset(offset)
-    ).scalars())
+    rows = list(
+        session.execute(
+            base.order_by(ApprovalModel.requested_at.desc(), ApprovalModel.row_id.desc())
+            .limit(limit)
+            .offset(offset)
+        ).scalars()
+    )
 
     return {
         "items": [_approval_to_dict(_to_domain(m, session)) for m in rows],

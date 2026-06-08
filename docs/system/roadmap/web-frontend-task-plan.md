@@ -547,7 +547,7 @@ affected_files:
   - docs/system/audit/2026-04-28-section-c-capabilities.md  # SC-HI-3 → resolved
 ```
 
-**Description:** [cod_doc/api/web/db_resolver.py](../../../cod_doc/api/web/db_resolver.py)
+**Description:** historical `cod_doc/api/web/db_resolver.py`
 импортирует `cod_doc.infra.db.make_engine`, `make_session_factory` и
 `cod_doc.infra.repositories.ProjectRepository` — нарушает
 [capabilities/web-frontend.md §7](../capabilities/web-frontend.md). Замещается

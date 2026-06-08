@@ -65,15 +65,11 @@ def _build_embedding_function(
         # Default to a tiny CPU-friendly model when the slug looks like an
         # OpenAI route — saves the user from a config error after a backend
         # switch.
-        model_name = (
-            "all-MiniLM-L6-v2" if "/" in embedding_model else embedding_model
-        )
+        model_name = "all-MiniLM-L6-v2" if "/" in embedding_model else embedding_model
         return SentenceTransformerEmbeddingFunction(model_name=model_name)
 
     if backend != "openai":
-        raise ValueError(
-            f"Unknown embedding_backend {backend!r}: expected 'openai' or 'local'"
-        )
+        raise ValueError(f"Unknown embedding_backend {backend!r}: expected 'openai' or 'local'")
 
     from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 
@@ -113,9 +109,7 @@ def get_collection(
     try:
         import chromadb  # noqa: F401
     except ImportError as e:
-        raise ImportError(
-            "chromadb не установлен. Выполните: pip install chromadb"
-        ) from e
+        raise ImportError("chromadb не установлен. Выполните: pip install chromadb") from e
 
     import chromadb as _chromadb
 
@@ -144,9 +138,7 @@ def reindex_project(
     Проиндексировать файлы проекта в ChromaDB.
     Возвращает {'indexed': int, 'errors': list[str]}.
     """
-    collection = get_collection(
-        chroma_path, api_key, base_url, embedding_model, embedding_backend
-    )
+    collection = get_collection(chroma_path, api_key, base_url, embedding_model, embedding_backend)
     files = [single_file] if single_file else _collect_files(repo_root)
     indexed = 0
     errors: list[str] = []
@@ -193,9 +185,7 @@ def search_documents(
 
     Returns список dict: {path, score, snippet, hash}.
     """
-    collection = get_collection(
-        chroma_path, api_key, base_url, embedding_model, embedding_backend
-    )
+    collection = get_collection(chroma_path, api_key, base_url, embedding_model, embedding_backend)
     where = {"project": project_root} if project_root else None
 
     try:

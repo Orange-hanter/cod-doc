@@ -36,9 +36,7 @@ def upgrade() -> None:
     with op.batch_alter_table("task") as batch:
         batch.add_column(sa.Column("checked_out_by", sa.String(128), nullable=True))
         batch.add_column(sa.Column("checked_out_at", sa.DateTime(timezone=True), nullable=True))
-        batch.add_column(
-            sa.Column("expected_status_at_checkout", sa.String(16), nullable=True)
-        )
+        batch.add_column(sa.Column("expected_status_at_checkout", sa.String(16), nullable=True))
     op.create_index("ix_task_checked_out_by", "task", ["checked_out_by"])
 
     # ---- Part 2: Routine + RoutineRun (PCA-210) ----

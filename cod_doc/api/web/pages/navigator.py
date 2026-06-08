@@ -29,9 +29,7 @@ def doc_navigator(
     # Hot cache: if a fresh analysis exists, render it inline on the GET response
     # so the user does NOT pay an HTMX round-trip + loading spinner on repeat visits.
     cache_path = proj.entry.cod_doc_dir / "nav_cache.json"
-    cached_analysis = nav_service.peek_cached_analysis(
-        session, project_db_id, cache_path
-    )
+    cached_analysis = nav_service.peek_cached_analysis(session, project_db_id, cache_path)
 
     return templates.TemplateResponse(
         request,
@@ -57,9 +55,7 @@ async def doc_navigator_analyze(
     cfg = get_config()
     session, project_db_id = db
     cache_path = proj.entry.cod_doc_dir / "nav_cache.json"
-    analysis = nav_service.analyze_gaps(
-        session, project_db_id, cfg, cache_path, force=force
-    )
+    analysis = nav_service.analyze_gaps(session, project_db_id, cfg, cache_path, force=force)
     return templates.TemplateResponse(
         request,
         "_frag/nav_analysis.html",

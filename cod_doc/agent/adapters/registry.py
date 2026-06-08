@@ -16,11 +16,12 @@ Usage::
 from __future__ import annotations
 
 import importlib
-from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cod_doc.agent.adapters.base import LLMAdapter
     from cod_doc.config import Config
 
@@ -89,9 +90,14 @@ def _load_plugins() -> None:
             class_name = entry["class"]
             mod = importlib.import_module(module_path)
             cls = getattr(mod, class_name)
-            register_adapter(name, lambda cfg, _cls=cls: _cls.from_config(cfg))
+
+            def _factory(cfg: Any, adapter_cls: Any = cls) -> LLMAdapter:
+                return cast("LLMAdapter", adapter_cls.from_config(cfg))
+
+            register_adapter(name, _factory)
     except Exception as exc:  # pragma: no cover — plugin loading is best-effort
         import warnings
+
         warnings.warn(f"Failed to load adapter plugins from {plugin_file}: {exc}", stacklevel=2)
 
 

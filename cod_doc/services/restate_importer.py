@@ -55,6 +55,7 @@ _SKIP_DIRS = {
     "build",
     ".pytest_cache",
     ".mypy_cache",
+    "cod_doc.egg-info",
 }
 
 
@@ -199,9 +200,7 @@ _IMPORT_SECTION_SLUG = "A-Imported"
 _IMPORT_TASK_PREFIX = "LEG"
 
 
-def _ensure_import_plan(
-    session: Session, project_id: int
-) -> tuple[int, int]:
+def _ensure_import_plan(session: Session, project_id: int) -> tuple[int, int]:
     """Return (plan_id, section_id) for the synthetic 'imported-legacy' plan.
 
     Created on first call; reused on subsequent imports for the same project.
@@ -287,9 +286,7 @@ def import_legacy_tasks(
         legacy_status = str(raw.get("status", "pending")).strip().lower()
         status = _LEGACY_STATUS_MAP.get(legacy_status, TaskStatus.PENDING)
         blocked_reason = (
-            f"legacy status: {legacy_status}"
-            if legacy_status in {"failed", "blocked"}
-            else None
+            f"legacy status: {legacy_status}" if legacy_status in {"failed", "blocked"} else None
         )
         description = str(raw.get("description") or "").strip()
         result = str(raw.get("result") or "").strip()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json as _json
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 from rich.console import Console
@@ -213,7 +213,8 @@ def link_backfill(ctx: click.Context, project: str, dry_run: bool) -> None:
     """COD-079: re-parse links for every section in the project.
 
     Existing imports skipped link extraction; this walks all sections and
-    runs ``sync_section`` so the in-memory + UI link panels show real data.
+    runs ``sync_section`` + ``resolve_section`` so the in-memory + UI link
+    panels show resolved graph data rather than parse-cache rows only.
     """
     from sqlalchemy import select
 
@@ -229,18 +230,16 @@ def link_backfill(ctx: click.Context, project: str, dry_run: bool) -> None:
     docs_seen: set[str] = set()
     with transactional(sf) as session:
         project_id = _require_project_id(session, project)
-        rows = (
-            session.execute(
-                select(SectionModel.row_id, DocumentModel.doc_key)
-                .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
-                .where(DocumentModel.project_id == project_id)
-                .order_by(DocumentModel.doc_key, SectionModel.position)
-            )
-            .all()
-        )
+        rows = session.execute(
+            select(SectionModel.row_id, DocumentModel.doc_key)
+            .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
+            .where(DocumentModel.project_id == project_id)
+            .order_by(DocumentModel.doc_key, SectionModel.position)
+        ).all()
         for sec_id, doc_key in rows:
             try:
-                links = link_service.sync_section(session, int(sec_id))
+                link_service.sync_section(session, int(sec_id))
+                links = link_service.resolve_section(session, int(sec_id))
             except Exception as exc:
                 log.warning("backfill skipped %s: %s", doc_key, exc)
                 continue
@@ -306,14 +305,25 @@ def link_verify(ctx: click.Context, doc_key: str, project: str, anchor: str, as_
 
 @link.command("suggest")
 @click.argument("project")
-@click.option("--threshold", type=float, default=0.78, show_default=True,
-              help="Minimum similarity score for a suggestion to be stored.")
-@click.option("--apply-above", type=float, default=None,
-              help="Auto-accept suggestions scoring above this value.")
-@click.option("--dry-run", is_flag=True, default=False,
-              help="Preview only — do not write to the database.")
-@click.option("--doc-key", default=None,
-              help="Limit to one document's sections instead of whole project.")
+@click.option(
+    "--threshold",
+    type=float,
+    default=0.78,
+    show_default=True,
+    help="Minimum similarity score for a suggestion to be stored.",
+)
+@click.option(
+    "--apply-above",
+    type=float,
+    default=None,
+    help="Auto-accept suggestions scoring above this value.",
+)
+@click.option(
+    "--dry-run", is_flag=True, default=False, help="Preview only — do not write to the database."
+)
+@click.option(
+    "--doc-key", default=None, help="Limit to one document's sections instead of whole project."
+)
 @click.pass_context
 def link_suggest(
     ctx: click.Context,
@@ -333,14 +343,16 @@ def link_suggest(
     from cod_doc.services.link_service import semantic
 
     cfg = Config.load()
-    session_factory, project_id_fn = _make_session(project, cfg)
+    session_factory, _project_id_fn = _make_session(project, cfg)
 
     from cod_doc.infra.db import transactional
 
     with transactional(session_factory) as session:
         try:
             from cod_doc.infra.repositories import ProjectRepository
-            project_id = ProjectRepository(session).get_id_by_name(project)
+
+            project_row = ProjectRepository(session).get_by_slug(project)
+            project_id = project_row.row_id if project_row is not None else None
         except Exception:
             project_id = None
 
@@ -361,20 +373,32 @@ def link_suggest(
             if doc_row_id is None:
                 console.print(f"[red]Document not found: {doc_key}[/red]")
                 sys.exit(1)
-            sec_ids = session.execute(
-                select(SectionModel.row_id).where(SectionModel.document_id == doc_row_id)
-            ).scalars().all()
+            sec_ids = (
+                session.execute(
+                    select(SectionModel.row_id).where(SectionModel.document_id == doc_row_id)
+                )
+                .scalars()
+                .all()
+            )
             total_suggestions = 0
             for sid in sec_ids:
                 suggs = semantic.suggest_for_section(
-                    session, int(sid), cfg,
-                    threshold=threshold, dry_run=dry_run,
+                    session,
+                    int(sid),
+                    cfg,
+                    threshold=threshold,
+                    dry_run=dry_run,
                 )
                 total_suggestions += len(suggs)
-            result_summary = {"sections_processed": len(sec_ids), "suggestions_created": total_suggestions}
+            result_summary: dict[str, Any] = {
+                "sections_processed": len(sec_ids),
+                "suggestions_created": total_suggestions,
+            }
         else:
             result = semantic.backfill_project(
-                session, project_id, cfg,
+                session,
+                project_id,
+                cfg,
                 apply_above=apply_above,
                 dry_run=dry_run,
                 threshold=threshold,

@@ -16,7 +16,7 @@ reverse_chain(X): what X unblocks (dependents).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select, text
 
@@ -150,7 +150,7 @@ def reverse_chain(session: Session, task_id: str) -> list[ChainEntry]:
     ]
 
 
-def chain_layout(session: Session, plan_id: int) -> dict:
+def chain_layout(session: Session, plan_id: int) -> dict[str, Any]:
     """Topological-level layout of a plan's task graph (COD-021 follow-up).
 
     Returns ``{"levels", "critical_path", "ready_ids", "edge_count",
@@ -174,19 +174,29 @@ def chain_layout(session: Session, plan_id: int) -> dict:
 
     task_rows = session.execute(
         select(
-            TaskModel.row_id, TaskModel.task_id, TaskModel.title,
-            TaskModel.status, TaskModel.priority, TaskModel.type,
-            TaskModel.section_id, TaskModel.acceptance, TaskModel.blocked_reason,
+            TaskModel.row_id,
+            TaskModel.task_id,
+            TaskModel.title,
+            TaskModel.status,
+            TaskModel.priority,
+            TaskModel.type,
+            TaskModel.section_id,
+            TaskModel.acceptance,
+            TaskModel.blocked_reason,
         ).where(TaskModel.plan_id == plan_id)
     ).all()
 
     if not task_rows:
         return {
-            "levels": [], "critical_path": [], "ready_ids": set(),
-            "edge_count": 0, "task_count": 0, "max_level": 0,
+            "levels": [],
+            "critical_path": [],
+            "ready_ids": set(),
+            "edge_count": 0,
+            "task_count": 0,
+            "max_level": 0,
         }
 
-    by_rid: dict[int, dict] = {}
+    by_rid: dict[int, dict[str, Any]] = {}
     for r in task_rows:
         by_rid[r[0]] = {
             "row_id": r[0],
@@ -249,18 +259,20 @@ def chain_layout(session: Session, plan_id: int) -> dict:
         if all(by_rid[p]["status"] == "done" for p in prereqs[rid]):
             ready_ids.add(info["task_id"])
 
-    by_level: dict[int, list[dict]] = {}
+    by_level: dict[int, list[dict[str, Any]]] = {}
     for rid, info in by_rid.items():
         lvl = level[rid]
-        by_level.setdefault(lvl, []).append({
-            **info,
-            "is_critical": info["task_id"] in critical_ids,
-            "is_ready": info["task_id"] in ready_ids,
-            "prereq_ids": sorted(by_rid[p]["task_id"] for p in prereqs[rid]),
-            "dep_ids": sorted(by_rid[d]["task_id"] for d in deps[rid]),
-        })
+        by_level.setdefault(lvl, []).append(
+            {
+                **info,
+                "is_critical": info["task_id"] in critical_ids,
+                "is_ready": info["task_id"] in ready_ids,
+                "prereq_ids": sorted(by_rid[p]["task_id"] for p in prereqs[rid]),
+                "dep_ids": sorted(by_rid[d]["task_id"] for d in deps[rid]),
+            }
+        )
 
-    levels: list[dict] = []
+    levels: list[dict[str, Any]] = []
     for lvl in sorted(by_level.keys()):
         levels.append({"level": lvl, "tasks": by_level[lvl]})
 

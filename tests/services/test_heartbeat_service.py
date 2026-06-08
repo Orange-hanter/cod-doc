@@ -25,9 +25,7 @@ if TYPE_CHECKING:
 
 def _seed_plan(session: Session) -> tuple[int, int, int]:
     now = datetime.now(UTC)
-    proj = ProjectModel(
-        slug="hb-proj", title="Heartbeat Proj", root_path="/tmp/hb", config_json={}
-    )
+    proj = ProjectModel(slug="hb-proj", title="Heartbeat Proj", root_path="/tmp/hb", config_json={})
     proj.created = now
     proj.updated = now
     session.add(proj)
@@ -265,9 +263,7 @@ def test_next_action_guess_when_blocked_by_open_tasks(engine_with_schema) -> Non
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         _create_task(session, p, pl, s, task_id="HB-010", title="blocker")
-        _create_task(
-            session, p, pl, s, task_id="HB-020", title="blocked", blocked_by=["HB-010"]
-        )
+        _create_task(session, p, pl, s, task_id="HB-020", title="blocked", blocked_by=["HB-010"])
         ctx = heartbeat_service.heartbeat_context(session, task_id="HB-020")
 
     assert "wait on blockers" in ctx["next_action_guess"]

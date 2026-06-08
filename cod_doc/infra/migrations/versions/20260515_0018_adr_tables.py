@@ -45,12 +45,16 @@ def upgrade() -> None:
         sa.Column("consequences", sa.Text, nullable=True),
         sa.Column("author", sa.String(128), nullable=False, server_default="human"),
         sa.Column(
-            "created", sa.DateTime(timezone=True),
-            nullable=False, server_default=sa.func.current_timestamp(),
+            "created",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.current_timestamp(),
         ),
         sa.Column(
-            "last_updated", sa.DateTime(timezone=True),
-            nullable=False, server_default=sa.func.current_timestamp(),
+            "last_updated",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.current_timestamp(),
         ),
         sa.UniqueConstraint("project_id", "adr_id", name="uq_adr_project_id"),
         sa.CheckConstraint(
@@ -93,11 +97,15 @@ def upgrade() -> None:
         ),
         sa.Column("reason", sa.Text, nullable=True),
         sa.Column(
-            "at", sa.DateTime(timezone=True),
-            nullable=False, server_default=sa.func.current_timestamp(),
+            "at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.func.current_timestamp(),
         ),
         sa.UniqueConstraint(
-            "superseding_id", "superseded_id", name="uq_adr_supersedes_edge",
+            "superseding_id",
+            "superseded_id",
+            name="uq_adr_supersedes_edge",
         ),
         sa.CheckConstraint(
             "superseding_id <> superseded_id",
@@ -118,11 +126,15 @@ def upgrade() -> None:
         ),
         sa.Column("task_id", sa.String(32), nullable=False),
         sa.Column(
-            "relation", sa.String(16),
-            nullable=False, server_default="implements",
+            "relation",
+            sa.String(16),
+            nullable=False,
+            server_default="implements",
         ),
         sa.UniqueConstraint(
-            "adr_row_id", "task_id", "relation",
+            "adr_row_id",
+            "task_id",
+            "relation",
             name="uq_adr_task_link",
         ),
         sa.CheckConstraint(

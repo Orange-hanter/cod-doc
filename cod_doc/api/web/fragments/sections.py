@@ -182,6 +182,4 @@ def section_patch(
             doc=doc,
             section=updated,
         )
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/docs/{doc_key}#{anchor}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}#{anchor}", status_code=303)

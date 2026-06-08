@@ -20,9 +20,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import AsyncIterator
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cod_doc.agent.adapters.base import (
     AdapterCapabilities,
@@ -34,6 +33,9 @@ from cod_doc.agent.adapters.base import (
     FunctionCall,
     ToolCall,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
 class MockAdapter:
@@ -89,7 +91,9 @@ class MockAdapter:
         can assert incremental delivery.  For tool calls, yields the
         whole tool_call as one chunk followed by a finish chunk.
         """
-        self.calls.append({"messages": messages, "tools": tools, "model": model, "_streaming": True})
+        self.calls.append(
+            {"messages": messages, "tools": tools, "model": model, "_streaming": True}
+        )
         resp = self._queue.pop(0) if self._queue else self.text_response("Task complete.")
         choice = resp.choices[0]
         msg = choice.message
@@ -109,9 +113,7 @@ class MockAdapter:
     def estimate_tokens(self, text: str) -> int:
         return len(text) // 4
 
-    def cost_estimate(
-        self, input_tokens: int, output_tokens: int, *, model: str
-    ) -> Decimal:
+    def cost_estimate(self, input_tokens: int, output_tokens: int, *, model: str) -> Decimal:
         return Decimal(0)
 
     # ------------------------------------------------------------------ #

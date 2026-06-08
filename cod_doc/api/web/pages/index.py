@@ -54,7 +54,9 @@ def index(
     projects = []
     for entry, fallback in zip(page_entries, yaml_stats, strict=True):
         stats = dict(fallback)
-        stats.setdefault("pct", round(stats["done"] / stats["total"] * 100) if stats.get("total") else 0)
+        stats.setdefault(
+            "pct", round(stats["done"] / stats["total"] * 100) if stats.get("total") else 0
+        )
         stats.setdefault("pending", 0)
         stats.setdefault("failed", 0)
 
@@ -65,22 +67,26 @@ def index(
                 # Only replace YAML stats when DB actually has tasks.
                 # Projects still using legacy tasks.yaml return total=0 from DB.
                 if db_stats["total"] > 0:
-                    stats.update({
-                        "total": db_stats["total"],
-                        "pending": db_stats["pending"],
-                        "in_progress": db_stats["in_progress"],
-                        "done": db_stats["done"],
-                        "failed": db_stats["failed"],
-                        "pct": db_stats["pct"],
-                    })
+                    stats.update(
+                        {
+                            "total": db_stats["total"],
+                            "pending": db_stats["pending"],
+                            "in_progress": db_stats["in_progress"],
+                            "done": db_stats["done"],
+                            "failed": db_stats["failed"],
+                            "pct": db_stats["pct"],
+                        }
+                    )
 
-        projects.append({
-            "name": entry.name,
-            "path": entry.path,
-            "enabled": entry.enabled,
-            "daemon_enabled": entry.daemon_enabled,
-            "stats": stats,
-        })
+        projects.append(
+            {
+                "name": entry.name,
+                "path": entry.path,
+                "enabled": entry.enabled,
+                "daemon_enabled": entry.daemon_enabled,
+                "stats": stats,
+            }
+        )
 
     has_prev = offset > 0
     has_next = offset + limit < total

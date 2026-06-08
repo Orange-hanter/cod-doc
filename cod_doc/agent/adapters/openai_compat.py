@@ -75,17 +75,13 @@ class OpenAICompatAdapter:
         if temperature is not None:
             kwargs["temperature"] = temperature
 
-        raw = await with_retry(
-            lambda: self._client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
-        )
+        raw = await with_retry(lambda: self._client.chat.completions.create(**kwargs))
         return _from_openai(raw)
 
     def estimate_tokens(self, text: str) -> int:
         return len(text) // 4
 
-    def cost_estimate(
-        self, input_tokens: int, output_tokens: int, *, model: str
-    ) -> Decimal:
+    def cost_estimate(self, input_tokens: int, output_tokens: int, *, model: str) -> Decimal:
         """PCA-925: Estimate USD cost from a static pricing table.
 
         Falls back to ``Decimal(0)`` for unknown models.  The table is
@@ -101,9 +97,8 @@ class OpenAICompatAdapter:
             return Decimal(0)
         in_rate, out_rate = rates
         per_mtok = Decimal(1_000_000)
-        return (
-            (Decimal(input_tokens) * in_rate / per_mtok)
-            + (Decimal(output_tokens) * out_rate / per_mtok)
+        return (Decimal(input_tokens) * in_rate / per_mtok) + (
+            Decimal(output_tokens) * out_rate / per_mtok
         )
 
 
@@ -111,20 +106,20 @@ class OpenAICompatAdapter:
 # of OpenRouter / OpenAI / Anthropic pricing.  Update as needed.
 _PRICING_USD_PER_MTOK: dict[str, tuple[Decimal, Decimal]] = {
     # OpenRouter routes
-    "anthropic/claude-sonnet-4-6":  (Decimal("3.00"),  Decimal("15.00")),
-    "anthropic/claude-opus-4":      (Decimal("15.00"), Decimal("75.00")),
-    "anthropic/claude-3-5-sonnet":  (Decimal("3.00"),  Decimal("15.00")),
-    "anthropic/claude-3-5-haiku":   (Decimal("0.80"),  Decimal("4.00")),
-    "openai/gpt-4o":                (Decimal("2.50"),  Decimal("10.00")),
-    "openai/gpt-4o-mini":           (Decimal("0.15"),  Decimal("0.60")),
-    "openai/o1":                    (Decimal("15.00"), Decimal("60.00")),
-    "google/gemini-2.0-flash":      (Decimal("0.10"),  Decimal("0.40")),
-    "google/gemini-pro":            (Decimal("1.25"),  Decimal("5.00")),
+    "anthropic/claude-sonnet-4-6": (Decimal("3.00"), Decimal("15.00")),
+    "anthropic/claude-opus-4": (Decimal("15.00"), Decimal("75.00")),
+    "anthropic/claude-3-5-sonnet": (Decimal("3.00"), Decimal("15.00")),
+    "anthropic/claude-3-5-haiku": (Decimal("0.80"), Decimal("4.00")),
+    "openai/gpt-4o": (Decimal("2.50"), Decimal("10.00")),
+    "openai/gpt-4o-mini": (Decimal("0.15"), Decimal("0.60")),
+    "openai/o1": (Decimal("15.00"), Decimal("60.00")),
+    "google/gemini-2.0-flash": (Decimal("0.10"), Decimal("0.40")),
+    "google/gemini-pro": (Decimal("1.25"), Decimal("5.00")),
     # Bare model names (no provider prefix)
-    "claude-sonnet-4-6":            (Decimal("3.00"),  Decimal("15.00")),
-    "claude-3-5-sonnet":            (Decimal("3.00"),  Decimal("15.00")),
-    "gpt-4o":                       (Decimal("2.50"),  Decimal("10.00")),
-    "gpt-4o-mini":                  (Decimal("0.15"),  Decimal("0.60")),
+    "claude-sonnet-4-6": (Decimal("3.00"), Decimal("15.00")),
+    "claude-3-5-sonnet": (Decimal("3.00"), Decimal("15.00")),
+    "gpt-4o": (Decimal("2.50"), Decimal("10.00")),
+    "gpt-4o-mini": (Decimal("0.15"), Decimal("0.60")),
 }
 
 

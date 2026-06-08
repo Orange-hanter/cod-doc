@@ -20,6 +20,8 @@ from fastapi.testclient import TestClient
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import (
+    DocumentStatus,
+    DocumentType,
     Plan,
     PlanSection,
     Priority,
@@ -34,6 +36,7 @@ from cod_doc.infra.repositories import (
     PlanSectionRepository,
     ProjectRepository,
 )
+from cod_doc.services import doc_service, projection_service, routine_service
 from cod_doc.services import task_service as tasks
 
 if TYPE_CHECKING:
@@ -111,6 +114,28 @@ def overview_client(tmp_path: Path, migrate_db):
             id_prefix="OVR",
         )
         tasks.complete(session, task_id=done_t.task_id, author="human:dakh")
+
+        doc = doc_service.create(
+            session,
+            project_id=proj.row_id,
+            doc_key="docs/health",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.ACTIVE,
+            title="Health",
+            owner="docs",
+            author="human:dakh",
+        )
+        projection_service.export_document(session, doc.row_id, root_path=repo)
+        routine_service.create(
+            session,
+            proj.row_id,
+            name="doc_drift_daily",
+            check_name="doc_drift",
+            trigger="cron",
+            cron="0 0 * * *",
+            on_finding="comment_only",
+        )
+        routine_service.run_now(session, proj.row_id, "doc_drift_daily")
     engine.dispose()
 
     from cod_doc.api.server import app
@@ -156,6 +181,32 @@ def test_overview_recent_revisions_visible(overview_client) -> None:
     assert "task#" in r.text
 
 
+def test_overview_doc_drift_health_badge_visible(overview_client) -> None:
+    client, entry = overview_client
+    r = client.get(f"/p/{entry.name}")
+    assert r.status_code == 200
+    assert "Doc drift" in r.text
+    assert 'href="/p/demo/routines#routine-doc_drift_daily"' in r.text
+    assert ">clean</a>" in r.text
+    assert "0 findings" in r.text
+
+
+def test_api_project_health_json(overview_client) -> None:
+    client, entry = overview_client
+    r = client.get(f"/api/projects/{entry.name}/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["project"] == "demo"
+    assert body["status"] == "ok"
+    assert body["db_available"] is True
+    assert body["documents"]["total"] == 1
+    assert body["documents"]["drift_problem_count"] == 0
+    assert body["documents"]["drift_counts"]["in_sync"] == 1
+    assert body["links"]["unresolved"] == 0
+    assert body["routines"]["doc_drift"]["configured"] is True
+    assert body["routines"]["doc_drift"]["last_run"]["status"] == "done"
+
+
 def test_overview_empty_db_renders_placeholder(tmp_path: Path) -> None:
     """When `.cod-doc/state.db` is missing, overview shows a graceful note."""
     repo = tmp_path / "no-db"
@@ -180,6 +231,31 @@ def test_overview_empty_db_renders_placeholder(tmp_path: Path) -> None:
     assert 'action="/p/bare/init"' in r.text
     assert "Initialize DB" in r.text
     assert "Ready to start" not in r.text
+
+
+def test_api_project_health_without_db(tmp_path: Path) -> None:
+    repo = tmp_path / "no-db-api"
+    repo.mkdir()
+    entry = ProjectEntry(name="bare-api", path=str(repo))
+    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg.add_project(entry)
+
+    import cod_doc.api.deps as deps
+
+    deps.set_config(cfg)
+
+    Project(entry).init()
+
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get(f"/api/projects/{entry.name}/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["project"] == "bare-api"
+    assert body["status"] == "uninitialized"
+    assert body["db_available"] is False
+    assert body["documents"]["drift_problem_count"] is None
 
 
 # ── POST /tasks/{id}/complete ─────────────────────────────────────────────

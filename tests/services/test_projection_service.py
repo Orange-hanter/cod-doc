@@ -252,6 +252,55 @@ def test_detect_drift_edited_in_place(engine_with_schema, root_path: Path) -> No
         assert report.status is proj.DriftStatus.EDITED_IN_PLACE
 
 
+def test_detect_drift_accepts_imported_file_hash_baseline(
+    engine_with_schema, root_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+
+        imported = "---\ntitle: Imported\n---\n# Imported\n\nHand-kept markdown.\n"
+        path = root_path / "test-doc.md"
+        path.write_text(imported, encoding="utf-8")
+
+        from cod_doc.infra.models import DocumentModel
+        from cod_doc.services.projection_service._safety import _sha256
+        from cod_doc.services.projection_service.render import render_markdown
+
+        model = session.get(DocumentModel, doc_id)
+        assert model is not None
+        model.content_sha256_head = _sha256(imported)
+        model.projection_hash = _sha256(render_markdown(session, doc_id))
+        session.flush()
+
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.status is proj.DriftStatus.IN_SYNC
+
+        path.write_text(imported + "\nLocal edit.\n", encoding="utf-8")
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.status is proj.DriftStatus.EDITED_IN_PLACE
+
+
+def test_detect_project_drift_returns_counts_and_issues(
+    engine_with_schema, root_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        synced_id = _make_doc(session, p, doc_key="synced")
+        _make_doc(session, p, doc_key="missing")
+        proj.export_document(session, synced_id, root_path=root_path)
+
+        report = proj.detect_project_drift(session, p, root_path=root_path)
+
+    assert report.total_docs == 2
+    assert report.counts["in_sync"] == 1
+    assert report.counts["missing"] == 1
+    assert report.problem_count == 1
+    assert report.issues[0].doc_key == "missing"
+
+
 # ============================================================================ #
 # import_document                                                               #
 # ============================================================================ #
@@ -308,6 +357,46 @@ def test_import_applies_frontmatter_field_changes(engine_with_schema, root_path:
         )
         assert doc is not None
         assert doc.status is DocumentStatus.ACTIVE
+
+
+def test_import_applies_body_changes_and_accepts_file_baseline(
+    engine_with_schema, root_path: Path
+) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+        docs.add_section(
+            session,
+            document_id=doc_id,
+            anchor="body",
+            heading="Body",
+            level=2,
+            position=0,
+            body="Before.\n",
+            author="human:test",
+        )
+        export_result = proj.export_document(session, doc_id, root_path=root_path)
+
+        new_content = export_result.path.read_text(encoding="utf-8").replace(
+            "Before.",
+            "After.",
+        )
+        export_result.path.write_text(new_content, encoding="utf-8")
+
+        imported = proj.import_document(
+            session,
+            p,
+            export_result.path,
+            author="human:test",
+            root_path=root_path,
+        )
+
+        assert imported is not None
+        section = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "body")
+        assert section.body == "After."
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.status is proj.DriftStatus.IN_SYNC
 
 
 # ============================================================================ #

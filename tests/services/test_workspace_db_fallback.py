@@ -35,13 +35,9 @@ def test_session_factory_empty_string_falls_back_to_default(tmp_path, monkeypatc
         get_project = staticmethod(fake_get_project)
 
     monkeypatch.setattr("cod_doc.config.Config.load", lambda: _FakeCfg())
-    monkeypatch.setattr(
-        "cod_doc.infra.db.resolve_db_url", lambda p: f"sqlite:///{p}/x.db"
-    )
+    monkeypatch.setattr("cod_doc.infra.db.resolve_db_url", lambda p: f"sqlite:///{p}/x.db")
     monkeypatch.setattr("cod_doc.infra.db.make_engine", lambda url: object())
-    monkeypatch.setattr(
-        "cod_doc.infra.db.make_session_factory", lambda eng: (lambda: None)
-    )
+    monkeypatch.setattr("cod_doc.infra.db.make_session_factory", lambda eng: lambda: None)
 
     _workspace.clear()
     _workspace.set_("from-default-ws")
@@ -74,13 +70,9 @@ def test_session_factory_explicit_overrides_default(tmp_path, monkeypatch) -> No
         get_project = staticmethod(fake_get_project)
 
     monkeypatch.setattr("cod_doc.config.Config.load", lambda: _FakeCfg())
-    monkeypatch.setattr(
-        "cod_doc.infra.db.resolve_db_url", lambda p: f"sqlite:///{p}/x.db"
-    )
+    monkeypatch.setattr("cod_doc.infra.db.resolve_db_url", lambda p: f"sqlite:///{p}/x.db")
     monkeypatch.setattr("cod_doc.infra.db.make_engine", lambda url: object())
-    monkeypatch.setattr(
-        "cod_doc.infra.db.make_session_factory", lambda eng: (lambda: None)
-    )
+    monkeypatch.setattr("cod_doc.infra.db.make_session_factory", lambda eng: lambda: None)
 
     _workspace.clear()
     _workspace.set_("ignored-default")

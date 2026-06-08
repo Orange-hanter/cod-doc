@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from cod_doc.agent.adapters.base import ChatResponse
 from cod_doc.agent.adapters.mock import MockAdapter
 from cod_doc.agent.orchestrator import Orchestrator
 from cod_doc.config import Config, ProjectEntry
@@ -15,6 +14,8 @@ from cod_doc.core.project import Project, Task, TaskStatus
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from cod_doc.agent.adapters.base import ChatResponse
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -37,7 +38,9 @@ def config() -> Config:
     )
 
 
-def _orch(project: Project, config: Config, responses: list[ChatResponse], **kw: Any) -> Orchestrator:
+def _orch(
+    project: Project, config: Config, responses: list[ChatResponse], **kw: Any
+) -> Orchestrator:
     """Create an Orchestrator backed by a MockAdapter."""
     adapter = MockAdapter(responses=responses)
     orch = Orchestrator(project, config, adapter=adapter, **kw)
@@ -71,10 +74,14 @@ async def test_run_task_with_tool_call(project: Project, config: Config) -> None
     task = Task(title="Прочитать файл")
     project.add_task(task)
 
-    orch = _orch(project, config, [
-        MockAdapter.tool_call_response("read_file", {"path": "MASTER.md"}, call_id="call_1"),
-        MockAdapter.text_response("Файл прочитан."),
-    ])
+    orch = _orch(
+        project,
+        config,
+        [
+            MockAdapter.tool_call_response("read_file", {"path": "MASTER.md"}, call_id="call_1"),
+            MockAdapter.text_response("Файл прочитан."),
+        ],
+    )
     events = []
     async for event in orch.run_task(task):
         events.append(event)
@@ -116,14 +123,19 @@ async def test_async_on_ask_human(project: Project, config: Config) -> None:
     async def fake_ask(question: str, context: str) -> str:
         return "синий"
 
-    orch = _orch(project, config, [
-        MockAdapter.tool_call_response(
-            "ask_human",
-            {"question": "Какой цвет?", "context": "тест"},
-            call_id="call_1",
-        ),
-        MockAdapter.text_response("Ответ получен."),
-    ], async_on_ask_human=fake_ask)
+    orch = _orch(
+        project,
+        config,
+        [
+            MockAdapter.tool_call_response(
+                "ask_human",
+                {"question": "Какой цвет?", "context": "тест"},
+                call_id="call_1",
+            ),
+            MockAdapter.text_response("Ответ получен."),
+        ],
+        async_on_ask_human=fake_ask,
+    )
     events = []
     async for event in orch.run_task(task):
         events.append(event)
@@ -138,15 +150,19 @@ async def test_run_autonomous_no_tasks_generates_from_master(
     project: Project, config: Config
 ) -> None:
     """Если задач нет, агент анализирует MASTER.md и создаёт задачи."""
-    orch = _orch(project, config, [
-        MockAdapter.tool_call_response(
-            "create_task",
-            {"title": "Создать спецификацию", "priority": 1},
-            call_id="call_1",
-        ),
-        MockAdapter.text_response("Создал задачу."),
-        MockAdapter.text_response("Задача выполнена."),
-    ])
+    orch = _orch(
+        project,
+        config,
+        [
+            MockAdapter.tool_call_response(
+                "create_task",
+                {"title": "Создать спецификацию", "priority": 1},
+                call_id="call_1",
+            ),
+            MockAdapter.text_response("Создал задачу."),
+            MockAdapter.text_response("Задача выполнена."),
+        ],
+    )
     events = []
     async for event in orch.run_autonomous():
         events.append(event)
@@ -168,9 +184,7 @@ def _get_sent_messages(adapter: MockAdapter) -> list[dict]:  # type: ignore[no-u
 
 
 @pytest.mark.asyncio
-async def test_run_task_cold_start_includes_master_block(
-    project: Project, config: Config
-) -> None:
+async def test_run_task_cold_start_includes_master_block(project: Project, config: Config) -> None:
     """Без WakeContext — _build_messages идёт по 'full' пути с MASTER.md (L0) блоком."""
     task = Task(title="Cold start task", description="do thing")
     project.add_task(task)
@@ -250,9 +264,7 @@ async def test_run_task_cold_start_wake_still_reads_master(
 
 
 @pytest.mark.asyncio
-async def test_run_task_sets_run_id_during_heartbeat(
-    project: Project, config: Config
-) -> None:
+async def test_run_task_sets_run_id_during_heartbeat(project: Project, config: Config) -> None:
     """During Orchestrator.run_task, get_current_run_id() returns the heartbeat run_id."""
     from cod_doc.services.run_context import get_current_run_id
 
@@ -279,9 +291,7 @@ async def test_run_task_sets_run_id_during_heartbeat(
 
 
 @pytest.mark.asyncio
-async def test_run_task_resets_run_id_after_heartbeat(
-    project: Project, config: Config
-) -> None:
+async def test_run_task_resets_run_id_after_heartbeat(project: Project, config: Config) -> None:
     """After Orchestrator.run_task returns, get_current_run_id() is None."""
     from cod_doc.services.run_context import get_current_run_id
 

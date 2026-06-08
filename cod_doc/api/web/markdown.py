@@ -213,10 +213,7 @@ def render_markdown(text: str) -> str:
                     # auto-detect and colourise the block. Bare ``` fences
                     # (no lang) get no class — highlight.js falls back to
                     # auto-detection on those.
-                    if fence_lang:
-                        lang_attr = f' class="language-{html_escape(fence_lang)}"'
-                    else:
-                        lang_attr = ""
+                    lang_attr = f' class="language-{html_escape(fence_lang)}"' if fence_lang else ""
                     blocks.append(f"<pre><code{lang_attr}>{html_escape(content)}</code></pre>")
                 fence_lines.clear()
                 fence_lang = ""
@@ -294,10 +291,7 @@ def render_markdown(text: str) -> str:
         if fence_lang == "mermaid":
             blocks.append(f'<div class="mermaid">{html_escape(content)}</div>')
         else:
-            if fence_lang:
-                lang_attr = f' class="language-{html_escape(fence_lang)}"'
-            else:
-                lang_attr = ""
+            lang_attr = f' class="language-{html_escape(fence_lang)}"' if fence_lang else ""
             blocks.append(f"<pre><code{lang_attr}>{html_escape(content)}</code></pre>")
 
     return "\n".join(blocks)

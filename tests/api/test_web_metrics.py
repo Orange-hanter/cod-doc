@@ -41,6 +41,7 @@ def metrics_client(tmp_path: Path, migrate_db):
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
     Project(entry).init()
 
@@ -51,13 +52,15 @@ def metrics_client(tmp_path: Path, migrate_db):
         proj = ProjectRepository(session).add(
             ProjectEntity(slug="metp", title="Demo", root_path=str(repo), config={})
         )
-        proj.created = now; proj.updated = now
+        proj.created = now
+        proj.updated = now
         session.flush()
 
         plan = PlanRepository(session).add(
             Plan(project_id=proj.row_id, scope="x", principle="test-first")
         )
-        plan.created = now; plan.last_updated = now
+        plan.created = now
+        plan.last_updated = now
         session.flush()
 
         sec = PlanSectionRepository(session).add(
@@ -69,14 +72,20 @@ def metrics_client(tmp_path: Path, migrate_db):
         for i, ttype in enumerate([TaskType.FEATURE, TaskType.BUG]):
             t = tasks.create(
                 session,
-                project_id=proj.row_id, plan_id=plan.row_id, section_id=sec.row_id,
-                title=f"Task {i}", type=ttype, priority=Priority.MEDIUM,
-                author="t", id_prefix="MET",
+                project_id=proj.row_id,
+                plan_id=plan.row_id,
+                section_id=sec.row_id,
+                title=f"Task {i}",
+                type=ttype,
+                priority=Priority.MEDIUM,
+                author="t",
+                id_prefix="MET",
             )
             tasks.complete(session, task_id=t.task_id, author="t")
     engine.dispose()
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         yield client, entry
 
@@ -115,6 +124,7 @@ def test_metrics_page_no_data_state(metrics_client, tmp_path: Path, migrate_db) 
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
     Project(entry).init()
     engine = make_engine(f"sqlite:///{db_path}")
@@ -124,10 +134,12 @@ def test_metrics_page_no_data_state(metrics_client, tmp_path: Path, migrate_db) 
         proj = ProjectRepository(session).add(
             ProjectEntity(slug="empty-metp", title="X", root_path=str(repo), config={})
         )
-        proj.created = now; proj.updated = now
+        proj.created = now
+        proj.updated = now
     engine.dispose()
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get("/p/empty-metp/metrics")
     assert r.status_code == 200

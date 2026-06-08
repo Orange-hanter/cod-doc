@@ -29,9 +29,7 @@ class StatusTransitionError(ValueError):
     """Raised when an attempted transition is not allowed."""
 
     def __init__(self, *, from_status: str, to_status: str, reason: str) -> None:
-        super().__init__(
-            f"Invalid TaskStatus transition {from_status!r} → {to_status!r}: {reason}"
-        )
+        super().__init__(f"Invalid TaskStatus transition {from_status!r} → {to_status!r}: {reason}")
         self.from_status = from_status
         self.to_status = to_status
         self.reason = reason
@@ -61,25 +59,27 @@ def normalise(status: str | TaskStatus) -> str:
 
 # Per proposal 08 §51. Keys + values are *canonical* (post-normalise) buckets.
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    "backlog":     frozenset({"todo", "cancelled"}),
-    "todo":        frozenset({"in_progress", "blocked", "backlog", "cancelled"}),
+    "backlog": frozenset({"todo", "cancelled"}),
+    "todo": frozenset({"in_progress", "blocked", "backlog", "cancelled"}),
     # `in_progress → todo` is a slight deviation from proposal 08 §51 to
     # support "rollback without completing" — useful when an exploratory
     # checkout turns out to be wrong and the agent wants to put the task
     # back without marking it cancelled. Releasing the lock alone (via
     # `task_release`) does not change status, so this stays orthogonal.
     "in_progress": frozenset({"todo", "in_review", "blocked", "done", "cancelled"}),
-    "in_review":   frozenset({"in_progress", "done", "cancelled"}),
-    "blocked":     frozenset({"todo", "in_progress", "cancelled"}),
-    "done":        frozenset({"todo", "in_progress"}),  # reopen
-    "cancelled":   frozenset({"todo"}),                  # reopen
+    "in_review": frozenset({"in_progress", "done", "cancelled"}),
+    "blocked": frozenset({"todo", "in_progress", "cancelled"}),
+    "done": frozenset({"todo", "in_progress"}),  # reopen
+    "cancelled": frozenset({"todo"}),  # reopen
 }
 
 # Transitions that, per proposal 08 §51 + proposal 06, REQUIRE a checkout.
 # Currently: only `todo → in_progress` (must go through `task_checkout`).
-TRANSITIONS_REQUIRING_CHECKOUT: frozenset[tuple[str, str]] = frozenset({
-    ("todo", "in_progress"),
-})
+TRANSITIONS_REQUIRING_CHECKOUT: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("todo", "in_progress"),
+    }
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -122,11 +122,7 @@ def validate_transition(
             reason=f"only these are allowed from {f!r}: {sorted(allowed)}",
         )
 
-    if (
-        enforce_checkout
-        and (f, t) in TRANSITIONS_REQUIRING_CHECKOUT
-        and not via_checkout
-    ):
+    if enforce_checkout and (f, t) in TRANSITIONS_REQUIRING_CHECKOUT and not via_checkout:
         raise StatusTransitionError(
             from_status=str(from_status),
             to_status=str(to_status),

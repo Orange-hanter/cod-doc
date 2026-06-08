@@ -28,9 +28,7 @@ def _seed(session) -> None:
     plan = PlanModel(project_id=proj.row_id, scope="sp-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="A", slug="A", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
     session.add(sec)
     session.flush()
 
@@ -54,13 +52,15 @@ def test_envelope_success_path_for_capabilities() -> None:
 
 
 def test_envelope_validation_error_for_unknown_task(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed(session)
 
     from cod_doc.mcp.tools import task_tools
+
     monkeypatch.setattr(task_tools, "session_factory", lambda project: (factory, None))
     monkeypatch.setattr(task_tools, "require_project_id", lambda session, project: 1)
 

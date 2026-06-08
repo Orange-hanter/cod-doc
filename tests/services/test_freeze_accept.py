@@ -81,18 +81,14 @@ def test_update_status_writes_revision(tmp_path: Path, engine_with_schema) -> No
     with transactional(factory) as session:
         project_id, _ = _seed(session, "p", tmp_path)
         doc = _make_doc(session, project_id, "draft-doc", DocumentStatus.DRAFT)
-        before = revision_service.list_for_entity(
-            session, EntityKind.DOCUMENT, doc.row_id
-        )
+        before = revision_service.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)
         doc_service.update_status(
             session,
             document_id=doc.row_id,
             new_status=DocumentStatus.REVIEW,
             author="human:test",
         )
-        after = revision_service.list_for_entity(
-            session, EntityKind.DOCUMENT, doc.row_id
-        )
+        after = revision_service.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)
         assert len(after) == len(before) + 1
         assert "status" in after[-1].diff and "review" in after[-1].diff
 
@@ -102,18 +98,14 @@ def test_update_status_no_op_when_unchanged(tmp_path: Path, engine_with_schema) 
     with transactional(factory) as session:
         project_id, _ = _seed(session, "p", tmp_path)
         doc = _make_doc(session, project_id, "active-doc", DocumentStatus.ACTIVE)
-        baseline = len(
-            revision_service.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)
-        )
+        baseline = len(revision_service.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id))
         doc_service.update_status(
             session,
             document_id=doc.row_id,
             new_status=DocumentStatus.ACTIVE,
             author="human:test",
         )
-        after = len(
-            revision_service.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)
-        )
+        after = len(revision_service.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id))
     assert after == baseline
 
 
@@ -122,9 +114,7 @@ def test_accept_promotes_draft_to_active(tmp_path: Path, engine_with_schema) -> 
     with transactional(factory) as session:
         project_id, _ = _seed(session, "p", tmp_path)
         doc = _make_doc(session, project_id, "to-accept", DocumentStatus.DRAFT)
-        promoted = doc_service.accept(
-            session, document_id=doc.row_id, author="human:test"
-        )
+        promoted = doc_service.accept(session, document_id=doc.row_id, author="human:test")
     assert promoted.status == DocumentStatus.ACTIVE
 
 
@@ -132,7 +122,8 @@ def test_accept_promotes_draft_to_active(tmp_path: Path, engine_with_schema) -> 
 
 
 def test_freeze_projection_creates_execution_log_doc(
-    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+    tmp_path: Path,
+    engine_with_schema,  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -151,9 +142,7 @@ def test_freeze_projection_creates_execution_log_doc(
             author="human:test",
             id_prefix="FRZ",
         )
-        frozen = plan_service.freeze_projection(
-            session, plan_id, author="human:test"
-        )
+        frozen = plan_service.freeze_projection(session, plan_id, author="human:test")
     assert frozen.row_id is not None
     assert frozen.type == DocumentType.EXECUTION_LOG
     assert frozen.status == DocumentStatus.ACTIVE
@@ -164,28 +153,26 @@ def test_freeze_projection_creates_execution_log_doc(
 
 
 def test_freeze_projection_creates_distinct_snapshots_per_call(
-    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+    tmp_path: Path,
+    engine_with_schema,  # type: ignore[no-untyped-def]
 ) -> None:
     """Two freezes back-to-back must produce distinct doc_keys (millisecond
     resolution prevents UniqueConstraint collisions even within the same second)."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        project_id, plan_id = _seed(session, "p2", tmp_path)
-        first = plan_service.freeze_projection(
-            session, plan_id, author="human:test"
-        )
+        _project_id, plan_id = _seed(session, "p2", tmp_path)
+        first = plan_service.freeze_projection(session, plan_id, author="human:test")
     assert first.row_id is not None
     # NB: no sleep — relies on ms-precision in the timestamp.
     with transactional(factory) as session:
-        second = plan_service.freeze_projection(
-            session, plan_id, author="human:test"
-        )
+        second = plan_service.freeze_projection(session, plan_id, author="human:test")
     assert second.row_id != first.row_id
     assert second.doc_key != first.doc_key
 
 
 def test_freeze_projection_unknown_plan_raises(
-    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+    tmp_path: Path,
+    engine_with_schema,  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session, pytest.raises(plan_service.PlanNotFoundError):

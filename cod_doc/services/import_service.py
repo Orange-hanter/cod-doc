@@ -25,12 +25,15 @@ import hashlib
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
+from sqlalchemy import select
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
+from cod_doc.infra.models import DocumentModel
 from cod_doc.services import doc_service as docs
 
 if TYPE_CHECKING:
@@ -144,6 +147,26 @@ def _enum_or_default(enum_cls: type, raw: Any, default: Any) -> Any:
         return default
 
 
+def _jsonable_frontmatter(value: Any) -> Any:
+    """Convert YAML-loaded frontmatter values into JSON-storable values."""
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(k): _jsonable_frontmatter(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_jsonable_frontmatter(v) for v in value]
+    return value
+
+
+def _frontmatter_with_effective_defaults(
+    frontmatter: dict[str, Any], *, sensitivity: Sensitivity
+) -> dict[str, Any]:
+    """Store DB-effective defaults required by metadata audit."""
+    stored = dict(frontmatter)
+    stored.setdefault("sensitivity", sensitivity.value)
+    return stored
+
+
 def import_markdown(
     session: Session,
     *,
@@ -164,18 +187,14 @@ def import_markdown(
     Caller is responsible for committing the transaction.
     """
     parsed = parse_markdown(raw_markdown)
-    fm = parsed.frontmatter
+    fm = _jsonable_frontmatter(parsed.frontmatter)
 
-    title = (
-        fm.get("title")
-        or parsed.title_h1
-        or fallback_title
-        or doc_key.rsplit("/", 1)[-1]
-    )
+    title = fm.get("title") or parsed.title_h1 or fallback_title or doc_key.rsplit("/", 1)[-1]
     doc_type = _enum_or_default(DocumentType, fm.get("type"), fallback_type)
     status = _enum_or_default(DocumentStatus, fm.get("status"), DocumentStatus.DRAFT)
     sensitivity = _enum_or_default(Sensitivity, fm.get("sensitivity"), Sensitivity.INTERNAL)
     owner = fm.get("owner") or author
+    stored_frontmatter = _frontmatter_with_effective_defaults(fm, sensitivity=sensitivity)
 
     doc = docs.create(
         session,
@@ -186,8 +205,12 @@ def import_markdown(
         title=str(title),
         author=author,
         owner=str(owner),
+        source_of_truth=(
+            fm.get("source_of_truth") if isinstance(fm.get("source_of_truth"), bool) else None
+        ),
         sensitivity=sensitivity,
         preamble=parsed.preamble or "",
+        frontmatter=stored_frontmatter,
         reason=reason or "import_markdown",
     )
 
@@ -245,11 +268,20 @@ def import_or_update_markdown(
         )
         if source_sha256 is not None and doc.row_id is not None:
             _set_content_sha(session, doc.row_id, source_sha256)
+            _set_projection_hash_to_rendered(session, doc.row_id)
         return doc, True
 
-    # Doc exists — patch each section body to create a new revision.
+    # Doc exists — first sync its document-level metadata/frontmatter, then
+    # patch each section body to create section revisions when needed.
     assert existing.row_id is not None
     parsed = parse_markdown(raw_markdown)
+    _update_existing_document_metadata(
+        session,
+        document_id=existing.row_id,
+        parsed=parsed,
+        fallback_title=fallback_title,
+        author=author,
+    )
 
     for section in parsed.sections:
         try:
@@ -283,18 +315,80 @@ def import_or_update_markdown(
     _resolve_all_sections(session, existing.row_id)
     if source_sha256 is not None:
         _set_content_sha(session, existing.row_id, source_sha256)
+        _set_projection_hash_to_rendered(session, existing.row_id)
     return existing, False
 
 
+def _update_existing_document_metadata(
+    session: Session,
+    *,
+    document_id: int,
+    parsed: ParsedMarkdown,
+    fallback_title: str | None,
+    author: str,
+) -> None:
+    """Apply parsed frontmatter/preamble to an existing Document row.
+
+    Earlier imports updated only section bodies, which meant DB records could
+    drift from markdown frontmatter (`status`, `source_of_truth`,
+    `canonical_source`, `sensitivity`, `owner`, etc.). The markdown file is
+    the import source for this operation; after it runs, the DB row is the
+    canonical structured representation.
+    """
+    model = session.execute(
+        select(DocumentModel).where(DocumentModel.row_id == document_id)
+    ).scalar_one()
+    fm = _jsonable_frontmatter(parsed.frontmatter)
+
+    title = fm.get("title") or parsed.title_h1 or fallback_title or model.title
+    model.title = str(title)
+    model.type = _enum_or_default(DocumentType, fm.get("type"), DocumentType(model.type)).value
+    model.status = _enum_or_default(
+        DocumentStatus, fm.get("status"), DocumentStatus(model.status)
+    ).value
+    model.sensitivity = _enum_or_default(
+        Sensitivity, fm.get("sensitivity"), Sensitivity(model.sensitivity)
+    ).value
+    if "owner" in fm:
+        model.owner = str(fm["owner"]) if fm["owner"] else None
+    elif not model.owner:
+        model.owner = author
+    if isinstance(fm.get("source_of_truth"), bool):
+        model.source_of_truth = bool(fm["source_of_truth"])
+    model.preamble = parsed.preamble or ""
+    model.frontmatter_json = _frontmatter_with_effective_defaults(
+        fm, sensitivity=Sensitivity(model.sensitivity)
+    )
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+
+
 def _set_content_sha(session: Session, document_id: int, sha: str) -> None:
-    """PCA-928: store sha256 of imported file head on DocumentModel."""
+    """PCA-928: store sha256 of the accepted imported file on DocumentModel."""
     from sqlalchemy import update as _update
 
     from cod_doc.infra.models.documents import DocumentModel
+
     session.execute(
         _update(DocumentModel)
         .where(DocumentModel.row_id == document_id)
         .values(content_sha256_head=sha)
+    )
+
+
+def _set_projection_hash_to_rendered(session: Session, document_id: int) -> None:
+    """Record the current DB-render hash as the accepted DB baseline."""
+    from sqlalchemy import update as _update
+
+    from cod_doc.infra.models.documents import DocumentModel
+    from cod_doc.services.projection_service._safety import _sha256
+    from cod_doc.services.projection_service.render import render_markdown
+
+    rendered_hash = _sha256(render_markdown(session, document_id))
+    session.execute(
+        _update(DocumentModel)
+        .where(DocumentModel.row_id == document_id)
+        .values(projection_hash=rendered_hash)
     )
 
 
@@ -306,7 +400,7 @@ def _resolve_all_sections(session: Session, document_id: int) -> None:
     chance once the whole document exists.
     """
     try:
-        from cod_doc.infra.repositories.doc_repo import SectionRepository
+        from cod_doc.infra.repositories import SectionRepository
         from cod_doc.services import link_service as _links
 
         for sec in SectionRepository(session).list_for_document(document_id):
@@ -314,6 +408,7 @@ def _resolve_all_sections(session: Session, document_id: int) -> None:
                 _links.resolve_section(session, sec.row_id)
     except Exception:
         import logging
+
         logging.getLogger("cod_doc.services.import_service").warning(
             "Two-pass resolve failed for document_id=%s — "
             "links may be unresolved until next backfill",
@@ -333,13 +428,13 @@ _HEAD_BYTES = 4096  # hash first 4 KB only — cheap, stable enough for change d
 class ManifestEntry:
     """One .md file compared against the current project DB."""
 
-    path: str               # relative path from scan root (e.g. "modules/foo.md")
-    doc_key: str            # auto-derived key (path without .md, without "docs/" prefix)
-    title: str              # from H1 or frontmatter or filename
-    doc_type: str           # from frontmatter `type:` or empty string
-    sha256_head: str        # sha256 of first 4 KB
+    path: str  # relative path from scan root (e.g. "modules/foo.md")
+    doc_key: str  # auto-derived key (path without .md, without "docs/" prefix)
+    title: str  # from H1 or frontmatter or filename
+    doc_type: str  # from frontmatter `type:` or empty string
+    sha256_head: str  # sha256 of first 4 KB
     status: ManifestStatus  # new | changed | unchanged | missing
-    reason: str             # human-readable hint for the UI
+    reason: str  # human-readable hint for the UI
 
 
 def _derive_doc_key(rel_path: str) -> str:
@@ -362,6 +457,14 @@ def _head_sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as fh:
         h.update(fh.read(_HEAD_BYTES))
+    return h.hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
     return h.hexdigest()
 
 
@@ -460,28 +563,32 @@ def scan_folder(
                     status = "changed"
                     reason = "File modified since last import"
 
-            entries.append(ManifestEntry(
-                path=rel,
-                doc_key=doc_key,
-                title=title,
-                doc_type=doc_type_raw,
-                sha256_head=sha,
-                status=status,
-                reason=reason,
-            ))
+            entries.append(
+                ManifestEntry(
+                    path=rel,
+                    doc_key=doc_key,
+                    title=title,
+                    doc_type=doc_type_raw,
+                    sha256_head=sha,
+                    status=status,
+                    reason=reason,
+                )
+            )
 
     # Report DB docs that have no file on disk (MISSING)
     for doc_key, doc in existing.items():
         if doc_key not in seen_keys:
-            entries.append(ManifestEntry(
-                path="",
-                doc_key=doc_key,
-                title=str(doc.title or doc_key),
-                doc_type="",
-                sha256_head="",
-                status="missing",
-                reason="File not found on disk",
-            ))
+            entries.append(
+                ManifestEntry(
+                    path="",
+                    doc_key=doc_key,
+                    title=str(doc.title or doc_key),
+                    doc_type="",
+                    sha256_head="",
+                    status="missing",
+                    reason="File not found on disk",
+                )
+            )
 
     entries.sort(key=lambda e: (e.status == "missing", e.path))
     return entries

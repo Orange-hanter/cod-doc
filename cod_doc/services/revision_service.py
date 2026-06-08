@@ -360,9 +360,7 @@ def _revert_task_doc(session: Session, model: RevisionModel, *, author: str) -> 
 
     td = session.get(TaskDocumentModel, model.entity_id)
     if td is None:
-        raise RevertNotSupportedError(
-            f"TASK_DOC entity #{model.entity_id} not found"
-        )
+        raise RevertNotSupportedError(f"TASK_DOC entity #{model.entity_id} not found")
     task_doc_service.revert(
         session,
         project_id=model.project_id,

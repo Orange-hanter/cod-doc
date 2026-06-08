@@ -54,7 +54,7 @@ related:
    потоки, чтобы не ломать привычные сценарии.
 3. **COD-051** — добавили `cod-doc import legacy-tasks` для bulk-переноса
    ([`cmd_import.py:84-117`](cod_doc/cli/cmd_import.py#L84-L117) +
-   [`restate_importer.py:243-337`](cod_doc/services/restate_importer.py#L243-L337)).
+   [`restate_importer.py:242-335`](cod_doc/services/restate_importer.py#L242-L335)).
    Это сняло срочность миграции, но создало стабильное «болото»: импорт
    есть → нет повода удалять YAML, YAML есть → legacy-тулзы продолжают
    писать туда же. UI отразил болото в виде отдельной вкладки.
@@ -107,7 +107,7 @@ related:
 (например, на `/p/{slug}/daemon/start`).
 
 Реализация ровно поверх уже существующего
-[`restate_importer.import_legacy_tasks`](cod_doc/services/restate_importer.py#L243-L337):
+[`restate_importer.import_legacy_tasks`](cod_doc/services/restate_importer.py#L242-L335):
 для dry-run — `session.rollback()` и сериализация `summary`; для
 архива — `yaml_path.rename(yaml_path.with_suffix(".archived.yaml"))`.
 

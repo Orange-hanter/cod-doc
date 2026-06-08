@@ -58,9 +58,7 @@ def register(mcp: FastMCP) -> None:
             existing = plan_repo.get_by_scope(scope)
             if existing is not None:
                 raise ValueError(f"Plan with scope '{scope}' already exists.")
-            new_plan = plan_repo.add(
-                Plan(project_id=project_id, scope=scope, principle=principle)
-            )
+            new_plan = plan_repo.add(Plan(project_id=project_id, scope=scope, principle=principle))
             assert new_plan.row_id is not None
             plan_id = new_plan.row_id
 
@@ -69,8 +67,7 @@ def register(mcp: FastMCP) -> None:
             for spec in sections or []:
                 if not spec.get("letter") or not spec.get("title"):
                     raise ValueError(
-                        "section spec must include 'letter' and 'title' (got "
-                        f"{spec!r})"
+                        f"section spec must include 'letter' and 'title' (got {spec!r})"
                     )
                 sec = sec_repo.add(
                     PlanSection(
@@ -127,9 +124,7 @@ def register(mcp: FastMCP) -> None:
                 select(
                     TaskModel.section_id,
                     func.count(TaskModel.row_id).label("total"),
-                    func.sum(
-                        case((TaskModel.status == "done", 1), else_=0)
-                    ).label("done"),
+                    func.sum(case((TaskModel.status == "done", 1), else_=0)).label("done"),
                 )
                 .where(TaskModel.plan_id == plan_id)
                 .group_by(TaskModel.section_id)
@@ -179,8 +174,7 @@ def register(mcp: FastMCP) -> None:
             current = sec_repo.list_for_plan(plan_id)
             if any(s.letter.upper() == letter.upper() for s in current):
                 raise ValueError(
-                    f"Section letter '{letter}' already exists in plan "
-                    f"'{plan_scope}'."
+                    f"Section letter '{letter}' already exists in plan '{plan_scope}'."
                 )
             sec = sec_repo.add(
                 PlanSection(

@@ -68,8 +68,7 @@ def _bootstrap_default_routines(session, project_id: int) -> None:  # type: igno
     from cod_doc.services import routine_service
 
     existing = session.execute(
-        select(RoutineModel.row_id)
-        .where(
+        select(RoutineModel.row_id).where(
             RoutineModel.project_id == project_id,
             RoutineModel.name == "approval_stale_default",
         )

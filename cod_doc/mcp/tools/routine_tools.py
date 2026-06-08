@@ -82,10 +82,17 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
                 r = routine_service.create(
-                    session, project_id,
-                    name=name, check_name=check_name, trigger=trigger,
-                    cron=cron, check_args=check_args, on_finding=on_finding,
-                    concurrency=concurrency, catch_up=catch_up, enabled=enabled,
+                    session,
+                    project_id,
+                    name=name,
+                    check_name=check_name,
+                    trigger=trigger,
+                    cron=cron,
+                    check_args=check_args,
+                    on_finding=on_finding,
+                    concurrency=concurrency,
+                    catch_up=catch_up,
+                    enabled=enabled,
                 )
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
@@ -117,7 +124,9 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="routine_update_status")
     def routine_update_status(
-        project: str, name: str, enabled: bool,
+        project: str,
+        name: str,
+        enabled: bool,
     ) -> dict[str, Any]:
         """Enable or disable a routine without removing it."""
         from cod_doc.infra.db import transactional
@@ -129,7 +138,10 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
                 r = routine_service.update_status(
-                    session, project_id, name, enabled=enabled,
+                    session,
+                    project_id,
+                    name,
+                    enabled=enabled,
                 )
         except RoutineNotFoundError as exc:
             raise ValueError(str(exc)) from exc
@@ -173,7 +185,9 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="routine_history")
     def routine_history(
-        project: str, name: str, limit: int = 20,
+        project: str,
+        name: str,
+        limit: int = 20,
     ) -> list[dict[str, Any]]:
         """Recent RoutineRun rows for a routine, newest first."""
         from cod_doc.infra.db import transactional

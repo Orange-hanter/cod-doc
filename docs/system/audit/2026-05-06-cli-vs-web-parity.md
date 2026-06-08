@@ -147,7 +147,7 @@ coverage (конфликт ключа, broken refs).
 **Где:** [cod_doc/cli/cmd_audit.py](../../../cod_doc/cli/cmd_audit.py) — 297 LOC,
 запускает frontmatter-checks (FM-001..FM-005) + drift-checks (DR-*) по всему проекту.
 
-**Симптом:** [validation_pattern](../../../../.claude/projects/-Users-dakh-Git-cod-doc/memory/validation_pattern.md)
+**Симптом:** memory `validation_pattern.md`
 закрепляет advisory-аудит как часть write-path, но **batch-запуск из Web
 отсутствует**. Health-check проекта = терминал.
 
@@ -221,7 +221,7 @@ cod-doc plan export PLAN -p P [--section progress_overview|next_batch|...]
 
 **Где:** [cod_doc/cli/doc/cmd_drift.py](../../../cod_doc/cli/doc/cmd_drift.py).
 
-**Симптом:** drift-detection — часть [validation_pattern](../../../../.claude/projects/-Users-dakh-Git-cod-doc/memory/validation_pattern.md)
+**Симптом:** drift-detection — часть memory `validation_pattern.md`
 (FM-004/FM-005 advisory). Из Web нельзя понять, расходится ли on-disk файл
 с проекцией БД. Это особенно опасно после ручной правки markdown снаружи.
 

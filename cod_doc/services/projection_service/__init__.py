@@ -19,15 +19,23 @@ Public API:
 - `render_markdown` — pure: render frontmatter + body to a markdown string.
 - `export_document` — write the rendered markdown, update `projection_hash`.
 - `detect_drift` — compare DB / projection_hash / file hashes.
-- `import_document` — apply frontmatter changes from a file back to the DB.
+- `import_document` — apply markdown/frontmatter changes from a tracked file
+  back to the DB and accept the file hash as the current import baseline.
 
 Caller owns the transaction.
 """
 
 from __future__ import annotations
 
-from ._types import DriftReport, DriftStatus, ExportResult, PathEscapeError
-from .drift import detect_drift
+from ._types import (
+    DriftReport,
+    DriftStatus,
+    ExportResult,
+    PathEscapeError,
+    ProjectDriftItem,
+    ProjectDriftReport,
+)
+from .drift import detect_drift, detect_project_drift
 from .export import export_document
 from .import_doc import import_document
 from .render import render_markdown
@@ -37,7 +45,10 @@ __all__ = [
     "DriftStatus",
     "ExportResult",
     "PathEscapeError",
+    "ProjectDriftItem",
+    "ProjectDriftReport",
     "detect_drift",
+    "detect_project_drift",
     "export_document",
     "import_document",
     "render_markdown",

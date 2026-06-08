@@ -24,7 +24,8 @@ def _get_tool(mcp: FastMCP, name: str) -> Any:
 
 
 def test_plan_sections_list_returns_letters_titles_and_counts(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
 
@@ -37,9 +38,7 @@ def test_plan_sections_list_returns_letters_titles_and_counts(
         session.add(proj)
         session.flush()
 
-        plan = PlanModel(
-            project_id=proj.row_id, scope="p-plan", created=now, last_updated=now
-        )
+        plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
         session.add(plan)
         session.flush()
 
@@ -56,7 +55,7 @@ def test_plan_sections_list_returns_letters_titles_and_counts(
         session.flush()
 
         # 3 tasks in A (1 done), 1 in B, 0 in C.
-        for i, (sec_id, status) in enumerate(
+        for i, (sec_id, _status) in enumerate(
             [
                 (sec_a.row_id, TaskStatus.PENDING),
                 (sec_a.row_id, TaskStatus.PENDING),
@@ -69,7 +68,7 @@ def test_plan_sections_list_returns_letters_titles_and_counts(
                 project_id=proj.row_id,
                 plan_id=plan.row_id,
                 section_id=sec_id,
-                task_id=f"PLN-{i+1:03d}",
+                task_id=f"PLN-{i + 1:03d}",
                 title=f"task {i}",
                 type=TaskType.FEATURE,
                 priority=Priority.MEDIUM,
@@ -78,12 +77,14 @@ def test_plan_sections_list_returns_letters_titles_and_counts(
             if i == 0:
                 # Mark one of A's tasks as done.
                 from cod_doc.infra.models import TaskModel
+
                 m = session.get(TaskModel, task.row_id)
                 assert m is not None
                 m.status = TaskStatus.DONE
                 session.flush()
 
     from cod_doc.mcp.tools import plan_tools as pt
+
     monkeypatch.setattr(pt, "session_factory", lambda project: (factory, None))
 
     mcp = FastMCP("test")
@@ -108,7 +109,8 @@ def test_plan_sections_list_returns_letters_titles_and_counts(
 
 
 def test_plan_sections_list_unknown_plan_raises(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -120,6 +122,7 @@ def test_plan_sections_list_unknown_plan_raises(
         session.flush()
 
     from cod_doc.mcp.tools import plan_tools as pt
+
     monkeypatch.setattr(pt, "session_factory", lambda project: (factory, None))
 
     mcp = FastMCP("test")
@@ -127,5 +130,6 @@ def test_plan_sections_list_unknown_plan_raises(
     plan_sections_list = _get_tool(mcp, "plan_sections_list")
 
     import pytest
+
     with pytest.raises(ValueError, match="not found"):
         plan_sections_list(project="p", plan_scope="nonexistent")

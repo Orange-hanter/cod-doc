@@ -31,6 +31,7 @@ def adr_client(tmp_path: Path, migrate_db):
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
     Project(entry).init()
 
@@ -41,24 +42,32 @@ def adr_client(tmp_path: Path, migrate_db):
         proj = ProjectRepository(session).add(
             ProjectEntity(slug="adr-demo", title="Demo", root_path=str(repo), config={})
         )
-        proj.created = now; proj.updated = now
+        proj.created = now
+        proj.updated = now
         session.flush()
 
         adr_service.create(
-            session, project_id=proj.row_id,
-            title="Layered architecture with DIP", status="accepted",
-            context="LLM-provider abstraction needed", decision="4-layer + DIP",
+            session,
+            project_id=proj.row_id,
+            title="Layered architecture with DIP",
+            status="accepted",
+            context="LLM-provider abstraction needed",
+            decision="4-layer + DIP",
             adr_id="ADR-001",
         )
         adr_service.create(
-            session, project_id=proj.row_id,
-            title="Use SQLite for local-first", status="proposed",
-            context="docker-free deployment", decision="SQLite via SQLAlchemy",
+            session,
+            project_id=proj.row_id,
+            title="Use SQLite for local-first",
+            status="proposed",
+            context="docker-free deployment",
+            decision="SQLite via SQLAlchemy",
             adr_id="ADR-002",
         )
     engine.dispose()
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         yield client, entry
 

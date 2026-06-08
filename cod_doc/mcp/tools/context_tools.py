@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections import Counter
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from cod_doc.mcp.tools._db import require_project_id, session_factory
 
@@ -14,6 +15,8 @@ if TYPE_CHECKING:
 
 def _active_profile() -> str:
     """Defer import to avoid circular: server depends on context_tools."""
+    if profile := os.environ.get("COD_DOC_ACTIVE_PROFILE"):
+        return profile
     try:
         from cod_doc.mcp.server import get_active_profile
 
@@ -183,11 +186,7 @@ def register(mcp: FastMCP) -> None:
         deprecated = "DEPRECATED" in desc.upper()[:80]
 
         # Crude related-tools heuristic: other tools in the same family.
-        related = sorted(
-            n
-            for n in tools
-            if n != name and _tool_family(n) == family
-        )[:5]
+        related = sorted(n for n in tools if n != name and _tool_family(n) == family)[:5]
 
         return {
             "name": name,
@@ -269,35 +268,40 @@ def register(mcp: FastMCP) -> None:
             return {"ok": True, "result": result, "error": None}
         except TaskNotFoundError as exc:
             return _envelope_error(
-                "not_found", str(exc),
+                "not_found",
+                str(exc),
                 hint="Verify task_id via task_list or task_find_duplicate(title=...).",
                 related_tools=["task_list", "task_find_duplicate"],
                 retry_safe=False,
             )
         except DuplicateTaskError as exc:
             return _envelope_error(
-                "duplicate", str(exc),
+                "duplicate",
+                str(exc),
                 hint="Pass allow_duplicate=True to override, or update the existing task.",
                 related_tools=["task_find_duplicate", "task_update_status"],
                 retry_safe=False,
             )
         except TaskAlreadyDoneError as exc:
             return _envelope_error(
-                "already_done", str(exc),
+                "already_done",
+                str(exc),
                 hint="The task is already in 'done' status — no further action needed.",
                 related_tools=["task_get"],
                 retry_safe=False,
             )
         except TaskBlockedError as exc:
             return _envelope_error(
-                "blocked", str(exc),
+                "blocked",
+                str(exc),
                 hint="Close blocking dependencies first, then retry task_complete.",
                 related_tools=["task_list_blocked", "plan_ready"],
                 retry_safe=False,
             )
         except StatusTransitionError as exc:
             return _envelope_error(
-                "transition_invalid", str(exc),
+                "transition_invalid",
+                str(exc),
                 hint=(
                     "See cod_doc/services/task_status_machine.py for the legal "
                     "transition graph (skill task-standard)."
@@ -307,21 +311,24 @@ def register(mcp: FastMCP) -> None:
             )
         except ValidationError as exc:
             return _envelope_error(
-                "validation", str(exc),
+                "validation",
+                str(exc),
                 hint="Inspect the failing field and retry with corrected args.",
                 related_tools=["capabilities"],
                 retry_safe=False,
             )
         except (LookupError, ValueError) as exc:
             return _envelope_error(
-                "validation", str(exc),
+                "validation",
+                str(exc),
                 hint=None,
                 related_tools=[],
                 retry_safe=False,
             )
         except Exception as exc:  # last-resort
             return _envelope_error(
-                "internal", f"{type(exc).__name__}: {exc}",
+                "internal",
+                f"{type(exc).__name__}: {exc}",
                 hint="Server-side error — check logs.",
                 related_tools=[],
                 retry_safe=True,
@@ -353,9 +360,7 @@ def register(mcp: FastMCP) -> None:
         import json
         from pathlib import Path
 
-        snapshot_dir = (
-            Path(__file__).resolve().parents[3] / ".cod-doc" / "tool_snapshots"
-        )
+        snapshot_dir = Path(__file__).resolve().parents[3] / ".cod-doc" / "tool_snapshots"
         snap_path = snapshot_dir / f"{since}.json"
         if not snap_path.exists():
             return {
@@ -372,7 +377,11 @@ def register(mcp: FastMCP) -> None:
             }
 
         snap_data = json.loads(snap_path.read_text(encoding="utf-8"))
-        snap_tools = {t["name"]: t for t in snap_data.get("tools", [])}
+        snap_tools: dict[str, dict[str, Any]] = {
+            str(t["name"]): t
+            for t in snap_data.get("tools", [])
+            if isinstance(t, dict) and "name" in t
+        }
 
         current = {
             t.name: {
@@ -389,10 +398,12 @@ def register(mcp: FastMCP) -> None:
         for name in sorted(set(current) & set(snap_tools)):
             cur = current[name]
             snap = snap_tools[name]
-            cur_props = set((cur["input_schema"].get("properties") or {}).keys())
-            snap_props = set((snap["input_schema"].get("properties") or {}).keys())
-            cur_req = set(cur["input_schema"].get("required") or [])
-            snap_req = set(snap["input_schema"].get("required") or [])
+            cur_schema = cast("dict[str, Any]", cur["input_schema"] or {})
+            snap_schema = cast("dict[str, Any]", snap.get("input_schema") or {})
+            cur_props = set((cur_schema.get("properties") or {}).keys())
+            snap_props = set((snap_schema.get("properties") or {}).keys())
+            cur_req = set(cur_schema.get("required") or [])
+            snap_req = set(snap_schema.get("required") or [])
             fields_added = sorted(cur_props - snap_props)
             fields_removed = sorted(snap_props - cur_props)
             required_changed = cur_req != snap_req

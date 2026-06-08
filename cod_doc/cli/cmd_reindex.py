@@ -49,8 +49,10 @@ def reindex_files(ctx: click.Context, project: str, max_files: int) -> None:
             console.print(f"[red]Project '{project}' not in DB.[/red]")
             sys.exit(1)
         result = repo_index_service.scan_project(
-            session, project_id=proj.row_id,
-            repo_path=Path(entry.path), max_files=max_files,
+            session,
+            project_id=proj.row_id,
+            repo_path=Path(entry.path),
+            max_files=max_files,
         )
 
     console.print(

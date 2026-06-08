@@ -76,8 +76,7 @@ def test_doc_family_rows_sum_to_itogo() -> None:
     declared_total = int(total_match.group(1))
     summed = sum(family_counts)
     assert summed == declared_total, (
-        f"Sum of family rows ({summed}) != ИТОГО ({declared_total}). "
-        f"Family counts: {family_counts}"
+        f"Sum of family rows ({summed}) != ИТОГО ({declared_total}). Family counts: {family_counts}"
     )
 
 

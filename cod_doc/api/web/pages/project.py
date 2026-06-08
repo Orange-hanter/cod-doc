@@ -17,6 +17,7 @@ from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import EntityKind, Priority, TaskType
 from cod_doc.services import ai_generate, trace_service
 from cod_doc.services import plan_service as plans
+from cod_doc.services import project_health_service as health_svc
 from cod_doc.services import project_service as projects
 from cod_doc.services import revision_service as revisions
 from cod_doc.services import task_service as task_svc
@@ -44,6 +45,13 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
     plan_rows: list[dict[str, Any]] = []
     recent_revs: list[dict[str, Any]] = []
     db_available = False
+    drift_health = {
+        "level": "muted",
+        "label": "no db",
+        "findings": None,
+        "last_run_at": None,
+        "href": None,
+    }
 
     # Header KPI cards: prefer DB-aggregated totals (single source of truth
     # with the Plan-progress block below). Fall back to legacy YAML stats
@@ -77,17 +85,13 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                         "remaining": progress.remaining,
                         "status": progress.status.value,
                         "percent": (
-                            round(100 * progress.done / progress.total)
-                            if progress.total
-                            else 0
+                            round(100 * progress.done / progress.total) if progress.total else 0
                         ),
                     }
                 )
 
             # COD-075: ready batch across all plans in one SQL — was N+1.
-            for t in plans.ready_for_project(
-                session, project_db_id, limit=OVERVIEW_READY_LIMIT
-            ):
+            for t in plans.ready_for_project(session, project_db_id, limit=OVERVIEW_READY_LIMIT):
                 ready_tasks.append(
                     {
                         "task_id": t.task_id,
@@ -115,6 +119,19 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                         "reason": r.reason or "",
                     }
                 )
+
+            project_health = health_svc.build_project_health(
+                session,
+                project_db_id,
+                root_path=Path(proj.entry.path),
+            )
+            drift_routine_name = project_health["routines"]["doc_drift"]["name"]
+            drift_health = health_svc.doc_drift_badge(
+                project_health,
+                href=f"/p/{slug}/routines#routine-{drift_routine_name}"
+                if drift_routine_name
+                else None,
+            )
 
     if db_available and any((db_total, db_done, db_in_progress)):
         kpi = {
@@ -146,6 +163,7 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
             "ready_tasks": ready_tasks,
             "plan_rows": plan_rows,
             "recent_revs": recent_revs,
+            "drift_health": drift_health,
         },
     )
 
@@ -234,9 +252,7 @@ def import_master_scan(
     files = _walk_doc_files(Path(proj.entry.path))
 
     try:
-        draft, meta = ai_generate.generate_master_from_folder(
-            files, cfg=cfg, intent=intent
-        )
+        draft, meta = ai_generate.generate_master_from_folder(files, cfg=cfg, intent=intent)
         notice = (
             f"Scanned {len(draft.files_seen)} files; "
             f"{len(draft.coverage_tasks)} coverage tasks proposed."
@@ -325,9 +341,7 @@ async def import_master_save(
                 continue
             type_ = types[i] if i < len(types) else "docs"
             priority = priorities[i] if i < len(priorities) else "medium"
-            letter = (
-                str(section_letters[i] if i < len(section_letters) else "").upper().strip()
-            )
+            letter = str(section_letters[i] if i < len(section_letters) else "").upper().strip()
             description = str(descriptions[i] if i < len(descriptions) else "")
             section = section_by_letter.get(letter) or sections[0]
             if section.row_id is None:
@@ -356,8 +370,7 @@ async def import_master_save(
     session.commit()
 
     return RedirectResponse(
-        url=f"/p/{slug}?master_written={'1' if write_master else '0'}"
-        f"&tasks_saved={saved_tasks}",
+        url=f"/p/{slug}?master_written={'1' if write_master else '0'}&tasks_saved={saved_tasks}",
         status_code=303,
     )
 

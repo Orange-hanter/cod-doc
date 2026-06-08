@@ -70,6 +70,7 @@ def web_app_client(tmp_path: Path):
     from cod_doc.api.server import app
 
     if "/__test_raises__" not in {r.path for r in app.routes}:  # type: ignore[attr-defined]
+
         @app.get("/__test_raises__")
         def _probe() -> None:
             raise NotFoundWebError("test-not-found")
@@ -102,6 +103,7 @@ def test_weberror_handler_truncates_flash_cookie(web_app_client) -> None:
     from cod_doc.api.server import app
 
     if "/__test_huge__" not in {r.path for r in app.routes}:  # type: ignore[attr-defined]
+
         @app.get("/__test_huge__")
         def _huge() -> None:
             raise NotFoundWebError(huge)

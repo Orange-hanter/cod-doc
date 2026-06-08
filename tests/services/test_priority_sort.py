@@ -35,14 +35,10 @@ def _seed(session: Session) -> tuple[int, int, int]:
     proj.updated = now
     session.add(proj)
     session.flush()
-    plan = PlanModel(
-        project_id=proj.row_id, scope="prio-plan", created=now, last_updated=now
-    )
+    plan = PlanModel(project_id=proj.row_id, scope="prio-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -70,11 +66,15 @@ def test_priority_sql_order_yields_semantic_ranking(engine_with_schema) -> None:
                 author="human:test",
             )
 
-        ordered = session.execute(
-            select(TaskModel.task_id)
-            .where(TaskModel.project_id == p)
-            .order_by(priority_sql_order(TaskModel.priority), TaskModel.task_id)
-        ).scalars().all()
+        ordered = (
+            session.execute(
+                select(TaskModel.task_id)
+                .where(TaskModel.project_id == p)
+                .order_by(priority_sql_order(TaskModel.priority), TaskModel.task_id)
+            )
+            .scalars()
+            .all()
+        )
 
     # critical < high < medium < low
     assert ordered == ["PR-002", "PR-004", "PR-003", "PR-001"]
@@ -105,9 +105,13 @@ def test_unknown_priority_values_sink_to_bottom(engine_with_schema) -> None:  # 
         )
         session.flush()
 
-        ordered = session.execute(
-            select(TaskModel.task_id)
-            .where(TaskModel.project_id == p)
-            .order_by(priority_sql_order(TaskModel.priority))
-        ).scalars().all()
+        ordered = (
+            session.execute(
+                select(TaskModel.task_id)
+                .where(TaskModel.project_id == p)
+                .order_by(priority_sql_order(TaskModel.priority))
+            )
+            .scalars()
+            .all()
+        )
     assert ordered == ["PR-001"]

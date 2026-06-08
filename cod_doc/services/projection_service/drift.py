@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from ._internals import _require_doc_model
 from ._safety import _safe_target, _sha256
-from ._types import DriftReport, DriftStatus
+from ._types import DriftReport, DriftStatus, ProjectDriftItem, ProjectDriftReport
 from .render import render_markdown
 
 if TYPE_CHECKING:
@@ -41,8 +41,11 @@ def detect_drift(
 
     file_hash = _sha256(file_path.read_text(encoding="utf-8"))
 
+    accepted_file_hash = getattr(model, "content_sha256_head", None)
     if model.projection_hash != db_hash:
         status = DriftStatus.STALE_EXPORT
+    elif accepted_file_hash and file_hash == accepted_file_hash:
+        status = DriftStatus.IN_SYNC
     elif file_hash != model.projection_hash:
         status = DriftStatus.EDITED_IN_PLACE
     else:
@@ -54,4 +57,49 @@ def detect_drift(
         projection_hash=model.projection_hash,
         db_content_hash=db_hash,
         file_hash=file_hash,
+    )
+
+
+def detect_project_drift(
+    session: Session,
+    project_id: int,
+    *,
+    root_path: Path,
+    limit: int | None = None,
+) -> ProjectDriftReport:
+    """Project-wide DB ↔ markdown projection drift summary.
+
+    The report is read-only and intentionally mirrors the shape needed by CLI,
+    routines, MCP, and Web health badges.
+    """
+    from cod_doc.services import doc_service
+
+    docs = doc_service.list_for_project(session, project_id)
+    if limit is not None:
+        docs = docs[:limit]
+
+    counts = {status.value: 0 for status in DriftStatus}
+    issues: list[ProjectDriftItem] = []
+    checked = 0
+
+    for doc in docs:
+        if doc.row_id is None:
+            continue
+        checked += 1
+        report = detect_drift(session, doc.row_id, root_path=root_path)
+        counts[report.status.value] += 1
+        if report.status is not DriftStatus.IN_SYNC:
+            issues.append(
+                ProjectDriftItem(
+                    doc_key=doc.doc_key,
+                    path=doc.path,
+                    report=report,
+                )
+            )
+
+    return ProjectDriftReport(
+        project_id=project_id,
+        total_docs=checked,
+        counts=counts,
+        issues=issues,
     )

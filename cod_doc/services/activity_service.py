@@ -46,8 +46,8 @@ def _uuid7() -> str:
     """
     ts_ms = int(time.time() * 1000) & ((1 << 48) - 1)
     rand = int.from_bytes(os.urandom(10), "big")  # 80 random bits
-    rand_a = (rand >> 64) & 0xFFF                 # 12 bits
-    rand_b = rand & ((1 << 62) - 1)               # 62 bits
+    rand_a = (rand >> 64) & 0xFFF  # 12 bits
+    rand_b = rand & ((1 << 62) - 1)  # 62 bits
 
     val = (ts_ms << 80) | (0x7 << 76) | (rand_a << 64) | (0b10 << 62) | rand_b
     hex_str = f"{val:032x}"
@@ -135,12 +135,13 @@ def list_events(
         count_q = count_q.where(ActivityEventModel.ts <= until)
 
     total = int(session.execute(count_q).scalar_one() or 0)
-    rows = list(session.execute(
-        base
-        .order_by(ActivityEventModel.ts.desc(), ActivityEventModel.row_id.desc())
-        .limit(limit)
-        .offset(offset)
-    ).scalars())
+    rows = list(
+        session.execute(
+            base.order_by(ActivityEventModel.ts.desc(), ActivityEventModel.row_id.desc())
+            .limit(limit)
+            .offset(offset)
+        ).scalars()
+    )
 
     return {
         "items": [_event_to_dict(e) for e in rows],

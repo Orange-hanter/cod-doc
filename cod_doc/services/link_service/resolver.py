@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 
 
 _MD_LABEL_RE = re.compile(r"\[([^\]]+)\]")
+_LINE_FRAGMENT_RE = re.compile(r"^L(?P<start>\d+)(?:-L?(?P<end>\d+))?$")
 
 
 def _extract_label(raw: str) -> str | None:
@@ -90,9 +92,7 @@ def _target_candidates(parsed_key: str, source_doc_key: str | None) -> list[str]
     return out
 
 
-def _lookup_doc_id(
-    session: Session, project_id: int, doc_key: str
-) -> int | None:
+def _lookup_doc_id(session: Session, project_id: int, doc_key: str) -> int | None:
     return session.execute(
         select(DocumentModel.row_id).where(
             DocumentModel.project_id == project_id,
@@ -114,6 +114,58 @@ def _resolve_canonical(
         if _lookup_doc_id(session, project_id, cand) is not None:
             return True, cand, None
     return False, None, f"document not found: {doc_key}"
+
+
+def _project_root(session: Session, project_id: int) -> Path | None:
+    proj = session.execute(
+        select(ProjectModel).where(ProjectModel.row_id == project_id)
+    ).scalar_one_or_none()
+    if proj is None or not proj.root_path:
+        return None
+    return Path(proj.root_path)
+
+
+def _candidate_paths(parsed_key: str, source_doc_key: str | None) -> list[str]:
+    """Return relative filesystem candidates for markdown file/dir refs."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _add(path: str) -> None:
+        cleaned = path.strip("/")
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            out.append(cleaned)
+
+    for cand in _target_candidates(parsed_key, source_doc_key):
+        _add(cand)
+        if not cand.endswith("/") and Path(cand).suffix == "":
+            _add(f"{cand}.md")
+    return out
+
+
+def _resolve_markdown(
+    session: Session,
+    project_id: int,
+    doc_key: str | None,
+    source_doc_key: str | None = None,
+) -> tuple[bool, str | None, str | None]:
+    """Resolve markdown refs to DB docs, or to existing files/directories."""
+    ok, to_key, reason = _resolve_canonical(session, project_id, doc_key, source_doc_key)
+    if ok or not doc_key:
+        return ok, to_key, reason
+
+    root = _project_root(session, project_id)
+    if root is None:
+        return False, None, f"project root unknown for project_id={project_id}"
+    for rel in _candidate_paths(doc_key, source_doc_key):
+        target = root / rel
+        try:
+            target.relative_to(root)
+        except ValueError:
+            continue
+        if target.exists():
+            return True, None, None
+    return False, None, reason
 
 
 def _resolve_section_anchor(
@@ -215,50 +267,79 @@ def _resolve_code_ref(
     project_id: int,
     file_path: str | None,
     symbol: str | None,
+    source_doc_key: str | None = None,
 ) -> tuple[bool, str | None, str | None]:
     """OBI-020: resolve a code-ref by checking the file exists on disk.
 
-    Returns (ok, file_path_back, reason). ``file_path`` is taken as-is —
-    the parser already normalized (no ``./``, no leading ``/``). Resolution
-    is fail-fast: if the file is missing under the project root,
+    Returns (ok, file_path_back, reason). The parser normalizes ``./`` and
+    leading ``../`` segments without retaining source context, so resolution
+    tries root-relative candidates and source-doc-relative candidates.
+    Resolution is fail-fast: if the file is missing under the project root,
     ``broken_reason`` carries an actionable message.
 
     Symbol-level verification (does the file contain ``#symbol``?) is
     a future enhancement — for now we only verify file existence.
     """
-    from pathlib import Path
-
     if not file_path:
         return (False, None, "missing file_path")
 
-    proj = session.execute(
-        select(ProjectModel).where(ProjectModel.row_id == project_id)
-    ).scalar_one_or_none()
-    if proj is None or not proj.root_path:
+    root = _project_root(session, project_id)
+    if root is None:
         return (False, file_path, f"project root unknown for project_id={project_id}")
 
-    target = Path(proj.root_path) / file_path
-    if not target.exists():
+    target: Path | None = None
+    matched_path: str | None = None
+    for candidate in _candidate_paths(file_path, source_doc_key):
+        candidate_target = root / candidate
+        try:
+            candidate_target.relative_to(root)
+        except ValueError:
+            continue
+        if not candidate_target.exists() and candidate_target.suffix == ".py":
+            package_init = candidate_target.with_suffix("") / "__init__.py"
+            if package_init.exists():
+                candidate_target = package_init
+        if candidate_target.exists():
+            target = candidate_target
+            matched_path = candidate_target.relative_to(root).as_posix()
+            break
+    if target is None:
         return (
-            False, file_path,
+            False,
+            file_path,
             f"file not found under project root: {file_path!r}",
         )
+    if matched_path is None:
+        matched_path = file_path
     if not target.is_file():
-        return (False, file_path, f"target is not a regular file: {file_path!r}")
+        return (False, matched_path, f"target is not a regular file: {matched_path!r}")
     # Optionally also check that ``symbol`` appears in the file. We don't
     # parse AST (different per language) — just substring match, which
     # catches typos without false-positive on similar prefixes.
     if symbol:
+        line_match = _LINE_FRAGMENT_RE.fullmatch(symbol)
+        if line_match:
+            total_lines = len(target.read_text(encoding="utf-8", errors="replace").splitlines())
+            start = int(line_match.group("start"))
+            end = int(line_match.group("end") or start)
+            if 1 <= start <= end <= total_lines:
+                return (True, matched_path, None)
+            return (
+                False,
+                matched_path,
+                f"line fragment {symbol!r} outside {matched_path!r}",
+            )
         try:
             text = target.read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
-            return (False, file_path, f"unreadable: {exc}")
+            return (False, matched_path, f"unreadable: {exc}")
         if symbol not in text:
             return (
-                False, file_path,
-                f"symbol {symbol!r} not found in {file_path!r}",
+                False,
+                matched_path,
+                f"symbol {symbol!r} not found in {matched_path!r}",
             )
-    return (True, file_path, None)
+    return (True, matched_path, None)
 
 
 def _reparse_link(model: LinkModel) -> ParsedLink:
@@ -282,6 +363,53 @@ def _source_doc_key_for_section(session: Session, section_id: int) -> str | None
         .join(SectionModel, SectionModel.document_id == DocumentModel.row_id)
         .where(SectionModel.row_id == section_id)
     ).scalar_one_or_none()
+
+
+def _source_doc_for_section(session: Session, section_id: int) -> DocumentModel | None:
+    return session.execute(
+        select(DocumentModel)
+        .join(SectionModel, SectionModel.document_id == DocumentModel.row_id)
+        .where(SectionModel.row_id == section_id)
+    ).scalar_one_or_none()
+
+
+def _task_exists(session: Session, project_id: int, task_id: str | None) -> bool:
+    if not task_id:
+        return False
+    return (
+        session.execute(
+            select(TaskModel.row_id).where(
+                TaskModel.project_id == project_id,
+                TaskModel.task_id == task_id,
+            )
+        ).scalar_one_or_none()
+        is not None
+    )
+
+
+def _coerce_execution_plan_bare_adr_task(
+    session: Session,
+    *,
+    project_id: int,
+    source_doc: DocumentModel | None,
+    parsed: ParsedLink,
+) -> tuple[LinkKind, str | None]:
+    """Treat bare ADR-NNN in execution plans as task refs when a task exists.
+
+    The ADR-system roadmap used task IDs such as ADR-006 before ADR refs
+    became first-class. Explicit forms like ``[[adr:ADR-006]]`` still mean
+    Architecture Decision Record; only the bare token in execution-plan docs
+    is contextually a task.
+    """
+    if (
+        source_doc is not None
+        and source_doc.type == "execution-plan"
+        and parsed.kind is LinkKind.ADR
+        and parsed.raw == (parsed.target_adr_id or "")
+        and _task_exists(session, project_id, parsed.target_adr_id)
+    ):
+        return LinkKind.TASK, parsed.target_adr_id
+    return parsed.kind, None
 
 
 def _apply_resolution(
@@ -317,7 +445,7 @@ def _apply_resolution(
         )
         model.to_doc_key = to_key
     elif kind is LinkKind.MARKDOWN:
-        ok, to_key, reason = _resolve_canonical(
+        ok, to_key, reason = _resolve_markdown(
             session, project_id, parsed.target_doc_key, source_doc_key
         )
         model.to_doc_key = to_key
@@ -325,7 +453,9 @@ def _apply_resolution(
         ok, to_key, reason = _resolve_wiki(session, project_id, parsed.target_label)
         model.to_doc_key = to_key
     elif kind is LinkKind.TASK:
-        ok, to_id, reason = _resolve_task(session, project_id, parsed.target_task_id)
+        ok, to_id, reason = _resolve_task(
+            session, project_id, parsed.target_task_id or model.to_task_id
+        )
         model.to_task_id = to_id
     elif kind is LinkKind.STORY:
         ok, to_id, reason = _resolve_story(session, project_id, parsed.target_story_id)
@@ -338,7 +468,11 @@ def _apply_resolution(
         # project root. ``parsed.target_file_path`` is what the parser
         # produced; ``parsed.target_symbol`` is the optional ``#fragment``.
         ok, file_path, reason = _resolve_code_ref(
-            session, project_id, parsed.target_file_path, parsed.target_symbol,
+            session,
+            project_id,
+            parsed.target_file_path,
+            parsed.target_symbol,
+            source_doc_key,
         )
         model.to_file_path = file_path
         model.to_symbol = parsed.target_symbol
@@ -360,6 +494,7 @@ def sync_section(session: Session, section_id: int) -> list[Link]:
     """
     sec = _section_or_raise(session, section_id)
     project_id = _project_id_for_section(session, section_id)
+    source_doc = _source_doc_for_section(session, section_id)
     parsed = parse(sec.body)
 
     repo = LinkRepository(session)
@@ -367,13 +502,19 @@ def sync_section(session: Session, section_id: int) -> list[Link]:
 
     inserted: list[LinkModel] = []
     for p in parsed:
+        kind, coerced_task_id = _coerce_execution_plan_bare_adr_task(
+            session,
+            project_id=project_id,
+            source_doc=source_doc,
+            parsed=p,
+        )
         m = LinkModel(
             project_id=project_id,
             from_section_id=section_id,
             raw=p.raw,
-            kind=p.kind.value,
+            kind=kind.value,
             to_doc_key=None,
-            to_task_id=None,
+            to_task_id=coerced_task_id,
             to_story_id=None,
             # OBI-020: code-ref payload preserved through sync so resolver
             # has access without re-parsing.
@@ -461,18 +602,21 @@ def list_for_section(session: Session, section_id: int) -> list[Link]:
 
 
 def list_code_refs(
-    session: Session, project_id: int,
+    session: Session,
+    project_id: int,
 ) -> list[dict[str, object]]:
     """OBI-021 (web): all ``kind='code'`` links in the project, plain dicts.
 
     Returns dicts (not LinkModel objects) so the web layer doesn't have to
     import infra models — closes F1 of the 2026-05-15 audit.
     """
-    rows = list(session.execute(
-        select(LinkModel)
-        .where(LinkModel.project_id == project_id, LinkModel.kind == "code")
-        .order_by(LinkModel.to_file_path, LinkModel.to_symbol)
-    ).scalars())
+    rows = list(
+        session.execute(
+            select(LinkModel)
+            .where(LinkModel.project_id == project_id, LinkModel.kind == "code")
+            .order_by(LinkModel.to_file_path, LinkModel.to_symbol)
+        ).scalars()
+    )
     return [
         {
             "file_path": r.to_file_path or "",
@@ -486,9 +630,7 @@ def list_code_refs(
     ]
 
 
-def list_incoming_for_doc(
-    session: Session, project_id: int, doc_key: str
-) -> list[IncomingLink]:
+def list_incoming_for_doc(session: Session, project_id: int, doc_key: str) -> list[IncomingLink]:
     """COD-078: enumerate links pointing at ``doc_key`` with enough source
     context for UI rendering.
 

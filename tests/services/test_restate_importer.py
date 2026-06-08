@@ -46,6 +46,8 @@ def test_walk_doc_files_picks_md_skips_dotdirs(tmp_path: Path) -> None:
     (tmp_path / ".git" / "HEAD.md").write_text("ignored")
     (tmp_path / "node_modules").mkdir()
     (tmp_path / "node_modules" / "x.md").write_text("ignored")
+    (tmp_path / "cod_doc.egg-info").mkdir()
+    (tmp_path / "cod_doc.egg-info" / "PKG-INFO.md").write_text("ignored")
 
     out = restate_importer._walk_doc_files(tmp_path)
     rels = {p.relative_to(tmp_path).as_posix() for p in out}
@@ -53,6 +55,7 @@ def test_walk_doc_files_picks_md_skips_dotdirs(tmp_path: Path) -> None:
     assert "Docs/arch.md" in rels
     assert ".git/HEAD.md" not in rels
     assert "node_modules/x.md" not in rels
+    assert "cod_doc.egg-info/PKG-INFO.md" not in rels
     assert "Docs/image.png" not in rels
 
 
@@ -64,9 +67,7 @@ def test_import_docs_creates_documents(tmp_path: Path, engine_with_schema) -> No
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         project_id = _seed_project(session, "demo", tmp_path)
-        summary = restate_importer.import_docs(
-            session, repo_root=tmp_path, project_id=project_id
-        )
+        summary = restate_importer.import_docs(session, repo_root=tmp_path, project_id=project_id)
     assert summary.imported == 2
     assert summary.skipped == 0
     assert summary.errors == []
@@ -85,15 +86,11 @@ def test_import_docs_is_idempotent(tmp_path: Path, engine_with_schema) -> None: 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         project_id = _seed_project(session, "demo", tmp_path)
-        first = restate_importer.import_docs(
-            session, repo_root=tmp_path, project_id=project_id
-        )
+        first = restate_importer.import_docs(session, repo_root=tmp_path, project_id=project_id)
     assert first.imported == 1
 
     with transactional(factory) as session:
-        again = restate_importer.import_docs(
-            session, repo_root=tmp_path, project_id=project_id
-        )
+        again = restate_importer.import_docs(session, repo_root=tmp_path, project_id=project_id)
     assert again.imported == 0
     assert again.skipped == 1
     assert again.errors == []
@@ -103,9 +100,7 @@ def test_import_docs_handles_empty_repo(tmp_path: Path, engine_with_schema) -> N
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         project_id = _seed_project(session, "empty", tmp_path)
-        summary = restate_importer.import_docs(
-            session, repo_root=tmp_path, project_id=project_id
-        )
+        summary = restate_importer.import_docs(session, repo_root=tmp_path, project_id=project_id)
     assert summary.imported == 0
     assert summary.skipped == 0
 
@@ -116,9 +111,7 @@ def test_import_docs_dry_run_via_rollback(tmp_path: Path, engine_with_schema) ->
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         project_id = _seed_project(session, "demo", tmp_path)
-        summary = restate_importer.import_docs(
-            session, repo_root=tmp_path, project_id=project_id
-        )
+        summary = restate_importer.import_docs(session, repo_root=tmp_path, project_id=project_id)
         assert summary.imported == 1
         session.rollback()
 
@@ -139,7 +132,8 @@ def _write_legacy_yaml(path: Path, entries: list[dict]) -> None:
 
 
 def test_import_legacy_tasks_creates_plan_and_tasks(
-    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+    tmp_path: Path,
+    engine_with_schema,  # type: ignore[no-untyped-def]
 ) -> None:
     yaml_path = tmp_path / ".cod-doc" / "tasks.yaml"
     _write_legacy_yaml(
@@ -199,7 +193,8 @@ def test_import_legacy_tasks_creates_plan_and_tasks(
 
 
 def test_import_legacy_tasks_missing_yaml_returns_error(
-    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+    tmp_path: Path,
+    engine_with_schema,  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -214,7 +209,8 @@ def test_import_legacy_tasks_missing_yaml_returns_error(
 
 
 def test_import_legacy_tasks_skips_entries_without_title(
-    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+    tmp_path: Path,
+    engine_with_schema,  # type: ignore[no-untyped-def]
 ) -> None:
     yaml_path = tmp_path / ".cod-doc" / "tasks.yaml"
     _write_legacy_yaml(
@@ -236,7 +232,8 @@ def test_import_legacy_tasks_skips_entries_without_title(
 
 
 def test_import_legacy_tasks_reuses_existing_plan(
-    tmp_path: Path, engine_with_schema  # type: ignore[no-untyped-def]
+    tmp_path: Path,
+    engine_with_schema,  # type: ignore[no-untyped-def]
 ) -> None:
     """A second import run does not create another 'imported-legacy' plan."""
     yaml1 = tmp_path / ".cod-doc" / "tasks.yaml"
@@ -247,16 +244,13 @@ def test_import_legacy_tasks_reuses_existing_plan(
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         project_id = _seed_project(session, "demo", tmp_path)
-        restate_importer.import_legacy_tasks(
-            session, yaml_path=yaml1, project_id=project_id
-        )
+        restate_importer.import_legacy_tasks(session, yaml_path=yaml1, project_id=project_id)
     with transactional(factory) as session:
-        restate_importer.import_legacy_tasks(
-            session, yaml_path=yaml2, project_id=project_id
-        )
+        restate_importer.import_legacy_tasks(session, yaml_path=yaml2, project_id=project_id)
     with transactional(factory) as session:
         plans = [
-            p for p in plan_service.list_for_project(session, project_id)
+            p
+            for p in plan_service.list_for_project(session, project_id)
             if p.scope == "imported-legacy"
         ]
     assert len(plans) == 1

@@ -46,7 +46,7 @@ def adr_graph(ctx: click.Context, project: str, fmt: str) -> None:
         icon = STATUS_ICON.get(node["status"], "•")
         node_id = node["adr_id"].replace("-", "_")
         label = f"{icon} {node['adr_id']}<br/>{node['title']}"
-        lines.append(f"  {node_id}[\"{label}\"]")
+        lines.append(f'  {node_id}["{label}"]')
     for edge in graph["edges"]:
         from_id = edge["from"].replace("-", "_")
         to_id = edge["to"].replace("-", "_")

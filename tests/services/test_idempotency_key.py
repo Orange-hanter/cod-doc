@@ -32,16 +32,15 @@ def _seed(session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="ip-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="A", slug="A", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
 
 
 def test_task_create_with_same_idempotency_key_returns_cached(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     _idempotency.clear()
     factory = make_session_factory(engine_with_schema)
@@ -75,14 +74,13 @@ def test_task_create_with_same_idempotency_key_returns_cached(
 
     # Only ONE task row exists in DB.
     with transactional(factory) as session:
-        rows = session.execute(
-            select(TaskModel).where(TaskModel.title == "idem")
-        ).scalars().all()
+        rows = session.execute(select(TaskModel).where(TaskModel.title == "idem")).scalars().all()
     assert len(rows) == 1, f"expected single row, got {len(rows)}"
 
 
 def test_different_idempotency_keys_create_separate_tasks(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     _idempotency.clear()
     factory = make_session_factory(engine_with_schema)
@@ -109,14 +107,17 @@ def test_different_idempotency_keys_create_separate_tasks(
     create(**args, title="A2", idempotency_key="k2")
 
     with transactional(factory) as session:
-        rows = session.execute(
-            select(TaskModel).where(TaskModel.title.in_(["A1", "A2"]))
-        ).scalars().all()
+        rows = (
+            session.execute(select(TaskModel).where(TaskModel.title.in_(["A1", "A2"])))
+            .scalars()
+            .all()
+        )
     assert len(rows) == 2
 
 
 def test_no_idempotency_key_does_not_cache(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     """Без idempotency_key duplicate-guard от title по-прежнему работает."""
     _idempotency.clear()

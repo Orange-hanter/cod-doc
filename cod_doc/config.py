@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -171,7 +172,16 @@ class Config(BaseSettings):
         for p in self.projects:
             if p.get("name") == name:
                 return ProjectEntry(**p)
-        return None
+        return _discover_workspace_project(name)
+
+    def discover_workspace_projects(self) -> list[ProjectEntry]:
+        """Return DB-registered projects from the nearest workspace DB.
+
+        This is intentionally read-only: it lets CLI/API commands launched from
+        a repo recover when the global ``~/.cod-doc/config.yaml`` registry is
+        stale, without mutating the user's personal config.
+        """
+        return _discover_workspace_projects()
 
     def add_project(self, entry: ProjectEntry) -> None:
         self.projects = [p for p in self.projects if p.get("name") != entry.name]
@@ -187,7 +197,13 @@ class Config(BaseSettings):
         return False
 
     def list_projects(self) -> list[ProjectEntry]:
-        return [ProjectEntry(**p) for p in self.projects]
+        projects = [ProjectEntry(**p) for p in self.projects]
+        seen = {p.name for p in projects}
+        for entry in self.discover_workspace_projects():
+            if entry.name not in seen:
+                projects.append(entry)
+                seen.add(entry.name)
+        return projects
 
     # ── Validation ───────────────────────────────────────────────────────────
 
@@ -208,3 +224,52 @@ class Config(BaseSettings):
             if doc_type in self._HEAVY_DOC_TYPES
             else self.doc_max_tokens_default
         )
+
+
+def _nearest_workspace_db(start: Path | None = None) -> Path | None:
+    """Find the closest ``.cod-doc/state.db`` from cwd upward."""
+    cur = (start or Path.cwd()).resolve()
+    for parent in (cur, *cur.parents):
+        db_path = parent / ".cod-doc" / "state.db"
+        if db_path.exists():
+            return db_path
+    return None
+
+
+def _entry_from_project_row(slug: str, root_path: str) -> ProjectEntry | None:
+    if not slug or not root_path:
+        return None
+    root = Path(root_path).expanduser().resolve()
+    return ProjectEntry(name=slug, path=str(root), master_md="MASTER.md")
+
+
+def _read_workspace_project_rows(db_path: Path) -> list[tuple[str, str]]:
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            return [
+                (str(slug), str(root_path))
+                for slug, root_path in conn.execute(
+                    "select slug, root_path from project order by slug"
+                ).fetchall()
+            ]
+    except sqlite3.Error:
+        return []
+
+
+def _discover_workspace_projects(start: Path | None = None) -> list[ProjectEntry]:
+    db_path = _nearest_workspace_db(start)
+    if db_path is None:
+        return []
+    entries: list[ProjectEntry] = []
+    for slug, root_path in _read_workspace_project_rows(db_path):
+        entry = _entry_from_project_row(slug, root_path)
+        if entry is not None:
+            entries.append(entry)
+    return entries
+
+
+def _discover_workspace_project(name: str) -> ProjectEntry | None:
+    for entry in _discover_workspace_projects():
+        if entry.name == name:
+            return entry
+    return None

@@ -60,7 +60,9 @@ def adr_show(ctx: click.Context, project: str, adr_id: str, as_json: bool) -> No
         for d in diagrams:
             title = f" — {d['title']}" if d.get("title") else ""
             body.append(f"  [{d['position']}]{title}")
-            body.append(f"    [dim]{d['mermaid'][:120]}{'…' if len(d['mermaid']) > 120 else ''}[/dim]")
+            body.append(
+                f"    [dim]{d['mermaid'][:120]}{'…' if len(d['mermaid']) > 120 else ''}[/dim]"
+            )
         body.append("")
 
     links = payload.get("task_links") or []

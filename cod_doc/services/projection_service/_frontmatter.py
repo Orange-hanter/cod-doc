@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 
@@ -45,7 +45,8 @@ def _frontmatter_dict(model: DocumentModel) -> dict[str, Any]:
 
 
 def _render_frontmatter(fm: dict[str, Any]) -> str:
-    return "---\n" + yaml.dump(fm, sort_keys=True, allow_unicode=True) + "---\n"
+    dumped = cast("str", yaml.dump(fm, sort_keys=True, allow_unicode=True))
+    return "---\n" + dumped + "---\n"
 
 
 def _parse_frontmatter(content: str) -> dict[str, Any]:
@@ -57,9 +58,12 @@ def _parse_frontmatter(content: str) -> dict[str, Any]:
         return {}
     yaml_block = content[3:end].strip()
     try:
-        return yaml.safe_load(yaml_block) or {}
+        loaded = yaml.safe_load(yaml_block) or {}
     except yaml.YAMLError:
         return {}
+    if not isinstance(loaded, dict):
+        return {}
+    return {str(k): v for k, v in loaded.items()}
 
 
 def _apply_frontmatter_to_model(model: DocumentModel, fm: dict[str, Any]) -> None:

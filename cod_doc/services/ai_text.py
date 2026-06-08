@@ -62,9 +62,7 @@ def improve_text_traced(text: str, intent: str, *, cfg: Config) -> ImproveResult
     import time
 
     if not cfg.api_key:
-        raise AIBackendError(
-            "LLM backend not configured: set the API key in /settings."
-        )
+        raise AIBackendError("LLM backend not configured: set the API key in /settings.")
     if not text.strip():
         raise AIBackendError("Nothing to improve — text is empty.")
 
@@ -106,8 +104,6 @@ def improve_text_traced(text: str, intent: str, *, cfg: Config) -> ImproveResult
 
 # ── Doc meta suggestion ────────────────────────────────────────────────────
 
-from dataclasses import dataclass
-
 
 @dataclass
 class DocMetaSuggestion:
@@ -145,7 +141,6 @@ def suggest_doc_meta(description: str, *, cfg: Config) -> DocMetaSuggestion:
     Raises ``AIBackendError`` on failure.
     """
     import json as _json
-    import time as _time
 
     if not cfg.api_key:
         raise AIBackendError("LLM backend not configured: set the API key in /settings.")
@@ -160,7 +155,6 @@ def suggest_doc_meta(description: str, *, cfg: Config) -> DocMetaSuggestion:
     model = cfg.lite_model.strip() if cfg.lite_model and cfg.lite_model.strip() else cfg.model
     client = OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
 
-    started = _time.monotonic()
     try:
         completion = client.chat.completions.create(
             model=model,
@@ -283,8 +277,10 @@ def expand_doc_sections(
 
     # Heavy doc types use the full model + token budget; smaller docs can use the lite model.
     is_heavy = doc_type in cfg._HEAVY_DOC_TYPES
-    model = cfg.model if is_heavy else (
-        cfg.lite_model.strip() if cfg.lite_model and cfg.lite_model.strip() else cfg.model
+    model = (
+        cfg.model
+        if is_heavy
+        else (cfg.lite_model.strip() if cfg.lite_model and cfg.lite_model.strip() else cfg.model)
     )
     budget = cfg.doc_token_budget(doc_type) if doc_type else cfg.doc_max_tokens_default
     client = OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)

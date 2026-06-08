@@ -61,9 +61,7 @@ async def doc_accept(
         reason="accept" if new_status == DocumentStatus.ACTIVE else "status",
     )
     session.commit()
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/docs/{doc_key}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}", status_code=303)
 
 
 def _group_by_folder(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -90,9 +88,7 @@ def _group_by_folder(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
         cursor = root
         for folder in parts[:-1]:
             cursor["total"] += 1
-            existing = next(
-                (s for s in cursor["subfolders"] if s["name"] == folder), None
-            )
+            existing = next((s for s in cursor["subfolders"] if s["name"] == folder), None)
             if existing is None:
                 child_path = f"{cursor['path']}/{folder}" if cursor["path"] else folder
                 existing = _new_node(folder, child_path)
@@ -111,13 +107,15 @@ def _group_by_folder(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
     _sort(root)
     result: list[dict[str, Any]] = list(root["subfolders"])
     if root["files"]:
-        result.append({
-            "name": "(root)",
-            "path": "",
-            "subfolders": [],
-            "files": root["files"],
-            "total": len(root["files"]),
-        })
+        result.append(
+            {
+                "name": "(root)",
+                "path": "",
+                "subfolders": [],
+                "files": root["files"],
+                "total": len(root["files"]),
+            }
+        )
     return result
 
 
@@ -201,10 +199,21 @@ def docs_list(
 # ── COD-078: New blank doc ─────────────────────────────────────────────
 
 _DOCUMENT_TYPES = [
-    "module-spec", "guide", "architecture", "vision", "standard",
-    "execution-plan", "decision", "open-question",
-    "module-subdoc", "task-section", "execution-log", "user-story", "redirect",
+    "module-spec",
+    "guide",
+    "architecture",
+    "vision",
+    "standard",
+    "execution-plan",
+    "decision",
+    "open-question",
+    "module-subdoc",
+    "task-section",
+    "execution-log",
+    "user-story",
+    "redirect",
 ]
+_SOURCE_QUERY = Query(default=None)
 
 
 @router.get("/p/{slug}/docs/new", response_class=HTMLResponse)
@@ -245,12 +254,14 @@ def doc_suggest(
         suggestion = suggest_doc_meta(description, cfg=cfg)
     except AIBackendError as exc:
         return JSONResponse({"error": str(exc)}, status_code=422)
-    return JSONResponse({
-        "title": suggestion.title,
-        "doc_key": suggestion.doc_key,
-        "type": suggestion.type,
-        "preamble": suggestion.preamble,
-    })
+    return JSONResponse(
+        {
+            "title": suggestion.title,
+            "doc_key": suggestion.doc_key,
+            "type": suggestion.type,
+            "preamble": suggestion.preamble,
+        }
+    )
 
 
 @router.post("/p/{slug}/docs/new", response_class=HTMLResponse)
@@ -305,15 +316,11 @@ def doc_new_submit(
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        raise ValidationWebError(
-            f"Документ с таким doc_key уже существует: {doc_key}"
-        ) from exc
+        raise ValidationWebError(f"Документ с таким doc_key уже существует: {doc_key}") from exc
     except ValueError as exc:
         session.rollback()
         raise ValidationWebError(str(exc)) from exc
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/docs/{doc_key}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}", status_code=303)
 
 
 # ── COD-078: AI-generate from existing docs ────────────────────────────
@@ -326,7 +333,7 @@ def doc_generate_form(
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
     intent: str = Query(""),
     type: str = Query(""),
-    source: list[str] = Query(default=[]),
+    source: list[str] | None = _SOURCE_QUERY,
 ) -> HTMLResponse:
     proj = get_project(slug)
     session, project_db_id = db
@@ -337,7 +344,7 @@ def doc_generate_form(
                 "doc_key": d.doc_key,
                 "title": d.title,
                 "type": d.type.value,
-                "preselected": d.doc_key in source,
+                "preselected": d.doc_key in (source or []),
             }
         )
     return templates.TemplateResponse(
@@ -475,12 +482,7 @@ async def doc_generate_save(
             heading = str(heading).strip()
             if not heading:
                 continue
-            anchor = (
-                heading.lower()
-                .replace(" ", "-")
-                .replace("/", "-")[:40]
-                or f"section-{i}"
-            )
+            anchor = heading.lower().replace(" ", "-").replace("/", "-")[:40] or f"section-{i}"
             docs.add_section(
                 session,
                 document_id=doc.row_id,
@@ -500,7 +502,8 @@ async def doc_generate_save(
         # the generated bodies. The link parser picks markdown links up on insert.
         all_body_text = "\n".join(section_bodies_str) + "\n" + preamble
         missing_sources = [
-            s for s in sources
+            s
+            for s in sources
             if s and f"]({s})" not in all_body_text and f"]({s}#" not in all_body_text
         ]
         if missing_sources:
@@ -528,15 +531,11 @@ async def doc_generate_save(
         session.commit()
     except IntegrityError as exc:
         session.rollback()
-        raise ValidationWebError(
-            f"Документ с таким doc_key уже существует: {doc_key}"
-        ) from exc
+        raise ValidationWebError(f"Документ с таким doc_key уже существует: {doc_key}") from exc
     except ValueError as exc:
         session.rollback()
         raise ValidationWebError(str(exc)) from exc
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/docs/{doc_key}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}", status_code=303)
 
 
 @router.post("/p/{slug}/docs/import", response_class=HTMLResponse)
@@ -570,9 +569,7 @@ def docs_import(
     try:
         raw = raw_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise ValidationWebError(
-            "Файл не в UTF-8 — ожидается markdown в кодировке UTF-8."
-        ) from exc
+        raise ValidationWebError("Файл не в UTF-8 — ожидается markdown в кодировке UTF-8.") from exc
 
     fallback_title = (file.filename or doc_key).rsplit("/", 1)[-1]
     if fallback_title.endswith(".md"):
@@ -594,9 +591,7 @@ def docs_import(
         session.rollback()
         raise ValidationWebError(f"Импорт отклонён: {exc}") from exc
 
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/docs/{doc.doc_key}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc.doc_key}", status_code=303)
 
 
 @router.get("/p/{slug}/docs/import/scan")
@@ -624,18 +619,20 @@ def docs_import_scan(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
-    return JSONResponse([
-        {
-            "path": e.path,
-            "doc_key": e.doc_key,
-            "title": e.title,
-            "doc_type": e.doc_type,
-            "sha256_head": e.sha256_head,
-            "status": e.status,
-            "reason": e.reason,
-        }
-        for e in entries
-    ])
+    return JSONResponse(
+        [
+            {
+                "path": e.path,
+                "doc_key": e.doc_key,
+                "title": e.title,
+                "doc_type": e.doc_type,
+                "sha256_head": e.sha256_head,
+                "status": e.status,
+                "reason": e.reason,
+            }
+            for e in entries
+        ]
+    )
 
 
 @router.get("/p/{slug}/docs/import", response_class=HTMLResponse)
@@ -647,9 +644,9 @@ def docs_import_page(
     """PCA-401: Bulk import UI — folder manifest with checkboxes."""
     proj = get_project(slug)
     return templates.TemplateResponse(
+        request,
         "project/docs_import.html",
         {
-            "request": request,
             "project": proj.entry,
             "scan_path": path,
             "slug": slug,
@@ -696,7 +693,7 @@ async def docs_import_apply(
         # PCA-928: capture sha256 head for change detection on next scan.
         source_sha = imports._head_sha256(fpath)
         try:
-            _, created = import_or_update_markdown(
+            _, _created = import_or_update_markdown(
                 session,
                 project_id=project_db_id,
                 doc_key=doc_key,
@@ -807,6 +804,7 @@ def suggestion_accept(
         block = f"\n\n{marker_open}\n**See also:**\n- {new_link_md}\n{marker_close}\n"
         body = body.rstrip() + block
 
+    assert parent_doc.row_id is not None
     doc_service.patch_section(
         session,
         document_id=parent_doc.row_id,
@@ -879,9 +877,7 @@ def doc_show(
                 "row_id": s.row_id,
                 "body": s.body or "",
                 "html": render_markdown(s.body or ""),
-                "head_rev": revisions.head_for_entity(
-                    session, EntityKind.SECTION, s.row_id
-                )
+                "head_rev": revisions.head_for_entity(session, EntityKind.SECTION, s.row_id)
                 if s.row_id is not None
                 else None,
             }
@@ -922,9 +918,7 @@ def doc_show(
                 "sections": [],
             },
         )
-        bucket["sections"].append(
-            {"heading": il.section_heading, "anchor": il.section_anchor}
-        )
+        bucket["sections"].append({"heading": il.section_heading, "anchor": il.section_anchor})
     incoming = sorted(incoming_groups.values(), key=lambda x: x["doc_key"])
 
     # Comments on this document — section-anchored bubbles + doc-level zone.
@@ -952,10 +946,10 @@ def doc_show(
         else:
             doc_level_comments.append(c_view)
     # Attach per-section comment counts onto the rendered section dicts.
-    for s in sections_html:
-        s["comments"] = comments_by_anchor.get(s["anchor"], [])
-        s["open_comments"] = sum(
-            1 for c in s["comments"] if c["status"] == "open"
+    for section_view in sections_html:
+        section_view["comments"] = comments_by_anchor.get(section_view["anchor"], [])
+        section_view["open_comments"] = sum(
+            1 for c in section_view["comments"] if c["status"] == "open"
         )
 
     # PCA-422 follow-up: Suggested links — pending semantic-similarity hits
@@ -963,27 +957,34 @@ def doc_show(
     suggestions_by_section: list[dict[str, Any]] = []
     try:
         from cod_doc.services.link_service import semantic as _semantic
+
         sec_id_to_heading = {s.row_id: s.heading for s in sections_db if s.row_id is not None}
         rows = _semantic.list_suggestions_for_document(
-            session, project_id=project_db_id, document_id=doc.row_id,
+            session,
+            project_id=project_db_id,
+            document_id=doc.row_id,
         )
         # Group by from_section
         grouped: dict[int, list[dict[str, Any]]] = {}
         for r in rows:
-            grouped.setdefault(r["from_section_id"], []).append({
-                "row_id": r["row_id"],
-                "to_doc_key": r["to_doc_key"],
-                "score": round(r["score"], 3),
-            })
+            grouped.setdefault(r["from_section_id"], []).append(
+                {
+                    "row_id": r["row_id"],
+                    "to_doc_key": r["to_doc_key"],
+                    "score": round(r["score"], 3),
+                }
+            )
         for sec_id, items in grouped.items():
-            suggestions_by_section.append({
-                "section_id": sec_id,
-                "section_heading": sec_id_to_heading.get(sec_id, "?"),
-                # Renamed from "items" → "suggestions": Jinja's attribute lookup
-                # resolves `grp.items` to the dict.items builtin method, not the
-                # dict key, raising TypeError on `| length`.
-                "suggestions": items,
-            })
+            suggestions_by_section.append(
+                {
+                    "section_id": sec_id,
+                    "section_heading": sec_id_to_heading.get(sec_id, "?"),
+                    # Renamed from "items" → "suggestions": Jinja's attribute lookup
+                    # resolves `grp.items` to the dict.items builtin method, not the
+                    # dict key, raising TypeError on `| length`.
+                    "suggestions": items,
+                }
+            )
     except Exception:
         suggestions_by_section = []
 
@@ -1075,4 +1076,6 @@ def doc_expand(
             except Exception:
                 pass
     session.commit()
-    return JSONResponse({"created": created, "sections": [{"heading": s.heading} for s in section_drafts]})
+    return JSONResponse(
+        {"created": created, "sections": [{"heading": s.heading} for s in section_drafts]}
+    )

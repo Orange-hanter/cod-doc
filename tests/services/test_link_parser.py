@@ -120,6 +120,24 @@ def test_parse_skips_code_blocks() -> None:
     assert "TST-002" in task_ids
 
 
+def test_parse_skips_inline_code_spans() -> None:
+    parsed = links.parse("Ignore `ADR-007` and `[[doc:KEY]]`; keep ADR-001.")
+    assert len(parsed) == 1
+    assert parsed[0].kind is LinkKind.ADR
+    assert parsed[0].target_adr_id == "ADR-001"
+
+
+def test_parse_skips_documentation_placeholders() -> None:
+    body = (
+        "Examples: [[doc:KEY]], [[doc:<doc_key>#anchor]], [[task:ID]], "
+        "[label](../path.md), [src](src/path.py), [[Wiki Title]]. "
+        "Real: [[doc:real]], [[task:TST-002]]."
+    )
+    parsed = links.parse(body)
+
+    assert [p.raw for p in parsed] == ["[[doc:real]]", "[[task:TST-002]]"]
+
+
 def test_parse_adr_wiki_explicit() -> None:
     parsed = links.parse("See [[adr:ADR-007]] for rationale.")
     assert len(parsed) == 1

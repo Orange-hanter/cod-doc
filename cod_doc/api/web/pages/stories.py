@@ -174,28 +174,38 @@ def stories_list(
     context_docs: list[dict[str, Any]] = []
     context_docs_fresh = 0
     for d in docs_svc.list_for_project(session, project_db_id):
-        is_fresh = bool(
-            last_gen and d.last_updated and d.last_updated > last_gen
-        )
+        is_fresh = bool(last_gen and d.last_updated and d.last_updated > last_gen)
         if is_fresh:
             context_docs_fresh += 1
-        context_docs.append({
-            "doc_key": d.doc_key,
-            "type": d.type.value,
-            "status": d.status.value,
-            "updated_at": d.last_updated.isoformat() if d.last_updated else "",
-            "is_fresh": is_fresh,
-        })
+        context_docs.append(
+            {
+                "doc_key": d.doc_key,
+                "type": d.type.value,
+                "status": d.status.value,
+                "updated_at": d.last_updated.isoformat() if d.last_updated else "",
+                "is_fresh": is_fresh,
+            }
+        )
 
     # Group docs by type for the inventory display — each bucket pairs with a
     # role label from doc_type_guides so the user knows what that type is FOR.
     # Sort buckets in priority order: types that materially help story
     # generation (vision, architecture, module-spec, guide) come first.
     _type_priority = {
-        "vision": 1, "architecture": 2, "module-spec": 3, "module-subdoc": 4,
-        "guide": 5, "standard": 6, "adr": 7, "decision": 8,
-        "execution-plan": 9, "user-story": 10, "open-question": 11,
-        "execution-log": 12, "task-section": 13, "redirect": 14,
+        "vision": 1,
+        "architecture": 2,
+        "module-spec": 3,
+        "module-subdoc": 4,
+        "guide": 5,
+        "standard": 6,
+        "adr": 7,
+        "decision": 8,
+        "execution-plan": 9,
+        "user-story": 10,
+        "open-question": 11,
+        "execution-log": 12,
+        "task-section": 13,
+        "redirect": 14,
     }
     _type_roles = {
         "vision": "Strategic intent — purpose, audience, goals.",
@@ -214,8 +224,8 @@ def stories_list(
         "redirect": "Stubs pointing at canonical homes.",
     }
     by_type: dict[str, list[dict[str, Any]]] = {}
-    for d in context_docs:
-        by_type.setdefault(d["type"], []).append(d)
+    for context_doc in context_docs:
+        by_type.setdefault(context_doc["type"], []).append(context_doc)
     # Sort docs within each type bucket by recency, then put fresh ones first.
     # Two-pass with a stable sort: the second pass becomes the primary key.
     for type_docs in by_type.values():
@@ -262,19 +272,21 @@ def stories_list(
         parsed = _parse_narrative(s.narrative)
         section = _section_of(parsed.get("id_hint", "")) or "?"
 
-        enriched.append({
-            "story_id": s.story_id,
-            "persona": s.persona,
-            "persona_hue": _persona_hue(s.persona),
-            "narrative": s.narrative,
-            "parsed": parsed,
-            "section": section,
-            "status": s.status.value,
-            "priority": s.priority.value,
-            "tasks_total": tasks_total,
-            "tasks_done": tasks_done,
-            "plan_scopes": plan_scopes,
-        })
+        enriched.append(
+            {
+                "story_id": s.story_id,
+                "persona": s.persona,
+                "persona_hue": _persona_hue(s.persona),
+                "narrative": s.narrative,
+                "parsed": parsed,
+                "section": section,
+                "status": s.status.value,
+                "priority": s.priority.value,
+                "tasks_total": tasks_total,
+                "tasks_done": tasks_done,
+                "plan_scopes": plan_scopes,
+            }
+        )
 
     # Build groups for the template — always emit a sorted list so the order
     # is deterministic across renders.
@@ -283,50 +295,62 @@ def stories_list(
     summary_path = proj.entry.cod_doc_dir / "section_summaries.json"
     groups: list[dict[str, Any]] = []
     if group_by == "persona":
-        bucket: dict[str, list[dict[str, Any]]] = {}
+        persona_bucket: dict[str, list[dict[str, Any]]] = {}
         for st in enriched:
-            bucket.setdefault(st["persona"], []).append(st)
-        for key in sorted(bucket.keys()):
-            groups.append({
-                "key": key, "label": key, "hue": _persona_hue(key),
-                "stories": bucket[key], "summary": None,
-            })
+            persona_bucket.setdefault(st["persona"], []).append(st)
+        for key in sorted(persona_bucket.keys()):
+            groups.append(
+                {
+                    "key": key,
+                    "label": key,
+                    "hue": _persona_hue(key),
+                    "stories": persona_bucket[key],
+                    "summary": None,
+                }
+            )
     elif group_by == "none":
-        groups = [{
-            "key": "", "label": "", "hue": "accent",
-            "stories": enriched, "summary": None,
-        }]
+        groups = [
+            {
+                "key": "",
+                "label": "",
+                "hue": "accent",
+                "stories": enriched,
+                "summary": None,
+            }
+        ]
     else:  # section (default)
-        bucket: dict[str, list[dict[str, Any]]] = {}
+        section_bucket: dict[str, list[dict[str, Any]]] = {}
         for st in enriched:
-            bucket.setdefault(st["section"], []).append(st)
+            section_bucket.setdefault(st["section"], []).append(st)
 
         # Natural sort: numeric sections first ("1", "2", …), then "?" last.
         def _sort_key(k: str) -> tuple[int, str]:
             return (0 if k.isdigit() else 1, f"{int(k):04}" if k.isdigit() else k)
 
         # Load all section summaries in one pass (cheap JSON read).
-        section_map = {sec: [s["story_id"] for s in items] for sec, items in bucket.items()}
+        section_map = {sec: [s["story_id"] for s in items] for sec, items in section_bucket.items()}
         loaded_summaries = summaries.load_all(summary_path, section_map)
 
-        for key in sorted(bucket.keys(), key=_sort_key):
+        for key in sorted(section_bucket.keys(), key=_sort_key):
             label = f"Section {key}" if key.isdigit() else "Unsorted"
             summary = loaded_summaries.get(key)
-            groups.append({
-                "key": key,
-                "label": label,
-                "hue": "accent",
-                "stories": bucket[key],
-                "summary": (
-                    {
-                        "text": summary.text,
-                        "generated_at": summary.generated_at,
-                        "stale": summary.stale,
-                    }
-                    if summary
-                    else None
-                ),
-            })
+            groups.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "hue": "accent",
+                    "stories": section_bucket[key],
+                    "summary": (
+                        {
+                            "text": summary.text,
+                            "generated_at": summary.generated_at,
+                            "stale": summary.stale,
+                        }
+                        if summary
+                        else None
+                    ),
+                }
+            )
 
     return templates.TemplateResponse(
         request,
@@ -454,9 +478,7 @@ async def stories_save(
             continue
         saved += 1
     session.commit()
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/stories?saved={saved}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/stories?saved={saved}", status_code=303)
 
 
 # ── Story detail + task generation (COD-069) ──────────────────────────
@@ -491,8 +513,7 @@ def story_show(
                 "priority": story.priority.value,
             },
             "acceptance": [
-                {"position": a.position, "criterion": a.criterion, "met": a.met}
-                for a in acceptance
+                {"position": a.position, "criterion": a.criterion, "met": a.met} for a in acceptance
             ],
             "linked_tasks": [
                 {
@@ -561,18 +582,16 @@ def stories_coverage_analyze(
         raw = _call_lite_raw(prompt, cfg, max_tokens=1200).strip()
         if raw.startswith("```"):
             raw_lines = raw.splitlines()
-            raw = "\n".join(
-                raw_lines[1:-1] if raw_lines[-1].strip() == "```" else raw_lines[1:]
-            )
+            raw = "\n".join(raw_lines[1:-1] if raw_lines[-1].strip() == "```" else raw_lines[1:])
         data = json.loads(raw)
         coverage = {
             "summary": str(data.get("summary", "")),
             "strengths": [str(x) for x in data.get("strengths", [])][:5],
             "gaps": [str(x) for x in data.get("gaps", [])][:5],
             "recommendation": str(data.get("recommendation", "")),
-            "generated_at": __import__("datetime").datetime.now(
-                __import__("datetime").UTC
-            ).isoformat(),
+            "generated_at": __import__("datetime")
+            .datetime.now(__import__("datetime").UTC)
+            .isoformat(),
         }
         coverage_path.parent.mkdir(parents=True, exist_ok=True)
         coverage_path.write_text(json.dumps(coverage, ensure_ascii=False, indent=2))
@@ -627,9 +646,7 @@ def stories_section_analyze(
         raise HTTPException(404, f"No stories in section {section_key}")
 
     try:
-        summary = summaries_svc.generate(
-            summary_path, section_key, section_stories, cfg
-        )
+        summary = summaries_svc.generate(summary_path, section_key, section_stories, cfg)
     except AIBackendError as exc:
         return templates.TemplateResponse(
             request,
@@ -687,9 +704,7 @@ def story_update_status(
         reason="status-promote",
     )
     session.commit()
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/stories/{story_id}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/stories/{story_id}", status_code=303)
 
 
 @router.post(
@@ -718,8 +733,7 @@ def story_tasks_generate(
         if plan and plan.row_id is not None:
             plan_id = plan.row_id
             section_layout = [
-                (s.letter.upper(), s.title)
-                for s in plans.list_sections(session, plan.row_id)
+                (s.letter.upper(), s.title) for s in plans.list_sections(session, plan.row_id)
             ]
 
     try:
@@ -814,9 +828,7 @@ async def story_tasks_save(
             continue
         type_ = types[i] if i < len(types) else "feature"
         priority = priorities[i] if i < len(priorities) else "medium"
-        letter = (
-            str(section_letters[i] if i < len(section_letters) else "").upper().strip()
-        )
+        letter = str(section_letters[i] if i < len(section_letters) else "").upper().strip()
         description = str(descriptions[i] if i < len(descriptions) else "")
         section = section_by_letter.get(letter)
         if section is None or section.row_id is None:

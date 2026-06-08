@@ -17,6 +17,7 @@ contract honest (profile filter expects all 6 names present).
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -69,6 +70,7 @@ def register(mcp: FastMCP) -> None:
             set(ALLOWED_TRANSITIONS.keys())
             | {dst for dsts in ALLOWED_TRANSITIONS.values() for dst in dsts}
         )
+
         # Skills carry only short one-liners here — full bodies arrive
         # later inline in agent_pick's task card (or via agent_get).
         # Many SKILL.md frontmatters use block-scalar descriptions that
@@ -202,7 +204,11 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return agent_service.get(
-                session, project_id=project_id, task_id=task_id, what=what, ref=ref,
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                what=what,
+                ref=ref,
             )
 
     @mcp.tool(name="agent_report")
@@ -233,8 +239,13 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return agent_service.report(
-                session, project_id=project_id, task_id=task_id, kind=kind,
-                message=message, payload=payload, agent_id=agent_id,
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                kind=kind,
+                message=message,
+                payload=payload,
+                agent_id=agent_id,
             )
 
     @mcp.tool(name="agent_complete")
@@ -259,8 +270,12 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return agent_service.complete(
-                session, project_id=project_id, task_id=task_id,
-                agent_id=agent_id, commit_sha=commit_sha, summary=summary,
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                agent_id=agent_id,
+                commit_sha=commit_sha,
+                summary=summary,
             )
 
     @mcp.tool(name="agent_release")
@@ -279,13 +294,18 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return agent_service.release(
-                session, project_id=project_id, task_id=task_id,
-                agent_id=agent_id, reason=reason,
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                agent_id=agent_id,
+                reason=reason,
             )
 
 
 def _active_profile() -> str:
     """Defer import to avoid circular: server depends on agent_tools."""
+    if profile := os.environ.get("COD_DOC_ACTIVE_PROFILE"):
+        return profile
     try:
         from cod_doc.mcp.server import get_active_profile
 

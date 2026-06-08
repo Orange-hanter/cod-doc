@@ -37,8 +37,7 @@ def _project_db_id(session, project_name: str) -> int:  # type: ignore[no-untype
     proj = ProjectRepository(session).get_by_slug(project_name)
     if proj is None or proj.row_id is None:
         raise click.ClickException(
-            f"Проект '{project_name}' не зарегистрирован в БД. "
-            "Сначала: cod-doc project init <name>"
+            f"Проект '{project_name}' не зарегистрирован в БД. Сначала: cod-doc project init <name>"
         )
     return proj.row_id
 
@@ -54,9 +53,7 @@ def _project_db_id(session, project_name: str) -> int:  # type: ignore[no-untype
     help="Cap на количество файлов в одном прогоне.",
 )
 @click.pass_context
-def cmd_import_docs(
-    ctx: click.Context, project_name: str, dry_run: bool, max_files: int
-) -> None:
+def cmd_import_docs(ctx: click.Context, project_name: str, dry_run: bool, max_files: int) -> None:
     """Импортировать .md/.rst/.txt файлы как Documents."""
     cfg: Config = ctx.obj["config"]
     entry, factory, engine = _open_session(cfg, project_name)
@@ -88,9 +85,7 @@ def cmd_import_docs(
 @click.argument("project_name")
 @click.option("--dry-run", is_flag=True, help="Показать план без записи.")
 @click.pass_context
-def cmd_import_legacy_tasks(
-    ctx: click.Context, project_name: str, dry_run: bool
-) -> None:
+def cmd_import_legacy_tasks(ctx: click.Context, project_name: str, dry_run: bool) -> None:
     """Перенести записи из .cod-doc/tasks.yaml в DB-таблицу task."""
     cfg: Config = ctx.obj["config"]
     entry, factory, engine = _open_session(cfg, project_name)
@@ -127,6 +122,4 @@ def cmd_import_legacy_tasks(
 def cmd_import_all(ctx: click.Context, project_name: str, dry_run: bool) -> None:
     """Запустить все доступные пайплайны импорта подряд."""
     ctx.invoke(cmd_import_docs, project_name=project_name, dry_run=dry_run, max_files=1000)
-    ctx.invoke(
-        cmd_import_legacy_tasks, project_name=project_name, dry_run=dry_run
-    )
+    ctx.invoke(cmd_import_legacy_tasks, project_name=project_name, dry_run=dry_run)

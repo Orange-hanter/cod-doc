@@ -22,14 +22,7 @@ def test_parse_frontmatter_extracts_top_level_keys() -> None:
 
 
 def test_parse_frontmatter_handles_pipe_block_scalar() -> None:
-    raw = (
-        "---\n"
-        "name: x\n"
-        "description: |\n"
-        "  multi-line\n"
-        "  description\n"
-        "---\n\nbody\n"
-    )
+    raw = "---\nname: x\ndescription: |\n  multi-line\n  description\n---\n\nbody\n"
     meta, body = _parse_frontmatter(raw)
     assert meta["name"] == "x"
     assert "multi-line" in meta["description"]

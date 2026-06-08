@@ -34,7 +34,7 @@ class TestOrderedList:
     def test_start_attribute_absent_for_one(self) -> None:
         src = "1. Item"
         html = render_markdown(src)
-        assert 'start=' not in html
+        assert "start=" not in html
 
     def test_list_split_by_blank_line(self) -> None:
         src = "1. Part one\n\n5. Part two\n6. Part three"

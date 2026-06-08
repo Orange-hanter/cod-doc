@@ -66,7 +66,7 @@ description: >
 
 ## План внедрения
 
-1. **Извлечь и поделить.** Разрезать [prompts.py:3-58](cod_doc/agent/prompts.py#L3-L58) на 3-4 базовых скилла. SYSTEM_PROMPT в коде остаётся, но становится тонким — собирает orchestrator/SKILL.md + триггерные.
+1. **Извлечь и поделить.** Разрезать [prompts.py](cod_doc/agent/prompts.py) на 3-4 базовых скилла. SYSTEM_PROMPT в коде остаётся, но становится тонким — собирает orchestrator/SKILL.md + триггерные.
 2. **Перенести memory-правила.** FM-валидацию, audit-cadence из `MEMORY.md` в соответствующие скиллы (это shared-знание, не личная память пользователя).
 3. **Триггер-матчер.** Простая функция `select_skills(task: Task) -> list[Path]` в [cod_doc/agent/](cod_doc/agent/). Можно начать с keyword-matching по `task.title + task.description + task.kind`.
 4. **MCP-tool `skill_list` / `skill_get`.** Чтобы агент сам мог запросить: «дай мне `audit-cadence`».

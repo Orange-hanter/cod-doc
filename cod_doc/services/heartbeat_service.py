@@ -175,14 +175,12 @@ def _next_action_guess(task: TaskModel, blocked_by_ids: list[str]) -> str:
 
 
 def _resolve_task_documents(session: Session, task_row_id: int) -> list[dict[str, Any]]:
-    """PCA-916: compact list of task-bound docs (key/title/doc_type)."""
+    """PCA-916: compact list of task-bound docs (key/title/format)."""
     try:
         from cod_doc.services import task_doc_service
+
         docs = task_doc_service.list_for_task(session, task_row_id)
-        return [
-            {"key": d.key, "title": d.title or "", "doc_type": d.doc_type or ""}
-            for d in docs
-        ]
+        return [{"key": d.key, "title": d.title or "", "format": d.format or ""} for d in docs]
     except Exception:
         return []
 
@@ -194,18 +192,22 @@ def _resolve_pending_approvals(
     try:
         from cod_doc.infra.models.approvals import ApprovalModel, ApprovalTaskLinkModel
 
-        rows = session.execute(
-            select(ApprovalModel)
-            .join(
-                ApprovalTaskLinkModel,
-                ApprovalTaskLinkModel.approval_id == ApprovalModel.row_id,
+        rows = (
+            session.execute(
+                select(ApprovalModel)
+                .join(
+                    ApprovalTaskLinkModel,
+                    ApprovalTaskLinkModel.approval_id == ApprovalModel.row_id,
+                )
+                .where(
+                    ApprovalModel.project_id == project_id,
+                    ApprovalModel.status == "pending",
+                    ApprovalTaskLinkModel.task_ref == task_id,
+                )
             )
-            .where(
-                ApprovalModel.project_id == project_id,
-                ApprovalModel.status == "pending",
-                ApprovalTaskLinkModel.task_ref == task_id,
-            )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [
             {
                 "approval_id": a.approval_id,
@@ -266,9 +268,7 @@ def heartbeat_context(
         "linked_docs_summary": [],
         "task_documents": task_documents,
         "pending_approvals": pending_approvals,
-        "recent_changes": _recent_changes_for_task(
-            session, model.row_id, since_revision_id
-        ),
+        "recent_changes": _recent_changes_for_task(session, model.row_id, since_revision_id),
         "active_skills_hint": ["orchestrator"],
         "next_action_guess": _next_action_guess(model, blocked_by_ids),
     }

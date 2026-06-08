@@ -31,7 +31,7 @@
 | Проверка | Источник | Drift = |
 |---|---|---|
 | ADR-claim vs code | `adr_create` поле `claim_code_refs` vs `commit_link_service.search_by_adr` | В ADR-001 перечислены 3 модуля, которые обязаны использовать Snowball Protocol. Если новый `cod_doc/agent/*.py` не вызывает `context_get(level=...)` — drift. |
-| ADR-superseded chain | `adr_supersede` linked ADR | Старый ADR-002 объявлен superseded → новый ADR-007. Если в коде всё ещё импортируется модуль из ADR-002 — drift. |
+| ADR-superseded chain | `adr_supersede` linked ADR | Старый `ADR-NNN` объявлен superseded → новый `ADR-NNN`. Если в коде всё ещё импортируется модуль из старого ADR — drift. |
 | Task acceptance vs doc actuality | `task.acceptance` vs `doc.body` sha | Task COD-789 acceptance: «обновить docs/system/DATA_MODEL.md». Если последний commit в этом файле был >7 дней назад, а task `done` — drift. |
 | ADR-graph reachability | `adr_graph` API | ADR в статусе `ACCEPTED`, но не имеет ни одной linked task и ни одного `adr_link_task` за 30 дней → orphan. |
 | Doc hash vs source | `update_master_hashes` (existing) | Уже работает; интегрировать с тем же routine. |
@@ -113,7 +113,7 @@ cod_doc/mcp/tools/
 ## Acceptance criteria
 
 1. `adr_drift_daily` routine зарегистрирована, выполняется по расписанию, не падает на пустой БД.
-2. `check_superseded_chain` ловит реальный тест-кейс (fixture: ADR-002 superseded → ADR-007, код импортирует старую абстракцию).
+2. `check_superseded_chain` ловит реальный тест-кейс (fixture: `ADR-NNN` superseded → `ADR-NNN`, код импортирует старую абстракцию).
 3. `check_task_acceptance` пишет в `activity_log` для task'ов со status=done >7 дней.
 4. MCP `adr_drift_check` возвращает структурированный список issues с severity.
 5. `docs/system/audit/<date>-adr-drift.md` генерируется автоматом при `INFO`-severity issues >0.
@@ -126,5 +126,5 @@ cod_doc/mcp/tools/
 
 ## Источники
 
-- Реальная боль: cod-doc сам (ADR-002 superseded → ADR-007, но `arch/architecture.md` до сих пор упоминает старую структуру).
+- Реальная боль: cod-doc сам (`ADR-NNN` superseded → `ADR-NNN`, но `arch/architecture.md` до сих пор упоминает старую структуру).
 - Paperclip [`routines/`](https://github.com/paperclipai/paperclip) — паттерн cron-style health checks.

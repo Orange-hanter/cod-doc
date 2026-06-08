@@ -113,7 +113,7 @@ expected_parent_revision_id: str | None | object = rev._NO_PARENT_CHECK
 
 ### SB-LO-5. `_new_doc` в `test_doc_service.py` — нет return type annotation
 
-[tests/services/test_doc_service.py:57](../../../tests/services/test_doc_service.py) — функция-хелпер без `-> Document`. Mypy strict: `no-untyped-def`.
+Historical `tests/services/test_doc_service.py:57` — функция-хелпер без `-> Document`. Mypy strict: `no-untyped-def`; позднее файл был разрезан на focused service tests.
 
 ### SB-LO-6. Double-complete не тестирован
 

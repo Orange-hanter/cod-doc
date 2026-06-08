@@ -52,6 +52,33 @@ def _add_doc(session: Session, project_id: int, *, doc_key: str, title: str | No
     return doc.row_id  # type: ignore[return-value]
 
 
+def _add_task(session: Session, project_id: int, *, task_id: str) -> None:
+    now = datetime.now(UTC)
+    plan = PlanModel(project_id=project_id, scope=f"{task_id}-plan", created=now, last_updated=now)
+    session.add(plan)
+    session.flush()
+    ps = PlanSectionModel(
+        plan_id=plan.row_id,
+        letter="A",
+        title="X",
+        slug=f"A-{task_id}",
+        position=0,
+    )
+    session.add(ps)
+    session.flush()
+    tasks.create(
+        session,
+        project_id=project_id,
+        plan_id=plan.row_id,
+        section_id=ps.row_id,
+        task_id=task_id,
+        title=task_id,
+        type=TaskType.FEATURE,
+        priority=Priority.LOW,
+        author="human:test",
+    )
+
+
 # ============================================================================ #
 # sync_section: replace stored links from current body                          #
 # ============================================================================ #
@@ -251,6 +278,30 @@ def test_resolve_markdown_walks_up_source_dir(engine_with_schema) -> None:  # ty
         resolved = links.resolve(session, rows[0].row_id)
         assert resolved.resolved is True
         assert resolved.to_doc_key == "architecture/polyglot"
+
+
+def test_resolve_markdown_existing_directory_target(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    (tmp_path / "cod_doc" / "services").mkdir(parents=True)
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        project = session.get(ProjectModel, proj)
+        project.root_path = str(tmp_path)
+        host = _add_doc(session, proj, doc_key="docs/system/overview")
+        sec = docs.add_section(
+            session,
+            document_id=host,
+            anchor="i",
+            heading="I",
+            level=2,
+            position=0,
+            body="See [services](../../../cod_doc/services/).",
+            author="human:test",
+        )
+        resolved = links.resolve_section(session, sec.row_id)
+        assert resolved[0].kind is LinkKind.MARKDOWN
+        assert resolved[0].resolved is True
+        assert resolved[0].to_doc_key is None
 
 
 def test_resolve_canonical_unknown_marks_unresolved(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -528,7 +579,6 @@ def test_resolve_adr_ref(engine_with_schema) -> None:  # type: ignore[no-untyped
         # Two ADR links, one good one broken.
         adrs = [r for r in rows if r.kind is LinkKind.ADR]
         assert len(adrs) == 2
-        by_id = {r.to_adr_id or "broken": r for r in adrs}
         # ADR-001 resolved
         assert any(r.resolved is True and r.to_adr_id == "ADR-001" for r in adrs)
         # ADR-999 broken
@@ -561,3 +611,58 @@ def test_resolve_adr_bare_token(engine_with_schema) -> None:  # type: ignore[no-
         assert len(adrs) == 1
         assert adrs[0].to_adr_id == "ADR-001"
         assert adrs[0].resolved is True
+
+
+def test_execution_plan_bare_adr_task_id_resolves_as_task(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        _add_task(session, proj, task_id="ADR-006")
+        doc = docs.create(
+            session,
+            project_id=proj,
+            doc_key="docs/system/roadmap/adr-system-task-plan",
+            type=DocumentType.EXECUTION_PLAN,
+            status=DocumentStatus.ACTIVE,
+            title="ADR plan",
+            author="human:test",
+            owner="human:test",
+        )
+        sec = docs.add_section(
+            session,
+            document_id=doc.row_id,
+            anchor="section-b",
+            heading="Section B",
+            level=2,
+            position=0,
+            body="### ADR-006 — graph page",
+            author="human:test",
+        )
+
+        rows = links.resolve_section(session, sec.row_id)
+        assert rows[0].kind is LinkKind.TASK
+        assert rows[0].to_task_id == "ADR-006"
+        assert rows[0].resolved is True
+
+
+def test_non_plan_bare_adr_token_stays_adr_link(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        _add_task(session, proj, task_id="ADR-006")
+        host = _add_doc(session, proj, doc_key="src")
+        sec = docs.add_section(
+            session,
+            document_id=host,
+            anchor="i",
+            heading="I",
+            level=2,
+            position=0,
+            body="This prose mentions ADR-006.",
+            author="human:test",
+        )
+
+        rows = links.resolve_section(session, sec.row_id)
+        assert rows[0].kind is LinkKind.ADR
+        assert rows[0].resolved is False
+        assert rows[0].broken_reason and "adr not found" in rows[0].broken_reason

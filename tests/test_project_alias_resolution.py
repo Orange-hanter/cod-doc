@@ -188,9 +188,7 @@ async def test_get_master_accepts_legacy_project_name(
         result = await session.call_tool("get_master", {"project_name": entry.name})
 
     assert result.content, "get_master returned no content for project_name="
-    assert not result.isError, (
-        f"get_master errored on project_name=: {result.content}"
-    )
+    assert not result.isError, f"get_master errored on project_name=: {result.content}"
 
 
 @pytest.mark.anyio

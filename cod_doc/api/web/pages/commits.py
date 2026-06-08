@@ -63,7 +63,9 @@ def commits_import(
     session, project_id = db
     try:
         commit_link_service.import_from_git_log(
-            session, project_id=project_id, repo_path=Path(proj.entry.path),
+            session,
+            project_id=project_id,
+            repo_path=Path(proj.entry.path),
         )
         session.commit()
     except ValueError as exc:

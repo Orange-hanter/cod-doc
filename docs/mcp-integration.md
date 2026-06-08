@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **119 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **120 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -99,7 +99,7 @@ COD_DOC_PROFILE=full cod-doc-mcp         # через env
 
 ### Что можно делать
 
-После подключения в Copilot Chat доступна вся MCP-поверхность (119 тулов на текущий релиз). Примеры запросов:
+После подключения в Copilot Chat доступна вся MCP-поверхность (120 тулов на текущий релиз). Примеры запросов:
 
 - "Покажи статус проекта weather-cli"
 - "Какие задачи не закрыты?"
@@ -283,7 +283,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 
 | Семейство | Кол-во | Назначение | Ключевые тулы |
 |-----------|-------:|------------|---------------|
-| **doc.\*** | 7 | DB-backed документы | `doc_list`, `doc_body`, `doc_create`, `doc_rename`, `doc_export`, `doc_drift`, `doc_get` |
+| **doc.\*** | 8 | DB-backed документы | `doc_list`, `doc_body`, `doc_create`, `doc_rename`, `doc_export`, `doc_drift`, `doc_drift_all`, `doc_get` |
 | **task.\*** | 15 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_complete`, `task_set_blocker`, `task_find_duplicate`, `task_log_progress`, … |
 | **task_doc.\*** | 5 | Артефакты, связанные с задачей | `task_doc_put`, `task_doc_get`, `task_doc_list`, `task_doc_revisions`, `task_doc_revert` |
 | **task_checkout / task_release** | 2 | Атомарный захват задачи (PCA-200) | `task_checkout`, `task_release` |
@@ -302,7 +302,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **hash / verify** | 2 | Контроль целостности файлов | `hash_file`, `verify_hash` |
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
 | **Legacy (YAML)** | 20 | Проекты / задачи / MASTER / поиск / агент — depending on `tasks_yaml` стора | `list_projects`, `add_project`, `remove_project`, `get_project_status`, `list_tasks`, `add_task`, `update_task`, `next_pending_task`, `get_master`, `update_master_hashes`, `check_stale_refs`, `generate_ref`, `read_file`, `read_context`, `list_files`, `search_docs`, `reindex`, `run_agent_once`, `get_agent_context`, `clear_agent_context` |
-| **ИТОГО** | **119** | | |
+| **ИТОГО** | **120** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
@@ -337,7 +337,7 @@ docstring соответствующих тулов. Для новых инте�
 | Copilot Chat | ✅ | ✅ | ❌ | Частично |
 | Claude Desktop | ✅ | ✅ | ❌ | Через copy-paste |
 | CI/CD | ❌ | ✅ | ✅ | ❌ |
-| Кол-во инструментов | 119 | 119 | ~8 | 0 |
+| Кол-во инструментов | 120 | 120 | ~8 | 0 |
 | Семантический поиск | ✅ | ✅ | ❌ | ❌ |
 | Запуск агента | ✅ | ✅ | ✅ (WS) | ❌ |
 

@@ -37,9 +37,11 @@ def test_ws_rejects_unknown_project(ws_client) -> None:
     client, _ = ws_client
     from starlette.websockets import WebSocketDisconnect
 
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/ws/projects/nope") as ws:
-            ws.receive_json()
+    with (
+        pytest.raises(WebSocketDisconnect),
+        client.websocket_connect("/ws/projects/nope") as ws,
+    ):
+        ws.receive_json()
 
 
 def test_ws_sends_hello_then_streams_events(ws_client) -> None:

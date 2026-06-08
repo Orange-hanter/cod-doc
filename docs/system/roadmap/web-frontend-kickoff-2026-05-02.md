@@ -103,7 +103,7 @@ WEB-030 → WEB-031 → WEB-042 + WEB-050 (cleanup bundle).
   `get_engine_for_slug`, `get_project_db`, `dispose_all_engines`.
 - [cod_doc/api/server.py](../../../cod_doc/api/server.py) — в lifespan
   shutdown вызвать `dispose_all_engines()`.
-- [cod_doc/api/web/db_resolver.py](../../../cod_doc/api/web/db_resolver.py) —
+- historical `cod_doc/api/web/db_resolver.py` —
   оставить пока что; **в WEB-040 удалится**. Внутри переписать на использование
   кэша из deps (минимальное изменение, чтобы тесты остались зелёными).
 - `tests/api/test_deps_engine_cache.py` — **NEW**.

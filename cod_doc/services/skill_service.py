@@ -10,7 +10,7 @@ Read-only — skills are package-shipped markdown, not runtime state.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cod_doc.mcp.tools.skill_tools import SKILLS_ROOT, iter_skill_records
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def list_skills() -> list[dict]:
+def list_skills() -> list[dict[str, Any]]:
     """Return the catalog as a list of frontmatter records.
 
     Each record carries at least ``name``, ``description``, and ``path``
@@ -27,7 +27,7 @@ def list_skills() -> list[dict]:
     return iter_skill_records()
 
 
-def get_skill(name: str) -> dict | None:
+def get_skill(name: str) -> dict[str, Any] | None:
     """Return one skill record by name, or ``None`` if unknown."""
     for r in iter_skill_records():
         if r.get("name") == name:

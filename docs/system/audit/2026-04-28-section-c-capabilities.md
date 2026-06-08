@@ -75,7 +75,7 @@ related_docs:
 
 ### SC-HI-3. ✅ → задача WEB-040. Web layer обходит сервисный слой
 
-**Где:** [cod_doc/api/web/db_resolver.py](../../../cod_doc/api/web/db_resolver.py) импортирует `DocumentModel` напрямую из `cod_doc.infra.models`.
+**Где:** historical `cod_doc/api/web/db_resolver.py` импортировал `DocumentModel` напрямую из `cod_doc.infra.models`; файл удалён в WEB-040.
 
 **Симптом:** нарушает правило [capabilities/web-frontend.md §7](../capabilities/web-frontend.md): «Web-страница не имеет права обходить сервис».
 

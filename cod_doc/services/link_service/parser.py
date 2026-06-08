@@ -14,6 +14,7 @@ from cod_doc.domain.entities import LinkKind
 from ._types import ParsedLink
 
 _FENCE_RE = re.compile(r"```[A-Za-z0-9_+\-]*\n.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 _WIKI_RE = re.compile(r"\[\[([^\]\n]+)\]\]")
 _MD_LINK_RE = re.compile(r"\[([^\]\n]+)\]\(([^)\n]+)\)")
 _BARE_URL_RE = re.compile(r"https?://[^\s)\]]+")
@@ -21,26 +22,94 @@ _BARE_URL_RE = re.compile(r"https?://[^\s)\]]+")
 # is unambiguous — does not collide with task ids (COD-NNN) or story ids
 # (US-NNN). Matched only OUTSIDE existing wiki/markdown spans.
 _ADR_BARE_RE = re.compile(r"\bADR-\d{3,}\b")
+_PLACEHOLDER_TARGETS: frozenset[str] = frozenset(
+    {
+        "...",
+        "<doc_key>",
+        "ADR-NNN",
+        "Document Name",
+        "Doc|alias",
+        "ID",
+        "KEY",
+        "NEW-DOC",
+        "OLD",
+        "OLD…",
+        "Some Title",
+        "Title",
+        "Wiki Title",
+        "doc-key",
+        "href",
+        "key",
+        "path",
+        "path/to",
+        "rel",
+        "relative/path",
+        "src/file.py",
+        "src/path.py",
+        "url",
+        "…",
+    }
+)
 
 # OBI-020: code-ref extensions. A markdown link whose href ends in one of
 # these is classified as LinkKind.CODE (not LinkKind.MARKDOWN). The list
 # covers the languages COD-DOC's own codebase + projects it's expected to
 # document: Python, JS/TS, Go, Rust, JVM family, C/C++, Ruby, PHP, Swift,
 # shell, SQL, common config formats, web frontend.
-_CODE_EXTENSIONS: frozenset[str] = frozenset({
-    ".py", ".pyi", ".pyx",
-    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
-    ".vue", ".svelte",
-    ".go", ".rs",
-    ".java", ".kt", ".kts", ".scala", ".groovy",
-    ".c", ".h", ".cpp", ".hpp", ".cc", ".hh", ".cxx",
-    ".rb", ".php", ".swift", ".m", ".mm",
-    ".sh", ".bash", ".zsh", ".fish",
-    ".sql",
-    ".yaml", ".yml", ".toml", ".json", ".ini",
-    ".html", ".htm", ".css", ".scss", ".sass", ".less",
-    ".dockerfile", ".lua", ".pl", ".r",
-})
+_CODE_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".py",
+        ".pyi",
+        ".pyx",
+        ".js",
+        ".jsx",
+        ".ts",
+        ".tsx",
+        ".mjs",
+        ".cjs",
+        ".vue",
+        ".svelte",
+        ".go",
+        ".rs",
+        ".java",
+        ".kt",
+        ".kts",
+        ".scala",
+        ".groovy",
+        ".c",
+        ".h",
+        ".cpp",
+        ".hpp",
+        ".cc",
+        ".hh",
+        ".cxx",
+        ".rb",
+        ".php",
+        ".swift",
+        ".m",
+        ".mm",
+        ".sh",
+        ".bash",
+        ".zsh",
+        ".fish",
+        ".sql",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".json",
+        ".ini",
+        ".html",
+        ".htm",
+        ".css",
+        ".scss",
+        ".sass",
+        ".less",
+        ".dockerfile",
+        ".lua",
+        ".pl",
+        ".r",
+    }
+)
 
 
 def _is_code_href(href: str) -> bool:
@@ -74,8 +143,9 @@ def _split_code_href(href: str) -> tuple[str, str | None]:
 
 
 def _strip_fenced_code(body: str) -> str:
-    """Replace fenced code blocks with same-length whitespace to keep offsets."""
-    return _FENCE_RE.sub(lambda m: " " * len(m.group(0)), body)
+    """Replace code spans/blocks with same-length whitespace to keep offsets."""
+    without_fences = _FENCE_RE.sub(lambda m: " " * len(m.group(0)), body)
+    return _INLINE_CODE_RE.sub(lambda m: " " * len(m.group(0)), without_fences)
 
 
 def _href_to_doc_key(href: str) -> tuple[str | None, str | None]:
@@ -95,6 +165,19 @@ def _href_to_doc_key(href: str) -> tuple[str | None, str | None]:
     if href.endswith(".md"):
         href = href[:-3]
     return (href or None, anchor or None)
+
+
+def _is_placeholder_target(value: str | None) -> bool:
+    """Return True for documentation examples that should not enter link graph."""
+    if not value:
+        return False
+    cleaned = value.strip().split("#", 1)[0].split("?", 1)[0]
+    while cleaned.startswith("../") or cleaned.startswith("./"):
+        cleaned = cleaned[3:] if cleaned.startswith("../") else cleaned[2:]
+    if cleaned.startswith("/"):
+        cleaned = cleaned[1:]
+    cleaned = cleaned[:-3] if cleaned.endswith(".md") else cleaned
+    return cleaned in _PLACEHOLDER_TARGETS
 
 
 def _classify_wiki_inner(inner: str, raw: str, start: int) -> ParsedLink:
@@ -161,11 +244,17 @@ def parse(body: str) -> list[ParsedLink]:
 
     for m in _WIKI_RE.finditer(text):
         wiki_spans.append((m.start(), m.end()))
-        out.append(_classify_wiki_inner(m.group(1).strip(), m.group(0), m.start()))
+        inner = m.group(1).strip()
+        if _is_placeholder_target(inner.split(":", 1)[-1]):
+            continue
+        out.append(_classify_wiki_inner(inner, m.group(0), m.start()))
 
     for m in _MD_LINK_RE.finditer(text):
         href = m.group(2).strip()
         md_spans.append((m.start(), m.end()))
+        href_path = href.split("#", 1)[0].split("?", 1)[0]
+        if _is_placeholder_target(href_path):
+            continue
         if href.startswith(("http://", "https://")):
             out.append(ParsedLink(raw=m.group(0), kind=LinkKind.URL, start=m.start()))
             continue

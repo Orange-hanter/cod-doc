@@ -97,11 +97,10 @@ def apply_profile(profile: str) -> dict[str, str | int]:
     start from ``main()``.
     """
     if profile not in VALID_PROFILES:
-        raise ValueError(
-            f"Unknown profile: {profile!r}; expected one of {sorted(VALID_PROFILES)}"
-        )
+        raise ValueError(f"Unknown profile: {profile!r}; expected one of {sorted(VALID_PROFILES)}")
     global _ACTIVE_PROFILE
     _ACTIVE_PROFILE = profile
+    os.environ["COD_DOC_ACTIVE_PROFILE"] = profile
 
     tools = mcp._tool_manager._tools
     to_drop = [name for name in tools if not keep_tool(name, profile)]

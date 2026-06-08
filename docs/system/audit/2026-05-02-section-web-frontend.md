@@ -63,7 +63,7 @@ Inline-fix'ов нет намеренно: каждое замечание ни�
 
 ### SW-HI-1. Web → infra bypass всё ещё не закрыт (WEB-040)
 
-**Где:** [cod_doc/api/web/db_resolver.py:22-23](../../../cod_doc/api/web/db_resolver.py)
+**Где:** historical `cod_doc/api/web/db_resolver.py:22-23` (удалён в WEB-040)
 
 ```python
 from cod_doc.infra.db import make_engine, make_session_factory
@@ -91,7 +91,7 @@ from cod_doc.infra.repositories import ProjectRepository
 
 ### SW-HI-2. Engine создаётся на каждый HTTP-запрос (perf cliff)
 
-**Где:** [cod_doc/api/web/db_resolver.py:44-59](../../../cod_doc/api/web/db_resolver.py)
+**Где:** historical `cod_doc/api/web/db_resolver.py:44-59` (удалён в WEB-040)
 
 ```python
 engine = make_engine(f"sqlite:///{db_path}")

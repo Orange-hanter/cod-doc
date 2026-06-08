@@ -57,7 +57,7 @@ def _bootstrap(tmp_path: Path) -> tuple[Config, ProjectEntry]:
 
 
 def test_cli_import_docs_dry_run_does_not_persist(tmp_path: Path) -> None:
-    cfg, entry = _bootstrap(tmp_path)
+    cfg, _entry = _bootstrap(tmp_path)
     (tmp_path / "repo" / "README.md").write_text("# README")
 
     runner = CliRunner()
@@ -93,7 +93,7 @@ def test_cli_import_docs_dry_run_does_not_persist(tmp_path: Path) -> None:
 
 
 def test_cli_import_legacy_tasks_runs_end_to_end(tmp_path: Path) -> None:
-    cfg, entry = _bootstrap(tmp_path)
+    cfg, _entry = _bootstrap(tmp_path)
     yaml_path = tmp_path / "repo" / ".cod-doc" / "tasks.yaml"
     yaml_path.write_text(
         yaml.dump(
@@ -123,7 +123,6 @@ def test_cli_link_backfill_syncs_sections(tmp_path: Path) -> None:
     """COD-079: `cod-doc link backfill` walks every section and calls
     sync_section so existing imports gain link rows."""
     cfg, entry = _bootstrap(tmp_path)
-
 
     from cod_doc.cli.link import link as link_group
     from cod_doc.domain.entities import (

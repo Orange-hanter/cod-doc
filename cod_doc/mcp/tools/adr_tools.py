@@ -59,10 +59,17 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             row = adr_service.create(
-                session, project_id=project_id, title=title, status=status,
-                decided_at=_parse_date(decided_at), context=context,
-                decision=decision, alternatives=alternatives,
-                consequences=consequences, adr_id=adr_id, author=author,
+                session,
+                project_id=project_id,
+                title=title,
+                status=status,
+                decided_at=_parse_date(decided_at),
+                context=context,
+                decision=decision,
+                alternatives=alternatives,
+                consequences=consequences,
+                adr_id=adr_id,
+                author=author,
             )
             return adr_service.adr_to_dict(session, row)
 
@@ -108,7 +115,9 @@ def register(mcp: FastMCP) -> None:
             rows = adr_service.list_for_project(session, project_id, status=status)
             return [
                 {
-                    "adr_id": r.adr_id, "title": r.title, "status": r.status,
+                    "adr_id": r.adr_id,
+                    "title": r.title,
+                    "status": r.status,
                     "decided_at": r.decided_at.isoformat() if r.decided_at else None,
                     "author": r.author,
                 }
@@ -137,10 +146,15 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
                 row = adr_service.update(
-                    session, project_id=project_id, adr_id=adr_id,
-                    title=title, status=status,
-                    decided_at=_parse_date(decided_at), context=context,
-                    decision=decision, alternatives=alternatives,
+                    session,
+                    project_id=project_id,
+                    adr_id=adr_id,
+                    title=title,
+                    status=status,
+                    decided_at=_parse_date(decided_at),
+                    context=context,
+                    decision=decision,
+                    alternatives=alternatives,
                     consequences=consequences,
                     author="agent",
                 )
@@ -166,13 +180,19 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
                 d = adr_service.add_diagram(
-                    session, project_id=project_id, adr_id=adr_id,
-                    mermaid=mermaid, title=title, position=position,
+                    session,
+                    project_id=project_id,
+                    adr_id=adr_id,
+                    mermaid=mermaid,
+                    title=title,
+                    position=position,
                     author="agent",
                 )
                 return {
-                    "adr_id": adr_id, "position": d.position,
-                    "title": d.title, "diagram_id": d.row_id,
+                    "adr_id": adr_id,
+                    "position": d.position,
+                    "title": d.title,
+                    "diagram_id": d.row_id,
                 }
         except ADRNotFoundError as exc:
             raise ValueError(str(exc)) from exc
@@ -199,7 +219,8 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
                 edge = adr_service.supersede(
-                    session, project_id=project_id,
+                    session,
+                    project_id=project_id,
                     superseding_adr_id=superseding_adr_id,
                     superseded_adr_id=superseded_adr_id,
                     reason=reason,
@@ -231,12 +252,16 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
                 link = adr_service.link_task(
-                    session, project_id=project_id, adr_id=adr_id,
-                    task_id=task_id, relation=relation,
+                    session,
+                    project_id=project_id,
+                    adr_id=adr_id,
+                    task_id=task_id,
+                    relation=relation,
                     author="agent",
                 )
                 return {
-                    "adr_id": adr_id, "task_id": link.task_id,
+                    "adr_id": adr_id,
+                    "task_id": link.task_id,
                     "relation": link.relation,
                 }
         except ADRNotFoundError as exc:
@@ -262,8 +287,11 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
                 row = adr_service.deprecate(
-                    session, project_id=project_id, adr_id=adr_id,
-                    reason=reason, author="agent",
+                    session,
+                    project_id=project_id,
+                    adr_id=adr_id,
+                    reason=reason,
+                    author="agent",
                 )
                 return adr_service.adr_to_dict(session, row)
         except ADRNotFoundError as exc:

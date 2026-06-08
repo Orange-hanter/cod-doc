@@ -53,8 +53,7 @@ def resolve_project_name(
     resolved = project if project is not None else project_name
     if not resolved:
         raise ValueError(
-            f"{tool_name}: `project` is required "
-            f"(legacy alias `project_name` also accepted)."
+            f"{tool_name}: `project` is required (legacy alias `project_name` also accepted)."
         )
     if project is None and project_name is not None:
         warnings.warn(

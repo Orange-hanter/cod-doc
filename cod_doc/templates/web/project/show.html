@@ -37,6 +37,24 @@
     <div class="card-label">Last run</div>
     <div class="card-value muted">{{ stats.last_run or "—" }}</div>
   </div>
+  <div class="card card-health card-health-{{ drift_health.level }}">
+    <div class="card-label">Doc drift</div>
+    <div class="card-value">
+      {% if drift_health.href %}
+      <a class="badge badge-{{ drift_health.level }}" href="{{ drift_health.href }}">{{ drift_health.label }}</a>
+      {% else %}
+      <span class="badge badge-{{ drift_health.level }}">{{ drift_health.label }}</span>
+      {% endif %}
+    </div>
+    <div class="card-subvalue muted-tiny">
+      {% if drift_health.findings is not none %}
+        {{ drift_health.findings }} findings
+        {% if drift_health.last_run_at %} · {{ drift_health.last_run_at | relative_time }}{% endif %}
+      {% else %}
+        routine unavailable
+      {% endif %}
+    </div>
+  </div>
 </section>
 
 {% if db_available %}

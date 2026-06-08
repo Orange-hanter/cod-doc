@@ -108,8 +108,11 @@ def register(mcp: FastMCP) -> None:
                     reason=reason,
                 )
                 from cod_doc.services import activity_service
+
                 activity_service.emit(
-                    session, project_id, "doc.created",
+                    session,
+                    project_id,
+                    "doc.created",
                     actor_kind="agent" if author.startswith("agent") else "human",
                     actor_id=author,
                     scope_kind="document",
@@ -125,6 +128,7 @@ def register(mcp: FastMCP) -> None:
         else:
             _idempotency.store("doc_create", idempotency_key, out)
         from cod_doc.services.skill_service import recommend_for_tool
+
         recs = recommend_for_tool("doc_create")
         if recs:
             out["recommended_skills"] = recs[:3]
@@ -160,8 +164,11 @@ def register(mcp: FastMCP) -> None:
                 cascade_links=cascade_links,
             )
             from cod_doc.services import activity_service
+
             activity_service.emit(
-                session, project_id, "doc.renamed",
+                session,
+                project_id,
+                "doc.renamed",
                 actor_kind="agent" if author.startswith("agent") else "human",
                 actor_id=author,
                 scope_kind="document",
@@ -240,4 +247,43 @@ def register(mcp: FastMCP) -> None:
             "projection_hash": report.projection_hash,
             "db_content_hash": report.db_content_hash,
             "file_hash": report.file_hash,
+        }
+
+    @mcp.tool(name="doc_drift_all")
+    def doc_drift_all(project: str, limit: int | None = None) -> dict[str, Any]:
+        """Project-wide DB↔markdown drift summary.
+
+        Returns counts by status plus issue rows for non-in-sync documents.
+        """
+        from pathlib import Path
+
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import projection_service
+
+        sf, entry = session_factory(project)
+        root = Path(entry.path).expanduser().resolve()
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            report = projection_service.detect_project_drift(
+                session,
+                project_id,
+                root_path=root,
+                limit=limit,
+            )
+        return {
+            "project": project,
+            "total_docs": report.total_docs,
+            "problem_count": report.problem_count,
+            "counts": report.counts,
+            "issues": [
+                {
+                    "doc_key": item.doc_key,
+                    "path": item.path,
+                    "status": item.report.status.value,
+                    "projection_hash": item.report.projection_hash,
+                    "db_content_hash": item.report.db_content_hash,
+                    "file_hash": item.report.file_hash,
+                }
+                for item in report.issues
+            ],
         }

@@ -34,6 +34,25 @@ class DriftReport:
     file_hash: str | None  # SHA-256 of on-disk file; None if MISSING
 
 
+@dataclass(slots=True)
+class ProjectDriftItem:
+    doc_key: str
+    path: str
+    report: DriftReport
+
+
+@dataclass(slots=True)
+class ProjectDriftReport:
+    project_id: int
+    total_docs: int
+    counts: dict[str, int]
+    issues: list[ProjectDriftItem]
+
+    @property
+    def problem_count(self) -> int:
+        return len(self.issues)
+
+
 class PathEscapeError(ValueError):
     """Raised when a document's stored path resolves outside its project root.
 

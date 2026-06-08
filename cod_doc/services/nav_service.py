@@ -12,18 +12,19 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import TYPE_CHECKING
-
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING, Any
 
 from cod_doc.services import doc_service as docs
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from sqlalchemy.orm import Session
+
     from cod_doc.config import Config
 
 
-_JOURNEY: list[dict] = [
+_JOURNEY: list[dict[str, Any]] = [
     {
         "id": "vision",
         "icon": "🎯",
@@ -147,7 +148,7 @@ def fmt_relative(iso_ts: str) -> str:
     return ts.strftime("%Y-%m-%d")
 
 
-def _fingerprint(doc_list: list) -> str:
+def _fingerprint(doc_list: list[Any]) -> str:
     keys = sorted(d.doc_key for d in doc_list)
     return hashlib.sha256("\n".join(keys).encode()).hexdigest()[:16]
 
@@ -347,9 +348,7 @@ def analyze_gaps(
         raw = _call_lite_raw(prompt, cfg, max_tokens=1200)
         if raw.startswith("```"):
             raw_lines = raw.splitlines()
-            raw = "\n".join(
-                raw_lines[1:-1] if raw_lines[-1].strip() == "```" else raw_lines[1:]
-            )
+            raw = "\n".join(raw_lines[1:-1] if raw_lines[-1].strip() == "```" else raw_lines[1:])
         data = json.loads(raw)
         analysis = NavAnalysis(
             summary=data.get("summary", ""),

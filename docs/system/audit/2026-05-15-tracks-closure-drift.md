@@ -175,7 +175,7 @@ add a `synced_from_db: true` frontmatter flag.
 
 **F12 [docs] · severity: M** — `docs/HANDBOOK.md` lacks promised ADR section.
 
-ADR-008 acceptance: "end-to-end ADR flow + **HANDBOOK section**". The
+Task `ADR-008` acceptance: "end-to-end ADR flow + **HANDBOOK section**". The
 e2e tests landed; the HANDBOOK addition didn't. `grep -i adr
 docs/HANDBOOK.md` returns nothing.
 

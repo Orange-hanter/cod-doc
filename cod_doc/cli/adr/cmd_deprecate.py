@@ -40,7 +40,9 @@ def adr_deprecate(
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             adr_service.deprecate(
-                session, project_id=project_id, adr_id=adr_id,
+                session,
+                project_id=project_id,
+                adr_id=adr_id,
                 reason=reason,
             )
     except ADRNotFoundError as exc:

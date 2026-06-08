@@ -52,9 +52,7 @@ def _seed(session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="A", slug="A", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -117,12 +115,13 @@ def test_task_create_real_run_persists(engine_with_schema, monkeypatch) -> None:
 
 
 def test_task_update_status_dry_run_does_not_change_status(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id, plan_id, sec_id = _seed(session)
-        task = task_service.create(
+        task_service.create(
             session,
             project_id=proj_id,
             plan_id=plan_id,
@@ -143,15 +142,11 @@ def test_task_update_status_dry_run_does_not_change_status(
     task_tools.register(mcp)
     update_status = _get_tool(mcp, "task_update_status")
 
-    result = update_status(
-        project="p", task_id="PLN-001", new_status="cancelled", dry_run=True
-    )
+    result = update_status(project="p", task_id="PLN-001", new_status="cancelled", dry_run=True)
     assert result.get("dry_run") is True
 
     with transactional(factory) as session:
-        row = session.execute(
-            select(TaskModel).where(TaskModel.task_id == "PLN-001")
-        ).scalar_one()
+        row = session.execute(select(TaskModel).where(TaskModel.task_id == "PLN-001")).scalar_one()
         # status must NOT be cancelled — dry_run rolled back.
         assert row.status != TaskStatus.CANCELLED
 

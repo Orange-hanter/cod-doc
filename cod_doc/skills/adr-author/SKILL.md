@@ -117,9 +117,9 @@ PROPOSED ──accept──▶ ACCEPTED ──supersede──▶ SUPERSEDED
 
 ## Связи
 
-- **Задача → ADR:** `adr_link_task(adr_id=ADR-007, task_id=COD-123,
+- **Задача → ADR:** `adr_link_task(adr_id="<ADR-NNN>", task_id="COD-123",
   relation=implements)`. Если задача — следствие решения.
-- **ADR в markdown:** пиши просто `ADR-007` или `[[adr:ADR-007]]` —
+- **ADR в markdown:** пиши просто `ADR-NNN` или `[[adr:ADR-NNN]]` —
   link-сервис распарсит и зарезолвит.
 
 ## Один проход агента

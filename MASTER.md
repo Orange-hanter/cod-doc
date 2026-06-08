@@ -143,7 +143,11 @@ graph TD
     ],
     "docs": [
       {"cmd": "open docs/system/MASTER.md", "desc": "Открыть system-of-truth"},
-      {"cmd": "open proposals/README.md", "desc": "RFC backlog (paperclip adoption)"}
+      {"cmd": "open proposals/README.md", "desc": "RFC backlog (paperclip adoption)"},
+      {"cmd": "cod-doc doc drift --project cod-doc --all", "desc": "Проверить DB↔markdown drift без перезаписи файлов"}
+    ],
+    "health": [
+      {"cmd": "curl http://localhost:8765/api/projects/cod-doc/health", "desc": "JSON-сводка DB health: doc drift, unresolved links, doc_drift routine"}
     ]
   },
   "handoffs": {

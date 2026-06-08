@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -11,6 +12,7 @@ from cod_doc.agent.orchestrator import Orchestrator
 from cod_doc.api.deps import (
     daemon_is_running,
     get_config,
+    get_engine_for_slug,
     get_project,
     start_daemon,
     stop_daemon,
@@ -18,6 +20,9 @@ from cod_doc.api.deps import (
 from cod_doc.api.schemas import ConfigUpdate, ProjectCreate, TaskCreate
 from cod_doc.config import ProjectEntry
 from cod_doc.core.project import Project, Task, TaskStatus
+from cod_doc.infra.db import make_session_factory
+from cod_doc.infra.repositories import ProjectRepository
+from cod_doc.services import project_health_service
 
 logger = logging.getLogger("cod_doc.api")
 
@@ -100,6 +105,32 @@ def read_master(name: str) -> dict[str, Any]:
     return {"content": content}
 
 
+@router.get("/projects/{name}/health")
+def read_project_health(name: str) -> dict[str, Any]:
+    """Read-only DB health summary for automation and dashboards."""
+    proj = get_project(name)
+    engine = get_engine_for_slug(name)
+    if engine is None:
+        return {"project": name, **project_health_service.uninitialized_project_health()}
+
+    factory = make_session_factory(engine)
+    session = factory()
+    try:
+        db_project = ProjectRepository(session).get_by_slug(name)
+        if db_project is None or db_project.row_id is None:
+            return {"project": name, **project_health_service.uninitialized_project_health()}
+        return {
+            "project": name,
+            **project_health_service.build_project_health(
+                session,
+                db_project.row_id,
+                root_path=Path(proj.entry.path),
+            ),
+        }
+    finally:
+        session.close()
+
+
 # ── Tasks ─────────────────────────────────────────────────────────────────────
 
 
@@ -158,8 +189,7 @@ def daemon_status() -> dict[str, Any]:
         "running": daemon_is_running(),
         "agent_enabled": cfg.agent_enabled,
         "projects": [
-            {"name": e.name, "daemon_enabled": e.daemon_enabled}
-            for e in cfg.list_projects()
+            {"name": e.name, "daemon_enabled": e.daemon_enabled} for e in cfg.list_projects()
         ],
     }
 

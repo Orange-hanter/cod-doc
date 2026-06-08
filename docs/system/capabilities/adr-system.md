@@ -30,7 +30,7 @@ related_code:
 
 **Боль:**
 - Нет единого реестра «какое решение принято когда и кем».
-- Невозможно отследить supersede-цепочку («ADR-005 заменён ADR-012, который частично откатывает ADR-003»).
+- Невозможно отследить supersede-цепочку («`ADR-NNN` заменён `ADR-NNN`, который частично откатывает `ADR-NNN`»).
 - Нет визуального инструмента для авторов — markdown-таблицы и встройка
   Mermaid-диаграмм требуют ручной разметки.
 
@@ -96,8 +96,8 @@ adr_graph(project, format='mermaid'|'json') -> str | dict
 ```
 cod-doc adr new --title "Use SQLite by default" --context-file ./ctx.md
 cod-doc adr list --status accepted
-cod-doc adr show ADR-007
-cod-doc adr supersede ADR-003 ADR-012 --reason "performance regression"
+cod-doc adr show ADR-NNN
+cod-doc adr supersede ADR-NNN ADR-NNN --reason "performance regression"
 cod-doc adr graph --format mermaid > docs/adr-graph.mmd
 ```
 
@@ -174,4 +174,4 @@ Live-preview через клиентский Mermaid.js (тот же, что у�
 
 Реализация — план [adr-system-task-plan.md](../roadmap/adr-system-task-plan.md),
 3 секции (Domain & MCP, Web UI, Templates & Migration), 8 задач
-ADR-001..ADR-008.
+`ADR-001`..`ADR-008`.

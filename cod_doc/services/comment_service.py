@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
@@ -92,9 +92,7 @@ def create(
         if sec is None:
             raise ValueError(f"Unknown section #{section_id}")
         if sec.document_id != document_id:
-            raise ValueError(
-                f"Section #{section_id} does not belong to document #{document_id}"
-            )
+            raise ValueError(f"Section #{section_id} does not belong to document #{document_id}")
         anchor = sec.anchor
 
     now = datetime.now(UTC)
@@ -133,9 +131,7 @@ def get(session: Session, comment_id: int) -> DocComment | None:
     return _to_domain(m) if m else None
 
 
-def update_status(
-    session: Session, *, comment_id: int, new_status: str
-) -> DocComment:
+def update_status(session: Session, *, comment_id: int, new_status: str) -> DocComment:
     if new_status not in VALID_STATUS:
         raise ValueError(f"Unknown status: {new_status}")
     m = session.get(DocCommentModel, comment_id)
@@ -189,7 +185,7 @@ class DocRework:
     section_reworks: list[SectionRework]
     doc_level_summary: str
     doc_level_comment_ids: list[int]
-    skipped: list[dict]
+    skipped: list[dict[str, Any]]
 
 
 def _call_rewrite(body: str, comments: list[str], cfg: Config) -> str:
@@ -204,10 +200,7 @@ def _call_rewrite(body: str, comments: list[str], cfg: Config) -> str:
 
     client = OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
     comments_block = "\n".join(f"- {c}" for c in comments)
-    user_msg = (
-        f"Comments to apply:\n{comments_block}\n\n"
-        f"Section body:\n{body}"
-    )
+    user_msg = f"Comments to apply:\n{comments_block}\n\nSection body:\n{body}"
     try:
         completion = client.chat.completions.create(
             model=cfg.model,
@@ -225,10 +218,7 @@ def _call_rewrite(body: str, comments: list[str], cfg: Config) -> str:
         raise AIBackendError("LLM returned empty content.")
     if content.startswith("```"):
         lines = content.splitlines()
-        if lines[-1].strip().startswith("```"):
-            lines = lines[1:-1]
-        else:
-            lines = lines[1:]
+        lines = lines[1:-1] if lines[-1].strip().startswith("```") else lines[1:]
         content = "\n".join(lines)
     return content
 
@@ -256,7 +246,8 @@ def apply_open_with_ai(
         raise ValueError(f"Document #{document_id} not found")
 
     open_comments = [
-        c for c in list_for_document(session, document_id, include_resolved=False)
+        c
+        for c in list_for_document(session, document_id, include_resolved=False)
         if c.status == "open"
     ]
 
@@ -266,32 +257,33 @@ def apply_open_with_ai(
         buckets.setdefault(c.section_id, []).append(c)
 
     section_reworks: list[SectionRework] = []
-    skipped: list[dict] = []
+    skipped: list[dict[str, Any]] = []
     for section_id, comments in buckets.items():
         if section_id is None:
             continue
         sec = session.get(SectionModel, section_id)
         if sec is None:
-            skipped.append({
-                "section_id": section_id,
-                "reason": "section no longer exists",
-                "comment_ids": [c.row_id for c in comments],
-            })
+            skipped.append(
+                {
+                    "section_id": section_id,
+                    "reason": "section no longer exists",
+                    "comment_ids": [c.row_id for c in comments],
+                }
+            )
             continue
-        comment_texts = [
-            (f"[quote: {c.quote!r}] " if c.quote else "") + c.body
-            for c in comments
-        ]
+        comment_texts = [(f"[quote: {c.quote!r}] " if c.quote else "") + c.body for c in comments]
         try:
             new_body = _call_rewrite(sec.body, comment_texts, cfg)
         except Exception as exc:
-            skipped.append({
-                "section_id": section_id,
-                "anchor": sec.anchor,
-                "heading": sec.heading,
-                "reason": f"AI call failed: {exc}",
-                "comment_ids": [c.row_id for c in comments],
-            })
+            skipped.append(
+                {
+                    "section_id": section_id,
+                    "anchor": sec.anchor,
+                    "heading": sec.heading,
+                    "reason": f"AI call failed: {exc}",
+                    "comment_ids": [c.row_id for c in comments],
+                }
+            )
             continue
         section_reworks.append(
             SectionRework(

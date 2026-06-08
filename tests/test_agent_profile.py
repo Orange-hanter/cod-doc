@@ -157,7 +157,8 @@ def test_agent_capabilities_strict_subset_vs_admin_capabilities() -> None:
 
 
 @pytest.mark.parametrize(
-    "tool_name", ["agent_pick", "agent_get", "agent_report", "agent_complete", "agent_release"],
+    "tool_name",
+    ["agent_pick", "agent_get", "agent_report", "agent_complete", "agent_release"],
 )
 def test_agent_tool_is_registered_callable(tool_name: str) -> None:
     tool = live_mcp._tool_manager._tools[tool_name]

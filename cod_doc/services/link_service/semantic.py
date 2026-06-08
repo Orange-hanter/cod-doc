@@ -26,7 +26,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-
     from sqlalchemy.orm import Session
 
     from cod_doc.config import Config
@@ -34,13 +33,14 @@ if TYPE_CHECKING:
 log = logging.getLogger("cod_doc.services.link_service.semantic")
 
 DEFAULT_THRESHOLD = 0.78
-DEFAULT_K = 20         # candidates from ChromaDB
-DEFAULT_TOP_N = 5      # suggestions stored per section
+DEFAULT_K = 20  # candidates from ChromaDB
+DEFAULT_TOP_N = 5  # suggestions stored per section
 
 
 @dataclass
 class SuggestionResult:
     """Summary returned by backfill_project."""
+
     sections_processed: int = 0
     suggestions_created: int = 0
     suggestions_skipped: int = 0
@@ -105,16 +105,18 @@ def _upsert_suggestion(
             )
         return False  # not a new row
 
-    session.add(LinkSuggestionModel(
-        from_section_id=from_section_id,
-        to_doc_key=to_doc_key,
-        to_section_id=to_section_id,
-        score=score,
-        evidence=json.dumps(evidence),
-        state="pending",
-        created_at=now,
-        updated_at=now,
-    ))
+    session.add(
+        LinkSuggestionModel(
+            from_section_id=from_section_id,
+            to_doc_key=to_doc_key,
+            to_section_id=to_section_id,
+            score=score,
+            evidence=json.dumps(evidence),
+            state="pending",
+            created_at=now,
+            updated_at=now,
+        )
+    )
     return True
 
 
@@ -182,7 +184,7 @@ def suggest_for_section(
     suggestions: list[dict[str, Any]] = []
     seen_doc_keys: set[str] = set()
 
-    for _snippet, meta, dist in zip(hits_docs, hits_metas, hits_distances):
+    for _snippet, meta, dist in zip(hits_docs, hits_metas, hits_distances, strict=False):
         base_score = round(1.0 - dist, 4)
         if base_score < threshold:
             continue
@@ -223,13 +225,15 @@ def suggest_for_section(
             "final_score": reranked,
             "path": rel_path,
         }
-        suggestions.append({
-            "from_section_id": section_id,
-            "to_doc_key": cand_doc.doc_key,
-            "to_section_id": None,
-            "score": reranked,
-            "evidence": evidence,
-        })
+        suggestions.append(
+            {
+                "from_section_id": section_id,
+                "to_doc_key": cand_doc.doc_key,
+                "to_section_id": None,
+                "score": reranked,
+                "evidence": evidence,
+            }
+        )
 
     # 4. Sort and cap
     suggestions.sort(key=lambda s: s["score"], reverse=True)
@@ -286,8 +290,13 @@ def backfill_project(
         result.sections_processed += 1
         try:
             suggs = suggest_for_section(
-                session, sid, config,
-                k=k, threshold=threshold, top_n=top_n, dry_run=dry_run,
+                session,
+                sid,
+                config,
+                k=k,
+                threshold=threshold,
+                top_n=top_n,
+                dry_run=dry_run,
             )
             created = len(suggs)
             result.suggestions_created += created
@@ -369,23 +378,29 @@ def list_suggestions_for_document(
     from cod_doc.infra.models.documents import SectionModel
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
-    sec_ids = session.execute(
-        select(SectionModel.row_id).where(SectionModel.document_id == document_id)
-    ).scalars().all()
+    sec_ids = (
+        session.execute(select(SectionModel.row_id).where(SectionModel.document_id == document_id))
+        .scalars()
+        .all()
+    )
     if not sec_ids:
         return []
 
-    rows = session.execute(
-        select(LinkSuggestionModel)
-        .where(
-            LinkSuggestionModel.from_section_id.in_(sec_ids),
-            LinkSuggestionModel.state == state,
+    rows = (
+        session.execute(
+            select(LinkSuggestionModel)
+            .where(
+                LinkSuggestionModel.from_section_id.in_(sec_ids),
+                LinkSuggestionModel.state == state,
+            )
+            .order_by(
+                LinkSuggestionModel.from_section_id,
+                LinkSuggestionModel.score.desc(),
+            )
         )
-        .order_by(
-            LinkSuggestionModel.from_section_id,
-            LinkSuggestionModel.score.desc(),
-        )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     return [
         {
@@ -402,6 +417,7 @@ def list_suggestions_for_document(
 def get_suggestion(session: Session, row_id: int) -> dict[str, Any] | None:
     """Return a single suggestion row as a plain dict, or None."""
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
+
     r = session.get(LinkSuggestionModel, row_id)
     if r is None:
         return None

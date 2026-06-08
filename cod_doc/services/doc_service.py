@@ -135,6 +135,7 @@ def create(
     path: str | None = None,
     sensitivity: Sensitivity = Sensitivity.INTERNAL,
     owner: str | None = None,
+    source_of_truth: bool | None = None,
     preamble: str = "",
     frontmatter: dict[str, Any] | None = None,
     reason: str | None = None,
@@ -149,6 +150,12 @@ def create(
     effective_path = path or f"{doc_key}.md"
     validation.validate_doc_path(effective_path)
     now = datetime.now(UTC)
+    fm_source = (frontmatter or {}).get("source_of_truth")
+    effective_source_of_truth = (
+        fm_source
+        if source_of_truth is None and isinstance(fm_source, bool)
+        else (True if source_of_truth is None else source_of_truth)
+    )
     doc = DocumentRepository(session).add(
         Document(
             project_id=project_id,
@@ -157,6 +164,7 @@ def create(
             type=type,
             status=status,
             title=title,
+            source_of_truth=effective_source_of_truth,
             sensitivity=sensitivity,
             owner=owner,
             preamble=preamble,
