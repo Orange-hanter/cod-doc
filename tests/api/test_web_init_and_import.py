@@ -294,3 +294,49 @@ def test_import_form_visible_on_docs_list(web_inited_client) -> None:
     assert 'enctype="multipart/form-data"' in r.text
     # All document_types appear in the dropdown
     assert ">module-spec<" in r.text
+
+
+def test_legacy_tasks_import_streams_progress_over_ws(web_inited_client) -> None:
+    """WEB-031: the legacy-tasks import publishes import.* events that the
+    project WebSocket relays (started → progress → completed)."""
+    from pathlib import Path
+
+    import yaml as _yaml
+
+    client, entry = web_inited_client
+    cod_dir = Path(entry.path) / ".cod-doc"
+    cod_dir.mkdir(parents=True, exist_ok=True)
+    (cod_dir / "tasks.yaml").write_text(
+        _yaml.dump(
+            {
+                "tasks": [
+                    {"id": "t1", "title": "Alpha", "priority": 2, "status": "pending"},
+                    {"id": "t2", "title": "Beta", "priority": 3, "status": "pending"},
+                ]
+            },
+            allow_unicode=True,
+        )
+    )
+
+    with client.websocket_connect(f"/ws/projects/{entry.name}") as ws:
+        assert ws.receive_json()["kind"] == "hello"
+
+        r = client.post(f"/p/{entry.name}/tasks/legacy/import")
+        assert r.status_code == 200
+        assert r.json()["imported"] == 2
+
+        kinds: list[str] = []
+        payloads: dict[str, dict] = {}
+        for _ in range(12):
+            msg = ws.receive_json()
+            kinds.append(msg["kind"])
+            payloads[msg["kind"]] = msg["payload"]
+            if msg["kind"] == "import.completed":
+                break
+
+    assert "import.started" in kinds
+    assert "import.completed" in kinds
+    assert payloads["import.completed"]["imported"] == 2
+    # progress (best-effort ordering) carries the total when present
+    if "import.progress" in payloads:
+        assert payloads["import.progress"]["total"] == 2

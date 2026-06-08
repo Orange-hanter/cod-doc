@@ -17,6 +17,7 @@ callers wrap the call in a savepoint and roll back instead of committing.
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,7 @@ from cod_doc.infra.repositories import (
 from cod_doc.services import import_service, task_service
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from sqlalchemy.orm import Session
@@ -245,6 +247,7 @@ def import_legacy_tasks(
     yaml_path: Path,
     project_id: int,
     author: str = "human:cli",
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> TasksSummary:
     """Migrate entries from a ``.cod-doc/tasks.yaml`` into the DB.
 
@@ -252,6 +255,11 @@ def import_legacy_tasks(
     legacy result/description are stitched into ``description`` so nothing
     is lost. Failed/blocked statuses become PENDING with the reason recorded
     in ``blocked_reason``.
+
+    WEB-031: when ``progress`` is given, it is called once per processed entry
+    with ``(done, total, label)`` so callers can stream live import progress
+    (e.g. over the project WebSocket). The callback must not raise — any
+    exception is suppressed so it can never break the migration.
     """
     summary = TasksSummary(plan_scope=_IMPORT_PLAN_SCOPE)
     if not yaml_path.exists():
@@ -269,67 +277,78 @@ def import_legacy_tasks(
         return summary
 
     plan_id, section_id = _ensure_import_plan(session, project_id)
+    total = len(entries)
 
-    for raw in entries:
-        if not isinstance(raw, dict):
-            summary.skipped += 1
-            continue
-        title = str(raw.get("title") or "").strip()
-        if not title:
-            summary.skipped += 1
-            continue
-        priority_raw = raw.get("priority", 3)
+    for idx, raw in enumerate(entries, start=1):
+        label = "?"
         try:
-            priority = _LEGACY_PRIORITY_MAP.get(int(priority_raw), Priority.MEDIUM)
-        except (ValueError, TypeError):
-            priority = Priority.MEDIUM
-        legacy_status = str(raw.get("status", "pending")).strip().lower()
-        status = _LEGACY_STATUS_MAP.get(legacy_status, TaskStatus.PENDING)
-        blocked_reason = (
-            f"legacy status: {legacy_status}" if legacy_status in {"failed", "blocked"} else None
-        )
-        description = str(raw.get("description") or "").strip()
-        result = str(raw.get("result") or "").strip()
-        legacy_id = str(raw.get("id") or "").strip()
-        body_parts: list[str] = []
-        if legacy_id:
-            body_parts.append(f"_legacy id_: `{legacy_id}`")
-        if description:
-            body_parts.append(description)
-        if result:
-            body_parts.append(f"**Result**\n{result}")
-        full_description = "\n\n".join(body_parts) or None
+            if not isinstance(raw, dict):
+                summary.skipped += 1
+                continue
+            title = str(raw.get("title") or "").strip()
+            label = title or str(raw.get("id") or "?")
+            if not title:
+                summary.skipped += 1
+                continue
+            priority_raw = raw.get("priority", 3)
+            try:
+                priority = _LEGACY_PRIORITY_MAP.get(int(priority_raw), Priority.MEDIUM)
+            except (ValueError, TypeError):
+                priority = Priority.MEDIUM
+            legacy_status = str(raw.get("status", "pending")).strip().lower()
+            status = _LEGACY_STATUS_MAP.get(legacy_status, TaskStatus.PENDING)
+            blocked_reason = (
+                f"legacy status: {legacy_status}"
+                if legacy_status in {"failed", "blocked"}
+                else None
+            )
+            description = str(raw.get("description") or "").strip()
+            result = str(raw.get("result") or "").strip()
+            legacy_id = str(raw.get("id") or "").strip()
+            body_parts: list[str] = []
+            if legacy_id:
+                body_parts.append(f"_legacy id_: `{legacy_id}`")
+            if description:
+                body_parts.append(description)
+            if result:
+                body_parts.append(f"**Result**\n{result}")
+            full_description = "\n\n".join(body_parts) or None
 
-        # COD-071: savepoint per legacy entry — a single bad row should not
-        # take down the rest of the migration batch.
-        try:
-            with session.begin_nested():
-                task = task_service.create(
-                    session,
-                    project_id=project_id,
-                    plan_id=plan_id,
-                    section_id=section_id,
-                    title=title,
-                    type=TaskType.CHORE,
-                    priority=priority,
-                    author=author,
-                    id_prefix=_IMPORT_TASK_PREFIX,
-                    description=full_description,
-                    blocked_reason=blocked_reason,
-                    allow_duplicate=True,
-                    reason=f"restate-import:{legacy_id or '?'}",
-                )
-                if status != TaskStatus.PENDING:
-                    task_service.update_status(
+            # COD-071: savepoint per legacy entry — a single bad row should not
+            # take down the rest of the migration batch.
+            try:
+                with session.begin_nested():
+                    task = task_service.create(
                         session,
-                        task_id=task.task_id,
-                        new_status=status,
+                        project_id=project_id,
+                        plan_id=plan_id,
+                        section_id=section_id,
+                        title=title,
+                        type=TaskType.CHORE,
+                        priority=priority,
                         author=author,
-                        reason="restate-import:status",
-                        force=True,  # import sets arbitrary legacy status
+                        id_prefix=_IMPORT_TASK_PREFIX,
+                        description=full_description,
+                        blocked_reason=blocked_reason,
+                        allow_duplicate=True,
+                        reason=f"restate-import:{legacy_id or '?'}",
                     )
-        except Exception as exc:
-            summary.errors.append(f"{title!r}: {exc}")
-            continue
-        summary.imported += 1
+                    if status != TaskStatus.PENDING:
+                        task_service.update_status(
+                            session,
+                            task_id=task.task_id,
+                            new_status=status,
+                            author=author,
+                            reason="restate-import:status",
+                            force=True,  # import sets arbitrary legacy status
+                        )
+            except Exception as exc:
+                summary.errors.append(f"{title!r}: {exc}")
+                continue
+            summary.imported += 1
+        finally:
+            if progress is not None:
+                # progress must never break the import
+                with contextlib.suppress(Exception):
+                    progress(idx, total, label)
     return summary

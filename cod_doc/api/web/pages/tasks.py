@@ -414,21 +414,30 @@ def tasks_legacy_list(
 
 
 @router.post("/p/{slug}/tasks/legacy/import")
-def legacy_tasks_import(
+async def legacy_tasks_import(
     request: Request,
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
     dry_run: bool = Query(default=False),
 ) -> JSONResponse:
-    """PCA-410: Migrate (or preview) legacy YAML tasks → DB.
+    """PCA-410 / WEB-031: Migrate (or preview) legacy YAML tasks → DB.
 
     With ``?dry_run=true`` the session is rolled back and a diff is returned
     without writing anything.  Without it, tasks are committed.
 
+    WEB-031: progress is streamed live over the project WebSocket
+    (``/ws/projects/{slug}``) as ``import.started`` → ``import.progress`` (one
+    per entry) → ``import.completed`` events, so a browser can show a live
+    import bar instead of waiting for the final JSON.
+
     Returns JSON:
     ``{"imported": N, "skipped": N, "errors": [...], "plan_scope": "...", "dry_run": bool}``
     """
-    from cod_doc.services import restate_importer
+    import asyncio
+
+    from starlette.concurrency import run_in_threadpool
+
+    from cod_doc.services import event_bus, restate_importer
 
     proj = get_project(slug)
     session, project_db_id = db
@@ -440,11 +449,26 @@ def legacy_tasks_import(
             raise HTTPException(409, "tasks.yaml already archived — legacy tasks already migrated")
         raise HTTPException(404, "tasks.yaml not found in .cod-doc/")
 
-    summary = restate_importer.import_legacy_tasks(
+    loop = asyncio.get_running_loop()
+
+    def on_progress(done: int, total: int, label: str) -> None:
+        # Called from the import worker thread — hop back onto the event loop
+        # so the publish reaches WebSocket subscribers.
+        asyncio.run_coroutine_threadsafe(
+            event_bus.publish(
+                slug, "import.progress", {"done": done, "total": total, "task": label}
+            ),
+            loop,
+        )
+
+    await event_bus.publish(slug, "import.started", {"dry_run": dry_run})
+    summary = await run_in_threadpool(
+        restate_importer.import_legacy_tasks,
         session,
         yaml_path=yaml_path,
         project_id=project_db_id,
         author="human:web",
+        progress=on_progress,
     )
 
     if dry_run:
@@ -454,6 +478,7 @@ def legacy_tasks_import(
 
     result = summary.to_dict()
     result["dry_run"] = dry_run
+    await event_bus.publish(slug, "import.completed", result)
     return JSONResponse(result)
 
 

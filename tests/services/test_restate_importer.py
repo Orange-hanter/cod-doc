@@ -254,3 +254,64 @@ def test_import_legacy_tasks_reuses_existing_plan(
             if p.scope == "imported-legacy"
         ]
     assert len(plans) == 1
+
+
+def test_import_legacy_tasks_invokes_progress_callback(
+    tmp_path: Path,
+    engine_with_schema,  # type: ignore[no-untyped-def]
+) -> None:
+    """WEB-031: progress fires once per entry with (done, total, label),
+    including for skipped (title-less) rows, and never breaks the import."""
+    yaml_path = tmp_path / ".cod-doc" / "tasks.yaml"
+    _write_legacy_yaml(
+        yaml_path,
+        [
+            {"id": "a1", "title": "First", "priority": 2, "status": "pending"},
+            {"id": "a2", "priority": 3, "status": "pending"},  # no title → skipped
+            {"id": "a3", "title": "Third", "priority": 1, "status": "done"},
+        ],
+    )
+    calls: list[tuple[int, int, str]] = []
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "prog", tmp_path)
+        summary = restate_importer.import_legacy_tasks(
+            session,
+            yaml_path=yaml_path,
+            project_id=project_id,
+            progress=lambda done, total, label: calls.append((done, total, label)),
+        )
+
+    assert summary.imported == 2
+    assert summary.skipped == 1
+    # One callback per entry, monotonically increasing done, constant total.
+    assert [done for done, _, _ in calls] == [1, 2, 3]
+    assert {total for _, total, _ in calls} == {3}
+    labels = [label for _, _, label in calls]
+    assert labels[0] == "First"
+    assert labels[1] == "a2"  # title-less row falls back to legacy id
+    assert labels[2] == "Third"
+
+
+def test_import_legacy_tasks_progress_exception_is_swallowed(
+    tmp_path: Path,
+    engine_with_schema,  # type: ignore[no-untyped-def]
+) -> None:
+    """A throwing progress callback must never break the migration."""
+    yaml_path = tmp_path / ".cod-doc" / "tasks.yaml"
+    _write_legacy_yaml(
+        yaml_path,
+        [{"id": "x1", "title": "Only", "priority": 2, "status": "pending"}],
+    )
+
+    def _boom(done: int, total: int, label: str) -> None:
+        raise RuntimeError("progress sink down")
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "boom", tmp_path)
+        summary = restate_importer.import_legacy_tasks(
+            session, yaml_path=yaml_path, project_id=project_id, progress=_boom
+        )
+    assert summary.imported == 1
+    assert summary.errors == []
