@@ -9,6 +9,7 @@ Levels (from audit-and-ci.md §1):
 from __future__ import annotations
 
 import json as _json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -165,8 +166,129 @@ def _check_drift(doc: Any, root: Path, session: Any, findings: list[AuditFinding
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# WEB-042: web-route ↔ capability-doc drift audit
+# ──────────────────────────────────────────────────────────────────────────────
+
+_CAP_ROUTE_RE = re.compile(r"^\|\s*`(GET|POST|PUT|PATCH|DELETE)\s+(/[^`]*)`", re.MULTILINE)
+_PARAM_CONV_RE = re.compile(r"\{([^}:]+)(?::[^}]+)?\}")
+
+
+def _normalize_route(path: str) -> str:
+    """Strip Starlette path-converter suffixes so docs/code compare equal.
+
+    ``/p/{slug}/docs/{doc_key:path}`` → ``/p/{slug}/docs/{doc_key}``.
+    """
+    return _PARAM_CONV_RE.sub(r"{\1}", path.strip())
+
+
+def _documented_web_routes(cap_path: Path) -> set[tuple[str, str]]:
+    """Parse the capability §3 route table → {(METHOD, normalized_path)}."""
+    text = cap_path.read_text(encoding="utf-8")
+    return {(m.group(1), _normalize_route(m.group(2))) for m in _CAP_ROUTE_RE.finditer(text)}
+
+
+def _real_web_routes() -> set[tuple[str, str]]:
+    """Live web routes from the pages + fragments routers (excludes /api, /ws)."""
+    from cod_doc.api.web import fragments_router, pages_router
+
+    routes: set[tuple[str, str]] = set()
+    for r in (*pages_router.routes, *fragments_router.routes):
+        path = getattr(r, "path", None)
+        methods = getattr(r, "methods", None)
+        if not path or not methods:
+            continue
+        norm = _normalize_route(path)
+        for method in methods:
+            if method in ("HEAD", "OPTIONS"):
+                continue
+            routes.add((method, norm))
+    return routes
+
+
+def _audit_web_routes(cap_path: Path) -> list[AuditFinding]:
+    """WEB-042: diff documented web routes (capability §3) vs real app routes.
+
+    All findings are ``warning`` severity — route drift is advisory and never
+    fails CI on its own.
+    """
+    if not cap_path.exists():
+        return [
+            AuditFinding(
+                code="WR-0",
+                severity="warning",
+                subject=str(cap_path),
+                message="web-frontend capability route table not found — skipping route audit",
+            )
+        ]
+
+    documented = _documented_web_routes(cap_path)
+    real = _real_web_routes()
+    findings: list[AuditFinding] = []
+    for method, path in sorted(documented - real):
+        findings.append(
+            AuditFinding(
+                code="WR-1",
+                severity="warning",
+                subject=f"{method} {path}",
+                message="documented in capability §3 but no matching live route (stale/removed)",
+            )
+        )
+    for method, path in sorted(real - documented):
+        findings.append(
+            AuditFinding(
+                code="WR-2",
+                severity="warning",
+                subject=f"{method} {path}",
+                message="live web route missing from capability §3 route table (undocumented)",
+            )
+        )
+    return findings
+
+
+def _render_route_findings(findings: list[AuditFinding], as_json: bool) -> None:
+    """Print WEB-042 route-audit findings (non-blocking)."""
+    if as_json:
+        # Plain print (not rich console) — rich wraps long lines and corrupts JSON.
+        print(
+            _json.dumps(
+                {
+                    "findings": [
+                        {"code": f.code, "severity": f.severity, "subject": f.subject,
+                         "message": f.message}
+                        for f in findings
+                    ],
+                    "total": len(findings),
+                    "missing_in_code": sum(1 for f in findings if f.code == "WR-1"),
+                    "missing_in_docs": sum(1 for f in findings if f.code == "WR-2"),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return
+    if not findings:
+        console.print("[green]✅ Web routes ↔ capability §3 in sync.[/green]")
+        return
+    table = Table(show_header=True, box=None, padding=(0, 1))
+    table.add_column("Code", style="cyan", width=6)
+    table.add_column("Route", width=52)
+    table.add_column("Message")
+    for f in findings:
+        table.add_row(f.code, f.subject, f.message)
+    console.print(table)
+    console.print()
+    miss_code = sum(1 for f in findings if f.code == "WR-1")
+    miss_docs = sum(1 for f in findings if f.code == "WR-2")
+    console.print(
+        f"  [yellow]{miss_code} documented-but-missing[/yellow]  "
+        f"[yellow]{miss_docs} undocumented[/yellow]  total {len(findings)} "
+        f"[dim](advisory — does not fail CI)[/dim]"
+    )
+
+
 @click.command("audit")
-@click.option("--project", "-p", required=True, help="Project slug")
+@click.option("--project", "-p", required=False, help="Project slug")
 @click.option(
     "--strict",
     is_flag=True,
@@ -185,14 +307,22 @@ def _check_drift(doc: Any, root: Path, session: Any, findings: list[AuditFinding
     default=False,
     help="Also run DR-003 projection drift checks",
 )
+@click.option(
+    "--web-routes",
+    "web_routes",
+    is_flag=True,
+    default=False,
+    help="WEB-042: diff live web routes against the capability §3 route table (advisory)",
+)
 @click.option("--json", "as_json", is_flag=True, default=False)
 @click.pass_context
 def audit(
     ctx: click.Context,
-    project: str,
+    project: str | None,
     strict: bool,
     staged: bool,
     drift: bool,
+    web_routes: bool,
     as_json: bool,
 ) -> None:
     """Audit document frontmatter (FM-* rules) and optionally drift (DR-003).
@@ -200,13 +330,28 @@ def audit(
     Runs advisory checks from validation.audit_frontmatter on every document
     in the project (or only staged files with --staged). Prints findings and
     exits 1 if --strict and any error-severity issues exist.
+
+    With ``--web-routes`` instead audits the web layer: it diffs the live
+    FastAPI web routes against the capability §3 route table and reports
+    documented-but-missing (WR-1) and undocumented (WR-2) routes. Route drift
+    is advisory and never fails CI.
     """
     from cod_doc.infra.db import transactional
     from cod_doc.services import doc_service
 
-    effective_strict = strict or staged
-
     cfg: Config = ctx.obj["config"]
+
+    if web_routes:
+        entry = cfg.get_project(project) if project else None
+        root = Path(entry.path).expanduser().resolve() if entry else Path.cwd()
+        cap_path = root / "docs" / "system" / "capabilities" / "web-frontend.md"
+        _render_route_findings(_audit_web_routes(cap_path), as_json)
+        return
+
+    if not project:
+        raise click.UsageError("--project is required (unless --web-routes)")
+
+    effective_strict = strict or staged
     sf = _make_session(project, cfg)
 
     entry = cfg.get_project(project)
