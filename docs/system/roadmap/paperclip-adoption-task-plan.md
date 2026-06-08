@@ -1,11 +1,11 @@
 ---
 type: execution-plan
 scope: paperclip-adoption
-status: draft
+status: done
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-07
-last_updated: 2026-05-07
+last_updated: 2026-06-05
 audience: [contributors, agents]
 related_docs:
   - ../../../proposals/README.md
@@ -38,7 +38,9 @@ related_docs:
 | E | UX & Migration | 13, 14, 15 | US-017..US-019 | 7 | 🟡 pending |
 | F | Tooling fixes (cycle-2 gaps) | — | — (internal) | 3 | 🟡 pending |
 | H | Agent tools completion (cycle-5 cleanup) | 16, 20 | — (AGN-001..003, 010..013, 020..021) | 9 | 🟡 pending |
-| **TOTAL** | | 15 | 15 | **52** | 🟡 pending |
+| **TOTAL** | | 15 | 15 | **52** | ✅ done |
+
+> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): «🟡 pending» — устаревший черновик. БД: PCA = 82 done, 2 cancelled (PCA-935 hide-legacy, PCA-947 activity_subscribe). Сверка с кодом подтвердила, что все 15 RFC-паттернов (01–15) реализованы и подключены. **Исключение — Section H** (agent-tools docstring + integration-тесты): код AGT done, но остаточная работа трекается отдельно в [agent-tools-completion-task-plan.md](agent-tools-completion-task-plan.md) и в плане `stabilization-2026-06` (ROADMAP, A0-1).
 
 > Cycle 2 наполнил Section A (PCA-001..PCA-034). Cycle 3 (2026-05-07) расширил
 > план Sections B/C/D/E (Phase 2-4 + UX) и добавил Section F с tooling-фиксами
@@ -544,7 +546,7 @@ affects_files:
 ## Section F: Tooling fixes (cycle-2 gaps)
 
 > Заведена в Cycle 3 (2026-05-07) для закрытия API-gap'ов из
-> [cycle-2 audit](../audit/2026-05-07-doc-consolidation-cycle-2.md §3).
+> [cycle-2 audit §3](../audit/2026-05-07-doc-consolidation-cycle-2.md).
 > Без этих фиксов любая работа с RFC-беклогом полагается на прямой Python-доступ
 > к БД для plan/section bootstrap, и blocked_by/story_id/affects_files не
 > прорастают в граф зависимостей.

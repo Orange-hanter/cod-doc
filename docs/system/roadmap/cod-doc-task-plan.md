@@ -4,7 +4,7 @@ scope: cod-doc-bootstrap
 status: in-progress
 principle: test-first
 created: 2026-04-19
-last_updated: 2026-05-02
+last_updated: 2026-06-05
 source_of_truth:
   vision: docs/system/VISION.md
   architecture: docs/system/ARCHITECTURE.md
@@ -30,11 +30,13 @@ source_of_truth:
 | A: Data Core | inline | 5 | 5 | 0 | ✅ done |
 | B: Services | inline | 6 | 6 | 0 | ✅ done |
 | C: Write Paths | inline | 4 | 4 | 0 | ✅ done |
-| D: MCP & CLI | inline | 4 | 3 | 1 | 🔄 in-progress |
-| E: Retrieval | inline | 4 | 1 | 3 | 🔄 in-progress |
-| F: Migration | inline | 3 | 0 | 3 | ❌ pending |
+| D: MCP & CLI | inline | 4 | 4 | 0 | ✅ done |
+| E: Retrieval | inline | 4 | 2 | 2 | 🔄 in-progress |
+| F: Migration | inline | 3 | 1 | 2 | 🔄 in-progress |
 | G: Hardening & DevX | inline | 5 | 5 | 0 | ✅ done |
-| **TOTAL**   |        | **31** | **24** | **7** | |
+| **TOTAL**   |        | **31** | **27** | **4** | |
+
+> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): сверка с кодом исправила устаревший учёт. **Закрыты в коде, ранее висели pending:** COD-033 (`context_tools.py` + `context_service.py` L0/L1), COD-040 (FTS5 search), COD-041 (ContextService L0/L1). **Реально остаются открытыми** → трекаются в плане `stabilization-2026-06` (A1-4): COD-042/043 (ContextService L2/L3 семантика — сейчас заглушки), COD-052 (freeze/rollback projection flow). COD-051 (Restate importer) — код есть и работает (`services/restate_importer.py`), помечен done.
 
 ## Gap Analysis Summary
 

@@ -84,6 +84,7 @@ docs/system/
 │   └── from-restate.md             ← как перевезти реальное состояние Restate
 │
 └── roadmap/
+    ├── ROADMAP.md                            ← 🧭 канонический индекс приоритетов (старт здесь; БД = source of truth)
     ├── cod-doc-task-plan.md                  ← план внедрения (dogfood формата task-plan)
     ├── web-frontend-task-plan.md             ← план Web UI поверх FastAPI
     ├── web-frontend-kickoff-2026-05-02.md    ← brief на старт Section F (после аудита)
@@ -136,6 +137,7 @@ docs/system/
 | standards/* | draft | cod-doc core |
 | capabilities/* | draft | cod-doc core |
 | migration/from-restate | draft | cod-doc core |
+| roadmap/ROADMAP | active | cod-doc core |
 | roadmap/cod-doc-task-plan | active | cod-doc core |
 | roadmap/audit-followups-task-plan | active | cod-doc core |
 | roadmap/web-frontend-task-plan | active | cod-doc core |
@@ -175,7 +177,7 @@ docs/system/
 | 2026-05-07 | **Documentation Consolidation — Cycle 3 (Phase 2-4 + UX + Tooling).** Все 15 RFC из `/proposals/` теперь имеют структурированный беклог: 11 новых stories US-009..US-019, 5 новых секций B/C/D/E/F в DB plan, 26 новых задач PCA-100..PCA-422 + PCA-901..PCA-903. Section F вынесена для tooling-фиксов G1/G2/G3 (PCA-901..PCA-903; PCA-902 `critical` как блокер базовых plan_ready/plan_audit/critical_path сценариев). Plan total: **43 задачи** (17/6/7/3/7/3 по секциям A..F). Аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-3.md](audit/2026-05-07-doc-consolidation-cycle-3.md). |
 | 2026-05-07 | **Documentation Consolidation — Cycle 4 (Cross-links & Integrity).** `link_list` показал 39 broken markdown-refs на `docs/system/MASTER` — обнаружен gap **G4** (link_service не резолвит relative-paths против source-doc directory) → расширил scope PCA-421 в plan paperclip-adoption. Doc-record `arch/arch/architecture` идентифицирован как фикстурный реликт (commit e51e85f, 2026-04-05). `doc_drift` для root `MASTER` и `docs/system/MASTER` — `stale_export` после edit-in-place (известное состояние). Cycle-2/3 audit-доки зарегистрированы как doc-records (active). `check_stale_refs` остаётся 10/10 VALID. Аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-4.md](audit/2026-05-07-doc-consolidation-cycle-4.md). |
 | 2026-05-07 | **Documentation Consolidation — Cycle 5 (Final Close-out).** Сводка по 5 циклам: +44 pending tasks (44 задачи в paperclip-adoption-task-plan), +15 stories (US-005..US-019, всего 19), +5 audit-отчётов, +6 doc-records, +2 roadmap-файлов. Заведён PCA-911 (low) для уборки `arch/arch/architecture.md` фикстуры. Memory обогащена двумя feedback-патернами: `mcp_field_persistence_gap` (echo-but-no-persist) и `consolidation_cycle_pattern` (N циклов → N audit-отчётов). Реализация PCA-001..PCA-911 намеренно не запущена в этом сеансе — это отдельный длинный фронт работ. Финальный аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-5-final.md](audit/2026-05-07-doc-consolidation-cycle-5-final.md). |
-| 2026-05-07 | **ADR System capability добавлена.** Заведена capability [adr-system](capabilities/adr-system.md) (Architecture Decision Records как first-class entity с автонумерацией, supersede-DAG, визуальным редактором и Mermaid-графом в Web UI). Story US-020 (`accepted`). Новый план [adr-system-task-plan](roadmap/adr-system-task-plan.md), 3 секции (Domain & MCP, Web UI, Templates & Migration), 8 задач ADR-001..ADR-008. Старт реализации после закрытия Section F paperclip-плана. |
+| 2026-05-07 | **ADR System capability добавлена.** Заведена capability [adr-system](capabilities/adr-system.md) (Architecture Decision Records как first-class entity с автонумерацией, supersede-DAG, визуальным редактором и Mermaid-графом в Web UI). Story US-020 (`accepted`). Новый план [adr-system-task-plan](roadmap/adr-system-task-plan.md), 3 секции (Domain & MCP, Web UI, Templates & Migration), 8 задач `ADR-001`..`ADR-008`. Старт реализации после закрытия Section F paperclip-плана. |
 | 2026-05-07 | **Observability & Indexing capability добавлена (опциональная).** Capability [observability-and-indexing](capabilities/observability-and-indexing.md) — метрики выполнения задач, commit→task linkage для истории работ, code-refs `[label](src/path.py)` в markdown, RepoIndex (.gitignore-aware symbols/imports), DBObjectIndex (FTS5 unified search). 5 stories US-021..US-025 (`accepted`), новый план [observability-and-indexing-task-plan](roadmap/observability-and-indexing-task-plan.md): 5 секций (Metrics/Commits/Code-Refs/Repo-Index/DB-Object-Index), 8 задач OBI-001..OBI-040. Помечено опциональным — не блокирует Phase 1 paperclip-adoption. |
 
 ## 7. Соглашения об оформлении

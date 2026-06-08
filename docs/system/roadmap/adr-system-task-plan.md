@@ -1,11 +1,11 @@
 ---
 type: execution-plan
 scope: adr-system
-status: draft
+status: done
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-07
-last_updated: 2026-05-07
+last_updated: 2026-06-05
 audience: [contributors, agents]
 related_docs:
   - ../capabilities/adr-system.md
@@ -27,10 +27,12 @@ related_docs:
 
 | Section | Title | Tasks | Status |
 |:--------|:------|------:|:-------|
-| A | Domain & MCP | 3 | 🟡 pending |
-| B | Web UI (visual) | 3 | 🟡 pending |
-| C | Templates & Migration | 2 | 🟡 pending |
-| **TOTAL** | | **8** | 🟡 pending |
+| A | Domain & MCP | 3 | ✅ done |
+| B | Web UI (visual) | 3 | ✅ done |
+| C | Templates & Migration | 2 | ✅ done |
+| **TOTAL** | | **8** | ✅ done |
+
+> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): код подтверждает 8/8 done — миграция `20260515_0018_adr_tables.py`, `services/adr_service.py` (+ immutability/deprecate), 9 MCP-тулов `adr_*`, CLI `cod_doc/cli/adr/`, web-страницы `api/web/pages/adr.py` (list/new/show/graph). БД: ADR-001..008 = done.
 
 ## Dependency Graph
 

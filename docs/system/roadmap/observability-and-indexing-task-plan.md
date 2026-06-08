@@ -1,11 +1,11 @@
 ---
 type: execution-plan
 scope: observability-and-indexing
-status: optional
+status: done
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-07
-last_updated: 2026-05-07
+last_updated: 2026-06-05
 audience: [contributors, agents]
 related_docs:
   - ../capabilities/observability-and-indexing.md
@@ -29,12 +29,14 @@ related_docs:
 
 | Section | Story | Title | Tasks | Status |
 |:--------|:------|:------|------:|:-------|
-| A | US-021 | Метрики и скорость выполнения задач | 2 | 🟡 pending |
-| B | US-022 | Тесная интеграция коммитов | 2 | 🟡 pending |
-| C | US-023 | Связывание исходного кода с задачами/документами | 2 | 🟡 pending |
-| D | US-024 | Индексирование файловой базы репозитория | 1 | 🟡 pending |
-| E | US-025 | Индексирование объектной базы проекта | 1 | 🟡 pending |
-| **TOTAL** | | | **8** | 🟡 pending |
+| A | US-021 | Метрики и скорость выполнения задач | 2 | ✅ done |
+| B | US-022 | Тесная интеграция коммитов | 2 | ✅ done |
+| C | US-023 | Связывание исходного кода с задачами/документами | 2 | ✅ done |
+| D | US-024 | Индексирование файловой базы репозитория | 1 | ✅ done |
+| E | US-025 | Индексирование объектной базы проекта | 1 | ✅ done |
+| **TOTAL** | | | **8** | ✅ done |
+
+> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): код подтверждает 8/8 done — `metrics_service.py` + web `/metrics`, `commit_link_service.py` + web `/commits`, code-refs (`api/web/pages/code_refs.py`), `repo_index_service.py` (repo_file/repo_symbol), `search_service.py` FTS5 (`db_search_idx*`). БД: OBI-001..008 = done.
 
 ## Dependency Graph
 

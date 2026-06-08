@@ -1,10 +1,10 @@
 ---
 type: execution-plan
 scope: cod-doc-refactor-large-files
-status: pending
+status: done
 principle: fix-first
 created: 2026-05-02
-last_updated: 2026-05-02
+last_updated: 2026-06-05
 source_of_truth:
   cod_doc_plan: docs/system/roadmap/cod-doc-task-plan.md
   task_plan_standard: docs/system/standards/task-plan.md
@@ -36,7 +36,9 @@ source_of_truth:
 | F: TUI screens | 1 | 0 | 1 | pending |
 | G: Static assets (CSS) | 1 | 0 | 1 | pending |
 | H: Tests | 6 | 0 | 6 | pending |
-| **TOTAL** | **20** | **0** | **20** | pending |
+| **TOTAL** | **20** | **20** | **0** | ✅ done |
+
+> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): таблица выше была устаревшим черновиком («0 done») — сверка с кодом показала, что декомпозиция **уже выполнена**: пакеты `cod_doc/services/{plan_service,link_service,story_service,validation,projection_service}/`, `cod_doc/infra/models/` (20 файлов), `cod_doc/cli/{doc,plan,story}/`, `cod_doc/api/web/{pages,fragments}/`, `cod_doc/tui/screens/wizard/`, CSS-split (`static/app.css` → `static/css/_*.css`). Остаточный low-value пункт (standalone frontmatter-parser COD-050 — логика встроена в `projection_service/_frontmatter.py`) не блокирует. План закрыт.
 
 ## Принципы декомпозиции
 
@@ -248,7 +250,7 @@ cod_doc/services/projection/
 
 **Type:** refactor   **Priority:** low   **Section:** B-Services
 
-**Файл на грани (402 LOC).** Внутри две явные категории: structural validators (raise `ValidationError`) и advisory validators (return `list[ValidationIssue]`). Согласно [memory/validation_pattern.md](../../../.claude/projects/-Users-dakh-Git-cod-doc/memory/validation_pattern.md) разделение по этой границе — основной паттерн проекта; материализация в коде усилит его.
+**Файл на грани (402 LOC).** Внутри две явные категории: structural validators (raise `ValidationError`) и advisory validators (return `list[ValidationIssue]`). Согласно memory `validation_pattern.md` разделение по этой границе — основной паттерн проекта; материализация в коде усилит его.
 
 **Целевая структура.** Пакет `cod_doc/services/validation/`:
 
@@ -550,7 +552,14 @@ def db_url(tmp_path: Path) -> str: ...
 def engine_with_schema(db_url: str): ...
 ```
 
-(см. одинаковые блоки в [test_doc_service.py:32-50](../../../tests/services/test_doc_service.py), [test_task_service.py:30-50](../../../tests/services/test_task_service.py), [test_plan_service.py:29-47](../../../tests/services/test_plan_service.py), [test_story_service.py:43-61](../../../tests/services/test_story_service.py), [test_link_service.py:39-57](../../../tests/services/test_link_service.py), [test_projection_service.py:24-43](../../../tests/services/test_projection_service.py)).
+(исторически одинаковые блоки жили в `test_doc_service.py`, `test_task_service.py`,
+`test_plan_service.py`, `test_story_service.py`, `test_link_service.py`; после
+разрезания см. текущие focused tests: [test_doc_create.py](../../../tests/services/test_doc_create.py),
+[test_task_create.py](../../../tests/services/test_task_create.py),
+[test_plan_recalc.py](../../../tests/services/test_plan_recalc.py),
+[test_story_crud.py](../../../tests/services/test_story_crud.py),
+[test_link_parser.py](../../../tests/services/test_link_parser.py),
+[test_projection_service.py](../../../tests/services/test_projection_service.py)).
 
 **Действие.** Создать (или дополнить) `tests/services/conftest.py` с этими тремя элементами. Удалить копии из шести модулей. ⚠️ ПРЕДВАРЯЕТ задачи RFL-071..RFL-075 — без неё каждое последующее разбиение раздувает дублирование.
 
