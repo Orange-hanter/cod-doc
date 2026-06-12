@@ -19,6 +19,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 CONFIG_DIR = Path(os.environ.get("COD_DOC_HOME", Path.home() / ".cod-doc"))
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
 
+# STB-011: cache the parsed config per file-path, keyed on (mtime, size).
+# Config.load() is on the hot path (every MCP tool resolves a project through
+# it); without this it re-reads + re-parses YAML on every call. The key is
+# (mtime, size) so an external edit invalidates it; save() pops the entry so an
+# in-process mutation is never served stale.
+_LOAD_CACHE: dict[str, tuple[float, int, dict[str, Any]]] = {}
+
 
 class ProjectEntry(BaseSettings):
     """Запись о проекте в реестре."""
@@ -154,17 +161,37 @@ class Config(BaseSettings):
 
     @classmethod
     def load(cls) -> Config:
-        """Загрузить конфиг из файла (или вернуть дефолтный)."""
-        if CONFIG_FILE.exists():
-            data = yaml.safe_load(CONFIG_FILE.read_text(encoding="utf-8")) or {}
-            return cls(**data)
-        return cls()
+        """Загрузить конфиг из файла (или вернуть дефолтный).
+
+        STB-011: the parsed YAML is cached per config-file path and invalidated
+        by (mtime, size), so hot callers don't re-read+parse on every call. A
+        fresh ``Config`` is still constructed each call, so callers never share
+        a mutable instance.
+        """
+        path = CONFIG_FILE
+        if not path.exists():
+            return cls()
+        st = path.stat()
+        key = str(path)
+        cached = _LOAD_CACHE.get(key)
+        if cached is not None and cached[0] == st.st_mtime and cached[1] == st.st_size:
+            data = cached[2]
+        else:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            _LOAD_CACHE[key] = (st.st_mtime, st.st_size, data)
+        return cls(**data)
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Drop the parsed-config cache (STB-011) — mainly for tests."""
+        _LOAD_CACHE.clear()
 
     def save(self) -> None:
         """Сохранить конфиг в файл."""
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         data = self.model_dump()
         CONFIG_FILE.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+        _LOAD_CACHE.pop(str(CONFIG_FILE), None)  # STB-011: invalidate stale parse
 
     # ── Projects ─────────────────────────────────────────────────────────────
 
