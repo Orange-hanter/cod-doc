@@ -146,6 +146,29 @@ audit:
     paths: [audit.json]
 ```
 
+### 4.4 Расширенные паттерны (DOC-ME-3)
+
+- **Shared-token / pinned version.** Закрепляй версию: `pip install cod-doc==X.Y.Z`
+  (или git-pin), чтобы CI не «поплыл» на минорном релизе. Токены/секреты для
+  приватных индексов — через CI-secrets, не в YAML.
+- **Кэш `state.db` между job-ами.** БД-проекция дорого пересобирается; кэшируй
+  `.cod-doc/state.db` по ключу от хеша `docs/**`, чтобы audit/drift-jobs
+  переиспользовали индекс:
+
+  ```yaml
+  - uses: actions/cache@v4
+    with:
+      path: .cod-doc/state.db
+      key: coddoc-db-${{ hashFiles('docs/**', 'cod_doc/infra/migrations/**') }}
+  ```
+
+  Промах кэша → один `cod-doc doc import` пересобирает БД; попадание → job
+  стартует с готовым индексом.
+- **Fail-on-warning toggle.** По умолчанию warning'и не валят сборку
+  (exit 0). Для строгих веток: `cod-doc audit --strict` (error → exit 1).
+  Route-drift и подобные advisory-проверки (`--web-routes`) остаются
+  non-blocking даже под `--strict` — они сигналят, но не блокируют merge.
+
 ## 5. JSON-формат отчёта
 
 ```json

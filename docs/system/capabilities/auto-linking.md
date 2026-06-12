@@ -105,6 +105,23 @@ Gotcha: если входящая ссылка была написана как 
 - **Осиротевшие документы** (`cod-doc audit --orphans`) — `source_of_truth=true`, но входящих 0 (кроме root MASTER и NAVIGATION).
 - **Кластер доков** (`cod-doc graph cluster --around <doc>`) — BFS по `link` до глубины `N`.
 
+### 5.1 Documentation graph (DOC-ME-1) — 🟡 planned
+
+> ⚠️ **Намечено, не реализовано (на 2026-06-08).** Спецификация будущей команды;
+> сейчас доступен только ADR-граф (`cod-doc adr graph`).
+
+`cod-doc graph documentation --format mermaid|dot` — генерируемый аналог
+(Restate) `Documentation Graph.md`: рендерит граф `link` между документами в
+Mermaid или Graphviz/DOT для вставки в обзор или CI-артефакт. Уровни охвата:
+
+- `--scope full` — весь проект (узлы = документы, рёбра = resolved-ссылки).
+- `--scope module <prefix>` — поддерево одного модуля (`modules/M1-auth/*`).
+- `--scope hottest --top N` — N документов с наибольшим числом входящих ссылок
+  (ranking по `link.to_doc_key`), чтобы видеть «центры тяжести» документации.
+
+Источник данных — та же таблица `link`, что и graph-queries выше; команда
+read-only и не пишет в БД.
+
 ## 6. MCP поверхность
 
 | Tool | Операция |

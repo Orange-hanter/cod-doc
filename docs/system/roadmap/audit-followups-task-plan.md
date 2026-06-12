@@ -1,10 +1,10 @@
 ---
 type: execution-plan
 scope: cod-doc-audit-followups
-status: pending
+status: done
 principle: fix-first
 created: 2026-04-19
-last_updated: 2026-04-28
+last_updated: 2026-06-08
 source_of_truth:
   audit_report: docs/system/audit/2026-04-19-initial-audit.md
   section_c_audit: docs/system/audit/2026-04-28-section-c-capabilities.md
@@ -29,11 +29,21 @@ source_of_truth:
 |:--------|:-----|------:|-----:|----------:|:-------|
 | A: Critical (blocking) | inline | 2 | 2 | 0 | ✅ done |
 | B: High (pre-impl) | inline | 9 | 9 | 0 | ✅ done |
-| C: Medium | inline | 7 | 1 | 6 | 🔄 in-progress |
-| D: Low | inline | 5 | 1 | 4 | 🔄 in-progress |
-| **TOTAL** |       | **23** | **13** | **10** | |
+| C: Medium | inline | 7 | 7 | 0 | ✅ done |
+| D: Low | inline | 5 | 5 | 0 | ✅ done |
+| **TOTAL** |       | **23** | **23** | **0** | ✅ done |
 
-> Стабы для DOC-HI-1..HI-5 уже созданы во время аудита (decisions-and-questions, agents-and-skills, sensitive-data, project-bootstrap, audit-and-ci); они помечены `done` ниже. Остался blockers фундамента (DOC-HI-6..HI-9), medium и low.
+> Стабы для DOC-HI-1..HI-5 уже созданы во время аудита (decisions-and-questions, agents-and-skills, sensitive-data, project-bootstrap, audit-and-ci); они помечены `done` ниже.
+>
+> **STB-021 closure 2026-06-08** (см. [ROADMAP](ROADMAP.md)): закрыты оставшиеся
+> 10 задач. Standards/conventions (существующие концепты): DOC-ME-5 transclusion
+> (document-link §12), DOC-ME-6 priority rubric (task-plan §5.1), DOC-ME-7
+> audit_log↔revision (revision-history §13), DOC-LO-2 terminology, DOC-LO-3
+> Restate-prefix, DOC-LO-4 language standard, DOC-LO-5 changelog template
+> (MASTER §6/§7). Capability-спеки для **ещё не реализованных** команд помечены
+> 🟡 planned: DOC-ME-1 documentation graph (auto-linking §5.1), DOC-ME-2
+> backup-and-export (новый файл). DOC-ME-3 CI-паттерны (audit-and-ci §4.4) —
+> реальная конфигурация.
 
 ## Gap Analysis Summary
 
@@ -318,7 +328,7 @@ affected_files:
 id: DOC-ME-1
 title: "Docs: documentation graph generation"
 section: C-Medium
-status: pending
+status: done
 depends_on: []
 type: docs
 priority: medium
@@ -334,7 +344,7 @@ affected_files:
 id: DOC-ME-2
 title: "Docs: backup/export and recovery"
 section: C-Medium
-status: pending
+status: done
 depends_on: []
 type: docs
 priority: medium
@@ -353,7 +363,7 @@ affected_files:
 id: DOC-ME-3
 title: "Docs: CI templates expanded (GitHub + GitLab + pre-commit)"
 section: C-Medium
-status: pending
+status: done
 depends_on: [DOC-HI-7, DOC-HI-9]
 type: docs
 priority: medium
@@ -387,7 +397,7 @@ affected_files:
 id: DOC-ME-5
 title: "Docs: transclusion semantics and embedding interaction"
 section: C-Medium
-status: pending
+status: done
 depends_on: [DOC-HI-8]
 type: docs
 priority: medium
@@ -403,7 +413,7 @@ affected_files:
 id: DOC-ME-6
 title: "Docs: priority rubric for tasks"
 section: C-Medium
-status: pending
+status: done
 depends_on: []
 type: docs
 priority: medium
@@ -419,7 +429,7 @@ affected_files:
 id: DOC-ME-7
 title: "Docs: audit_log vs revision boundary"
 section: C-Medium
-status: pending
+status: done
 depends_on: [DOC-HI-9]
 type: docs
 priority: medium
@@ -454,7 +464,7 @@ affected_files:
 id: DOC-LO-2
 title: "Docs: terminology cleanup (section file/files)"
 section: D-Low
-status: pending
+status: done
 type: docs
 priority: low
 affected_files:
@@ -468,7 +478,7 @@ affected_files:
 id: DOC-LO-3
 title: "Docs: prefix Restate-internal references with «(Restate)»"
 section: D-Low
-status: pending
+status: done
 type: docs
 priority: low
 ```
@@ -479,7 +489,7 @@ priority: low
 id: DOC-LO-4
 title: "Docs: language standard (RU prose, EN identifiers)"
 section: D-Low
-status: pending
+status: done
 type: docs
 priority: low
 affected_files:
@@ -492,7 +502,7 @@ affected_files:
 id: DOC-LO-5
 title: "Docs: MASTER.md changelog template"
 section: D-Low
-status: pending
+status: done
 type: docs
 priority: low
 affected_files:
