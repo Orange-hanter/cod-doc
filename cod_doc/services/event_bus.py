@@ -118,7 +118,7 @@ def queue_emit(session: Session, project: str, kind: str, **payload: Any) -> Non
 
 
 @event.listens_for(Session, "after_commit")
-def _flush_pending_events(session: Session) -> None:  # pragma: no cover via integration
+def _flush_pending_events(session: Session) -> None:
     pending = session.info.pop(_PENDING_KEY, None)
     if not pending:
         return
@@ -127,7 +127,7 @@ def _flush_pending_events(session: Session) -> None:  # pragma: no cover via int
 
 
 @event.listens_for(Session, "after_rollback")
-def _drop_pending_events(session: Session) -> None:  # pragma: no cover via integration
+def _drop_pending_events(session: Session) -> None:
     session.info.pop(_PENDING_KEY, None)
 
 

@@ -95,7 +95,7 @@ def _load_plugins() -> None:
                 return cast("LLMAdapter", adapter_cls.from_config(cfg))
 
             register_adapter(name, _factory)
-    except Exception as exc:  # pragma: no cover — plugin loading is best-effort
+    except Exception as exc:  # plugin loading is best-effort (covered by test_degraded_paths)
         import warnings
 
         warnings.warn(f"Failed to load adapter plugins from {plugin_file}: {exc}", stacklevel=2)

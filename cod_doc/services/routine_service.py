@@ -510,7 +510,7 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
                 )
                 if created_task_id:
                     run_row.created_task_id = created_task_id
-    except Exception as exc:  # pragma: no cover — defensive guard
+    except Exception as exc:  # defensive guard (covered by test_degraded_paths)
         run_row.status = "failed"
         run_row.error = repr(exc)
         run_row.finished_at = datetime.now(UTC)

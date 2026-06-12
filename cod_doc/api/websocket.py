@@ -43,7 +43,7 @@ async def project_event_stream(websocket: WebSocket, slug: str) -> None:
                     break
     except WebSocketDisconnect:
         return
-    except Exception:  # pragma: no cover — defensive
+    except Exception:  # defensive (covered by test_ws_stream_crash_closes_gracefully)
         logger.exception("ws/projects/%s stream crashed", slug)
         with contextlib.suppress(Exception):
             await websocket.close(code=1011, reason="server error")

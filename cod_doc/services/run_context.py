@@ -137,7 +137,7 @@ def _open_session_for_project(project_path: str | None):  # type: ignore[no-unty
                     if proj is not None and proj.row_id is not None:
                         return sf, proj.row_id
         return None, None
-    except Exception:  # pragma: no cover — degraded path
+    except Exception:  # degraded path (covered by test_degraded_paths)
         return None, None
 
 
@@ -176,7 +176,7 @@ def start_orchestrator_run(
                         status="running",
                     )
                 )
-        except Exception:  # pragma: no cover — degraded path
+        except Exception:  # degraded path (covered by test_degraded_paths)
             pass
     return _current_run_id.set(run_id)
 
@@ -211,7 +211,7 @@ def finalize_orchestrator_run(
                     run.finished_at = datetime.now(UTC)
                     if summary is not None:
                         run.summary = summary
-        except Exception:  # pragma: no cover — degraded path
+        except Exception:  # degraded path (covered by test_degraded_paths)
             pass
 
     from contextvars import Token

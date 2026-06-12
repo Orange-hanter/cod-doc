@@ -116,3 +116,24 @@ def test_non_project_page_omits_data_project(ws_client) -> None:
     assert r.status_code == 200
     assert "data-project=" not in r.text
     assert 'id="cod-ws-dot"' not in r.text
+
+
+def test_ws_stream_crash_closes_gracefully(ws_client, monkeypatch) -> None:
+    """STB-010: a non-disconnect crash in the stream loop is caught — the
+    server logs and closes with 1011 instead of bubbling an unhandled error."""
+    from starlette.websockets import WebSocketDisconnect
+
+    from cod_doc.services import event_bus
+
+    def boom(_slug):
+        raise RuntimeError("subscribe boom")
+
+    monkeypatch.setattr(event_bus, "subscribe", boom)
+
+    client, entry = ws_client
+    with client.websocket_connect(f"/ws/projects/{entry.name}") as ws:
+        assert ws.receive_json()["kind"] == "hello"
+        # subscribe() raises → handler hits the defensive `except Exception`
+        # and closes the socket; the next receive observes the disconnect.
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()
