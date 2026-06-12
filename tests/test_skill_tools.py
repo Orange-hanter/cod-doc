@@ -82,3 +82,14 @@ def test_get_skill_record_returns_full_body_for_orchestrator() -> None:
 
 def test_get_skill_record_unknown_returns_none() -> None:
     assert get_skill_record("does-not-exist") is None
+
+
+def test_skill_loader_relocated_to_core_and_reexported() -> None:
+    """STB-022: catalog loaders live in core.skills; skill_tools re-exports them."""
+    from cod_doc.core.skills import iter_skill_records as core_fn
+    from cod_doc.mcp.tools import skill_tools
+
+    assert skill_tools.iter_skill_records is core_fn
+    recs = core_fn()
+    assert isinstance(recs, list)
+    assert all({"name", "description", "path"} <= r.keys() for r in recs)

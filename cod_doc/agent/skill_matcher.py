@@ -20,7 +20,7 @@ import re
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from cod_doc.mcp.tools.skill_tools import SKILLS_ROOT, iter_skill_records
+from cod_doc.core.skills import SKILLS_ROOT, iter_skill_records
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -152,7 +152,13 @@ class Subscription:
 
     async def __aexit__(self, *exc_info: Any) -> None:
         async with _lock:
-            _subscribers[self.project].discard(self._queue)
+            subs = _subscribers.get(self.project)
+            if subs is not None:
+                subs.discard(self._queue)
+                # STB-022: drop the key once empty so projects don't accumulate
+                # idle empty sets in the module-level dict for the process life.
+                if not subs:
+                    _subscribers.pop(self.project, None)
 
     def __aiter__(self) -> Subscription:
         return self
@@ -169,3 +175,12 @@ def subscribe(project: str) -> Subscription:
 def active_subscribers(project: str) -> int:
     """Return the count of live subscribers — used by tests + diagnostics."""
     return len(_subscribers.get(project, ()))
+
+
+def dispose() -> None:
+    """Drop all subscriber queues (STB-022).
+
+    Called on API shutdown (and useful on reload) so the module-level
+    ``_subscribers`` registry doesn't retain queues across an app lifecycle.
+    """
+    _subscribers.clear()

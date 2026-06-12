@@ -112,3 +112,21 @@ async def test_queue_emit_drops_events_on_rollback(engine_with_schema) -> None: 
                 await asyncio.wait_for(sub.__anext__(), timeout=0.1)
     finally:
         session.close()
+
+
+async def test_subscriber_key_removed_when_empty() -> None:
+    """STB-022: the registry must not retain an empty set after unsubscribe."""
+    async with event_bus.subscribe("leak-demo"):
+        assert event_bus.active_subscribers("leak-demo") == 1
+    assert event_bus.active_subscribers("leak-demo") == 0
+    assert "leak-demo" not in event_bus._subscribers
+
+
+async def test_dispose_clears_all_subscribers() -> None:
+    """STB-022: dispose() drops every subscriber (called on app shutdown)."""
+    async with event_bus.subscribe("d1"):
+        assert event_bus.active_subscribers("d1") == 1
+        event_bus.dispose()
+        assert event_bus._subscribers == {}
+    # __aexit__ after dispose is a safe no-op (key already gone).
+    assert event_bus.active_subscribers("d1") == 0

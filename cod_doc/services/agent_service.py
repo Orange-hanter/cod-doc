@@ -16,6 +16,8 @@ from sqlalchemy import select
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+    from cod_doc.domain.entities import Task
+
 
 # ----------------------------------------------------------------- #
 # Helpers                                                            #
@@ -121,7 +123,7 @@ def _parse_acceptance_checklist(acceptance: str | None) -> list[str]:
 def _build_task_card(
     session: Session,
     project_id: int,
-    task: Any,  # cod_doc.domain.entities.Task — Any to avoid circular import
+    task: Task,
 ) -> dict[str, Any]:
     """Assemble the agent_pick payload for an already-checked-out task."""
     from cod_doc.infra.models import (
@@ -705,6 +707,14 @@ def pick(
 
     # Refresh task after checkout (status updated to in_progress).
     refreshed = repo.get(target.row_id) if target.row_id is not None else target
+    if refreshed is None:
+        # Row vanished between checkout and refresh (concurrent delete) — the
+        # type fix in STB-022 surfaced this previously-unhandled edge.
+        return {
+            "task": None,
+            "reason": "task_disappeared",
+            "detail": target.task_id,
+        }
 
     # 4. Assemble card.
     return _build_task_card(session, project_id, refreshed)

@@ -28,6 +28,7 @@ from cod_doc.api.webhooks import router as webhook_router
 from cod_doc.api.websocket import router as websocket_router
 from cod_doc.config import Config
 from cod_doc.logging_config import setup_logging
+from cod_doc.services import event_bus
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -51,6 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     stop_daemon()
     dispose_all_engines()
+    event_bus.dispose()  # STB-022: clear WebSocket subscriber registry on shutdown
 
 
 app = FastAPI(

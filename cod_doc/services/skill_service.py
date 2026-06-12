@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cod_doc.mcp.tools.skill_tools import SKILLS_ROOT, iter_skill_records
+from cod_doc.core.skills import SKILLS_ROOT, iter_skill_records
 
 if TYPE_CHECKING:
     from pathlib import Path
