@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **101 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **103 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -283,11 +283,11 @@ LLM может разобрать MASTER.md и выстроить карту п�
 
 | Семейство | Кол-во | Назначение | Ключевые тулы |
 |-----------|-------:|------------|---------------|
-| **doc.\*** | 8 | DB-backed документы | `doc_list`, `doc_body`, `doc_create`, `doc_rename`, `doc_export`, `doc_drift`, `doc_drift_all`, `doc_get` |
+| **doc.\*** | 9 | DB-backed документы | `doc_list`, `doc_body`, `doc_create`, `doc_rename`, `doc_export`, `doc_drift`, `doc_drift_all`, `doc_get`, `doc_accept` |
 | **task.\*** | 15 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_complete`, `task_set_blocker`, `task_find_duplicate`, `task_log_progress`, … |
 | **task_doc.\*** | 5 | Артефакты, связанные с задачей | `task_doc_put`, `task_doc_get`, `task_doc_list`, `task_doc_revisions`, `task_doc_revert` |
 | **task_checkout / task_release** | 2 | Атомарный захват задачи (PCA-200) | `task_checkout`, `task_release` |
-| **plan.\*** | 10 | Планы исполнения и графы зависимостей | `plan_create`, `plan_section_create`, `plan_sections_list`, `plan_ready`, `plan_progress`, `plan_critical_path`, `plan_forward_chain`, `plan_reverse_chain`, `plan_audit`, `plan_export` |
+| **plan.\*** | 11 | Планы исполнения и графы зависимостей | `plan_create`, `plan_freeze`, `plan_section_create`, `plan_sections_list`, `plan_ready`, `plan_progress`, `plan_critical_path`, `plan_forward_chain`, `plan_reverse_chain`, `plan_audit`, `plan_export` |
 | **story.\*** | 7 | User stories + acceptance criteria | `story_create`, `story_list`, `story_get`, `story_link`, `story_add_criterion`, `story_update_status`, `story_coverage` |
 | **link.\*** | 4 | Гибридные ссылки между документами | `link_list`, `link_sync`, `link_verify`, `link_suggest_for_section` |
 | **revision.\*** | 3 | История изменений сущностей | `revision_list`, `revision_get`, `revision_revert` |
@@ -301,7 +301,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **context / capabilities / session** | 9 | Admin: snowball-сборка контекста, L0 bootstrap, tool discovery + per-tool describe, change-log, safe-call envelope, workspace defaults | `context_get`, `capabilities`, `tool_search`, `tool_describe`, `tools_diff`, `tool_call_safe`, `set_default_project`, `get_default_project`, `clear_default_project` |
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
 | **Legacy (YAML агент)** | 3 | Остаток legacy-surface после STB-002 (2026-06-08): resume-вход + context-хелперы. YAML CRUD (проекты/задачи/MASTER/поиск + hash/verify) удалён — БД источник истины. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
-| **ИТОГО** | **101** | | |
+| **ИТОГО** | **103** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в

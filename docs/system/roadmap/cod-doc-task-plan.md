@@ -32,11 +32,17 @@ source_of_truth:
 | C: Write Paths | inline | 4 | 4 | 0 | ✅ done |
 | D: MCP & CLI | inline | 4 | 4 | 0 | ✅ done |
 | E: Retrieval | inline | 4 | 2 | 2 | 🔄 in-progress |
-| F: Migration | inline | 3 | 1 | 2 | 🔄 in-progress |
+| F: Migration | inline | 3 | 2 | 1 | 🔄 in-progress |
 | G: Hardening & DevX | inline | 5 | 5 | 0 | ✅ done |
-| **TOTAL**   |        | **31** | **27** | **4** | |
+| **TOTAL**   |        | **31** | **28** | **3** | |
 
-> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): сверка с кодом исправила устаревший учёт. **Закрыты в коде, ранее висели pending:** COD-033 (`context_tools.py` + `context_service.py` L0/L1), COD-040 (FTS5 search), COD-041 (ContextService L0/L1). **Реально остаются открытыми** → трекаются в плане `stabilization-2026-06` (A1-4): COD-042/043 (ContextService L2/L3 семантика — сейчас заглушки), COD-052 (freeze/rollback projection flow). COD-051 (Restate importer) — код есть и работает (`services/restate_importer.py`), помечен done.
+> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): сверка с кодом исправила устаревший учёт. **Закрыты в коде, ранее висели pending:** COD-033 (`context_tools.py` + `context_service.py` L0/L1), COD-040 (FTS5 search), COD-041 (ContextService L0/L1). **Реально остаются открытыми** → трекаются в плане `stabilization-2026-06`: COD-042/043 (ContextService L2/L3 семантика — сейчас заглушки, A1-4). COD-051 (Restate importer) — код есть и работает (`services/restate_importer.py`), помечен done.
+>
+> **STB-014 closure 2026-06-14:** COD-052 (freeze + accept flow) закрыт. Сервис-слой
+> (`plan_service.freeze_projection`, `doc_service.accept`) уже существовал; добавлена
+> недостающая user-facing surface: MCP-тулы `plan_freeze` / `doc_accept` (каталог
+> 101→103) и CLI `cod-doc plan freeze` / `cod-doc doc accept`. Rollback документа уже
+> покрыт `revision_revert`.
 
 ## Gap Analysis Summary
 
@@ -640,7 +646,7 @@ affected_files:
 id: COD-052
 title: "Implement: projection freeze + accept flow"
 section: F-Migration
-status: pending
+status: done
 depends_on: [COD-023, COD-051]
 type: feature
 priority: high

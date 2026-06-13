@@ -8,6 +8,7 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_chain,
     cmd_critical_path,
     cmd_export,
+    cmd_freeze,
     cmd_ready,
     cmd_show,
 )

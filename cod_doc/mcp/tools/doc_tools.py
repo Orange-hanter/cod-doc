@@ -193,6 +193,43 @@ def register(mcp: FastMCP) -> None:
             body = doc_service.render_body(session, d.row_id)
         return body or ""
 
+    @mcp.tool(name="doc_accept")
+    def doc_accept(
+        project: str,
+        doc_key: str,
+        author: str = "mcp",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """COD-052: promote a DRAFT/REVIEW document to ACTIVE (the 'accept' step).
+
+        Writes a DOCUMENT revision and emits a ``doc.accepted`` activity event.
+        Accepting an already-ACTIVE document is a no-op transition.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import activity_service, doc_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            d = doc_service.get(session, project_id, doc_key)
+            if d is None or d.row_id is None:
+                raise ValueError(f"Document '{doc_key}' not found.")
+            updated = doc_service.accept(
+                session, document_id=d.row_id, author=author, reason=reason
+            )
+            activity_service.emit(
+                session,
+                project_id,
+                "doc.accepted",
+                actor_kind="agent" if author.startswith("agent") else "human",
+                actor_id=author,
+                scope_kind="document",
+                scope_id=doc_key,
+                payload={"status": updated.status.value},
+                summary=f"Document {doc_key!r} accepted → {updated.status.value}",
+            )
+        return doc_to_dict(updated)
+
     @mcp.tool(name="doc_export")
     def doc_export(
         project: str,

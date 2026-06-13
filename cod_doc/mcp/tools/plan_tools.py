@@ -95,6 +95,36 @@ def register(mcp: FastMCP) -> None:
             "sections": seeded,
         }
 
+    @mcp.tool(name="plan_freeze")
+    def plan_freeze(
+        project: str,
+        plan_scope: str,
+        author: str = "mcp",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """COD-052: snapshot a plan's current projection into a frozen Document.
+
+        Renders Progress Overview / Next Batch / Dependency Graph and stores
+        them as an immutable ``EXECUTION_LOG`` document keyed
+        ``frozen/<scope>/<UTC timestamp>``. Append-only: each call creates a new
+        snapshot. Returns ``{frozen_doc_key, document_id, title}``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import plan_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            require_project_id(session, project)
+            plan_id = _require_plan_id(session, plan_scope)
+            doc = plan_service.freeze_projection(
+                session, plan_id, author=author, reason=reason
+            )
+        return {
+            "frozen_doc_key": doc.doc_key,
+            "document_id": doc.row_id,
+            "title": doc.title,
+        }
+
     @mcp.tool(name="plan_sections_list")
     def plan_sections_list(project: str, plan_scope: str) -> list[dict[str, Any]]:
         """List all sections of a plan with task counts (PCA-941).
