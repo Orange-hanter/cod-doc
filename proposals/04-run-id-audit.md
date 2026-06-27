@@ -56,7 +56,7 @@ X-Paperclip-Run-Id: <run-uuid>
 | Операция                            | Источник                                  |
 | ----------------------------------- | ----------------------------------------- |
 | `doc_create`, `doc_body` (write)    | [doc_tools.py](cod_doc/mcp/tools/doc_tools.py) |
-| `update_master_hashes`              | [legacy_master_tools.py](cod_doc/mcp/tools/legacy_master_tools.py) |
+| `update_master_hashes`              | legacy `legacy_master_tools.py` (removed in `c310503`; historical mutation source) |
 | `task_update_status`, `task_complete` | [task_tools.py](cod_doc/mcp/tools/task_tools.py) |
 | `task_create`, `task_set_blocker`   | [task_tools.py](cod_doc/mcp/tools/task_tools.py) |
 | `link_sync`                         | [link_tools.py](cod_doc/mcp/tools/link_tools.py) |

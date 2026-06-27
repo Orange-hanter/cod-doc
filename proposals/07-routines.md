@@ -22,7 +22,7 @@ POST /api/companies/:id/routines
 ## Текущее состояние cod-doc
 
 В cod-doc уже есть набор «health-чеков», но они вызываются вручную из CLI или UI:
-- [check_stale_refs](cod_doc/mcp/tools/legacy_master_tools.py) — поиск устаревших ссылок в MASTER.md.
+- [stale_refs](cod_doc/services/routine_service.py) — поиск устаревших ссылок в MASTER.md; legacy MCP tool `check_stale_refs` was removed in `c310503`.
 - [link_verify](cod_doc/mcp/tools/link_tools.py) — проверка целостности линков.
 - [doc_drift](cod_doc/mcp/tools/doc_tools.py) — обнаружение sha-расхождений.
 - `plan_audit`, `task_stale` — планерные проверки.

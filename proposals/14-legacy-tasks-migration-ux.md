@@ -11,7 +11,7 @@ related:
   - cod_doc/cli/cmd_import.py
   - cod_doc/services/restate_importer.py
   - cod_doc/core/project.py
-  - cod_doc/mcp/tools/legacy_project_tools.py
+  - cod_doc/mcp/tools/task_tools.py
 ---
 
 # Proposal 14 · Миграция legacy-задач из YAML в БД через UI
@@ -35,7 +35,7 @@ related:
 | На `/p/{slug}/tasks` стоит «В этом проекте пока нет задач», а сверху висит ссылка «Legacy YAML tasks (34)» | Страница читает только DB; legacy — параллельный мир в `tasks.yaml` |
 | Чтобы перенести 34 задачи в БД, нужно открыть терминал и запустить `cod-doc import legacy-tasks <slug>` | UI вообще не знает про эту команду — нет ни эндпоинта, ни кнопки |
 | Banner «not yet migrated» висит даже после того, как пользователь уже всё проверил и считает, что мигрировать не надо | Нет состояния «принято решение не мигрировать»; нет dry-run, нет diff |
-| `add_task` / `update_task` через MCP всё ещё пишут в YAML ([`legacy_project_tools.py:122-185`](cod_doc/mcp/tools/legacy_project_tools.py#L122-L185)) | Старые тулзы зарегистрированы рядом с новыми (`task_tools.py`) и не помечены deprecated → агенты иногда выбирают legacy |
+| `add_task` / `update_task` через legacy MCP писали в YAML (`legacy_project_tools.py`, removed in `c310503`) | Старые тулзы были зарегистрированы рядом с новыми ([`task_tools.py`](cod_doc/mcp/tools/task_tools.py)) и не помечены deprecated → агенты иногда выбирали legacy |
 | Legacy-страница показывает только id/title/status/priority/updated, без description/result | Read-only превью без полного содержимого — пользователь не видит, что именно мигрируется |
 
 ### 1.2. Почему получается
@@ -128,7 +128,7 @@ related:
 
 Это критично — иначе после импорта снова накопится разрыв.
 
-1. В [`legacy_project_tools.py`](cod_doc/mcp/tools/legacy_project_tools.py)
+1. В legacy `legacy_project_tools.py` (removed in `c310503`)
    у `add_task` / `update_task` менять docstring на
    `"DEPRECATED — use mcp__cod-doc__task_create instead"`.
 2. На уровне реализации `Project.add_task` ([`core/project.py:188-192`](cod_doc/core/project.py#L188-L192))
@@ -169,9 +169,9 @@ related:
 | 2 | `POST /tasks/legacy/archive` | те же |
 | 3 | Обновить `tasks_list.html` baner: «imported / not yet imported / archived» по состоянию БД и `tasks.archived.yaml` | `templates/.../tasks_list.html`, `api/web/pages/tasks.py:tasks_list` |
 | 4 | Раскрывающееся превью description/result на legacy-странице | `templates/.../tasks_legacy_list.html` |
-| 5 | Пометить deprecated `add_task`/`update_task` MCP, поднять `RuntimeError` на write при archived state | `mcp/tools/legacy_project_tools.py`, `core/project.py` |
+| 5 | Пометить deprecated `add_task`/`update_task` MCP, поднять `RuntimeError` на write при archived state | historical `mcp/tools/legacy_project_tools.py`, `core/project.py` |
 | 6 | Тест: legacy → import → repeat-import = no-op (через duplicate detection в `task_service.create`) | `tests/web/test_tasks_page.py`, `tests/services/test_restate_importer.py` |
-| 7 | После 3-4 успешных миграций — удалить write-методы legacy полностью | `core/project.py`, `mcp/tools/legacy_project_tools.py` |
+| 7 | После 3-4 успешных миграций — удалить write-методы legacy полностью | `core/project.py`, historical `mcp/tools/legacy_project_tools.py` |
 
 Шаги 1-4 — одна задача (`COD-XXX: legacy tasks UI import`). Шаги 5-7 —
 отдельная следом, чтобы не смешивать UX и deprecation в один PR.
