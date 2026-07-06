@@ -9,19 +9,24 @@ from sqlalchemy import select
 
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    ADRDiagramModel, ADRModel, ADRSupersedeModel, ADRTaskModel, ProjectModel,
+    ADRSupersedeModel,
+    ADRTaskModel,
+    ProjectModel,
 )
 from cod_doc.services import adr_service
 from cod_doc.services.adr_service import (
-    ADRAlreadyExistsError, ADRNotFoundError,
+    ADRAlreadyExistsError,
+    ADRNotFoundError,
 )
 
 
 def _seed(session) -> int:
     now = datetime.now(UTC)
     proj = ProjectModel(slug="adrs", title="P", root_path="/tmp", config_json={})
-    proj.created = now; proj.updated = now
-    session.add(proj); session.flush()
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
     return proj.row_id
 
 
@@ -72,10 +77,15 @@ def test_create_with_full_payload(engine_with_schema) -> None:  # type: ignore[n
     with transactional(factory) as session:
         pid = _seed(session)
         r = adr_service.create(
-            session, project_id=pid, title="Layered arch",
-            status="accepted", decided_at=date(2026, 4, 5),
-            context="DI requirement", decision="4-layer",
-            alternatives="Clean Arch", consequences="+ testable; − boilerplate",
+            session,
+            project_id=pid,
+            title="Layered arch",
+            status="accepted",
+            decided_at=date(2026, 4, 5),
+            context="DI requirement",
+            decision="4-layer",
+            alternatives="Clean Arch",
+            consequences="+ testable; − boilerplate",
         )
     assert r.status == "accepted"
     assert r.decided_at == date(2026, 4, 5)
@@ -125,8 +135,11 @@ def test_update_changes_fields(engine_with_schema) -> None:  # type: ignore[no-u
         adr_service.create(session, project_id=pid, title="old")
     with transactional(factory) as session:
         r = adr_service.update(
-            session, project_id=1, adr_id="ADR-001",
-            title="new", status="accepted",
+            session,
+            project_id=1,
+            adr_id="ADR-001",
+            title="new",
+            status="accepted",
         )
     assert r.title == "new"
     assert r.status == "accepted"
@@ -152,10 +165,12 @@ def test_add_diagram_appends(engine_with_schema) -> None:  # type: ignore[no-unt
         pid = _seed(session)
         adr_service.create(session, project_id=pid, title="x")
     with transactional(factory) as session:
-        d1 = adr_service.add_diagram(session, project_id=1, adr_id="ADR-001",
-                                     mermaid="graph TD;A-->B", title="first")
-        d2 = adr_service.add_diagram(session, project_id=1, adr_id="ADR-001",
-                                     mermaid="graph LR;X-->Y", title="second")
+        d1 = adr_service.add_diagram(
+            session, project_id=1, adr_id="ADR-001", mermaid="graph TD;A-->B", title="first"
+        )
+        d2 = adr_service.add_diagram(
+            session, project_id=1, adr_id="ADR-001", mermaid="graph LR;X-->Y", title="second"
+        )
     assert d1.position == 0
     assert d2.position == 1
 
@@ -173,8 +188,10 @@ def test_supersede_creates_edge_and_flips_status(engine_with_schema) -> None:  #
         adr_service.create(session, project_id=pid, title="new", status="accepted")
     with transactional(factory) as session:
         adr_service.supersede(
-            session, project_id=1,
-            superseding_adr_id="ADR-002", superseded_adr_id="ADR-001",
+            session,
+            project_id=1,
+            superseding_adr_id="ADR-002",
+            superseded_adr_id="ADR-001",
             reason="better approach",
         )
     with transactional(factory) as session:
@@ -195,13 +212,17 @@ def test_supersede_idempotent(engine_with_schema) -> None:  # type: ignore[no-un
         adr_service.create(session, project_id=pid, title="b")
     with transactional(factory) as session:
         adr_service.supersede(
-            session, project_id=1,
-            superseding_adr_id="ADR-002", superseded_adr_id="ADR-001",
+            session,
+            project_id=1,
+            superseding_adr_id="ADR-002",
+            superseded_adr_id="ADR-001",
         )
     with transactional(factory) as session:
         adr_service.supersede(
-            session, project_id=1,
-            superseding_adr_id="ADR-002", superseded_adr_id="ADR-001",
+            session,
+            project_id=1,
+            superseding_adr_id="ADR-002",
+            superseded_adr_id="ADR-001",
         )
     with transactional(factory) as session:
         edges = list(session.execute(select(ADRSupersedeModel)).scalars())
@@ -216,8 +237,10 @@ def test_supersede_self_loop_raises(engine_with_schema) -> None:  # type: ignore
     with pytest.raises(ValueError, match="itself"):
         with transactional(factory) as session:
             adr_service.supersede(
-                session, project_id=1,
-                superseding_adr_id="ADR-001", superseded_adr_id="ADR-001",
+                session,
+                project_id=1,
+                superseding_adr_id="ADR-001",
+                superseded_adr_id="ADR-001",
             )
 
 
@@ -247,7 +270,11 @@ def test_link_task_invalid_relation(engine_with_schema) -> None:  # type: ignore
     with pytest.raises(ValueError, match="invalid relation"):
         with transactional(factory) as session:
             adr_service.link_task(
-                session, project_id=1, adr_id="ADR-001", task_id="t", relation="weird",
+                session,
+                project_id=1,
+                adr_id="ADR-001",
+                task_id="t",
+                relation="weird",
             )
 
 
@@ -264,8 +291,10 @@ def test_graph_returns_nodes_and_edges(engine_with_schema) -> None:  # type: ign
         adr_service.create(session, project_id=pid, title="B", status="accepted")
         adr_service.create(session, project_id=pid, title="C", status="proposed")
         adr_service.supersede(
-            session, project_id=pid,
-            superseding_adr_id="ADR-002", superseded_adr_id="ADR-001",
+            session,
+            project_id=pid,
+            superseding_adr_id="ADR-002",
+            superseded_adr_id="ADR-001",
         )
     with transactional(factory) as session:
         g = adr_service.graph(session, project_id=1)

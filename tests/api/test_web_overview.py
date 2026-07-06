@@ -176,7 +176,7 @@ def test_overview_empty_db_renders_placeholder(tmp_path: Path) -> None:
         r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
     # No agg blocks, no crash; instead — the empty-DB banner with init button.
-    assert "База проекта не инициализирована" in r.text
+    assert "Project database not initialized" in r.text
     assert 'action="/p/bare/init"' in r.text
     assert "Initialize DB" in r.text
     assert "Ready to start" not in r.text

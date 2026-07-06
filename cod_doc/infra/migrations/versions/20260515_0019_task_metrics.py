@@ -58,7 +58,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_task_metrics_project", "task_metrics", ["project_id"])
     op.create_index(
-        "ix_task_metrics_completed", "task_metrics", ["project_id", "completed_at"],
+        "ix_task_metrics_completed",
+        "task_metrics",
+        ["project_id", "completed_at"],
     )
 
 

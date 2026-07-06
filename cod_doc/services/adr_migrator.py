@@ -19,13 +19,14 @@ from __future__ import annotations
 
 import re
 from datetime import date
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from cod_doc.services import adr_service
 from cod_doc.services.adr_service import ADRAlreadyExistsError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from sqlalchemy.orm import Session
 
 

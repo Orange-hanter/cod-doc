@@ -391,6 +391,7 @@ def register(mcp: FastMCP) -> None:
         # see skill bodies inlined in agent_pick().navigation.applicable_skills
         # — they don't need separate recommended_skills hints.
         from cod_doc.services.skill_service import recommend_for_tool
+
         recs = recommend_for_tool("task_create")
         if recs:
             result["recommended_skills"] = recs[:3]
@@ -443,9 +444,7 @@ def register(mcp: FastMCP) -> None:
                 None,
             )
             if section is None or section.row_id is None:
-                raise ValueError(
-                    f"Section '{section_letter}' not found in plan {plan_scope!r}"
-                )
+                raise ValueError(f"Section '{section_letter}' not found in plan {plan_scope!r}")
             plan_id, section_id = plan.row_id, section.row_id
 
         created: list[dict[str, Any]] = []
@@ -487,9 +486,7 @@ def register(mcp: FastMCP) -> None:
                     ValidationError,
                     ValueError,
                 ) as exc:
-                    errors.append(
-                        {"index": i, "title": title, "message": str(exc)}
-                    )
+                    errors.append({"index": i, "title": title, "message": str(exc)})
                     if not continue_on_error:
                         raise
 
@@ -524,13 +521,15 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
                 from cod_doc.services import checkout_service as _co
+
                 _co.warn_if_no_checkout(session, task_id, author)
-                t = task_service.set_blocker(
-                    session, task_id=task_id, reason=reason, author=author
-                )
+                t = task_service.set_blocker(session, task_id=task_id, reason=reason, author=author)
                 from cod_doc.services import activity_service
+
                 activity_service.emit(
-                    session, project_id, "task.blocked",
+                    session,
+                    project_id,
+                    "task.blocked",
                     actor_kind="human",
                     actor_id=author,
                     scope_kind="task",
@@ -559,7 +558,9 @@ def register(mcp: FastMCP) -> None:
                 project_id = require_project_id(session, project)
                 t = task_service.clear_blocker(session, task_id=task_id, author=author)
                 activity_service.emit(
-                    session, project_id, "task.unblocked",
+                    session,
+                    project_id,
+                    "task.unblocked",
                     actor_kind="human",
                     actor_id=author,
                     scope_kind="task",
@@ -655,7 +656,9 @@ def register(mcp: FastMCP) -> None:
                     reason=reason,
                 )
                 activity_service.emit(
-                    session, project_id, "task.status_changed",
+                    session,
+                    project_id,
+                    "task.status_changed",
                     actor_kind="agent" if author.startswith("agent") else "human",
                     actor_id=author,
                     scope_kind="task",
@@ -709,7 +712,9 @@ def register(mcp: FastMCP) -> None:
                     reason=reason,
                 )
                 activity_service.emit(
-                    session, project_id, "task.completed",
+                    session,
+                    project_id,
+                    "task.completed",
                     actor_kind="agent" if author.startswith("agent") else "human",
                     actor_id=author,
                     scope_kind="task",

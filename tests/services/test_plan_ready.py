@@ -72,7 +72,9 @@ def _seed_task(
         author="human:test",
     )
     if status is not TaskStatus.PENDING:
-        tasks.update_status(session, task_id=task_id, new_status=status, author="human:test", force=True)
+        tasks.update_status(
+            session, task_id=task_id, new_status=status, author="human:test", force=True
+        )
     return t
 
 

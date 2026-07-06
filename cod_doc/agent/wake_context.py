@@ -98,14 +98,10 @@ class WakeContext:
     def validate(self) -> None:
         """Enforce shape + payload size invariants. Called from __post_init__."""
         if not isinstance(self.reason, WakeReason):
-            raise TypeError(
-                f"reason must be WakeReason, got {type(self.reason).__name__}"
-            )
+            raise TypeError(f"reason must be WakeReason, got {type(self.reason).__name__}")
         if self.task_id is not None and not isinstance(self.task_id, str):
             raise TypeError("task_id must be str | None")
-        if self.triggering_doc_ref is not None and not isinstance(
-            self.triggering_doc_ref, str
-        ):
+        if self.triggering_doc_ref is not None and not isinstance(self.triggering_doc_ref, str):
             raise TypeError("triggering_doc_ref must be str | None")
         if not isinstance(self.payload, dict):
             raise TypeError("payload must be a dict")
@@ -114,17 +110,13 @@ class WakeContext:
 
         size = self.payload_size_bytes()
         if size > PAYLOAD_BUDGET_BYTES:
-            raise WakePayloadTooLargeError(
-                size_bytes=size, budget_bytes=PAYLOAD_BUDGET_BYTES
-            )
+            raise WakePayloadTooLargeError(size_bytes=size, budget_bytes=PAYLOAD_BUDGET_BYTES)
 
         if (
             self.reason in (WakeReason.TASK_ASSIGNED, WakeReason.APPROVAL_RESOLVED)
             and not self.task_id
         ):
-            raise ValueError(
-                f"reason={self.reason.value} requires non-empty task_id"
-            )
+            raise ValueError(f"reason={self.reason.value} requires non-empty task_id")
         if self.reason is WakeReason.DOC_DRIFT and not self.triggering_doc_ref:
             raise ValueError("reason=doc_drift requires triggering_doc_ref")
 
@@ -233,9 +225,7 @@ def build_wake_context(
         if not task_id:
             raise ValueError(f"reason={reason.value} requires task_id")
         if session is None:
-            raise ValueError(
-                f"reason={reason.value} requires a DB session for heartbeat lookup"
-            )
+            raise ValueError(f"reason={reason.value} requires a DB session for heartbeat lookup")
         from cod_doc.services import heartbeat_service
 
         payload = heartbeat_service.heartbeat_context(

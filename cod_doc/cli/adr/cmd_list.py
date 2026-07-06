@@ -42,12 +42,15 @@ def adr_list(ctx: click.Context, project: str, status: str | None, as_json: bool
             _json.dumps(
                 [
                     {
-                        "adr_id": r.adr_id, "title": r.title, "status": r.status,
+                        "adr_id": r.adr_id,
+                        "title": r.title,
+                        "status": r.status,
                         "decided_at": r.decided_at.isoformat() if r.decided_at else None,
                     }
                     for r in rows
                 ],
-                indent=2, ensure_ascii=False,
+                indent=2,
+                ensure_ascii=False,
             )
         )
         return

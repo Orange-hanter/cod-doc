@@ -8,12 +8,15 @@ skill_get — one call gives it everything.
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+    from cod_doc.domain.entities import Task
 
 
 # ----------------------------------------------------------------- #
@@ -97,12 +100,16 @@ def _parse_acceptance_checklist(acceptance: str | None) -> list[str]:
             return items
     # Try bullet-style "- ".
     if raw.count("\n- ") >= 1:
-        items = [line.strip("- ").strip() for line in raw.split("\n") if line.strip().startswith("- ")]
+        items = [
+            line.strip("- ").strip() for line in raw.split("\n") if line.strip().startswith("- ")
+        ]
         if items:
             return items
     # Fallback: split by sentence-end "." if multiple sentences exist.
     if raw.count(". ") >= 1:
-        items = [s.strip() + ("." if not s.endswith(".") else "") for s in raw.split(". ") if s.strip()]
+        items = [
+            s.strip() + ("." if not s.endswith(".") else "") for s in raw.split(". ") if s.strip()
+        ]
         if len(items) >= 2:
             return items
     return [raw]
@@ -116,7 +123,7 @@ def _parse_acceptance_checklist(acceptance: str | None) -> list[str]:
 def _build_task_card(
     session: Session,
     project_id: int,
-    task,  # cod_doc.domain.entities.Task
+    task: Task,
 ) -> dict[str, Any]:
     """Assemble the agent_pick payload for an already-checked-out task."""
     from cod_doc.infra.models import (
@@ -259,7 +266,9 @@ def get(
     LEGAL = ["full_doc_body", "related_task", "story_full", "plan_export", "file_content"]
     if what not in LEGAL:
         return {
-            "found": False, "what": what, "ref": ref,
+            "found": False,
+            "what": what,
+            "ref": ref,
             "hint": f"unknown 'what'. Legal values: {LEGAL}",
             "legal_what": LEGAL,
         }
@@ -285,7 +294,12 @@ def get(
         t = task_service.get(session, ref)
         if t is None:
             return {"found": False, "what": what, "ref": ref, "hint": f"task_id not found: {ref}"}
-        return {"found": True, "what": what, "ref": ref, "payload": task_to_dict(t, session=session)}
+        return {
+            "found": True,
+            "what": what,
+            "ref": ref,
+            "payload": task_to_dict(t, session=session),
+        }
 
     if what == "story_full":
         from cod_doc.infra.models import UserStoryModel
@@ -300,13 +314,17 @@ def get(
             return {"found": False, "what": what, "ref": ref, "hint": f"story_id not found: {ref}"}
         ac = story_service.list_acceptance(session, ref)
         return {
-            "found": True, "what": what, "ref": ref,
+            "found": True,
+            "what": what,
+            "ref": ref,
             "payload": {
-                "story_id": s.story_id, "persona": s.persona, "narrative": s.narrative,
-                "status": s.status, "priority": s.priority,
+                "story_id": s.story_id,
+                "persona": s.persona,
+                "narrative": s.narrative,
+                "status": s.status,
+                "priority": s.priority,
                 "acceptance_criteria": [
-                    {"position": a.position, "criterion": a.criterion, "met": a.met}
-                    for a in ac
+                    {"position": a.position, "criterion": a.criterion, "met": a.met} for a in ac
                 ],
             },
         }
@@ -316,15 +334,24 @@ def get(
             return {"found": False, "what": what, "ref": ref, "hint": "ref=plan_scope required"}
         plan = PlanRepository(session).get_by_scope(ref)
         if plan is None or plan.row_id is None:
-            return {"found": False, "what": what, "ref": ref, "hint": f"plan_scope not found: {ref}"}
+            return {
+                "found": False,
+                "what": what,
+                "ref": ref,
+                "hint": f"plan_scope not found: {ref}",
+            }
         from cod_doc.services.plan_service import reads as plan_reads
 
         progress = plan_reads.recalc(session, plan.row_id)
         return {
-            "found": True, "what": what, "ref": ref,
+            "found": True,
+            "what": what,
+            "ref": ref,
             "payload": {
-                "scope": progress.scope, "total": progress.total,
-                "done": progress.done, "remaining": progress.remaining,
+                "scope": progress.scope,
+                "total": progress.total,
+                "done": progress.done,
+                "remaining": progress.remaining,
                 "sections": [
                     {"letter": s.letter, "title": s.title, "total": s.total, "done": s.done}
                     for s in progress.sections
@@ -337,9 +364,11 @@ def get(
         # in the service layer (no FS coupling). MCP wrapper resolves and
         # passes content via different code path.
         return {
-            "found": False, "what": what, "ref": ref,
+            "found": False,
+            "what": what,
+            "ref": ref,
             "hint": "file_content requires MCP-layer resolution (project root). "
-                    "Use the standard-profile read_file tool instead, or open via your editor.",
+            "Use the standard-profile read_file tool instead, or open via your editor.",
         }
     # unreachable due to LEGAL check
     return {"found": False, "what": what, "ref": ref}
@@ -368,7 +397,8 @@ def report(
     LEGAL = ["progress", "blocker", "approval_request", "needs_context"]
     if kind not in LEGAL:
         return {
-            "ok": False, "kind": kind,
+            "ok": False,
+            "kind": kind,
             "hint": f"unknown kind. Legal values: {LEGAL}",
             "legal_kinds": LEGAL,
         }
@@ -381,7 +411,12 @@ def report(
             task_service.log_progress(session, task_id=task_id, message=message, author=agent_id)
         except TaskNotFoundError:
             return {"ok": False, "kind": kind, "hint": f"task not found: {task_id}"}
-        return {"ok": True, "kind": kind, "task_id": task_id, "next_actions": ["agent_complete or further agent_report"]}
+        return {
+            "ok": True,
+            "kind": kind,
+            "task_id": task_id,
+            "next_actions": ["agent_complete or further agent_report"],
+        }
 
     if kind == "blocker":
         from cod_doc.domain.entities import TaskStatus
@@ -389,26 +424,39 @@ def report(
         try:
             task_service.set_blocker(session, task_id=task_id, reason=message, author=agent_id)
             t = task_service.update_status(
-                session, task_id=task_id,
+                session,
+                task_id=task_id,
                 new_status=TaskStatus("blocked"),
-                author=agent_id, reason=message,
+                author=agent_id,
+                reason=message,
             )
         except TaskNotFoundError:
             return {"ok": False, "kind": kind, "hint": f"task not found: {task_id}"}
         activity_service.emit(
-            session, project_id, "task.blocked",
+            session,
+            project_id,
+            "task.blocked",
             actor_kind="agent" if agent_id.startswith("agent") else "human",
-            actor_id=agent_id, scope_kind="task", scope_id=task_id,
-            payload={"reason": message}, summary=f"Task {task_id} blocked: {message[:120]}",
+            actor_id=agent_id,
+            scope_kind="task",
+            scope_id=task_id,
+            payload={"reason": message},
+            summary=f"Task {task_id} blocked: {message[:120]}",
         )
-        return {"ok": True, "kind": kind, "task_id": task_id, "status": t.status.value,
-                "next_actions": ["agent_complete after blocker resolved, or agent_release to give up"]}
+        return {
+            "ok": True,
+            "kind": kind,
+            "task_id": task_id,
+            "status": t.status.value,
+            "next_actions": ["agent_complete after blocker resolved, or agent_release to give up"],
+        }
 
     if kind == "approval_request":
         from cod_doc.services import approval_service
 
         approval = approval_service.request(
-            session, project_id,
+            session,
+            project_id,
             approval_type=(payload or {}).get("approval_type", "manual"),
             requested_by=agent_id,
             payload={"message": message, **(payload or {})},
@@ -417,23 +465,41 @@ def report(
             expires_in_hours=48,
         )
         activity_service.emit(
-            session, project_id, "approval.requested",
-            actor_kind="agent", actor_id=agent_id,
-            scope_kind="approval", scope_id=approval.approval_id,
-            payload={"task_id": task_id}, summary=f"Approval requested for {task_id}",
+            session,
+            project_id,
+            "approval.requested",
+            actor_kind="agent",
+            actor_id=agent_id,
+            scope_kind="approval",
+            scope_id=approval.approval_id,
+            payload={"task_id": task_id},
+            summary=f"Approval requested for {task_id}",
         )
-        return {"ok": True, "kind": kind, "approval_id": approval.approval_id,
-                "next_actions": ["wait — orchestration will resume after approval resolution"]}
+        return {
+            "ok": True,
+            "kind": kind,
+            "approval_id": approval.approval_id,
+            "next_actions": ["wait — orchestration will resume after approval resolution"],
+        }
 
     if kind == "needs_context":
         activity_service.emit(
-            session, project_id, "agent.needs_context",
-            actor_kind="agent", actor_id=agent_id,
-            scope_kind="task", scope_id=task_id,
-            payload={"message": message}, summary=f"Needs context: {message[:120]}",
+            session,
+            project_id,
+            "agent.needs_context",
+            actor_kind="agent",
+            actor_id=agent_id,
+            scope_kind="task",
+            scope_id=task_id,
+            payload={"message": message},
+            summary=f"Needs context: {message[:120]}",
         )
-        return {"ok": True, "kind": kind, "task_id": task_id,
-                "next_actions": ["agent_get(what=...) for specific lookup"]}
+        return {
+            "ok": True,
+            "kind": kind,
+            "task_id": task_id,
+            "next_actions": ["agent_get(what=...) for specific lookup"],
+        }
     return {"ok": False, "kind": kind}
 
 
@@ -449,13 +515,18 @@ def complete(
     """AGT-006: validate blockers, mark done, release lock in one transaction."""
     from cod_doc.services import activity_service, checkout_service, task_service
     from cod_doc.services.task_service import (
-        TaskAlreadyDoneError, TaskBlockedError, TaskNotFoundError,
+        TaskAlreadyDoneError,
+        TaskBlockedError,
+        TaskNotFoundError,
     )
 
     try:
         t = task_service.complete(
-            session, task_id=task_id, author=agent_id,
-            commit_sha=commit_sha, reason=summary,
+            session,
+            task_id=task_id,
+            author=agent_id,
+            commit_sha=commit_sha,
+            reason=summary,
         )
     except TaskNotFoundError:
         return {"ok": False, "hint": f"task not found: {task_id}"}
@@ -465,20 +536,24 @@ def complete(
         return {"ok": False, "hint": str(exc), "code": "blocked"}
 
     # Release lock if held by this agent (idempotent if not).
-    try:
+    with contextlib.suppress(Exception):
         checkout_service.release(session, task_id, agent=agent_id, force=False)
-    except Exception:
-        pass  # not fatal — task is done regardless
 
     activity_service.emit(
-        session, project_id, "task.completed",
-        actor_kind="agent", actor_id=agent_id,
-        scope_kind="task", scope_id=task_id,
+        session,
+        project_id,
+        "task.completed",
+        actor_kind="agent",
+        actor_id=agent_id,
+        scope_kind="task",
+        scope_id=task_id,
         payload={"commit_sha": commit_sha, "summary": summary},
         summary=f"Task {task_id} completed by {agent_id}",
     )
     return {
-        "ok": True, "task_id": task_id, "status": t.status.value,
+        "ok": True,
+        "task_id": task_id,
+        "status": t.status.value,
         "commit_sha": commit_sha,
         "next_actions": ["agent_pick for the next ready task"],
     }
@@ -504,13 +579,19 @@ def release(
         return {"ok": False, "hint": str(exc), "code": "not_held_by_this_agent"}
 
     activity_service.emit(
-        session, project_id, "task.released",
-        actor_kind="agent", actor_id=agent_id,
-        scope_kind="task", scope_id=task_id,
-        payload={"reason": reason}, summary=f"Task {task_id} released by {agent_id}: {reason or 'no reason'}",
+        session,
+        project_id,
+        "task.released",
+        actor_kind="agent",
+        actor_id=agent_id,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={"reason": reason},
+        summary=f"Task {task_id} released by {agent_id}: {reason or 'no reason'}",
     )
     return {
-        "ok": True, "task_id": task_id,
+        "ok": True,
+        "task_id": task_id,
         "status": result.new_status,
         "next_actions": ["agent_pick for the next ready task"],
     }
@@ -534,15 +615,16 @@ def pick(
     - When the ready set is empty: ``{"task": None, "reason": "no_ready_tasks"}``.
     """
     from cod_doc.infra.models import TaskModel
+    from cod_doc.infra.repositories import TaskRepository
     from cod_doc.services import checkout_service
     from cod_doc.services.plan_service import reads as plan_reads
-    from cod_doc.infra.repositories import TaskRepository
 
     repo = TaskRepository(session)
 
     # 1. Idempotency: already-held lock?
     existing_lock = session.execute(
-        select(TaskModel).where(
+        select(TaskModel)
+        .where(
             TaskModel.project_id == project_id,
             TaskModel.checked_out_by == agent_id,
         )
@@ -597,6 +679,12 @@ def pick(
 
     # Refresh task after checkout (status updated to in_progress).
     refreshed = repo.get(target.row_id) if target.row_id is not None else target
+    if refreshed is None:
+        return {
+            "task": None,
+            "reason": "checkout_failed",
+            "detail": "task not found after checkout",
+        }
 
     # 4. Assemble card.
     return _build_task_card(session, project_id, refreshed)

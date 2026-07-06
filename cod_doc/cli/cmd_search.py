@@ -30,8 +30,9 @@ log = get_logger("cli.search")
     help="Restrict search to one kind",
 )
 @click.option("--limit", default=20, type=int, show_default=True)
-@click.option("--reindex", is_flag=True, default=False,
-              help="Rebuild the FTS index before searching.")
+@click.option(
+    "--reindex", is_flag=True, default=False, help="Rebuild the FTS index before searching."
+)
 @click.pass_context
 def search(
     ctx: click.Context,
@@ -64,8 +65,11 @@ def search(
             counts = search_service.reindex_all(session, proj.row_id)
             console.print(f"📚 reindexed: {counts}")
         result = search_service.search(
-            session, project_id=proj.row_id, query=query,
-            scope=scope, limit=limit,
+            session,
+            project_id=proj.row_id,
+            query=query,
+            scope=scope,
+            limit=limit,
         )
 
     if result["total"] == 0:

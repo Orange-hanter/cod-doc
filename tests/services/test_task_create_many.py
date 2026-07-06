@@ -32,9 +32,7 @@ def _seed(session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="bm-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="A", slug="A", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -70,9 +68,13 @@ def test_create_many_happy_path(engine_with_schema, monkeypatch) -> None:  # typ
     assert result["errors"] == []
 
     with transactional(factory) as session:
-        rows = session.execute(
-            select(TaskModel).where(TaskModel.title.in_(["Task A", "Task B", "Task C"]))
-        ).scalars().all()
+        rows = (
+            session.execute(
+                select(TaskModel).where(TaskModel.title.in_(["Task A", "Task B", "Task C"]))
+            )
+            .scalars()
+            .all()
+        )
     assert len(rows) == 3
 
 
@@ -92,21 +94,29 @@ def test_create_many_rollback_on_error(engine_with_schema, monkeypatch) -> None:
         section_letter="A",
         items=[
             {"title": "Good 1", "type": "feature", "priority": "high", "id_prefix": "BMR"},
-            {"title": "", "type": "feature", "priority": "high", "id_prefix": "BMR"},  # missing title
+            {
+                "title": "",
+                "type": "feature",
+                "priority": "high",
+                "id_prefix": "BMR",
+            },  # missing title
             {"title": "Good 2", "type": "feature", "priority": "high", "id_prefix": "BMR"},
         ],
     )
     assert result["committed"] is False
     # Default continue_on_error=False → whole batch rolled back.
     with transactional(factory) as session:
-        rows = session.execute(
-            select(TaskModel).where(TaskModel.title.in_(["Good 1", "Good 2"]))
-        ).scalars().all()
+        rows = (
+            session.execute(select(TaskModel).where(TaskModel.title.in_(["Good 1", "Good 2"])))
+            .scalars()
+            .all()
+        )
     assert rows == [], "batch should be rolled back on first error"
 
 
 def test_create_many_continue_on_error_commits_good_ones(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -133,7 +143,11 @@ def test_create_many_continue_on_error_commits_good_ones(
     assert len(result["errors"]) == 1
 
     with transactional(factory) as session:
-        rows = session.execute(
-            select(TaskModel).where(TaskModel.title.in_(["Survives 1", "Survives 2"]))
-        ).scalars().all()
+        rows = (
+            session.execute(
+                select(TaskModel).where(TaskModel.title.in_(["Survives 1", "Survives 2"]))
+            )
+            .scalars()
+            .all()
+        )
     assert len(rows) == 2

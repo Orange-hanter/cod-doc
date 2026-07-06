@@ -44,9 +44,11 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "pytest-timeout>=2.3",
     "hypothesis>=6.100",
     "ruff>=0.8",
     "mypy>=1.11",
+    "types-PyYAML>=6.0",
     "pre-commit>=3.8",
 ]
 # COD-043: opt-in local embeddings backend. Pulls torch (~200 MB on first
@@ -126,17 +128,22 @@ runtime-evaluated-decorators = [
 "cod_doc/api/routes.py" = ["TC001", "TC002", "TC003"]
 "cod_doc/api/webhooks.py" = ["TC001", "TC002", "TC003"]
 "cod_doc/api/deps.py" = ["TC001", "TC002", "TC003"]
-"cod_doc/api/web/*.py" = ["TC001", "TC002", "TC003"]
+"cod_doc/api/web/*.py" = ["TC001", "TC002", "TC003", "B008"]
 # cod_doc contains intentional Russian text, complex docstrings, and UI labels.
 # RUF001/002/003 are false positives on Cyrillic text.
 # E501 violations are primarily unavoidable long docstrings/signatures.
 "cod_doc/**/*.py" = ["RUF001", "RUF002", "RUF003", "E501"]
 # Test modules contain intentional Russian strings (test data, docstrings)
 # that trip RUF001/002/003 ambiguous-unicode checks, plus complex assertions.
-"tests/**/*.py" = ["RUF001", "RUF002", "RUF003", "E501"]
+# E702: seed helpers use compact `a = x; b = y` one-liners.
+"tests/**/*.py" = ["RUF001", "RUF002", "RUF003", "E501", "E702", "B017", "SIM117", "RUF012"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "anthropic.*"
+ignore_missing_imports = true

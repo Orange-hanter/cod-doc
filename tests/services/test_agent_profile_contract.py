@@ -8,14 +8,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 import pytest
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    PlanModel, PlanSectionModel, ProjectModel,
+    PlanModel,
+    PlanSectionModel,
+    ProjectModel,
 )
 from cod_doc.services import agent_service, task_service
 
@@ -23,12 +24,16 @@ from cod_doc.services import agent_service, task_service
 def _seed(session) -> tuple[int, int, int]:
     now = datetime.now(UTC)
     proj = ProjectModel(slug="ctr", title="P", root_path="/tmp/p", config_json={})
-    proj.created = now; proj.updated = now
-    session.add(proj); session.flush()
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
     plan = PlanModel(project_id=proj.row_id, scope="ctr-plan", created=now, last_updated=now)
-    session.add(plan); session.flush()
+    session.add(plan)
+    session.flush()
     sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
-    session.add(sec); session.flush()
+    session.add(sec)
+    session.flush()
     return proj.row_id, plan.row_id, sec.row_id
 
 
@@ -37,9 +42,15 @@ def _seed_with_task(engine_with_schema, task_id: str = "CON-001"):  # type: igno
     with transactional(factory) as session:
         pid, plid, sid = _seed(session)
         task_service.create(
-            session, project_id=pid, plan_id=plid, section_id=sid,
-            task_id=task_id, title=f"Task {task_id}",
-            type=TaskType.FEATURE, priority=Priority.MEDIUM, author="t",
+            session,
+            project_id=pid,
+            plan_id=plid,
+            section_id=sid,
+            task_id=task_id,
+            title=f"Task {task_id}",
+            type=TaskType.FEATURE,
+            priority=Priority.MEDIUM,
+            author="t",
             acceptance="✓ A; ✓ B",
         )
     return factory
@@ -52,10 +63,18 @@ def _seed_with_task(engine_with_schema, task_id: str = "CON-001"):  # type: igno
 
 CARD_TOP_LEVEL = {"task", "context", "navigation"}
 CONTEXT_KEYS = {
-    "plan", "story", "related_docs", "siblings", "affected_files", "recent_history",
+    "plan",
+    "story",
+    "related_docs",
+    "siblings",
+    "affected_files",
+    "recent_history",
 }
 NAVIGATION_KEYS = {
-    "applicable_skills", "next_actions", "success_criteria", "legal_status_transitions",
+    "applicable_skills",
+    "next_actions",
+    "success_criteria",
+    "legal_status_transitions",
 }
 
 
@@ -111,14 +130,19 @@ def test_legal_status_transitions_includes_done(engine_with_schema) -> None:  # 
 
 
 @pytest.mark.parametrize(
-    "kind", ["progress", "blocker", "approval_request", "needs_context"],
+    "kind",
+    ["progress", "blocker", "approval_request", "needs_context"],
 )
 def test_agent_report_legal_kinds_return_ok(engine_with_schema, kind) -> None:  # type: ignore[no-untyped-def]
     factory = _seed_with_task(engine_with_schema, task_id="REPC-001")
     with transactional(factory) as session:
         r = agent_service.report(
-            session, project_id=1, task_id="REPC-001",
-            kind=kind, message="contract test", agent_id="agent",
+            session,
+            project_id=1,
+            task_id="REPC-001",
+            kind=kind,
+            message="contract test",
+            agent_id="agent",
         )
     assert r.get("ok") is True, f"kind={kind} should succeed: {r}"
     assert r.get("kind") == kind
@@ -128,12 +152,19 @@ def test_agent_report_unknown_kind_lists_legal(engine_with_schema) -> None:  # t
     factory = _seed_with_task(engine_with_schema, task_id="REPC-002")
     with transactional(factory) as session:
         r = agent_service.report(
-            session, project_id=1, task_id="REPC-002",
-            kind="wrong", message="x", agent_id="agent",
+            session,
+            project_id=1,
+            task_id="REPC-002",
+            kind="wrong",
+            message="x",
+            agent_id="agent",
         )
     assert r["ok"] is False
     assert set(r.get("legal_kinds", [])) == {
-        "progress", "blocker", "approval_request", "needs_context",
+        "progress",
+        "blocker",
+        "approval_request",
+        "needs_context",
     }
 
 
@@ -148,8 +179,12 @@ def test_agent_complete_response_shape(engine_with_schema) -> None:  # type: ign
         agent_service.pick(session, project_id=1, agent_id="alpha")
     with transactional(factory) as session:
         r = agent_service.complete(
-            session, project_id=1, task_id="CMPC-001", agent_id="alpha",
-            commit_sha="abc", summary="ok",
+            session,
+            project_id=1,
+            task_id="CMPC-001",
+            agent_id="alpha",
+            commit_sha="abc",
+            summary="ok",
         )
     assert {"ok", "task_id", "status", "commit_sha", "next_actions"} <= set(r.keys())
     assert r["status"] == "done"
@@ -161,7 +196,10 @@ def test_agent_release_response_shape(engine_with_schema) -> None:  # type: igno
         agent_service.pick(session, project_id=1, agent_id="alpha")
     with transactional(factory) as session:
         r = agent_service.release(
-            session, project_id=1, task_id="RELC-001", agent_id="alpha",
+            session,
+            project_id=1,
+            task_id="RELC-001",
+            agent_id="alpha",
             reason="contract test",
         )
     assert {"ok", "task_id", "status", "next_actions"} <= set(r.keys())

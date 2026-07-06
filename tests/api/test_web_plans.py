@@ -123,7 +123,9 @@ def test_plans_list_renders_seed_plan(plans_client) -> None:
     assert "test-first" in r.text
     # 1 done out of 3 = 33%
     assert 'style="width: 33%"' in r.text
-    assert 'class="active" href="/p/demo/plans"' in r.text
+    from tests.api.conftest import assert_active_tab
+
+    assert_active_tab(r.text, "demo", "plans")
 
 
 def test_plans_list_db_absent_warning(tmp_path: Path) -> None:
@@ -144,7 +146,7 @@ def test_plans_list_db_absent_warning(tmp_path: Path) -> None:
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get(f"/p/{entry.name}/plans")
     assert r.status_code == 200
-    assert "DB-проект не инициализирован" in r.text
+    assert "DB project not initialized" in r.text
 
 
 # ── /p/{slug}/plans/{plan_id} ────────────────────────────────────────────
@@ -254,9 +256,7 @@ def test_plan_show_section_with_no_tasks_says_so(plans_client, tmp_path: Path, m
 def test_plan_freeze_creates_doc_and_redirects(plans_client) -> None:
     """COD-052: POST /freeze creates an EXECUTION_LOG and redirects to it."""
     client, entry, plan_id = plans_client
-    r = client.post(
-        f"/p/{entry.name}/plans/{plan_id}/freeze", follow_redirects=False
-    )
+    r = client.post(f"/p/{entry.name}/plans/{plan_id}/freeze", follow_redirects=False)
     assert r.status_code == 303
     location = r.headers["location"]
     assert "/docs/frozen/payments/" in location
@@ -270,9 +270,7 @@ def test_plan_freeze_creates_doc_and_redirects(plans_client) -> None:
 
 def test_plan_freeze_unknown_plan_404(plans_client) -> None:
     client, entry, _ = plans_client
-    r = client.post(
-        f"/p/{entry.name}/plans/9999/freeze", follow_redirects=False
-    )
+    r = client.post(f"/p/{entry.name}/plans/9999/freeze", follow_redirects=False)
     assert r.status_code == 404
 
 
@@ -280,7 +278,7 @@ def test_plan_show_renders_freeze_button(plans_client) -> None:
     client, entry, plan_id = plans_client
     r = client.get(f"/p/{entry.name}/plans/{plan_id}")
     assert "Freeze projection" in r.text
-    assert f'/p/{entry.name}/plans/{plan_id}/freeze' in r.text
+    assert f"/p/{entry.name}/plans/{plan_id}/freeze" in r.text
 
 
 def test_plan_show_cross_project_404(plans_client, tmp_path: Path, migrate_db) -> None:

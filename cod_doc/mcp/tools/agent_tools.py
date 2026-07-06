@@ -61,14 +61,15 @@ def register(mcp: FastMCP) -> None:
         from cod_doc.mcp.tools import _workspace
         from cod_doc.mcp.tools.skill_tools import iter_skill_records
         from cod_doc.services.task_status_machine import (
-            ALLOWED_TRANSITIONS,
             _LEGACY_ALIASES,
+            ALLOWED_TRANSITIONS,
         )
 
         canonical = sorted(
             set(ALLOWED_TRANSITIONS.keys())
             | {dst for dsts in ALLOWED_TRANSITIONS.values() for dst in dsts}
         )
+
         # Skills carry only short one-liners here — full bodies arrive
         # later inline in agent_pick's task card (or via agent_get).
         # Many SKILL.md frontmatters use block-scalar descriptions that
@@ -198,7 +199,11 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return agent_service.get(
-                session, project_id=project_id, task_id=task_id, what=what, ref=ref,
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                what=what,
+                ref=ref,
             )
 
     @mcp.tool(name="agent_report")
@@ -229,8 +234,13 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return agent_service.report(
-                session, project_id=project_id, task_id=task_id, kind=kind,
-                message=message, payload=payload, agent_id=agent_id,
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                kind=kind,
+                message=message,
+                payload=payload,
+                agent_id=agent_id,
             )
 
     @mcp.tool(name="agent_complete")
@@ -255,8 +265,12 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return agent_service.complete(
-                session, project_id=project_id, task_id=task_id,
-                agent_id=agent_id, commit_sha=commit_sha, summary=summary,
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                agent_id=agent_id,
+                commit_sha=commit_sha,
+                summary=summary,
             )
 
     @mcp.tool(name="agent_release")
@@ -275,8 +289,11 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return agent_service.release(
-                session, project_id=project_id, task_id=task_id,
-                agent_id=agent_id, reason=reason,
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                agent_id=agent_id,
+                reason=reason,
             )
 
 

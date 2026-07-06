@@ -6,18 +6,18 @@ import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.task_board import (
+    PRIO_RANK,
+    TYPE_GLYPHS,
     board_refresh_url,
     build_columns,
     compute_stats,
     load_task_rows,
-    TYPE_GLYPHS,
-    PRIO_RANK,
 )
 from cod_doc.api.web.templates_env import templates
 from cod_doc.core.project import TaskStatus as LegacyTaskStatus
@@ -46,8 +46,7 @@ def _enrich_chain(
     levels: list[dict[str, Any]] = []
     for lvl_bucket in raw["levels"]:
         tasks_with_glyph = [
-            {**t, "type_glyph": TYPE_GLYPHS.get(t["type"], "?")}
-            for t in lvl_bucket["tasks"]
+            {**t, "type_glyph": TYPE_GLYPHS.get(t["type"], "?")} for t in lvl_bucket["tasks"]
         ]
         tasks_with_glyph.sort(key=lambda c: (PRIO_RANK.get(c["priority"], 99), c["task_id"]))
         levels.append({"level": lvl_bucket["level"], "tasks": tasks_with_glyph})
@@ -106,11 +105,13 @@ def tasks_list(
                 if p.row_id is None:
                     continue
                 prog = progress_map.get(p.row_id)
-                plan_list.append({
-                    "scope": p.scope,
-                    "done": prog.done if prog else 0,
-                    "total": prog.total if prog else 0,
-                })
+                plan_list.append(
+                    {
+                        "scope": p.scope,
+                        "done": prog.done if prog else 0,
+                        "total": prog.total if prog else 0,
+                    }
+                )
 
             all_rows = load_task_rows(session, project_db_id)
 
@@ -207,16 +208,16 @@ def tasks_audit(
         "You are a senior project manager auditing a task list for an engineering team.\n\n"
         f"Task list (JSON):\n{tasks_json}\n\n"
         "Analyze all tasks and return a JSON object with these exact fields:\n"
-        '{\n'
+        "{\n"
         '  "summary": "2-3 sentence overall assessment",\n'
         '  "score": 7,\n'
         '  "issues": [\n'
         '    {"severity": "critical|warning|info", "category": "short label",\n'
         '     "message": "concrete description", "task_ids": ["T-001", ...]}\n'
-        '  ],\n'
+        "  ],\n"
         '  "recommendations": ["actionable step", ...],\n'
         '  "strengths": ["positive observation", ...]\n'
-        '}\n\n'
+        "}\n\n"
         "Check for: missing descriptions or acceptance criteria; tasks stuck as "
         "'blocked' with no blocked_reason; 'in_progress' tasks that look stale; "
         "sequencing issues (high-priority tasks that may depend on lower-priority "
@@ -231,9 +232,7 @@ def tasks_audit(
         raw = _call_lite_raw(prompt, cfg, max_tokens=2048).strip()
         if raw.startswith("```"):
             raw_lines = raw.splitlines()
-            raw = "\n".join(
-                raw_lines[1:-1] if raw_lines[-1].strip() == "```" else raw_lines[1:]
-            )
+            raw = "\n".join(raw_lines[1:-1] if raw_lines[-1].strip() == "```" else raw_lines[1:])
         data = json.loads(raw)
         audit = {
             "summary": str(data.get("summary", "")),
@@ -249,9 +248,9 @@ def tasks_audit(
             ][:8],
             "recommendations": [str(x) for x in data.get("recommendations", [])][:5],
             "strengths": [str(x) for x in data.get("strengths", [])][:4],
-            "generated_at": __import__("datetime").datetime.now(
-                __import__("datetime").UTC
-            ).isoformat(),
+            "generated_at": __import__("datetime")
+            .datetime.now(__import__("datetime").UTC)
+            .isoformat(),
             "task_count": len(all_tasks_data),
         }
         audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -475,9 +474,7 @@ def task_show(
                     "author": r.author,
                     "at": r.at,
                     "reason": r.reason or "",
-                    "diff_first_line": (r.diff or "").splitlines()[0][:240]
-                    if r.diff
-                    else "",
+                    "diff_first_line": (r.diff or "").splitlines()[0][:240] if r.diff else "",
                 }
                 for r in reversed(history)  # newest first for the timeline
             ],

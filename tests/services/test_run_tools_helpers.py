@@ -21,9 +21,7 @@ if TYPE_CHECKING:
 
 def _add_project(session: Session, slug: str = "rt") -> int:
     now = datetime.now(UTC)
-    proj = ProjectModel(
-        slug=slug, title=slug.upper(), root_path=f"/tmp/{slug}", config_json={}
-    )
+    proj = ProjectModel(slug=slug, title=slug.upper(), root_path=f"/tmp/{slug}", config_json={})
     proj.created = now
     proj.updated = now
     session.add(proj)

@@ -32,9 +32,7 @@ def _add_project(session: Session) -> int:
     return proj.row_id
 
 
-def _write_rev(
-    session: Session, project_id: int, *, entity_id: int, author: str = "x"
-) -> str:
+def _write_rev(session: Session, project_id: int, *, entity_id: int, author: str = "x") -> str:
     """Write one task revision and return revision_id."""
     r = rev.write(
         session,
@@ -204,9 +202,7 @@ def test_start_finalize_orchestrator_run_no_db_path() -> None:
     assert get_current_run_id() is None
     token = start_orchestrator_run(project_path=None, run_id="orch-noprojectpath")
     assert get_current_run_id() == "orch-noprojectpath"
-    finalize_orchestrator_run(
-        token, project_path=None, run_id="orch-noprojectpath", status="done"
-    )
+    finalize_orchestrator_run(token, project_path=None, run_id="orch-noprojectpath", status="done")
     assert get_current_run_id() is None
 
 
@@ -228,9 +224,7 @@ def test_start_finalize_propagates_run_id_to_revisions(engine_with_schema) -> No
             rid_a = _write_rev(session, proj_id, entity_id=10)
             rid_b = _write_rev(session, proj_id, entity_id=11)
     finally:
-        finalize_orchestrator_run(
-            token, project_path=None, run_id="orch-prop", status="done"
-        )
+        finalize_orchestrator_run(token, project_path=None, run_id="orch-prop", status="done")
 
     with transactional(factory) as session:
         for rid in (rid_a, rid_b):
@@ -251,7 +245,5 @@ def test_finalize_resets_contextvar_even_on_failed_status() -> None:
     try:
         assert get_current_run_id() == "orch-failed"
     finally:
-        finalize_orchestrator_run(
-            token, project_path=None, run_id="orch-failed", status="failed"
-        )
+        finalize_orchestrator_run(token, project_path=None, run_id="orch-failed", status="failed")
     assert get_current_run_id() is None

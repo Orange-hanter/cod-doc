@@ -58,8 +58,8 @@ def settings_save(
     base_url: str = Form(...),
     model: str = Form(...),
     max_tokens: int = Form(...),
-    auto_commit: str = Form(""),      # checkbox: "on" or absent
-    agent_enabled: str = Form(""),    # checkbox: "on" or absent
+    auto_commit: str = Form(""),  # checkbox: "on" or absent
+    agent_enabled: str = Form(""),  # checkbox: "on" or absent
     max_iterations: int = Form(...),
     agent_interval: int = Form(...),
     embedding_model: str = Form(...),

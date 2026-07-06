@@ -9,19 +9,19 @@ root; ``#symbol`` fragment is substring-verified for typo-catching.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pytest
 from sqlalchemy import select
 
 from cod_doc.domain.entities import LinkKind
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    DocumentModel, LinkModel, ProjectModel, SectionModel,
+    DocumentModel,
+    LinkModel,
+    ProjectModel,
+    SectionModel,
 )
 from cod_doc.services.link_service.parser import (
-    _CODE_EXTENSIONS,
     _is_code_href,
     _split_code_href,
     parse,
@@ -29,6 +29,8 @@ from cod_doc.services.link_service.parser import (
 from cod_doc.services.link_service.resolver import sync_section
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     pass
 
 
@@ -44,10 +46,20 @@ def test_is_code_href_recognizes_python() -> None:
 
 def test_is_code_href_recognizes_many_languages() -> None:
     for path in (
-        "src/api.ts", "app.tsx", "main.go", "lib.rs",
-        "Foo.java", "Bar.kt", "core.c", "core.cpp",
-        "script.sh", "schema.sql", "config.yaml",
-        "page.html", "style.css", "App.vue",
+        "src/api.ts",
+        "app.tsx",
+        "main.go",
+        "lib.rs",
+        "Foo.java",
+        "Bar.kt",
+        "core.c",
+        "core.cpp",
+        "script.sh",
+        "schema.sql",
+        "config.yaml",
+        "page.html",
+        "style.css",
+        "App.vue",
     ):
         assert _is_code_href(path), path
 
@@ -142,22 +154,39 @@ def test_parse_ignores_code_inside_fenced_block() -> None:
 def _seed(session, root: Path) -> tuple[int, int]:  # type: ignore[no-untyped-def]
     now = datetime.now(UTC)
     proj = ProjectModel(
-        slug="cref", title="P", root_path=str(root), config_json={},
+        slug="cref",
+        title="P",
+        root_path=str(root),
+        config_json={},
     )
-    proj.created = now; proj.updated = now
-    session.add(proj); session.flush()
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
     doc = DocumentModel(
-        project_id=proj.row_id, doc_key="x/y", path="x/y.md",
-        type="guide", status="active", title="Doc",
+        project_id=proj.row_id,
+        doc_key="x/y",
+        path="x/y.md",
+        type="guide",
+        status="active",
+        title="Doc",
         sensitivity="internal",
     )
-    doc.created = now; doc.last_updated = now
-    session.add(doc); session.flush()
+    doc.created = now
+    doc.last_updated = now
+    session.add(doc)
+    session.flush()
     sec = SectionModel(
-        document_id=doc.row_id, anchor="s1", heading="S1",
-        level=2, position=0, body="", content_hash="0",
+        document_id=doc.row_id,
+        anchor="s1",
+        heading="S1",
+        level=2,
+        position=0,
+        body="",
+        content_hash="0",
     )
-    session.add(sec); session.flush()
+    session.add(sec)
+    session.flush()
     return proj.row_id, sec.row_id
 
 
@@ -165,7 +194,7 @@ def test_resolver_resolves_existing_file(engine_with_schema, tmp_path) -> None: 
     (tmp_path / "real.py").write_text("def hi(): pass\n")
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        proj_id, sec_id = _seed(session, tmp_path)
+        _proj_id, sec_id = _seed(session, tmp_path)
         sec = session.get(SectionModel, sec_id)
         sec.body = "see [hi](real.py)"
     # sync_section will parse, create a CODE link row.
@@ -174,6 +203,7 @@ def test_resolver_resolves_existing_file(engine_with_schema, tmp_path) -> None: 
     # Now resolve.
     with transactional(factory) as session:
         from cod_doc.services.link_service.resolver import resolve_section
+
         resolved = resolve_section(session, sec_id)
     assert len(resolved) == 1
     code_link = resolved[0]
@@ -184,13 +214,14 @@ def test_resolver_resolves_existing_file(engine_with_schema, tmp_path) -> None: 
 def test_resolver_fails_fast_on_missing_file(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        proj_id, sec_id = _seed(session, tmp_path)
+        _proj_id, sec_id = _seed(session, tmp_path)
         sec = session.get(SectionModel, sec_id)
         sec.body = "see [ghost](no_such.py)"
     with transactional(factory) as session:
         sync_section(session, sec_id)
     with transactional(factory) as session:
         from cod_doc.services.link_service.resolver import resolve_section
+
         resolved = resolve_section(session, sec_id)
         # Re-read with broken_reason from DB.
         row = session.execute(
@@ -205,13 +236,14 @@ def test_resolver_resolves_when_symbol_present_in_file(engine_with_schema, tmp_p
     (tmp_path / "sym.py").write_text("def magic_function(): pass\n")
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        proj_id, sec_id = _seed(session, tmp_path)
+        _proj_id, sec_id = _seed(session, tmp_path)
         sec = session.get(SectionModel, sec_id)
         sec.body = "see [m](sym.py#magic_function)"
     with transactional(factory) as session:
         sync_section(session, sec_id)
     with transactional(factory) as session:
         from cod_doc.services.link_service.resolver import resolve_section
+
         resolved = resolve_section(session, sec_id)
     assert resolved[0].resolved is True
 
@@ -220,13 +252,14 @@ def test_resolver_fails_fast_on_missing_symbol(engine_with_schema, tmp_path) -> 
     (tmp_path / "sym2.py").write_text("def other(): pass\n")
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        proj_id, sec_id = _seed(session, tmp_path)
+        _proj_id, sec_id = _seed(session, tmp_path)
         sec = session.get(SectionModel, sec_id)
         sec.body = "see [m](sym2.py#missing_fn)"
     with transactional(factory) as session:
         sync_section(session, sec_id)
     with transactional(factory) as session:
         from cod_doc.services.link_service.resolver import resolve_section
+
         resolved = resolve_section(session, sec_id)
         row = session.execute(
             select(LinkModel).where(LinkModel.from_section_id == sec_id)
@@ -239,7 +272,7 @@ def test_sync_persists_file_path_and_symbol(engine_with_schema, tmp_path) -> Non
     (tmp_path / "a.py").write_text("# nothing")
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        proj_id, sec_id = _seed(session, tmp_path)
+        _proj_id, sec_id = _seed(session, tmp_path)
         sec = session.get(SectionModel, sec_id)
         sec.body = "see [x](a.py#foo)"
     with transactional(factory) as session:

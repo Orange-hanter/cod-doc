@@ -42,8 +42,6 @@ def require_project_id(session, project_name: str) -> int:  # type: ignore[no-un
 
     proj = ProjectRepository(session).get_by_slug(project_name)
     if proj is None or proj.row_id is None:
-        console.print(
-            f"[red]Project '{project_name}' not in DB. Run 'project add' first.[/red]"
-        )
+        console.print(f"[red]Project '{project_name}' not in DB. Run 'project add' first.[/red]")
         sys.exit(1)
     return proj.row_id

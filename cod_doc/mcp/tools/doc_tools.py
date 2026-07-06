@@ -108,8 +108,11 @@ def register(mcp: FastMCP) -> None:
                     reason=reason,
                 )
                 from cod_doc.services import activity_service
+
                 activity_service.emit(
-                    session, project_id, "doc.created",
+                    session,
+                    project_id,
+                    "doc.created",
                     actor_kind="agent" if author.startswith("agent") else "human",
                     actor_id=author,
                     scope_kind="document",
@@ -125,6 +128,7 @@ def register(mcp: FastMCP) -> None:
         else:
             _idempotency.store("doc_create", idempotency_key, out)
         from cod_doc.services.skill_service import recommend_for_tool
+
         recs = recommend_for_tool("doc_create")
         if recs:
             out["recommended_skills"] = recs[:3]
@@ -160,8 +164,11 @@ def register(mcp: FastMCP) -> None:
                 cascade_links=cascade_links,
             )
             from cod_doc.services import activity_service
+
             activity_service.emit(
-                session, project_id, "doc.renamed",
+                session,
+                project_id,
+                "doc.renamed",
                 actor_kind="agent" if author.startswith("agent") else "human",
                 actor_id=author,
                 scope_kind="document",

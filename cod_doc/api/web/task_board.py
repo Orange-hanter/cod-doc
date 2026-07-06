@@ -90,13 +90,9 @@ def compute_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "in_progress": sum(1 for r in rows if r["status"] in ("in_progress", "in-progress")),
         "blocked": sum(1 for r in rows if r["status"] == "blocked"),
         "in_review": sum(1 for r in rows if r["status"] == "in_review"),
-        "missing_ac": sum(
-            1 for r in rows if not r["has_acceptance"] and r["status"] != "done"
-        ),
+        "missing_ac": sum(1 for r in rows if not r["has_acceptance"] and r["status"] != "done"),
         "critical_open": sum(
-            1
-            for r in rows
-            if r["priority"] == "critical" and r["status"] != "done"
+            1 for r in rows if r["priority"] == "critical" and r["status"] != "done"
         ),
     }
     stats["pct_done"] = int(stats["done"] / total * 100) if total else 0
@@ -121,8 +117,7 @@ def build_columns(
                 "count": len(col_tasks),
                 "tasks": col_tasks,
                 "collapsed_default": key in ("done", "cancelled"),
-                "highlighted": status_filter is not None
-                and status_filter.value in members,
+                "highlighted": status_filter is not None and status_filter.value in members,
             }
         )
     return columns

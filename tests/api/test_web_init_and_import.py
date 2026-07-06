@@ -158,12 +158,12 @@ def test_init_unblocks_overview_dashboard(web_no_db_client) -> None:
     """After init, the empty-DB banner is gone and the live agg blocks render."""
     client, entry = web_no_db_client
     pre = client.get(f"/p/{entry.name}")
-    assert "База проекта не инициализирована" in pre.text
+    assert "Project database not initialized" in pre.text
 
     client.post(f"/p/{entry.name}/init", follow_redirects=False)
 
     post = client.get(f"/p/{entry.name}")
-    assert "База проекта не инициализирована" not in post.text
+    assert "Project database not initialized" not in post.text
     # The agg block headers appear when DB is live.
     assert "Ready to start" in post.text
     assert "Plan progress" in post.text

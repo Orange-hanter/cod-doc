@@ -81,17 +81,13 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                         "remaining": progress.remaining,
                         "status": progress.status.value,
                         "percent": (
-                            round(100 * progress.done / progress.total)
-                            if progress.total
-                            else 0
+                            round(100 * progress.done / progress.total) if progress.total else 0
                         ),
                     }
                 )
 
             # COD-075: ready batch across all plans in one SQL — was N+1.
-            for t in plans.ready_for_project(
-                session, project_db_id, limit=OVERVIEW_READY_LIMIT
-            ):
+            for t in plans.ready_for_project(session, project_db_id, limit=OVERVIEW_READY_LIMIT):
                 ready_tasks.append(
                     {
                         "task_id": t.task_id,
@@ -240,9 +236,7 @@ def import_master_scan(
     files = _walk_doc_files(Path(proj.entry.path))
 
     try:
-        draft, meta = ai_generate.generate_master_from_folder(
-            files, cfg=cfg, intent=intent
-        )
+        draft, meta = ai_generate.generate_master_from_folder(files, cfg=cfg, intent=intent)
         notice = (
             f"Scanned {len(draft.files_seen)} files; "
             f"{len(draft.coverage_tasks)} coverage tasks proposed."
@@ -331,9 +325,7 @@ async def import_master_save(
                 continue
             type_ = types[i] if i < len(types) else "docs"
             priority = priorities[i] if i < len(priorities) else "medium"
-            letter = (
-                str(section_letters[i] if i < len(section_letters) else "").upper().strip()
-            )
+            letter = str(section_letters[i] if i < len(section_letters) else "").upper().strip()
             description = str(descriptions[i] if i < len(descriptions) else "")
             section = section_by_letter.get(letter) or sections[0]
             if section.row_id is None:
@@ -362,8 +354,7 @@ async def import_master_save(
     session.commit()
 
     return RedirectResponse(
-        url=f"/p/{slug}?master_written={'1' if write_master else '0'}"
-        f"&tasks_saved={saved_tasks}",
+        url=f"/p/{slug}?master_written={'1' if write_master else '0'}&tasks_saved={saved_tasks}",
         status_code=303,
     )
 

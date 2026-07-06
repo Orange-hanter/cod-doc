@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 def _resolve_task_row_id(session: Any, project_id: int, task_id: str) -> int:
     from sqlalchemy import select
+
     from cod_doc.infra.models import TaskModel
 
     row = session.execute(

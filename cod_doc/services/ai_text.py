@@ -62,9 +62,7 @@ def improve_text_traced(text: str, intent: str, *, cfg: Config) -> ImproveResult
     import time
 
     if not cfg.api_key:
-        raise AIBackendError(
-            "LLM backend not configured: set the API key in /settings."
-        )
+        raise AIBackendError("LLM backend not configured: set the API key in /settings.")
     if not text.strip():
         raise AIBackendError("Nothing to improve — text is empty.")
 
@@ -106,8 +104,6 @@ def improve_text_traced(text: str, intent: str, *, cfg: Config) -> ImproveResult
 
 # ── Doc meta suggestion ────────────────────────────────────────────────────
 
-from dataclasses import dataclass
-
 
 @dataclass
 class DocMetaSuggestion:
@@ -138,7 +134,7 @@ Rules:
 - Respond ONLY with the JSON object, nothing else."""
 
 
-def suggest_doc_meta(description: str, *, cfg: "Config") -> DocMetaSuggestion:
+def suggest_doc_meta(description: str, *, cfg: Config) -> DocMetaSuggestion:
     """Call lite model to infer doc title, doc_key, type, and preamble from a free-form description.
 
     Uses ``cfg.lite_model`` when set, falls back to ``cfg.model``.
@@ -160,7 +156,7 @@ def suggest_doc_meta(description: str, *, cfg: "Config") -> DocMetaSuggestion:
     model = cfg.lite_model.strip() if cfg.lite_model and cfg.lite_model.strip() else cfg.model
     client = OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
 
-    started = _time.monotonic()
+    _time.monotonic()
     try:
         completion = client.chat.completions.create(
             model=model,
@@ -257,7 +253,7 @@ def expand_doc_sections(
     preamble: str,
     *,
     intent: str = "",
-    cfg: "Config",
+    cfg: Config,
     doc_type: str = "",
 ) -> list[SectionDraft]:
     """Ask the model to generate sections that expand a document preamble.
@@ -283,8 +279,10 @@ def expand_doc_sections(
 
     # Heavy doc types use the full model + token budget; smaller docs can use the lite model.
     is_heavy = doc_type in cfg._HEAVY_DOC_TYPES
-    model = cfg.model if is_heavy else (
-        cfg.lite_model.strip() if cfg.lite_model and cfg.lite_model.strip() else cfg.model
+    model = (
+        cfg.model
+        if is_heavy
+        else (cfg.lite_model.strip() if cfg.lite_model and cfg.lite_model.strip() else cfg.model)
     )
     budget = cfg.doc_token_budget(doc_type) if doc_type else cfg.doc_max_tokens_default
     client = OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
@@ -343,7 +341,7 @@ def expand_doc_sections(
 # ── Low-level lite-model helper ────────────────────────────────────────────
 
 
-def _call_lite_raw(prompt: str, cfg: "Config", *, max_tokens: int = 1024) -> str:
+def _call_lite_raw(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> str:
     """Call the lite model with a single user message and return the raw string.
 
     Uses ``cfg.lite_model`` when set, falls back to ``cfg.model``.

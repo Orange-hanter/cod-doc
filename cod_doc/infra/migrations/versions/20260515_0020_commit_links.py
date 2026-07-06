@@ -38,7 +38,10 @@ def upgrade() -> None:
         sa.Column("author", sa.String(128), nullable=False, server_default=""),
         sa.Column("ts", sa.DateTime(timezone=True), nullable=True),
         sa.UniqueConstraint(
-            "project_id", "task_id", "sha", name="uq_commit_link_edge",
+            "project_id",
+            "task_id",
+            "sha",
+            name="uq_commit_link_edge",
         ),
     )
     op.create_index("ix_commit_link_task", "commit_link", ["project_id", "task_id"])

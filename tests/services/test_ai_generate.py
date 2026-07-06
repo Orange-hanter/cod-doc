@@ -10,9 +10,7 @@ from cod_doc.services.ai_text import AIBackendError
 
 
 def _cfg() -> Config:
-    return Config(
-        api_key="sk-test", model="test/m", base_url="https://x"
-    )
+    return Config(api_key="sk-test", model="test/m", base_url="https://x")
 
 
 def _stub_chat_json(payload: dict, monkeypatch) -> None:
@@ -117,9 +115,7 @@ def test_generate_tasks_falls_back_on_bad_type(monkeypatch) -> None:
         {"tasks": [{"title": "Do thing", "type": "weird", "priority": "low"}]},
         monkeypatch,
     )
-    drafts, _ = ai_generate.generate_tasks_for_story(
-        "u", "I want X", cfg=_cfg()
-    )
+    drafts, _ = ai_generate.generate_tasks_for_story("u", "I want X", cfg=_cfg())
     assert drafts[0].type == "feature"  # fallback
 
 

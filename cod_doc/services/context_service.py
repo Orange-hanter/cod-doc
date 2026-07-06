@@ -65,9 +65,7 @@ def _stories_for_target(
     return [{"story_id": r.story_id, "persona": r.persona, "why": "linked"} for r in rows]
 
 
-def _open_tasks_for_plan(
-    session: Session, plan_id: int
-) -> list[dict[str, Any]]:
+def _open_tasks_for_plan(session: Session, plan_id: int) -> list[dict[str, Any]]:
     """Return pending + in_progress tasks for a plan (priority-ordered, capped)."""
     from cod_doc.infra.sql_helpers import priority_sql_order
 
@@ -82,16 +80,17 @@ def _open_tasks_for_plan(
     )
     rows = session.execute(stmt).scalars().all()
     return [
-        {"task_id": r.task_id, "title": r.title, "status": r.status, "why": "open"}
-        for r in rows
+        {"task_id": r.task_id, "title": r.title, "status": r.status, "why": "open"} for r in rows
     ]
 
 
 def _plan_progress(session: Session, plan_id: int) -> dict[str, int]:
     """Return {done, total} counts for a plan."""
-    all_tasks = session.execute(
-        select(TaskModel.status).where(TaskModel.plan_id == plan_id)
-    ).scalars().all()
+    all_tasks = (
+        session.execute(select(TaskModel.status).where(TaskModel.plan_id == plan_id))
+        .scalars()
+        .all()
+    )
     done = sum(1 for s in all_tasks if s == TaskStatus.DONE.value)
     return {"done": done, "total": len(all_tasks)}
 
@@ -101,9 +100,7 @@ def _plan_progress(session: Session, plan_id: int) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_document(
-    session: Session, project_id: int, doc_key: str
-) -> DocumentModel | None:
+def _resolve_document(session: Session, project_id: int, doc_key: str) -> DocumentModel | None:
     stmt = select(DocumentModel).where(
         DocumentModel.project_id == project_id,
         DocumentModel.doc_key == doc_key,
@@ -362,9 +359,7 @@ def _build_module_context(
 # ---------------------------------------------------------------------------
 
 
-def _enrich_l2_task(
-    session: Session, task: TaskModel, related: dict[str, Any]
-) -> None:
+def _enrich_l2_task(session: Session, task: TaskModel, related: dict[str, Any]) -> None:
     """Add depends_on / dependents chains to ``related["dependencies"]``."""
     from cod_doc.services import plan_service
 
@@ -398,9 +393,7 @@ def _enrich_l2_task(
     related["dependencies"] = deps
 
 
-def _enrich_l2_document(
-    session: Session, doc: DocumentModel, related: dict[str, Any]
-) -> None:
+def _enrich_l2_document(session: Session, doc: DocumentModel, related: dict[str, Any]) -> None:
     """Add cross-document outgoing links to ``related["documents"]``."""
     stmt = (
         select(LinkModel, DocumentModel)
@@ -572,8 +565,7 @@ def context_get(
 
     else:
         raise ValueError(
-            f"Unknown target_kind {target_kind!r}. "
-            "Expected one of: document, task, plan, module"
+            f"Unknown target_kind {target_kind!r}. Expected one of: document, task, plan, module"
         )
 
     # L3: semantic search on top of L2.

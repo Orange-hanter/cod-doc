@@ -125,9 +125,7 @@ class DuplicateTaskError(ValueError):
         self.normalized_title = normalized_title
 
 
-def find_duplicate_by_title(
-    session: Session, project_id: int, title: str
-) -> Task | None:
+def find_duplicate_by_title(session: Session, project_id: int, title: str) -> Task | None:
     """Return an existing task in the project with the same normalized title.
 
     Uses the indexed ``task.normalized_title`` column (COD-076). Returns
@@ -265,9 +263,7 @@ def create(
                 select(TaskModel).where(TaskModel.task_id == blocker_task_id)
             ).scalar_one_or_none()
             if blocker_model is None:
-                raise ValueError(
-                    f"blocked_by references unknown task_id: {blocker_task_id!r}"
-                )
+                raise ValueError(f"blocked_by references unknown task_id: {blocker_task_id!r}")
             session.add(
                 DependencyModel(
                     from_task_id=task.row_id,
@@ -285,9 +281,7 @@ def create(
             )
         ).scalar_one_or_none()
         if story_model is None:
-            raise ValueError(
-                f"story_id references unknown story: {story_id!r}"
-            )
+            raise ValueError(f"story_id references unknown story: {story_id!r}")
         session.add(
             StoryLinkModel(
                 story_id=story_model.row_id,
@@ -404,8 +398,11 @@ def update_status(
     # the only emit site).
     try:
         from cod_doc.services import activity_service
+
         activity_service.emit(
-            session, model.project_id, "task.status_changed",
+            session,
+            model.project_id,
+            "task.status_changed",
             actor_kind="agent" if author.startswith("agent") else "human",
             actor_id=author,
             scope_kind="task",
@@ -570,8 +567,11 @@ def complete(
     # wrapper used to do this; moving the emit here covers all entry points.
     try:
         from cod_doc.services import activity_service
+
         activity_service.emit(
-            session, model.project_id, "task.completed",
+            session,
+            model.project_id,
+            "task.completed",
             actor_kind="agent" if author.startswith("agent") else "human",
             actor_id=author,
             scope_kind="task",
@@ -591,12 +591,16 @@ def complete(
     # OBI-001: record per-task completion metrics for /p/<slug>/metrics
     # dashboard. Idempotent — safe under re-completion.
     import logging as _log
+
     try:
         from cod_doc.services import metrics_service
+
         metrics_service.record_on_complete(session, model)
     except Exception as _exc:  # never break completion on metrics failure
         _log.getLogger("cod_doc.metrics").warning(
-            "metrics_service.record_on_complete failed for %s: %s", task_id, _exc,
+            "metrics_service.record_on_complete failed for %s: %s",
+            task_id,
+            _exc,
         )
 
     if (slug := _project_slug(session, model.project_id)) is not None:

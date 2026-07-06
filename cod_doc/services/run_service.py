@@ -7,7 +7,7 @@ enforced by ``tests/api/test_web_layer_imports.py``).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import desc, select
@@ -40,22 +40,22 @@ def _to_dict(r: AgentRunModel) -> dict[str, Any]:
     }
 
 
-def list_recent(
-    session: "Session", project_id: int, *, limit: int = 50
-) -> list[dict[str, Any]]:
+def list_recent(session: Session, project_id: int, *, limit: int = 50) -> list[dict[str, Any]]:
     """Most recent agent runs for a project, newest first."""
-    rows = session.execute(
-        select(AgentRunModel)
-        .where(AgentRunModel.project_id == project_id)
-        .order_by(desc(AgentRunModel.started_at))
-        .limit(limit)
-    ).scalars().all()
+    rows = (
+        session.execute(
+            select(AgentRunModel)
+            .where(AgentRunModel.project_id == project_id)
+            .order_by(desc(AgentRunModel.started_at))
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
     return [_to_dict(r) for r in rows]
 
 
-def get_one(
-    session: "Session", project_id: int, run_id: str
-) -> dict[str, Any] | None:
+def get_one(session: Session, project_id: int, run_id: str) -> dict[str, Any] | None:
     """Fetch a single run by id, scoped to the project (returns None if absent)."""
     r = session.execute(
         select(AgentRunModel).where(

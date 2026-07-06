@@ -127,8 +127,9 @@ def test_revisions_log_renders_seeded_history(revisions_client) -> None:
     # 3 revisions for the seeded task: create + status + complete
     assert "task#" in r.text
     assert "human:dakh" in r.text
-    # Tab strip is now active for revisions
-    assert 'class="active" href="/p/demo/revisions"' in r.text
+    from tests.api.conftest import assert_active_tab
+
+    assert_active_tab(r.text, "demo", "revisions")
 
 
 def test_revisions_filter_by_entity_kind(revisions_client) -> None:
@@ -140,9 +141,7 @@ def test_revisions_filter_by_entity_kind(revisions_client) -> None:
 
 def test_revisions_filter_by_entity_kind_and_id(revisions_client) -> None:
     client, entry, task_row_id = revisions_client
-    r = client.get(
-        f"/p/{entry.name}/revisions?entity_kind=task&entity_id={task_row_id}"
-    )
+    r = client.get(f"/p/{entry.name}/revisions?entity_kind=task&entity_id={task_row_id}")
     assert r.status_code == 200
     assert f"task#{task_row_id}" in r.text
 
@@ -174,7 +173,7 @@ def test_revisions_db_absent_renders_warning(tmp_path: Path) -> None:
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get(f"/p/{entry.name}/revisions")
     assert r.status_code == 200
-    assert "DB-проект не инициализирован" in r.text
+    assert "DB project not initialized" in r.text
 
 
 def test_revisions_404_unknown_project(revisions_client) -> None:

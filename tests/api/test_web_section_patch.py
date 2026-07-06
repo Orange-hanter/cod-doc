@@ -250,6 +250,4 @@ def test_doc_show_embeds_edit_button(section_client) -> None:
     assert r.status_code == 200
     # Edit ✎ button wired to the form endpoint
     assert "section-edit-btn" in r.text
-    assert (
-        'hx-get="/p/demo/docs/modules/M1/notes/sections/overview/edit"' in r.text
-    )
+    assert 'hx-get="/p/demo/docs/modules/M1/notes/sections/overview/edit"' in r.text

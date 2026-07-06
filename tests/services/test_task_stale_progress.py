@@ -27,9 +27,7 @@ def _seed(session: Session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -67,9 +65,7 @@ def _make_in_progress(
 
         backdated = datetime.now(UTC) - timedelta(hours=last_updated_offset_hours)
         session.execute(
-            update(TaskModel)
-            .where(TaskModel.task_id == tid)
-            .values(last_updated=backdated)
+            update(TaskModel).where(TaskModel.task_id == tid).values(last_updated=backdated)
         )
         session.flush()
     return 0
@@ -174,6 +170,4 @@ def test_log_progress_rejects_empty_message(engine_with_schema) -> None:  # type
         _make_in_progress(session, p, pl, s, "PR-001")
 
         with pytest.raises(ValueError, match="non-empty"):
-            task_service.log_progress(
-                session, task_id="PR-001", message="   ", author="agent:x"
-            )
+            task_service.log_progress(session, task_id="PR-001", message="   ", author="agent:x")

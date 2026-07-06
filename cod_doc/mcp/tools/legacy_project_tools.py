@@ -156,6 +156,7 @@ def register(mcp: FastMCP) -> None:
         Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
         """
         import warnings
+
         warnings.warn(
             "add_task (legacy) is deprecated — use task_create (DB-backed) instead",
             DeprecationWarning,
@@ -198,6 +199,7 @@ def register(mcp: FastMCP) -> None:
         Accepts ``project`` (canonical) or ``project_name`` (legacy alias).
         """
         import warnings
+
         warnings.warn(
             "update_task (legacy) is deprecated — use task_update_status (DB-backed) instead",
             DeprecationWarning,

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from cod_doc.api.deps import get_project, try_open_project_db
@@ -29,8 +29,8 @@ def tasks_board_fragment(
 ) -> HTMLResponse:
     """Return the stats strip + kanban region for HTMX outerHTML swap.
 
-  Query params mirror the tasks list page filters so live refresh preserves
-  the user's plan/status context.
+    Query params mirror the tasks list page filters so live refresh preserves
+    the user's plan/status context.
     """
     proj = get_project(slug)
 
@@ -60,8 +60,6 @@ def tasks_board_fragment(
             "stats": stats,
             "columns": columns,
             "selected_plan": plan,
-            "board_refresh_url": board_refresh_url(
-                proj.entry.name, plan=plan, status=status
-            ),
+            "board_refresh_url": board_refresh_url(proj.entry.name, plan=plan, status=status),
         },
     )

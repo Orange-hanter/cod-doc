@@ -154,7 +154,7 @@ def test_tasks_list_renders_all(tasks_client) -> None:
     assert 'id="tasks-live-region"' in r.text
     assert "frag/tasks/board" in r.text
     # count footer
-    assert "3 tasks shown." in r.text
+    assert "3 task(s) shown." in r.text
 
 
 def test_tasks_list_done_column_collapsed_by_default(tasks_client) -> None:
@@ -166,9 +166,8 @@ def test_tasks_list_done_column_collapsed_by_default(tasks_client) -> None:
     # Find the Done column markup and confirm it has no `open` attribute.
     # Other columns with tasks should be open.
     import re
-    done_block = re.search(
-        r'<details class="kanban-col kanban-col-done[^"]*"([^>]*)>', r.text
-    )
+
+    done_block = re.search(r'<details class="kanban-col kanban-col-done[^"]*"([^>]*)>', r.text)
     assert done_block is not None, "Done column must render"
     assert "open" not in done_block.group(1), "Done column should be collapsed by default"
 
@@ -236,7 +235,7 @@ def test_tasks_list_invalid_status_warns(tasks_client) -> None:
     client, entry = tasks_client
     r = client.get(f"/p/{entry.name}/tasks?status=garbage&view=all")
     assert r.status_code == 200
-    assert "Неизвестное значение status" in r.text
+    assert "Unknown status value" in r.text
     # falls back to the requested view — `view=all` shows every task.
     assert "AUTH-001" in r.text
     assert "AUTH-002" in r.text
@@ -262,7 +261,7 @@ def test_tasks_list_warns_when_db_absent(tmp_path: Path) -> None:
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get(f"/p/{entry.name}/tasks")
     assert r.status_code == 200
-    assert "DB-проект не инициализирован" in r.text
+    assert "DB project not initialized" in r.text
 
 
 def test_tasks_list_404_unknown_project(tasks_client) -> None:

@@ -43,17 +43,13 @@ def _seed_plan(session: Session, project_id: int, scope: str = "p-plan") -> tupl
     plan = PlanModel(project_id=project_id, scope=scope, created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0)
     session.add(sec)
     session.flush()
     return plan.row_id, sec.row_id
 
 
-def _seed_doc(
-    session: Session, project_id: int, doc_key: str = "modules/M1/overview"
-) -> int:
+def _seed_doc(session: Session, project_id: int, doc_key: str = "modules/M1/overview") -> int:
     doc = doc_service.create(
         session,
         project_id=project_id,
@@ -79,9 +75,7 @@ def test_invalid_depth_raises(engine_with_schema) -> None:  # type: ignore[no-un
     with transactional(factory) as session:
         proj_id = _seed_project(session)
         with pytest.raises(ValueError, match="Invalid depth"):
-            context_service.context_get(
-                session, proj_id, "document", "x", depth="L9"
-            )
+            context_service.context_get(session, proj_id, "document", "x", depth="L9")
 
 
 def test_unknown_target_kind_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -161,9 +155,7 @@ def test_l0_task_metadata_only(engine_with_schema) -> None:  # type: ignore[no-u
             acceptance="acceptance text",
         )
 
-        result = context_service.context_get(
-            session, proj_id, "task", "PR-001", depth="L0"
-        )
+        result = context_service.context_get(session, proj_id, "task", "PR-001", depth="L0")
 
         assert result["target_summary"]["task_id"] == "PR-001"
         assert result["target_summary"]["status"] == "pending"
@@ -225,9 +217,7 @@ def test_l1_task_includes_description_and_acceptance(engine_with_schema) -> None
             acceptance="acceptance text",
         )
 
-        result = context_service.context_get(
-            session, proj_id, "task", "PR-001", depth="L1"
-        )
+        result = context_service.context_get(session, proj_id, "task", "PR-001", depth="L1")
 
         assert result["core"]["description"] == "some long description here"
         assert result["core"]["acceptance"] == "acceptance text"
@@ -251,9 +241,7 @@ def test_l1_task_includes_siblings(engine_with_schema) -> None:  # type: ignore[
                 author="human:test",
             )
 
-        result = context_service.context_get(
-            session, proj_id, "task", "PR-002", depth="L1"
-        )
+        result = context_service.context_get(session, proj_id, "task", "PR-002", depth="L1")
 
         sibling_ids = {t["task_id"] for t in result["related"]["tasks"]}
         assert sibling_ids == {"PR-001", "PR-003"}
@@ -279,9 +267,7 @@ def test_l1_plan_progress_and_open_tasks(engine_with_schema) -> None:  # type: i
                 author="human:test",
             )
 
-        result = context_service.context_get(
-            session, proj_id, "plan", "my-plan", depth="L1"
-        )
+        result = context_service.context_get(session, proj_id, "plan", "my-plan", depth="L1")
 
         assert result["target_summary"]["scope"] == "my-plan"
         assert result["target_summary"]["total"] == 2
@@ -395,20 +381,14 @@ def test_l2_task_includes_forward_and_reverse_chains(engine_with_schema) -> None
         # PR-003 depends on PR-002 (PR-002 blocks PR-003)
         rows = {t.task_id: t.row_id for t in task_service.list_for_project(session, proj_id)}
         session.add(
-            DependencyModel(
-                from_task_id=rows["PR-002"], to_task_id=rows["PR-001"], kind="blocks"
-            )
+            DependencyModel(from_task_id=rows["PR-002"], to_task_id=rows["PR-001"], kind="blocks")
         )
         session.add(
-            DependencyModel(
-                from_task_id=rows["PR-003"], to_task_id=rows["PR-002"], kind="blocks"
-            )
+            DependencyModel(from_task_id=rows["PR-003"], to_task_id=rows["PR-002"], kind="blocks")
         )
         session.flush()
 
-        result = context_service.context_get(
-            session, proj_id, "task", "PR-002", depth="L2"
-        )
+        result = context_service.context_get(session, proj_id, "task", "PR-002", depth="L2")
 
         deps = result["related"]["dependencies"]
         # forward: prerequisites → PR-001 (depth=1)
@@ -439,15 +419,11 @@ def test_l1_task_does_not_include_chains(engine_with_schema) -> None:  # type: i
             )
         rows = {t.task_id: t.row_id for t in task_service.list_for_project(session, proj_id)}
         session.add(
-            DependencyModel(
-                from_task_id=rows["PR-002"], to_task_id=rows["PR-001"], kind="blocks"
-            )
+            DependencyModel(from_task_id=rows["PR-002"], to_task_id=rows["PR-001"], kind="blocks")
         )
         session.flush()
 
-        result = context_service.context_get(
-            session, proj_id, "task", "PR-002", depth="L1"
-        )
+        result = context_service.context_get(session, proj_id, "task", "PR-002", depth="L1")
         # L1 → no dependencies populated (default empty list)
         assert result["related"]["dependencies"] == []
 
@@ -495,7 +471,8 @@ def test_l2_document_includes_cross_doc_links(engine_with_schema) -> None:  # ty
 
 
 def test_l3_semantic_returns_empty_when_no_api_key(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     """L3 must not fail when ChromaDB / embedding backend is unavailable."""
     factory = make_session_factory(engine_with_schema)

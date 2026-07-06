@@ -58,9 +58,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_agent_run_project_started", "agent_run", ["project_id", "started_at"])
     op.create_index("ix_agent_run_status", "agent_run", ["status"])
-    op.create_index(
-        "ix_agent_run_triggering_task", "agent_run", ["triggering_task_id"]
-    )
+    op.create_index("ix_agent_run_triggering_task", "agent_run", ["triggering_task_id"])
 
     # Stamp run_id on mutating tables. NULL = human / external mutation.
     with op.batch_alter_table("revision") as batch:

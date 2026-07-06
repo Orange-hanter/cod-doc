@@ -102,8 +102,9 @@ def test_stories_list_renders_empty(stories_client) -> None:
     assert "User stories" in r.text
     assert "Generate from docs" in r.text
     assert "ещё не создан" in r.text.lower() or "stories" in r.text.lower()
-    # Tab strip — Stories active
-    assert 'class="active" href="/p/demo/stories"' in r.text
+    from tests.api.conftest import assert_active_tab
+
+    assert_active_tab(r.text, "demo", "stories")
 
 
 def test_stories_list_shows_existing(stories_client) -> None:

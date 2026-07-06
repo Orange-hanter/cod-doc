@@ -236,7 +236,11 @@ def revert(
     m.last_updated = datetime.now(UTC)
     session.flush()
     new_rev_id = _write_revision(
-        session, project_id, m, body_at_target, author,
+        session,
+        project_id,
+        m,
+        body_at_target,
+        author,
         reason=f"revert to {revision_id}",
     )
     m.current_revision_id = new_rev_id

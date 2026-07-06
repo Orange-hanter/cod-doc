@@ -22,12 +22,13 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from cod_doc.domain.entities import TaskStatus
 from cod_doc.infra.models import TaskModel
 from cod_doc.services.task_status_machine import normalise
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+    from cod_doc.domain.entities import TaskStatus
 
 
 class CheckoutConflictError(RuntimeError):
@@ -45,9 +46,7 @@ class CheckoutStatusError(RuntimeError):
     """Raised when the current task status is not in ``expected_statuses``."""
 
     def __init__(self, *, task_id: str, current: str, expected: list[str]) -> None:
-        super().__init__(
-            f"Task {task_id!r} is in {current!r}, not in expected {expected!r}"
-        )
+        super().__init__(f"Task {task_id!r} is in {current!r}, not in expected {expected!r}")
         self.task_id = task_id
         self.current = current
         self.expected = expected
@@ -64,9 +63,7 @@ class CheckoutResult:
 
 
 def _load_task(session: Session, task_id: str) -> TaskModel:
-    m = session.execute(
-        select(TaskModel).where(TaskModel.task_id == task_id)
-    ).scalar_one_or_none()
+    m = session.execute(select(TaskModel).where(TaskModel.task_id == task_id)).scalar_one_or_none()
     if m is None:
         raise LookupError(f"Task {task_id!r} not found.")
     return m
@@ -109,9 +106,7 @@ def checkout(
         )
 
     if current_canon not in expected:
-        raise CheckoutStatusError(
-            task_id=task_id, current=m.status, expected=expected
-        )
+        raise CheckoutStatusError(task_id=task_id, current=m.status, expected=expected)
 
     now = datetime.now(UTC)
     # Preserve legacy "in-progress" hyphenation when checking out a
@@ -188,6 +183,7 @@ def warn_if_no_checkout(session: Session, task_id: str, agent: str) -> str | Non
     documented in proposal 06.  Logged + returned; never raises.
     """
     import logging
+
     locked_by = session.execute(
         select(TaskModel.checked_out_by).where(TaskModel.task_id == task_id)
     ).scalar_one_or_none()
@@ -210,12 +206,14 @@ def warn_if_no_checkout(session: Session, task_id: str, agent: str) -> str | Non
 def release_stale(session: Session, *, ttl_minutes: int = 30) -> list[str]:
     """Force-release locks older than ``ttl_minutes``; return released task_ids."""
     cutoff = datetime.now(UTC) - timedelta(minutes=ttl_minutes)
-    rows = list(session.execute(
-        select(TaskModel).where(
-            TaskModel.checked_out_at.is_not(None),
-            TaskModel.checked_out_at < cutoff,
-        )
-    ).scalars())
+    rows = list(
+        session.execute(
+            select(TaskModel).where(
+                TaskModel.checked_out_at.is_not(None),
+                TaskModel.checked_out_at < cutoff,
+            )
+        ).scalars()
+    )
     released: list[str] = []
     for m in rows:
         m.checked_out_by = None

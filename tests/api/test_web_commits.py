@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -13,22 +12,30 @@ from fastapi.testclient import TestClient
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import (
-    Plan, PlanSection, Priority, TaskType,
+    Plan,
+    PlanSection,
+    Priority,
+    TaskType,
 )
 from cod_doc.domain.entities import Project as ProjectEntity
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import (
-    PlanRepository, PlanSectionRepository, ProjectRepository,
+    PlanRepository,
+    PlanSectionRepository,
+    ProjectRepository,
 )
 from cod_doc.services import task_service as tasks
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     pass
 
 
 def _init_git(repo: Path) -> None:
     def _run(*args: str) -> None:
         subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
     _run("init", "-q", "--initial-branch=main")
     _run("config", "user.email", "t@example.com")
     _run("config", "user.name", "Tester")
@@ -54,6 +61,7 @@ def commits_client(tmp_path: Path, migrate_db):
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
     Project(entry).init()
 
@@ -64,12 +72,14 @@ def commits_client(tmp_path: Path, migrate_db):
         proj = ProjectRepository(session).add(
             ProjectEntity(slug="cmtp", title="P", root_path=str(repo), config={})
         )
-        proj.created = now; proj.updated = now
+        proj.created = now
+        proj.updated = now
         session.flush()
         plan = PlanRepository(session).add(
             Plan(project_id=proj.row_id, scope="x", principle="test-first")
         )
-        plan.created = now; plan.last_updated = now
+        plan.created = now
+        plan.last_updated = now
         session.flush()
         sec = PlanSectionRepository(session).add(
             PlanSection(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
@@ -77,14 +87,20 @@ def commits_client(tmp_path: Path, migrate_db):
         session.flush()
         for tid in ("WEB-001", "WEB-002"):
             tasks.create(
-                session, project_id=proj.row_id, plan_id=plan.row_id,
-                section_id=sec.row_id, title=f"Task {tid}",
-                type=TaskType.FEATURE, priority=Priority.MEDIUM, author="t",
+                session,
+                project_id=proj.row_id,
+                plan_id=plan.row_id,
+                section_id=sec.row_id,
+                title=f"Task {tid}",
+                type=TaskType.FEATURE,
+                priority=Priority.MEDIUM,
+                author="t",
                 task_id=tid,
             )
     engine.dispose()
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         yield client, entry
 
@@ -107,7 +123,7 @@ def test_commits_import_then_page_shows_rows(commits_client) -> None:  # type: i
     assert "WEB-001" in page.text
     assert "WEB-002" in page.text
     # Each appears as a task link.
-    assert f'/p/{entry.name}/tasks/WEB-001' in page.text
+    assert f"/p/{entry.name}/tasks/WEB-001" in page.text
 
 
 def test_commits_tab_in_project_navigation(commits_client) -> None:  # type: ignore[no-untyped-def]

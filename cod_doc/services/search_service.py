@@ -59,8 +59,11 @@ def _insert(
             "VALUES (:kind, :ref, :pid, :title, :body)"
         ),
         {
-            "kind": kind, "ref": ref, "pid": project_id,
-            "title": title or "", "body": body or "",
+            "kind": kind,
+            "ref": ref,
+            "pid": project_id,
+            "title": title or "",
+            "body": body or "",
         },
     )
 
@@ -72,13 +75,15 @@ def reindex_all(session: Session, project_id: int) -> dict[str, int]:
     counts: dict[str, int] = {"task": 0, "doc": 0, "story": 0, "adr": 0}
 
     # Tasks — description + acceptance + blocked_reason in body.
-    for t in session.execute(
-        select(TaskModel).where(TaskModel.project_id == project_id)
-    ).scalars():
+    for t in session.execute(select(TaskModel).where(TaskModel.project_id == project_id)).scalars():
         body_parts = [t.description or "", t.acceptance or "", t.blocked_reason or ""]
         _insert(
-            session, kind="task", ref=t.task_id, project_id=project_id,
-            title=t.title or "", body="\n".join(b for b in body_parts if b),
+            session,
+            kind="task",
+            ref=t.task_id,
+            project_id=project_id,
+            title=t.title or "",
+            body="\n".join(b for b in body_parts if b),
         )
         counts["task"] += 1
 
@@ -86,17 +91,23 @@ def reindex_all(session: Session, project_id: int) -> dict[str, int]:
     for d in session.execute(
         select(DocumentModel).where(DocumentModel.project_id == project_id)
     ).scalars():
-        sections = list(session.execute(
-            select(SectionModel)
-            .where(SectionModel.document_id == d.row_id)
-            .order_by(SectionModel.position)
-        ).scalars())
+        sections = list(
+            session.execute(
+                select(SectionModel)
+                .where(SectionModel.document_id == d.row_id)
+                .order_by(SectionModel.position)
+            ).scalars()
+        )
         body = "\n\n".join(
             [d.preamble or ""] + [(s.heading or "") + "\n" + (s.body or "") for s in sections]
         )
         _insert(
-            session, kind="doc", ref=d.doc_key, project_id=project_id,
-            title=d.title or "", body=body.strip(),
+            session,
+            kind="doc",
+            ref=d.doc_key,
+            project_id=project_id,
+            title=d.title or "",
+            body=body.strip(),
         )
         counts["doc"] += 1
 
@@ -104,29 +115,45 @@ def reindex_all(session: Session, project_id: int) -> dict[str, int]:
     for s in session.execute(
         select(UserStoryModel).where(UserStoryModel.project_id == project_id)
     ).scalars():
-        crits = list(session.execute(
-            select(StoryAcceptanceModel.criterion)
-            .where(StoryAcceptanceModel.story_id == s.row_id)
-            .order_by(StoryAcceptanceModel.position)
-        ).scalars())
+        crits = list(
+            session.execute(
+                select(StoryAcceptanceModel.criterion)
+                .where(StoryAcceptanceModel.story_id == s.row_id)
+                .order_by(StoryAcceptanceModel.position)
+            ).scalars()
+        )
         body = (s.narrative or "") + "\n\n" + "\n- ".join(crits)
         title = (s.narrative or "")[:120]
         _insert(
-            session, kind="story", ref=s.story_id, project_id=project_id,
-            title=title, body=body,
+            session,
+            kind="story",
+            ref=s.story_id,
+            project_id=project_id,
+            title=title,
+            body=body,
         )
         counts["story"] += 1
 
     # ADRs — full decision payload.
-    for a in session.execute(
-        select(ADRModel).where(ADRModel.project_id == project_id)
-    ).scalars():
-        body = "\n\n".join(filter(None, [
-            a.context, a.decision, a.alternatives, a.consequences,
-        ]))
+    for a in session.execute(select(ADRModel).where(ADRModel.project_id == project_id)).scalars():
+        body = "\n\n".join(
+            filter(
+                None,
+                [
+                    a.context,
+                    a.decision,
+                    a.alternatives,
+                    a.consequences,
+                ],
+            )
+        )
         _insert(
-            session, kind="adr", ref=a.adr_id, project_id=project_id,
-            title=a.title or "", body=body,
+            session,
+            kind="adr",
+            ref=a.adr_id,
+            project_id=project_id,
+            title=a.title or "",
+            body=body,
         )
         counts["adr"] += 1
 
@@ -178,14 +205,11 @@ def search(
         }
     """
     if scope is not None and scope not in _VALID_SCOPES:
-        raise ValueError(
-            f"invalid scope {scope!r}; expected one of {sorted(_VALID_SCOPES)}"
-        )
+        raise ValueError(f"invalid scope {scope!r}; expected one of {sorted(_VALID_SCOPES)}")
 
     fts_query = _escape_fts(query)
     if not fts_query:
-        return {"query": query, "total": 0,
-                "by_kind": {k: [] for k in sorted(_VALID_SCOPES)}}
+        return {"query": query, "total": 0, "by_kind": {k: [] for k in sorted(_VALID_SCOPES)}}
 
     # Column index -1 lets FTS5 pick the column with the strongest match
     # — so a title-only hit still shows a useful snippet, and body matches
@@ -206,8 +230,12 @@ def search(
     rows = session.execute(text(sql), params).all()
     by_kind: dict[str, list[dict[str, Any]]] = {k: [] for k in sorted(_VALID_SCOPES)}
     for r in rows:
-        by_kind.setdefault(r.kind, []).append({
-            "ref": r.ref, "title": r.title,
-            "snippet": r.snippet, "score": round(float(r.score), 4),
-        })
+        by_kind.setdefault(r.kind, []).append(
+            {
+                "ref": r.ref,
+                "title": r.title,
+                "snippet": r.snippet,
+                "score": round(float(r.score), 4),
+            }
+        )
     return {"query": query, "total": len(rows), "by_kind": by_kind}

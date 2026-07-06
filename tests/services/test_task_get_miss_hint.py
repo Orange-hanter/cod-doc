@@ -12,10 +12,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-import pytest
 from mcp.server.fastmcp import FastMCP
 
-from cod_doc.domain.entities import Priority, Task, TaskStatus, TaskType
+from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.mcp.tools import task_tools
@@ -36,9 +35,7 @@ def _seed(session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="X", slug="A-X", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="X", slug="A-X", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -49,6 +46,7 @@ def test_task_get_miss_returns_structured_hint(engine_with_schema, monkeypatch) 
 
     # Stub session_factory + require_project_id so the MCP wrapper uses our DB.
     from cod_doc.mcp.tools import task_tools as tt
+
     monkeypatch.setattr(tt, "session_factory", lambda project: (factory, None))
 
     mcp = FastMCP("test")
@@ -85,6 +83,7 @@ def test_task_get_hit_returns_task_dict_unchanged(engine_with_schema, monkeypatc
         )
 
     from cod_doc.mcp.tools import task_tools as tt
+
     monkeypatch.setattr(tt, "session_factory", lambda project: (factory, None))
 
     mcp = FastMCP("test")

@@ -61,7 +61,7 @@ def test_index_warns_when_unconfigured(tmp_path: Path) -> None:
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get("/")
     assert r.status_code == 200
-    assert "API-ключ не настроен" in r.text
+    assert "API key is not configured" in r.text
 
 
 def test_index_empty_when_no_projects(tmp_path: Path) -> None:
@@ -159,7 +159,7 @@ def test_project_show_master_truncated(tmp_path: Path) -> None:
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
-    assert "Показаны первые строки" in r.text
+    assert "Showing the first lines only." in r.text
     assert "line 0" in r.text
     assert "line 79" in r.text
     assert "line 80" not in r.text
@@ -198,8 +198,14 @@ def test_project_show_handles_missing_master(tmp_path: Path) -> None:
     repo = tmp_path / "no-master"
     repo.mkdir()
     entry = ProjectEntry(name="hollow", path=str(repo))
-    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg = Config(
+        api_key="sk-test",
+        model="test/model",
+        base_url="https://x",
+        agent_enabled=False,
+    )
     cfg.add_project(entry)
+    cfg.save()
 
     import cod_doc.api.deps as deps
 
@@ -214,5 +220,4 @@ def test_project_show_handles_missing_master(tmp_path: Path) -> None:
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
-    # The template shows the "ещё не создан" warning instead of crashing.
-    assert "ещё не создан" in r.text
+    assert "has not been created yet" in r.text

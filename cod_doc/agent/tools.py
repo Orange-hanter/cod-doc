@@ -322,7 +322,6 @@ class ToolExecutor:
 
     def _tool_doc_body(self, doc_key: str) -> dict[str, Any]:
         try:
-
             from cod_doc.infra.db import transactional
             from cod_doc.mcp.tools._db import require_project_id
             from cod_doc.services import doc_service

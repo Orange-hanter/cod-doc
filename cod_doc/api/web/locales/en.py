@@ -141,7 +141,7 @@ MESSAGES: dict[str, str] = {
     "index.agent_disabled": "(disabled)",
     "index.stop": "Stop",
     "index.start": "Start",
-    "index.api_key_warn": "API key is not configured. Go to <a href=\"/settings\">Settings</a>.",
+    "index.api_key_warn": 'API key is not configured. Go to <a href="/settings">Settings</a>.',
     "index.add_project": "Add project",
     "index.add_first_project": "Add your first project",
     "index.create_project": "Create project",
@@ -159,7 +159,7 @@ MESSAGES: dict[str, str] = {
     "index.master_md": "MASTER.md",
     "index.auto_commit": "Auto-commit changes",
     "index.creating": "Creating…",
-    "index.created": "Project \"{name}\" created.",
+    "index.created": 'Project "{name}" created.',
     "index.required_fields": "Name and path are required.",
     "index.error_prefix": "Error",
     "index.card_total": "Total",
@@ -201,7 +201,7 @@ MESSAGES: dict[str, str] = {
     "db.not_initialized_overview_link": "project overview",
     "db.not_initialized_docs_hint": (
         "DB project not initialized. Go to "
-        "<a href=\"/p/{slug}\">project overview</a> and click "
+        '<a href="/p/{slug}">project overview</a> and click '
         "<strong>Initialize DB</strong>."
     ),
     "plans.none": "No plans in this project yet.",

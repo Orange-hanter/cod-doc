@@ -95,8 +95,7 @@ def test_task_create_wrapper_forwards_blocked_by_affects_files_story_id() -> Non
         f"blocked_by lost in MCP wrapper. Captured kwargs: {sorted(captured)}"
     )
     assert captured.get("affected_files") == ["a.py", "b.py"], (
-        f"affects_files → affected_files passthrough broken. "
-        f"Captured kwargs: {sorted(captured)}"
+        f"affects_files → affected_files passthrough broken. Captured kwargs: {sorted(captured)}"
     )
     assert captured.get("story_id") == "US-1", (
         f"story_id lost in MCP wrapper. Captured kwargs: {sorted(captured)}"

@@ -20,7 +20,7 @@ import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 
@@ -50,15 +50,17 @@ def parse_task_refs(message: str) -> list[str]:
 
 
 def _known_task_ids(session: Session, project_id: int) -> set[str]:
-    rows = session.execute(
-        select(TaskModel.task_id).where(TaskModel.project_id == project_id)
-    ).scalars().all()
+    rows = (
+        session.execute(select(TaskModel.task_id).where(TaskModel.project_id == project_id))
+        .scalars()
+        .all()
+    )
     return {r for r in rows if r}
 
 
-def _parse_git_log(output: str) -> list[dict]:
+def _parse_git_log(output: str) -> list[dict[str, Any]]:
     """Parse ``git log --pretty='%H|%an|%aI|%s'`` output into dicts."""
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for line in output.splitlines():
         if not line.strip():
             continue
@@ -70,12 +72,14 @@ def _parse_git_log(output: str) -> list[dict]:
             ts = datetime.fromisoformat(iso_ts)
         except ValueError:
             ts = None
-        out.append({
-            "sha": sha.strip(),
-            "author": author.strip(),
-            "ts": ts,
-            "message": message.strip(),
-        })
+        out.append(
+            {
+                "sha": sha.strip(),
+                "author": author.strip(),
+                "ts": ts,
+                "message": message.strip(),
+            }
+        )
     return out
 
 
@@ -95,8 +99,14 @@ def import_from_git_log(
     if not (repo_path / ".git").exists():
         raise ValueError(f"not a git repository: {repo_path}")
 
-    cmd = ["git", "-C", str(repo_path), "log",
-           f"--max-count={limit}", "--pretty=format:%H|%an|%aI|%s"]
+    cmd = [
+        "git",
+        "-C",
+        str(repo_path),
+        "log",
+        f"--max-count={limit}",
+        "--pretty=format:%H|%an|%aI|%s",
+    ]
     if since:
         cmd.append(f"--since={since}")
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
@@ -126,15 +136,17 @@ def import_from_git_log(
             if existing is not None:
                 skipped += 1
                 continue
-            session.add(CommitLinkModel(
-                project_id=project_id,
-                task_id=tid,
-                sha=c["sha"],
-                short_sha=c["sha"][:12],
-                message=c["message"][:1024],
-                author=c["author"][:128],
-                ts=c["ts"],
-            ))
+            session.add(
+                CommitLinkModel(
+                    project_id=project_id,
+                    task_id=tid,
+                    sha=c["sha"],
+                    short_sha=c["sha"][:12],
+                    message=c["message"][:1024],
+                    author=c["author"][:128],
+                    ts=c["ts"],
+                )
+            )
             linked += 1
             touched_tasks.add(tid)
     session.flush()
@@ -147,7 +159,9 @@ def import_from_git_log(
 
 
 def _refresh_commit_counts(
-    session: Session, project_id: int, task_ids: set[str],
+    session: Session,
+    project_id: int,
+    task_ids: set[str],
 ) -> None:
     """Update ``task_metrics.commit_count`` for the given tasks."""
     if not task_ids:
@@ -181,26 +195,35 @@ def _refresh_commit_counts(
 
 
 def list_for_task(
-    session: Session, project_id: int, task_id: str,
+    session: Session,
+    project_id: int,
+    task_id: str,
 ) -> list[CommitLinkModel]:
     """All commit_link rows referencing ``task_id`` in this project."""
-    return list(session.execute(
-        select(CommitLinkModel)
-        .where(
-            CommitLinkModel.project_id == project_id,
-            CommitLinkModel.task_id == task_id,
-        )
-        .order_by(CommitLinkModel.ts.desc().nulls_last())
-    ).scalars())
+    return list(
+        session.execute(
+            select(CommitLinkModel)
+            .where(
+                CommitLinkModel.project_id == project_id,
+                CommitLinkModel.task_id == task_id,
+            )
+            .order_by(CommitLinkModel.ts.desc().nulls_last())
+        ).scalars()
+    )
 
 
 def list_for_project(
-    session: Session, project_id: int, *, limit: int = 200,
+    session: Session,
+    project_id: int,
+    *,
+    limit: int = 200,
 ) -> list[CommitLinkModel]:
     """All commit_link rows for this project, newest first."""
-    return list(session.execute(
-        select(CommitLinkModel)
-        .where(CommitLinkModel.project_id == project_id)
-        .order_by(CommitLinkModel.ts.desc().nulls_last())
-        .limit(limit)
-    ).scalars())
+    return list(
+        session.execute(
+            select(CommitLinkModel)
+            .where(CommitLinkModel.project_id == project_id)
+            .order_by(CommitLinkModel.ts.desc().nulls_last())
+            .limit(limit)
+        ).scalars()
+    )

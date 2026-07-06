@@ -83,11 +83,7 @@ def test_orchestrator_skill_tool_refs_resolve(skill_path: Path) -> None:
     referenced = _extract_tool_refs(skill_path)
     available = _mcp_tool_names()
 
-    missing = {
-        name
-        for name in referenced
-        if name not in available and name not in NON_MCP_ALLOWED
-    }
+    missing = {name for name in referenced if name not in available and name not in NON_MCP_ALLOWED}
     assert not missing, (
         f"{skill_path.name} references tool(s) not in MCP catalog "
         f"and not in NON_MCP_ALLOWED: {sorted(missing)}. "

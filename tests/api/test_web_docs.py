@@ -104,8 +104,9 @@ def test_docs_list_renders_seeded_doc(docs_client) -> None:
     assert "Auth Module Overview" in r.text
     assert "module-spec" in r.text
     assert "active" in r.text
-    # Tab strip: Docs is the active one
-    assert 'class="active" href="/p/demo/docs"' in r.text
+    from tests.api.conftest import assert_active_tab
+
+    assert_active_tab(r.text, "demo", "docs")
 
 
 def test_docs_list_warns_when_db_absent(tmp_path: Path) -> None:
@@ -128,7 +129,7 @@ def test_docs_list_warns_when_db_absent(tmp_path: Path) -> None:
     with TestClient(app, raise_server_exceptions=True) as client:
         r = client.get(f"/p/{entry.name}/docs")
     assert r.status_code == 200
-    assert "DB-проект не инициализирован" in r.text
+    assert "DB project not initialized" in r.text
 
 
 def test_doc_show_renders_sections_and_body(docs_client) -> None:
@@ -409,7 +410,7 @@ def test_doc_show_renders_accept_button_when_draft(docs_client) -> None:
 
     r = client.get(f"/p/{entry.name}/docs/drafts/spec")
     assert "Accept" in r.text and "active" in r.text
-    assert f'/p/{entry.name}/docs-accept' in r.text
+    assert f"/p/{entry.name}/docs-accept" in r.text
 
     # ACTIVE doc seeded by fixture should NOT have the button.
     r2 = client.get(f"/p/{entry.name}/docs/modules/M1-auth/overview")

@@ -40,8 +40,10 @@ def list_runs_for_project(
 ) -> dict[str, Any]:
     """Newest-first runs of a project, optionally filtered by status."""
     base = select(AgentRunModel).where(AgentRunModel.project_id == project_id)
-    count = select(func.count()).select_from(AgentRunModel).where(
-        AgentRunModel.project_id == project_id
+    count = (
+        select(func.count())
+        .select_from(AgentRunModel)
+        .where(AgentRunModel.project_id == project_id)
     )
     if status is not None:
         base = base.where(AgentRunModel.status == status)
@@ -60,9 +62,7 @@ def list_runs_for_project(
     }
 
 
-def plan_run_revert(
-    session: Session, run_id: str
-) -> dict[str, Any] | None:
+def plan_run_revert(session: Session, run_id: str) -> dict[str, Any] | None:
     """PCA-033: enumerate inverse operations for a run, with conflict detection.
 
     Read-only. Returns ``None`` if the run_id is unknown.
@@ -135,9 +135,7 @@ def plan_run_revert(
     }
 
 
-def get_run_with_mutations(
-    session: Session, run_id: str
-) -> dict[str, Any] | None:
+def get_run_with_mutations(session: Session, run_id: str) -> dict[str, Any] | None:
     """Single run + revisions + audit_log entries stamped with the same run_id."""
     run = session.execute(
         select(AgentRunModel).where(AgentRunModel.run_id == run_id)

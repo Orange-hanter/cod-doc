@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
-from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
+from cod_doc.api.deps import get_config, get_project, get_project_db
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import nav_service
 
@@ -29,9 +29,7 @@ def doc_navigator(
     # Hot cache: if a fresh analysis exists, render it inline on the GET response
     # so the user does NOT pay an HTMX round-trip + loading spinner on repeat visits.
     cache_path = proj.entry.cod_doc_dir / "nav_cache.json"
-    cached_analysis = nav_service.peek_cached_analysis(
-        session, project_db_id, cache_path
-    )
+    cached_analysis = nav_service.peek_cached_analysis(session, project_db_id, cache_path)
 
     return templates.TemplateResponse(
         request,
@@ -57,9 +55,7 @@ async def doc_navigator_analyze(
     cfg = get_config()
     session, project_db_id = db
     cache_path = proj.entry.cod_doc_dir / "nav_cache.json"
-    analysis = nav_service.analyze_gaps(
-        session, project_db_id, cfg, cache_path, force=force
-    )
+    analysis = nav_service.analyze_gaps(session, project_db_id, cfg, cache_path, force=force)
     return templates.TemplateResponse(
         request,
         "_frag/nav_analysis.html",

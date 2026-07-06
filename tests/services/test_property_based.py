@@ -101,18 +101,14 @@ def test_parse_frontmatter_roundtrip_known_fields(d: dict) -> None:  # type: ign
 # ---------------------------------------------------------------------------
 
 
-@given(
-    st.from_regex(r"^[A-Z]{2,5}-\d{3}[A-Z]?$", fullmatch=True)
-)
+@given(st.from_regex(r"^[A-Z]{2,5}-\d{3}[A-Z]?$", fullmatch=True))
 @settings(max_examples=300)
 def test_validate_task_id_accepts_all_valid(task_id: str) -> None:
     """Any string matching the task_id regex must pass without raising."""
     v.validate_task_id(task_id)  # no raise
 
 
-@given(
-    st.text().filter(lambda s: not _TASK_ID_RE.fullmatch(s))
-)
+@given(st.text().filter(lambda s: not _TASK_ID_RE.fullmatch(s)))
 @settings(max_examples=300)
 def test_validate_task_id_rejects_all_invalid(s: str) -> None:
     """Any string NOT matching the task_id regex must raise ValidationError."""
@@ -209,7 +205,9 @@ def test_validate_doc_path_accepts_safe_relative_paths(parts: list[str]) -> None
 @given(
     st.lists(
         st.text(
-            alphabet=st.characters(whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters="-_."),
+            alphabet=st.characters(
+                whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters="-_."
+            ),
             min_size=1,
             max_size=20,
         ).filter(lambda s: s.strip() and s != ".."),
@@ -222,7 +220,7 @@ def test_validate_doc_path_rejects_traversal_anywhere(parts: list[str]) -> None:
     """Inserting '..' anywhere in the path must trigger SD-100."""
     # Insert '..' at a random position (front, middle, or back)
     for insert_pos in range(len(parts) + 1):
-        traversal_parts = parts[:insert_pos] + [".."] + parts[insert_pos:]
+        traversal_parts = [*parts[:insert_pos], "..", *parts[insert_pos:]]
         path = "/".join(traversal_parts)
         with pytest.raises(v.ValidationError) as exc:
             v.validate_doc_path(path)

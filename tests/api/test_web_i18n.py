@@ -35,12 +35,12 @@ def i18n_client(tmp_path: Path):
 
 def test_default_locale_is_russian_without_cookie(i18n_client, monkeypatch) -> None:
     """COD_DOC_LOCALE default — Russian UI when no cookie/Accept-Language."""
-  monkeypatch.delenv("COD_DOC_LOCALE", raising=False)
-  client, entry = i18n_client
-  r = client.get(f"/p/{entry.name}")
-  assert r.status_code == 200
-  assert "Центр управления" in r.text
-  assert 'lang="ru"' in r.text
+    monkeypatch.delenv("COD_DOC_LOCALE", raising=False)
+    client, entry = i18n_client
+    r = client.get(f"/p/{entry.name}")
+    assert r.status_code == 200
+    assert "Центр управления" in r.text
+    assert 'lang="ru"' in r.text
 
 
 def test_english_locale_via_cookie(i18n_client, monkeypatch) -> None:

@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
-
 import pytest
 
 from cod_doc.mcp import server as mcp_server
 from cod_doc.mcp.profiles import (
     LEGACY_TOOLS,
     MINIMAL_TOOLS,
-    VALID_PROFILES,
     keep_tool,
 )
 
@@ -50,7 +46,7 @@ def test_minimal_profile_exposes_only_minimal_set() -> None:
         f"minimal profile exposed non-minimal tools: {sorted(names - MINIMAL_TOOLS)}"
     )
     # All declared minimal tools that exist in the catalog should survive.
-    expected = MINIMAL_TOOLS & set(_registered_names()) | MINIMAL_TOOLS
+    MINIMAL_TOOLS & set(_registered_names()) | MINIMAL_TOOLS
     # We expect at least the core 10 cold-start tools to be present.
     assert {"capabilities", "skill_list", "task_create", "context_get"} <= names
 

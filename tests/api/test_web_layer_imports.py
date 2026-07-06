@@ -26,9 +26,7 @@ ALLOWED_PREFIXES = (
     "cod_doc.domain.entities",
     "cod_doc.logging_config",
 )
-BANNED_PREFIXES = (
-    "cod_doc.infra",
-)
+BANNED_PREFIXES = ("cod_doc.infra",)
 
 
 def _imported_modules(py_file: Path) -> list[str]:
@@ -54,8 +52,7 @@ def test_web_layer_does_not_import_infra() -> None:
             if any(module.startswith(p) for p in BANNED_PREFIXES):
                 violations.append((py_file, module))
     assert violations == [], (
-        "Web layer must not import infra; route through cod_doc.api.deps. "
-        f"Violations: {violations}"
+        f"Web layer must not import infra; route through cod_doc.api.deps. Violations: {violations}"
     )
 
 

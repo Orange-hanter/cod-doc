@@ -32,6 +32,7 @@ def code_refs_client(tmp_path: Path, migrate_db):
     cfg.add_project(entry)
 
     import cod_doc.api.deps as deps
+
     deps.set_config(cfg)
     Project(entry).init()
 
@@ -42,36 +43,61 @@ def code_refs_client(tmp_path: Path, migrate_db):
         proj = ProjectRepository(session).add(
             ProjectEntity(slug="crp", title="P", root_path=str(repo), config={})
         )
-        proj.created = now; proj.updated = now
+        proj.created = now
+        proj.updated = now
         session.flush()
         doc = DocumentModel(
-            project_id=proj.row_id, doc_key="x/y", path="x/y.md",
-            type="guide", status="active", title="D",
+            project_id=proj.row_id,
+            doc_key="x/y",
+            path="x/y.md",
+            type="guide",
+            status="active",
+            title="D",
             sensitivity="internal",
         )
-        doc.created = now; doc.last_updated = now
-        session.add(doc); session.flush()
+        doc.created = now
+        doc.last_updated = now
+        session.add(doc)
+        session.flush()
         sec = SectionModel(
-            document_id=doc.row_id, anchor="s", heading="S",
-            level=2, position=0, body="", content_hash="0",
+            document_id=doc.row_id,
+            anchor="s",
+            heading="S",
+            level=2,
+            position=0,
+            body="",
+            content_hash="0",
         )
-        session.add(sec); session.flush()
+        session.add(sec)
+        session.flush()
         # One resolved + one broken code-ref.
-        session.add(LinkModel(
-            project_id=proj.row_id, from_section_id=sec.row_id,
-            raw="[hi](real.py)", kind="code",
-            to_file_path="real.py", to_symbol=None,
-            resolved=True,
-        ))
-        session.add(LinkModel(
-            project_id=proj.row_id, from_section_id=sec.row_id,
-            raw="[ghost](missing.py)", kind="code",
-            to_file_path="missing.py", to_symbol=None,
-            resolved=False, broken_reason="file not found",
-        ))
+        session.add(
+            LinkModel(
+                project_id=proj.row_id,
+                from_section_id=sec.row_id,
+                raw="[hi](real.py)",
+                kind="code",
+                to_file_path="real.py",
+                to_symbol=None,
+                resolved=True,
+            )
+        )
+        session.add(
+            LinkModel(
+                project_id=proj.row_id,
+                from_section_id=sec.row_id,
+                raw="[ghost](missing.py)",
+                kind="code",
+                to_file_path="missing.py",
+                to_symbol=None,
+                resolved=False,
+                broken_reason="file not found",
+            )
+        )
     engine.dispose()
 
     from cod_doc.api.server import app
+
     with TestClient(app, raise_server_exceptions=True) as client:
         yield client, entry
 

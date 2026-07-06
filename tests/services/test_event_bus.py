@@ -8,7 +8,6 @@ import pytest
 
 from cod_doc.services import event_bus
 
-
 pytestmark = pytest.mark.asyncio
 
 

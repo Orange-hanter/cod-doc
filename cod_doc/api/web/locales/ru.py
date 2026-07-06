@@ -141,7 +141,7 @@ MESSAGES: dict[str, str] = {
     "index.agent_disabled": "(отключён)",
     "index.stop": "Стоп",
     "index.start": "Старт",
-    "index.api_key_warn": "API-ключ не настроен. Перейдите в <a href=\"/settings\">Настройки</a>.",
+    "index.api_key_warn": 'API-ключ не настроен. Перейдите в <a href="/settings">Настройки</a>.',
     "index.add_project": "Добавить проект",
     "index.add_first_project": "Добавить первый проект",
     "index.create_project": "Создать проект",
@@ -201,7 +201,7 @@ MESSAGES: dict[str, str] = {
     "db.not_initialized_overview_link": "обзор проекта",
     "db.not_initialized_docs_hint": (
         "DB-проект не инициализирован. Перейдите на "
-        "<a href=\"/p/{slug}\">обзор проекта</a> и нажмите "
+        '<a href="/p/{slug}">обзор проекта</a> и нажмите '
         "<strong>Инициализировать БД</strong>."
     ),
     "plans.none": "Планов в этом проекте пока нет.",

@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from sqlalchemy import select
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
@@ -32,14 +31,10 @@ def _seed(session) -> tuple[int, int, int]:
     proj.updated = now
     session.add(proj)
     session.flush()
-    plan = PlanModel(
-        project_id=proj.row_id, scope="nr-plan", created=now, last_updated=now
-    )
+    plan = PlanModel(project_id=proj.row_id, scope="nr-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="A", slug="A", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -82,7 +77,8 @@ def test_task_next_ready_skips_blocked(engine_with_schema, monkeypatch) -> None:
 
 
 def test_task_next_ready_skips_checkout_locked(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
