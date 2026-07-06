@@ -71,9 +71,13 @@
 
   <script defer src="{{ static_url('cod_doc_ws.js') }}"></script>
   <script defer src="{{ static_url('cod_doc_app.js') }}"></script>
+  {% if _slug %}
+  <script defer src="{{ static_url('cod_doc_search.js') }}"></script>
+  {% endif %}
 </head>
 {% set _slug = (project.name if project is defined and project else None) or (request.path_params.slug if request is defined else None) %}
 <body{% if _slug %} data-project="{{ _slug }}"{% endif %}>
+  <a class="skip-link" href="#main-content">Перейти к содержимому</a>
   <header class="topbar">
     <a class="brand" href="/">COD-DOC</a>
     <nav>
@@ -83,6 +87,12 @@
     </nav>
     <span class="topbar-spacer"></span>
     {% if _slug %}
+      <button type="button" class="topbar-search-btn" id="search-open"
+              aria-label="Search project" title="Search (Ctrl+K)">
+        {% with icon_name="search", icon_class="icon-sm" %}{% include "_frag/icon.html" %}{% endwith %}
+        <span>Search</span>
+        <kbd class="topbar-search-kbd">⌘K</kbd>
+      </button>
       <span id="cod-ws-dot" class="cod-ws-dot cod-ws-disconnected"
             role="status" aria-live="polite"
             aria-label="Live updates: idle"
@@ -107,7 +117,19 @@
       {%- endwith -%}
     {%- endif -%}
   </div>
-  <main class="content">
+  {% if _slug %}
+  <div id="search-palette-backdrop" class="search-palette-backdrop" hidden>
+    <div class="search-palette" role="dialog" aria-modal="true" aria-label="Search">
+      <input type="search" id="search-palette-input" class="search-palette-input"
+             placeholder="Search tasks, docs, stories, ADRs…" autocomplete="off"
+             data-suggest-url="/p/{{ _slug }}/search/suggest">
+      <div class="search-palette-hint">↑↓ navigate · Enter open · Esc close</div>
+      <div id="search-palette-results" class="search-palette-results"
+           role="listbox" aria-label="Search results"></div>
+    </div>
+  </div>
+  {% endif %}
+  <main class="content" id="main-content">
     {% block content %}{% endblock %}
   </main>
 </body>

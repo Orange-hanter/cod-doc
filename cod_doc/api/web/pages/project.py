@@ -50,11 +50,15 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
     # when the DB isn't initialised — same shape so the template doesn't
     # need to branch.
     yaml_stats: dict[str, Any] = proj.stats()
-    db_total = db_done = db_in_progress = 0
+    db_total = db_done = db_in_progress = db_blocked = 0
 
     with try_open_project_db(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
             db_available = True
+            for t in task_svc.list_for_project(session, project_db_id):
+                if t.status.value == "blocked":
+                    db_blocked += 1
+
             project_plans = plans.list_for_project(session, project_db_id)
             # COD-075: aggregate progress for every plan in one SQL — was N+1.
             progress_by_plan = plans.recalc_for_project(session, project_db_id)
@@ -122,10 +126,12 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
             "total": db_total,
             "done": db_done,
             "in_progress": db_in_progress,
+            "blocked": db_blocked,
             "pending": db_total - db_done - db_in_progress,
+            "pct_done": round(100 * db_done / db_total) if db_total else 0,
         }
     else:
-        kpi = yaml_stats
+        kpi = {**yaml_stats, "blocked": 0, "pct_done": 0}
 
     return templates.TemplateResponse(
         request,

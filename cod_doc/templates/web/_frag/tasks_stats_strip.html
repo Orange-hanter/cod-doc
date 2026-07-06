@@ -1,0 +1,54 @@
+{# Task list stats header — swapped with kanban on live refresh. #}
+<header class="tasks-stats">
+  <div class="tasks-stats-progress">
+    <div class="tasks-stats-progress-head">
+      <span class="tasks-stats-title">{{ project.name }} · Tasks</span>
+      <span class="tasks-stats-pct">{{ stats.pct_done }}%</span>
+    </div>
+    <div class="tasks-stats-bar">
+      <div class="tasks-stats-bar-fill" style="width: {{ stats.pct_done }}%"></div>
+    </div>
+    <div class="tasks-stats-counts">
+      <span><strong>{{ stats.total }}</strong> total</span>
+      <span><strong>{{ stats.done }}</strong> done</span>
+    </div>
+  </div>
+
+  <div class="tasks-stats-metrics">
+    <a class="tasks-stat tasks-stat-progress" href="?status=in_progress{% if selected_plan %}&plan={{ selected_plan }}{% endif %}">
+      <span class="tasks-stat-value">{{ stats.in_progress }}</span>
+      <span class="tasks-stat-label">in progress</span>
+    </a>
+    <a class="tasks-stat tasks-stat-review" href="?status=in_review{% if selected_plan %}&plan={{ selected_plan }}{% endif %}">
+      <span class="tasks-stat-value">{{ stats.in_review }}</span>
+      <span class="tasks-stat-label">in review</span>
+    </a>
+    <a class="tasks-stat tasks-stat-blocked" href="?status=blocked{% if selected_plan %}&plan={{ selected_plan }}{% endif %}">
+      <span class="tasks-stat-value">{{ stats.blocked }}</span>
+      <span class="tasks-stat-label">blocked</span>
+    </a>
+    <div class="tasks-stat tasks-stat-warn"
+         title="Tasks (not done) missing acceptance criteria">
+      <span class="tasks-stat-value">{{ stats.missing_ac }}</span>
+      <span class="tasks-stat-label">no AC</span>
+    </div>
+    <div class="tasks-stat tasks-stat-critical"
+         title="Open critical-priority tasks">
+      <span class="tasks-stat-value">{{ stats.critical_open }}</span>
+      <span class="tasks-stat-label">critical</span>
+    </div>
+  </div>
+
+  <div class="tasks-stats-actions">
+    <form hx-post="/p/{{ project.name }}/tasks/audit"
+          hx-target="#task-audit-panel"
+          hx-swap="innerHTML"
+          hx-indicator="#audit-spinner">
+      <button type="submit" class="btn btn-primary btn-sm">
+        <span id="audit-spinner" class="htmx-indicator spinner tasks-audit-spinner"></span>
+        {% with icon_name="search", icon_class="icon-sm" %}{% include "_frag/icon.html" %}{% endwith %}
+        Audit consistency
+      </button>
+    </form>
+  </div>
+</header>

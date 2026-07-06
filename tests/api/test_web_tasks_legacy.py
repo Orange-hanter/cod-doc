@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -52,7 +54,10 @@ def test_legacy_list_renders_all(legacy_client) -> None:
     # Crumbs/heading
     assert "Legacy YAML tasks" in r.text
     # Tabs present, Tasks tab active (legacy lives under it)
-    assert 'class="active" href="/p/demo/tasks"' in r.text
+    assert re.search(
+        r'href="/p/demo/tasks"[^>]*\bactive\b|class="[^"]*\bactive\b[^"]*"[^>]*href="/p/demo/tasks"',
+        r.text,
+    )
     # Footer count
     assert "of 4" in r.text
 

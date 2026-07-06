@@ -117,9 +117,9 @@ def test_project_show_renders(web_client) -> None:
     for disabled in EXPECTED_DISABLED_TABS:
         assert f'href="/p/{entry.name}/{disabled}"' not in r.text
         assert f">{disabled.capitalize()}<" in r.text
-    # stats card labels
-    assert "Tasks total" in r.text
-    assert "Last run" in r.text
+    # command center hero + quick actions
+    assert "Command center" in r.text
+    assert "Agent console" in r.text
 
 
 def test_project_show_404_unknown(web_client) -> None:

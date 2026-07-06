@@ -8,40 +8,43 @@
 
 {% with slug=project.name, active="overview" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<section class="cards">
-  <div class="card">
-    <div class="card-label">Status</div>
-    <div class="card-value">{{ stats.status }}</div>
+<section class="overview-hero" aria-label="Project summary">
+  <div class="overview-hero-main">
+    <h2 class="overview-hero-title">Command center</h2>
+    <div class="overview-hero-bar" title="{{ stats.pct_done or 0 }}% complete">
+      <div class="overview-hero-bar-fill" style="width: {{ stats.pct_done or 0 }}%"></div>
+    </div>
+    <div class="overview-hero-meta">
+      <span><strong>{{ stats.done or 0 }}</strong> / {{ stats.total or 0 }} tasks done</span>
+      <span>Status: <strong>{{ stats.status }}</strong></span>
+      {% if stats.last_run %}<span>Last run: {{ stats.last_run }}</span>{% endif %}
+    </div>
   </div>
-  <div class="card">
-    <div class="card-label">Tasks total</div>
-    <div class="card-value">{{ stats.total }}</div>
-  </div>
-  <div class="card">
-    <div class="card-label">Done</div>
-    <div class="card-value">{{ stats.done }}</div>
-  </div>
-  <div class="card">
-    <div class="card-label">In&nbsp;progress</div>
-    <div class="card-value">{{ stats.in_progress }}</div>
-  </div>
-  <div class="card">
-    <div class="card-label">Pending</div>
-    <div class="card-value">{{ stats.pending }}</div>
-  </div>
-  <div class="card">
-    <div class="card-label">Failed</div>
-    <div class="card-value">{{ stats.failed }}</div>
-  </div>
-  <div class="card">
-    <div class="card-label">Last run</div>
-    <div class="card-value muted">{{ stats.last_run or "—" }}</div>
+  <div class="overview-hero-metrics">
+    <div class="overview-metric overview-metric-open" title="Open tasks">
+      <span class="overview-metric-value">{{ stats.pending or 0 }}</span>
+      <span class="overview-metric-label">Open</span>
+    </div>
+    <div class="overview-metric overview-metric-progress" title="In progress">
+      <span class="overview-metric-value">{{ stats.in_progress or 0 }}</span>
+      <span class="overview-metric-label">Active</span>
+    </div>
+    <div class="overview-metric overview-metric-blocked" title="Blocked">
+      <span class="overview-metric-value">{{ stats.blocked or 0 }}</span>
+      <span class="overview-metric-label">Blocked</span>
+    </div>
   </div>
 </section>
 
+<nav class="overview-quick-actions" aria-label="Quick actions">
+  <a class="btn btn-primary" href="/p/{{ project.name }}/run">Agent console</a>
+  <a class="btn btn-secondary" href="/p/{{ project.name }}/tasks">Tasks board</a>
+  <a class="btn btn-secondary" href="/p/{{ project.name }}/docs">Docs</a>
+</nav>
+
 {% if db_available %}
 <section class="overview-grid">
-  <div class="overview-block">
+  <div class="overview-block overview-block-primary">
     <h2>Ready to start</h2>
     {% if ready_tasks %}
     <ul class="ready-list">
@@ -59,7 +62,10 @@
                   hx-post="/p/{{ project.name }}/tasks/{{ t.task_id }}/complete"
                   hx-target="#task-{{ t.task_id }}"
                   hx-swap="outerHTML"
-                  title="Mark done">✓</button>
+                  aria-label="Mark {{ t.task_id }} done"
+                  title="Mark done">
+            {% with icon_name="check", icon_class="icon-sm" %}{% include "_frag/icon.html" %}{% endwith %}
+          </button>
         </form>
       </li>
       {% endfor %}
@@ -79,7 +85,7 @@
       <tbody>
         {% for p in plan_rows %}
         <tr>
-          <td class="mono">{{ p.scope }}</td>
+          <td class="mono"><a href="/p/{{ project.name }}/tasks?plan={{ p.scope }}">{{ p.scope }}</a></td>
           <td class="num">{{ p.done }}</td>
           <td class="num">{{ p.total }}</td>
           <td>{{ p.status }}</td>
@@ -93,7 +99,7 @@
       </tbody>
     </table>
     {% else %}
-    <p class="muted">Планов в этом проекте пока нет.</p>
+    <p class="muted">Планов в этом проекте пока нет. <a href="/p/{{ project.name }}/plans">Создать план</a>.</p>
     {% endif %}
   </div>
 
@@ -110,6 +116,7 @@
       </li>
       {% endfor %}
     </ul>
+    <p class="muted-tiny"><a href="/p/{{ project.name }}/revisions">All revisions →</a></p>
     {% else %}
     <p class="muted">Ревизий пока нет.</p>
     {% endif %}
@@ -136,15 +143,13 @@
   <span aria-hidden="true">⚙</span>
   <span class="cod-agent-label">Agent:</span>
   <span class="cod-agent-step">Idle</span>
-  <a class="muted-tiny" href="/p/{{ project.name }}/run" style="margin-left: auto;">open console →</a>
+  <a class="muted-tiny" href="/p/{{ project.name }}/run">open console →</a>
 </div>
 
 {% if db_available %}
-<section class="overview-block">
-  <header class="task-card-header">
-    <h2>Import from folder</h2>
-    <span class="muted-tiny">AI scans the repo and proposes a fresh MASTER.md + coverage tasks.</span>
-  </header>
+<details class="overview-block">
+  <summary><h2 style="display:inline;">Import from folder</h2></summary>
+  <p class="muted-tiny">AI scans the repo and proposes a fresh MASTER.md + coverage tasks.</p>
   <form hx-post="/p/{{ project.name }}/import_master/scan"
         hx-target="#master-draft"
         hx-swap="innerHTML"
@@ -154,17 +159,17 @@
       <input type="text" name="intent"
              placeholder="e.g. focus on architecture, ignore changelogs">
     </label>
-    <button type="submit" class="btn-primary">✨ Scan &amp; propose</button>
+    <button type="submit" class="btn-primary">Scan &amp; propose</button>
   </form>
   <div id="master-draft"></div>
-</section>
+</details>
 {% endif %}
 
-<section class="master-preview">
-  <header class="master-header">
-    <h2>{{ project.master_md }}</h2>
+<details class="master-preview overview-block">
+  <summary class="master-header">
+    <h2 style="display:inline;">{{ project.master_md }}</h2>
     <a class="master-raw-link muted" href="/p/{{ project.name }}/docs/{{ project.master_md }}?raw=1">View raw</a>
-  </header>
+  </summary>
   {% if not project.master_exists %}
     <p class="warn">{{ project.master_md }} ещё не создан.</p>
   {% elif master_preview is none %}
@@ -177,5 +182,5 @@
       <p class="muted">Показаны первые строки. <a href="/p/{{ project.name }}/docs/{{ project.master_md }}">Открыть целиком</a>.</p>
     {% endif %}
   {% endif %}
-</section>
+</details>
 {% endblock %}

@@ -44,8 +44,8 @@ def tabs_client(tmp_path: Path):
 
 
 def _extract_tabs_block(html: str) -> str:
-    m = re.search(r'<nav class="tabs">(.*?)</nav>', html, re.DOTALL)
-    assert m is not None, "no <nav class='tabs'> block on page"
+    m = re.search(r'<nav class="tabs[^"]*">(.*?)</nav>', html, re.DOTALL)
+    assert m is not None, "no project tabs <nav> block on page"
     return m.group(1)
 
 
@@ -58,7 +58,7 @@ def test_overview_tab_active_others_live_or_disabled(tabs_client) -> None:
     assert r.status_code == 200
     block = _extract_tabs_block(r.text)
     # Overview is the active anchor (special-case the slug-less path)
-    assert re.search(r'<a[^>]*class="active"[^>]*href="/p/demo"[^>]*>Overview</a>', block)
+    assert re.search(r'<a[^>]*\bactive\b[^>]*href="/p/demo"[^>]*>.*?Overview', block, re.DOTALL)
     for live in EXPECTED_LIVE_TABS:
         if live == "overview":
             continue
@@ -76,7 +76,7 @@ def test_docs_list_tab_marks_docs_active(tabs_client) -> None:
     r = client.get(f"/p/{entry.name}/docs")
     assert r.status_code == 200
     block = _extract_tabs_block(r.text)
-    assert re.search(r'<a[^>]*class="active"[^>]*href="/p/demo/docs"', block)
+    assert re.search(r'<a[^>]*\bactive\b[^>]*href="/p/demo/docs"', block)
 
 
 def test_tasks_list_tab_marks_tasks_active(tabs_client) -> None:
@@ -84,7 +84,7 @@ def test_tasks_list_tab_marks_tasks_active(tabs_client) -> None:
     r = client.get(f"/p/{entry.name}/tasks")
     assert r.status_code == 200
     block = _extract_tabs_block(r.text)
-    assert re.search(r'<a[^>]*class="active"[^>]*href="/p/demo/tasks"', block)
+    assert re.search(r'<a[^>]*\bactive\b[^>]*href="/p/demo/tasks"', block)
 
 
 def test_disabled_tabs_have_no_href(tabs_client) -> None:

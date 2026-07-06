@@ -20,11 +20,12 @@ from cod_doc.services import task_service as tasks  # noqa: F401 — preserves
 
 # `cod_doc.api.web.fragments.tasks.update_status` for tests/external
 # monkeypatchers that depended on the pre-split module attribute.
-from . import sections, tasks_fields, tasks_status
+from . import sections, tasks_board, tasks_fields, tasks_status
 
 router = APIRouter()
 router.include_router(tasks_status.router)
 router.include_router(tasks_fields.router)
+router.include_router(tasks_board.router)
 router.include_router(sections.router)
 
 __all__ = ["router"]

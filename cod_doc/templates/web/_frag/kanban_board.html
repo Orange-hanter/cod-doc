@@ -1,0 +1,20 @@
+{# Kanban columns only — included inside tasks_live_region. #}
+<div class="kanban" id="tasks-kanban">
+  {% for col in columns %}
+    <details class="kanban-col kanban-col-{{ col.key }}{% if col.highlighted %} kanban-col-highlighted{% endif %}"
+             {% if not col.collapsed_default and col.count > 0 %}open{% endif %}>
+      <summary class="kanban-col-head">
+        <span class="kanban-col-icon" aria-hidden="true">{{ col.icon }}</span>
+        <span class="kanban-col-label">{{ col.label }}</span>
+        <span class="kanban-col-count">{{ col.count }}</span>
+      </summary>
+      <div class="kanban-col-body">
+        {% for t in col.tasks %}
+          {% include "_frag/task_card.html" %}
+        {% else %}
+          <p class="kanban-col-empty muted-tiny">—</p>
+        {% endfor %}
+      </div>
+    </details>
+  {% endfor %}
+</div>

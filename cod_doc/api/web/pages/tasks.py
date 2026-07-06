@@ -11,6 +11,14 @@ from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
 from cod_doc.api.web.markdown import render_markdown
+from cod_doc.api.web.task_board import (
+    board_refresh_url,
+    build_columns,
+    compute_stats,
+    load_task_rows,
+    TYPE_GLYPHS,
+    PRIO_RANK,
+)
 from cod_doc.api.web.templates_env import templates
 from cod_doc.core.project import TaskStatus as LegacyTaskStatus
 from cod_doc.domain.entities import EntityKind, TaskStatus
@@ -25,39 +33,6 @@ LEGACY_TASK_STATUS_OPTIONS = [s.value for s in LegacyTaskStatus]
 LEGACY_PAGE_SIZE_DEFAULT = 100
 LEGACY_PAGE_SIZE_MAX = 500
 
-# Kanban columns in workflow order.  Each column collects multiple status
-# aliases (e.g. legacy `pending` + new `todo`) under one bucket.
-# Tuple: (column_key, display_label, icon, set_of_status_values).
-_KANBAN_COLS: list[tuple[str, str, str, set[str]]] = [
-    ("todo",        "Todo",        "○", {"backlog", "todo", "pending"}),
-    ("in_progress", "In progress", "◐", {"in_progress", "in-progress"}),
-    ("in_review",   "In review",   "◔", {"in_review"}),
-    ("blocked",     "Blocked",     "✕", {"blocked"}),
-    ("done",        "Done",        "●", {"done"}),
-    ("cancelled",   "Cancelled",   "—", {"cancelled"}),
-]
-
-# Type-letter glyphs for compact task cards.
-_TYPE_GLYPHS: dict[str, str] = {
-    "feature":  "F",
-    "bug":      "B",
-    "refactor": "R",
-    "test":     "T",
-    "docs":     "D",
-    "chore":    "C",
-}
-
-# Priority sort weight (critical first).
-_PRIO_RANK: dict[str, int] = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-
-
-def _column_for(status: str) -> str | None:
-    """Map a task status value to its kanban column key."""
-    for key, _label, _icon, members in _KANBAN_COLS:
-        if status in members:
-            return key
-    return None
-
 
 def _enrich_chain(
     session: Session,
@@ -71,10 +46,10 @@ def _enrich_chain(
     levels: list[dict[str, Any]] = []
     for lvl_bucket in raw["levels"]:
         tasks_with_glyph = [
-            {**t, "type_glyph": _TYPE_GLYPHS.get(t["type"], "?")}
+            {**t, "type_glyph": TYPE_GLYPHS.get(t["type"], "?")}
             for t in lvl_bucket["tasks"]
         ]
-        tasks_with_glyph.sort(key=lambda c: (_PRIO_RANK.get(c["priority"], 99), c["task_id"]))
+        tasks_with_glyph.sort(key=lambda c: (PRIO_RANK.get(c["priority"], 99), c["task_id"]))
         levels.append({"level": lvl_bucket["level"], "tasks": tasks_with_glyph})
 
     return {
@@ -127,17 +102,9 @@ def tasks_list(
 
             plans_models = plans.list_for_project(session, project_db_id)
             progress_map = plans.recalc_for_project(session, project_db_id)
-            scope_by_pid: dict[int, str] = {}
-            sections_by_pid: dict[int, dict[int, dict[str, str]]] = {}
             for p in plans_models:
                 if p.row_id is None:
                     continue
-                scope_by_pid[p.row_id] = p.scope
-                sects = plans.list_sections(session, p.row_id)
-                sections_by_pid[p.row_id] = {
-                    s.row_id: {"letter": s.letter or "", "title": s.title}
-                    for s in sects if s.row_id is not None
-                }
                 prog = progress_map.get(p.row_id)
                 plan_list.append({
                     "scope": p.scope,
@@ -145,26 +112,7 @@ def tasks_list(
                     "total": prog.total if prog else 0,
                 })
 
-            for t in tasks.list_for_project(session, project_db_id):
-                plan_scope = scope_by_pid.get(t.plan_id, "")
-                sect = sections_by_pid.get(t.plan_id, {}).get(t.section_id, {})
-                has_ac = bool(t.acceptance and t.acceptance.strip())
-                has_desc = bool(t.description and t.description.strip())
-                all_rows.append({
-                    "task_id": t.task_id,
-                    "title": t.title,
-                    "status": t.status.value,
-                    "type": t.type.value,
-                    "type_glyph": _TYPE_GLYPHS.get(t.type.value, "?"),
-                    "priority": t.priority.value,
-                    "plan_id": t.plan_id,
-                    "plan_scope": plan_scope,
-                    "section_letter": sect.get("letter", ""),
-                    "section_title": sect.get("title", ""),
-                    "has_acceptance": has_ac,
-                    "has_description": has_desc,
-                    "blocked_reason": t.blocked_reason or "",
-                })
+            all_rows = load_task_rows(session, project_db_id)
 
             # Compute per-plan chain data only when the chains view is requested
             # (it issues one extra recursive CTE per plan for critical_path).
@@ -183,36 +131,8 @@ def tasks_list(
     if plan:
         rows = [r for r in rows if r["plan_scope"] == plan]
 
-    # Stats are computed on the (plan-filtered) row set so they match what's
-    # visible on the board.
-    total = len(rows)
-    stats = {
-        "total": total,
-        "done": sum(1 for r in rows if r["status"] == "done"),
-        "in_progress": sum(1 for r in rows if r["status"] in ("in_progress", "in-progress")),
-        "blocked": sum(1 for r in rows if r["status"] == "blocked"),
-        "in_review": sum(1 for r in rows if r["status"] == "in_review"),
-        "missing_ac": sum(1 for r in rows if not r["has_acceptance"] and r["status"] != "done"),
-        "critical_open": sum(1 for r in rows
-                             if r["priority"] == "critical" and r["status"] != "done"),
-    }
-    stats["pct_done"] = int(stats["done"] / total * 100) if total else 0
-
-    # Bucket rows into kanban columns + priority-sort within each column.
-    columns: list[dict[str, Any]] = []
-    for key, label, icon, _members in _KANBAN_COLS:
-        col_tasks = [r for r in rows if _column_for(r["status"]) == key]
-        col_tasks.sort(key=lambda r: (_PRIO_RANK.get(r["priority"], 99), r["task_id"]))
-        columns.append({
-            "key": key,
-            "label": label,
-            "icon": icon,
-            "count": len(col_tasks),
-            "tasks": col_tasks,
-            # Collapsed by default if Done/Cancelled — least scanned columns.
-            "collapsed_default": key in ("done", "cancelled"),
-            "highlighted": status_filter is not None and status_filter.value in _members,
-        })
+    stats = compute_stats(rows)
+    columns = build_columns(rows, status_filter=status_filter)
 
     legacy_count = len(proj.get_tasks())
     return templates.TemplateResponse(
@@ -231,6 +151,11 @@ def tasks_list(
             "status_filter": status_filter.value if status_filter else "",
             "status_invalid": status_invalid,
             "legacy_count": legacy_count,
+            "board_refresh_url": board_refresh_url(
+                proj.entry.name,
+                plan=plan or "",
+                status=status_filter.value if status_filter else "",
+            ),
         },
     )
 

@@ -20,6 +20,7 @@ venv/
 
 # Local dev tooling
 .claude/
+.cursor/
 .mcp.json
 models/
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -145,8 +146,13 @@ def test_tasks_list_renders_all(tasks_client) -> None:
     assert "status-pending" in r.text
     assert "status-in-progress" in r.text
     assert "status-done" in r.text
-    # tab strip: Tasks active
-    assert 'class="active" href="/p/demo/tasks"' in r.text
+    assert re.search(
+        r'href="/p/demo/tasks"[^>]*\bactive\b|class="[^"]*\bactive\b[^"]*"[^>]*href="/p/demo/tasks"',
+        r.text,
+    )
+    # Live refresh region for WebSocket kanban sync
+    assert 'id="tasks-live-region"' in r.text
+    assert "frag/tasks/board" in r.text
     # count footer
     assert "3 tasks shown." in r.text
 
@@ -376,3 +382,13 @@ def test_status_post_persists_change(tasks_client) -> None:
     assert r.status_code == 200
     assert "AUTH-001" in r.text  # now also done
     assert "AUTH-003" in r.text  # was already done
+
+
+def test_tasks_board_fragment(tasks_client) -> None:
+    """HTMX fragment for live kanban refresh returns stats + board."""
+    client, entry = tasks_client
+    r = client.get(f"/p/{entry.name}/frag/tasks/board")
+    assert r.status_code == 200
+    assert 'id="tasks-live-region"' in r.text
+    assert 'id="card-AUTH-001"' in r.text
+    assert "tasks-stats" in r.text

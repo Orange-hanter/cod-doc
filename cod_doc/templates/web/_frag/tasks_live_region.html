@@ -1,0 +1,24 @@
+{# Stats + kanban — refreshed together on WebSocket task events. #}
+<div id="tasks-live-region"
+     class="tasks-live-region"
+     data-refresh-url="{{ board_refresh_url }}">
+  {% include "_frag/tasks_stats_strip.html" %}
+
+  {% if stats.total == 0 %}
+    <div class="tasks-empty">
+      <span class="tasks-empty-icon" aria-hidden="true">
+        {% with icon_name="doc", icon_class="icon-lg" %}{% include "_frag/icon.html" %}{% endwith %}
+      </span>
+      <p class="muted">
+        {% if selected_plan %}
+          В плане <code>{{ selected_plan }}</code> ещё нет задач.
+          <a href="/p/{{ project.name }}/tasks">Показать все планы</a>.
+        {% else %}
+          Задач ещё нет. Создай план или запусти агента.
+        {% endif %}
+      </p>
+    </div>
+  {% else %}
+    {% include "_frag/kanban_board.html" %}
+  {% endif %}
+</div>

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
@@ -79,3 +79,36 @@ def search_reindex(
         url=f"/p/{slug}/search?q=&reindexed={total}",
         status_code=303,
     )
+
+
+@router.get("/p/{slug}/search/suggest")
+def search_suggest(
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    q: str = "",
+    limit: int = 12,
+) -> JSONResponse:
+    """JSON hits for the ⌘K search palette."""
+    session, project_id = db
+    limit = max(1, min(limit, 30))
+    items: list[dict[str, str]] = []
+    if q.strip():
+        result = search_service.search(
+            session, project_id=project_id, query=q, limit=limit
+        )
+        for kind, hits in result["by_kind"].items():
+            mk = _DEEPLINK_BY_KIND.get(kind)
+            for h in hits:
+                items.append(
+                    {
+                        "kind": kind,
+                        "title": h.get("title") or h.get("ref") or "",
+                        "ref": h.get("ref") or "",
+                        "url": mk(slug, h["ref"]) if mk else "",
+                    }
+                )
+                if len(items) >= limit:
+                    break
+            if len(items) >= limit:
+                break
+    return JSONResponse({"items": items[:limit]})
