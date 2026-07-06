@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Tasks · {{ project.name }} — COD-DOC{% endblock %}
+{% block title %}{{ _('tasks.page_title') }} · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
-  <a href="/">Projects</a> /
+  <a href="/">{{ _('nav.projects') }}</a> /
   <a href="/p/{{ project.name }}">{{ project.name }}</a> /
-  <span>Tasks</span>
+  <span>{{ _('tasks.page_title') }}</span>
 </nav>
 
 {% with slug=project.name, active="tasks" %}{% include "_layout/project_tabs.html" %}{% endwith %}
@@ -14,37 +14,36 @@
   {% if legacy_count and legacy_count > 0 %}
     <p class="muted tasks-legacy-hint">
       {% with icon_name="folder", icon_class="icon-sm icon-inline" %}{% include "_frag/icon.html" %}{% endwith %}
-      <a href="/p/{{ project.name }}/tasks/legacy">Legacy YAML tasks ({{ legacy_count }})</a>
-      — stored in <code>.cod-doc/tasks.yaml</code>, not yet migrated.
+      <a href="/p/{{ project.name }}/tasks/legacy">{{ _('tasks.legacy_hint', count=legacy_count) }}</a>
+      — {{ _('tasks.legacy_suffix') }}
     </p>
   {% endif %}
 
   {% if not db_available %}
-    <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug не совпадает с <code>project.slug</code> в БД.</p>
+    {% include "_frag/db_uninitialized.html" %}
   {% else %}
 
-    {# ── View toggle: Board (kanban) | Chains (dependency graph) ────────── #}
     <div class="tasks-view-row">
-      <nav class="tasks-view-toggle" aria-label="Choose task layout">
+      <nav class="tasks-view-toggle" aria-label="{{ _('a11y.choose_task_layout') }}">
         <a class="tasks-view-btn {% if view == 'board' %}tasks-view-btn-active{% endif %}"
            href="/p/{{ project.name }}/tasks{% if selected_plan %}?plan={{ selected_plan }}{% endif %}"
-           title="Status columns, priority-sorted">
+           title="{{ _('tasks.board_title') }}">
           {% with icon_name="grid", icon_class="icon-sm tasks-view-icon" %}{% include "_frag/icon.html" %}{% endwith %}
-          Board
+          {{ _('tasks.board') }}
         </a>
         <a class="tasks-view-btn {% if view == 'chains' %}tasks-view-btn-active{% endif %}"
            href="/p/{{ project.name }}/tasks?view=chains{% if selected_plan %}&plan={{ selected_plan }}{% endif %}"
-           title="Dependency graph, topological levels">
+           title="{{ _('tasks.chains_title') }}">
           {% with icon_name="git-branch", icon_class="icon-sm tasks-view-icon" %}{% include "_frag/icon.html" %}{% endwith %}
-          Chains
+          {{ _('tasks.chains') }}
         </a>
       </nav>
 
       {% if plans and (plans | length > 1 or selected_plan) %}
-        <nav class="plan-filter" aria-label="Filter tasks by plan">
-          <span class="plan-filter-label muted-tiny">Plan</span>
+        <nav class="plan-filter" aria-label="{{ _('a11y.filter_by_plan') }}">
+          <span class="plan-filter-label muted-tiny">{{ _('tasks.plan_filter') }}</span>
           <a class="plan-chip {% if not selected_plan %}plan-chip-active{% endif %}"
-             href="/p/{{ project.name }}/tasks{% if view == 'chains' %}?view=chains{% endif %}">All</a>
+             href="/p/{{ project.name }}/tasks{% if view == 'chains' %}?view=chains{% endif %}">{{ _('tasks.plan_all') }}</a>
           {% for p in plans %}
             <a class="plan-chip {% if selected_plan == p.scope %}plan-chip-active{% endif %}"
                href="/p/{{ project.name }}/tasks?{% if view == 'chains' %}view=chains&{% endif %}plan={{ p.scope }}">
@@ -59,20 +58,18 @@
     </div>
 
     {% if status_invalid %}
-      <p class="warn">Неизвестное значение status — фильтр проигнорирован.</p>
+      <p class="warn">{{ _('tasks.unknown_status') }}</p>
     {% endif %}
 
     {% if status_filter %}
       <p class="muted-tiny tasks-status-hint">
-        Highlighting column: <code>{{ status_filter }}</code>
-        <a href="/p/{{ project.name }}/tasks{% if selected_plan %}?plan={{ selected_plan }}{% endif %}">clear</a>
+        {{ _('tasks.highlighting_column') }}: <code>{{ status_filter }}</code>
+        <a href="/p/{{ project.name }}/tasks{% if selected_plan %}?plan={{ selected_plan }}{% endif %}">{{ _('tasks.clear_filter') }}</a>
       </p>
     {% endif %}
 
-    {# ── AI Audit panel (populated on demand) ───────────────────────────── #}
     <div id="task-audit-panel"></div>
 
-    {# ── Main layout: Board or Chains ────────────────────────────────────── #}
     {% if view == 'chains' %}
       {% include "_frag/tasks_stats_strip.html" %}
       {% if not chains %}
@@ -82,9 +79,9 @@
           </span>
           <p class="muted">
             {% if selected_plan %}
-              План <code>{{ selected_plan }}</code> не содержит задач.
+              {{ _('tasks.no_tasks_in_plan_short', plan=selected_plan) }}
             {% else %}
-              Планов с задачами не найдено.
+              {{ _('tasks.no_plans_with_tasks') }}
             {% endif %}
           </p>
         </div>
@@ -98,7 +95,7 @@
     {% endif %}
 
     <p class="muted tasks-count-footer">
-      {{ tasks | length }} task{% if tasks | length != 1 %}s{% endif %} shown.
+      {{ _('tasks.count_shown', count=tasks | length) }}
     </p>
 
   {% endif %}

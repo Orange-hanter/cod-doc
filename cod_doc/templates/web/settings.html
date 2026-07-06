@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Settings — COD-DOC{% endblock %}
+{% block title %}{{ _('settings.title') }} — COD-DOC{% endblock %}
 {% block content %}
-<nav class="crumbs"><a href="/">Projects</a> / <span>Settings</span></nav>
+<nav class="crumbs"><a href="/">{{ _('nav.projects') }}</a> / <span>{{ _('settings.title') }}</span></nav>
 
-<h1>Settings</h1>
+<h1>{{ _('settings.title') }}</h1>
 
 <form method="post" action="/settings" class="settings-form">
   <fieldset>

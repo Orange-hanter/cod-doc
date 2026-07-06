@@ -1,72 +1,70 @@
 {% extends "base.html" %}
-{% block title %}Projects — COD-DOC{% endblock %}
+{% block title %}{{ _('index.title') }} — COD-DOC{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h1>Projects</h1>
+  <h1>{{ _('index.title') }}</h1>
   <div class="page-header-actions">
     <div id="daemon-bar" class="daemon-bar {% if daemon_running %}daemon-running{% else %}daemon-stopped{% endif %}">
       <span class="daemon-dot" aria-hidden="true">●</span>
       <span class="daemon-label">
-        Daemon · <strong>{% if daemon_running %}running{% else %}stopped{% endif %}</strong>
+        {{ _('index.daemon') }} · <strong>{% if daemon_running %}{{ _('index.running') }}{% else %}{{ _('index.stopped') }}{% endif %}</strong>
       </span>
       {% if not agent_enabled %}
-        <span class="muted" title="Set agent_enabled=true in Settings to enable">(disabled)</span>
+        <span class="muted" title="{{ _('index.agent_disabled_title') }}">{{ _('index.agent_disabled') }}</span>
       {% elif daemon_running %}
         <button class="daemon-btn"
                 hx-post="/api/daemon/stop"
-                hx-on::after-request="window.location.reload()">Stop</button>
+                hx-on::after-request="window.location.reload()">{{ _('index.stop') }}</button>
       {% else %}
         <button class="daemon-btn daemon-btn-start"
                 hx-post="/api/daemon/start"
-                hx-on::after-request="window.location.reload()">Start</button>
+                hx-on::after-request="window.location.reload()">{{ _('index.start') }}</button>
       {% endif %}
     </div>
   </div>
 </div>
 
 {% if not configured %}
-  <p class="warn">API-ключ не настроен. Перейдите в <a href="/settings">Settings</a>.</p>
+  <p class="warn">{{ _('index.api_key_warn') }}</p>
 {% endif %}
 
 {# ── Add project drawer ──────────────────────────────────────────────────── #}
 <details class="add-project-drawer" id="add-project-drawer">
   <summary>
     <span class="chevron">▶</span>
-    Add project
+    {{ _('index.add_project') }}
   </summary>
   <form id="add-project-form" class="add-project-form">
     <div class="field">
-      <label for="ap-name">Name</label>
+      <label for="ap-name">{{ _('index.name') }}</label>
       <input type="text" id="ap-name" name="name" required placeholder="my-project" autocomplete="off">
     </div>
     <div class="field">
-      <label for="ap-path">Path on host</label>
+      <label for="ap-path">{{ _('index.path') }}</label>
       <input type="text" id="ap-path" name="path" required placeholder="/projects/my-project" autocomplete="off">
       <small class="muted" id="ap-path-hint" style="font-size:12px; margin-top:4px; display:block;">
-        Use a path inside <code>/projects/</code> (bind-mounted) or <code>/data/cod-doc/</code> (named volume).
-        Anywhere else lives only inside the container and is wiped on rebuild.
+        {{ _('index.path_hint') }}
       </small>
       <div id="ap-path-warning" hidden
            style="margin-top:6px; padding:6px 10px; border-radius:var(--radius-sm);
                   background:var(--warning-soft-bg); color:var(--warning-soft-fg);
                   border:1px solid var(--warning-border); font-size:12px;">
-        ⚠ Этот путь не примонтирован к хосту — проект исчезнет при пересборке контейнера.
-        Используй <code>/projects/&lt;name&gt;</code> или <code>/data/cod-doc/&lt;name&gt;</code>.
+        {{ _('index.path_warning') }}
       </div>
     </div>
     <div class="field">
-      <label for="ap-master">MASTER.md</label>
+      <label for="ap-master">{{ _('index.master_md') }}</label>
       <input type="text" id="ap-master" name="master_md" value="MASTER.md" placeholder="MASTER.md">
     </div>
     <div class="field">
       <label>&nbsp;</label>
       <div style="display:flex; align-items:center; gap:var(--space-2); padding-top:6px;">
         <input type="checkbox" id="ap-commit" name="auto_commit" value="true">
-        <label for="ap-commit" style="font-size:13px; text-transform:none; letter-spacing:0; color:var(--fg); cursor:pointer;">Auto-commit changes</label>
+        <label for="ap-commit" style="font-size:13px; text-transform:none; letter-spacing:0; color:var(--fg); cursor:pointer;">{{ _('index.auto_commit') }}</label>
       </div>
     </div>
     <div class="form-actions">
-      <button type="submit" class="btn btn-primary">Create project</button>
+      <button type="submit" class="btn btn-primary">{{ _('index.create_project') }}</button>
       <span id="add-project-status" class="muted" style="font-size:13px;"></span>
     </div>
   </form>
@@ -98,9 +96,9 @@
           <div class="project-card-path" title="{{ p.path }}">{{ p.path }}</div>
         </div>
         {% if not p.daemon_enabled %}
-          <span class="project-card-status s-no-agent" title="Excluded from autonomous agent cycle">no agent</span>
+          <span class="project-card-status s-no-agent" title="{{ _('index.card_no_agent_title') }}">{{ _('index.card_no_agent') }}</span>
         {% elif proj_status == 'running' %}
-          <span class="project-card-status s-running"><span class="dot"></span>running</span>
+          <span class="project-card-status s-running"><span class="dot"></span>{{ _('index.running') }}</span>
         {% elif proj_status == 'idle' %}
           <span class="project-card-status s-idle"><span class="dot"></span>idle</span>
         {% else %}
@@ -110,7 +108,7 @@
 
       {# Progress bar: done | in_progress | failed #}
       <div class="project-card-progress">
-        <div class="project-card-progress-track" title="{{ done }} done · {{ in_prog }} in progress · {{ failed }} failed">
+        <div class="project-card-progress-track" title="{{ _('index.card_progress_title', done=done, in_prog=in_prog, failed=failed) }}">
           {% if total %}
             <div class="project-card-progress-done" style="width: {{ done_w | round(1) }}%"></div>
             <div class="project-card-progress-inprogress" style="width: {{ inprog_w | round(1) }}%"></div>
@@ -118,7 +116,7 @@
           {% endif %}
         </div>
         <div class="project-card-progress-label">
-          <span class="muted" style="font-size:11px;">{{ done }}/{{ total }} tasks done</span>
+          <span class="muted" style="font-size:11px;">{{ _('index.card_tasks_done', done=done, total=total) }}</span>
           <span class="project-card-progress-pct">{{ pct }}%</span>
         </div>
       </div>
@@ -127,35 +125,35 @@
       <div class="project-card-stats">
         <div class="project-card-stat">
           <span class="val">{{ total }}</span>
-          <span class="lbl">Total</span>
+          <span class="lbl">{{ _('index.card_total') }}</span>
         </div>
         <div class="project-card-stat stat-done">
           <span class="val">{{ done }}</span>
-          <span class="lbl">Done</span>
+          <span class="lbl">{{ _('index.card_done') }}</span>
         </div>
         <div class="project-card-stat stat-inprog">
           <span class="val">{{ in_prog }}</span>
-          <span class="lbl">Active</span>
+          <span class="lbl">{{ _('index.card_active') }}</span>
         </div>
         <div class="project-card-stat stat-fail">
           <span class="val">{{ failed }}</span>
-          <span class="lbl">Failed</span>
+          <span class="lbl">{{ _('index.card_failed') }}</span>
         </div>
       </div>
 
       {# Footer — last run #}
       <div class="project-card-footer">
         {% if not p.enabled %}
-          <span class="badge badge-warning">disabled</span>
+          <span class="badge badge-warning">{{ _('index.card_disabled') }}</span>
         {% endif %}
         {% if pending %}
-          <span class="muted">{{ pending }} pending</span>
+          <span class="muted">{{ _('index.card_pending', count=pending) }}</span>
         {% endif %}
         <span class="last-run">
           {% if s.last_run %}
             {{ s.last_run | replace("T", " ") | truncate(16, True, "") }}
           {% else %}
-            never run
+            {{ _('index.never_run') }}
           {% endif %}
         </span>
       </div>
@@ -167,7 +165,7 @@
   <button type="button" class="project-card-add"
           onclick="document.getElementById('add-project-drawer').open = true; document.getElementById('ap-name').focus();">
     <span class="add-icon">+</span>
-    Add project
+    {{ _('index.add_project') }}
   </button>
 </div>
 
@@ -176,23 +174,23 @@
   <button type="button" class="project-card-add"
           onclick="document.getElementById('add-project-drawer').open = true; document.getElementById('ap-name').focus();">
     <span class="add-icon">+</span>
-    Add your first project
+    {{ _('index.add_first_project') }}
   </button>
 </div>
 {% endif %}
 
 {% if page.has_prev or page.has_next %}
-<nav class="pagination" aria-label="projects pagination">
+<nav class="pagination" aria-label="{{ _('a11y.projects_pagination') }}">
   {% if page.has_prev %}
-    <a href="/?limit={{ page.limit }}&amp;offset={{ page.prev_offset }}">‹ Prev</a>
+    <a href="/?limit={{ page.limit }}&amp;offset={{ page.prev_offset }}">{{ _('index.pagination_prev') }}</a>
   {% else %}
-    <span class="page-disabled">‹ Prev</span>
+    <span class="page-disabled">{{ _('index.pagination_prev') }}</span>
   {% endif %}
-  <span class="page-summary muted">{{ page.showing_from }}–{{ page.showing_to }} of {{ page.total }}</span>
+  <span class="page-summary muted">{{ _('index.pagination_summary', from_=page.showing_from, to=page.showing_to, total=page.total) }}</span>
   {% if page.has_next %}
-    <a href="/?limit={{ page.limit }}&amp;offset={{ page.next_offset }}">Next ›</a>
+    <a href="/?limit={{ page.limit }}&amp;offset={{ page.next_offset }}">{{ _('index.pagination_next') }}</a>
   {% else %}
-    <span class="page-disabled">Next ›</span>
+    <span class="page-disabled">{{ _('index.pagination_next') }}</span>
   {% endif %}
 </nav>
 {% endif %}
@@ -224,8 +222,8 @@
       master_md: fd.get('master_md') || 'MASTER.md',
       auto_commit: fd.get('auto_commit') === 'true',
     };
-    if (!body.name || !body.path) { status.textContent = 'Name and path are required.'; return; }
-    status.textContent = 'Creating…';
+    if (!body.name || !body.path) { status.textContent = (window.COD_DOC_I18N && window.COD_DOC_I18N['index.required_fields']) || 'Name and path are required.'; return; }
+    status.textContent = (window.COD_DOC_I18N && window.COD_DOC_I18N['index.creating']) || 'Creating…';
     try {
       const r = await fetch('/api/projects', {
         method: 'POST',
@@ -234,10 +232,10 @@
       });
       const data = await r.json();
       if (!r.ok) { status.textContent = data.detail || JSON.stringify(data); return; }
-      status.textContent = `Project "${data.created}" created.`;
+      status.textContent = ((window.COD_DOC_I18N && window.COD_DOC_I18N['index.created']) || 'Project "{name}" created.').replace('{name}', data.created);
       setTimeout(() => window.location.reload(), 800);
     } catch (e) {
-      status.textContent = 'Error: ' + e.message;
+      status.textContent = ((window.COD_DOC_I18N && window.COD_DOC_I18N['index.error_prefix']) || 'Error') + ': ' + e.message;
     }
   });
 })();

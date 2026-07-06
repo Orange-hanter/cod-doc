@@ -2,7 +2,7 @@
 {% block title %}{{ adr.adr_id }} · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
-  <a href="/">Projects</a> /
+  <a href="/">{{ _('nav.projects') }}</a> /
   <a href="/p/{{ project.name }}">{{ project.name }}</a> /
   <a href="/p/{{ project.name }}/adr">ADRs</a> /
   <span>{{ adr.adr_id }}</span>

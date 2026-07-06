@@ -1,18 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Docs · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
-<nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>Docs</span></nav>
+<nav class="crumbs"><a href="/">{{ _('nav.projects') }}</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>{{ _('page.docs') }}</span></nav>
 
 <h1>{{ project.name }} · Docs</h1>
 
 {% with slug=project.name, active="docs" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
 {% if not db_available %}
-  <p class="warn">
-    DB-проект не инициализирован. Зайди на
-    <a href="/p/{{ project.name }}">обзор проекта</a> и нажми
-    <strong>Initialize DB</strong>.
-  </p>
+  <p class="warn">{{ _('db.not_initialized_docs_hint', slug=project.name) }}</p>
 {% else %}
 
 {% set _active_status = filters.status or "live" %}

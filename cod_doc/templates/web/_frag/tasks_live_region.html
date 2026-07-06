@@ -11,10 +11,10 @@
       </span>
       <p class="muted">
         {% if selected_plan %}
-          В плане <code>{{ selected_plan }}</code> ещё нет задач.
-          <a href="/p/{{ project.name }}/tasks">Показать все планы</a>.
+          {{ _('tasks.no_tasks_in_plan', plan=selected_plan) }}
+          <a href="/p/{{ project.name }}/tasks">{{ _('tasks.show_all_plans') }}</a>.
         {% else %}
-          Задач ещё нет. Создай план или запусти агента.
+          {{ _('tasks.no_tasks') }}
         {% endif %}
       </p>
     </div>

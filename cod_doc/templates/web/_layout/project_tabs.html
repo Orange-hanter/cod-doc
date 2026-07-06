@@ -1,41 +1,36 @@
-{# Project tab strip — primary tabs always visible; secondary in "More" menu.
-
-Variables (set via `{% with %}`):
-- slug   — project name in URL
-- active — slug of the currently-active tab (or empty for none)
-#}
+{# Project tab strip — primary tabs always visible; secondary in "More" menu. #}
 {% set primary_tabs = [
-  ("overview", "Overview",  "/p/" ~ slug,             "overview"),
-  ("run",      "Agent",     "/p/" ~ slug ~ "/run",    "agent"),
-  ("tasks",    "Tasks",     "/p/" ~ slug ~ "/tasks",  "tasks"),
-  ("docs",     "Docs",      "/p/" ~ slug ~ "/docs",   "book"),
+  ("overview", "tab.overview", "/p/" ~ slug, "overview"),
+  ("run",      "tab.agent",   "/p/" ~ slug ~ "/run",    "agent"),
+  ("tasks",    "tab.tasks",   "/p/" ~ slug ~ "/tasks",  "tasks"),
+  ("docs",     "tab.docs",    "/p/" ~ slug ~ "/docs",   "book"),
 ] %}
 {% set secondary_tabs = [
-  ("stories",   "Stories",   "/p/" ~ slug ~ "/stories"),
-  ("plans",     "Plans",     "/p/" ~ slug ~ "/plans"),
-  ("adr",       "ADRs",      "/p/" ~ slug ~ "/adr"),
-  ("metrics",   "Metrics",   "/p/" ~ slug ~ "/metrics"),
-  ("commits",   "Commits",   "/p/" ~ slug ~ "/commits"),
-  ("code_refs", "Code refs", "/p/" ~ slug ~ "/code-refs"),
-  ("search",    "Search",    "/p/" ~ slug ~ "/search"),
-  ("routines",  "Routines",  "/p/" ~ slug ~ "/routines"),
-  ("costs",     "Costs",     "/p/" ~ slug ~ "/costs"),
-  ("revisions", "Revisions", "/p/" ~ slug ~ "/revisions"),
+  ("stories",   "tab.stories",   "/p/" ~ slug ~ "/stories"),
+  ("plans",     "tab.plans",     "/p/" ~ slug ~ "/plans"),
+  ("adr",       "tab.adr",       "/p/" ~ slug ~ "/adr"),
+  ("metrics",   "tab.metrics",   "/p/" ~ slug ~ "/metrics"),
+  ("commits",   "tab.commits",   "/p/" ~ slug ~ "/commits"),
+  ("code_refs", "tab.code_refs", "/p/" ~ slug ~ "/code-refs"),
+  ("search",    "tab.search",    "/p/" ~ slug ~ "/search"),
+  ("routines",  "tab.routines",  "/p/" ~ slug ~ "/routines"),
+  ("costs",     "tab.costs",     "/p/" ~ slug ~ "/costs"),
+  ("revisions", "tab.revisions", "/p/" ~ slug ~ "/revisions"),
 ] %}
-{% set ns = namespace(more_active=false, more_label="More") %}
-{% for sid, label, href in secondary_tabs %}
+{% set ns = namespace(more_active=false, more_label_key="tab.more") %}
+{% for sid, label_key, href in secondary_tabs %}
   {% if active == sid %}
     {% set ns.more_active = true %}
-    {% set ns.more_label = label %}
+    {% set ns.more_label_key = label_key %}
   {% endif %}
 {% endfor %}
 
-<nav class="tabs tabs-project" aria-label="Project sections">
+<nav class="tabs tabs-project" aria-label="{{ _('a11y.project_sections') }}">
   <div class="tabs-primary">
-    {%- for slug_id, label, href, icon in primary_tabs -%}
+    {%- for slug_id, label_key, href, icon in primary_tabs -%}
       <a class="tab-link{% if active == slug_id %} active{% endif %}" href="{{ href }}">
         {% with icon_name=icon, icon_class="icon-sm tab-icon" %}{% include "_frag/icon.html" %}{% endwith %}
-        <span>{{ label }}</span>
+        <span>{{ t(label_key) }}</span>
       </a>
     {%- endfor -%}
   </div>
@@ -43,22 +38,21 @@ Variables (set via `{% with %}`):
   <details class="tabs-more"{% if ns.more_active %} open{% endif %}>
     <summary class="tab-link tabs-more-trigger{% if ns.more_active %} active{% endif %}">
       {% with icon_name="more", icon_class="icon-sm tab-icon" %}{% include "_frag/icon.html" %}{% endwith %}
-      <span>{{ ns.more_label }}</span>
+      <span>{{ t(ns.more_label_key) }}</span>
     </summary>
     <div class="tabs-more-menu" role="menu">
-      {% for slug_id, label, href in secondary_tabs %}
+      {% for slug_id, label_key, href in secondary_tabs %}
         <a class="tabs-more-item{% if active == slug_id %} active{% endif %}"
            href="{{ href }}"
-           role="menuitem">{{ label }}</a>
+           role="menuitem">{{ t(label_key) }}</a>
       {% endfor %}
     </div>
   </details>
 
-  {# Wide screens: show secondary tabs inline (grouped after a divider). #}
-  <div class="tabs-secondary" aria-label="Additional sections">
-    {%- for slug_id, label, href in secondary_tabs -%}
+  <div class="tabs-secondary" aria-label="{{ _('a11y.additional_sections') }}">
+    {%- for slug_id, label_key, href in secondary_tabs -%}
       <a class="tab-link tab-link-compact{% if active == slug_id %} active{% endif %}" href="{{ href }}">
-        <span>{{ label }}</span>
+        <span>{{ t(label_key) }}</span>
       </a>
     {%- endfor -%}
   </div>

@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Plans · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
-<nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>Plans</span></nav>
+<nav class="crumbs"><a href="/">{{ _('nav.projects') }}</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>{{ _('page.plans') }}</span></nav>
 
 <h1>{{ project.name }} · Plans</h1>
 
 {% with slug=project.name, active="plans" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
 {% if not db_available %}
-  <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug не совпадает с <code>project.slug</code> в БД.</p>
+  {% include "_frag/db_uninitialized.html" %}
 {% elif not plans %}
-  <p class="muted">Планов в этом проекте пока нет.</p>
+  <p class="muted">{{ _('plans.none') }}</p>
 {% else %}
 <table class="grid">
   <thead>

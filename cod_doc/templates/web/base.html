@@ -1,16 +1,14 @@
+{% set _slug = (project.name if project is defined and project else None) or (request.path_params.slug if request is defined else None) %}
+{% set _return = request.url.path if request is defined else '/' %}
 <!doctype html>
-<html lang="ru" data-theme="light">
+<html lang="{{ locale() }}" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}COD-DOC{% endblock %}</title>
-  {# Inline SVG favicon as data URI. Avoids a separate static request and works
-     identically in light/dark browser chrome. Source: cod_doc/static/favicon.svg. #}
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23a78bfa'/%3E%3Cstop offset='100%25' stop-color='%232f81f7'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='url(%23g)'/%3E%3Cpath d='M44 8 L56 20 L56 22 L44 22 Z' fill='%23ffffff' opacity='0.18'/%3E%3Cpath d='M44 8 L44 22 L56 22' fill='none' stroke='%23ffffff' stroke-width='1.5' opacity='0.4'/%3E%3Crect x='14' y='14' width='22' height='3' rx='1.5' fill='%23ffffff' opacity='0.85'/%3E%3Crect x='14' y='22' width='16' height='2.5' rx='1.25' fill='%23ffffff' opacity='0.55'/%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 40 L14 46 L22 52'/%3E%3Cpath d='M42 40 L50 46 L42 52'/%3E%3Cpath d='M36 36 L28 56'/%3E%3C/g%3E%3C/svg%3E">
   <link rel="stylesheet" href="{{ static_url('app.css') }}">
   <script>
-    // Theme bootstrap — runs before <body> renders to avoid flash.
-    // Order: localStorage override > prefers-color-scheme > "light".
     (function () {
       try {
         var stored = localStorage.getItem('cod-doc-theme');
@@ -19,24 +17,18 @@
           resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
         document.documentElement.setAttribute('data-theme', resolved);
-      } catch (e) { /* localStorage may be denied — fall back to default */ }
+      } catch (e) { }
     })();
+    window.COD_DOC_I18N = {{ js_messages() | safe }};
   </script>
   <script defer src="{{ static_url('htmx.min.js') }}"></script>
   <script type="module">
     if (document.querySelector('.mermaid')) {
       const m = await import('{{ mermaid_src }}');
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      m.default.initialize({
-        startOnLoad: true,
-        theme: isDark ? 'dark' : 'default',
-        securityLevel: 'strict',
-      });
+      m.default.initialize({ startOnLoad: true, theme: isDark ? 'dark' : 'default', securityLevel: 'strict' });
     }
   </script>
-
-  {# Syntax highlighting — both light and dark themes loaded; the non-matching
-     one is disabled on boot and re-toggled when the user flips the theme. #}
   <link id="hljs-light" rel="stylesheet" href="{{ hljs_light_css }}">
   <link id="hljs-dark"  rel="stylesheet" href="{{ hljs_dark_css }}" disabled>
   <script>
@@ -49,7 +41,6 @@
         if (darkLink) darkLink.disabled = !dark;
       }
       syncHljsTheme();
-      // Re-sync when cod_doc_app.js toggles data-theme on <html>.
       new MutationObserver(syncHljsTheme).observe(document.documentElement, {
         attributes: true, attributeFilter: ['data-theme'],
       });
@@ -60,46 +51,52 @@
     document.addEventListener('DOMContentLoaded', () => {
       if (window.hljs) {
         document.querySelectorAll('pre code').forEach((el) => {
-          // Skip already-processed and explicit no-highlight blocks.
           if (el.dataset.highlighted === 'yes') return;
           if (el.classList.contains('language-mermaid') || el.classList.contains('nohighlight')) return;
-          try { window.hljs.highlightElement(el); } catch (e) { /* fail silently */ }
+          try { window.hljs.highlightElement(el); } catch (e) { }
         });
       }
     });
   </script>
-
   <script defer src="{{ static_url('cod_doc_ws.js') }}"></script>
   <script defer src="{{ static_url('cod_doc_app.js') }}"></script>
   {% if _slug %}
   <script defer src="{{ static_url('cod_doc_search.js') }}"></script>
   {% endif %}
 </head>
-{% set _slug = (project.name if project is defined and project else None) or (request.path_params.slug if request is defined else None) %}
 <body{% if _slug %} data-project="{{ _slug }}"{% endif %}>
-  <a class="skip-link" href="#main-content">Перейти к содержимому</a>
+  <a class="skip-link" href="#main-content">{{ _('a11y.skip_to_content') }}</a>
   <header class="topbar">
     <a class="brand" href="/">COD-DOC</a>
     <nav>
-      <a href="/"{% if request and request.url.path == '/' %} class="active"{% endif %}>Projects</a>
-      <a href="/standards"{% if request and request.url.path.startswith('/standards') %} class="active"{% endif %}>Standards</a>
-      <a href="/settings"{% if request and request.url.path == '/settings' %} class="active"{% endif %}>Settings</a>
+      <a href="/"{% if request and request.url.path == '/' %} class="active"{% endif %}>{{ _('nav.projects') }}</a>
+      <a href="/standards"{% if request and request.url.path.startswith('/standards') %} class="active"{% endif %}>{{ _('nav.standards') }}</a>
+      <a href="/settings"{% if request and request.url.path == '/settings' %} class="active"{% endif %}>{{ _('nav.settings') }}</a>
     </nav>
     <span class="topbar-spacer"></span>
+    <nav class="lang-switch" aria-label="{{ _('nav.language') }}">
+      {% for code in supported_locales %}
+        <a href="/locale/{{ code }}?next={{ _return | urlencode }}"
+           class="lang-switch-btn{% if locale() == code %} active{% endif %}"
+           hreflang="{{ code }}"
+           lang="{{ code }}">{{ code | upper }}</a>
+      {% endfor %}
+    </nav>
     {% if _slug %}
       <button type="button" class="topbar-search-btn" id="search-open"
-              aria-label="Search project" title="Search (Ctrl+K)">
+              aria-label="{{ _('search.project_aria') }}"
+              title="{{ _('search.project_title') }}">
         {% with icon_name="search", icon_class="icon-sm" %}{% include "_frag/icon.html" %}{% endwith %}
-        <span>Search</span>
+        <span>{{ _('search.title') }}</span>
         <kbd class="topbar-search-kbd">⌘K</kbd>
       </button>
       <span id="cod-ws-dot" class="cod-ws-dot cod-ws-disconnected"
             role="status" aria-live="polite"
-            aria-label="Live updates: idle"
-            title="Live updates: idle">idle</span>
+            aria-label="{{ _('ws.live_updates', state=_('ws.state.idle')) }}"
+            title="{{ _('ws.live_updates', state=_('ws.state.idle')) }}">{{ _('ws.state.idle') }}</span>
     {% endif %}
     <button type="button" class="theme-toggle" id="theme-toggle"
-            aria-label="Toggle theme" title="Toggle theme">
+            aria-label="{{ _('theme.toggle') }}" title="{{ _('theme.toggle') }}">
       <svg class="icon-sun" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
         <path d="M8 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM7 0h2v2H7V0zm0 14h2v2H7v-2zM0 7v2h2V7H0zm14 0v2h2V7h-2zM2.222 2.222l1.414 1.414L2.222 5.05.808 3.636l1.414-1.414zm9.342 9.342 1.414 1.414-1.414 1.414-1.414-1.414 1.414-1.414zM12.95 2.222l1.414 1.414-1.414 1.414-1.414-1.414 1.414-1.414zm-9.342 9.342 1.414 1.414L3.636 14.4 2.222 12.99l1.414-1.414z"/>
       </svg>
@@ -119,13 +116,13 @@
   </div>
   {% if _slug %}
   <div id="search-palette-backdrop" class="search-palette-backdrop" hidden>
-    <div class="search-palette" role="dialog" aria-modal="true" aria-label="Search">
+    <div class="search-palette" role="dialog" aria-modal="true" aria-label="{{ _('search.aria_dialog') }}">
       <input type="search" id="search-palette-input" class="search-palette-input"
-             placeholder="Search tasks, docs, stories, ADRs…" autocomplete="off"
+             placeholder="{{ _('search.placeholder') }}" autocomplete="off"
              data-suggest-url="/p/{{ _slug }}/search/suggest">
-      <div class="search-palette-hint">↑↓ navigate · Enter open · Esc close</div>
+      <div class="search-palette-hint">{{ _('search.hint') }}</div>
       <div id="search-palette-results" class="search-palette-results"
-           role="listbox" aria-label="Search results"></div>
+           role="listbox" aria-label="{{ _('search.aria_results') }}"></div>
     </div>
   </div>
   {% endif %}

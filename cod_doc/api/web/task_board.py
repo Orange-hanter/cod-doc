@@ -10,14 +10,14 @@ from cod_doc.domain.entities import TaskStatus
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
 
-# Kanban columns in workflow order. Tuple: (column_key, display_label, icon, statuses).
+# Kanban columns in workflow order. Tuple: (column_key, label_i18n_key, icon, statuses).
 KANBAN_COLS: list[tuple[str, str, str, set[str]]] = [
-    ("todo", "Todo", "○", {"backlog", "todo", "pending"}),
-    ("in_progress", "In progress", "◐", {"in_progress", "in-progress"}),
-    ("in_review", "In review", "◔", {"in_review"}),
-    ("blocked", "Blocked", "✕", {"blocked"}),
-    ("done", "Done", "●", {"done"}),
-    ("cancelled", "Cancelled", "—", {"cancelled"}),
+    ("todo", "kanban.todo", "○", {"backlog", "todo", "pending"}),
+    ("in_progress", "kanban.in_progress", "◐", {"in_progress", "in-progress"}),
+    ("in_review", "kanban.in_review", "◔", {"in_review"}),
+    ("blocked", "kanban.blocked", "✕", {"blocked"}),
+    ("done", "kanban.done", "●", {"done"}),
+    ("cancelled", "kanban.cancelled", "—", {"cancelled"}),
 ]
 
 TYPE_GLYPHS: dict[str, str] = {
@@ -110,13 +110,13 @@ def build_columns(
 ) -> list[dict[str, Any]]:
     """Bucket rows into kanban columns, priority-sorted within each."""
     columns: list[dict[str, Any]] = []
-    for key, label, icon, members in KANBAN_COLS:
+    for key, label_key, icon, members in KANBAN_COLS:
         col_tasks = [r for r in rows if column_for(r["status"]) == key]
         col_tasks.sort(key=lambda r: (PRIO_RANK.get(r["priority"], 99), r["task_id"]))
         columns.append(
             {
                 "key": key,
-                "label": label,
+                "label_key": label_key,
                 "icon": icon,
                 "count": len(col_tasks),
                 "tasks": col_tasks,

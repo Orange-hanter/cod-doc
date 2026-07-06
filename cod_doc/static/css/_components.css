@@ -3005,6 +3005,28 @@ details > summary { cursor: pointer; }
   background: var(--bg);
 }
 
+.lang-switch {
+  display: inline-flex;
+  gap: 2px;
+  margin-right: var(--space-2);
+}
+.lang-switch-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+}
+.lang-switch-btn:hover { color: var(--fg); border-color: var(--border); text-decoration: none; }
+.lang-switch-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft-bg);
+}
+
 @media (max-width: 640px) {
   .overview-hero {
     grid-template-columns: 1fr;

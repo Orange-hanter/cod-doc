@@ -1,0 +1,208 @@
+"""Russian UI strings for the web frontend."""
+
+from __future__ import annotations
+
+MESSAGES: dict[str, str] = {
+    # Navigation
+    "nav.projects": "Проекты",
+    "nav.standards": "Стандарты",
+    "nav.settings": "Настройки",
+    "nav.search": "Поиск",
+    "nav.language": "Язык",
+    # Project tabs
+    "tab.overview": "Обзор",
+    "tab.agent": "Агент",
+    "tab.tasks": "Задачи",
+    "tab.docs": "Документы",
+    "tab.stories": "Истории",
+    "tab.plans": "Планы",
+    "tab.adr": "ADR",
+    "tab.metrics": "Метрики",
+    "tab.commits": "Коммиты",
+    "tab.code_refs": "Код-ссылки",
+    "tab.search": "Поиск",
+    "tab.routines": "Рутины",
+    "tab.costs": "Расходы",
+    "tab.revisions": "Ревизии",
+    "tab.more": "Ещё",
+    # Accessibility
+    "a11y.skip_to_content": "Перейти к содержимому",
+    "a11y.project_sections": "Разделы проекта",
+    "a11y.additional_sections": "Дополнительные разделы",
+    "a11y.choose_task_layout": "Выбор раскладки задач",
+    "a11y.filter_by_plan": "Фильтр задач по плану",
+    "a11y.project_summary": "Сводка проекта",
+    "a11y.quick_actions": "Быстрые действия",
+    "a11y.projects_pagination": "Пагинация проектов",
+    # Theme / live
+    "theme.toggle": "Переключить тему",
+    "ws.live_updates": "Живые обновления: {state}",
+    "ws.state.idle": "ожидание",
+    "ws.state.connecting": "подключение",
+    "ws.state.connected": "подключено",
+    "ws.state.reconnecting": "переподключение",
+    # Search palette
+    "search.title": "Поиск",
+    "search.aria_dialog": "Поиск",
+    "search.aria_results": "Результаты поиска",
+    "search.placeholder": "Поиск по задачам, документам, историям, ADR…",
+    "search.hint": "↑↓ навигация · Enter открыть · Esc закрыть",
+    "search.empty_prompt": "Введите запрос для поиска по задачам, документам, историям и ADR.",
+    "search.no_results": "Ничего не найдено.",
+    "search.project_aria": "Поиск по проекту",
+    "search.project_title": "Поиск (Ctrl+K)",
+    # Overview
+    "overview.command_center": "Центр управления",
+    "overview.tasks_done": "{done} / {total} задач выполнено",
+    "overview.status": "Статус",
+    "overview.last_run": "Последний запуск",
+    "overview.open": "Открыто",
+    "overview.active": "В работе",
+    "overview.blocked": "Заблокировано",
+    "overview.ready_to_start": "Готовы к старту",
+    "overview.no_ready_tasks": "Нет задач, готовых к старту.",
+    "overview.plan_progress": "Прогресс планов",
+    "overview.no_plans": "Планов в этом проекте пока нет.",
+    "overview.create_plan": "Создать план",
+    "overview.recent_revisions": "Недавние ревизии",
+    "overview.no_revisions": "Ревизий пока нет.",
+    "overview.all_revisions": "Все ревизии →",
+    "overview.agent_console": "Консоль агента",
+    "overview.tasks_board": "Доска задач",
+    "overview.docs": "Документы",
+    "overview.import_folder": "Импорт из папки",
+    "overview.import_hint": "AI сканирует репозиторий и предлагает MASTER.md + задачи покрытия.",
+    "overview.scan_intent": "Намерение сканирования (необязательно)",
+    "overview.scan_intent_placeholder": "напр. фокус на архитектуре, без changelog",
+    "overview.scan_propose": "Сканировать и предложить",
+    "overview.view_raw": "Исходник",
+    "overview.master_empty": "Файл пуст.",
+    "overview.master_missing": "{name} ещё не создан.",
+    "overview.master_truncated": "Показаны первые строки.",
+    "overview.master_open_full": "Открыть целиком",
+    "overview.db_not_initialized_title": "База проекта не инициализирована",
+    "overview.db_not_initialized_body": (
+        "<code>{path}/.cod-doc/state.db</code> ещё не создан. "
+        "Нажмите <strong>Инициализировать БД</strong> — выполнятся alembic-миграции, "
+        "добавится project-row, появятся таблицы для задач/документов/планов."
+    ),
+    "overview.initialize_db": "Инициализировать БД",
+    "overview.init_or_cli": "или: <code>cod-doc project init {name}</code>",
+    "overview.open_console": "открыть консоль →",
+    "overview.agent_label": "Агент",
+    "overview.agent_idle": "Ожидание",
+    # Tasks page
+    "tasks.page_title": "Задачи",
+    "tasks.board": "Доска",
+    "tasks.board_title": "Колонки по статусу, сортировка по приоритету",
+    "tasks.chains": "Цепочки",
+    "tasks.chains_title": "Граф зависимостей, топологические уровни",
+    "tasks.audit": "Аудит согласованности",
+    "tasks.legacy_hint": "Legacy YAML задачи ({count})",
+    "tasks.legacy_suffix": "в <code>.cod-doc/tasks.yaml</code>, ещё не мигрированы.",
+    "tasks.db_not_initialized": (
+        "DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует "
+        "или slug не совпадает с <code>project.slug</code> в БД."
+    ),
+    "tasks.no_tasks_in_plan": "В плане <code>{plan}</code> ещё нет задач.",
+    "tasks.show_all_plans": "Показать все планы",
+    "tasks.no_tasks": "Задач ещё нет. Создайте план или запустите агента.",
+    "tasks.no_plans_with_tasks": "Планов с задачами не найдено.",
+    "tasks.no_tasks_in_plan_short": "План <code>{plan}</code> не содержит задач.",
+    "tasks.unknown_status": "Неизвестное значение status — фильтр проигнорирован.",
+    "tasks.highlighting_column": "Подсвечена колонка",
+    "tasks.clear_filter": "сбросить",
+    "tasks.count_shown": "Показано задач: {count}.",
+    "tasks.stats_title": "{project} · Задачи",
+    "tasks.stat_total": "всего",
+    "tasks.stat_done": "готово",
+    "tasks.stat_in_progress": "в работе",
+    "tasks.stat_in_review": "на ревью",
+    "tasks.stat_blocked": "заблок.",
+    "tasks.stat_no_ac": "без AC",
+    "tasks.stat_no_ac_title": "Незавершённые задачи без критериев приёмки",
+    "tasks.stat_critical": "критич.",
+    "tasks.stat_critical_title": "Открытые задачи с приоритетом critical",
+    "tasks.plan_filter": "План",
+    "tasks.plan_all": "Все",
+    # Kanban columns
+    "kanban.todo": "К выполнению",
+    "kanban.in_progress": "В работе",
+    "kanban.in_review": "На ревью",
+    "kanban.blocked": "Заблокировано",
+    "kanban.done": "Готово",
+    "kanban.cancelled": "Отменено",
+    # Index / projects home
+    "index.title": "Проекты",
+    "index.daemon": "Демон",
+    "index.running": "работает",
+    "index.stopped": "остановлен",
+    "index.agent_disabled_title": "Включите agent_enabled=true в Настройках",
+    "index.agent_disabled": "(отключён)",
+    "index.stop": "Стоп",
+    "index.start": "Старт",
+    "index.api_key_warn": "API-ключ не настроен. Перейдите в <a href=\"/settings\">Настройки</a>.",
+    "index.add_project": "Добавить проект",
+    "index.add_first_project": "Добавить первый проект",
+    "index.create_project": "Создать проект",
+    "index.name": "Имя",
+    "index.path": "Путь на хосте",
+    "index.path_hint": (
+        "Используйте путь внутри <code>/projects/</code> (bind-mount) или "
+        "<code>/data/cod-doc/</code> (named volume). "
+        "Любой другой путь живёт только в контейнере и исчезнет при пересборке."
+    ),
+    "index.path_warning": (
+        "Этот путь не примонтирован к хосту — проект исчезнет при пересборке контейнера. "
+        "Используйте <code>/projects/&lt;name&gt;</code> или <code>/data/cod-doc/&lt;name&gt;</code>."
+    ),
+    "index.master_md": "MASTER.md",
+    "index.auto_commit": "Авто-коммит изменений",
+    "index.creating": "Создание…",
+    "index.created": "Проект «{name}» создан.",
+    "index.required_fields": "Имя и путь обязательны.",
+    "index.error_prefix": "Ошибка",
+    "index.card_total": "Всего",
+    "index.card_done": "Готово",
+    "index.card_active": "Активно",
+    "index.card_failed": "Ошибки",
+    "index.card_tasks_done": "{done}/{total} задач готово",
+    "index.card_progress_title": "{done} готово · {in_prog} в работе · {failed} ошибок",
+    "index.card_no_agent": "без агента",
+    "index.card_no_agent_title": "Исключён из автономного цикла агента",
+    "index.card_disabled": "отключён",
+    "index.card_pending": "{count} в очереди",
+    "index.never_run": "не запускался",
+    "index.pagination_prev": "‹ Назад",
+    "index.pagination_next": "Вперёд ›",
+    "index.pagination_summary": "{from_}–{to} из {total}",
+    # Settings
+    "settings.title": "Настройки",
+    # Common page titles / crumbs
+    "page.docs": "Документы",
+    "page.plans": "Планы",
+    "page.revisions": "Ревизии",
+    "page.search": "Поиск",
+    "page.standards": "Стандарты",
+    # Shared
+    "common.mark_done": "Отметить готовым",
+    "common.mark_done_aria": "Отметить {task_id} готовым",
+    "common.disabled": "(отключён)",
+    "common.plan": "План",
+    "common.status": "Статус",
+    "common.done": "Готово",
+    "common.total": "Всего",
+    # DB warning (shared)
+    "db.not_initialized": (
+        "DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует "
+        "или slug не совпадает с <code>project.slug</code> в БД."
+    ),
+    "db.not_initialized_short": "DB-проект не инициализирован. Перейдите на",
+    "db.not_initialized_overview_link": "обзор проекта",
+    "db.not_initialized_docs_hint": (
+        "DB-проект не инициализирован. Перейдите на "
+        "<a href=\"/p/{slug}\">обзор проекта</a> и нажмите "
+        "<strong>Инициализировать БД</strong>."
+    ),
+    "plans.none": "Планов в этом проекте пока нет.",
+}

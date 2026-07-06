@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Search · {{ project.name }} — COD-DOC{% endblock %}
+{% block title %}{{ _('page.search') }} · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
-  <a href="/">Projects</a> /
+  <a href="/">{{ _('nav.projects') }}</a> /
   <a href="/p/{{ project.name }}">{{ project.name }}</a> /
-  <span>Search</span>
+  <span>{{ _('page.search') }}</span>
 </nav>
 
 {% with slug=project.name, active="search" %}{% include "_layout/project_tabs.html" %}{% endwith %}

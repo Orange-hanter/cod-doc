@@ -68,6 +68,29 @@ app.include_router(pages_router)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+@app.middleware("http")
+async def locale_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """Bind request locale for template ``t()`` / ``locale()`` globals."""
+    from cod_doc.api.web.i18n import resolve_locale, set_request_locale
+
+    set_request_locale(resolve_locale(request))
+    return await call_next(request)
+
+
+@app.get("/locale/{lang}")
+def set_locale(lang: str, request: Request, next: str = "/") -> RedirectResponse:
+    """Set UI language cookie and redirect back."""
+    from cod_doc.api.web.locales import COOKIE_NAME, SUPPORTED_LOCALES
+
+    if lang not in SUPPORTED_LOCALES:
+        return RedirectResponse(url=next, status_code=303)
+    # Only allow relative redirects to avoid open redirects.
+    target = next if next.startswith("/") else "/"
+    response = RedirectResponse(url=target, status_code=303)
+    response.set_cookie(COOKIE_NAME, lang, max_age=365 * 24 * 3600, path="/", samesite="lax")
+    return response
+
+
 @app.exception_handler(WebError)
 async def web_error_handler(request: Request, exc: WebError) -> Response:
     """Render WebError as alert fragment (HTMX) or cookie-flash + redirect (form)."""

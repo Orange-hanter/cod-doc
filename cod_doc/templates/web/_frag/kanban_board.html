@@ -5,7 +5,7 @@
              {% if not col.collapsed_default and col.count > 0 %}open{% endif %}>
       <summary class="kanban-col-head">
         <span class="kanban-col-icon" aria-hidden="true">{{ col.icon }}</span>
-        <span class="kanban-col-label">{{ col.label }}</span>
+        <span class="kanban-col-label">{{ t(col.label_key) }}</span>
         <span class="kanban-col-count">{{ col.count }}</span>
       </summary>
       <div class="kanban-col-body">

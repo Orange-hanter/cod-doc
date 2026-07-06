@@ -1,51 +1,51 @@
 {% extends "base.html" %}
 {% block title %}{{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
-<nav class="crumbs"><a href="/">Projects</a> / <span>{{ project.name }}</span></nav>
+<nav class="crumbs"><a href="/">{{ _('nav.projects') }}</a> / <span>{{ project.name }}</span></nav>
 
-<h1>{{ project.name }}{% if not project.enabled %} <span class="muted">(disabled)</span>{% endif %}</h1>
+<h1>{{ project.name }}{% if not project.enabled %} <span class="muted">{{ _('common.disabled') }}</span>{% endif %}</h1>
 <p class="mono muted">{{ project.path }}</p>
 
 {% with slug=project.name, active="overview" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<section class="overview-hero" aria-label="Project summary">
+<section class="overview-hero" aria-label="{{ _('a11y.project_summary') }}">
   <div class="overview-hero-main">
-    <h2 class="overview-hero-title">Command center</h2>
-    <div class="overview-hero-bar" title="{{ stats.pct_done or 0 }}% complete">
+    <h2 class="overview-hero-title">{{ _('overview.command_center') }}</h2>
+    <div class="overview-hero-bar" title="{{ stats.pct_done or 0 }}%">
       <div class="overview-hero-bar-fill" style="width: {{ stats.pct_done or 0 }}%"></div>
     </div>
     <div class="overview-hero-meta">
-      <span><strong>{{ stats.done or 0 }}</strong> / {{ stats.total or 0 }} tasks done</span>
-      <span>Status: <strong>{{ stats.status }}</strong></span>
-      {% if stats.last_run %}<span>Last run: {{ stats.last_run }}</span>{% endif %}
+      <span>{{ _('overview.tasks_done', done=stats.done or 0, total=stats.total or 0) }}</span>
+      <span>{{ _('overview.status') }}: <strong>{{ stats.status }}</strong></span>
+      {% if stats.last_run %}<span>{{ _('overview.last_run') }}: {{ stats.last_run }}</span>{% endif %}
     </div>
   </div>
   <div class="overview-hero-metrics">
-    <div class="overview-metric overview-metric-open" title="Open tasks">
+    <div class="overview-metric overview-metric-open" title="{{ _('overview.open') }}">
       <span class="overview-metric-value">{{ stats.pending or 0 }}</span>
-      <span class="overview-metric-label">Open</span>
+      <span class="overview-metric-label">{{ _('overview.open') }}</span>
     </div>
-    <div class="overview-metric overview-metric-progress" title="In progress">
+    <div class="overview-metric overview-metric-progress" title="{{ _('overview.active') }}">
       <span class="overview-metric-value">{{ stats.in_progress or 0 }}</span>
-      <span class="overview-metric-label">Active</span>
+      <span class="overview-metric-label">{{ _('overview.active') }}</span>
     </div>
-    <div class="overview-metric overview-metric-blocked" title="Blocked">
+    <div class="overview-metric overview-metric-blocked" title="{{ _('overview.blocked') }}">
       <span class="overview-metric-value">{{ stats.blocked or 0 }}</span>
-      <span class="overview-metric-label">Blocked</span>
+      <span class="overview-metric-label">{{ _('overview.blocked') }}</span>
     </div>
   </div>
 </section>
 
-<nav class="overview-quick-actions" aria-label="Quick actions">
-  <a class="btn btn-primary" href="/p/{{ project.name }}/run">Agent console</a>
-  <a class="btn btn-secondary" href="/p/{{ project.name }}/tasks">Tasks board</a>
-  <a class="btn btn-secondary" href="/p/{{ project.name }}/docs">Docs</a>
+<nav class="overview-quick-actions" aria-label="{{ _('a11y.quick_actions') }}">
+  <a class="btn btn-primary" href="/p/{{ project.name }}/run">{{ _('overview.agent_console') }}</a>
+  <a class="btn btn-secondary" href="/p/{{ project.name }}/tasks">{{ _('overview.tasks_board') }}</a>
+  <a class="btn btn-secondary" href="/p/{{ project.name }}/docs">{{ _('overview.docs') }}</a>
 </nav>
 
 {% if db_available %}
 <section class="overview-grid">
   <div class="overview-block overview-block-primary">
-    <h2>Ready to start</h2>
+    <h2>{{ _('overview.ready_to_start') }}</h2>
     {% if ready_tasks %}
     <ul class="ready-list">
       {% for t in ready_tasks %}
@@ -62,8 +62,8 @@
                   hx-post="/p/{{ project.name }}/tasks/{{ t.task_id }}/complete"
                   hx-target="#task-{{ t.task_id }}"
                   hx-swap="outerHTML"
-                  aria-label="Mark {{ t.task_id }} done"
-                  title="Mark done">
+                  aria-label="{{ _('common.mark_done_aria', task_id=t.task_id) }}"
+                  title="{{ _('common.mark_done') }}">
             {% with icon_name="check", icon_class="icon-sm" %}{% include "_frag/icon.html" %}{% endwith %}
           </button>
         </form>
@@ -71,16 +71,22 @@
       {% endfor %}
     </ul>
     {% else %}
-    <p class="muted">Нет задач, готовых к старту.</p>
+    <p class="muted">{{ _('overview.no_ready_tasks') }}</p>
     {% endif %}
   </div>
 
   <div class="overview-block">
-    <h2>Plan progress</h2>
+    <h2>{{ _('overview.plan_progress') }}</h2>
     {% if plan_rows %}
     <table class="grid">
       <thead>
-        <tr><th>Plan</th><th class="num">Done</th><th class="num">Total</th><th>Status</th><th></th></tr>
+        <tr>
+          <th>{{ _('common.plan') }}</th>
+          <th class="num">{{ _('common.done') }}</th>
+          <th class="num">{{ _('common.total') }}</th>
+          <th>{{ _('common.status') }}</th>
+          <th></th>
+        </tr>
       </thead>
       <tbody>
         {% for p in plan_rows %}
@@ -99,12 +105,12 @@
       </tbody>
     </table>
     {% else %}
-    <p class="muted">Планов в этом проекте пока нет. <a href="/p/{{ project.name }}/plans">Создать план</a>.</p>
+    <p class="muted">{{ _('overview.no_plans') }} <a href="/p/{{ project.name }}/plans">{{ _('overview.create_plan') }}</a>.</p>
     {% endif %}
   </div>
 
   <div class="overview-block">
-    <h2>Recent revisions</h2>
+    <h2>{{ _('overview.recent_revisions') }}</h2>
     {% if recent_revs %}
     <ul class="rev-list">
       {% for r in recent_revs %}
@@ -116,50 +122,45 @@
       </li>
       {% endfor %}
     </ul>
-    <p class="muted-tiny"><a href="/p/{{ project.name }}/revisions">All revisions →</a></p>
+    <p class="muted-tiny"><a href="/p/{{ project.name }}/revisions">{{ _('overview.all_revisions') }}</a></p>
     {% else %}
-    <p class="muted">Ревизий пока нет.</p>
+    <p class="muted">{{ _('overview.no_revisions') }}</p>
     {% endif %}
   </div>
 </section>
 {% else %}
 <section class="empty-db-banner">
   <div class="empty-db-text">
-    <h2>База проекта не инициализирована</h2>
-    <p class="muted">
-      <code>{{ project.path }}/.cod-doc/state.db</code> ещё не создан.
-      Нажми <strong>Initialize DB</strong> — выполнятся alembic-миграции,
-      добавится project-row, появятся таблицы для задач/документов/планов.
-    </p>
+    <h2>{{ _('overview.db_not_initialized_title') }}</h2>
+    <p class="muted">{{ _('overview.db_not_initialized_body', path=project.path) }}</p>
   </div>
   <form method="post" action="/p/{{ project.name }}/init" class="empty-db-form">
-    <button type="submit" class="btn-primary btn-lg">Initialize DB</button>
-    <span class="muted-tiny">или: <code>cod-doc project init {{ project.name }}</code></span>
+    <button type="submit" class="btn-primary btn-lg">{{ _('overview.initialize_db') }}</button>
+    <span class="muted-tiny">{{ _('overview.init_or_cli', name=project.name) }}</span>
   </form>
 </section>
 {% endif %}
 
 <div id="cod-agent-status" class="cod-agent-status" hidden>
   <span aria-hidden="true">⚙</span>
-  <span class="cod-agent-label">Agent:</span>
-  <span class="cod-agent-step">Idle</span>
-  <a class="muted-tiny" href="/p/{{ project.name }}/run">open console →</a>
+  <span class="cod-agent-label">{{ _('overview.agent_label') }}:</span>
+  <span class="cod-agent-step">{{ _('overview.agent_idle') }}</span>
+  <a class="muted-tiny" href="/p/{{ project.name }}/run">{{ _('overview.open_console') }}</a>
 </div>
 
 {% if db_available %}
 <details class="overview-block">
-  <summary><h2 style="display:inline;">Import from folder</h2></summary>
-  <p class="muted-tiny">AI scans the repo and proposes a fresh MASTER.md + coverage tasks.</p>
+  <summary><h2 style="display:inline;">{{ _('overview.import_folder') }}</h2></summary>
+  <p class="muted-tiny">{{ _('overview.import_hint') }}</p>
   <form hx-post="/p/{{ project.name }}/import_master/scan"
         hx-target="#master-draft"
         hx-swap="innerHTML"
         class="ai-gen-form">
     <label class="field">
-      <span class="muted-tiny">Scan intent (optional)</span>
-      <input type="text" name="intent"
-             placeholder="e.g. focus on architecture, ignore changelogs">
+      <span class="muted-tiny">{{ _('overview.scan_intent') }}</span>
+      <input type="text" name="intent" placeholder="{{ _('overview.scan_intent_placeholder') }}">
     </label>
-    <button type="submit" class="btn-primary">Scan &amp; propose</button>
+    <button type="submit" class="btn-primary">{{ _('overview.scan_propose') }}</button>
   </form>
   <div id="master-draft"></div>
 </details>
@@ -168,18 +169,18 @@
 <details class="master-preview overview-block">
   <summary class="master-header">
     <h2 style="display:inline;">{{ project.master_md }}</h2>
-    <a class="master-raw-link muted" href="/p/{{ project.name }}/docs/{{ project.master_md }}?raw=1">View raw</a>
+    <a class="master-raw-link muted" href="/p/{{ project.name }}/docs/{{ project.master_md }}?raw=1">{{ _('overview.view_raw') }}</a>
   </summary>
   {% if not project.master_exists %}
-    <p class="warn">{{ project.master_md }} ещё не создан.</p>
+    <p class="warn">{{ _('overview.master_missing', name=project.master_md) }}</p>
   {% elif master_preview is none %}
-    <p class="muted">Файл пуст.</p>
+    <p class="muted">{{ _('overview.master_empty') }}</p>
   {% else %}
     <article class="master-body doc-body">
       {{ master_html | safe }}
     </article>
     {% if master_truncated %}
-      <p class="muted">Показаны первые строки. <a href="/p/{{ project.name }}/docs/{{ project.master_md }}">Открыть целиком</a>.</p>
+      <p class="muted">{{ _('overview.master_truncated') }} <a href="/p/{{ project.name }}/docs/{{ project.master_md }}">{{ _('overview.master_open_full') }}</a>.</p>
     {% endif %}
   {% endif %}
 </details>

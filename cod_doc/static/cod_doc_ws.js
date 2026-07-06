@@ -12,17 +12,28 @@
 (function () {
   const body = document.body;
   const slug = body && body.dataset ? body.dataset.project : null;
+  const i18n = window.COD_DOC_I18N || {};
+  function tr(key, fallback) {
+    return i18n[key] || fallback || key;
+  }
+  function wsLabel(state) {
+    const stateKey = 'ws.state.' + state;
+    const stateText = tr(stateKey, state);
+    const tpl = tr('ws.live_updates', 'Live updates: {state}');
+    return tpl.replace('{state}', stateText);
+  }
   if (!slug) {
-    return; // Not a project page — no-op.
+    return;
   }
 
   const dot = document.getElementById('cod-ws-dot');
   function setDot(state) {
     if (!dot) return;
     dot.className = 'cod-ws-dot cod-ws-' + state;
-    const label = 'Live updates: ' + state;
+    const label = wsLabel(state);
     dot.title = label;
     dot.setAttribute('aria-label', label);
+    dot.textContent = tr('ws.state.' + state, state);
   }
 
   function buildUrl() {
@@ -52,7 +63,7 @@
         if (block) {
           const empty = document.createElement('p');
           empty.className = 'muted';
-          empty.textContent = 'Нет задач, готовых к старту.';
+          empty.textContent = tr('overview.no_ready_tasks', 'No tasks ready to start.');
           list.replaceWith(empty);
         }
       }

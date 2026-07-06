@@ -2,9 +2,9 @@
 {% block title %}{{ task.task_id }} · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
-  <a href="/">Projects</a> /
+  <a href="/">{{ _('nav.projects') }}</a> /
   <a href="/p/{{ project.name }}">{{ project.name }}</a> /
-  <a href="/p/{{ project.name }}/tasks">Tasks</a> /
+  {% set _tasks_crumb %}{{ _('tab.tasks') }}{% endset %}<a href="/p/{{ project.name }}/tasks">{{ _tasks_crumb }}</a> /
   <span>{{ task.task_id }}</span>
 </nav>
 

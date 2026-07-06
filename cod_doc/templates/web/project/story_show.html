@@ -2,7 +2,7 @@
 {% block title %}{{ story.story_id }} · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 <nav class="crumbs">
-  <a href="/">Projects</a> /
+  <a href="/">{{ _('nav.projects') }}</a> /
   <a href="/p/{{ project.name }}">{{ project.name }}</a> /
   <a href="/p/{{ project.name }}/stories">Stories</a> /
   <span>{{ story.story_id }}</span>

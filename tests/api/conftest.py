@@ -34,6 +34,12 @@ EXPECTED_LIVE_TABS: tuple[str, ...] = ("overview", "run", "docs", "tasks", "plan
 EXPECTED_DISABLED_TABS: tuple[str, ...] = ()
 
 
+@pytest.fixture(autouse=True)
+def _web_ui_english_locale(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stable English copy in web template smoke tests."""
+    monkeypatch.setenv("COD_DOC_LOCALE", "en")
+
+
 @pytest.fixture
 def migrate_db():
     """Apply Alembic migrations to a sqlite file, used to seed test DBs.

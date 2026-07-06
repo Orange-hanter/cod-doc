@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Revisions · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
-<nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>Revisions</span></nav>
+<nav class="crumbs"><a href="/">{{ _('nav.projects') }}</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>{{ _('page.revisions') }}</span></nav>
 
 <h1>{{ project.name }} · Revisions</h1>
 
@@ -32,7 +32,7 @@
 {% endif %}
 
 {% if not db_available %}
-  <p class="warn">DB-проект не инициализирован: <code>.cod-doc/state.db</code> отсутствует или slug не совпадает с <code>project.slug</code> в БД.</p>
+  {% include "_frag/db_uninitialized.html" %}
 {% elif not revisions %}
   <p class="muted">Ревизий пока нет{% if entity_kind %} для <code>{{ entity_kind }}</code>{% endif %}.</p>
 {% else %}

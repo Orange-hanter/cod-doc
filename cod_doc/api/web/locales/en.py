@@ -1,0 +1,208 @@
+"""English UI strings for the web frontend."""
+
+from __future__ import annotations
+
+MESSAGES: dict[str, str] = {
+    # Navigation
+    "nav.projects": "Projects",
+    "nav.standards": "Standards",
+    "nav.settings": "Settings",
+    "nav.search": "Search",
+    "nav.language": "Language",
+    # Project tabs
+    "tab.overview": "Overview",
+    "tab.agent": "Agent",
+    "tab.tasks": "Tasks",
+    "tab.docs": "Docs",
+    "tab.stories": "Stories",
+    "tab.plans": "Plans",
+    "tab.adr": "ADRs",
+    "tab.metrics": "Metrics",
+    "tab.commits": "Commits",
+    "tab.code_refs": "Code refs",
+    "tab.search": "Search",
+    "tab.routines": "Routines",
+    "tab.costs": "Costs",
+    "tab.revisions": "Revisions",
+    "tab.more": "More",
+    # Accessibility
+    "a11y.skip_to_content": "Skip to content",
+    "a11y.project_sections": "Project sections",
+    "a11y.additional_sections": "Additional sections",
+    "a11y.choose_task_layout": "Choose task layout",
+    "a11y.filter_by_plan": "Filter tasks by plan",
+    "a11y.project_summary": "Project summary",
+    "a11y.quick_actions": "Quick actions",
+    "a11y.projects_pagination": "Projects pagination",
+    # Theme / live
+    "theme.toggle": "Toggle theme",
+    "ws.live_updates": "Live updates: {state}",
+    "ws.state.idle": "idle",
+    "ws.state.connecting": "connecting",
+    "ws.state.connected": "connected",
+    "ws.state.reconnecting": "reconnecting",
+    # Search palette
+    "search.title": "Search",
+    "search.aria_dialog": "Search",
+    "search.aria_results": "Search results",
+    "search.placeholder": "Search tasks, docs, stories, ADRs…",
+    "search.hint": "↑↓ navigate · Enter open · Esc close",
+    "search.empty_prompt": "Type to search across tasks, docs, stories, and ADRs.",
+    "search.no_results": "No results.",
+    "search.project_aria": "Search project",
+    "search.project_title": "Search (Ctrl+K)",
+    # Overview
+    "overview.command_center": "Command center",
+    "overview.tasks_done": "{done} / {total} tasks done",
+    "overview.status": "Status",
+    "overview.last_run": "Last run",
+    "overview.open": "Open",
+    "overview.active": "Active",
+    "overview.blocked": "Blocked",
+    "overview.ready_to_start": "Ready to start",
+    "overview.no_ready_tasks": "No tasks ready to start.",
+    "overview.plan_progress": "Plan progress",
+    "overview.no_plans": "No plans in this project yet.",
+    "overview.create_plan": "Create a plan",
+    "overview.recent_revisions": "Recent revisions",
+    "overview.no_revisions": "No revisions yet.",
+    "overview.all_revisions": "All revisions →",
+    "overview.agent_console": "Agent console",
+    "overview.tasks_board": "Tasks board",
+    "overview.docs": "Docs",
+    "overview.import_folder": "Import from folder",
+    "overview.import_hint": "AI scans the repo and proposes a fresh MASTER.md + coverage tasks.",
+    "overview.scan_intent": "Scan intent (optional)",
+    "overview.scan_intent_placeholder": "e.g. focus on architecture, ignore changelogs",
+    "overview.scan_propose": "Scan & propose",
+    "overview.view_raw": "View raw",
+    "overview.master_empty": "File is empty.",
+    "overview.master_missing": "{name} has not been created yet.",
+    "overview.master_truncated": "Showing the first lines only.",
+    "overview.master_open_full": "Open full document",
+    "overview.db_not_initialized_title": "Project database not initialized",
+    "overview.db_not_initialized_body": (
+        "<code>{path}/.cod-doc/state.db</code> does not exist yet. "
+        "Click <strong>Initialize DB</strong> to run alembic migrations, "
+        "create the project row, and enable tasks/docs/plans tables."
+    ),
+    "overview.initialize_db": "Initialize DB",
+    "overview.init_or_cli": "or: <code>cod-doc project init {name}</code>",
+    "overview.open_console": "open console →",
+    "overview.agent_label": "Agent",
+    "overview.agent_idle": "Idle",
+    # Tasks page
+    "tasks.page_title": "Tasks",
+    "tasks.board": "Board",
+    "tasks.board_title": "Status columns, priority-sorted",
+    "tasks.chains": "Chains",
+    "tasks.chains_title": "Dependency graph, topological levels",
+    "tasks.audit": "Audit consistency",
+    "tasks.legacy_hint": "Legacy YAML tasks ({count})",
+    "tasks.legacy_suffix": "stored in <code>.cod-doc/tasks.yaml</code>, not yet migrated.",
+    "tasks.db_not_initialized": (
+        "DB project not initialized: <code>.cod-doc/state.db</code> is missing "
+        "or slug does not match <code>project.slug</code> in the database."
+    ),
+    "tasks.no_tasks_in_plan": "No tasks in plan <code>{plan}</code> yet.",
+    "tasks.show_all_plans": "Show all plans",
+    "tasks.no_tasks": "No tasks yet. Create a plan or run the agent.",
+    "tasks.no_plans_with_tasks": "No plans with tasks found.",
+    "tasks.no_tasks_in_plan_short": "Plan <code>{plan}</code> has no tasks.",
+    "tasks.unknown_status": "Unknown status value — filter ignored.",
+    "tasks.highlighting_column": "Highlighting column",
+    "tasks.clear_filter": "clear",
+    "tasks.count_shown": "{count} task(s) shown.",
+    "tasks.stats_title": "{project} · Tasks",
+    "tasks.stat_total": "total",
+    "tasks.stat_done": "done",
+    "tasks.stat_in_progress": "in progress",
+    "tasks.stat_in_review": "in review",
+    "tasks.stat_blocked": "blocked",
+    "tasks.stat_no_ac": "no AC",
+    "tasks.stat_no_ac_title": "Tasks (not done) missing acceptance criteria",
+    "tasks.stat_critical": "critical",
+    "tasks.stat_critical_title": "Open critical-priority tasks",
+    "tasks.plan_filter": "Plan",
+    "tasks.plan_all": "All",
+    # Kanban columns
+    "kanban.todo": "Todo",
+    "kanban.in_progress": "In progress",
+    "kanban.in_review": "In review",
+    "kanban.blocked": "Blocked",
+    "kanban.done": "Done",
+    "kanban.cancelled": "Cancelled",
+    # Index / projects home
+    "index.title": "Projects",
+    "index.daemon": "Daemon",
+    "index.running": "running",
+    "index.stopped": "stopped",
+    "index.agent_disabled_title": "Set agent_enabled=true in Settings to enable",
+    "index.agent_disabled": "(disabled)",
+    "index.stop": "Stop",
+    "index.start": "Start",
+    "index.api_key_warn": "API key is not configured. Go to <a href=\"/settings\">Settings</a>.",
+    "index.add_project": "Add project",
+    "index.add_first_project": "Add your first project",
+    "index.create_project": "Create project",
+    "index.name": "Name",
+    "index.path": "Path on host",
+    "index.path_hint": (
+        "Use a path inside <code>/projects/</code> (bind-mounted) or "
+        "<code>/data/cod-doc/</code> (named volume). "
+        "Anywhere else lives only inside the container and is wiped on rebuild."
+    ),
+    "index.path_warning": (
+        "This path is not mounted to the host — the project will disappear on container rebuild. "
+        "Use <code>/projects/&lt;name&gt;</code> or <code>/data/cod-doc/&lt;name&gt;</code>."
+    ),
+    "index.master_md": "MASTER.md",
+    "index.auto_commit": "Auto-commit changes",
+    "index.creating": "Creating…",
+    "index.created": "Project \"{name}\" created.",
+    "index.required_fields": "Name and path are required.",
+    "index.error_prefix": "Error",
+    "index.card_total": "Total",
+    "index.card_done": "Done",
+    "index.card_active": "Active",
+    "index.card_failed": "Failed",
+    "index.card_tasks_done": "{done}/{total} tasks done",
+    "index.card_progress_title": "{done} done · {in_prog} in progress · {failed} failed",
+    "index.card_no_agent": "no agent",
+    "index.card_no_agent_title": "Excluded from autonomous agent cycle",
+    "index.card_disabled": "disabled",
+    "index.card_pending": "{count} pending",
+    "index.never_run": "never run",
+    "index.pagination_prev": "‹ Prev",
+    "index.pagination_next": "Next ›",
+    "index.pagination_summary": "{from_}–{to} of {total}",
+    # Settings
+    "settings.title": "Settings",
+    # Common page titles / crumbs
+    "page.docs": "Docs",
+    "page.plans": "Plans",
+    "page.revisions": "Revisions",
+    "page.search": "Search",
+    "page.standards": "Standards",
+    # Shared
+    "common.mark_done": "Mark done",
+    "common.mark_done_aria": "Mark {task_id} done",
+    "common.disabled": "(disabled)",
+    "common.plan": "Plan",
+    "common.status": "Status",
+    "common.done": "Done",
+    "common.total": "Total",
+    # DB warning (shared)
+    "db.not_initialized": (
+        "DB project not initialized: <code>.cod-doc/state.db</code> is missing "
+        "or slug does not match <code>project.slug</code> in the database."
+    ),
+    "db.not_initialized_short": "DB project not initialized. Go to",
+    "db.not_initialized_overview_link": "project overview",
+    "db.not_initialized_docs_hint": (
+        "DB project not initialized. Go to "
+        "<a href=\"/p/{slug}\">project overview</a> and click "
+        "<strong>Initialize DB</strong>."
+    ),
+    "plans.none": "No plans in this project yet.",
+}

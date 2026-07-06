@@ -1,6 +1,11 @@
 /* Global search palette — Ctrl/Cmd+K on project pages. */
 
 (function () {
+  const i18n = window.COD_DOC_I18N || {};
+  function tr(key, fallback) {
+    return i18n[key] || fallback || key;
+  }
+
   const backdrop = document.getElementById('search-palette-backdrop');
   const input = document.getElementById('search-palette-input');
   const results = document.getElementById('search-palette-results');
@@ -31,14 +36,14 @@
     if (!input.value.trim()) {
       const hint = document.createElement('div');
       hint.className = 'search-palette-empty';
-      hint.textContent = 'Type to search across tasks, docs, stories, and ADRs.';
+      hint.textContent = tr('search.empty_prompt', 'Type to search…');
       results.appendChild(hint);
       return;
     }
     if (items.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'search-palette-empty';
-      empty.textContent = 'No results.';
+      empty.textContent = tr('search.no_results', 'No results.');
       results.appendChild(empty);
       return;
     }
