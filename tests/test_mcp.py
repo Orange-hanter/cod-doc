@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -36,7 +37,7 @@ def mcp_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Projec
 
 def _open_stdio_client(config_dir: Path):
     params = StdioServerParameters(
-        command=str(Path(__file__).resolve().parents[1] / ".venv" / "bin" / "python"),
+        command=sys.executable,
         # Tests assert presence of legacy tools (list_projects, add_task,
         # get_master, …) which are hidden under the cycle-4 'standard'
         # default. Pin --profile full for back-compat coverage.

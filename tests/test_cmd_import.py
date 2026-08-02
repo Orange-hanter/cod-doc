@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,15 +19,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def _migrate(db_path: Path) -> None:
     """Apply alembic migrations to a fresh sqlite file."""
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        check=True,
-        env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{db_path}"},
-        capture_output=True,
-    )
+    from tests._alembic import run_alembic_upgrade
+
+    run_alembic_upgrade(f"sqlite:///{db_path}")
 
 
 def _bootstrap(tmp_path: Path) -> tuple[Config, ProjectEntry]:
@@ -57,7 +50,7 @@ def _bootstrap(tmp_path: Path) -> tuple[Config, ProjectEntry]:
 
 
 def test_cli_import_docs_dry_run_does_not_persist(tmp_path: Path) -> None:
-    cfg, entry = _bootstrap(tmp_path)
+    cfg, _entry = _bootstrap(tmp_path)
     (tmp_path / "repo" / "README.md").write_text("# README")
 
     runner = CliRunner()
@@ -93,7 +86,7 @@ def test_cli_import_docs_dry_run_does_not_persist(tmp_path: Path) -> None:
 
 
 def test_cli_import_legacy_tasks_runs_end_to_end(tmp_path: Path) -> None:
-    cfg, entry = _bootstrap(tmp_path)
+    cfg, _entry = _bootstrap(tmp_path)
     yaml_path = tmp_path / "repo" / ".cod-doc" / "tasks.yaml"
     yaml_path.write_text(
         yaml.dump(
@@ -123,8 +116,6 @@ def test_cli_link_backfill_syncs_sections(tmp_path: Path) -> None:
     """COD-079: `cod-doc link backfill` walks every section and calls
     sync_section so existing imports gain link rows."""
     cfg, entry = _bootstrap(tmp_path)
-
-    from datetime import UTC, datetime
 
     from cod_doc.cli.link import link as link_group
     from cod_doc.domain.entities import (

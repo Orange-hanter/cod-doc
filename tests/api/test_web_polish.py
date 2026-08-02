@@ -24,6 +24,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+def _app_route_paths(app) -> set[str]:
+    return {p for r in app.routes if (p := getattr(r, "path", None))}
+
+
 # ── WEB-054: truncate_for_cookie unit tests ──────────────────────────────
 
 
@@ -69,7 +73,9 @@ def web_app_client(tmp_path: Path):
     # Register the route on the real app so we exercise the registered handler.
     from cod_doc.api.server import app
 
-    if "/__test_raises__" not in {r.path for r in app.routes}:  # type: ignore[attr-defined]
+    route_paths = _app_route_paths(app)
+    if "/__test_raises__" not in route_paths:
+
         @app.get("/__test_raises__")
         def _probe() -> None:
             raise NotFoundWebError("test-not-found")
@@ -101,7 +107,8 @@ def test_weberror_handler_truncates_flash_cookie(web_app_client) -> None:
 
     from cod_doc.api.server import app
 
-    if "/__test_huge__" not in {r.path for r in app.routes}:  # type: ignore[attr-defined]
+    if "/__test_huge__" not in _app_route_paths(app):
+
         @app.get("/__test_huge__")
         def _huge() -> None:
             raise NotFoundWebError(huge)

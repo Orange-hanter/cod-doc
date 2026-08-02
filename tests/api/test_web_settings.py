@@ -66,8 +66,10 @@ def test_settings_get_masks_api_key(settings_client) -> None:
     assert "…2345" in r.text
 
 
-def test_settings_get_handles_unset_api_key() -> None:
-    Config().save()  # persist defaults (no api_key)
+def test_settings_get_handles_unset_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # CI sets COD_DOC_API_KEY; clear it so the "unset" path is exercised.
+    monkeypatch.delenv("COD_DOC_API_KEY", raising=False)
+    Config(api_key="").save()
     from cod_doc.api.server import app
 
     with TestClient(app, raise_server_exceptions=True) as client:

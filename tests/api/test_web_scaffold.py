@@ -48,8 +48,10 @@ def test_index_renders_project_list(web_client) -> None:
     assert '<link rel="stylesheet" href="/static/app.css?v=' in r.text
 
 
-def test_index_warns_when_unconfigured(tmp_path: Path) -> None:
-    cfg = Config()  # no api_key
+def test_index_warns_when_unconfigured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # CI sets COD_DOC_API_KEY; clear it so "unconfigured" is real.
+    monkeypatch.delenv("COD_DOC_API_KEY", raising=False)
+    cfg = Config(api_key="")
     cfg.add_project(ProjectEntry(name="p1", path=str(tmp_path)))
 
     import cod_doc.api.deps as deps

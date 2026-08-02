@@ -7,7 +7,6 @@ looks each link's target up in the DB and stamps `to_*` / `resolved` /
 
 from __future__ import annotations
 
-import posixpath
 import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -90,9 +89,7 @@ def _target_candidates(parsed_key: str, source_doc_key: str | None) -> list[str]
     return out
 
 
-def _lookup_doc_id(
-    session: Session, project_id: int, doc_key: str
-) -> int | None:
+def _lookup_doc_id(session: Session, project_id: int, doc_key: str) -> int | None:
     return session.execute(
         select(DocumentModel.row_id).where(
             DocumentModel.project_id == project_id,
@@ -226,7 +223,8 @@ def _resolve_code_ref(
     target = Path(proj.root_path) / file_path
     if not target.exists():
         return (
-            False, file_path,
+            False,
+            file_path,
             f"file not found under project root: {file_path!r}",
         )
     if not target.is_file():
@@ -241,7 +239,8 @@ def _resolve_code_ref(
             return (False, file_path, f"unreadable: {exc}")
         if symbol not in text:
             return (
-                False, file_path,
+                False,
+                file_path,
                 f"symbol {symbol!r} not found in {file_path!r}",
             )
     return (True, file_path, None)
@@ -321,7 +320,10 @@ def _apply_resolution(
         # project root. ``parsed.target_file_path`` is what the parser
         # produced; ``parsed.target_symbol`` is the optional ``#fragment``.
         ok, file_path, reason = _resolve_code_ref(
-            session, project_id, parsed.target_file_path, parsed.target_symbol,
+            session,
+            project_id,
+            parsed.target_file_path,
+            parsed.target_symbol,
         )
         model.to_file_path = file_path
         model.to_symbol = parsed.target_symbol
@@ -443,9 +445,7 @@ def list_for_section(session: Session, section_id: int) -> list[Link]:
     return LinkRepository(session).list_for_section(section_id)
 
 
-def list_incoming_for_doc(
-    session: Session, project_id: int, doc_key: str
-) -> list[IncomingLink]:
+def list_incoming_for_doc(session: Session, project_id: int, doc_key: str) -> list[IncomingLink]:
     """COD-078: enumerate links pointing at ``doc_key`` with enough source
     context for UI rendering.
 
@@ -476,3 +476,23 @@ def list_incoming_for_doc(
             )
         )
     return out
+
+
+def list_code_refs_for_project(session: Session, project_id: int) -> list[dict[str, object]]:
+    """Return code-ref link rows for the project overview panel (OBI-021)."""
+    rows = session.execute(
+        select(LinkModel)
+        .where(LinkModel.project_id == project_id, LinkModel.kind == LinkKind.CODE.value)
+        .order_by(LinkModel.to_file_path, LinkModel.to_symbol)
+    ).scalars()
+    return [
+        {
+            "file_path": r.to_file_path or "",
+            "symbol": r.to_symbol or None,
+            "resolved": r.resolved,
+            "broken_reason": r.broken_reason,
+            "raw": r.raw,
+            "from_section_id": r.from_section_id,
+        }
+        for r in rows
+    ]

@@ -14,16 +14,15 @@ checked against directory traversal. Anything outside the root → 400.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
 from cod_doc.api.web.templates_env import templates
-from cod_doc.infra.models import LinkModel
+from cod_doc.services import link_service
 
 router = APIRouter()
 
@@ -53,31 +52,16 @@ def code_refs_index(
     proj = get_project(slug)
     session, project_id = db
 
-    rows = list(session.execute(
-        select(LinkModel)
-        .where(LinkModel.project_id == project_id, LinkModel.kind == "code")
-        .order_by(LinkModel.to_file_path, LinkModel.to_symbol)
-    ).scalars())
-
-    items = [
-        {
-            "file_path": r.to_file_path or "",
-            "symbol": r.to_symbol or None,
-            "resolved": r.resolved,
-            "broken_reason": r.broken_reason,
-            "raw": r.raw,
-            "from_section_id": r.from_section_id,
-        }
-        for r in rows
-    ]
+    items = link_service.list_code_refs_for_project(session, project_id)
 
     # Group by file_path for cleaner display.
-    by_file: dict[str, list[dict]] = {}
+    by_file: dict[str, list[dict[str, Any]]] = {}
     for it in items:
-        by_file.setdefault(it["file_path"] or "(missing path)", []).append(it)
+        file_path = str(it["file_path"] or "(missing path)")
+        by_file.setdefault(file_path, []).append(it)
     grouped = sorted(
         ({"file_path": fp, "refs": refs} for fp, refs in by_file.items()),
-        key=lambda x: x["file_path"],
+        key=lambda row: str(row["file_path"]),
     )
 
     return templates.TemplateResponse(

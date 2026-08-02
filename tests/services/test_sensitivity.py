@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -234,10 +233,9 @@ def test_audit_frontmatter_fm007_fires_for_standard() -> None:
 
 
 def _run_alembic_upgrade(db_url: str) -> None:
-    env = {"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": db_url}
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True, env=env, capture_output=True)
+    from tests._alembic import run_alembic_upgrade
+
+    run_alembic_upgrade(db_url)
 
 
 @pytest.fixture

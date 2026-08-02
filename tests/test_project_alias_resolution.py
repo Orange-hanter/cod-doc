@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import warnings
 from pathlib import Path
 
@@ -28,7 +29,6 @@ from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.mcp.server import mcp
 from cod_doc.mcp.tools._legacy import resolve_project_name
-
 
 # --------------------------------------------------------------------------- #
 # Unit tests for the resolver                                                  #
@@ -150,7 +150,7 @@ def mcp_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Projec
 
 def _open_stdio_client(config_dir: Path):
     params = StdioServerParameters(
-        command=str(Path(__file__).resolve().parents[1] / ".venv" / "bin" / "python"),
+        command=sys.executable,
         # Need legacy `get_master` exposed → --profile full.
         args=["-m", "cod_doc.mcp.server", "--transport", "stdio", "--profile", "full"],
         env={**os.environ, "COD_DOC_HOME": str(config_dir)},
@@ -189,9 +189,7 @@ async def test_get_master_accepts_legacy_project_name(
         result = await session.call_tool("get_master", {"project_name": entry.name})
 
     assert result.content, "get_master returned no content for project_name="
-    assert not result.isError, (
-        f"get_master errored on project_name=: {result.content}"
-    )
+    assert not result.isError, f"get_master errored on project_name=: {result.content}"
 
 
 @pytest.mark.anyio

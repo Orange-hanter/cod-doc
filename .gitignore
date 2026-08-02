@@ -21,7 +21,11 @@ venv/
 # Local dev tooling
 .claude/
 .mcp.json
-models/
+# Do NOT ignore **/models/ — that also hid cod_doc/infra/models/*.py from git.
+# Local LLM weight dumps (if any) go under this root-level folder:
+/models/*.gguf
+/models/*.bin
+/models/*.safetensors
 
 # Local playwright scripts
 .cod-doc-playwright-*.py

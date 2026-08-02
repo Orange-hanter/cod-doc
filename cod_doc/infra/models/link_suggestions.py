@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Float, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, _utcnow
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 _SUGGESTION_STATES = ("pending", "accepted", "rejected")
 
@@ -44,7 +47,9 @@ class LinkSuggestionModel(Base):
         Index("ix_lsugg_state", "state"),
         Index(
             "uq_lsugg_triple",
-            "from_section_id", "to_doc_key", "to_section_id",
+            "from_section_id",
+            "to_doc_key",
+            "to_section_id",
             unique=True,
         ),
     )

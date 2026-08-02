@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff
+      - run: pip install ".[dev]"
       - run: ruff check cod_doc/ tests/
       - run: ruff format --check cod_doc/ tests/
 
@@ -51,8 +51,11 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: pip install .[dev]
-      - run: pytest tests/ -v --tb=short --timeout=120
-        timeout-minutes: 10
+      # Quiet mode keeps the GitHub Actions step under the wall-clock budget;
+      # per-test --timeout still guards hangs. Matrix jobs were timing out at
+      # 10m with -v on py3.12/3.13 (~1278 tests).
+      - run: pytest tests/ -q --tb=short --timeout=120
+        timeout-minutes: 20
         env:
           COD_DOC_API_KEY: ${{ secrets.COD_DOC_TEST_API_KEY || 'sk-test-placeholder' }}
           COD_DOC_AUTO_COMMIT: "false"

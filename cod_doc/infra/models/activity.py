@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime  # noqa: TC003
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Text, text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, _utcnow
@@ -40,9 +40,7 @@ class ActivityEventModel(Base):
     project_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False
     )
-    ts: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     # actor_kind: 'orchestrator' | 'human' | 'routine' | 'system'
     actor_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     # actor_id: user identifier, agent run_id, routine name, etc.

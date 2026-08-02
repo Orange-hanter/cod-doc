@@ -20,10 +20,11 @@ See `tests/api/test_web_settings.py:settings_client` for the pattern.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import pytest
+
+from tests._alembic import run_alembic_upgrade
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -34,6 +35,24 @@ EXPECTED_LIVE_TABS: tuple[str, ...] = ("overview", "run", "docs", "tasks", "plan
 EXPECTED_DISABLED_TABS: tuple[str, ...] = ()
 
 
+def assert_active_tab(html: str, slug: str, section: str) -> None:
+    """Assert *section* tab is active in the project tab strip."""
+    import re
+
+    href = f"/p/{slug}" if section == "overview" else f"/p/{slug}/{section}"
+    pattern = (
+        rf'<a[^>]*class="[^"]*tab-link[^"]*active[^"]*"[^>]*href="{re.escape(href)}"'
+        rf'|<a[^>]*href="{re.escape(href)}"[^>]*class="[^"]*tab-link[^"]*active[^"]*"'
+    )
+    assert re.search(pattern, html), f"active tab for {section!r} not found"
+
+
+@pytest.fixture(autouse=True)
+def _web_ui_english_locale(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stable English copy in web template smoke tests."""
+    monkeypatch.setenv("COD_DOC_LOCALE", "en")
+
+
 @pytest.fixture
 def migrate_db():
     """Apply Alembic migrations to a sqlite file, used to seed test DBs.
@@ -42,17 +61,9 @@ def migrate_db():
     their own URL: `migrate_db(db_path)` runs `alembic upgrade head`
     against `sqlite:///<db_path>`.
     """
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd_base = [str(venv_alembic) if venv_alembic.exists() else "alembic"]
 
     def _apply(db_path: Path) -> None:
-        subprocess.run(
-            [*cmd_base, "upgrade", "head"],
-            cwd=REPO_ROOT,
-            check=True,
-            env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{db_path}"},
-            capture_output=True,
-        )
+        run_alembic_upgrade(f"sqlite:///{db_path}")
 
     return _apply
 
