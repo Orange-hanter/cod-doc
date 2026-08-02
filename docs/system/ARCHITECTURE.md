@@ -182,11 +182,26 @@ ContextService.build(target, depth)
 
 ## 8. Деплой и среды
 
-- **Local embedded** (одиночный разработчик): `.cod-doc/state.db`, нет REST, только CLI + MCP.
-- **Shared Postgres** (команда / Restate-scale): docker-compose стек (`docker-compose.yml` уже есть), REST API активен, MCP запускается на машине пользователя и ходит в общий Postgres.
-- **CI**: headless режим; используется только CLI (`cod-doc audit`, `cod-doc plan next`, `cod-doc link verify`).
+| Профиль | Когда | БД | MCP | Auth | Projection |
+|---------|-------|-----|-----|------|------------|
+| **embedded** | один разработчик | SQLite `.cod-doc/state.db` | stdio | implicit OS user | FS mirror обязателен |
+| **server** | команда, один хост | Postgres | stdio и/или localhost HTTP | token (спека §12) | FS volume |
+| **cloud** | ИИ-агенты remote | Postgres | streamable-http + TLS | Bearer enforced | optional export |
 
-Переключение — через `COD_DOC_DB_URL`.
+- **Local embedded**: нет REST, только CLI + MCP.
+- **Shared Postgres (server)**: docker-compose стек, REST API активен;
+  MCP может жить на машине пользователя и ходить в общий Postgres.
+- **Cloud agent plane** (цель): один team-узел в облаке; несколько
+  независимых ИИ-клиентов (Cursor Cloud, Claude, orchestrator) —
+  децентрализованные воркеры через remote MCP; SoT = БД; markdown —
+  опциональная проекция. См.
+  [capabilities/cloud-agent-plane.md](capabilities/cloud-agent-plane.md)
+  и [roadmap/cloud-agent-plane-task-plan.md](roadmap/cloud-agent-plane-task-plan.md).
+- **CI**: headless; CLI (`cod-doc audit`, `cod-doc plan next`,
+  `cod-doc link verify`).
+
+Переключение — через `COD_DOC_DB_URL` (+ `COD_DOC_AUTH` / MCP transport
+для cloud).
 
 ## 9. Безопасность
 

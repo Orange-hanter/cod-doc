@@ -25,6 +25,11 @@
 | 10  | [Adapter pattern для LLM](10-adapter-pattern.md)          | 🔵 Архитектура  | Plug-in Claude/локальных моделей без переписи   | высокий |
 | 11  | [AGENTS.md как контракт](11-agents-md.md)                 | 🔵 Архитектура  | Правила вклада для людей и агентов              | низкий  |
 | 12  | [First-class approvals](12-approvals.md)                  | 🔵 Архитектура  | Структурный заменитель ad-hoc эскалаций         | средний |
+| 16  | [Cloud decentralized agent plane](16-cloud-decentralized-agent-plane.md) | 🔵 Архитектура | Облачный SoT + remote агенты + `agent_apply` | высокий |
+
+> Proposals 13–15 живут в paperclip UX/migration треке (см. Section E
+> [paperclip-adoption-task-plan](../docs/system/roadmap/paperclip-adoption-task-plan.md)).
+> **16** — отдельный трек cloud agent plane (не paperclip-заимствование).
 
 ## Рекомендуемый порядок внедрения
 
@@ -46,14 +51,19 @@ graph LR
 **Фаза 2 (структурный аудит):** 09 → 05 → 12
 **Фаза 3 (расширения):** 06 → 08 → 07 → 11
 **Фаза 4 (по необходимости):** 10
+**Фаза 5 (cloud agent plane, proposal 16):** foundation → `agent_apply` →
+Bearer remote MCP → optional projection — см.
+[cloud-agent-plane-task-plan](../docs/system/roadmap/cloud-agent-plane-task-plan.md).
 
 ## Что осталось за скобками
 
 Намеренно НЕ рассматривается:
-- **Multi-company isolation** — cod-doc multi-project, но не SaaS.
+- **Multi-company isolation / SaaS billing** — cod-doc multi-project на
+  одном team-узле, не multi-tenant продукт (proposal 16 тоже non-goal).
 - **Budget/cost hard-stops** — не масштаб задачи (один агент на проект).
 - **Org chart / hiring / OpenClaw onboarding** — про управление агентскими командами, не про документы.
 - **Plugin system с IPC-воркерами** — слишком тяжёлая инфраструктура.
+- **P2P-федерация нескольких COD-DOC узлов** — out of scope proposal 16.
 
 ## Источники
 

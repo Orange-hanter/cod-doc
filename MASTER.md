@@ -59,10 +59,10 @@ graph TD
 - **Статус:** `🟢 ACTIVE`
 
 ### Proposals (RFC backlog)
-- **Описание:** 15 RFC по адаптации паттернов из paperclipai/paperclip
-  (Skills layer, Heartbeat-context, Wake-payload, Run-id audit, Issue documents,
-  Activity log, Approvals и др.). Дорожная карта — Phase 1..4. Конкретные
-  задачи живут в `docs/system/roadmap/paperclip-adoption-task-plan.md`.
+- **Описание:** RFC из paperclipai/paperclip (Skills, Heartbeat, Wake,
+  Run-id, Approvals, …) плюс proposal 16 — cloud decentralized agent plane.
+  Дорожные карты — `paperclip-adoption-task-plan` и
+  `cloud-agent-plane-task-plan`.
 - **Ссылка:** [`📁 proposals/README.md`](proposals/README.md)
 - **Статус:** `🟢 ACTIVE`
 

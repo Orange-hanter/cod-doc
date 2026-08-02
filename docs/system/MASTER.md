@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-05-07
+last_updated: 2026-07-29
 audience: [contributors, agents]
 related_code:
   - cod_doc/core/project.py
@@ -66,6 +66,7 @@ docs/system/
 │   ├── agents-and-skills.md        ← каталог агентов
 │   ├── project-bootstrap.md        ← `cod-doc project new`
 │   ├── web-frontend.md             ← server-rendered Web UI (Jinja + HTMX)
+│   ├── cloud-agent-plane.md        ← облачный SoT + remote ИИ-воркеры
 │   └── audit-and-ci.md             ← каталог проверок + git/CI
 │
 ├── audit/
@@ -92,7 +93,9 @@ docs/system/
     ├── paperclip-adoption-task-plan.md       ← план заимствований из paperclip (15 RFC → 44 задачи)
     ├── paperclip-adoption-kickoff-2026-05-07.md ← brief на Phase 1 paperclip
     ├── adr-system-task-plan.md               ← план ADR-системы (capability + visual UI, 8 задач)
-    └── observability-and-indexing-task-plan.md ← опциональный план: метрики/commits/code-refs/repo-index/DB-index (8 задач, 5 stories US-021..US-025)
+    ├── observability-and-indexing-task-plan.md ← опциональный план: метрики/commits/code-refs/repo-index/DB-index (8 задач, 5 stories US-021..US-025)
+    ├── cloud-agent-plane-task-plan.md        ← облачный control plane для ИИ-агентов (18 задач CAP-*)
+    └── cloud-agent-plane-kickoff-2026-07-29.md ← brief на старт cloud agent plane
 ```
 
 ---
@@ -123,6 +126,7 @@ docs/system/
 | Получение концентрированного контекста | [capabilities/context-retrieval.md](capabilities/context-retrieval.md) |
 | Ведение плана | [capabilities/plan-management.md](capabilities/plan-management.md) + [standards/task-plan.md](standards/task-plan.md) |
 | Пользовательские истории и граф зависимостей | [capabilities/user-stories-graph.md](capabilities/user-stories-graph.md) |
+| ИИ ведёт docs через облачный COD-DOC (remote агенты) | [capabilities/cloud-agent-plane.md](capabilities/cloud-agent-plane.md) + [roadmap/cloud-agent-plane-task-plan.md](roadmap/cloud-agent-plane-task-plan.md) |
 
 ---
 
@@ -150,6 +154,9 @@ docs/system/
 | audit/2026-05-02-checkpoint-web-batch-3 | resolved | cod-doc core |
 | audit/2026-05-02-checkpoint-web-batch-4 | resolved | cod-doc core |
 | capabilities/web-frontend | active | cod-doc core |
+| capabilities/cloud-agent-plane | draft | cod-doc core |
+| roadmap/cloud-agent-plane-task-plan | active | cod-doc core |
+| roadmap/cloud-agent-plane-kickoff-2026-07-29 | active | cod-doc core |
 
 Пока пакет в статусе `draft` — изменения допустимы без revision-истории. После `active` любая правка обязана вести к revision-записи (см. [standards/revision-history.md](standards/revision-history.md)). Статус `resolved` — для audit-отчётов, чьи задачи закрыты (см. [standards/frontmatter.md §7](standards/frontmatter.md)).
 
@@ -177,6 +184,7 @@ docs/system/
 | 2026-05-07 | **Documentation Consolidation — Cycle 5 (Final Close-out).** Сводка по 5 циклам: +44 pending tasks (44 задачи в paperclip-adoption-task-plan), +15 stories (US-005..US-019, всего 19), +5 audit-отчётов, +6 doc-records, +2 roadmap-файлов. Заведён PCA-911 (low) для уборки `arch/arch/architecture.md` фикстуры. Memory обогащена двумя feedback-патернами: `mcp_field_persistence_gap` (echo-but-no-persist) и `consolidation_cycle_pattern` (N циклов → N audit-отчётов). Реализация PCA-001..PCA-911 намеренно не запущена в этом сеансе — это отдельный длинный фронт работ. Финальный аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-5-final.md](audit/2026-05-07-doc-consolidation-cycle-5-final.md). |
 | 2026-05-07 | **ADR System capability добавлена.** Заведена capability [adr-system](capabilities/adr-system.md) (Architecture Decision Records как first-class entity с автонумерацией, supersede-DAG, визуальным редактором и Mermaid-графом в Web UI). Story US-020 (`accepted`). Новый план [adr-system-task-plan](roadmap/adr-system-task-plan.md), 3 секции (Domain & MCP, Web UI, Templates & Migration), 8 задач ADR-001..ADR-008. Старт реализации после закрытия Section F paperclip-плана. |
 | 2026-05-07 | **Observability & Indexing capability добавлена (опциональная).** Capability [observability-and-indexing](capabilities/observability-and-indexing.md) — метрики выполнения задач, commit→task linkage для истории работ, code-refs `[label](src/path.py)` в markdown, RepoIndex (.gitignore-aware symbols/imports), DBObjectIndex (FTS5 unified search). 5 stories US-021..US-025 (`accepted`), новый план [observability-and-indexing-task-plan](roadmap/observability-and-indexing-task-plan.md): 5 секций (Metrics/Commits/Code-Refs/Repo-Index/DB-Object-Index), 8 задач OBI-001..OBI-040. Помечено опциональным — не блокирует Phase 1 paperclip-adoption. |
+| 2026-07-29 | **Cloud Agent Plane спроектирован.** Capability [cloud-agent-plane](capabilities/cloud-agent-plane.md): COD-DOC как облачный documentation control plane; ИИ ведёт docs полностью через MCP; агенты — децентрализованные remote-воркеры; SoT = Postgres; markdown projection optional. RFC [proposals/16](../../proposals/16-cloud-decentralized-agent-plane.md), kickoff + execution plan (18 задач CAP-001..CAP-033). ARCHITECTURE §8 расширен профилем `cloud`. Non-goals: SaaS multi-tenant, P2P-федерация. |
 
 ## 7. Соглашения об оформлении
 
