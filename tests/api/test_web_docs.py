@@ -409,7 +409,7 @@ def test_doc_show_renders_accept_button_when_draft(docs_client) -> None:
 
     r = client.get(f"/p/{entry.name}/docs/drafts/spec")
     assert "Accept" in r.text and "active" in r.text
-    assert f'/p/{entry.name}/docs-accept' in r.text
+    assert f"/p/{entry.name}/docs-accept" in r.text
 
     # ACTIVE doc seeded by fixture should NOT have the button.
     r2 = client.get(f"/p/{entry.name}/docs/modules/M1-auth/overview")

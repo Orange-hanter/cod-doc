@@ -14,7 +14,7 @@ Routes:
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -60,14 +60,16 @@ def adr_list(
 
     items = []
     for r in rows:
-        items.append({
-            "adr_id": r.adr_id,
-            "title": r.title,
-            "status": r.status,
-            "status_icon": _STATUS_ICON.get(r.status, "•"),
-            "decided_at": r.decided_at.isoformat() if r.decided_at else None,
-            "author": r.author,
-        })
+        items.append(
+            {
+                "adr_id": r.adr_id,
+                "title": r.title,
+                "status": r.status,
+                "status_icon": _STATUS_ICON.get(r.status, "•"),
+                "decided_at": r.decided_at.isoformat() if r.decided_at else None,
+                "author": r.author,
+            }
+        )
 
     return templates.TemplateResponse(
         request,
@@ -161,7 +163,7 @@ def adr_graph_page(
         if len(title) > 40:
             title = title[:37] + "…"
         label = f"{icon} {node['adr_id']}<br/>{title}"
-        lines.append(f"  {node_id}[\"{label}\"]")
+        lines.append(f'  {node_id}["{label}"]')
     for edge in graph["edges"]:
         from_id = edge["from"].replace("-", "_")
         to_id = edge["to"].replace("-", "_")
@@ -231,8 +233,11 @@ def adr_edit(
     session, project_id = db
     try:
         adr_service.update(
-            session, project_id=project_id, adr_id=adr_id,
-            title=title.strip(), status=status,
+            session,
+            project_id=project_id,
+            adr_id=adr_id,
+            title=title.strip(),
+            status=status,
             decided_at=_parse_date(decided_at),
             context=(context or None),
             decision=(decision or None),
@@ -260,8 +265,11 @@ def adr_add_diagram(
     session, project_id = db
     try:
         adr_service.add_diagram(
-            session, project_id=project_id, adr_id=adr_id,
-            mermaid=mermaid, title=(title or None),
+            session,
+            project_id=project_id,
+            adr_id=adr_id,
+            mermaid=mermaid,
+            title=(title or None),
         )
         session.commit()
     except ADRNotFoundError as exc:
@@ -282,8 +290,10 @@ def adr_supersede_post(
     session, project_id = db
     try:
         adr_service.supersede(
-            session, project_id=project_id,
-            superseding_adr_id=adr_id, superseded_adr_id=superseded_adr_id,
+            session,
+            project_id=project_id,
+            superseding_adr_id=adr_id,
+            superseded_adr_id=superseded_adr_id,
             reason=(reason or None),
         )
         session.commit()

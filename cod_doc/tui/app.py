@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -74,12 +75,10 @@ class CodDocApp(App[Any]):
             self.push_screen(DashboardScreen(self.config))
         # Surface deprecation in the running TUI as a one-shot toast so users
         # who land here directly (skipping the CLI banner) still notice.
-        try:
+        with contextlib.suppress(Exception):
             self.notify(
                 "TUI is deprecated — use `cod-doc web` for the live agent console.",
                 title="Deprecated",
                 severity="warning",
                 timeout=10,
             )
-        except Exception:
-            pass

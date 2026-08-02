@@ -17,18 +17,20 @@ from __future__ import annotations
 
 import importlib
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from cod_doc.agent.adapters.base import LLMAdapter
     from cod_doc.config import Config
 
 
 # Dict of name → factory(config) → adapter instance.
-_REGISTRY: dict[str, Callable[[Any], "LLMAdapter"]] = {}
+_REGISTRY: dict[str, Callable[[Any], LLMAdapter]] = {}
 
 
-def register_adapter(name: str, factory: Callable[[Any], "LLMAdapter"]) -> None:
+def register_adapter(name: str, factory: Callable[[Any], LLMAdapter]) -> None:
     """Register a factory under ``name``.  Overwrites any prior registration."""
     _REGISTRY[name] = factory
 
@@ -38,7 +40,7 @@ def list_adapters() -> list[str]:
     return sorted(_REGISTRY)
 
 
-def get_adapter(name: str, config: "Config") -> "LLMAdapter":
+def get_adapter(name: str, config: Config) -> LLMAdapter:
     """Instantiate the adapter registered under ``name``.
 
     Raises
@@ -57,7 +59,7 @@ def get_adapter(name: str, config: "Config") -> "LLMAdapter":
     return _REGISTRY[name](config)
 
 
-def get_adapter_from_config(config: "Config") -> "LLMAdapter":
+def get_adapter_from_config(config: Config) -> LLMAdapter:
     """Select the adapter named in ``config.llm_adapter`` (default 'openai_compat')."""
     name = getattr(config, "llm_adapter", "openai_compat") or "openai_compat"
     return get_adapter(name, config)
@@ -83,14 +85,17 @@ def _load_plugins() -> None:
     try:
         entries = json.loads(plugin_file.read_text())
         for entry in entries:
-            name = entry["name"]
             module_path = entry["module"]
             class_name = entry["class"]
             mod = importlib.import_module(module_path)
             cls = getattr(mod, class_name)
-            register_adapter(name, lambda cfg, _cls=cls: _cls.from_config(cfg))
+            register_adapter(
+                entry["name"],
+                lambda cfg, _cls=cls: _cls.from_config(cfg),  # type: ignore[misc]
+            )
     except Exception as exc:  # pragma: no cover — plugin loading is best-effort
         import warnings
+
         warnings.warn(f"Failed to load adapter plugins from {plugin_file}: {exc}", stacklevel=2)
 
 
@@ -99,13 +104,13 @@ def _load_plugins() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _openai_factory(config: "Config") -> "LLMAdapter":
+def _openai_factory(config: Config) -> LLMAdapter:
     from cod_doc.agent.adapters.openai_compat import OpenAICompatAdapter
 
     return OpenAICompatAdapter(api_key=config.api_key, base_url=config.base_url)
 
 
-def _anthropic_factory(config: "Config") -> "LLMAdapter":
+def _anthropic_factory(config: Config) -> LLMAdapter:
     from cod_doc.agent.adapters.anthropic import AnthropicAdapter
 
     # The Anthropic adapter uses its own API key; fall back to the generic
@@ -114,7 +119,7 @@ def _anthropic_factory(config: "Config") -> "LLMAdapter":
     return AnthropicAdapter(api_key=api_key)
 
 
-def _mock_factory(config: "Config") -> "LLMAdapter":
+def _mock_factory(config: Config) -> LLMAdapter:
     from cod_doc.agent.adapters.mock import MockAdapter
 
     return MockAdapter()

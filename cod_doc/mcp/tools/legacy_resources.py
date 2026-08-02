@@ -44,9 +44,7 @@ def register(mcp: FastMCP) -> None:
     def project_tasks_resource(project_name: str) -> str:
         """Task list for a specific project."""
         proj = open_project(project_name)
-        return json.dumps(
-            [t.to_dict() for t in proj.get_tasks()], ensure_ascii=False, indent=2
-        )
+        return json.dumps([t.to_dict() for t in proj.get_tasks()], ensure_ascii=False, indent=2)
 
     @mcp.prompt()
     def doc_review(project_name: str, focus: str = "structure and stale links") -> str:

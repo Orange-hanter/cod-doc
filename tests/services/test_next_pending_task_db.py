@@ -14,7 +14,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from cod_doc.domain.entities import Priority, TaskStatus, TaskType
+from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
     DependencyModel,
@@ -38,14 +38,10 @@ def _seed_project(session) -> tuple[int, int, int]:
     proj.updated = now
     session.add(proj)
     session.flush()
-    plan = PlanModel(
-        project_id=proj.row_id, scope="p-plan", created=now, last_updated=now
-    )
+    plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="A", slug="A", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -67,8 +63,8 @@ def _make_task(session, proj_id, plan_id, sec_id, task_id, *, priority=Priority.
 
 def _register_tool(monkeypatch, factory):
     # Stub session_factory + open_project + require_project_id.
-    from cod_doc.mcp.tools import legacy_project_tools as lpt
     from cod_doc.mcp.tools import _db
+    from cod_doc.mcp.tools import legacy_project_tools as lpt
 
     monkeypatch.setattr(_db, "session_factory", lambda project: (factory, None))
 
@@ -96,9 +92,7 @@ def test_blocked_task_is_not_returned(engine_with_schema, monkeypatch) -> None: 
         a = _make_task(session, proj_id, plan_id, sec_id, "PLN-001", priority=Priority.HIGH)
         b = _make_task(session, proj_id, plan_id, sec_id, "PLN-002")
         # B is blocked by A; A is pending, so B is not ready.
-        session.add(
-            DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks")
-        )
+        session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
         session.flush()
 
     next_pending = _register_tool(monkeypatch, factory)

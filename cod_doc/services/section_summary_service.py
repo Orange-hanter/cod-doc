@@ -17,10 +17,11 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from cod_doc.config import Config
 
 
@@ -37,16 +38,17 @@ def _fingerprint(story_ids: list[str]) -> str:
     return hashlib.sha256("\n".join(sorted(story_ids)).encode()).hexdigest()[:16]
 
 
-def _load_all(path: Path) -> dict[str, dict]:
+def _load_all(path: Path) -> dict[str, dict[str, Any]]:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text())
+        data: dict[str, dict[str, Any]] = json.loads(path.read_text())
+        return data
     except Exception:
         return {}
 
 
-def _save_all(path: Path, data: dict[str, dict]) -> None:
+def _save_all(path: Path, data: dict[str, dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
@@ -119,7 +121,7 @@ def generate(
     path: Path,
     section: str,
     story_id_to_narrative: dict[str, str],
-    cfg: "Config",
+    cfg: Config,
 ) -> SectionSummary:
     """Run AI summary for ``section`` and persist it.
 

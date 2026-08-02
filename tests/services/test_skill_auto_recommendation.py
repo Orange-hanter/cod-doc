@@ -27,9 +27,7 @@ def _seed(session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="sr-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="A", slug="A", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -37,9 +35,7 @@ def _seed(session) -> tuple[int, int, int]:
 
 def test_recommend_for_tool_task_create_includes_task_standard() -> None:
     recs = recommend_for_tool("task_create")
-    assert "task-standard" in recs, (
-        f"task-standard skill must match task_create; got {recs}"
-    )
+    assert "task-standard" in recs, f"task-standard skill must match task_create; got {recs}"
 
 
 def test_recommend_for_tool_doc_create_includes_doc_style() -> None:
@@ -50,7 +46,8 @@ def test_recommend_for_tool_doc_create_includes_doc_style() -> None:
 
 
 def test_task_create_response_carries_recommended_skills(
-    engine_with_schema, monkeypatch  # type: ignore[no-untyped-def]
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
     _idempotency.clear()
     factory = make_session_factory(engine_with_schema)

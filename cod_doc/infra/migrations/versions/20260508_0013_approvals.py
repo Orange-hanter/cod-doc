@@ -88,9 +88,7 @@ def upgrade() -> None:
         ),
         sa.Column("revision_id", sa.String(26), nullable=False),
     )
-    op.create_index(
-        "ix_approval_doc_rev_approval", "approval_doc_revision_link", ["approval_id"]
-    )
+    op.create_index("ix_approval_doc_rev_approval", "approval_doc_revision_link", ["approval_id"])
 
 
 def downgrade() -> None:

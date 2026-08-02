@@ -136,7 +136,7 @@ def test_mermaid_fence_emits_div_for_clientside_render() -> None:
 
 def test_mermaid_fence_escapes_diagram_source() -> None:
     """User-supplied diagram text must be HTML-escaped — no raw HTML injection."""
-    md = "```mermaid\ngraph TD\n  A[\"<script>alert(1)</script>\"]\n```"
+    md = '```mermaid\ngraph TD\n  A["<script>alert(1)</script>"]\n```'
     out = render_markdown(md)
     assert "&lt;script&gt;" in out
     assert "<script>alert(1)" not in out
@@ -178,11 +178,7 @@ def test_gfm_table_renders_header_and_rows() -> None:
 
 
 def test_gfm_table_alignment_via_colon() -> None:
-    md = (
-        "| L | C | R |\n"
-        "| :--- | :---: | ---: |\n"
-        "| a | b | c |"
-    )
+    md = "| L | C | R |\n| :--- | :---: | ---: |\n| a | b | c |"
     out = render_markdown(md)
     assert 'style="text-align:left"' in out
     assert 'style="text-align:center"' in out
@@ -198,12 +194,7 @@ def test_table_without_delimiter_falls_back_to_paragraph() -> None:
 
 
 def test_jagged_rows_pad_to_header_width() -> None:
-    md = (
-        "| A | B | C |\n"
-        "| --- | --- | --- |\n"
-        "| 1 | 2 |\n"
-        "| 1 | 2 | 3 | extra |"
-    )
+    md = "| A | B | C |\n| --- | --- | --- |\n| 1 | 2 |\n| 1 | 2 | 3 | extra |"
     out = render_markdown(md)
     # First row gets a third <td> (empty); second row trims the extra cell.
     assert out.count("<tr>") == 3  # 1 header + 2 body

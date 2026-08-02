@@ -58,10 +58,17 @@ def adr_new(
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             row = adr_service.create(
-                session, project_id=project_id, title=title, status=status,
-                decided_at=parsed_date, context=context, decision=decision,
-                alternatives=alternatives, consequences=consequences,
-                adr_id=adr_id, author=author,
+                session,
+                project_id=project_id,
+                title=title,
+                status=status,
+                decided_at=parsed_date,
+                context=context,
+                decision=decision,
+                alternatives=alternatives,
+                consequences=consequences,
+                adr_id=adr_id,
+                author=author,
             )
             new_id = row.adr_id
     except ADRAlreadyExistsError as exc:

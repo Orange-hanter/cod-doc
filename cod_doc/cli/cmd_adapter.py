@@ -52,20 +52,26 @@ def adapter_list() -> None:
     for n in names:
         if n in plugins:
             entry = plugins[n]
-            table.add_row(n, "external", f"{entry.get('module','?')}.{entry.get('class','?')}")
+            table.add_row(n, "external", f"{entry.get('module', '?')}.{entry.get('class', '?')}")
         else:
             table.add_row(n, "built-in", "—")
     # Plugins not yet imported (e.g. import error) still show up
     for name, entry in plugins.items():
         if name not in names:
-            table.add_row(name, "external (load error)", f"{entry.get('module','?')}.{entry.get('class','?')}")
+            table.add_row(
+                name,
+                "external (load error)",
+                f"{entry.get('module', '?')}.{entry.get('class', '?')}",
+            )
     console.print(table)
 
 
 @adapter.command("add")
 @click.argument("name")
 @click.option("--module", required=True, help="Python module path (e.g. my_pkg.adapter)")
-@click.option("--class", "class_", required=True, help="Adapter class name with `from_config` classmethod")
+@click.option(
+    "--class", "class_", required=True, help="Adapter class name with `from_config` classmethod"
+)
 def adapter_add(name: str, module: str, class_: str) -> None:
     """Register an external adapter into ~/.cod-doc/adapters.json.
 
@@ -75,6 +81,7 @@ def adapter_add(name: str, module: str, class_: str) -> None:
     # Verify the module loads + class exists before persisting.
     try:
         import importlib
+
         mod = importlib.import_module(module)
         cls = getattr(mod, class_, None)
         if cls is None:
@@ -122,7 +129,7 @@ def adapter_show(name: str) -> None:
     if name not in _REGISTRY:
         plugins = {e["name"]: e for e in _load_plugin_entries()}
         if name in plugins:
-            console.print(f"[yellow]External plugin entry exists but failed to load:[/yellow]")
+            console.print("[yellow]External plugin entry exists but failed to load:[/yellow]")
             console.print(json.dumps(plugins[name], indent=2))
         else:
             console.print(f"[red]Unknown adapter: {name}[/red]")
@@ -138,6 +145,7 @@ def adapter_show(name: str) -> None:
     # Try to instantiate with a fake config to read capabilities
     try:
         from unittest.mock import MagicMock
+
         cfg = MagicMock()
         cfg.api_key = ""
         cfg.base_url = ""

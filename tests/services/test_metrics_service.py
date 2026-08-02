@@ -2,42 +2,49 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
 from cod_doc.domain.entities import Priority, TaskStatus, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    PlanModel, PlanSectionModel, ProjectModel,
-    TaskMetricsModel, TaskModel,
+    PlanModel,
+    PlanSectionModel,
+    ProjectModel,
+    TaskMetricsModel,
+    TaskModel,
 )
 from cod_doc.services import metrics_service, task_service
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
 
 
 def _seed(session) -> tuple[int, int, int]:  # type: ignore[no-untyped-def]
     now = datetime.now(UTC)
     proj = ProjectModel(slug="metp", title="P", root_path="/tmp", config_json={})
-    proj.created = now; proj.updated = now
-    session.add(proj); session.flush()
-    plan = PlanModel(project_id=proj.row_id, scope="metp-plan",
-                     created=now, last_updated=now)
-    session.add(plan); session.flush()
-    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A",
-                           slug="A", position=0)
-    session.add(sec); session.flush()
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
+    plan = PlanModel(project_id=proj.row_id, scope="metp-plan", created=now, last_updated=now)
+    session.add(plan)
+    session.flush()
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
+    session.add(sec)
+    session.flush()
     return proj.row_id, plan.row_id, sec.row_id
 
 
 def _make(session, pid, plid, sid, tid, *, type=TaskType.FEATURE, prio=Priority.MEDIUM):
     return task_service.create(
-        session, project_id=pid, plan_id=plid, section_id=sid,
-        task_id=tid, title=f"task {tid}",
-        type=type, priority=prio, author="t",
+        session,
+        project_id=pid,
+        plan_id=plid,
+        section_id=sid,
+        task_id=tid,
+        title=f"task {tid}",
+        type=type,
+        priority=prio,
+        author="t",
     )
 
 
@@ -50,7 +57,7 @@ def test_complete_records_metrics_row(engine_with_schema) -> None:  # type: igno
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid, plid, sid = _seed(session)
-        t = _make(session, pid, plid, sid, "MET-001")
+        _make(session, pid, plid, sid, "MET-001")
     with transactional(factory) as session:
         task_service.complete(session, task_id="MET-001", author="a")
     with transactional(factory) as session:
@@ -68,14 +75,12 @@ def test_record_is_idempotent_on_recomplete(engine_with_schema) -> None:  # type
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid, plid, sid = _seed(session)
-        t = _make(session, pid, plid, sid, "MET-002")
+        _make(session, pid, plid, sid, "MET-002")
     with transactional(factory) as session:
         task_service.complete(session, task_id="MET-002", author="a")
     # Reopen via direct model touch (state-machine path is checked elsewhere).
     with transactional(factory) as session:
-        m = session.execute(
-            select(TaskModel).where(TaskModel.task_id == "MET-002")
-        ).scalar_one()
+        m = session.execute(select(TaskModel).where(TaskModel.task_id == "MET-002")).scalar_one()
         m.status = TaskStatus.IN_PROGRESS.value
     # Complete again — second call should be a no-op for metrics.
     with transactional(factory) as session:

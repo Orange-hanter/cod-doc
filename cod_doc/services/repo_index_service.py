@@ -12,6 +12,7 @@ Public entry:
 from __future__ import annotations
 
 import ast
+import contextlib
 import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,20 +36,40 @@ if TYPE_CHECKING:
 
 
 _LANG_BY_EXT: dict[str, str] = {
-    ".py": "python", ".pyi": "python",
-    ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
+    ".py": "python",
+    ".pyi": "python",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
     ".jsx": "javascriptreact",
-    ".ts": "typescript", ".tsx": "typescriptreact",
-    ".go": "go", ".rs": "rust",
-    ".java": "java", ".kt": "kotlin",
-    ".c": "c", ".h": "c",
-    ".cpp": "cpp", ".hpp": "cpp", ".cc": "cpp", ".hh": "cpp",
-    ".rb": "ruby", ".php": "php", ".swift": "swift",
-    ".sh": "shell", ".bash": "shell", ".zsh": "shell",
+    ".ts": "typescript",
+    ".tsx": "typescriptreact",
+    ".go": "go",
+    ".rs": "rust",
+    ".java": "java",
+    ".kt": "kotlin",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".hpp": "cpp",
+    ".cc": "cpp",
+    ".hh": "cpp",
+    ".rb": "ruby",
+    ".php": "php",
+    ".swift": "swift",
+    ".sh": "shell",
+    ".bash": "shell",
+    ".zsh": "shell",
     ".sql": "sql",
-    ".yaml": "yaml", ".yml": "yaml", ".toml": "toml", ".json": "json",
-    ".html": "html", ".css": "css", ".scss": "scss",
-    ".vue": "vue", ".svelte": "svelte",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".toml": "toml",
+    ".json": "json",
+    ".html": "html",
+    ".css": "css",
+    ".scss": "scss",
+    ".vue": "vue",
+    ".svelte": "svelte",
     ".md": "markdown",
 }
 
@@ -72,19 +93,25 @@ def _load_gitignore_spec(repo_root: Path):  # type: ignore[no-untyped-def]
     import pathspec
 
     patterns: list[str] = [
-        ".git/", "__pycache__/", ".venv/", "venv/", "env/",
-        ".mypy_cache/", ".pytest_cache/", ".ruff_cache/", ".hypothesis/",
-        "node_modules/", "dist/", "build/", "*.egg-info/",
+        ".git/",
+        "__pycache__/",
+        ".venv/",
+        "venv/",
+        "env/",
+        ".mypy_cache/",
+        ".pytest_cache/",
+        ".ruff_cache/",
+        ".hypothesis/",
+        "node_modules/",
+        "dist/",
+        "build/",
+        "*.egg-info/",
         ".cod-doc/",  # don't index our own state.db etc.
     ]
     gitignore = repo_root / ".gitignore"
     if gitignore.exists():
-        try:
-            patterns.extend(
-                gitignore.read_text(encoding="utf-8").splitlines()
-            )
-        except OSError:
-            pass
+        with contextlib.suppress(OSError):
+            patterns.extend(gitignore.read_text(encoding="utf-8").splitlines())
     return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
 
 
@@ -126,14 +153,14 @@ def _extract_python(
                     symbols.append((target.id, "constant", node.lineno, None))
 
     # Imports — walk full tree so conditional imports surface too.
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                imports.append((alias.name, node.lineno))
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
+    for ast_node in ast.walk(tree):
+        if isinstance(ast_node, ast.Import):
+            for alias in ast_node.names:
+                imports.append((alias.name, ast_node.lineno))
+        elif isinstance(ast_node, ast.ImportFrom):
+            module = ast_node.module or ""
             if module:
-                imports.append((module, node.lineno))
+                imports.append((module, ast_node.lineno))
 
     return symbols, imports
 
@@ -174,9 +201,7 @@ def scan_project(
     spec = _load_gitignore_spec(repo_root)
 
     # Truncate existing index for this project (CASCADE removes symbols+imports).
-    session.execute(
-        delete(RepoFileModel).where(RepoFileModel.project_id == project_id)
-    )
+    session.execute(delete(RepoFileModel).where(RepoFileModel.project_id == project_id))
     session.flush()
 
     files_count = 0
@@ -221,15 +246,24 @@ def scan_project(
                 source = ""
             symbols, imports = _extract_python(source)
             for name, kind, line, parent in symbols:
-                session.add(RepoSymbolModel(
-                    file_id=file_row.row_id, name=name, kind=kind,
-                    line=line, parent_name=parent,
-                ))
+                session.add(
+                    RepoSymbolModel(
+                        file_id=file_row.row_id,
+                        name=name,
+                        kind=kind,
+                        line=line,
+                        parent_name=parent,
+                    )
+                )
                 symbols_count += 1
             for module, line in imports:
-                session.add(RepoImportModel(
-                    file_id=file_row.row_id, module=module, line=line,
-                ))
+                session.add(
+                    RepoImportModel(
+                        file_id=file_row.row_id,
+                        module=module,
+                        line=line,
+                    )
+                )
                 imports_count += 1
         files_count += 1
 
@@ -257,7 +291,9 @@ def list_files(
 
 
 def find_symbol(
-    session: Session, project_id: int, name: str,
+    session: Session,
+    project_id: int,
+    name: str,
 ) -> list[tuple[RepoFileModel, RepoSymbolModel]]:
     """Locate ``name`` across all indexed files."""
     rows = session.execute(
@@ -273,17 +309,21 @@ def find_symbol(
 
 
 def find_importers(
-    session: Session, project_id: int, module: str,
+    session: Session,
+    project_id: int,
+    module: str,
 ) -> list[RepoFileModel]:
     """Which files import ``module``."""
-    rows = list(session.execute(
-        select(RepoFileModel)
-        .join(RepoImportModel, RepoImportModel.file_id == RepoFileModel.row_id)
-        .where(
-            RepoFileModel.project_id == project_id,
-            RepoImportModel.module == module,
-        )
-        .distinct()
-        .order_by(RepoFileModel.path)
-    ).scalars())
+    rows = list(
+        session.execute(
+            select(RepoFileModel)
+            .join(RepoImportModel, RepoImportModel.file_id == RepoFileModel.row_id)
+            .where(
+                RepoFileModel.project_id == project_id,
+                RepoImportModel.module == module,
+            )
+            .distinct()
+            .order_by(RepoFileModel.path)
+        ).scalars()
+    )
     return rows

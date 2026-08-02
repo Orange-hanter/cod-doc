@@ -35,9 +35,7 @@ def _tool_descriptions() -> dict[str, str]:
 @pytest.mark.parametrize("tool_name", DOC_REQUIRED_TOOLS)
 def test_status_aware_tools_mention_all_canonical_statuses(tool_name: str) -> None:
     descriptions = _tool_descriptions()
-    assert tool_name in descriptions, (
-        f"Expected tool {tool_name!r} to be registered on MCP server."
-    )
+    assert tool_name in descriptions, f"Expected tool {tool_name!r} to be registered on MCP server."
     desc = descriptions[tool_name]
     missing = sorted(s for s in CANONICAL_STATUSES if s not in desc)
     assert not missing, (
@@ -49,8 +47,7 @@ def test_status_aware_tools_mention_all_canonical_statuses(tool_name: str) -> No
 
 def test_task_standard_skill_lists_all_canonical_statuses() -> None:
     skill = (
-        Path(__file__).resolve().parents[1]
-        / "cod_doc" / "skills" / "task-standard" / "SKILL.md"
+        Path(__file__).resolve().parents[1] / "cod_doc" / "skills" / "task-standard" / "SKILL.md"
     )
     text = skill.read_text(encoding="utf-8")
     missing = sorted(s for s in CANONICAL_STATUSES if s not in text)

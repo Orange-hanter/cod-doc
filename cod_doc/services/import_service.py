@@ -166,12 +166,7 @@ def import_markdown(
     parsed = parse_markdown(raw_markdown)
     fm = parsed.frontmatter
 
-    title = (
-        fm.get("title")
-        or parsed.title_h1
-        or fallback_title
-        or doc_key.rsplit("/", 1)[-1]
-    )
+    title = fm.get("title") or parsed.title_h1 or fallback_title or doc_key.rsplit("/", 1)[-1]
     doc_type = _enum_or_default(DocumentType, fm.get("type"), fallback_type)
     status = _enum_or_default(DocumentStatus, fm.get("status"), DocumentStatus.DRAFT)
     sensitivity = _enum_or_default(Sensitivity, fm.get("sensitivity"), Sensitivity.INTERNAL)
@@ -214,7 +209,7 @@ def import_markdown(
 
 
 def import_or_update_markdown(
-    session: "Session",
+    session: Session,
     *,
     project_id: int,
     doc_key: str,
@@ -223,7 +218,7 @@ def import_or_update_markdown(
     author: str = "human:web",
     reason: str | None = None,
     source_sha256: str | None = None,
-) -> tuple["Document", bool]:
+) -> tuple[Document, bool]:
     """PCA-929: Idempotent import — create new doc or update existing one.
 
     Returns ``(document, created)`` where ``created`` is True for new docs
@@ -286,10 +281,12 @@ def import_or_update_markdown(
     return existing, False
 
 
-def _set_content_sha(session: "Session", document_id: int, sha: str) -> None:
+def _set_content_sha(session: Session, document_id: int, sha: str) -> None:
     """PCA-928: store sha256 of imported file head on DocumentModel."""
-    from cod_doc.infra.models.documents import DocumentModel
     from sqlalchemy import update as _update
+
+    from cod_doc.infra.models.documents import DocumentModel
+
     session.execute(
         _update(DocumentModel)
         .where(DocumentModel.row_id == document_id)
@@ -297,7 +294,7 @@ def _set_content_sha(session: "Session", document_id: int, sha: str) -> None:
     )
 
 
-def _resolve_all_sections(session: "Session", document_id: int) -> None:
+def _resolve_all_sections(session: Session, document_id: int) -> None:
     """Best-effort second-pass resolve for every section of *document_id*.
 
     Called at the end of import_markdown() so forward links that were
@@ -305,14 +302,15 @@ def _resolve_all_sections(session: "Session", document_id: int) -> None:
     chance once the whole document exists.
     """
     try:
+        from cod_doc.infra.repositories.document_repo import SectionRepository
         from cod_doc.services import link_service as _links
-        from cod_doc.infra.repositories.doc_repo import SectionRepository
 
         for sec in SectionRepository(session).list_for_document(document_id):
             if sec.row_id is not None:
                 _links.resolve_section(session, sec.row_id)
     except Exception:
         import logging
+
         logging.getLogger("cod_doc.services.import_service").warning(
             "Two-pass resolve failed for document_id=%s — "
             "links may be unresolved until next backfill",
@@ -332,13 +330,13 @@ _HEAD_BYTES = 4096  # hash first 4 KB only — cheap, stable enough for change d
 class ManifestEntry:
     """One .md file compared against the current project DB."""
 
-    path: str               # relative path from scan root (e.g. "modules/foo.md")
-    doc_key: str            # auto-derived key (path without .md, without "docs/" prefix)
-    title: str              # from H1 or frontmatter or filename
-    doc_type: str           # from frontmatter `type:` or empty string
-    sha256_head: str        # sha256 of first 4 KB
+    path: str  # relative path from scan root (e.g. "modules/foo.md")
+    doc_key: str  # auto-derived key (path without .md, without "docs/" prefix)
+    title: str  # from H1 or frontmatter or filename
+    doc_type: str  # from frontmatter `type:` or empty string
+    sha256_head: str  # sha256 of first 4 KB
     status: ManifestStatus  # new | changed | unchanged | missing
-    reason: str             # human-readable hint for the UI
+    reason: str  # human-readable hint for the UI
 
 
 def _derive_doc_key(rel_path: str) -> str:
@@ -373,7 +371,7 @@ def _quick_title(parsed: ParsedMarkdown, path: Path) -> str:
 
 
 def scan_folder(
-    session: "Session",
+    session: Session,
     *,
     project_id: int,
     root: Path,
@@ -408,8 +406,9 @@ def scan_folder(
 
     # PCA-928: load DocumentModel directly so we can read content_sha256_head
     # for content-change detection.
-    from cod_doc.infra.models.documents import DocumentModel
     from sqlalchemy import select as _select
+
+    from cod_doc.infra.models.documents import DocumentModel
 
     existing: dict[str, Any] = {}
     rows = session.execute(
@@ -458,28 +457,32 @@ def scan_folder(
                     status = "changed"
                     reason = "File modified since last import"
 
-            entries.append(ManifestEntry(
-                path=rel,
-                doc_key=doc_key,
-                title=title,
-                doc_type=doc_type_raw,
-                sha256_head=sha,
-                status=status,
-                reason=reason,
-            ))
+            entries.append(
+                ManifestEntry(
+                    path=rel,
+                    doc_key=doc_key,
+                    title=title,
+                    doc_type=doc_type_raw,
+                    sha256_head=sha,
+                    status=status,
+                    reason=reason,
+                )
+            )
 
     # Report DB docs that have no file on disk (MISSING)
     for doc_key, doc in existing.items():
         if doc_key not in seen_keys:
-            entries.append(ManifestEntry(
-                path="",
-                doc_key=doc_key,
-                title=str(doc.title or doc_key),
-                doc_type="",
-                sha256_head="",
-                status="missing",
-                reason="File not found on disk",
-            ))
+            entries.append(
+                ManifestEntry(
+                    path="",
+                    doc_key=doc_key,
+                    title=str(doc.title or doc_key),
+                    doc_type="",
+                    sha256_head="",
+                    status="missing",
+                    reason="File not found on disk",
+                )
+            )
 
     entries.sort(key=lambda e: (e.status == "missing", e.path))
     return entries

@@ -113,9 +113,7 @@ def queue_emit(session: Session, project: str, kind: str, **payload: Any) -> Non
     Use this from any service-layer write path so browsers never see state
     that didn't actually persist.
     """
-    pending: list[tuple[str, str, dict[str, Any]]] = session.info.setdefault(
-        _PENDING_KEY, []
-    )
+    pending: list[tuple[str, str, dict[str, Any]]] = session.info.setdefault(_PENDING_KEY, [])
     pending.append((project, kind, dict(payload)))
 
 

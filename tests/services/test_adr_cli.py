@@ -21,8 +21,15 @@ def test_adr_new_help_has_all_fields() -> None:
     result = runner.invoke(main, ["adr", "new", "--help"])
     assert result.exit_code == 0
     for opt in (
-        "--project", "--title", "--status", "--decided-at", "--context",
-        "--decision", "--alternatives", "--consequences", "--adr-id",
+        "--project",
+        "--title",
+        "--status",
+        "--decided-at",
+        "--context",
+        "--decision",
+        "--alternatives",
+        "--consequences",
+        "--adr-id",
     ):
         assert opt in result.output, f"{opt} missing"
 

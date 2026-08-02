@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
@@ -16,10 +16,10 @@ router = APIRouter()
 
 
 _DEEPLINK_BY_KIND = {
-    "task":  lambda slug, ref: f"/p/{slug}/tasks/{ref}",
-    "doc":   lambda slug, ref: f"/p/{slug}/docs/{ref}",
+    "task": lambda slug, ref: f"/p/{slug}/tasks/{ref}",
+    "doc": lambda slug, ref: f"/p/{slug}/docs/{ref}",
     "story": lambda slug, ref: f"/p/{slug}/stories/{ref}",
-    "adr":   lambda slug, ref: f"/p/{slug}/adr/{ref}",
+    "adr": lambda slug, ref: f"/p/{slug}/adr/{ref}",
 }
 
 
@@ -36,10 +36,12 @@ def search_page(
     proj = get_project(slug)
     session, project_id = db
 
-    result: dict | None = None
+    result: dict[str, Any] | None = None
     if q.strip():
         result = search_service.search(
-            session, project_id=project_id, query=q,
+            session,
+            project_id=project_id,
+            query=q,
             scope=(scope or None),
             limit=limit,
         )
@@ -66,10 +68,8 @@ def search_page(
 def search_reindex(
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
-):
+) -> RedirectResponse:
     """Rebuild FTS index for this project."""
-    from fastapi.responses import RedirectResponse
-
     session, project_id = db
     counts = search_service.reindex_all(session, project_id)
     session.commit()
@@ -79,3 +79,34 @@ def search_reindex(
         url=f"/p/{slug}/search?q=&reindexed={total}",
         status_code=303,
     )
+
+
+@router.get("/p/{slug}/search/suggest")
+def search_suggest(
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    q: str = "",
+    limit: int = 12,
+) -> JSONResponse:
+    """JSON hits for the ⌘K search palette."""
+    session, project_id = db
+    limit = max(1, min(limit, 30))
+    items: list[dict[str, str]] = []
+    if q.strip():
+        result = search_service.search(session, project_id=project_id, query=q, limit=limit)
+        for kind, hits in result["by_kind"].items():
+            mk = _DEEPLINK_BY_KIND.get(kind)
+            for h in hits:
+                items.append(
+                    {
+                        "kind": kind,
+                        "title": h.get("title") or h.get("ref") or "",
+                        "ref": h.get("ref") or "",
+                        "url": mk(slug, h["ref"]) if mk else "",
+                    }
+                )
+                if len(items) >= limit:
+                    break
+            if len(items) >= limit:
+                break
+    return JSONResponse({"items": items[:limit]})

@@ -86,7 +86,7 @@ def write(
     diff: str,
     reason: str | None = None,
     commit_sha: str | None = None,
-    expected_parent_revision_id: str | None | object = _NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = _NO_PARENT_CHECK,
 ) -> Revision:
     """Append a revision row.
 
@@ -360,9 +360,7 @@ def _revert_task_doc(session: Session, model: RevisionModel, *, author: str) -> 
 
     td = session.get(TaskDocumentModel, model.entity_id)
     if td is None:
-        raise RevertNotSupportedError(
-            f"TASK_DOC entity #{model.entity_id} not found"
-        )
+        raise RevertNotSupportedError(f"TASK_DOC entity #{model.entity_id} not found")
     task_doc_service.revert(
         session,
         project_id=model.project_id,

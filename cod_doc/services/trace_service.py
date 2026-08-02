@@ -55,17 +55,20 @@ def list_for_task(session: Session, task_row_id: int) -> Sequence[TraceCall]:
 
 
 def aggregate_by_model_for_project(
-    session: Session, project_id: int,
+    session: Session,
+    project_id: int,
 ) -> list[dict[str, Any]]:
     """PCA-925 follow-up UI: per-model totals (calls, tokens, cost USD).
 
     Used by the cost dashboard.  Cost is computed via the OpenAI-compat
     pricing dict (best-effort; unknown models return 0).
     """
-    from sqlalchemy import select, func
-    from cod_doc.infra.models import TraceCallModel, TaskModel
-    from cod_doc.agent.adapters.openai_compat import _PRICING_USD_PER_MTOK
     from decimal import Decimal
+
+    from sqlalchemy import func, select
+
+    from cod_doc.agent.adapters.openai_compat import _PRICING_USD_PER_MTOK
+    from cod_doc.infra.models import TaskModel, TraceCallModel
 
     rows = session.execute(
         select(
@@ -91,16 +94,18 @@ def aggregate_by_model_for_project(
             cost = (Decimal(in_tok) * in_rate + Decimal(out_tok) * out_rate) / Decimal(1_000_000)
         else:
             cost = Decimal(0)
-        out.append({
-            "model": model,
-            "calls": calls,
-            "input_tokens": int(in_tok),
-            "output_tokens": int(out_tok),
-            "total_tokens": int(in_tok) + int(out_tok),
-            "duration_ms": int(dur),
-            "cost_usd": float(cost),
-            "priced": rates is not None,
-        })
+        out.append(
+            {
+                "model": model,
+                "calls": calls,
+                "input_tokens": int(in_tok),
+                "output_tokens": int(out_tok),
+                "total_tokens": int(in_tok) + int(out_tok),
+                "duration_ms": int(dur),
+                "cost_usd": float(cost),
+                "priced": rates is not None,
+            }
+        )
     return out
 
 

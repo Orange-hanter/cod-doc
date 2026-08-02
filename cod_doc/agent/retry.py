@@ -87,9 +87,7 @@ class ContextLengthExceededError(LLMError):
     с урезанным контекстом (degraded mode).
     """
 
-    def __init__(
-        self, message: str, retryable: bool = True, status_code: int = 400
-    ) -> None:
+    def __init__(self, message: str, retryable: bool = True, status_code: int = 400) -> None:
         super().__init__(message, retryable=retryable, status_code=status_code)
 
 

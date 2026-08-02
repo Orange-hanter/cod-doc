@@ -68,8 +68,13 @@ def test_index_uses_batch_stats(many_projects_client) -> None:
     ):
         # Make stats() return something picklable-trivial
         stats_spy.return_value = {
-            "total": 0, "pending": 0, "in_progress": 0, "done": 0,
-            "failed": 0, "status": "idle", "last_run": None,
+            "total": 0,
+            "pending": 0,
+            "in_progress": 0,
+            "done": 0,
+            "failed": 0,
+            "status": "idle",
+            "last_run": None,
         }
         r = client.get("/")
     assert r.status_code == 200
@@ -153,6 +158,7 @@ def test_batch_stats_returns_results_in_input_order(tmp_path: Path) -> None:
     # by mutating one entry's tasks file and checking only that entry
     # reports nonzero totals.
     import yaml
+
     target = entries[2]
     target.cod_doc_dir.joinpath("tasks.yaml").write_text(
         yaml.dump({"tasks": [{"id": "X", "title": "y"}]}, allow_unicode=True),

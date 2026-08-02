@@ -100,9 +100,7 @@ def task_field_edit_form(
     task = tasks.get(session, task_id)
     if task is None or task.project_id != project_db_id:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
-    return _render_task_field_edit(
-        request, project_name=proj.entry.name, task=task, field=field
-    )
+    return _render_task_field_edit(request, project_name=proj.entry.name, task=task, field=field)
 
 
 @router.get(
@@ -123,9 +121,7 @@ def task_field_view_fragment(
     task = tasks.get(session, task_id)
     if task is None or task.project_id != project_db_id:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
-    return _render_task_field_view(
-        request, project_name=proj.entry.name, task=task, field=field
-    )
+    return _render_task_field_view(request, project_name=proj.entry.name, task=task, field=field)
 
 
 @router.post(
@@ -236,6 +232,4 @@ def task_field_patch(
         return _render_task_field_view(
             request, project_name=proj.entry.name, task=updated, field=field
         )
-    return RedirectResponse(
-        url=f"/p/{proj.entry.name}/tasks/{task_id}", status_code=303
-    )
+    return RedirectResponse(url=f"/p/{proj.entry.name}/tasks/{task_id}", status_code=303)

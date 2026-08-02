@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -13,14 +12,15 @@ from sqlalchemy import select
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
-    CommitLinkModel, PlanModel, PlanSectionModel, ProjectModel,
+    PlanModel,
+    PlanSectionModel,
+    ProjectModel,
     TaskMetricsModel,
 )
 from cod_doc.services import commit_link_service, task_service
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
-
+    from pathlib import Path
 
 # ----------------------------------------------------------------- #
 # parse_task_refs                                                    #
@@ -61,22 +61,30 @@ def test_parse_empty_message_returns_empty_list() -> None:
 def _seed(session) -> tuple[int, int, int]:  # type: ignore[no-untyped-def]
     now = datetime.now(UTC)
     proj = ProjectModel(slug="cmtp", title="P", root_path="/tmp", config_json={})
-    proj.created = now; proj.updated = now
-    session.add(proj); session.flush()
-    plan = PlanModel(project_id=proj.row_id, scope="cmtp-plan",
-                     created=now, last_updated=now)
-    session.add(plan); session.flush()
-    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A",
-                           slug="A", position=0)
-    session.add(sec); session.flush()
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
+    plan = PlanModel(project_id=proj.row_id, scope="cmtp-plan", created=now, last_updated=now)
+    session.add(plan)
+    session.flush()
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
+    session.add(sec)
+    session.flush()
     return proj.row_id, plan.row_id, sec.row_id
 
 
 def _make(session, pid, plid, sid, tid):
     return task_service.create(
-        session, project_id=pid, plan_id=plid, section_id=sid,
-        task_id=tid, title=f"Task {tid}",
-        type=TaskType.FEATURE, priority=Priority.MEDIUM, author="t",
+        session,
+        project_id=pid,
+        plan_id=plid,
+        section_id=sid,
+        task_id=tid,
+        title=f"Task {tid}",
+        type=TaskType.FEATURE,
+        priority=Priority.MEDIUM,
+        author="t",
     )
 
 
@@ -117,7 +125,9 @@ def test_import_links_commits_to_known_tasks(engine_with_schema, git_repo) -> No
 
     with transactional(factory) as session:
         result = commit_link_service.import_from_git_log(
-            session, project_id=1, repo_path=git_repo,
+            session,
+            project_id=1,
+            repo_path=git_repo,
         )
     assert result["scanned"] == 3
     assert result["linked"] == 3  # 2 for CMT-001 + 1 for CMT-002
@@ -153,8 +163,10 @@ def test_import_skips_unknown_task_ids(engine_with_schema, tmp_path) -> None:  #
     # Build a repo with ONE commit referencing a non-existent task.
     repo = tmp_path / "lonely-repo"
     repo.mkdir()
+
     def _run(*args: str) -> None:
         subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
     _run("init", "-q", "--initial-branch=main")
     _run("config", "user.email", "t@example.com")
     _run("config", "user.name", "Tester")
@@ -165,7 +177,9 @@ def test_import_skips_unknown_task_ids(engine_with_schema, tmp_path) -> None:  #
 
     with transactional(factory) as session:
         result = commit_link_service.import_from_git_log(
-            session, project_id=1, repo_path=repo,
+            session,
+            project_id=1,
+            repo_path=repo,
         )
     assert result["scanned"] == 1
     assert result["linked"] == 0
@@ -183,11 +197,14 @@ def test_import_updates_commit_count_in_metrics(engine_with_schema, git_repo) ->
 
     with transactional(factory) as session:
         commit_link_service.import_from_git_log(
-            session, project_id=1, repo_path=git_repo,
+            session,
+            project_id=1,
+            repo_path=git_repo,
         )
 
     with transactional(factory) as session:
         from cod_doc.infra.models import TaskModel
+
         task_row = session.execute(
             select(TaskModel).where(TaskModel.task_id == "CMT-001")
         ).scalar_one()
@@ -204,5 +221,7 @@ def test_import_rejects_non_git_path(engine_with_schema, tmp_path) -> None:  # t
     with pytest.raises(ValueError, match="not a git"):
         with transactional(factory) as session:
             commit_link_service.import_from_git_log(
-                session, project_id=1, repo_path=tmp_path,
+                session,
+                project_id=1,
+                repo_path=tmp_path,
             )

@@ -31,9 +31,7 @@ def _seed(session: Session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -62,9 +60,7 @@ def _create(session, p, pl, s, tid: str, title: str, **kwargs) -> object:  # typ
 def test_normalize_title_collapses_case_and_punctuation() -> None:
     assert _normalize_title("Implement: Auth-Service!") == "implement auth service"
     assert _normalize_title("  Implement   auth   service  ") == "implement auth service"
-    assert _normalize_title("Implement: Auth/Service") == _normalize_title(
-        "implement auth service"
-    )
+    assert _normalize_title("Implement: Auth/Service") == _normalize_title("implement auth service")
 
 
 def test_normalize_title_unicode_keeps_word_chars() -> None:
@@ -127,7 +123,14 @@ def test_find_duplicate_scoped_to_project(engine_with_schema) -> None:  # type: 
         session.flush()
 
         _create(session, p1, pl1, s1, "PR-001", "Implement: shared title")
-        _create(session, p2_model.row_id, plan2.row_id, sec2.row_id, "PRX-001", "Implement: shared title")
+        _create(
+            session,
+            p2_model.row_id,
+            plan2.row_id,
+            sec2.row_id,
+            "PRX-001",
+            "Implement: shared title",
+        )
 
         # Probe project p2: should NOT find the task in p1
         match = find_duplicate_by_title(session, p2_model.row_id, "Implement: shared title")

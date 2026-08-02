@@ -31,8 +31,11 @@ def test_emit_creates_event_with_defaults(engine_with_schema) -> None:  # type: 
     with transactional(factory) as session:
         proj_id = _seed_project(session)
         ev = activity.emit(
-            session, proj_id, "task.created",
-            scope_kind="task", scope_id="T-001",
+            session,
+            proj_id,
+            "task.created",
+            scope_kind="task",
+            scope_id="T-001",
             summary="Task T-001 created",
         )
         assert ev.id is not None
@@ -71,8 +74,7 @@ def test_list_events_returns_newest_first(engine_with_schema) -> None:  # type: 
     with transactional(factory) as session:
         proj_id = _seed_project(session)
         for i in range(3):
-            activity.emit(session, proj_id, f"e.{i}",
-                          ts=datetime(2026, 1, 1 + i, tzinfo=UTC))
+            activity.emit(session, proj_id, f"e.{i}", ts=datetime(2026, 1, 1 + i, tzinfo=UTC))
 
     with transactional(factory) as session:
         result = activity.list_events(session, proj_id)
@@ -85,19 +87,14 @@ def test_list_events_filters_by_scope(engine_with_schema) -> None:  # type: igno
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _seed_project(session)
-        activity.emit(session, proj_id, "task.created",
-                      scope_kind="task", scope_id="T-001")
-        activity.emit(session, proj_id, "doc.updated",
-                      scope_kind="doc", scope_id="MASTER")
-        activity.emit(session, proj_id, "task.completed",
-                      scope_kind="task", scope_id="T-001")
+        activity.emit(session, proj_id, "task.created", scope_kind="task", scope_id="T-001")
+        activity.emit(session, proj_id, "doc.updated", scope_kind="doc", scope_id="MASTER")
+        activity.emit(session, proj_id, "task.completed", scope_kind="task", scope_id="T-001")
 
     with transactional(factory) as session:
         only_task = activity.list_events(session, proj_id, scope_kind="task")
         assert only_task["total"] == 2
-        only_t001 = activity.list_events(
-            session, proj_id, scope_kind="task", scope_id="T-001"
-        )
+        only_t001 = activity.list_events(session, proj_id, scope_kind="task", scope_id="T-001")
         assert only_t001["total"] == 2
 
 
@@ -105,12 +102,9 @@ def test_list_events_filters_by_kind_and_actor(engine_with_schema) -> None:  # t
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _seed_project(session)
-        activity.emit(session, proj_id, "approval.requested",
-                      actor_kind="orchestrator")
-        activity.emit(session, proj_id, "approval.resolved",
-                      actor_kind="human")
-        activity.emit(session, proj_id, "doc.updated",
-                      actor_kind="orchestrator")
+        activity.emit(session, proj_id, "approval.requested", actor_kind="orchestrator")
+        activity.emit(session, proj_id, "approval.resolved", actor_kind="human")
+        activity.emit(session, proj_id, "doc.updated", actor_kind="orchestrator")
 
     with transactional(factory) as session:
         by_kind = activity.list_events(session, proj_id, kind="approval.requested")
@@ -129,7 +123,8 @@ def test_list_events_filters_by_time_range(engine_with_schema) -> None:  # type:
 
     with transactional(factory) as session:
         result = activity.list_events(
-            session, proj_id,
+            session,
+            proj_id,
             since=base + timedelta(days=1),
             until=base + timedelta(days=3),
         )
@@ -141,8 +136,7 @@ def test_list_events_pagination(engine_with_schema) -> None:  # type: ignore[no-
     with transactional(factory) as session:
         proj_id = _seed_project(session)
         for i in range(10):
-            activity.emit(session, proj_id, f"e.{i}",
-                          ts=datetime(2026, 1, 1, i, 0, tzinfo=UTC))
+            activity.emit(session, proj_id, f"e.{i}", ts=datetime(2026, 1, 1, i, 0, tzinfo=UTC))
 
     with transactional(factory) as session:
         page = activity.list_events(session, proj_id, limit=3, offset=2)
@@ -156,10 +150,12 @@ def test_events_for_run_returns_oldest_first(engine_with_schema) -> None:  # typ
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _seed_project(session)
-        activity.emit(session, proj_id, "step.1", run_id="R1",
-                      ts=datetime(2026, 1, 1, 10, tzinfo=UTC))
-        activity.emit(session, proj_id, "step.2", run_id="R1",
-                      ts=datetime(2026, 1, 1, 11, tzinfo=UTC))
+        activity.emit(
+            session, proj_id, "step.1", run_id="R1", ts=datetime(2026, 1, 1, 10, tzinfo=UTC)
+        )
+        activity.emit(
+            session, proj_id, "step.2", run_id="R1", ts=datetime(2026, 1, 1, 11, tzinfo=UTC)
+        )
         activity.emit(session, proj_id, "other", run_id="R2")
 
     with transactional(factory) as session:
@@ -185,7 +181,9 @@ def test_emit_persists_payload_and_summary(engine_with_schema) -> None:  # type:
     with transactional(factory) as session:
         proj_id = _seed_project(session)
         activity.emit(
-            session, proj_id, "task.status_changed",
+            session,
+            proj_id,
+            "task.status_changed",
             payload={"from": "pending", "to": "in-progress"},
             summary="T-001 → in-progress",
         )

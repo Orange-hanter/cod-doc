@@ -59,9 +59,11 @@ def _validate_adr_id(adr_id: str) -> None:
 
 def _next_adr_id(session: Session, project_id: int) -> str:
     """Assign ``ADR-NNN`` as max-existing-N + 1, zero-padded to 3."""
-    rows = session.execute(
-        select(ADRModel.adr_id).where(ADRModel.project_id == project_id)
-    ).scalars().all()
+    rows = (
+        session.execute(select(ADRModel.adr_id).where(ADRModel.project_id == project_id))
+        .scalars()
+        .all()
+    )
     max_n = 0
     for aid in rows:
         m = _ADR_ID_RE.match(aid or "")
@@ -73,7 +75,8 @@ def _next_adr_id(session: Session, project_id: int) -> str:
 def _require(session: Session, project_id: int, adr_id: str) -> ADRModel:
     row = session.execute(
         select(ADRModel).where(
-            ADRModel.project_id == project_id, ADRModel.adr_id == adr_id,
+            ADRModel.project_id == project_id,
+            ADRModel.adr_id == adr_id,
         )
     ).scalar_one_or_none()
     if row is None:
@@ -106,7 +109,8 @@ def create(
         _validate_adr_id(adr_id)
         existing = session.execute(
             select(ADRModel).where(
-                ADRModel.project_id == project_id, ADRModel.adr_id == adr_id,
+                ADRModel.project_id == project_id,
+                ADRModel.adr_id == adr_id,
             )
         ).scalar_one_or_none()
         if existing is not None:
@@ -137,7 +141,8 @@ def create(
 def get(session: Session, project_id: int, adr_id: str) -> ADRModel | None:
     row = session.execute(
         select(ADRModel).where(
-            ADRModel.project_id == project_id, ADRModel.adr_id == adr_id,
+            ADRModel.project_id == project_id,
+            ADRModel.adr_id == adr_id,
         )
     ).scalar_one_or_none()
     return row
@@ -205,8 +210,9 @@ def add_diagram(
     if position is None:
         # Append at end.
         max_pos = session.execute(
-            select(func.coalesce(func.max(ADRDiagramModel.position), -1))
-            .where(ADRDiagramModel.adr_id == adr.row_id)
+            select(func.coalesce(func.max(ADRDiagramModel.position), -1)).where(
+                ADRDiagramModel.adr_id == adr.row_id
+            )
         ).scalar_one()
         position = int(max_pos) + 1
     row = ADRDiagramModel(
@@ -274,7 +280,9 @@ def link_task(
     relation: str = "implements",
 ) -> ADRTaskModel:
     if relation not in _LEGAL_RELATIONS:
-        raise ValueError(f"invalid relation {relation!r}; expected one of {sorted(_LEGAL_RELATIONS)}")
+        raise ValueError(
+            f"invalid relation {relation!r}; expected one of {sorted(_LEGAL_RELATIONS)}"
+        )
     adr = _require(session, project_id, adr_id)
     # Idempotency.
     existing = session.execute(
@@ -295,10 +303,10 @@ def link_task(
 def graph(session: Session, project_id: int) -> dict[str, Any]:
     """Return the supersede DAG for ``project_id``:
 
-        {
-          "nodes": [{adr_id, title, status}, ...],
-          "edges": [{from: adr_id, to: adr_id, reason}, ...]
-        }
+    {
+      "nodes": [{adr_id, title, status}, ...],
+      "edges": [{from: adr_id, to: adr_id, reason}, ...]
+    }
     """
     nodes = list(
         session.execute(
@@ -322,14 +330,8 @@ def graph(session: Session, project_id: int) -> dict[str, Any]:
         .where(new_alias.c.project_id == project_id)
     ).all()
     return {
-        "nodes": [
-            {"adr_id": n.adr_id, "title": n.title, "status": n.status}
-            for n in nodes
-        ],
-        "edges": [
-            {"from": e.new_id, "to": e.old_id, "reason": e.reason}
-            for e in edge_rows
-        ],
+        "nodes": [{"adr_id": n.adr_id, "title": n.title, "status": n.status} for n in nodes],
+        "edges": [{"from": e.new_id, "to": e.old_id, "reason": e.reason} for e in edge_rows],
     }
 
 
@@ -339,7 +341,11 @@ def graph(session: Session, project_id: int) -> dict[str, Any]:
 
 
 def adr_to_dict(
-    session: Session, adr: ADRModel, *, include_diagrams: bool = True, include_links: bool = True,
+    session: Session,
+    adr: ADRModel,
+    *,
+    include_diagrams: bool = True,
+    include_links: bool = True,
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "adr_id": adr.adr_id,
@@ -355,22 +361,23 @@ def adr_to_dict(
         "last_updated": adr.last_updated.isoformat() if adr.last_updated else None,
     }
     if include_diagrams:
-        diagrams = session.execute(
-            select(ADRDiagramModel)
-            .where(ADRDiagramModel.adr_id == adr.row_id)
-            .order_by(ADRDiagramModel.position)
-        ).scalars().all()
+        diagrams = (
+            session.execute(
+                select(ADRDiagramModel)
+                .where(ADRDiagramModel.adr_id == adr.row_id)
+                .order_by(ADRDiagramModel.position)
+            )
+            .scalars()
+            .all()
+        )
         out["diagrams"] = [
-            {"position": d.position, "title": d.title, "mermaid": d.mermaid}
-            for d in diagrams
+            {"position": d.position, "title": d.title, "mermaid": d.mermaid} for d in diagrams
         ]
     if include_links:
-        links = session.execute(
-            select(ADRTaskModel)
-            .where(ADRTaskModel.adr_row_id == adr.row_id)
-        ).scalars().all()
-        out["task_links"] = [
-            {"task_id": link.task_id, "relation": link.relation}
-            for link in links
-        ]
+        links = (
+            session.execute(select(ADRTaskModel).where(ADRTaskModel.adr_row_id == adr.row_id))
+            .scalars()
+            .all()
+        )
+        out["task_links"] = [{"task_id": link.task_id, "relation": link.relation} for link in links]
     return out

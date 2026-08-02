@@ -33,9 +33,7 @@ async def project_event_stream(websocket: WebSocket, slug: str) -> None:
 
     await websocket.accept()
     # Send a hello so the client knows the channel is live.
-    await websocket.send_json(
-        {"project": slug, "kind": "hello", "payload": {}, "ts": 0}
-    )
+    await websocket.send_json({"project": slug, "kind": "hello", "payload": {}, "ts": 0})
     try:
         async with event_bus.subscribe(slug) as sub:
             async for event in sub:

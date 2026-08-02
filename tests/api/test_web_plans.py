@@ -254,9 +254,7 @@ def test_plan_show_section_with_no_tasks_says_so(plans_client, tmp_path: Path, m
 def test_plan_freeze_creates_doc_and_redirects(plans_client) -> None:
     """COD-052: POST /freeze creates an EXECUTION_LOG and redirects to it."""
     client, entry, plan_id = plans_client
-    r = client.post(
-        f"/p/{entry.name}/plans/{plan_id}/freeze", follow_redirects=False
-    )
+    r = client.post(f"/p/{entry.name}/plans/{plan_id}/freeze", follow_redirects=False)
     assert r.status_code == 303
     location = r.headers["location"]
     assert "/docs/frozen/payments/" in location
@@ -270,9 +268,7 @@ def test_plan_freeze_creates_doc_and_redirects(plans_client) -> None:
 
 def test_plan_freeze_unknown_plan_404(plans_client) -> None:
     client, entry, _ = plans_client
-    r = client.post(
-        f"/p/{entry.name}/plans/9999/freeze", follow_redirects=False
-    )
+    r = client.post(f"/p/{entry.name}/plans/9999/freeze", follow_redirects=False)
     assert r.status_code == 404
 
 
@@ -280,7 +276,7 @@ def test_plan_show_renders_freeze_button(plans_client) -> None:
     client, entry, plan_id = plans_client
     r = client.get(f"/p/{entry.name}/plans/{plan_id}")
     assert "Freeze projection" in r.text
-    assert f'/p/{entry.name}/plans/{plan_id}/freeze' in r.text
+    assert f"/p/{entry.name}/plans/{plan_id}/freeze" in r.text
 
 
 def test_plan_show_cross_project_404(plans_client, tmp_path: Path, migrate_db) -> None:

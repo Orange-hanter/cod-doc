@@ -43,7 +43,8 @@ def adr_supersede(
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             adr_service.supersede(
-                session, project_id=project_id,
+                session,
+                project_id=project_id,
                 superseding_adr_id=superseding_adr_id,
                 superseded_adr_id=superseded_adr_id,
                 reason=reason,
@@ -57,6 +58,5 @@ def adr_supersede(
 
     console.print(
         f"🔁 [cyan]{superseding_adr_id}[/cyan] now supersedes "
-        f"[yellow]{superseded_adr_id}[/yellow]"
-        + (f" — [dim]{reason}[/dim]" if reason else "")
+        f"[yellow]{superseded_adr_id}[/yellow]" + (f" — [dim]{reason}[/dim]" if reason else "")
     )

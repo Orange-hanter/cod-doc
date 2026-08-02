@@ -64,39 +64,43 @@ def routines_list(
         except Exception:
             history = []
         last_run = history[0] if history else None
-        next_fire = _next_fire(last_run.started_at if last_run else None, r.cron) if r.enabled else None
+        next_fire = (
+            _next_fire(last_run.started_at if last_run else None, r.cron) if r.enabled else None
+        )
         next_fire_pct: int | None = None
         if next_fire is not None:
             now = datetime.now(UTC)
             delta_s = (next_fire - now).total_seconds()
             if 0 < delta_s < 3600:
-                next_fire_pct = int(round(delta_s / 3600 * 100))
+                next_fire_pct = round(delta_s / 3600 * 100)
             elif delta_s <= 0:
                 next_fire_pct = 0
-        rows.append({
-            "next_fire_pct": next_fire_pct,
-            "name": r.name,
-            "check_name": r.check_name,
-            "trigger": r.trigger,
-            "cron": r.cron or "",
-            "on_finding": r.on_finding,
-            "enabled": r.enabled,
-            "last_run_at": last_run.started_at if last_run else None,
-            "last_run_at_fmt": _fmt_age(last_run.started_at if last_run else None),
-            "last_run_status": last_run.status if last_run else None,
-            "last_findings": last_run.findings_count if last_run else None,
-            "next_fire_at": next_fire,
-            "next_fire_fmt": _fmt_age(next_fire) if next_fire else "—",
-            "interval_min": routine_service._cron_interval_minutes(r.cron) if r.cron else None,
-            "history": [
-                {
-                    "started_at": h.started_at,
-                    "status": h.status,
-                    "findings_count": h.findings_count,
-                }
-                for h in history
-            ],
-        })
+        rows.append(
+            {
+                "next_fire_pct": next_fire_pct,
+                "name": r.name,
+                "check_name": r.check_name,
+                "trigger": r.trigger,
+                "cron": r.cron or "",
+                "on_finding": r.on_finding,
+                "enabled": r.enabled,
+                "last_run_at": last_run.started_at if last_run else None,
+                "last_run_at_fmt": _fmt_age(last_run.started_at if last_run else None),
+                "last_run_status": last_run.status if last_run else None,
+                "last_findings": last_run.findings_count if last_run else None,
+                "next_fire_at": next_fire,
+                "next_fire_fmt": _fmt_age(next_fire) if next_fire else "—",
+                "interval_min": routine_service._cron_interval_minutes(r.cron) if r.cron else None,
+                "history": [
+                    {
+                        "started_at": h.started_at,
+                        "status": h.status,
+                        "findings_count": h.findings_count,
+                    }
+                    for h in history
+                ],
+            }
+        )
 
     available_checks = sorted(routine_service.CHECK_CATALOG)
 
@@ -172,12 +176,14 @@ def routine_run(
     except routine_service.RoutineNotFoundError:
         raise HTTPException(404, "Routine not found") from None
     session.commit()
-    return JSONResponse({
-        "name": name,
-        "status": run.status,
-        "findings_count": run.findings_count,
-        "started_at": run.started_at.isoformat() if run.started_at else None,
-    })
+    return JSONResponse(
+        {
+            "name": name,
+            "status": run.status,
+            "findings_count": run.findings_count,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+        }
+    )
 
 
 @router.post("/p/{slug}/routines/{name}/delete")

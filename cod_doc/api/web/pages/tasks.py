@@ -6,7 +6,7 @@ import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
@@ -29,22 +29,22 @@ LEGACY_PAGE_SIZE_MAX = 500
 # aliases (e.g. legacy `pending` + new `todo`) under one bucket.
 # Tuple: (column_key, display_label, icon, set_of_status_values).
 _KANBAN_COLS: list[tuple[str, str, str, set[str]]] = [
-    ("todo",        "Todo",        "○", {"backlog", "todo", "pending"}),
+    ("todo", "Todo", "○", {"backlog", "todo", "pending"}),
     ("in_progress", "In progress", "◐", {"in_progress", "in-progress"}),
-    ("in_review",   "In review",   "◔", {"in_review"}),
-    ("blocked",     "Blocked",     "✕", {"blocked"}),
-    ("done",        "Done",        "●", {"done"}),
-    ("cancelled",   "Cancelled",   "—", {"cancelled"}),
+    ("in_review", "In review", "◔", {"in_review"}),
+    ("blocked", "Blocked", "✕", {"blocked"}),
+    ("done", "Done", "●", {"done"}),
+    ("cancelled", "Cancelled", "—", {"cancelled"}),
 ]
 
 # Type-letter glyphs for compact task cards.
 _TYPE_GLYPHS: dict[str, str] = {
-    "feature":  "F",
-    "bug":      "B",
+    "feature": "F",
+    "bug": "B",
     "refactor": "R",
-    "test":     "T",
-    "docs":     "D",
-    "chore":    "C",
+    "test": "T",
+    "docs": "D",
+    "chore": "C",
 }
 
 # Priority sort weight (critical first).
@@ -71,8 +71,7 @@ def _enrich_chain(
     levels: list[dict[str, Any]] = []
     for lvl_bucket in raw["levels"]:
         tasks_with_glyph = [
-            {**t, "type_glyph": _TYPE_GLYPHS.get(t["type"], "?")}
-            for t in lvl_bucket["tasks"]
+            {**t, "type_glyph": _TYPE_GLYPHS.get(t["type"], "?")} for t in lvl_bucket["tasks"]
         ]
         tasks_with_glyph.sort(key=lambda c: (_PRIO_RANK.get(c["priority"], 99), c["task_id"]))
         levels.append({"level": lvl_bucket["level"], "tasks": tasks_with_glyph})
@@ -136,35 +135,40 @@ def tasks_list(
                 sects = plans.list_sections(session, p.row_id)
                 sections_by_pid[p.row_id] = {
                     s.row_id: {"letter": s.letter or "", "title": s.title}
-                    for s in sects if s.row_id is not None
+                    for s in sects
+                    if s.row_id is not None
                 }
                 prog = progress_map.get(p.row_id)
-                plan_list.append({
-                    "scope": p.scope,
-                    "done": prog.done if prog else 0,
-                    "total": prog.total if prog else 0,
-                })
+                plan_list.append(
+                    {
+                        "scope": p.scope,
+                        "done": prog.done if prog else 0,
+                        "total": prog.total if prog else 0,
+                    }
+                )
 
             for t in tasks.list_for_project(session, project_db_id):
                 plan_scope = scope_by_pid.get(t.plan_id, "")
                 sect = sections_by_pid.get(t.plan_id, {}).get(t.section_id, {})
                 has_ac = bool(t.acceptance and t.acceptance.strip())
                 has_desc = bool(t.description and t.description.strip())
-                all_rows.append({
-                    "task_id": t.task_id,
-                    "title": t.title,
-                    "status": t.status.value,
-                    "type": t.type.value,
-                    "type_glyph": _TYPE_GLYPHS.get(t.type.value, "?"),
-                    "priority": t.priority.value,
-                    "plan_id": t.plan_id,
-                    "plan_scope": plan_scope,
-                    "section_letter": sect.get("letter", ""),
-                    "section_title": sect.get("title", ""),
-                    "has_acceptance": has_ac,
-                    "has_description": has_desc,
-                    "blocked_reason": t.blocked_reason or "",
-                })
+                all_rows.append(
+                    {
+                        "task_id": t.task_id,
+                        "title": t.title,
+                        "status": t.status.value,
+                        "type": t.type.value,
+                        "type_glyph": _TYPE_GLYPHS.get(t.type.value, "?"),
+                        "priority": t.priority.value,
+                        "plan_id": t.plan_id,
+                        "plan_scope": plan_scope,
+                        "section_letter": sect.get("letter", ""),
+                        "section_title": sect.get("title", ""),
+                        "has_acceptance": has_ac,
+                        "has_description": has_desc,
+                        "blocked_reason": t.blocked_reason or "",
+                    }
+                )
 
             # Compute per-plan chain data only when the chains view is requested
             # (it issues one extra recursive CTE per plan for critical_path).
@@ -193,8 +197,9 @@ def tasks_list(
         "blocked": sum(1 for r in rows if r["status"] == "blocked"),
         "in_review": sum(1 for r in rows if r["status"] == "in_review"),
         "missing_ac": sum(1 for r in rows if not r["has_acceptance"] and r["status"] != "done"),
-        "critical_open": sum(1 for r in rows
-                             if r["priority"] == "critical" and r["status"] != "done"),
+        "critical_open": sum(
+            1 for r in rows if r["priority"] == "critical" and r["status"] != "done"
+        ),
     }
     stats["pct_done"] = int(stats["done"] / total * 100) if total else 0
 
@@ -203,16 +208,18 @@ def tasks_list(
     for key, label, icon, _members in _KANBAN_COLS:
         col_tasks = [r for r in rows if _column_for(r["status"]) == key]
         col_tasks.sort(key=lambda r: (_PRIO_RANK.get(r["priority"], 99), r["task_id"]))
-        columns.append({
-            "key": key,
-            "label": label,
-            "icon": icon,
-            "count": len(col_tasks),
-            "tasks": col_tasks,
-            # Collapsed by default if Done/Cancelled — least scanned columns.
-            "collapsed_default": key in ("done", "cancelled"),
-            "highlighted": status_filter is not None and status_filter.value in _members,
-        })
+        columns.append(
+            {
+                "key": key,
+                "label": label,
+                "icon": icon,
+                "count": len(col_tasks),
+                "tasks": col_tasks,
+                # Collapsed by default if Done/Cancelled — least scanned columns.
+                "collapsed_default": key in ("done", "cancelled"),
+                "highlighted": status_filter is not None and status_filter.value in _members,
+            }
+        )
 
     legacy_count = len(proj.get_tasks())
     return templates.TemplateResponse(
@@ -282,16 +289,16 @@ def tasks_audit(
         "You are a senior project manager auditing a task list for an engineering team.\n\n"
         f"Task list (JSON):\n{tasks_json}\n\n"
         "Analyze all tasks and return a JSON object with these exact fields:\n"
-        '{\n'
+        "{\n"
         '  "summary": "2-3 sentence overall assessment",\n'
         '  "score": 7,\n'
         '  "issues": [\n'
         '    {"severity": "critical|warning|info", "category": "short label",\n'
         '     "message": "concrete description", "task_ids": ["T-001", ...]}\n'
-        '  ],\n'
+        "  ],\n"
         '  "recommendations": ["actionable step", ...],\n'
         '  "strengths": ["positive observation", ...]\n'
-        '}\n\n'
+        "}\n\n"
         "Check for: missing descriptions or acceptance criteria; tasks stuck as "
         "'blocked' with no blocked_reason; 'in_progress' tasks that look stale; "
         "sequencing issues (high-priority tasks that may depend on lower-priority "
@@ -306,9 +313,7 @@ def tasks_audit(
         raw = _call_lite_raw(prompt, cfg, max_tokens=2048).strip()
         if raw.startswith("```"):
             raw_lines = raw.splitlines()
-            raw = "\n".join(
-                raw_lines[1:-1] if raw_lines[-1].strip() == "```" else raw_lines[1:]
-            )
+            raw = "\n".join(raw_lines[1:-1] if raw_lines[-1].strip() == "```" else raw_lines[1:])
         data = json.loads(raw)
         audit = {
             "summary": str(data.get("summary", "")),
@@ -324,9 +329,9 @@ def tasks_audit(
             ][:8],
             "recommendations": [str(x) for x in data.get("recommendations", [])][:5],
             "strengths": [str(x) for x in data.get("strengths", [])][:4],
-            "generated_at": __import__("datetime").datetime.now(
-                __import__("datetime").UTC
-            ).isoformat(),
+            "generated_at": __import__("datetime")
+            .datetime.now(__import__("datetime").UTC)
+            .isoformat(),
             "task_count": len(all_tasks_data),
         }
         audit_path.parent.mkdir(parents=True, exist_ok=True)
@@ -550,9 +555,7 @@ def task_show(
                     "author": r.author,
                     "at": r.at,
                     "reason": r.reason or "",
-                    "diff_first_line": (r.diff or "").splitlines()[0][:240]
-                    if r.diff
-                    else "",
+                    "diff_first_line": (r.diff or "").splitlines()[0][:240] if r.diff else "",
                 }
                 for r in reversed(history)  # newest first for the timeline
             ],

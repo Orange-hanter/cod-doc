@@ -395,9 +395,7 @@ def test_field_edit_form_has_improve_button_and_intent_input(task_detail_client)
     assert "/fields/description/improve" in body
 
 
-def test_field_improve_swaps_textarea_with_suggestion(
-    task_detail_client, monkeypatch
-) -> None:
+def test_field_improve_swaps_textarea_with_suggestion(task_detail_client, monkeypatch) -> None:
     """The improve endpoint returns the edit fragment with the AI suggestion in textarea."""
     client, entry = task_detail_client
     from cod_doc.services import ai_text
@@ -431,14 +429,12 @@ def test_field_improve_swaps_textarea_with_suggestion(
     assert "AI-improved" not in r2.text
 
 
-def test_field_improve_surfaces_backend_error_inline(
-    task_detail_client, monkeypatch
-) -> None:
+def test_field_improve_surfaces_backend_error_inline(task_detail_client, monkeypatch) -> None:
     """When the LLM call fails, return the original draft + an inline error notice."""
     client, entry = task_detail_client
     from cod_doc.services import ai_text
 
-    def boom(text: str, intent: str, *, cfg):  # noqa: ANN202
+    def boom(text: str, intent: str, *, cfg):
         raise ai_text.AIBackendError("network down")
 
     monkeypatch.setattr(ai_text, "improve_text_traced", boom)

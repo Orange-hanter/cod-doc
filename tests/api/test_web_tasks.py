@@ -160,9 +160,8 @@ def test_tasks_list_done_column_collapsed_by_default(tasks_client) -> None:
     # Find the Done column markup and confirm it has no `open` attribute.
     # Other columns with tasks should be open.
     import re
-    done_block = re.search(
-        r'<details class="kanban-col kanban-col-done[^"]*"([^>]*)>', r.text
-    )
+
+    done_block = re.search(r'<details class="kanban-col kanban-col-done[^"]*"([^>]*)>', r.text)
     assert done_block is not None, "Done column must render"
     assert "open" not in done_block.group(1), "Done column should be collapsed by default"
 

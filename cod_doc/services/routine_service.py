@@ -26,14 +26,15 @@ Public API
 from __future__ import annotations
 
 import re as _re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from cod_doc.infra.models import (
     ApprovalModel,
@@ -127,14 +128,16 @@ def _run_to_domain(m: RoutineRunModel) -> RoutineRun:
 def _check_approval_stale(session: Session, project_id: int, **_: Any) -> dict[str, Any]:
     """Find pending approvals past expires_at and mark them expired."""
     now = datetime.now(UTC)
-    rows = list(session.execute(
-        select(ApprovalModel).where(
-            ApprovalModel.project_id == project_id,
-            ApprovalModel.status == "pending",
-            ApprovalModel.expires_at.is_not(None),
-            ApprovalModel.expires_at < now,
-        )
-    ).scalars())
+    rows = list(
+        session.execute(
+            select(ApprovalModel).where(
+                ApprovalModel.project_id == project_id,
+                ApprovalModel.status == "pending",
+                ApprovalModel.expires_at.is_not(None),
+                ApprovalModel.expires_at < now,
+            )
+        ).scalars()
+    )
     expired_ids: list[str] = []
     for a in rows:
         a.status = "expired"
@@ -142,7 +145,9 @@ def _check_approval_stale(session: Session, project_id: int, **_: Any) -> dict[s
         a.decision_comment = "expired by routine"
         expired_ids.append(a.approval_id)
         activity_service.emit(
-            session, project_id, "approval.expired",
+            session,
+            project_id,
+            "approval.expired",
             actor_kind="routine",
             actor_id="approval_stale",
             scope_kind="approval",
@@ -152,9 +157,10 @@ def _check_approval_stale(session: Session, project_id: int, **_: Any) -> dict[s
     return {"expired_count": len(expired_ids), "expired_ids": expired_ids}
 
 
-def _get_project_root(session: Session, project_id: int) -> "Path | None":
+def _get_project_root(session: Session, project_id: int) -> Path | None:
     """Return the on-disk root for a project_id via the project.root_path column."""
     from pathlib import Path
+
     from cod_doc.infra.models.project import ProjectModel
 
     proj_model = session.get(ProjectModel, project_id)
@@ -186,7 +192,9 @@ def _check_stale_refs(session: Session, project_id: int, **_: Any) -> dict[str, 
             findings.append({"path": rel, "status": "BROKEN", "expected": expected})
         elif not check_hash(target, expected):
             actual = calc_hash(target)
-            findings.append({"path": rel, "status": "STALE", "expected": expected, "actual": actual})
+            findings.append(
+                {"path": rel, "status": "STALE", "expected": expected, "actual": actual}
+            )
 
     return {"findings": findings, "findings_count": len(findings)}
 
@@ -203,15 +211,20 @@ def _check_link_integrity(
     Delegates to ``link_service.verify_section`` for each section.
     """
     from sqlalchemy import select as _select
+
     from cod_doc.infra.models.documents import DocumentModel, SectionModel
     from cod_doc.services import link_service
 
-    sec_ids = session.execute(
-        _select(SectionModel.row_id)
-        .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
-        .where(DocumentModel.project_id == project_id)
-        .limit(limit)
-    ).scalars().all()
+    sec_ids = (
+        session.execute(
+            _select(SectionModel.row_id)
+            .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
+            .where(DocumentModel.project_id == project_id)
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
 
     total_broken = 0
     broken_detail: list[dict[str, Any]] = []
@@ -281,10 +294,10 @@ CheckFn = Callable[..., dict[str, Any]]
 
 CHECK_CATALOG: dict[str, CheckFn] = {
     "approval_stale": _check_approval_stale,
-    "stale_refs":     _check_stale_refs,
+    "stale_refs": _check_stale_refs,
     "link_integrity": _check_link_integrity,
-    "doc_drift":      _check_doc_drift,
-    "task_stale":     _check_task_stale,
+    "doc_drift": _check_doc_drift,
+    "task_stale": _check_task_stale,
 }
 
 
@@ -340,14 +353,18 @@ def create(
 def get(session: Session, project_id: int, name: str) -> Routine | None:
     m = session.execute(
         select(RoutineModel).where(
-            RoutineModel.project_id == project_id, RoutineModel.name == name,
+            RoutineModel.project_id == project_id,
+            RoutineModel.name == name,
         )
     ).scalar_one_or_none()
     return _to_domain(m) if m is not None else None
 
 
 def list_routines(
-    session: Session, project_id: int, *, enabled_only: bool = False,
+    session: Session,
+    project_id: int,
+    *,
+    enabled_only: bool = False,
 ) -> list[Routine]:
     stmt = select(RoutineModel).where(RoutineModel.project_id == project_id)
     if enabled_only:
@@ -357,11 +374,16 @@ def list_routines(
 
 
 def update_status(
-    session: Session, project_id: int, name: str, *, enabled: bool,
+    session: Session,
+    project_id: int,
+    name: str,
+    *,
+    enabled: bool,
 ) -> Routine:
     m = session.execute(
         select(RoutineModel).where(
-            RoutineModel.project_id == project_id, RoutineModel.name == name,
+            RoutineModel.project_id == project_id,
+            RoutineModel.name == name,
         )
     ).scalar_one_or_none()
     if m is None:
@@ -375,7 +397,8 @@ def update_status(
 def delete(session: Session, project_id: int, name: str) -> None:
     m = session.execute(
         select(RoutineModel).where(
-            RoutineModel.project_id == project_id, RoutineModel.name == name,
+            RoutineModel.project_id == project_id,
+            RoutineModel.name == name,
         )
     ).scalar_one_or_none()
     if m is None:
@@ -398,7 +421,8 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
     """
     routine = session.execute(
         select(RoutineModel).where(
-            RoutineModel.project_id == project_id, RoutineModel.name == name,
+            RoutineModel.project_id == project_id,
+            RoutineModel.name == name,
         )
     ).scalar_one_or_none()
     if routine is None:
@@ -423,7 +447,9 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
     session.flush()
 
     activity_service.emit(
-        session, project_id, "routine.fired",
+        session,
+        project_id,
+        "routine.fired",
         actor_kind="routine",
         actor_id=routine.name,
         scope_kind="routine",
@@ -434,15 +460,19 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
     check_fn = CHECK_CATALOG[routine.check_name]
     try:
         result = check_fn(session, project_id, **(routine.check_args or {}))
-        findings_count = int(result.get("findings_count")
-                             or result.get("expired_count")
-                             or len(result.get("findings", [])))
+        findings_count = int(
+            result.get("findings_count")
+            or result.get("expired_count")
+            or len(result.get("findings", []))
+        )
         run_row.findings_count = findings_count
         run_row.status = "done"
         run_row.finished_at = datetime.now(UTC)
         if findings_count > 0:
             activity_service.emit(
-                session, project_id, "routine.found_issue",
+                session,
+                project_id,
+                "routine.found_issue",
                 actor_kind="routine",
                 actor_id=routine.name,
                 scope_kind="routine",
@@ -453,7 +483,10 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
             # PCA-922: on_finding policy
             if routine.on_finding == "update_existing_task":
                 created_task_id = _update_or_create_finding_task(
-                    session, project_id, routine, result,
+                    session,
+                    project_id,
+                    routine,
+                    result,
                 )
                 if created_task_id:
                     run_row.created_task_id = created_task_id
@@ -472,9 +505,9 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
 # Scheduler tick (PCA-919)                                                     #
 # --------------------------------------------------------------------------- #
 
-_EVERY_N_MINUTES = _re.compile(r"^\*/(\d+)\s")      # */15 * * * *
-_EVERY_N_HOURS   = _re.compile(r"^0\s\*/(\d+)\s")   # 0 */2 * * *
-_DAILY           = _re.compile(r"^0\s0\s")           # 0 0 * * *
+_EVERY_N_MINUTES = _re.compile(r"^\*/(\d+)\s")  # */15 * * * *
+_EVERY_N_HOURS = _re.compile(r"^0\s\*/(\d+)\s")  # 0 */2 * * *
+_DAILY = _re.compile(r"^0\s0\s")  # 0 0 * * *
 
 
 def _cron_interval_minutes(cron: str | None) -> int:
@@ -498,7 +531,7 @@ def _cron_interval_minutes(cron: str | None) -> int:
     return 60  # safe default for unrecognised patterns
 
 
-def tick(session: "Session", project_id: int) -> list[str]:
+def tick(session: Session, project_id: int) -> list[str]:
     """PCA-919: Fire all overdue cron routines for a project.
 
     Called once per daemon cycle.  For each enabled routine with
@@ -511,13 +544,15 @@ def tick(session: "Session", project_id: int) -> list[str]:
     now = datetime.now(UTC)
     fired: list[str] = []
 
-    routines = list(session.execute(
-        select(RoutineModel).where(
-            RoutineModel.project_id == project_id,
-            RoutineModel.trigger == "cron",
-            RoutineModel.enabled.is_(True),
-        )
-    ).scalars())
+    routines = list(
+        session.execute(
+            select(RoutineModel).where(
+                RoutineModel.project_id == project_id,
+                RoutineModel.trigger == "cron",
+                RoutineModel.enabled.is_(True),
+            )
+        ).scalars()
+    )
 
     for routine in routines:
         interval = timedelta(minutes=_cron_interval_minutes(routine.cron))
@@ -542,11 +577,16 @@ def tick(session: "Session", project_id: int) -> list[str]:
 
 
 def history(
-    session: Session, project_id: int, name: str, *, limit: int = 20,
+    session: Session,
+    project_id: int,
+    name: str,
+    *,
+    limit: int = 20,
 ) -> list[RoutineRun]:
     routine = session.execute(
         select(RoutineModel).where(
-            RoutineModel.project_id == project_id, RoutineModel.name == name,
+            RoutineModel.project_id == project_id,
+            RoutineModel.name == name,
         )
     ).scalar_one_or_none()
     if routine is None:
@@ -571,7 +611,7 @@ def _signature_for_routine(routine_name: str) -> str:
 
 
 def _update_or_create_finding_task(
-    session: "Session",
+    session: Session,
     project_id: int,
     routine: RoutineModel,
     result: dict[str, Any],
@@ -585,7 +625,8 @@ def _update_or_create_finding_task(
     Returns the task_id of the touched task, or None on failure.
     """
     from sqlalchemy import select as _select
-    from cod_doc.domain.entities import Priority, TaskStatus, TaskType
+
+    from cod_doc.domain.entities import Priority, TaskType
     from cod_doc.infra.models import TaskModel
     from cod_doc.services import task_service
 
@@ -614,7 +655,9 @@ def _update_or_create_finding_task(
         existing.last_updated = datetime.now(UTC)
         session.flush()
         activity_service.emit(
-            session, project_id, "task.updated_by_routine",
+            session,
+            project_id,
+            "task.updated_by_routine",
             actor_kind="routine",
             actor_id=routine.name,
             scope_kind="task",

@@ -158,8 +158,7 @@ def daemon_status() -> dict[str, Any]:
         "running": daemon_is_running(),
         "agent_enabled": cfg.agent_enabled,
         "projects": [
-            {"name": e.name, "daemon_enabled": e.daemon_enabled}
-            for e in cfg.list_projects()
+            {"name": e.name, "daemon_enabled": e.daemon_enabled} for e in cfg.list_projects()
         ],
     }
 

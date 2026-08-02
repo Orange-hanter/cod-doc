@@ -27,9 +27,7 @@ def _seed(session: Session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="p-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -113,9 +111,7 @@ def test_set_blocker_rejects_empty_reason(engine_with_schema) -> None:  # type: 
         _make(session, p, pl, s, "PR-001")
 
         with pytest.raises(ValueError, match="non-empty"):
-            task_service.set_blocker(
-                session, task_id="PR-001", reason="   ", author="human:test"
-            )
+            task_service.set_blocker(session, task_id="PR-001", reason="   ", author="human:test")
 
 
 def test_clear_blocker_removes_reason(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -124,9 +120,7 @@ def test_clear_blocker_removes_reason(engine_with_schema) -> None:  # type: igno
         p, pl, s = _seed(session)
         _make(session, p, pl, s, "PR-001")
 
-        task_service.set_blocker(
-            session, task_id="PR-001", reason="x", author="human:test"
-        )
+        task_service.set_blocker(session, task_id="PR-001", reason="x", author="human:test")
         task_service.clear_blocker(session, task_id="PR-001", author="human:test")
 
         t = task_service.get(session, "PR-001")
@@ -156,12 +150,8 @@ def test_list_blocked_returns_tasks_with_blocker(engine_with_schema) -> None:  #
         p, pl, s = _seed(session)
         for tid in ("PR-001", "PR-002", "PR-003"):
             _make(session, p, pl, s, tid)
-        task_service.set_blocker(
-            session, task_id="PR-001", reason="x", author="human:test"
-        )
-        task_service.set_blocker(
-            session, task_id="PR-003", reason="y", author="human:test"
-        )
+        task_service.set_blocker(session, task_id="PR-001", reason="x", author="human:test")
+        task_service.set_blocker(session, task_id="PR-003", reason="y", author="human:test")
 
         blocked = task_service.list_blocked(session, p)
         assert {t.task_id for t in blocked} == {"PR-001", "PR-003"}
@@ -173,9 +163,7 @@ def test_list_blocked_excludes_done_tasks(engine_with_schema) -> None:  # type: 
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _make(session, p, pl, s, "PR-001")
-        task_service.set_blocker(
-            session, task_id="PR-001", reason="x", author="human:test"
-        )
+        task_service.set_blocker(session, task_id="PR-001", reason="x", author="human:test")
         task_service.update_status(
             session,
             task_id="PR-001",

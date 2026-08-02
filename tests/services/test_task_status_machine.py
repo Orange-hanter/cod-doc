@@ -27,6 +27,7 @@ class TestNormalise:
 
     def test_accepts_enum(self) -> None:
         from cod_doc.domain.entities import TaskStatus
+
         assert normalise(TaskStatus.PENDING) == "todo"
         assert normalise(TaskStatus.IN_PROGRESS) == "in_progress"
 
@@ -67,14 +68,12 @@ class TestValidateTransition:
 
 class TestTransitionTableShape:
     def test_table_covers_all_canonical_statuses(self) -> None:
-        canonical = {"backlog", "todo", "in_progress", "in_review",
-                     "blocked", "done", "cancelled"}
+        canonical = {"backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"}
         assert set(ALLOWED_TRANSITIONS.keys()) == canonical
 
     def test_no_transition_to_unknown_target(self) -> None:
-        canonical = {"backlog", "todo", "in_progress", "in_review",
-                     "blocked", "done", "cancelled"}
-        for sources, targets in ALLOWED_TRANSITIONS.items():
+        canonical = {"backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"}
+        for _sources, targets in ALLOWED_TRANSITIONS.items():
             assert targets <= canonical
 
 

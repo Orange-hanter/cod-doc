@@ -23,9 +23,7 @@ if TYPE_CHECKING:
 
 def _seed_plan(session: Session) -> tuple[int, int, int]:
     now = datetime.now(UTC)
-    proj = ProjectModel(
-        slug="wb-proj", title="WC Proj", root_path="/tmp/wb", config_json={}
-    )
+    proj = ProjectModel(slug="wb-proj", title="WC Proj", root_path="/tmp/wb", config_json={})
     proj.created = now
     proj.updated = now
     session.add(proj)
@@ -80,9 +78,7 @@ def test_build_task_assigned_uses_heartbeat_payload(engine_with_schema) -> None:
             priority=Priority.MEDIUM,
             author="x",
         )
-        wc = build_wake_context(
-            session, reason=WakeReason.TASK_ASSIGNED, task_id="WB-001"
-        )
+        wc = build_wake_context(session, reason=WakeReason.TASK_ASSIGNED, task_id="WB-001")
 
     assert wc.reason is WakeReason.TASK_ASSIGNED
     assert wc.task_id == "WB-001"
@@ -106,9 +102,7 @@ def test_build_approval_resolved_uses_heartbeat_payload(engine_with_schema) -> N
             priority=Priority.HIGH,
             author="x",
         )
-        wc = build_wake_context(
-            session, reason=WakeReason.APPROVAL_RESOLVED, task_id="WB-002"
-        )
+        wc = build_wake_context(session, reason=WakeReason.APPROVAL_RESOLVED, task_id="WB-002")
 
     assert wc.reason is WakeReason.APPROVAL_RESOLVED
     assert wc.payload["task"]["id"] == "WB-002"
@@ -149,6 +143,4 @@ def test_build_doc_drift_without_doc_ref_raises(engine_with_schema) -> None:  # 
 def test_build_unknown_task_id_propagates(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session, pytest.raises(task_service.TaskNotFoundError):
-        build_wake_context(
-            session, reason=WakeReason.TASK_ASSIGNED, task_id="NOPE-001"
-        )
+        build_wake_context(session, reason=WakeReason.TASK_ASSIGNED, task_id="NOPE-001")

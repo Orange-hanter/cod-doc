@@ -16,8 +16,7 @@ from cod_doc.infra.repositories import (
     LinkRepository,
     ProjectRepository,
 )
-from cod_doc.services import doc_service
-from cod_doc.services import link_service
+from cod_doc.services import doc_service, link_service
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

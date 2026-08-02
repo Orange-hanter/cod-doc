@@ -128,9 +128,7 @@ def rename_cascade(
             rewritten_sections=0,
         )
 
-    effective_path_map = (
-        {o: n for o, n in path_map.items() if o != n} if path_map else {}
-    )
+    effective_path_map = {o: n for o, n in path_map.items() if o != n} if path_map else {}
 
     # COD-079: rename_cascade pre-updates link rows in step 1 and patches
     # section bodies in step 3. doc_service.patch_section's auto-sync would

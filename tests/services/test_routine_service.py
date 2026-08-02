@@ -15,8 +15,8 @@ from cod_doc.infra.models import (
     ProjectModel,
     RoutineModel,
 )
-from cod_doc.services import routine_service as routines
 from cod_doc.services import approval_service as approvals
+from cod_doc.services import routine_service as routines
 from cod_doc.services.routine_service import RoutineNotFoundError
 
 if TYPE_CHECKING:
@@ -38,10 +38,12 @@ def test_create_persists_routine(engine_with_schema) -> None:  # type: ignore[no
     with transactional(factory) as session:
         proj_id = _seed_project(session)
         r = routines.create(
-            session, proj_id,
+            session,
+            proj_id,
             name="approval_stale_check",
             check_name="approval_stale",
-            trigger="cron", cron="0 * * * *",
+            trigger="cron",
+            cron="0 * * * *",
             on_finding="comment_only",
         )
         assert r.name == "approval_stale_check"
@@ -54,9 +56,7 @@ def test_create_validates_check_name(engine_with_schema) -> None:  # type: ignor
     with transactional(factory) as session:
         proj_id = _seed_project(session)
         with pytest.raises(ValueError, match="unknown check_name"):
-            routines.create(session, proj_id,
-                            name="x", check_name="not_a_check",
-                            trigger="manual")
+            routines.create(session, proj_id, name="x", check_name="not_a_check", trigger="manual")
 
 
 def test_create_cron_requires_cron_expr(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -64,8 +64,7 @@ def test_create_cron_requires_cron_expr(engine_with_schema) -> None:  # type: ig
     with transactional(factory) as session:
         proj_id = _seed_project(session)
         with pytest.raises(ValueError, match="trigger='cron' requires"):
-            routines.create(session, proj_id, name="x",
-                            check_name="approval_stale", trigger="cron")
+            routines.create(session, proj_id, name="x", check_name="approval_stale", trigger="cron")
 
 
 def test_create_validates_on_finding(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -73,19 +72,22 @@ def test_create_validates_on_finding(engine_with_schema) -> None:  # type: ignor
     with transactional(factory) as session:
         proj_id = _seed_project(session)
         with pytest.raises(ValueError, match="on_finding"):
-            routines.create(session, proj_id, name="x",
-                            check_name="approval_stale", trigger="manual",
-                            on_finding="bogus")
+            routines.create(
+                session,
+                proj_id,
+                name="x",
+                check_name="approval_stale",
+                trigger="manual",
+                on_finding="bogus",
+            )
 
 
 def test_list_filters_enabled_only(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _seed_project(session)
-        routines.create(session, proj_id, name="r1",
-                        check_name="approval_stale", trigger="manual")
-        r2 = routines.create(session, proj_id, name="r2",
-                             check_name="approval_stale", trigger="manual")
+        routines.create(session, proj_id, name="r1", check_name="approval_stale", trigger="manual")
+        routines.create(session, proj_id, name="r2", check_name="approval_stale", trigger="manual")
         routines.update_status(session, proj_id, "r2", enabled=False)
 
         enabled = routines.list_routines(session, proj_id, enabled_only=True)
@@ -106,8 +108,7 @@ def test_delete_cascades_to_runs(engine_with_schema) -> None:  # type: ignore[no
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _seed_project(session)
-        routines.create(session, proj_id, name="r1",
-                        check_name="approval_stale", trigger="manual")
+        routines.create(session, proj_id, name="r1", check_name="approval_stale", trigger="manual")
         routines.run_now(session, proj_id, "r1")
         routines.delete(session, proj_id, "r1")
         assert routines.get(session, proj_id, "r1") is None
@@ -117,17 +118,18 @@ def test_run_now_emits_routine_fired_event(engine_with_schema) -> None:  # type:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _seed_project(session)
-        routines.create(session, proj_id, name="r1",
-                        check_name="approval_stale", trigger="manual")
+        routines.create(session, proj_id, name="r1", check_name="approval_stale", trigger="manual")
         run = routines.run_now(session, proj_id, "r1")
         assert run.status == "done"
 
     with transactional(factory) as session:
-        events = list(session.execute(
-            select(ActivityEventModel).where(
-                ActivityEventModel.kind == "routine.fired",
-            )
-        ).scalars())
+        events = list(
+            session.execute(
+                select(ActivityEventModel).where(
+                    ActivityEventModel.kind == "routine.fired",
+                )
+            ).scalars()
+        )
         assert len(events) == 1
         assert events[0].scope_id == "r1"
 
@@ -136,18 +138,26 @@ def test_run_now_skip_concurrency_returns_existing_running(engine_with_schema) -
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _seed_project(session)
-        routines.create(session, proj_id, name="r1",
-                        check_name="approval_stale", trigger="manual",
-                        concurrency="skip")
+        routines.create(
+            session,
+            proj_id,
+            name="r1",
+            check_name="approval_stale",
+            trigger="manual",
+            concurrency="skip",
+        )
         # Manually plant a 'running' row to simulate concurrent execution.
         from cod_doc.infra.models import RoutineRunModel
+
         routine_row = session.execute(
             select(RoutineModel).where(RoutineModel.name == "r1")
         ).scalar_one()
-        session.add(RoutineRunModel(
-            routine_id=routine_row.row_id,
-            status="running",
-        ))
+        session.add(
+            RoutineRunModel(
+                routine_id=routine_row.row_id,
+                status="running",
+            )
+        )
         session.flush()
 
         result = routines.run_now(session, proj_id, "r1")
@@ -160,16 +170,18 @@ def test_approval_stale_check_expires_pending_approvals(engine_with_schema) -> N
     with transactional(factory) as session:
         proj_id = _seed_project(session)
         # Create a pending approval that is already past its expires_at.
-        a = approvals.request(session, proj_id, approval_type="manual",
-                              requested_by="x", expires_in_hours=1)
+        a = approvals.request(
+            session, proj_id, approval_type="manual", requested_by="x", expires_in_hours=1
+        )
         m = session.execute(
             select(ApprovalModel).where(ApprovalModel.approval_id == a.approval_id)
         ).scalar_one()
         m.expires_at = datetime.now(UTC) - timedelta(hours=2)
         session.flush()
 
-        routines.create(session, proj_id, name="approval_stale",
-                        check_name="approval_stale", trigger="manual")
+        routines.create(
+            session, proj_id, name="approval_stale", check_name="approval_stale", trigger="manual"
+        )
         run = routines.run_now(session, proj_id, "approval_stale")
         assert run.findings_count == 1
 
@@ -183,8 +195,7 @@ def test_history_returns_recent_runs_newest_first(engine_with_schema) -> None:  
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj_id = _seed_project(session)
-        routines.create(session, proj_id, name="r1",
-                        check_name="approval_stale", trigger="manual")
+        routines.create(session, proj_id, name="r1", check_name="approval_stale", trigger="manual")
         for _ in range(3):
             routines.run_now(session, proj_id, "r1")
         history = routines.history(session, proj_id, "r1", limit=10)

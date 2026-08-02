@@ -62,7 +62,7 @@ class Orchestrator:
         config: Config,
         on_ask_human: Callable[[str, str], str] | None = None,
         async_on_ask_human: AskHumanAsync | None = None,
-        adapter: "LLMAdapter | None" = None,
+        adapter: LLMAdapter | None = None,
     ) -> None:
         self.project = project
         self.config = config
@@ -74,6 +74,7 @@ class Orchestrator:
             self.adapter = adapter
         else:
             from cod_doc.agent.adapters.registry import get_adapter_from_config
+
             self.adapter = get_adapter_from_config(config)
 
         # PCA-926: adapter must support tool_use (orchestrator unconditionally uses tools).
@@ -108,6 +109,7 @@ class Orchestrator:
         use ``orchestrator.adapter`` instead.
         """
         import warnings
+
         warnings.warn(
             "orchestrator.client is deprecated — use orchestrator.adapter instead",
             DeprecationWarning,
@@ -157,9 +159,7 @@ class Orchestrator:
         self.project.update_task(task.id, status=TaskStatus.IN_PROGRESS)
         self.project.set_status("running")
         scoped = wake is not None and wake.is_scoped
-        messages = self._build_messages(
-            task, context_mode="no_master" if scoped else "full"
-        )
+        messages = self._build_messages(task, context_mode="no_master" if scoped else "full")
         if wake is not None:
             messages.insert(0, {"role": "user", "content": wake.to_message_block()})
 
@@ -268,7 +268,11 @@ class Orchestrator:
             content = read.get("content", "")
             lines = content.splitlines()
             preview = "\n".join(lines[:max_lines])
-            tail = f"\n[... +{len(lines) - max_lines} строк пропущено]" if len(lines) > max_lines else ""
+            tail = (
+                f"\n[... +{len(lines) - max_lines} строк пропущено]"
+                if len(lines) > max_lines
+                else ""
+            )
             blocks.append(f"**`{path}`**\n```\n{preview}{tail}\n```")
         return "\n\n".join(blocks)
 
@@ -357,8 +361,7 @@ class Orchestrator:
             return f"[Story {story_id}: {data['error']}]"
         criteria = data.get("acceptance_criteria", [])
         lines = [
-            f"## User Story [{data['story_id']}]: "
-            f"{data['persona']} — {data['narrative']}",
+            f"## User Story [{data['story_id']}]: {data['persona']} — {data['narrative']}",
             "### Acceptance Criteria:",
         ]
         for c in criteria:
@@ -400,9 +403,7 @@ class Orchestrator:
 
     # ── Message builder ───────────────────────────────────────────────────────
 
-    def _build_messages(
-        self, task: Task, context_mode: str = "full"
-    ) -> list[dict[str, Any]]:
+    def _build_messages(self, task: Task, context_mode: str = "full") -> list[dict[str, Any]]:
         """Построить начальные сообщения для задачи.
 
         context_mode:
@@ -432,7 +433,12 @@ class Orchestrator:
             refs = self._render_context_refs_compact(task.context_refs)
             if refs:
                 optional.append(("context_refs", refs))
-            return [{"role": "user", "content": self._budget_join(header, optional, _FOOTER, budget_chars)}]
+            return [
+                {
+                    "role": "user",
+                    "content": self._budget_join(header, optional, _FOOTER, budget_chars),
+                }
+            ]
 
         # full / no_master — build optional blocks in priority order
         optional = []
@@ -449,7 +455,9 @@ class Orchestrator:
         if task.story_id:
             optional.append(("story", self._render_story(task.story_id)))
 
-        return [{"role": "user", "content": self._budget_join(header, optional, _FOOTER, budget_chars)}]
+        return [
+            {"role": "user", "content": self._budget_join(header, optional, _FOOTER, budget_chars)}
+        ]
 
     async def _agent_loop(
         self, messages: list[dict[str, Any]], task: Task
@@ -477,21 +485,24 @@ class Orchestrator:
                     select_skills,
                 )
 
-                _system_text = compose_system_prompt(
-                    SYSTEM_PROMPT, select_skills(task)
-                )
+                _system_text = compose_system_prompt(SYSTEM_PROMPT, select_skills(task))
                 llm_messages = [{"role": "system", "content": _system_text}, *messages]
                 # G1: log token budget before sending
                 approx_tokens = sum(len(str(m.get("content", ""))) for m in llm_messages) // 4
                 logger.debug(
                     "[task %s] retry=%d context≈%d t messages=%d",
-                    task.id, context_retry, approx_tokens, len(llm_messages),
+                    task.id,
+                    context_retry,
+                    approx_tokens,
+                    len(llm_messages),
                 )
                 if approx_tokens > self.config.max_context_tokens * 2:
                     logger.warning(
                         "[task %s] context ≈%d t exceeds 2× budget (%d t). "
                         "Consider decomposing this task.",
-                        task.id, approx_tokens, self.config.max_context_tokens,
+                        task.id,
+                        approx_tokens,
+                        self.config.max_context_tokens,
                     )
                 # PCA-302: dispatch through the adapter (default: openai_compat).
                 response = await self.adapter.chat(
@@ -563,9 +574,7 @@ class Orchestrator:
                         result = content[:500]
                         if degraded_mode:
                             result = f"[degraded-{context_retry}] " + result
-                        self.project.update_task(
-                            task.id, status=TaskStatus.DONE, result=result
-                        )
+                        self.project.update_task(task.id, status=TaskStatus.DONE, result=result)
                 return
 
             # Обработка вызовов инструментов

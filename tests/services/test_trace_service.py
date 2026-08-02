@@ -28,9 +28,7 @@ def _seed(session: Session) -> tuple[int, int, int]:
     plan = PlanModel(project_id=proj.row_id, scope="trace-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
-    sec = PlanSectionModel(
-        plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0
-    )
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
@@ -108,9 +106,7 @@ def test_record_serializes_tool_calls(engine_with_schema) -> None:  # type: igno
             {"name": "task.list", "args": {"project": "demo"}},
             {"name": "doc.get", "args": {"key": "MASTER"}},
         ]
-        traces.record(
-            session, model="m", task_id=tid, tool_calls=tool_calls, input_tokens=1
-        )
+        traces.record(session, model="m", task_id=tid, tool_calls=tool_calls, input_tokens=1)
 
         [row] = traces.list_for_task(session, tid)
         assert row.tool_calls == tool_calls
