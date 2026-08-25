@@ -118,7 +118,7 @@ graph TD
 ### Handbook (пользовательский справочник)
 - **Описание:** Полное руководство: установка, Quick Start, Web UI tour, CLI,
   конфигурация, MCP, ИИ-агент, ChromaDB, troubleshooting.
-- **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:702215d16ac4`
+- **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:4a5c449c3183`
 - **Статус:** `🟢 VERIFIED`
 
 ### Гайд по документированию (tutorial)
@@ -203,7 +203,7 @@ graph TD
 | 4 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-07-29 | 🟡 LEGACY |
 | 5 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-07-29 | 🟡 LEGACY |
 | 6 | Доменные модели (legacy) | `doc:models_domain_md` | `2e5d66877b50` | 2026-07-29 | 🟡 LEGACY |
-| 7 | Handbook | `doc:docs_HANDBOOK_md` | `2edf006548df` | 2026-07-29 | 🟢 VERIFIED |
+| 7 | Handbook | `doc:docs_HANDBOOK_md` | `4a5c449c3183` | 2026-08-25 | 🟢 VERIFIED |
 | 8 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-07-29 | 🟢 VERIFIED |
 | 9 | MCP-интеграция | `doc:docs_mcp-integration_md` | `0ce0a4a39b75` | 2026-07-29 | 🟢 VERIFIED |
 | 10 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `c4d21d12427b` | 2026-07-29 | 🟢 VERIFIED |

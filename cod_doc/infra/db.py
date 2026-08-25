@@ -18,6 +18,61 @@ if TYPE_CHECKING:
 
 DEFAULT_EMBEDDED_PATH = ".cod-doc/state.db"
 
+#: Ждать освобождения блокировки перед `database is locked` (мс).
+#: SYM-002 / RFC 22 §3.1 — несколько петель агентов пишут в одну БД.
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
+#: Прагмы для файловой SQLite. WAL даёт «писатель не блокирует читателей»,
+#: `synchronous=NORMAL` безопасен именно в паре с WAL (fsync только на
+#: checkpoint'ах). `journal_mode` возвращает строку — ответ обязательно
+#: вычитывается, иначе pysqlite оставит незакрытый курсор.
+SQLITE_FILE_PRAGMAS: tuple[str, ...] = (
+    "PRAGMA foreign_keys=ON",
+    "PRAGMA journal_mode=WAL",
+    f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}",
+    "PRAGMA synchronous=NORMAL",
+)
+
+#: Для in-memory БД WAL и synchronous смысла не имеют — журнала нет вовсе.
+SQLITE_MEMORY_PRAGMAS: tuple[str, ...] = ("PRAGMA foreign_keys=ON",)
+
+_IN_MEMORY_MARKERS = (":memory:", "mode=memory")
+
+
+def is_in_memory_sqlite(url: str) -> bool:
+    """`sqlite://` без пути, `:memory:` и `mode=memory` — это БД в памяти."""
+    if any(marker in url for marker in _IN_MEMORY_MARKERS):
+        return True
+    return url.rstrip("/") in {"sqlite:", "sqlite:/", "sqlite://"}
+
+
+def apply_sqlite_pragmas(dbapi_conn: DBAPIConnection, *, in_memory: bool) -> None:
+    """Выполнить набор прагм на свежесозданном соединении."""
+    pragmas = SQLITE_MEMORY_PRAGMAS if in_memory else SQLITE_FILE_PRAGMAS
+    cur = dbapi_conn.cursor()
+    try:
+        for pragma in pragmas:
+            cur.execute(pragma)
+            cur.fetchall()
+    finally:
+        cur.close()
+
+
+def register_sqlite_pragmas(engine: Engine, url: str) -> None:
+    """Повесить connect-listener с прагмами, если движок — SQLite.
+
+    Общая точка для `make_engine` и alembic-окружения: alembic строит engine
+    через `engine_from_config` и своего listener'а не получает, поэтому шёл бы
+    без `busy_timeout`.
+    """
+    if not url.startswith("sqlite"):
+        return
+    in_memory = is_in_memory_sqlite(url)
+
+    @event.listens_for(engine, "connect")
+    def _on_connect(dbapi_conn: DBAPIConnection, _record: ConnectionPoolEntry) -> None:
+        apply_sqlite_pragmas(dbapi_conn, in_memory=in_memory)
+
 
 def resolve_db_url(project_root: Path | None = None, override: str | None = None) -> str:
     """Resolve DB URL from override → env → embedded default.
@@ -41,14 +96,7 @@ def make_engine(url: str | None = None, *, echo: bool = False) -> Engine:
     """Create a SQLAlchemy engine with sensible defaults."""
     final_url = url or resolve_db_url()
     engine = create_engine(final_url, echo=echo, future=True)
-    if final_url.startswith("sqlite"):
-        # Foreign keys are off by default in SQLite — turn them on per connection.
-        @event.listens_for(engine, "connect")
-        def _enable_fk(dbapi_conn: DBAPIConnection, _record: ConnectionPoolEntry) -> None:
-            cur = dbapi_conn.cursor()
-            cur.execute("PRAGMA foreign_keys=ON")
-            cur.close()
-
+    register_sqlite_pragmas(engine, final_url)
     return engine
 
 
