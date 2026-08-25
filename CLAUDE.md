@@ -123,6 +123,17 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   автоматически, без правки фикстур.
 - `asyncio_mode = "auto"` — async-тесты не требуют маркера.
 
+## Инструментарий сессии
+
+- MCP-сервер `cod-doc` (native stdio, профиль `standard`, `.mcp.json`) — 99
+  тулов `task_*`/`doc_*`/`plan_*`/…; предпочитай их ad-hoc Python-скриптам.
+- `/gate` — полный CI-гейт одной командой.
+- Проектные скиллы `.claude/skills/`: `task-flow` (checkout → complete c sha,
+  создание задач/секций, service-fallback), `doc-sync` (markdown ↔ БД,
+  hash-реестр, drift-семантика).
+- PostToolUse-хук напоминает про `doc import` после правки `.md` — это не шум,
+  это закон репозитория.
+
 ## Конвенции
 
 - **Русский текст в коде — норма.** `RUF001/002/003` и `E501` отключены для
