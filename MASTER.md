@@ -70,10 +70,11 @@ graph TD
 - **Статус:** `🟢 ACTIVE`
 
 ### Proposals (RFC backlog)
-- **Описание:** 22 RFC: 01–15 — адаптация паттернов paperclipai/paperclip
+- **Описание:** 23 RFC: 01–15 — адаптация паттернов paperclipai/paperclip
   (реализованы, план закрыт), 16–21 — hackathon-track (только proposals),
   22 — **Symbiosis** (ZAIrgRush + Orakul/ai-review, активная программа;
-  декомпозиция — секция E плана `adoption-2026-08`).
+  декомпозиция — секция E плана `adoption-2026-08`), 23 — cloud agent plane
+  (спроектирован, не начат).
 - **Ссылка:** [`📁 proposals/README.md`](proposals/README.md)
 - **Статус:** `🟢 ACTIVE`
 
