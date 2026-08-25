@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "cod-doc"
 version = "1.1.0"
 description = "Context Orchestrator for Documentation — autonomous multi-project documentation agent"
-readme = "docs/cod-doc-guide.md"
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 classifiers = [
