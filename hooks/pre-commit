@@ -9,9 +9,16 @@ CHANGED_MD=$(git diff --cached --name-only --diff-filter=ACM | grep '\.md$' || t
 [[ -z "$CHANGED_MD" ]] && { echo -e "${GREEN}✅ Нет .md файлов — OK${NC}"; exit 0; }
 
 while IFS= read -r file; do
-  LINK_LINES=$(git show ":$file" 2>/dev/null | grep -n '📁' || true)
+  # ADO-019: кандидат на проверку — только настоящая гибридная ссылка: все три
+  # маркера плюс `sha:`. Строки с одним 📁 (обычные markdown-ссылки), шапка
+  # таблицы реестра и примеры формата с плейсхолдерами — не ссылки.
+  LINK_LINES=$(git show ":$file" 2>/dev/null \
+    | grep -n '📁' | grep '🗃️' | grep 'sha:' \
+    | grep -vE '(\{|…|/path/to/|hexchars|sanitized_path)' || true)
   if [[ -n "$LINK_LINES" ]]; then
-    MALFORMED=$(echo "$LINK_LINES" | grep -vP '📁\s+\S+\s+\|\s+🗃️\s+\S+\s+\|\s+🔑\s+sha:[0-9a-f]{12}' || true)
+    # ADO-019: POSIX ERE, не PCRE. BSD-grep (macOS) не знает -P: раньше вызов
+    # падал, `|| true` глотал ошибку, и проверка формата молча проходила всегда.
+    MALFORMED=$(echo "$LINK_LINES" | grep -vE '📁[[:space:]]+[^[:space:]]+[[:space:]]+\|[[:space:]]+🗃️[[:space:]]+[^[:space:]]+[[:space:]]+\|[[:space:]]+🔑[[:space:]]+sha:[0-9a-f]{12}' || true)
     if [[ -n "$MALFORMED" ]]; then
       echo -e "${RED}❌ Неверный формат ссылок в $file:${NC}"; echo "$MALFORMED"; ERRORS=$((ERRORS+1))
     fi
@@ -19,7 +26,10 @@ while IFS= read -r file; do
 done <<< "$CHANGED_MD"
 
 if echo "$CHANGED_MD" | grep -q 'MASTER\.md'; then
-  STALE=$(git show ":MASTER.md" 2>/dev/null | grep -n '🔴' || true)
+  # ADO-019: только строки реестра (`| … | 🔴 STALE |`), а не любой 🔴 в тексте —
+  # легенда статусов и строка «Всего: … 🔴 STALE: 0» ловились как ошибки и
+  # блокировали любой коммит, трогающий MASTER.md.
+  STALE=$(git show ":MASTER.md" 2>/dev/null | grep -nE '^\|.*🔴[[:space:]]+(STALE|BROKEN)[[:space:]]*\|[[:space:]]*$' || true)
   if [[ -n "$STALE" ]]; then
     echo -e "${YELLOW}⚠️  MASTER.md содержит устаревшие ссылки:${NC}"; echo "$STALE"; ERRORS=$((ERRORS+1))
   fi
