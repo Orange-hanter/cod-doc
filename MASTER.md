@@ -118,7 +118,7 @@ graph TD
 ### Handbook (пользовательский справочник)
 - **Описание:** Полное руководство: установка, Quick Start, Web UI tour, CLI,
   конфигурация, MCP, ИИ-агент, ChromaDB, troubleshooting.
-- **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:2edf006548df`
+- **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:702215d16ac4`
 - **Статус:** `🟢 VERIFIED`
 
 ### Гайд по документированию (tutorial)
@@ -132,7 +132,7 @@ graph TD
   накопленным markdown: починка конфига, выбор пилота, 4 архетипа проектов,
   ежедневный цикл, известные шероховатости. В отличие от tutorial — про
   живые репозитории, а не про пример с нуля.
-- **Ссылка:** `📁 /docs/adoption-playbook.md | 🗃️ doc:docs_adoption-playbook_md | 🔑 sha:c4d21d12427b`
+- **Ссылка:** `📁 /docs/adoption-playbook.md | 🗃️ doc:docs_adoption-playbook_md | 🔑 sha:ec7b8b660080`
 - **Статус:** `🟢 VERIFIED`
 
 ### MCP-интеграция (catalog)

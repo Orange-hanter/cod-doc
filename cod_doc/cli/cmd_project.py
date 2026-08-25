@@ -17,6 +17,25 @@ console = Console()
 log = get_logger("cli")
 
 
+def _init_and_report(entry: ProjectEntry, *, verb: str) -> None:
+    """SYM-001: полный бутстрап (файлы + alembic + строка project) с отчётом.
+
+    До этого CLI создавал только файлы (`Project.init()`), а БД — нет:
+    `project_service.init_project` вызывался единственно из web-роута
+    `POST /p/{slug}/init`, и задокументированная последовательность
+    `project add → project init → import docs` падала на пустой SQLite.
+    """
+    from cod_doc.services import project_service
+
+    result = project_service.init_project(entry)
+    db_part = "БД мигрирована (уже существовала)" if result.db_existed else "БД создана"
+    row_part = "запись проекта на месте" if result.db_row_existed else "запись проекта создана"
+    files_part = "файлы .cod-doc/ созданы" if result.files_created else "файлы .cod-doc/ на месте"
+    console.print(
+        f"[green]✅ Проект '{entry.name}' {verb}: {db_part}, {row_part}, {files_part}.[/green]"
+    )
+
+
 @click.group()
 def project() -> None:
     """Управление проектами."""
@@ -65,8 +84,6 @@ def project_add(ctx: click.Context, path: str, name: str, master: str) -> None:
     """Добавить проект в реестр COD-DOC."""
     from pathlib import Path
 
-    from cod_doc.core.project import Project
-
     cfg: Config = ctx.obj["config"]
     p = Path(path).expanduser().resolve()
     if not p.exists():
@@ -75,9 +92,7 @@ def project_add(ctx: click.Context, path: str, name: str, master: str) -> None:
 
     entry = ProjectEntry(name=name, path=str(p), master_md=master)
     cfg.add_project(entry)
-    proj = Project(entry)
-    proj.init()
-    console.print(f"[green]✅ Проект '{name}' добавлен и инициализирован.[/green]")
+    _init_and_report(entry, verb="добавлен")
 
 
 @project.command("remove")
@@ -97,16 +112,13 @@ def project_remove(ctx: click.Context, name: str) -> None:
 @click.argument("name")
 @click.pass_context
 def project_init(ctx: click.Context, name: str) -> None:
-    """Переинициализировать .cod-doc/ в проекте."""
-    from cod_doc.core.project import Project
-
+    """(Пере)инициализировать проект: .cod-doc/, state.db со схемой, запись project."""
     cfg: Config = ctx.obj["config"]
     entry = cfg.get_project(name)
     if not entry:
         console.print(f"[red]Проект '{name}' не найден.[/red]")
         sys.exit(1)
-    Project(entry).init()
-    console.print(f"[green]✅ Проект '{name}' инициализирован.[/green]")
+    _init_and_report(entry, verb="инициализирован")
 
 
 @project.command("status")

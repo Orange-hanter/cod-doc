@@ -167,7 +167,7 @@ cod-doc serve  # → http://127.0.0.1:8765
 cd ~/code/my-app
 
 # 2. Зарегистрируй его в COD-DOC
-cod-doc project add my-app .
+cod-doc project add . --name my-app
 
 # 3. Инициализируй .cod-doc/ (создаёт state.db + MASTER.md)
 cod-doc project init my-app
@@ -422,7 +422,7 @@ Cross-project guard: `/p/B/plans/<id-from-A>` → 404, не утечка.
 ### project
 
 ```bash
-cod-doc project add my-app /path/to/repo    # зарегистрировать
+cod-doc project add /path/to/repo --name my-app   # зарегистрировать
 cod-doc project init my-app                  # создать .cod-doc/state.db + MASTER.md
 cod-doc project list                          # все проекты
 cod-doc project status my-app                # подробности
