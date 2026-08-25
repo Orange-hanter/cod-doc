@@ -52,11 +52,13 @@ class ADRModel(Base):
     )
 
     diagrams: Mapped[list[ADRDiagramModel]] = relationship(
-        back_populates="adr", cascade="all, delete-orphan",
+        back_populates="adr",
+        cascade="all, delete-orphan",
         order_by="ADRDiagramModel.position",
     )
     task_links: Mapped[list[ADRTaskModel]] = relationship(
-        back_populates="adr", cascade="all, delete-orphan",
+        back_populates="adr",
+        cascade="all, delete-orphan",
     )
 
 
@@ -82,7 +84,9 @@ class ADRSupersedeModel(Base):
     __tablename__ = "adr_supersedes"
     __table_args__ = (
         UniqueConstraint(
-            "superseding_id", "superseded_id", name="uq_adr_supersedes_edge",
+            "superseding_id",
+            "superseded_id",
+            name="uq_adr_supersedes_edge",
         ),
         CheckConstraint(
             "superseding_id <> superseded_id",
@@ -100,16 +104,17 @@ class ADRSupersedeModel(Base):
         Integer, ForeignKey("adr.row_id", ondelete="CASCADE"), nullable=False
     )
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
 class ADRTaskModel(Base):
     __tablename__ = "adr_task"
     __table_args__ = (
         UniqueConstraint(
-            "adr_row_id", "task_id", "relation", name="uq_adr_task_link",
+            "adr_row_id",
+            "task_id",
+            "relation",
+            name="uq_adr_task_link",
         ),
         CheckConstraint(
             "relation IN ('implements','invalidates','discovers','relates')",

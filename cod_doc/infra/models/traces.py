@@ -24,8 +24,6 @@ class TraceCallModel(Base):
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     tool_calls: Mapped[str | None] = mapped_column(Text)  # JSON-encoded
     error: Mapped[str | None] = mapped_column(Text)
-    ts: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
-    )
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
     __table_args__ = (Index("ix_trace_call_task_id_ts", "task_id", "ts"),)

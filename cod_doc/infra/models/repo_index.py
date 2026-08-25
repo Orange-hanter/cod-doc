@@ -26,21 +26,27 @@ class RepoFileModel(Base):
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False,
+        Integer,
+        ForeignKey("project.row_id", ondelete="CASCADE"),
+        nullable=False,
     )
     path: Mapped[str] = mapped_column(String(512), nullable=False)
     language: Mapped[str | None] = mapped_column(String(32), nullable=True)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     sha1: Mapped[str] = mapped_column(String(40), nullable=False)
     scanned_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow,
+        DateTime(timezone=True),
+        nullable=False,
+        default=_utcnow,
     )
 
     symbols: Mapped[list[RepoSymbolModel]] = relationship(
-        back_populates="file", cascade="all, delete-orphan",
+        back_populates="file",
+        cascade="all, delete-orphan",
     )
     imports: Mapped[list[RepoImportModel]] = relationship(
-        back_populates="file", cascade="all, delete-orphan",
+        back_populates="file",
+        cascade="all, delete-orphan",
     )
 
 
@@ -53,7 +59,9 @@ class RepoSymbolModel(Base):
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     file_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("repo_file.row_id", ondelete="CASCADE"), nullable=False,
+        Integer,
+        ForeignKey("repo_file.row_id", ondelete="CASCADE"),
+        nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -72,7 +80,9 @@ class RepoImportModel(Base):
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     file_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("repo_file.row_id", ondelete="CASCADE"), nullable=False,
+        Integer,
+        ForeignKey("repo_file.row_id", ondelete="CASCADE"),
+        nullable=False,
     )
     module: Mapped[str] = mapped_column(String(255), nullable=False)
     line: Mapped[int] = mapped_column(Integer, nullable=False)

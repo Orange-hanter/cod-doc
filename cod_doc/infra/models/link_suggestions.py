@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime  # noqa: TC003 — runtime use by Mapped[datetime]
 
 from sqlalchemy import DateTime, Float, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -44,7 +44,9 @@ class LinkSuggestionModel(Base):
         Index("ix_lsugg_state", "state"),
         Index(
             "uq_lsugg_triple",
-            "from_section_id", "to_doc_key", "to_section_id",
+            "from_section_id",
+            "to_doc_key",
+            "to_section_id",
             unique=True,
         ),
     )

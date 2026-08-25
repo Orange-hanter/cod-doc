@@ -26,14 +26,19 @@ class TaskMetricsModel(Base):
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     task_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("task.row_id", ondelete="CASCADE"),
-        nullable=False, unique=True,
+        Integer,
+        ForeignKey("task.row_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
     )
     project_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False,
+        Integer,
+        ForeignKey("project.row_id", ondelete="CASCADE"),
+        nullable=False,
     )
     completed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
     )
     duration_hours: Mapped[float] = mapped_column(Float, nullable=False)
     in_progress_hours: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -38,5 +38,9 @@ class TaskDocumentModel(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
     format: Mapped[str] = mapped_column(String(16), nullable=False, default="markdown")
     current_revision_id: Mapped[str | None] = mapped_column(String(26))
-    created: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    last_updated: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    created: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
