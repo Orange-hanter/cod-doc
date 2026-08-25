@@ -1,6 +1,6 @@
 # 🧭 Project Navigator: cod-doc
 
-> 📊 Meta: `{"version": "2.2", "last_updated": "2026-08-25", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
+> 📊 Meta: `{"version": "2.3", "last_updated": "2026-08-25", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
 
 > **Этот файл — тонкий L0-навигатор для агента и нового контрибьютора.**
 > Source of truth целевого состояния системы — [`docs/system/MASTER.md`](docs/system/MASTER.md).
@@ -49,6 +49,7 @@ graph TD
     Legacy --> Specs["specs/modules.md"]
     Legacy --> Models["models/domain.md"]
 
+    Root --> Readme["README.md (витрина, EN)"]
     Root --> Hand["docs/HANDBOOK.md"]
     Root --> Guide["docs/cod-doc-guide.md"]
     Root --> Play["docs/adoption-playbook.md"]
@@ -114,6 +115,14 @@ graph TD
 - **Ссылка:** `📁 /models/domain.md | 🗃️ doc:models_domain_md | 🔑 sha:2e5d66877b50`
 - **Статус:** `🟡 LEGACY`
 - **Ответственный агент:** `@Orchestrator`
+
+### README (витрина проекта, английский) ⭐
+- **Описание:** Точка входа для внешнего читателя GitHub/PyPI: что это, зачем
+  БД вместо голого markdown, quick start на 5 строк, четыре поверхности,
+  таблица ссылок на остальную документацию. Подставляется как
+  `long_description` пакета (`pyproject.toml → readme`).
+- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:2b58cb45e78e`
+- **Статус:** `🟢 VERIFIED`
 
 ### Handbook (пользовательский справочник)
 - **Описание:** Полное руководство: установка, Quick Start, Web UI tour, CLI,
@@ -207,8 +216,9 @@ graph TD
 | 8 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-07-29 | 🟢 VERIFIED |
 | 9 | MCP-интеграция | `doc:docs_mcp-integration_md` | `0ce0a4a39b75` | 2026-07-29 | 🟢 VERIFIED |
 | 10 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `c4d21d12427b` | 2026-07-29 | 🟢 VERIFIED |
+| 11 | README (витрина) | `doc:README_md` | `2b58cb45e78e` | 2026-08-25 | 🟢 VERIFIED |
 
-> **Всего:** 10 документов | 🟢 VERIFIED: 7 | 🟡 LEGACY: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+> **Всего:** 11 документов | 🟢 VERIFIED: 8 | 🟡 LEGACY: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >
 > **Пересчёт 2026-07-29:** 4 хэша были STALE (`arch/architecture.md`,
 > `HANDBOOK.md`, `cod-doc-guide.md`, `mcp-integration.md`) — файлы правились
@@ -228,7 +238,6 @@ graph TD
     "no_hallucinations": true,
     "context_depth": "L0",
     "missing_info": [
-      "В корне нет README.md — pyproject подставляет docs/cod-doc-guide.md (F6 аудита 2026-07-29, задача C-2)",
       "capabilities/project-bootstrap.md описывает 'cod-doc project new'; CLI даёт 'project add' + 'project init' (задача D-4)",
       "66 живых web-роутов отсутствуют в capabilities/web-frontend.md §3 (F3, задача D-1)"
     ]
@@ -240,6 +249,14 @@ graph TD
 ```json
 {
   "changelog": [
+    {
+      "date": "2026-08-25",
+      "version": "2.3",
+      "action": "SYM-002 + ADO-002. Файловая SQLite переведена на WAL + busy_timeout=5000 + synchronous=NORMAL (общий listener переиспользован в alembic-env), миграция 0023_fts5_index получила dialect-guard — находки B7/B10 RFC 22. В корне появился README.md (английская витрина), pyproject.readme переключён на него — закрыта находка F6 аудита 2026-07-29, реестр 10 → 11 документов.",
+      "author": "SYM-002 / ADO-002",
+      "scope": "master",
+      "rfc": "proposals/22-symbiosis-zairgrush-orakul.md"
+    },
     {
       "date": "2026-08-25",
       "version": "2.2",
