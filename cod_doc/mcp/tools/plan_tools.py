@@ -116,9 +116,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             require_project_id(session, project)
             plan_id = _require_plan_id(session, plan_scope)
-            doc = plan_service.freeze_projection(
-                session, plan_id, author=author, reason=reason
-            )
+            doc = plan_service.freeze_projection(session, plan_id, author=author, reason=reason)
         return {
             "frozen_doc_key": doc.doc_key,
             "document_id": doc.row_id,

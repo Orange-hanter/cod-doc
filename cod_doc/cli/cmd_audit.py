@@ -254,8 +254,12 @@ def _render_route_findings(findings: list[AuditFinding], as_json: bool) -> None:
             _json.dumps(
                 {
                     "findings": [
-                        {"code": f.code, "severity": f.severity, "subject": f.subject,
-                         "message": f.message}
+                        {
+                            "code": f.code,
+                            "severity": f.severity,
+                            "subject": f.subject,
+                            "message": f.message,
+                        }
                         for f in findings
                     ],
                     "total": len(findings),

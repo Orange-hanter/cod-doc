@@ -108,9 +108,7 @@ def test_orchestrator_run_lifecycle_survives_db_failure(monkeypatch) -> None:
     assert run_context.get_current_run_id() is None
     token = run_context.start_orchestrator_run(project_path="/x", run_id="RUN-1")
     assert run_context.get_current_run_id() == "RUN-1"  # set despite DB write failure
-    run_context.finalize_orchestrator_run(
-        token, project_path="/x", run_id="RUN-1", status="done"
-    )
+    run_context.finalize_orchestrator_run(token, project_path="/x", run_id="RUN-1", status="done")
     assert run_context.get_current_run_id() is None  # reset after finalize
 
 
