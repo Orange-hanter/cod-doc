@@ -30,6 +30,7 @@ from __future__ import annotations
 from ._types import (
     DriftReport,
     DriftStatus,
+    ExportGuardError,
     ExportResult,
     PathEscapeError,
     ProjectDriftItem,
@@ -43,6 +44,7 @@ from .render import render_markdown
 __all__ = [
     "DriftReport",
     "DriftStatus",
+    "ExportGuardError",
     "ExportResult",
     "PathEscapeError",
     "ProjectDriftItem",

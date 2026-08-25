@@ -109,7 +109,10 @@ def test_document_body_assembles_preamble_and_sections(engine_with_schema) -> No
         )
         doc_id = doc.row_id
 
-    expected = "Intro line.## Alpha\n\nAlpha body.\n\n### Beta\n\nBeta body."
+    # ADO-010 (F7): preamble and the first heading are separated by a blank
+    # line. Before the fix this asserted the glued form — `Intro line.## Alpha`
+    # — which is what corrupted every exported document.
+    expected = "Intro line.\n\n## Alpha\n\nAlpha body.\n\n### Beta\n\nBeta body."
 
     with engine_with_schema.connect() as conn:
         body = conn.execute(

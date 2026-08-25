@@ -81,6 +81,8 @@ CREATE TABLE document (
   title            TEXT    NOT NULL,
   preamble         TEXT    NOT NULL DEFAULT '',  -- текст до первого H2 (короткое описание/intro)
   frontmatter_json TEXT    NOT NULL DEFAULT '{}',
+  frontmatter_raw  TEXT,                         -- ADO-010: YAML-блок как в файле; '' = файл был без frontmatter, NULL = документ заведён в БД
+  title_in_body    INTEGER,                      -- ADO-010: был ли в источнике '# H1' (NULL = неизвестно → H1 рендерится)
   projection_hash  TEXT,                         -- hash последнего export
   created          TEXT    NOT NULL,
   last_updated     TEXT    NOT NULL,
@@ -434,18 +436,31 @@ GROUP BY s.row_id;
 ```sql
 CREATE VIEW document_body AS
 SELECT
-  d.row_id          AS document_id,
-  d.preamble || string_agg(
-    repeat('#', s.level) || ' ' || s.heading || E'\n\n' || s.body,
-    E'\n\n'
-    ORDER BY s.position
-  ) AS body
+  d.row_id AS document_id,
+  d.preamble
+    || CASE
+         WHEN d.preamble <> '' AND COALESCE(s.body, '') <> ''
+         THEN E'\n\n'
+         ELSE ''
+       END
+    || COALESCE(s.body, '') AS body
 FROM document d
-LEFT JOIN section s ON s.document_id = d.row_id
-GROUP BY d.row_id, d.preamble;
+LEFT JOIN (
+  SELECT
+    document_id,
+    string_agg(
+      repeat('#', level) || ' ' || heading || E'\n\n' || body,
+      E'\n\n'
+      ORDER BY position
+    ) AS body
+  FROM section
+  GROUP BY document_id
+) s ON s.document_id = d.row_id;
 ```
 
-> Реализовано в `cod_doc/infra/migrations/versions/20260425_0006_views_and_defaults.py`: SQLite-вариант использует `group_concat(... , char(10) || char(10))` поверх упорядоченного подзапроса (`SELECT ... ORDER BY position`); Postgres — `string_agg(... , E'\n\n' ORDER BY s.position)` с `LEFT JOIN`. Оба варианта возвращают идентичный текст (включая `preamble`).
+> Реализовано в `cod_doc/infra/migrations/versions/20260825_0025_projection_fidelity.py`: SQLite-вариант использует `group_concat(... , char(10) || char(10))` поверх упорядоченного подзапроса (`SELECT ... ORDER BY position`); Postgres — `string_agg(... , E'\n\n' ORDER BY position)`. Оба варианта возвращают идентичный текст.
+
+> **ADO-010 (находка F7).** До миграции 0025 view склеивал `preamble` с первым заголовком без разделителя — `preamble` хранится без хвостового перевода строки, поэтому на выходе получалось `> …заранее.## 1. Зачем`. Это была порча контента, а не форматирование: любой `doc export` ломал документ. Разделитель `\n\n` вставляется только когда обе части непусты; агрегат секций вынесен в производную таблицу, чтобы условие могло его проверить, не повторяя `group_concat`.
 
 ### 4.3 `ready_tasks`
 

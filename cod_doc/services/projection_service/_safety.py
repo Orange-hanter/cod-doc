@@ -3,16 +3,32 @@
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING
+from functools import lru_cache
+from pathlib import Path
 
 from ._types import PathEscapeError
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@lru_cache(maxsize=1)
+def _own_source_checkout() -> Path | None:
+    """Repo root cod-doc is running from, or None when installed as a package.
+
+    Used by the ADO-010 export guard to tell "cod-doc editing its own docs"
+    from "cod-doc writing into someone else's repository". Resolved from the
+    package location, so a `pip install -e .` checkout counts and a wheel in
+    site-packages does not.
+    """
+    root = Path(__file__).resolve().parents[3]
+    pyproject = root / "pyproject.toml"
+    if not pyproject.exists():
+        return None
+    if 'name = "cod-doc"' not in pyproject.read_text(encoding="utf-8"):
+        return None
+    return root
 
 
 def _safe_target(root_path: Path, doc_path: str) -> Path:

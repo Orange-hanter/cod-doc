@@ -49,6 +49,17 @@ class DocumentModel(Base):
     frontmatter_json: Mapped[dict[str, Any]] = mapped_column(
         JSON, nullable=False, default=dict, server_default=text("'{}'")
     )
+    # ADO-010 (F7): verbatim YAML block of the imported file, without the `---`
+    # fences. Re-emitted byte-for-byte on export while the DB-authoritative
+    # fields still agree with it; NULL for DB-authored docs, which fall back to
+    # deterministic serialisation. Keeps key order, flow-style lists and
+    # unquoted dates that a JSON round-trip would destroy.
+    frontmatter_raw: Mapped[str | None] = mapped_column(Text)
+    # ADO-010: did the source file carry an `# H1`? The importer moves it into
+    # `title`, so the renderer must put it back — but only where it was.
+    # NULL = unknown (DB-authored) and renders the heading, as the projection
+    # contract intends.
+    title_in_body: Mapped[bool | None] = mapped_column(Boolean)
     projection_hash: Mapped[str | None] = mapped_column(String(64))
     # PCA-928: sha256 of the first 4 KB of the source file at last import.
     # Used by scan_folder() to detect "changed" status without re-parsing.

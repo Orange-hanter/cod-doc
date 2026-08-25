@@ -21,8 +21,11 @@ class DriftStatus(StrEnum):
 class ExportResult:
     document_id: int
     path: Path
-    written: bool  # False = skipped (hash already matched)
+    written: bool  # False = skipped (hash already matched, or dry run)
     content_hash: str  # SHA-256 of exported content
+    # ADO-010: unified diff (file → projection) filled in on `dry_run`; empty
+    # string means the projection already matches the file byte-for-byte.
+    diff: str | None = None
 
 
 @dataclass(slots=True)
@@ -51,6 +54,19 @@ class ProjectDriftReport:
     @property
     def problem_count(self) -> int:
         return len(self.issues)
+
+
+class ExportGuardError(RuntimeError):
+    """Raised when `export_document` refuses to overwrite a file (ADO-010).
+
+    Two situations, both overridable with `force_write=True` (CLI:
+    `--force-write`) and both previewable with `dry_run=True`:
+
+    - the on-disk file does not match anything cod-doc has written or accepted,
+      so overwriting it would silently discard human edits;
+    - the target project is not the checkout cod-doc itself runs from, i.e. an
+      export into someone else's repository (the pilot case).
+    """
 
 
 class PathEscapeError(ValueError):

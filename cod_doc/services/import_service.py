@@ -59,6 +59,10 @@ class ParsedSection:
 @dataclass(slots=True)
 class ParsedMarkdown:
     frontmatter: dict[str, Any] = field(default_factory=dict)
+    # ADO-010: the YAML block exactly as written, without the `---` fences and
+    # without a trailing newline. `frontmatter` is the parsed form; this is what
+    # export re-emits so key order / flow style / unquoted dates survive.
+    frontmatter_raw: str | None = None
     title_h1: str | None = None
     preamble: str = ""
     sections: list[ParsedSection] = field(default_factory=list)
@@ -84,6 +88,7 @@ def parse_markdown(raw: str) -> ParsedMarkdown:
                 out.frontmatter = {}
         except yaml.YAMLError:
             out.frontmatter = {}
+        out.frontmatter_raw = fm_match.group(1)
         body = raw[fm_match.end() :]
 
     # 2. Optional leading H1 — strip and remember
@@ -158,6 +163,24 @@ def _jsonable_frontmatter(value: Any) -> Any:
     return value
 
 
+def _set_projection_shape(session: Session, document_id: int, parsed: ParsedMarkdown) -> None:
+    """ADO-010: record how the source file was shaped, so export can rebuild it.
+
+    Kept off `doc_service.create` on purpose: these are projection-fidelity
+    artifacts of the *file*, not part of the document's domain identity.
+
+    An imported file with no frontmatter block stores `""`, which is distinct
+    from `NULL` (never imported — a DB-authored document). The renderer uses
+    that difference to decide whether emitting frontmatter would be restoring
+    metadata or inventing it; `title_in_body` plays the same role for the H1.
+    """
+    model = session.get(DocumentModel, document_id)
+    if model is not None:
+        model.frontmatter_raw = parsed.frontmatter_raw or ""
+        model.title_in_body = parsed.title_h1 is not None
+        session.flush()
+
+
 def _frontmatter_with_effective_defaults(
     frontmatter: dict[str, Any], *, sensitivity: Sensitivity
 ) -> dict[str, Any]:
@@ -215,6 +238,7 @@ def import_markdown(
     )
 
     assert doc.row_id is not None  # doc_service.create asserts this internally
+    _set_projection_shape(session, doc.row_id, parsed)
     for i, section in enumerate(parsed.sections):
         docs.add_section(
             session,
@@ -356,6 +380,8 @@ def _update_existing_document_metadata(
     if isinstance(fm.get("source_of_truth"), bool):
         model.source_of_truth = bool(fm["source_of_truth"])
     model.preamble = parsed.preamble or ""
+    model.frontmatter_raw = parsed.frontmatter_raw or ""
+    model.title_in_body = parsed.title_h1 is not None
     model.frontmatter_json = _frontmatter_with_effective_defaults(
         fm, sensitivity=Sensitivity(model.sensitivity)
     )

@@ -235,9 +235,15 @@ def register(mcp: FastMCP) -> None:
         project: str,
         doc_key: str,
         force: bool = False,
+        dry_run: bool = False,
+        force_write: bool = False,
     ) -> dict[str, Any]:
-        """Export a document projection to disk. Returns {path, written, content_hash}.
+        """Export a document projection to disk. Returns {path, written, content_hash, diff}.
         Skips if projection_hash already matches current DB content (unless force=true).
+        Refuses (ADO-010) to overwrite a file that does not match the last export/import,
+        or to write into a repo that is not cod-doc's own checkout: preview with
+        dry_run=true (returns a unified diff, writes nothing), override with
+        force_write=true.
         """
         from pathlib import Path
 
@@ -252,12 +258,19 @@ def register(mcp: FastMCP) -> None:
             if d is None or d.row_id is None:
                 raise ValueError(f"Document '{doc_key}' not found.")
             result = projection_service.export_document(
-                session, d.row_id, root_path=root, force=force
+                session,
+                d.row_id,
+                root_path=root,
+                force=force,
+                dry_run=dry_run,
+                force_write=force_write,
+                own_checkout_only=True,
             )
         return {
             "path": str(result.path),
             "written": result.written,
             "content_hash": result.content_hash,
+            "diff": result.diff,
         }
 
     @mcp.tool(name="doc_drift")
