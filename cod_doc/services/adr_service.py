@@ -175,13 +175,12 @@ def create(
 
 
 def get(session: Session, project_id: int, adr_id: str) -> ADRModel | None:
-    row = session.execute(
+    return session.execute(
         select(ADRModel).where(
             ADRModel.project_id == project_id,
             ADRModel.adr_id == adr_id,
         )
     ).scalar_one_or_none()
-    return row
 
 
 def list_for_project(

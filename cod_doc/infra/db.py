@@ -13,6 +13,9 @@ from sqlalchemy.orm import Session, sessionmaker
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from sqlalchemy.engine.interfaces import DBAPIConnection
+    from sqlalchemy.pool import ConnectionPoolEntry
+
 DEFAULT_EMBEDDED_PATH = ".cod-doc/state.db"
 
 
@@ -41,7 +44,7 @@ def make_engine(url: str | None = None, *, echo: bool = False) -> Engine:
     if final_url.startswith("sqlite"):
         # Foreign keys are off by default in SQLite — turn them on per connection.
         @event.listens_for(engine, "connect")
-        def _enable_fk(dbapi_conn, _record):  # type: ignore[no-untyped-def]
+        def _enable_fk(dbapi_conn: DBAPIConnection, _record: ConnectionPoolEntry) -> None:
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA foreign_keys=ON")
             cur.close()

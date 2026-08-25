@@ -20,11 +20,10 @@ from cod_doc.tui.screens.wizard import WizardScreen
 
 def _make_config(*, configured: bool, tmp_path) -> Config:  # type: ignore[no-untyped-def]
     """Build a Config with an isolated config directory."""
-    cfg = Config(
+    return Config(
         api_key="sk-test-1234567890" if configured else "",
         cod_doc_home=str(tmp_path / ".cod-doc"),
     )
-    return cfg
 
 
 @pytest.mark.asyncio

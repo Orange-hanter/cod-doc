@@ -124,6 +124,11 @@ pytest tests/ --tb=short --timeout=120
 Всё зелёное → готов PR. Если что-то не запускалось — явно отметь в
 PR-описании «not run, because <reason>».
 
+Политика качества (запрет голого `Any`, магических чисел, потолок сложности,
+ratchet существующего долга) — в
+[`docs/system/standards/code-quality.md`](docs/system/standards/code-quality.md);
+конфигурация-истина — `pyproject.toml`.
+
 ## 8. Validation pattern
 
 Из memory project (validation_pattern.md):

@@ -50,7 +50,7 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
-            result = activity_service.list_events(
+            return activity_service.list_events(
                 session,
                 project_id,
                 scope_kind=scope_kind,
@@ -62,7 +62,6 @@ def register(mcp: FastMCP) -> None:
                 limit=limit,
                 offset=offset,
             )
-        return result
 
     @mcp.tool(name="activity_for_run")
     def activity_for_run(
@@ -77,5 +76,4 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
-            events = activity_service.events_for_run(session, project_id, run_id, limit=limit)
-        return events
+            return activity_service.events_for_run(session, project_id, run_id, limit=limit)

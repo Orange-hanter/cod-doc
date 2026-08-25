@@ -217,11 +217,10 @@ def render_body(session: Session, document_id: int) -> str | None:
     Returns preamble + concatenated section bodies (with markdown headings),
     in `section.position` order — see DATA_MODEL §4.3a.
     """
-    row = session.execute(
+    return session.execute(
         text("SELECT body FROM document_body WHERE document_id = :d"),
         {"d": document_id},
     ).scalar_one_or_none()
-    return row
 
 
 def add_section(

@@ -13,13 +13,15 @@ from rich.table import Table
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
+
     from cod_doc.config import Config
 
 console = Console()
 log = get_logger("cli.link")
 
 
-def _make_session(project_name: str, cfg: Config):  # type: ignore[no-untyped-def]
+def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
     from pathlib import Path
 
     from cod_doc.infra.db import make_engine, make_session_factory, resolve_db_url
@@ -33,7 +35,7 @@ def _make_session(project_name: str, cfg: Config):  # type: ignore[no-untyped-de
     return make_session_factory(engine)
 
 
-def _require_project_id(session, project_name: str) -> int:  # type: ignore[no-untyped-def]
+def _require_project_id(session: Session, project_name: str) -> int:
     from cod_doc.infra.repositories import ProjectRepository
 
     proj = ProjectRepository(session).get_by_slug(project_name)
@@ -43,7 +45,7 @@ def _require_project_id(session, project_name: str) -> int:  # type: ignore[no-u
     return proj.row_id
 
 
-def _resolve_section_id(session, project_id: int, doc_key: str, anchor: str) -> int:  # type: ignore[no-untyped-def]
+def _resolve_section_id(session: Session, project_id: int, doc_key: str, anchor: str) -> int:
     """Look up section row_id by (project_id, doc_key, anchor); exit on failure."""
     from sqlalchemy import select
 
@@ -343,7 +345,7 @@ def link_suggest(
     from cod_doc.services.link_service import semantic
 
     cfg = Config.load()
-    session_factory, _project_id_fn = _make_session(project, cfg)
+    session_factory = _make_session(project, cfg)
 
     from cod_doc.infra.db import transactional
 

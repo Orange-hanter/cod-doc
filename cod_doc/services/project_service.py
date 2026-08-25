@@ -32,6 +32,8 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
     from cod_doc.config import ProjectEntry
 
 
@@ -53,7 +55,7 @@ def _alembic_config_for(db_url: str) -> AlembicConfig:
     return cfg
 
 
-def _bootstrap_default_routines(session, project_id: int) -> None:  # type: ignore[no-untyped-def]
+def _bootstrap_default_routines(session: Session, project_id: int) -> None:
     """PCA-914: Idempotently create default routines for a project.
 
     Default routines:

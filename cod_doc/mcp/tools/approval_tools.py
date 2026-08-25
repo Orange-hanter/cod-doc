@@ -117,7 +117,7 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
-            result = approval_service.list_approvals(
+            return approval_service.list_approvals(
                 session,
                 project_id,
                 status=status,
@@ -126,7 +126,6 @@ def register(mcp: FastMCP) -> None:
                 limit=limit,
                 offset=offset,
             )
-        return result
 
     @mcp.tool(name="approval_get")
     def approval_get(project: str, approval_id: str) -> dict[str, Any] | None:

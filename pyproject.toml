@@ -100,7 +100,25 @@ select = [
     "SIM",  # simplify
     "TCH",  # type-checking imports
     "RUF",  # ruff-specific
+    # --- quality policy 2026-08-25 (docs/system/standards/code-quality.md) ---
+    "ANN",  # mandatory annotations; ANN401 = no bare `Any` in signatures
+    "C901", # KISS: cyclomatic complexity ceiling (see [lint.mccabe])
+    "PLR2004", # no magic numbers in comparisons (code only; tests exempt)
+    "RET",  # return discipline (no assign-then-return, etc.)
+    "PERF", # obvious perf anti-patterns (manual list building, etc.)
+    "PTH",  # pathlib over os.path — codebase is already clean, keep it so
 ]
+
+[tool.ruff.lint.mccabe]
+# Target is 10; 15 is the hard ceiling. Existing offenders are ratchet-listed
+# below and must only shrink — never raise this number to admit new code.
+max-complexity = 15
+
+[tool.ruff.lint.flake8-annotations]
+# `**kwargs: Any` passthrough is a legitimate pattern (event payloads, click);
+# bare `param: Any` is not — type it properly or use `object`.
+allow-star-arg-any = true
+mypy-init-return = true
 
 [tool.ruff.lint.isort]
 known-first-party = ["cod_doc"]
@@ -134,13 +152,89 @@ runtime-evaluated-decorators = [
 "cod_doc/**/*.py" = ["RUF001", "RUF002", "RUF003", "E501"]
 # Test modules contain intentional Russian strings (test data, docstrings)
 # that trip RUF001/002/003 ambiguous-unicode checks, plus complex assertions.
-"tests/**/*.py" = ["RUF001", "RUF002", "RUF003", "E501"]
+# ANN/PLR2004 exempt: literals ARE the test data, and mypy does not check
+# tests either — annotation pressure there buys nothing.
+"tests/**/*.py" = ["RUF001", "RUF002", "RUF003", "E501", "ANN", "PLR2004", "PERF"]
+
+# ── RATCHET (2026-08-25): существующие нарушители на момент включения ──
+# Список может только уменьшаться. Починил файл — удали строку. Новые файлы
+# в список НЕ добавляются: новая запись здесь = отклонение политики, а не фикс.
+# Burn-down трекается docs/system/standards/code-quality.md §3.
+# ANN401 — bare `Any` в сигнатурах (40 мест на момент включения):
+"cod_doc/agent/adapters/anthropic.py" = ["ANN401"]
+"cod_doc/agent/adapters/openai_compat.py" = ["ANN401"]
+"cod_doc/agent/adapters/registry.py" = ["ANN401"]
+"cod_doc/agent/tools.py" = ["ANN401"]
+"cod_doc/api/web/fragments/_shared.py" = ["ANN401"]
+"cod_doc/api/web/fragments/sections.py" = ["ANN401"]
+"cod_doc/api/web/fragments/tasks_fields.py" = ["ANN401"]
+"cod_doc/cli/cmd_audit.py" = ["ANN401", "PERF401"]
+"cod_doc/core/reindex.py" = ["ANN401", "PERF401"]
+"cod_doc/infra/sql_helpers.py" = ["ANN401"]
+"cod_doc/mcp/tools/_db.py" = ["ANN401"]
+"cod_doc/mcp/tools/link_tools.py" = ["ANN401"]
+"cod_doc/mcp/tools/revision_tools.py" = ["ANN401"]
+"cod_doc/mcp/tools/routine_tools.py" = ["ANN401"]
+"cod_doc/mcp/tools/task_doc_tools.py" = ["ANN401"]
+"cod_doc/services/ai_generate.py" = ["ANN401"]
+"cod_doc/services/import_service.py" = ["ANN401"]
+"cod_doc/services/plan_service/export.py" = ["ANN401", "PERF401"]
+# PLR2004 — магические числа (39 мест на момент включения):
+"cod_doc/agent/retry.py" = ["PLR2004"]
+"cod_doc/agent/skill_matcher.py" = ["PLR2004"]
+"cod_doc/api/web/pages/_helpers.py" = ["PLR2004"]
+"cod_doc/api/web/pages/adr.py" = ["PLR2004", "PERF401"]
+"cod_doc/api/web/pages/routines.py" = ["PLR2004"]
+"cod_doc/api/web/pages/run.py" = ["PLR2004"]
+"cod_doc/cli/adr/cmd_show.py" = ["PLR2004", "PERF401"]
+"cod_doc/cli/story/cmd_list.py" = ["PLR2004"]
+"cod_doc/mcp/tools/agent_tools.py" = ["PLR2004"]
+"cod_doc/services/agent_service.py" = ["PLR2004"]
+"cod_doc/services/commit_link_service.py" = ["PLR2004"]
+"cod_doc/services/metrics_service.py" = ["PLR2004"]
+"cod_doc/services/model_catalog.py" = ["PLR2004"]
+"cod_doc/services/nav_service.py" = ["PLR2004"]
+"cod_doc/services/sensitivity_scanner.py" = ["PLR2004"]
+"cod_doc/services/skill_service.py" = ["PLR2004"]
+"cod_doc/services/task_service.py" = ["PLR2004"]
+"cod_doc/services/validation/advisory.py" = ["PLR2004"]
+"cod_doc/tui/screens/wizard/screen.py" = ["PLR2004"]
+# C901 — сложность > 15 (14 функций на момент включения):
+"cod_doc/api/web/markdown.py" = ["C901"]
+"cod_doc/api/web/pages/stories.py" = ["C901", "PERF401"]
+"cod_doc/mcp/tools/adr_tools.py" = ["C901"]
+"cod_doc/mcp/tools/doc_tools.py" = ["C901"]
+"cod_doc/mcp/tools/story_tools.py" = ["C901"]
+"cod_doc/services/adr_service.py" = ["C901", "PERF401"]
+"cod_doc/services/link_service/rename_cascade.py" = ["C901"]
+"cod_doc/services/link_service/resolver.py" = ["C901"]
+"cod_doc/services/link_service/semantic.py" = ["C901"]
+"cod_doc/services/plan_service/graph.py" = ["C901", "PERF401"]
+# PERF401 — ручной list-comprehension (25 мест, авто-фикс ruff счёл небезопасным):
+"cod_doc/api/web/pages/comments.py" = ["PERF401"]
+"cod_doc/api/web/pages/docs.py" = ["PERF401"]
+"cod_doc/api/web/pages/project.py" = ["PERF401"]
+"cod_doc/api/web/pages/revisions.py" = ["PERF401"]
+"cod_doc/api/web/pages/tasks.py" = ["PERF401"]
+"cod_doc/logging_config.py" = ["PERF401"]
+"cod_doc/mcp/tools/legacy_agent_tools.py" = ["PERF401"]
+"cod_doc/services/context_service.py" = ["PERF401"]
+"cod_doc/services/repo_index_service.py" = ["PERF401"]
+# Файлы сразу в нескольких списках:
+"cod_doc/agent/orchestrator.py" = ["ANN401", "PLR2004", "C901"]
+"cod_doc/mcp/tools/context_tools.py" = ["PLR2004", "C901"]
+"cod_doc/mcp/tools/plan_tools.py" = ["ANN401", "C901"]
+"cod_doc/mcp/tools/task_tools.py" = ["ANN401", "C901"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+# quality policy 2026-08-25: dead code is a defect, not a style choice.
+warn_unreachable = true
+# `Any` must not leak in through untyped third-party imports.
+disallow_any_unimported = true
 
 [[tool.mypy.overrides]]
 module = ["anthropic", "yaml"]

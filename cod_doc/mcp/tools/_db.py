@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from cod_doc.config import ProjectEntry
 
 
 def _resolve(project: str | None) -> str:
@@ -17,7 +22,7 @@ def _resolve(project: str | None) -> str:
     return _ws_resolve(project)
 
 
-def session_factory(project: str | None):  # type: ignore[no-untyped-def]
+def session_factory(project: str | None) -> tuple[sessionmaker[Session], ProjectEntry]:
     """Return (sessionmaker, ProjectEntry) for the given project slug.
 
     Cycle-4: ``project=None`` triggers fallback to

@@ -73,7 +73,7 @@ class TestTransitionTableShape:
 
     def test_no_transition_to_unknown_target(self) -> None:
         canonical = {"backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"}
-        for _sources, targets in ALLOWED_TRANSITIONS.items():
+        for targets in ALLOWED_TRANSITIONS.values():
             assert targets <= canonical
 
 

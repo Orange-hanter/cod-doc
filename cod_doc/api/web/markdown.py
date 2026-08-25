@@ -58,8 +58,7 @@ def _render_inline(text: str) -> str:
     text = _INLINE_CODE.sub(_shield_inline_code, text)
     text = _BOLD.sub(r"<strong>\1</strong>", text)
     text = _ITALIC.sub(r"<em>\1</em>", text)
-    text = _LINK.sub(r'<a href="\2">\1</a>', text)
-    return text
+    return _LINK.sub(r'<a href="\2">\1</a>', text)
 
 
 def _split_pipe_row(line: str) -> list[str]:

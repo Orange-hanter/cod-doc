@@ -127,9 +127,16 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - **Русский текст в коде — норма.** `RUF001/002/003` и `E501` отключены для
   `cod_doc/**` и `tests/**` именно поэтому; не «чини» кириллицу в докстрингах.
-- ruff: line-length 100, `select = E,W,F,I,UP,B,SIM,TCH,RUF`; mypy `strict`.
+- ruff: line-length 100, `select = E,W,F,I,UP,B,SIM,TCH,RUF` + политика
+  качества `ANN,C901,PLR2004,RET,PERF,PTH` (голый `Any` запрещён, магические
+  числа запрещены, сложность ≤15); mypy `strict` + `warn_unreachable` +
+  `disallow_any_unimported`. Существующий долг — в ratchet-списке
+  `per-file-ignores` (может только уменьшаться); правила и обоснования —
+  `docs/system/standards/code-quality.md`.
   FastAPI/Pydantic/SQLAlchemy-типы намеренно живут вне `TYPE_CHECKING`
   (см. `runtime-evaluated-*` в `pyproject.toml`).
+- Прогоняя тесты из окрашенного терминала — `env -u FORCE_COLOR`: rich красит
+  вывод CLI в `CliRunner`, строковые ассерты падают на ANSI-кодах.
 - Коммиты — conventional + ID задачи: `feat(flow): STB-014 (COD-052) — …`.
 - Закрытие задачи — записью в БД (`task_complete` / `task_update_status`),
   не только правкой markdown. Закрытие секции плана → audit-отчёт в

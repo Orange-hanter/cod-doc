@@ -206,7 +206,7 @@ def _build_task_card(
 
     skills = _matching_skills_with_bodies(task.title, task.type.value)
 
-    card = {
+    return {
         "task": task_to_dict(task, session=session),
         "context": {
             "plan": {
@@ -234,7 +234,6 @@ def _build_task_card(
             "legal_status_transitions": _legal_post_checkout_transitions(),
         },
     }
-    return card
 
 
 # ----------------------------------------------------------------- #

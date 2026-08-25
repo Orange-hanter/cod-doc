@@ -477,7 +477,10 @@ def _apply_resolution(
         model.to_file_path = file_path
         model.to_symbol = parsed.target_symbol
     else:
-        ok, reason = False, f"unsupported kind: {kind.value}"
+        # Форвард-совместимость: ветка мертва, пока if-цепочка исчерпывает
+        # LinkKind, и оживает при добавлении нового вида ссылки — линк
+        # помечается broken вместо NameError. mypy прав «сейчас», мы — «потом».
+        ok, reason = False, f"unsupported kind: {kind.value}"  # type: ignore[unreachable]
 
     model.resolved = ok
     model.broken_reason = None if ok else reason
@@ -643,8 +646,6 @@ def list_incoming_for_doc(session: Session, project_id: int, doc_key: str) -> li
     rows = LinkRepository(session).list_for_doc_key(project_id, doc_key)
     out: list[IncomingLink] = []
     for link in rows:
-        if link.from_section_id is None:
-            continue
         section = session.get(SectionModel, link.from_section_id)
         if section is None:
             continue

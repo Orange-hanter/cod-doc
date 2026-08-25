@@ -43,8 +43,7 @@ def _orch(
 ) -> Orchestrator:
     """Create an Orchestrator backed by a MockAdapter."""
     adapter = MockAdapter(responses=responses)
-    orch = Orchestrator(project, config, adapter=adapter, **kw)
-    return orch
+    return Orchestrator(project, config, adapter=adapter, **kw)
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────

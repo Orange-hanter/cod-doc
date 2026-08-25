@@ -11,6 +11,8 @@ from rich.console import Console
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
+
     from cod_doc.config import Config
 
 console = Console()
@@ -31,7 +33,7 @@ _DRIFT_ICON = {
 }
 
 
-def _make_session(project_name: str, cfg: Config):  # type: ignore[no-untyped-def]
+def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
     from cod_doc.infra.db import make_engine, make_session_factory, resolve_db_url
 
     entry = cfg.get_project(project_name)
@@ -43,7 +45,7 @@ def _make_session(project_name: str, cfg: Config):  # type: ignore[no-untyped-de
     return make_session_factory(engine)
 
 
-def _require_project_id(session, project_name: str) -> int:  # type: ignore[no-untyped-def]
+def _require_project_id(session: Session, project_name: str) -> int:
     from cod_doc.infra.repositories import ProjectRepository
 
     proj = ProjectRepository(session).get_by_slug(project_name)

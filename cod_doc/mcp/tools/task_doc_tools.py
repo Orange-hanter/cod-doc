@@ -146,8 +146,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             task_row_id = _resolve_task_row_id(session, project_id, task_id)
-            revs = task_doc_service.revisions(session, task_row_id, key, limit=limit)
-        return revs
+            return task_doc_service.revisions(session, task_row_id, key, limit=limit)
 
     @mcp.tool(name="task_doc_revert")
     def task_doc_revert(

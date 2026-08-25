@@ -29,6 +29,10 @@ __all__ = ["TOOL_DEFINITIONS", "ToolExecutor"]
 class ToolExecutor:
     """Выполняет вызовы инструментов от имени агента."""
 
+    # Обрезка тела документа в doc_body-туле: защита контекста агента от
+    # мегадокументов. 300 строк ≈ разумный превью-бюджет.
+    _DOC_PREVIEW_LINES = 300
+
     def __init__(
         self,
         project: Project,
@@ -226,7 +230,7 @@ class ToolExecutor:
         if not self.chroma_path:
             return {"error": "ChromaDB не настроен. Укажите chroma_path в конфиге."}
         try:
-            result = reindex_project(
+            return reindex_project(
                 self.root,
                 self.chroma_path,
                 api_key=self.api_key,
@@ -234,7 +238,6 @@ class ToolExecutor:
                 embedding_model=self.embedding_model,
                 embedding_backend=self.embedding_backend,
             )
-            return result
         except ImportError as e:
             return {"error": str(e)}
         except Exception as e:
@@ -337,8 +340,9 @@ class ToolExecutor:
             if body is None:
                 return {"error": f"Document '{doc_key}' has no body"}
             lines = body.splitlines()
-            preview = "\n".join(lines[:300])
-            tail = f"\n[... +{len(lines) - 300} строк пропущено]" if len(lines) > 300 else ""
+            preview = "\n".join(lines[: self._DOC_PREVIEW_LINES])
+            hidden = len(lines) - self._DOC_PREVIEW_LINES
+            tail = f"\n[... +{hidden} строк пропущено]" if hidden > 0 else ""
             return {"doc_key": doc_key, "body": preview + tail, "total_lines": len(lines)}
         except Exception as e:
             return {"error": str(e)}

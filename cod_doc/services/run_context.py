@@ -31,7 +31,7 @@ from cod_doc.infra.models import AgentRunModel
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from sqlalchemy.orm import Session
+    from sqlalchemy.orm import Session, sessionmaker
 
 
 _current_run_id: ContextVar[str | None] = ContextVar("cod_doc_run_id", default=None)
@@ -100,7 +100,9 @@ def run_scope(
 # --------------------------------------------------------------------------- #
 
 
-def _open_session_for_project(project_path: str | None):  # type: ignore[no-untyped-def]
+def _open_session_for_project(
+    project_path: str | None,
+) -> tuple[sessionmaker[Session] | None, int | None]:
     """Best-effort session factory for a project on disk.
 
     Returns ``(session_factory, project_db_id)`` or ``(None, None)`` if

@@ -305,8 +305,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             require_project_id(session, project)
             plan_id = _require_plan_id(session, plan_scope)
-            projections = plan_service.export(session, plan_id)
-        return projections
+            return plan_service.export(session, plan_id)
 
     @mcp.tool(name="plan_critical_path")
     def plan_critical_path(project: str, plan_scope: str) -> dict[str, Any]:

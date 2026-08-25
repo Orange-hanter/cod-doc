@@ -599,8 +599,14 @@ class Orchestrator:
                     result = json.dumps({"answer": answer}, ensure_ascii=False)
                 else:
                     result = self.executor.execute(fn_name, fn_args)
+                    # execute() мог выставить _blocked (ask_human без async-пути);
+                    # mypy сужает is_blocked до Literal[False] по проверке в
+                    # начале витка и не видит мутацию через вызов — ложный
+                    # unreachable.
                     if self.executor.is_blocked:
-                        yield AgentEvent("blocked", self.executor._blocked_question)
+                        yield AgentEvent(  # type: ignore[unreachable]
+                            "blocked", self.executor._blocked_question
+                        )
                         return
 
                 yield AgentEvent("tool_result", {"name": fn_name, "result": result})

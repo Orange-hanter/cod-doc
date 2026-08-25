@@ -13,6 +13,8 @@ from rich.table import Table
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session, sessionmaker
+
     from cod_doc.config import Config
     from cod_doc.services.plan_service import ChainEntry
 
@@ -27,7 +29,7 @@ _STATUS_ICON = {
 }
 
 
-def _make_session(project_name: str, cfg: Config):  # type: ignore[no-untyped-def]
+def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
     from cod_doc.infra.db import make_engine, make_session_factory, resolve_db_url
 
     entry = cfg.get_project(project_name)
@@ -39,7 +41,7 @@ def _make_session(project_name: str, cfg: Config):  # type: ignore[no-untyped-de
     return make_session_factory(engine)
 
 
-def _require_plan_id(session, plan_scope: str) -> int:  # type: ignore[no-untyped-def]
+def _require_plan_id(session: Session, plan_scope: str) -> int:
     from cod_doc.infra.repositories import PlanRepository
 
     plan = PlanRepository(session).get_by_scope(plan_scope)

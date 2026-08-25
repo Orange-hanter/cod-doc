@@ -27,6 +27,7 @@ from cod_doc.infra.models import (
 )
 
 if TYPE_CHECKING:
+    import pathspec
     from sqlalchemy.orm import Session
 
 
@@ -83,7 +84,7 @@ def _detect_language(path: Path) -> str | None:
 # ----------------------------------------------------------------- #
 
 
-def _load_gitignore_spec(repo_root: Path):  # type: ignore[no-untyped-def]
+def _load_gitignore_spec(repo_root: Path) -> pathspec.PathSpec[pathspec.Pattern]:
     """Load ``.gitignore`` patterns into a pathspec matcher.
 
     Falls back to a permissive baseline if pathspec / .gitignore are
@@ -314,7 +315,7 @@ def find_importers(
     module: str,
 ) -> list[RepoFileModel]:
     """Which files import ``module``."""
-    rows = list(
+    return list(
         session.execute(
             select(RepoFileModel)
             .join(RepoImportModel, RepoImportModel.file_id == RepoFileModel.row_id)
@@ -326,4 +327,3 @@ def find_importers(
             .order_by(RepoFileModel.path)
         ).scalars()
     )
-    return rows

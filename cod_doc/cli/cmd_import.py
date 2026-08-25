@@ -13,7 +13,10 @@ from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import restate_importer
 
 if TYPE_CHECKING:
-    from cod_doc.config import Config
+    from sqlalchemy import Engine
+    from sqlalchemy.orm import Session, sessionmaker
+
+    from cod_doc.config import Config, ProjectEntry
 
 console = Console()
 
@@ -23,7 +26,9 @@ def import_cmd() -> None:
     """Импорт документации/задач из репозитория проекта."""
 
 
-def _open_session(cfg: Config, project_name: str):  # type: ignore[no-untyped-def]
+def _open_session(
+    cfg: Config, project_name: str
+) -> tuple[ProjectEntry, sessionmaker[Session], Engine]:
     entry = cfg.get_project(project_name)
     if entry is None:
         raise click.ClickException(f"Проект не найден: {project_name}")
@@ -33,7 +38,7 @@ def _open_session(cfg: Config, project_name: str):  # type: ignore[no-untyped-de
     return entry, factory, engine
 
 
-def _project_db_id(session, project_name: str) -> int:  # type: ignore[no-untyped-def]
+def _project_db_id(session: Session, project_name: str) -> int:
     proj = ProjectRepository(session).get_by_slug(project_name)
     if proj is None or proj.row_id is None:
         raise click.ClickException(
