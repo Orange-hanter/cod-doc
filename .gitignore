@@ -21,7 +21,10 @@ venv/
 # Local dev tooling
 .claude/
 .mcp.json
-models/
+# ADO-020: anchored. Unanchored `models/` also matched `cod_doc/infra/models/`,
+# so five ORM modules that `cod_doc.infra.models.__init__` imports were never
+# committed — a fresh clone could not import the package at all.
+/models/
 
 # Local playwright scripts
 .cod-doc-playwright-*.py
