@@ -6,6 +6,9 @@ import re
 
 from cod_doc.domain.entities import DocumentType, TaskType
 
+# ADO-021: these are applied with `.fullmatch()`, not `.match()`. In Python `$`
+# also matches just before a trailing newline, so `.match()` accepted `'AA\n'`
+# as an id_prefix and let it through into generated task IDs.
 _TASK_ID_RE = re.compile(r"^[A-Z]{2,5}-\d{3}[A-Z]?$")
 _ID_PREFIX_RE = re.compile(r"^[A-Z]{2,5}$")
 _STORY_ID_RE = re.compile(r"^[A-Z]{2,4}-\d{3}$")

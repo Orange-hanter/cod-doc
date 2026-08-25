@@ -24,7 +24,7 @@ def validate_task_id(task_id: str) -> None:
 
     Per [task-plan.md §5, §8]. Examples: `AUTH-025`, `COD-011`, `AGN-021A`.
     """
-    if not isinstance(task_id, str) or not _TASK_ID_RE.match(task_id):
+    if not isinstance(task_id, str) or not _TASK_ID_RE.fullmatch(task_id):
         raise ValidationError(
             "TP-001",
             f"invalid task_id {task_id!r}: expected '<PREFIX>-NNN' "
@@ -36,7 +36,7 @@ def validate_task_id(task_id: str) -> None:
 
 def validate_id_prefix(prefix: str) -> None:
     """`^[A-Z]{2,5}$` — used when auto-generating task IDs."""
-    if not isinstance(prefix, str) or not _ID_PREFIX_RE.match(prefix):
+    if not isinstance(prefix, str) or not _ID_PREFIX_RE.fullmatch(prefix):
         raise ValidationError(
             "TP-002",
             f"invalid id_prefix {prefix!r}: expected 2-5 capital letters",
@@ -46,7 +46,7 @@ def validate_id_prefix(prefix: str) -> None:
 
 def validate_story_id(story_id: str) -> None:
     """`^[A-Z]{2,4}-\\d{3}$` — typically `US-NNN` per DATA_MODEL §6."""
-    if not isinstance(story_id, str) or not _STORY_ID_RE.match(story_id):
+    if not isinstance(story_id, str) or not _STORY_ID_RE.fullmatch(story_id):
         raise ValidationError(
             "US-001",
             f"invalid story_id {story_id!r}: expected '<PREFIX>-NNN' "
@@ -57,7 +57,7 @@ def validate_story_id(story_id: str) -> None:
 
 def validate_section_slug(slug: str) -> None:
     """`^[A-Z]-<KebabSlug>$` — e.g. `A-Data-Core`, `B-Services`."""
-    if not isinstance(slug, str) or not _SECTION_SLUG_RE.match(slug):
+    if not isinstance(slug, str) or not _SECTION_SLUG_RE.fullmatch(slug):
         raise ValidationError(
             "TP-003",
             f"invalid section slug {slug!r}: expected '<LETTER>-<KebabSlug>'",
