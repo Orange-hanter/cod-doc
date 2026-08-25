@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-05-07
+last_updated: 2026-07-29
 audience: [contributors, agents]
 related_code:
   - cod_doc/core/project.py
@@ -28,6 +28,8 @@ related_code:
 
 | Роль | Начать с | Затем |
 |------|----------|-------|
+| **Любой — «что делать дальше»** | [roadmap/ROADMAP.md](roadmap/ROADMAP.md) | [audit/2026-07-29-state-of-the-project.md](audit/2026-07-29-state-of-the-project.md) |
+| **Пользователь cod-doc** | [../adoption-playbook.md](../adoption-playbook.md) | [../HANDBOOK.md](../HANDBOOK.md) |
 | Продукт/видение | [VISION.md](VISION.md) | [capabilities/](capabilities/) |
 | Архитектор | [ARCHITECTURE.md](ARCHITECTURE.md) | [DATA_MODEL.md](DATA_MODEL.md) |
 | Разработчик ядра | [DATA_MODEL.md](DATA_MODEL.md) | [capabilities/](capabilities/), [roadmap/cod-doc-task-plan.md](roadmap/cod-doc-task-plan.md) |
@@ -78,7 +80,11 @@ docs/system/
 │   ├── 2026-05-02-checkpoint-web-batch-1..4.md ← mid-section checkpoints
 │   ├── 2026-05-06-ai-usage-audit.md        ← аудит usage AI в системе
 │   ├── 2026-05-06-cli-vs-web-parity.md     ← сравнение CLI и Web UI surface'ов
-│   └── 2026-05-07-doc-consolidation-cycle-{1..5}.md ← цикловые аудиты консолидации
+│   ├── 2026-05-07-doc-consolidation-cycle-{1..5}.md ← цикловые аудиты консолидации
+│   ├── 2026-06-04-self-improvement-compared.md ← двойное LLM-ревью, P0/P1/P2 backlog
+│   ├── 2026-06-05-doc-drift-source-of-truth.md ← первая трёхсторонняя сверка БД↔md↔код
+│   ├── 2026-06-08-agent-tools-completion.md    ← закрытие Section H (STB-001)
+│   └── 2026-07-29-state-of-the-project.md      ← 🧭 актуальное состояние; основание для ROADMAP
 │
 ├── migration/
 │   └── from-restate.md             ← как перевезти реальное состояние Restate
@@ -151,6 +157,10 @@ docs/system/
 | audit/2026-05-02-checkpoint-web-batch-2 | resolved | cod-doc core |
 | audit/2026-05-02-checkpoint-web-batch-3 | resolved | cod-doc core |
 | audit/2026-05-02-checkpoint-web-batch-4 | resolved | cod-doc core |
+| audit/2026-06-04-self-improvement-compared | resolved | cod-doc core |
+| audit/2026-06-05-doc-drift-source-of-truth | resolved | cod-doc core |
+| audit/2026-06-08-agent-tools-completion | resolved | cod-doc core |
+| audit/2026-07-29-state-of-the-project | active | cod-doc core |
 | capabilities/web-frontend | active | cod-doc core |
 
 Пока пакет в статусе `draft` — изменения допустимы без revision-истории. После `active` любая правка обязана вести к revision-записи (см. [standards/revision-history.md](standards/revision-history.md)). Статус `resolved` — для audit-отчётов, чьи задачи закрыты (см. [standards/frontmatter.md §7](standards/frontmatter.md)).
@@ -186,6 +196,7 @@ docs/system/
 | 2026-05-07 | **Documentation Consolidation — Cycle 4 (Cross-links & Integrity).** `link_list` показал 39 broken markdown-refs на `docs/system/MASTER` — обнаружен gap **G4** (link_service не резолвит relative-paths против source-doc directory) → расширил scope PCA-421 в plan paperclip-adoption. Doc-record `arch/arch/architecture` идентифицирован как фикстурный реликт (commit e51e85f, 2026-04-05). `doc_drift` для root `MASTER` и `docs/system/MASTER` — `stale_export` после edit-in-place (известное состояние). Cycle-2/3 audit-доки зарегистрированы как doc-records (active). `check_stale_refs` остаётся 10/10 VALID. Аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-4.md](audit/2026-05-07-doc-consolidation-cycle-4.md). |
 | 2026-05-07 | **Documentation Consolidation — Cycle 5 (Final Close-out).** Сводка по 5 циклам: +44 pending tasks (44 задачи в paperclip-adoption-task-plan), +15 stories (US-005..US-019, всего 19), +5 audit-отчётов, +6 doc-records, +2 roadmap-файлов. Заведён PCA-911 (low) для уборки `arch/arch/architecture.md` фикстуры. Memory обогащена двумя feedback-патернами: `mcp_field_persistence_gap` (echo-but-no-persist) и `consolidation_cycle_pattern` (N циклов → N audit-отчётов). Реализация PCA-001..PCA-911 намеренно не запущена в этом сеансе — это отдельный длинный фронт работ. Финальный аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-5-final.md](audit/2026-05-07-doc-consolidation-cycle-5-final.md). |
 | 2026-05-07 | **ADR System capability добавлена.** Заведена capability [adr-system](capabilities/adr-system.md) (Architecture Decision Records как first-class entity с автонумерацией, supersede-DAG, визуальным редактором и Mermaid-графом в Web UI). Story US-020 (`accepted`). Новый план [adr-system-task-plan](roadmap/adr-system-task-plan.md), 3 секции (Domain & MCP, Web UI, Templates & Migration), 8 задач `ADR-001`..`ADR-008`. Старт реализации после закрытия Section F paperclip-плана. |
+| 2026-07-29 | **State-of-the-project audit + пересборка роадмапа.** Прогон подтвердил инженерное здоровье: 1356 тестов, ruff/mypy clean, 106 документов `in_sync`, `plan audit` ×5 без issues, 0 `pragma: no cover`. Трек A (`stabilization-2026-06`) закрыт 12/13; закрыт STB-013 (ContextService L2/L3 реализованы — оставался только устаревший docstring). Находки: F2 repo-index не строился на собственном проекте (исправлено: 625 файлов / 3021 символ), F3 66 недокументированных web-роутов, F4 L0-payload `agent_capabilities` пробил потолок 4 КБ (исправлено: 4543 → 3586 байт), F5 глобальный конфиг из тестового прогона, F6 нет корневого README. Каталог скиллов 9 → 12 (`project-onboarding`, `ground-truth-reconcile`, `rfc-authoring`). Добавлен [../adoption-playbook.md](../adoption-playbook.md). [ROADMAP](roadmap/ROADMAP.md) пересобран: приоритет смещён с фич на adoption (M1 → M2 → M3). Отчёт: [audit/2026-07-29-state-of-the-project.md](audit/2026-07-29-state-of-the-project.md). |
 | 2026-05-07 | **Observability & Indexing capability добавлена (опциональная).** Capability [observability-and-indexing](capabilities/observability-and-indexing.md) — метрики выполнения задач, commit→task linkage для истории работ, code-refs `[label](src/path.py)` в markdown, RepoIndex (.gitignore-aware symbols/imports), DBObjectIndex (FTS5 unified search). 5 stories US-021..US-025 (`accepted`), новый план [observability-and-indexing-task-plan](roadmap/observability-and-indexing-task-plan.md): 5 секций (Metrics/Commits/Code-Refs/Repo-Index/DB-Object-Index), 8 задач OBI-001..OBI-040. Помечено опциональным — не блокирует Phase 1 paperclip-adoption. |
 
 ## 7. Соглашения об оформлении

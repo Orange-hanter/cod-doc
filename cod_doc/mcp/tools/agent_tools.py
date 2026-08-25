@@ -71,15 +71,25 @@ def register(mcp: FastMCP) -> None:
             | {dst for dsts in ALLOWED_TRANSITIONS.values() for dst in dsts}
         )
 
-        # Skills carry only short one-liners here — full bodies arrive
-        # later inline in agent_pick's task card (or via agent_get).
-        # Many SKILL.md frontmatters use block-scalar descriptions that
-        # parse as a single long string; we truncate at the first sentence
-        # boundary or 120 chars to keep this payload under the 4KB ceiling.
-        def _one_liner(s: str | None, limit: int = 120) -> str:
+        # Skills are a *menu* at L0: enough to recognise a name, no more.
+        # Full bodies arrive inline in agent_pick's task card (or via
+        # agent_get) — so this payload must not grow with the catalog.
+        #
+        # SKILL.md frontmatters use block-scalar descriptions that parse as
+        # one long string ending in a "Триггеры: ..." keyword list. Those
+        # keywords exist for the server-side matcher (skill_service.match),
+        # not for the agent, so we drop them before truncating; without that
+        # the per-skill cost is ~2x and the 4KB ceiling breaks at ~10 skills.
+        _TRIGGER_MARKERS = ("Триггеры:", "Триггер-keywords:", "Triggers:")
+
+        def _one_liner(s: str | None, limit: int = 60) -> str:
             if not s:
                 return ""
             text = " ".join(s.strip().split())  # collapse whitespace
+            for marker in _TRIGGER_MARKERS:
+                idx = text.find(marker)
+                if idx > 0:
+                    text = text[:idx].rstrip(" .;—-")
             # Prefer first-sentence boundary if it lands under `limit`.
             for sep in (". ", "; ", " — "):
                 cut = text.find(sep)

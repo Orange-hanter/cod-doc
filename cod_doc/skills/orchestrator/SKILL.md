@@ -102,12 +102,24 @@ L2/L3 — не нужны: если что-то не покрыл task card, е�
 
 ## Связанные скиллы
 
+**Работа с задачами**
 - `task-standard` — статусы (7-state flow), обязательные поля задач.
 - `plan-to-tasks` — разбиение execution-plan на узлы.
-- `drift-handling` — что делать при STALE / BROKEN.
+
+**Целостность**
+- `drift-handling` — что делать при STALE / BROKEN (хэш vs файл).
+- `ground-truth-reconcile` — сверка БД ↔ markdown ↔ код (статус vs реализация).
 - `validation` — write-path валидация (FM-002..FM-005).
+
+**Закрытие и открытие фаз**
 - `module-audit` — закрытие модуля / крупной задачи.
 - `audit-cadence` — закрытие секции → audit-report.
+
+**Вход в проект и новые направления**
+- `project-onboarding` — завести существующий репозиторий под COD-DOC.
+- `rfc-authoring` — оформить идею как proposal перед декомпозицией.
+- `adr-author` — зафиксировать архитектурное решение.
+- `doc-style` — стиль доковой прозы.
 
 Большинство из них автоматически инлайнятся в `agent_pick().navigation.applicable_skills`
 по триггерам — отдельно звать `skill_get` не нужно.

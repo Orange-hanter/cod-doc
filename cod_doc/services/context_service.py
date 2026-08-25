@@ -1,4 +1,4 @@
-"""ContextService L0/L1 — assemble minimal-sufficient context for agents (COD-041).
+"""ContextService — assemble minimal-sufficient context for agents (COD-041..043).
 
 Public API:
 - context_get(session, project_id, target_kind, target_id, depth, token_budget, master_content)
@@ -6,7 +6,8 @@ Public API:
 Target kinds: document | task | plan | module
 Depth levels:  L0 (metadata only)
                L1 (L0 + body + direct relations)
-               L2/L3 deferred to COD-042.
+               L2 (L1 + dependency chains + cross-document links)   — COD-042
+               L3 (L2 + semantic hits from ChromaDB, graceful skip) — COD-043
 """
 
 from __future__ import annotations
