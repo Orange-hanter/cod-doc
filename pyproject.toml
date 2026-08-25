@@ -24,7 +24,7 @@ dependencies = [
     "openai>=1.50.0",
     "chromadb>=0.5.0",
     "textual>=0.80.0",
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",  # PR#5: верхний пин — mcp 2.x ломает совместимость
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "pyyaml>=6.0",
@@ -45,9 +45,11 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "pytest-timeout>=2.3",  # PR#5: гейт из CLAUDE.md зовёт --timeout=120
     "hypothesis>=6.100",
     "ruff>=0.8",
     "mypy>=1.11",
+    "types-PyYAML>=6.0",  # PR#5: стабы для mypy strict
     "pre-commit>=3.8",
 ]
 # COD-043: opt-in local embeddings backend. Pulls torch (~200 MB on first
