@@ -5,103 +5,254 @@ status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-06-05
-last_updated: 2026-06-05
+last_updated: 2026-08-25
 audience: [contributors, agents]
 related_docs:
   - ../MASTER.md
   - task-graph.md
   - ../../../proposals/README.md
-  - ../audit/2026-06-04-self-improvement-compared.md
+  - ../audit/2026-07-29-state-of-the-project.md
+  - ../../adoption-playbook.md
+  - ../../../proposals/22-symbiosis-zairgrush-orakul.md
 ---
 
 # COD-DOC — Roadmap (canonical index)
 
 > Единая точка приоритизации поверх всех task-планов, RFC и аудитов.
-> Создан 2026-06-05 после трёхсторонней сверки (БД ↔ markdown ↔ **код**),
-> которая показала, что markdown-статусы устарели в обе стороны, а проект
-> **не закончен**: есть подтверждённые кодом дыры + непрожатый feature-трек.
+> Пересобран 2026-07-29 после [state-of-the-project audit](../audit/2026-07-29-state-of-the-project.md):
+> Трек A (стабилизация) закрыт 12/13, и главный дефицит сместился с качества
+> кода на **отсутствие использования**.
 
 ## Правило источника истины
 
 1. **БД приложения (`.cod-doc/state.db`) — source of truth для трекаемых задач.**
    Статус задачи определяется записью в БД, а не markdown.
 2. **Код — арбитр при расхождении.** Если БД и markdown спорят — смотрим, что
-   реально реализовано в коде (file:line), и приводим оба к нему.
-3. **markdown Progress Overview — вторичен**, обновляется из БД/кода. Все
-   планы со статусом `done` ниже синхронизированы 2026-06-05.
+   реально реализовано (`file:line` + тест), и приводим оба к нему.
+3. **markdown Progress Overview — вторичен**, обновляется из БД/кода.
+
+Процедура сверки формализована в skill
+[`ground-truth-reconcile`](../../../cod_doc/skills/ground-truth-reconcile/SKILL.md).
 
 ## Navigation
 
-- [System MASTER](../MASTER.md)
-- [Task graph](task-graph.md)
+- [System MASTER](../MASTER.md) · [Task graph](task-graph.md)
 - [Proposals (RFC 01–21)](../../../proposals/README.md)
-- [Self-improvement audit 2026-06-04](../audit/2026-06-04-self-improvement-compared.md)
+- [State-of-the-project audit 2026-07-29](../audit/2026-07-29-state-of-the-project.md)
+- [Adoption playbook](../../adoption-playbook.md)
 
-## Ground-truth состояние планов (сверено с кодом 2026-06-05)
+## Где мы находимся
 
-| План | Статус (истина) | Примечание |
+Проверено прогоном 2026-07-29, не переписано из прошлых отчётов:
+
+| Измерение | Состояние |
+|---|---|
+| Тесты / линт / типы | 1356 passed · ruff clean · mypy clean (287 файлов) |
+| Drift | 106 документов `in_sync`, 0 расхождений |
+| Планы | 5 планов, 0 issues в `plan audit` |
+| Задачи | 179 `done` · 25 `pending` · 5 `cancelled` |
+| Поверхность | 103 MCP-тула · 12 скиллов · 6 ADR · 25 stories |
+| **Внешних пользователей** | **0 проектов, кроме самого cod-doc** |
+
+Последняя строка — и есть новый приоритет.
+
+## Ground-truth состояние планов
+
+| План | Статус | Примечание |
 |---|---|---|
-| [paperclip-adoption](paperclip-adoption-task-plan.md) (RFC 01–15) | ✅ done | 82 done / 2 cancelled в БД; кроме Section H (см. A0-1) |
-| [adr-system](adr-system-task-plan.md) | ✅ done | 8/8; миграции+сервис+9 MCP+CLI+web |
-| [observability-and-indexing](observability-and-indexing-task-plan.md) | ✅ done | 8/8; metrics, commit-links, code-refs, repo-index, FTS5 |
-| [refactor-large-files](refactor-large-files-task-plan.md) | ✅ done | ~20/20; пакеты сервисов/CLI/моделей/pages + CSS-split |
-| [cod-doc bootstrap](cod-doc-task-plan.md) | 🔄 in-progress | открыты COD-042/043 (L2/L3), COD-052 (freeze) → A1-4 |
-| [web-frontend](web-frontend-task-plan.md) | 🔄 in-progress | открыты WEB-031, WEB-042 → A0-3 |
-| [agent-tools-completion](agent-tools-completion-task-plan.md) | 🟡 open | docstring+тесты; код AGT done → A0-1 |
-| [audit-followups](audit-followups-task-plan.md) | 🔄 in-progress | ~10 doc-задач → A2-2 |
-| RFC 16–20 (hackathon-track) | 🆕 не начато | только proposals → Трек B |
+| [paperclip-adoption](paperclip-adoption-task-plan.md) (RFC 01–15) | ✅ done | 94 done / 2 cancelled |
+| [adr-system](adr-system-task-plan.md) | ✅ done | 8/8 |
+| [observability-and-indexing](observability-and-indexing-task-plan.md) | ✅ done | 8/8 |
+| [refactor-large-files](refactor-large-files-task-plan.md) | ✅ done | подтверждён STB-020 |
+| [cod-doc bootstrap](cod-doc-task-plan.md) | ✅ done | 58/58; COD-042/043/052 закрыты |
+| [web-frontend](web-frontend-task-plan.md) | ✅ done | WEB-031/042 закрыты (STB-003/004) |
+| [audit-followups](audit-followups-task-plan.md) | ✅ done | закрыт STB-021 |
+| [agent-tools-completion](agent-tools-completion-task-plan.md) | ✅ done | закрыт STB-001 |
+| [stabilization-2026-06](../audit/2026-07-29-state-of-the-project.md) | 🔄 11 done / 1 cancelled | STB-012 → cancelled (re-scoped как ADO-013); открыт STB-023 |
+| **adoption-2026-08** | 🔄 0/26 | Треки C+D+E; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)) |
+| RFC 16–21 (hackathon-track) | 🆕 не начато | только proposals; внешняя часть 16/17 поглощена RFC 22 |
 
-## Реальный бэклог
+## Смена приоритета: почему Adoption вперёд фич
 
-Два трека. **Решение: Трек A (долг) целиком приоритетнее Трека B (фичи).**
-Открытые задачи Трека A заведены в БД как план `stabilization-2026-06`
-(см. ниже) — БД остаётся единым трекером.
+Сверка 2026-07-29 дала четыре находки, указывающие в одну сторону:
 
-### Трек A — Стабилизация и tech-debt
+- **F2** — `repo_file`/`repo_symbol` были пусты: собственная capability
+  (OBI-030) ни разу не запускалась на собственном проекте.
+- **F5** — `~/.cod-doc/config.yaml` содержит `model: test/model` и один
+  зарегистрированный проект — временную директорию pytest.
+- **F6** — в корне нет README: проект нечем объяснить за 30 секунд.
+- **F7** — **`doc export` повреждает документ** (склейка preamble с первым
+  заголовком, потеря H1, подмена `type`). Не всплывало, потому что этой
+  дорогой ни разу не прошли.
 
-#### A-P0 — сейчас (~4–5 дней)
+F7 — решающий аргумент. «Markdown — только проекция, генерируется из БД при
+export» — центральное обещание [VISION §2](../VISION.md), и оно сейчас не
+работает. Догфудинг нашёл за вечер то, чего не нашли 1356 тестов, два
+LLM-ревью и три аудита: все они смотрели на код, а не пользовались им.
 
-| ID | Задача | Источник | Файлы |
+Инструмент, не заведённый ни на одном реальном проекте, **не проверен там,
+где он ломается**. Поэтому:
+
+> **Решение: Трек C (Adoption) приоритетнее Трека B (hackathon-фичи).**
+> **ADO-010 (export) идёт вперёд обоих** — экспортом нельзя пользоваться на
+> пилотах, пока он портит документы.
+
+## Смена пилотов: программа Symbiosis (2026-08-25)
+
+Решением владельца пилоты переназначены с «спокойных» репозиториев на два
+живых, дающих обратный поток данных
+([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)):
+
+- **ZAIrgRush** (пилот №1, ADO-016) — мульти-агентная петля разработки со
+  свободным экспериментальным слотом E5 «Дрейф docs↔code»; cod-doc заходит
+  туда как вариант C этого эксперимента.
+- **Orakul / ai-review** (пилот №2, ADO-017) — LLM-ревью PR без БД; cod-doc
+  становится хранилищем находок (дедуп, стабильность) и детерминированным
+  drift-гейтом, которого у них нет.
+
+Симбиоз двунаправленный: cod-doc отдаёт спеки/ADR/контекст, пилоты
+возвращают findings, коммиты и измерения. ADO-003/ADO-004 закрыты как
+`cancelled` с указанием причины; STB-012 закрыт как `cancelled`
+(re-scoped в ADO-013). ADO-010 разбит на два этапа (guard сейчас,
+byte-identical round-trip — перед первым `doc export` наружу).
+Декомпозиция программы — секция E плана `adoption-2026-08` (SYM-001…011).
+
+## Треки
+
+Все задачи заведены в БД как план **`adoption-2026-08`** (26 задач: C — 9,
+D — 6, E — 11):
+`cod-doc plan ready adoption-2026-08 -p cod-doc`.
+
+### Трек C — Adoption (приоритет)
+
+Цель: cod-doc используется на ≥ 2 реальных проектах владельца, и обратная
+связь оттуда правит бэклог. Сценарии по типам проектов —
+[adoption-playbook.md](../../adoption-playbook.md).
+
+| ID | Задача | Приоритет | Блокируется |
 |---|---|---|---|
-| **A0-1** | Section H: убрать misleading docstring, дописать 4 integration-теста через `mcp.call_tool`, audit-отчёт (код AGT уже done) | audit P0-1 | `mcp/tools/agent_tools.py:115-118`, `AGENTS.md`, `tests/integration/test_agent_profile_mcp.py` |
-| **A0-2** | Удалить 5 legacy YAML-модулей (863 строки dead code; флаг «спрятать» PCA-935 отменён → удаляем) | audit P0-2 | `mcp/tools/legacy_*.py` |
-| **A0-3** | Закрыть 2 WEB-дыры: WEB-031 (import progress stream через WebSocket), WEB-042 (`cod-doc audit --web-routes`) | web-plan | `api/websocket.py`, `cli/cmd_audit.py` |
+| **ADO-001** | Починить `~/.cod-doc/config.yaml`: выкинуть `integration-test`, прописать реальную модель и ключ (F5) | critical | — |
+| **ADO-002** | Корневой `README.md`: что это, кому, quick start, скриншот Web UI (F6) | high | — |
+| ~~ADO-003~~ | ~~Пилот №1: Mushrooms Shuchin~~ — cancelled, пилот переназначен (RFC 22) | — | — |
+| ~~ADO-004~~ | ~~Пилот №2: yana-reconciliation~~ — cancelled, пилот переназначен (RFC 22) | — | — |
+| **ADO-016** | Пилот №1: `ZAIrgRush` (петля агентов, 28 root-доков, слот E5) | high | SYM-001, SYM-002, SYM-004, ADO-015, ADO-010 |
+| **ADO-017** | Пилот №2: `Orakul` (371 док, Diátaxis, ai-review) | high | ADO-016 |
+| **ADO-005** | Friction-лог: неделя в пилотах, ≥ 10 наблюдений из живой работы | high | ADO-016, ADO-017 |
+| **ADO-006** | Закрыть top-3 находки friction-лога | high | ADO-005 |
+| **ADO-007** | Routine `doc_drift` на пилотах — автопроверки вне cod-doc | medium | ADO-016 |
 
-#### A-P1 — ближайший месяц (~3 недели)
+### Трек D — Остаточный долг (фоном)
 
-| ID | Задача | Источник | Файлы |
+| ID | Задача | Приоритет | Блокируется |
 |---|---|---|---|
-| **A1-1** | Закрыть `pragma: no cover` ×8 на degraded paths (8 unit-тестов) | audit P1-3 | `event_bus.py:123,132`, `run_context.py:140,179,214`, `websocket.py:48`, `routine_service.py:463`, `adapters/registry.py:93` |
-| **A1-2** | Кеш `Config.load()` (YAML с диска на каждый MCP-вызов; caveat: hot-reload) | audit P1-5 | `config.py:155`, `mcp/tools/_db.py:27` |
-| **A1-3** | RFC #21 (degraded-path auditability, гибрид): ring buffer + `error_audit` + 2 MCP-тула + 2 web-страницы + TTL-cleanup | proposals/21 | миграция, `services/`, `mcp/tools/`, `api/web/pages/` |
-| **A1-4** | COD-042/043 (ContextService L2/L3 семантика) + COD-052 (freeze/rollback projection) | cod-doc plan | `services/context_service.py`, `services/projection_service/` |
+| **ADO-010** | **`doc export` повреждает документ** (F7). Re-scope 2026-08-25: этап 1 — guard (`--dry-run` + `--force-write` для чужого root) разблокирует пилоты; этап 2 — byte-identical round-trip перед первым export наружу | **critical** | — |
+| **ADO-011** | Route drift: синхронизировать `capabilities/web-frontend.md §3` — 66 undocumented (F3) | medium | — |
+| **ADO-012** | Поставить `audit --web-routes` в CI как advisory-шаг, чтобы дрейф не копился | medium | ADO-011 |
+| **ADO-013** | Пересмотреть RFC #21: Tier-1 потерял основание после STB-010 (STB-012 закрыт `cancelled`, остаток живёт здесь) | medium | — |
+| **ADO-015** | Enum `DocumentType`: + `design/audit/journal/plan/analysis/research/capability/audit-report` — 5 из 6 типов ZAIrgRush молча становятся `module-spec`; тихую подмену → предупреждение | medium | — |
+| **ADO-014** | Актуализировать `capabilities/project-bootstrap.md`: `project new` vs `project add` + `init` | low | — |
+| **STB-023** | `activity_subscribe` (SSE). Держать закрытым, пока не появится реальный event-driven сценарий | low | — |
 
-#### A-P2 — опортунистично
+### Трек E — Symbiosis ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md))
 
-| ID | Задача | Источник |
-|---|---|---|
-| **A2-1** | Хвост refactor (подтвердить тесты RFL-070..075; CSS уже split) | refactor plan |
-| **A2-2** | audit-followups: DOC-ME-1,2,3,5,6,7 + DOC-LO-2..5 (~10 doc-задач) | audit-followups |
-| **A2-3** | Мелочи аудита: skill-matcher→embeddings, `iter_skill_records()`→core, `event_bus._subscribers` dispose, `task: Any`→Protocol | audit P2 |
-| **A2-4** | Реанимировать PCA-947 (`activity_subscribe` SSE) если нужен event-driven orchestration | cancelled |
+Фаза 0 (самопочинка, блокирует пилоты) → Фазы 1–5 (hub, findings, петля,
+ai-review, кросс-проектность). Полный план:
+`cod-doc plan ready adoption-2026-08 -p cod-doc`.
 
-### Трек B — Feature-трек (hackathon RFC, после стабилизации)
+| ID | Задача | Приоритет | Блокируется |
+|---|---|---|---|
+| **SYM-001** | B1: `project add/init` создаёт БД + починить прескрипт онбординга в 3 доках | **critical** | — |
+| **SYM-002** | SQLite hardening: WAL + busy_timeout + synchronous; dialect-guard FTS5 | high | — |
+| **SYM-003** | Безопасность: bind 127.0.0.1 по умолчанию + loopback-гейт `POST /settings` | high | — |
+| **SYM-004** | `import docs --exclude` | medium | — |
+| **SYM-005** | Фаза 1: hub.db + миграции 0026/0027 + finding_service | high | SYM-002 |
+| **SYM-006** | Фаза 1: реестр ingest-адаптеров + CLI ingest/ctx + api/v1 + MCP finding_*/ctx_* | high | SYM-005 |
+| **SYM-007** | ADR-мост ZAIrgRush: 13 ADR → adr-система + decisions.jsonl | medium | ADO-016 |
+| **SYM-008** | Фаза 2: ctx docs + патч петли ZAIrgRush (E5 вариант C) + git-трейлеры | medium | SYM-006, ADO-016 |
+| **SYM-009** | Фаза 3: ingest ai_review pull-моделью + upstream-PR slimFinding + finding stability | medium | SYM-006 |
+| **SYM-010** | Фаза 4a: ctx drift → PR-комментарий (гейт ссылок/frontmatter Orakul) | medium | SYM-009, ADO-017 |
+| **SYM-011** | Фаза 5: кросс-проектный поиск + `[[doc:slug:key]]` + фикс Chroma L3 + `agent_pick --projects` | low | SYM-005 |
 
-Ветка `feat/hackathon-ideas-rfc`. Порядок из [proposals/README.md](../../../proposals/README.md):
+### Трек B — Feature-трек (hackathon RFC, после C)
 
-- **B-MVP (1–2 недели каждая):** RFC 18 Vibecoder's Diary → RFC 19 Context-Scout → RFC 17 Living Specification.
-- **B-Scale (3–4 недели):** RFC 16 AI-Pair-Hacker → RFC 20 Multi-Agent Standup.
+Ветка `feat/hackathon-ideas-rfc`. Порядок из
+[proposals/README.md](../../../proposals/README.md):
 
-Каждая RFC декомпозируется в отдельный план (`plan_create`) перед стартом.
+- **B-MVP:** RFC 18 Vibecoder's Diary → RFC 19 Context-Scout → RFC 17 Living Specification.
+- **B-Scale:** RFC 16 AI-Pair-Hacker → RFC 20 Multi-Agent Standup.
+
+Каждая RFC декомпозируется в отдельный план (`plan_create`) перед стартом —
+см. skill [`rfc-authoring`](../../../cod_doc/skills/rfc-authoring/SKILL.md).
+
+> **Замечание о перекосе.** 21 RFC против 5 планов: предложений написано
+> вчетверо больше, чем фронтов работ. Перед стартом Трека B стоит
+> перечитать RFC 16–20 и отбраковать те, чья секция «Текущее состояние»
+> устарела — как это случилось с RFC #21.
+
+## Три ближайших милстоуна
+
+### M1 — «Пилот работает» *(SYM-001..004, ADO-010 этап 1, 001, 002, 015, 016, 017; ~2–3 недели)*
+
+Cod-doc заведён на двух реальных проектах и отдаёт контекст, а экспорт не
+портит документы.
+
+**Готово, когда:**
+- [ ] **ADO-010 этап 1 закрыт:** `doc export` не может молча писать в чужой репозиторий (`--dry-run` + `--force-write`); этап 2 (byte-identical round-trip) — отложен до первого export наружу.
+- [ ] **SYM-001 закрыт:** `project add/init` создаёт БД — онбординг работает по документации.
+- [ ] `cod-doc project list` не содержит `integration-test`; конфиг указывает на рабочую модель.
+- [ ] В корне есть `README.md`, объясняющий проект без чтения `docs/`.
+- [ ] Два проекта проходят все 5 критериев «проект заведён» из skill `project-onboarding`.
+- [ ] `cod-doc search` на каждом пилоте находит документы по доменному термину.
+
+**Риск:** импорт затащит архивный/вендорный markdown → шум в FTS.
+**Митигация:** `--dry-run` обязателен; решение по `Архив/` принимается до импорта (зафиксировано в скилле и playbook'е).
+
+**Почему ADO-010 первым:** пилоты — это чужие рабочие репозитории. Ставить
+туда инструмент, который может испортить markdown, нельзя.
+
+### M2 — «Обратная связь встроена» *(ADO-005..007, 011, 012; ~3 недели)*
+
+Пилоты прожиты, найденное — починено, дрейф не копится.
+
+**Готово, когда:**
+- [ ] Есть friction-лог ≥ 10 наблюдений из реальной работы, не из чтения кода.
+- [ ] Top-3 находки закрыты задачами в БД, а не заметками.
+- [ ] `capabilities/web-frontend.md §3` совпадает с живыми роутами; `audit --web-routes` в CI.
+- [ ] Routine `doc_drift` отрабатывает на пилоте по расписанию.
+- [ ] Написан audit-отчёт по итогам пилота (skill `audit-cadence`).
+
+**Риск:** пилоты «заведены и заброшены» — трекинг переедет обратно в голову.
+**Митигация:** M2 не закрывается без friction-лога из живой работы.
+
+### M3 — «Первая фича по спросу» *(Трек B-MVP + ADO-013; ~2–3 недели)*
+
+Одна RFC из hackathon-трека реализована — **выбранная по friction-логу M2**,
+а не по порядку из README.
+
+**Готово, когда:**
+- [ ] Выбор RFC обоснован ссылками на конкретные наблюдения M2.
+- [ ] Секция «Текущее состояние» выбранной RFC перепроверена по коду.
+- [ ] Заведён отдельный план (`plan_create`), задачи — по skill `plan-to-tasks`.
+- [ ] Фича работает на пилотном проекте, не только в тестах.
+- [ ] Остальные RFC 16–20 пересмотрены: устаревшие помечены в `proposals/README.md`.
+
+**Риск:** соблазн начать с RFC 18 просто потому, что она первая в списке.
+**Митигация:** первый чек-пункт — обоснование выбора данными M2.
 
 ## Порядок исполнения
 
-1. **A-P0** → стабильная база.
-2. **A-P1** → закрытие долга и наблюдаемости.
-3. **A-P2** → опортунистичные чистки.
-4. **Трек B** → фичи (18→19→17→16→20).
+1. **Фаза 0** (SYM-001..004 + ADO-001/010-этап-1/015) → cod-doc безопасен для чужого репозитория.
+2. **M1** → ZAIrgRush и Orakul заведены (ADO-016/017), в их деревья не записано ничего лишнего.
+3. **Фазы 1–4** (SYM-005..010) → hub, findings, петля E5-C, drift-гейт; параллельно M2 (friction-лог).
+4. **M3 / Фаза 5** → кросс-проектность и фича, выбранная спросом.
+
+Трек D идёт фоном; ADO-011/012 привязаны к M2, ADO-013 — к M3, ADO-014/015
+опортунистично (ADO-015 удобно закрыть вместе с ADO-010 — общая корневая
+причина).
 
 ## История сверки
 
-- **2026-06-04** — [self-improvement audit](../audit/2026-06-04-self-improvement-compared.md): двойное LLM-ревью, P0/P1/P2 backlog, RFC #21 (гибрид).
-- **2026-06-05** — трёхсторонняя сверка БД↔markdown↔код; синхронизированы статусы 5 планов; создан этот индекс; Трек A заведён в БД (`stabilization-2026-06`).
+- **2026-06-04** — [self-improvement audit](../audit/2026-06-04-self-improvement-compared.md): двойное LLM-ревью, P0/P1/P2 backlog, RFC #21.
+- **2026-06-05** — [трёхсторонняя сверка](../audit/2026-06-05-doc-drift-source-of-truth.md) БД↔markdown↔код; Трек A заведён в БД (`stabilization-2026-06`).
+- **2026-07-29** — [state-of-the-project audit](../audit/2026-07-29-state-of-the-project.md): Трек A закрыт 12/13; извлечены 3 скилла (9 → 12); найден F7 (`doc export` повреждает документ); приоритет смещён на adoption; заведён план `adoption-2026-08` (13 задач); этот роадмап пересобран.
+- **2026-08-25** — программа Symbiosis ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)): пилоты переназначены на ZAIrgRush/Orakul (ADO-003/004 → cancelled, ADO-016/017); секция E (SYM-001…011); STB-012 → cancelled (re-scoped в ADO-013); ADO-010 разбит на 2 этапа; ADO-015 расширен под типы пилотов.

@@ -1,9 +1,10 @@
 # 🧭 Project Navigator: cod-doc
 
-> 📊 Meta: `{"version": "2.0", "last_updated": "2026-05-07", "context_depth": "L0", "repo": "/Users/dakh/Git/cod-doc"}`
+> 📊 Meta: `{"version": "2.2", "last_updated": "2026-08-25", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
 
 > **Этот файл — тонкий L0-навигатор для агента и нового контрибьютора.**
 > Source of truth целевого состояния системы — [`docs/system/MASTER.md`](docs/system/MASTER.md).
+> Приоритеты и милстоуны — [`docs/system/roadmap/ROADMAP.md`](docs/system/roadmap/ROADMAP.md).
 > Каталог RFC и заимствований — [`proposals/README.md`](proposals/README.md).
 
 ## 1. 🎯 Executive Summary
@@ -13,10 +14,19 @@
   markdown-проекциями.
 - **Архитектура:** многоуровневая модульная (Presentation → Application →
   Domain ← Infrastructure) с DIP-инверсией.
-- **Текущий статус:** 🟢 ACTIVE — закрыты Sections A/B/C/G и Web-секция (16/16
-  baseline-аудит resolved); открытые направления — Section D (MCP context.get),
-  Section E (ContextService L0/L1), Section F (Restate importer), интеграция
-  предложений из `/proposals/`.
+- **Текущий статус:** 🟢 ACTIVE — **все 8 планов закрыты**, стабилизация
+  12/13. Прогон 2026-07-29: 1356 тестов зелёные, ruff/mypy чистые, 106
+  документов `in_sync`, 0 issues в `plan audit`. Поверхность: 103 MCP-тула
+  (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
+- **Текущий приоритет: adoption через симбиоз.** Пилоты переназначены на
+  **ZAIrgRush** (мульти-агентная петля) и **Orakul/ai-review** (LLM-ревью PR) —
+  [RFC 22](proposals/22-symbiosis-zairgrush-orakul.md), решение 2026-08-25.
+  cod-doc отдаёт спеки/ADR/контекст, пилоты возвращают findings и измерения.
+  Милстоуны — [ROADMAP](docs/system/roadmap/ROADMAP.md) (M1 «Пилот работает» →
+  M2 «Обратная связь встроена» → M3 «Первая фича по спросу»).
+- **Открыто:** план `adoption-2026-08` — 24 задачи (Фаза 0: SYM-001…004 +
+  ADO-001/010/015; пилоты ADO-016/017; Фазы 1–5: SYM-005…011), STB-023 (SSE,
+  low). STB-012 закрыт `cancelled` (re-scoped в ADO-013).
 
 ## 2. 🗺️ Context Map
 
@@ -41,6 +51,7 @@ graph TD
 
     Root --> Hand["docs/HANDBOOK.md"]
     Root --> Guide["docs/cod-doc-guide.md"]
+    Root --> Play["docs/adoption-playbook.md"]
     Root --> MCP["docs/mcp-integration.md"]
     Root --> CI[".github/workflows/ci.yml"]
     Root --> CD[".github/workflows/cd.yml"]
@@ -59,10 +70,10 @@ graph TD
 - **Статус:** `🟢 ACTIVE`
 
 ### Proposals (RFC backlog)
-- **Описание:** 15 RFC по адаптации паттернов из paperclipai/paperclip
-  (Skills layer, Heartbeat-context, Wake-payload, Run-id audit, Issue documents,
-  Activity log, Approvals и др.). Дорожная карта — Phase 1..4. Конкретные
-  задачи живут в `docs/system/roadmap/paperclip-adoption-task-plan.md`.
+- **Описание:** 22 RFC: 01–15 — адаптация паттернов paperclipai/paperclip
+  (реализованы, план закрыт), 16–21 — hackathon-track (только proposals),
+  22 — **Symbiosis** (ZAIrgRush + Orakul/ai-review, активная программа;
+  декомпозиция — секция E плана `adoption-2026-08`).
 - **Ссылка:** [`📁 proposals/README.md`](proposals/README.md)
 - **Статус:** `🟢 ACTIVE`
 
@@ -84,7 +95,7 @@ graph TD
 - **Описание:** Многоуровневая архитектура Presentation/Application/Domain/
   Infrastructure, ADR, нефункциональные требования. Сжатый обзор для агента.
   Канонический source — [`docs/system/ARCHITECTURE.md`](docs/system/ARCHITECTURE.md).
-- **Ссылка:** `📁 /arch/architecture.md | 🗃️ doc:arch_architecture_md | 🔑 sha:242b25d6bfd3`
+- **Ссылка:** `📁 /arch/architecture.md | 🗃️ doc:arch_architecture_md | 🔑 sha:7d32687d9139`
 - **Статус:** `🟡 LEGACY` — обзор, актуальные детали см. в canonical.
 - **Ответственный агент:** `@Orchestrator`
 
@@ -107,19 +118,27 @@ graph TD
 ### Handbook (пользовательский справочник)
 - **Описание:** Полное руководство: установка, Quick Start, Web UI tour, CLI,
   конфигурация, MCP, ИИ-агент, ChromaDB, troubleshooting.
-- **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:81fac3e1c061`
+- **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:2edf006548df`
 - **Статус:** `🟢 VERIFIED`
 
 ### Гайд по документированию (tutorial)
 - **Описание:** Пошаговое руководство по созданию документации проекта с нуля
   через COD-DOC (~30 минут, пример weather-cli).
-- **Ссылка:** `📁 /docs/cod-doc-guide.md | 🗃️ doc:docs_cod-doc-guide_md | 🔑 sha:e2ff564ecab5`
+- **Ссылка:** `📁 /docs/cod-doc-guide.md | 🗃️ doc:docs_cod-doc-guide_md | 🔑 sha:562c1f392f47`
+- **Статус:** `🟢 VERIFIED`
+
+### Adoption Playbook (как завести на своих проектах) ⭐
+- **Описание:** Сценарии заведения COD-DOC на **существующих** репозиториях с
+  накопленным markdown: починка конфига, выбор пилота, 4 архетипа проектов,
+  ежедневный цикл, известные шероховатости. В отличие от tutorial — про
+  живые репозитории, а не про пример с нуля.
+- **Ссылка:** `📁 /docs/adoption-playbook.md | 🗃️ doc:docs_adoption-playbook_md | 🔑 sha:c4d21d12427b`
 - **Статус:** `🟢 VERIFIED`
 
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:9087378db933`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:0ce0a4a39b75`
 - **Статус:** `🟢 VERIFIED`
 
 ## 4. ⚡ Quick Actions & Handoffs
@@ -178,17 +197,24 @@ graph TD
 
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
-| 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-05-07 | 🟢 VERIFIED |
-| 2 | CI Pipeline | `doc:github_workflows_ci_yml` | `2b0809be8fcc` | 2026-05-07 | 🟢 VERIFIED |
-| 3 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-05-07 | 🟢 VERIFIED |
-| 4 | Архитектура (legacy) | `doc:arch_architecture_md` | `242b25d6bfd3` | 2026-05-07 | 🟡 LEGACY |
-| 5 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-05-07 | 🟡 LEGACY |
-| 6 | Доменные модели (legacy) | `doc:models_domain_md` | `2e5d66877b50` | 2026-05-07 | 🟡 LEGACY |
-| 7 | Handbook | `doc:docs_HANDBOOK_md` | `81fac3e1c061` | 2026-05-07 | 🟢 VERIFIED |
-| 8 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `e2ff564ecab5` | 2026-05-07 | 🟢 VERIFIED |
-| 9 | MCP-интеграция | `doc:docs_mcp-integration_md` | `9087378db933` | 2026-05-07 | 🟢 VERIFIED |
+| 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-07-29 | 🟢 VERIFIED |
+| 2 | CI Pipeline | `doc:github_workflows_ci_yml` | `2b0809be8fcc` | 2026-07-29 | 🟢 VERIFIED |
+| 3 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-07-29 | 🟢 VERIFIED |
+| 4 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-07-29 | 🟡 LEGACY |
+| 5 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-07-29 | 🟡 LEGACY |
+| 6 | Доменные модели (legacy) | `doc:models_domain_md` | `2e5d66877b50` | 2026-07-29 | 🟡 LEGACY |
+| 7 | Handbook | `doc:docs_HANDBOOK_md` | `2edf006548df` | 2026-07-29 | 🟢 VERIFIED |
+| 8 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-07-29 | 🟢 VERIFIED |
+| 9 | MCP-интеграция | `doc:docs_mcp-integration_md` | `0ce0a4a39b75` | 2026-07-29 | 🟢 VERIFIED |
+| 10 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `c4d21d12427b` | 2026-07-29 | 🟢 VERIFIED |
 
-> **Всего:** 9 документов | 🟢 VERIFIED: 6 | 🟡 LEGACY: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+> **Всего:** 10 документов | 🟢 VERIFIED: 7 | 🟡 LEGACY: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+>
+> **Пересчёт 2026-07-29:** 4 хэша были STALE (`arch/architecture.md`,
+> `HANDBOOK.md`, `cod-doc-guide.md`, `mcp-integration.md`) — файлы правились
+> легитимными коммитами (`3d2b329`, `27f3d6f`, `c310503`, `b4ad388`,
+> `a73dcbb`), а реестр отстал. Контент сверен по git-истории перед
+> обновлением (skill `drift-handling`: не обновлять хэши наугад).
 >
 > **Canonical-пакет** (`docs/system/`) — отдельный реестр документов, см.
 > [`docs/system/MASTER.md §5`](docs/system/MASTER.md).
@@ -202,7 +228,9 @@ graph TD
     "no_hallucinations": true,
     "context_depth": "L0",
     "missing_info": [
-      "В корне нет ROADMAP — пользоваться docs/system/roadmap/ + proposals/README.md"
+      "В корне нет README.md — pyproject подставляет docs/cod-doc-guide.md (F6 аудита 2026-07-29, задача C-2)",
+      "capabilities/project-bootstrap.md описывает 'cod-doc project new'; CLI даёт 'project add' + 'project init' (задача D-4)",
+      "66 живых web-роутов отсутствуют в capabilities/web-frontend.md §3 (F3, задача D-1)"
     ]
   }
 }
@@ -212,6 +240,22 @@ graph TD
 ```json
 {
   "changelog": [
+    {
+      "date": "2026-08-25",
+      "version": "2.2",
+      "action": "Программа Symbiosis (RFC 22): пилоты переназначены Mushrooms/yana → ZAIrgRush/Orakul (ADO-003/004 cancelled, созданы ADO-016/017); в план adoption-2026-08 добавлена секция E (SYM-001…011, Фазы 0–5); STB-012 cancelled (re-scoped в ADO-013); ADO-010 разбит на 2 этапа (guard → byte-identical); ADO-015 расширен под типы пилотов. ROADMAP пересобран, RFC-каталог 21 → 22.",
+      "author": "Symbiosis Reorg 2026-08-25",
+      "scope": "master",
+      "rfc": "proposals/22-symbiosis-zairgrush-orakul.md"
+    },
+    {
+      "date": "2026-07-29",
+      "version": "2.1",
+      "action": "State-of-the-project refresh. Прогон: 1356 tests passed, ruff/mypy clean, 106 docs in_sync, plan audit ×5 без issues. Закрыт STB-013 (ContextService L2/L3 реализованы — снят устаревший docstring). Построен repo-index (625 файлов / 3021 символ). Каталог скиллов 9 → 12: извлечены project-onboarding, ground-truth-reconcile, rfc-authoring. L0-payload agent_capabilities ужат 4543 → 3586 байт (вырезаны trigger-списки). Пересчитаны 4 STALE-хэша реестра. Добавлен docs/adoption-playbook.md. ROADMAP пересобран: приоритет смещён со фич на adoption (M1/M2/M3).",
+      "author": "State Refresh 2026-07-29",
+      "scope": "master",
+      "audit": "docs/system/audit/2026-07-29-state-of-the-project.md"
+    },
     {
       "date": "2026-05-07",
       "version": "2.0",
@@ -245,6 +289,9 @@ graph TD
 **Статусы:** `🟢 VERIFIED` | `🟡 LEGACY` | `🟡 DRAFT` | `🔴 STALE` | `🔴 BROKEN`
 
 **Где что искать:**
+- Приоритеты, милстоуны, что делать дальше → [`docs/system/roadmap/ROADMAP.md`](docs/system/roadmap/ROADMAP.md)
+- Как завести cod-doc на своём проекте → [`docs/adoption-playbook.md`](docs/adoption-playbook.md)
+- Каталог скиллов (12) → [`cod_doc/skills/`](cod_doc/skills/)
 - Целевая архитектура и DATA_MODEL → [`docs/system/`](docs/system/)
 - Capability-описания (одна возможность = один файл) → [`docs/system/capabilities/`](docs/system/capabilities/)
 - Стандарты frontmatter / task-plan / link / sensitive-data → [`docs/system/standards/`](docs/system/standards/)

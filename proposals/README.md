@@ -44,6 +44,16 @@
 | 20  | [Multi-Agent Standup](20-multi-agent-standup.md)        | 🔵 Архитектура | 2+ агента в одной инстанции без race             | высокий |
 | 21  | [Degraded-Path Auditability + Error Audit Trail](21-degraded-path-auditability.md) | 🟡 Адаптация | Видимость degraded paths и hard exceptions     | средний |
 
+## 🤝 Symbiosis-track (2026-08-24)
+
+> RFC 22 заменяет гипотетических «vibecoder'ов» из 16/17 двумя реальными
+> пилотами (ZAIrgRush, Orakul/ai-review) и поглощает внешнюю часть этих
+> предложений. Приоритет задаёт ROADMAP (adoption > фичи).
+
+| #   | Документ                                                | Категория      | Эффект                                            | Риск    |
+| --- | ------------------------------------------------------- | -------------- | ------------------------------------------------- | ------- |
+| 22  | [Symbiosis: ZAIrgRush + Orakul](22-symbiosis-zairgrush-orakul.md) | 🔵 Архитектура | Hub-БД, findings-ingest, doc-контекст для внешней петли и AI-ревью | высокий |
+
 ### Рекомендуемый порядок для hackathon-track
 
 **Быстрые победы (1-2 недели каждая):**
@@ -77,6 +87,12 @@ graph LR
     M --> N[19 Context-Scout]
     N --> O[16 AI-Pair-Hacker]
     O --> P[20 Multi-Agent Standup]
+
+    %% Symbiosis-track
+    E --> Q[22 Symbiosis ZAIrgRush+Orakul]
+    J --> Q
+    Q -.поглощает внешнюю часть.-> O
+    Q -.поглощает внешнюю часть.-> M
 ```
 
 **Фаза 1 (быстрые победы):** 01 → 03 → 02 → 04
@@ -85,6 +101,7 @@ graph LR
 **Фаза 4 (hackathon-track MVP):** 18 → 19 → 17
 **Фаза 5 (hackathon-track scale-up):** 16 → 20
 **Фаза 6 (по необходимости):** 10
+**Symbiosis-track (2026-08, приоритет по ROADMAP):** 22 — вместо 16/20 как путь к реальным пользователям
 
 ## Что осталось за скобками
 
