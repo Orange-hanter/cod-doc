@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -15,14 +16,19 @@ from cod_doc.api.deps import (
     get_project_db,
     try_open_project_db,
 )
-from cod_doc.api.web.errors import ValidationWebError
+from cod_doc.api.web.errors import ValidationWebError, truncate_for_cookie
 from cod_doc.api.web.markdown import render_markdown
-from cod_doc.api.web.templates_env import templates
+from cod_doc.api.web.templates_env import DOCUMENT_TYPES, templates
 from cod_doc.domain.entities import DocumentStatus, DocumentType, EntityKind
 from cod_doc.services import doc_service as docs
 from cod_doc.services import import_service as imports
 from cod_doc.services import revision_service as revisions
 from cod_doc.services.import_service import import_or_update_markdown, scan_folder
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from cod_doc.services.import_service import CoercedField
 
 router = APIRouter()
 
@@ -198,7 +204,11 @@ def docs_list(
 
 # ── COD-078: New blank doc ─────────────────────────────────────────────
 
-_DOCUMENT_TYPES = [
+# ADO-015: derived from the enum, never re-typed — a hand-kept copy is how the
+# form ended up unable to offer `capability` / `audit-report` at all. The head
+# of the list is the authoring order the form used to have; the rest follows
+# the enum so a new type shows up in the picker for free.
+_TYPE_ORDER_HEAD = (
     "module-spec",
     "guide",
     "architecture",
@@ -207,11 +217,9 @@ _DOCUMENT_TYPES = [
     "execution-plan",
     "decision",
     "open-question",
-    "module-subdoc",
-    "task-section",
-    "execution-log",
-    "user-story",
-    "redirect",
+)
+_DOCUMENT_TYPES = [t for t in _TYPE_ORDER_HEAD if t in set(DOCUMENT_TYPES)] + [
+    t for t in DOCUMENT_TYPES if t not in _TYPE_ORDER_HEAD
 ]
 _SOURCE_QUERY = Query(default=None)
 
@@ -538,6 +546,31 @@ async def doc_generate_save(
     return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}", status_code=303)
 
 
+def _flash_import_warnings(
+    redirect: RedirectResponse, warnings: Sequence[CoercedField]
+) -> RedirectResponse:
+    """ADO-015: carry «what the import had to bend» across the 303 redirect.
+
+    The single-file «Import markdown» button answers with a redirect to the new
+    document, so there is no response body an alert could go into — the same
+    cookie-flash the task-status forms use carries it instead. Without this the
+    Web surface stayed the one place where a coerced `type:` was invisible
+    until an export rewrote the file with the fallback; CLI prints the same
+    lines, and `/docs/import/apply` returns them as JSON.
+    """
+    if not warnings:
+        return redirect
+    message = "Импорт подменил frontmatter: " + "; ".join(w.describe() for w in warnings)
+    redirect.set_cookie("flash_severity", "warning", max_age=30, path="/")
+    redirect.set_cookie(
+        "flash_message",
+        quote(truncate_for_cookie(message)),
+        max_age=30,
+        path="/",
+    )
+    return redirect
+
+
 @router.post("/p/{slug}/docs/import", response_class=HTMLResponse)
 def docs_import(
     request: Request,
@@ -576,7 +609,7 @@ def docs_import(
         fallback_title = fallback_title[:-3]
 
     try:
-        doc = imports.import_markdown(
+        report = imports.import_markdown(
             session,
             project_id=project_db_id,
             doc_key=doc_key.strip(),
@@ -591,7 +624,12 @@ def docs_import(
         session.rollback()
         raise ValidationWebError(f"Импорт отклонён: {exc}") from exc
 
-    return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc.doc_key}", status_code=303)
+    return _flash_import_warnings(
+        RedirectResponse(
+            url=f"/p/{proj.entry.name}/docs/{report.document.doc_key}", status_code=303
+        ),
+        report.warnings,
+    )
 
 
 @router.get("/p/{slug}/docs/import/scan")
@@ -664,7 +702,9 @@ async def docs_import_apply(
 
     Expects a JSON body ``{"paths": ["rel/path/file.md", ...]}``.
     Each file is parsed and imported (idempotent: reimport = new revision).
-    Returns a JSON summary ``{"imported": N, "errors": [...]}``.
+    Returns a JSON summary ``{"imported": N, "errors": [...], "warnings": [...]}``
+    where each warning names the file and the frontmatter value that had to be
+    coerced to fit an enum (ADO-015).
     """
     proj = get_project(slug)
     session, project_db_id = db
@@ -676,6 +716,7 @@ async def docs_import_apply(
 
     imported = 0
     errors: list[str] = []
+    warnings: list[dict[str, str]] = []
 
     for rel_path in paths:
         fpath = proj.entry.root / rel_path
@@ -693,7 +734,7 @@ async def docs_import_apply(
         # PCA-928: capture sha256 head for change detection on next scan.
         source_sha = imports._head_sha256(fpath)
         try:
-            _, _created = import_or_update_markdown(
+            report = import_or_update_markdown(
                 session,
                 project_id=project_db_id,
                 doc_key=doc_key,
@@ -704,6 +745,7 @@ async def docs_import_apply(
                 source_sha256=source_sha,
             )
             imported += 1
+            warnings.extend({"path": rel_path, **w.to_dict()} for w in report.warnings)
         except (ValueError, Exception) as exc:
             session.rollback()
             errors.append(f"{rel_path}: {exc}")
@@ -715,7 +757,7 @@ async def docs_import_apply(
         session.rollback()
         raise HTTPException(500, f"Commit failed: {exc}") from exc
 
-    return JSONResponse({"imported": imported, "errors": errors})
+    return JSONResponse({"imported": imported, "errors": errors, "warnings": warnings})
 
 
 @router.post("/p/{slug}/suggestions/run")

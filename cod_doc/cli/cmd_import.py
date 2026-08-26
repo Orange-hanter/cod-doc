@@ -20,6 +20,17 @@ if TYPE_CHECKING:
 
 console = Console()
 
+# SYM-004: сколько путей печатать в `--dry-run`, прежде чем свернуть хвост.
+# Разведка репозитория на 641 markdown не должна топить терминал.
+_DRY_RUN_PREVIEW_LIMIT = 50
+
+_EXCLUDE_HELP = (
+    "Glob-паттерн исключения относительно корня репозитория; повторяемый: "
+    "--exclude 'experiments/stand*' --exclude '*/_archive'. Паттерн сверяется "
+    "и с путём файла, и с каждым его каталогом-предком, поэтому каталожный "
+    "паттерн вычищает всё поддерево. Это НЕ gitignore: '*' перекрывает '/'."
+)
+
 
 @click.group("import")
 def import_cmd() -> None:
@@ -38,6 +49,25 @@ def _open_session(
     return entry, factory, engine
 
 
+def _resolve_project_name(positional: str | None, option: str | None) -> str:
+    """SYM-004: позиционный PROJECT_NAME и алиас ``-p/--project`` — одно и то же.
+
+    Семейство `import` исторически брало проект позиционным аргументом, а весь
+    остальной CLI (`link`, `doc`, `reindex`) — через ``-p``. Обе формы теперь
+    работают; указать разом две разных — ошибка, а не тихий выбор одной.
+    """
+    if positional and option and positional != option:
+        raise click.ClickException(
+            f"Проект указан дважды и по-разному: '{positional}' и '{option}'. Оставьте одно."
+        )
+    name = positional or option
+    if not name:
+        raise click.ClickException(
+            "Не указан проект: cod-doc import <cmd> <PROJECT_NAME> либо -p/--project <slug>."
+        )
+    return name
+
+
 def _project_db_id(session: Session, project_name: str) -> int:
     proj = ProjectRepository(session).get_by_slug(project_name)
     if proj is None or proj.row_id is None:
@@ -48,28 +78,39 @@ def _project_db_id(session: Session, project_name: str) -> int:
 
 
 @import_cmd.command("docs")
-@click.argument("project_name")
+@click.argument("project_name", required=False)
+@click.option("--project", "-p", "project_opt", default=None, help="Слаг проекта (алиас).")
 @click.option("--dry-run", is_flag=True, help="Показать план без записи.")
 @click.option(
     "--max-files",
     type=int,
-    default=1000,
+    default=restate_importer.DEFAULT_MAX_FILES,
     show_default=True,
     help="Cap на количество файлов в одном прогоне.",
 )
+@click.option("--exclude", "exclude", multiple=True, help=_EXCLUDE_HELP)
 @click.pass_context
-def cmd_import_docs(ctx: click.Context, project_name: str, dry_run: bool, max_files: int) -> None:
+def cmd_import_docs(
+    ctx: click.Context,
+    project_name: str | None,
+    project_opt: str | None,
+    dry_run: bool,
+    max_files: int,
+    exclude: tuple[str, ...],
+) -> None:
     """Импортировать .md/.rst/.txt файлы как Documents."""
     cfg: Config = ctx.obj["config"]
-    entry, factory, engine = _open_session(cfg, project_name)
+    name = _resolve_project_name(project_name, project_opt)
+    entry, factory, engine = _open_session(cfg, name)
     try:
         with transactional(factory) as session:
-            project_id = _project_db_id(session, project_name)
+            project_id = _project_db_id(session, name)
             summary = restate_importer.import_docs(
                 session,
                 repo_root=Path(entry.path),
                 project_id=project_id,
                 max_files=max_files,
+                exclude=exclude,
             )
             if dry_run:
                 session.rollback()
@@ -80,6 +121,23 @@ def cmd_import_docs(ctx: click.Context, project_name: str, dry_run: bool, max_fi
         console.print("[yellow]Dry-run — изменения откатили.[/yellow]")
     console.print(f"Imported: [bold green]{summary.imported}[/bold green]")
     console.print(f"Skipped (already in DB): {summary.skipped}")
+    if dry_run and summary.files:
+        # SYM-004: разведка без списка файлов бесполезна — по одним счётчикам
+        # не видно, сработал ли --exclude. markup=False: '[' в имени файла
+        # не должен уехать в rich-разметку; soft_wrap — чтобы длинный путь
+        # не переносился по ширине терминала.
+        console.print(f"Файлы ({len(summary.files)}):")
+        for rel in summary.files[:_DRY_RUN_PREVIEW_LIMIT]:
+            console.print(f"  • {rel}", markup=False, highlight=False, soft_wrap=True)
+        hidden = len(summary.files) - _DRY_RUN_PREVIEW_LIMIT
+        if hidden > 0:
+            console.print(f"  … ещё {hidden}")
+    if summary.warnings:
+        # ADO-015: frontmatter values coerced to fit an enum — reported, since
+        # a bulk import of a foreign corpus is exactly where they hide.
+        console.print(f"[yellow]Warnings: {len(summary.warnings)}[/yellow]")
+        for w in summary.warnings[:10]:
+            console.print(f"  ⚠️  {w}")
     if summary.errors:
         console.print(f"[red]Errors: {len(summary.errors)}[/red]")
         for e in summary.errors[:10]:
@@ -87,17 +145,21 @@ def cmd_import_docs(ctx: click.Context, project_name: str, dry_run: bool, max_fi
 
 
 @import_cmd.command("legacy-tasks")
-@click.argument("project_name")
+@click.argument("project_name", required=False)
+@click.option("--project", "-p", "project_opt", default=None, help="Слаг проекта (алиас).")
 @click.option("--dry-run", is_flag=True, help="Показать план без записи.")
 @click.pass_context
-def cmd_import_legacy_tasks(ctx: click.Context, project_name: str, dry_run: bool) -> None:
+def cmd_import_legacy_tasks(
+    ctx: click.Context, project_name: str | None, project_opt: str | None, dry_run: bool
+) -> None:
     """Перенести записи из .cod-doc/tasks.yaml в DB-таблицу task."""
     cfg: Config = ctx.obj["config"]
-    entry, factory, engine = _open_session(cfg, project_name)
+    name = _resolve_project_name(project_name, project_opt)
+    entry, factory, engine = _open_session(cfg, name)
     yaml_path = entry.cod_doc_dir / "tasks.yaml"
     try:
         with transactional(factory) as session:
-            project_id = _project_db_id(session, project_name)
+            project_id = _project_db_id(session, name)
             summary = restate_importer.import_legacy_tasks(
                 session,
                 yaml_path=yaml_path,
@@ -121,10 +183,28 @@ def cmd_import_legacy_tasks(ctx: click.Context, project_name: str, dry_run: bool
 
 
 @import_cmd.command("all")
-@click.argument("project_name")
+@click.argument("project_name", required=False)
+@click.option("--project", "-p", "project_opt", default=None, help="Слаг проекта (алиас).")
 @click.option("--dry-run", is_flag=True)
+@click.option("--exclude", "exclude", multiple=True, help=_EXCLUDE_HELP)
 @click.pass_context
-def cmd_import_all(ctx: click.Context, project_name: str, dry_run: bool) -> None:
+def cmd_import_all(
+    ctx: click.Context,
+    project_name: str | None,
+    project_opt: str | None,
+    dry_run: bool,
+    exclude: tuple[str, ...],
+) -> None:
     """Запустить все доступные пайплайны импорта подряд."""
-    ctx.invoke(cmd_import_docs, project_name=project_name, dry_run=dry_run, max_files=1000)
-    ctx.invoke(cmd_import_legacy_tasks, project_name=project_name, dry_run=dry_run)
+    name = _resolve_project_name(project_name, project_opt)
+    # exclude пробрасывается явно: ctx.invoke подставил бы click-дефолт (пустой
+    # кортеж), и флаг молча не сработал бы на составном прогоне.
+    ctx.invoke(
+        cmd_import_docs,
+        project_name=name,
+        project_opt=None,
+        dry_run=dry_run,
+        max_files=restate_importer.DEFAULT_MAX_FILES,
+        exclude=exclude,
+    )
+    ctx.invoke(cmd_import_legacy_tasks, project_name=name, project_opt=None, dry_run=dry_run)

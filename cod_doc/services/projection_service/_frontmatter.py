@@ -99,10 +99,15 @@ def _render_frontmatter(fm: dict[str, Any]) -> str:
 def _raw_matches_db(model: DocumentModel) -> bool:
     """True when the stored raw YAML block still agrees with the DB record.
 
-    Unknown enum values (`type: capability`, `type: audit-report` — ADO-015)
-    count as agreeing: the import coerced them to a fallback in the DB, and
-    rewriting the file to that fallback would be exactly the corruption
-    ADO-010 exists to stop.
+    Unknown enum values count as agreeing: the import coerced them to a
+    fallback in the DB, and rewriting the file to that fallback would be
+    exactly the corruption ADO-010 exists to stop.
+
+    ADO-015 shrank the set this covers — `capability`, `audit-report` and the
+    other six corpus types are now real enum members, stored as authored, and
+    reach the ordinary comparison below. What is left are values no version of
+    cod-doc can store (`kickoff-brief`, `roadmap-index` …); the import reports
+    those in `ImportReport.warnings`, and the file still keeps what it said.
     """
     raw = model.frontmatter_raw
     if not raw:
@@ -150,6 +155,20 @@ def _render_frontmatter_block(model: DocumentModel) -> str:
     if _raw_matches_db(model):
         return "---\n" + (model.frontmatter_raw or "") + "\n---\n"
     return _render_frontmatter(_frontmatter_dict(model))
+
+
+def _leading_shape(text: str) -> tuple[str | None, bool]:
+    """The two things `frontmatter_raw` / `title_in_body` remember about a file.
+
+    Returns `(raw YAML block without the fences or None, has a leading '# H1')`.
+    Parsed with the importer's own `parse_markdown`, so the answer is exactly
+    what an import (or `backfill_projection_fidelity`) would store — the guard
+    in `export.py` must not be a second, drifting copy of that regex.
+    """
+    from cod_doc.services.import_service import parse_markdown
+
+    parsed = parse_markdown(text)
+    return parsed.frontmatter_raw, parsed.title_h1 is not None
 
 
 def _parse_frontmatter(content: str) -> dict[str, Any]:

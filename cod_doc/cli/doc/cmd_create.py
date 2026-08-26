@@ -7,11 +7,18 @@ from typing import TYPE_CHECKING
 
 import click
 
+from cod_doc.domain.entities import DocumentType
+
 from ._common import _make_session, _require_project_id, console
 from ._group import doc
 
 if TYPE_CHECKING:
     from cod_doc.config import Config
+
+# ADO-015: derived from the enum. A hand-kept copy here silently lagged behind
+# `DocumentType`, so the CLI could not create the very types the importer had
+# just learned to store — CLI and MCP are meant to be the same interface.
+_DOC_TYPE_CHOICES = [t.value for t in DocumentType]
 
 
 @doc.command("create")
@@ -23,23 +30,7 @@ if TYPE_CHECKING:
     "--type",
     "doc_type",
     required=True,
-    type=click.Choice(
-        [
-            "module-spec",
-            "module-subdoc",
-            "execution-plan",
-            "task-section",
-            "execution-log",
-            "standard",
-            "architecture",
-            "vision",
-            "guide",
-            "user-story",
-            "decision",
-            "open-question",
-            "redirect",
-        ]
-    ),
+    type=click.Choice(_DOC_TYPE_CHOICES),
 )
 @click.option(
     "--status",

@@ -26,8 +26,9 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import yaml
 from sqlalchemy import select
@@ -37,6 +38,8 @@ from cod_doc.infra.models import DocumentModel
 from cod_doc.services import doc_service as docs
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from sqlalchemy.orm import Session
 
     from cod_doc.domain.entities import Document
@@ -142,14 +145,132 @@ def parse_markdown(raw: str) -> ParsedMarkdown:
     return out
 
 
-def _enum_or_default(enum_cls: type, raw: Any, default: Any) -> Any:
-    """Coerce a frontmatter value into an enum, falling back to default."""
+# ── ADO-015: coercion that reports itself ────────────────────────────────────
+
+CoercionReason = Literal["unknown", "alias"]
+
+_ENUM = TypeVar("_ENUM", bound=StrEnum)
+
+
+@dataclass(slots=True, frozen=True)
+class CoercedField:
+    """One frontmatter value the import could not store as written.
+
+    Named `CoercedField`, not `ImportWarning` — the latter shadows a Python
+    builtin exception.
+    """
+
+    field: str  # frontmatter key: "type" | "status" | "sensitivity"
+    raw: str  # value exactly as the file wrote it
+    applied: str  # value actually written to the DB
+    reason: CoercionReason  # "alias" — known foreign spelling; "unknown" — fallback
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "field": self.field,
+            "raw": self.raw,
+            "applied": self.applied,
+            "reason": self.reason,
+        }
+
+    def describe(self) -> str:
+        """One line fit for a CLI / log — `type: 'kickoff-brief' → 'module-spec'`."""
+        note = "unknown value" if self.reason == "unknown" else "foreign spelling"
+        return f"{self.field}: {self.raw!r} → {self.applied!r} ({note})"
+
+
+@dataclass(slots=True)
+class ImportReport:
+    """What an import did — including every value it had to bend.
+
+    Before ADO-015 both import entry points returned only the document, so a
+    frontmatter `type: capability` became `module-spec` in the DB with nothing
+    anywhere saying so. Callers now get `warnings` whether they ask or not.
+    """
+
+    document: Document
+    created: bool
+    warnings: list[CoercedField] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "doc_key": self.document.doc_key,
+            "document_id": self.document.row_id,
+            "created": self.created,
+            "warnings": [w.to_dict() for w in self.warnings],
+        }
+
+
+# Foreign status vocabularies met in imported corpora, mapped onto the four
+# cod-doc statuses. A table, not a chain of `if`s, so the mapping is greppable
+# and testable; every substitution still raises a warning (reason="alias") —
+# a documented rename is not a licence to stay silent.
+_ALIEN_STATUS_ALIASES: dict[str, DocumentStatus] = {
+    # «живой» / завершённый документ чужого стандарта — работающий, не черновик
+    "living": DocumentStatus.ACTIVE,
+    "final": DocumentStatus.ACTIVE,
+    "done": DocumentStatus.ACTIVE,
+    "complete": DocumentStatus.ACTIVE,
+    "completed": DocumentStatus.ACTIVE,
+    # закрытый аудит: все задачи разобраны, но отчёт остаётся действительным
+    # документом. Не `deprecated` — иначе 9 наших собственных audit-report'ов
+    # уезжают в «снят с эксплуатации» на первом же импорте.
+    "resolved": DocumentStatus.ACTIVE,
+    "accepted": DocumentStatus.ACTIVE,
+    "delivered": DocumentStatus.ACTIVE,
+    "published": DocumentStatus.ACTIVE,
+    "current": DocumentStatus.ACTIVE,
+    "stable": DocumentStatus.ACTIVE,
+    "in-progress": DocumentStatus.ACTIVE,
+    "in_progress": DocumentStatus.ACTIVE,
+    # ещё не принят
+    "proposed": DocumentStatus.DRAFT,
+    "pending": DocumentStatus.DRAFT,
+    "wip": DocumentStatus.DRAFT,
+    "todo": DocumentStatus.DRAFT,
+    # на рассмотрении
+    "in-review": DocumentStatus.REVIEW,
+    "in_review": DocumentStatus.REVIEW,
+    "reviewing": DocumentStatus.REVIEW,
+    # снят с эксплуатации
+    "archived": DocumentStatus.DEPRECATED,
+    "superseded": DocumentStatus.DEPRECATED,
+    "obsolete": DocumentStatus.DEPRECATED,
+    "rejected": DocumentStatus.DEPRECATED,
+    "cancelled": DocumentStatus.DEPRECATED,
+}
+
+
+def _coerce_enum(
+    enum_cls: type[_ENUM],
+    raw: object,
+    default: _ENUM,
+    *,
+    field_name: str,
+    sink: list[CoercedField],
+    aliases: Mapping[str, _ENUM] | None = None,
+) -> _ENUM:
+    """Coerce a frontmatter value into *enum_cls*, recording what was bent.
+
+    An absent or empty value falls back to *default* in silence — that is a
+    default, not a substitution. A value that was written and could not be
+    stored as written always lands in *sink*.
+    """
     if not raw:
         return default
-    try:
-        return enum_cls(str(raw))
-    except (ValueError, TypeError):
+    text = str(raw).strip()
+    if not text:
         return default
+    try:
+        return enum_cls(text)
+    except (ValueError, TypeError):
+        pass
+    alias = (aliases or {}).get(text.lower())
+    if alias is not None:
+        sink.append(CoercedField(field=field_name, raw=text, applied=alias.value, reason="alias"))
+        return alias
+    sink.append(CoercedField(field=field_name, raw=text, applied=default.value, reason="unknown"))
+    return default
 
 
 def _jsonable_frontmatter(value: Any) -> Any:
@@ -200,22 +321,41 @@ def import_markdown(
     fallback_type: DocumentType = DocumentType.MODULE_SPEC,
     author: str = "human:web",
     reason: str | None = None,
-) -> Document:
+) -> ImportReport:
     """Parse + insert document and its sections into the project DB.
 
     Frontmatter fields used (all optional): `title`, `type`, `status`, `owner`,
     `sensitivity`. Anything not in frontmatter falls back to either a sensible
     default or the `fallback_*` arguments.
 
+    ADO-015: a frontmatter value that had to be bent to fit an enum is
+    reported in `ImportReport.warnings` instead of vanishing.
+
     Caller is responsible for committing the transaction.
     """
     parsed = parse_markdown(raw_markdown)
     fm = _jsonable_frontmatter(parsed.frontmatter)
+    warnings: list[CoercedField] = []
 
     title = fm.get("title") or parsed.title_h1 or fallback_title or doc_key.rsplit("/", 1)[-1]
-    doc_type = _enum_or_default(DocumentType, fm.get("type"), fallback_type)
-    status = _enum_or_default(DocumentStatus, fm.get("status"), DocumentStatus.DRAFT)
-    sensitivity = _enum_or_default(Sensitivity, fm.get("sensitivity"), Sensitivity.INTERNAL)
+    doc_type = _coerce_enum(
+        DocumentType, fm.get("type"), fallback_type, field_name="type", sink=warnings
+    )
+    status = _coerce_enum(
+        DocumentStatus,
+        fm.get("status"),
+        DocumentStatus.DRAFT,
+        field_name="status",
+        sink=warnings,
+        aliases=_ALIEN_STATUS_ALIASES,
+    )
+    sensitivity = _coerce_enum(
+        Sensitivity,
+        fm.get("sensitivity"),
+        Sensitivity.INTERNAL,
+        field_name="sensitivity",
+        sink=warnings,
+    )
     owner = fm.get("owner") or author
     stored_frontmatter = _frontmatter_with_effective_defaults(fm, sensitivity=sensitivity)
 
@@ -257,7 +397,7 @@ def import_markdown(
     # sections that were inserted later in the same batch get resolved.
     _resolve_all_sections(session, doc.row_id)
 
-    return doc
+    return ImportReport(document=doc, created=True, warnings=warnings)
 
 
 def import_or_update_markdown(
@@ -270,18 +410,22 @@ def import_or_update_markdown(
     author: str = "human:web",
     reason: str | None = None,
     source_sha256: str | None = None,
-) -> tuple[Document, bool]:
+) -> ImportReport:
     """PCA-929: Idempotent import — create new doc or update existing one.
 
-    Returns ``(document, created)`` where ``created`` is True for new docs
+    Returns an :class:`ImportReport`; ``report.created`` is True for new docs
     and False when an existing doc's sections were patched.
+
+    ADO-015: the update path reports coerced frontmatter too — it used to be
+    the worse of the two, re-stamping the same silent fallback on every
+    re-import until it looked like the author's own choice.
 
     PCA-928: when ``source_sha256`` is provided, it is stored on the
     DocumentModel.content_sha256_head column for change detection later.
     """
     existing = docs.get(session, project_id, doc_key)
     if existing is None:
-        doc = import_markdown(
+        report = import_markdown(
             session,
             project_id=project_id,
             doc_key=doc_key,
@@ -290,21 +434,24 @@ def import_or_update_markdown(
             author=author,
             reason=reason or "bulk import (new)",
         )
-        if source_sha256 is not None and doc.row_id is not None:
-            _set_content_sha(session, doc.row_id, source_sha256)
-            _set_projection_hash_to_rendered(session, doc.row_id)
-        return doc, True
+        doc_row_id = report.document.row_id
+        if source_sha256 is not None and doc_row_id is not None:
+            _set_content_sha(session, doc_row_id, source_sha256)
+            _set_projection_hash_to_rendered(session, doc_row_id)
+        return report
 
     # Doc exists — first sync its document-level metadata/frontmatter, then
     # patch each section body to create section revisions when needed.
     assert existing.row_id is not None
     parsed = parse_markdown(raw_markdown)
+    warnings: list[CoercedField] = []
     _update_existing_document_metadata(
         session,
         document_id=existing.row_id,
         parsed=parsed,
         fallback_title=fallback_title,
         author=author,
+        sink=warnings,
     )
 
     for section in parsed.sections:
@@ -340,7 +487,8 @@ def import_or_update_markdown(
     if source_sha256 is not None:
         _set_content_sha(session, existing.row_id, source_sha256)
         _set_projection_hash_to_rendered(session, existing.row_id)
-    return existing, False
+    refreshed = docs.get(session, project_id, doc_key) or existing
+    return ImportReport(document=refreshed, created=False, warnings=warnings)
 
 
 def _update_existing_document_metadata(
@@ -350,6 +498,7 @@ def _update_existing_document_metadata(
     parsed: ParsedMarkdown,
     fallback_title: str | None,
     author: str,
+    sink: list[CoercedField],
 ) -> None:
     """Apply parsed frontmatter/preamble to an existing Document row.
 
@@ -358,6 +507,9 @@ def _update_existing_document_metadata(
     `canonical_source`, `sensitivity`, `owner`, etc.). The markdown file is
     the import source for this operation; after it runs, the DB row is the
     canonical structured representation.
+
+    ADO-015: *sink* collects every coercion, so a re-import cannot quietly
+    re-apply yesterday's fallback as if the author had asked for it.
     """
     model = session.execute(
         select(DocumentModel).where(DocumentModel.row_id == document_id)
@@ -366,12 +518,27 @@ def _update_existing_document_metadata(
 
     title = fm.get("title") or parsed.title_h1 or fallback_title or model.title
     model.title = str(title)
-    model.type = _enum_or_default(DocumentType, fm.get("type"), DocumentType(model.type)).value
-    model.status = _enum_or_default(
-        DocumentStatus, fm.get("status"), DocumentStatus(model.status)
+    model.type = _coerce_enum(
+        DocumentType,
+        fm.get("type"),
+        DocumentType(model.type),
+        field_name="type",
+        sink=sink,
     ).value
-    model.sensitivity = _enum_or_default(
-        Sensitivity, fm.get("sensitivity"), Sensitivity(model.sensitivity)
+    model.status = _coerce_enum(
+        DocumentStatus,
+        fm.get("status"),
+        DocumentStatus(model.status),
+        field_name="status",
+        sink=sink,
+        aliases=_ALIEN_STATUS_ALIASES,
+    ).value
+    model.sensitivity = _coerce_enum(
+        Sensitivity,
+        fm.get("sensitivity"),
+        Sensitivity(model.sensitivity),
+        field_name="sensitivity",
+        sink=sink,
     ).value
     if "owner" in fm:
         model.owner = str(fm["owner"]) if fm["owner"] else None

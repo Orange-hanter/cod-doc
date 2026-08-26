@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import contextlib
 from dataclasses import dataclass, field
+from fnmatch import fnmatchcase
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -39,12 +41,13 @@ from cod_doc.infra.repositories import (
 from cod_doc.services import import_service, task_service
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from sqlalchemy.orm import Session
 
 
+DEFAULT_MAX_FILES = 1000
 _DOC_EXTENSIONS = {".md", ".rst", ".txt", ".markdown"}
 _SKIP_DIRS = {
     ".git",
@@ -67,6 +70,9 @@ class DocsSummary:
     skipped: int = 0
     errors: list[str] = field(default_factory=list)
     files: list[str] = field(default_factory=list)
+    # ADO-015: "<rel path>: type: 'journal' → 'module-spec' (unknown value)".
+    # A bulk import that bends metadata has to say which file it bent.
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -74,6 +80,7 @@ class DocsSummary:
             "skipped": self.skipped,
             "errors": self.errors,
             "files": self.files,
+            "warnings": self.warnings,
         }
 
 
@@ -96,10 +103,75 @@ class TasksSummary:
 # ── docs ────────────────────────────────────────────────────────────────
 
 
-def _walk_doc_files(repo_root: Path, *, max_files: int = 1000) -> list[Path]:
-    """Iterate the repo for importable doc files. Skips noisy build dirs."""
+def _normalise_patterns(raw: Sequence[str] | None) -> tuple[str, ...]:
+    """Привести exclude-паттерны к форме относительного POSIX-пути.
+
+    Снимает ведущие ``./``, переводит ``\\`` в ``/`` и обрезает крайние ``/``,
+    чтобы ``./experiments/stand*/`` и ``experiments/stand*`` значили одно и то
+    же. Пустые строки отбрасываются: пустой паттерн заматчил бы корень репо и
+    вычистил бы весь импорт.
+    """
+    if not raw:
+        return ()
+    out: list[str] = []
+    for item in raw:
+        cleaned = item.strip().replace("\\", "/")
+        while cleaned.startswith("./"):
+            cleaned = cleaned[2:]
+        cleaned = cleaned.strip("/")
+        if cleaned:
+            out.append(cleaned)
+    return tuple(out)
+
+
+def _is_excluded(rel_posix: str, patterns: tuple[str, ...]) -> bool:
+    """Проверить относительный путь файла против exclude-паттернов.
+
+    Паттерн сверяется и с самим путём, и с каждым его каталогом-предком,
+    поэтому каталожный паттерн вычищает всё поддерево: ``experiments/stand*``
+    убирает и ``experiments/stand-01/notes.md``, а ``docs/*.md`` продолжает
+    работать как файловый.
+    """
+    if not patterns:
+        return False
+    candidates = [rel_posix]
+    candidates.extend(
+        str(parent) for parent in PurePosixPath(rel_posix).parents if str(parent) != "."
+    )
+    return any(fnmatchcase(candidate, pat) for candidate in candidates for pat in patterns)
+
+
+def _walk_doc_files(
+    repo_root: Path,
+    *,
+    max_files: int = DEFAULT_MAX_FILES,
+    exclude: Sequence[str] | None = None,
+) -> list[Path]:
+    """Iterate the repo for importable doc files. Skips noisy build dirs.
+
+    SYM-004: ``exclude`` — glob-паттерны, которые сверяются с путём файла
+    **относительно** ``repo_root`` (не с абсолютным), поэтому
+    ``experiments/stand*`` предсказуемо означает «каталоги стендов в корне
+    репозитория», а не «где угодно на диске».
+
+    Матчинг — ``fnmatch.fnmatchcase``, а не ``PurePath.match``: ``match``
+    якорится справа и покомпонентно, поэтому
+    ``PurePosixPath("experiments/stand-01/notes.md").match("experiments/stand*")``
+    возвращает ``False`` — то есть паттерн из критерия приёмки молча не
+    исключил бы ничего. ``PurePath.full_match`` умеет ``**``, но появился в
+    3.13, а проект держит ``requires-python >=3.11``. ``fnmatchcase`` (а не
+    ``fnmatch``) — чтобы не гонять ``os.path.normcase``, который на Windows
+    лоуркейсит путь и меняет разделители: нужен детерминированный матч.
+
+    ВНИМАНИЕ: это НЕ gitignore-семантика. ``*`` в fnmatch перекрывает ``/``,
+    поэтому ``docs/*`` заматчит и ``docs/a/b/c.md``.
+
+    Исключение проверяется ДО ``out.append``, поэтому отброшенные файлы не
+    расходуют лимит ``max_files``.
+    """
     if not repo_root.exists() or not repo_root.is_dir():
         return []
+    patterns = _normalise_patterns(exclude)
     out: list[Path] = []
     for path in sorted(repo_root.rglob("*")):
         if len(out) >= max_files:
@@ -110,8 +182,10 @@ def _walk_doc_files(repo_root: Path, *, max_files: int = 1000) -> list[Path]:
         # so .gitignore.md / .env.txt don't sneak through.
         if path.name.startswith("."):
             continue
-        rel_parts = path.relative_to(repo_root).parts
-        if any(p in _SKIP_DIRS or p.startswith(".") for p in rel_parts[:-1]):
+        rel = path.relative_to(repo_root)
+        if any(p in _SKIP_DIRS or p.startswith(".") for p in rel.parts[:-1]):
+            continue
+        if _is_excluded(rel.as_posix(), patterns):
             continue
         out.append(path)
     return out
@@ -131,16 +205,20 @@ def import_docs(
     repo_root: Path,
     project_id: int,
     author: str = "human:cli",
-    max_files: int = 1000,
+    max_files: int = DEFAULT_MAX_FILES,
+    exclude: Sequence[str] | None = None,
 ) -> DocsSummary:
     """Walk ``repo_root`` for markdown files and import each as a Document.
+
+    SYM-004: ``exclude`` — повторяемые glob-паттерны относительно
+    ``repo_root``; семантику см. в :func:`_walk_doc_files`.
 
     Caller commits the transaction (or rolls back for a dry-run).
     """
     summary = DocsSummary()
     repo_doc = DocumentRepository(session)
 
-    for path in _walk_doc_files(repo_root, max_files=max_files):
+    for path in _walk_doc_files(repo_root, max_files=max_files, exclude=exclude):
         rel = str(path.relative_to(repo_root))
         doc_key = _doc_key_for(repo_root, path)
         if repo_doc.get_by_key(project_id, doc_key) is not None:
@@ -152,7 +230,7 @@ def import_docs(
             summary.errors.append(f"{rel}: read error — {exc}")
             continue
         try:
-            import_service.import_markdown(
+            report = import_service.import_markdown(
                 session,
                 project_id=project_id,
                 doc_key=doc_key,
@@ -164,6 +242,7 @@ def import_docs(
             )
             summary.imported += 1
             summary.files.append(rel)
+            summary.warnings.extend(f"{rel}: {w.describe()}" for w in report.warnings)
         except Exception as exc:
             summary.errors.append(f"{rel}: {exc}")
     return summary

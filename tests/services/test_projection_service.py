@@ -324,15 +324,16 @@ def test_import_no_op_when_hash_matches(engine_with_schema, root_path: Path) -> 
 
         export_result = proj.export_document(session, doc_id, root_path=root_path)
 
-        doc = proj.import_document(
+        report = proj.import_document(
             session,
             p,
             export_result.path,
             author="human:test",
             root_path=root_path,
         )
-        assert doc is not None
-        assert doc.row_id == doc_id
+        assert report is not None
+        assert report.document.row_id == doc_id
+        assert report.warnings == []
 
 
 def test_import_applies_frontmatter_field_changes(engine_with_schema, root_path: Path) -> None:  # type: ignore[no-untyped-def]
@@ -348,15 +349,15 @@ def test_import_applies_frontmatter_field_changes(engine_with_schema, root_path:
         new_content = old_content.replace("status: draft", "status: active")
         export_result.path.write_text(new_content, encoding="utf-8")
 
-        doc = proj.import_document(
+        report = proj.import_document(
             session,
             p,
             export_result.path,
             author="human:test",
             root_path=root_path,
         )
-        assert doc is not None
-        assert doc.status is DocumentStatus.ACTIVE
+        assert report is not None
+        assert report.document.status is DocumentStatus.ACTIVE
 
 
 def test_import_applies_body_changes_and_accepts_file_baseline(

@@ -59,6 +59,139 @@ def test_walk_doc_files_picks_md_skips_dotdirs(tmp_path: Path) -> None:
     assert "Docs/image.png" not in rels
 
 
+# ── SYM-004: exclude-паттерны ──────────────────────────────────────────
+
+
+def _seed_exclude_tree(root: Path) -> None:
+    """Дерево из критерия приёмки: стенды, аналитика, docs и архив."""
+    (root / "experiments" / "stand-01").mkdir(parents=True)
+    (root / "experiments" / "stand-02").mkdir(parents=True)
+    (root / "experiments" / "stand-01" / "notes.md").write_text("# stand 1")
+    (root / "experiments" / "stand-02" / "README.md").write_text("# stand 2")
+    (root / "experiments" / "analysis.md").write_text("# analysis")
+    (root / "docs" / "_archive" / "deep").mkdir(parents=True)
+    (root / "docs" / "arch.md").write_text("# arch")
+    (root / "docs" / "_archive" / "old.md").write_text("# old")
+    (root / "docs" / "_archive" / "deep" / "older.md").write_text("# older")
+
+
+def _rels(root: Path, files: list[Path]) -> set[str]:
+    return {p.relative_to(root).as_posix() for p in files}
+
+
+def test_walk_doc_files_excludes_by_pattern(tmp_path: Path) -> None:
+    """Дословная семантика критерия: 'experiments/stand*' убирает стенды."""
+    _seed_exclude_tree(tmp_path)
+
+    rels = _rels(
+        tmp_path, restate_importer._walk_doc_files(tmp_path, exclude=["experiments/stand*"])
+    )
+
+    assert "experiments/stand-01/notes.md" not in rels
+    assert "experiments/stand-02/README.md" not in rels
+    # Соседи по каталогу не пострадали.
+    assert "experiments/analysis.md" in rels
+    assert "docs/arch.md" in rels
+
+
+def test_walk_doc_files_exclude_accepts_multiple_patterns(tmp_path: Path) -> None:
+    _seed_exclude_tree(tmp_path)
+
+    rels = _rels(
+        tmp_path,
+        restate_importer._walk_doc_files(tmp_path, exclude=["experiments/stand*", "*/_archive"]),
+    )
+
+    assert not any(r.startswith("experiments/stand") for r in rels)
+    assert not any("_archive" in r for r in rels)
+    assert rels == {"experiments/analysis.md", "docs/arch.md"}
+
+
+def test_walk_doc_files_exclude_matches_directory_subtree(tmp_path: Path) -> None:
+    """Паттерн без wildcard'ов — это каталог, а не только файл ровно по пути."""
+    _seed_exclude_tree(tmp_path)
+
+    rels = _rels(tmp_path, restate_importer._walk_doc_files(tmp_path, exclude=["docs/_archive"]))
+
+    assert "docs/_archive/old.md" not in rels
+    assert "docs/_archive/deep/older.md" not in rels
+    assert "docs/arch.md" in rels
+
+
+def test_walk_doc_files_exclude_normalises_pattern(tmp_path: Path) -> None:
+    """'./experiments/stand*/' == 'experiments/stand*'."""
+    _seed_exclude_tree(tmp_path)
+
+    rels = _rels(
+        tmp_path, restate_importer._walk_doc_files(tmp_path, exclude=["./experiments/stand*/"])
+    )
+
+    assert not any(r.startswith("experiments/stand") for r in rels)
+    assert "experiments/analysis.md" in rels
+
+
+def test_walk_doc_files_exclude_empty_is_noop(tmp_path: Path) -> None:
+    """None, () и пустая строка не должны ничего вычищать.
+
+    Пустой паттерн особенно опасен: '' заматчил бы корень репозитория, если
+    его не отбросить, и импорт молча стал бы нулевым.
+    """
+    _seed_exclude_tree(tmp_path)
+    baseline = _rels(tmp_path, restate_importer._walk_doc_files(tmp_path))
+
+    assert _rels(tmp_path, restate_importer._walk_doc_files(tmp_path, exclude=None)) == baseline
+    assert _rels(tmp_path, restate_importer._walk_doc_files(tmp_path, exclude=())) == baseline
+    assert (
+        _rels(tmp_path, restate_importer._walk_doc_files(tmp_path, exclude=["", "  "])) == baseline
+    )
+    assert baseline == {
+        "experiments/stand-01/notes.md",
+        "experiments/stand-02/README.md",
+        "experiments/analysis.md",
+        "docs/arch.md",
+        "docs/_archive/old.md",
+        "docs/_archive/deep/older.md",
+    }
+
+
+def test_walk_doc_files_exclude_does_not_consume_max_files(tmp_path: Path) -> None:
+    """Исключённые файлы не расходуют cap: фильтр стоит до append."""
+    (tmp_path / "experiments").mkdir()
+    for i in range(3):
+        (tmp_path / "experiments" / f"stand-{i}.md").write_text("# stand")
+    (tmp_path / "a-keep.md").write_text("# a")
+    (tmp_path / "z-keep.md").write_text("# z")
+
+    rels = _rels(
+        tmp_path,
+        restate_importer._walk_doc_files(tmp_path, max_files=2, exclude=["experiments/stand*"]),
+    )
+
+    assert rels == {"a-keep.md", "z-keep.md"}
+
+
+def test_import_docs_honours_exclude(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """End-to-end: exclude долетает из import_docs в walker."""
+    _seed_exclude_tree(tmp_path)
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "excl", tmp_path)
+        summary = restate_importer.import_docs(
+            session,
+            repo_root=tmp_path,
+            project_id=project_id,
+            exclude=["experiments/stand*", "docs/_archive"],
+        )
+
+    assert summary.errors == []
+    assert summary.imported == 2
+    assert {f.replace("\\", "/") for f in summary.files} == {
+        "experiments/analysis.md",
+        "docs/arch.md",
+    }
+
+
 def test_import_docs_creates_documents(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     (tmp_path / "README.md").write_text("# Hello\n\nIntro paragraph.")
     (tmp_path / "Docs").mkdir()

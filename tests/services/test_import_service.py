@@ -15,6 +15,8 @@ from cod_doc.services import import_service
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+    from cod_doc.services.import_service import ImportReport
+
 
 def _seed_project(session: Session) -> int:
     now = datetime.now(UTC)
@@ -74,24 +76,25 @@ Body v2.
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         project_id = _seed_project(session)
-        doc, created = import_service.import_or_update_markdown(
+        first_report = import_service.import_or_update_markdown(
             session,
             project_id=project_id,
             doc_key="docs/sample",
             raw_markdown=first,
             source_sha256=_sha(first),
         )
-        assert created is True
+        assert first_report.created is True
+        doc = first_report.document
 
-        same_doc, created = import_service.import_or_update_markdown(
+        second_report = import_service.import_or_update_markdown(
             session,
             project_id=project_id,
             doc_key="docs/sample",
             raw_markdown=second,
             source_sha256=_sha(second),
         )
-        assert created is False
-        assert same_doc.row_id == doc.row_id
+        assert second_report.created is False
+        assert second_report.document.row_id == doc.row_id
 
         model = session.get(DocumentModel, doc.row_id)
         assert model is not None
@@ -115,7 +118,7 @@ def test_import_stores_effective_sensitivity_in_frontmatter_json(
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         project_id = _seed_project(session)
-        doc, created = import_service.import_or_update_markdown(
+        report = import_service.import_or_update_markdown(
             session,
             project_id=project_id,
             doc_key="plain",
@@ -123,8 +126,178 @@ def test_import_stores_effective_sensitivity_in_frontmatter_json(
             source_sha256=_sha(raw),
         )
 
-        assert created is True
-        model = session.get(DocumentModel, doc.row_id)
+        assert report.created is True
+        model = session.get(DocumentModel, report.document.row_id)
         assert model is not None
         assert model.sensitivity == "internal"
         assert model.frontmatter_json["sensitivity"] == "internal"
+        # A default applied to an absent key is not a substitution — no warning.
+        assert report.warnings == []
+
+
+# ============================================================================ #
+# ADO-015: the import stops bending metadata in silence                         #
+# ============================================================================ #
+
+
+def _import(session: Session, project_id: int, doc_key: str, raw: str) -> ImportReport:
+    return import_service.import_or_update_markdown(
+        session,
+        project_id=project_id,
+        doc_key=doc_key,
+        raw_markdown=raw,
+        source_sha256=_sha(raw),
+    )
+
+
+def test_corpus_types_are_stored_as_authored(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """`capability` / `audit-report` reach the DB intact, with nothing to report.
+
+    These two are this repository's own documents — 13 and 23 of them — and
+    every one landed in the DB as `module-spec` before ADO-015.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        for doc_key, doc_type in (
+            ("cap", "capability"),
+            ("rep", "audit-report"),
+            ("des", "design"),
+            ("jour", "journal"),
+            ("pl", "plan"),
+            ("an", "analysis"),
+            ("res", "research"),
+            ("aud", "audit"),
+        ):
+            report = _import(
+                session, project_id, doc_key, f"---\ntype: {doc_type}\n---\n\n# T\n\nBody.\n"
+            )
+            model = session.get(DocumentModel, report.document.row_id)
+            assert model is not None
+            assert model.type == doc_type
+            assert report.warnings == []
+
+
+def test_unstorable_type_falls_back_but_says_so(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """A type no enum member matches still falls back — loudly.
+
+    `kickoff-brief` exists in this repo's docs and is not a cod-doc type. The
+    fallback is fine; doing it without a word is the bug.
+    """
+    raw = "---\ntype: kickoff-brief\n---\n\n# T\n\nBody.\n"
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        report = _import(session, project_id, "brief", raw)
+
+        model = session.get(DocumentModel, report.document.row_id)
+        assert model is not None
+        assert model.type == "module-spec"
+        assert [w.to_dict() for w in report.warnings] == [
+            {
+                "field": "type",
+                "raw": "kickoff-brief",
+                "applied": "module-spec",
+                "reason": "unknown",
+            }
+        ]
+
+
+def test_foreign_statuses_map_through_the_alias_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """`final` / `living` / `done` / `resolved` are renames, not draft documents.
+
+    `resolved` sits here and not in the `deprecated` bucket on purpose: nine
+    audit reports in this very repo carry it, and a closed audit is a finished
+    document, not one withdrawn from service (§2b of the frontmatter standard).
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        for i, alien in enumerate(("final", "living", "done", "resolved")):
+            report = _import(
+                session, project_id, f"s{i}", f"---\nstatus: {alien}\n---\n\n# T\n\nBody.\n"
+            )
+            model = session.get(DocumentModel, report.document.row_id)
+            assert model is not None
+            assert model.status == "active", alien
+            assert [w.to_dict() for w in report.warnings] == [
+                {"field": "status", "raw": alien, "applied": "active", "reason": "alias"}
+            ]
+
+
+def test_status_outside_the_alias_table_is_a_plain_unknown(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    raw = "---\nstatus: marinated\n---\n\n# T\n\nBody.\n"
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        report = _import(session, project_id, "odd", raw)
+
+        model = session.get(DocumentModel, report.document.row_id)
+        assert model is not None
+        assert model.status == "draft"
+        assert [w.to_dict() for w in report.warnings] == [
+            {"field": "status", "raw": "marinated", "applied": "draft", "reason": "unknown"}
+        ]
+
+
+def test_reimport_of_an_unstorable_type_keeps_reporting(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """The update path reports too — it was the one that made damage permanent.
+
+    `_update_existing_document_metadata` defaults to the type already in the
+    row, so a coercion applied once used to be re-applied on every re-import,
+    indistinguishable from a value the author had chosen.
+    """
+    raw = "---\ntype: kickoff-brief\nstatus: living\n---\n\n# T\n\nBody.\n"
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        _import(session, project_id, "brief", raw)
+        second = _import(session, project_id, "brief", raw)
+
+        assert second.created is False
+        reported = {(w.field, w.raw, w.applied, w.reason) for w in second.warnings}
+        assert ("type", "kickoff-brief", "module-spec", "unknown") in reported
+        assert ("status", "living", "active", "alias") in reported
+
+
+def test_zairgrush_shaped_frontmatter_imports_without_coercing_the_type(
+    engine_with_schema,  # type: ignore[no-untyped-def]
+) -> None:
+    """The pilot's own shape: `type: journal` + `status: living`, no owner.
+
+    Exactly one warning — the status alias. Before ADO-015 this document
+    became `module-spec` / `draft` with nothing said about either.
+    """
+    raw = """---
+title: Рабочий журнал
+type: journal
+status: living
+version: 0.18
+---
+
+# Рабочий журнал
+
+## 2026-08-01
+
+Запись.
+"""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        report = import_service.import_or_update_markdown(
+            session,
+            project_id=project_id,
+            doc_key="journal",
+            raw_markdown=raw,
+            author="human:test",
+            source_sha256=_sha(raw),
+        )
+
+        model = session.get(DocumentModel, report.document.row_id)
+        assert model is not None
+        assert model.type == "journal"
+        assert model.status == "active"
+        assert model.owner == "human:test"
+        assert [w.to_dict() for w in report.warnings] == [
+            {"field": "status", "raw": "living", "applied": "active", "reason": "alias"}
+        ]

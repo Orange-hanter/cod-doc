@@ -56,16 +56,45 @@ class ProjectDriftReport:
         return len(self.issues)
 
 
+class FidelityBackfillAction(StrEnum):
+    """What `backfill_projection_fidelity` did with one document row."""
+
+    FILLED = "filled"  # shape recovered from the file on disk
+    FILE_MISSING = "file_missing"  # nothing on disk to recover the shape from
+    SKIPPED = "skipped"  # the file *is* our own last export — nothing to learn
+
+
+@dataclass(slots=True)
+class FidelityBackfillItem:
+    doc_key: str
+    path: str
+    action: FidelityBackfillAction
+
+
+@dataclass(slots=True)
+class FidelityBackfillReport:
+    project_id: int
+    scanned: int  # rows with a NULL in either fidelity column
+    filled: int
+    file_missing: int
+    skipped: int
+    items: list[FidelityBackfillItem]
+
+
 class ExportGuardError(RuntimeError):
     """Raised when `export_document` refuses to overwrite a file (ADO-010).
 
-    Two situations, both overridable with `force_write=True` (CLI:
-    `--force-write`) and both previewable with `dry_run=True`:
+    Three situations, all overridable with `force_write=True` (CLI:
+    `--force-write`) and all previewable with `dry_run=True`:
 
     - the on-disk file does not match anything cod-doc has written or accepted,
       so overwriting it would silently discard human edits;
     - the target project is not the checkout cod-doc itself runs from, i.e. an
-      export into someone else's repository (the pilot case).
+      export into someone else's repository (the pilot case);
+    - ADO-022: the row predates migration `0025_projection_fidelity`, so the DB
+      does not remember the file's shape (`frontmatter_raw` / `title_in_body`
+      are NULL) and the export would rewrite its frontmatter or invent an H1.
+      Cured by `backfill_projection_fidelity`, not by `force_write`.
     """
 
 

@@ -39,4 +39,9 @@ def doc_import(ctx: click.Context, file_path: str, project: str, author: str) ->
     if result is None:
         console.print(f"[red]No document in this project matches path: {path}[/red]")
         sys.exit(1)
-    console.print(f"[green]✅ Imported {result.doc_key} from {path.name}[/green]")
+    console.print(f"[green]✅ Imported {result.document.doc_key} from {path.name}[/green]")
+    # ADO-015: frontmatter the enums could not store as written. Printed, not
+    # swallowed — a coerced `type:` used to be invisible until export rewrote
+    # the file with the fallback.
+    for warning in result.warnings:
+        console.print(f"[yellow]⚠️  {warning.describe()}[/yellow]")

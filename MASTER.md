@@ -142,13 +142,13 @@ graph TD
   накопленным markdown: починка конфига, выбор пилота, 4 архетипа проектов,
   ежедневный цикл, известные шероховатости. В отличие от tutorial — про
   живые репозитории, а не про пример с нуля.
-- **Ссылка:** `📁 /docs/adoption-playbook.md | 🗃️ doc:docs_adoption-playbook_md | 🔑 sha:ec7b8b660080`
+- **Ссылка:** `📁 /docs/adoption-playbook.md | 🗃️ doc:docs_adoption-playbook_md | 🔑 sha:9ba4d87dc9c2`
 - **Статус:** `🟢 VERIFIED`
 
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:0ce0a4a39b75`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:ce2b227c6e84`
 - **Статус:** `🟢 VERIFIED`
 
 ## 4. ⚡ Quick Actions & Handoffs
@@ -215,8 +215,8 @@ graph TD
 | 6 | Доменные модели (legacy) | `doc:models_domain_md` | `2e5d66877b50` | 2026-07-29 | 🟡 LEGACY |
 | 7 | Handbook | `doc:docs_HANDBOOK_md` | `4a5c449c3183` | 2026-08-25 | 🟢 VERIFIED |
 | 8 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-07-29 | 🟢 VERIFIED |
-| 9 | MCP-интеграция | `doc:docs_mcp-integration_md` | `0ce0a4a39b75` | 2026-07-29 | 🟢 VERIFIED |
-| 10 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `c4d21d12427b` | 2026-07-29 | 🟢 VERIFIED |
+| 9 | MCP-интеграция | `doc:docs_mcp-integration_md` | `ce2b227c6e84` | 2026-08-26 | 🟢 VERIFIED |
+| 10 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-08-26 | 🟢 VERIFIED |
 | 11 | README (витрина) | `doc:README_md` | `2b58cb45e78e` | 2026-08-25 | 🟢 VERIFIED |
 
 > **Всего:** 11 документов | 🟢 VERIFIED: 8 | 🟡 LEGACY: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0

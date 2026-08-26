@@ -104,12 +104,13 @@ cod-doc project init shuchin
 cod-doc import docs shuchin --dry-run
 ```
 
-**Решение по `Архив/`:** временно вынесите его за пределы репозитория
-(`mv Архив /tmp/shuchin-archive`), импортируйте, верните. Иначе архивные
-документы будут всплывать в `search` и в `context_get` наравне с живыми.
+**Решение по `Архив/`:** отсеките его флагом `--exclude` (SYM-004) и убедитесь
+по `--dry-run`, что в списке его больше нет. Иначе архивные документы будут
+всплывать в `search` и в `context_get` наравне с живыми.
 
 ```bash
-cod-doc import docs shuchin
+cod-doc import docs shuchin --exclude 'Архив*' --dry-run
+cod-doc import docs shuchin --exclude 'Архив*'
 cod-doc reindex files -p shuchin
 cod-doc doc drift -p shuchin --all      # ожидаем 0 расхождений
 cod-doc audit -p shuchin                # frontmatter: находки будут, они advisory
@@ -271,7 +272,8 @@ agent_complete(task_id=..., agent_id="claude")
 
 - `import docs` по умолчанию ограничен `--max-files 1000` — влезет, но
   одним куском и без разбора на модули.
-- `Docs/_archive/` и `Docs/api/_archive/` утащатся вместе со всем.
+- `Docs/_archive/` и `Docs/api/_archive/` придётся отсекать вручную:
+  `--exclude '*/_archive'` (SYM-004) — сам walker их не знает.
 - Обещанной в VISION команды `cod-doc import restate <path> --docs … --plans …
   --standards …` **не существует**. Реальный импортёр (`services/restate_importer.py`,
   несмотря на имя) — универсальный: только `import docs` и
@@ -291,29 +293,43 @@ Obsidian. Иначе первый же заход даст 641 документ 
 
 | Что | Статус | Обход |
 |---|---|---|
-| **`cod-doc doc export` повреждает документ** | 🔴 **не используйте** — ADO-010 (critical) | см. ниже |
+| **`cod-doc doc export` на старой БД переписывает frontmatter** | 🟡 ADO-010 закрыт 2026-08-25; остаточный риск ADO-022 у БД старше миграции `0025_projection_fidelity` | `doc backfill-projection` перед первым export'ом — см. ниже |
 | `cod-doc plan create` в CLI нет | планы создаются через MCP `plan_create` или Python | MCP-сессия или скрипт |
-| `import docs` без флага исключений | только `--max-files` | временно вынести каталог из repo_root |
+| ~~`import docs` без флага исключений~~ | ✅ закрыто SYM-004: `--exclude` (повторяемый glob от корня репо) + `--dry-run` печатает итоговый список | — |
 | Markdown-планы не парсятся в задачи | автоматики нет | `task_create` вручную; skill `plan-to-tasks` |
 | `capabilities/project-bootstrap.md` описывает `project new` | документ опережает CLI (`add` + `init`) | следовать этому playbook'у, не capability |
 | 66 web-роутов не в таблице capability §3 | advisory-дрейф, D-1 роадмапа | на работу не влияет |
 | Глобальный конфиг с тестовыми значениями | §0 этого документа | почините до первого пилота |
 
-### 🔴 Про `doc export` — подробнее
+### 🟡 Про `doc export` — подробнее
 
-Проверено 2026-07-29 на живом документе (файл восстановлен, см.
-[F7 аудита](system/audit/2026-07-29-state-of-the-project.md)). `doc export`
-сейчас **портит контент**:
+Порча контента из [F7 аудита](system/audit/2026-07-29-state-of-the-project.md)
+(преамбула склеивалась с первым заголовком, H1 терялся, `type: capability`
+подменялся на `module-spec`) закрыта в ADO-010 2026-08-25: import → export
+байт-идентичен на всём корпусе `docs/`.
 
-- преамбула склеивается с первым заголовком в одну строку
-  (`> …заранее.## 1. Зачем`);
-- заголовок H1 документа теряется полностью;
-- `type: capability` / `audit-report` подменяются на `module-spec`.
+**Остаточный риск для пилотов — ADO-022.** Если БД проекта заведена до
+миграции `0025_projection_fidelity`, у документов не записана форма исходного
+файла, и export пере-сериализует frontmatter (переставит ключи, файлу без
+frontmatter допишет выдуманный блок `type/status/owner`) и добавит `# H1`,
+которого в источнике не было. Именно так однажды переписались 107 файлов
+из 121.
 
-**Практическое следствие для пилотов:** направление БД → markdown пока
-нерабочее. Пользуйтесь cod-doc в режиме «**файлы — источник, БД — индекс**»:
-`import docs` при заведении, `doc import <file>` после ручных правок. Ваш
-markdown при этом не трогается вообще — импорт только читает.
+`doc export` сам отказывается писать такой файл — в сообщении будет
+`frontmatter_raw` и `backfill`. Перед первым export'ом на такой БД выполните:
+
+```bash
+cod-doc doc backfill-projection --project <slug> --dry-run   # посмотреть
+cod-doc doc backfill-projection --project <slug>             # починить
+```
+
+Он восстанавливает форму из файлов на диске и не трогает метаданные, изменённые
+в БД. `--force-write` на этой ошибке — не обход, а сама порча.
+
+Если направление БД → markdown вам пока не нужно, работайте в режиме
+«**файлы — источник, БД — индекс**»: `import docs` при заведении,
+`doc import <file>` после ручных правок. Ваш markdown при этом не трогается
+вообще — импорт только читает.
 
 Состояние `stale_export` в `doc drift` при таком режиме **нормально** и
 чинить его не нужно: оно означает лишь «проекция ни разу не выгружалась».

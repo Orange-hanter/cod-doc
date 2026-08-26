@@ -11,6 +11,7 @@ Covers:
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from urllib.parse import unquote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -294,6 +295,96 @@ def test_import_form_visible_on_docs_list(web_inited_client) -> None:
     assert 'enctype="multipart/form-data"' in r.text
     # All document_types appear in the dropdown
     assert ">module-spec<" in r.text
+    # ADO-015: the picker is derived from DocumentType, so the corpus types are
+    # offered too — a hand-kept list here could not create them at all.
+    assert ">capability<" in r.text
+    assert ">audit-report<" in r.text
+
+
+def test_single_file_import_flashes_coerced_frontmatter(web_inited_client) -> None:
+    """ADO-015: the «Import markdown» button must not substitute values silently.
+
+    This is the surface `import_service`'s docstring names as its primary
+    consumer, and the only one that answers with a bare redirect — so the
+    warnings ride the cookie-flash that base.html renders into `#alerts`.
+    """
+    client, entry = web_inited_client
+    md = b"---\ntype: kickoff-brief\nstatus: living\n---\n\n# Alien\n\nBody.\n"
+
+    r = client.post(
+        f"/p/{entry.name}/docs/import",
+        data={"doc_key": "alien", "type": "module-spec"},
+        files={"file": ("alien.md", md, "text/markdown")},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    flash = unquote(r.cookies["flash_message"])
+    assert r.cookies["flash_severity"] == "warning"
+    assert "kickoff-brief" in flash and "module-spec" in flash
+    assert "living" in flash and "active" in flash
+
+    # And the alert actually reaches the page the browser is sent to.
+    page = client.get(r.headers["location"])
+    assert "kickoff-brief" in page.text
+
+
+def test_single_file_import_without_coercion_flashes_nothing(web_inited_client) -> None:
+    """No warning, no alert — the flash must not become background noise."""
+    client, entry = web_inited_client
+    md = b"---\ntype: capability\nstatus: active\n---\n\n# Clean\n\nBody.\n"
+
+    r = client.post(
+        f"/p/{entry.name}/docs/import",
+        data={"doc_key": "clean", "type": "module-spec"},
+        files={"file": ("clean.md", md, "text/markdown")},
+        follow_redirects=False,
+    )
+
+    assert r.status_code == 303
+    assert "flash_message" not in r.cookies
+
+
+def test_bulk_import_apply_reports_coerced_frontmatter(web_inited_client) -> None:
+    """ADO-015: the bulk-import JSON summary carries a `warnings` list.
+
+    Selecting fifty files in the UI and getting back only `imported: 50` is
+    how a corpus loses its metadata quietly.
+    """
+    client, entry = web_inited_client
+    (entry.root / "alien.md").write_text(
+        "---\ntype: kickoff-brief\nstatus: living\n---\n\n# Alien\n\nBody.\n",
+        encoding="utf-8",
+    )
+    (entry.root / "clean.md").write_text(
+        "---\ntype: capability\nstatus: active\n---\n\n# Clean\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+    r = client.post(
+        f"/p/{entry.name}/docs/import/apply",
+        json={"paths": ["alien.md", "clean.md"]},
+    )
+
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["imported"] == 2
+    assert payload["errors"] == []
+    assert {
+        "path": "alien.md",
+        "field": "type",
+        "raw": "kickoff-brief",
+        "applied": "module-spec",
+        "reason": "unknown",
+    } in payload["warnings"]
+    assert {
+        "path": "alien.md",
+        "field": "status",
+        "raw": "living",
+        "applied": "active",
+        "reason": "alias",
+    } in payload["warnings"]
+    assert all(w["path"] != "clean.md" for w in payload["warnings"])
 
 
 def test_legacy_tasks_import_streams_progress_over_ws(web_inited_client) -> None:

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     "--force-write",
     is_flag=True,
     default=False,
-    help="Overwrite an edited/foreign file (lifts the ADO-010 guards)",
+    help="Overwrite an edited/foreign/unshaped/unmigrated file (lifts all four guards)",
 )
 @click.pass_context
 def doc_export(
@@ -41,10 +41,15 @@ def doc_export(
 ) -> None:
     """Export a document projection to disk (writes <project-root>/<doc.path>).
 
-    Guards (ADO-010, audit finding F7): the export refuses to overwrite a file
-    that does not match cod-doc's last export or import, and refuses to write
-    into a repository that is not cod-doc's own checkout. `--dry-run` previews
-    either case; `--force-write` proceeds anyway.
+    Guards: the export refuses to overwrite a file that does not match
+    cod-doc's last export or import, refuses to write into a repository that is
+    not cod-doc's own checkout (both ADO-010, audit finding F7), and refuses to
+    rewrite a file whose shape the DB does not remember (ADO-022 — a row older
+    than migration 0025; cure it with `doc backfill-projection`, not with
+    `--force-write`), and refuses to rewrite the `type:` of a row whose stored
+    type is an older build's silent coercion (ADO-015 — a row migration 0026
+    has not repaired; cure it with `project init`). `--dry-run` previews any of
+    the four; `--force-write` proceeds anyway.
     """
     from cod_doc.infra.db import transactional
     from cod_doc.services import doc_service, projection_service
