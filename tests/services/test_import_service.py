@@ -342,3 +342,53 @@ def test_full_file_sha_import_reports_in_sync_for_large_files(
         model = session.get(DocumentModel, row_id)
         assert model is not None
         assert model.content_sha256_head == _sha(big)
+
+
+def test_import_makes_doc_searchable_without_reindex(
+    engine_with_schema,
+) -> None:  # type: ignore[no-untyped-def]
+    """ADO-030 (friction #5): import_or_update_markdown refreshes the FTS row
+    in the same transaction — `search` finds the doc with no manual reindex,
+    on both the create and the update path."""
+    from cod_doc.services import search_service
+
+    raw = """---
+title: Swarm Notes
+type: journal
+---
+# Swarm Notes
+
+## Entry
+
+The swarm coordination pulse settles eventually.
+"""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        import_service.import_or_update_markdown(
+            session,
+            project_id=project_id,
+            doc_key="journal",
+            raw_markdown=raw,
+            author="human:test",
+        )
+
+        hits = search_service.search(session, project_id=project_id, query="swarm", scope="doc")
+        assert hits["total"] == 1
+        assert hits["by_kind"]["doc"][0]["ref"] == "journal"
+
+        updated = raw.replace("settles eventually", "settles deterministically")
+        import_service.import_or_update_markdown(
+            session,
+            project_id=project_id,
+            doc_key="journal",
+            raw_markdown=updated,
+            author="human:test",
+        )
+        hits = search_service.search(
+            session, project_id=project_id, query="deterministically", scope="doc"
+        )
+        assert hits["total"] == 1
+        # And the update path did not duplicate the index row.
+        hits = search_service.search(session, project_id=project_id, query="swarm", scope="doc")
+        assert hits["total"] == 1

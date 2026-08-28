@@ -70,6 +70,49 @@ def _insert(
     )
 
 
+def _index_doc(session: Session, project_id: int, d: DocumentModel) -> None:
+    """Insert one FTS row for a document (preamble + section bodies)."""
+    sections = list(
+        session.execute(
+            select(SectionModel)
+            .where(SectionModel.document_id == d.row_id)
+            .order_by(SectionModel.position)
+        ).scalars()
+    )
+    body = "\n\n".join(
+        [d.preamble or ""] + [(s.heading or "") + "\n" + (s.body or "") for s in sections]
+    )
+    _insert(
+        session,
+        kind="doc",
+        ref=d.doc_key,
+        project_id=project_id,
+        title=d.title or "",
+        body=body.strip(),
+    )
+
+
+def upsert_doc(session: Session, *, project_id: int, doc_key: str) -> None:
+    """ADO-030: incremental FTS update for a single document.
+
+    Called from the import/update path so freshly imported docs are
+    searchable without a manual ``--reindex``. Delete-then-insert keeps it
+    idempotent; a missing document just clears the stale row.
+    """
+    session.execute(
+        text("DELETE FROM db_search_idx WHERE project_id = :p AND kind = 'doc' AND ref = :r"),
+        {"p": project_id, "r": doc_key},
+    )
+    d = session.execute(
+        select(DocumentModel).where(
+            DocumentModel.project_id == project_id,
+            DocumentModel.doc_key == doc_key,
+        )
+    ).scalar_one_or_none()
+    if d is not None:
+        _index_doc(session, project_id, d)
+
+
 def reindex_all(session: Session, project_id: int) -> dict[str, int]:
     """Drop project rows from index, then rebuild from canonical tables."""
     _wipe(session, project_id)
@@ -93,24 +136,7 @@ def reindex_all(session: Session, project_id: int) -> dict[str, int]:
     for d in session.execute(
         select(DocumentModel).where(DocumentModel.project_id == project_id)
     ).scalars():
-        sections = list(
-            session.execute(
-                select(SectionModel)
-                .where(SectionModel.document_id == d.row_id)
-                .order_by(SectionModel.position)
-            ).scalars()
-        )
-        body = "\n\n".join(
-            [d.preamble or ""] + [(s.heading or "") + "\n" + (s.body or "") for s in sections]
-        )
-        _insert(
-            session,
-            kind="doc",
-            ref=d.doc_key,
-            project_id=project_id,
-            title=d.title or "",
-            body=body.strip(),
-        )
+        _index_doc(session, project_id, d)
         counts["doc"] += 1
 
     # Stories — narrative + acceptance criteria.

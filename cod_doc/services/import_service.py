@@ -36,6 +36,7 @@ from sqlalchemy import select
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
 from cod_doc.infra.models import DocumentModel
 from cod_doc.services import doc_service as docs
+from cod_doc.services import search_service
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -438,6 +439,9 @@ def import_or_update_markdown(
         if source_sha256 is not None and doc_row_id is not None:
             _set_content_sha(session, doc_row_id, source_sha256)
             _set_projection_hash_to_rendered(session, doc_row_id)
+        # ADO-030: keep FTS fresh in the same transaction — a doc you just
+        # imported must be searchable without a manual --reindex.
+        search_service.upsert_doc(session, project_id=project_id, doc_key=doc_key)
         return report
 
     # Doc exists — first sync its document-level metadata/frontmatter, then
@@ -487,6 +491,8 @@ def import_or_update_markdown(
     if source_sha256 is not None:
         _set_content_sha(session, existing.row_id, source_sha256)
         _set_projection_hash_to_rendered(session, existing.row_id)
+    # ADO-030: same-transaction FTS refresh on the update path too.
+    search_service.upsert_doc(session, project_id=project_id, doc_key=doc_key)
     refreshed = docs.get(session, project_id, doc_key) or existing
     return ImportReport(document=refreshed, created=False, warnings=warnings)
 
