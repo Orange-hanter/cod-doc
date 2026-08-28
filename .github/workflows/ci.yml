@@ -57,6 +57,22 @@ jobs:
           COD_DOC_API_KEY: ${{ secrets.COD_DOC_TEST_API_KEY || 'sk-test-placeholder' }}
           COD_DOC_AUTO_COMMIT: "false"
 
+  # ── Web routes drift (advisory, ADO-012) ─────────────────────────────────
+  web-routes:
+    name: Web routes drift (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true # advisory — дрейф роутов не блокирует CI (ADO-011/012)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      # Аудит читает capabilities/web-frontend.md §3 с диска и сравнивает с
+      # живыми роутами из routers; БД/импорт не нужны, только реестр проекта.
+      - run: cod-doc project add . --name cod-doc
+      - run: cod-doc audit --web-routes -p cod-doc
+
   # ── Docker Build (smoke test) ─────────────────────────────────────────────
   docker:
     name: Docker build
