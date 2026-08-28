@@ -322,3 +322,85 @@ def test_alembic_head_check_flags_stale_db(engine_with_schema) -> None:  # type:
         run = routines.run_now(session, proj_id, "alembic_head_check")
         assert run.status == "done"
         assert run.findings_count == 1
+
+
+# ── ADO-028 (F2): full cron semantics in tick() ──────────────────────────────
+
+
+def test_cron_next_fire_daily_at_exact_time() -> None:
+    from cod_doc.services.routine_service import _cron_next_fire
+
+    after = datetime(2026, 8, 28, 9, 47, 30, tzinfo=UTC)
+    nxt = _cron_next_fire("47 9 * * *", after)
+    assert nxt == datetime(2026, 8, 29, 9, 47, tzinfo=UTC)
+
+
+def test_cron_next_fire_step_and_range_forms() -> None:
+    from cod_doc.services.routine_service import _cron_next_fire
+
+    after = datetime(2026, 8, 28, 16, 30, tzinfo=UTC)  # Friday
+    assert _cron_next_fire("*/15 * * * *", after) == datetime(2026, 8, 28, 16, 45, tzinfo=UTC)
+    assert _cron_next_fire("0 */6 * * *", after) == datetime(2026, 8, 28, 18, 0, tzinfo=UTC)
+    # Monday 09:00 — следующий понедельник после пятницы.
+    assert _cron_next_fire("0 9 * * 1", after) == datetime(2026, 8, 31, 9, 0, tzinfo=UTC)
+    # dom/dow OR-semantics: 1-е число ИЛИ понедельник.
+    assert _cron_next_fire("0 0 1 * 1", after) == datetime(2026, 8, 31, 0, 0, tzinfo=UTC)
+    # Списки.
+    assert _cron_next_fire("0 8,18 * * *", after) == datetime(2026, 8, 28, 18, 0, tzinfo=UTC)
+
+
+def test_cron_next_fire_invalid_returns_none() -> None:
+    from cod_doc.services.routine_service import _cron_next_fire
+
+    after = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
+    assert _cron_next_fire(None, after) is None
+    assert _cron_next_fire("not a cron", after) is None
+    assert _cron_next_fire("61 * * * *", after) is None
+    assert _cron_next_fire("* * *", after) is None
+
+
+def test_tick_daily_cron_does_not_fire_an_hour_later(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """F2 regression: `47 9 * * *` must NOT degrade into 'every hour' — an
+    hour after the last run the routine is not due."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        routines.create(
+            session,
+            proj_id,
+            name="daily_947",
+            check_name="task_stale",
+            trigger="cron",
+            cron="47 9 * * *",
+        )
+        run = routines.run_now(session, proj_id, "daily_947")
+        assert run.status == "done"
+        # Час спустя — ещё не due (следующий fire — завтра в 9:47).
+        assert routines.tick(session, proj_id) == []
+
+
+def test_tick_step_cron_still_fires_when_due(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """`*/1 * * * *` due сразу после прогона — step-формы не сломаны."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        routines.create(
+            session,
+            proj_id,
+            name="every_min",
+            check_name="task_stale",
+            trigger="cron",
+            cron="*/1 * * * *",
+        )
+        routines.run_now(session, proj_id, "every_min")
+        # Подсовываем last_run двухминутной давности — рутина due.
+        from sqlalchemy import update as _update
+
+        from cod_doc.infra.models import RoutineRunModel
+
+        session.execute(
+            _update(RoutineRunModel).values(
+                started_at=datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=2)
+            )
+        )
+        assert routines.tick(session, proj_id) == ["every_min"]

@@ -26,7 +26,6 @@ Public API
 
 from __future__ import annotations
 
-import re as _re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -557,30 +556,81 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
 # Scheduler tick (PCA-919)                                                     #
 # --------------------------------------------------------------------------- #
 
-_EVERY_N_MINUTES = _re.compile(r"^\*/(\d+)\s")  # */15 * * * *
-_EVERY_N_HOURS = _re.compile(r"^0\s\*/(\d+)\s")  # 0 */2 * * *
-_DAILY = _re.compile(r"^0\s0\s")  # 0 0 * * *
+_CRON_FIELD_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))
+_CRON_FIELDS_COUNT = 5
+_CRON_SUNDAY = 7  # cron принимает и 0, и 7 как воскресенье
+_CRON_LOOKAHEAD_DAYS = 366
 
 
-def _cron_interval_minutes(cron: str | None) -> int:
-    """Parse a simple cron expression into an interval in minutes.
+def _parse_cron_field(field: str, lo: int, hi: int) -> set[int] | None:
+    """Parse one cron field (``*``, ``*/N``, ``a``, ``a-b``, ``a-b/N``, lists)
+    into a set of allowed values; ``None`` when invalid."""
+    out: set[int] = set()
+    try:
+        for part in field.split(","):
+            step = 1
+            if "/" in part:
+                part, s = part.split("/", 1)
+                step = int(s)
+                if step < 1:
+                    return None
+            if part in ("*", ""):
+                start, end = lo, hi
+            elif "-" in part:
+                a, b = part.split("-", 1)
+                start, end = int(a), int(b)
+            else:
+                start = end = int(part)
+            if start < lo or end > hi or start > end:
+                return None
+            out.update(range(start, end + 1, step))
+    except ValueError:
+        return None
+    return out or None
 
-    Supported patterns (no external library required):
-    - ``*/N * * * *``   → every N minutes
-    - ``0 */N * * *``   → every N hours
-    - ``0 0 * * *``     → every 1440 minutes (daily)
 
-    Unknown expressions default to 60 minutes.
+def _cron_next_fire(cron: str | None, after: datetime) -> datetime | None:
+    """ADO-028 (F2): next fire time strictly after ``after`` (UTC-aware).
+
+    Full 5-field cron with standard dom/dow OR-semantics (when both are
+    restricted, either may match; ``7`` is Sunday, same as ``0``).
+    Returns ``None`` for unparseable expressions — the caller falls back
+    to a safe hourly interval.
     """
     if not cron:
-        return 60
-    if m := _EVERY_N_MINUTES.match(cron):
-        return max(1, int(m.group(1)))
-    if m := _EVERY_N_HOURS.match(cron):
-        return max(1, int(m.group(1))) * 60
-    if _DAILY.match(cron):
-        return 1440
-    return 60  # safe default for unrecognised patterns
+        return None
+    fields = cron.split()
+    if len(fields) != _CRON_FIELDS_COUNT:
+        return None
+    parsed = [
+        _parse_cron_field(f, lo, hi) for f, (lo, hi) in zip(fields, _CRON_FIELD_RANGES, strict=True)
+    ]
+    if any(p is None for p in parsed):
+        return None
+    minute, hour, dom, month, dow = (p for p in parsed if p is not None)
+    dow = {0 if v == _CRON_SUNDAY else v for v in dow}
+
+    dom_restricted = fields[2] != "*"
+    dow_restricted = fields[4] != "*"
+
+    t = _as_utc(after).replace(second=0, microsecond=0) + timedelta(minutes=1)
+    limit = t + timedelta(days=_CRON_LOOKAHEAD_DAYS)
+    while t <= limit:
+        if t.minute in minute and t.hour in hour and t.month in month:
+            dom_ok = t.day in dom
+            dow_ok = ((t.weekday() + 1) % 7) in dow  # python Mon=0 → cron Sun=0
+            if dom_restricted and dow_restricted:
+                day_ok = dom_ok or dow_ok
+            elif dom_restricted:
+                day_ok = dom_ok
+            elif dow_restricted:
+                day_ok = dow_ok
+            else:
+                day_ok = True
+            if day_ok:
+                return t
+        t += timedelta(minutes=1)
+    return None
 
 
 def _as_utc(ts: datetime) -> datetime:
@@ -591,9 +641,11 @@ def tick(session: Session, project_id: int) -> list[str]:
     """PCA-919: Fire all overdue cron routines for a project.
 
     Called once per daemon cycle.  For each enabled routine with
-    ``trigger='cron'``, compares the last ``started_at`` with the
-    interval derived from the ``cron`` field.  Fires via ``run_now``
-    when the interval has elapsed (or the routine has never run).
+    ``trigger='cron'``, computes the next fire time strictly after the
+    last ``started_at`` (ADO-028: full cron semantics — ``47 9 * * *``
+    fires once a day at 09:47, not hourly).  Fires via ``run_now`` when
+    that time has passed (or the routine has never run).  Unparseable
+    cron expressions fall back to a safe hourly interval.
 
     Returns the list of routine names that were fired.
     """
@@ -611,8 +663,6 @@ def tick(session: Session, project_id: int) -> list[str]:
     )
 
     for routine in routines:
-        interval = timedelta(minutes=_cron_interval_minutes(routine.cron))
-
         last_run = session.execute(
             select(RoutineRunModel.started_at)
             .where(RoutineRunModel.routine_id == routine.row_id)
@@ -620,8 +670,14 @@ def tick(session: Session, project_id: int) -> list[str]:
             .limit(1)
         ).scalar_one_or_none()
 
-        if last_run is not None and (now - _as_utc(last_run)) < interval:
-            continue  # not yet due
+        if last_run is not None:
+            nxt = _cron_next_fire(routine.cron, _as_utc(last_run))
+            if nxt is None:
+                # Unparseable / never-fires expression — legacy safe default.
+                if (now - _as_utc(last_run)) < timedelta(minutes=60):
+                    continue
+            elif nxt > now:
+                continue  # not yet due
 
         try:
             run_now(session, project_id, routine.name)
