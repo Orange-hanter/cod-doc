@@ -6,7 +6,7 @@ source_of_truth: false
 canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
 created: 2026-08-28
-last_updated: 2026-08-28
+last_updated: 2026-08-29
 audience: [next-session-agent, contributors]
 related_docs:
   - ROADMAP.md
@@ -109,10 +109,15 @@ SYM-008…011, Трек B, STB-023. F3 (single-file upload hash) — мягки�
 
 ## 5. Definition of Done
 
-- [ ] ADO-030/031/032/033 → done → ADO-006 → done (через `task_complete`
+- [x] ADO-030/031/032/033 → done → ADO-006 → done (через `task_complete`
       с `commit_sha`)
-- [ ] ADO-027/028/029, ADO-011/012 → done
-- [ ] `ruff check`, `ruff format --check`, `mypy cod_doc/`, `pytest` — зелёные
-- [ ] Drift 100% in_sync (CLI; MCP-процесс сессии может отставать от main)
-- [ ] ROADMAP.md: чекбоксы M2, указатель активного спринта
-- [ ] Audit-отчёт спринта в `docs/system/audit/`
+- [x] ADO-027/028/029, ADO-011/012 → done
+- [x] `ruff check`, `ruff format --check`, `mypy cod_doc/`, `pytest` — зелёные
+      (1562 passed)
+- [x] Drift 100% in_sync (123/123, CLI)
+- [x] ROADMAP.md: чекбоксы M2, указатель активного спринта
+- [x] Audit-отчёт спринта в `docs/system/audit/`
+      ([2026-09-11-sprint-m2-feedback-loop.md](../audit/2026-09-11-sprint-m2-feedback-loop.md))
+
+> **Спринт закрыт досрочно — 2026-08-29.** Все гола и стретч SYM-007
+> выполнены.
