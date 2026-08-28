@@ -614,6 +614,7 @@ def _resolve_all_sections(session: Session, document_id: int) -> None:
 
 ManifestStatus = Literal["new", "changed", "unchanged", "missing"]
 
+
 @dataclass(slots=True)
 class ManifestEntry:
     """One .md file compared against the current project DB."""

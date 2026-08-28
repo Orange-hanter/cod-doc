@@ -182,9 +182,7 @@ def _activity_events(project_name: str) -> list[ActivityEventModel]:
         engine.dispose()
 
 
-def test_ingest_emits_activity_event(
-    tmp_path: Path, isolated_cod_doc_home: Path
-) -> None:
+def test_ingest_emits_activity_event(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
     _init_project(tmp_path, "p")
     infile = tmp_path / "export.json"
     infile.write_text(json.dumps(_ai_payload()), encoding="utf-8")
