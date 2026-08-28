@@ -14,19 +14,23 @@
   markdown-проекциями.
 - **Архитектура:** многоуровневая модульная (Presentation → Application →
   Domain ← Infrastructure) с DIP-инверсией.
-- **Текущий статус:** 🟢 ACTIVE — **все 8 планов закрыты**, стабилизация
-  12/13. Прогон 2026-07-29: 1356 тестов зелёные, ruff/mypy чистые, 106
-  документов `in_sync`, 0 issues в `plan audit`. Поверхность: 103 MCP-тула
-  (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
+- **Текущий статус:** 🟢 ACTIVE — **M1 «Пилот работает» закрыт**, фундамент
+  Фазы 1 (hub + findings + ingest) закрыт. Прогон 2026-08-28: 1506 тестов
+  зелёные, ruff/mypy чистые, 121 документ (`edited_in_place`=0 после
+  reconcile; 35 `stale_export` — хвост ре-коерсии типов миграции 0026,
+  лечится `doc export`). Поверхность: 103 MCP-тула (профиль `agent` — 6),
+  12 скиллов, 6 ADR, 25 stories.
 - **Текущий приоритет: adoption через симбиоз.** Пилоты переназначены на
   **ZAIrgRush** (мульти-агентная петля) и **Orakul/ai-review** (LLM-ревью PR) —
   [RFC 22](proposals/22-symbiosis-zairgrush-orakul.md), решение 2026-08-25.
   cod-doc отдаёт спеки/ADR/контекст, пилоты возвращают findings и измерения.
   Милстоуны — [ROADMAP](docs/system/roadmap/ROADMAP.md) (M1 «Пилот работает» →
   M2 «Обратная связь встроена» → M3 «Первая фича по спросу»).
-- **Открыто:** план `adoption-2026-08` — 24 задачи (Фаза 0: SYM-001…004 +
-  ADO-001/010/015; пилоты ADO-016/017; Фазы 1–5: SYM-005…011), STB-023 (SSE,
-  low). STB-012 закрыт `cancelled` (re-scoped в ADO-013).
+- **Открыто:** план `adoption-2026-08` — M1 закрыт (пилоты ADO-016/017 заведены),
+  фундамент Фазы 1 закрыт (SYM-005A–D, SYM-006A/B). Далее: M2 (ADO-005/007,
+  ADO-023 — projection_hash на импорте), стретч SYM-006C/D, Фазы 2–5
+  (SYM-007…011). STB-023 (SSE, low). STB-012 закрыт `cancelled`
+  (re-scoped в ADO-013).
 
 ## 2. 🗺️ Context Map
 
@@ -113,7 +117,7 @@ graph TD
 - **Описание:** Aggregates (Project, Task, Document), Value Objects, доменные
   события, порты-репозитории. Canonical schema-описание — в
   [`docs/system/DATA_MODEL.md`](docs/system/DATA_MODEL.md).
-- **Ссылка:** `📁 /models/domain.md | 🗃️ doc:models_domain_md | 🔑 sha:2e5d66877b50`
+- **Ссылка:** `📁 /models/domain.md | 🗃️ doc:models_domain_md | 🔑 sha:0a25ddfd9b0c`
 - **Статус:** `🟡 LEGACY`
 - **Ответственный агент:** `@Orchestrator`
 
@@ -128,7 +132,7 @@ graph TD
 ### Handbook (пользовательский справочник)
 - **Описание:** Полное руководство: установка, Quick Start, Web UI tour, CLI,
   конфигурация, MCP, ИИ-агент, ChromaDB, troubleshooting.
-- **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:4a5c449c3183`
+- **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:389ea7641970`
 - **Статус:** `🟢 VERIFIED`
 
 ### Гайд по документированию (tutorial)
@@ -250,6 +254,14 @@ graph TD
 ```json
 {
   "changelog": [
+    {
+      "date": "2026-08-28",
+      "version": "2.4",
+      "action": "M1 «Пилот работает» закрыт: заведены ZAIrgRush (31 док, ADO-016) и Orakul (405 док, ADO-017); SYM-003 — loopback bind по умолчанию + гейт POST /settings (ae5911e); влита ветка worktree-swarm (ADO-015 типы, SYM-004 --exclude, ADO-022 fidelity, 1a66aaa). Фундамент Фазы 1: hub-инфраструктура (ProjectEntry.db_url, db_for_entry, cod-doc hub init — SYM-005A), миграции 0027_shared_hub (UNIQUE(project_id, task_id)) и 0028_findings (finding/finding_source_run/external_ref + FTS scope), finding_service (fingerprint/dedup/promote — SYM-005D), ingest-адаптеры ai_review/zairgrush (SYM-006A), CLI ingest + finding stability (SYM-006B). Friction-лог пилотов: 14 записей; ADO-023 заведён (import не проставляет projection_hash).",
+      "author": "Sprint 2026-08-27 M1+Phase1",
+      "scope": "master",
+      "rfc": "proposals/22-symbiosis-zairgrush-orakul.md"
+    },
     {
       "date": "2026-08-25",
       "version": "2.3",

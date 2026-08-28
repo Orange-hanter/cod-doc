@@ -194,7 +194,7 @@ head` по hub — при остановленных петлях; собств�
 ## 5. Definition of Done спринта
 
 - [x] G1: SYM-003, ADO-016, ADO-017 → `done` в БД через `task_complete` с `commit_sha` (2026-08-28: ae5911e / 1a66aaa / 1a66aaa).
-- [ ] G2: SYM-005A–D → `done`; SYM-006A/B → `done`.
+- [x] G2: SYM-005A–D → `done`; SYM-006A/B → `done` (2026-08-28: aca5028, 7e532d0, d3f3255, db627a3, 78c9678, d363169).
 - [ ] G3: ADO-005 ≥5 наблюдений в journal; ADO-007 routine работает на пилоте.
 - [ ] `ruff check`, `ruff format --check`, `mypy cod_doc/`, `pytest --timeout=120` — зелёные.
 - [ ] Activity events на всех новых write-тулах (proposal 09).
