@@ -7,6 +7,8 @@ Public API:
   `complete()` for the guarded transition to DONE).
 - `complete` — validate all blocking deps are DONE, then set `status=done` +
   `completed_at` + optional `completed_commit`; writes TASK revision.
+- `remove_dependency` — delete a task→task `dependency` edge (kind='blocks');
+  raises on unknown task or missing edge; writes TASK revision + activity.
 
 ID format:  `<PREFIX>-<NNN>` (e.g. `COD-011`, `AUTH-025`). Caller passes
 `id_prefix` when `task_id=None`; the service finds the current max sequence
@@ -52,6 +54,10 @@ if TYPE_CHECKING:
 
 class TaskNotFoundError(LookupError):
     pass
+
+
+class DependencyNotFoundError(LookupError):
+    """Raised by `remove_dependency()` when the requested edge does not exist."""
 
 
 class TaskBlockedError(RuntimeError):
@@ -730,6 +736,72 @@ def clear_blocker(
         diff=_task_diff("clear_blocker", old=old_reason),
         reason="clear_blocker",
     )
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return t
+
+
+def remove_dependency(
+    session: Session,
+    *,
+    task_id: str,
+    blocker_task_id: str,
+    author: str,
+    reason: str | None = None,
+) -> Task:
+    """Remove a task→task ``dependency`` edge (kind='blocks', task → blocker).
+
+    Not idempotent: raises :class:`TaskNotFoundError` if either task is
+    unknown and :class:`DependencyNotFoundError` if the edge does not
+    exist. Writes a TASK revision with op=remove_dependency and emits a
+    ``task.dependency_removed`` activity event (proposal 09 / PCA-912
+    extension — the service emits directly so CLI/programmatic callers
+    participate in the audit timeline).
+    """
+    model = _require_task(session, task_id)
+    blocker_model = _require_task(session, blocker_task_id)
+
+    edge = session.execute(
+        select(DependencyModel).where(
+            DependencyModel.from_task_id == model.row_id,
+            DependencyModel.to_task_id == blocker_model.row_id,
+            DependencyModel.kind == "blocks",
+        )
+    ).scalar_one_or_none()
+    if edge is None:
+        raise DependencyNotFoundError(
+            f"no 'blocks' dependency edge: {task_id!r} is not blocked by {blocker_task_id!r}"
+        )
+    session.delete(edge)
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+
+    rev.write(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff("remove_dependency", blocker=blocker_task_id),
+        reason=reason or "remove_dependency",
+    )
+    try:
+        from cod_doc.services import activity_service
+
+        activity_service.emit(
+            session,
+            model.project_id,
+            "task.dependency_removed",
+            actor_kind="agent" if author.startswith("agent") else "human",
+            actor_id=author,
+            scope_kind="task",
+            scope_id=task_id,
+            payload={"blocker_task_id": blocker_task_id, "reason": reason},
+            summary=f"Task {task_id}: dependency on {blocker_task_id} removed",
+        )
+    except Exception:
+        pass
+
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t

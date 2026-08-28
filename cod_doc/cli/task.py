@@ -1,4 +1,4 @@
-"""CLI commands for task management: task list/show/create/status/complete."""
+"""CLI commands for task management: task list/show/create/status/complete/remove-dep."""
 
 from __future__ import annotations
 
@@ -382,3 +382,58 @@ def task_complete(
     console.print(f"[green]✅ {t.task_id} marked done.[/green]")
     if t.completed_commit:
         console.print(f"   Commit: {t.completed_commit}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# task remove-dep
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@task.command("remove-dep")
+@click.argument("task_id")
+@click.argument("blocker_id")
+@click.option("--project", "-p", required=True, help="Project slug")
+@click.option("--author", default="cli", show_default=True)
+@click.option("--reason", default=None)
+@click.pass_context
+def task_remove_dep(
+    ctx: click.Context,
+    task_id: str,
+    blocker_id: str,
+    project: str,
+    author: str,
+    reason: str | None,
+) -> None:
+    """Remove a dependency edge (TASK_ID is no longer blocked by BLOCKER_ID)."""
+    from cod_doc.infra.db import transactional
+    from cod_doc.services.task_service import (
+        DependencyNotFoundError,
+        TaskNotFoundError,
+        remove_dependency,
+    )
+
+    cfg: Config = ctx.obj["config"]
+    sf = _make_session(project, cfg)
+
+    # Phase 1: validate project (read-only — sys.exit here is safe)
+    with transactional(sf) as session:
+        _require_project_id(session, project)
+
+    # Phase 2: write (separate transaction — no sys.exit inside this block)
+    try:
+        with transactional(sf) as session:
+            t = remove_dependency(
+                session,
+                task_id=task_id,
+                blocker_task_id=blocker_id,
+                author=author,
+                reason=reason,
+            )
+    except TaskNotFoundError as exc:
+        console.print(f"[red]Task '{exc}' not found.[/red]")
+        sys.exit(1)
+    except DependencyNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    console.print(f"[green]✅ {t.task_id}: dependency on {blocker_id} removed.[/green]")

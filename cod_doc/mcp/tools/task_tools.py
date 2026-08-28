@@ -571,6 +571,43 @@ def register(mcp: FastMCP) -> None:
             raise ValueError(f"Task '{task_id}' not found.") from None
         return task_to_dict(t)
 
+    @mcp.tool(name="task_remove_dependency")
+    def task_remove_dependency(
+        project: str,
+        task_id: str,
+        blocker_id: str,
+        author: str = "mcp",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Remove a task→task ``dependency`` edge (task ← blocked by ← blocker).
+
+        Inverse of the ``blocked_by`` list accepted by ``task_create``:
+        deletes the ``dependency`` row (kind='blocks', from=task_id →
+        to=blocker_id). Raises if either task is unknown or no such edge
+        exists (not idempotent). Writes a TASK revision
+        (op=remove_dependency) and emits ``task.dependency_removed``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import task_service
+        from cod_doc.services.task_service import DependencyNotFoundError, TaskNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                require_project_id(session, project)
+                t = task_service.remove_dependency(
+                    session,
+                    task_id=task_id,
+                    blocker_task_id=blocker_id,
+                    author=author,
+                    reason=reason,
+                )
+        except TaskNotFoundError as exc:
+            raise ValueError(f"Task '{exc}' not found.") from None
+        except DependencyNotFoundError as exc:
+            raise ValueError(str(exc)) from None
+        return task_to_dict(t)
+
     @mcp.tool(name="task_list_blocked")
     def task_list_blocked(
         project: str,
