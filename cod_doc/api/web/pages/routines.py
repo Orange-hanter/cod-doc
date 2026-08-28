@@ -17,14 +17,13 @@ router = APIRouter()
 
 
 def _next_fire(last_run_at: datetime | None, cron: str | None) -> datetime | None:
-    """Estimate next firing time using the same interval logic as the daemon tick."""
+    """Estimate next firing time using the same cron logic as the daemon tick."""
     if not cron:
         return None
-    interval = timedelta(minutes=routine_service._cron_interval_minutes(cron))
     if last_run_at is None:
         return datetime.now(UTC)
     base = last_run_at if last_run_at.tzinfo else last_run_at.replace(tzinfo=UTC)
-    return base + interval
+    return routine_service._cron_next_fire(cron, base) or base + timedelta(minutes=60)
 
 
 def _fmt_age(ts: datetime | None) -> str:
@@ -90,7 +89,6 @@ def routines_list(
                 "last_findings": last_run.findings_count if last_run else None,
                 "next_fire_at": next_fire,
                 "next_fire_fmt": _fmt_age(next_fire) if next_fire else "—",
-                "interval_min": routine_service._cron_interval_minutes(r.cron) if r.cron else None,
                 "history": [
                     {
                         "started_at": h.started_at,
