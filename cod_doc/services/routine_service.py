@@ -12,6 +12,7 @@ maintenance utilities:
 - ``link_integrity`` — wraps ``link.verify``
 - ``doc_drift``      — wraps ``doc.drift``
 - ``task_stale``     — wraps ``task.stale``
+- ``alembic_head``   — ADO-027 (F1): рабочая БД на head-миграции
 
 Plus the meta-check from proposal 12:
 
@@ -310,6 +311,36 @@ def _check_task_stale(
     return {"findings": findings, "findings_count": len(findings)}
 
 
+def _check_alembic_head(session: Session, project_id: int, **_: Any) -> dict[str, Any]:
+    """ADO-027 (F1): the working DB must sit on a head revision.
+
+    Compares the ``alembic_version`` table against the head(s) of the
+    bundled migration scripts. A mismatch means migrations were written
+    but never applied to this DB — exactly the F1 failure mode.
+    """
+    from importlib.resources import files
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import text as _text
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(files("cod_doc.infra") / "migrations"))
+    heads = set(ScriptDirectory.from_config(cfg).get_heads())
+    current = set(session.execute(_text("SELECT version_num FROM alembic_version")).scalars().all())
+
+    behind = sorted(heads - current)
+    findings = []
+    if behind or not current:
+        findings.append({"current": sorted(current), "heads": sorted(heads)})
+    return {
+        "findings": findings,
+        "findings_count": len(findings),
+        "current": sorted(current),
+        "heads": sorted(heads),
+    }
+
+
 CheckFn = Callable[..., dict[str, Any]]
 
 CHECK_CATALOG: dict[str, CheckFn] = {
@@ -318,6 +349,7 @@ CHECK_CATALOG: dict[str, CheckFn] = {
     "link_integrity": _check_link_integrity,
     "doc_drift": _check_doc_drift,
     "task_stale": _check_task_stale,
+    "alembic_head": _check_alembic_head,
 }
 
 

@@ -284,3 +284,41 @@ def test_tick_handles_sqlite_naive_last_run(engine_with_schema) -> None:  # type
         session.flush()
 
         assert routines.tick(session, proj_id) == []
+
+
+def test_alembic_head_check_clean_on_migrated_db(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-027 (F1): на свежемигрированной БД чек не даёт находок."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        routines.create(
+            session,
+            proj_id,
+            name="alembic_head_check",
+            check_name="alembic_head",
+            trigger="cron",
+            cron="0 0 * * *",
+        )
+        run = routines.run_now(session, proj_id, "alembic_head_check")
+        assert run.status == "done"
+        assert run.findings_count == 0
+
+
+def test_alembic_head_check_flags_stale_db(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-027 (F1): version_num, которого нет среди heads, → finding."""
+    from sqlalchemy import text
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        session.execute(text("UPDATE alembic_version SET version_num = '0000_bogus'"))
+        routines.create(
+            session,
+            proj_id,
+            name="alembic_head_check",
+            check_name="alembic_head",
+            trigger="manual",
+        )
+        run = routines.run_now(session, proj_id, "alembic_head_check")
+        assert run.status == "done"
+        assert run.findings_count == 1
