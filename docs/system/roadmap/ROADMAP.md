@@ -191,9 +191,12 @@ ai-review, кросс-проектность). Полный план:
 
 ## Три ближайших милстоуна
 
-> **Активный спринт (2026-08-27 → 2026-09-10):** [sprint-2026-08-27-m1-phase1.md](sprint-2026-08-27-m1-phase1.md)
-> — закрытие M1 + фундамент Фазы 1. Декомпозиция SYM-005/SYM-006 в субзадачи
-> SYM-005A–D / SYM-006A–D (уже в БД, секция E), контракты и схемы БД — там.
+> **Активный спринт (2026-08-28 → 2026-09-11):** [sprint-2026-08-28-m2-feedback-loop.md](sprint-2026-08-28-m2-feedback-loop.md)
+> — закрытие M2 «Обратная связь встроена»: friction top-1+4 (ADO-023 done,
+> ADO-030…033), route drift (ADO-011/012), хвосты аудита F1/F2/F4
+> (ADO-027/028/029), стретч SYM-007. Предыдущий спринт:
+> [sprint-2026-08-27-m1-phase1.md](sprint-2026-08-27-m1-phase1.md)
+> (закрыт досрочно 2026-08-28, audit в `docs/system/audit/`).
 
 ### M1 — «Пилот работает» *(SYM-001..004, ADO-010 этап 1, 001, 002, 015, 016, 017; ~2–3 недели)*
 
@@ -262,3 +265,4 @@ Cod-doc заведён на двух реальных проектах и отд
 - **2026-08-25** — программа Symbiosis ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)): пилоты переназначены на ZAIrgRush/Orakul (ADO-003/004 → cancelled, ADO-016/017); секция E (SYM-001…011); STB-012 → cancelled (re-scoped в ADO-013); ADO-010 разбит на 2 этапа; ADO-015 расширен под типы пилотов.
 - **2026-08-27** — заведён спринт [sprint-2026-08-27-m1-phase1.md](sprint-2026-08-27-m1-phase1.md) (M1 + Фаза 1): SYM-005/006 декомпозированы в SYM-005A–D / SYM-006A–D (секция E, контракты в БД); найдены расхождения ground truth — миграция 0026 на невлитой ветке `worktree-swarm-ado022-ado015-sym004` (номера Фазы 1 сдвинуты на 0027/0028), ai-reviewer живёт в `/Users/dakh/Git/_my/ai-reviewer`, а не под Mozarella.
 - **2026-08-28** — **M1 «Пилот работает» закрыт.** ADO-016 (ZAIrgRush, 31 док) и ADO-017 (Orakul, 405 доков) → done; SYM-003 (bind-hygiene + гейт loopback) → done (ae5911e); ветка `worktree-swarm-ado022-ado015-sym004` влита (1a66aaa — ADO-015 типы, SYM-004 `--exclude`, ADO-022 fidelity, миграция 0026). Friction-лог ADO-005: 14 записей (≥10 для M2). Оговорки: ADR ZAIrgRush без типов → SYM-007; stale_export после импорта (friction #7/#12) — кандидат в M2.
+- **2026-08-28 (2)** — заведён спринт [sprint-2026-08-28-m2-feedback-loop.md](sprint-2026-08-28-m2-feedback-loop.md) (M2): friction-слоты ADO-030…033 (записи #5/#6/#9/#13 лога, решение владельца — все четыре), хвосты аудита F1/F2/F4 (ADO-027/028/029), route drift ADO-011/012, стретч SYM-007.
