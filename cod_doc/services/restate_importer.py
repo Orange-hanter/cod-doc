@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from cod_doc.domain.entities import (
-    DocumentType,
     Plan,
     PlanSection,
     Priority,
@@ -39,6 +38,7 @@ from cod_doc.infra.repositories import (
     PlanSectionRepository,
 )
 from cod_doc.services import import_service, task_service
+from cod_doc.services.projection_service._safety import _sha256
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -230,15 +230,20 @@ def import_docs(
             summary.errors.append(f"{rel}: read error — {exc}")
             continue
         try:
-            report = import_service.import_markdown(
+            # ADO-023: go through the shared import_or_update path with the
+            # file's sha256, so the same transaction records
+            # content_sha256_head (accepted file) and projection_hash
+            # (DB-render baseline) — without them every imported doc shows as
+            # stale_export in drift reports until a manual re-export.
+            report = import_service.import_or_update_markdown(
                 session,
                 project_id=project_id,
                 doc_key=doc_key,
                 raw_markdown=raw,
                 fallback_title=path.stem,
-                fallback_type=DocumentType.MODULE_SPEC,
                 author=author,
                 reason=f"restate-import:{rel}",
+                source_sha256=_sha256(raw),
             )
             summary.imported += 1
             summary.files.append(rel)

@@ -13,7 +13,8 @@ from cod_doc.infra.repositories import (
     DocumentRepository,
     ProjectRepository,
 )
-from cod_doc.services import plan_service, restate_importer, task_service
+from cod_doc.services import plan_service, projection_service, restate_importer, task_service
+from cod_doc.services.projection_service import DriftStatus
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -211,6 +212,27 @@ def test_import_docs_creates_documents(tmp_path: Path, engine_with_schema) -> No
         keys = {d.doc_key for d in docs}
     assert "README" in keys
     assert "Docs/arch" in keys
+
+
+def test_import_docs_reports_in_sync_drift(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-023: import must persist projection_hash/content_sha256_head, so a
+    freshly imported corpus reports in_sync — not stale_export — in drift."""
+    (tmp_path / "README.md").write_text("# Hello\n\nIntro paragraph.")
+    (tmp_path / "Docs").mkdir()
+    (tmp_path / "Docs" / "arch.md").write_text("# Arch\n\n## Modules\n\nFoo bar.")
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+        summary = restate_importer.import_docs(session, repo_root=tmp_path, project_id=project_id)
+    assert summary.imported == 2
+    assert summary.errors == []
+
+    with transactional(factory) as session:
+        report = projection_service.detect_project_drift(session, project_id, root_path=tmp_path)
+    assert report.counts[DriftStatus.STALE_EXPORT.value] == 0
+    assert report.counts[DriftStatus.IN_SYNC.value] == 2
+    assert report.issues == []
 
 
 def test_import_docs_is_idempotent(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
