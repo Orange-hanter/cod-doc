@@ -5,7 +5,7 @@ status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-28
-last_updated: 2026-05-02
+last_updated: 2026-08-28
 related_docs:
   - ../ARCHITECTURE.md
   - ../VISION.md
@@ -52,7 +52,7 @@ related_code:
 
 ## 3. Маршруты
 
-Web-маршруты живут в `cod_doc.api.web.*` и подключаются вторым роутером в `server.py`. Префикса нет — корень отдан под Web; API остаётся на `/api/*`.
+Web-маршруты живут в `cod_doc.api.web.*` и подключаются вторым роутером в `server.py`. Префикса нет — корень отдан под Web; API остаётся на `/api/*`. Статика (`/static/*`) отдаётся отдельным `StaticFiles` mount'ом и не входит в таблицу ниже.
 
 Колонка **Status** показывает реальное состояние реализации (см. также §11):
 
@@ -62,30 +62,111 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 
 | Метод + путь | Назначение | Сервис | Status | Task |
 |--------------|-----------|--------|:------:|------|
-| `GET /` | Список проектов + ссылка на settings | `Config.list_projects()` + `Project.stats()` | ✅ | WEB-001 |
-| `GET /p/{slug}` | Дашборд проекта: stats, MASTER preview, табы | `Project.stats()` + `Project.read_master()` | ✅ | WEB-002 |
+| **Глобальные страницы**  | | | |
+| `GET /` | Список проектов + пагинация + stats | `Config.list_projects()` + `Project.batch_stats()` + `task_service.summarize_for_project` | ✅ | WEB-001 |
+| `GET /settings` | Просмотр конфига (API-ключ маскирован) | `Config.load` | ✅ | WEB-060 |
+| `POST /settings` | Сохранение конфига | `Config.save` | ✅ | WEB-060 |
+| `GET /standards` | Каталог встроенных skills/стандартов | `skill_service.list_skills` | ✅ | OBI-standards |
+| `GET /standards/{name}` | Деталь skill'а / стандарта | `skill_service.get_skill` | ✅ | OBI-standards |
+| **Проект — overview и bootstrap**  | | | |
+| `GET /p/{slug}` | Дашборд проекта: KPI, MASTER preview, ready tasks, планы, ревизии, drift-health | `Project.stats/read_master` + `plan_service` + `revision_service` + `project_health_service` | ✅ | WEB-002 |
 | `POST /p/{slug}/init` | Bootstrap БД (alembic upgrade + ProjectModel) | `project_service.init_project` | ✅ | WEB-080 |
-| `POST /p/{slug}/docs/import` | Загрузка markdown-файла → Document + Sections | `import_service.import_markdown` | ✅ | WEB-081 |
-| `GET /p/{slug}/docs` | Список документов | `doc_service.list_for_project` | ✅ | WEB-003 |
-| `GET /p/{slug}/docs/{doc_key:path}` | Просмотр документа: секции + body | `doc_service.get` + `get_sections` + `render_body` | ✅ | WEB-003 |
-| `POST /p/{slug}/docs/{doc_key:path}/sections/{anchor}` | HTMX-патч секции (form-encoded body) | `doc_service.patch_section` | ✅ | WEB-012 |
-| `GET /p/{slug}/docs/{doc_key:path}/sections/{anchor}/edit` | Edit form fragment | `doc_service.get_sections + revisions.head_for_entity` | ✅ | WEB-012 |
+| `POST /p/{slug}/import_master/scan` | AI-скан репо: preview MASTER.md + coverage tasks | `ai_generate.generate_master_from_folder` | ✅ | COD-060 |
+| `POST /p/{slug}/import_master/save` | Запись MASTER.md и создание coverage tasks | `ai_generate` + `task_service.create` | ✅ | COD-060 |
+| **Документы — список и CRUD**  | | | |
+| `GET /p/{slug}/docs` | Список документов (tree/flat, фильтр по type/status/q) | `doc_service.list_for_project` | ✅ | WEB-003 |
+| `GET /p/{slug}/docs/new` | Форма создания пустого документа | `doc_service` (только форма) | ✅ | COD-078 |
+| `POST /p/{slug}/docs/new` | Создание пустого документа | `doc_service.create` | ✅ | COD-078 |
+| `POST /p/{slug}/docs/suggest` | AI-подбор title/doc_key/type/preamble по описанию | `ai_text.suggest_doc_meta` | ✅ | COD-078 |
+| `POST /p/{slug}/docs-accept` | Продвижение документа в статус ACTIVE (или др.) | `doc_service.update_status` | ✅ | COD-052 |
+| `GET /p/{slug}/docs/{doc_key:path}` | Просмотр документа: preamble + sections + links + comments + suggestions | `doc_service.get/render_body/get_sections` + `link_service` + `comment_service` | ✅ | WEB-003 |
+| `POST /p/{slug}/docs/{doc_key:path}/expand` | AI-генерация секций для пустого/разреженного документа | `ai_text.expand_doc_sections` + `doc_service.add_section` | ✅ | COD-078 |
+| **Документы — импорт**  | | | |
+| `GET /p/{slug}/docs/import` | Bulk import UI: форма + манифест | `import_service` (форма) | ✅ | PCA-401 |
+| `POST /p/{slug}/docs/import` | Загрузка одного markdown-файла → Document + Sections | `import_service.import_markdown` | ✅ | WEB-081 |
+| `GET /p/{slug}/docs/import/scan` | JSON-манифест файлов проекта vs БД | `import_service.scan_folder` | ✅ | PCA-400 |
+| `POST /p/{slug}/docs/import/apply` | Применение выбранных файлов из bulk-манифеста | `import_service.import_or_update_markdown` | ✅ | PCA-401 |
+| **Документы — AI-генерация из источников**  | | | |
+| `GET /p/{slug}/docs/generate` | Форма выбора source-документов и intent | `doc_service.list_for_project` | ✅ | COD-078 |
+| `POST /p/{slug}/docs/generate` | Preview сгенерированного документа | `ai_generate.generate_doc_from_sources` | ✅ | COD-078 |
+| `POST /p/{slug}/docs/generate/save` | Сохранение сгенерированного документа + авто-ссылки | `doc_service.create/add_section` | ✅ | COD-078 |
+| **Документы — семантические подсказки ссылок**  | | | |
+| `POST /p/{slug}/suggestions/run` | Запуск генерации semantic link suggestions для документа | `link_service.semantic.suggest_for_section` | ✅ | PCA-422 |
+| `POST /p/{slug}/suggestions/{row_id}/accept` | Принятие suggestion: добавление ссылки в See also | `doc_service.patch_section` + `link_service.semantic` | ✅ | PCA-422 |
+| `POST /p/{slug}/suggestions/{row_id}/reject` | Отклонение suggestion | `link_service.semantic.update_suggestion_state` | ✅ | PCA-422 |
+| **Документы — комментарии**  | | | |
+| `POST /p/{slug}/docs/{doc_key:path}/comments` | Создание section-anchored или doc-level комментария | `comment_service.create` | ✅ | OBI-comments |
+| `GET /p/{slug}/docs/{doc_key:path}/comments.json` | JSON-дамп комментариев (popover'ы) | `comment_service.list_for_document` | ✅ | OBI-comments |
+| `POST /p/{slug}/docs/{doc_key:path}/comments/{comment_id}/resolve` | Пометить комментарий resolved | `comment_service.update_status` | ✅ | OBI-comments |
+| `POST /p/{slug}/docs/{doc_key:path}/comments/{comment_id}/reopen` | Вернуть комментарий в open | `comment_service.update_status` | ✅ | OBI-comments |
+| `POST /p/{slug}/docs/{doc_key:path}/comments/{comment_id}/delete` | Удалить комментарий | `comment_service.delete` | ✅ | OBI-comments |
+| `POST /p/{slug}/docs/{doc_key:path}/comments/apply` | AI-rework preview по открытым комментариям | `comment_service.apply_open_with_ai` | ✅ | OBI-comments |
+| `POST /p/{slug}/docs/{doc_key:path}/comments/apply/commit` | Применение выбранных AI-правок | `doc_service.patch_section` + `comment_service.update_status` | ✅ | OBI-comments |
+| **Документы — навигатор и анализ**  | | | |
+| `GET /p/{slug}/docs/navigator` | Карта пути документации + кешированный gap-analysis | `nav_service.compute_journey` + `nav_service.peek_cached_analysis` | ✅ | OBI-navigator |
+| `POST /p/{slug}/docs/navigator/analyze` | HTMX: запуск/загрузка AI gap-analysis | `nav_service.analyze_gaps` | ✅ | OBI-navigator |
+| **Секции — HTMX-фрагменты**  | | | |
+| `GET /p/{slug}/docs/{doc_key:path}/sections/{anchor}/edit` | Edit form fragment | `doc_service.get_sections` + `revision_service.head_for_entity` | ✅ | WEB-012 |
 | `GET /p/{slug}/docs/{doc_key:path}/sections/{anchor}/view` | View fragment (cancel) | `doc_service.get_sections` | ✅ | WEB-012 |
-| `GET /p/{slug}/tasks` | Таблица задач (фильтр `?status=`, `?plan=`) | `task_service.list_for_project` | ✅ | WEB-010 |
-| `GET /p/{slug}/tasks/{task_id}` | Деталь задачи (header + chains + history) | `task_service.get` + `plan_service.forward_chain/reverse_chain` + `revision_service.list_for_entity` | ✅ | WEB-070 |
+| `POST /p/{slug}/docs/{doc_key:path}/sections/{anchor}` | HTMX-патч секции (form-encoded body) | `doc_service.patch_section` | ✅ | WEB-012 |
+| **Планы**  | | | |
+| `GET /p/{slug}/plans` | Список планов проекта с прогрессом | `plan_service.list_for_project` + `recalc` | ✅ | WEB-004 |
+| `GET /p/{slug}/plans/{plan_id}` | Plan view: Progress Overview + Next Batch + Mermaid | `plan_service.recalc/ready/export` | ✅ | WEB-004 |
+| `POST /p/{slug}/plans/{plan_id}/freeze` | Snapshot текущего плана в EXECUTION_LOG документ | `plan_service.freeze_projection` | ✅ | COD-052 |
+| **Задачи — список и detail**  | | | |
+| `GET /p/{slug}/tasks` | Список задач (kanban board / chains, фильтр plan/status) | `task_service.list_for_project` + `plan_service` | ✅ | WEB-010 |
+| `GET /p/{slug}/tasks/{task_id}` | Деталь задачи (header + chains + history + trace) | `task_service.get` + `plan_service.forward/reverse_chain` + `revision_service` + `trace_service` | ✅ | WEB-070 |
+| `POST /p/{slug}/tasks/audit` | AI-аудит consistency всех задач проекта | `ai_text._call_lite_raw` + `task_service.list_for_project` | ✅ | OBI-tasks |
+| `GET /p/{slug}/tasks/legacy` | Список legacy YAML-задач (paginated) | `Project.get_tasks` | ✅ | PCA-410 |
+| `POST /p/{slug}/tasks/legacy/import` | Миграция legacy YAML-задач → DB (с WebSocket прогрессом) | `restate_importer.import_legacy_tasks` | ✅ | PCA-410 |
+| `POST /p/{slug}/tasks/legacy/archive` | Архивация tasks.yaml → tasks.archived.yaml | filesystem rename | ✅ | PCA-410 |
+| **Задачи — HTMX-фрагменты полей и статуса**  | | | |
 | `GET /p/{slug}/tasks/{task_id}/fields/{field}/edit` | HTMX edit-form для description / acceptance | `task_service.get` | ✅ | WEB-071 |
 | `GET /p/{slug}/tasks/{task_id}/fields/{field}/view` | HTMX view-fragment (Cancel target) | `task_service.get` | ✅ | WEB-071 |
 | `POST /p/{slug}/tasks/{task_id}/fields/{field}` | Inline-патч поля (description / acceptance) | `task_service.update_description / update_acceptance` | ✅ | WEB-071 |
-| `POST /p/{slug}/tasks/{task_id}/status` | HTMX-смена статуса (radio/select) | `task_service.update_status` | ✅ | WEB-011 |
+| `POST /p/{slug}/tasks/{task_id}/fields/{field}/improve` | LLM "improve" draft поля (без записи в БД) | `ai_text.improve_text_traced` | ✅ | WEB-071 |
+| `POST /p/{slug}/tasks/{task_id}/status` | HTMX-смена статуса | `task_service.update_status` | ✅ | WEB-011 |
 | `POST /p/{slug}/tasks/{task_id}/complete` | HTMX-завершение задачи | `task_service.complete` | ✅ | WEB-014 |
-| `GET /p/{slug}/plans/{plan_id}` | Plan view: Progress Overview + Next Batch + Mermaid | `plan_service.recalc/ready/export` | ✅ | WEB-004 |
-| `GET /p/{slug}/plans` | Список планов проекта | `plan_service.list_for_project + recalc` | ✅ | WEB-004 |
+| **User Stories**  | | | |
+| `GET /p/{slug}/stories` | Список user stories (group by section/persona/none) | `story_service.list_for_project` + `doc_service.list_for_project` | ✅ | COD-068 |
+| `GET /p/{slug}/stories/{story_id}` | Деталь story + acceptance + linked tasks | `story_service.get` + `list_acceptance` + `list_tasks` | ✅ | COD-069 |
+| `POST /p/{slug}/stories/generate` | AI-генерация draft-историй из MASTER.md | `ai_generate.generate_stories` | ✅ | COD-068 |
+| `POST /p/{slug}/stories/save` | Сохранение выбранных story drafts | `story_service.create` | ✅ | COD-068 |
+| `POST /p/{slug}/stories/{story_id}/status` | Продвижение story между статусами | `story_service.update_status` | ✅ | COD-069 |
+| `POST /p/{slug}/stories/{story_id}/tasks/generate` | AI-генерация задач для story | `ai_generate.generate_tasks_for_story` | ✅ | COD-069 |
+| `POST /p/{slug}/stories/{story_id}/tasks/save` | Сохранение сгенерированных задач + линковка к story | `task_service.create` + `story_service.link` | ✅ | COD-069 |
+| `POST /p/{slug}/stories/coverage/analyze` | AI-анализ покрытия документов для story-generation | `ai_text._call_lite_raw` + `doc_service.list_for_project` | ✅ | COD-068 |
+| `POST /p/{slug}/stories/section/{section_key}/analyze` | AI-summary для одной секции stories | `section_summary_service.generate` | ✅ | COD-069 |
+| **ADR — Architecture Decision Records**  | | | |
+| `GET /p/{slug}/adr` | Список ADR с фильтром по статусу | `adr_service.list_for_project` | ✅ | ADR-004 |
+| `GET /p/{slug}/adr/new` | Форма создания ADR | `adr_service` (форма) | ✅ | ADR-005 |
+| `POST /p/{slug}/adr/new` | Создание ADR | `adr_service.create` | ✅ | ADR-005 |
+| `GET /p/{slug}/adr/graph` | Supersede DAG в виде Mermaid | `adr_service.graph` | ✅ | ADR-006 |
+| `GET /p/{slug}/adr/{adr_id}` | Деталь ADR + диаграммы + форма редактирования | `adr_service.get` + `adr_to_dict` | ✅ | ADR-005 |
+| `POST /p/{slug}/adr/{adr_id}/edit` | Редактирование полей ADR | `adr_service.update` | ✅ | ADR-005 |
+| `POST /p/{slug}/adr/{adr_id}/diagram` | Добавление Mermaid-диаграммы к ADR | `adr_service.add_diagram` | ✅ | ADR-005 |
+| `POST /p/{slug}/adr/{adr_id}/supersede` | Запись supersede-ребра | `adr_service.supersede` | ✅ | ADR-005 |
+| `POST /p/{slug}/adr/{adr_id}/deprecate` | Перевод ADR в DEPRECATED | `adr_service.deprecate` | ✅ | ADR-005 |
+| **Ревизии, рутины, запуски агента**  | | | |
 | `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `revision_service.list_for_project` | ✅ | WEB-021 |
-| `GET /p/{slug}/run` | SSE-стрим запуска агента | переиспользует `Orchestrator.run_autonomous` (см. [routes.py](../../../cod_doc/api/routes.py)) | ❌ | WEB-030 |
-| `GET /settings`, `POST /settings` | Просмотр + сохранение конфига (API-ключ маскирован) | `Config.load/save` | ✅ | WEB-060 |
-| `GET /static/{path:path}` | Статика | StaticFiles mount | ✅ | WEB-001 |
+| `GET /p/{slug}/routines` | Список routines + история запусков | `routine_service.list_routines` + `history` | ✅ | PCA-919 |
+| `POST /p/{slug}/routines/create` | Создание routine | `routine_service.create` | ✅ | PCA-919 |
+| `POST /p/{slug}/routines/{name}/toggle` | Включение/выключение routine | `routine_service.update_status` | ✅ | PCA-920 |
+| `POST /p/{slug}/routines/{name}/run` | Ручной запуск routine | `routine_service.run_now` | ✅ | PCA-920 |
+| `POST /p/{slug}/routines/{name}/delete` | Удаление routine | `routine_service.delete` | ✅ | PCA-920 |
+| `GET /p/{slug}/run` | Live agent console + история запусков | `run_service.list_recent` + `activity_service` | ✅ | WEB-030 |
+| `GET /p/{slug}/run/{run_id}` | Деталь одного запуска агента | `run_service.get_one` + `activity_service.events_for_run` | ✅ | WEB-030 |
+| **Поиск, коммиты, code-refs, метрики, затраты**  | | | |
+| `GET /p/{slug}/search` | FTS5-поиск по tasks/docs/stories/ADRs | `search_service.search` | ✅ | OBI-040 |
+| `POST /p/{slug}/search/reindex` | Перестроение FTS-индекса проекта | `search_service.reindex_all` | ✅ | OBI-040 |
+| `GET /p/{slug}/commits` | Таблица commit↔task links | `commit_link_service.list_for_project` | ✅ | OBI-011 |
+| `POST /p/{slug}/commits/import` | Рескан git log и импорт task-tagged commits | `commit_link_service.import_from_git_log` | ✅ | OBI-011 |
+| `GET /p/{slug}/code-refs` | Список code-refs проекта | `link_service.list_code_refs` | ✅ | OBI-021 |
+| `GET /p/{slug}/code-refs/preview` | Preview первых 20 строк файла (JSON) | `link_service.list_code_refs` + filesystem | ✅ | OBI-021 |
+| `GET /p/{slug}/metrics` | Completion stats: sparkline + percentiles by type | `metrics_service.summary` + `sparkline_buckets` | ✅ | OBI-002 |
+| `GET /p/{slug}/costs` | Dashboard затрат по моделям (trace calls + pricing) | `trace_service.aggregate_by_model_for_project` | ✅ | PCA-925 |
 
-**Принцип:** обработчик не знает про SQL/репозитории. Только сервисы (`cod_doc.services.*`) и существующие helper-ы (`get_config`, `get_project`, новый `get_project_db` после WEB-040). См. §7.
+**Принцип:** обработчик не знает про SQL/репозитории. Только сервисы (`cod_doc.services.*`) и существующие helper-ы (`get_config`, `get_project`, `get_project_db`). См. §7.
 
 > **Status (2026-05-02, post WEB-040):** правило восстановлено. `cod_doc/api/web/`
 > импортирует только `cod_doc.services.*`, `cod_doc.api.deps`, `cod_doc.config`,
@@ -317,7 +398,7 @@ endpoints — service-helper типа `plan_service.get_for_project(...)`.
 | ~~Tabs ведут на 404 для нереализованных страниц~~ | ~~shared~~ | ✅ **WEB-041** done 2026-05-02 |
 | ~~`<div id="alerts">` без модели — ошибки молча теряются~~ | ~~`base.html` + `fragments.py`~~ | ✅ **WEB-022** done 2026-05-02 |
 | ~~`doc_show` body — raw markdown без anchor'ов~~ | ~~`doc_show.html`, `pages.py:162`~~ | ✅ **WEB-006** done 2026-05-02 |
-| ~~`status_options` дубль~~ | ~~`pages.py:147`, `fragments.py:52`~~ | ✅ **WEB-041** done 2026-05-02 (Jinja global) |
+| ~~`status_options` дубль~~ | ~~`pages.py:147`, `fragments.py:52`~~ | ✅ **WEB-041** done 2026-05-02 |
 
 Полный разбор — в audit-отчёте от 2026-05-02 (см. ссылку выше).
 
@@ -327,3 +408,4 @@ endpoints — service-helper типа `plan_service.get_for_project(...)`.
 |------|---------|
 | 2026-04-28 | Создан capability-документ (status: draft). |
 | 2026-05-02 | Section A (Scaffold) + WEB-010/011 закрыты. Capability переведён в `active`. §3 расширен колонками Status/Task; §4 — пометкой «целевая структура», явное реальное состояние; §7 — DI-конвенция и ссылка на WEB-040; §8 — error-branch coverage в DoD; добавлен §11 «Текущее состояние». См. audit-отчёт `2026-05-02-section-web-frontend.md`. |
+| 2026-08-28 | ADO-011: §3 синхронизирован со всеми живыми web-роутами (87 endpoints). Устранён WR-1 `/static/{path}`. |
