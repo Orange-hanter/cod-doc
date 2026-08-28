@@ -5,7 +5,7 @@ status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-06-05
-last_updated: 2026-08-25
+last_updated: 2026-08-27
 audience: [contributors, agents]
 related_docs:
   - ../MASTER.md
@@ -191,6 +191,10 @@ ai-review, кросс-проектность). Полный план:
 
 ## Три ближайших милстоуна
 
+> **Активный спринт (2026-08-27 → 2026-09-10):** [sprint-2026-08-27-m1-phase1.md](sprint-2026-08-27-m1-phase1.md)
+> — закрытие M1 + фундамент Фазы 1. Декомпозиция SYM-005/SYM-006 в субзадачи
+> SYM-005A–D / SYM-006A–D (уже в БД, секция E), контракты и схемы БД — там.
+
 ### M1 — «Пилот работает» *(SYM-001..004, ADO-010 этап 1, 001, 002, 015, 016, 017; ~2–3 недели)*
 
 Cod-doc заведён на двух реальных проектах и отдаёт контекст, а экспорт не
@@ -256,3 +260,4 @@ Cod-doc заведён на двух реальных проектах и отд
 - **2026-06-05** — [трёхсторонняя сверка](../audit/2026-06-05-doc-drift-source-of-truth.md) БД↔markdown↔код; Трек A заведён в БД (`stabilization-2026-06`).
 - **2026-07-29** — [state-of-the-project audit](../audit/2026-07-29-state-of-the-project.md): Трек A закрыт 12/13; извлечены 3 скилла (9 → 12); найден F7 (`doc export` повреждает документ); приоритет смещён на adoption; заведён план `adoption-2026-08` (13 задач); этот роадмап пересобран.
 - **2026-08-25** — программа Symbiosis ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)): пилоты переназначены на ZAIrgRush/Orakul (ADO-003/004 → cancelled, ADO-016/017); секция E (SYM-001…011); STB-012 → cancelled (re-scoped в ADO-013); ADO-010 разбит на 2 этапа; ADO-015 расширен под типы пилотов.
+- **2026-08-27** — заведён спринт [sprint-2026-08-27-m1-phase1.md](sprint-2026-08-27-m1-phase1.md) (M1 + Фаза 1): SYM-005/006 декомпозированы в SYM-005A–D / SYM-006A–D (секция E, контракты в БД); найдены расхождения ground truth — миграция 0026 на невлитой ветке `worktree-swarm-ado022-ado015-sym004` (номера Фазы 1 сдвинуты на 0027/0028), ai-reviewer живёт в `/Users/dakh/Git/_my/ai-reviewer`, а не под Mozarella.
