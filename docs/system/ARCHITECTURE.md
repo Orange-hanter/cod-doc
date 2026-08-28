@@ -208,6 +208,7 @@ ContextService.build(target, depth)
 - Данные проекта не покидают БД без явного export.
 - Встроенный LLM-клиент не видит содержимого документов сверх того, что ContextService положил в сессию.
 - Audit-лог всех write-операций через MCP/REST — в таблице `Revision` + отдельном `AuditLog` (см. [DATA_MODEL.md §3.13](DATA_MODEL.md)).
+- **`/api/v1` — единственная поверхность будущего Bearer-гейта** (контракт RFC 22 §3.3, см. `proposals/22-symbiosis-zairgrush-orakul.md`): `COD_DOC_API_TOKEN`, ASGI-middleware только на `/api/v1` (`cod_doc/api/v1/`), constant-time compare, 401 JSON. Гейт включается при появлении первого удалённого вызывающего. Legacy `/api/*` заморожен и Bearer-гейта не получит.
 
 ## 10. Error Model
 
