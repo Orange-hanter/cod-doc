@@ -48,6 +48,8 @@ cod-doc audit            — проверка frontmatter + дрейфа (FM-*/D
 cod-doc import docs      — импорт .md/.rst/.txt из репо как Documents
 cod-doc import legacy-tasks — миграция .cod-doc/tasks.yaml в DB
 cod-doc import all       — оба пайплайна подряд
+cod-doc ingest <adapter> — ingest внешних находок (ai_review, zairgrush_*)
+cod-doc finding stability — Jaccard-стабильность находок по SHA
 """
 
 from __future__ import annotations
@@ -58,9 +60,11 @@ from cod_doc.cli.adr import adr
 from cod_doc.cli.cmd_adapter import adapter
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_audit import audit
+from cod_doc.cli.cmd_finding import finding
 from cod_doc.cli.cmd_hash import hash
 from cod_doc.cli.cmd_hub import hub
 from cod_doc.cli.cmd_import import import_cmd
+from cod_doc.cli.cmd_ingest import ingest
 from cod_doc.cli.cmd_project import project
 from cod_doc.cli.cmd_reindex import reindex
 from cod_doc.cli.cmd_search import search as search_cmd
@@ -104,6 +108,8 @@ main.add_command(link)
 main.add_command(revision)
 main.add_command(audit)
 main.add_command(import_cmd)
+main.add_command(ingest)
+main.add_command(finding)
 main.add_command(adapter)
 main.add_command(adr)
 main.add_command(reindex)
