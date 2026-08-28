@@ -140,3 +140,26 @@ def test_init_creates_cod_doc_dir(tmp_path: Path) -> None:
 def test_init_idempotent(project: Project) -> None:
     project.init()  # второй раз не должен упасть
     assert (project.entry.cod_doc_dir / "tasks.yaml").exists()
+
+
+def test_init_master_context_map_lists_only_existing_dirs(tmp_path: Path) -> None:
+    """ADO-033 (friction #13): Context Map в сгенерированном MASTER.md
+    ссылается только на каталоги, которые реально есть в проекте."""
+    (tmp_path / "docs").mkdir()
+    entry = ProjectEntry(name="pilot", path=str(tmp_path))
+    Project(entry).init()
+
+    content = (tmp_path / "MASTER.md").read_text(encoding="utf-8")
+    assert "/docs/" in content
+    assert "/specs/" not in content
+    assert "/arch/" not in content
+    assert "/models/" not in content
+
+
+def test_init_master_context_map_empty_project_has_placeholder(tmp_path: Path) -> None:
+    entry = ProjectEntry(name="empty-proj", path=str(tmp_path))
+    Project(entry).init()
+
+    content = (tmp_path / "MASTER.md").read_text(encoding="utf-8")
+    assert "📁" in content  # placeholder-нода вместо битых ссылок
+    assert "/specs/" not in content

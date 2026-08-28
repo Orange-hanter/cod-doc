@@ -150,6 +150,10 @@ class Project:
             with gi.open("a", encoding="utf-8") as f:
                 f.write("\n# COD-DOC\n" + "\n".join(added) + "\n")
 
+    # ADO-033: канонические док-каталоги, показываемые в Context Map — только
+    # те, что реально есть в проекте (порядок = порядок показа).
+    _CONTEXT_DIR_CANDIDATES = ("docs", "specs", "arch", "models")
+
     def _create_master(self) -> None:
         from importlib.resources import files
 
@@ -158,10 +162,12 @@ class Project:
         tmpl_text = files("cod_doc.templates").joinpath("MASTER.md.j2").read_text(encoding="utf-8")
         env = Environment(loader=BaseLoader(), autoescape=False)
         tmpl = env.from_string(tmpl_text)
+        context_dirs = [d for d in self._CONTEXT_DIR_CANDIDATES if (self.entry.root / d).is_dir()]
         content = tmpl.render(
             project_name=self.entry.name,
             date=datetime.now(UTC).strftime("%Y-%m-%d"),
             repo=self.entry.path,
+            context_dirs=context_dirs,
         )
         self.entry.master_path.write_text(content, encoding="utf-8")
 

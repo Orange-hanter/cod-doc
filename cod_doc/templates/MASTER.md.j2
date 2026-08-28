@@ -12,10 +12,12 @@
 ## 2. 🗺️ Context Map
 ```mermaid
 graph TD
-    Root[MASTER.md] --> S[📁 /specs/]
-    Root --> A[📁 /arch/]
-    Root --> M[📁 /models/]
-    Root --> D[📁 /docs/]
+    Root[MASTER.md]
+{%- for d in context_dirs %}
+    Root --> N{{ loop.index }}["📁 /{{ d }}/"]
+{%- else %}
+    Root --> NEW["📁 разделы появятся по мере роста документации"]
+{%- endfor %}
 ```
 
 ## 3. 🧩 Modular Sections
