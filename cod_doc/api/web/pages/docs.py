@@ -731,8 +731,9 @@ async def docs_import_apply(
 
         doc_key = imports._derive_doc_key(str(fpath.relative_to(proj.entry.root)))
         fallback_title = fpath.stem
-        # PCA-928: capture sha256 head for change detection on next scan.
-        source_sha = imports._head_sha256(fpath)
+        # ADO-026: full-file hash — drift and the export guard compare
+        # content_sha256_head against the whole file.
+        source_sha = imports._file_sha256(fpath)
         try:
             report = import_or_update_markdown(
                 session,

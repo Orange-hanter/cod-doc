@@ -614,9 +614,6 @@ def _resolve_all_sections(session: Session, document_id: int) -> None:
 
 ManifestStatus = Literal["new", "changed", "unchanged", "missing"]
 
-_HEAD_BYTES = 4096  # hash first 4 KB only — cheap, stable enough for change detection
-
-
 @dataclass(slots=True)
 class ManifestEntry:
     """One .md file compared against the current project DB."""
@@ -625,7 +622,7 @@ class ManifestEntry:
     doc_key: str  # auto-derived key (path without .md, without "docs/" prefix)
     title: str  # from H1 or frontmatter or filename
     doc_type: str  # from frontmatter `type:` or empty string
-    sha256_head: str  # sha256 of first 4 KB
+    sha256_head: str  # full-file sha256 (field name kept for API compat)
     status: ManifestStatus  # new | changed | unchanged | missing
     reason: str  # human-readable hint for the UI
 
@@ -644,13 +641,6 @@ def _derive_doc_key(rel_path: str) -> str:
     if key.startswith("docs/"):
         key = key[5:]
     return key
-
-
-def _head_sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        h.update(fh.read(_HEAD_BYTES))
-    return h.hexdigest()
 
 
 def _file_sha256(path: Path) -> str:
@@ -736,7 +726,7 @@ def scan_folder(
                 continue
 
             parsed = parse_markdown(raw)
-            sha = _head_sha256(fpath)
+            sha = _file_sha256(fpath)
             title = _quick_title(parsed, fpath)
             doc_type_raw = str(parsed.frontmatter.get("type", "") or "")
 
@@ -744,7 +734,7 @@ def scan_folder(
                 status: ManifestStatus = "new"
                 reason = "Not in database"
             else:
-                # PCA-928: compare stored sha256 with on-disk file head.
+                # PCA-928/ADO-026: compare stored full-file sha256 with disk.
                 stored_sha = getattr(existing[doc_key], "content_sha256_head", None)
                 if stored_sha is None:
                     status = "unchanged"

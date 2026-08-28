@@ -301,3 +301,44 @@ version: 0.18
         assert [w.to_dict() for w in report.warnings] == [
             {"field": "status", "raw": "living", "applied": "active", "reason": "alias"}
         ]
+
+
+def test_full_file_sha_import_reports_in_sync_for_large_files(
+    tmp_path,
+    engine_with_schema,  # type: ignore[no-untyped-def]
+) -> None:
+    """ADO-026: web bulk apply / scan_folder hash the FULL file, so a >4 KB
+    doc imported with the file's sha reports in_sync in drift and unchanged
+    in the next scan (with the old 4 KB head hash both broke)."""
+    big = "# Big doc\n\n" + ("lorem ipsum dolor sit amet, consectetur\n" * 400)
+    assert len(big.encode("utf-8")) > 4096
+    (tmp_path / "big.md").write_text(big, encoding="utf-8")
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        report = import_service.import_or_update_markdown(
+            session,
+            project_id=project_id,
+            doc_key="big",
+            raw_markdown=big,
+            author="human:test",
+            source_sha256=import_service._file_sha256(tmp_path / "big.md"),
+        )
+        row_id = report.document.row_id
+
+        from cod_doc.services import projection_service
+        from cod_doc.services.projection_service import DriftStatus
+
+        drift = projection_service.detect_project_drift(session, project_id, root_path=tmp_path)
+        assert drift.counts[DriftStatus.IN_SYNC.value] == 1
+        assert drift.counts[DriftStatus.EDITED_IN_PLACE.value] == 0
+        assert drift.issues == []
+
+        entries = import_service.scan_folder(session, project_id=project_id, root=tmp_path)
+        by_key = {e.doc_key: e for e in entries}
+        assert by_key["big"].status == "unchanged"
+
+        model = session.get(DocumentModel, row_id)
+        assert model is not None
+        assert model.content_sha256_head == _sha(big)
