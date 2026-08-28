@@ -94,6 +94,13 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "link_verify" in tool_names
     assert "revision_list" in tool_names
     assert "revision_revert" in tool_names
+    # SYM-006D / RFC 22: findings + ctx aliases (standard/full profiles)
+    assert "finding_list" in tool_names
+    assert "finding_get" in tool_names
+    assert "finding_promote" in tool_names
+    assert "finding_dismiss" in tool_names
+    assert "ctx_docs" in tool_names
+    assert "ctx_drift" in tool_names
 
 
 # STB-002 (2026-06-08): removed test_mcp_add_task_and_get_master — it exercised

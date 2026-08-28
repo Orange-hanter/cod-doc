@@ -10,7 +10,7 @@
 > Bodies реализованы в `cod_doc/services/agent_service.py`; MCP-обёртки в
 > `cod_doc/mcp/tools/agent_tools.py` (тонкий wrapper-слой, не stubs). Покрытие:
 > `tests/services/test_agent_pick.py`, `tests/services/test_agent_workflow.py`,
-> `tests/services/test_agent_profile_contract.py`. 104-tool CRUD surface
+> `tests/services/test_agent_profile_contract.py`. 105-tool CRUD surface
 > (`task_*`, `doc_*`, `plan_*`, …) остаётся для `--profile full|standard`
 > (admin / CLI / web). Tracked в plan
 > `paperclip-adoption-task-plan` section H. Новые agent-features → секция H,
@@ -91,13 +91,13 @@ pytest tests/ -v --tb=short     # run the suite
 9. **MCP server profiles** (PCA-951, cycle-4 default-switch). Запуск:
    ```
    cod-doc-mcp                                # standard (default)
-   cod-doc-mcp --profile minimal              # 15-tool cold-start
-   cod-doc-mcp --profile full                 # все ~102, включая legacy
+   cod-doc-mcp --profile minimal              # 20-tool cold-start
+   cod-doc-mcp --profile full                 # все 111, включая legacy
    COD_DOC_PROFILE=full cod-doc-mcp           # через env
    ```
-   - ``minimal`` — 15-tool cold-start surface для свежих интеграций.
-   - ``standard`` — **default**: ~80 DB-backed тулов без legacy YAML.
-   - ``full`` — все ~102 тула, включая legacy. Только для админ-сценариев
+   - ``minimal`` — 20-tool cold-start surface для свежих интеграций.
+   - ``standard`` — **default**: ~107 DB-backed тулов без legacy YAML.
+   - ``full`` — все 111 тулов, включая legacy. Только для админ-сценариев
      и обратной совместимости с до-cycle-3 интеграциями.
    См. `cod_doc/mcp/profiles.py`.
 

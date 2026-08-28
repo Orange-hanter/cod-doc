@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **104 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **111 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -284,7 +284,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | Семейство | Кол-во | Назначение | Ключевые тулы |
 |-----------|-------:|------------|---------------|
 | **doc.\*** | 10 | DB-backed документы | `doc_list`, `doc_body`, `doc_create`, `doc_rename`, `doc_export`, `doc_drift`, `doc_drift_all`, `doc_get`, `doc_accept`, `doc_backfill_projection` |
-| **task.\*** | 15 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_complete`, `task_set_blocker`, `task_find_duplicate`, `task_log_progress`, … |
+| **task.\*** | 16 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_complete`, `task_set_blocker`, `task_find_duplicate`, `task_log_progress`, … |
 | **task_doc.\*** | 5 | Артефакты, связанные с задачей | `task_doc_put`, `task_doc_get`, `task_doc_list`, `task_doc_revisions`, `task_doc_revert` |
 | **task_checkout / task_release** | 2 | Атомарный захват задачи (PCA-200) | `task_checkout`, `task_release` |
 | **plan.\*** | 11 | Планы исполнения и графы зависимостей | `plan_create`, `plan_freeze`, `plan_section_create`, `plan_sections_list`, `plan_ready`, `plan_progress`, `plan_critical_path`, `plan_forward_chain`, `plan_reverse_chain`, `plan_audit`, `plan_export` |
@@ -301,7 +301,9 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **context / capabilities / session** | 9 | Admin: snowball-сборка контекста, L0 bootstrap, tool discovery + per-tool describe, change-log, safe-call envelope, workspace defaults | `context_get`, `capabilities`, `tool_search`, `tool_describe`, `tools_diff`, `tool_call_safe`, `set_default_project`, `get_default_project`, `clear_default_project` |
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
 | **Legacy (YAML агент)** | 3 | Остаток legacy-surface после STB-002 (2026-06-08): resume-вход + context-хелперы. YAML CRUD (проекты/задачи/MASTER/поиск + hash/verify) удалён — БД источник истины. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
-| **ИТОГО** | **104** | | |
+| **finding.\* (RFC 22)** | 4 | Внешние находки (ai-review / ZAIrgRush / routines): triage и промоушен в задачи. Только профили standard/full | `finding_list`, `finding_get`, `finding_promote`, `finding_dismiss` |
+| **ctx.\* (RFC 22)** | 2 | Тонкие алиасы для внешних потребителей контекста (SYM-006D): `ctx_docs` = `doc_list`, `ctx_drift` = `doc_drift_all`. Только профили standard/full | `ctx_docs`, `ctx_drift` |
+| **ИТОГО** | **111** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в

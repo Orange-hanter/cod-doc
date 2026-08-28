@@ -25,10 +25,13 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services.finding_service import (
     FindingSeed,
+    dismiss_finding,
     fingerprint_ai_review,
     fingerprint_routine,
     fingerprint_zairgrush,
+    get_finding,
     ingest_findings,
+    list_findings,
     promote_finding,
 )
 
@@ -422,3 +425,75 @@ def test_promote_update_existing_task(engine_with_schema) -> None:  # type: igno
             ).scalars()
         )
         assert len(events) == 2
+
+
+# --------------------------------------------------------------------------- #
+# Query / dismiss tests (SYM-006D)                                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_list_and_get_findings(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id, _, _ = _seed_plan(session)
+        finding = _ingest_single_finding(session, project_id)
+
+        rows = list_findings(session, project_id)
+        assert len(rows) == 1
+        assert rows[0]["finding_uid"] == finding.finding_uid
+        assert rows[0]["status"] == "open"
+
+        assert list_findings(session, project_id, status="dismissed") == []
+        assert list_findings(session, project_id, source="zairgrush") == []
+
+        got = get_finding(session, project_id, finding.finding_uid)
+        assert got is not None
+        assert got["title"] == "Promote me"
+        assert got["finding_id"] == finding.row_id
+
+        assert get_finding(session, project_id, "no-such-uid") is None
+        # Cross-project isolation: same uid, other project id → miss.
+        assert get_finding(session, project_id + 1, finding.finding_uid) is None
+
+
+def test_dismiss_emits_activity_event_once(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id, _, _ = _seed_plan(session)
+        finding = _ingest_single_finding(session, project_id)
+
+        out = dismiss_finding(
+            session,
+            project_id=project_id,
+            finding_uid=finding.finding_uid,
+            author="test",
+            reason="noise",
+        )
+        assert out["status"] == "dismissed"
+
+        # Second dismiss is a no-op — no duplicate activity event.
+        again = dismiss_finding(
+            session, project_id=project_id, finding_uid=finding.finding_uid, author="test"
+        )
+        assert again["status"] == "dismissed"
+
+        session.flush()
+        events = list(
+            session.execute(
+                select(ActivityEventModel).where(
+                    ActivityEventModel.project_id == project_id,
+                    ActivityEventModel.kind == "finding.dismissed",
+                )
+            ).scalars()
+        )
+        assert len(events) == 1
+        assert events[0].scope_id == finding.finding_uid
+        assert events[0].payload["reason"] == "noise"
+
+
+def test_dismiss_unknown_finding_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id, _, _ = _seed_plan(session)
+        with pytest.raises(ValueError, match="not found"):
+            dismiss_finding(session, project_id=project_id, finding_uid="missing-uid")

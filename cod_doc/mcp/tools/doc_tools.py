@@ -379,3 +379,69 @@ def register(mcp: FastMCP) -> None:
                 for item in report.issues
             ],
         }
+
+    # ------------------------------------------------------------------ #
+    # RFC 22 §3.3 / SYM-006D: ctx.* family — thin aliases over doc_list  #
+    # and doc_drift_all, named per the symbiosis contract (`cod-doc ctx  #
+    # docs|drift`). Read-only; standard/full profiles only (minimal and  #
+    # agent are explicit allowlists in cod_doc/mcp/profiles.py).         #
+    # ------------------------------------------------------------------ #
+
+    @mcp.tool(name="ctx_docs")
+    def ctx_docs(project: str) -> list[dict[str, Any]]:
+        """RFC 22 (SYM-006D): document listing for external context consumers.
+
+        Thin alias of ``doc_list`` — same shape, same data. The RFC's
+        ``--paths``/``--budget-tokens`` filtering is a CLI concern
+        (``cod-doc ctx docs``); the MCP surface stays minimal.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            docs = doc_service.list_for_project(session, project_id)
+        return [doc_to_dict(d) for d in docs]
+
+    @mcp.tool(name="ctx_drift")
+    def ctx_drift(project: str, limit: int | None = None) -> dict[str, Any]:
+        """RFC 22 (SYM-006D): project-wide DB↔markdown drift for external consumers.
+
+        Thin alias of ``doc_drift_all`` — same shape, same data. The RFC's
+        ``--changed-files`` narrowing and engine-shaped output
+        (``prescan: true``, ``model: "cod-doc/drift"``) belong to the CLI
+        drift-gate (phase 4); the MCP surface stays minimal.
+        """
+        from pathlib import Path
+
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import projection_service
+
+        sf, entry = session_factory(project)
+        root = Path(entry.path).expanduser().resolve()
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            report = projection_service.detect_project_drift(
+                session,
+                project_id,
+                root_path=root,
+                limit=limit,
+            )
+        return {
+            "project": project,
+            "total_docs": report.total_docs,
+            "problem_count": report.problem_count,
+            "counts": report.counts,
+            "issues": [
+                {
+                    "doc_key": item.doc_key,
+                    "path": item.path,
+                    "status": item.report.status.value,
+                    "projection_hash": item.report.projection_hash,
+                    "db_content_hash": item.report.db_content_hash,
+                    "file_hash": item.report.file_hash,
+                }
+                for item in report.issues
+            ],
+        }

@@ -106,3 +106,41 @@ def test_keep_tool_pure_logic() -> None:
     assert keep_tool("run_agent_once", "full") is True
     assert keep_tool("plan_audit", "minimal") is False
     assert keep_tool("plan_audit", "standard") is True
+
+
+SYM_006D_TOOLS = {
+    "finding_list",
+    "finding_get",
+    "finding_promote",
+    "finding_dismiss",
+    "ctx_docs",
+    "ctx_drift",
+}
+
+
+def test_sym006d_keep_tool_logic() -> None:
+    """SYM-006D / RFC 22: finding_*/ctx_* appear in standard+full only.
+
+    minimal and agent profiles are explicit allowlists, so the new names
+    must not leak into them; standard inherits everything non-legacy.
+    """
+    for name in SYM_006D_TOOLS:
+        assert keep_tool(name, "full") is True
+        assert keep_tool(name, "standard") is True
+        assert keep_tool(name, "minimal") is False
+        assert keep_tool(name, "agent") is False
+
+
+def test_sym006d_minimal_profile_excludes_new_tools() -> None:
+    mcp_server.apply_profile("minimal")
+    assert not (SYM_006D_TOOLS & _registered_names())
+
+
+def test_sym006d_agent_profile_excludes_new_tools() -> None:
+    mcp_server.apply_profile("agent")
+    assert not (SYM_006D_TOOLS & _registered_names())
+
+
+def test_sym006d_standard_profile_keeps_new_tools() -> None:
+    mcp_server.apply_profile("standard")
+    assert _registered_names() >= SYM_006D_TOOLS

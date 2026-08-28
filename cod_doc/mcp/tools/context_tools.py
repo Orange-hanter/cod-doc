@@ -58,11 +58,13 @@ def _tool_family(name: str) -> str:
         "routine_",
         "activity_",
         "revision_",
+        "finding_",
         "plan_",
         "story_",
         "link_",
         "run_",
         "skill_",
+        "ctx_",
         "doc_",
         "task_",
     ):

@@ -27,6 +27,7 @@ from cod_doc.mcp.tools import (
     checkout_tools,
     context_tools,
     doc_tools,
+    finding_tools,
     legacy_agent_tools,
     link_tools,
     plan_tools,
@@ -76,6 +77,8 @@ for _module in (
     agent_tools,
     # ADR-002 adr.* (Architecture Decision Records)
     adr_tools,
+    # RFC 22 / SYM-006D finding.* (external findings; ctx_* aliases live in doc_tools)
+    finding_tools,
 ):
     _module.register(mcp)
 
