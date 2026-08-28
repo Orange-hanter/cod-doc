@@ -32,6 +32,10 @@ RUN chmod +x ./entrypoint.sh \
 # ── 5. Runtime directories & env defaults ────────────────────────────────────
 RUN mkdir -p /data/cod-doc /projects
 
+# COD_DOC_API_HOST=0.0.0.0 — осознанный opt-out (SYM-003): в контейнере
+# loopback-bind сделал бы сервис недоступным снаружи; публикацию порта
+# ограничивает оператор (`-p 127.0.0.1:8765:8765`). Вне контейнера
+# дефолт — 127.0.0.1.
 ENV COD_DOC_HOME=/data/cod-doc \
     COD_DOC_API_KEY="" \
     COD_DOC_MODEL="anthropic/claude-sonnet-4-6" \

@@ -17,12 +17,18 @@ if TYPE_CHECKING:
 @click.pass_context
 def serve(ctx: click.Context, host: str | None, port: int | None, reload: bool) -> None:
     """Запустить REST API сервер (production)."""
+    import os
+
     import uvicorn
 
     cfg: Config = ctx.obj["config"]
+    # SYM-003: приоритет --host > COD_DOC_BIND > config.api_host (default
+    # 127.0.0.1). COD_DOC_BIND=0.0.0.0 — осознанный возврат к старому
+    # поведению «слушать все интерфейсы».
+    bind = os.environ.get("COD_DOC_BIND")
     uvicorn.run(
         "cod_doc.api.server:app",
-        host=host or cfg.api_host,
+        host=host or bind or cfg.api_host,
         port=port or cfg.api_port,
         reload=reload,
         log_level="info",

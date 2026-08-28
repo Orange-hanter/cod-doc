@@ -1,6 +1,7 @@
 """
 FastAPI REST API для production-режима COD-DOC.
-Запуск: uvicorn cod_doc.api.server:app --host 0.0.0.0 --port 8765
+Запуск: uvicorn cod_doc.api.server:app --host 127.0.0.1 --port 8765
+(SYM-003: loopback по умолчанию; 0.0.0.0 — только осознанно, COD_DOC_BIND)
 """
 
 from __future__ import annotations

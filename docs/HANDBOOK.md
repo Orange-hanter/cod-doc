@@ -507,7 +507,7 @@ cod-doc audit my-app --strict                # advisory issues тоже фейл
 ### serve / mcp / agent / tui / hash
 
 ```bash
-cod-doc serve --host 0.0.0.0 --port 8765 [--reload]
+cod-doc serve [--host 127.0.0.1] [--port 8765] [--reload]   # loopback по умолчанию (SYM-003); 0.0.0.0 — через --host или COD_DOC_BIND
 cod-doc mcp                                  # MCP server (stdio)
 cod-doc agent run my-app                     # interactive agent loop
 cod-doc tui                                  # textual-based TUI
@@ -536,7 +536,7 @@ agent_interval: 60                            # daemon poll seconds
 chroma_path: ~/.cod-doc/chroma
 embedding_model: openai/text-embedding-ada-002
 
-api_host: 0.0.0.0
+api_host: 127.0.0.1                           # loopback по умолчанию (SYM-003); POST /settings — только с loopback
 api_port: 8765
 
 projects:

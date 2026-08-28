@@ -149,7 +149,10 @@ class Config(BaseSettings):
     projects: list[dict[str, Any]] = Field(default_factory=list)
 
     # API-сервер
-    api_host: str = Field(default="0.0.0.0")
+    # SYM-003: loopback по умолчанию — auth нет, а POST /settings пишет
+    # LLM-ключ. Осознанный opt-out: --host флаг, COD_DOC_BIND (см.
+    # cli/cmd_serve.py) или COD_DOC_API_HOST (pydantic env, env_prefix выше).
+    api_host: str = Field(default="127.0.0.1")
     api_port: int = Field(default=8765)
 
     @field_validator("api_key", mode="before")

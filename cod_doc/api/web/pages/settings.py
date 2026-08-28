@@ -9,7 +9,7 @@ from cod_doc.api.deps import get_config
 from cod_doc.api.web.templates_env import templates
 from cod_doc.services import model_catalog
 
-from ._helpers import _masked_api_key
+from ._helpers import _masked_api_key, ensure_loopback_client
 
 router = APIRouter()
 
@@ -68,6 +68,7 @@ def settings_save(
     doc_max_tokens_heavy: int = Form(64000),
     doc_max_tokens_default: int = Form(16000),
 ) -> Response:
+    ensure_loopback_client(request)  # SYM-003: endpoint пишет LLM-ключ
     cfg = get_config()
     # Empty api_key on POST means "leave existing untouched" — typical web UX
     # for password/secret fields. Forces an explicit "delete" by typing the
