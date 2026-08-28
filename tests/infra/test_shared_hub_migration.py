@@ -250,9 +250,9 @@ def test_upgrade_rejects_same_task_id_within_project(seeded_pre_0027: str) -> No
 
 
 def test_upgrade_downgrade_upgrade_is_symmetric(db_url: str) -> None:
-    """head → -1 → head is error-free on a fresh database."""
+    """head → 0026 → head is error-free on a fresh database."""
     _alembic(db_url, "upgrade", "head")
-    _alembic(db_url, "downgrade", "-1")
+    _alembic(db_url, "downgrade", BEFORE)
     _alembic(db_url, "upgrade", "head")
 
     engine = make_engine(db_url)
@@ -294,7 +294,7 @@ def test_downgrade_fails_when_task_id_is_shared_across_projects(seeded_pre_0027:
             )
 
         with pytest.raises(subprocess.CalledProcessError) as exc_info:
-            _alembic(seeded_pre_0027, "downgrade", "-1")
+            _alembic(seeded_pre_0027, "downgrade", BEFORE)
         assert "Cannot downgrade 0027_shared_hub" in exc_info.value.stderr.decode()
     finally:
         engine.dispose()

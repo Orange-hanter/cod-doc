@@ -24,6 +24,7 @@ from .base import Base, _utcnow
 from .comments import DocCommentModel
 from .commits import CommitLinkModel
 from .documents import DocumentModel, LinkModel, SectionModel
+from .findings import ExternalRefModel, FindingModel, FindingSourceRunModel
 from .metrics import TaskMetricsModel
 from .modules import ModuleCodeModel, ModuleDependencyModel, ModuleModel
 from .plans import (
@@ -60,6 +61,9 @@ __all__ = [
     "DocCommentModel",
     "DocumentModel",
     "DocumentTagModel",
+    "ExternalRefModel",
+    "FindingModel",
+    "FindingSourceRunModel",
     "LinkModel",
     "ModuleCodeModel",
     "ModuleDependencyModel",

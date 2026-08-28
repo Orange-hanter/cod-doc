@@ -13,6 +13,7 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
     ADRModel,
     DocumentModel,
+    FindingModel,
     PlanModel,
     PlanSectionModel,
     ProjectModel,
@@ -117,6 +118,24 @@ def _make_adr(session, pid, aid, title, decision):
     return a
 
 
+def _make_finding(session, pid, uid, title, body):
+    now = datetime.now(UTC)
+    f = FindingModel(
+        project_id=pid,
+        finding_uid=uid,
+        source="ai_review",
+        fingerprint=f"fp-{uid}",
+        severity="major",
+        title=title,
+        body=body,
+        first_seen_at=now,
+        last_seen_at=now,
+    )
+    session.add(f)
+    session.flush()
+    return f
+
+
 # ----------------------------------------------------------------- #
 # Index population                                                   #
 # ----------------------------------------------------------------- #
@@ -210,6 +229,30 @@ def test_search_finds_adr_by_decision(engine_with_schema) -> None:  # type: igno
         result = search_service.search(session, project_id=1, query="daemon")
     refs = [h["ref"] for h in result["by_kind"]["adr"]]
     assert "ADR-040" in refs
+
+
+def test_reindex_counts_findings(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, _, _ = _seed(session)
+        _make_finding(session, pid, "F-001", "Race in checkout", "Found a data race in checkout.")
+    with transactional(factory) as session:
+        counts = search_service.reindex_all(session, project_id=1)
+    assert counts["finding"] == 1
+    assert counts["total"] == 1
+
+
+def test_search_finds_finding_by_body(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, _, _ = _seed(session)
+        _make_finding(session, pid, "F-002", "Memory leak", "Buffer is never released.")
+    with transactional(factory) as session:
+        search_service.reindex_all(session, project_id=1)
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="buffer")
+    refs = [h["ref"] for h in result["by_kind"]["finding"]]
+    assert "F-002" in refs
 
 
 def test_search_scope_filters_to_one_kind(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

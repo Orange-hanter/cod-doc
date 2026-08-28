@@ -6,10 +6,11 @@ Public API:
   ranked hits (bm25) grouped by kind.
 
 Index entries:
-- ``kind='task'``   ref=task_id (e.g. ADR-001)  title=task.title         body=description+acceptance
-- ``kind='doc'``    ref=doc_key                  title=document.title     body=preamble + all section bodies
-- ``kind='story'``  ref=story_id                 title=narrative (truncated)  body=narrative + acceptance criteria
-- ``kind='adr'``    ref=adr_id                   title=adr.title          body=context+decision+alternatives+consequences
+- ``kind='task'``     ref=task_id (e.g. ADR-001)  title=task.title         body=description+acceptance
+- ``kind='doc'``      ref=doc_key                  title=document.title     body=preamble + all section bodies
+- ``kind='story'``    ref=story_id                 title=narrative (truncated)  body=narrative + acceptance criteria
+- ``kind='adr'``      ref=adr_id                   title=adr.title          body=context+decision+alternatives+consequences
+- ``kind='finding'``  ref=finding_uid              title=finding.title      body=source + kind + path + body
 
 FTS5 BM25 ranking by default; we surface the relevance score with each
 hit so the UI can show a confidence bar.
@@ -24,6 +25,7 @@ from sqlalchemy import select, text
 from cod_doc.infra.models import (
     ADRModel,
     DocumentModel,
+    FindingModel,
     SectionModel,
     StoryAcceptanceModel,
     TaskModel,
@@ -34,7 +36,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-_VALID_SCOPES = frozenset({"task", "doc", "story", "adr"})
+_VALID_SCOPES = frozenset({"task", "doc", "story", "adr", "finding"})
 
 
 def _wipe(session: Session, project_id: int) -> None:
@@ -72,7 +74,7 @@ def reindex_all(session: Session, project_id: int) -> dict[str, int]:
     """Drop project rows from index, then rebuild from canonical tables."""
     _wipe(session, project_id)
 
-    counts: dict[str, int] = {"task": 0, "doc": 0, "story": 0, "adr": 0}
+    counts: dict[str, int] = {"task": 0, "doc": 0, "story": 0, "adr": 0, "finding": 0}
 
     # Tasks — description + acceptance + blocked_reason in body.
     for t in session.execute(select(TaskModel).where(TaskModel.project_id == project_id)).scalars():
@@ -157,8 +159,23 @@ def reindex_all(session: Session, project_id: int) -> dict[str, int]:
         )
         counts["adr"] += 1
 
+    # Findings — source + kind + path + body.
+    for f in session.execute(
+        select(FindingModel).where(FindingModel.project_id == project_id)
+    ).scalars():
+        body_parts = [f.source or "", f.kind or "", f.path or "", f.body or ""]
+        _insert(
+            session,
+            kind="finding",
+            ref=f.finding_uid,
+            project_id=project_id,
+            title=f.title or "",
+            body="\n".join(b for b in body_parts if b),
+        )
+        counts["finding"] += 1
+
     session.flush()
-    counts["total"] = sum(counts[k] for k in ("task", "doc", "story", "adr"))
+    counts["total"] = sum(counts[k] for k in ("task", "doc", "story", "adr", "finding"))
     return counts
 
 
