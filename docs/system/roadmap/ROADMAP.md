@@ -204,9 +204,9 @@ Cod-doc заведён на двух реальных проектах и отд
 - [x] **ADO-010 закрыт целиком** (2026-08-25, а не в два захода): guard (`--dry-run`, `--force-write`, отказ писать поверх правки руками и в чужой checkout) **и** byte-identical round-trip — 71/71 дока `docs/` (миграция `0025_projection_fidelity`).
 - [x] **SYM-001 закрыт:** `project add/init` создаёт БД — онбординг работает по документации.
 - [x] `cod-doc project list` не содержит `integration-test`; конфиг указывает на рабочую модель *(ADO-001, 2026-08-25)*.
-- [ ] В корне есть `README.md`, объясняющий проект без чтения `docs/`.
-- [ ] Два проекта проходят все 5 критериев «проект заведён» из skill `project-onboarding`.
-- [ ] `cod-doc search` на каждом пилоте находит документы по доменному термину.
+- [x] В корне есть `README.md`, объясняющий проект без чтения `docs/` (2026-08-25).
+- [x] Два проекта проходят все 5 критериев «проект заведён» из skill `project-onboarding` — ZAIrgRush (ADO-016, 2026-08-28) и Orakul (ADO-017, 2026-08-28).
+- [x] `cod-doc search` на каждом пилоте находит документы по доменному термину («swarm» в ZAIrgRush, «pulse» → 18 хитов в Orakul; оба — после `--reindex`, friction #5).
 
 **Риск:** импорт затащит архивный/вендорный markdown → шум в FTS.
 **Митигация:** `--dry-run` обязателен; решение по `Архив/` принимается до импорта (зафиксировано в скилле и playbook'е).
@@ -261,3 +261,4 @@ Cod-doc заведён на двух реальных проектах и отд
 - **2026-07-29** — [state-of-the-project audit](../audit/2026-07-29-state-of-the-project.md): Трек A закрыт 12/13; извлечены 3 скилла (9 → 12); найден F7 (`doc export` повреждает документ); приоритет смещён на adoption; заведён план `adoption-2026-08` (13 задач); этот роадмап пересобран.
 - **2026-08-25** — программа Symbiosis ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)): пилоты переназначены на ZAIrgRush/Orakul (ADO-003/004 → cancelled, ADO-016/017); секция E (SYM-001…011); STB-012 → cancelled (re-scoped в ADO-013); ADO-010 разбит на 2 этапа; ADO-015 расширен под типы пилотов.
 - **2026-08-27** — заведён спринт [sprint-2026-08-27-m1-phase1.md](sprint-2026-08-27-m1-phase1.md) (M1 + Фаза 1): SYM-005/006 декомпозированы в SYM-005A–D / SYM-006A–D (секция E, контракты в БД); найдены расхождения ground truth — миграция 0026 на невлитой ветке `worktree-swarm-ado022-ado015-sym004` (номера Фазы 1 сдвинуты на 0027/0028), ai-reviewer живёт в `/Users/dakh/Git/_my/ai-reviewer`, а не под Mozarella.
+- **2026-08-28** — **M1 «Пилот работает» закрыт.** ADO-016 (ZAIrgRush, 31 док) и ADO-017 (Orakul, 405 доков) → done; SYM-003 (bind-hygiene + гейт loopback) → done (ae5911e); ветка `worktree-swarm-ado022-ado015-sym004` влита (1a66aaa — ADO-015 типы, SYM-004 `--exclude`, ADO-022 fidelity, миграция 0026). Friction-лог ADO-005: 14 записей (≥10 для M2). Оговорки: ADR ZAIrgRush без типов → SYM-007; stale_export после импорта (friction #7/#12) — кандидат в M2.
