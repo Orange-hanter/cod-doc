@@ -28,17 +28,14 @@ _STATUS_ICON = {
 
 
 def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
-    from pathlib import Path
-
-    from cod_doc.infra.db import make_engine, make_session_factory, resolve_db_url
+    from cod_doc.infra.db import db_for_entry
 
     entry = cfg.get_project(project_name)
     if not entry:
         console.print(f"[red]Project not found: {project_name}[/red]")
         sys.exit(1)
-    url = resolve_db_url(Path(entry.path))
-    engine = make_engine(url)
-    return make_session_factory(engine)
+    factory, _engine = db_for_entry(entry)
+    return factory
 
 
 def _require_project_id(session: Session, project_name: str) -> int:

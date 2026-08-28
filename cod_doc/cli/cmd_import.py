@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import click
 from rich.console import Console
 
-from cod_doc.infra.db import make_engine, make_session_factory, resolve_db_url, transactional
+from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import restate_importer
 
@@ -43,9 +43,7 @@ def _open_session(
     entry = cfg.get_project(project_name)
     if entry is None:
         raise click.ClickException(f"Проект не найден: {project_name}")
-    db_url = resolve_db_url(entry.root)
-    engine = make_engine(db_url)
-    factory = make_session_factory(engine)
+    factory, engine = db_for_entry(entry)
     return entry, factory, engine
 
 

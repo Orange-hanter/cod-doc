@@ -6,6 +6,7 @@ cod-doc wizard           — запустить только wizard настро
 cod-doc project add      — добавить проект
 cod-doc project list     — список проектов
 cod-doc project init     — инициализировать .cod-doc/ в проекте
+cod-doc hub init         — создать/мигрировать глобальную hub-БД
 cod-doc agent run        — запустить агент для проекта
 cod-doc serve            — запустить REST API сервер
 cod-doc hash calc        — вычислить хэш файла
@@ -58,6 +59,7 @@ from cod_doc.cli.cmd_adapter import adapter
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_audit import audit
 from cod_doc.cli.cmd_hash import hash
+from cod_doc.cli.cmd_hub import hub
 from cod_doc.cli.cmd_import import import_cmd
 from cod_doc.cli.cmd_project import project
 from cod_doc.cli.cmd_reindex import reindex
@@ -89,6 +91,7 @@ def main(ctx: click.Context, log_level: str | None, log_format: str | None) -> N
 main.add_command(tui)
 main.add_command(wizard)
 main.add_command(project)
+main.add_command(hub)
 main.add_command(agent)
 main.add_command(hash)
 main.add_command(serve)

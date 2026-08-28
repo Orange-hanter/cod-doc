@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ._legacy import load_config, open_project, resolve_project_name
@@ -62,16 +61,9 @@ def _build_wake_for_run(
             triggering_revision_id=since_revision_id,
         )
 
-    from cod_doc.infra.db import (
-        make_engine,
-        make_session_factory,
-        resolve_db_url,
-        transactional,
-    )
+    from cod_doc.infra.db import db_for_entry, transactional
 
-    url = resolve_db_url(Path(proj.entry.path))
-    engine = make_engine(url)
-    sf = make_session_factory(engine)
+    sf, _engine = db_for_entry(proj.entry)
     with transactional(sf) as session:
         return build_wake_context(
             session,

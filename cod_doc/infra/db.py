@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
 if TYPE_CHECKING:
@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
     from sqlalchemy.engine.interfaces import DBAPIConnection
     from sqlalchemy.pool import ConnectionPoolEntry
+
+    from cod_doc.config import ProjectEntry
 
 DEFAULT_EMBEDDED_PATH = ".cod-doc/state.db"
 
@@ -102,6 +104,66 @@ def make_engine(url: str | None = None, *, echo: bool = False) -> Engine:
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
+
+
+class SchemaMismatchError(Exception):
+    """БД накатана не до актуальной alembic-головы."""
+
+    code = "schema_mismatch"
+
+
+def _alembic_head_revision() -> str:
+    """Текущая голова поставляемых миграций."""
+    from importlib.resources import files
+
+    from alembic.script import ScriptDirectory
+
+    scripts_path = files("cod_doc.infra.migrations")
+    script = ScriptDirectory(str(scripts_path))
+    head = script.get_current_head()
+    if head is None:
+        raise RuntimeError("no alembic migrations found")
+    return head
+
+
+def db_for_entry(entry: ProjectEntry) -> tuple[sessionmaker[Session], Engine]:
+    """Фабрика сессий и движок для записи проекта.
+
+    - Если у записи задан ``db_url`` — открываем эту БД (hub-режим) и перед
+      возвратом проверяем, что ``alembic_version`` совпадает с головой.
+    - Иначе — embedded ``<root>/.cod-doc/state.db``.
+    """
+    db_url = getattr(entry, "db_url", None)
+    if db_url is not None:
+        url = db_url
+    else:
+        root_path = Path(getattr(entry, "path", ".")).expanduser().resolve()
+        db_path = root_path / ".cod-doc" / "state.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        url = f"sqlite:///{db_path}"
+
+    engine = make_engine(url)
+
+    if db_url is not None:
+        head = _alembic_head_revision()
+        try:
+            with engine.connect() as conn:
+                current = conn.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one_or_none()
+        except Exception as exc:
+            engine.dispose()
+            raise SchemaMismatchError(
+                f"hub schema check failed for {getattr(entry, 'name', '<unknown>')!r}: {exc}"
+            ) from exc
+        if current != head:
+            engine.dispose()
+            raise SchemaMismatchError(
+                f"hub schema mismatch for {getattr(entry, 'name', '<unknown>')!r}: "
+                f"expected {head!r}, found {current!r}"
+            )
+
+    return make_session_factory(engine), engine
 
 
 @contextmanager

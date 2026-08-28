@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -30,16 +29,15 @@ def session_factory(project: str | None) -> tuple[sessionmaker[Session], Project
     Falsy value with no default raises ValueError with a hint.
     """
     from cod_doc.config import Config
-    from cod_doc.infra.db import make_engine, make_session_factory, resolve_db_url
+    from cod_doc.infra.db import db_for_entry
 
     name = _resolve(project)
     cfg = Config.load()
     entry = cfg.get_project(name)
     if not entry:
         raise ValueError(f"Project not found: {name!r}")
-    url = resolve_db_url(Path(entry.path))
-    engine = make_engine(url)
-    return make_session_factory(engine), entry
+    factory, _engine = db_for_entry(entry)
+    return factory, entry
 
 
 def require_project_id(session: Any, project: str | None) -> int:

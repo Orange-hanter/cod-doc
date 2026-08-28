@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click
@@ -43,7 +42,7 @@ def search(
     reindex: bool,
 ) -> None:
     """Search tasks / docs / stories / ADRs for QUERY (FTS5)."""
-    from cod_doc.infra.db import make_engine, make_session_factory, resolve_db_url, transactional
+    from cod_doc.infra.db import db_for_entry, transactional
     from cod_doc.infra.repositories import ProjectRepository
     from cod_doc.services import search_service
 
@@ -52,9 +51,7 @@ def search(
     if not entry:
         console.print(f"[red]Project not found: {project}[/red]")
         sys.exit(1)
-    url = resolve_db_url(Path(entry.path))
-    engine = make_engine(url)
-    factory = make_session_factory(engine)
+    factory, _engine = db_for_entry(entry)
 
     with transactional(factory) as session:
         proj = ProjectRepository(session).get_by_slug(project)

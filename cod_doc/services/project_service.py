@@ -28,7 +28,7 @@ from alembic.config import Config as AlembicConfig
 
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import Project as ProjectEntity
-from cod_doc.infra.db import make_engine, make_session_factory, transactional
+from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.repositories import ProjectRepository
 
 if TYPE_CHECKING:
@@ -110,8 +110,7 @@ def init_project(entry: ProjectEntry) -> InitResult:
 
     # 3. ProjectModel row keyed by slug=entry.name (so `try_open_project_db`
     # can resolve URL-slug → DB row).
-    engine = make_engine(f"sqlite:///{db_path}")
-    factory = make_session_factory(engine)
+    factory, engine = db_for_entry(entry)
     db_row_existed: bool
     with transactional(factory) as session:
         existing = ProjectRepository(session).get_by_slug(entry.name)

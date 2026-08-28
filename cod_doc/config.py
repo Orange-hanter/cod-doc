@@ -38,6 +38,7 @@ class ProjectEntry(BaseSettings):
     auto_commit: bool = False
     enabled: bool = True
     daemon_enabled: bool = True
+    db_url: str | None = None
 
     @property
     def root(self) -> Path:
