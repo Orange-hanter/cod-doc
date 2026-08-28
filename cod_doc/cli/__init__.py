@@ -34,6 +34,7 @@ cod-doc doc list         — список документов
 cod-doc doc show         — детали документа
 cod-doc doc create       — создать документ
 cod-doc doc rename       — переименовать документ
+cod-doc doc delete       — удалить документ из БД
 cod-doc doc body         — показать тело документа
 cod-doc doc export       — экспортировать на диск
 cod-doc doc drift        — проверить дрейф проекции

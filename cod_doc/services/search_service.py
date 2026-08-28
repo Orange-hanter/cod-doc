@@ -113,6 +113,14 @@ def upsert_doc(session: Session, *, project_id: int, doc_key: str) -> None:
         _index_doc(session, project_id, d)
 
 
+def delete_doc(session: Session, *, project_id: int, doc_key: str) -> None:
+    """Remove one FTS row for a document (used by the doc delete path)."""
+    session.execute(
+        text("DELETE FROM db_search_idx WHERE project_id = :p AND kind = 'doc' AND ref = :r"),
+        {"p": project_id, "r": doc_key},
+    )
+
+
 def reindex_all(session: Session, project_id: int) -> dict[str, int]:
     """Drop project rows from index, then rebuild from canonical tables."""
     _wipe(session, project_id)

@@ -27,9 +27,10 @@ import difflib
 import hashlib
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from pathlib import PurePath
+from typing import TYPE_CHECKING, Any, NamedTuple
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import (
@@ -42,11 +43,19 @@ from cod_doc.domain.entities import (
 )
 from cod_doc.infra.models import DocumentModel, SectionModel
 from cod_doc.infra.repositories import DocumentRepository, SectionRepository
+from cod_doc.services import activity_service, search_service, validation
 from cod_doc.services import revision_service as rev
-from cod_doc.services import validation
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+
+class DeleteResult(NamedTuple):
+    """Metadata returned by ``delete`` / ``list_delete_candidates``."""
+
+    doc_key: str
+    title: str
+    section_count: int
 
 
 class DocumentNotFoundError(LookupError):
@@ -489,3 +498,102 @@ def rename(
     refreshed = DocumentRepository(session).get(document_id)
     assert refreshed is not None
     return refreshed
+
+
+def _section_count(session: Session, document_id: int) -> int:
+    return int(
+        session.execute(
+            select(func.count())
+            .select_from(SectionModel)
+            .where(SectionModel.document_id == document_id)
+        ).scalar_one()
+    )
+
+
+def _actor_kind(author: str) -> str:
+    return "agent" if author.startswith("agent") else "human"
+
+
+def delete(
+    session: Session,
+    *,
+    project_id: int,
+    doc_key: str,
+    author: str,
+    reason: str | None = None,
+) -> DeleteResult:
+    """Delete a document and its derived rows from the DB.
+
+    Cascades (same transaction):
+      - document row
+      - all section rows
+      - link rows belonging to those sections
+      - document_tag / doc_comment rows (DB FK CASCADE)
+      - FTS db_search_idx row for this document
+
+    Does NOT touch: revision rows (append-only audit), activity events.
+    Emits one ``doc.deleted`` activity event with the section count.
+    """
+    doc = session.execute(
+        select(DocumentModel).where(
+            DocumentModel.project_id == project_id,
+            DocumentModel.doc_key == doc_key,
+        )
+    ).scalar_one_or_none()
+    if doc is None:
+        raise DocumentNotFoundError(f"document {doc_key!r}")
+
+    section_count = _section_count(session, doc.row_id)
+
+    search_service.delete_doc(session, project_id=project_id, doc_key=doc_key)
+
+    activity_service.emit(
+        session,
+        project_id,
+        "doc.deleted",
+        actor_kind=_actor_kind(author),
+        actor_id=author,
+        scope_kind="doc",
+        scope_id=doc_key,
+        payload={"doc_key": doc_key, "section_count": section_count, "reason": reason},
+        summary=f"Document {doc_key} deleted ({section_count} section(s))",
+    )
+
+    session.delete(doc)
+    session.flush()
+
+    return DeleteResult(
+        doc_key=doc.doc_key,
+        title=doc.title,
+        section_count=section_count,
+    )
+
+
+def list_delete_candidates(
+    session: Session,
+    *,
+    project_id: int,
+    path_glob: str | None = None,
+    doc_type: str | None = None,
+) -> list[DeleteResult]:
+    """Return documents matching optional path glob and/or type filter.
+
+    ``path_glob`` supports ``**`` (e.g. ``'experiments/**'``) via
+    ``pathlib.PurePath.match``.
+    """
+    docs = DocumentRepository(session).list_for_project(project_id)
+    results: list[DeleteResult] = []
+    for d in docs:
+        if path_glob is not None and not PurePath(d.path).match(path_glob):
+            continue
+        if doc_type is not None and d.type.value != doc_type:
+            continue
+        assert d.row_id is not None
+        results.append(
+            DeleteResult(
+                doc_key=d.doc_key,
+                title=d.title,
+                section_count=_section_count(session, d.row_id),
+            )
+        )
+    return sorted(results, key=lambda r: r.doc_key)

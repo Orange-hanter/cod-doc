@@ -13,6 +13,7 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_backfill,
     cmd_body,
     cmd_create,
+    cmd_delete,
     cmd_drift,
     cmd_export,
     cmd_import,
