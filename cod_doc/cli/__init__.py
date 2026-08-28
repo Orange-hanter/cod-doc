@@ -50,6 +50,9 @@ cod-doc import legacy-tasks — миграция .cod-doc/tasks.yaml в DB
 cod-doc import all       — оба пайплайна подряд
 cod-doc ingest <adapter> — ingest внешних находок (ai_review, zairgrush_*)
 cod-doc finding stability — Jaccard-стабильность находок по SHA
+cod-doc routine list       — список рутин с последним запуском
+cod-doc routine tick       — один тик планировщика (для OS cron/launchd)
+cod-doc routine run        — ручной запуск рутины по имени
 """
 
 from __future__ import annotations
@@ -74,6 +77,7 @@ from cod_doc.cli.doc import doc
 from cod_doc.cli.link import link
 from cod_doc.cli.plan import plan
 from cod_doc.cli.revision import revision
+from cod_doc.cli.routine import routine
 from cod_doc.cli.story import story
 from cod_doc.cli.task import task
 from cod_doc.config import Config
@@ -106,6 +110,7 @@ main.add_command(story)
 main.add_command(doc)
 main.add_command(link)
 main.add_command(revision)
+main.add_command(routine)
 main.add_command(audit)
 main.add_command(import_cmd)
 main.add_command(ingest)
