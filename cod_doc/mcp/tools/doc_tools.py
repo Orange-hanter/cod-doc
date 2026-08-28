@@ -75,7 +75,9 @@ def register(mcp: FastMCP) -> None:
 
         type: module-spec | module-subdoc | execution-plan | task-section |
               execution-log | standard | architecture | vision | guide |
-              user-story | decision | open-question | redirect.
+              user-story | decision | open-question | redirect |
+              design | audit | audit-report | journal | plan | analysis |
+              research | capability.
         status: draft | review | active | deprecated.
         sensitivity: public | internal | confidential | restricted.
         """
@@ -241,9 +243,13 @@ def register(mcp: FastMCP) -> None:
         """Export a document projection to disk. Returns {path, written, content_hash, diff}.
         Skips if projection_hash already matches current DB content (unless force=true).
         Refuses (ADO-010) to overwrite a file that does not match the last export/import,
-        or to write into a repo that is not cod-doc's own checkout: preview with
-        dry_run=true (returns a unified diff, writes nothing), override with
-        force_write=true.
+        or to write into a repo that is not cod-doc's own checkout; refuses (ADO-022) to
+        rewrite a file whose shape the DB does not remember — run
+        doc_backfill_projection first, do NOT force past that one; refuses
+        (ADO-015) to rewrite the `type:` of a row whose stored type is an older
+        build's coercion — apply migration 0026 (`cod-doc project init`) first.
+        Preview with dry_run=true (returns a unified diff, writes nothing),
+        override with force_write=true.
         """
         from pathlib import Path
 
@@ -271,6 +277,42 @@ def register(mcp: FastMCP) -> None:
             "written": result.written,
             "content_hash": result.content_hash,
             "diff": result.diff,
+        }
+
+    @mcp.tool(name="doc_backfill_projection")
+    def doc_backfill_projection(project: str, dry_run: bool = False) -> dict[str, Any]:
+        """ADO-022: recover projection-fidelity columns from the files on disk.
+
+        Databases created before migration 0025_projection_fidelity do not remember
+        how each file was shaped (frontmatter_raw/title_in_body are NULL), so
+        doc_export would rewrite frontmatter and invent headings — and refuses until
+        this has run. Unlike an import, only the two shape columns are touched, so
+        DB-side metadata changes that were never exported survive.
+        Returns {scanned, filled, file_missing, skipped, items}.
+        """
+        from pathlib import Path
+
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import projection_service
+
+        sf, entry = session_factory(project)
+        root = Path(entry.path).expanduser().resolve()
+        with transactional(sf, commit=not dry_run) as session:
+            project_id = require_project_id(session, project)
+            report = projection_service.backfill_projection_fidelity(
+                session, project_id, root_path=root, dry_run=dry_run
+            )
+        return {
+            "project": project,
+            "dry_run": dry_run,
+            "scanned": report.scanned,
+            "filled": report.filled,
+            "file_missing": report.file_missing,
+            "skipped": report.skipped,
+            "items": [
+                {"doc_key": item.doc_key, "path": item.path, "action": item.action.value}
+                for item in report.items
+            ],
         }
 
     @mcp.tool(name="doc_drift")

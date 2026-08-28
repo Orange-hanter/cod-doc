@@ -21,11 +21,17 @@ last_updated: 2026-04-28
 
 | Поле | Значения | Мэппинг в БД |
 |------|----------|--------------|
-| `type` | `module-spec`, `module-subdoc`, `execution-plan`, `task-section`, `execution-log`, `standard`, `architecture`, `vision`, `guide`, `user-story`, `audit-report`, `redirect` | `document.type` |
-| `status` | См. таблицу §2a (зависит от `type`) | `document.status` |
+| `type` | `module-spec`, `module-subdoc`, `execution-plan`, `task-section`, `execution-log`, `standard`, `architecture`, `vision`, `guide`, `user-story`, `decision`, `open-question`, `redirect`, `design`, `audit`, `audit-report`, `journal`, `plan`, `analysis`, `research`, `capability` | `document.type` |
+| `status` | См. таблицу §2a (зависит от `type`); чужие написания — §2b | `document.status` |
 | `owner` | Строка (команда или роль) | `document.owner` |
 | `last_updated` | `YYYY-MM-DD` | `document.last_updated` |
 | `source_of_truth` | `true` / `false` *(или вложенный dict для `execution-plan` — см. §7)* | `document.source_of_truth` |
+
+Источник истины по списку `type` — enum `DocumentType` (`cod_doc/domain/entities.py`);
+таблица выше обязана совпадать с ним значение в значение. Восемь типов
+(`design`, `audit`, `audit-report`, `journal`, `plan`, `analysis`, `research`,
+`capability`) добавлены в ADO-015: они уже жили в корпусах, но импорт молча
+превращал их в `module-spec`.
 
 ## 2a. Допустимые `status` по `type`
 
@@ -36,7 +42,32 @@ last_updated: 2026-04-28
 | `module-spec`, `module-subdoc`, `standard`, `architecture`, `vision`, `guide`, `redirect` | `draft` → `review` → `active` → `deprecated` | `deprecated` |
 | `execution-plan`, `task-section`, `execution-log` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`) | `done` / `cancelled` |
 | `user-story` | `draft` → `accepted` → `delivered` → `archived` | `archived` |
-| `audit-report` | `active` (живой аудит) → `resolved` (все задачи закрыты) → `superseded` (устарел) | `resolved` / `superseded` |
+| `audit-report`, `audit` | `active` (живой аудит **и** закрытый — в frontmatter его пишут `resolved`, см. §2b) → `deprecated` (замещён; в frontmatter `superseded`) | `deprecated` |
+| `design`, `analysis`, `research`, `capability`, `decision`, `open-question` | `draft` → `review` → `active` → `deprecated` | `deprecated` |
+| `plan` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`) | `done` / `cancelled` |
+| `journal` | `active` — журнал не «завершается», он либо ведётся, либо `deprecated` | `deprecated` |
+
+## 2b. Чужие статусы при импорте
+
+В БД живут ровно четыре значения `status`: `draft`, `review`, `active`,
+`deprecated`. Чужие корпуса пишут иначе (`living`, `final`, `done`, `accepted`,
+`archived`, `superseded`, …). Импорт не выбрасывает их и не притворяется, что
+понял: таблица `_ALIEN_STATUS_ALIASES` (`cod_doc/services/import_service.py`)
+переводит известные написания, и **каждая такая замена попадает в
+`ImportReport.warnings`** с `reason: alias`. Написание, которого нет в таблице,
+даёт `draft` и `reason: unknown`.
+
+| Чужое написание | Канонический `status` |
+|---|---|
+| `living`, `final`, `done`, `complete`, `completed`, `resolved`, `accepted`, `delivered`, `published`, `current`, `stable`, `in-progress` | `active` |
+| `proposed`, `pending`, `wip`, `todo` | `draft` |
+| `in-review`, `reviewing` | `review` |
+| `archived`, `resolved`, `superseded`, `obsolete`, `rejected`, `cancelled` | `deprecated` |
+
+Побочный эффект, о котором стоит знать: `final`, `done` и `resolved` становятся `active`,
+поэтому FM-005 (`stale-doc`) начинает считать возраст исторических документов.
+Это осознанный выбор — «завершённый» документ не то же самое, что снятый с
+эксплуатации.
 
 ## 3. Условно-обязательные
 
@@ -85,7 +116,11 @@ last_updated: 2026-04-28
 
 Правила:
 
-- `FM-001` Неизвестное значение `type` → error.
+- `FM-001` Неизвестное значение `type` → error. На пути **import** это не error, а
+  предупреждение: значение вне enum откатывается к fallback в БД и попадает в
+  `ImportReport.warnings` (`reason: unknown`), а **файл при этом не
+  переписывается** — за это отвечает `_raw_matches_db` (ADO-010). Импорт чужого
+  корпуса не имеет права ни ронять прогон, ни править чужой markdown.
 - `FM-002` `status=active` при пустом `owner` → error.
 - `FM-003` `source_of_truth: false` без `canonical_source` → error (для `execution-plan` см. §7 — dict-вариант исключён).
 - `FM-004` `last_updated` в будущем → warning.

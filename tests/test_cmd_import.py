@@ -92,6 +92,172 @@ def test_cli_import_docs_dry_run_does_not_persist(tmp_path: Path) -> None:
     assert "Skipped (already in DB): 1" in result3.output
 
 
+# ── SYM-004: --exclude ─────────────────────────────────────────────────
+
+
+def _seed_stands(repo: Path) -> None:
+    """Репозиторий со стендами: ровно та форма, ради которой заведён флаг."""
+    (repo / "experiments" / "stand-01").mkdir(parents=True)
+    (repo / "experiments" / "stand-02").mkdir(parents=True)
+    (repo / "experiments" / "stand-01" / "notes.md").write_text("# stand 1")
+    (repo / "experiments" / "stand-02" / "log.md").write_text("# stand 2")
+    (repo / "README.md").write_text("# README")
+
+
+def test_cli_import_docs_exclude_hides_stand_files_on_dry_run(tmp_path: Path) -> None:
+    """Дословный критерий приёмки SYM-004.
+
+    `import docs -p x --exclude 'experiments/stand*' --dry-run` не показывает
+    файлы стендов — и именно показывает остальные, иначе «не показывает» было
+    бы выполнено пустым выводом.
+    """
+    cfg, _entry = _bootstrap(tmp_path)
+    _seed_stands(tmp_path / "repo")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        import_cmd,
+        ["docs", "-p", "restate", "--exclude", "experiments/stand*", "--dry-run"],
+        obj={"config": cfg},
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "stand-01" not in result.output
+    assert "stand-02" not in result.output
+    assert "README.md" in result.output
+    assert "Imported: 1" in result.output
+    assert "Dry-run" in result.output
+
+
+def test_cli_import_docs_dry_run_lists_files(tmp_path: Path) -> None:
+    """Без --exclude тот же прогон показывает все три файла.
+
+    Контрольный кейс: он доказывает, что предыдущий тест ловит фильтрацию, а
+    не просто отсутствие листинга в выводе.
+    """
+    cfg, _entry = _bootstrap(tmp_path)
+    _seed_stands(tmp_path / "repo")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        import_cmd,
+        ["docs", "restate", "--dry-run"],
+        obj={"config": cfg},
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Imported: 3" in result.output
+    assert "stand-01" in result.output
+    assert "stand-02" in result.output
+    assert "README.md" in result.output
+
+
+def test_cli_import_docs_exclude_is_repeatable(tmp_path: Path) -> None:
+    """multiple=True: два --exclude в одном вызове складываются."""
+    cfg, _entry = _bootstrap(tmp_path)
+    repo = tmp_path / "repo"
+    _seed_stands(repo)
+    (repo / "_archive").mkdir()
+    (repo / "_archive" / "old.md").write_text("# old")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        import_cmd,
+        [
+            "docs",
+            "restate",
+            "--exclude",
+            "experiments/stand*",
+            "--exclude",
+            "_archive",
+            "--dry-run",
+        ],
+        obj={"config": cfg},
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "stand-01" not in result.output
+    assert "old.md" not in result.output
+    assert "README.md" in result.output
+    assert "Imported: 1" in result.output
+
+
+def test_cli_import_all_passes_exclude(tmp_path: Path) -> None:
+    """`import all` обязан пробросить exclude в docs-пайплайн, а не потерять."""
+    cfg, _entry = _bootstrap(tmp_path)
+    _seed_stands(tmp_path / "repo")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        import_cmd,
+        ["all", "restate", "--exclude", "experiments/stand*", "--dry-run"],
+        obj={"config": cfg},
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "stand-01" not in result.output
+    assert "README.md" in result.output
+
+
+def test_cli_import_docs_rejects_conflicting_project(tmp_path: Path) -> None:
+    """Позиционный проект и -p, указывающие в разное, — ошибка, не тихий выбор."""
+    cfg, _entry = _bootstrap(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        import_cmd,
+        ["docs", "restate", "-p", "other", "--dry-run"],
+        obj={"config": cfg},
+    )
+
+    assert result.exit_code != 0
+    assert "дважды" in result.output
+
+
+def test_cli_import_docs_requires_a_project(tmp_path: Path) -> None:
+    cfg, _entry = _bootstrap(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(import_cmd, ["docs", "--dry-run"], obj={"config": cfg})
+
+    assert result.exit_code != 0
+    assert "Не указан проект" in result.output
+
+
+def test_cli_import_docs_reports_coerced_frontmatter(tmp_path: Path) -> None:
+    """ADO-015: a bulk import of a foreign corpus says what it had to bend.
+
+    This is where the coercion hid best — one command, hundreds of files, a
+    single "Imported: N" line. `capability` now stores as authored (no
+    warning); `kickoff-brief` is not a cod-doc type and gets reported.
+    """
+    cfg, _entry = _bootstrap(tmp_path)
+    repo = tmp_path / "repo"
+    (repo / "clean.md").write_text("---\ntype: capability\n---\n\n# Clean\n", encoding="utf-8")
+    (repo / "alien.md").write_text(
+        "---\ntype: kickoff-brief\nstatus: living\n---\n\n# Alien\n", encoding="utf-8"
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        import_cmd,
+        ["docs", "restate"],
+        obj={"config": cfg},
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Imported: 2" in result.output
+    assert "Warnings: 2" in result.output
+    assert "alien.md: type: 'kickoff-brief' → 'module-spec' (unknown value)" in result.output
+    assert "alien.md: status: 'living' → 'active' (foreign spelling)" in result.output
+    assert "clean.md" not in result.output
+
+
 def test_cli_import_legacy_tasks_runs_end_to_end(tmp_path: Path) -> None:
     cfg, _entry = _bootstrap(tmp_path)
     yaml_path = tmp_path / "repo" / ".cod-doc" / "tasks.yaml"

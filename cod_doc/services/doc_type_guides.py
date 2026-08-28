@@ -179,6 +179,94 @@ DOC_TYPE_GUIDES: dict[str, str] = {
         "REDIRECT documents are stubs pointing at the canonical home of a topic.\n"
         "Body must be ≤ 3 sentences: 'See <doc_key> for ...'. No other content."
     ),
+    # ── ADO-015: corpus types the importer used to flatten into module-spec ──
+    "design": (
+        "DESIGN documents work out HOW one feature will be built, before it is built.\n"
+        "Sections:\n"
+        "  1. Problem — what must become possible, and for whom\n"
+        "  2. Proposed design — the mechanism, with a ```mermaid``` diagram\n"
+        "  3. Interfaces touched — signatures / endpoints / schema deltas\n"
+        "  4. Alternatives rejected — one line each, with the reason\n"
+        "  5. Rollout and migration\n"
+        "  6. Open questions\n"
+        "STRICT RULES:\n"
+        "  - Present tense, concrete: 'the importer records …', not 'we could record …'.\n"
+        "  - A design doc that could describe any feature has failed."
+    ),
+    "audit": (
+        "AUDIT documents record a systematic inspection of code / docs / process.\n"
+        "Sections:\n"
+        "  1. Scope and method — what was inspected, how, at which revision\n"
+        "  2. Findings — numbered (F1, F2 …), each: evidence → impact → severity\n"
+        "  3. Summary table — finding / severity / owner / follow-up task ID\n"
+        "  4. What was checked and found clean (so the next audit can skip it)\n"
+        "STRICT RULES:\n"
+        "  - Every finding cites a file:line, a command output, or a query result.\n"
+        "  - No finding without a stated impact — 'looks odd' is not a finding."
+    ),
+    "audit-report": (
+        "AUDIT-REPORT documents close out an audit or a plan section.\n"
+        "Sections:\n"
+        "  1. What was audited and when (revision / commit sha)\n"
+        "  2. Result — verdict in one sentence\n"
+        "  3. Findings addressed — table: finding / resolution / commit or task ID\n"
+        "  4. Findings deferred — with the task that carries them\n"
+        "  5. Residual risk\n"
+        "STRICT RULES: written after the fact, past tense; no open TODOs in the body."
+    ),
+    "journal": (
+        "JOURNAL documents are a running log kept by a person or an agent.\n"
+        "Sections: chronological entries under ### YYYY-MM-DD headers.\n"
+        "Each entry: what happened, what was decided, what is next.\n"
+        "STRICT RULES:\n"
+        "  - Append; never rewrite an earlier entry (correct it in a new one).\n"
+        "  - A journal may be informal, but every entry must be dated."
+    ),
+    "plan": (
+        "PLAN documents state what will be done, in what order, by when.\n"
+        "Sections:\n"
+        "  1. Objective — the outcome, not the activity\n"
+        "  2. Steps — ordered, each with an owner and an exit criterion\n"
+        "  3. Dependencies and sequencing constraints\n"
+        "  4. Risks and mitigations\n"
+        "  5. Definition of done\n"
+        "STRICT RULES: ISO dates; every step testably done or not done."
+    ),
+    "analysis": (
+        "ANALYSIS documents examine data or behaviour and draw a conclusion.\n"
+        "Sections:\n"
+        "  1. Question — what is being decided or explained\n"
+        "  2. Data / evidence — where it came from, how it was gathered\n"
+        "  3. Method — how the numbers were produced (reproducible)\n"
+        "  4. Results — tables and charts, with units\n"
+        "  5. Interpretation — what follows, and what does NOT follow\n"
+        "  6. Limitations and threats to validity\n"
+        "STRICT RULES: no conclusion without the evidence that supports it."
+    ),
+    "research": (
+        "RESEARCH documents survey an unfamiliar area before a decision is made.\n"
+        "Sections:\n"
+        "  1. Question and why it is open\n"
+        "  2. Prior art / options surveyed — table: option / maturity / fit / cost\n"
+        "  3. Experiments run, if any — setup and outcome\n"
+        "  4. Findings\n"
+        "  5. Recommendation, or an explicit 'not yet decided'\n"
+        "  6. Sources — links, versions, dates\n"
+        "STRICT RULES: cite sources with dates; distinguish measured from claimed."
+    ),
+    "capability": (
+        "CAPABILITY documents describe one thing the product can DO, end to end.\n"
+        "Sections:\n"
+        "  1. Capability statement — 'The system can <verb> <object>'\n"
+        "  2. Who uses it and why\n"
+        "  3. Surfaces — CLI / MCP / API / UI entry points, with exact names\n"
+        "  4. Mechanism — what happens underneath (link to module-spec for detail)\n"
+        "  5. Limits and known gaps\n"
+        "  6. Related capabilities\n"
+        "STRICT RULES:\n"
+        "  - Organised by what the user can do, NOT by module layout.\n"
+        "  - Name every surface exactly (`cod-doc doc import`, `doc_export`)."
+    ),
 }
 
 

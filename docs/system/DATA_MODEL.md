@@ -81,8 +81,8 @@ CREATE TABLE document (
   title            TEXT    NOT NULL,
   preamble         TEXT    NOT NULL DEFAULT '',  -- текст до первого H2 (короткое описание/intro)
   frontmatter_json TEXT    NOT NULL DEFAULT '{}',
-  frontmatter_raw  TEXT,                         -- ADO-010: YAML-блок как в файле; '' = файл был без frontmatter, NULL = документ заведён в БД
-  title_in_body    INTEGER,                      -- ADO-010: был ли в источнике '# H1' (NULL = неизвестно → H1 рендерится)
+  frontmatter_raw  TEXT,                         -- ADO-010: YAML-блок как в файле; '' = файл был без frontmatter, NULL = документ заведён в БД ЛИБО строка создана до миграции 0025 (ADO-022)
+  title_in_body    INTEGER,                      -- ADO-010: был ли в источнике '# H1' (NULL = неизвестно → H1 рендерится; см. ADO-022)
   projection_hash  TEXT,                         -- hash последнего export
   created          TEXT    NOT NULL,
   last_updated     TEXT    NOT NULL,
@@ -92,6 +92,16 @@ CREATE TABLE document (
 CREATE INDEX ix_document_type ON document(type, status);
 CREATE INDEX ix_document_sensitivity ON document(sensitivity);
 ```
+
+> **ADO-022.** У пары `frontmatter_raw` / `title_in_body` два разных источника
+> NULL, и различить их по самой строке нельзя: документ, заведённый в БД
+> (`doc create`), и документ, импортированный до миграции
+> `0025_projection_fidelity`. Для первого NULL — правда, для второго — потеря
+> данных: рендер пере-сериализует frontmatter из `frontmatter_json` и дописывает
+> `# H1`, которого в источнике не было. Поэтому `doc export` отказывается
+> переписывать такой файл, а лечится это `cod-doc doc backfill-projection`
+> (MCP: `doc_backfill_projection`) — восстановлением ровно этих двух колонок с
+> диска, без отката метаданных, которые меняли в БД.
 
 ### 3.3 `Section`
 

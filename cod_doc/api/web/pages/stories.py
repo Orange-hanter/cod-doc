@@ -206,6 +206,16 @@ def stories_list(
         "execution-log": 12,
         "task-section": 13,
         "redirect": 14,
+        # ADO-015: corpus types. Placed by how much they help story generation —
+        # `capability` sits high because it states what the product can do.
+        "capability": 4,
+        "design": 6,
+        "research": 11,
+        "analysis": 11,
+        "plan": 12,
+        "audit": 15,
+        "audit-report": 16,
+        "journal": 17,
     }
     _type_roles = {
         "vision": "Strategic intent — purpose, audience, goals.",
@@ -222,6 +232,14 @@ def stories_list(
         "execution-log": "Chronological journal of shipped work.",
         "task-section": "Coherent groups of implementation tasks.",
         "redirect": "Stubs pointing at canonical homes.",
+        "capability": "What the product can do, end to end, per surface.",
+        "design": "How one feature will be built, before it is built.",
+        "research": "Surveys of an unfamiliar area ahead of a decision.",
+        "analysis": "Evidence examined, with the conclusion it supports.",
+        "plan": "What will be done, in what order, by when.",
+        "audit": "Systematic inspections and their findings.",
+        "audit-report": "Close-out of an audit or a plan section.",
+        "journal": "Dated running log kept by a person or an agent.",
     }
     by_type: dict[str, list[dict[str, Any]]] = {}
     for context_doc in context_docs:

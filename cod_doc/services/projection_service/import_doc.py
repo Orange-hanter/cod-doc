@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
-    from cod_doc.domain.entities import Document
+    from cod_doc.services.import_service import ImportReport
 
 
 def import_document(
@@ -29,10 +29,14 @@ def import_document(
     *,
     author: str,
     root_path: Path,
-) -> Document | None:
+) -> ImportReport | None:
     """Read a projection file and apply its markdown/frontmatter to the DB.
 
     If no Document with this path exists in the project, returns `None`.
+
+    Returns an :class:`~cod_doc.services.import_service.ImportReport`:
+    `report.document` is the refreshed row, `report.warnings` lists every
+    frontmatter value the enums could not store as written (ADO-015).
 
     The accepted file hash is stored as `content_sha256_head`, while
     `projection_hash` is updated to the DB-rendered markdown hash after import.
@@ -53,7 +57,7 @@ def import_document(
 
     from cod_doc.services import import_service
 
-    doc, _created = import_service.import_or_update_markdown(
+    report = import_service.import_or_update_markdown(
         session,
         project_id=project_id,
         doc_key=model.doc_key,
@@ -64,7 +68,8 @@ def import_document(
         source_sha256=file_hash,
     )
     session.flush()
-    assert doc.row_id is not None
-    refreshed = session.get(DocumentModel, doc.row_id)
+    assert report.document.row_id is not None
+    refreshed = session.get(DocumentModel, report.document.row_id)
     assert refreshed is not None
-    return DocumentRepository(session)._to_domain(refreshed)
+    report.document = DocumentRepository(session)._to_domain(refreshed)
+    return report

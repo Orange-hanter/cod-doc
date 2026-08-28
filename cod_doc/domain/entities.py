@@ -11,6 +11,24 @@ if TYPE_CHECKING:
 
 
 class DocumentType(StrEnum):
+    """Catalogue of document types cod-doc can store.
+
+    Two groups, one enum:
+
+    - **Native (cod-doc's own)** — the shapes the generator, the plan exporter
+      and the ADR tooling produce themselves.
+    - **Corpus types (ADO-015 / RFC 22 §4)** — shapes that already exist in
+      real repositories cod-doc imports: this repo's own ``capability`` and
+      ``audit-report`` documents, plus the pilots' ``design`` / ``journal`` /
+      ``plan`` / ``analysis`` / ``research`` / ``audit``. Before ADO-015 an
+      import coerced every one of them into ``module-spec`` in silence.
+
+    ``document.type`` is ``VARCHAR(32)`` without a CHECK constraint or a
+    database ENUM, so adding a value here needs no schema migration — only the
+    data migration ``0026_document_type_recoercion``, which repairs rows that
+    were coerced before the value existed.
+    """
+
     MODULE_SPEC = "module-spec"
     MODULE_SUBDOC = "module-subdoc"
     EXECUTION_PLAN = "execution-plan"
@@ -24,6 +42,15 @@ class DocumentType(StrEnum):
     DECISION = "decision"
     OPEN_QUESTION = "open-question"
     REDIRECT = "redirect"
+    # ADO-015: types found in the corpus, previously coerced to module-spec.
+    DESIGN = "design"
+    AUDIT = "audit"
+    AUDIT_REPORT = "audit-report"
+    JOURNAL = "journal"
+    PLAN = "plan"
+    ANALYSIS = "analysis"
+    RESEARCH = "research"
+    CAPABILITY = "capability"
 
 
 class DocumentStatus(StrEnum):

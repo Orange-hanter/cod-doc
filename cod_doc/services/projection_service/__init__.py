@@ -21,6 +21,30 @@ Public API:
 - `detect_drift` — compare DB / projection_hash / file hashes.
 - `import_document` — apply markdown/frontmatter changes from a tracked file
   back to the DB and accept the file hash as the current import baseline.
+  Returns an `ImportReport` whose `warnings` name every frontmatter value the
+  enums could not store as written (ADO-015) — never a silent substitution.
+- `backfill_projection_fidelity` — ADO-022 repair for databases older than
+  migration `0025_projection_fidelity`.
+
+**Projection fidelity (`frontmatter_raw` / `title_in_body`).** These two
+columns remember the *shape* of the imported file: the verbatim YAML block and
+whether the source carried an `# H1`. NULL means "no shape recorded" — which is
+the honest state of a `doc create`-authored document, but also the state of
+every row written before migration `0025_projection_fidelity` (ADO-022). Since
+the renderer treats NULL as licence to rebuild the frontmatter from
+`frontmatter_json`, exporting such a legacy row rewrites the file's metadata.
+`export_document` therefore refuses that write, and
+`backfill_projection_fidelity` (CLI: `cod-doc doc backfill-projection`)
+recovers the columns from disk.
+
+**Pending type re-coercion (ADO-015).** The same shape of hazard one migration
+later: `document.type` may hold a value an older build coerced because its
+`DocumentType` had no such member (`capability`, `audit-report`, …). Widening
+the enum is what *disarms* the protection that used to keep those files
+verbatim, so `export_document` also refuses to rewrite a row whose
+`frontmatter_json` names a now-storable type the row does not have — the exact
+set migration `0026_document_type_recoercion` repairs. The cure is applying the
+migration (`cod-doc project init <slug>`), not a service call.
 
 Caller owns the transaction.
 """
@@ -32,10 +56,14 @@ from ._types import (
     DriftStatus,
     ExportGuardError,
     ExportResult,
+    FidelityBackfillAction,
+    FidelityBackfillItem,
+    FidelityBackfillReport,
     PathEscapeError,
     ProjectDriftItem,
     ProjectDriftReport,
 )
+from .backfill import backfill_projection_fidelity
 from .drift import detect_drift, detect_project_drift
 from .export import export_document
 from .import_doc import import_document
@@ -46,9 +74,13 @@ __all__ = [
     "DriftStatus",
     "ExportGuardError",
     "ExportResult",
+    "FidelityBackfillAction",
+    "FidelityBackfillItem",
+    "FidelityBackfillReport",
     "PathEscapeError",
     "ProjectDriftItem",
     "ProjectDriftReport",
+    "backfill_projection_fidelity",
     "detect_drift",
     "detect_project_drift",
     "export_document",
