@@ -212,7 +212,16 @@ def project_init_db(request: Request, slug: str) -> Response:
 _DOC_EXTS = {".md", ".rst", ".txt"}
 _IMPORT_SCAN_LIMIT = 40
 _IMPORT_FILE_BYTES = 4000
-_IMPORT_SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".cod-doc", "dist", "build"}
+_IMPORT_SKIP_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    ".cod-doc",
+    "dist",
+    "build",
+}
 
 
 def _walk_doc_files(root: Path) -> list[tuple[str, str]]:

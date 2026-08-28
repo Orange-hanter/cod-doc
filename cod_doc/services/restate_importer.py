@@ -52,6 +52,7 @@ _DOC_EXTENSIONS = {".md", ".rst", ".txt", ".markdown"}
 _SKIP_DIRS = {
     ".git",
     ".venv",
+    "venv",
     "node_modules",
     "__pycache__",
     ".cod-doc",

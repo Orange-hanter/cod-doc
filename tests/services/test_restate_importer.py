@@ -49,6 +49,11 @@ def test_walk_doc_files_picks_md_skips_dotdirs(tmp_path: Path) -> None:
     (tmp_path / "node_modules" / "x.md").write_text("ignored")
     (tmp_path / "cod_doc.egg-info").mkdir()
     (tmp_path / "cod_doc.egg-info" / "PKG-INFO.md").write_text("ignored")
+    # ADO-032: venv-окружения без точки тоже пропускаем (friction #9 Orakul).
+    (tmp_path / "venv").mkdir()
+    (tmp_path / "venv" / "site.md").write_text("ignored")
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / ".venv" / "site.md").write_text("ignored")
 
     out = restate_importer._walk_doc_files(tmp_path)
     rels = {p.relative_to(tmp_path).as_posix() for p in out}
@@ -57,6 +62,8 @@ def test_walk_doc_files_picks_md_skips_dotdirs(tmp_path: Path) -> None:
     assert ".git/HEAD.md" not in rels
     assert "node_modules/x.md" not in rels
     assert "cod_doc.egg-info/PKG-INFO.md" not in rels
+    assert "venv/site.md" not in rels
+    assert ".venv/site.md" not in rels
     assert "Docs/image.png" not in rels
 
 
