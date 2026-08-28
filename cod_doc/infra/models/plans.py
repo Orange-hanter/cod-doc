@@ -82,13 +82,14 @@ class TaskModel(Base):
         Index("ix_task_status", "status", "priority"),
         Index("ix_task_plan", "plan_id", "section_id"),
         Index("ix_task_project_normtitle", "project_id", "normalized_title"),
+        UniqueConstraint("project_id", "task_id", name="uq_task_project_task_id"),
     )
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False
     )
-    task_id: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    task_id: Mapped[str] = mapped_column(String(32), nullable=False)
     plan_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("plan.row_id", ondelete="CASCADE"), nullable=False
     )
