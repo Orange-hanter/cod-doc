@@ -132,8 +132,8 @@ def _build_task_card(
         StoryLinkModel,
         UserStoryModel,
     )
-    from cod_doc.mcp.tools._db import task_to_dict
     from cod_doc.services import activity_service, context_service
+    from cod_doc.services.serializers import task_to_dict
 
     # Build base context via existing L1 context_service.
     ctx = context_service.context_get(
@@ -273,8 +273,8 @@ def get(
         }
 
     from cod_doc.infra.repositories import PlanRepository
-    from cod_doc.mcp.tools._db import task_to_dict
     from cod_doc.services import doc_service
+    from cod_doc.services.serializers import task_to_dict
 
     if what == "full_doc_body":
         if not ref:
