@@ -122,8 +122,9 @@ def get_active_profile() -> str:
     default=os.environ.get("COD_DOC_PROFILE", "agent"),
     show_default=True,
     help="Tool-surface profile (default: agent — cycle-5). agent=6 task-centric "
-    "tools for AI workflows; minimal=~18 cold-start curated CRUD; "
-    "standard=DB-only; full=all including legacy agent tools.",
+    "tools for AI workflows; minimal=20 cold-start curated CRUD; "
+    "standard=107 DB-backed tools without legacy; full=111 including legacy "
+    "agent tools. Counts enforced by tests/test_server_profiles.py.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")
 @click.option("--log-format", default=None, envvar="LOG_FORMAT")

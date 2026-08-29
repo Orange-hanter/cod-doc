@@ -1,22 +1,25 @@
 """PCA-951 / AGT-001: MCP server profiles — control which tools are exposed.
 
-Four profiles:
+Four profiles (counts validated by tests/test_server_profiles.py::
+test_profile_counts_match_documented_values — keep them in sync with
+AGENTS.md §5.9, server.py --profile help, docs/mcp-integration.md):
 
-- ``agent`` (cycle-5) — 6-tool task-centric surface for AI agents. Each
-  call returns a self-sufficient payload (task card with inlined skills,
-  related docs, navigation) so the agent doesn't need 5-10 round-trips
-  to collect context. The recommended profile for AI-driven workflows.
-- ``minimal`` — ~18-tool cold-start surface for non-agent integrations
+- ``agent`` (cycle-5, **default**) — 6-tool task-centric surface for AI
+  agents. Each call returns a self-sufficient payload (task card with
+  inlined skills, related docs, navigation) so the agent doesn't need
+  5-10 round-trips to collect context. The recommended profile for
+  AI-driven workflows.
+- ``minimal`` — 20-tool cold-start surface for non-agent integrations
   that still want a curated subset of CRUD tools.
-- ``standard`` (current default) — full DB-backed surface; drops only
-  the remaining legacy YAML-backed agent tools (run_agent_once,
-  get_agent_context, …). The legacy YAML CRUD tools were removed in
-  STB-002 (2026-06-08) once the DB became the source of truth.
-- ``full`` — every tool the server registers, including the remaining
+- ``standard`` — 107-tool DB-backed surface; drops only the remaining
+  legacy YAML-backed agent tools (run_agent_once, get_agent_context, …).
+  The legacy YAML CRUD tools were removed in STB-002 (2026-06-08) once
+  the DB became the source of truth.
+- ``full`` — all 111 tools the server registers, including the remaining
   legacy agent tools. For admin / migration / debugging sessions.
 
 Active profile is chosen at server start via CLI ``--profile`` or env
-``COD_DOC_PROFILE``.
+``COD_DOC_PROFILE`` (default: ``agent``).
 """
 
 from __future__ import annotations

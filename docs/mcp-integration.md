@@ -53,8 +53,9 @@ MCP (Model Context Protocol) — стандартный протокол для 
 
 ```bash
 cod-doc-mcp                              # agent (default cycle-5)
-cod-doc-mcp --profile standard           # CRUD ~85 tools (без legacy)
-cod-doc-mcp --profile full               # все 110 (включая legacy)
+cod-doc-mcp --profile minimal            # 20 cold-start tools
+cod-doc-mcp --profile standard           # 107 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 111 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 ```
 

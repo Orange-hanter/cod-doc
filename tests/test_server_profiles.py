@@ -108,6 +108,28 @@ def test_keep_tool_pure_logic() -> None:
     assert keep_tool("plan_audit", "standard") is True
 
 
+# ADO-052: documented counts. When this test fails after adding/removing a
+# tool, update the numbers here AND in: AGENTS.md §5.9, cod_doc/mcp/profiles.py
+# docstring, cod_doc/mcp/server.py --profile help, docs/mcp-integration.md.
+EXPECTED_PROFILE_COUNTS = {
+    "agent": 6,
+    "minimal": 20,
+    "standard": 107,
+    "full": 111,
+}
+
+
+def test_profile_counts_match_documented_values() -> None:
+    """Smoke: registry ↔ profile counts must match what the docs promise."""
+    names = list(mcp_server.mcp._tool_manager._tools)
+    actual = {p: sum(1 for n in names if keep_tool(n, p)) for p in EXPECTED_PROFILE_COUNTS}
+    assert actual == EXPECTED_PROFILE_COUNTS, (
+        f"profile counts drifted: {actual} — update EXPECTED_PROFILE_COUNTS and the docs "
+        "(AGENTS.md §5.9, profiles.py docstring, server.py --profile help, "
+        "docs/mcp-integration.md)"
+    )
+
+
 SYM_006D_TOOLS = {
     "finding_list",
     "finding_get",
