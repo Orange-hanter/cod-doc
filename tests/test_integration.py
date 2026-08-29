@@ -12,7 +12,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import TYPE_CHECKING
+import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -21,8 +22,7 @@ from fastapi.testclient import TestClient
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 
-if TYPE_CHECKING:
-    from pathlib import Path
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,27 @@ def app_client(tmp_path: Path, tmp_project):
 
     # Инициализировать проект
     Project(entry).init()
+
+    # ADO-037: tasks-эндпоинты переведены на DB (task_service) — поднимаем
+    # схему state.db и регистрируем проект в ней.
+    from cod_doc.infra.db import make_engine, make_session_factory
+    from cod_doc.infra.models import ProjectModel
+
+    state_db = entry.cod_doc_dir / "state.db"
+    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
+    subprocess.run(
+        [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"],
+        cwd=REPO_ROOT,
+        check=True,
+        env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{state_db}"},
+        capture_output=True,
+    )
+    engine = make_engine(f"sqlite:///{state_db}")
+    factory = make_session_factory(engine)
+    with factory() as session:
+        session.add(ProjectModel(slug=entry.name, title=entry.name, root_path=str(entry.path)))
+        session.commit()
+    engine.dispose()
 
     from cod_doc.api.server import app
 

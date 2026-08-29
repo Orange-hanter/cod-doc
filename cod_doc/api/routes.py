@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from cod_doc.agent.orchestrator import Orchestrator
+from cod_doc.api import legacy_tasks
 from cod_doc.api.deps import (
     daemon_is_running,
     ensure_loopback_client,
@@ -20,10 +21,11 @@ from cod_doc.api.deps import (
 )
 from cod_doc.api.schemas import ConfigUpdate, ProjectCreate, TaskCreate
 from cod_doc.config import ProjectEntry
-from cod_doc.core.project import Project, Task, TaskStatus
+from cod_doc.core.project import Project
+from cod_doc.domain.entities import TaskStatus, TaskType
 from cod_doc.infra.db import make_session_factory
 from cod_doc.infra.repositories import ProjectRepository
-from cod_doc.services import project_health_service
+from cod_doc.services import project_health_service, task_service
 
 logger = logging.getLogger("cod_doc.api")
 
@@ -134,30 +136,116 @@ def read_project_health(name: str) -> dict[str, Any]:
 
 
 # ── Tasks ─────────────────────────────────────────────────────────────────────
+# ADO-037: legacy tasks-эндпоинты переведены с YAML-пути (core/project.py)
+# на task_service — Revision + activity event + статус-машина. Проект без
+# инициализированной state.db получает 409.
+
+_SUPPORTED_PATCH_FIELDS = frozenset({"status", "result"})
+
+
+def _legacy_session(name: str) -> tuple[Any, int]:
+    """(session, project_id) для DB-backed legacy-эндпоинтов или HTTP-ошибка."""
+    engine = get_engine_for_slug(name)
+    if engine is None:
+        raise HTTPException(
+            409,
+            f"Проект '{name}' не инициализирован в БД "
+            "(нет .cod-doc/state.db — выполни alembic-миграцию проекта)",
+        )
+    factory = make_session_factory(engine)
+    session = factory()
+    db_project = ProjectRepository(session).get_by_slug(name)
+    if db_project is None or db_project.row_id is None:
+        session.close()
+        raise HTTPException(404, f"Проект не найден в БД: {name}")
+    return session, db_project.row_id
 
 
 @router.get("/projects/{name}/tasks")
 def list_tasks(name: str, status: str | None = None) -> list[dict[str, Any]]:
-    proj = get_project(name)
-    s = TaskStatus(status) if status else None
-    return [t.to_dict() for t in proj.get_tasks(s)]
+    session, project_id = _legacy_session(name)
+    try:
+        try:
+            status_filter = TaskStatus(status) if status else None
+        except ValueError:
+            raise HTTPException(400, f"Неизвестный статус: {status}") from None
+        tasks = task_service.list_for_project(session, project_id, status=status_filter)
+        tasks.sort(key=lambda t: legacy_tasks.priority_to_int(t.priority))
+        return [legacy_tasks.to_legacy_dict(t) for t in tasks]
+    finally:
+        session.close()
 
 
 @router.post("/projects/{name}/tasks", status_code=201)
 def create_task(name: str, data: TaskCreate) -> dict[str, Any]:
-    proj = get_project(name)
-    task = Task(**data.model_dump())
-    proj.add_task(task)
-    return task.to_dict()
+    session, project_id = _legacy_session(name)
+    try:
+        plan_id, section_id = legacy_tasks.ensure_legacy_plan(session, project_id)
+        task = task_service.create(
+            session,
+            project_id=project_id,
+            plan_id=plan_id,
+            section_id=section_id,
+            title=data.title,
+            type=TaskType.FEATURE,
+            priority=legacy_tasks.priority_from_int(data.priority),
+            author=legacy_tasks.AUTHOR,
+            id_prefix=legacy_tasks.LEGACY_ID_PREFIX,
+            description=data.description or None,
+        )
+        session.commit()
+        return legacy_tasks.to_legacy_dict(task)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 @router.patch("/projects/{name}/tasks/{task_id}")
 def update_task(name: str, task_id: str, body: dict[str, Any]) -> dict[str, Any]:
-    proj = get_project(name)
-    task = proj.update_task(task_id, **body)
-    if not task:
-        raise HTTPException(404, f"Задача не найдена: {task_id}")
-    return task.to_dict()
+    unknown = set(body) - _SUPPORTED_PATCH_FIELDS
+    if unknown:
+        raise HTTPException(422, f"Неподдерживаемые поля: {', '.join(sorted(unknown))}")
+    session, _project_id = _legacy_session(name)
+    try:
+        if task_service.get(session, task_id) is None:
+            raise HTTPException(404, f"Задача не найдена: {task_id}")
+        if "result" in body:
+            task_service.log_progress(
+                session, task_id=task_id, message=str(body["result"]), author=legacy_tasks.AUTHOR
+            )
+        if "status" in body:
+            new_status = str(body["status"])
+            try:
+                if new_status == TaskStatus.DONE.value:
+                    task_service.complete(
+                        session,
+                        task_id=task_id,
+                        author=legacy_tasks.AUTHOR,
+                        reason=str(body.get("result") or "via legacy REST"),
+                    )
+                else:
+                    task_service.update_status(
+                        session,
+                        task_id=task_id,
+                        new_status=TaskStatus(new_status),
+                        author=legacy_tasks.AUTHOR,
+                        strict=True,
+                    )
+            except ValueError as exc:
+                # StatusTransitionError / TaskAlreadyDoneError / TaskBlockedError
+                # / неизвестный статус — всё это конфликт с контрактом машины.
+                raise HTTPException(409, str(exc)) from exc
+        session.commit()
+        task = task_service.get(session, task_id)
+        assert task is not None
+        return legacy_tasks.to_legacy_dict(task)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
