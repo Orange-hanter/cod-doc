@@ -6,11 +6,12 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from cod_doc.agent.orchestrator import Orchestrator
 from cod_doc.api.deps import (
     daemon_is_running,
+    ensure_loopback_client,
     get_config,
     get_engine_for_slug,
     get_project,
@@ -47,7 +48,8 @@ def read_config() -> dict[str, Any]:
 
 
 @router.patch("/config")
-def update_config(update: ConfigUpdate) -> dict[str, Any]:
+def update_config(update: ConfigUpdate, request: Request) -> dict[str, Any]:
+    ensure_loopback_client(request)  # ADO-035: endpoint пишет LLM-ключ
     cfg = get_config()
     for field, value in update.model_dump(exclude_none=True).items():
         setattr(cfg, field, value)
