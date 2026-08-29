@@ -234,6 +234,12 @@ class Document:
     owner: str | None = None
     preamble: str = ""
     frontmatter: dict[str, Any] = field(default_factory=dict)
+    # ADO-010/ADO-036: verbatim YAML frontmatter исходного файла (без ---),
+    # был ли в теле `# H1`, и sha256 принятого файла — фиделность проекций.
+    # NULL для DB-authored документов.
+    frontmatter_raw: str | None = None
+    title_in_body: bool | None = None
+    content_sha256_head: str | None = None
     projection_hash: str | None = None
     created: datetime | None = None
     last_updated: datetime | None = None

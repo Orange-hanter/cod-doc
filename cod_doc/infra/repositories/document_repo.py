@@ -34,6 +34,9 @@ class DocumentRepository(BaseRepository[Document, DocumentModel]):
             title=model.title,
             preamble=model.preamble,
             frontmatter=dict(model.frontmatter_json or {}),
+            frontmatter_raw=model.frontmatter_raw,
+            title_in_body=model.title_in_body,
+            content_sha256_head=model.content_sha256_head,
             projection_hash=model.projection_hash,
             created=model.created,
             last_updated=model.last_updated,
@@ -53,6 +56,9 @@ class DocumentRepository(BaseRepository[Document, DocumentModel]):
             "title": entity.title,
             "preamble": entity.preamble,
             "frontmatter_json": entity.frontmatter,
+            "frontmatter_raw": entity.frontmatter_raw,
+            "title_in_body": entity.title_in_body,
+            "content_sha256_head": entity.content_sha256_head,
             "projection_hash": entity.projection_hash,
         }
         if entity.row_id is not None:
