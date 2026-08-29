@@ -196,9 +196,11 @@ ai-review, кросс-проектность). Полный план:
 
 ## Три ближайших милстоуна
 
-> **Активный спринт — H1 (2026-08-29 → 2026-09-05):**
+> **Спринт H1 закрыт досрочно 2026-08-29:**
 > [sprint-2026-08-29-hardening-m3-kickoff.md](sprint-2026-08-29-hardening-m3-kickoff.md)
-> — hardening по contract-аудиту (ADO-035…055) + M3-кикофф (аналитика).
+> — audit [2026-09-05-sprint-h1-hardening.md](../audit/2026-09-05-sprint-h1-hardening.md).
+> Следующий спринт — M3 по остаткам friction-лога (#8/#10/#11/#14),
+> ещё не оформлен.
 > M2 закрыт досрочно 2026-08-29: [sprint-2026-08-28-m2-feedback-loop.md](sprint-2026-08-28-m2-feedback-loop.md)
 > — audit [2026-09-11-sprint-m2-feedback-loop.md](../audit/2026-09-11-sprint-m2-feedback-loop.md).
 > Предыдущие спринты:

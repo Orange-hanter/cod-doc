@@ -1,12 +1,14 @@
 ---
 type: sprint-plan
 scope: adoption-2026-08
-status: active
+status: completed
 source_of_truth: false
 canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
 created: 2026-08-29
 last_updated: 2026-08-29
+closed: 2026-08-29 (досрочно)
+audit: ../audit/2026-09-05-sprint-h1-hardening.md
 audience: [next-session-agent, contributors]
 related_docs:
   - ROADMAP.md
@@ -148,23 +150,23 @@ ADO-042…051, SYM-009/010/011, STB-023, ADO-014, реализация фичи 
 Каждый пункт проверяем одной командой/одним артефактом — не «сделано», а
 «доказано».
 
-- [ ] Каждая bug-задача G1/G2 имеет **регрессионный тест, который падает на
+- [x] Каждая bug-задача G1/G2 имеет **регрессионный тест, который падает на
       main без фикса** (вывод `pytest <test>` на коммите до фикса — в
       task-doc 'verification').
-- [ ] ADO-037: решение в task-doc 'design' до кода (см. контракт выше).
-- [ ] ADO-056 + отбраковка RFC 16–21 в `proposals/README.md` (закрывает
+- [x] ADO-037: решение в task-doc 'design' до кода (см. контракт выше).
+- [x] ADO-056 + отбраковка RFC 16–21 в `proposals/README.md` (закрывает
       ADO-013).
 - [x] SYM-005/006: статусы в БД совпадают с кодом (finding_tools.py и
       миграции 0027/0028 в main ↔ статусы задач) — сверка 2026-08-29, обе
       done, gap `cod-doc ctx` → ADO-057.
-- [ ] Все задачи спринта прошли `task_checkout` → `task_complete` с
+- [x] Все задачи спринта прошли `task_checkout` → `task_complete` с
       `commit_sha`; в истории нет «висячих» in-progress.
-- [ ] Каждая правка трекаемого `.md` закрыта `doc import` в том же коммите;
-      финальный `doc drift --all` — 100% in_sync.
-- [ ] `ruff check` + `ruff format --check` + `mypy cod_doc/` +
+- [x] Каждая правка трекаемого `.md` закрыта `doc import` в том же коммите;
+      финальный `doc drift --all` — 100% in_sync (126/126).
+- [x] `ruff check` + `ruff format --check` + `mypy cod_doc/` +
       `pytest tests/ --timeout=120` — зелёные на последнем коммите спринта.
-- [ ] Ratchet не вырос: `pyproject.toml [per-file-ignores]` — строк не
+- [x] Ratchet не вырос: `pyproject.toml [per-file-ignores]` — строк не
       больше, чем на старте; новых `# noqa`/`# type: ignore` без
       комментария-обоснования — ноль (grep-проверка по диффу спринта).
-- [ ] Audit-отчёт `docs/system/audit/2026-09-05-sprint-h1-hardening.md` —
+- [x] Audit-отчёт `docs/system/audit/2026-09-05-sprint-h1-hardening.md` —
       status active, в БД, со ссылками на все коммиты спринта.
