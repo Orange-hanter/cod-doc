@@ -33,6 +33,20 @@ def _unified_diff(current: str, projected: str, *, path: Path) -> str:
     )
 
 
+def _audience_target(canonical: Path, audience: str) -> Path:
+    """Path of the audience-specific export, derived from the canonical one.
+
+    `overview.md` with audience `public` → `overview.public.md`. The suffix
+    keeps the redacted artifact next to the canonical file while leaving the
+    canonical file (and its `projection_hash`) untouched (ADO-053): neither
+    `detect_drift` nor a later `doc import` ever sees the redacted body.
+    Characters outside `[A-Za-z0-9_-]` are flattened to `-` so an exotic
+    audience value cannot escape the directory or break the name.
+    """
+    safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in audience)
+    return canonical.with_name(f"{canonical.stem}.{safe}{canonical.suffix}")
+
+
 def _assert_file_provenance(model: DocumentModel, target: Path, file_hash: str) -> None:
     """Refuse to overwrite content cod-doc never wrote or accepted (ADO-010, F7).
 
@@ -200,10 +214,11 @@ def export_document(
     DB content (no changes since last export), unless `force=True`.
 
     `audience` (COD-025 / SD-002) controls redaction in the rendered body —
-    see `render_markdown`. The `projection_hash` is only updated for the
-    canonical (audience=None) export, so an audience-specific export does NOT
-    overwrite the stored hash. This keeps `detect_drift` consistent against
-    the canonical projection.
+    see `render_markdown`. An audience-specific export writes to a derived
+    path (`<stem>.<audience><suffix>`, see `_audience_target`) instead of the
+    canonical file and never updates `projection_hash` (ADO-053), so neither
+    `detect_drift` nor a later `doc import` of the canonical path ever sees
+    the redacted body.
 
     Guards, all lifted by `force_write=True`:
 
@@ -217,6 +232,11 @@ def export_document(
       column is an old build's silent coercion — may not have its frontmatter
       rewritten either; apply the migration first.
 
+    The provenance/fidelity/recoercion guards protect the *canonical*
+    projection, so they only apply to `audience=None` exports — an audience
+    artifact is derived, never imported back, and has no DB-remembered hash
+    to compare against. The own-checkout guard applies to every write.
+
     `dry_run=True` renders and diffs without touching disk or DB, and never
     trips a guard: the result carries the unified diff in `ExportResult.diff`.
 
@@ -224,6 +244,8 @@ def export_document(
     """
     model = _require_doc_model(session, document_id)
     target = _safe_target(root_path, model.path)
+    if audience is not None:
+        target = _audience_target(target, audience)
     content = render_markdown(session, document_id, audience=audience)
     content_hash = _sha256(content)
     exists = target.exists()
@@ -249,7 +271,7 @@ def export_document(
     if not force_write:
         if own_checkout_only:
             _assert_own_checkout(root_path)
-        if exists:
+        if audience is None and exists:
             file_hash = _sha256(current)
             _assert_file_provenance(model, target, file_hash)
             _assert_projection_fidelity_known(

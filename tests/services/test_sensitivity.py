@@ -348,12 +348,69 @@ def test_export_with_public_audience_does_not_overwrite_projection_hash(  # type
         # Audience export to a sibling directory must not change the hash.
         public_dir = tmp_path / "public"
         public_dir.mkdir()
-        proj.export_document(session, did, root_path=public_dir, audience="public")
+        result = proj.export_document(session, did, root_path=public_dir, audience="public")
         assert session.get(DocumentModel, did).projection_hash == canonical_hash
-        # And the public file must NOT contain the secret body.
-        from cod_doc.infra.models import DocumentModel as _DM
-
-        path = session.get(_DM, did).path
-        public_file = (public_dir / path).read_text(encoding="utf-8")
+        # And the public file must NOT contain the secret body. ADO-053: it
+        # lives at the audience-suffixed path, not the canonical one.
+        public_file = result.path.read_text(encoding="utf-8")
+        assert result.path.name.endswith(".public.md")
         assert "secret-stuff" not in public_file
         assert "content redacted" in public_file
+
+
+def test_audience_export_same_root_keeps_canonical_and_drift_in_sync(  # type: ignore[no-untyped-def]
+    engine_with_schema, tmp_path: Path
+) -> None:
+    """ADO-053: audience export into the SAME root must not touch the canonical file.
+
+    Pre-fix the redacted body overwrote `<root>/<doc.path>`, so drift flipped
+    to edited_in_place and a re-import pulled the redacted body into the DB.
+    """
+    from cod_doc.infra.models import DocumentModel
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        did = _create_doc(session, pid, sensitivity=Sensitivity.CONFIDENTIAL, body="secret-stuff")
+        proj.export_document(session, did, root_path=tmp_path)
+        canonical_path = tmp_path / session.get(DocumentModel, did).path
+        canonical_text = canonical_path.read_text(encoding="utf-8")
+        assert "secret-stuff" in canonical_text
+
+        result = proj.export_document(session, did, root_path=tmp_path, audience="public")
+
+        assert result.path != canonical_path
+        assert result.path.name.endswith(".public.md")
+        assert "content redacted" in result.path.read_text(encoding="utf-8")
+        # Canonical file and hash are untouched → no drift.
+        assert canonical_path.read_text(encoding="utf-8") == canonical_text
+        drift = proj.detect_drift(session, did, root_path=tmp_path)
+        assert drift.status is proj.DriftStatus.IN_SYNC
+
+
+def test_import_after_audience_export_keeps_canonical_body(  # type: ignore[no-untyped-def]
+    engine_with_schema, tmp_path: Path
+) -> None:
+    """ADO-053: re-importing the canonical path must not drag the redacted body in."""
+    from cod_doc.infra.models import DocumentModel
+    from cod_doc.services import import_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        did = _create_doc(session, pid, sensitivity=Sensitivity.CONFIDENTIAL, body="secret-stuff")
+        proj.export_document(session, did, root_path=tmp_path)
+        proj.export_document(session, did, root_path=tmp_path, audience="public")
+
+        canonical_path = tmp_path / session.get(DocumentModel, did).path
+        import_service.import_or_update_markdown(
+            session,
+            project_id=pid,
+            doc_key="restricted-spec",
+            raw_markdown=canonical_path.read_text(encoding="utf-8"),
+            author="human:test",
+        )
+
+        rendered = proj.render_markdown(session, did)
+        assert "secret-stuff" in rendered
+        assert "content redacted" not in rendered
