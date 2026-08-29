@@ -524,9 +524,19 @@ def complete(
 ) -> Task:
     """Complete a task: validate deps → done, write revision.
 
+    ADO-038: переход в done идёт через статус-машину (ALLOWED_TRANSITIONS).
+    Прямого ребра ``todo→done`` в машине нет (proposal 08: сначала начать
+    работу), поэтому для задач в ``todo``/``pending`` выполняется явная
+    checkout-нога ``todo→in_progress`` (update_status, via_checkout=True) —
+    два легальных перехода вместо одного нелегального. Переходы
+    ``cancelled→done`` и ``backlog→done`` отклоняются StatusTransitionError.
+
     Raises `TaskAlreadyDoneError` if the task is already done.
     Raises `TaskBlockedError` if any `blocks`-type dep is not yet done.
+    Raises `StatusTransitionError` on a status the machine forbids → done.
     """
+    from cod_doc.services.task_status_machine import validate_transition
+
     model = _require_task(session, task_id)
 
     if model.status == TaskStatus.DONE.value:
@@ -545,8 +555,22 @@ def complete(
     if blocking:
         raise TaskBlockedError(f"{task_id} blocked by: {', '.join(blocking)}")
 
-    now = datetime.now(UTC)
+    # old_status для revision-диффа — статус ДО checkout-ноги: revert
+    # complete-ревизии должен вернуть задачу в исходное состояние, а не в
+    # промежуточное in-progress.
     old_status = model.status
+    if model.status in (TaskStatus.PENDING.value, TaskStatus.TODO.value):
+        update_status(
+            session,
+            task_id=task_id,
+            new_status=TaskStatus.IN_PROGRESS,
+            author=author,
+            reason="auto-checkout перед complete (ADO-038)",
+            via_checkout=True,
+        )
+    validate_transition(model.status, TaskStatus.DONE.value)
+
+    now = datetime.now(UTC)
     model.status = TaskStatus.DONE.value
     model.completed_at = now
     model.completed_commit = commit_sha

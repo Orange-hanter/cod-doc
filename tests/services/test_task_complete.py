@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from sqlalchemy import select
 
 from cod_doc.domain.entities import EntityKind, Priority, Task, TaskStatus, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
@@ -15,6 +16,7 @@ from cod_doc.infra.models import (
     PlanModel,
     PlanSectionModel,
     ProjectModel,
+    TaskModel,
 )
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
@@ -174,3 +176,69 @@ def test_list_for_plan_returns_all_tasks(engine_with_schema) -> None:  # type: i
             _task(session, p, pl, s, task_id=f"PLN-{n:03d}", title=f"T{n}")
         all_tasks = tasks.list_for_plan(session, pl)
         assert {t.task_id for t in all_tasks} == {"PLN-001", "PLN-002", "PLN-003"}
+
+
+# ── ADO-038: complete() идёт через статус-машину ─────────────────────────────
+
+
+def _force_status(session: Session, task_id: str, status: TaskStatus) -> None:
+    """Прямая установка статуса в обход сервиса (подготовка состояния теста)."""
+    model = session.execute(select(TaskModel).where(TaskModel.task_id == task_id)).scalar_one()
+    model.status = status.value
+    session.flush()
+
+
+@pytest.mark.parametrize("from_status", [TaskStatus.CANCELLED, TaskStatus.BACKLOG])
+def test_complete_rejects_terminal_sources(engine_with_schema, from_status) -> None:  # type: ignore[no-untyped-def]
+    """cancelled/backlog → done запрещены машиной — complete() должен резать."""
+    from cod_doc.services.task_status_machine import StatusTransitionError
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        _force_status(session, task.task_id, from_status)
+
+        with pytest.raises(StatusTransitionError):
+            tasks.complete(session, task_id=task.task_id, author="x")
+
+        rejected = tasks.get(session, task.task_id)
+        assert rejected is not None
+        assert rejected.status is from_status
+
+
+@pytest.mark.parametrize(
+    "from_status",
+    [TaskStatus.IN_PROGRESS, TaskStatus.IN_PROGRESS_NEW, TaskStatus.IN_REVIEW],
+)
+def test_complete_allows_legal_sources(engine_with_schema, from_status) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        _force_status(session, task.task_id, from_status)
+
+        tasks.complete(session, task_id=task.task_id, author="x")
+        done = tasks.get(session, task.task_id)
+        assert done is not None
+        assert done.status is TaskStatus.DONE
+
+
+@pytest.mark.parametrize("from_status", [TaskStatus.PENDING, TaskStatus.TODO])
+def test_complete_from_todo_goes_via_checkout_leg(engine_with_schema, from_status) -> None:  # type: ignore[no-untyped-def]
+    """todo→done в машине нет — complete() делает явную ногу todo→in_progress."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        task = _task(session, p, pl, s)
+        _force_status(session, task.task_id, from_status)
+
+        tasks.complete(session, task_id=task.task_id, author="x")
+
+        done = tasks.get(session, task.task_id)
+        assert done is not None
+        assert done.status is TaskStatus.DONE
+        history = rev.list_for_entity(session, EntityKind.TASK, done.row_id)  # type: ignore[arg-type]
+        ops = [json.loads(r.diff)["op"] for r in history]
+        # create → status(todo→in-progress, checkout-нога) → complete
+        assert ops == ["create", "status", "complete"]
