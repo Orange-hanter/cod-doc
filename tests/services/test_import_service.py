@@ -392,3 +392,90 @@ The swarm coordination pulse settles eventually.
         # And the update path did not duplicate the index row.
         hits = search_service.search(session, project_id=project_id, query="swarm", scope="doc")
         assert hits["total"] == 1
+
+
+# ── ADO-055: update-путь не теряет секции молча ──────────────────────────────
+
+_UPDATE_MD = """---
+title: Updatable
+type: guide
+---
+# Updatable
+
+## Intro
+
+Body v1.
+"""
+
+
+def test_update_path_reports_patch_failure(
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """Реальный сбой patch_section (не «секции нет») — warning, не молчание."""
+    from cod_doc.services import doc_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        import_service.import_or_update_markdown(
+            session,
+            project_id=project_id,
+            doc_key="upd",
+            raw_markdown=_UPDATE_MD,
+            author="human:test",
+        )
+
+        def _broken_patch(*args, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("disk on fire")
+
+        monkeypatch.setattr(doc_service, "patch_section", _broken_patch)
+        report = import_service.import_or_update_markdown(
+            session,
+            project_id=project_id,
+            doc_key="upd",
+            raw_markdown=_UPDATE_MD.replace("Body v1.", "Body v2."),
+            author="human:test",
+        )
+
+    assert report.created is False
+    section_warnings = [w for w in report.warnings if w.field == "section:intro"]
+    assert len(section_warnings) == 1
+    assert section_warnings[0].raw == "RuntimeError"
+    assert section_warnings[0].applied == "skipped"
+
+
+def test_update_path_reports_add_failure(
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """Новая секция, которую не удалось добавить, видна в warnings."""
+    from cod_doc.services import doc_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        import_service.import_or_update_markdown(
+            session,
+            project_id=project_id,
+            doc_key="upd",
+            raw_markdown=_UPDATE_MD,
+            author="human:test",
+        )
+
+        def _broken_add(*args, **kwargs):  # type: ignore[no-untyped-def]
+            raise RuntimeError("schema mismatch")
+
+        monkeypatch.setattr(doc_service, "add_section", _broken_add)
+        report = import_service.import_or_update_markdown(
+            session,
+            project_id=project_id,
+            doc_key="upd",
+            raw_markdown=_UPDATE_MD + "\n## Second\n\nNew section body.\n",
+            author="human:test",
+        )
+
+    assert report.created is False
+    section_warnings = [w for w in report.warnings if w.field == "section:second"]
+    assert len(section_warnings) == 1
+    assert section_warnings[0].applied == "skipped"

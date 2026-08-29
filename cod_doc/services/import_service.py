@@ -22,6 +22,7 @@ nested H2 inside fenced code blocks (would require a full markdown parser).
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -44,6 +45,8 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from cod_doc.domain.entities import Document
+
+logger = logging.getLogger("cod_doc.import_service")
 
 
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", re.DOTALL)
@@ -459,6 +462,10 @@ def import_or_update_markdown(
     )
 
     for section in parsed.sections:
+        # ADO-055: «секции нет» — единственный легальный повод для fallback на
+        # add_section. Любой другой провал patch/add логируется и попадает в
+        # ImportReport.warnings — импорт не падает на одной секции, но и не
+        # теряет её молча.
         try:
             docs.patch_section(
                 session,
@@ -468,24 +475,45 @@ def import_or_update_markdown(
                 author=author,
                 reason=reason or "bulk import (update)",
             )
-        except Exception:
-            # Section may not exist yet — add it.
-            try:
-                existing_sections = docs.get_sections(session, existing.row_id)
-                position = len(existing_sections)
-                docs.add_section(
-                    session,
-                    document_id=existing.row_id,
-                    anchor=section.anchor,
-                    heading=section.heading,
-                    level=section.level,
-                    position=position,
-                    body=section.body,
-                    author=author,
-                    reason=reason or "bulk import (new section)",
+            continue
+        except docs.SectionNotFoundError:
+            pass  # секции ещё нет — добавим ниже
+        except Exception as exc:
+            logger.warning("import %s#%s: patch_section failed: %s", doc_key, section.anchor, exc)
+            warnings.append(
+                CoercedField(
+                    field=f"section:{section.anchor}",
+                    raw=type(exc).__name__,
+                    applied="skipped",
+                    reason="unknown",
                 )
-            except Exception:
-                pass
+            )
+            continue
+
+        try:
+            existing_sections = docs.get_sections(session, existing.row_id)
+            position = len(existing_sections)
+            docs.add_section(
+                session,
+                document_id=existing.row_id,
+                anchor=section.anchor,
+                heading=section.heading,
+                level=section.level,
+                position=position,
+                body=section.body,
+                author=author,
+                reason=reason or "bulk import (new section)",
+            )
+        except Exception as exc:
+            logger.warning("import %s#%s: add_section failed: %s", doc_key, section.anchor, exc)
+            warnings.append(
+                CoercedField(
+                    field=f"section:{section.anchor}",
+                    raw=type(exc).__name__,
+                    applied="skipped",
+                    reason="unknown",
+                )
+            )
 
     _resolve_all_sections(session, existing.row_id)
     if source_sha256 is not None:
