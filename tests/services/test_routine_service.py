@@ -404,3 +404,79 @@ def test_tick_step_cron_still_fires_when_due(engine_with_schema) -> None:  # typ
             )
         )
         assert routines.tick(session, proj_id) == ["every_min"]
+
+
+def test_run_now_create_task_policy_creates_new_task_each_run(  # type: ignore[no-untyped-def]
+    engine_with_schema, tmp_path
+) -> None:
+    """ADO-054: on_finding='create_task' lands a FRESH task per firing (no dedup).
+
+    Pre-fix the policy was accepted by validation but run_now never handled
+    it — findings were reported, no task created. Uses `doc_drift` with an
+    unexported doc: the finding persists across runs.
+    """
+    from cod_doc.domain.entities import Priority, TaskType
+    from cod_doc.infra.models import PlanModel, PlanSectionModel
+    from cod_doc.services import task_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session, root_path=str(tmp_path))
+        # Fallback task so the finding task inherits plan/section.
+        now = datetime.now(UTC)
+        plan = PlanModel(project_id=proj_id, scope="rt-plan", created=now, last_updated=now)
+        session.add(plan)
+        session.flush()
+        sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="S", slug="A-S", position=0)
+        session.add(sec)
+        session.flush()
+        task_service.create(
+            session,
+            project_id=proj_id,
+            plan_id=plan.row_id,
+            section_id=sec.row_id,
+            title="Seed task",
+            type=TaskType.CHORE,
+            priority=Priority.LOW,
+            author="human:test",
+            id_prefix="RT",
+        )
+        # Unexported doc → doc_drift reports `missing` on every run.
+        doc_service.create(
+            session,
+            project_id=proj_id,
+            doc_key="missing",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.ACTIVE,
+            title="Missing",
+            owner="docs",
+            author="human:test",
+        )
+        routines.create(
+            session,
+            proj_id,
+            name="drift_creator",
+            check_name="doc_drift",
+            trigger="manual",
+            on_finding="create_task",
+        )
+
+        run1 = routines.run_now(session, proj_id, "drift_creator")
+        run2 = routines.run_now(session, proj_id, "drift_creator")
+
+    assert run1.findings_count == 1
+    assert run1.created_task_id is not None
+    assert run2.created_task_id is not None
+    assert run1.created_task_id != run2.created_task_id
+
+    with transactional(factory) as session:
+        from cod_doc.infra.models import TaskModel
+
+        tasks = list(
+            session.execute(
+                select(TaskModel).where(TaskModel.title == "Routine finding: drift_creator")
+            ).scalars()
+        )
+        assert {t.task_id for t in tasks} == {run1.created_task_id, run2.created_task_id}
+        # The routine signature is embedded for traceability.
+        assert all("<!-- routine:drift_creator -->" in (t.description or "") for t in tasks)

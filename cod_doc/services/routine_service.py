@@ -541,6 +541,16 @@ def run_now(session: Session, project_id: int, name: str) -> RoutineRun:
                 )
                 if created_task_id:
                     run_row.created_task_id = created_task_id
+            elif routine.on_finding == "create_task":
+                # ADO-054: previously validated but silently no-op.
+                created_task_id = _create_finding_task(
+                    session,
+                    project_id,
+                    routine,
+                    result,
+                )
+                if created_task_id:
+                    run_row.created_task_id = created_task_id
     except Exception as exc:  # defensive guard (covered by test_degraded_paths)
         run_row.status = "failed"
         run_row.error = repr(exc)
@@ -738,9 +748,7 @@ def _update_or_create_finding_task(
     """
     from sqlalchemy import select as _select
 
-    from cod_doc.domain.entities import Priority, TaskType
     from cod_doc.infra.models import TaskModel
-    from cod_doc.services import task_service
 
     sig = _signature_for_routine(routine.name)
     findings = result.get("findings", [])
@@ -778,8 +786,37 @@ def _update_or_create_finding_task(
         )
         return existing.task_id
 
-    # No open task — create one.  Pick the routine's plan/section by latest task
-    # in the project (best-effort) so the new task lands somewhere sensible.
+    # No open task — create one.
+    return _create_finding_task(session, project_id, routine, result)
+
+
+def _create_finding_task(
+    session: Session,
+    project_id: int,
+    routine: RoutineModel,
+    result: dict[str, Any],
+) -> str | None:
+    """ADO-054: always create a NEW task for the finding (no dedup).
+
+    This is the ``on_finding='create_task'`` policy — unlike
+    ``_update_or_create_finding_task`` every firing lands a fresh task.
+    The routine's plan/section is picked from the latest task in the project
+    (best-effort) so the new task lands somewhere sensible.
+
+    Returns the task_id of the created task, or None on failure.
+    """
+    from sqlalchemy import select as _select
+
+    from cod_doc.domain.entities import Priority, TaskType
+    from cod_doc.infra.models import TaskModel
+    from cod_doc.services import task_service
+
+    sig = _signature_for_routine(routine.name)
+    findings = result.get("findings", [])
+    summary = (
+        f"Routine `{routine.name}` reported {len(findings)} finding(s).\n\n"
+        f"Latest result: {findings[:5]!r}\n\n{sig}"
+    )
     fallback = session.execute(
         _select(TaskModel)
         .where(TaskModel.project_id == project_id)
