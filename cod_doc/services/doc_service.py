@@ -192,6 +192,16 @@ def create(
         diff=_create_diff(preamble, label=f"document:{doc_key}"),
         reason=reason or "create",
     )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "doc.created",
+        author,
+        scope_kind="doc",
+        scope_id=doc_key,
+        payload={"type": type.value, "status": status.value, "path": effective_path},
+        summary=f"Document {doc_key} created",
+    )
     return doc
 
 
@@ -282,6 +292,16 @@ def add_section(
         diff=_create_diff(body, label=f"section:{doc.doc_key}#{anchor}"),
         reason=reason or "add_section",
     )
+    activity_service.emit_for_write(
+        session,
+        doc.project_id,
+        "doc.section_added",
+        author,
+        scope_kind="doc",
+        scope_id=doc.doc_key,
+        payload={"anchor": anchor, "heading": heading, "position": position},
+        summary=f"Document {doc.doc_key}: section {anchor} added",
+    )
     _sync_section_links_safe(session, section.row_id)
     return section
 
@@ -368,6 +388,16 @@ def patch_section(
         reason=reason,
         expected_parent_revision_id=expected_parent_revision_id,
     )
+    activity_service.emit_for_write(
+        session,
+        doc.project_id,
+        "doc.section_updated",
+        author,
+        scope_kind="section",
+        scope_id=f"{doc.doc_key}#{anchor}",
+        payload={"anchor": anchor},
+        summary=f"Document {doc.doc_key}: section {anchor} updated",
+    )
     _sync_section_links_safe(session, sec_model.row_id)
     refreshed = SectionRepository(session).get(sec_model.row_id)
     assert refreshed is not None
@@ -407,6 +437,16 @@ def update_status(
         author=author,
         diff=diff,
         reason=reason or "status",
+    )
+    activity_service.emit_for_write(
+        session,
+        doc.project_id,
+        "doc.status_changed",
+        author,
+        scope_kind="doc",
+        scope_id=doc.doc_key,
+        payload={"old_status": old_status, "new_status": new_status.value, "reason": reason},
+        summary=f"Document {doc.doc_key}: {old_status} → {new_status.value}",
     )
     refreshed = DocumentRepository(session).get(document_id)
     assert refreshed is not None
@@ -479,6 +519,21 @@ def rename(
         diff=diff,
         reason=reason or "rename",
     )
+    activity_service.emit_for_write(
+        session,
+        doc.project_id,
+        "doc.renamed",
+        author,
+        scope_kind="doc",
+        scope_id=new_doc_key,
+        payload={
+            "old_doc_key": old_key,
+            "old_path": old_path,
+            "new_doc_key": new_doc_key,
+            "new_path": target_path,
+        },
+        summary=f"Document {old_key} renamed to {new_doc_key}",
+    )
 
     path_changed = old_path != target_path
     if cascade_links and (old_key != new_doc_key or path_changed):
@@ -508,10 +563,6 @@ def _section_count(session: Session, document_id: int) -> int:
             .where(SectionModel.document_id == document_id)
         ).scalar_one()
     )
-
-
-def _actor_kind(author: str) -> str:
-    return "agent" if author.startswith("agent") else "human"
 
 
 def delete(
@@ -547,12 +598,11 @@ def delete(
 
     search_service.delete_doc(session, project_id=project_id, doc_key=doc_key)
 
-    activity_service.emit(
+    activity_service.emit_for_write(
         session,
         project_id,
         "doc.deleted",
-        actor_kind=_actor_kind(author),
-        actor_id=author,
+        author,
         scope_kind="doc",
         scope_id=doc_key,
         payload={"doc_key": doc_key, "section_count": section_count, "reason": reason},

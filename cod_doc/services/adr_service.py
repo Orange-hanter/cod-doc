@@ -39,6 +39,7 @@ from cod_doc.infra.models import (
     ADRTaskModel,
     ProjectModel,
 )
+from cod_doc.services import activity_service
 from cod_doc.services import revision_service as rev
 
 if TYPE_CHECKING:
@@ -171,6 +172,16 @@ def create(
         diff=_diff("create", adr_id=adr_id, status=status, title=title),
         reason="create",
     )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "adr.created",
+        author,
+        scope_kind="adr",
+        scope_id=adr_id,
+        payload={"title": title, "status": status},
+        summary=f"ADR {adr_id} created",
+    )
     return row
 
 
@@ -299,6 +310,16 @@ def update(
         diff=_diff("update", adr_id=adr_id, **changed),
         reason=reason or "update",
     )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "adr.updated",
+        author,
+        scope_kind="adr",
+        scope_id=adr_id,
+        payload={"changed": list(changed.keys())},
+        summary=f"ADR {adr_id} updated",
+    )
     return row
 
 
@@ -335,6 +356,16 @@ def deprecate(
         author=author,
         diff=_diff("deprecate", adr_id=adr_id, old=old_status, reason=reason),
         reason=reason or "deprecate",
+    )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "adr.deprecated",
+        author,
+        scope_kind="adr",
+        scope_id=adr_id,
+        payload={"old_status": old_status, "reason": reason},
+        summary=f"ADR {adr_id} deprecated",
     )
     return row
 
@@ -385,6 +416,16 @@ def add_diagram(
             diagram_id=row.row_id,
         ),
         reason="add_diagram",
+    )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "adr.diagram_added",
+        author,
+        scope_kind="adr",
+        scope_id=adr_id,
+        payload={"position": position, "title": title, "diagram_id": row.row_id},
+        summary=f"ADR {adr_id}: diagram added",
     )
     return row
 
@@ -462,6 +503,20 @@ def supersede(
             ),
             reason=reason or "supersede",
         )
+        activity_service.emit_for_write(
+            session,
+            project_id,
+            "adr.superseded",
+            author,
+            scope_kind="adr",
+            scope_id=superseded_adr_id,
+            payload={
+                "superseded_by": superseding_adr_id,
+                "reason": reason,
+                "status_flipped": flipped,
+            },
+            summary=f"ADR {superseded_adr_id} superseded by {superseding_adr_id}",
+        )
     return edge
 
 
@@ -528,6 +583,16 @@ def link_task(
         author=author,
         diff=_diff("link_task", adr_id=adr_id, task_id=task_id, relation=relation),
         reason="link_task",
+    )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "adr.task_linked",
+        author,
+        scope_kind="adr",
+        scope_id=adr_id,
+        payload={"task_id": task_id, "relation": relation},
+        summary=f"ADR {adr_id} linked to task {task_id}",
     )
     return row
 

@@ -31,8 +31,8 @@ from cod_doc.infra.repositories import (
     TaskRepository,
     UserStoryRepository,
 )
+from cod_doc.services import activity_service, validation
 from cod_doc.services import revision_service as rev
-from cod_doc.services import validation
 
 from ._internals import _diff, _require_story
 from ._types import StoryAlreadyExistsError
@@ -104,6 +104,20 @@ def create(
             acceptance_count=len(acceptance or []),
         ),
         reason=reason or "create",
+    )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "story.created",
+        author,
+        scope_kind="story",
+        scope_id=story_id,
+        payload={
+            "status": status.value,
+            "acceptance_count": len(acceptance or []),
+            "priority": priority.value,
+        },
+        summary=f"Story {story_id} created",
     )
     return story
 
@@ -194,6 +208,16 @@ def update_status(
         diff=_diff("status", old=old_status, new=new_status.value),
         reason=reason,
         expected_parent_revision_id=expected_parent_revision_id,
+    )
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "story.status_changed",
+        author,
+        scope_kind="story",
+        scope_id=story_id,
+        payload={"old_status": old_status, "new_status": new_status.value, "reason": reason},
+        summary=f"Story {story_id}: {old_status} → {new_status.value}",
     )
     s = UserStoryRepository(session).get(model.row_id)
     assert s is not None

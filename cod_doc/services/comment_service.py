@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from cod_doc.infra.models import DocCommentModel, DocumentModel, SectionModel
+from cod_doc.services import activity_service
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -87,6 +88,10 @@ def create(
     if not body.strip():
         raise ValueError("Comment body is empty.")
 
+    doc = session.get(DocumentModel, document_id)
+    if doc is None:
+        raise ValueError(f"Document #{document_id} not found")
+
     if section_id is not None and anchor is None:
         sec = session.get(SectionModel, section_id)
         if sec is None:
@@ -109,6 +114,20 @@ def create(
     )
     session.add(model)
     session.flush()
+    activity_service.emit_for_write(
+        session,
+        doc.project_id,
+        "comment.created",
+        author,
+        scope_kind="comment",
+        scope_id=str(model.row_id),
+        payload={
+            "document_id": document_id,
+            "section_id": section_id,
+            "anchor": anchor,
+        },
+        summary=f"Comment #{model.row_id} created on document {document_id}",
+    )
     return _to_domain(model)
 
 
@@ -140,6 +159,20 @@ def update_status(session: Session, *, comment_id: int, new_status: str) -> DocC
     m.status = new_status
     m.last_updated = datetime.now(UTC)
     session.flush()
+
+    doc = session.get(DocumentModel, m.document_id)
+    project_id = doc.project_id if doc is not None else None
+    if project_id is not None:
+        activity_service.emit_for_write(
+            session,
+            project_id,
+            "comment.status_changed",
+            "system",
+            scope_kind="comment",
+            scope_id=str(comment_id),
+            payload={"document_id": m.document_id, "new_status": new_status},
+            summary=f"Comment #{comment_id} status → {new_status}",
+        )
     return _to_domain(m)
 
 
@@ -147,8 +180,21 @@ def delete(session: Session, comment_id: int) -> bool:
     m = session.get(DocCommentModel, comment_id)
     if m is None:
         return False
+    doc = session.get(DocumentModel, m.document_id)
+    project_id = doc.project_id if doc is not None else None
     session.delete(m)
     session.flush()
+    if project_id is not None:
+        activity_service.emit_for_write(
+            session,
+            project_id,
+            "comment.deleted",
+            "system",
+            scope_kind="comment",
+            scope_id=str(comment_id),
+            payload={"document_id": m.document_id},
+            summary=f"Comment #{comment_id} deleted",
+        )
     return True
 
 

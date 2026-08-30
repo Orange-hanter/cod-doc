@@ -20,6 +20,7 @@ from cod_doc.infra.models import (
     TaskModel,
 )
 from cod_doc.infra.repositories import StoryLinkRepository
+from cod_doc.services import activity_service
 from cod_doc.services import revision_service as rev
 
 from ._internals import _diff, _require_story
@@ -100,5 +101,19 @@ def link(
             relation=relation.value,
         ),
         reason=reason,
+    )
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "story.linked",
+        author,
+        scope_kind="story",
+        scope_id=story_id,
+        payload={
+            "to_kind": to_kind.value,
+            "to_ref": to_ref,
+            "relation": relation.value,
+        },
+        summary=f"Story {story_id} linked to {to_kind.value} {to_ref}",
     )
     return new_link

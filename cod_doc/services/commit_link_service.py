@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, select
 
 from cod_doc.infra.models import CommitLinkModel, TaskMetricsModel, TaskModel
+from cod_doc.services import activity_service
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -154,6 +155,22 @@ def import_from_git_log(
     if touched_tasks:
         _refresh_commit_counts(session, project_id, touched_tasks)
         session.flush()
+
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "commit_link.imported",
+        "system",
+        scope_kind="project",
+        scope_id=str(project_id),
+        payload={
+            "scanned": scanned,
+            "linked": linked,
+            "skipped_existing": skipped,
+            "touched_tasks": sorted(touched_tasks),
+        },
+        summary=f"Imported {linked} commit link(s) for project {project_id}",
+    )
 
     return {"scanned": scanned, "linked": linked, "skipped_existing": skipped}
 

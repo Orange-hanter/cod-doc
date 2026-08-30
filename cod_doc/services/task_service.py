@@ -45,7 +45,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.infra.repositories import TaskRepository
 from cod_doc.infra.sql_helpers import priority_sql_order
-from cod_doc.services import event_bus, validation
+from cod_doc.services import activity_service, event_bus, validation
 from cod_doc.services import revision_service as rev
 
 if TYPE_CHECKING:
@@ -307,6 +307,16 @@ def create(
         diff=_task_diff("create", task_id=task_id, status="pending"),
         reason=reason or "create",
     )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "task.created",
+        author,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={"title": task.title, "type": task.type.value, "priority": task.priority.value},
+        summary=f"Task {task_id} created",
+    )
     if (slug := _project_slug(session, project_id)) is not None:
         event_bus.queue_emit(
             session,
@@ -418,23 +428,17 @@ def update_status(
 
     # PCA-912 (extension): persist to activity_event so CLI/programmatic
     # callers participate in the audit timeline (the MCP wrapper used to be
-    # the only emit site).
-    try:
-        from cod_doc.services import activity_service
-
-        activity_service.emit(
-            session,
-            model.project_id,
-            "task.status_changed",
-            actor_kind="agent" if author.startswith("agent") else "human",
-            actor_id=author,
-            scope_kind="task",
-            scope_id=task_id,
-            payload={"old_status": old_status, "new_status": new_status.value, "reason": reason},
-            summary=f"Task {task_id}: {old_status} → {new_status.value}",
-        )
-    except Exception:
-        pass
+    # the only emit site). Errors are not swallowed.
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "task.status_changed",
+        author,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={"old_status": old_status, "new_status": new_status.value, "reason": reason},
+        summary=f"Task {task_id}: {old_status} → {new_status.value}",
+    )
 
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
@@ -482,6 +486,16 @@ def _update_text_field(
         ),
         reason=reason,
         expected_parent_revision_id=expected_parent_revision_id,
+    )
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        f"task.{field}_updated",
+        author,
+        scope_kind="task",
+        scope_id=model.task_id,
+        payload={"field": field, "old_len": len(old_value), "new_len": len(new_value)},
+        summary=f"Task {model.task_id}: {field} updated",
     )
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
@@ -612,22 +626,17 @@ def complete(
     # PCA-912 (extension): emit activity event from the service layer so
     # CLI / programmatic callers don't bypass the audit timeline.  The MCP
     # wrapper used to do this; moving the emit here covers all entry points.
-    try:
-        from cod_doc.services import activity_service
-
-        activity_service.emit(
-            session,
-            model.project_id,
-            "task.completed",
-            actor_kind="agent" if author.startswith("agent") else "human",
-            actor_id=author,
-            scope_kind="task",
-            scope_id=task_id,
-            payload={"commit_sha": commit_sha, "reason": reason},
-            summary=f"Task {task_id} completed by {author}",
-        )
-    except Exception:  # never break completion on audit-emit failure
-        pass
+    # Errors are not swallowed.
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "task.completed",
+        author,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={"commit_sha": commit_sha, "reason": reason},
+        summary=f"Task {task_id} completed by {author}",
+    )
 
     # COD-022: signal plan staleness so callers know projection may be outdated.
     plan_model = session.get(PlanModel, model.plan_id)
@@ -745,6 +754,16 @@ def set_blocker(
         diff=_task_diff("set_blocker", old=old_reason, new=reason),
         reason="set_blocker",
     )
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "task.blocker_added",
+        author,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={"reason": reason},
+        summary=f"Task {task_id}: blocker added",
+    )
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t
@@ -776,6 +795,16 @@ def clear_blocker(
         author=author,
         diff=_task_diff("clear_blocker", old=old_reason),
         reason="clear_blocker",
+    )
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "task.blocker_cleared",
+        author,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={"old_reason": old_reason},
+        summary=f"Task {task_id}: blocker cleared",
     )
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
@@ -826,22 +855,16 @@ def remove_dependency(
         diff=_task_diff("remove_dependency", blocker=blocker_task_id),
         reason=reason or "remove_dependency",
     )
-    try:
-        from cod_doc.services import activity_service
-
-        activity_service.emit(
-            session,
-            model.project_id,
-            "task.dependency_removed",
-            actor_kind="agent" if author.startswith("agent") else "human",
-            actor_id=author,
-            scope_kind="task",
-            scope_id=task_id,
-            payload={"blocker_task_id": blocker_task_id, "reason": reason},
-            summary=f"Task {task_id}: dependency on {blocker_task_id} removed",
-        )
-    except Exception:
-        pass
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "task.dependency_removed",
+        author,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={"blocker_task_id": blocker_task_id, "reason": reason},
+        summary=f"Task {task_id}: dependency on {blocker_task_id} removed",
+    )
 
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
@@ -926,6 +949,16 @@ def log_progress(
         author=author,
         diff=_task_diff("progress", message=message),
         reason="progress",
+    )
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "task.progress_logged",
+        author,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={"message": message},
+        summary=f"Task {task_id}: progress logged",
     )
     t = TaskRepository(session).get(model.row_id)
     assert t is not None

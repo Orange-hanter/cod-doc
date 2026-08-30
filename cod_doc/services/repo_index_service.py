@@ -25,6 +25,7 @@ from cod_doc.infra.models import (
     RepoImportModel,
     RepoSymbolModel,
 )
+from cod_doc.services import activity_service
 
 if TYPE_CHECKING:
     import pathspec
@@ -269,6 +270,23 @@ def scan_project(
         files_count += 1
 
     session.flush()
+
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "repo_index.scanned",
+        "system",
+        scope_kind="project",
+        scope_id=str(project_id),
+        payload={
+            "files": files_count,
+            "symbols": symbols_count,
+            "imports": imports_count,
+            "skipped_gitignore": skipped_gitignore,
+        },
+        summary=f"Repo indexed: {files_count} files, {symbols_count} symbols, {imports_count} imports",
+    )
+
     return {
         "files": files_count,
         "symbols": symbols_count,

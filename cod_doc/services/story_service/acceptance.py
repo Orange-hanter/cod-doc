@@ -10,6 +10,7 @@ from sqlalchemy import select
 from cod_doc.domain.entities import EntityKind, StoryAcceptance
 from cod_doc.infra.models import StoryAcceptanceModel
 from cod_doc.infra.repositories import StoryAcceptanceRepository
+from cod_doc.services import activity_service
 from cod_doc.services import revision_service as rev
 
 from ._internals import _diff, _require_story
@@ -46,6 +47,16 @@ def add_criterion(
         author=author,
         diff=_diff("add_criterion", position=next_pos, criterion=criterion),
         reason=reason,
+    )
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "story.criterion_added",
+        author,
+        scope_kind="story",
+        scope_id=story_id,
+        payload={"position": next_pos, "criterion": criterion},
+        summary=f"Story {story_id}: criterion added at position {next_pos}",
     )
     return ac
 
@@ -85,5 +96,15 @@ def set_criterion_met(
         author=author,
         diff=_diff("criterion_met", position=position, old=old_met, new=met),
         reason=reason,
+    )
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "story.criterion_met",
+        author,
+        scope_kind="story",
+        scope_id=story_id,
+        payload={"position": position, "met": met, "old_met": old_met},
+        summary=f"Story {story_id}: criterion {position} met={met}",
     )
     return StoryAcceptanceRepository(session)._to_domain(ac_model)

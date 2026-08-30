@@ -33,6 +33,7 @@ from cod_doc.infra.models import (
     ApprovalModel,
     ApprovalTaskLinkModel,
 )
+from cod_doc.services import activity_service
 from cod_doc.services.run_context import get_current_run_id
 
 if TYPE_CHECKING:
@@ -200,6 +201,21 @@ def request(
         session.add(ApprovalDocRevisionLinkModel(approval_id=m.row_id, revision_id=rev_id))
     session.flush()
 
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "approval.requested",
+        requested_by,
+        scope_kind="approval",
+        scope_id=m.approval_id,
+        payload={
+            "approval_type": approval_type,
+            "linked_task_refs": task_refs,
+            "linked_doc_revision_ids": doc_revs,
+        },
+        summary=f"Approval {m.approval_id} requested ({approval_type})",
+    )
+
     # PCA-913: auto-transition linked in_progress tasks → in_review so the
     # agent knows the task is paused pending human decision.
     from cod_doc.domain.entities import TaskStatus
@@ -312,6 +328,17 @@ def resolve(
     m.decision_comment = comment
     session.flush()
 
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "approval.resolved",
+        resolved_by,
+        scope_kind="approval",
+        scope_id=approval_id,
+        payload={"decision": decision, "comment": comment},
+        summary=f"Approval {approval_id} {decision}d",
+    )
+
     domain = _to_domain(m, session)
 
     # Build wake hint — the first linked task gets the wake.
@@ -356,4 +383,16 @@ def cancel(
     m.resolved_at = datetime.now(UTC)
     m.decision_comment = reason
     session.flush()
+
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "approval.cancelled",
+        cancelled_by,
+        scope_kind="approval",
+        scope_id=approval_id,
+        payload={"reason": reason},
+        summary=f"Approval {approval_id} cancelled",
+    )
+
     return _to_domain(m, session)

@@ -25,6 +25,7 @@ from cod_doc.infra.models import (
     UserStoryModel,
 )
 from cod_doc.infra.repositories import LinkRepository
+from cod_doc.services import activity_service
 
 from ._section_helpers import _link_or_raise, _project_id_for_section, _section_or_raise
 from ._types import IncomingLink, ParsedLink, VerifyReport
@@ -531,6 +532,17 @@ def sync_section(session: Session, section_id: int) -> list[Link]:
         inserted.append(m)
     session.flush()
 
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "link.synced",
+        "system",
+        scope_kind="section",
+        scope_id=str(section_id),
+        payload={"link_count": len(inserted)},
+        summary=f"Section {section_id}: links synced ({len(inserted)} parsed)",
+    )
+
     return [repo._to_domain(m) for m in inserted]
 
 
@@ -546,6 +558,18 @@ def resolve(session: Session, link_row_id: int) -> Link:
         mark_checked=False,
     )
     session.flush()
+
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "link.resolved",
+        "system",
+        scope_kind="link",
+        scope_id=str(link_row_id),
+        payload={"resolved": model.resolved, "broken_reason": model.broken_reason},
+        summary=f"Link {link_row_id} resolved",
+    )
+
     repo = LinkRepository(session)
     return repo._to_domain(model)
 
@@ -571,6 +595,21 @@ def resolve_section(session: Session, section_id: int) -> list[Link]:
         )
         out.append(repo._to_domain(model))
     session.flush()
+
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "link.resolved",
+        "system",
+        scope_kind="section",
+        scope_id=str(section_id),
+        payload={
+            "link_count": len(out),
+            "resolved": sum(1 for link in out if link.resolved),
+        },
+        summary=f"Section {section_id}: {len(out)} link(s) resolved",
+    )
+
     return out
 
 
@@ -597,6 +636,20 @@ def verify_section(session: Session, section_id: int) -> VerifyReport:
         else:
             broken += 1
     session.flush()
+
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "link.verified",
+        "system",
+        scope_kind="section",
+        scope_id=str(section_id),
+        payload={"ok": ok, "broken": broken, "skipped": skipped},
+        summary=(
+            f"Section {section_id}: links verified ({ok} ok, {broken} broken, {skipped} skipped)"
+        ),
+    )
+
     return VerifyReport(section_id=section_id, ok=ok, broken=broken, skipped=skipped)
 
 

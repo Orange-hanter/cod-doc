@@ -28,6 +28,7 @@ from ulid import ULID
 
 from cod_doc.domain.entities import EntityKind
 from cod_doc.infra.models import RevisionModel, TaskDocumentModel
+from cod_doc.services import activity_service
 from cod_doc.services.run_context import get_current_run_id
 
 if TYPE_CHECKING:
@@ -136,6 +137,7 @@ def put(
         )
     ).scalar_one_or_none()
 
+    is_new = m is None
     if m is None:
         if base_revision_id is not None:
             raise TaskDocConflictError(
@@ -160,6 +162,16 @@ def put(
 
     m.current_revision_id = new_rev_id
     session.flush()
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "task_doc.created" if is_new else "task_doc.updated",
+        author,
+        scope_kind="task_doc",
+        scope_id=f"{task_row_id}:{key}",
+        payload={"key": key, "title": title, "format": format},
+        summary=f"Task doc {key} {'created' if is_new else 'updated'}",
+    )
     return _to_domain(m)
 
 
@@ -245,4 +257,14 @@ def revert(
     )
     m.current_revision_id = new_rev_id
     session.flush()
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "task_doc.reverted",
+        author,
+        scope_kind="task_doc",
+        scope_id=f"{task_row_id}:{key}",
+        payload={"key": key, "revision_id": revision_id},
+        summary=f"Task doc {key} reverted to {revision_id}",
+    )
     return _to_domain(m)

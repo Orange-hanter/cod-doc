@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from cod_doc.infra.models import TaskModel
+from cod_doc.services import activity_service
 from cod_doc.services.task_status_machine import normalise
 
 if TYPE_CHECKING:
@@ -120,6 +121,20 @@ def checkout(
     m.last_updated = now
     session.flush()
 
+    activity_service.emit_for_write(
+        session,
+        m.project_id,
+        "task.checked_out",
+        agent,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={
+            "old_status": m.expected_status_at_checkout,
+            "new_status": m.status,
+        },
+        summary=f"Task {task_id} checked out by {agent}",
+    )
+
     return CheckoutResult(
         task_id=task_id,
         checked_out_by=agent,
@@ -158,6 +173,18 @@ def release(
     m.checked_out_at = None
     m.last_updated = datetime.now(UTC)
     session.flush()
+
+    activity_service.emit_for_write(
+        session,
+        m.project_id,
+        "task.released",
+        agent,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={"status": m.status},
+        summary=f"Task {task_id} released by {agent}",
+    )
+
     return CheckoutResult(
         task_id=task_id,
         checked_out_by=None,
@@ -222,4 +249,15 @@ def release_stale(session: Session, *, ttl_minutes: int = 30) -> list[str]:
         released.append(m.task_id)
     if released:
         session.flush()
+    for m in rows:
+        activity_service.emit_for_write(
+            session,
+            m.project_id,
+            "task.released",
+            "system",
+            scope_kind="task",
+            scope_id=m.task_id,
+            payload={"status": m.status, "reason": "stale_lock_release"},
+            summary=f"Task {m.task_id} released by stale-lock cleanup",
+        )
     return released
