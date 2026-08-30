@@ -161,7 +161,11 @@ def test_heartbeat_no_cursor_returns_empty_recent_changes(engine_with_schema) ->
         from cod_doc.domain.entities import TaskStatus
 
         task_service.update_status(
-            session, task_id="HB-001", new_status=TaskStatus.IN_PROGRESS, author="x"
+            session,
+            task_id="HB-001",
+            new_status=TaskStatus.IN_PROGRESS,
+            author="x",
+            via_checkout=True,
         )
 
         ctx = heartbeat_service.heartbeat_context(session, task_id="HB-001")
@@ -180,13 +184,21 @@ def test_heartbeat_with_cursor_returns_only_newer_revisions(engine_with_schema) 
         task = _create_task(session, p, pl, s, task_id="HB-001", title="t")
         # Initial revision is from create. Now produce 3 more.
         task_service.update_status(
-            session, task_id="HB-001", new_status=TaskStatus.IN_PROGRESS, author="x"
+            session,
+            task_id="HB-001",
+            new_status=TaskStatus.IN_PROGRESS,
+            author="x",
+            via_checkout=True,
         )
         task_service.update_status(
             session, task_id="HB-001", new_status=TaskStatus.PENDING, author="x"
         )
         task_service.update_status(
-            session, task_id="HB-001", new_status=TaskStatus.IN_PROGRESS, author="x"
+            session,
+            task_id="HB-001",
+            new_status=TaskStatus.IN_PROGRESS,
+            author="x",
+            via_checkout=True,
         )
 
         all_revs = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
@@ -231,7 +243,11 @@ def test_heartbeat_cursor_caps_at_20_entries(engine_with_schema) -> None:  # typ
         states = [TaskStatus.IN_PROGRESS, TaskStatus.PENDING]
         for i in range(25):
             task_service.update_status(
-                session, task_id="HB-001", new_status=states[i % 2], author="x"
+                session,
+                task_id="HB-001",
+                new_status=states[i % 2],
+                author="x",
+                via_checkout=True,
             )
 
         all_revs = rev.list_for_entity(session, EntityKind.TASK, task.row_id)

@@ -114,6 +114,7 @@ def test_summarize_aggregates_by_status_and_priority(engine_with_schema) -> None
             task_id="PR-002",
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",
+            via_checkout=True,
         )
 
         summary = task_service.summarize_for_project(session, p)

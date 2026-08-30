@@ -132,7 +132,11 @@ def task_detail_client(tmp_path: Path, migrate_db):
         session.flush()
         # Add an extra revision: bump status of t1 (creates one more entry).
         tasks.update_status(
-            session, task_id=t1.task_id, new_status=TaskStatus.IN_PROGRESS, author="human:dakh"
+            session,
+            task_id=t1.task_id,
+            new_status=TaskStatus.IN_PROGRESS,
+            author="human:dakh",
+            via_checkout=True,
         )
     engine.dispose()
 

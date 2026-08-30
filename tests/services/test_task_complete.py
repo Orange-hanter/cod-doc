@@ -143,7 +143,11 @@ def test_complete_conflict_via_expected_parent(engine_with_schema) -> None:  # t
         original_head = first_history[0].revision_id
 
         tasks.update_status(
-            session, task_id=task.task_id, new_status=TaskStatus.IN_PROGRESS, author="other"
+            session,
+            task_id=task.task_id,
+            new_status=TaskStatus.IN_PROGRESS,
+            author="other",
+            via_checkout=True,
         )
 
         with pytest.raises(rev.RevisionConflictError):

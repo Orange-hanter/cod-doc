@@ -58,6 +58,7 @@ def _make_in_progress(
         task_id=tid,
         new_status=TaskStatus.IN_PROGRESS,
         author="human:test",
+        via_checkout=True,
     )
     if last_updated_offset_hours:
         # Backdate last_updated so we can test stale-cutoff.

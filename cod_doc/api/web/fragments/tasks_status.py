@@ -17,9 +17,12 @@ from cod_doc.api.web.errors import (
     truncate_for_cookie,
 )
 from cod_doc.domain.entities import TaskStatus
+from cod_doc.services import checkout_service
 from cod_doc.services import task_service as tasks
+from cod_doc.services.checkout_service import CheckoutConflictError, CheckoutStatusError
 from cod_doc.services.revision_service import RevisionConflictError
 from cod_doc.services.task_service import TaskAlreadyDoneError, TaskBlockedError
+from cod_doc.services.task_status_machine import normalise
 
 from ._shared import _is_htmx, _render_task_row
 
@@ -49,15 +52,30 @@ def task_status_update(
 
     inline_alert: tuple[str, str] | None = None
     try:
-        updated = tasks.update_status(
-            session,
-            task_id=task_id,
-            new_status=new_status,
-            author="human:web",
-            reason="web inline status",
-            strict=False,  # web UI allows direct jumps (user may skip steps)
-        )
+        # ADO-039 (Phase-2 enforce): todo→in_progress — только через checkout,
+        # даже на web. Остальные прямые прыжки — по-прежнему strict=False.
+        if (
+            normalise(existing.status.value) == "todo"
+            and normalise(new_status.value) == "in_progress"
+        ):
+            checkout_service.checkout(session, task_id=task_id, agent="human:web")
+            checked = tasks.get(session, task_id)
+            assert checked is not None
+            updated = checked
+        else:
+            updated = tasks.update_status(
+                session,
+                task_id=task_id,
+                new_status=new_status,
+                author="human:web",
+                reason="web inline status",
+                strict=False,  # web UI allows direct jumps (user may skip steps)
+            )
         session.commit()
+    except (CheckoutConflictError, CheckoutStatusError) as exc:
+        session.rollback()
+        updated = existing
+        inline_alert = ("error", str(exc))
     except RevisionConflictError as exc:
         session.rollback()
         updated = existing

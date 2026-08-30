@@ -307,6 +307,7 @@ def task_status(
     from cod_doc.infra.db import transactional
     from cod_doc.services import task_service
     from cod_doc.services.task_service import TaskNotFoundError
+    from cod_doc.services.task_status_machine import StatusTransitionError
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
@@ -322,6 +323,10 @@ def task_status(
             )
     except TaskNotFoundError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
+        sys.exit(1)
+    except StatusTransitionError as exc:
+        # ADO-039: todo→in_progress enforce'ится через task_checkout
+        console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
     icon = _STATUS_ICON.get(t.status.value, "⚪")

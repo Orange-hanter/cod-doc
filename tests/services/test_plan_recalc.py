@@ -73,7 +73,13 @@ def _seed_task(
         author="human:test",
     )
     if status is not TaskStatus.PENDING:
-        tasks.update_status(session, task_id=task_id, new_status=status, author="human:test")
+        tasks.update_status(
+            session,
+            task_id=task_id,
+            new_status=status,
+            author="human:test",
+            via_checkout=(status is TaskStatus.IN_PROGRESS),
+        )
     return t
 
 

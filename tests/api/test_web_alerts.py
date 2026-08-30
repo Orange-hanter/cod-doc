@@ -210,7 +210,7 @@ def test_conflict_appends_oob_alert_to_row_response(alerts_client, monkeypatch) 
 
     r = client.post(
         f"/p/{entry.name}/tasks/ALR-001/status",
-        data={"status": "in-progress"},
+        data={"status": "done"},
         headers={"HX-Request": "true"},
     )
     # 200, because the row IS rendered (with old status); alert OOB is appended.

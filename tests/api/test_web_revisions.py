@@ -107,6 +107,7 @@ def revisions_client(tmp_path: Path, migrate_db):
             new_status=TaskStatus.IN_PROGRESS,
             author="human:dakh",
             reason="started",
+            via_checkout=True,
         )
         tasks.complete(session, task_id=t.task_id, author="human:dakh")
     engine.dispose()

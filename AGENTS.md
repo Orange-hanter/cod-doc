@@ -71,7 +71,10 @@ pytest tests/ -v --tb=short     # run the suite
 2. **Snowball Protocol.** Грузить контекст по уровням L0/L1/L2 (см.
    `docs/system/capabilities/context-retrieval.md`).
 3. **Атомарный checkout.** `todo → in_progress` только через
-   `task_checkout` (proposal 06, PCA-200). Warn-mode сейчас, enforce — позже.
+   `task_checkout` (proposal 06, PCA-200). **Enforce включён** (ADO-039,
+   Phase 2): прямой `update_status(todo→in_progress)` бросает
+   `StatusTransitionError` на всех поверхностях; web-форма идёт через
+   `checkout_service.checkout`.
 4. **Run-id на всех мутациях.** Внутри `run_scope(...)` все revisions /
    activity events / approvals тегаются `run_id` (proposal 04).
 5. **Validate transitions.** `task_status_machine.validate_transition`

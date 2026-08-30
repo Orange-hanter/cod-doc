@@ -134,7 +134,11 @@ def test_task_update_status_dry_run_does_not_change_status(
         )
         # Move to in_progress so we can test cancel transition.
         task_service.update_status(
-            session, task_id="PLN-001", new_status=TaskStatus.IN_PROGRESS_NEW, author="t"
+            session,
+            task_id="PLN-001",
+            new_status=TaskStatus.IN_PROGRESS_NEW,
+            author="t",
+            via_checkout=True,
         )
 
     _stub(monkeypatch, factory, module=task_tools)

@@ -342,7 +342,12 @@ def update_status(
     (warn-mode for Phase 1). Pass ``strict=True`` to raise
     :class:`StatusTransitionError` on disallowed transitions. Default is
     permissive — disallowed transitions log via :func:`_warn_invalid_transition`
-    but proceed. Phase 2 enforcement flips the default to ``strict=True``.
+    but proceed.
+
+    ADO-039 (Phase 2, решение владельца 2026-08-30): checkout-правило
+    ``todo → in_progress`` **enforce'ится всегда** — это правило протокола,
+    а не таблицы переходов, поэтому ``strict=False`` его не смягчает.
+    Обход — только ``force=True`` (revert / миграции данных).
 
     Pass ``via_checkout=True`` when this call is the ``todo→in_progress``
     leg of a checkout flow.
@@ -355,6 +360,7 @@ def update_status(
     """
     from cod_doc.services.task_status_machine import (
         StatusTransitionError,
+        normalise,
         validate_transition,
     )
 
@@ -366,6 +372,17 @@ def update_status(
         return t
 
     if not force:
+        # ADO-039: checkout-правило — протокольное, проверяется до strict и
+        # не смягчается им.
+        if (normalise(old_status), normalise(new_status.value)) == (
+            "todo",
+            "in_progress",
+        ) and not via_checkout:
+            raise StatusTransitionError(
+                from_status=old_status,
+                to_status=new_status.value,
+                reason="must go through task_checkout (proposal 06, Phase-2 enforce ADO-039)",
+            )
         try:
             validate_transition(old_status, new_status.value, via_checkout=via_checkout)
         except StatusTransitionError:

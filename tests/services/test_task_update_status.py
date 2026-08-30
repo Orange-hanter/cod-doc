@@ -17,6 +17,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
+from cod_doc.services.task_status_machine import StatusTransitionError
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -63,18 +64,40 @@ def _task(
     )
 
 
-def test_update_status_pending_to_in_progress(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_update_status_pending_to_in_progress_requires_checkout(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-039 (Phase-2 enforce): todo→in_progress без checkout — ошибка.
+
+    Протокольное правило не смягчается strict=False; легальный путь —
+    checkout (via_checkout=True), который по-прежнему пишет revision.
+    """
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
 
+        with pytest.raises(StatusTransitionError):
+            tasks.update_status(
+                session,
+                task_id=task.task_id,
+                new_status=TaskStatus.IN_PROGRESS,
+                author="human:dakh",
+            )
+        with pytest.raises(StatusTransitionError):
+            tasks.update_status(
+                session,
+                task_id=task.task_id,
+                new_status=TaskStatus.IN_PROGRESS,
+                author="human:dakh",
+                strict=False,
+            )
+
         updated = tasks.update_status(
             session,
             task_id=task.task_id,
             new_status=TaskStatus.IN_PROGRESS,
             author="human:dakh",
+            via_checkout=True,
         )
         assert updated.status == TaskStatus.IN_PROGRESS
 
@@ -116,7 +139,11 @@ def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type
         head = rev.list_for_entity(session, EntityKind.TASK, task.row_id)[0].revision_id
 
         tasks.update_status(
-            session, task_id=task.task_id, new_status=TaskStatus.IN_PROGRESS, author="other"
+            session,
+            task_id=task.task_id,
+            new_status=TaskStatus.IN_PROGRESS,
+            author="other",
+            via_checkout=True,
         )
 
         with pytest.raises(rev.RevisionConflictError):

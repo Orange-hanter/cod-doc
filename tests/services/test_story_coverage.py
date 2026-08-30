@@ -169,6 +169,7 @@ def test_coverage_in_progress_when_any_task_started(engine_with_schema) -> None:
             task_id="TST-001",
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",
+            via_checkout=True,
         )
         cov = stories.coverage(session, story.story_id)
         assert cov.status is stories.CoverageStatus.IN_PROGRESS

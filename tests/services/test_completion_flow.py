@@ -72,6 +72,7 @@ def test_revert_task_status_change(engine_with_schema) -> None:  # type: ignore[
             task_id="CF-001",
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",
+            via_checkout=True,
         )
         history = rev.list_for_entity(
             session,
