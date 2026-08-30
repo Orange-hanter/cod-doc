@@ -325,6 +325,7 @@ def import_markdown(
     fallback_type: DocumentType = DocumentType.MODULE_SPEC,
     author: str = "human:web",
     reason: str | None = None,
+    path: str | None = None,
 ) -> ImportReport:
     """Parse + insert document and its sections into the project DB.
 
@@ -372,6 +373,7 @@ def import_markdown(
         title=str(title),
         author=author,
         owner=str(owner),
+        path=path,
         source_of_truth=(
             fm.get("source_of_truth") if isinstance(fm.get("source_of_truth"), bool) else None
         ),
@@ -414,6 +416,7 @@ def import_or_update_markdown(
     author: str = "human:web",
     reason: str | None = None,
     source_sha256: str | None = None,
+    path: str | None = None,
 ) -> ImportReport:
     """PCA-929: Idempotent import — create new doc or update existing one.
 
@@ -437,6 +440,7 @@ def import_or_update_markdown(
             fallback_title=fallback_title,
             author=author,
             reason=reason or "bulk import (new)",
+            path=path,
         )
         doc_row_id = report.document.row_id
         if source_sha256 is not None and doc_row_id is not None:

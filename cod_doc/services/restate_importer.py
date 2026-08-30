@@ -220,7 +220,7 @@ def import_docs(
     repo_doc = DocumentRepository(session)
 
     for path in _walk_doc_files(repo_root, max_files=max_files, exclude=exclude):
-        rel = str(path.relative_to(repo_root))
+        rel = path.relative_to(repo_root).as_posix()
         doc_key = _doc_key_for(repo_root, path)
         if repo_doc.get_by_key(project_id, doc_key) is not None:
             summary.skipped += 1
@@ -236,6 +236,8 @@ def import_docs(
             # content_sha256_head (accepted file) and projection_hash
             # (DB-render baseline) — without them every imported doc shows as
             # stale_export in drift reports until a manual re-export.
+            # ADO-058: pass the real file path — doc_service defaults to
+            # "<doc_key>.md", which leaves .txt/.rst imports as drift-missing.
             report = import_service.import_or_update_markdown(
                 session,
                 project_id=project_id,
@@ -245,6 +247,7 @@ def import_docs(
                 author=author,
                 reason=f"restate-import:{rel}",
                 source_sha256=_sha256(raw),
+                path=rel,
             )
             summary.imported += 1
             summary.files.append(rel)

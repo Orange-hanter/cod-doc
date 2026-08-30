@@ -744,6 +744,9 @@ async def docs_import_apply(
                 author="human:web",
                 reason="bulk import",
                 source_sha256=source_sha,
+                # ADO-058: real path, otherwise .txt/.rst get "<doc_key>.md"
+                # and show as drift-missing.
+                path=rel_path,
             )
             imported += 1
             warnings.extend({"path": rel_path, **w.to_dict()} for w in report.warnings)

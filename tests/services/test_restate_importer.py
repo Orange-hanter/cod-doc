@@ -242,6 +242,27 @@ def test_import_docs_reports_in_sync_drift(tmp_path: Path, engine_with_schema) -
     assert report.issues == []
 
 
+def test_import_docs_txt_path_matches_real_file(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-058 (friction #10): a `.txt` import must keep the real file path —
+    `doc drift` should see it in_sync, not missing."""
+    (tmp_path / "notes.txt").write_text("# Notes\n\nPlain text doc.")
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+        summary = restate_importer.import_docs(session, repo_root=tmp_path, project_id=project_id)
+    assert summary.imported == 1
+    assert summary.errors == []
+
+    with transactional(factory) as session:
+        doc = DocumentRepository(session).get_by_key(project_id, "notes")
+        assert doc is not None
+        assert doc.path == "notes.txt"
+        report = projection_service.detect_project_drift(session, project_id, root_path=tmp_path)
+    assert report.counts[DriftStatus.MISSING.value] == 0
+    assert report.counts[DriftStatus.IN_SYNC.value] == 1
+
+
 def test_import_docs_is_idempotent(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Re-running over the same files counts them as skipped, not errors."""
     (tmp_path / "README.md").write_text("# Hello")
