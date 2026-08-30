@@ -61,3 +61,16 @@ def test_dry_run_limit_n_lists_exactly_n(tmp_path: Path, isolated_cod_doc_home: 
     assert result.exit_code == 0, result.output
     assert result.output.count("•") == 5
     assert "ещё 56" in result.output
+
+
+def test_dry_run_lists_skipped_hidden_dirs(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    """ADO-061 (friction #11): the hidden-dir skip is visible in dry-run."""
+    root = _init_project(tmp_path)
+    (root / "doc.md").write_text("# Doc\n\nBody.")
+    (root / ".cursor").mkdir()
+    (root / ".cursor" / "rules.md").write_text("# Rules\n\nBody.")
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["import", "docs", "p", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "Скрытые каталоги пропущены (1): .cursor" in result.output

@@ -263,6 +263,22 @@ def test_import_docs_txt_path_matches_real_file(tmp_path: Path, engine_with_sche
     assert report.counts[DriftStatus.IN_SYNC.value] == 1
 
 
+def test_import_docs_reports_hidden_dirs(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-061 (friction #11): user dot-dirs are reported, known noise is not."""
+    (tmp_path / "README.md").write_text("# Hello\n\nIntro.")
+    (tmp_path / ".cursor").mkdir()
+    (tmp_path / ".cursor" / "rules.md").write_text("# Rules\n\nText.")
+    (tmp_path / ".claude").mkdir()
+    (tmp_path / ".claude" / "notes.md").write_text("# Notes\n\nText.")
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+        summary = restate_importer.import_docs(session, repo_root=tmp_path, project_id=project_id)
+    assert summary.imported == 1
+    assert summary.hidden_dirs == [".claude", ".cursor"]
+
+
 def test_import_docs_is_idempotent(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Re-running over the same files counts them as skipped, not errors."""
     (tmp_path / "README.md").write_text("# Hello")

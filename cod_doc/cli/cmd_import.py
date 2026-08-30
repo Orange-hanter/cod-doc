@@ -141,6 +141,12 @@ def cmd_import_docs(
         hidden = len(summary.files) - len(shown)
         if hidden > 0:
             console.print(f"  … ещё {hidden} (полный список: --limit 0)")
+    if dry_run and summary.hidden_dirs:
+        # ADO-061 (friction #11): скип скрытых каталогов больше не молчаливый.
+        console.print(
+            f"Скрытые каталоги пропущены ({len(summary.hidden_dirs)}): "
+            + ", ".join(summary.hidden_dirs)
+        )
     if summary.warnings:
         # ADO-015: frontmatter values coerced to fit an enum — reported, since
         # a bulk import of a foreign corpus is exactly where they hide.

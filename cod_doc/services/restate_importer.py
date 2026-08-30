@@ -74,6 +74,9 @@ class DocsSummary:
     # ADO-015: "<rel path>: type: 'journal' → 'module-spec' (unknown value)".
     # A bulk import that bends metadata has to say which file it bent.
     warnings: list[str] = field(default_factory=list)
+    # ADO-061 (friction #11): dot-directories the walker skipped over, sorted —
+    # otherwise the skip is invisible in --dry-run.
+    hidden_dirs: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -82,6 +85,7 @@ class DocsSummary:
             "errors": self.errors,
             "files": self.files,
             "warnings": self.warnings,
+            "hidden_dirs": self.hidden_dirs,
         }
 
 
@@ -147,6 +151,7 @@ def _walk_doc_files(
     *,
     max_files: int = DEFAULT_MAX_FILES,
     exclude: Sequence[str] | None = None,
+    hidden_sink: set[str] | None = None,
 ) -> list[Path]:
     """Iterate the repo for importable doc files. Skips noisy build dirs.
 
@@ -184,7 +189,12 @@ def _walk_doc_files(
         if path.name.startswith("."):
             continue
         rel = path.relative_to(repo_root)
+        dotted = next((p for p in rel.parts[:-1] if p.startswith(".")), None)
         if any(p in _SKIP_DIRS or p.startswith(".") for p in rel.parts[:-1]):
+            # ADO-061 (friction #11): record user dot-dirs (.cursor, .claude…)
+            # the walker silently skipped; known noise (_SKIP_DIRS) is not news.
+            if hidden_sink is not None and dotted is not None and dotted not in _SKIP_DIRS:
+                hidden_sink.add(dotted)
             continue
         if _is_excluded(rel.as_posix(), patterns):
             continue
@@ -218,8 +228,11 @@ def import_docs(
     """
     summary = DocsSummary()
     repo_doc = DocumentRepository(session)
+    hidden: set[str] = set()
 
-    for path in _walk_doc_files(repo_root, max_files=max_files, exclude=exclude):
+    for path in _walk_doc_files(
+        repo_root, max_files=max_files, exclude=exclude, hidden_sink=hidden
+    ):
         rel = path.relative_to(repo_root).as_posix()
         doc_key = _doc_key_for(repo_root, path)
         if repo_doc.get_by_key(project_id, doc_key) is not None:
@@ -254,6 +267,7 @@ def import_docs(
             summary.warnings.extend(f"{rel}: {w.describe()}" for w in report.warnings)
         except Exception as exc:
             summary.errors.append(f"{rel}: {exc}")
+    summary.hidden_dirs = sorted(hidden)
     return summary
 
 
