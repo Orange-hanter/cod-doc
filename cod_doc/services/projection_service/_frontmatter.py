@@ -115,7 +115,13 @@ def _raw_matches_db(model: DocumentModel) -> bool:
     try:
         parsed = yaml.safe_load(raw)
     except yaml.YAMLError:
-        return False
+        # ADO-064: a block we cannot parse cannot *prove* it disagrees with
+        # the DB (real corpus: Orakul's Russian frontmatter with unquoted
+        # markdown links breaks safe_load). Rebuilding it from metadata would
+        # destroy the author's block — the same corruption the unknown-enum
+        # escape hatch below exists to stop. Keep it verbatim; the trade-off
+        # is that DB-side metadata edits never reach such a file's frontmatter.
+        return True
     if not isinstance(parsed, dict):
         return False
 

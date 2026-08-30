@@ -257,6 +257,38 @@ def test_frontmatter_is_reserialised_when_the_db_diverges(
     assert rendered.index("type:") < rendered.index("status:") < rendered.index("owner:")
 
 
+def test_unparseable_frontmatter_is_kept_verbatim(
+    engine_with_schema,  # type: ignore[no-untyped-def]
+    root_path: Path,
+) -> None:
+    """ADO-064: frontmatter that is not valid YAML must survive the round-trip.
+
+    Real corpus (Orakul `docs/00-current-state.md`): a Russian frontmatter
+    whose `Связанные документы:` value carries unquoted markdown links with
+    colons breaks `yaml.safe_load`. An unparseable block cannot *prove* it
+    disagrees with the DB, so the renderer has no licence to rebuild it —
+    rebuilding destroyed 283 files' authored metadata on the 2026-08-30
+    re-export. Same escape hatch as unknown enum values: keep as authored.
+    """
+    raw = (
+        "---\n"
+        "Документ: Состояние продукта — единый источник правды о факте\n"
+        "Версия: 1.13\n"
+        "Связанные документы: [Реестр несделанного](04-implementation/15-not-done.md), "
+        "[Roadmap](04-implementation/12-product-roadmap.md)\n"
+        "---\n"
+        "\n# Состояние продукта\n\nТело.\n"
+    )
+    factory = make_session_factory(engine_with_schema)
+
+    with transactional(factory) as session:
+        project_id = _seed_project(session, root_path)
+        doc_id = _import_file(session, project_id, "d.md", raw)
+        rendered = proj.render_markdown(session, doc_id)
+
+    assert rendered == raw
+
+
 # ============================================================================ #
 # Export guards (stage 1)                                                       #
 # ============================================================================ #
