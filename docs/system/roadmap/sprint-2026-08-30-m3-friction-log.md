@@ -1,7 +1,7 @@
 ---
 type: sprint-plan
 scope: adoption-2026-08
-status: active
+status: completed
 source_of_truth: false
 canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
@@ -113,18 +113,18 @@ related_docs:
 Каждый пункт проверяем одной командой/одним артефактом — не «сделано», а
 «доказано».
 
-- [ ] Каждая bug-задача (#10, #14) имеет регрессионный тест, который
+- [x] Каждая bug-задача (#10, #14) имеет регрессионный тест, который
       падает на main без фикса; красный прогон записан в task-doc
       'verification'.
-- [ ] Все задачи спринта прошли `task_checkout` → `task_complete` с
+- [x] Все задачи спринта прошли `task_checkout` → `task_complete` с
       `commit_sha`; «висячих» in-progress нет.
-- [ ] Каждая правка трекаемого `.md` закрыта `doc import` в том же
+- [x] Каждая правка трекаемого `.md` закрыта `doc import` в том же
       коммите; финальный `doc drift --all` — 100% in_sync.
-- [ ] `ruff check` + `ruff format --check` + `mypy cod_doc/` +
+- [x] `ruff check` + `ruff format --check` + `mypy cod_doc/` +
       `pytest tests/ --timeout=120` — зелёные на последнем коммите.
-- [ ] Ratchet не вырос: `per-file-ignores` ≤ 6 записей; новых
+- [x] Ratchet не вырос: `per-file-ignores` ≤ 6 записей; новых
       `# noqa`/`# type: ignore` без обоснования — ноль (идиома
       тест-файлов `no-untyped-def` допустима).
-- [ ] Friction-лог ADO-005: 0 открытых записей.
-- [ ] Audit-отчёт `2026-09-06-sprint-m3-friction.md` — status active,
+- [x] Friction-лог ADO-005: 0 открытых записей.
+- [x] Audit-отчёт `2026-09-06-sprint-m3-friction.md` — status active,
       в БД, со ссылками на все коммиты спринта.
