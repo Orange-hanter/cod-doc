@@ -154,6 +154,12 @@ def ctx() -> None:
     default=None,
     help="Ограничить выборку документами, укладывающимися в бюджет токенов",
 )
+@click.option(
+    "--include-body",
+    is_flag=True,
+    default=False,
+    help="Включить отрендеренное тело документа в JSON (для prompt-контекста)",
+)
 @click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
 @click.pass_context
 def ctx_docs(
@@ -161,6 +167,7 @@ def ctx_docs(
     project: str,
     paths: tuple[str, ...],
     budget_tokens: int | None,
+    include_body: bool,
     as_json: bool,
 ) -> None:
     """Список документов проекта с оценкой токенов и рискованными ссылками."""
@@ -181,6 +188,7 @@ def ctx_docs(
             # Применяем бюджет: идём в порядке doc_key, пока сумма токенов
             # не превысит заданный лимит.
             selected: list[Any] = []
+            bodies: dict[str, str] = {}
             token_estimate = 0
             for doc in sorted(filtered, key=lambda d: d.doc_key):
                 body = (
@@ -191,9 +199,14 @@ def ctx_docs(
                     continue
                 selected.append(doc)
                 token_estimate += doc_tokens
+                if include_body and body:
+                    bodies[doc.doc_key] = body
 
             links_at_risk = _collect_links_at_risk(session, project_id, selected)
             docs_out = [_doc_to_compact(d) for d in selected]
+            for d in docs_out:
+                if d["doc_key"] in bodies:
+                    d["body"] = bodies[d["doc_key"]]
             payload = {
                 "docs": docs_out,
                 "links_at_risk": links_at_risk,
@@ -203,7 +216,7 @@ def ctx_docs(
         engine.dispose()
 
     if as_json:
-        console.print(_json.dumps(payload, ensure_ascii=False, indent=2))
+        print(_json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
     console.rule(f"[bold]Контекст: документы — {project}[/bold]")
@@ -266,7 +279,7 @@ def ctx_drift(ctx: click.Context, project: str, as_json: bool) -> None:
     }
 
     if as_json:
-        console.print(_json.dumps(payload, ensure_ascii=False, indent=2))
+        print(_json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
     console.rule(f"[bold]Контекст: дрейф — {project}[/bold]")
@@ -311,7 +324,7 @@ def ctx_search(ctx: click.Context, query: str, project: str, as_json: bool) -> N
         engine.dispose()
 
     if as_json:
-        console.print(_json.dumps(result, ensure_ascii=False, indent=2))
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
         return
 
     console.rule(f"[bold]Контекст: поиск — {project}[/bold]")

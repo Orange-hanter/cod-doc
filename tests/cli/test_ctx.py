@@ -143,3 +143,31 @@ def test_ctx_help_in_russian(tmp_path: Path, isolated_cod_doc_home: Path) -> Non
     assert "docs" in result.output
     assert "drift" in result.output
     assert "search" in result.output
+
+
+def test_ctx_docs_include_body(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    root = _init_project(tmp_path)
+    _import_corpus(root)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ctx", "docs", "-p", "p", "--include-body", "--json"])
+    assert result.exit_code == 0, result.output
+
+    data = json.loads(result.output)
+    bodies = {d["doc_key"]: d.get("body") for d in data["docs"]}
+    assert bodies.get("alpha"), "include-body обязан вернуть отрендеренное тело"
+    assert "See [[doc:missing]]" in bodies["alpha"]
+
+
+def test_ctx_docs_without_include_body_has_no_body(
+    tmp_path: Path, isolated_cod_doc_home: Path
+) -> None:
+    root = _init_project(tmp_path)
+    _import_corpus(root)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ctx", "docs", "-p", "p", "--json"])
+    assert result.exit_code == 0, result.output
+
+    data = json.loads(result.output)
+    assert all("body" not in d for d in data["docs"])
