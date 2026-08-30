@@ -50,6 +50,9 @@ cod-doc import docs      — импорт .md/.rst/.txt из репо как Doc
 cod-doc import legacy-tasks — миграция .cod-doc/tasks.yaml в DB
 cod-doc import all       — оба пайплайна подряд
 cod-doc ingest <adapter> — ingest внешних находок (ai_review, zairgrush_*)
+cod-doc ctx docs           — контекст: документы проекта
+cod-doc ctx drift          — контекст: дрейф проекций проекта
+cod-doc ctx search         — контекст: поиск по проекту
 cod-doc finding stability — Jaccard-стабильность находок по SHA
 cod-doc routine list       — список рутин с последним запуском
 cod-doc routine tick       — один тик планировщика (для OS cron/launchd)
@@ -64,6 +67,7 @@ from cod_doc.cli.adr import adr
 from cod_doc.cli.cmd_adapter import adapter
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_audit import audit
+from cod_doc.cli.cmd_ctx import ctx
 from cod_doc.cli.cmd_finding import finding
 from cod_doc.cli.cmd_hash import hash
 from cod_doc.cli.cmd_hub import hub
@@ -115,6 +119,7 @@ main.add_command(routine)
 main.add_command(audit)
 main.add_command(import_cmd)
 main.add_command(ingest)
+main.add_command(ctx)
 main.add_command(finding)
 main.add_command(adapter)
 main.add_command(adr)
