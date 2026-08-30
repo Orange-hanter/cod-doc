@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from click.testing import CliRunner
@@ -16,8 +18,6 @@ from cod_doc.infra.db import make_engine
 from cod_doc.infra.models import ActivityEventModel, FindingModel, FindingSourceRunModel
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import pytest
 
 
@@ -122,7 +122,7 @@ def test_ingest_from_pr_with_monkeypatched_download(
     fixture = tmp_path / "pr-export.json"
     fixture.write_text(json.dumps(_ai_payload()), encoding="utf-8")
 
-    def _fake_download(pr: int, dest: Path) -> None:
+    def _fake_download(pr: int, dest: Path, repo: Path | None = None) -> None:
         shutil.copy(fixture, dest / f"pr-review-export-{pr}.json")
 
     monkeypatch.setattr("cod_doc.cli.cmd_ingest._download_pr_artifact", _fake_download)
@@ -146,6 +146,86 @@ def test_ingest_from_pr_with_monkeypatched_download(
     data2 = json.loads(result2.output)
     assert data2["created"] == 0
     assert data2["updated"] == 1
+
+
+def test_ingest_from_pr_repo_cwd(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    isolated_cod_doc_home: Path,
+) -> None:
+    _init_project(tmp_path, "p")
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    captured: dict[str, object] = {}
+
+    def _fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        captured["cwd"] = kwargs.get("cwd")
+        dest = Path(cmd[cmd.index("--dir") + 1])
+        dest.mkdir(parents=True, exist_ok=True)
+        (dest / "pr-review-export-42.json").write_text(json.dumps(_ai_payload()), encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr("cod_doc.cli.cmd_ingest.subprocess.run", _fake_run)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "ingest",
+            "ai_review",
+            "--project",
+            "p",
+            "--from-pr",
+            "42",
+            "--repo",
+            str(repo_path),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["cwd"] == str(repo_path)
+
+
+def test_ingest_from_pr_gh_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    isolated_cod_doc_home: Path,
+) -> None:
+    _init_project(tmp_path, "p")
+
+    def _fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError("gh")
+
+    monkeypatch.setattr("cod_doc.cli.cmd_ingest.subprocess.run", _fake_run)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["ingest", "ai_review", "--project", "p", "--from-pr", "42"],
+    )
+    assert result.exit_code != 0
+    assert "`gh` CLI not found" in result.output
+
+
+def test_ingest_from_pr_gh_download_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    isolated_cod_doc_home: Path,
+) -> None:
+    _init_project(tmp_path, "p")
+
+    def _fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(1, ["gh"], stderr="artifact not found")
+
+    monkeypatch.setattr("cod_doc.cli.cmd_ingest.subprocess.run", _fake_run)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["ingest", "ai_review", "--project", "p", "--from-pr", "42"],
+    )
+    assert result.exit_code != 0
+    assert "Failed to download artifact" in result.output
 
 
 def test_ingest_stdin_default_input(tmp_path: Path, isolated_cod_doc_home: Path) -> None:

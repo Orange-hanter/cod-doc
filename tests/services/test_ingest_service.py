@@ -107,7 +107,7 @@ class TestAiReviewAdapter:
 
     @pytest.mark.parametrize(
         "version",
-        [2, "2", None, 0],
+        ["2", None, 0],
     )
     def test_unknown_version_raises(self, version: object) -> None:
         adapter = AiReviewAdapter()
@@ -115,6 +115,37 @@ class TestAiReviewAdapter:
         stream = io.StringIO(_json_dumps(payload))
         with pytest.raises(ValueError, match=r"Unsupported ai_review payload\.version"):
             adapter.parse(stream)
+
+    def test_v2_additive_fields_parsed(self) -> None:
+        """EXPORT_VERSION=2 (ai-reviewer): fp/verifierStatus/actionabilityScore."""
+        adapter = AiReviewAdapter()
+        payload = {
+            "version": 2,
+            "pr": {"number": 42},
+            "findings": [
+                {
+                    "file": "a.py",
+                    "line": 7,
+                    "severity": "major",
+                    "title": "v2 finding",
+                    "model": "m1",
+                    "fp": "abc123",
+                    "verifierStatus": "verified",
+                    "actionabilityScore": 3.5,
+                }
+            ],
+            "blockers": [],
+        }
+        findings = adapter.parse(io.StringIO(_json_dumps(payload)))
+        assert len(findings) == 1
+        finding = findings[0]
+        assert finding.fp == "abc123"
+        assert finding.payload is not None
+        assert finding.payload["version"] == 2
+        assert finding.payload["verifier_status"] == "verified"
+        assert finding.payload["actionability_score"] == 3.5
+        seed = finding.to_seed()
+        assert seed.payload["fp_basis"] == "fp"
 
     def test_nit_severity_normalizes_to_info(self) -> None:
         adapter = AiReviewAdapter()

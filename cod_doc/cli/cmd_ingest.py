@@ -29,17 +29,26 @@ log = get_logger("cli.ingest")
 _DRY_RUN_PREVIEW_LIMIT = 20
 
 
-def _download_pr_artifact(pr: int, dest: Path) -> None:
+def _download_pr_artifact(pr: int, dest: Path, repo: Path | None = None) -> None:
     """Download the ``pr-review-export-<PR>`` artifact using ``gh run download``.
 
     This function is the only place that shells out to ``gh``. It is exposed as
     a module-level hook so tests can monkey-patch it without touching the CLI
     surface.
+
+    Args:
+        pr: Pull-request number whose artifact should be downloaded.
+        dest: Directory where ``gh`` will extract the artifact contents.
+        repo: Optional path to the local Git repository to run ``gh`` in.
+            When omitted ``gh`` uses the current working directory.
     """
     artifact_name = f"pr-review-export-{pr}"
     cmd = ["gh", "run", "download", "--name", artifact_name, "--dir", str(dest)]
+    run_kwargs: dict[str, Any] = {}
+    if repo is not None:
+        run_kwargs["cwd"] = str(repo)
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, **run_kwargs)
     except FileNotFoundError as exc:
         raise click.ClickException(
             "`gh` CLI not found. Install GitHub CLI to use --from-pr."
@@ -58,6 +67,7 @@ def _resolve_input_stream(
     input_stream: TextIO,
     *,
     from_pr: int | None,
+    repo: Path | None = None,
 ) -> Iterator[TextIO]:
     """Return the input stream, downloading from GitHub Actions if requested."""
     if from_pr is None:
@@ -66,7 +76,7 @@ def _resolve_input_stream(
 
     with tempfile.TemporaryDirectory(prefix="cod-doc-ingest-") as td:
         dest = Path(td)
-        _download_pr_artifact(from_pr, dest)
+        _download_pr_artifact(from_pr, dest, repo=repo)
         json_files = sorted(dest.rglob("*.json"))
         if not json_files:
             raise click.ClickException(
@@ -246,6 +256,12 @@ _json_option = click.option("--json", "as_json", is_flag=True, help="Machine-rea
     default=None,
     help="Download `pr-review-export-<PR>` artifact via `gh run download`.",
 )
+@click.option(
+    "--repo",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help="Local Git repository to run `gh` in (default: current directory).",
+)
 @_dry_run_option
 @_json_option
 @click.pass_context
@@ -254,11 +270,12 @@ def ai_review_cmd(
     project: str,
     input_stream: TextIO,
     from_pr: int | None,
+    repo: Path | None,
     dry_run: bool,
     as_json: bool,
 ) -> None:
     """Ingest an ai-review JSON export (file, stdin, or PR artifact)."""
-    with _resolve_input_stream(input_stream, from_pr=from_pr) as stream:
+    with _resolve_input_stream(input_stream, from_pr=from_pr, repo=repo) as stream:
         _run_ingest(
             ctx,
             adapter_name="ai_review",

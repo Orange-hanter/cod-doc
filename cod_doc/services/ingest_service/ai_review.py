@@ -1,8 +1,10 @@
 """Ingest adapter for ai-review JSON exports.
 
-Dispatches on ``payload.version``. Only version 1 is supported today; any
-other version raises ``ValueError`` so the caller knows the export must be
-handled explicitly rather than silently best-efforted.
+Dispatches on ``payload.version``. Versions 1 and 2 are supported (v2 is
+additive: slimFinding carries fp/verifierStatus/actionabilityScore — see
+ai-reviewer EXPORT_VERSION); any other version raises ``ValueError`` so the
+caller knows the export must be handled explicitly rather than silently
+best-efforted.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from typing import TextIO
 
 from cod_doc.services.ingest_service.models import RawFinding
 
-_KNOWN_VERSIONS = frozenset({1})
+_KNOWN_VERSIONS = frozenset({1, 2})
 
 
 class AiReviewAdapter:
@@ -26,15 +28,15 @@ class AiReviewAdapter:
         version = payload.get("version")
         if version not in _KNOWN_VERSIONS:
             raise ValueError(f"Unsupported ai_review payload.version: {version!r}")
-        return self._parse_v1(payload)
+        return self._parse_v1(payload, version=int(version))
 
-    def _parse_v1(self, payload: dict[str, object]) -> list[RawFinding]:
+    def _parse_v1(self, payload: dict[str, object], *, version: int) -> list[RawFinding]:
         pr = payload.get("pr") or {}
         if not isinstance(pr, dict):
             pr = {}
         source_ref = self._as_text(pr.get("number"))
         common_payload: dict[str, object] = {
-            "version": 1,
+            "version": version,
             "head_sha": self._as_text(payload.get("headSha")),
             "review_mode": self._as_text(payload.get("reviewMode")),
         }
@@ -65,6 +67,15 @@ class AiReviewAdapter:
         line = None
         if isinstance(line_value, int) and line_value > 0:
             line = line_value
+        finding_payload = dict(common_payload)
+        # v2 additive fields (ai-reviewer EXPORT_VERSION=2): surface them for
+        # downstream stability analysis without changing the fingerprint.
+        verifier_status = self._as_text(raw.get("verifierStatus"))
+        if verifier_status:
+            finding_payload["verifier_status"] = verifier_status
+        actionability = raw.get("actionabilityScore")
+        if isinstance(actionability, (int, float)) and not isinstance(actionability, bool):
+            finding_payload["actionability_score"] = float(actionability)
         return RawFinding(
             source="ai_review",
             source_ref=source_ref or None,
@@ -76,7 +87,7 @@ class AiReviewAdapter:
             line=line,
             confidence=self._normalize_confidence(raw.get("confidence")),
             fp=self._as_text(raw.get("fp")) or None,
-            payload=common_payload,
+            payload=finding_payload,
             raw=raw,
         )
 
