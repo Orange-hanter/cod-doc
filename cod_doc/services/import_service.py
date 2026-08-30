@@ -244,6 +244,49 @@ _ALIEN_STATUS_ALIASES: dict[str, DocumentStatus] = {
     "cancelled": DocumentStatus.DEPRECATED,
 }
 
+# ADO-060 (friction #14): foreign corpora without a `type:` key. Orakul writes
+# Russian frontmatter (`Документ`, `Версия`, `Статус`, `diataxis`, `quadrant`);
+# diataxis quadrants map onto cod-doc types. Same rule as statuses: a table,
+# and every substitution is reported (reason="alias").
+_DIATAXIS_TYPE_ALIASES: dict[str, DocumentType] = {
+    # обучающие материалы — руководства
+    "tutorial": DocumentType.GUIDE,
+    "how-to": DocumentType.GUIDE,
+    "how_to": DocumentType.GUIDE,
+    "howto": DocumentType.GUIDE,
+    # объясняющий квадрант — аналитика/концепции
+    "explanation": DocumentType.ANALYSIS,
+    # справочный квадрант — ближайшее у нас module-spec; записан явно, чтобы
+    # маппинг был greppable, а warning зафиксировал осознанный выбор
+    "reference": DocumentType.MODULE_SPEC,
+}
+
+# Ключи frontmatter, из которых берётся тип, когда `type:` отсутствует.
+# Порядок — приоритет: `diataxis` важнее `quadrant`.
+_TYPE_FALLBACK_KEYS: tuple[str, ...] = ("diataxis", "quadrant")
+
+
+def _diataxis_type(
+    fm: Mapping[str, Any], *, fallback: DocumentType, sink: list[CoercedField]
+) -> DocumentType:
+    """Derive the document type from `diataxis`/`quadrant` when `type:` is absent.
+
+    Only called on the create path: the update path keeps the existing type
+    for a missing `type:` key, so a re-import cannot undo this mapping.
+    """
+    for key in _TYPE_FALLBACK_KEYS:
+        raw = fm.get(key)
+        if not raw:
+            continue
+        text = str(raw).strip()
+        alias = _DIATAXIS_TYPE_ALIASES.get(text.lower())
+        if alias is not None:
+            sink.append(CoercedField(field=key, raw=text, applied=alias.value, reason="alias"))
+            return alias
+        sink.append(CoercedField(field=key, raw=text, applied=fallback.value, reason="unknown"))
+        return fallback
+    return fallback
+
 
 def _coerce_enum(
     enum_cls: type[_ENUM],
@@ -346,6 +389,10 @@ def import_markdown(
     doc_type = _coerce_enum(
         DocumentType, fm.get("type"), fallback_type, field_name="type", sink=warnings
     )
+    if not fm.get("type"):
+        # ADO-060 (friction #14): no `type:` key — try the foreign
+        # `diataxis`/`quadrant` vocabulary before settling for the default.
+        doc_type = _diataxis_type(fm, fallback=doc_type, sink=warnings)
     status = _coerce_enum(
         DocumentStatus,
         fm.get("status"),

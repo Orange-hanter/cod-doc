@@ -203,6 +203,58 @@ def test_unstorable_type_falls_back_but_says_so(engine_with_schema) -> None:  # 
         ]
 
 
+def test_diataxis_frontmatter_maps_to_document_type(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-060 (friction #14): Orakul-style frontmatter without `type:` must
+    not silently flatten to module-spec — `diataxis`/`quadrant` map loudly."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        cases = [
+            ("tut", "diataxis", "tutorial", "guide"),
+            ("how", "diataxis", "how-to", "guide"),
+            ("exp", "quadrant", "explanation", "analysis"),
+            ("ref", "diataxis", "reference", "module-spec"),
+        ]
+        for key, field, raw_value, expected in cases:
+            report = _import(
+                session, project_id, key, f"---\n{field}: {raw_value}\n---\n\n# T\n\nBody.\n"
+            )
+            model = session.get(DocumentModel, report.document.row_id)
+            assert model is not None
+            assert model.type == expected, (key, field, raw_value)
+            assert [w.to_dict() for w in report.warnings] == [
+                {"field": field, "raw": raw_value, "applied": expected, "reason": "alias"}
+            ]
+
+
+def test_diataxis_unknown_value_is_a_plain_unknown(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    raw = "---\ndiataxis: marinated\n---\n\n# T\n\nBody.\n"
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        report = _import(session, project_id, "odd-dt", raw)
+
+        model = session.get(DocumentModel, report.document.row_id)
+        assert model is not None
+        assert model.type == "module-spec"
+        assert [w.to_dict() for w in report.warnings] == [
+            {"field": "diataxis", "raw": "marinated", "applied": "module-spec", "reason": "unknown"}
+        ]
+
+
+def test_explicit_type_wins_over_diataxis(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    raw = "---\ntype: vision\ndiataxis: tutorial\n---\n\n# T\n\nBody.\n"
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        report = _import(session, project_id, "both", raw)
+
+        model = session.get(DocumentModel, report.document.row_id)
+        assert model is not None
+        assert model.type == "vision"
+        assert report.warnings == []
+
+
 def test_foreign_statuses_map_through_the_alias_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """`final` / `living` / `done` / `resolved` are renames, not draft documents.
 
