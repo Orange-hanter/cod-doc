@@ -87,6 +87,13 @@ def _project_db_id(session: Session, project_name: str) -> int:
     help="Cap на количество файлов в одном прогоне.",
 )
 @click.option("--exclude", "exclude", multiple=True, help=_EXCLUDE_HELP)
+@click.option(
+    "--limit",
+    type=click.IntRange(min=0),
+    default=_DRY_RUN_PREVIEW_LIMIT,
+    show_default=True,
+    help="Сколько путей печатать в --dry-run; 0 — весь список.",
+)
 @click.pass_context
 def cmd_import_docs(
     ctx: click.Context,
@@ -95,6 +102,7 @@ def cmd_import_docs(
     dry_run: bool,
     max_files: int,
     exclude: tuple[str, ...],
+    limit: int,
 ) -> None:
     """Импортировать .md/.rst/.txt файлы как Documents."""
     cfg: Config = ctx.obj["config"]
@@ -124,12 +132,15 @@ def cmd_import_docs(
         # не видно, сработал ли --exclude. markup=False: '[' в имени файла
         # не должен уехать в rich-разметку; soft_wrap — чтобы длинный путь
         # не переносился по ширине терминала.
+        # ADO-059 (friction #8): --limit 0 печатает весь список — на корпусе
+        # 400+ документов решение по exclude иначе принимать не по чему.
         console.print(f"Файлы ({len(summary.files)}):")
-        for rel in summary.files[:_DRY_RUN_PREVIEW_LIMIT]:
+        shown = summary.files if limit == 0 else summary.files[:limit]
+        for rel in shown:
             console.print(f"  • {rel}", markup=False, highlight=False, soft_wrap=True)
-        hidden = len(summary.files) - _DRY_RUN_PREVIEW_LIMIT
+        hidden = len(summary.files) - len(shown)
         if hidden > 0:
-            console.print(f"  … ещё {hidden}")
+            console.print(f"  … ещё {hidden} (полный список: --limit 0)")
     if summary.warnings:
         # ADO-015: frontmatter values coerced to fit an enum — reported, since
         # a bulk import of a foreign corpus is exactly where they hide.
