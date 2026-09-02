@@ -187,6 +187,7 @@ ai-review, кросс-проектность). Полный план:
 | **SYM-009** | Фаза 3: ingest ai_review pull-моделью + upstream-PR slimFinding + finding stability | medium | SYM-006 |
 | **SYM-010** | Фаза 4a: ctx drift → PR-комментарий (гейт ссылок/frontmatter Orakul) | medium | SYM-009, ADO-017 |
 | **SYM-011** | Фаза 5: кросс-проектный поиск + `[[doc:slug:key]]` + фикс Chroma L3 + `agent_pick --projects` | low | SYM-005 |
+| *(draft)* | [RFC 24](../../../proposals/24-structure-contracts-scenarios.md): structure/cont scenario contour — после SYM-005..009 | — | SYM-006, SYM-009 |
 
 ### Трек B — Feature-трек (hackathon RFC, после C)
 

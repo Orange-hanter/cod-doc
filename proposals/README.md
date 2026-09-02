@@ -65,6 +65,7 @@
 | #   | Документ                                                | Категория      | Эффект                                            | Риск    |
 | --- | ------------------------------------------------------- | -------------- | ------------------------------------------------- | ------- |
 | 22  | [Symbiosis: ZAIrgRush + Orakul](22-symbiosis-zairgrush-orakul.md) | 🔵 Архитектура | Hub-БД, findings-ingest, doc-контекст для внешней петли и AI-ревью | высокий |
+| 24  | [Structure, contracts & scenarios](24-structure-contracts-scenarios.md) | 🔵 Архитектура · **черновик** | Единый контур docs↔code: obligations/facts/assessment, scenario coverage, `structure_context` для garage | высокий |
 
 ## ☁️ Cloud-track (2026-07-29)
 
@@ -128,7 +129,7 @@ graph LR
 **Фаза 4 (hackathon-track MVP):** 18 → 19 → 17
 **Фаза 5 (hackathon-track scale-up):** 16 → 20
 **Фаза 6 (по необходимости):** 10
-**Symbiosis-track (2026-08, приоритет по ROADMAP):** 22 — вместо 16/20 как путь к реальным пользователям
+**Symbiosis-track (2026-08, приоритет по ROADMAP):** 22 — вместо 16/20 как путь к реальным пользователям; **24** (черновик) — глубокий контур structure/scenario после SYM-005..009
 
 ## Что осталось за скобками
 
