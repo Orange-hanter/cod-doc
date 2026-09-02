@@ -1,6 +1,9 @@
 # 17 — Living Specification: ADR ↔ Tasks ↔ Code ↔ Docs drift detector
 
 > Категория: 🟡 Адаптация · Риск: средний · Зависимости: 07-routines, ADR-система (a73dcbb), OBI code-ref
+> · **Примечание (2026-09-02):** внешняя часть (cross-repo structure/scenario
+> contour) переносится в [proposal 24](24-structure-contracts-scenarios.md);
+> routine `adr_drift` в cod-doc остаётся complementary.
 
 ## Контекст: дрейф между «как должно быть» и «как есть»
 
