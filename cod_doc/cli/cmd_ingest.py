@@ -319,3 +319,66 @@ for _adapter_name in INGEST_ADAPTERS:
         return _cmd
 
     _make_cmd(_adapter_name)
+
+
+@ingest.command("structure")
+@click.option("--project", "-p", required=True)
+@click.option("--facts", "facts_path", required=True, type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--assessment",
+    "assessment_path",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+)
+@click.option(
+    "--trust-tier",
+    type=click.Choice(["signed_ci", "trusted_local", "untrusted"]),
+    default="trusted_local",
+    show_default=True,
+)
+@_json_option
+@click.pass_context
+def ingest_structure(
+    ctx: click.Context,
+    project: str,
+    facts_path: Path,
+    assessment_path: Path | None,
+    trust_tier: str,
+    as_json: bool,
+) -> None:
+    """Store a structure_facts payload (and optional assessment) blob-first."""
+    from cod_doc.infra.db import transactional
+    from cod_doc.services.structure_protocol import as_object
+    from cod_doc.services.structure_service import ingest_structure as ingest_fn
+
+    cfg: Config = ctx.obj["config"]
+    facts = as_object(json.loads(facts_path.read_text(encoding="utf-8")), label="facts")
+    assessment = None
+    if assessment_path is not None:
+        assessment = as_object(
+            json.loads(assessment_path.read_text(encoding="utf-8")), label="assessment"
+        )
+    _entry, (factory, engine) = _open_entry(cfg, project)
+    try:
+        with transactional(factory) as session:
+            project_id = _require_project_id(session, project)
+            result = ingest_fn(
+                session,
+                project_id,
+                facts=facts,
+                assessment=assessment,
+                trust_tier=trust_tier,
+                project_slug=project,
+                actor="cli",
+            )
+    finally:
+        engine.dispose()
+    if as_json:
+        click.echo(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return
+    snap = result["snapshot"]
+    assert isinstance(snap, dict)
+    click.echo(
+        f"ingested fingerprint={snap['fingerprint']} "
+        f"idempotent={result['idempotent']} published={result['publishedCurrent']}"
+    )

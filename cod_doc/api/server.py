@@ -22,6 +22,7 @@ from cod_doc.api.deps import (
     stop_daemon,
 )
 from cod_doc.api.routes import router as core_router
+from cod_doc.api.structure import router as structure_router
 from cod_doc.api.v1.routes import router as v1_router
 from cod_doc.api.web import fragments_router, pages_router
 from cod_doc.api.web.errors import WebError, truncate_for_cookie
@@ -66,6 +67,7 @@ app = FastAPI(
 
 app.include_router(core_router)
 app.include_router(v1_router)  # SYM-006C: /api/v1 — единственная поверхность будущего Bearer-гейта
+app.include_router(structure_router)
 app.include_router(webhook_router)
 app.include_router(websocket_router)
 app.include_router(fragments_router)

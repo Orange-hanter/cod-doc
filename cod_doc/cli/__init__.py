@@ -45,7 +45,11 @@ cod-doc link verify      — проверить ссылки секции
 cod-doc revision list    — история ревизий сущности
 cod-doc revision show    — детали ревизии
 cod-doc revision revert  — откатить ревизию
-cod-doc audit            — проверка frontmatter + дрейфа (FM-*/DR-*)
+cod-doc ingest structure — принять structure facts/assessment snapshot
+cod-doc obligation export — экспортировать obligations_export.v1
+cod-doc structure latest|get|drift|triage|entities|contracts|scenarios
+cod-doc ctx structure     — pinned SHA structure_context
+
 cod-doc import docs      — импорт .md/.rst/.txt из репо как Documents
 cod-doc import legacy-tasks — миграция .cod-doc/tasks.yaml в DB
 cod-doc import all       — оба пайплайна подряд
@@ -80,10 +84,12 @@ from cod_doc.cli.cmd_serve import mcp_server, serve
 from cod_doc.cli.cmd_tui import tui, wizard
 from cod_doc.cli.doc import doc
 from cod_doc.cli.link import link
+from cod_doc.cli.obligation import obligation
 from cod_doc.cli.plan import plan
 from cod_doc.cli.revision import revision
 from cod_doc.cli.routine import routine
 from cod_doc.cli.story import story
+from cod_doc.cli.structure import structure
 from cod_doc.cli.task import task
 from cod_doc.config import Config
 from cod_doc.logging_config import setup_logging
@@ -121,6 +127,8 @@ main.add_command(import_cmd)
 main.add_command(ingest)
 main.add_command(ctx)
 main.add_command(finding)
+main.add_command(obligation)
+main.add_command(structure)
 main.add_command(adapter)
 main.add_command(adr)
 main.add_command(reindex)

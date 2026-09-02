@@ -36,6 +36,7 @@ from cod_doc.mcp.tools import (
     run_tools,
     skill_tools,
     story_tools,
+    structure_tools,
     task_doc_tools,
     task_tools,
 )
@@ -79,6 +80,7 @@ for _module in (
     adr_tools,
     # RFC 22 / SYM-006D finding.* (external findings; ctx_* aliases live in doc_tools)
     finding_tools,
+    structure_tools,
 ):
     _module.register(mcp)
 
@@ -122,8 +124,8 @@ def get_active_profile() -> str:
     default=os.environ.get("COD_DOC_PROFILE", "agent"),
     show_default=True,
     help="Tool-surface profile (default: agent — cycle-5). agent=6 task-centric "
-    "tools for AI workflows; minimal=20 cold-start curated CRUD; "
-    "standard=107 DB-backed tools without legacy; full=111 including legacy "
+    "tools for AI workflows; minimal=21 cold-start curated CRUD; "
+    "standard=112 DB-backed tools without legacy; full=116 including legacy "
     "agent tools. Counts enforced by tests/test_server_profiles.py.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")

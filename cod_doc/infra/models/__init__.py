@@ -39,6 +39,19 @@ from .repo_index import RepoFileModel, RepoImportModel, RepoSymbolModel
 from .revisions import AgentRunModel, AuditLogModel, RevisionModel
 from .routines import RoutineModel, RoutineRunModel
 from .stories import StoryAcceptanceModel, StoryLinkModel, UserStoryModel
+from .structure import (
+    CodeBoundaryModel,
+    CodeContractModel,
+    CodeEdgeModel,
+    CodeEntityModel,
+    CodeStructureSnapshotModel,
+    DocCodeClaimModel,
+    StructureAssessmentModel,
+    StructureCurrentModel,
+    StructureFindingModel,
+    StructureLinkSuggestionModel,
+    StructureWaiverModel,
+)
 from .tags import DocumentTagModel, StoryTagModel, TagModel, TaskTagModel
 from .task_docs import TaskDocumentModel
 from .traces import TraceCallModel
@@ -56,8 +69,14 @@ __all__ = [
     "ApprovalTaskLinkModel",
     "AuditLogModel",
     "Base",
+    "CodeBoundaryModel",
+    "CodeContractModel",
+    "CodeEdgeModel",
+    "CodeEntityModel",
+    "CodeStructureSnapshotModel",
     "CommitLinkModel",
     "DependencyModel",
+    "DocCodeClaimModel",
     "DocCommentModel",
     "DocumentModel",
     "DocumentTagModel",
@@ -81,6 +100,11 @@ __all__ = [
     "StoryAcceptanceModel",
     "StoryLinkModel",
     "StoryTagModel",
+    "StructureAssessmentModel",
+    "StructureCurrentModel",
+    "StructureFindingModel",
+    "StructureLinkSuggestionModel",
+    "StructureWaiverModel",
     "TagModel",
     "TaskDocumentModel",
     "TaskMetricsModel",
