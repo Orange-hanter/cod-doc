@@ -529,18 +529,20 @@ def reconcile_findings(
     for row in existing_rows:
         if row.fingerprint in incoming_by:
             continue
-        if not can_close:
-            row.status = "pending_verify" if row.status != "superseded" else row.status
-            row.last_seen_snapshot_id = snapshot_id
-            row.updated = now
-            out.append(_row_to_finding(row))
-            continue
-        if row.rule_id == "docs.obligation_unlinked":
-            row.status = "superseded"
-        else:
-            row.status = "pending_verify"
         row.last_seen_snapshot_id = snapshot_id
         row.updated = now
+        if row.status == "superseded":
+            out.append(_row_to_finding(row))
+            continue
+        if not can_close:
+            row.status = "pending_verify"
+        elif row.rule_id == "docs.obligation_unlinked":
+            row.status = "superseded"
+        elif row.status == "pending_verify":
+            row.status = "resolved"
+            row.resolved_by_snapshot_id = snapshot_id
+        else:
+            row.status = "pending_verify"
         out.append(_row_to_finding(row))
     session.flush()
     out.sort(key=lambda item: str(item["fingerprint"]))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -25,6 +26,7 @@ from cod_doc.services.structure_protocol import StructureProtocolError, sha256_t
 from cod_doc.services.structure_service import (
     get_latest,
     ingest_structure,
+    replay_snapshot,
     require_pinned_snapshot,
 )
 
@@ -343,3 +345,98 @@ def test_link_suggest_confirm_and_bootstrap_drafts(engine_with_schema) -> None:
         exported = export_obligations(session, project_id, project_slug="demo", head_sha="abcdef1")
     assert confirmed["status"] == "confirmed"
     assert any(item["id"] == confirmed["claimId"] for item in exported["obligations"])
+
+
+def _hex(digit: str) -> str:
+    return digit * 64
+
+
+def test_replay_rebuilds_indexes_from_stored_blob(engine_with_schema) -> None:
+    factory = make_session_factory(engine_with_schema)
+    facts = _facts()
+    with transactional(factory) as session:
+        project_id = _project(session)
+        result = ingest_structure(
+            session, project_id, facts=facts, trust_tier="trusted_local", project_slug="demo"
+        )
+        snapshot_id = int(result["snapshot"]["snapshotId"])
+        first = dict(result["indexes"])
+        replayed = replay_snapshot(session, project_id, snapshot_id)
+    assert replayed["indexes"] == first
+    assert int(replayed["indexes"]["entities"]) >= 1
+
+
+def test_finding_goes_pending_verify_then_resolves_when_gap_stays_gone(engine_with_schema) -> None:
+    factory = make_session_factory(engine_with_schema)
+    facts = _facts()
+    assessment = _assessment()
+    with transactional(factory) as session:
+        project_id = _project(session)
+        ingest_structure(
+            session,
+            project_id,
+            facts=facts,
+            assessment=assessment,
+            trust_tier="trusted_local",
+            project_slug="demo",
+        )
+        open_rows = list(
+            session.execute(
+                select(StructureFindingModel).where(StructureFindingModel.project_id == project_id)
+            ).scalars()
+        )
+        assert open_rows
+        assert all(row.status == "open" for row in open_rows)
+
+        closed_assessment = copy.deepcopy(assessment)
+        closed_assessment["assessments"]["contractScenarios"] = [
+            {
+                **closed_assessment["assessments"]["contractScenarios"][0],
+                "status": "covered",
+                "statusReason": "test link, execution and scenario-specific evidence satisfied",
+                "missingEvidence": [],
+            }
+        ]
+        closed_assessment["hints"] = []
+
+        second_facts = copy.deepcopy(facts)
+        second_facts["fingerprint"] = _hex("a")
+        closed_assessment["fingerprint"] = _hex("b")
+        closed_assessment["factsFingerprint"] = second_facts["fingerprint"]
+        ingest_structure(
+            session,
+            project_id,
+            facts=second_facts,
+            assessment=closed_assessment,
+            trust_tier="trusted_local",
+            project_slug="demo",
+        )
+        pending = list(
+            session.execute(
+                select(StructureFindingModel).where(StructureFindingModel.project_id == project_id)
+            ).scalars()
+        )
+        assert pending
+        assert all(row.status == "pending_verify" for row in pending)
+
+        third_facts = copy.deepcopy(facts)
+        third_facts["fingerprint"] = _hex("c")
+        third_assessment = copy.deepcopy(closed_assessment)
+        third_assessment["fingerprint"] = _hex("d")
+        third_assessment["factsFingerprint"] = third_facts["fingerprint"]
+        ingest_structure(
+            session,
+            project_id,
+            facts=third_facts,
+            assessment=third_assessment,
+            trust_tier="trusted_local",
+            project_slug="demo",
+        )
+        resolved = list(
+            session.execute(
+                select(StructureFindingModel).where(StructureFindingModel.project_id == project_id)
+            ).scalars()
+        )
+    assert resolved
+    assert all(row.status == "resolved" for row in resolved)
+    assert all(row.resolved_by_snapshot_id is not None for row in resolved)
