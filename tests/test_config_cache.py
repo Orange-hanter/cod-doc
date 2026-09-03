@@ -11,7 +11,7 @@ _SAMPLE = "api_key: sk-1\nmodel: m\nbase_url: https://x\nprojects: []\n"
 
 def test_load_caches_parse_within_unchanged_file(monkeypatch) -> None:
     cfgmod.Config.clear_cache()
-    cfgmod.CONFIG_FILE.write_text(_SAMPLE, encoding="utf-8")
+    cfgmod.config_file().write_text(_SAMPLE, encoding="utf-8")
 
     reads = {"n": 0}
     real = cfgmod.yaml.safe_load
@@ -34,23 +34,23 @@ def test_load_caches_parse_within_unchanged_file(monkeypatch) -> None:
 
 def test_load_reparses_when_file_changes() -> None:
     cfgmod.Config.clear_cache()
-    cfgmod.CONFIG_FILE.write_text(_SAMPLE, encoding="utf-8")
+    cfgmod.config_file().write_text(_SAMPLE, encoding="utf-8")
     assert cfgmod.Config.load().api_key == "sk-1"
 
-    cfgmod.CONFIG_FILE.write_text(
+    cfgmod.config_file().write_text(
         "api_key: sk-2-longer\nmodel: m\nbase_url: https://x\nprojects: []\n",
         encoding="utf-8",
     )
     # Bump mtime too, so the change is seen even on coarse-mtime filesystems.
-    st = cfgmod.CONFIG_FILE.stat()
-    os.utime(cfgmod.CONFIG_FILE, (st.st_atime, st.st_mtime + 5))
+    st = cfgmod.config_file().stat()
+    os.utime(cfgmod.config_file(), (st.st_atime, st.st_mtime + 5))
 
     assert cfgmod.Config.load().api_key == "sk-2-longer"
 
 
 def test_save_invalidates_cache() -> None:
     cfgmod.Config.clear_cache()
-    cfgmod.CONFIG_FILE.write_text(_SAMPLE, encoding="utf-8")
+    cfgmod.config_file().write_text(_SAMPLE, encoding="utf-8")
     cfg = cfgmod.Config.load()
     assert cfg.get_project("p") is None  # not yet present
 
@@ -63,8 +63,8 @@ def test_save_invalidates_cache() -> None:
 def test_load_without_file_returns_default_and_does_not_cache() -> None:
     cfgmod.Config.clear_cache()
     # conftest points CONFIG_FILE at a fresh tmp path that does not exist yet.
-    if cfgmod.CONFIG_FILE.exists():
-        cfgmod.CONFIG_FILE.unlink()
+    if cfgmod.config_file().exists():
+        cfgmod.config_file().unlink()
     c = cfgmod.Config.load()
     assert c.api_key == "" or c.api_key is not None  # default Config constructed
-    assert str(cfgmod.CONFIG_FILE) not in cfgmod._LOAD_CACHE
+    assert str(cfgmod.config_file()) not in cfgmod._LOAD_CACHE

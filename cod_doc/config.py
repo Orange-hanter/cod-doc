@@ -16,8 +16,26 @@ import yaml
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-CONFIG_DIR = Path(os.environ.get("COD_DOC_HOME", Path.home() / ".cod-doc"))
-CONFIG_FILE = CONFIG_DIR / "config.yaml"
+
+def config_dir() -> Path:
+    """Каталог конфигурации; ``COD_DOC_HOME`` читается на КАЖДОМ вызове.
+
+    ADO-068: раньше это была константа уровня модуля. ``cod_doc.config``
+    импортируется на стадии коллекции тестов — то есть ДО того, как
+    autouse-фикстура ``tests/conftest.py`` подменит ``COD_DOC_HOME`` на tmp.
+    Путь замерзал на настоящем ``~/.cod-doc``, и ``Config.save()`` из тестов
+    писал в рабочий конфиг пользователя: там оказались ``model: m``,
+    ``api_key: sk-test`` и pytest-каталоги в ``projects:`` — побайтовая копия
+    тестовых фикстур. Это был рецидив находки F5 (аудит 2026-07-29), закрытой
+    ADO-001 за пять дней до того.
+    """
+    return Path(os.environ.get("COD_DOC_HOME", Path.home() / ".cod-doc"))
+
+
+def config_file() -> Path:
+    """Путь к ``config.yaml`` в актуальном :func:`config_dir`."""
+    return config_dir() / "config.yaml"
+
 
 # STB-011: cache the parsed config per file-path, keyed on (mtime, size).
 # Config.load() is on the hot path (every MCP tool resolves a project through
@@ -56,12 +74,19 @@ class ProjectEntry(BaseSettings):
 class Config(BaseSettings):
     """Глобальная конфигурация COD-DOC."""
 
+    # ADO-068: env_file здесь НЕ указан — путь к нему зависит от COD_DOC_HOME,
+    # а model_config вычисляется при создании класса, то есть на импорте.
+    # Подставляется в __init__ через _env_file, уже по актуальному окружению.
     model_config = SettingsConfigDict(
         env_prefix="COD_DOC_",
-        env_file=str(CONFIG_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="allow",
     )
+
+    def __init__(self, **values: object) -> None:
+        """Резолвит ``.env`` в момент создания объекта, а не на импорте модуля."""
+        values.setdefault("_env_file", str(config_dir() / ".env"))
+        super().__init__(**values)  # type: ignore[arg-type]
 
     # LLM adapter selection (PCA-302, proposal 10).
     # Built-in choices: "openai_compat" (default) | "anthropic" | "mock"
@@ -128,7 +153,8 @@ class Config(BaseSettings):
     )
 
     # ChromaDB / Embeddings
-    chroma_path: str = Field(default=str(CONFIG_DIR / "chroma"))
+    # ADO-068: default_factory, а не default — иначе путь замерзает на импорте.
+    chroma_path: str = Field(default_factory=lambda: str(config_dir() / "chroma"))
     embedding_backend: str = Field(
         default="openai",
         description=(
@@ -172,7 +198,7 @@ class Config(BaseSettings):
         fresh ``Config`` is still constructed each call, so callers never share
         a mutable instance.
         """
-        path = CONFIG_FILE
+        path = config_file()
         if not path.exists():
             return cls()
         st = path.stat()
@@ -192,10 +218,11 @@ class Config(BaseSettings):
 
     def save(self) -> None:
         """Сохранить конфиг в файл."""
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        path = config_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
         data = self.model_dump()
-        CONFIG_FILE.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
-        _LOAD_CACHE.pop(str(CONFIG_FILE), None)  # STB-011: invalidate stale parse
+        path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+        _LOAD_CACHE.pop(str(path), None)  # STB-011: invalidate stale parse
 
     # ── Projects ─────────────────────────────────────────────────────────────
 

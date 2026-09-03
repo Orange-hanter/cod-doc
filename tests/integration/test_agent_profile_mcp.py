@@ -13,7 +13,6 @@ AGN-013: agent_get + agent_report smoke.
 from __future__ import annotations
 
 import os
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -24,7 +23,6 @@ from mcp import StdioServerParameters
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
-import cod_doc.config as config_module
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
@@ -35,6 +33,7 @@ from cod_doc.infra.models import (
     TaskModel,
 )
 from cod_doc.mcp.profiles import AGENT_TOOLS
+from tests._alembic import run_alembic
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -46,10 +45,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _run_alembic_upgrade(db_url: str) -> None:
     """Run ``alembic upgrade head`` against the given DB URL."""
-    env = {"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": db_url}
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True, env=env, capture_output=True)
+    run_alembic("upgrade", "head", db_url=db_url)
 
 
 def _seed_project(session) -> int:
@@ -111,9 +107,9 @@ def mcp_agent_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[
     and pre-seeded with a project, plan, section, and optionally tasks.
     """
     config_dir = tmp_path / ".cod-doc-home"
-    config_file = config_dir / "config.yaml"
-    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
-    monkeypatch.setattr(config_module, "CONFIG_FILE", config_file)
+    # ADO-068: путь резолвится в момент вызова — достаточно COD_DOC_HOME.
+    config_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("COD_DOC_HOME", str(config_dir))
 
     repo = tmp_path / "agn-repo"
     repo.mkdir()

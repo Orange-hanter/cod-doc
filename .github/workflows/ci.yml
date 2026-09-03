@@ -21,7 +21,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff
+      # ADO-070: ставим ruff из dev-экстры проекта, а не голым `pip install ruff`.
+      # Иначе CI берёт свежайшую версию, локальный venv — ту, что стояла, и гейт
+      # расходится сам собой: 10×RUF036 приехали в CI правилом, которого нет
+      # в локальной версии.
+      - run: pip install .[dev]
       - run: ruff check cod_doc/ tests/
       - run: ruff format --check cod_doc/ tests/
 

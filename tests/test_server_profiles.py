@@ -67,10 +67,10 @@ def test_invalid_profile_raises() -> None:
         mcp_server.apply_profile("custom-evil")
 
 
-def test_capabilities_reports_active_profile() -> None:
+async def test_capabilities_reports_active_profile() -> None:
     mcp_server.apply_profile("standard")
     capabilities = mcp_server.mcp._tool_manager._tools["capabilities"].fn
-    result = capabilities()
+    result = await capabilities()
     assert result["profile"] == "standard"
 
 

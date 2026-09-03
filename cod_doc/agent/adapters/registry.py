@@ -16,7 +16,6 @@ Usage::
 from __future__ import annotations
 
 import importlib
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -77,7 +76,11 @@ def _load_plugins() -> None:
     if _plugins_loaded:
         return
     _plugins_loaded = True
-    plugin_file = Path.home() / ".cod-doc" / "adapters.json"
+    # ADO-068: через config_dir(), а не Path.home() — иначе COD_DOC_HOME
+    # игнорируется и тесты читают реестр адаптеров пользователя.
+    from cod_doc.config import config_dir
+
+    plugin_file = config_dir() / "adapters.json"
     if not plugin_file.exists():
         return
     import json

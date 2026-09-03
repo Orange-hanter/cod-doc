@@ -47,7 +47,11 @@ dev = [
     "pytest-asyncio>=0.23",
     "pytest-timeout>=2.3",  # PR#5: гейт из CLAUDE.md зовёт --timeout=120
     "hypothesis>=6.100",
-    "ruff>=0.8",
+    # ADO-070: верхняя граница на minor — линтер без пина это «движущийся гейт»:
+    # CI ставил ruff заново на каждый прогон и приносил новые правила (так
+    # приехали 10×RUF036 в красный CI), пока локальный venv стоял на старой
+    # версии и молчал. Поднимать границу — осознанным коммитом с прогоном.
+    "ruff>=0.16.5,<0.17",
     "mypy>=1.11",
     "types-PyYAML>=6.0",  # PR#5: стабы для mypy strict
     "pre-commit>=3.8",
@@ -229,7 +233,21 @@ runtime-evaluated-decorators = [
 "cod_doc/mcp/tools/task_tools.py" = ["ANN401", "C901"]
 
 [tool.mypy]
-python_version = "3.11"
+# ADO-070: 3.12, а не 3.11 — вынужденно. numpy приезжает транзитивно
+# (openai._extras.numpy_proxy → numpy) и не пинуется; начиная с numpy 2.5 его
+# стабы написаны на PEP 695 (`type X = ...`). Под `python_version = "3.11"`
+# mypy падает на разборе стаба
+#   numpy/__init__.pyi:737: Type statement is only supported in Python 3.12+
+# и обрывает проверку целиком ("errors prevented further checking") — джоба
+# Typecheck была из-за этого красной. Подавить нельзя: per-module override
+# (`follow_imports`/`ignore_errors`) не действует на синтаксическую ошибку в
+# стабе установленного пакета — проверено на воспроизведении CI.
+#
+# Цена: mypy больше не ловит использование 3.12-only конструкций, которые
+# сломались бы на 3.11 (`requires-python = ">=3.11"`). Страхует матрица тестов:
+# джоба Test py3.11 гоняет полный suite на 3.11, и 3.12-only синтаксис упадёт
+# там SyntaxError'ом при импорте модуля.
+python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import inspect
 import os
 from collections import Counter
 from typing import TYPE_CHECKING, Any, cast
@@ -204,7 +204,7 @@ def register(mcp: FastMCP) -> None:
         }
 
     @mcp.tool()
-    def tool_call_safe(
+    async def tool_call_safe(
         tool_name: str,
         args: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -267,6 +267,11 @@ def register(mcp: FastMCP) -> None:
         kwargs = args or {}
         try:
             result = target.fn(**kwargs)
+            # ADO-066: каталог смешанный — часть тулов async (capabilities,
+            # tool_search, tools_diff). Синхронный вызов вернул бы корутину, и
+            # в конверт уехал бы <coroutine object> вместо результата.
+            if inspect.isawaitable(result):
+                result = await result
             return {"ok": True, "result": result, "error": None}
         except TaskNotFoundError as exc:
             return _envelope_error(
@@ -337,7 +342,7 @@ def register(mcp: FastMCP) -> None:
             )
 
     @mcp.tool()
-    def tools_diff(since: str = "HEAD") -> dict[str, Any]:
+    async def tools_diff(since: str = "HEAD") -> dict[str, Any]:
         """Diff the current MCP catalog against a named snapshot (PCA-950).
 
         Snapshots live in ``.cod-doc/tool_snapshots/<name>.json`` and are
@@ -391,7 +396,7 @@ def register(mcp: FastMCP) -> None:
                 "description": t.description or "",
                 "input_schema": t.inputSchema,
             }
-            for t in asyncio.run(mcp.list_tools())
+            for t in await mcp.list_tools()
         }
 
         added = sorted(set(current) - set(snap_tools))
@@ -431,7 +436,7 @@ def register(mcp: FastMCP) -> None:
         }
 
     @mcp.tool()
-    def tool_search(
+    async def tool_search(
         query: str,
         limit: int = 3,
         family: str | None = None,
@@ -451,7 +456,7 @@ def register(mcp: FastMCP) -> None:
         in capabilities().tools.families, e.g. "task", "plan", "doc").
         """
         terms = {t.lower() for t in query.split() if len(t) >= 2}
-        all_tools = asyncio.run(mcp.list_tools())
+        all_tools = await mcp.list_tools()
 
         scored: list[tuple[int, Any]] = []
         for tool in all_tools:
@@ -483,7 +488,7 @@ def register(mcp: FastMCP) -> None:
         return results
 
     @mcp.tool()
-    def capabilities() -> dict[str, Any]:
+    async def capabilities() -> dict[str, Any]:
         """Self-describing server snapshot for fresh agent sessions (PCA-940).
 
         Single-call bootstrap — replaces the cold-start round-trip of
@@ -519,7 +524,7 @@ def register(mcp: FastMCP) -> None:
             ALLOWED_TRANSITIONS,
         )
 
-        all_tools = asyncio.run(mcp.list_tools())
+        all_tools = await mcp.list_tools()
         family_counts = Counter(_tool_family(t.name) for t in all_tools)
 
         canonical_statuses = sorted(

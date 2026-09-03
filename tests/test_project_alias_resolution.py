@@ -23,7 +23,6 @@ from mcp import StdioServerParameters
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
-import cod_doc.config as config_module
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.mcp.server import mcp
@@ -114,9 +113,9 @@ def test_legacy_tool_schema_exposes_both_aliases(tool_name: str) -> None:
 @pytest.fixture
 def mcp_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProjectEntry, Path]:
     config_dir = tmp_path / ".cod-doc-home"
-    config_file = config_dir / "config.yaml"
-    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
-    monkeypatch.setattr(config_module, "CONFIG_FILE", config_file)
+    # ADO-068: путь резолвится в момент вызова — достаточно COD_DOC_HOME.
+    config_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("COD_DOC_HOME", str(config_dir))
 
     repo = tmp_path / "alias-repo"
     repo.mkdir()

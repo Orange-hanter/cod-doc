@@ -166,7 +166,7 @@ def write_revision_and_emit_event(
     diff: str,
     reason: str | None,
     commit_sha: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
     activity_kind: str,
     activity_scope_kind: str | None = None,
     activity_scope_id: str | None = None,

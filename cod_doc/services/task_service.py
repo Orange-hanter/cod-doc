@@ -338,7 +338,7 @@ def update_status(
     new_status: TaskStatus,
     author: str,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
     via_checkout: bool = False,
     strict: bool = True,
     force: bool = False,
@@ -453,7 +453,7 @@ def _update_text_field(
     new_value: str,
     author: str,
     reason: str | None,
-    expected_parent_revision_id: str | None | object,
+    expected_parent_revision_id: str | object | None,
 ) -> Task:
     """Shared body for update_description / update_acceptance.
 
@@ -509,7 +509,7 @@ def update_description(
     new_description: str,
     author: str,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Replace task.description; writes a TASK revision (op=description)."""
     return _update_text_field(
@@ -530,7 +530,7 @@ def update_acceptance(
     new_acceptance: str,
     author: str,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Replace task.acceptance; writes a TASK revision (op=acceptance)."""
     return _update_text_field(
@@ -551,7 +551,7 @@ def complete(
     author: str,
     commit_sha: str | None = None,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Complete a task: validate deps → done, write revision.
 

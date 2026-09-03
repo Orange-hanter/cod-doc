@@ -20,9 +20,13 @@ def isolated_cod_doc_home(
 ) -> Path:
     home = tmp_path / "cod-doc-home"
     home.mkdir()
+    # ADO-068: достаточно переменной окружения. Раньше здесь дополнительно
+    # подменялись константы cod_doc.config.CONFIG_DIR/CONFIG_FILE — они
+    # вычислялись на импорте, и без подмены изоляция не работала. Теперь путь
+    # резолвится в момент вызова (config_dir()/config_file()), поэтому setenv
+    # покрывает и внутрипроцессный код, и подпроцессы, которым окружение
+    # наследуется (см. tests/_alembic.py).
     monkeypatch.setenv("COD_DOC_HOME", str(home))
-    monkeypatch.setattr("cod_doc.config.CONFIG_DIR", home)
-    monkeypatch.setattr("cod_doc.config.CONFIG_FILE", home / "config.yaml")
 
     # Workspace discovery is a useful runtime fallback, but in tests it makes
     # an empty Config accidentally include the repository under test. Keep the

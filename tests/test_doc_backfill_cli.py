@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from click.testing import CliRunner
@@ -21,11 +19,13 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import DocumentModel, ProjectModel
 from cod_doc.services import import_service
 from cod_doc.services.projection_service import export as export_mod
+from tests._alembic import run_alembic
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 
 RAW = "---\ntype: guide\nstatus: draft\nowner: docs\n---\n\n# Legacy\n\nBody.\n"
 
@@ -35,15 +35,7 @@ def _sha256(text: str) -> str:
 
 
 def _migrate(db_path: Path) -> None:
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        check=True,
-        env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{db_path}"},
-        capture_output=True,
-    )
+    run_alembic("upgrade", "head", db_url=f"sqlite:///{db_path}")
 
 
 def _bootstrap_repo(tmp_path: Path) -> Config:

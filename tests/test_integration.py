@@ -12,8 +12,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import subprocess
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -21,8 +20,10 @@ from fastapi.testclient import TestClient
 
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
+from tests._alembic import run_alembic
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -61,14 +62,7 @@ def app_client(tmp_path: Path, tmp_project):
     from cod_doc.infra.models import ProjectModel
 
     state_db = entry.cod_doc_dir / "state.db"
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    subprocess.run(
-        [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"],
-        cwd=REPO_ROOT,
-        check=True,
-        env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{state_db}"},
-        capture_output=True,
-    )
+    run_alembic("upgrade", "head", db_url=f"sqlite:///{state_db}")
     engine = make_engine(f"sqlite:///{state_db}")
     factory = make_session_factory(engine)
     with factory() as session:

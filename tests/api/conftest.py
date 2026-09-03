@@ -15,13 +15,14 @@ See `tests/api/test_web_settings.py:settings_client` for the pattern.
 
 from __future__ import annotations
 
-import subprocess
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests._alembic import run_alembic
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # WEB-053b: single source of truth for project-tab expectations.
 # All currently-rendered tabs ("Agent" included) are live.
@@ -37,16 +38,8 @@ def migrate_db():
     their own URL: `migrate_db(db_path)` runs `alembic upgrade head`
     against `sqlite:///<db_path>`.
     """
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd_base = [str(venv_alembic) if venv_alembic.exists() else "alembic"]
 
     def _apply(db_path: Path) -> None:
-        subprocess.run(
-            [*cmd_base, "upgrade", "head"],
-            cwd=REPO_ROOT,
-            check=True,
-            env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{db_path}"},
-            capture_output=True,
-        )
+        run_alembic("upgrade", "head", db_url=f"sqlite:///{db_path}")
 
     return _apply

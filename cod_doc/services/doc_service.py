@@ -352,7 +352,7 @@ def patch_section(
     new_body: str,
     author: str,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Section:
     """Replace a section's body; writes a SECTION revision with unified diff.
 

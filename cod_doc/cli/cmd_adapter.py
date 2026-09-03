@@ -4,32 +4,40 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
 from rich.table import Table
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 console = Console()
 
-PLUGIN_FILE = Path.home() / ".cod-doc" / "adapters.json"
+
+def plugin_file() -> Path:
+    """Путь к adapters.json. ADO-068: через config_dir(), не Path.home()."""
+    from cod_doc.config import config_dir
+
+    return config_dir() / "adapters.json"
 
 
 def _load_plugin_entries() -> list[dict[str, str]]:
     """Read ~/.cod-doc/adapters.json or return [] when absent."""
-    if not PLUGIN_FILE.exists():
+    if not plugin_file().exists():
         return []
     try:
-        data = json.loads(PLUGIN_FILE.read_text())
+        data = json.loads(plugin_file().read_text())
         return data if isinstance(data, list) else []
     except Exception as exc:
-        console.print(f"[red]Failed to read {PLUGIN_FILE}: {exc}[/red]")
+        console.print(f"[red]Failed to read {plugin_file()}: {exc}[/red]")
         return []
 
 
 def _save_plugin_entries(entries: list[dict[str, str]]) -> None:
-    PLUGIN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PLUGIN_FILE.write_text(json.dumps(entries, indent=2))
+    plugin_file().parent.mkdir(parents=True, exist_ok=True)
+    plugin_file().write_text(json.dumps(entries, indent=2))
 
 
 @click.group()
@@ -98,7 +106,7 @@ def adapter_add(name: str, module: str, class_: str) -> None:
     entries = [e for e in entries if e.get("name") != name]
     entries.append({"name": name, "module": module, "class": class_})
     _save_plugin_entries(entries)
-    console.print(f"[green]Adapter {name!r} registered → {PLUGIN_FILE}[/green]")
+    console.print(f"[green]Adapter {name!r} registered → {plugin_file()}[/green]")
     console.print(f"  module: {module}")
     console.print(f"  class:  {class_}")
 
@@ -116,7 +124,7 @@ def adapter_remove(name: str) -> None:
         console.print(f"[yellow]Adapter {name!r} not in plugin file (or built-in)[/yellow]")
         sys.exit(1)
     _save_plugin_entries(new_entries)
-    console.print(f"[green]Adapter {name!r} removed from {PLUGIN_FILE}[/green]")
+    console.print(f"[green]Adapter {name!r} removed from {plugin_file()}[/green]")
 
 
 @adapter.command("show")

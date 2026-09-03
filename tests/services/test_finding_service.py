@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import multiprocessing
-import subprocess
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from hypothesis import given, settings
@@ -34,6 +32,10 @@ from cod_doc.services.finding_service import (
     list_findings,
     promote_finding,
 )
+from tests._alembic import run_alembic
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # --------------------------------------------------------------------------- #
 # Fixtures                                                                    #
@@ -236,16 +238,7 @@ def _concurrent_worker(db_path: Path, project_id: int, source_run_id: str) -> di
 def test_concurrent_ingest_no_database_is_locked(tmp_path: Path, engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     db_path = tmp_path / "concurrent.db"
     # Migrate the file DB that will be shared by worker processes.
-    repo_root = Path(__file__).resolve().parents[2]
-    env = {"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{db_path}"}
-    venv_alembic = repo_root / ".venv" / "bin" / "alembic"
-    subprocess.run(
-        [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"],
-        cwd=repo_root,
-        check=True,
-        env=env,
-        capture_output=True,
-    )
+    run_alembic("upgrade", "head", db_url=f"sqlite:///{db_path}")
 
     engine = create_engine(
         f"sqlite:///{db_path}",
