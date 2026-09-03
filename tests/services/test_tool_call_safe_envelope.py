@@ -33,25 +33,25 @@ def _seed(session) -> None:
     session.flush()
 
 
-def test_envelope_unknown_tool_name() -> None:
+async def test_envelope_unknown_tool_name() -> None:
     safe = _get_tool("tool_call_safe")
-    result = safe(tool_name="totally_not_a_tool", args={})
+    result = await safe(tool_name="totally_not_a_tool", args={})
     assert result["ok"] is False
     assert result["result"] is None
     assert result["error"]["code"] == "tool_not_found"
     assert "tool_search" in result["error"]["related_tools"]
 
 
-def test_envelope_success_path_for_capabilities() -> None:
+async def test_envelope_success_path_for_capabilities() -> None:
     safe = _get_tool("tool_call_safe")
-    result = safe(tool_name="capabilities", args={})
+    result = await safe(tool_name="capabilities", args={})
     assert result["ok"] is True
     assert result["error"] is None
     assert isinstance(result["result"], dict)
     assert "cod_doc_version" in result["result"]
 
 
-def test_envelope_validation_error_for_unknown_task(
+async def test_envelope_validation_error_for_unknown_task(
     engine_with_schema,
     monkeypatch,  # type: ignore[no-untyped-def]
 ) -> None:
@@ -65,7 +65,7 @@ def test_envelope_validation_error_for_unknown_task(
     monkeypatch.setattr(task_tools, "require_project_id", lambda session, project: 1)
 
     safe = _get_tool("tool_call_safe")
-    result = safe(
+    result = await safe(
         tool_name="task_update_status",
         args={"project": "sp", "task_id": "NOPE-999", "new_status": "done"},
     )

@@ -186,7 +186,7 @@ def update_status(
     new_status: UserStoryStatus,
     author: str,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> UserStory:
     model = _require_story(session, story_id)
     old_status = model.status

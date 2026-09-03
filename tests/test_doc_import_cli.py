@@ -8,9 +8,8 @@ nothing but a green success line.
 from __future__ import annotations
 
 import hashlib
-import subprocess
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from click.testing import CliRunner
 
@@ -19,8 +18,10 @@ from cod_doc.config import Config, ProjectEntry
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import DocumentModel, ProjectModel
 from cod_doc.services import import_service
+from tests._alembic import run_alembic
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # `kickoff-brief` is a real type from this repo's own docs that no version of
 # cod-doc can store; `living` is the pilots' spelling of "active".
@@ -33,15 +34,7 @@ def _sha256(text: str) -> str:
 
 
 def _migrate(db_path: Path) -> None:
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        check=True,
-        env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{db_path}"},
-        capture_output=True,
-    )
+    run_alembic("upgrade", "head", db_url=f"sqlite:///{db_path}")
 
 
 def _bootstrap_repo(tmp_path: Path, *, file_content: str) -> Config:

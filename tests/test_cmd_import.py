@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from click.testing import CliRunner
@@ -14,21 +13,15 @@ from cod_doc.config import Config, ProjectEntry
 from cod_doc.domain.entities import Project as ProjectEntity
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
+from tests._alembic import run_alembic
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _migrate(db_path: Path) -> None:
     """Apply alembic migrations to a fresh sqlite file."""
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        check=True,
-        env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{db_path}"},
-        capture_output=True,
-    )
+    run_alembic("upgrade", "head", db_url=f"sqlite:///{db_path}")
 
 
 def _bootstrap(tmp_path: Path) -> tuple[Config, ProjectEntry]:

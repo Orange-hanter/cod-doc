@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 def hub_db_path() -> Path:
     """Путь к файлу hub-БД с учётом ``COD_DOC_HOME``."""
-    return config.CONFIG_DIR / "hub.db"
+    return config.config_dir() / "hub.db"
 
 
 def init_hub() -> Path:

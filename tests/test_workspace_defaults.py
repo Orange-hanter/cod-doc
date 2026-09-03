@@ -44,11 +44,11 @@ def test_clear_default_project() -> None:
     assert get()["default_project"] is None
 
 
-def test_capabilities_reflects_default_project() -> None:
+async def test_capabilities_reflects_default_project() -> None:
     set_ = _get_tool("set_default_project")
     capabilities = _get_tool("capabilities")
     set_(name="caps-proj")
-    result = capabilities()
+    result = await capabilities()
     assert result["session"]["default_project"] == "caps-proj"
 
 

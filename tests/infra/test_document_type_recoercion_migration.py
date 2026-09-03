@@ -10,24 +10,23 @@ The migration closes that window by restoring the authored value.
 from __future__ import annotations
 
 import json
-import subprocess
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from sqlalchemy import text
 
 from cod_doc.infra.db import make_engine
+from tests._alembic import run_alembic
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+if TYPE_CHECKING:
+    from pathlib import Path
+
 BEFORE = "0025_projection_fidelity"
 
 
 def _alembic(db_url: str, *args: str) -> None:
-    env = {"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": db_url}
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", *args]
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True, env=env, capture_output=True)
+    run_alembic(*args, db_url=db_url)
 
 
 @pytest.fixture

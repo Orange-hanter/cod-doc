@@ -86,7 +86,7 @@ def write(
     diff: str,
     reason: str | None = None,
     commit_sha: str | None = None,
-    expected_parent_revision_id: str | None | object = _NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = _NO_PARENT_CHECK,
 ) -> Revision:
     """Append a revision row.
 
