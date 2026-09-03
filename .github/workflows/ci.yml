@@ -55,8 +55,12 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: pip install .[dev]
+      # ADO-070: 25, а не 10. Полный прогон занимает ~11 минут, и джоба
+      # убивалась таймаутом на 64% тестов — pytest даже не успевал напечатать
+      # сводку с трейсбеками. Раньше это было незаметно: джоба падала на
+      # alembic за полторы минуты и до таймаута не доживала.
       - run: pytest tests/ -v --tb=short --timeout=120
-        timeout-minutes: 10
+        timeout-minutes: 25
         env:
           COD_DOC_API_KEY: ${{ secrets.COD_DOC_TEST_API_KEY || 'sk-test-placeholder' }}
           COD_DOC_AUTO_COMMIT: "false"
