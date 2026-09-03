@@ -13,6 +13,7 @@ AGN-013: agent_get + agent_report smoke.
 from __future__ import annotations
 
 import os
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -140,7 +141,7 @@ def mcp_agent_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[
 def _open_stdio_client(config_dir: Path):
     """Open a stdio MCP client subprocess with ``--profile agent``."""
     params = StdioServerParameters(
-        command=str(REPO_ROOT / ".venv" / "bin" / "python"),
+        command=sys.executable,  # ADO-070: не хардкодить .venv — в CI его нет
         args=[
             "-m",
             "cod_doc.mcp.server",

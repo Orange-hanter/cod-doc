@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import warnings
 from pathlib import Path
 
@@ -129,7 +130,7 @@ def mcp_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Projec
 
 def _open_stdio_client(config_dir: Path):
     params = StdioServerParameters(
-        command=str(Path(__file__).resolve().parents[1] / ".venv" / "bin" / "python"),
+        command=sys.executable,  # ADO-070: не хардкодить .venv — в CI его нет
         # Need legacy `get_master` exposed → --profile full.
         args=["-m", "cod_doc.mcp.server", "--transport", "stdio", "--profile", "full"],
         env={**os.environ, "COD_DOC_HOME": str(config_dir)},
