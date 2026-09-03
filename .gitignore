@@ -31,3 +31,6 @@ venv/
 .cod-doc-playwright-*.py
 .cod-doc-pw-*.py
 .playwright-mcp/
+
+# macOS
+.DS_Store

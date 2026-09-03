@@ -1,7 +1,7 @@
 ---
 type: sprint-plan
 scope: adoption-2026-08
-status: completed
+status: active
 source_of_truth: false
 canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
