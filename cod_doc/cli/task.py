@@ -1,4 +1,4 @@
-"""CLI commands for task management: task list/show/create/status/complete/remove-dep."""
+"""CLI: task list/show/create/status/update/complete/remove-dep."""
 
 from __future__ import annotations
 
@@ -331,6 +331,91 @@ def task_status(
 
     icon = _STATUS_ICON.get(t.status.value, "⚪")
     console.print(f"[green]{t.task_id}: {icon} {t.status.value}[/green]")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# task update
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@task.command("update")
+@click.argument("task_id")
+@click.option("--project", "-p", required=True, help="Project slug")
+@click.option("--description", default=None, help="Новый текст description (пустая строка очищает)")
+@click.option("--acceptance", default=None, help="Новый текст acceptance (пустая строка очищает)")
+@click.option(
+    "--priority",
+    default=None,
+    type=click.Choice(["critical", "high", "medium", "low"]),
+    help="Новый приоритет",
+)
+@click.option("--author", default="cli", show_default=True)
+@click.option("--reason", default=None)
+@click.pass_context
+def task_update(
+    ctx: click.Context,
+    task_id: str,
+    project: str,
+    description: str | None,
+    acceptance: str | None,
+    priority: str | None,
+    author: str,
+    reason: str | None,
+) -> None:
+    """Grooming уже созданной задачи: description / acceptance / priority.
+
+    ADO-067: раньше эти поля правились только из web-UI. Передавай только
+    те опции, которые меняешь. Не меняет title и status (см. `task status`).
+    """
+    from cod_doc.domain.entities import Priority
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import task_service
+    from cod_doc.services.task_service import TaskNotFoundError
+
+    if description is None and acceptance is None and priority is None:
+        console.print(
+            "[red]Нечего менять: передай хотя бы --description / --acceptance / --priority.[/red]"
+        )
+        sys.exit(1)
+
+    cfg: Config = ctx.obj["config"]
+    sf = _make_session(project, cfg)
+    changed: list[str] = []
+
+    try:
+        with transactional(sf) as session:
+            if description is not None:
+                task_service.update_description(
+                    session,
+                    task_id=task_id,
+                    new_description=description,
+                    author=author,
+                    reason=reason,
+                )
+                changed.append("description")
+            if acceptance is not None:
+                task_service.update_acceptance(
+                    session,
+                    task_id=task_id,
+                    new_acceptance=acceptance,
+                    author=author,
+                    reason=reason,
+                )
+                changed.append("acceptance")
+            if priority is not None:
+                task_service.update_priority(
+                    session,
+                    task_id=task_id,
+                    new_priority=Priority(priority),
+                    author=author,
+                    reason=reason,
+                )
+                changed.append("priority")
+    except TaskNotFoundError:
+        console.print(f"[red]Task '{task_id}' not found.[/red]")
+        sys.exit(1)
+
+    console.print(f"[green]✅ {task_id}: обновлено — {', '.join(changed)}[/green]")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

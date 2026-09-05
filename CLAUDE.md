@@ -82,7 +82,10 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - **Четыре равные поверхности.** Новая функциональность в `services/` обязана
   появиться и в CLI, и в MCP — агент и человек должны иметь тождественный
-  интерфейс. Прямых SQL-запросов из presentation нет.
+  интерфейс. Прямых SQL-запросов из presentation нет. Для мутаций задач это
+  правило машинно проверяется (ADO-067):
+  `tests/services/test_task_mutation_surface_parity.py` находит write-функции
+  `task_service` по AST и требует вызова из `cod_doc/mcp/` и `cod_doc/cli/`.
 - **Резолв БД** (`infra/db.py::resolve_db_url`): explicit override → env
   `COD_DOC_DB_URL` → embedded `<project_root>/.cod-doc/state.db`. Реестр
   проектов — `~/.cod-doc/config.yaml` (переопределяется `COD_DOC_HOME`),
@@ -91,7 +94,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `register(mcp)`; `mcp/server.py` вызывает их в цикле, затем `apply_profile()`
   **фильтрует уже зарегистрированный** каталог (`mcp/profiles.py`). Профиль
   `agent` — **дефолтный**, 6 task-centric тулов, каждый возвращает
-  самодостаточный payload; дальше `minimal` 20 / `standard` 107 / `full` 111.
+  самодостаточный payload; дальше `minimal` 20 / `standard` 108 / `full` 112.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   `AGENTS.md` §5.9, `server.py --profile` и `docs/mcp-integration.md` — меняешь
   набор тулов, правь все четыре места. Новые agent-фичи идут в `agent_*`, а не
@@ -146,9 +149,10 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/20/107/111) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/20/108/112) в коде и доках совпадают |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
+| `services/test_task_mutation_surface_parity.py` | мутация задачи в `task_service` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
 
 ## Тестовые фикстуры
 
@@ -162,7 +166,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 ## Инструментарий сессии
 
 - MCP-сервер `cod-doc` (native stdio, `.mcp.json` явно ставит профиль
-  `standard`, не дефолтный `agent`) — 107 тулов `task_*`/`doc_*`/`plan_*`/…;
+  `standard`, не дефолтный `agent`) — 108 тулов `task_*`/`doc_*`/`plan_*`/…;
   предпочитай их ad-hoc Python-скриптам.
 - `/gate` — полный CI-гейт одной командой.
 - Проектные скиллы `.claude/skills/`: `task-flow` (checkout → complete c sha,
