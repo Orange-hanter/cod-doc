@@ -114,8 +114,8 @@ def test_keep_tool_pure_logic() -> None:
 EXPECTED_PROFILE_COUNTS = {
     "agent": 6,
     "minimal": 20,
-    "standard": 108,
-    "full": 112,
+    "standard": 109,
+    "full": 113,
 }
 
 
@@ -137,6 +137,7 @@ SYM_006D_TOOLS = {
     "finding_dismiss",
     "ctx_docs",
     "ctx_drift",
+    "ctx_drift_gate",
 }
 
 

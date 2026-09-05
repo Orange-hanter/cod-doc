@@ -10,9 +10,24 @@ from ._types import DriftReport, DriftStatus, ProjectDriftItem, ProjectDriftRepo
 from .render import render_markdown
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from sqlalchemy.orm import Session
+
+
+def normalize_repo_path(path: str) -> str:
+    """Normalise a repo-relative path for comparison (``./a/b`` → ``a/b``).
+
+    Git and the DB agree on POSIX separators and repo-relative paths, but
+    ``gh``/human input may carry a leading ``./`` or ``/``, or a Windows
+    separator. Anything else is left untouched — this is a comparison key,
+    not a filesystem operation.
+    """
+    cleaned = path.strip().replace("\\", "/").lstrip("/")
+    while cleaned.startswith("./"):
+        cleaned = cleaned[2:]
+    return cleaned
 
 
 def detect_drift(
@@ -66,15 +81,24 @@ def detect_project_drift(
     *,
     root_path: Path,
     limit: int | None = None,
+    paths: Sequence[str] | None = None,
 ) -> ProjectDriftReport:
     """Project-wide DB ↔ markdown projection drift summary.
 
     The report is read-only and intentionally mirrors the shape needed by CLI,
     routines, MCP, and Web health badges.
+
+    ``paths`` (SYM-010) narrows the scan to documents whose repo-relative
+    ``path`` is in the given set — the PR drift-gate feeds it the files a pull
+    request touched. ``None`` scans the whole project; an empty sequence is a
+    deliberate "nothing to scan" and yields an empty report.
     """
     from cod_doc.services import doc_service
 
     docs = doc_service.list_for_project(session, project_id)
+    if paths is not None:
+        wanted = {normalize_repo_path(p) for p in paths}
+        docs = [d for d in docs if normalize_repo_path(d.path) in wanted]
     if limit is not None:
         docs = docs[:limit]
 
