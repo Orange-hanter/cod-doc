@@ -60,6 +60,27 @@ def fingerprint_zairgrush(
     return digest, {"fp_basis": "exp_variant_kind"}
 
 
+def fingerprint_drift_gate(
+    *,
+    source: str = "cod_doc_drift",
+    path: str,
+    rule: str,
+    code: str,
+    subject: str,
+) -> tuple[str, dict[str, Any]]:
+    """Fingerprint for cod-doc's own drift-gate findings (RFC 22 §3.5, SYM-010).
+
+    Formula: ``sha256(source|path|rule|code|subject)``.
+
+    ``subject`` is the stable identity of *what* the finding is about inside
+    the file — a section anchor plus the raw link text, or the frontmatter
+    field name. Deliberately excludes hashes and line numbers, so the same
+    broken anchor keeps its fingerprint across unrelated edits of the file.
+    """
+    digest = _sha256([source, path, rule, code, subject])
+    return digest, {"fp_basis": "path_rule_code_subject"}
+
+
 def fingerprint_routine(
     *,
     source: str = "routine",

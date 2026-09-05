@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **111 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **112 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -54,8 +54,8 @@ MCP (Model Context Protocol) — стандартный протокол для 
 ```bash
 cod-doc-mcp                              # agent (default cycle-5)
 cod-doc-mcp --profile minimal            # 20 cold-start tools
-cod-doc-mcp --profile standard           # 107 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 111 (включая legacy)
+cod-doc-mcp --profile standard           # 108 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 112 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 ```
 
@@ -303,8 +303,8 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
 | **Legacy (YAML агент)** | 3 | Остаток legacy-surface после STB-002 (2026-06-08): resume-вход + context-хелперы. YAML CRUD (проекты/задачи/MASTER/поиск + hash/verify) удалён — БД источник истины. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
 | **finding.\* (RFC 22)** | 4 | Внешние находки (ai-review / ZAIrgRush / routines): triage и промоушен в задачи. Только профили standard/full | `finding_list`, `finding_get`, `finding_promote`, `finding_dismiss` |
-| **ctx.\* (RFC 22)** | 2 | Тонкие алиасы для внешних потребителей контекста (SYM-006D): `ctx_docs` = `doc_list`, `ctx_drift` = `doc_drift_all`. Только профили standard/full | `ctx_docs`, `ctx_drift` |
-| **ИТОГО** | **111** | | |
+| **ctx.\* (RFC 22)** | 3 | Контекст для внешних потребителей: `ctx_docs` = `doc_list`, `ctx_drift` = `doc_drift_all` (SYM-006D), `ctx_drift_gate` — детерминированный гейт документации по файлам PR с идемпотентным PR-комментарием (SYM-010). Только профили standard/full | `ctx_docs`, `ctx_drift`, `ctx_drift_gate` |
+| **ИТОГО** | **112** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в

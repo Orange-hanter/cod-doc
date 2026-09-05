@@ -5,6 +5,7 @@ from __future__ import annotations
 from cod_doc.services.finding_service.dedup import FindingSeed, IngestResult, ingest_findings
 from cod_doc.services.finding_service.fingerprint import (
     fingerprint_ai_review,
+    fingerprint_drift_gate,
     fingerprint_routine,
     fingerprint_zairgrush,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "dismiss_finding",
     "finding_to_dict",
     "fingerprint_ai_review",
+    "fingerprint_drift_gate",
     "fingerprint_routine",
     "fingerprint_zairgrush",
     "get_finding",

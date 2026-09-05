@@ -60,6 +60,7 @@ docker compose up -d                     # контейнер cod-doc, healthche
 cod-doc doc drift --project cod-doc --all # дрейф БД ↔ markdown без перезаписи
 cod-doc ctx docs|drift|search --json     # контекст для промпта в JSON (ctx docs --include-body — с телом)
 cod-doc ingest ai_review -p cod-doc --from-pr 123   # findings из артефакта PR через gh; далее finding_promote
+cod-doc ctx drift -p orakul --pr 562 --comment      # drift-гейт PR: находки → идемпотентный комментарий (--dry-run для проверки)
 ```
 
 Миграции: `alembic revision -m "<name>"` → заполнить симметричные
@@ -91,7 +92,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `register(mcp)`; `mcp/server.py` вызывает их в цикле, затем `apply_profile()`
   **фильтрует уже зарегистрированный** каталог (`mcp/profiles.py`). Профиль
   `agent` — **дефолтный**, 6 task-centric тулов, каждый возвращает
-  самодостаточный payload; дальше `minimal` 20 / `standard` 107 / `full` 111.
+  самодостаточный payload; дальше `minimal` 20 / `standard` 108 / `full` 112.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   `AGENTS.md` §5.9, `server.py --profile` и `docs/mcp-integration.md` — меняешь
   набор тулов, правь все четыре места. Новые agent-фичи идут в `agent_*`, а не
@@ -146,7 +147,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/20/107/111) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/20/108/112) в коде и доках совпадают |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 
@@ -162,7 +163,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 ## Инструментарий сессии
 
 - MCP-сервер `cod-doc` (native stdio, `.mcp.json` явно ставит профиль
-  `standard`, не дефолтный `agent`) — 107 тулов `task_*`/`doc_*`/`plan_*`/…;
+  `standard`, не дефолтный `agent`) — 108 тулов `task_*`/`doc_*`/`plan_*`/…;
   предпочитай их ad-hoc Python-скриптам.
 - `/gate` — полный CI-гейт одной командой.
 - Проектные скиллы `.claude/skills/`: `task-flow` (checkout → complete c sha,

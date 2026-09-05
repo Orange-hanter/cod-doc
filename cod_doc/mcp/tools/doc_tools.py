@@ -408,10 +408,9 @@ def register(mcp: FastMCP) -> None:
     def ctx_drift(project: str, limit: int | None = None) -> dict[str, Any]:
         """RFC 22 (SYM-006D): project-wide DB↔markdown drift for external consumers.
 
-        Thin alias of ``doc_drift_all`` — same shape, same data. The RFC's
-        ``--changed-files`` narrowing and engine-shaped output
-        (``prescan: true``, ``model: "cod-doc/drift"``) belong to the CLI
-        drift-gate (phase 4); the MCP surface stays minimal.
+        Thin alias of ``doc_drift_all`` — same shape, same data. Narrowing to
+        the files a PR touched and the engine-shaped output (``prescan: true``,
+        ``model: "cod-doc/drift"``) live in ``ctx_drift_gate`` (SYM-010).
         """
         from pathlib import Path
 
@@ -445,3 +444,78 @@ def register(mcp: FastMCP) -> None:
                 for item in report.issues
             ],
         }
+
+    @mcp.tool(name="ctx_drift_gate")
+    def ctx_drift_gate(
+        project: str,
+        changed_files: list[str] | None = None,
+        pr: int | None = None,
+        repo: str | None = None,
+        post_comment: bool = False,
+    ) -> dict[str, Any]:
+        """RFC 22 §3.5 (SYM-010): deterministic documentation gate for a PR.
+
+        Same engine as ``cod-doc ctx drift --changed-files``. Collects three
+        classes of *verifiable* facts about the documents a pull request
+        touches — projection drift (DB↔markdown), links/anchors that do not
+        resolve, and frontmatter violations — and returns them in ai-review's
+        finding shape (``prescan: true``, ``model: "cod-doc/drift"``).
+
+        Args:
+            project: cod-doc project slug.
+            changed_files: repo-relative paths to narrow the scan to. When
+                omitted and ``pr`` is given, the list is read from the PR via
+                ``gh pr view``. When both are omitted the whole project is
+                scanned.
+            pr: pull-request number (needed for ``post_comment``).
+            repo: ``OWNER/NAME`` for ``gh``; defaults to the repository the
+                project path points at.
+            post_comment: create or update the gate's own PR comment. The
+                comment is found by the marker ``cod-doc:drift-gate:<project>``,
+                so a repeated run edits it in place instead of adding a new one.
+
+        Read-only with respect to both the database and the target working
+        tree: the only write it ever makes is the PR comment.
+        """
+        from pathlib import Path
+
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import drift_gate_service, gh_service
+
+        if post_comment and pr is None:
+            raise ValueError("post_comment=True requires pr=<number>")
+
+        sf, entry = session_factory(project)
+        root = Path(entry.path).expanduser().resolve()
+
+        files = changed_files
+        if files is None and pr is not None:
+            files = gh_service.pr_changed_files(pr, repo=repo, cwd=root)
+
+        # commit=False: resolve_section touches the derived `link` table only
+        # in memory, the rollback drops it — same contract as `ctx docs`.
+        with transactional(sf, commit=False) as session:
+            project_id = require_project_id(session, project)
+            gate = drift_gate_service.collect(
+                session,
+                project=project,
+                project_id=project_id,
+                root_path=root,
+                changed_files=files,
+            )
+
+        payload = gate.as_dict()
+        if post_comment and pr is not None:
+            ref = gh_service.upsert_marker_comment(
+                pr,
+                drift_gate_service.render_comment(gate, pr=pr),
+                drift_gate_service.marker(project),
+                repo=repo,
+                cwd=root,
+            )
+            payload["comment"] = {
+                "action": ref.action,
+                "comment_id": ref.comment_id,
+                "url": ref.url,
+            }
+        return payload

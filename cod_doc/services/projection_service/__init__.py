@@ -64,7 +64,7 @@ from ._types import (
     ProjectDriftReport,
 )
 from .backfill import backfill_projection_fidelity
-from .drift import detect_drift, detect_project_drift
+from .drift import detect_drift, detect_project_drift, normalize_repo_path
 from .export import export_document
 from .import_doc import import_document
 from .render import render_markdown
@@ -85,5 +85,6 @@ __all__ = [
     "detect_project_drift",
     "export_document",
     "import_document",
+    "normalize_repo_path",
     "render_markdown",
 ]
