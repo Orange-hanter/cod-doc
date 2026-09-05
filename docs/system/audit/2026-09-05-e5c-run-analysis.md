@@ -3,7 +3,6 @@ type: audit-report
 scope: e5c-openrouter-run
 status: active
 source_of_truth: true
-canonical_source: /Users/dakh/Git/_my/ZAIrgRush/experiments/stand-e11b/.swarm/metrics.jsonl
 owner: cod-doc core
 created: 2026-09-05
 last_updated: 2026-09-05
