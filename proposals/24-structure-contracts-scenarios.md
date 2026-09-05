@@ -88,6 +88,33 @@ Routine `adr_drift` из 17 остаётся complementary для ADR-graph orph
 в документации, какие тестовые сценарии подтверждены, каких evidence не хватает
 и что именно следует изменить.
 
+## 1a. Текущее состояние (сверено 2026-09-05)
+
+**Сторона producer'а — есть.** `Orange-hanter/ai-reviewer#6` смержен
+2026-09-03: `lib/structure.mjs`, `lib/structure-{protocol,identity,graphify,
+scip,lcov,tests,assessments,drift,export,evidence,context,mutation}.mjs`,
+входные точки `bin/pr-review-structure.mjs` и `bin/pr-review-structure-mcp.mjs`,
+четыре схемы в `schemas/` и фикстуры в `fixtures/structure/`.
+
+**Сторона cod-doc — нет ничего.** На `main` отсутствуют и код, и следы в
+планировании: grep по `structure_facts|structure_context|obligations_export`
+в `*.md`/`*.py` даёт ноль совпадений, в БД нет задачи со `structure` в
+названии, а `document` содержит `proposals/01`…`proposals/23` — без 24.
+
+**Фундамент под ingest готов** и переиспользуется, а не строится заново:
+
+- реестр ingest-адаптеров и `finding_service` — `cod_doc/services/finding_service.py`,
+  CLI `cod-doc ingest ai_review --from-pr` (`cod_doc/cli/cmd_ingest.py`), SYM-006/009;
+- hub-БД и таблицы findings — миграции `0027_shared_hub`, `0028_findings`
+  (`cod_doc/infra/migrations/versions/`); текущий head — `0028_findings`;
+- контекст под token budget — `cod_doc/services/context_service.py` (L0/L1/L2);
+- projection drift, от которого structure drift обязан отличаться, —
+  `cod_doc/services/projection_service/`, CLI `cod-doc doc drift`.
+
+Незакрытый разрыв: `evidence-receipt.v1` существует как схема в producer'е, но
+в этом RFC не определён — при декомпозиции либо описать его здесь, либо
+исключить из потребляемых артефактов.
+
 ## 2. Ответственность инструментов
 
 - **ai-reviewer / structure producer** владеет наблюдаемыми фактами о коде, тестах, зависимостях и coverage. Он не меняет документацию и не объявляет намерения проекта.
@@ -390,17 +417,25 @@ cod-doc ctx structure -p <project> --scope <module|path|entity> --budget-tokens 
 
 ## 15. План реализации
 
-| Фаза | Содержание | Репозиторий |
-|------|------------|-------------|
-| 1 | Общий протокол: schemas, fixtures, contract tests | ai-reviewer + cod-doc |
-| 2 | Producer в ai-reviewer (`lib/structure*.mjs`, `pr-review-structure`) | ai-reviewer |
-| 3 | Blob-first ingest, pull pilot | cod-doc |
-| 4 | Scoped indexes, obligations export, drift, finding lifecycle | cod-doc |
-| 5 | Human triage loop, waiver, advisory CI (не merge blocker) | cod-doc |
-| 6 | `structure_context`, MCP, agent task card enrichment | cod-doc + garage consumer |
-| 7 | Exact providers, breaking diff, authenticated push | ai-reviewer |
+| Фаза | Содержание | Репозиторий | Статус |
+|------|------------|-------------|--------|
+| 1 | Общий протокол: schemas, fixtures, contract tests | ai-reviewer + cod-doc | ✅ сделано в producer'е |
+| 2 | Producer в ai-reviewer (`lib/structure*.mjs`, `pr-review-structure`) | ai-reviewer | ✅ сделано |
+| 3 | Blob-first ingest, pull pilot | cod-doc | ⬜ STR-001 |
+| 4 | Scoped indexes, obligations export, drift, finding lifecycle | cod-doc | ⬜ STR-002 |
+| 5 | Human triage loop, waiver, advisory CI (не merge blocker) | cod-doc | ⬜ STR-003 |
+| 6 | `structure_context`, MCP, agent task card enrichment | cod-doc + garage consumer | ⬜ STR-004 |
+| 7 | Exact providers, breaking diff, authenticated push | ai-reviewer | ⬜ |
 
-**Prerequisite:** SYM-005..009 (RFC 22) — hub, finding tables, pull ingest, trust model.
+**Фазы 1–2 закрыты 2026-09-03** — PR `Orange-hanter/ai-reviewer#6` смержен
+(`lib/structure*.mjs`, `bin/pr-review-structure.mjs`, четыре схемы в
+`schemas/`, фикстуры, `test/structure.test.mjs`); с тех пор producer доехал до
+релиза 0.3.0. Владелец схем — producer: cod-doc обязан подтягивать его версию,
+а не вести свою копию.
+
+**Prerequisite:** SYM-005..009 (RFC 22) — hub, finding tables, pull ingest,
+trust model. **Выполнен:** все SYM-005..009 в статусе `done` (SYM-009 закрыт в
+спринте M4, 2026-09-02).
 
 ## 16. Non-goals первого релиза
 
@@ -414,6 +449,23 @@ cod-doc ctx structure -p <project> --scope <module|path|entity> --budget-tokens 
 ## 17. Критерии готовности
 
 См. исходный документ: протокол (cross-repo fixtures), достоверность (hard caps на статусы), cod-doc (idempotent ingest, projection vs structure drift), security (untrusted tier), платформенный сценарий (bootstrap → confirm link → ingest → finding → structure_context → pending_verify → resolve).
+
+## 17a. Оценка
+
+Сторона cod-doc (фазы 3–6) — **4 задачи**, секция F плана `adoption-2026-08`.
+Исходный код существует в ветке `cursor/structure-platform-a8c9` (+5621 строка,
+draft PR #6) и режется по фазам, а не вливается одним куском.
+
+| Задача | Фаза | Объём | Зависит от |
+|---|---|---|---|
+| STR-001 | 3 | Протокол, blob-first ingest, миграция 0029, trust-тиры | этот RFC |
+| STR-002 | 4 | Scoped indexes, obligations export, structure drift | STR-001 |
+| STR-003 | 5 | Triage, waiver, finding lifecycle (`pending_verify` → resolve) | STR-002 |
+| STR-004 | 6 | `structure_context`, паритет MCP, обогащение task card | STR-003 |
+
+Фаза 7 — сторона ai-reviewer, в оценку cod-doc не входит. Сроки не
+планируются: спринт — упорядоченная очередь, а не окно (решение владельца
+2026-08-30, действует с M4).
 
 ## 18. Источники
 
