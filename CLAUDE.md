@@ -95,10 +95,11 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `register(mcp)`; `mcp/server.py` вызывает их в цикле, затем `apply_profile()`
   **фильтрует уже зарегистрированный** каталог (`mcp/profiles.py`). Профиль
   `agent` — **дефолтный**, 6 task-centric тулов, каждый возвращает
-  самодостаточный payload; дальше `minimal` 20 / `standard` 109 / `full` 113.
+  самодостаточный payload; дальше `minimal` 20 / `standard` 106 / `full` 110.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
-  `AGENTS.md` §5.9, `server.py --profile` и `docs/mcp-integration.md` — меняешь
-  набор тулов, правь все четыре места. Новые agent-фичи идут в `agent_*`, а не
+  ПЯТИ местах: `mcp/profiles.py` (docstring), `server.py --profile`,
+  `AGENTS.md` §5.9, этот файл и `docs/mcp-integration.md` (строка семейства
+  + ИТОГО) — меняешь набор тулов, правь все пять. Новые agent-фичи идут в `agent_*`, а не
   в расширение internal CRUD.
 - **`mcp/tools/_db.py`** — общий вход в БД для тулов: `session_factory(project)`
   резолвит слаг (или workspace-default) → Config → engine. `project=None`
@@ -119,9 +120,15 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   где ревизии нет) внутри транзакции мутации; ошибки не глотаются, `actor_kind`
   выводится из `author`. Новый write-сервис без события — регресс, ловится
   `tests/services/test_activity_write_path.py`.
-- **run_id через contextvar** (`services/run_context.py::run_scope`): внутри
-  скоупа все revisions / activity events / approvals штампуются `run_id`;
-  вне — колонка NULL.
+- **run_id — телеметрия, не контракт** (ADR-012). `run_scope`
+  (`services/run_context.py`) открывает только встроенный оркестратор,
+  которым не пользуются: на живой БД `revision` 2166/2166 и
+  `activity_event` 1114/1114 с `run_id IS NULL`. Колонка оставлена
+  nullable; не пиши код, рассчитывающий на её непустоту. Провенанс несёт
+  `author` / `actor_id`, а роль выводится **только** через
+  `domain.entities.actor_kind_for_author` — единственную точку вывода.
+  Таблица `audit_log` удалена (миграция 0029), журнал write-операций —
+  `activity_event`.
 - **Статусы задач** — 7 канонических bucket'ов плюс legacy-алиасы
   (`pending`≡`todo`, `in-progress`≡`in_progress`), нормализация и
   `ALLOWED_TRANSITIONS` в `services/task_status_machine.py`. Единственный
@@ -150,7 +157,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/20/109/113) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/20/106/110) в коде и доках совпадают |
+| `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 | `services/test_task_mutation_surface_parity.py` | мутация задачи в `task_service` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
@@ -167,7 +175,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 ## Инструментарий сессии
 
 - MCP-сервер `cod-doc` (native stdio, `.mcp.json` явно ставит профиль
-  `standard`, не дефолтный `agent`) — 109 тулов `task_*`/`doc_*`/`plan_*`/…;
+  `standard`, не дефолтный `agent`) — 106 тулов `task_*`/`doc_*`/`plan_*`/…;
   предпочитай их ad-hoc Python-скриптам.
 - `/gate` — полный CI-гейт одной командой.
 - Проектные скиллы `.claude/skills/`: `task-flow` (checkout → complete c sha,

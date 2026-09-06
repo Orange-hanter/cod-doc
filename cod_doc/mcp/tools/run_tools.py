@@ -1,14 +1,19 @@
-"""MCP tools: run.* — agent run-id audit trail (PCA-032, proposal 04).
+"""MCP tools: run.* — inspection of built-in-orchestrator runs (PCA-032).
 
-Exposes the `agent_run` table + run-linked mutations via MCP. Once
-``Orchestrator.run_task`` enters ``run_scope`` (PCA-031), every revision
-written downstream carries the run_id; these tools let agents (and
-humans) ask "what happened on run X" and "what runs has the system seen
-recently".
+ADR-012 (ADO-044) снял контракт «run-id на всех мутациях»: `run_scope`
+открывает только встроенный раннер (`agent/orchestrator.py`), которым
+не пользуются — работа идёт через MCP из Claude Code, и там скоуп не
+открывается. Замер на живой БД: `revision` 2166/2166 с `run_id IS NULL`,
+`activity_event` 1114/1114, `agent_run` — одна строка от 2026-06-06.
 
-The query helpers (``list_runs_for_project``, ``get_run_with_mutations``)
-are module-level + session-typed so unit tests can call them directly,
-without spinning up a FastMCP instance.
+Поэтому `run_list` и `run_revert` (и `activity_for_run`) удалены: они
+построены на посылке «revision помечены run_id», которая ложна.
+Остался `run_get` — точка инспекции одной строки `agent_run`; вторая
+поверхность чтения — web-консоль `/p/{slug}/run`.
+
+Helper `list_runs_for_project` сохранён: его зовёт web-слой через
+`services/run_service.py`-подобный путь и он тривиально возвращает
+`run_list`, если встроенный раннер снова станет рабочим.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 
-from cod_doc.infra.models import AgentRunModel, AuditLogModel, RevisionModel
+from cod_doc.infra.models import AgentRunModel, RevisionModel
 from cod_doc.mcp.tools._db import require_project_id, session_factory
 
 if TYPE_CHECKING:
@@ -62,81 +67,13 @@ def list_runs_for_project(
     }
 
 
-def plan_run_revert(session: Session, run_id: str) -> dict[str, Any] | None:
-    """PCA-033: enumerate inverse operations for a run, with conflict detection.
-
-    Read-only. Returns ``None`` if the run_id is unknown.
-
-    For each revision stamped with ``run_id``, walks the entity's revision
-    chain and reports:
-    - ``op``: a label of the reverse step (revision_id of the candidate undo).
-    - ``conflicts``: revisions written *after* this run on the same entity —
-      those mean a later run already touched the artifact, and a real revert
-      would have to be a 3-way merge (out of scope here). Empty list = clean
-      revert candidate.
-
-    The actual destructive revert (`revision_revert`) is wired entity-by-
-    entity in COD-022 and is invoked by the operator when the dry-run
-    output looks acceptable. PCA-033 only assembles the proposal.
-    """
-    from sqlalchemy import select
-
-    run = session.execute(
-        select(AgentRunModel).where(AgentRunModel.run_id == run_id)
-    ).scalar_one_or_none()
-    if run is None:
-        return None
-
-    revs = list(
-        session.execute(
-            select(RevisionModel)
-            .where(RevisionModel.run_id == run_id)
-            .order_by(RevisionModel.at.asc(), RevisionModel.row_id.asc())
-        ).scalars()
-    )
-
-    operations: list[dict[str, Any]] = []
-    for r in revs:
-        # Conflict = a revision on the same entity strictly newer than this
-        # one and stamped with a *different* run_id (or None — human edit).
-        conflicts_q = (
-            select(RevisionModel.revision_id, RevisionModel.run_id, RevisionModel.author)
-            .where(
-                RevisionModel.entity_kind == r.entity_kind,
-                RevisionModel.entity_id == r.entity_id,
-                (RevisionModel.at > r.at)
-                | ((RevisionModel.at == r.at) & (RevisionModel.row_id > r.row_id)),
-            )
-            .order_by(RevisionModel.at.asc(), RevisionModel.row_id.asc())
-        )
-        conflicts = [
-            {"revision_id": rev_id, "run_id": rid, "author": author}
-            for rev_id, rid, author in session.execute(conflicts_q)
-            if rid != run_id  # mutations from the same run are part of the rollback, not conflicts
-        ]
-        operations.append(
-            {
-                "revision_id": r.revision_id,
-                "entity_kind": r.entity_kind,
-                "entity_id": r.entity_id,
-                "author": r.author,
-                "at": r.at.isoformat() if r.at else None,
-                "conflicts": conflicts,
-            }
-        )
-
-    return {
-        "run_id": run_id,
-        "status": run.status,
-        "operations": operations,
-        "total_operations": len(operations),
-        "total_conflicts": sum(1 for op in operations if op["conflicts"]),
-        "dry_run": True,
-    }
-
-
 def get_run_with_mutations(session: Session, run_id: str) -> dict[str, Any] | None:
-    """Single run + revisions + audit_log entries stamped with the same run_id."""
+    """Single run + revisions stamped with the same run_id.
+
+    ADR-012: `revisions` пуст для всего, что сделано не встроенным
+    раннером — это ожидаемое состояние, а не баг. Ключ `audit_log`
+    убран вместе с таблицей (миграция 0029).
+    """
     run = session.execute(
         select(AgentRunModel).where(AgentRunModel.run_id == run_id)
     ).scalar_one_or_none()
@@ -148,13 +85,6 @@ def get_run_with_mutations(session: Session, run_id: str) -> dict[str, Any] | No
             select(RevisionModel)
             .where(RevisionModel.run_id == run_id)
             .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
-        ).scalars()
-    )
-    audit = list(
-        session.execute(
-            select(AuditLogModel)
-            .where(AuditLogModel.run_id == run_id)
-            .order_by(AuditLogModel.at.desc(), AuditLogModel.row_id.desc())
         ).scalars()
     )
 
@@ -170,17 +100,6 @@ def get_run_with_mutations(session: Session, run_id: str) -> dict[str, Any] | No
                     "at": r.at.isoformat() if r.at else None,
                 }
                 for r in revs
-            ],
-            "audit_log": [
-                {
-                    "row_id": a.row_id,
-                    "actor": a.actor,
-                    "surface": a.surface,
-                    "action": a.action,
-                    "result": a.result,
-                    "at": a.at.isoformat() if a.at else None,
-                }
-                for a in audit
             ],
         },
     }
@@ -209,33 +128,19 @@ def _run_to_dict(run: AgentRunModel) -> dict[str, Any]:
 
 
 def register(mcp: FastMCP) -> None:
-    """Register run.* tools on the given FastMCP instance."""
+    """Register run.* tools on the given FastMCP instance.
 
-    @mcp.tool(name="run_list")
-    def run_list(
-        project: str,
-        status: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> dict[str, Any]:
-        """List agent runs for a project — newest first, paginated.
-
-        Status filter: running | done | failed | cancelled.
-        """
-        from cod_doc.infra.db import transactional
-
-        sf, _ = session_factory(project)
-        with transactional(sf) as session:
-            project_id = require_project_id(session, project)
-            return list_runs_for_project(
-                session, project_id, status=status, limit=limit, offset=offset
-            )
+    ADR-012: остался один тул. `run_list` и `run_revert` удалены —
+    см. модульный docstring.
+    """
 
     @mcp.tool(name="run_get")
     def run_get(project: str, run_id: str) -> dict[str, Any] | None:
-        """Get one run with its linked mutations (revisions + audit_log).
+        """Get one built-in-orchestrator run with its linked revisions.
 
         Returns ``None`` when the run_id is unknown for this project.
+        Мутации, сделанные через MCP / CLI / REST, run_id не несут
+        (ADR-012), поэтому ``mutations.revisions`` у них пуст.
         """
         from cod_doc.infra.db import transactional
 
@@ -243,32 +148,3 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             require_project_id(session, project)
             return get_run_with_mutations(session, run_id)
-
-    @mcp.tool(name="run_revert")
-    def run_revert(
-        project: str,
-        run_id: str,
-        dry_run: bool = True,
-    ) -> dict[str, Any] | None:
-        """PCA-033: enumerate inverse ops for a run (read-only dry_run).
-
-        ``dry_run=True`` is the only supported mode for now: returns the
-        list of revisions that would be reverted plus any conflicts
-        (newer revisions on the same entity from other runs / humans).
-        Real destructive revert is wired entity-by-entity in COD-022 and
-        is invoked by the operator after reviewing the dry-run output.
-        ``dry_run=False`` raises ``NotImplementedError`` for safety until
-        the wrapper that walks ``revision_revert`` per op lands.
-        """
-        if not dry_run:
-            raise NotImplementedError(
-                "run.revert dry_run=False is not yet supported — review the "
-                "dry_run output and call revision.revert per row."
-            )
-
-        from cod_doc.infra.db import transactional
-
-        sf, _ = session_factory(project)
-        with transactional(sf) as session:
-            require_project_id(session, project)
-            return plan_run_revert(session, run_id)

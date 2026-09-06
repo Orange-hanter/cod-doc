@@ -3,7 +3,11 @@
 Tools
 -----
 - ``activity_list``       — paginated event stream with rich filters
-- ``activity_for_run``    — all events emitted during one agent run
+
+ADR-012 (ADO-044): тул ``activity_for_run`` удалён — `run_id` пуст на
+всех 1114 событиях живой БД, потому что run-скоуп открывает только
+встроенный раннер. Сервисная функция ``activity_service.events_for_run``
+сохранена: её зовёт web-консоль ``/p/{slug}/run``.
 """
 
 from __future__ import annotations
@@ -36,7 +40,8 @@ def register(mcp: FastMCP) -> None:
         scope_kind: 'task' | 'doc' | 'task_doc' | 'story' | 'project' | 'approval' | 'run'
         scope_id: task_id / doc_key / story_id / ...
         kind: canonical event kind (e.g. 'task.status_changed', 'doc.updated')
-        actor_kind: 'orchestrator' | 'human' | 'routine' | 'system'
+        actor_kind: см. ``domain.entities.ActorKind`` — 'human' | 'agent' |
+            'orchestrator' | 'routine' | 'system' | 'cli' | 'api'
         since / until: ISO-8601 datetime strings (UTC).
         """
         from datetime import datetime
@@ -62,18 +67,3 @@ def register(mcp: FastMCP) -> None:
                 limit=limit,
                 offset=offset,
             )
-
-    @mcp.tool(name="activity_for_run")
-    def activity_for_run(
-        project: str,
-        run_id: str,
-        limit: int = 200,
-    ) -> list[dict[str, Any]]:
-        """All activity events emitted during a specific agent run, oldest first."""
-        from cod_doc.infra.db import transactional
-        from cod_doc.services import activity_service
-
-        sf, _ = session_factory(project)
-        with transactional(sf) as session:
-            project_id = require_project_id(session, project)
-            return activity_service.events_for_run(session, project_id, run_id, limit=limit)

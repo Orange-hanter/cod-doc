@@ -1,10 +1,18 @@
 """PCA-031: agent run-id propagation via contextvar.
 
-Closes proposal 04 wiring. ``Orchestrator.run_task`` enters a run-scope
-once per heartbeat; mutations made downstream (via ``RevisionService.write``,
-audit-log, etc.) read the active run_id from the contextvar and stamp it
-on their rows. Outside an active scope (humans / external mutations) the
-contextvar holds ``None`` — column stays NULL.
+**ADR-012 (ADO-044): это телеметрия встроенного оркестратора, а не
+контракт.** ``Orchestrator.run_task`` — единственный вызывающий
+(``agent/orchestrator.py``), и им не пользуются: реальная работа идёт
+через MCP из Claude Code, где скоуп не открывается. Замер на живой БД
+2026-09-06: `revision` 2166/2166 и `activity_event` 1114/1114 с
+`run_id IS NULL`. Не пиши код, который рассчитывает на непустой
+`run_id`, — правило «run-id на всех мутациях» снято из AGENTS.md §5.4.
+
+Механика: внутри скоупа мутации ниже по стеку (``RevisionService.write``,
+``activity_service.emit``, ``approval_service``, ``task_doc_service``,
+``routine_service``) читают активный run_id из contextvar'а и штампуют
+его на своих строках. Вне скоупа contextvar держит ``None`` — колонка
+остаётся NULL.
 
 Usage::
 

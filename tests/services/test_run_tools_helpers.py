@@ -1,4 +1,9 @@
-"""PCA-032: run_tools query helpers (list_runs_for_project + get_run_with_mutations)."""
+"""PCA-032: run_tools query helpers (list_runs_for_project + get_run_with_mutations).
+
+ADR-012 (ADO-044): `plan_run_revert` удалён вместе с тулом `run_revert`,
+`audit_log` — вместе с таблицей (миграция 0029). Осталось то, что
+продолжает работать для встроенного оркестратора.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from cod_doc.domain.entities import EntityKind
 from cod_doc.infra.db import make_session_factory, transactional
-from cod_doc.infra.models import AuditLogModel, ProjectModel
+from cod_doc.infra.models import ProjectModel
 from cod_doc.mcp.tools.run_tools import (
     get_run_with_mutations,
     list_runs_for_project,
@@ -128,7 +133,7 @@ def test_get_run_unknown_returns_none(engine_with_schema) -> None:  # type: igno
     assert result is None
 
 
-def test_get_run_with_revisions_and_audit_log(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_get_run_with_revisions(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid = _add_project(session)
@@ -142,17 +147,6 @@ def test_get_run_with_revisions_and_audit_log(engine_with_schema) -> None:  # ty
                     author="agent",
                     diff='{"op":"create"}',
                 )
-            session.add(
-                AuditLogModel(
-                    project_id=pid,
-                    actor="agent",
-                    surface="mcp",
-                    action="task.complete",
-                    payload_json={"task_id": "PCA-032"},
-                    result="ok",
-                    run_id="run-mutations",
-                )
-            )
 
     with transactional(factory) as session:
         result = get_run_with_mutations(session, "run-mutations")
@@ -161,8 +155,8 @@ def test_get_run_with_revisions_and_audit_log(engine_with_schema) -> None:  # ty
     assert result["run_id"] == "run-mutations"
     assert result["status"] == "done"
     assert len(result["mutations"]["revisions"]) == 3
-    assert len(result["mutations"]["audit_log"]) == 1
-    assert result["mutations"]["audit_log"][0]["action"] == "task.complete"
+    # ADR-012: ключа audit_log больше нет — таблица удалена миграцией 0029.
+    assert "audit_log" not in result["mutations"]
 
 
 def test_get_run_excludes_other_runs_mutations(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -196,131 +190,3 @@ def test_get_run_excludes_other_runs_mutations(engine_with_schema) -> None:  # t
     assert a is not None and b is not None
     assert {r["entity_id"] for r in a["mutations"]["revisions"]} == {1}
     assert {r["entity_id"] for r in b["mutations"]["revisions"]} == {2}
-
-
-# --------------------------------------------------------------------------- #
-# plan_run_revert (PCA-033 dry_run)                                            #
-# --------------------------------------------------------------------------- #
-
-
-def test_plan_run_revert_unknown_run_id_returns_none(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    from cod_doc.mcp.tools.run_tools import plan_run_revert
-
-    factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        _add_project(session)
-        result = plan_run_revert(session, "does-not-exist")
-    assert result is None
-
-
-def test_plan_run_revert_no_conflicts_lists_all_ops(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    """Run with 3 revisions, no later writes → 3 ops, 0 conflicts."""
-    from cod_doc.mcp.tools.run_tools import plan_run_revert
-
-    factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        pid = _add_project(session)
-        with run_scope(session, project_id=pid, run_id="rv-clean"):
-            for i in range(3):
-                rev.write(
-                    session,
-                    project_id=pid,
-                    entity_kind=EntityKind.TASK,
-                    entity_id=i + 1,
-                    author="agent",
-                    diff='{"op":"create"}',
-                )
-
-    with transactional(factory) as session:
-        result = plan_run_revert(session, "rv-clean")
-
-    assert result is not None
-    assert result["run_id"] == "rv-clean"
-    assert result["status"] == "done"
-    assert result["dry_run"] is True
-    assert result["total_operations"] == 3
-    assert result["total_conflicts"] == 0
-    for op in result["operations"]:
-        assert op["conflicts"] == []
-
-
-def test_plan_run_revert_detects_later_human_edits_as_conflicts(
-    engine_with_schema,
-) -> None:  # type: ignore[no-untyped-def]
-    """A later revision on the same entity by a different actor → conflict."""
-    from cod_doc.mcp.tools.run_tools import plan_run_revert
-    from cod_doc.services.run_context import set_current_run_id
-
-    factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        pid = _add_project(session)
-        with run_scope(session, project_id=pid, run_id="rv-conflicted"):
-            rev.write(
-                session,
-                project_id=pid,
-                entity_kind=EntityKind.TASK,
-                entity_id=42,
-                author="agent",
-                diff='{"op":"create"}',
-            )
-        # Human edit on the same entity, different run_id (None).
-        try:
-            set_current_run_id(None)
-            rev.write(
-                session,
-                project_id=pid,
-                entity_kind=EntityKind.TASK,
-                entity_id=42,
-                author="human:cli",
-                diff='{"op":"status","old":"pending","new":"done"}',
-            )
-        finally:
-            set_current_run_id(None)
-
-    with transactional(factory) as session:
-        result = plan_run_revert(session, "rv-conflicted")
-
-    assert result is not None
-    assert result["total_operations"] == 1
-    assert result["total_conflicts"] == 1
-    op = result["operations"][0]
-    assert len(op["conflicts"]) == 1
-    assert op["conflicts"][0]["author"] == "human:cli"
-    assert op["conflicts"][0]["run_id"] is None
-
-
-def test_plan_run_revert_does_not_count_same_run_revs_as_conflicts(
-    engine_with_schema,
-) -> None:  # type: ignore[no-untyped-def]
-    """Multiple revisions of the same entity *within* the run are not conflicts."""
-    from cod_doc.mcp.tools.run_tools import plan_run_revert
-
-    factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        pid = _add_project(session)
-        with run_scope(session, project_id=pid, run_id="rv-self"):
-            rev.write(
-                session,
-                project_id=pid,
-                entity_kind=EntityKind.TASK,
-                entity_id=7,
-                author="agent",
-                diff='{"op":"create"}',
-            )
-            rev.write(
-                session,
-                project_id=pid,
-                entity_kind=EntityKind.TASK,
-                entity_id=7,
-                author="agent",
-                diff='{"op":"status","old":"pending","new":"in-progress"}',
-            )
-
-    with transactional(factory) as session:
-        result = plan_run_revert(session, "rv-self")
-
-    assert result is not None
-    assert result["total_operations"] == 2
-    assert result["total_conflicts"] == 0  # both revs are part of the same run
-    for op in result["operations"]:
-        assert op["conflicts"] == []
