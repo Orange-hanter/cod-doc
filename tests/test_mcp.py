@@ -80,10 +80,13 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     # PCA-010: heartbeat-context surface
     assert "task_heartbeat_context" in tool_names
     # PCA-032: run-id audit trail
-    assert "run_list" in tool_names
     assert "run_get" in tool_names
+    # ADR-012 (ADO-044): run_list / run_revert / activity_for_run удалены —
+    # run_id пуст на всех мутациях, кроме встроенного раннера.
+    assert "run_list" not in tool_names
+    assert "run_revert" not in tool_names
+    assert "activity_for_run" not in tool_names
     # PCA-033: run-revert dry-run
-    assert "run_revert" in tool_names
     # PCA-003: agent-skill catalog
     assert "skill_list" in tool_names
     assert "skill_get" in tool_names

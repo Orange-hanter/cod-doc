@@ -36,7 +36,7 @@ Project ─┬─< Document ─┬─< Section ─┬─< Block
          │
          ├─< Tag ──< DocumentTag, TaskTag, StoryTag
          │
-         └─< AuditLog (всё, что прошло через write-path)
+         └─< ActivityEvent (всё, что прошло через write-path) ──< AgentRun (run_id)
 ```
 
 ## 2. Ключевые инварианты
@@ -163,7 +163,8 @@ CREATE TABLE revision (
   at           TEXT    NOT NULL,   -- ISO-8601; должен соответствовать timestamp в revision_id
   diff         TEXT    NOT NULL,   -- unified diff либо JSON-patch
   reason       TEXT,
-  commit_sha   TEXT                -- если привязано к git-коммиту
+  commit_sha   TEXT,               -- если привязано к git-коммиту
+  run_id       TEXT                -- телеметрия оркестратора; де-факто всегда NULL, см. §3.13.1
 );
 CREATE INDEX ix_revision_entity ON revision(entity_kind, entity_id, at);
 CREATE INDEX ix_revision_parent ON revision(parent_revision_id);
@@ -338,24 +339,69 @@ CREATE TABLE task_tag     (task_id     INTEGER, tag_id INTEGER, PRIMARY KEY(task
 CREATE TABLE story_tag    (story_id    INTEGER, tag_id INTEGER, PRIMARY KEY(story_id, tag_id));
 ```
 
-### 3.13 `AuditLog`
+### 3.13 `ActivityEvent` — журнал write-операций
+
+Единый audit-таймлайн проекта: одна строка на каждую мутацию, пишется
+в той же транзакции, что и сама мутация (ADO-040), через
+`activity_service.write_revision_and_emit_event` / `emit_for_write`.
 
 ```sql
-CREATE TABLE audit_log (
-  row_id       INTEGER PRIMARY KEY,
-  project_id   INTEGER NOT NULL REFERENCES project(row_id),
-  actor        TEXT    NOT NULL,          -- 'agent:task-steward' / 'human:dakh'
-  surface      TEXT    NOT NULL,          -- 'cli'|'mcp'|'rest'|'tui'|'agent'
-  action       TEXT    NOT NULL,          -- 'task.create'|'doc.patch'|...
-  payload_json TEXT    NOT NULL DEFAULT '{}',  -- JSON аргументов
-  result       TEXT    NOT NULL,          -- 'ok'|'error:…'
-  at           TEXT    NOT NULL
+CREATE TABLE activity_event (
+  id         TEXT    PRIMARY KEY,         -- UUIDv7, time-sortable
+  project_id INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
+  ts         TEXT    NOT NULL,
+  actor_kind TEXT    NOT NULL,            -- см. ActorKind ниже
+  actor_id   TEXT,                        -- строка-автор: 'human:dakh', 'agent:claude-opus-5'
+  run_id     TEXT,                        -- телеметрия оркестратора, см. §3.13.1
+  kind       TEXT    NOT NULL,            -- 'task.status_changed', 'doc.updated', …
+  scope_kind TEXT,                        -- 'task' | 'doc' | 'story' | 'approval' | 'run'
+  scope_id   TEXT,
+  payload    TEXT    NOT NULL DEFAULT '{}',
+  summary    TEXT
 );
-CREATE INDEX ix_audit_action ON audit_log(action, at);
-CREATE INDEX ix_audit_actor  ON audit_log(actor,  at);
 ```
 
-**`surface = 'agent'`** — вызовы оркестратора (вне человеческого CLI / MCP / REST / TUI).
+**`actor_kind`** — enum `domain.entities.ActorKind`:
+`human | agent | orchestrator | routine | system | cli | api`.
+Выводится из строки-автора **только** через
+`domain.entities.actor_kind_for_author()` — единственную точку вывода
+(ADR-012). Канонический формат `actor_id` / `author` — `<kind>:<id>`
+(`human:dakh`, `agent:claude-opus-5`, `routine:doc_drift_daily`);
+оркестраторный прогон исторически пишется через дефис
+(`orchestrator-run-<name>`), резолвер понимает оба написания.
+`cli` и `api` — поверхностные акторы: проставляются явно на своих
+call-site'ах и из строки не выводятся.
+
+> **Строки до 2026-09-06 неточны.** До ADR-012 эвристика была
+> продублирована в одиннадцати местах в трёх вариантах, поэтому в истории
+> есть события `orchestrator-run-*` с `actor_kind='human'` и события
+> `agent:*` с `actor_kind='human'`. Бэкфилла нет намеренно: журнал
+> наблюдений не переписывается задним числом.
+
+#### 3.13.1 `AgentRun` и колонка `run_id` — телеметрия, не контракт
+
+`agent_run` — одна строка на вызов `Orchestrator.run_task` встроенного
+раннера. Колонка `run_id` есть в семи таблицах (`revision`,
+`activity_event`, `approval`, `agent_run`, `routine_run`, `finding`,
+плюс исторически `audit_log`) и заполняется **только** внутри
+`run_scope` / `start_orchestrator_run`.
+
+**Мутации через MCP, CLI и REST run-скоуп не открывают, поэтому у них
+`run_id IS NULL`.** Замер на живой БД cod-doc 2026-09-06: `revision`
+2166/2166 NULL, `activity_event` 1114/1114 NULL, `agent_run` — одна
+строка от 2026-06-06.
+
+Это зафиксированное решение (ADR-012), а не незакрытый долг: правило
+«run-id на всех мутациях» снято из `AGENTS.md` §5.4, MCP-тулы
+`run_list` / `run_revert` / `activity_for_run` удалены. Колонки
+оставлены nullable — удалять их значило бы переписать append-only
+`revision` в каждой существующей БД ради нулевой выгоды. Не пиши код,
+который рассчитывает на непустой `run_id`.
+
+> **`audit_log` удалена** (миграция `0029_drop_audit_log`, 2026-09-06).
+> Таблица была объявлена журналом write-операций в ARCHITECTURE §9 и в
+> этом параграфе, но за всю историю проекта не получила ни одного
+> writer'а — 0 строк. Потребность закрывает `activity_event` выше.
 
 ### 3.14 `Embedding`
 
@@ -492,7 +538,7 @@ WHERE t.status='pending'
 - Миграции — Alembic (`cod_doc/infra/migrations/`), нумерация `0001_*`, `0002_*`.
 - Seed добавляет только системные теги и enum-валидации.
 - Для импорта Restate — отдельный one-shot скрипт (см. [migration/from-restate.md](migration/from-restate.md)).
-- **JSON `NOT NULL`-колонки** (`project.config_json`, `document.frontmatter_json`, `audit_log.payload_json`) — `server_default '{}'`. Безопасны для raw INSERT и bulk-импорта.
+- **JSON `NOT NULL`-колонки** (`project.config_json`, `document.frontmatter_json`) — `server_default '{}'`. Безопасны для raw INSERT и bulk-импорта.
 - **Таймстемп-колонки** (`created`, `last_updated`, `at`) — `NOT NULL` без `server_default`. Заполняются на стороне приложения (`_utcnow` в ORM); raw SQL должен передавать значения явно. Это компромисс: единый источник истины — Python-часовой пояс, без рассинхрона с серверным `current_timestamp` между диалектами.
 
 ## 6. Именование и id-формат

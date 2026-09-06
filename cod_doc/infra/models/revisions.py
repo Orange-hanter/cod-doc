@@ -1,19 +1,20 @@
-"""Revision history + structured audit log."""
+"""Revision history + orchestrator run records.
+
+ADR-012: таблица ``audit_log`` удалена (миграция 0033) — журнал
+write-операций держит ``activity_event``.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 — runtime use by Mapped[datetime]
-from typing import Any
 
 from sqlalchemy import (
-    JSON,
     DateTime,
     ForeignKey,
     Index,
     Integer,
     String,
     Text,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,31 +42,9 @@ class RevisionModel(Base):
     diff: Mapped[str] = mapped_column(Text, nullable=False)
     reason: Mapped[str | None] = mapped_column(Text)
     commit_sha: Mapped[str | None] = mapped_column(String(64))
-    # PCA-030: linkage to agent_run; NULL = human/external mutation.
-    run_id: Mapped[str | None] = mapped_column(String(36))
-
-
-class AuditLogModel(Base):
-    __tablename__ = "audit_log"
-    __table_args__ = (
-        Index("ix_audit_action", "action", "at"),
-        Index("ix_audit_actor", "actor", "at"),
-        Index("ix_audit_log_run_id", "run_id"),
-    )
-
-    row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    project_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False
-    )
-    actor: Mapped[str] = mapped_column(String(128), nullable=False)
-    surface: Mapped[str] = mapped_column(String(16), nullable=False)
-    action: Mapped[str] = mapped_column(String(64), nullable=False)
-    payload_json: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, default=dict, server_default=text("'{}'")
-    )
-    result: Mapped[str] = mapped_column(Text, nullable=False)
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    # PCA-030: linkage to agent_run; NULL = human/external mutation.
+    # PCA-030 / ADR-012: телеметрия встроенного оркестратора, не контракт.
+    # Заполняется только внутри run_scope / start_orchestrator_run;
+    # для мутаций через MCP / CLI / REST всегда NULL.
     run_id: Mapped[str | None] = mapped_column(String(36))
 
 
@@ -75,6 +54,10 @@ class AgentRunModel(Base):
     One row per `Orchestrator.run_task` invocation. Mutations made during
     the run carry `run_id` (set as a contextvar in PCA-031), so a single
     SELECT enumerates everything an agent did on that run.
+
+    ADR-012: встроенный раннер — единственный писатель этой таблицы.
+    Работа через MCP из Claude Code run-скоуп не открывает, поэтому
+    `run_id` на её мутациях NULL. Это телеметрия, а не контракт.
     """
 
     __tablename__ = "agent_run"

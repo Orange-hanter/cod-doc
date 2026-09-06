@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.mcp.tools._db import require_project_id, session_factory
 
 if TYPE_CHECKING:
@@ -65,7 +66,7 @@ def register(mcp: FastMCP) -> None:
                         session,
                         project_id,
                         "task.checked_out",
-                        actor_kind="orchestrator" if "run" in agent else "human",
+                        actor_kind=actor_kind_for_author(agent),
                         actor_id=agent,
                         scope_kind="task",
                         scope_id=task_id,
@@ -119,7 +120,7 @@ def register(mcp: FastMCP) -> None:
                         session,
                         project_id,
                         "task.released",
-                        actor_kind="human" if force else "orchestrator",
+                        actor_kind=actor_kind_for_author(agent),
                         actor_id=agent,
                         scope_kind="task",
                         scope_id=task_id,

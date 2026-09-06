@@ -1,4 +1,9 @@
-"""PCA-030: agent_run table + run_id columns on revision/audit_log."""
+"""PCA-030: agent_run table + run_id column on revision.
+
+ADR-012 (ADO-044): `run_id` — телеметрия встроенного оркестратора,
+не контракт «run-id на всех мутациях». Кейсы `audit_log` сняты вместе
+с таблицей (миграция 0029_drop_audit_log).
+"""
 
 from __future__ import annotations
 
@@ -11,7 +16,6 @@ from sqlalchemy import inspect, select
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import (
     AgentRunModel,
-    AuditLogModel,
     ProjectModel,
     RevisionModel,
 )
@@ -79,12 +83,10 @@ def test_agent_run_table_exists(engine_with_schema) -> None:  # type: ignore[no-
     assert expected <= cols, f"missing columns: {expected - cols}"
 
 
-def test_run_id_column_added_to_revision_and_audit_log(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_run_id_column_added_to_revision(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     insp = inspect(engine_with_schema)
     rev_cols = {c["name"] for c in insp.get_columns("revision")}
-    audit_cols = {c["name"] for c in insp.get_columns("audit_log")}
     assert "run_id" in rev_cols
-    assert "run_id" in audit_cols
 
 
 def test_run_id_unique_constraint_on_agent_run(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -158,29 +160,6 @@ def test_revision_run_id_linkage(engine_with_schema) -> None:  # type: ignore[no
             select(RevisionModel).where(RevisionModel.run_id == "01J0LINK")
         ).scalar_one()
         assert rev_loaded.revision_id == "01J0REV001"
-
-
-def test_audit_log_run_id_linkage(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        proj_id = _add_project(session)
-        entry = AuditLogModel(
-            project_id=proj_id,
-            actor="agent",
-            surface="mcp",
-            action="task.create",
-            payload_json={"task_id": "PCA-030"},
-            result="ok",
-            run_id="01J0AUDIT",
-        )
-        session.add(entry)
-        session.flush()
-
-    with transactional(factory) as session:
-        loaded = session.execute(
-            select(AuditLogModel).where(AuditLogModel.run_id == "01J0AUDIT")
-        ).scalar_one()
-        assert loaded.action == "task.create"
 
 
 def test_revision_without_run_id_remains_supported(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

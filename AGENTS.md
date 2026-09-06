@@ -10,7 +10,7 @@
 > Bodies реализованы в `cod_doc/services/agent_service.py`; MCP-обёртки в
 > `cod_doc/mcp/tools/agent_tools.py` (тонкий wrapper-слой, не stubs). Покрытие:
 > `tests/services/test_agent_pick.py`, `tests/services/test_agent_workflow.py`,
-> `tests/services/test_agent_profile_contract.py`. 109-tool CRUD surface
+> `tests/services/test_agent_profile_contract.py`. 106-tool CRUD surface
 > (`task_*`, `doc_*`, `plan_*`, …) остаётся для `--profile standard|full`
 > (admin / CLI / web). Tracked в plan
 > `paperclip-adoption-task-plan` section H. Новые agent-features → секция H,
@@ -75,14 +75,27 @@ pytest tests/ -v --tb=short     # run the suite
    Phase 2): прямой `update_status(todo→in_progress)` бросает
    `StatusTransitionError` на всех поверхностях; web-форма идёт через
    `checkout_service.checkout`.
-4. **Run-id на всех мутациях.** Внутри `run_scope(...)` все revisions /
-   activity events / approvals тегаются `run_id` (proposal 04).
+4. **`run_id` — телеметрия, не контракт** (ADR-012, ADO-044). Правило
+   «run-id на всех мутациях» **снято**: `run_scope(...)` открывает только
+   встроенный раннер (`agent/orchestrator.py`), а работа идёт через MCP,
+   где скоуп не открывается. Замер 2026-09-06: `revision` 2166/2166 и
+   `activity_event` 1114/1114 с `run_id IS NULL`. Колонка оставлена
+   nullable — не пиши код, который рассчитывает на её непустоту.
+   Кто сделал мутацию, несёт `author` / `actor_id`, а не `run_id`.
 5. **Validate transitions.** `task_status_machine.validate_transition`
    вызывается в `task_service.update_status` — добавляешь новый статус →
    обнови `ALLOWED_TRANSITIONS`.
 6. **Activity events на каждой мутации.** Любой новый MCP-write-tool
    эмитит `activity_service.emit(...)` в той же транзакции (proposal 09).
    Не покрытые сейчас тулы — Section F backlog (PCA-912).
+   `actor_kind` **всегда** выводится через
+   `domain.entities.actor_kind_for_author(author)` — единственную точку
+   вывода (ADR-012); собственная эвристика на call-site'е
+   (`author.startswith("agent")`, `"run" in agent`) запрещена и ловится
+   `tests/test_actor_kind_single_source.py`. Канонический формат
+   `author` / `actor_id` — `<kind>:<id>` (`human:dakh`,
+   `agent:claude-opus-5`, `routine:doc_drift_daily`); словарь ролей —
+   `domain.entities.ActorKind`.
 7. **MCP-tool контракты.** Регистрация в `cod_doc/mcp/server.py`
    синхронно с реализацией; docstring идёт в `tools/list`. Для тестов —
    `tests/test_mcp.py::test_mcp_lists_tools` smoke-проверяет имена.
@@ -95,15 +108,15 @@ pytest tests/ -v --tb=short     # run the suite
    ```
    cod-doc-mcp                                # agent (default)
    cod-doc-mcp --profile minimal              # 20-tool cold-start
-   cod-doc-mcp --profile full                 # все 113, включая legacy
+   cod-doc-mcp --profile full                 # все 110, включая legacy
    COD_DOC_PROFILE=full cod-doc-mcp           # через env
    ```
    - ``agent`` — **default**: 6 task-centric тулов для AI-агентов
      (`agent_pick`, `agent_report`, `agent_complete`, `agent_release`,
      `agent_get`, `agent_capabilities`).
    - ``minimal`` — 20-tool cold-start surface для свежих интеграций.
-   - ``standard`` — 109 DB-backed тулов без legacy YAML.
-   - ``full`` — все 113 тулов, включая legacy. Только для админ-сценариев
+   - ``standard`` — 106 DB-backed тулов без legacy YAML.
+   - ``full`` — все 110 тулов, включая legacy. Только для админ-сценариев
      и обратной совместимости с до-cycle-3 интеграциями.
    Counts зафиксированы тестом
    `tests/test_server_profiles.py::test_profile_counts_match_documented_values` —
