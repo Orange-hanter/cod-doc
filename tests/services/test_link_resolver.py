@@ -646,9 +646,18 @@ def test_execution_plan_bare_adr_task_id_resolves_as_task(engine_with_schema) ->
 
 
 def test_non_plan_bare_adr_token_stays_adr_link(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Граница приведения: вне execution-plan голый ADR-006 остаётся ADR-ссылкой.
+
+    ADO-077: проекту заведён настоящий ADR, иначе реестр считается неиспользуемым
+    и находки не будет. Суть теста — что токен НЕ превращается в ссылку на
+    одноимённую задачу; строгость проверки здесь вторична.
+    """
+    from cod_doc.services import adr_service
+
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         proj = _seed_project(session)
+        adr_service.create(session, project_id=proj, title="Реестр в работе", status="accepted")
         _add_task(session, proj, task_id="ADR-006")
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
@@ -666,3 +675,58 @@ def test_non_plan_bare_adr_token_stays_adr_link(engine_with_schema) -> None:  # 
         assert rows[0].kind is LinkKind.ADR
         assert rows[0].resolved is False
         assert rows[0].broken_reason and "adr not found" in rows[0].broken_reason
+
+
+def test_bare_adr_is_not_broken_when_project_has_no_adr_registry(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-077: у проекта без единого ADR упоминание ADR-NNN — не битая ссылка.
+
+    Найдено на живом PR Orange-hanter/Orakul#562: голое упоминание в таблице
+    изменений давало LINK-BROKEN severity major, потому что реестр ADR у проекта
+    пуст. Для внешних проектов, которые реестром не пользуются, это шум на каждом
+    упоминании — а drift-гейт SYM-010 печатает находки в чужой PR.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        host = _add_doc(session, proj, doc_key="src")
+        sec = docs.add_section(
+            session,
+            document_id=host,
+            anchor="changelog",
+            heading="Changelog",
+            level=2,
+            position=0,
+            body="§3: добавлено предложенное ADR-001 о федеративном SSO сотрудников.",
+            author="human:test",
+        )
+        rows = links.resolve_section(session, sec.row_id)
+        adrs = [r for r in rows if r.kind is LinkKind.ADR]
+        assert len(adrs) == 1
+        assert adrs[0].resolved is True, "реестр не заведён — находки быть не должно"
+        assert adrs[0].broken_reason is None
+
+
+def test_bare_adr_still_broken_when_registry_is_in_use(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Обратная сторона ADO-077: у проекта с реестром проверка остаётся строгой."""
+    from cod_doc.services import adr_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        adr_service.create(session, project_id=proj, title="Настоящий ADR", status="accepted")
+        host = _add_doc(session, proj, doc_key="src")
+        sec = docs.add_section(
+            session,
+            document_id=host,
+            anchor="i",
+            heading="I",
+            level=2,
+            position=0,
+            body="Ссылаемся на ADR-404, которого нет.",
+            author="human:test",
+        )
+        rows = links.resolve_section(session, sec.row_id)
+        adrs = [r for r in rows if r.kind is LinkKind.ADR]
+        assert len(adrs) == 1
+        assert adrs[0].resolved is False
+        assert adrs[0].broken_reason and "adr not found: ADR-404" in adrs[0].broken_reason

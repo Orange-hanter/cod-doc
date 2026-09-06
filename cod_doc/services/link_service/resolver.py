@@ -233,6 +233,18 @@ def _resolve_story(
     return True, story_id, None
 
 
+def _project_uses_adr_registry(session: Session, project_id: int) -> bool:
+    """Заведён ли у проекта хоть один ADR.
+
+    ADO-077: голое упоминание вида ``ADR-001`` в прозе парсится как ссылка в
+    реестр. Для проекта, который реестром не пользуется, это даёт ложную находку
+    на каждом упоминании — а SYM-010 печатает такие находки в чужой PR. Пустой
+    реестр читаем как «конвенция к этому проекту не применяется».
+    """
+    stmt = select(ADRModel.row_id).where(ADRModel.project_id == project_id).limit(1)
+    return session.execute(stmt).scalar_one_or_none() is not None
+
+
 def _resolve_adr(
     session: Session, project_id: int, adr_id: str | None
 ) -> tuple[bool, str | None, str | None]:
@@ -243,6 +255,9 @@ def _resolve_adr(
         ADRModel.adr_id == adr_id,
     )
     if session.execute(stmt).scalar_one_or_none() is None:
+        if not _project_uses_adr_registry(session, project_id):
+            # Реестра нет — упоминание не является ссылкой (ADO-077).
+            return True, adr_id, None
         return False, None, f"adr not found: {adr_id}"
     return True, adr_id, None
 
