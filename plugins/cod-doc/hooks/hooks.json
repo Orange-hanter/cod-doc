@@ -1,0 +1,29 @@
+{
+  "description": "cod-doc: напоминание о синхронизации БД после правки tracked-markdown и (опциональная) сводка незакрытых задач при старте сессии",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/md-drift-reminder.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/session-brief.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cod-doc": {
+      "type": "stdio",
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/mcp-launch.sh"
+    }
+  }
+}
