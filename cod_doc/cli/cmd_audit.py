@@ -409,6 +409,18 @@ def audit(
             _check_frontmatter(d, findings)
             if drift:
                 _check_drift(d, root, session, findings)
+        from cod_doc.services.validation import audit_import_fallback
+
+        for issue in audit_import_fallback(docs):
+            findings.append(
+                AuditFinding(
+                    code=issue.code,
+                    severity=issue.severity,
+                    subject="project",
+                    message=issue.message,
+                    details=issue.details,
+                )
+            )
 
     error_count = sum(1 for f in findings if f.severity == "error")
     warning_count = sum(1 for f in findings if f.severity == "warning")
