@@ -6,7 +6,7 @@ source_of_truth: false
 canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
 created: 2026-09-02
-last_updated: 2026-09-02
+last_updated: 2026-09-06
 audience: [next-session-agent, contributors]
 related_docs:
   - ROADMAP.md
@@ -133,6 +133,10 @@ M4 закрылся на утверждении «гейты зелёные». �
 что входит, что НЕ входит, чем доказываем. Вводится этим спринтом.
 
 ## 3. Критерий выхода
+
+> **Спринт закрыт 2026-09-06.** Все шесть пунктов выполнены; очередь пройдена
+> целиком, включая хвост №7–8. Разбор —
+> [audit-отчёт M5](../audit/2026-09-06-sprint-m5-trustworthy-gate.md).
 
 1. **Зелёный прогон CI на main** — со ссылкой на run id. Это главный критерий:
    без него остальные пункты недоказуемы.
