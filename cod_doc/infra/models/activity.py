@@ -41,7 +41,9 @@ class ActivityEventModel(Base):
         Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False
     )
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
-    # actor_kind: 'orchestrator' | 'human' | 'routine' | 'system'
+    # actor_kind: домен-словарь domain.entities.ActorKind —
+    # 'human' | 'agent' | 'orchestrator' | 'routine' | 'system' | 'cli' | 'api'.
+    # Выводить из строки-автора только через actor_kind_for_author (ADR-012).
     actor_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     # actor_id: user identifier, agent run_id, routine name, etc.
     actor_id: Mapped[str | None] = mapped_column(String(128))

@@ -36,7 +36,7 @@ from .plans import (
 )
 from .project import ProjectModel
 from .repo_index import RepoFileModel, RepoImportModel, RepoSymbolModel
-from .revisions import AgentRunModel, AuditLogModel, RevisionModel
+from .revisions import AgentRunModel, RevisionModel
 from .routines import RoutineModel, RoutineRunModel
 from .stories import StoryAcceptanceModel, StoryLinkModel, UserStoryModel
 from .tags import DocumentTagModel, StoryTagModel, TagModel, TaskTagModel
@@ -54,7 +54,6 @@ __all__ = [
     "ApprovalDocRevisionLinkModel",
     "ApprovalModel",
     "ApprovalTaskLinkModel",
-    "AuditLogModel",
     "Base",
     "CommitLinkModel",
     "DependencyModel",

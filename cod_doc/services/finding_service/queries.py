@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
+from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.infra.models import FindingModel
 from cod_doc.services import activity_service
 
@@ -110,7 +111,7 @@ def dismiss_finding(
         session,
         project_id,
         "finding.dismissed",
-        actor_kind="agent" if author.startswith("agent") else "human",
+        actor_kind=actor_kind_for_author(author),
         actor_id=author,
         scope_kind="finding",
         scope_id=f.finding_uid,

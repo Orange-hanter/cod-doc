@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.mcp.tools._db import require_project_id, session_factory
 
 if TYPE_CHECKING:
@@ -73,7 +74,7 @@ def register(mcp: FastMCP) -> None:
                 session,
                 project_id,
                 "approval.requested",
-                actor_kind="orchestrator" if "run" in requested_by else "human",
+                actor_kind=actor_kind_for_author(requested_by),
                 actor_id=requested_by,
                 scope_kind="approval",
                 scope_id=approval.approval_id,
@@ -193,7 +194,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "approval.resolved",
-                    actor_kind="human",
+                    actor_kind=actor_kind_for_author(resolved_by),
                     actor_id=resolved_by,
                     scope_kind="approval",
                     scope_id=approval_id,
@@ -226,7 +227,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "approval.cancelled",
-                    actor_kind="human",
+                    actor_kind=actor_kind_for_author(cancelled_by),
                     actor_id=cancelled_by,
                     scope_kind="approval",
                     scope_id=approval_id,

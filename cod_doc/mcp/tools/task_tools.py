@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.mcp.tools._db import require_project_id, session_factory, task_to_dict
 
 if TYPE_CHECKING:
@@ -530,7 +531,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "task.blocked",
-                    actor_kind="human",
+                    actor_kind=actor_kind_for_author(author),
                     actor_id=author,
                     scope_kind="task",
                     scope_id=task_id,
@@ -561,7 +562,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "task.unblocked",
-                    actor_kind="human",
+                    actor_kind=actor_kind_for_author(author),
                     actor_id=author,
                     scope_kind="task",
                     scope_id=task_id,
@@ -696,7 +697,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "task.status_changed",
-                    actor_kind="agent" if author.startswith("agent") else "human",
+                    actor_kind=actor_kind_for_author(author),
                     actor_id=author,
                     scope_kind="task",
                     scope_id=task_id,
@@ -843,7 +844,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "task.completed",
-                    actor_kind="agent" if author.startswith("agent") else "human",
+                    actor_kind=actor_kind_for_author(author),
                     actor_id=author,
                     scope_kind="task",
                     scope_id=task_id,

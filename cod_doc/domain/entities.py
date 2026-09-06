@@ -201,12 +201,70 @@ class EntityKind(StrEnum):
     ADR = "adr"
 
 
-class AuditSurface(StrEnum):
-    CLI = "cli"
-    MCP = "mcp"
-    REST = "rest"
-    TUI = "tui"
+class ActorKind(StrEnum):
+    """ADR-012: канонический словарь ``activity_event.actor_kind``.
+
+    Значения — ровно те, что пишет код. До ADR-012 словарь был объявлен
+    как ``orchestrator | human | routine | system`` (миграция 0012),
+    а писались ещё ``agent``, ``cli`` и ``api``.
+    """
+
+    HUMAN = "human"
     AGENT = "agent"
+    ORCHESTRATOR = "orchestrator"
+    ROUTINE = "routine"
+    SYSTEM = "system"
+    #: Поверхностные акторы: их проставляют явно (``cmd_ingest``, ``/api/v1``),
+    #: из строки-автора они не выводятся — см. :func:`actor_kind_for_author`.
+    CLI = "cli"
+    API = "api"
+
+
+def actor_kind_for_author(author: str | None) -> ActorKind:
+    """Вывести :class:`ActorKind` из строки-автора мутации.
+
+    **Единственная** точка вывода на все четыре поверхности (ADR-012).
+    До неё эвристика ``author.startswith("agent")`` была продублирована
+    в одиннадцати местах в трёх несовместимых вариантах, из-за чего один
+    и тот же оркестраторный прогон попадал в журнал то как ``orchestrator``,
+    то как ``human``.
+
+    Канонический формат ``author`` — ``<kind>:<id>`` (``human:dakh``,
+    ``agent:claude-opus-5``, ``routine:doc_drift_daily``). Оркестраторный
+    прогон исторически пишется через дефис — ``orchestrator-run-<name>``;
+    резолвер понимает оба написания.
+
+    Правила по убыванию приоритета:
+
+    - ``orchestrator:*`` / ``orchestrator-run-*``  → ``orchestrator``
+    - ``agent:*`` / ``agent-*`` / ``agent``        → ``agent``
+    - ``routine:*`` / ``routine-*``                → ``routine``
+    - ``human:*``                                  → ``human``
+    - ``system``, ``mcp``, ``mcp:*``               → ``system``
+    - пусто или legacy-форма без префикса          → ``human``
+
+    ``ActorKind.CLI`` / ``ActorKind.API`` из строки не выводятся: это
+    поверхности, а не роли автора, и проставляются явно на своих
+    call-site'ах. Legacy-хвост (``cli``, ``claude-opus-5``,
+    ``roadmap-sync``, ``kimi-m4``) осознанно уезжает в ``human``: за
+    такими строками стоит человек, запустивший инструмент руками.
+    """
+    if not author:
+        return ActorKind.HUMAN
+
+    head = author.split(":", 1)[0].strip().lower()
+    # ``orchestrator-run-…`` / ``agent-steward`` — префикс через дефис.
+    root = head.split("-", 1)[0]
+
+    if root == "orchestrator":
+        return ActorKind.ORCHESTRATOR
+    if root == "agent":
+        return ActorKind.AGENT
+    if root == "routine":
+        return ActorKind.ROUTINE
+    if head in {"system", "mcp"}:
+        return ActorKind.SYSTEM
+    return ActorKind.HUMAN
 
 
 @dataclass(slots=True)
@@ -406,19 +464,6 @@ class Revision:
     at: datetime | None = None
     reason: str | None = None
     commit_sha: str | None = None
-    run_id: str | None = None
-
-
-@dataclass(slots=True)
-class AuditLog:
-    project_id: int
-    actor: str
-    surface: AuditSurface
-    action: str
-    payload: dict[str, Any]
-    result: str
-    row_id: int | None = None
-    at: datetime | None = None
     run_id: str | None = None
 
 

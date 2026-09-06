@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
+from cod_doc.domain.entities import actor_kind_for_author
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
@@ -435,7 +437,7 @@ def report(
             session,
             project_id,
             "task.blocked",
-            actor_kind="agent" if agent_id.startswith("agent") else "human",
+            actor_kind=actor_kind_for_author(agent_id),
             actor_id=agent_id,
             scope_kind="task",
             scope_id=task_id,

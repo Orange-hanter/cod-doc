@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.mcp.tools._db import doc_to_dict, require_project_id, session_factory
 
 if TYPE_CHECKING:
@@ -115,7 +116,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "doc.created",
-                    actor_kind="agent" if author.startswith("agent") else "human",
+                    actor_kind=actor_kind_for_author(author),
                     actor_id=author,
                     scope_kind="document",
                     scope_id=doc_key,
@@ -171,7 +172,7 @@ def register(mcp: FastMCP) -> None:
                 session,
                 project_id,
                 "doc.renamed",
-                actor_kind="agent" if author.startswith("agent") else "human",
+                actor_kind=actor_kind_for_author(author),
                 actor_id=author,
                 scope_kind="document",
                 scope_id=new_key,
@@ -223,7 +224,7 @@ def register(mcp: FastMCP) -> None:
                 session,
                 project_id,
                 "doc.accepted",
-                actor_kind="agent" if author.startswith("agent") else "human",
+                actor_kind=actor_kind_for_author(author),
                 actor_id=author,
                 scope_kind="document",
                 scope_id=doc_key,
