@@ -102,6 +102,10 @@ def audit_import_fallback(
     for doc in docs:
         doc_type = getattr(doc, "type", None)
         doc_status = getattr(doc, "status", None)
+        if not isinstance(doc_type, (DocumentType, str)):
+            continue
+        if not isinstance(doc_status, (DocumentStatus, str)):
+            continue
         fm = getattr(doc, "frontmatter", None) or {}
         if is_import_fallback(type=doc_type, status=doc_status, frontmatter=fm):
             keys.append(str(getattr(doc, "doc_key", "") or getattr(doc, "path", "")))

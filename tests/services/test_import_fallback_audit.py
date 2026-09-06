@@ -50,3 +50,11 @@ def test_empty_corpus_is_clean() -> None:
         SimpleNamespace(type="module-spec", status="active", frontmatter={}, doc_key="spec"),
     ]
     assert audit_import_fallback(docs) == []
+
+
+def test_missing_type_or_status_is_skipped() -> None:
+    docs = [
+        SimpleNamespace(type=None, status="draft", frontmatter={}, doc_key="no-type"),
+        SimpleNamespace(type="module-spec", status=None, frontmatter={}, doc_key="no-status"),
+    ]
+    assert audit_import_fallback(docs) == []
