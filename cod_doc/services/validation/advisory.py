@@ -9,12 +9,21 @@ decide whether to escalate them to errors.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, TaskType
 
 from ._errors import ValidationIssue
 from ._patterns import _FM007_REQUIRED_TYPES, _VERB_PATTERNS
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+# Import default when the file has no `type:` key (import_service fallback).
+# A corpus that is still 100% this pair has not been classified — Orakul 2026-09.
+_IMPORT_FALLBACK_TYPE = DocumentType.MODULE_SPEC.value
+_IMPORT_FALLBACK_STATUS = DocumentStatus.DRAFT.value
+_TY001_SAMPLE = 15
 
 
 def audit_task_title(title: str, task_type: TaskType) -> list[ValidationIssue]:
@@ -56,6 +65,66 @@ def audit_task_title(title: str, task_type: TaskType) -> list[ValidationIssue]:
                 "Refactor:, Fix:, Docs:)"
             ),
             details={"title": title},
+        )
+    ]
+
+
+def is_import_fallback(
+    *,
+    type: DocumentType | str,
+    status: DocumentStatus | str,
+    frontmatter: dict[str, Any] | None,
+) -> bool:
+    """True when the row still holds the silent import default.
+
+    Authored ``type:`` in frontmatter means the file claimed a type even if
+    the stored enum later coerced it. Missing ``type:`` plus
+    ``module-spec``/``draft`` is the unclassified residue.
+    """
+    fm = frontmatter or {}
+    if "type" in fm:
+        return False
+    type_str = type.value if isinstance(type, DocumentType) else str(type)
+    status_str = status.value if isinstance(status, DocumentStatus) else str(status)
+    return type_str == _IMPORT_FALLBACK_TYPE and status_str == _IMPORT_FALLBACK_STATUS
+
+
+def audit_import_fallback(
+    docs: Iterable[Any],
+) -> list[ValidationIssue]:
+    """TY-001: any document still on the import fallback pair.
+
+    One corpus-level issue (not one row per file) so a 400-doc foreign
+    import does not drown the audit table. ``cod-doc audit --strict``
+    treats this as an error — classify in the DB, do not rewrite YAML.
+    """
+    keys: list[str] = []
+    for doc in docs:
+        doc_type = getattr(doc, "type", None)
+        doc_status = getattr(doc, "status", None)
+        if not isinstance(doc_type, (DocumentType, str)):
+            continue
+        if not isinstance(doc_status, (DocumentStatus, str)):
+            continue
+        fm = getattr(doc, "frontmatter", None) or {}
+        if is_import_fallback(type=doc_type, status=doc_status, frontmatter=fm):
+            keys.append(str(getattr(doc, "doc_key", "") or getattr(doc, "path", "")))
+    if not keys:
+        return []
+    sample = keys[:_TY001_SAMPLE]
+    more = len(keys) - len(sample)
+    tail = f" (+{more} more)" if more else ""
+    return [
+        ValidationIssue(
+            code="TY-001",
+            severity="error",
+            message=(
+                f"{len(keys)} document(s) still have import fallback "
+                f"type=module-spec status=draft and no authored type: "
+                f"{', '.join(sample)}{tail}. Classify them in the DB; "
+                f"do not rewrite the author's YAML."
+            ),
+            details={"count": len(keys), "sample": sample},
         )
     ]
 
