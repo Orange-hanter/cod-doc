@@ -16,6 +16,8 @@ from cod_doc.api.deps import (
     get_config,
     get_engine_for_slug,
     get_project,
+    resolve_engine,
+    schema_mismatch_http_error,
     start_daemon,
     stop_daemon,
 )
@@ -145,7 +147,11 @@ _SUPPORTED_PATCH_FIELDS = frozenset({"status", "result"})
 
 def _legacy_session(name: str) -> tuple[Any, int]:
     """(session, project_id) для DB-backed legacy-эндпоинтов или HTTP-ошибка."""
-    engine = get_engine_for_slug(name)
+    resolution = resolve_engine(name)
+    if resolution.schema_error is not None:
+        # STO-026: схема БД разъехалась с головой — это не «проекта нет».
+        raise schema_mismatch_http_error(name, resolution.schema_error)
+    engine = resolution.engine
     if engine is None:
         raise HTTPException(
             409,

@@ -255,9 +255,19 @@ Web-страница не имеет права обходить сервис. �
 ```python
 # целевой контракт (после WEB-040):
 def get_project_db(slug: str) -> tuple[Session, int]: ...
-# возвращает (session, project_db_id) или поднимает HTTPException(404)
+# возвращает (session, project_db_id) или поднимает HTTPException:
+#   404 — проекта нет либо его БД не инициализирована;
+#   503 — БД на месте, но её схема разъехалась с головой миграций
+#         (тело: {"code": "schema_mismatch", "project", "detail", "hint"}).
 # session — из кэшированного Engine-а (см. WEB-005)
 ```
+
+> **STO-026 (2026-09-07):** рассинхрон схемы отличим от «проекта нет».
+> `get_engine_for_slug` по-прежнему отдаёт `None` в обоих случаях — кому нужна
+> разница, зовёт `deps.resolve_engine(slug)` и читает `schema_error`. Так
+> сделаны `get_project_db` и legacy-эндпоинты задач; graceful-страницы
+> (`try_open_project_db`) намеренно оставлены с общим «БД не инициализирована»:
+> список не место для диагностики миграций.
 
 Запрещено:
 - `from cod_doc.infra.db import make_engine`,

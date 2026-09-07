@@ -23,6 +23,8 @@ from cod_doc.infra.db import (
     SchemaMismatchError,
     db_for_entry,
     db_url_for_entry,
+    dispose_cached_engines,
+    evict_cached_engine,
     make_engine,
     make_session_factory,
     sqlite_file_path,
@@ -137,6 +139,9 @@ class _DbTarget:
     cache_key: str
     path: Path | None
     hub: bool
+    #: URL, под которым эту БД знает кэш движков `infra.db` — по нему сбрасываем
+    #: и его запись, когда файл пересоздали (STO-026).
+    url: str
 
 
 _ENGINE_CACHE: dict[str, _CachedEngine] = {}
@@ -154,13 +159,19 @@ def _resolve_db_target(entry: ProjectEntry) -> _DbTarget:
     url = db_url_for_entry(entry)
     db_path = sqlite_file_path(url)
     cache_key = str(db_path) if db_path is not None else url
-    return _DbTarget(cache_key=cache_key, path=db_path, hub=bool(entry.db_url))
+    return _DbTarget(cache_key=cache_key, path=db_path, hub=bool(entry.db_url), url=url)
 
 
-def _drop_cached(cache_key: str, cached: _CachedEngine) -> None:
-    """Выбросить запись из кэша вместе с движком. Под ``_ENGINE_CACHE_LOCK``."""
+def _drop_cached(target: _DbTarget, cached: _CachedEngine) -> None:
+    """Выбросить запись из кэша вместе с движком. Под ``_ENGINE_CACHE_LOCK``.
+
+    Кэш движков `infra.db` сбрасываем по тому же URL: hub-режим берёт движок
+    оттуда, и без этого mtime-инвалидация web-слоя возвращала бы тот же самый
+    движок с пулом в старый файл (STO-026).
+    """
     cached.engine.dispose()
-    _ENGINE_CACHE.pop(cache_key, None)
+    _ENGINE_CACHE.pop(target.cache_key, None)
+    evict_cached_engine(target.url)
 
 
 def _reuse_cached(target: _DbTarget, cached: _CachedEngine, now: float) -> Engine | None:
@@ -177,19 +188,40 @@ def _reuse_cached(target: _DbTarget, cached: _CachedEngine, now: float) -> Engin
     try:
         current_mtime = target.path.stat().st_mtime
     except OSError:
-        _drop_cached(target.cache_key, cached)
+        _drop_cached(target, cached)
         return None
     if current_mtime != cached.mtime:
-        _drop_cached(target.cache_key, cached)
+        _drop_cached(target, cached)
         return None
     cached.last_check = now
     return cached.engine
 
 
+@dataclass(frozen=True)
+class EngineResolution:
+    """Движок под slug либо причина, по которой его нет (STO-026).
+
+    ``schema_error`` заполняется только для одного случая: БД на месте, но её
+    ``alembic_version`` разъехался с головой миграций. Это лечится
+    ``alembic upgrade head`` / ``cod-doc project migrate``, поэтому вызывающий
+    обязан отличать его от «проекта нет» — иначе пользователь видит 404 и не
+    узнаёт, что делать.
+    """
+
+    engine: Engine | None
+    schema_error: str | None = None
+
+
+@dataclass(frozen=True)
+class _CreatedEngine:
+    engine: Engine
+    mtime: float | None
+
+
 def _create_engine_for_target(
     entry: ProjectEntry, target: _DbTarget
-) -> tuple[Engine, float | None] | None:
-    """Создать движок под ``target``; ``None`` — БД недоступна.
+) -> _CreatedEngine | EngineResolution:
+    """Движок под ``target`` либо ``EngineResolution`` с причиной отказа.
 
     Hub-режим делегируется ``db_for_entry``, чтобы резолв и сверка
     alembic-головы жили в одном месте (``infra.db``).
@@ -199,15 +231,48 @@ def _create_engine_for_target(
         try:
             mtime = target.path.stat().st_mtime
         except OSError:
-            return None
+            return EngineResolution(engine=None)
     if not target.hub:
-        return make_engine(f"sqlite:///{target.path}"), mtime
+        return _CreatedEngine(make_engine(f"sqlite:///{target.path}"), mtime)
     try:
         _factory, engine = db_for_entry(entry)
-    except (SchemaMismatchError, SQLAlchemyError) as exc:
+    except SchemaMismatchError as exc:
+        logger.warning("Проект %s: схема БД разъехалась с головой — %s", entry.name, exc)
+        return EngineResolution(engine=None, schema_error=str(exc))
+    except SQLAlchemyError as exc:
         logger.warning("Проект %s: БД из db_url недоступна — %s", entry.name, exc)
-        return None
-    return engine, mtime
+        return EngineResolution(engine=None)
+    return _CreatedEngine(engine, mtime)
+
+
+def resolve_engine(slug: str) -> EngineResolution:
+    """Движок под slug плюс причина отказа — то же, что ``get_engine_for_slug``.
+
+    STO-026: вызывающие, которые умеют показать разницу (`get_project_db`,
+    legacy-эндпоинты задач), берут отсюда ``schema_error`` и отвечают 503
+    вместо 404 — «ПО отстало от схемы БД» лечится не тем же, чем «проекта нет».
+    """
+    cfg = get_config()
+    entry = cfg.get_project(slug)
+    if entry is None:
+        return EngineResolution(engine=None)
+    target = _resolve_db_target(entry)
+
+    with _ENGINE_CACHE_LOCK:
+        now = time.monotonic()
+        cached = _ENGINE_CACHE.get(target.cache_key)
+        if cached is not None:
+            reused = _reuse_cached(target, cached, now)
+            if reused is not None:
+                return EngineResolution(engine=reused)
+
+        created = _create_engine_for_target(entry, target)
+        if isinstance(created, EngineResolution):
+            return created
+        _ENGINE_CACHE[target.cache_key] = _CachedEngine(
+            engine=created.engine, mtime=created.mtime, last_check=now
+        )
+        return EngineResolution(engine=created.engine)
 
 
 def get_engine_for_slug(slug: str) -> Engine | None:
@@ -224,49 +289,60 @@ def get_engine_for_slug(slug: str) -> Engine | None:
       (``SchemaMismatchError``) — веб-слой отдаёт «DB not initialized» / 404,
       а не 500.
 
+    Кому важна разница между «БД нет» и «схема разъехалась» — зовите
+    ``resolve_engine`` (STO-026): здесь оба случая по контракту дают ``None``.
+
     The engine is cached process-wide. Для файловой sqlite кэш инвалидируется
     по mtime файла, который проверяется не чаще раза в ``_ENGINE_TTL_SECONDS``
     (иначе stat() был бы на каждом запросе). Для нефайловой БД mtime
     неприменим: движок кэшируется по URL и живёт до ``dispose_all_engines()``.
     """
-    cfg = get_config()
-    entry = cfg.get_project(slug)
-    if entry is None:
-        return None
-    target = _resolve_db_target(entry)
+    return resolve_engine(slug).engine
 
-    with _ENGINE_CACHE_LOCK:
-        now = time.monotonic()
-        cached = _ENGINE_CACHE.get(target.cache_key)
-        if cached is not None:
-            reused = _reuse_cached(target, cached, now)
-            if reused is not None:
-                return reused
 
-        created = _create_engine_for_target(entry, target)
-        if created is None:
-            return None
-        engine, mtime = created
-        _ENGINE_CACHE[target.cache_key] = _CachedEngine(engine=engine, mtime=mtime, last_check=now)
-        return engine
+def schema_mismatch_http_error(slug: str, detail: str) -> HTTPException:
+    """503 с внятным JSON вместо 404 «проекта нет» (STO-026, acceptance STO-021)."""
+    return HTTPException(
+        503,
+        {
+            "code": "schema_mismatch",
+            "project": slug,
+            "detail": detail,
+            "hint": "накати миграции: cod-doc project migrate <slug> (или alembic upgrade head)",
+        },
+    )
 
 
 def dispose_all_engines() -> None:
-    """Dispose all cached engines and clear the cache. Called on app shutdown."""
+    """Dispose all cached engines and clear the cache. Called on app shutdown.
+
+    Заодно сбрасывает кэш движков уровнем ниже (``infra.db``): у web и у
+    ``db_for_entry`` они разные, но живут в одном процессе и гасить их
+    порознь незачем.
+    """
     with _ENGINE_CACHE_LOCK:
         for cached in _ENGINE_CACHE.values():
             cached.engine.dispose()
         _ENGINE_CACHE.clear()
+    dispose_cached_engines()
 
 
 def get_project_db(slug: str) -> Iterator[tuple[Session, int]]:
-    """FastAPI dependency: yield (Session, project_db_id) or raise HTTPException(404).
+    """FastAPI dependency: yield (Session, project_db_id) or raise HTTPException.
+
+    404 — проекта нет либо его БД не инициализирована; 503 с
+    ``code=schema_mismatch`` — БД на месте, но её схема разъехалась с головой
+    миграций (STO-026): случай лечится накаткой миграций, и пользователь
+    должен это увидеть.
 
     Use `Depends(get_project_db)` in endpoints that REQUIRE a DB-initialized project.
     For pages that gracefully render without DB, use `try_open_project_db()`
     as a context manager instead.
     """
-    engine = get_engine_for_slug(slug)
+    resolution = resolve_engine(slug)
+    if resolution.schema_error is not None:
+        raise schema_mismatch_http_error(slug, resolution.schema_error)
+    engine = resolution.engine
     if engine is None:
         raise HTTPException(404, f"DB-проект не инициализирован: {slug}")
     factory = make_session_factory(engine)
