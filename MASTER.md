@@ -14,22 +14,22 @@
   markdown-проекциями.
 - **Архитектура:** многоуровневая модульная (Presentation → Application →
   Domain ← Infrastructure) с DIP-инверсией.
-- **Текущий статус:** 🟢 ACTIVE — **M1 «Пилот работает» закрыт**, фундамент
-  Фазы 1 (hub + findings + ingest) закрыт. Прогон 2026-09-07: 1562 теста
-  зелёные, ruff/mypy чистые, 123 документа (`edited_in_place`=0,
-  `stale_export`=0 после reconcile миграций 0026–0028). Поверхность:
-  103 MCP-тула (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
+- **Текущий статус:** 🟢 ACTIVE — **M5 «Гейт, которому можно верить + симбиоз в бою» закрыт 2026-09-06**.
+  Прогон 2026-09-07: 1639 тестов зелёные, ruff/mypy чистые, ~137 документов
+  (`stale_export`=0 после reconcile миграций 0026–0029). Поверхность:
+  ~110 MCP-тулов (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
+  CI на main впервые зелёный (`bcb32f2`, [run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088)).
 - **Текущий приоритет: adoption через симбиоз.** Пилоты переназначены на
   **ZAIrgRush** (мульти-агентная петля) и **Orakul/ai-review** (LLM-ревью PR) —
   [RFC 22](proposals/22-symbiosis-zairgrush-orakul.md), решение 2026-08-25.
   cod-doc отдаёт спеки/ADR/контекст, пилоты возвращают findings и измерения.
-  Милстоуны — [ROADMAP](docs/system/roadmap/ROADMAP.md) (M1 «Пилот работает» →
-  M2 «Обратная связь встроена» → M3 «Первая фича по спросу»).
-- **Открыто:** план `adoption-2026-08` — M1 закрыт (пилоты ADO-016/017 заведены),
-  фундамент Фазы 1 закрыт (SYM-005A–D, SYM-006A/B). Далее: M2 (ADO-005/007,
-  ADO-023 — projection_hash на импорте), стретч SYM-006C/D, Фазы 2–5
-  (SYM-007…011). STB-023 (SSE, low). STB-012 закрыт `cancelled`
-  (re-scoped в ADO-013).
+  Милстоуны — [ROADMAP](docs/system/roadmap/ROADMAP.md): M1–M5 закрыты,
+  ведётся подготовка к M6 (hub + кросс-проектность).
+- **Открыто:** план `adoption-2026-08` — M1–M5 закрыты.
+  **Остаток Фазы 5:** SYM-011 (кросс-проектный поиск, `[[doc:slug:key]]`, low).
+  **Треки D/E:** STO-* (Postgres parity, 25 задач), ADO-071..095 (friction из живой работы).
+  STB-023 (SSE, low) — держится закрытым до event-driven сценария.
+  STB-012 закрыт `cancelled` (re-scoped в ADO-013).
 
 ## 2. 🗺️ Context Map
 
@@ -75,10 +75,10 @@ graph TD
 
 ### Proposals (RFC backlog)
 - **Описание:** 23 RFC: 01–15 — адаптация паттернов paperclipai/paperclip
-  (реализованы, план закрыт), 16–21 — hackathon-track (только proposals),
-  22 — **Symbiosis** (ZAIrgRush + Orakul/ai-review, активная программа;
+  (реализованы, план закрыт), 16–21 — hackathon-track (только proposals,
+  отбракованы 2026-08-29), 22 — **Symbiosis** (ZAIrgRush + Orakul/ai-review, активная программа;
   декомпозиция — секция E плана `adoption-2026-08`), 23 — cloud agent plane
-  (спроектирован, не начат).
+  (спроектирован, не начат), 24 — structure/contracts/scenarios (в работе).
 - **Ссылка:** [`📁 proposals/README.md`](proposals/README.md)
 - **Статус:** `🟢 ACTIVE`
 
@@ -198,140 +198,21 @@ graph TD
     "on_missing_file": "Искать файл на диске → если отсутствует, поднять задачу через task_create",
     "on_hash_mismatch": "Пересчитать хэш через hash_file → обновить ссылку в MASTER.md → статус 🔴 STALE до синхронизации",
     "on_broken_section": "Пометить 🔴 BROKEN, запросить восстановление через task_create",
-    "on_legacy_doc": "L0 bootstrap-документы (arch/specs/models) дают обзор; за деталями идти в docs/system/",
-    "context_gate": "L0 (этот файл) — старт сессии; L1 — при явном запросе раздела; L2 — только при анализе зависимостей"
+    "on_stale_meta": "Обновить meta-блок (version, last_updated) при смене спринта или значимом изменении"
   }
 }
-```
 
-## 5. ✅ Validation & Changelog
+## 5. 📜 Changelog
 
-### 5.1 📋 Validation Table
-
-| # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
-|---|----------|-----------|-----------------|-------------|--------|
-| 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-07 | 🟢 VERIFIED |
-| 2 | CI Pipeline | `doc:github_workflows_ci_yml` | `2b0809be8fcc` | 2026-07-29 | 🟢 VERIFIED |
-| 3 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-07-29 | 🟢 VERIFIED |
-| 4 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-07-29 | 🟡 LEGACY |
-| 5 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-07-29 | 🟡 LEGACY |
-| 6 | Доменные модели (legacy) | `doc:models_domain_md` | `2e5d66877b50` | 2026-07-29 | 🟡 LEGACY |
-| 7 | Handbook | `doc:docs_HANDBOOK_md` | `481aadc8fe7d` | 2026-09-07 | 🟢 VERIFIED |
-| 8 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-07-29 | 🟢 VERIFIED |
-| 9 | MCP-интеграция | `doc:docs_mcp-integration_md` | `9794e15d666a` | 2026-08-28 | 🟢 VERIFIED |
-| 10 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-08-26 | 🟢 VERIFIED |
-| 11 | README (витрина) | `doc:README_md` | `2b58cb45e78e` | 2026-08-25 | 🟢 VERIFIED |
-
-> **Всего:** 11 документов | 🟢 VERIFIED: 8 | 🟡 LEGACY: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0
->
-> **Пересчёт 2026-07-29:** 4 хэша были STALE (`arch/architecture.md`,
-> `HANDBOOK.md`, `cod-doc-guide.md`, `mcp-integration.md`) — файлы правились
-> легитимными коммитами (`3d2b329`, `27f3d6f`, `c310503`, `b4ad388`,
-> `a73dcbb`), а реестр отстал. Контент сверен по git-истории перед
-> обновлением (skill `drift-handling`: не обновлять хэши наугад).
->
-> **Canonical-пакет** (`docs/system/`) — отдельный реестр документов, см.
-> [`docs/system/MASTER.md §5`](docs/system/MASTER.md).
-
-### 5.2 🤖 Agent Self-Check
-```json
-{
-  "self_check": {
-    "links_verified": true,
-    "hashes_match": true,
-    "no_hallucinations": true,
-    "context_depth": "L0",
-    "missing_info": [
-      "capabilities/project-bootstrap.md описывает 'cod-doc project new'; CLI даёт 'project add' + 'project init' (задача D-4)",
-      "66 живых web-роутов отсутствуют в capabilities/web-frontend.md §3 (F3, задача D-1)"
-    ]
-  }
-}
-```
-
-### 5.3 📝 Changelog
-```json
-{
-  "changelog": [
-    {
-      "date": "2026-09-07",
-      "version": "2.5",
-      "action": "Обновление статуса drift: 35 stale_export документов экспортированы (миграции 0026–0028 применены, ADO-023 fix), drift 123/123 in_sync. Прогон тестов 1562 passed. MASTER.md обновлён: убрано упоминание о pending stale_export, статус актуализирован на 2026-09-07.",
-      "author": "COD-DOC Orchestrator",
-      "scope": "master",
-      "task": "a8831aa6"
-    },
-    {
-      "date": "2026-08-28",
-      "version": "2.4",
-      "action": "M1 «Пилот работает» закрыт: заведены ZAIrgRush (31 док, ADO-016) и Orakul (405 док, ADO-017); SYM-003 — loopback bind по умолчанию + гейт POST /settings (ae5911e); влита ветка worktree-swarm (ADO-015 типы, SYM-004 --exclude, ADO-022 fidelity, 1a66aaa). Фундамент Фазы 1: hub-инфраструктура (ProjectEntry.db_url, db_for_entry, cod-doc hub init — SYM-005A), миграции 0027_shared_hub (UNIQUE(project_id, task_id)) и 0028_findings (finding/finding_source_run/external_ref + FTS scope), finding_service (fingerprint/dedup/promote — SYM-005D), ingest-адаптеры ai_review/zairgrush (SYM-006A), CLI ingest + finding stability (SYM-006B). Friction-лог пилотов: 14 записей; ADO-023 заведён (import не проставляет projection_hash).",
-      "author": "Sprint 2026-08-27 M1+Phase1",
-      "scope": "master",
-      "rfc": "proposals/22-symbiosis-zairgrush-orakul.md"
-    },
-    {
-      "date": "2026-08-25",
-      "version": "2.3",
-      "action": "SYM-002 + ADO-002. Файловая SQLite переведена на WAL + busy_timeout=5000 + synchronous=NORMAL (общий listener переиспользован в alembic-env), миграция 0023_fts5_index получила dialect-guard — находки B7/B10 RFC 22. В корне появился README.md (английская витрина), pyproject.readme переключён на него — закрыта находка F6 аудита 2026-07-29, реестр 10 → 11 документов.",
-      "author": "SYM-002 / ADO-002",
-      "scope": "master",
-      "rfc": "proposals/22-symbiosis-zairgrush-orakul.md"
-    },
-    {
-      "date": "2026-08-25",
-      "version": "2.2",
-      "action": "Программа Symbiosis (RFC 22): пилоты переназначены Mushrooms/yana → ZAIrgRush/Orakul (ADO-003/004 cancelled, созданы ADO-016/017); в план adoption-2026-08 добавлена секция E (SYM-001…011, Фазы 0–5); STB-012 cancelled (re-scoped в ADO-013); ADO-010 разбит на 2 этапа (guard → byte-identical); ADO-015 расширен под типы пилотов. ROADMAP пересобран, RFC-каталог 21 → 22.",
-      "author": "Symbiosis Reorg 2026-08-25",
-      "scope": "master",
-      "rfc": "proposals/22-symbiosis-zairgrush-orakul.md"
-    },
-    {
-      "date": "2026-07-29",
-      "version": "2.1",
-      "action": "State-of-the-project refresh. Прогон: 1356 tests passed, ruff/mypy clean, 106 docs in_sync, plan audit ×5 без issues. Закрыт STB-013 (ContextService L2/L3 реализованы — снят устаревший docstring). Построен repo-index (625 файлов / 3021 символ). Каталог скиллов 9 → 12: извлечены project-onboarding, ground-truth-reconcile, rfc-authoring. L0-payload agent_capabilities ужат 4543 → 3586 байт (вырезаны trigger-списки). Пересчитаны 4 STALE-хэша реестра. Добавлен docs/adoption-playbook.md. ROADMAP пересобран: приоритет смещён со фич на adoption (M1/M2/M3).",
-      "author": "State Refresh 2026-07-29",
-      "scope": "master",
-      "audit": "docs/system/audit/2026-07-29-state-of-the-project.md"
-    },
-    {
-      "date": "2026-05-07",
-      "version": "2.0",
-      "action": "Cycle-1 consolidation: rewrote root MASTER as thin L0 navigator → docs/system + proposals; removed integration-test fixture leak; legacy L0 bootstrap (arch/specs/models) marked 🟡 LEGACY with canonical pointers; verified hash registry (10/10 VALID)",
-      "author": "Cod-Doc Consolidation Cycle 1",
-      "scope": "master",
-      "audit": "docs/system/audit/2026-05-07-doc-consolidation-cycle-1.md"
-    },
-    {
-      "date": "2026-04-05",
-      "version": "1.0",
-      "action": "Bootstrap MASTER.md (см. предыдущую историю в git log MASTER.md)",
-      "author": "COD-DOC Orchestrator",
-      "scope": "master"
-    }
-  ]
-}
-```
-
----
-
-## 📖 Snowball Protocol
-
-| Уровень | Загружено | Когда |
-|---------|-----------|-------|
-| `L0` | Только `MASTER.md` (этот файл) | Старт сессии (по умолчанию) |
-| `L1` | MASTER.md + 1 целевой файл | Явный запрос раздела |
-| `L2` | L1 + зависимости | Запрос анализа зависимостей |
-
-**Формат гибридной ссылки:** `📁 {path} | 🗃️ doc:{id} | 🔑 sha:{12hex}`
-**Статусы:** `🟢 VERIFIED` | `🟡 LEGACY` | `🟡 DRAFT` | `🔴 STALE` | `🔴 BROKEN`
-
-**Где что искать:**
-- Приоритеты, милстоуны, что делать дальше → [`docs/system/roadmap/ROADMAP.md`](docs/system/roadmap/ROADMAP.md)
-- Как завести cod-doc на своём проекте → [`docs/adoption-playbook.md`](docs/adoption-playbook.md)
-- Каталог скиллов (12) → [`cod_doc/skills/`](cod_doc/skills/)
-- Целевая архитектура и DATA_MODEL → [`docs/system/`](docs/system/)
-- Capability-описания (одна возможность = один файл) → [`docs/system/capabilities/`](docs/system/capabilities/)
-- Стандарты frontmatter / task-plan / link / sensitive-data → [`docs/system/standards/`](docs/system/standards/)
-- Audit-отчёты по секциям → [`docs/system/audit/`](docs/system/audit/)
-- Планы выполнения (execution-plan) → [`docs/system/roadmap/`](docs/system/roadmap/)
-- Заимствования и идеи на внедрение → [`proposals/`](proposals/)
+- **2026-09-07** — M5 закрыт: CI впервые зелёный (1639 тестов), ADO-066/067/068/069/070 done,
+  SYM-010 drift-гейт в Orakul, ADO-044 провенанс мутаций. Открыт остаток Фазы 5 (SYM-011),
+  треки D/E (STO-*, ADO-071..095). STB-023 (SSE) держится low.
+- **2026-09-02** — M4 закрыт: Orakul 405/405 in_sync, E5-C вердикт «масштабируем» ($0.98),
+  write-path wrapper (ADO-040), SYM-009 ingest ai_review. Найдено: CI не зелёный с 2026-05-06.
+- **2026-08-30** — M3 закрыт: friction-лог обнулён (ADO-058..061), стретчи ADO-039/SYM-008 done.
+- **2026-08-29** — M2 закрыт досрочно: friction-лог ≥10 наблюдений, top-3 закрыты,
+  route drift в CI, SYM-007 (13 ADR ZAIrgRush) done. Трек B отбракован целиком.
+- **2026-08-28** — M1 закрыт: пилоты ZAIrgRush (31 док) и Orakul (405 док) заведены,
+  ADO-010 (export guard + round-trip) done, SYM-003 (bind-hygiene) done.
+- **2026-08-25** — Symbiosis: пилоты переназначены на ZAIrgRush/Orakul (RFC 22),
+  STB-012 → cancelled, ADO-015 расширен под типы пилотов.
