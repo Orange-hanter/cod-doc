@@ -138,6 +138,7 @@ def suggest_for_section(
     from sqlalchemy import select
 
     from cod_doc.core import reindex as _reindex
+    from cod_doc.core.embeddings import settings_from_config
     from cod_doc.infra.models.documents import DocumentModel, SectionModel
 
     # 1. Load section body
@@ -152,13 +153,7 @@ def suggest_for_section(
 
     # 2. Query ChromaDB
     try:
-        collection = _reindex.get_collection(
-            config.chroma_path,
-            config.api_key,
-            config.base_url,
-            config.embedding_model,
-            config.embedding_backend,
-        )
+        collection = _reindex.get_collection(config.chroma_path, settings_from_config(config))
         # PCA-930: explicit check — querying an empty collection raises an error.
         if collection.count() == 0:
             log.info(

@@ -406,10 +406,13 @@ Cross-project guard: `/p/B/plans/<id-from-A>` → 404, не утечка.
 ![Settings](assets/cod-doc/08-settings.png)
 
 - API key — masked (`…XXXX`), никогда не в plaintext.
-- Базовые поля LLM (base_url, model, max_tokens, embedding_model).
+- Базовые поля LLM (base_url, model, max_tokens).
+- Поля эмбеддера (ADO-071): backend, отдельный ключ, base_url, модель,
+  dimensions, batch size — настраиваются независимо от LLM (§10.4).
 - Agent-параметры (max_iterations, daemon interval, auto_commit checkbox).
 - **Secret-field UX:** пустое значение api_key = «оставить как есть»;
-  явный дефис `-` = удалить; непустая строка = заменить.
+  явный дефис `-` = удалить; непустая строка = заменить. То же правило
+  действует для `embedding_api_key`.
 - POST → 303 на `/settings`, форма работает без JS.
 
 ---
@@ -504,6 +507,16 @@ cod-doc audit my-app                         # frontmatter + task-plan + sensiti
 cod-doc audit my-app --strict                # advisory issues тоже фейлят exit-code
 ```
 
+### embed (провайдер эмбеддингов, ADO-071)
+
+```bash
+cod-doc embed status                         # резолв ключа/endpoint + состояние индекса, без сети
+cod-doc embed status --json                  # то же машинно; exit 1, если конфиг нерабочий
+cod-doc embed probe                          # один живой вызов: размерность, задержка, usage.cost
+cod-doc embed models                         # каталог моделей провайдера (у OpenRouter отдельный)
+cod-doc embed reset --yes [--force]          # удалить коллекцию после смены модели/размерности
+```
+
 ### serve / mcp / agent / tui / hash
 
 ```bash
@@ -534,7 +547,12 @@ max_iterations: 50
 agent_interval: 60                            # daemon poll seconds
 
 chroma_path: ~/.cod-doc/chroma
+embedding_backend: openai                     # openai | openrouter | local | mock (§10.4)
+embedding_api_key: ''                         # выделенный ключ эмбеддера; пусто = как раньше
+embedding_base_url: ''                        # выделенный endpoint; пусто = base_url
 embedding_model: openai/text-embedding-ada-002
+embedding_dimensions: null                    # Matryoshka-обрезка; null = нативная
+embedding_batch_size: 128
 
 api_host: 127.0.0.1                           # loopback по умолчанию (SYM-003); POST /settings — только с loopback
 api_port: 8765
@@ -558,6 +576,12 @@ COD_DOC_MODEL=anthropic/claude-sonnet-4-6
 COD_DOC_BASE_URL=https://openrouter.ai/api/v1
 COD_DOC_AUTO_COMMIT=true
 COD_DOC_AGENT_INTERVAL=120
+COD_DOC_EMBEDDING_BACKEND=openrouter          # эмбеддер настраивается независимо от LLM
+COD_DOC_EMBEDDING_API_KEY=sk-or-v1-...        # не наследуется от COD_DOC_API_KEY
+COD_DOC_EMBEDDING_BASE_URL=https://openrouter.ai/api/v1
+COD_DOC_EMBEDDING_MODEL=qwen/qwen3-embedding-8b
+COD_DOC_EMBEDDING_DIMENSIONS=2048
+COD_DOC_EMBEDDING_BATCH_SIZE=128
 COD_DOC_API_HOST=127.0.0.1
 COD_DOC_API_PORT=9000
 COD_DOC_DB_URL=postgresql://user:pass@host/db   # server mode (otherwise embedded sqlite)
@@ -784,27 +808,67 @@ search_docs(
 
 `score` — косинусное сходство (0..1, чем выше — тем релевантнее).
 
-### 10.4. Конфигурация ChromaDB
+### 10.4. Конфигурация эмбеддингов (ADO-071)
+
+Провайдер эмбеддингов **независим от LLM-провайдера**: у него свой backend,
+ключ, endpoint, модель и размерность. Так и должно быть — не у каждого
+чат-провайдера вообще есть `/embeddings` (у Ollama Cloud их нет: замерено,
+404 на любой модели), и раньше смена LLM молча ломала семантический поиск.
+
+| backend | Что это | Ключ | Особенности |
+|---|---|---|---|
+| `openai` (по умолчанию) | Любой OpenAI-совместимый `/embeddings` | `embedding_api_key`, а если пусто — общий `api_key` | Обратная совместимость: ведёт себя как до ADO-071 |
+| `openrouter` | OpenRouter | **только** `embedding_api_key` | `dimensions` для любых моделей, `usage.cost`, свой каталог моделей |
+| `local` | sentence-transformers на CPU | не нужен | Требует `pip install 'cod-doc[embeddings-local]'` |
+| `mock` | Детерминированный | не нужен | Для тестов |
+
+**Ключ OpenRouter не наследуется от ключа LLM** — это разные ключи, и
+молчаливое наследование дало бы 401, неотличимый от бага cod-doc.
 
 ```yaml
-# ~/.cod-doc/config.yaml
-chroma_path: ~/.cod-doc/chroma          # путь к персистентному хранилищу
-embedding_model: openai/text-embedding-ada-002  # модель эмбеддингов
+# ~/.cod-doc/config.yaml — рабочий пример: чат в Ollama Cloud, эмбеддинги в OpenRouter
+base_url: https://ollama.com/v1          # LLM
+model: qwen3.5:397b                      # LLM
+chroma_path: ~/.cod-doc/chroma
+
+embedding_backend: openrouter
+embedding_api_key: sk-or-v1-…            # отдельный ключ
+embedding_model: qwen/qwen3-embedding-8b
+embedding_dimensions: 2048               # Matryoshka-обрезка на стороне провайдера
+embedding_batch_size: 128
 ```
 
-Или через env:
+Или через env: `COD_DOC_EMBEDDING_BACKEND`, `COD_DOC_EMBEDDING_API_KEY`,
+`COD_DOC_EMBEDDING_BASE_URL`, `COD_DOC_EMBEDDING_MODEL`,
+`COD_DOC_EMBEDDING_DIMENSIONS`, `COD_DOC_EMBEDDING_BATCH_SIZE`.
+
+**`embedding_dimensions`** — обрезка вектора на стороне провайдера. Для
+`qwen/qwen3-embedding-8b` нативные 4096 против 2048 замерены как lossless, а
+индекс вдвое меньше. Стоковая chroma-EF такой параметр умеет передавать
+только моделям `text-embedding-3-*`, поэтому для остальных cod-doc использует
+собственный адаптер.
+
+**Подпись коллекции.** При создании в metadata пишется
+`cod_doc:embedding = <backend>:<model>@<dimensions|native>`. Если конфиг
+разошёлся с непустым индексом, cod-doc падает с внятной ошибкой вместо мусорной
+выдачи: векторы разных моделей несравнимы. Единственное корректное действие —
+`cod-doc embed reset --yes` и переиндексация.
+
+**Свой адаптер.** Провайдера можно добавить, не трогая ядро: реализуйте
+протокол `cod_doc.core.embeddings.base.EmbeddingAdapter` (с classmethod
+`from_settings`) и зарегистрируйте его в `~/.cod-doc/embeddings.json`:
+
+```json
+[{"name": "my-embed", "module": "my_pkg.adapter", "class": "MyEmbeddingAdapter"}]
+```
+
+Диагностика:
 
 ```bash
-COD_DOC_EMBEDDING_MODEL=openai/text-embedding-3-small
-```
-
-Модель эмбеддингов должна быть доступна через тот же `base_url`, что и LLM
-(OpenRouter поддерживает `openai/text-embedding-ada-002` и `...-3-small`
-напрямую). При использовании собственного OpenAI API:
-
-```yaml
-base_url: https://api.openai.com/v1
-embedding_model: text-embedding-3-small
+cod-doc embed status        # резолв ключа/endpoint, состояние индекса — без сети
+cod-doc embed probe         # один живой вызов: размерность, задержка, цена
+cod-doc embed models        # каталог моделей провайдера (у OpenRouter отдельный)
+cod-doc embed reset --yes   # удалить коллекцию после смены модели
 ```
 
 ### 10.5. Устранение проблем с индексом
@@ -814,7 +878,11 @@ embedding_model: text-embedding-3-small
 | `search_docs` возвращает пустой список | Индекс не создан | Запустить `reindex` |
 | Стale-результаты (старый контент) | Файлы изменились после последней индексации | Запустить `reindex` |
 | `ChromaDB connection error` | Повреждён `chroma/` каталог | `rm -rf .cod-doc/chroma && reindex` |
-| Медленное индексирование | Много файлов или медленный embedding эндпоинт | Уменьшить директории в `INDEX_DIRS` или сменить модель |
+| Медленное индексирование | Много файлов или медленный embedding эндпоинт | Уменьшить `embedding_batch_size` или сменить модель |
+| `404 … нет маршрута /embeddings` | LLM-провайдер эмбеддингов не отдаёт (Ollama Cloud) | `embedding_backend: openrouter` + `embedding_api_key` |
+| `401` при `backend=openrouter` | Ключ эмбеддера не задан: он **не** наследуется от `api_key` | Заполнить `embedding_api_key` |
+| `dimension of N, got M` | Модель/размерность сменились, индекс построен другой | `cod-doc embed reset --yes`, затем переиндексация |
+| Поиск молча пуст, ошибок нет | Fail-open: потребители глушат ошибку эмбеддера | `cod-doc embed status` и `cod-doc embed probe` |
 
 ---
 

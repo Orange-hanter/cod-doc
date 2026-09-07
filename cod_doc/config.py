@@ -158,10 +158,38 @@ class Config(BaseSettings):
     embedding_backend: str = Field(
         default="openai",
         description=(
-            "'openai' — OpenAI-compatible /embeddings (default, needs api_key); "
-            "'local' — sentence-transformers via torch (no api_key, requires "
-            "the embeddings-local extra)."
+            "Провайдер эмбеддингов (ADO-071, независим от llm_adapter): "
+            "'openai' — generic OpenAI-совместимый /embeddings (по умолчанию); "
+            "'openrouter' — OpenRouter со своим ключом и поддержкой dimensions; "
+            "'local' — sentence-transformers через torch (без ключа, требует "
+            "extra embeddings-local); 'mock' — детерминированный, для тестов."
         ),
+    )
+    # ADO-071: у эмбеддера свои реквизиты. Пустые поля означают «как раньше»
+    # (для backend='openai' подставляются общие api_key/base_url), но
+    # backend='openrouter' ключ у LLM НЕ наследует — это разные ключи.
+    embedding_api_key: str = Field(
+        default="",
+        description="Выделенный ключ эмбеддера. Обязателен для backend='openrouter'.",
+    )
+    embedding_base_url: str = Field(
+        default="",
+        description=(
+            "Выделенный endpoint эмбеддера. Пусто → base_url для 'openai' и "
+            "https://openrouter.ai/api/v1 для 'openrouter'."
+        ),
+    )
+    embedding_dimensions: int | None = Field(
+        default=None,
+        description=(
+            "Размерность вектора (Matryoshka-обрезка на стороне провайдера). "
+            "Пусто → нативная размерность модели. Смена значения делает "
+            "существующую коллекцию несовместимой: нужен 'cod-doc embed reset'."
+        ),
+    )
+    embedding_batch_size: int = Field(
+        default=128,
+        description="Сколько документов уходит в один запрос эмбеддера.",
     )
     embedding_model: str = Field(
         default="openai/text-embedding-ada-002",
@@ -182,10 +210,32 @@ class Config(BaseSettings):
     api_host: str = Field(default="127.0.0.1")
     api_port: int = Field(default=8765)
 
-    @field_validator("api_key", mode="before")
+    @field_validator("api_key", "embedding_api_key", mode="before")
     @classmethod
     def _strip(cls, v: str) -> str:
         return str(v).strip()
+
+    @field_validator("embedding_backend", mode="before")
+    @classmethod
+    def _normalize_embedding_backend(cls, v: str) -> str:
+        """Неизвестный бэкенд — структурная ошибка, а не тихий фолбэк.
+
+        Сообщение обязано называть файл: ``Config.load()`` не обёрнут в try,
+        поэтому опечатка в YAML делает фатальной любую команду.
+        """
+        from cod_doc.core.embeddings.registry import list_embedding_adapters
+
+        value = str(v).strip().lower() or "openai"
+        # Список берём из реестра, а не из константы: внешний адаптер из
+        # ~/.cod-doc/embeddings.json — легальное значение.
+        allowed = list_embedding_adapters()
+        if value not in allowed:
+            raise ValueError(
+                f"embedding_backend={v!r} в {config_file()}; допустимые значения: "
+                f"{', '.join(allowed)} "
+                "(внешние адаптеры регистрируются в ~/.cod-doc/embeddings.json)"
+            )
+        return value
 
     # ── Persistence ──────────────────────────────────────────────────────────
 
