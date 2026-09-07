@@ -1,6 +1,6 @@
 # 🧭 Project Navigator: cod-doc
 
-> 📊 Meta: `{"version": "2.6", "last_updated": "2026-09-11", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
+> 📊 Meta: `{"version": "2.7", "last_updated": "2026-09-11", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
 
 > **Этот файл — тонкий L0-навигатор для агента и нового контрибьютора.**
 > Source of truth целевого состояния системы — [`docs/system/MASTER.md`](docs/system/MASTER.md).
@@ -74,11 +74,23 @@ graph TD
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
-- **Описание:** 23 RFC: 01–15 — адаптация паттернов paperclipai/paperclip
-  (реализованы, план закрыт), 16–21 — hackathon-track (только proposals,
-  отбракованы 2026-08-29), 22 — **Symbiosis** (ZAIrgRush + Orakul/ai-review, активная программа;
-  декомпозиция — секция E плана `adoption-2026-08`), 23 — cloud agent plane
-  (спроектирован, не начат), 24 — structure/contracts/scenarios (в работе).
+- **Описание:** 24 RFC в четырёх треках:
+  - **01–15 (paperclip-track):** 🟢 Реализованы — адаптация паттернов paperclipai/paperclip
+    (skills, heartbeat, wake-payload, run-id, issue docs, checkout, routines,
+    status taxonomy, activity log, adapter pattern, AGENTS.md, approvals,
+    import UX, legacy migration, link system). План закрыт.
+  - **16–21 (hackathon-track):** 🔴 Отбракованы 2026-08-29 — AI-Pair-Hacker,
+    Living Specification, Vibecoder's Diary, Context-Scout, Multi-Agent Standup,
+    Degraded-Path Auditability. См. [proposals/README.md](proposals/README.md) § «Отбраковка 2026-08-29».
+  - **22 (symbiosis-track):** 🟢 Активен — Symbiosis: ZAIrgRush + Orakul/ai-review
+    (hub-БД, findings-ingest, doc-контекст для внешней петли и AI-ревью).
+    Декомпозиция — секция E плана `adoption-2026-08`.
+  - **23 (cloud-track):** 🟡 Спроектирован — Cloud decentralized agent plane
+    (team-узел в облаке, ИИ-воркеры через remote MCP, SoT = Postgres).
+    Задачи CAP-001…CAP-033 не начаты, приоритет ниже adoption.
+  - **24 (structure-track):** 🟡 Черновик — Единый контур structure/contracts/scenarios
+    (docs↔code граница, obligations_export, structure_facts, scenario assessment).
+    Поглощает внешнюю часть RFC 17, зависит от RFC 22.
 - **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:92a044375021`
 - **Статус:** `🟢 VERIFIED`
 
@@ -91,7 +103,7 @@ graph TD
 
 ### CD Pipeline (GitHub Actions)
 - **Описание:** Доставка: сборка Docker-образа и публикация в GHCR при
-  тегировании v* (semver).
+  тегировании v* (семантическое версионирование: v1.2.3).
 - **Ссылка:** `📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:bec2cea789cd`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
@@ -238,13 +250,15 @@ graph TD
 | 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `d015b53c85cf` | 2026-09-11 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `0bf4dea86d70` | 2026-09-11 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
+| 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
+| 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `1cd50d7a2cba` | 2026-09-11 | 🟡 DRAFT |
 
-> **Всего:** 15 документов | 🟢 VERIFIED: 12 | 🟡 LEGACY: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+> **Всего:** 17 документов | 🟢 VERIFIED: 12 | 🟡 LEGACY: 3 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >
-> **Проверка 2026-09-11:** Все 14 ссылок в Context Map и Modular Sections
+> **Проверка 2026-09-11:** Все 16 ссылок в Context Map и Modular Sections
 > валидированы. Хэши пересчитаны через `calc_hash`, файлы существуют на диске.
 > Legacy-документы (arch/specs/models) помечены 🟡 — канонические источники
-> в `docs/system/`.
+> в `docs/system/`. RFC 23 и RFC 24 добавлены как DRAFT (спроектированы, не начаты).
 >
 > **Canonical-пакет** (`docs/system/`) — отдельный реестр документов, см.
 > [`docs/system/MASTER.md §5`](docs/system/MASTER.md).
@@ -258,8 +272,8 @@ graph TD
     "no_hallucinations": true,
     "context_depth": "L0",
     "validation_date": "2026-09-11",
-    "total_links": 14,
-    "valid_links": 14,
+    "total_links": 16,
+    "valid_links": 16,
     "stale_links": 0,
     "broken_links": 0
   }
@@ -270,6 +284,14 @@ graph TD
 ```json
 {
   "changelog": [
+    {
+      "date": "2026-09-11",
+      "version": "2.7",
+      "action": "Актуализирован статус RFC/Proposals: секция Proposals расширена явным перечислением RFC 01-24 с статусами (01-15 🟢 реализованы, 16-21 🔴 отбракованы 2026-08-29, 22 🟢 активен, 23-24 🟡 DRAFT). Добавлены RFC 23 и RFC 24 в Validation Table. Задача [66920971] выполнена.",
+      "author": "COD-DOC Orchestrator",
+      "scope": "master",
+      "task": "66920971"
+    },
     {
       "date": "2026-09-11",
       "version": "2.6",
