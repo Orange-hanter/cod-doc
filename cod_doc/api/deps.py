@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, Request
-from sqlalchemy.engine import Engine, make_url
-from sqlalchemy.exc import ArgumentError, OperationalError, SQLAlchemyError
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from cod_doc.config import Config, ProjectEntry
@@ -22,9 +22,10 @@ from cod_doc.core.project import Project
 from cod_doc.infra.db import (
     SchemaMismatchError,
     db_for_entry,
-    is_in_memory_sqlite,
+    db_url_for_entry,
     make_engine,
     make_session_factory,
+    sqlite_file_path,
 )
 from cod_doc.infra.repositories import ProjectRepository
 
@@ -143,32 +144,17 @@ _ENGINE_CACHE_LOCK = threading.Lock()
 _ENGINE_TTL_SECONDS = 5.0
 
 
-def _sqlite_file_path(url: str) -> Path | None:
-    """Путь к файлу для файловой sqlite-URL; ``None`` для памяти и не-sqlite."""
-    try:
-        parsed = make_url(url)
-    except ArgumentError:
-        return None
-    if not parsed.get_backend_name().startswith("sqlite"):
-        return None
-    if not parsed.database or is_in_memory_sqlite(url):
-        return None
-    return Path(parsed.database)
-
-
 def _resolve_db_target(entry: ProjectEntry) -> _DbTarget:
     """Резолв БД записи проекта — тот же, что в ``infra.db.db_for_entry``.
 
-    Непустой ``db_url`` (hub-режим) выигрывает у embedded
-    ``<root>/.cod-doc/state.db``; пустой — оставляет embedded-путь.
+    STO-027: само правило («непустой ``db_url`` выигрывает у embedded
+    ``<root>/.cod-doc/state.db``») живёт в ``infra.db.db_url_for_entry``;
+    здесь из него выводятся только ключ кэша и файл для mtime-инвалидации.
     """
-    db_url = entry.db_url or ""
-    if not db_url:
-        embedded = entry.cod_doc_dir / "state.db"
-        return _DbTarget(cache_key=str(embedded), path=embedded, hub=False)
-    db_path = _sqlite_file_path(db_url)
-    cache_key = str(db_path) if db_path is not None else db_url
-    return _DbTarget(cache_key=cache_key, path=db_path, hub=True)
+    url = db_url_for_entry(entry)
+    db_path = sqlite_file_path(url)
+    cache_key = str(db_path) if db_path is not None else url
+    return _DbTarget(cache_key=cache_key, path=db_path, hub=bool(entry.db_url))
 
 
 def _drop_cached(cache_key: str, cached: _CachedEngine) -> None:

@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.orm import Session, sessionmaker
 
 if TYPE_CHECKING:
@@ -94,6 +96,42 @@ def resolve_db_url(project_root: Path | None = None, override: str | None = None
     return f"sqlite:///{path}"
 
 
+def sqlite_file_path(url: str) -> Path | None:
+    """Путь к файлу для файловой sqlite-URL; ``None`` для памяти и не-sqlite.
+
+    Нужен всем, кто хочет знать «а есть ли эта БД на диске»: web кэширует
+    движок по mtime файла, ``init_project`` проверяет, создаёт он БД или
+    мигрирует существующую. Для postgres и ``:memory:`` ответа нет — ``None``.
+    """
+    try:
+        parsed = make_url(url)
+    except ArgumentError:
+        return None
+    if not parsed.get_backend_name().startswith("sqlite"):
+        return None
+    if not parsed.database or is_in_memory_sqlite(url):
+        return None
+    return Path(parsed.database)
+
+
+def db_url_for_entry(entry: ProjectEntry) -> str:
+    """URL БД записи реестра: непустой ``db_url`` (hub) выигрывает у embedded.
+
+    STO-021/STO-027: единственная точка вывода «какую БД открывает проект».
+    ``db_for_entry`` открывает именно её, ``init_project`` именно её мигрирует,
+    ``api/deps`` на неё же вешает кэш движков — раньше правило было размазано
+    по трём резолверам и расходилось.
+
+    Функция чистая: каталог под embedded-файл создаёт уже ``db_for_entry``,
+    иначе простой резолв URL создавал бы `.cod-doc/` на каждый запрос к web.
+    """
+    db_url = getattr(entry, "db_url", None)
+    if db_url:
+        return str(db_url)
+    root_path = Path(getattr(entry, "path", ".")).expanduser().resolve()
+    return f"sqlite:///{root_path / DEFAULT_EMBEDDED_PATH}"
+
+
 def make_engine(url: str | None = None, *, echo: bool = False) -> Engine:
     """Create a SQLAlchemy engine with sensible defaults."""
     final_url = url or resolve_db_url()
@@ -133,18 +171,16 @@ def db_for_entry(entry: ProjectEntry) -> tuple[sessionmaker[Session], Engine]:
       возвратом проверяем, что ``alembic_version`` совпадает с головой.
     - Иначе — embedded ``<root>/.cod-doc/state.db``.
     """
-    db_url = getattr(entry, "db_url", None)
-    if db_url is not None:
-        url = db_url
-    else:
-        root_path = Path(getattr(entry, "path", ".")).expanduser().resolve()
-        db_path = root_path / ".cod-doc" / "state.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        url = f"sqlite:///{db_path}"
+    hub = bool(getattr(entry, "db_url", None))
+    url = db_url_for_entry(entry)
+    if not hub:
+        db_path = sqlite_file_path(url)
+        if db_path is not None:
+            db_path.parent.mkdir(parents=True, exist_ok=True)
 
     engine = make_engine(url)
 
-    if db_url is not None:
+    if hub:
         head = _alembic_head_revision()
         try:
             with engine.connect() as conn:
