@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
+from fastapi import HTTPException
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -44,9 +45,11 @@ def _make_db(db_path: Path, slug: str, root: Path) -> None:
     engine.dispose()
 
 
-def _register(entry: ProjectEntry) -> None:
+def _register(*entries: ProjectEntry) -> None:
+    """Собрать конфиг из записей. Каждый вызов заменяет предыдущий конфиг целиком."""
     cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
-    cfg.add_project(entry)
+    for entry in entries:
+        cfg.add_project(entry)
     set_config(cfg)
 
 
@@ -147,19 +150,45 @@ def test_hub_db_absent_returns_none(tmp_path: Path) -> None:
     assert deps._ENGINE_CACHE == {}
 
 
-def test_hub_schema_mismatch_returns_none(tmp_path: Path, caplog) -> None:
-    """БД не на голове миграций → None (404/«DB not initialized»), не исключение."""
-    root = tmp_path / "stale"
+def _stale_hub_entry(tmp_path: Path, slug: str = "stale") -> ProjectEntry:
+    """Проект, чья hub-БД существует, но не накатана до головы миграций."""
+    root = tmp_path / slug
     root.mkdir()
-    stale_db = tmp_path / "stale-hub" / "state.db"
+    stale_db = tmp_path / f"{slug}-hub" / "state.db"
     stale_db.parent.mkdir(parents=True)
     stale_db.touch()  # пустой файл — валидная sqlite без alembic_version
-    _register(ProjectEntry(name="stale", path=str(root), db_url=f"sqlite:///{stale_db}"))
+    return ProjectEntry(name=slug, path=str(root), db_url=f"sqlite:///{stale_db}")
+
+
+def _absent_db_entry(tmp_path: Path, slug: str = "ghosted") -> ProjectEntry:
+    root = tmp_path / slug
+    root.mkdir()
+    return ProjectEntry(
+        name=slug, path=str(root), db_url=f"sqlite:///{tmp_path / 'nowhere' / 'state.db'}"
+    )
+
+
+def test_hub_schema_mismatch_returns_none(tmp_path: Path, caplog) -> None:
+    """БД не на голове миграций → None, не исключение (контракт не изменился)."""
+    _register(_stale_hub_entry(tmp_path))
 
     with caplog.at_level("WARNING", logger="cod_doc.api"):
         assert get_engine_for_slug("stale") is None
     assert deps._ENGINE_CACHE == {}
-    assert any("db_url" in rec.message for rec in caplog.records)
+    assert any("схема" in rec.message for rec in caplog.records)
+
+
+def test_schema_mismatch_is_distinguishable(tmp_path: Path) -> None:
+    """STO-026: `resolve_engine` отличает рассинхрон схемы от «БД нет»."""
+    _register(_stale_hub_entry(tmp_path), _absent_db_entry(tmp_path))
+
+    stale = deps.resolve_engine("stale")
+    absent = deps.resolve_engine("ghosted")
+
+    assert stale.engine is None
+    assert stale.schema_error is not None
+    assert absent.engine is None
+    assert absent.schema_error is None
 
 
 # ── db_url не-sqlite: кэш по URL, без mtime ──────────────────────────────────
@@ -221,3 +250,29 @@ def test_cache_key_follows_db_url(tmp_path: Path) -> None:
 
     assert get_engine_for_slug("keyed") is not None
     assert set(deps._ENGINE_CACHE) == {str(hub_db)}
+
+
+def test_get_project_db_returns_503_on_schema_mismatch(tmp_path: Path) -> None:
+    """STO-026: рассинхрон схемы — 503 с машиночитаемым телом, а не 404."""
+    _register(_stale_hub_entry(tmp_path))
+
+    gen = get_project_db("stale")
+    with pytest.raises(HTTPException) as exc_info:
+        next(gen)
+
+    assert exc_info.value.status_code == 503
+    detail = exc_info.value.detail
+    assert isinstance(detail, dict)
+    assert detail["code"] == "schema_mismatch"
+    assert detail["project"] == "stale"
+    assert "migrate" in detail["hint"]
+
+
+def test_get_project_db_keeps_404_for_absent_db(tmp_path: Path) -> None:
+    _register(_absent_db_entry(tmp_path))
+
+    gen = get_project_db("ghosted")
+    with pytest.raises(HTTPException) as exc_info:
+        next(gen)
+
+    assert exc_info.value.status_code == 404

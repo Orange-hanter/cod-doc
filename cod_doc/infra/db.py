@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -39,6 +41,8 @@ SQLITE_FILE_PRAGMAS: tuple[str, ...] = (
 
 #: Для in-memory БД WAL и synchronous смысла не имеют — журнала нет вовсе.
 SQLITE_MEMORY_PRAGMAS: tuple[str, ...] = ("PRAGMA foreign_keys=ON",)
+
+logger = logging.getLogger("cod_doc.infra.db")
 
 _IN_MEMORY_MARKERS = (":memory:", "mode=memory")
 
@@ -132,6 +136,62 @@ def db_url_for_entry(entry: ProjectEntry) -> str:
     return f"sqlite:///{root_path / DEFAULT_EMBEDDED_PATH}"
 
 
+#: Движки по URL. `db_for_entry` зовётся на каждый MCP-тул и каждую CLI-команду;
+#: без кэша это новый пул соединений на вызов (STO-026) — на SQLite лишние
+#: connect+PRAGMA, на Postgres полноценный новый пул.
+_ENGINE_CACHE: dict[str, Engine] = {}
+_ENGINE_CACHE_LOCK = threading.Lock()
+
+
+def cached_engine(url: str) -> Engine:
+    """Движок по URL из process-wide кэша; живёт до ``dispose_cached_engines``.
+
+    In-memory SQLite не кэшируется: там новый движок — это новая пустая БД,
+    и делить её между вызывающими нельзя.
+
+    ``make_engine`` зовётся здесь ровно одним позиционным аргументом: тесты
+    подменяют его лямбдой `lambda url: ...`, и лишний kwarg их ломает.
+    """
+    if is_in_memory_sqlite(url):
+        return make_engine(url)
+    with _ENGINE_CACHE_LOCK:
+        engine = _ENGINE_CACHE.get(url)
+        if engine is None:
+            engine = make_engine(url)
+            _ENGINE_CACHE[url] = engine
+        return engine
+
+
+def _dispose_quietly(engine: Engine) -> None:
+    """``dispose()`` не должен ронять shutdown и teardown тестов.
+
+    В кэш попадает то, что вернул ``make_engine``, а тесты его подменяют
+    (``lambda url: object()``); ошибка закрытия чужого объекта не должна
+    отменять закрытие остальных.
+    """
+    try:
+        engine.dispose()
+    except Exception:
+        logger.debug("dispose() движка не удался", exc_info=True)
+
+
+def evict_cached_engine(url: str) -> None:
+    """Выбросить один движок из кэша (файл БД пересоздали — пул смотрит в старый inode)."""
+    with _ENGINE_CACHE_LOCK:
+        engine = _ENGINE_CACHE.pop(url, None)
+    if engine is not None:
+        _dispose_quietly(engine)
+
+
+def dispose_cached_engines() -> None:
+    """Закрыть пулы и очистить кэш движков (shutdown приложения, тесты)."""
+    with _ENGINE_CACHE_LOCK:
+        engines = list(_ENGINE_CACHE.values())
+        _ENGINE_CACHE.clear()
+    for engine in engines:
+        _dispose_quietly(engine)
+
+
 def make_engine(url: str | None = None, *, echo: bool = False) -> Engine:
     """Create a SQLAlchemy engine with sensible defaults."""
     final_url = url or resolve_db_url()
@@ -178,7 +238,7 @@ def db_for_entry(entry: ProjectEntry) -> tuple[sessionmaker[Session], Engine]:
         if db_path is not None:
             db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    engine = make_engine(url)
+    engine = cached_engine(url)
 
     if hub:
         head = _alembic_head_revision()

@@ -6,6 +6,9 @@ dist/
 *.egg-info/
 .venv/
 venv/
+# `.venv/` со слэшем ловит только каталог. В worktree общий venv кладут
+# симлинком `.venv` — без этой строки он уезжает в индекс вместе с правкой.
+.venv
 .chroma/
 .cod-doc/
 .env

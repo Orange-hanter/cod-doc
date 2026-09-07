@@ -121,6 +121,47 @@ def project_init(ctx: click.Context, name: str) -> None:
     _init_and_report(entry, verb="инициализирован")
 
 
+@project.command("migrate")
+@click.argument("name", required=False)
+@click.option("--all", "all_projects", is_flag=True, default=False, help="Все проекты реестра")
+@click.pass_context
+def project_migrate(ctx: click.Context, name: str | None, all_projects: bool) -> None:
+    """Накатить голову миграций на БД проекта (hub из db_url или embedded).
+
+    STO-009: то же, что делает контейнерный bootstrap. Резолв БД — общий
+    (`db_url_for_entry`), поэтому hub-проект мигрируется по своему `db_url`,
+    а не по `<root>/.cod-doc/state.db`.
+    """
+    from cod_doc.services import project_service
+
+    cfg: Config = ctx.obj["config"]
+    if all_projects == bool(name):
+        console.print("[red]Укажи имя проекта либо --all (но не оба сразу).[/red]")
+        sys.exit(2)
+
+    if all_projects:
+        results = project_service.migrate_registered_projects(cfg)
+    else:
+        entry = cfg.get_project(name or "")
+        if not entry:
+            console.print(f"[red]Проект '{name}' не найден.[/red]")
+            sys.exit(1)
+        results = [project_service.migrate_entry(entry)]
+
+    if not results:
+        console.print("[yellow]В реестре нет проектов — мигрировать нечего.[/yellow]")
+        return
+
+    for result in results:
+        if result.ok:
+            console.print(f"[green]✅ {result.name} → {result.db_url}[/green]")
+        else:
+            console.print(f"[red]❌ {result.name} → {result.db_url}: {result.error}[/red]")
+
+    if any(not result.ok for result in results):
+        sys.exit(1)
+
+
 @project.command("status")
 @click.argument("name")
 @click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")

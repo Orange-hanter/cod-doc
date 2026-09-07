@@ -35,7 +35,7 @@ from cod_doc.infra.repositories import ProjectRepository
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-    from cod_doc.config import ProjectEntry
+    from cod_doc.config import Config, ProjectEntry
 
 
 @dataclass(slots=True)
@@ -47,6 +47,16 @@ class InitResult:
     files_created: bool
 
 
+@dataclass(slots=True)
+class MigrateResult:
+    """Итог `alembic upgrade head` по одной записи реестра (STO-009)."""
+
+    name: str
+    db_url: str
+    ok: bool
+    error: str | None = None
+
+
 def _alembic_config_for(db_url: str) -> AlembicConfig:
     """Build an in-memory Alembic config pointing at our packaged migrations."""
     cfg = AlembicConfig()
@@ -54,6 +64,35 @@ def _alembic_config_for(db_url: str) -> AlembicConfig:
     cfg.set_main_option("script_location", str(scripts_path))
     cfg.set_main_option("sqlalchemy.url", db_url)
     return cfg
+
+
+def migrate_entry(entry: ProjectEntry) -> MigrateResult:
+    """Накатить голову миграций на ту БД, которую откроет ``db_for_entry``.
+
+    STO-009: контейнерный bootstrap резолвил БД через ``resolve_db_url(root)``,
+    то есть всегда по embedded-пути, и на hub-проекте мигрировал не ту базу,
+    сообщая в лог `[migrate] ok`. Резолв здесь — общий (``db_url_for_entry``),
+    а причина падения возвращается вызывающему, а не глотается.
+    """
+    db_url = db_url_for_entry(entry)
+    try:
+        db_path = sqlite_file_path(db_url)
+        if db_path is not None:
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+        alembic_command.upgrade(_alembic_config_for(db_url), "head")
+    except Exception as exc:
+        return MigrateResult(
+            name=entry.name,
+            db_url=db_url,
+            ok=False,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+    return MigrateResult(name=entry.name, db_url=db_url, ok=True)
+
+
+def migrate_registered_projects(cfg: Config) -> list[MigrateResult]:
+    """Миграции по всем записям реестра; одна упавшая не останавливает остальные."""
+    return [migrate_entry(entry) for entry in cfg.list_projects()]
 
 
 def _bootstrap_default_routines(session: Session, project_id: int) -> None:
