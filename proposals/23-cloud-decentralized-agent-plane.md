@@ -1,11 +1,12 @@
 ---
 type: proposal
-number: 16
+number: 23
 title: Cloud decentralized agent plane
 category: architecture
 risk: high
-status: draft
+status: deferred
 created: 2026-07-29
+updated: 2026-09-07
 depends_on: [04, 06, 09, 12]
 related_code:
   - cod_doc/mcp/server.py
@@ -20,6 +21,10 @@ related_code:
 
 > Категория: 🔵 Архитектура · Риск: высокий · Зависимости: 04 run-id,
 > 06 checkout, 09 activity, 12 approvals
+>
+> **Статус: 🟠 DEFERRED (2026-09-07)** — зависимости реализованы, но задачи CAP-001…CAP-033
+> отложены до M6 «Hub + кросс-проектность». Приоритет сейчас на adoption (трек C/E Symbiosis).
+> См. [ROADMAP](../docs/system/roadmap/ROADMAP.md) → M6.
 
 ## Проблема
 
@@ -108,3 +113,9 @@ Agent profile tool list становится:
 approvals — топливо для cloud workers. Новые agent-features по
 AGENTS.md → мыслить как продолжение task-centric surface (не
 раздувание internal CRUD).
+
+## Связь с M6
+
+RFC 23 запланирован к запуску в **M6 «Hub + кросс-проектность»** после
+завершения трека C/E adoption (SYM-*). Задачи CAP-001…CAP-033 не начаты,
+ожидает приоритизации в плане M6.

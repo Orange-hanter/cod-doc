@@ -1,8 +1,9 @@
 # 24 — Единый контур структуры, контрактов и тестовых сценариев
 
-> **Статус: черновик** (2026-09-02) · Категория: 🔵 Архитектура · Риск: высокий
-> · Зависимости: [22 Symbiosis](22-symbiosis-zairgrush-orakul.md) (hub, findings,
-> pull ingest), [07 Routines](07-routines.md), [09 Activity log](09-activity-log.md)
+> **Статус: 🟠 DEFERRED (2026-09-07)** — producer в ai-reviewer готов (фазы 1–2),
+> но задачи cod-doc STR-001…STR-004 отложены до M6. Prerequisite SYM-005..009 выполнен.
+> Категория: 🔵 Архитектура · Риск: высокий · Зависимости: [22 Symbiosis](22-symbiosis-zairgrush-orakul.md)
+> (hub, findings, pull ingest), [07 Routines](07-routines.md), [09 Activity log](09-activity-log.md)
 > · Поглощает внешнюю часть [17 Living Specification](17-living-specification.md)
 
 ## 0. RACI триады (планирование / исполнение / верификация)
@@ -467,7 +468,14 @@ draft PR #6) и режется по фазам, а не вливается од�
 планируются: спринт — упорядоченная очередь, а не окно (решение владельца
 2026-08-30, действует с M4).
 
-## 18. Источники
+## 18. Связь с M6
+
+RFC 24 запланирован к запуску в **M6 «Hub + кросс-проектность»** после
+завершения трека C/E adoption (SYM-*). Задачи STR-001…STR-004 не начаты,
+ожидает приоритизации в плане M6. Producer в ai-reviewer готов (фазы 1–2),
+prerequisite SYM-005..009 выполнен.
+
+## 19. Источники
 
 - [22 Symbiosis](22-symbiosis-zairgrush-orakul.md) — hub, findings, E5-C, pull ingest
 - [17 Living Specification](17-living-specification.md) — ADR drift (поглощается)
