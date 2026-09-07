@@ -104,7 +104,7 @@ def _extract_error_code(exc: APIStatusError) -> str | None:
         return None
 
 
-async def with_retry(
+async def with_retry[T](
     coro_factory: Callable[[], Coroutine[Any, Any, T]],
     max_attempts: int = 4,
     base_delay: float = 2.0,

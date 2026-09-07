@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       # ADO-070: ставим ruff из dev-экстры проекта, а не голым `pip install ruff`.
       # Иначе CI берёт свежайшую версию, локальный venv — ту, что стояла, и гейт
       # расходится сам собой: 10×RUF036 приехали в CI правилом, которого нет
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - run: pip install .[dev]
       - run: mypy cod_doc/
 
@@ -48,7 +48,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12", "3.13"]
+        # ADO-097: одна поддерживаемая версия — 3.11/3.12 сняты с поддержки
+        # 2026-09-07; две джобы по ~14 минут уходили на версии, которые
+        # `requires-python = ">=3.13"` больше не допускает.
+        python: ["3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -74,7 +77,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - run: pip install .
       # Аудит читает capabilities/web-frontend.md §3 с диска и сравнивает с
       # живыми роутами из routers; БД/импорт не нужны, только реестр проекта.
