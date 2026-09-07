@@ -1,6 +1,6 @@
 # 🧭 Project Navigator: cod-doc
 
-> 📊 Meta: `{"version": "2.7", "last_updated": "2026-09-11", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
+> 📊 Meta: `{"version": "2.8", "last_updated": "2026-09-11", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
 
 > **Этот файл — тонкий L0-навигатор для агента и нового контрибьютора.**
 > Source of truth целевого состояния системы — [`docs/system/MASTER.md`](docs/system/MASTER.md).
@@ -23,8 +23,15 @@
   **ZAIrgRush** (мульти-агентная петля) и **Orakul/ai-review** (LLM-ревью PR) —
   [RFC 22](proposals/22-symbiosis-zairgrush-orakul.md), решение 2026-08-25.
   cod-doc отдаёт спеки/ADR/контекст, пилоты возвращают findings и измерения.
-  Милстоуны — [ROADMAP](docs/system/roadmap/ROADMAP.md): M1–M5 закрыты,
-  ведётся подготовка к M6 (hub + кросс-проектность).
+- **Подготовка к M6 «Hub + кросс-проектность»:** M1–M5 закрыты, ведётся
+  подготовка к M6. **Цели M6:** (1) кросс-проектный поиск через hub-БД
+  (`[[doc:slug:key]]`), (2) фикс ChromaDB L3-режима для мульти-проектности,
+  (3) расширение `agent_pick --projects` для работы с несколькими проектами,
+  (4) запуск RFC 23 (Cloud decentralized agent plane) и RFC 24 (единый контур
+  structure/contracts/scenarios). **Прогресс:** SYM-011 (кросс-проектный
+  поиск, low priority) открыт; RFC 23 и RFC 24 спроектированы (статус 🟡 DRAFT),
+  не начаты; треки D/E (STO-* Postgres parity, ADO-071..095 friction) идут
+  фоном. Полная дорожная карта — [ROADMAP](docs/system/roadmap/ROADMAP.md).
 - **Открыто:** план `adoption-2026-08` — M1–M5 закрыты.
   **Остаток Фазы 5:** SYM-011 (кросс-проектный поиск, `[[doc:slug:key]]`, low).
   **Треки D/E:** STO-* (Postgres parity, 25 задач), ADO-071..095 (friction из живой работы).
@@ -284,6 +291,14 @@ graph TD
 ```json
 {
   "changelog": [
+    {
+      "date": "2026-09-11",
+      "version": "2.8",
+      "action": "Добавлен блок «Подготовка к M6» в Executive Summary: цели M6 (кросс-проектный поиск, hub + кросс-проектность, RFC 23/24), текущий прогресс (SYM-011 открыт, RFC 23/24 в DRAFT), ссылка на ROADMAP.md. Задача [469ada54] выполнена.",
+      "author": "COD-DOC Orchestrator",
+      "scope": "master",
+      "task": "469ada54"
+    },
     {
       "date": "2026-09-11",
       "version": "2.7",
