@@ -34,6 +34,11 @@ related_docs:
 | `L2` | L1 + `depends_on`-цепочки, cross-module dependencies, соседние стандарты | Глубокая работа с границами |
 | `L3` | L2 + semantic-search top-k по всему корпусу | Только по явному запросу; дорогой |
 
+> L3 fail-open: если эмбеддер не настроен или недоступен, `related.semantic`
+> приходит пустым, а не роняет ответ. Проверка — `cod-doc embed status`
+> (резолв без сети) и `cod-doc embed probe` (живой вызов); провайдер
+> эмбеддингов настраивается независимо от LLM, см. HANDBOOK §10.4.
+
 ## 3. Контракт `context.get`
 
 ```json

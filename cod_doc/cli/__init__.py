@@ -57,6 +57,10 @@ cod-doc finding stability — Jaccard-стабильность находок п
 cod-doc routine list       — список рутин с последним запуском
 cod-doc routine tick       — один тик планировщика (для OS cron/launchd)
 cod-doc routine run        — ручной запуск рутины по имени
+cod-doc embed status       — провайдер эмбеддингов: резолв ключа и состояние индекса
+cod-doc embed probe        — живой вызов эмбеддера (размерность, цена, задержка)
+cod-doc embed models       — каталог моделей эмбеддингов провайдера
+cod-doc embed reset        — удалить векторную коллекцию (смена модели)
 """
 
 from __future__ import annotations
@@ -68,6 +72,7 @@ from cod_doc.cli.cmd_adapter import adapter
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_audit import audit
 from cod_doc.cli.cmd_ctx import ctx
+from cod_doc.cli.cmd_embed import embed
 from cod_doc.cli.cmd_finding import finding
 from cod_doc.cli.cmd_hash import hash
 from cod_doc.cli.cmd_hub import hub
@@ -123,6 +128,7 @@ main.add_command(ctx)
 main.add_command(finding)
 main.add_command(adapter)
 main.add_command(adr)
+main.add_command(embed)
 main.add_command(reindex)
 main.add_command(search_cmd)
 

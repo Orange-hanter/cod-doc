@@ -257,5 +257,5 @@ warn_unreachable = true
 disallow_any_unimported = true
 
 [[tool.mypy.overrides]]
-module = ["anthropic", "yaml"]
+module = ["anthropic", "sentence_transformers", "yaml"]
 ignore_missing_imports = true

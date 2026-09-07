@@ -99,16 +99,17 @@ related_code:
 
 ### 4.3 Embeddings
 
-Для concentrated-context retrieval (`ContextService`) хранится индекс эмбеддингов по документам и секциям. Реализации:
+Для concentrated-context retrieval (`ContextService`, уровень L3) хранится векторный индекс документов. Реализация — ChromaDB (`PersistentClient` в `chroma_path`, коллекция `cod_doc`, косинусная метрика); ранее заявленные `sqlite-vss`/`pgvector` не реализованы.
 
-- SQLite profile: `sqlite-vss` или faiss-файл рядом с БД.
-- Postgres profile: `pgvector`.
+**Провайдер эмбеддингов — выбор конфига и отдельная ось от LLM (ADO-071).** `cod_doc/core/embeddings/` — реестр адаптеров (`EmbeddingAdapter` + `registry.py`, внешние плагины из `~/.cod-doc/embeddings.json`), устроенный так же, как реестр LLM-адаптеров. Встроенные: `openai` (любой OpenAI-совместимый endpoint), `openrouter` (свой ключ, `dimensions`, `usage.cost`), `local` (sentence-transformers), `mock`. Ядро (`core/reindex.py`) принимает `EmbeddingSettings` и не знает ни одного провайдера по имени.
 
-Индексация — по событию `RevisionCommitted`, асинхронно, с fallback на полнотекстовый поиск.
+Идентичность коллекции фиксируется подписью `<backend>:<model>@<dimensions>` в её metadata: векторы разных моделей несравнимы, поэтому расхождение конфига с непустым индексом — явная ошибка с требованием пересобрать индекс, а не тихая деградация.
+
+Индексация — по явному вызову (`reindex_project`), поиск fail-open: любая ошибка бэкенда даёт пустой список, а громкий сигнал даёт `cod-doc embed status/probe`.
 
 ### 4.4 LLM provider
 
-Выбор провайдера — конфиг (OpenRouter, Anthropic API, local Ollama). Домен и сервисы не знают о конкретном провайдере; агент/оркестратор — знает. Это наследуется из текущего cod-doc (см. `cod_doc/agent/orchestrator.py`, `cod_doc/config.py`).
+Выбор провайдера — конфиг (OpenRouter, Anthropic API, local Ollama). Домен и сервисы не знают о конкретном провайдере; агент/оркестратор — знает. Это наследуется из текущего cod-doc (см. `cod_doc/agent/orchestrator.py`, `cod_doc/config.py`). Провайдер эмбеддингов выбирается **независимо** (§4.3): у чат-провайдера может не быть `/embeddings` вовсе.
 
 ## 5. Потоки данных
 

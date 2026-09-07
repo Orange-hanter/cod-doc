@@ -217,7 +217,7 @@ graph TD
 | 4 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-07-29 | 🟡 LEGACY |
 | 5 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-07-29 | 🟡 LEGACY |
 | 6 | Доменные модели (legacy) | `doc:models_domain_md` | `2e5d66877b50` | 2026-07-29 | 🟡 LEGACY |
-| 7 | Handbook | `doc:docs_HANDBOOK_md` | `4a5c449c3183` | 2026-08-25 | 🟢 VERIFIED |
+| 7 | Handbook | `doc:docs_HANDBOOK_md` | `481aadc8fe7d` | 2026-09-07 | 🟢 VERIFIED |
 | 8 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-07-29 | 🟢 VERIFIED |
 | 9 | MCP-интеграция | `doc:docs_mcp-integration_md` | `9794e15d666a` | 2026-08-28 | 🟢 VERIFIED |
 | 10 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-08-26 | 🟢 VERIFIED |

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from cod_doc.agent.tool_defs import TOOL_DEFINITIONS
 from cod_doc.core.context import get_context
+from cod_doc.core.embeddings import EmbeddingSettings
 from cod_doc.core.hash_calc import calc_hash, make_ref, update_hashes
 from cod_doc.core.project import Project, Task, TaskStatus
 from cod_doc.core.reindex import reindex_project
@@ -38,19 +39,15 @@ class ToolExecutor:
         project: Project,
         on_ask_human: Callable[[str, str], str] | None = None,
         chroma_path: str | None = None,
-        api_key: str = "",
-        base_url: str = "",
-        embedding_model: str = "",
-        embedding_backend: str = "openai",
+        embedding: EmbeddingSettings | None = None,
     ) -> None:
         self.project = project
         self.root = project.entry.root
         self.on_ask_human = on_ask_human
         self.chroma_path = chroma_path
-        self.api_key = api_key
-        self.base_url = base_url
-        self.embedding_model = embedding_model
-        self.embedding_backend = embedding_backend
+        # ADO-071: настройки эмбеддера приезжают одним объектом и больше не
+        # выводятся из ключа/endpoint чат-провайдера.
+        self.embedding = embedding or EmbeddingSettings()
         self._blocked = False
         self._blocked_question: str | None = None
 
@@ -213,10 +210,7 @@ class ToolExecutor:
             hits = _search_docs(
                 query=query,
                 chroma_path=self.chroma_path,
-                api_key=self.api_key,
-                base_url=self.base_url,
-                embedding_model=self.embedding_model,
-                embedding_backend=self.embedding_backend,
+                settings=self.embedding,
                 project_root=str(self.root),
                 n_results=n_results,
             )
@@ -230,14 +224,7 @@ class ToolExecutor:
         if not self.chroma_path:
             return {"error": "ChromaDB не настроен. Укажите chroma_path в конфиге."}
         try:
-            return reindex_project(
-                self.root,
-                self.chroma_path,
-                api_key=self.api_key,
-                base_url=self.base_url,
-                embedding_model=self.embedding_model,
-                embedding_backend=self.embedding_backend,
-            )
+            return dict(reindex_project(self.root, self.chroma_path, settings=self.embedding))
         except ImportError as e:
             return {"error": str(e)}
         except Exception as e:

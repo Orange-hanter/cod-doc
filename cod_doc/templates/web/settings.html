@@ -105,6 +105,10 @@
                 {% if config.embedding_backend == "openai" %}selected{% endif %}>
           OpenAI-compatible /embeddings (uses API key)
         </option>
+        <option value="openrouter"
+                {% if config.embedding_backend == "openrouter" %}selected{% endif %}>
+          OpenRouter (dedicated key, supports dimensions)
+        </option>
         <option value="local"
                 {% if config.embedding_backend == "local" %}selected{% endif %}>
           Local sentence-transformers (CPU, no API key)
@@ -119,10 +123,43 @@
       <span class="label">Embedding model</span>
       <input type="text" name="embedding_model" value="{{ config.embedding_model }}" required>
       <small class="muted">
-        For <code>openai</code>: e.g. <code>openai/text-embedding-ada-002</code>.
-        For <code>local</code>: a sentence-transformers id like
-        <code>all-MiniLM-L6-v2</code>.
+        For <code>openai</code>/<code>openrouter</code>: a route like
+        <code>openai/text-embedding-ada-002</code> or
+        <code>qwen/qwen3-embedding-8b</code>. For <code>local</code>:
+        a sentence-transformers id like <code>all-MiniLM-L6-v2</code>.
       </small>
+    </label>
+    <label class="field">
+      <span class="label">Embedding API key</span>
+      <input type="password" name="embedding_api_key"
+             placeholder="{% if config.embedding_api_key_set %}{{ config.embedding_api_key_masked }}{% else %}not set{% endif %}">
+      <small class="muted">
+        Separate from the LLM key: <code>openrouter</code> does <b>not</b> inherit it.
+        Empty = keep current; type <code>-</code> to delete.
+      </small>
+    </label>
+    <label class="field">
+      <span class="label">Embedding base URL</span>
+      <input type="text" name="embedding_base_url" value="{{ config.embedding_base_url }}"
+             placeholder="https://openrouter.ai/api/v1">
+      <small class="muted">
+        Empty = LLM base URL for <code>openai</code>, OpenRouter for <code>openrouter</code>.
+      </small>
+    </label>
+    <label class="field">
+      <span class="label">Embedding dimensions</span>
+      <input type="number" name="embedding_dimensions" min="1"
+             value="{{ config.embedding_dimensions }}" placeholder="native">
+      <small class="muted">
+        Matryoshka truncation on the provider side (e.g. 2048 for
+        <code>qwen/qwen3-embedding-8b</code>). Changing it makes the existing
+        collection incompatible — run <code>cod-doc embed reset</code>.
+      </small>
+    </label>
+    <label class="field">
+      <span class="label">Embedding batch size</span>
+      <input type="number" name="embedding_batch_size" min="1"
+             value="{{ config.embedding_batch_size }}">
     </label>
   </fieldset>
 

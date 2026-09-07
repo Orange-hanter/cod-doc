@@ -24,6 +24,7 @@ from cod_doc.agent.retry import (
     LLMError,
 )
 from cod_doc.agent.tools import TOOL_DEFINITIONS, ToolExecutor
+from cod_doc.core.embeddings import settings_from_config
 from cod_doc.core.project import Project, Task, TaskStatus
 
 if TYPE_CHECKING:
@@ -92,10 +93,7 @@ class Orchestrator:
             project,
             on_ask_human=on_ask_human if not async_on_ask_human else None,
             chroma_path=config.chroma_path,
-            api_key=config.api_key,
-            base_url=config.base_url,
-            embedding_model=config.embedding_model,
-            embedding_backend=config.embedding_backend,
+            embedding=settings_from_config(config),
         )
 
     # ── Public API ───────────────────────────────────────────────────────────
