@@ -71,6 +71,11 @@ class ProjectEntry(BaseSettings):
         return self.root / self.master_md
 
 
+SECRET_FIELDS: tuple[str, ...] = ("api_key", "anthropic_api_key", "embedding_api_key")
+"""Поля-секреты. Единый список: `GET /api/config` отдаёт конфиг целиком, и
+забытое здесь поле утекает наружу (ADO-096 добавил второй ключ — эмбеддера)."""
+
+
 class Config(BaseSettings):
     """Глобальная конфигурация COD-DOC."""
 

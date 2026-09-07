@@ -20,7 +20,7 @@ from cod_doc.api.deps import (
     stop_daemon,
 )
 from cod_doc.api.schemas import ConfigUpdate, ProjectCreate, TaskCreate
-from cod_doc.config import ProjectEntry
+from cod_doc.config import SECRET_FIELDS, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import TaskStatus, TaskType
 from cod_doc.infra.db import make_session_factory
@@ -45,7 +45,10 @@ def health() -> dict[str, Any]:
 def read_config() -> dict[str, Any]:
     cfg = get_config()
     data = cfg.model_dump()
-    data.pop("api_key", None)
+    # ADO-096: секретов теперь несколько (LLM, Anthropic, эмбеддер) — вырезаем
+    # по единому списку, чтобы следующий ключ не утёк по недосмотру.
+    for field in SECRET_FIELDS:
+        data.pop(field, None)
     return data
 
 
