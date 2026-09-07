@@ -1,6 +1,6 @@
 # 🧭 Project Navigator: cod-doc
 
-> 📊 Meta: `{"version": "2.3", "last_updated": "2026-08-25", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
+> 📊 Meta: `{"version": "2.5", "last_updated": "2026-09-07", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
 
 > **Этот файл — тонкий L0-навигатор для агента и нового контрибьютора.**
 > Source of truth целевого состояния системы — [`docs/system/MASTER.md`](docs/system/MASTER.md).
@@ -15,11 +15,10 @@
 - **Архитектура:** многоуровневая модульная (Presentation → Application →
   Domain ← Infrastructure) с DIP-инверсией.
 - **Текущий статус:** 🟢 ACTIVE — **M1 «Пилот работает» закрыт**, фундамент
-  Фазы 1 (hub + findings + ingest) закрыт. Прогон 2026-08-28: 1506 тестов
-  зелёные, ruff/mypy чистые, 121 документ (`edited_in_place`=0 после
-  reconcile; 35 `stale_export` — хвост ре-коерсии типов миграции 0026,
-  лечится `doc export`). Поверхность: 103 MCP-тула (профиль `agent` — 6),
-  12 скиллов, 6 ADR, 25 stories.
+  Фазы 1 (hub + findings + ingest) закрыт. Прогон 2026-09-07: 1562 теста
+  зелёные, ruff/mypy чистые, 123 документа (`edited_in_place`=0,
+  `stale_export`=0 после reconcile миграций 0026–0028). Поверхность:
+  103 MCP-тула (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
 - **Текущий приоритет: adoption через симбиоз.** Пилоты переназначены на
   **ZAIrgRush** (мульти-агентная петля) и **Orakul/ai-review** (LLM-ревью PR) —
   [RFC 22](proposals/22-symbiosis-zairgrush-orakul.md), решение 2026-08-25.
@@ -211,7 +210,7 @@ graph TD
 
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
-| 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-07-29 | 🟢 VERIFIED |
+| 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-07 | 🟢 VERIFIED |
 | 2 | CI Pipeline | `doc:github_workflows_ci_yml` | `2b0809be8fcc` | 2026-07-29 | 🟢 VERIFIED |
 | 3 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-07-29 | 🟢 VERIFIED |
 | 4 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-07-29 | 🟡 LEGACY |
@@ -254,6 +253,14 @@ graph TD
 ```json
 {
   "changelog": [
+    {
+      "date": "2026-09-07",
+      "version": "2.5",
+      "action": "Обновление статуса drift: 35 stale_export документов экспортированы (миграции 0026–0028 применены, ADO-023 fix), drift 123/123 in_sync. Прогон тестов 1562 passed. MASTER.md обновлён: убрано упоминание о pending stale_export, статус актуализирован на 2026-09-07.",
+      "author": "COD-DOC Orchestrator",
+      "scope": "master",
+      "task": "a8831aa6"
+    },
     {
       "date": "2026-08-28",
       "version": "2.4",
