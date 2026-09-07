@@ -13,13 +13,19 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, Request
-from sqlalchemy.engine import Engine
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.exc import ArgumentError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from cod_doc.config import Config
+from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
-from cod_doc.infra.db import make_engine, make_session_factory
+from cod_doc.infra.db import (
+    SchemaMismatchError,
+    db_for_entry,
+    is_in_memory_sqlite,
+    make_engine,
+    make_session_factory,
+)
 from cod_doc.infra.repositories import ProjectRepository
 
 logger = logging.getLogger("cod_doc.api")
@@ -107,65 +113,155 @@ def get_project(name: str) -> Project:
     return Project(entry)
 
 
-# ── Per-project DB engine cache (WEB-005) ────────────────────────────────────
+# ── Per-project DB engine cache (WEB-005, STO-021) ───────────────────────────
 
 
 @dataclass
 class _CachedEngine:
     engine: Engine
-    mtime: float
+    #: mtime файла sqlite на момент создания движка. ``None`` — БД не файловая
+    #: (hub на postgres и т.п.), инвалидировать по mtime нечего.
+    mtime: float | None
     last_check: float
 
 
-_ENGINE_CACHE: dict[Path, _CachedEngine] = {}
+@dataclass(frozen=True)
+class _DbTarget:
+    """Куда смотрит запись проекта: ключ кэша, файл sqlite и режим.
+
+    ``path`` заполнен только для файловой sqlite — по нему работает
+    mtime-инвалидация. Для сетевой БД ключ кэша — сам URL.
+    """
+
+    cache_key: str
+    path: Path | None
+    hub: bool
+
+
+_ENGINE_CACHE: dict[str, _CachedEngine] = {}
 _ENGINE_CACHE_LOCK = threading.Lock()
 _ENGINE_TTL_SECONDS = 5.0
 
 
+def _sqlite_file_path(url: str) -> Path | None:
+    """Путь к файлу для файловой sqlite-URL; ``None`` для памяти и не-sqlite."""
+    try:
+        parsed = make_url(url)
+    except ArgumentError:
+        return None
+    if not parsed.get_backend_name().startswith("sqlite"):
+        return None
+    if not parsed.database or is_in_memory_sqlite(url):
+        return None
+    return Path(parsed.database)
+
+
+def _resolve_db_target(entry: ProjectEntry) -> _DbTarget:
+    """Резолв БД записи проекта — тот же, что в ``infra.db.db_for_entry``.
+
+    Непустой ``db_url`` (hub-режим) выигрывает у embedded
+    ``<root>/.cod-doc/state.db``; пустой — оставляет embedded-путь.
+    """
+    db_url = entry.db_url or ""
+    if not db_url:
+        embedded = entry.cod_doc_dir / "state.db"
+        return _DbTarget(cache_key=str(embedded), path=embedded, hub=False)
+    db_path = _sqlite_file_path(db_url)
+    cache_key = str(db_path) if db_path is not None else db_url
+    return _DbTarget(cache_key=cache_key, path=db_path, hub=True)
+
+
+def _drop_cached(cache_key: str, cached: _CachedEngine) -> None:
+    """Выбросить запись из кэша вместе с движком. Под ``_ENGINE_CACHE_LOCK``."""
+    cached.engine.dispose()
+    _ENGINE_CACHE.pop(cache_key, None)
+
+
+def _reuse_cached(target: _DbTarget, cached: _CachedEngine, now: float) -> Engine | None:
+    """Живой движок из кэша либо ``None``, если запись протухла.
+
+    Протухшая запись тут же выбрасывается из кэша. Под ``_ENGINE_CACHE_LOCK``.
+    """
+    if now - cached.last_check < _ENGINE_TTL_SECONDS:
+        return cached.engine
+    if target.path is None:
+        # Сетевая БД: stat'ить нечего, только продлеваем TTL.
+        cached.last_check = now
+        return cached.engine
+    try:
+        current_mtime = target.path.stat().st_mtime
+    except OSError:
+        _drop_cached(target.cache_key, cached)
+        return None
+    if current_mtime != cached.mtime:
+        _drop_cached(target.cache_key, cached)
+        return None
+    cached.last_check = now
+    return cached.engine
+
+
+def _create_engine_for_target(
+    entry: ProjectEntry, target: _DbTarget
+) -> tuple[Engine, float | None] | None:
+    """Создать движок под ``target``; ``None`` — БД недоступна.
+
+    Hub-режим делегируется ``db_for_entry``, чтобы резолв и сверка
+    alembic-головы жили в одном месте (``infra.db``).
+    """
+    mtime: float | None = None
+    if target.path is not None:
+        try:
+            mtime = target.path.stat().st_mtime
+        except OSError:
+            return None
+    if not target.hub:
+        return make_engine(f"sqlite:///{target.path}"), mtime
+    try:
+        _factory, engine = db_for_entry(entry)
+    except (SchemaMismatchError, SQLAlchemyError) as exc:
+        logger.warning("Проект %s: БД из db_url недоступна — %s", entry.name, exc)
+        return None
+    return engine, mtime
+
+
 def get_engine_for_slug(slug: str) -> Engine | None:
-    """Return a cached SQLAlchemy Engine for the project's state.db, or None.
+    """Return a cached SQLAlchemy Engine for the project's DB, or None.
+
+    Резолв БД совпадает с ``infra.db.db_for_entry`` (STO-021): непустой
+    ``db_url`` записи реестра открывает hub-БД (со сверкой alembic-головы),
+    пустой — embedded ``<root>/.cod-doc/state.db``.
 
     Returns None when:
     - slug is unknown to Config,
-    - .cod-doc/state.db file is absent.
+    - the sqlite file behind the entry is absent,
+    - hub-БД недоступна или её схема разъехалась с головой миграций
+      (``SchemaMismatchError``) — веб-слой отдаёт «DB not initialized» / 404,
+      а не 500.
 
-    The engine is cached process-wide. Cache is invalidated when the
-    state.db file's mtime changes; mtime is re-checked at most once per
-    `_ENGINE_TTL_SECONDS` to avoid a stat() syscall on every request.
+    The engine is cached process-wide. Для файловой sqlite кэш инвалидируется
+    по mtime файла, который проверяется не чаще раза в ``_ENGINE_TTL_SECONDS``
+    (иначе stat() был бы на каждом запросе). Для нефайловой БД mtime
+    неприменим: движок кэшируется по URL и живёт до ``dispose_all_engines()``.
     """
     cfg = get_config()
     entry = cfg.get_project(slug)
     if entry is None:
         return None
-    db_path = entry.cod_doc_dir / "state.db"
+    target = _resolve_db_target(entry)
 
     with _ENGINE_CACHE_LOCK:
-        cached = _ENGINE_CACHE.get(db_path)
         now = time.monotonic()
-
+        cached = _ENGINE_CACHE.get(target.cache_key)
         if cached is not None:
-            if now - cached.last_check < _ENGINE_TTL_SECONDS:
-                return cached.engine
-            try:
-                current_mtime = db_path.stat().st_mtime
-            except OSError:
-                cached.engine.dispose()
-                del _ENGINE_CACHE[db_path]
-                return None
-            if current_mtime == cached.mtime:
-                cached.last_check = now
-                return cached.engine
-            # mtime changed → invalidate, fall through to recreate
-            cached.engine.dispose()
-            del _ENGINE_CACHE[db_path]
+            reused = _reuse_cached(target, cached, now)
+            if reused is not None:
+                return reused
 
-        try:
-            mtime = db_path.stat().st_mtime
-        except OSError:
+        created = _create_engine_for_target(entry, target)
+        if created is None:
             return None
-
-        engine = make_engine(f"sqlite:///{db_path}")
-        _ENGINE_CACHE[db_path] = _CachedEngine(engine=engine, mtime=mtime, last_check=now)
+        engine, mtime = created
+        _ENGINE_CACHE[target.cache_key] = _CachedEngine(engine=engine, mtime=mtime, last_check=now)
         return engine
 
 
