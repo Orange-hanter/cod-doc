@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import os
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from cod_doc.api import deps
 from cod_doc.api.deps import get_engine_for_slug, get_project_db, set_config
@@ -202,19 +205,19 @@ def test_unusable_db_url_does_not_raise(tmp_path: Path) -> None:
 
 
 # ── резолв пути под sqlite-URL ───────────────────────────────────────────────
+# STO-027: сам резолв (`sqlite_file_path`, `db_url_for_entry`) переехал в
+# `infra.db` — его таблица случаев живёт в tests/infra/test_db_for_entry.py.
+# Здесь остаётся проверка, что веб-слой берёт из него ключ кэша и файл.
 
 
-@pytest.mark.parametrize(
-    ("url", "expected"),
-    [
-        ("sqlite:////abs/path/state.db", Path("/abs/path/state.db")),
-        ("sqlite:///relative.db", Path("relative.db")),
-        ("sqlite+pysqlite:////abs/x.db", Path("/abs/x.db")),
-        ("sqlite:///:memory:", None),
-        ("sqlite://", None),
-        ("postgresql+psycopg://user@localhost/db", None),
-        ("не-урл-вовсе", None),
-    ],
-)
-def test_sqlite_file_path(url, expected) -> None:
-    assert deps._sqlite_file_path(url) == expected
+def test_cache_key_follows_db_url(tmp_path: Path) -> None:
+    """Ключ кэша движка — файл hub-БД, а не embedded-путь проекта."""
+    root = tmp_path / "repo"
+    hub_db = tmp_path / "hub" / "state.db"
+    _make_db(hub_db, "keyed", root)
+
+    entry = ProjectEntry(name="keyed", path=str(root), db_url=f"sqlite:///{hub_db}")
+    _register(entry)
+
+    assert get_engine_for_slug("keyed") is not None
+    assert set(deps._ENGINE_CACHE) == {str(hub_db)}

@@ -5,8 +5,9 @@ same thing:
 
 1. Ensure the on-disk `.cod-doc/` folder + `tasks.yaml` + `state.yaml` +
    `MASTER.md` exist (idempotent — see `cod_doc.core.project.Project.init`).
-2. Run Alembic migrations against the project's embedded SQLite (creates
-   `state.db` on first run).
+2. Run Alembic migrations against the DB the entry actually resolves to —
+   embedded SQLite (creates `state.db` on first run) или hub-БД из
+   `db_url` реестра (STO-027).
 3. Insert a `ProjectModel` row whose `slug` matches the legacy config name
    so `try_open_project_db` can map slug → DB row.
 
@@ -28,7 +29,7 @@ from alembic.config import Config as AlembicConfig
 
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import Project as ProjectEntity
-from cod_doc.infra.db import db_for_entry, transactional
+from cod_doc.infra.db import db_for_entry, db_url_for_entry, sqlite_file_path, transactional
 from cod_doc.infra.repositories import ProjectRepository
 
 if TYPE_CHECKING:
@@ -103,9 +104,17 @@ def init_project(entry: ProjectEntry) -> InitResult:
 
     # 2. Alembic upgrade. `state.db` is created by sqlite on first connection
     # by the alembic engine — even if absent before, this just creates it.
-    db_path = entry.cod_doc_dir / "state.db"
-    db_existed = db_path.exists()
-    cfg = _alembic_config_for(f"sqlite:///{db_path}")
+    # STO-027: мигрируем ту БД, которую откроет `db_for_entry` на шаге 3.
+    # В hub-режиме (`db_url` в реестре) она лежит вне рабочего дерева; резолв
+    # по embedded-пути создавал лишний пустой `.cod-doc/state.db` и ронял
+    # шаг 3 на сверке alembic-головы ненакатанного hub'а.
+    db_url = db_url_for_entry(entry)
+    db_path = sqlite_file_path(db_url)
+    if db_path is not None:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+    # Нефайловую БД (postgres) мы не создаём — она существует до init.
+    db_existed = db_path.exists() if db_path is not None else True
+    cfg = _alembic_config_for(db_url)
     alembic_command.upgrade(cfg, "head")
 
     # 3. ProjectModel row keyed by slug=entry.name (so `try_open_project_db`

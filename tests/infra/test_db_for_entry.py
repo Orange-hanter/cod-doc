@@ -1,17 +1,20 @@
-"""Тесты для ``cod_doc.infra.db.db_for_entry``."""
+"""Тесты для резолва БД записи реестра: ``db_url_for_entry`` и ``db_for_entry``."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path, PurePosixPath
 
 import pytest
 from sqlalchemy import text
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
 from cod_doc.config import ProjectEntry
-from cod_doc.infra.db import SchemaMismatchError, db_for_entry, make_engine
+from cod_doc.infra.db import (
+    SchemaMismatchError,
+    db_for_entry,
+    db_url_for_entry,
+    make_engine,
+    sqlite_file_path,
+)
 from cod_doc.services.project_service import _alembic_config_for
 
 
@@ -91,3 +94,47 @@ def test_db_for_entry_hub_missing_version_table(tmp_path: Path) -> None:
 
     assert exc_info.value.code == "schema_mismatch"
     assert "schema check failed" in str(exc_info.value)
+
+
+# ── STO-027: единственная точка вывода «какую БД открывает проект» ───────────
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("sqlite:////abs/path/state.db", PurePosixPath("/abs/path/state.db")),
+        ("sqlite:///relative.db", PurePosixPath("relative.db")),
+        ("sqlite+pysqlite:////abs/x.db", PurePosixPath("/abs/x.db")),
+        ("sqlite:///:memory:", None),
+        ("sqlite://", None),
+        ("postgresql+psycopg://user@localhost/db", None),
+        ("не-урл-вовсе", None),
+    ],
+)
+def test_sqlite_file_path(url: str, expected: PurePosixPath | None) -> None:
+    resolved = sqlite_file_path(url)
+    assert resolved == (None if expected is None else Path(expected))
+
+
+def test_db_url_for_entry_embedded(tmp_path: Path) -> None:
+    entry = ProjectEntry(name="demo", path=str(tmp_path))
+    assert db_url_for_entry(entry) == f"sqlite:///{tmp_path.resolve() / '.cod-doc' / 'state.db'}"
+
+
+def test_db_url_for_entry_hub_wins(tmp_path: Path) -> None:
+    entry = ProjectEntry(name="demo", path=str(tmp_path), db_url="sqlite:////hub/state.db")
+    assert db_url_for_entry(entry) == "sqlite:////hub/state.db"
+
+
+def test_db_url_for_entry_empty_db_url_is_embedded(tmp_path: Path) -> None:
+    """Пустая строка в реестре — это «не задано», а не «открывай ''»."""
+    entry = ProjectEntry(name="demo", path=str(tmp_path), db_url="")
+    assert db_url_for_entry(entry) == f"sqlite:///{tmp_path.resolve() / '.cod-doc' / 'state.db'}"
+
+
+def test_db_url_for_entry_does_not_touch_disk(tmp_path: Path) -> None:
+    """Резолв URL чистый: каталог `.cod-doc/` создаёт уже `db_for_entry`."""
+    repo = tmp_path / "untouched"
+    repo.mkdir()
+    db_url_for_entry(ProjectEntry(name="demo", path=str(repo)))
+    assert not (repo / ".cod-doc").exists()
