@@ -79,18 +79,38 @@ def _id_prefix_from_plan_scope(scope: str) -> str:
     return "".join(letters[:3]) or "TSK"
 
 
-# Splits an AI-generated narrative back into its semantic parts so the UI can
-# render them with hierarchy instead of a wall of text. The canonical shape we
-# emit is "[Section-N.M Title] As a Role, I want X, so that Y" — but the model
-# does occasionally drop the section header or use "As an", so the regex makes
-# the framing optional and accepts both articles.
-_NARRATIVE_PARSER = re.compile(
-    r"^\s*"
-    r"(?:\[\s*(?P<header>[^\]]+)\]\s*)?"  # optional [Section-N.M Title]
-    r"(?:As an?\s+(?P<role>[^,]+?),\s*)?"  # optional "As a/an Role,"
-    r"I want\s+(?P<want>.+?)"
-    r",\s*so that\s+(?P<so_that>.+?)\s*$",
-    re.IGNORECASE | re.DOTALL,
+# Splits a narrative back into its semantic parts so the UI can render them with
+# hierarchy instead of a wall of text. The canonical shape we emit is
+# "[Section-N.M Title] As a Role, I want X, so that Y" — but the model does
+# occasionally drop the section header or use "As an", so the framing is
+# optional and both articles are accepted.
+#
+# ADO-144: раньше здесь был один английский регекс, и на русском корпусе он не
+# срабатывал ни разу — карточки уходили в сырой абзац, а секция (которая тогда
+# выводилась из `id_hint`) не выводилась вообще. Теперь это список паттернов:
+# побеждает первый совпавший, ни один не совпал — прежний честный fallback в
+# `raw`. Порядок значим только тем, что английский паттерн стоит первым как
+# исторически основной; пересечений между языками нет.
+_NARRATIVE_PATTERNS = (
+    # EN: "[US-1.1 Title] As a Role, I want X, so that Y"
+    re.compile(
+        r"^\s*"
+        r"(?:\[\s*(?P<header>[^\]]+)\]\s*)?"  # optional [Section-N.M Title]
+        r"(?:As an?\s+(?P<role>[^,]+?),\s*)?"  # optional "As a/an Role,"
+        r"I want\s+(?P<want>.+?)"
+        r",\s*so that\s+(?P<so_that>.+?)\s*$",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    # RU: «[US-1.1 Заголовок] Как <роль>, я хочу <X>, чтобы <Y>».
+    # Запятая перед «чтобы» необязательна: в живом корпусе встречается и так.
+    re.compile(
+        r"^\s*"
+        r"(?:\[\s*(?P<header>[^\]]+)\]\s*)?"
+        r"(?:Как\s+(?P<role>[^,]+?),\s*)?"
+        r"я\s+хочу\s+(?P<want>.+?)"
+        r"\s*,?\s*чтобы\s+(?P<so_that>.+?)\s*$",
+        re.IGNORECASE | re.DOTALL,
+    ),
 )
 
 # Header inside the brackets is sometimes "US-1.1 Title", sometimes just "Title".
@@ -105,7 +125,7 @@ def _parse_narrative(text: str) -> dict[str, str]:
     """
     if not text:
         return {"raw": "", "id_hint": "", "title": "", "role": "", "want": "", "so_that": ""}
-    m = _NARRATIVE_PARSER.match(text)
+    m = next((hit for p in _NARRATIVE_PATTERNS if (hit := p.match(text))), None)
     if not m:
         return {"raw": text, "id_hint": "", "title": "", "role": "", "want": "", "so_that": ""}
     header = (m.group("header") or "").strip()
@@ -139,13 +159,46 @@ def _persona_hue(persona: str) -> str:
 # ── Stories list ───────────────────────────────────────────────────────
 
 
-# US-1.x → "1", US-1 → "1", anything else → "?".
+# US-1.x → "1", US-1 → "1", anything else → "".
 _SECTION_PREFIX = re.compile(r"^([A-Z]{2,5}-?)(\d+)(?:\.\d+)?")
+
+# Ключ корзины для историй без секции. Один и тот же во всех местах: раньше
+# список писал "?", а роут анализа сравнивал сырую "" — из-за этого анализ
+# несекционированной группы не мог совпасть ни с одной историей и всегда давал
+# 404. Теперь сентинел один.
+NO_SECTION = "_none"
 
 
 def _section_of(id_hint: str) -> str:
+    """Legacy-фолбэк: секция из id в прозе нарратива (`[US-1.1 …]`).
+
+    ADO-143 сделал секцию хранимой. Этот вывод оставлен только для историй,
+    которым секцию ещё не проставили: если у истории есть ``section_id``, он не
+    используется вовсе.
+    """
     m = _SECTION_PREFIX.match(id_hint or "")
     return m.group(2) if m else ""
+
+
+# ADO-140: ключи сортировки списка. Ранг приоритета — тот же порядок, что в
+# tasks.py::_PRIO_RANK; неизвестное значение уезжает в конец.
+_PRIO_RANK: dict[str, int] = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+_STATUS_RANK: dict[str, int] = {"draft": 0, "accepted": 1, "delivered": 2, "deferred": 3}
+_SORT_KEYS = ("id", "priority", "status", "updated")
+
+
+def _sort_stories(items: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
+    """Отсортировать карточки внутри одной группы. `story_id` — тай-брейк."""
+    if sort == "priority":
+        return sorted(items, key=lambda s: (_PRIO_RANK.get(s["priority"], 99), s["story_id"]))
+    if sort == "status":
+        return sorted(items, key=lambda s: (_STATUS_RANK.get(s["status"], 99), s["story_id"]))
+    if sort == "updated":
+        # Два прохода стабильной сортировкой, как для context-доков выше:
+        # свежие сверху, истории без даты — в конец.
+        by_date = sorted(items, key=lambda s: s["last_updated"], reverse=True)
+        return sorted(by_date, key=lambda s: s["last_updated"] == "")
+    return sorted(items, key=lambda s: s["story_id"])
 
 
 @router.get("/p/{slug}/stories", response_class=HTMLResponse)
@@ -154,12 +207,16 @@ def stories_list(
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
     group_by: str = "section",
+    sort: str = "id",
 ) -> HTMLResponse:
     """Stories list with parsed narratives, task counts, plan chips, grouping.
 
-    ``group_by`` ∈ {section, persona, none}: section groups by US-N (the
-    section number in the id_hint), persona by literal persona name, none
-    shows a single flat grid.
+    ``group_by`` ∈ {section, persona, none}: section groups by the story's
+    stored section (ADO-143), persona by literal persona name, none shows a
+    single flat grid.
+
+    ``sort`` ∈ {id, priority, status, updated} orders cards **inside** each
+    group (ADO-140); an unknown value falls back to ``id``.
     """
     from cod_doc.services import doc_service as docs_svc
 
@@ -270,6 +327,17 @@ def stories_list(
         except Exception:
             coverage = None
 
+    # ADO-143: реестр секций проекта. Один запрос, дальше только словари —
+    # раскладка по бакетам и порядок групп берутся отсюда, а не из прозы.
+    section_rows = stories.list_sections(session, project_db_id)
+    section_titles: dict[int, dict[str, Any]] = {
+        sec.row_id: {"key": sec.key, "title": sec.title, "position": sec.position}
+        for sec in section_rows
+        if sec.row_id is not None
+    }
+    section_order: dict[str, int] = {sec.key: sec.position for sec in section_rows}
+    section_label: dict[str, str] = {sec.key: sec.title for sec in section_rows}
+
     # Lookups for task counts + the set of plans linked tasks live in.
     # One pass per story — N+1, but story counts in real projects are small.
     enriched: list[dict[str, Any]] = []
@@ -288,7 +356,12 @@ def stories_list(
                 plan_scopes.append(plan.scope)
 
         parsed = _parse_narrative(s.narrative)
-        section = _section_of(parsed.get("id_hint", "")) or "?"
+        # ADO-143: хранимая секция — источник истины. Вывод из прозы остаётся
+        # только для историй, которым секцию ещё не проставили.
+        section = section_titles.get(s.section_id, {}).get("key") if s.section_id else None
+        if section is None:
+            legacy = _section_of(parsed.get("id_hint", ""))
+            section = legacy or NO_SECTION
 
         enriched.append(
             {
@@ -303,6 +376,7 @@ def stories_list(
                 "tasks_total": tasks_total,
                 "tasks_done": tasks_done,
                 "plan_scopes": plan_scopes,
+                "last_updated": s.last_updated.isoformat() if s.last_updated else "",
             }
         )
 
@@ -311,6 +385,7 @@ def stories_list(
     from cod_doc.services import section_summary_service as summaries
 
     summary_path = proj.entry.cod_doc_dir / "section_summaries.json"
+    sort_key = sort if sort in _SORT_KEYS else "id"
     groups: list[dict[str, Any]] = []
     if group_by == "persona":
         persona_bucket: dict[str, list[dict[str, Any]]] = {}
@@ -322,7 +397,7 @@ def stories_list(
                     "key": key,
                     "label": key,
                     "hue": _persona_hue(key),
-                    "stories": persona_bucket[key],
+                    "stories": _sort_stories(persona_bucket[key], sort_key),
                     "summary": None,
                 }
             )
@@ -332,7 +407,7 @@ def stories_list(
                 "key": "",
                 "label": "",
                 "hue": "accent",
-                "stories": enriched,
+                "stories": _sort_stories(enriched, sort_key),
                 "summary": None,
             }
         ]
@@ -341,23 +416,36 @@ def stories_list(
         for st in enriched:
             section_bucket.setdefault(st["section"], []).append(st)
 
-        # Natural sort: numeric sections first ("1", "2", …), then "?" last.
-        def _sort_key(k: str) -> tuple[int, str]:
-            return (0 if k.isdigit() else 1, f"{int(k):04}" if k.isdigit() else k)
+        def _group_sort_key(k: str) -> tuple[int, int, str]:
+            """Порядок групп: заведённые секции по position, потом legacy-числа
+            из прозы, и последней — корзина без секции."""
+            if k == NO_SECTION:
+                return (2, 0, "")
+            if k in section_order:
+                return (0, section_order[k], k)
+            return (1, int(k) if k.isdigit() else 0, k)
 
         # Load all section summaries in one pass (cheap JSON read).
         section_map = {sec: [s["story_id"] for s in items] for sec, items in section_bucket.items()}
         loaded_summaries = summaries.load_all(summary_path, section_map)
 
-        for key in sorted(section_bucket.keys(), key=_sort_key):
-            label = f"Section {key}" if key.isdigit() else "Unsorted"
+        for key in sorted(section_bucket.keys(), key=_group_sort_key):
+            if key == NO_SECTION:
+                label = "No section"
+            elif key in section_label:
+                label = section_label[key]
+            else:
+                label = f"Section {key}"
             summary = loaded_summaries.get(key)
             groups.append(
                 {
                     "key": key,
                     "label": label,
+                    # Корзина без секции не анализируется ИИ: у неё нет темы,
+                    # это просто «ещё не разложено».
+                    "analyzable": key != NO_SECTION,
                     "hue": "accent",
-                    "stories": section_bucket[key],
+                    "stories": _sort_stories(section_bucket[key], sort_key),
                     "summary": (
                         {
                             "text": summary.text,
@@ -378,6 +466,8 @@ def stories_list(
             "stories": enriched,
             "groups": groups,
             "group_by": group_by if group_by in ("section", "persona", "none") else "section",
+            "sort": sort_key,
+            "sort_keys": list(_SORT_KEYS),
             "totals": {
                 "stories": len(enriched),
                 "draft": sum(1 for s in enriched if s["status"] == "draft"),
@@ -652,12 +742,23 @@ def stories_section_analyze(
     cfg = get_config()
     summary_path = proj.entry.cod_doc_dir / "section_summaries.json"
 
-    # Collect every story whose parsed id_hint sits in the requested section.
+    # Собрать истории секции ровно тем же правилом, что и список: сначала
+    # хранимая секция (ADO-143), для непроставленных — вывод из прозы.
+    # Раньше эти два места расходились: список писал сентинел "?", а здесь
+    # сравнивалась сырая "" — из-за чего анализ никогда не совпадал.
     rows = stories.list_for_project(session, project_db_id)
+    section_keys = {
+        sec.row_id: sec.key
+        for sec in stories.list_sections(session, project_db_id)
+        if sec.row_id is not None
+    }
     section_stories: dict[str, str] = {}
     for s in rows:
-        parsed = _parse_narrative(s.narrative)
-        if _section_of(parsed.get("id_hint", "") or "") == section_key:
+        stored = section_keys.get(s.section_id) if s.section_id else None
+        if stored is None:
+            parsed = _parse_narrative(s.narrative)
+            stored = _section_of(parsed.get("id_hint", "") or "") or NO_SECTION
+        if stored == section_key:
             section_stories[s.story_id] = s.narrative
 
     if not section_stories:

@@ -130,14 +130,27 @@
         {% endif %}
       </h2>
 
+      {# Обе панели переносят чужой параметр: смена Group не должна сбрасывать
+         Sort и наоборот (ADO-140). #}
+      {% set _sort_q = "&sort=" ~ sort if sort and sort != "id" else "" %}
+      {% set _group_q = "&group_by=" ~ group_by if group_by and group_by != "section" else "" %}
+
       <nav class="view-toggle stories-group-toggle" aria-label="Group stories">
         <span class="muted-tiny" style="padding: 0 var(--space-2); align-self:center;">Group:</span>
         <a class="view-btn {% if group_by == 'section' %}view-btn-active{% endif %}"
-           href="/p/{{ project.name }}/stories?group_by=section">Section</a>
+           href="/p/{{ project.name }}/stories?group_by=section{{ _sort_q }}">Section</a>
         <a class="view-btn {% if group_by == 'persona' %}view-btn-active{% endif %}"
-           href="/p/{{ project.name }}/stories?group_by=persona">Persona</a>
+           href="/p/{{ project.name }}/stories?group_by=persona{{ _sort_q }}">Persona</a>
         <a class="view-btn {% if group_by == 'none' %}view-btn-active{% endif %}"
-           href="/p/{{ project.name }}/stories?group_by=none">Flat</a>
+           href="/p/{{ project.name }}/stories?group_by=none{{ _sort_q }}">Flat</a>
+      </nav>
+
+      <nav class="view-toggle stories-sort-toggle" aria-label="Sort stories">
+        <span class="muted-tiny" style="padding: 0 var(--space-2); align-self:center;">Sort:</span>
+        {% for key in sort_keys %}
+          <a class="view-btn {% if sort == key %}view-btn-active{% endif %}"
+             href="/p/{{ project.name }}/stories?sort={{ key }}{{ _group_q }}">{{ key }}</a>
+        {% endfor %}
       </nav>
     </div>
 
@@ -155,8 +168,9 @@
 
             {# Section AI summary — only for section grouping (each section
                has a stable key the summary service can use). Persona / flat
-               views skip this. #}
-            {% if group_by == 'section' and grp.key and grp.key != '?' %}
+               views skip this, and so does the "No section" bucket: it has no
+               subject to summarise, it is just the not-yet-sorted pile. #}
+            {% if group_by == 'section' and grp.key and grp.analyzable %}
               {% with section=grp.key, summary=grp.summary, error='' %}
                 {% include "_frag/section_summary.html" %}
               {% endwith %}
