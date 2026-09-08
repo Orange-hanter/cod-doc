@@ -88,6 +88,7 @@ from cod_doc.cli.link import link
 from cod_doc.cli.plan import plan
 from cod_doc.cli.revision import revision
 from cod_doc.cli.routine import routine
+from cod_doc.cli.scenario import scenario
 from cod_doc.cli.story import story
 from cod_doc.cli.task import task
 from cod_doc.config import Config
@@ -117,6 +118,7 @@ main.add_command(mcp_server)
 main.add_command(task)
 main.add_command(plan)
 main.add_command(story)
+main.add_command(scenario)
 main.add_command(doc)
 main.add_command(link)
 main.add_command(revision)
