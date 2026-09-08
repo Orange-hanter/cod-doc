@@ -562,38 +562,23 @@ def task_checkout(
     refuses the direct transition. Until ADO-157 the command existed only as
     the MCP tool, so a CLI-only workflow could not follow the protocol at all.
     """
-    from cod_doc.domain.entities import actor_kind_for_author
     from cod_doc.infra.db import transactional
-    from cod_doc.services import activity_service, checkout_service
+    from cod_doc.services import checkout_service
     from cod_doc.services.checkout_service import CheckoutConflictError, CheckoutStatusError
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
+    # Событие `task.checked_out` пишет сам сервис — второй emit у вызывающего
+    # давал два события на одно действие (см. checkout_service.py).
     try:
         with transactional(sf) as session:
-            project_id = _require_project_id(session, project)
             result = checkout_service.checkout(
                 session,
                 task_id,
                 agent=agent,
                 expected_statuses=list(expected_statuses) or None,
             )
-            if not result.idempotent:
-                activity_service.emit(
-                    session,
-                    project_id,
-                    "task.checked_out",
-                    actor_kind=actor_kind_for_author(agent),
-                    actor_id=agent,
-                    scope_kind="task",
-                    scope_id=task_id,
-                    payload={
-                        "from_status": result.expected_status_at_checkout,
-                        "to_status": result.new_status,
-                    },
-                    summary=f"Task {task_id} checked out by {agent}",
-                )
     except LookupError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
         sys.exit(1)
@@ -628,30 +613,17 @@ def task_release(
     force: bool,
 ) -> None:
     """Release the checkout lock on TASK_ID. Status is left unchanged."""
-    from cod_doc.domain.entities import actor_kind_for_author
     from cod_doc.infra.db import transactional
-    from cod_doc.services import activity_service, checkout_service
+    from cod_doc.services import checkout_service
     from cod_doc.services.checkout_service import CheckoutConflictError
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
+    # `task.released` тоже пишет сервис.
     try:
         with transactional(sf) as session:
-            project_id = _require_project_id(session, project)
             result = checkout_service.release(session, task_id, agent=agent, force=force)
-            if not result.idempotent:
-                activity_service.emit(
-                    session,
-                    project_id,
-                    "task.released",
-                    actor_kind=actor_kind_for_author(agent),
-                    actor_id=agent,
-                    scope_kind="task",
-                    scope_id=task_id,
-                    payload={"force": force},
-                    summary=f"Task {task_id} released by {agent}",
-                )
     except LookupError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
         sys.exit(1)

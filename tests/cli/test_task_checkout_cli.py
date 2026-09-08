@@ -163,6 +163,33 @@ def test_unknown_task_is_reported(tmp_path: Path) -> None:
     assert "not found" in r.output
 
 
+def test_one_activity_event_per_action(tmp_path: Path) -> None:
+    """Событие пишет сервис. Обёртка, пишущая своё, даёт два на одно действие.
+
+    Так и было в MCP-туле `task_checkout`, откуда команда и списана: сервис
+    писал `task.checked_out` с payload `{"old_status": ...}`, а тул — второй
+    такой же с `{"from_status": ..., "to_status": ...}`.
+    """
+    from sqlalchemy import select
+
+    from cod_doc.infra.models import ActivityEventModel
+
+    runner = _init_project(tmp_path)
+    _seed_task()
+
+    runner.invoke(main, ["task", "checkout", TASK, "-p", PROJECT, "--agent", "human:a"])
+    runner.invoke(main, ["task", "release", TASK, "-p", PROJECT, "--agent", "human:a"])
+
+    for session in _session():
+        rows = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.scope_id == TASK)
+        ).scalars()
+        kinds = [r.kind for r in rows]
+
+    assert kinds.count("task.checked_out") == 1, kinds
+    assert kinds.count("task.released") == 1, kinds
+
+
 def test_full_protocol_without_mcp(tmp_path: Path) -> None:
     """pending → checkout → in-progress → complete, ни одного MCP-вызова."""
     runner = _init_project(tmp_path)
