@@ -492,31 +492,32 @@ GROUP BY s.row_id;
 ```sql
 CREATE VIEW document_body AS
 SELECT
-  d.row_id AS document_id,
-  d.preamble
-    || CASE
-         WHEN d.preamble <> '' AND COALESCE(s.body, '') <> ''
-         THEN E'\n\n'
-         ELSE ''
-       END
-    || COALESCE(s.body, '') AS body
-FROM document d
-LEFT JOIN (
+  document_id,
+  preamble
+    || CASE WHEN preamble <> '' AND sec <> '' THEN E'\n\n' ELSE '' END
+    || sec AS body
+FROM (
   SELECT
-    document_id,
-    string_agg(
-      repeat('#', level) || ' ' || heading || E'\n\n' || body,
-      E'\n\n'
-      ORDER BY position
-    ) AS body
-  FROM section
-  GROUP BY document_id
-) s ON s.document_id = d.row_id;
+    d.row_id AS document_id,
+    d.preamble AS preamble,
+    COALESCE((
+      SELECT string_agg(
+        repeat('#', s.level) || ' ' || s.heading || E'\n\n' || s.body,
+        E'\n\n'
+        ORDER BY s.position
+      )
+      FROM section s
+      WHERE s.document_id = d.row_id
+    ), '') AS sec
+  FROM document d
+) AS t;
 ```
 
-> Реализовано в `cod_doc/infra/migrations/versions/20260825_0025_projection_fidelity.py`: SQLite-вариант использует `group_concat(... , char(10) || char(10))` поверх упорядоченного подзапроса (`SELECT ... ORDER BY position`); Postgres — `string_agg(... , E'\n\n' ORDER BY position)`. Оба варианта возвращают идентичный текст.
+> Реализовано в `cod_doc/infra/migrations/versions/20260908_0030_document_body_pushdown.py`: SQLite-вариант использует `group_concat(... , char(10) || char(10))` поверх упорядоченного подзапроса (`SELECT ... WHERE document_id = d.row_id ORDER BY position`); Postgres — `string_agg(... , E'\n\n' ORDER BY position)`. Оба варианта возвращают идентичный текст.
 
-> **ADO-010 (находка F7).** До миграции 0025 view склеивал `preamble` с первым заголовком без разделителя — `preamble` хранится без хвостового перевода строки, поэтому на выходе получалось `> …заранее.## 1. Зачем`. Это была порча контента, а не форматирование: любой `doc export` ломал документ. Разделитель `\n\n` вставляется только когда обе части непусты; агрегат секций вынесен в производную таблицу, чтобы условие могло его проверить, не повторяя `group_concat`.
+> **ADO-010 (находка F7).** До миграции 0025 view склеивал `preamble` с первым заголовком без разделителя — `preamble` хранится без хвостового перевода строки, поэтому на выходе получалось `> …заранее.## 1. Зачем`. Это была порча контента, а не форматирование: любой `doc export` ломал документ. Разделитель `\n\n` вставляется только когда обе части непусты; агрегат секций вычисляется один раз во внутреннем `SELECT`, чтобы условие могло его проверить, не повторяя `string_agg`.
+
+> **Производительность (миграция 0030).** Форма 0025 собирала секции в производной таблице с `GROUP BY document_id` и джойнила её к `document`. SQLite не проталкивает внешний `WHERE document_id = ?` внутрь такой группировки: он материализует агрегат по **всей** таблице `section` и лишь потом берёт одну строку, поэтому чтение одного документа стоило O(все секции проекта), а обход всех документов — O(документы × секции). На корпусе cod-doc (150 документов, 1200 секций) 150 одиночных чтений занимали 250–450 мс; на этом стояла страница `GET /p/{slug}`, которая гоняет `detect_project_drift` по всем документам. Коррелированный подзапрос даёт `SEARCH section USING INDEX ix_section_position (document_id=?)` — те же 150 чтений занимают 6 мс, чтение всех строк разом не пострадало (8.4 → 5.1 мс). Текст на выходе побайтово тот же — это обязательное условие, от него считается `document.projection_hash`.
 
 ### 4.3 `ready_tasks`
 

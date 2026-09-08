@@ -297,8 +297,21 @@ class Project:
             "in_progress": sum(1 for t in tasks if t.status == TaskStatus.IN_PROGRESS),
             "done": sum(1 for t in tasks if t.status == TaskStatus.DONE),
             "failed": sum(1 for t in tasks if t.status == TaskStatus.FAILED),
-            "status": self.state.get("status", "unknown"),
-            "last_run": self.state.get("last_run"),
+            **self.run_state(),
+        }
+
+    def run_state(self) -> dict[str, Any]:
+        """Поля прогона из `state.yaml` — та часть `stats()`, что не трогает `tasks.yaml`.
+
+        `stats()` разбирает legacy-`tasks.yaml` целиком (в этом репозитории —
+        82 КБ, ~44 мс), а на DB-проекте счётчики оттуда всё равно перекрываются
+        агрегатами из БД. Вызывающий, которому нужны только `status`/`last_run`,
+        берёт их отсюда.
+        """
+        state = self.state
+        return {
+            "status": state.get("status", "unknown"),
+            "last_run": state.get("last_run"),
         }
 
     @staticmethod
