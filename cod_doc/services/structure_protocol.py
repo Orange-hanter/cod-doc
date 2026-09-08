@@ -42,6 +42,8 @@ MAX_UNCOMPRESSED_BYTES: Final[int] = 20 * 1024 * 1024
 MAX_COMPRESSED_BYTES: Final[int] = 10 * 1024 * 1024
 MAX_DECOMPRESSION_RATIO: Final[int] = 50
 MAX_ENTITIES: Final[int] = 5000
+MAX_CONTRACTS: Final[int] = 10_000
+MAX_BOUNDARIES: Final[int] = 1000
 MAX_EDGES: Final[int] = 15_000
 MAX_TESTS: Final[int] = 10_000
 MAX_OBLIGATIONS: Final[int] = 10_000
@@ -191,11 +193,17 @@ def validate_structure_facts(payload: Mapping[str, object]) -> dict[str, object]
     facts = as_object(data.get("facts"), label="facts")
     boundaries = as_list(facts.get("boundaries"), label="facts.boundaries")
     entities = as_list(facts.get("entities"), label="facts.entities")
-    as_list(facts.get("contracts"), label="facts.contracts")
+    contracts = as_list(facts.get("contracts"), label="facts.contracts")
     dependencies = as_list(facts.get("dependencies"), label="facts.dependencies")
     test_cases = as_list(facts.get("testCases"), label="facts.testCases")
     if len(entities) > MAX_ENTITIES:
         raise StructureProtocolError("entity limit exceeded")
+    # Каждый контракт материализуется и в code_contract, и в doc_code_claim,
+    # поэтому без потолка один payload вставлял бы сотни тысяч строк.
+    if len(contracts) > MAX_CONTRACTS:
+        raise StructureProtocolError("contract limit exceeded")
+    if len(boundaries) > MAX_BOUNDARIES:
+        raise StructureProtocolError("boundary limit exceeded")
     if len(dependencies) > MAX_EDGES:
         raise StructureProtocolError("dependency limit exceeded")
     if len(test_cases) > MAX_TESTS:

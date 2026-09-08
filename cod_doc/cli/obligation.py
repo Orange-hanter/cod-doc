@@ -61,6 +61,7 @@ def obligation_export(
             payload["propertyDrafts"] = generate_property_drafts(
                 as_list(payload.get("obligations"), label="obligations")
             )
-    click.echo(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
-    if not as_json:
-        click.echo(f"obligations={len(as_list(payload.get('obligations'), label='obligations'))}")
+    if as_json:
+        click.echo(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+        return
+    click.echo(f"obligations={len(as_list(payload.get('obligations'), label='obligations'))}")

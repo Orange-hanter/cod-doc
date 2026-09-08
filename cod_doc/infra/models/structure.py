@@ -245,7 +245,8 @@ class StructureWaiverModel(Base):
     finding_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
     owner: Mapped[str] = mapped_column(String(64), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
-    scope: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # Ширина как у снапшота и находки — партиция адресуется везде одинаково.
+    scope: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
@@ -266,7 +267,9 @@ class StructureFindingModel(Base):
     )
     # Партиция, внутри которой находка сверяется. Пустая строка — «весь
     # репозиторий», единственный вариант до появления партиционирования.
-    scope: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # Ширина как у снапшота: иначе длинный префикс прошёл бы на SQLite
+    # и упал на Postgres.
+    scope: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
     rule_id: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="open")

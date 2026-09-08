@@ -18,6 +18,7 @@ from cod_doc.infra.models.structure import (
     StructureLinkSuggestionModel,
     StructureWaiverModel,
 )
+from cod_doc.services import activity_service
 from cod_doc.services.structure_protocol import (
     as_int,
     as_list,
@@ -148,8 +149,17 @@ def compute_structure_drift(
     obligations_export: dict[str, object],
     confirmed_claims: Sequence[object] | None = None,
     link_suggestions: Sequence[object] | None = None,
+    scope: str = "",
 ) -> dict[str, object]:
-    """Deterministic structure/docs/scenario drift. Not projection drift."""
+    """Deterministic structure/docs/scenario drift. Not projection drift.
+
+    ``scope`` непустой означает, что снапшот описывает лишь часть репозитория.
+    Такой снапшот не вправе утверждать, что контракт отсутствует: он его просто
+    не сканировал. Поэтому находки «по отсутствию» заводятся только для
+    субъектов, которые партиция действительно видела, а докс-глобальные
+    проверки — только на неразбитом прогоне. Иначе каждая из N партиций
+    штампует свою копию одной и той же ложной находки.
+    """
     facts = _payload_facts(facts_payload)
     provenance = as_object(facts_payload.get("provenance") or {}, label="provenance")
     contract_ids = {
@@ -177,10 +187,26 @@ def compute_structure_drift(
     stale = _stale_graph_finding(provenance, snapshot_fp)
     if stale is not None:
         findings.append(stale)
+    partitioned = bool(scope)
     findings.extend(
-        _obligation_findings(obligations, suggestion_by, contract_ids, entity_ids, snapshot_fp)
+        _obligation_findings(
+            obligations,
+            suggestion_by,
+            contract_ids,
+            entity_ids,
+            snapshot_fp,
+            partitioned=partitioned,
+        )
     )
-    findings.extend(_claim_findings(confirmed_claims or [], contract_ids, entity_ids, snapshot_fp))
+    findings.extend(
+        _claim_findings(
+            confirmed_claims or [],
+            contract_ids,
+            entity_ids,
+            snapshot_fp,
+            partitioned=partitioned,
+        )
+    )
     if assessment_payload:
         findings.extend(_scenario_gap_findings(assessment_payload, snapshot_fp))
         findings.extend(_hint_findings(assessment_payload, snapshot_fp))
@@ -220,8 +246,11 @@ def _obligation_findings(
     contract_ids: set[str],
     entity_ids: set[str],
     snapshot_fp: str,
+    *,
+    partitioned: bool = False,
 ) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
+    known = contract_ids | entity_ids
     for raw in obligations:
         obligation = as_object(raw, label="obligation")
         if obligation.get("status") != "confirmed":
@@ -231,7 +260,14 @@ def _obligation_findings(
             for item in as_list(obligation.get("contractRefs") or [], label="contractRefs")
         ]
         obl_id = str(obligation.get("id") or "")
+        if refs and partitioned and not any(ref in known for ref in refs):
+            # Ссылка ведёт в чужую партицию — здесь о ней сказать нечего.
+            continue
         if not refs:
+            if partitioned:
+                # Обязательство без ссылок — факт документации, а не кода: на
+                # партиционированном прогоне он повторился бы N раз.
+                continue
             suggestion = as_object(suggestion_by.get(obl_id) or {}, label="suggestion")
             candidates = as_list(suggestion.get("candidates") or [], label="candidates")
             findings.append(
@@ -270,6 +306,8 @@ def _claim_findings(
     contract_ids: set[str],
     entity_ids: set[str],
     snapshot_fp: str,
+    *,
+    partitioned: bool = False,
 ) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
     for raw_claim in confirmed_claims:
@@ -284,6 +322,11 @@ def _claim_findings(
             else subject in contract_ids or subject in entity_ids
         )
         if exists:
+            continue
+        if partitioned:
+            # Партиция не сканировала этот субъект — «не нашли» здесь не
+            # означает «исчез». Иначе один подтверждённый claim штампует
+            # ложную находку в каждой партиции, кроме своей.
             continue
         findings.append(
             _finding(
@@ -499,6 +542,16 @@ def confirm_obligation_link(
         existing.subject_ref = contract_ref
         existing.updated = now
     session.flush()
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "structure.link_confirmed",
+        author,
+        scope_kind="doc_code_claim",
+        scope_id=claim_id,
+        payload={"obligationRef": obligation_ref, "contractRef": contract_ref},
+        summary=f"structure link confirmed {obligation_ref} → {contract_ref}",
+    )
     return {"claimId": claim_id, "status": "confirmed", "contractRef": contract_ref}
 
 
@@ -687,6 +740,20 @@ def upsert_waiver(
         row.reason = reason
         row.expires_at = expires_at
     session.flush()
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "structure.waiver_set",
+        owner,
+        scope_kind="structure_waiver",
+        scope_id=finding_fingerprint,
+        payload={
+            "scope": scope,
+            "reason": reason,
+            "expiresAt": expires_at.isoformat(),
+        },
+        summary=f"structure waiver {finding_fingerprint[:16]} until {expires_at.date()}",
+    )
     return {
         "findingFingerprint": finding_fingerprint,
         "owner": owner,

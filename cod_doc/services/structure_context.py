@@ -110,7 +110,12 @@ def build_structure_context(
         session, project_id, project_slug=project_slug, head_sha=snapshot.head_sha
     )
     relevant_obligations = _filter_obligations(obligations, selected, selected_entities)
-    gaps = _gap_findings(session, project_id, selected)
+    gaps = _gap_findings(
+        session,
+        project_id,
+        selected,
+        {str(item["id"]) for item in selected_contracts if item.get("id")},
+    )
     scenarios = _filter_scenarios(assessment_payload, selected, relevant_obligations)
     suggested_files = sorted({str(item["path"]) for item in selected_entities if item.get("path")})[
         :_SUGGESTED_FILES
@@ -232,11 +237,38 @@ def _filter_scenarios(
     return scenarios[:MAX_CONTEXT_GAPS]
 
 
+_CODE_REF_PREFIXES = ("entity:", "contract:")
+
+
+def _gap_is_relevant(
+    row: StructureFindingModel,
+    selected: set[str],
+    contract_refs: set[str],
+) -> bool:
+    refs = {str(item) for item in (row.subject_refs_json or [])}
+    if not refs or refs & selected or refs & contract_refs:
+        return True
+    # Ни один субъект не адресует код (это id обязательства, claim'а или
+    # `structure:graph`) — находка общерепозиторная и относится к любому срезу.
+    return not any(ref.startswith(_CODE_REF_PREFIXES) for ref in refs)
+
+
 def _gap_findings(
     session: Session,
     project_id: int,
     selected: set[str],
+    contract_refs: set[str],
 ) -> list[dict[str, object]]:
+    """Активные находки, относящиеся к выбранному срезу.
+
+    ``selected`` содержит только observedId сущностей и концы рёбер, а субъекты
+    находок — это id обязательств, claim'ов и контрактов. Сопоставление лишь с
+    ``selected`` почти никогда не срабатывало, и ``gaps`` приходил пустым;
+    запасная ветка ``or not selected`` была недостижима, потому что seeds по
+    умолчанию берутся из первых сущностей. Поэтому сверяем и с контрактами
+    среза, а находки, чьи субъекты вообще не принадлежат этому снапшоту
+    (например ``structure:graph``), считаем общерепозиторными и оставляем.
+    """
     finding_rows = list(
         session.execute(
             select(StructureFindingModel).where(
@@ -258,7 +290,7 @@ def _gap_findings(
             "remediationTarget": row.remediation_target,
         }
         for row in finding_rows
-        if selected.intersection({str(x) for x in (row.subject_refs_json or [])}) or not selected
+        if _gap_is_relevant(row, selected, contract_refs)
     ]
     waived = apply_waivers(session, project_id, raw_findings)
     return triage_findings(waived, limit=MAX_CONTEXT_GAPS)

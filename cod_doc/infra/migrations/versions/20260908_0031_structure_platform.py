@@ -232,7 +232,7 @@ def upgrade() -> None:
         sa.Column("finding_fingerprint", sa.String(128), nullable=False),
         sa.Column("owner", sa.String(64), nullable=False),
         sa.Column("reason", sa.Text, nullable=False),
-        sa.Column("scope", sa.String(255), nullable=False, server_default=""),
+        sa.Column("scope", sa.String(512), nullable=False, server_default=""),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint(
@@ -249,7 +249,7 @@ def upgrade() -> None:
             sa.ForeignKey("project.row_id", ondelete="CASCADE"),
             nullable=False,
         ),
-        sa.Column("scope", sa.String(255), nullable=False, server_default=""),
+        sa.Column("scope", sa.String(512), nullable=False, server_default=""),
         sa.Column("fingerprint", sa.String(128), nullable=False),
         sa.Column("rule_id", sa.String(64), nullable=False),
         sa.Column("status", sa.String(32), nullable=False, server_default="open"),

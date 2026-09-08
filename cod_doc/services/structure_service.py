@@ -112,15 +112,28 @@ def _get_or_create_snapshot(
 ) -> tuple[CodeStructureSnapshotModel, bool]:
     validated = validate_structure_facts(payload)
     fingerprint = str(validated["fingerprint"])
+    incoming_provenance = as_object(validated.get("provenance"), label="provenance")
     existing = get_snapshot_by_fingerprint(session, project_id, fingerprint)
     if existing is not None:
+        incoming_head = str(incoming_provenance.get("headSha") or "")
+        incoming_branch = str(incoming_provenance.get("branchRef") or "unknown")
+        if incoming_head != existing.head_sha or incoming_branch != existing.branch_ref:
+            # Фингерпринт продюсера включает headSha, поэтому расхождение
+            # означает подделанный или несогласованный payload. Молча вернуть
+            # старый снапшот нельзя: вызов отрапортовал бы успех, а у ветки/PR
+            # не появилось бы ни указателя, ни адресуемого по SHA снапшота.
+            raise StructureProtocolError(
+                f"fingerprint {fingerprint[:12]} already stored for "
+                f"{existing.branch_ref}@{existing.head_sha[:12]}, "
+                f"payload claims {incoming_branch}@{incoming_head[:12]}"
+            )
         # Тир не должен залипать на том, который приехал первым: те же факты,
         # подтверждённые подписанным CI, обязаны поднять доверие снапшота.
         if is_more_trusted(trust_tier, existing.trust_tier):
             existing.trust_tier = trust_tier
             session.flush()
         return existing, True
-    provenance = as_object(validated.get("provenance"), label="provenance")
+    provenance = incoming_provenance
     compressed, digest, size = compress_payload(validated)
     now = datetime.now(UTC)
     pr_raw = provenance.get("prNumber")
@@ -443,8 +456,17 @@ def ingest_structure(
     if not idempotent:
         counts = materialize_indexes(session, snapshot)
         published = _publish_current(session, snapshot)
-        _gc_branch(session, project_id, snapshot.branch_ref, snapshot.scope)
-        bootstrap = _bootstrap_draft_claims(session, project_id, snapshot)
+        # Недоверенный снапшот хранится для осмотра, но не двигает общее
+        # состояние. Ретеншн считается по ветке, которую называет сам payload,
+        # поэтому серия untrusted-ingest'ов с `branchRef: main` вытесняла
+        # доверенную историю; draft-claims из непроверенного payload — та же
+        # категория. REST-ingest смонтирован без аутентификации, так что это
+        # единственная преграда.
+        if can_publish_current(snapshot.trust_tier):
+            _gc_branch(session, project_id, snapshot.branch_ref, snapshot.scope)
+            bootstrap = _bootstrap_draft_claims(session, project_id, snapshot)
+        else:
+            bootstrap = 0
     else:
         published = _publish_current(session, snapshot)
         bootstrap = 0
@@ -587,6 +609,7 @@ def _ingest_assessment(
         obligations_export=obligations,
         confirmed_claims=claim_dicts,
         link_suggestions=suggestions,
+        scope=snapshot.scope,
     )
     reconcile_findings(
         session,

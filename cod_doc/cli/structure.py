@@ -102,13 +102,17 @@ def structure_latest(
     """Show current snapshot for main, a PR, or an explicit SHA."""
     from cod_doc.infra.db import transactional
     from cod_doc.services import structure_service
+    from cod_doc.services.structure_protocol import StructureProtocolError
 
     cfg: Config = ctx.obj["config"]
     with transactional(_session(project, cfg)) as session:
         project_id = _project_id(session, project)
-        row = structure_service.get_latest(
-            session, project_id, head_sha=head_sha, branch_ref=branch_ref, pr_number=pr_number
-        )
+        try:
+            row = structure_service.get_latest(
+                session, project_id, head_sha=head_sha, branch_ref=branch_ref, pr_number=pr_number
+            )
+        except StructureProtocolError as exc:
+            raise click.ClickException(str(exc)) from exc
         if row is None:
             _console().print("[yellow]No snapshot matches the selector.[/yellow]")
             sys.exit(2)
