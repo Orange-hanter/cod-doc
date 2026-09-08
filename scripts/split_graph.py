@@ -77,7 +77,11 @@ def split(graph: dict[str, object], prefixes: list[str]) -> dict[str, dict[str, 
 
     out: dict[str, dict[str, object]] = {}
     for name, node_rows in buckets.items():
-        if not node_rows:
+        # Пустую партицию пропускаем, но только если в ней нет и рёбер: у ребра
+        # с висячим ``source`` (узла нет в графе) владельцем становится ``rest``,
+        # и молчаливый пропуск такого бакета терял бы рёбра — вопреки
+        # заявленной неразрушающей нарезке.
+        if not node_rows and not link_buckets[name]:
             continue
         out[name] = {
             **{k: v for k, v in graph.items() if k not in {"nodes", "links"}},

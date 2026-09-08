@@ -166,25 +166,30 @@ def _walk_neighborhood(
 ) -> tuple[set[str], list[CodeEdgeModel]]:
     selected = set(seeds)
     selected_edges: list[CodeEdgeModel] = []
-    frontier = list(seeds)
+    taken: set[int] = set()
+    frontier = set(seeds)
     for _ in range(depth):
-        nxt: list[str] = []
-        for edge in edges:
+        nxt: set[str] = set()
+        exhausted = False
+        for index, edge in enumerate(edges):
             if len(selected_edges) >= MAX_CONTEXT_EDGES:
+                exhausted = True
                 break
-            if edge.from_ref not in selected and edge.to_ref not in selected:
+            if index in taken:
                 continue
-            if edge in selected_edges:
+            # Раскрываем только текущий фронт. Проверка против растущего
+            # ``selected`` пропускала бы цепочку a→b→c→d целиком за один round,
+            # и радиус выборки зависел бы от порядка строк в БД, а не от depth.
+            if edge.from_ref not in frontier and edge.to_ref not in frontier:
                 continue
+            taken.add(index)
             selected_edges.append(edge)
-            if edge.from_ref not in selected:
-                selected.add(edge.from_ref)
-                nxt.append(edge.from_ref)
-            if edge.to_ref not in selected:
-                selected.add(edge.to_ref)
-                nxt.append(edge.to_ref)
+            for ref in (edge.from_ref, edge.to_ref):
+                if ref not in selected:
+                    selected.add(ref)
+                    nxt.add(ref)
         frontier = nxt
-        if not frontier:
+        if exhausted or not frontier:
             break
     return selected, selected_edges
 
@@ -246,6 +251,7 @@ def _gap_findings(
             "ruleId": row.rule_id,
             "priority": row.priority,
             "status": row.status,
+            "scope": row.scope,
             "subjectRefs": list(row.subject_refs_json or []),
             "summary": row.summary,
             "missingEvidence": list(row.missing_evidence_json or []),

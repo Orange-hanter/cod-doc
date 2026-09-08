@@ -24,6 +24,7 @@ from cod_doc.services.structure_protocol import (
     as_object,
     finding_fingerprint,
     sha256_text,
+    stable_id,
 )
 
 if TYPE_CHECKING:
@@ -465,7 +466,8 @@ def confirm_obligation_link(
     if suggestion is not None:
         suggestion.state = "accepted"
         suggestion.updated = now
-    claim_id = f"claim:{obligation_ref}:{contract_ref}"[:128]
+    # Срез строки схлопывал ссылки с общим длинным префиксом в один id.
+    claim_id = stable_id("claim", obligation_ref, contract_ref)
     existing = session.execute(
         select(DocCodeClaimModel).where(
             DocCodeClaimModel.project_id == project_id,
@@ -572,7 +574,11 @@ def reconcile_findings(
     for row in existing_rows:
         if row.fingerprint in incoming_by:
             continue
-        row.last_seen_snapshot_id = snapshot_id
+        # ``last_seen_snapshot_id`` здесь НЕ трогаем: находки в этом снапшоте не
+        # было, значит и «видели» её в прошлый раз. Проставляя его, мы делали
+        # вид, что закрывающий снапшот содержал находку, и уводили за собой
+        # `referenced` в ретеншн-GC — переставал защищаться снапшот с реальной
+        # уликой.
         row.updated = now
         # Терминальные статусы держатся сами по себе: находка, которая уже
         # закрыта и по-прежнему отсутствует в снапшоте, не должна заново
@@ -609,15 +615,17 @@ def apply_waivers(
             select(StructureWaiverModel).where(StructureWaiverModel.project_id == project_id)
         ).scalars()
     )
+    # Ключ включает партицию: вейвер, выписанный на одну, не имеет права
+    # глушить тот же fingerprint в остальных.
     active = {
-        row.finding_fingerprint: row
+        (row.scope, row.finding_fingerprint): row
         for row in waivers
         if row.expires_at.replace(tzinfo=row.expires_at.tzinfo or UTC) > current
     }
     out: list[dict[str, object]] = []
     for raw in findings:
         item = as_object(raw, label="finding")
-        waiver = active.get(str(item.get("fingerprint") or ""))
+        waiver = active.get((str(item.get("scope") or ""), str(item.get("fingerprint") or "")))
         enriched = dict(item)
         if waiver is not None:
             enriched["suppressed"] = True
@@ -645,9 +653,13 @@ def upsert_waiver(
     if not owner.strip() or not reason.strip():
         raise ValueError("waiver owner and reason are required")
     now = datetime.now(UTC)
+    # Ключ — (проект, партиция, fingerprint). Без партиции в условии повторный
+    # waive того же fingerprint для другой партиции переписывал бы владельца,
+    # причину и срок у первого вместо того, чтобы завести второй.
     row = session.execute(
         select(StructureWaiverModel).where(
             StructureWaiverModel.project_id == project_id,
+            StructureWaiverModel.scope == scope,
             StructureWaiverModel.finding_fingerprint == finding_fingerprint,
         )
     ).scalar_one_or_none()
@@ -665,7 +677,6 @@ def upsert_waiver(
     else:
         row.owner = owner
         row.reason = reason
-        row.scope = scope
         row.expires_at = expires_at
     session.flush()
     return {
@@ -717,6 +728,7 @@ def _row_to_finding(row: StructureFindingModel) -> dict[str, object]:
     return {
         "id": row.fingerprint,
         "fingerprint": row.fingerprint,
+        "scope": row.scope,
         "ruleId": row.rule_id,
         "priority": row.priority,
         "status": row.status,

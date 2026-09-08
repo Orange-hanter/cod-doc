@@ -41,8 +41,11 @@ from cod_doc.services.structure_protocol import (
     can_publish_current,
     compress_payload,
     decompress_payload,
+    is_more_trusted,
     normalize_trust_tier,
+    parse_cursor,
     sha256_text,
+    stable_id,
     validate_structure_assessment,
     validate_structure_facts,
 )
@@ -110,6 +113,11 @@ def _get_or_create_snapshot(
     fingerprint = str(validated["fingerprint"])
     existing = get_snapshot_by_fingerprint(session, project_id, fingerprint)
     if existing is not None:
+        # Тир не должен залипать на том, который приехал первым: те же факты,
+        # подтверждённые подписанным CI, обязаны поднять доверие снапшота.
+        if is_more_trusted(trust_tier, existing.trust_tier):
+            existing.trust_tier = trust_tier
+            session.flush()
         return existing, True
     provenance = as_object(validated.get("provenance"), label="provenance")
     compressed, digest, size = compress_payload(validated)
@@ -383,7 +391,7 @@ def _bootstrap_draft_claims(
         subject = str(item.get("id") or "")
         if not subject:
             continue
-        claim_id = f"draft:{subject}"[:128]
+        claim_id = stable_id("draft", subject)
         exists = session.execute(
             select(DocCodeClaimModel.row_id).where(
                 DocCodeClaimModel.project_id == project_id,
@@ -432,7 +440,7 @@ def ingest_structure(
         _gc_branch(session, project_id, snapshot.branch_ref, snapshot.scope)
         bootstrap = _bootstrap_draft_claims(session, project_id, snapshot)
     else:
-        published = False
+        published = _publish_current(session, snapshot)
         bootstrap = 0
 
     assessment_header: dict[str, object] | None = None
@@ -539,7 +547,7 @@ def _ingest_assessment(
         "trustTier": existing.trust_tier,
         "uncompressedBytes": existing.uncompressed_bytes,
     }
-    if not can_publish_current(trust_tier):
+    if not can_publish_current(snapshot.trust_tier):
         return header, None
     facts_payload = get_snapshot_payload(snapshot)
     obligations = export_obligations(
@@ -773,7 +781,7 @@ def _page[T](
     render: Callable[[T], dict[str, object]],
 ) -> dict[str, object]:
     items = list(rows)
-    start = int(cursor or "0")
+    start = parse_cursor(cursor)
     chunk = items[start : start + limit]
     next_cursor = str(start + limit) if start + limit < len(items) else None
     return {

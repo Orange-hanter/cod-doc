@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from cod_doc.mcp.tools._db import require_project_id, session_factory
-from cod_doc.services.structure_protocol import StructureProtocolError
+from cod_doc.services.structure_protocol import StructureProtocolError, parse_cursor
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -112,7 +112,7 @@ def register(mcp: FastMCP) -> None:
                         )
                     ).scalars()
                 )
-                start = int(cursor or "0")
+                start = parse_cursor(cursor)
                 findings = apply_waivers(
                     session,
                     project_id,
@@ -123,6 +123,7 @@ def register(mcp: FastMCP) -> None:
                             "status": row.status,
                             "priority": row.priority,
                             "summary": row.summary,
+                            "scope": row.scope,
                             "subjectRefs": list(row.subject_refs_json or []),
                             "missingEvidence": list(row.missing_evidence_json or []),
                             "remediationTarget": row.remediation_target,
@@ -178,7 +179,7 @@ def register(mcp: FastMCP) -> None:
                     payload = structure_service.get_assessment_payload(row)
                     assessments = as_object(payload.get("assessments") or {}, label="assessments")
                     items = as_list(assessments.get("contractScenarios") or [], label="scenarios")
-                start = int(cursor or "0")
+                start = parse_cursor(cursor)
                 chunk = items[start : start + limit]
                 return {
                     "ok": True,

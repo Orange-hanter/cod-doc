@@ -216,6 +216,7 @@ def structure_drift_cmd(
                 "status": row.status,
                 "priority": row.priority,
                 "summary": row.summary,
+                "scope": row.scope,
                 "subjectRefs": list(row.subject_refs_json or []),
                 "missingEvidence": list(row.missing_evidence_json or []),
                 "remediationTarget": row.remediation_target,
@@ -257,6 +258,7 @@ def structure_triage(ctx: click.Context, project: str, limit: int, as_json: bool
                 "status": row.status,
                 "priority": row.priority,
                 "summary": row.summary,
+                "scope": row.scope,
                 "subjectRefs": list(row.subject_refs_json or []),
                 "missingEvidence": list(row.missing_evidence_json or []),
                 "remediationTarget": row.remediation_target,
@@ -502,6 +504,11 @@ def structure_replay(ctx: click.Context, project: str, snapshot_id: int, as_json
 @structure.command("promote")
 @click.option("--project", "-p", required=True)
 @click.option("--fingerprint", required=True)
+@click.option(
+    "--scope",
+    default=None,
+    help="Партиция находки. Нужна, когда один fingerprint есть в нескольких.",
+)
 @click.option("--plan-id", required=True)
 @click.option("--section-id", required=True)
 @click.option("--author", default="human")
@@ -511,6 +518,7 @@ def structure_promote(
     ctx: click.Context,
     project: str,
     fingerprint: str,
+    scope: str | None,
     plan_id: str,
     section_id: str,
     author: str,
@@ -528,15 +536,28 @@ def structure_promote(
     cfg: Config = ctx.obj["config"]
     with transactional(_session(project, cfg)) as session:
         project_id = _project_id(session, project)
-        row = session.execute(
-            select(StructureFindingModel).where(
-                StructureFindingModel.project_id == project_id,
-                StructureFindingModel.fingerprint == fingerprint,
-            )
-        ).scalar_one_or_none()
-        if row is None:
+        # Уникальность находки — (project_id, scope, fingerprint), а сам
+        # fingerprint считается только от rule_id и subjectRefs. У
+        # `structure.graph_stale` subjectRefs синтетический и одинаков во всех
+        # партициях, поэтому без --scope выборка может вернуть несколько строк.
+        conditions = [
+            StructureFindingModel.project_id == project_id,
+            StructureFindingModel.fingerprint == fingerprint,
+        ]
+        if scope is not None:
+            conditions.append(StructureFindingModel.scope == scope)
+        matches = list(session.execute(select(StructureFindingModel).where(*conditions)).scalars())
+        if not matches:
             _console().print("[red]Finding not found.[/red]")
             sys.exit(2)
+        if len(matches) > 1:
+            scopes = ", ".join(sorted(item.scope or "<none>" for item in matches))
+            _console().print(
+                f"[red]Fingerprint present in {len(matches)} partitions ({scopes}); "
+                f"repeat with --scope.[/red]"
+            )
+            sys.exit(2)
+        row = matches[0]
         plan = session.execute(
             select(PlanModel).where(PlanModel.scope == plan_id, PlanModel.project_id == project_id)
         ).scalar_one_or_none()

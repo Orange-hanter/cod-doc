@@ -5,19 +5,34 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project_db
-from cod_doc.services.structure_protocol import StructureProtocolError, as_object
+from cod_doc.services.structure_protocol import (
+    StructureProtocolError,
+    as_object,
+    parse_cursor,
+)
 
 router = APIRouter(prefix="/api/projects/{slug}", tags=["structure"])
 
 
 class SnapshotIngest(BaseModel):
+    """Тело ingest'а снапшота.
+
+    ``trust_tier`` здесь намеренно отсутствует. Тир — это вся граница
+    безопасности контура: ``signed_ci``/``trusted_local`` публикуют
+    ``latest_main``/``latest_pr`` и заводят находки. Роутер смонтирован без
+    аутентификации (Bearer-гейт запланирован только на ``/api/v1``), поэтому
+    заявленный в payload тир не может быть ничем подтверждён. Доверие обязан
+    сообщать транспорт, а не отправитель, — REST всегда кладёт ``untrusted``.
+    Доверенный ingest идёт через CLI (``cod-doc ingest structure
+    --trust-tier``) или MCP, где вызывающего аутентифицирует ОС.
+    """
+
     facts: dict[str, object]
     assessment: dict[str, object] | None = None
-    trust_tier: str = Field(default="untrusted")
 
 
 @router.get("/obligations")
@@ -47,7 +62,7 @@ def post_snapshot(
             project_id,
             facts=as_object(body.facts, label="facts"),
             assessment=as_object(body.assessment, label="assessment") if body.assessment else None,
-            trust_tier=body.trust_tier,
+            trust_tier="untrusted",
             project_slug=slug,
             actor="rest",
         )
@@ -123,6 +138,8 @@ def get_drift(
 
     session, project_id = db
     try:
+        # Курсор разбираем здесь же: непригодный курсор — это 400, а не 500.
+        start = parse_cursor(cursor)
         snapshot = structure_service.require_pinned_snapshot(
             session, project_id, head_sha=head_sha, snapshot_fingerprint=snapshot_fingerprint
         )
@@ -143,6 +160,7 @@ def get_drift(
                 "status": row.status,
                 "summary": row.summary,
                 "priority": row.priority,
+                "scope": row.scope,
                 "subjectRefs": list(row.subject_refs_json or []),
                 "missingEvidence": list(row.missing_evidence_json or []),
                 "remediationTarget": row.remediation_target,
@@ -150,7 +168,6 @@ def get_drift(
             for row in rows
         ],
     )
-    start = int(cursor or "0")
     return {
         "kind": "structure_drift",
         "snapshotFingerprint": snapshot.fingerprint,
@@ -176,6 +193,8 @@ def get_scenarios(
 
     session, project_id = db
     try:
+        # Курсор разбираем здесь же: непригодный курсор — это 400, а не 500.
+        start = parse_cursor(cursor)
         snapshot = structure_service.require_pinned_snapshot(
             session, project_id, head_sha=head_sha, snapshot_fingerprint=snapshot_fingerprint
         )
@@ -192,7 +211,6 @@ def get_scenarios(
         payload = structure_service.get_assessment_payload(row)
         assessments = as_object(payload.get("assessments") or {}, label="assessments")
         items = as_list(assessments.get("contractScenarios") or [], label="scenarios")
-    start = int(cursor or "0")
     return {
         "items": items[start : start + limit],
         "nextCursor": str(start + limit) if start + limit < len(items) else None,

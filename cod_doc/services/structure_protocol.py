@@ -105,6 +105,20 @@ def as_int(value: object, *, label: str) -> int:
         raise StructureProtocolError(f"{label} must be a number") from exc
 
 
+def parse_cursor(cursor: object) -> int:
+    """Разобрать курсор страницы; пустой считаем нулём.
+
+    Голый ``int()`` ронял вызов ValueError'ом на любом непустом мусоре,
+    а отрицательный курсор молча резал список с конца вместо ошибки.
+    """
+    if cursor is None or cursor == "":
+        return 0
+    text = str(cursor)
+    if not text.isdigit():
+        raise StructureProtocolError(f"invalid cursor: {text!r}")
+    return int(text)
+
+
 def require_sha256(value: object, *, label: str) -> str:
     text = str(value or "")
     if not _SHA256_RE.fullmatch(text):
@@ -290,6 +304,20 @@ def normalize_trust_tier(value: object) -> str:
 
 def can_publish_current(trust_tier: str) -> bool:
     return trust_tier in PUBLISHABLE_TRUST
+
+
+def is_more_trusted(candidate: object, current: object) -> bool:
+    """Строго доверенней ли ``candidate``, чем ``current``.
+
+    ``TRUST_TIERS`` перечислены от самого доверенного к самому недоверенному,
+    поэтому меньший индекс — выше доверие. Нужно, чтобы повторный ingest тех же
+    фактов из подписанного CI поднимал тир снапшота, который до того завели
+    как ``untrusted``: иначе фингерпринт навсегда закреплял бы за собой первый
+    попавшийся тир.
+    """
+    return TRUST_TIERS.index(normalize_trust_tier(candidate)) < TRUST_TIERS.index(
+        normalize_trust_tier(current)
+    )
 
 
 def finding_fingerprint(rule_id: str, subject_refs: Sequence[str]) -> str:

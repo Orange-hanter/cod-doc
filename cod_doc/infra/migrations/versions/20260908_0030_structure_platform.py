@@ -236,7 +236,7 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint(
-            "project_id", "finding_fingerprint", name="uq_structure_waiver_finding"
+            "project_id", "scope", "finding_fingerprint", name="uq_structure_waiver_finding"
         ),
     )
 
