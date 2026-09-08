@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
@@ -50,33 +52,41 @@ def index(
     offset = max(0, offset)
     page_entries = all_entries[offset : offset + limit]
 
-    yaml_stats = Project.batch_stats(page_entries)
-    projects = []
-    for entry, fallback in zip(page_entries, yaml_stats, strict=True):
-        stats = dict(fallback)
-        stats.setdefault(
-            "pct", round(stats["done"] / stats["total"] * 100) if stats.get("total") else 0
-        )
-        stats.setdefault("pending", 0)
-        stats.setdefault("failed", 0)
-
+    # DB-проход первый: только он решает, нужен ли вообще legacy-`tasks.yaml`.
+    # Разбор этого файла стоит десятки миллисекунд на проект, а на DB-проекте
+    # все его счётчики всё равно перекрываются агрегатами из БД (total=0 из БД
+    # означает «проект ещё на tasks.yaml» — вот там fallback и нужен).
+    db_stats_by_name: dict[str, dict[str, Any]] = {}
+    for entry in page_entries:
         with try_open_project_db(entry.name) as (session, project_db_id):
-            if session is not None and project_db_id is not None:
-                raw = task_service.summarize_for_project(session, project_db_id)
-                db_stats = _normalize_stats(raw)
-                # Only replace YAML stats when DB actually has tasks.
-                # Projects still using legacy tasks.yaml return total=0 from DB.
-                if db_stats["total"] > 0:
-                    stats.update(
-                        {
-                            "total": db_stats["total"],
-                            "pending": db_stats["pending"],
-                            "in_progress": db_stats["in_progress"],
-                            "done": db_stats["done"],
-                            "failed": db_stats["failed"],
-                            "pct": db_stats["pct"],
-                        }
-                    )
+            if session is None or project_db_id is None:
+                continue
+            db_stats = _normalize_stats(task_service.summarize_for_project(session, project_db_id))
+        if db_stats["total"] > 0:
+            db_stats_by_name[entry.name] = db_stats
+
+    yaml_entries = [e for e in page_entries if e.name not in db_stats_by_name]
+    yaml_stats = dict(
+        zip(
+            (e.name for e in yaml_entries),
+            Project.batch_stats(yaml_entries),
+            strict=True,
+        )
+    )
+
+    projects = []
+    for entry in page_entries:
+        db_row = db_stats_by_name.get(entry.name)
+        stats: dict[str, Any]
+        if db_row is not None:
+            stats = {**db_row, **Project(entry).run_state()}
+        else:
+            stats = dict(yaml_stats[entry.name])
+            stats.setdefault(
+                "pct", round(stats["done"] / stats["total"] * 100) if stats.get("total") else 0
+            )
+            stats.setdefault("pending", 0)
+            stats.setdefault("failed", 0)
 
         projects.append(
             {
