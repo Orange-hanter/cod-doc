@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,21 +14,14 @@ from cod_doc.cli.obligation import obligation
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import ProjectModel
+from tests._alembic import run_alembic
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = REPO_ROOT / "fixtures" / "structure"
 
 
 def _migrate(db_path: Path) -> None:
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        check=True,
-        env={"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": f"sqlite:///{db_path}"},
-        capture_output=True,
-    )
+    run_alembic("upgrade", "head", db_url=f"sqlite:///{db_path}")
 
 
 def _bootstrap(tmp_path: Path) -> tuple[Config, ProjectEntry]:
