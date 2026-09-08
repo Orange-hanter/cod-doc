@@ -32,7 +32,14 @@ if [ -z "$COD_DOC_ROOT" ]; then
 	COD_DOC_ROOT="$(_cd_find_root "${CLAUDE_PROJECT_DIR:-$PWD}" || true)"
 fi
 if [ -z "$COD_DOC_ROOT" ] && command -v git >/dev/null 2>&1; then
-	_cd_main="$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
+	# `|| true` обязателен, как и строкой выше у _cd_find_root. Вне
+	# git-репозитория `git worktree list` выходит с 128; `2>/dev/null`
+	# прячет только текст, а не код возврата. У вызывающего
+	# (mcp-launch.sh) стоит `set -euo pipefail`, поэтому pipefail
+	# протаскивает 128 в присваивание, а set -e убивает скрипт — молча,
+	# ещё до exec. Клиент видел «Connection closed» без единой строки в
+	# логе: Python не успевал запуститься. См. ADO-146.
+	_cd_main="$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" worktree list 2>/dev/null | head -1 | awk '{print $1}' || true)"
 	if [ -n "$_cd_main" ] && [ -f "$_cd_main/.cod-doc/state.db" ]; then
 		COD_DOC_ROOT="$_cd_main"
 	fi

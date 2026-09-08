@@ -7,6 +7,18 @@
 # не покрывает doc/plan/link-работу, ради которой плагин и ставят.
 set -euo pipefail
 
+# ADO-146: до exec любой выход — это тихая смерть, и клиент увидит только
+# «Connection closed» без причины. Ловим её и печатаем в stderr: там её
+# подберёт mcp-logs Claude Code. Снимаем ловушку прямо перед exec, чтобы
+# штатный запуск сервера не выглядел как сбой.
+_cd_die() {
+	local rc=$?
+	[ "$rc" -eq 0 ] && return 0
+	echo "cod-doc plugin: лаунчер вышел с кодом $rc, не дойдя до запуска сервера." >&2
+	echo "  cwd=$PWD COD_DOC_ROOT=${COD_DOC_ROOT:-<пусто>} COD_DOC_BIN=${COD_DOC_BIN:-<пусто>}" >&2
+}
+trap _cd_die EXIT
+
 # shellcheck source=./cod-doc-env.sh
 . "$(dirname "$0")/cod-doc-env.sh"
 
@@ -26,4 +38,5 @@ if [ -z "$bin" ]; then
 	exit 1
 fi
 
+trap - EXIT
 exec "$bin" --profile "${COD_DOC_PROFILE:-standard}"
