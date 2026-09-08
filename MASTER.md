@@ -292,6 +292,14 @@ graph TD
 {
   "changelog": [
     {
+      "date": "2026-09-09",
+      "version": "2.9",
+      "action": "ADO-168: добавлен adr_service.sync_body — путь синхронизации записи реестра ADR с markdown-проекцией мимо статусного гейта. Гейт неизменяемости решений сохранён: status не является параметром, след различим (ревизия op=sync_body, событие adr.body_synced). Поверхности: CLI adr sync, MCP adr_sync_body. Счётчики профилей 106→107 и 110→111, adr.* 9→10 тулов; хэш docs/mcp-integration.md пересчитан.",
+      "author": "agent:claude-opus-5",
+      "scope": "master",
+      "task": "ADO-168"
+    },
+    {
       "date": "2026-09-11",
       "version": "2.8",
       "action": "Добавлен блок «Подготовка к M6» в Executive Summary: цели M6 (кросс-проектный поиск, hub + кросс-проектность, RFC 23/24), текущий прогресс (SYM-011 открыт, RFC 23/24 в DRAFT), ссылка на ROADMAP.md. Задача [469ada54] выполнена.",
