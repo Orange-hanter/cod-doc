@@ -12,6 +12,8 @@ import click
 from rich.console import Console
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session, sessionmaker
 
     from cod_doc.config import Config
@@ -70,6 +72,18 @@ def _pinned(
         )
     except StructureProtocolError as exc:
         raise click.ClickException(str(exc)) from exc
+
+
+def _subject_paths(subject_refs: Sequence[object]) -> list[str]:
+    """Пути файлов из протокольных id вида ``entity:path/to/file.py#symbol``."""
+    paths: list[str] = []
+    for raw in subject_refs:
+        ref = str(raw)
+        _, _, tail = ref.partition(":")
+        path = (tail or ref).split("#", 1)[0].strip()
+        if path and "/" in path and not path.endswith("/"):
+            paths.append(path)
+    return sorted(set(paths))
 
 
 def _dump(payload: object, as_json: bool) -> None:
@@ -488,7 +502,12 @@ def structure_waive(
     from cod_doc.services.structure_drift import upsert_waiver
 
     cfg: Config = ctx.obj["config"]
-    expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    try:
+        expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise click.ClickException(
+            f"--expires-at ожидает ISO-8601 (например 2026-12-31T00:00:00Z), получено {expires_at!r}"
+        ) from exc
     with transactional(_session(project, cfg)) as session:
         project_id = _project_id(session, project)
         payload = upsert_waiver(
@@ -580,7 +599,7 @@ def structure_promote(
     from cod_doc.infra.db import transactional
     from cod_doc.infra.models.plans import PlanModel, PlanSectionModel
     from cod_doc.infra.models.structure import StructureFindingModel
-    from cod_doc.services import task_service
+    from cod_doc.services import activity_service, task_service
 
     cfg: Config = ctx.obj["config"]
     with transactional(_session(project, cfg)) as session:
@@ -633,9 +652,19 @@ def structure_promote(
             author=author,
             id_prefix="STR",
             description=row.summary,
-            affected_files=[str(x) for x in row.subject_refs_json or [] if "/" in str(x)],
+            affected_files=_subject_paths(row.subject_refs_json or []),
         )
         row.promoted_task_id = task.task_id
         row.status = "in_progress"
+        activity_service.emit_for_write(
+            session,
+            project_id,
+            "structure.finding_promoted",
+            author,
+            scope_kind="structure_finding",
+            scope_id=fingerprint,
+            payload={"taskId": task.task_id, "scope": row.scope, "ruleId": row.rule_id},
+            summary=f"structure finding {fingerprint[:16]} promoted to {task.task_id}",
+        )
         payload = {"taskId": task.task_id, "fingerprint": fingerprint}
     _dump(payload, as_json)

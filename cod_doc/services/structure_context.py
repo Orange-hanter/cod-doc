@@ -40,6 +40,8 @@ _TOKEN_DIVISOR = 4
 _TRUNCATED_DEPS = 10
 _TRUNCATED_OBLIGATIONS = 5
 _TRUNCATED_GAPS = 5
+_TRUNCATED_ENTITIES = 40
+_TRUNCATED_CONTRACTS = 20
 _SUGGESTED_FILES = 20
 _ACTIVE_FINDING_STATUSES = ("open", "in_progress", "pending_verify")
 
@@ -128,6 +130,10 @@ def build_structure_context(
             "obligationsRevision": obligations.get("revision"),
             "branchRef": snapshot.branch_ref,
             "trustTier": snapshot.trust_tier,
+            # Партиция снапшота: без неё вызов по headSha на разбитом
+            # репозитории получает произвольную часть графа без признака,
+            # что остальное отсутствует.
+            "scope": snapshot.scope,
         },
         "temporalAlignment": (assessment_payload or {}).get("temporalAlignment") or "unknown",
         "entities": selected_entities,
@@ -296,6 +302,25 @@ def _gap_findings(
     return triage_findings(waived, limit=MAX_CONTEXT_GAPS)
 
 
+_SHRINKABLE = ("entities", "contracts", "dependencies", "obligations", "gaps")
+
+
+def _shrink_largest(payload: dict[str, object]) -> bool:
+    """Укоротить самую длинную секцию вдвое. False — резать больше нечего."""
+    longest = ""
+    length = 1
+    for key in _SHRINKABLE:
+        section = payload.get(key)
+        if isinstance(section, list) and len(section) > length:
+            longest, length = key, len(section)
+    if not longest:
+        return False
+    section = payload[longest]
+    assert isinstance(section, list)
+    payload[longest] = section[: length // 2]
+    return True
+
+
 def _apply_budget(payload: dict[str, object], *, budget_tokens: int) -> dict[str, object]:
     encoded = canonical_json(payload)
     truncated = (
@@ -303,14 +328,26 @@ def _apply_budget(payload: dict[str, object], *, budget_tokens: int) -> dict[str
         or len(encoded) // _TOKEN_DIVISOR > budget_tokens
     )
     if truncated:
-        deps = payload.get("dependencies")
-        obls = payload.get("obligations")
-        gaps = payload.get("gaps")
-        payload["dependencies"] = deps[:_TRUNCATED_DEPS] if isinstance(deps, list) else deps
-        payload["obligations"] = obls[:_TRUNCATED_OBLIGATIONS] if isinstance(obls, list) else obls
-        payload["gaps"] = gaps[:_TRUNCATED_GAPS] if isinstance(gaps, list) else gaps
+        for key, limit in (
+            ("dependencies", _TRUNCATED_DEPS),
+            ("obligations", _TRUNCATED_OBLIGATIONS),
+            ("gaps", _TRUNCATED_GAPS),
+            ("entities", _TRUNCATED_ENTITIES),
+            ("contracts", _TRUNCATED_CONTRACTS),
+        ):
+            section = payload.get(key)
+            if isinstance(section, list):
+                payload[key] = section[:limit]
         payload["truncated"] = True
         encoded = canonical_json(payload)
+        # Обрезка секций — оценка, а не гарантия: если и после неё payload не
+        # влезает в бюджет, режем самые крупные списки до последнего элемента,
+        # чтобы контракт «ответ помещается в бюджет» оставался верным.
+        while (
+            len(encoded.encode("utf-8")) > MAX_CONTEXT_BYTES
+            or len(encoded) // _TOKEN_DIVISOR > budget_tokens
+        ) and _shrink_largest(payload):
+            encoded = canonical_json(payload)
     payload["tokenEstimate"] = max(1, len(encoded) // _TOKEN_DIVISOR)
     payload["bytes"] = len(encoded.encode("utf-8"))
     return payload

@@ -18,6 +18,7 @@ cod-doc task status      — обновить статус задачи
 cod-doc task complete    — завершить задачу
 cod-doc plan show        — прогресс плана
 cod-doc plan ready       — готовые задачи
+cod-doc audit            — проверка frontmatter + дрейфа (FM-*/DR-*)
 cod-doc plan audit       — аудит плана
 cod-doc plan export      — экспорт markdown
 cod-doc plan critical-path — критический путь

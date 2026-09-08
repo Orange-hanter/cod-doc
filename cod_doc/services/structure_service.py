@@ -117,6 +117,12 @@ def _get_or_create_snapshot(
     if existing is not None:
         incoming_head = str(incoming_provenance.get("headSha") or "")
         incoming_branch = str(incoming_provenance.get("branchRef") or "unknown")
+        incoming_digest = compress_payload(validated)[1]
+        if incoming_digest != existing.payload_sha256:
+            raise StructureProtocolError(
+                f"fingerprint {fingerprint[:12]} already stored with different facts "
+                f"(payload sha256 {existing.payload_sha256[:12]} vs {incoming_digest[:12]})"
+            )
         if incoming_head != existing.head_sha or incoming_branch != existing.branch_ref:
             # Фингерпринт продюсера включает headSha, поэтому расхождение
             # означает подделанный или несогласованный payload. Молча вернуть
@@ -132,6 +138,10 @@ def _get_or_create_snapshot(
         if is_more_trusted(trust_tier, existing.trust_tier):
             existing.trust_tier = trust_tier
             session.flush()
+            # Повышение тира — это первый доверенный приход этих фактов: ниже
+            # по коду должны отработать публикация, ретеншн и draft-claims,
+            # которые на недоверенном приходе намеренно пропускались.
+            return existing, False
         return existing, True
     provenance = incoming_provenance
     compressed, digest, size = compress_payload(validated)
@@ -403,6 +413,13 @@ def _bootstrap_draft_claims(
     facts = as_object(payload.get("facts"), label="facts")
     now = datetime.now(UTC)
     created = 0
+    # Существующие claim_id забираем одним запросом: раньше на каждый контракт
+    # уходил отдельный SELECT внутри транзакции ingest.
+    known_claim_ids = set(
+        session.execute(
+            select(DocCodeClaimModel.claim_id).where(DocCodeClaimModel.project_id == project_id)
+        ).scalars()
+    )
     for raw in as_list(facts.get("contracts"), label="contracts"):
         if not isinstance(raw, dict):
             continue
@@ -411,14 +428,9 @@ def _bootstrap_draft_claims(
         if not subject:
             continue
         claim_id = stable_id("draft", subject)
-        exists = session.execute(
-            select(DocCodeClaimModel.row_id).where(
-                DocCodeClaimModel.project_id == project_id,
-                DocCodeClaimModel.claim_id == claim_id,
-            )
-        ).scalar_one_or_none()
-        if exists is not None:
+        if claim_id in known_claim_ids:
             continue
+        known_claim_ids.add(claim_id)
         session.add(
             DocCodeClaimModel(
                 project_id=project_id,
@@ -575,7 +587,7 @@ def _ingest_assessment(
         "trustTier": existing.trust_tier,
         "uncompressedBytes": existing.uncompressed_bytes,
     }
-    if not can_publish_current(snapshot.trust_tier):
+    if not can_publish_current(snapshot.trust_tier) or not can_publish_current(trust_tier):
         return header, None
     facts_payload = get_snapshot_payload(snapshot)
     obligations = export_obligations(
@@ -690,6 +702,10 @@ def require_pinned_snapshot(
         row = get_snapshot_by_fingerprint(session, project_id, snapshot_fingerprint)
         if row is None:
             raise StructureProtocolError("snapshot fingerprint not found")
+        if not can_publish_current(row.trust_tier):
+            # Тот же инвариант, что и на ветке по headSha: недоверенный снапшот
+            # хранится для осмотра, но закреплённым контекстом не становится.
+            raise StructureProtocolError("snapshot is untrusted and cannot be pinned")
         return row
     row = get_latest(session, project_id, head_sha=head_sha)
     if row is None:
