@@ -46,6 +46,7 @@ from .structural import (
     validate_id_prefix,
     validate_section_slug,
     validate_story_id,
+    validate_story_section_key,
     validate_task_id,
     validate_task_type,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "validate_id_prefix",
     "validate_section_slug",
     "validate_story_id",
+    "validate_story_section_key",
     "validate_task_id",
     "validate_task_type",
 ]

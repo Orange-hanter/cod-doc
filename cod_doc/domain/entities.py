@@ -394,6 +394,23 @@ class AffectedFile:
 
 
 @dataclass(slots=True)
+class StorySection:
+    """Именованная группа историй проекта — продуктовый модуль.
+
+    ``key`` — стабильный слаг, а не произвольная строка: он подставляется в путь
+    роута анализа секции (`/stories/section/{key}/analyze`, один сегмент URL) и
+    в ``id``/``hx-target`` htmx-фрагмента, который уходит в ``querySelector``.
+    Поэтому допустимы только ``[a-z0-9-]`` — см. ``validate_section_key``.
+    """
+
+    project_id: int
+    key: str
+    title: str
+    position: int
+    row_id: int | None = None
+
+
+@dataclass(slots=True)
 class UserStory:
     project_id: int
     story_id: str
@@ -404,6 +421,7 @@ class UserStory:
     row_id: int | None = None
     created: datetime | None = None
     last_updated: datetime | None = None
+    section_id: int | None = None
 
 
 @dataclass(slots=True)

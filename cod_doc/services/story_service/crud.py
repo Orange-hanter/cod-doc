@@ -52,6 +52,7 @@ def create(
     author: str,
     status: UserStoryStatus = UserStoryStatus.DRAFT,
     acceptance: list[str] | None = None,
+    section_id: int | None = None,
     reason: str | None = None,
 ) -> UserStory:
     """Persist a story (+ optional acceptance criteria) and write its initial revision."""
@@ -75,6 +76,7 @@ def create(
             priority=priority,
             created=now,
             last_updated=now,
+            section_id=section_id,
         )
     )
     assert story.row_id is not None
@@ -102,6 +104,7 @@ def create(
             story_id=story_id,
             status=status.value,
             acceptance_count=len(acceptance or []),
+            section_id=section_id,
         ),
         reason=reason or "create",
     )
@@ -116,6 +119,7 @@ def create(
             "status": status.value,
             "acceptance_count": len(acceptance or []),
             "priority": priority.value,
+            "section_id": section_id,
         },
         summary=f"Story {story_id} created",
     )

@@ -15,6 +15,7 @@ from ._patterns import (
     _ID_PREFIX_RE,
     _SECTION_SLUG_RE,
     _STORY_ID_RE,
+    _STORY_SECTION_KEY_RE,
     _TASK_ID_RE,
 )
 
@@ -62,6 +63,23 @@ def validate_section_slug(slug: str) -> None:
             "TP-003",
             f"invalid section slug {slug!r}: expected '<LETTER>-<KebabSlug>'",
             slug=slug,
+        )
+
+
+def validate_story_section_key(key: str) -> None:
+    """`^[a-z0-9-]+$` — e.g. `module-1`, `annex`.
+
+    Жёстче, чем хотелось бы для «просто идентификатора», и намеренно: ключ
+    подставляется в путь роута анализа секции (один сегмент URL — слэш сломает
+    маршрутизацию) и в ``id``/``hx-target`` htmx-фрагмента, который уходит в
+    ``querySelector``, где точка и пробел — синтаксис селектора.
+    """
+    if not isinstance(key, str) or not _STORY_SECTION_KEY_RE.fullmatch(key):
+        raise ValidationError(
+            "US-002",
+            f"invalid story section key {key!r}: expected lowercase "
+            "letters, digits and dashes (1-64 chars), e.g. 'module-1'",
+            key=key,
         )
 
 

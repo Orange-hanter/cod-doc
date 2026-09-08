@@ -1,4 +1,4 @@
-"""User story / acceptance / link repositories."""
+"""User story / acceptance / link / section repositories."""
 
 from __future__ import annotations
 
@@ -12,12 +12,14 @@ from cod_doc.domain.entities import (
     StoryLink,
     StoryLinkKind,
     StoryRelation,
+    StorySection,
     UserStory,
     UserStoryStatus,
 )
 from cod_doc.infra.models import (
     StoryAcceptanceModel,
     StoryLinkModel,
+    StorySectionModel,
     UserStoryModel,
 )
 from cod_doc.infra.repositories.base import BaseRepository
@@ -37,6 +39,7 @@ class UserStoryRepository(BaseRepository[UserStory, UserStoryModel]):
             priority=Priority(model.priority),
             created=model.created,
             last_updated=model.last_updated,
+            section_id=model.section_id,
         )
 
     def _to_model(self, entity: UserStory) -> UserStoryModel:
@@ -54,6 +57,8 @@ class UserStoryRepository(BaseRepository[UserStory, UserStoryModel]):
             kwargs["created"] = entity.created
         if entity.last_updated is not None:
             kwargs["last_updated"] = entity.last_updated
+        if entity.section_id is not None:
+            kwargs["section_id"] = entity.section_id
         return UserStoryModel(**kwargs)
 
     def get_by_story_id(self, story_id: str) -> UserStory | None:
@@ -132,3 +137,48 @@ class StoryLinkRepository(BaseRepository[StoryLink, StoryLinkModel]):
             .order_by(StoryLinkModel.row_id)
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
+
+
+class StorySectionRepository(BaseRepository[StorySection, StorySectionModel]):
+    model_cls = StorySectionModel
+
+    def _to_domain(self, model: StorySectionModel) -> StorySection:
+        return StorySection(
+            row_id=model.row_id,
+            project_id=model.project_id,
+            key=model.key,
+            title=model.title,
+            position=model.position,
+        )
+
+    def _to_model(self, entity: StorySection) -> StorySectionModel:
+        kwargs: dict[str, Any] = {
+            "project_id": entity.project_id,
+            "key": entity.key,
+            "title": entity.title,
+            "position": entity.position,
+        }
+        if entity.row_id is not None:
+            kwargs["row_id"] = entity.row_id
+        return StorySectionModel(**kwargs)
+
+    def get_by_key(self, project_id: int, key: str) -> StorySection | None:
+        stmt = select(StorySectionModel).where(
+            StorySectionModel.project_id == project_id,
+            StorySectionModel.key == key,
+        )
+        m = self.session.execute(stmt).scalar_one_or_none()
+        return self._to_domain(m) if m else None
+
+    def list_for_project(self, project_id: int) -> list[StorySection]:
+        """Секции в порядке показа: position, затем key как тай-брейк."""
+        stmt = (
+            select(StorySectionModel)
+            .where(StorySectionModel.project_id == project_id)
+            .order_by(StorySectionModel.position, StorySectionModel.key)
+        )
+        return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
+
+    def next_position(self, project_id: int) -> int:
+        rows = self.list_for_project(project_id)
+        return max((s.position for s in rows), default=0) + 1
