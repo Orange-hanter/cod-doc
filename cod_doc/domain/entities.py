@@ -196,6 +196,10 @@ class EntityKind(StrEnum):
     TASK_DOC = "task_doc"
     PLAN = "plan"
     STORY = "story"
+    # ADO-143: у секции своя нумерация row_id, поэтому свой kind. Писать её
+    # ревизии под STORY нельзя: пара (kind, entity_id) — единственный адрес
+    # ревизии, и секция row_id=1 села бы в историю истории row_id=1.
+    STORY_SECTION = "story_section"
     LINK = "link"
     MODULE = "module"
     ADR = "adr"

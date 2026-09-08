@@ -67,7 +67,7 @@ def validate_section_slug(slug: str) -> None:
 
 
 def validate_story_section_key(key: str) -> None:
-    """`^[a-z0-9-]+$` — e.g. `module-1`, `annex`.
+    """1–64 символа `[a-z0-9-]`, без дефиса по краям — `module-1`, `annex`.
 
     Жёстче, чем хотелось бы для «просто идентификатора», и намеренно: ключ
     подставляется в путь роута анализа секции (один сегмент URL — слэш сломает
@@ -77,8 +77,9 @@ def validate_story_section_key(key: str) -> None:
     if not isinstance(key, str) or not _STORY_SECTION_KEY_RE.fullmatch(key):
         raise ValidationError(
             "US-002",
-            f"invalid story section key {key!r}: expected lowercase "
-            "letters, digits and dashes (1-64 chars), e.g. 'module-1'",
+            f"invalid story section key {key!r}: expected 1-64 chars of "
+            "lowercase letters, digits and dashes, not starting or ending "
+            "with a dash, e.g. 'module-1'",
             key=key,
         )
 

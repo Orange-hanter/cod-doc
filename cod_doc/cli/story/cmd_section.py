@@ -146,6 +146,11 @@ def story_set_section(
     from cod_doc.services import story_service
     from cod_doc.services.story_service import SectionNotFoundError, StoryNotFoundError
 
+    if clear and key is not None:
+        # Молча проигнорировать KEY нельзя: намерение противоречиво, и тихая
+        # отвязка вместо привязки — не то, чего ждал набравший обе формы.
+        console.print(f"[red]--clear конфликтует с KEY '{key}'. Оставь что-то одно.[/red]")
+        sys.exit(1)
     if clear:
         key = None
     elif key is None:

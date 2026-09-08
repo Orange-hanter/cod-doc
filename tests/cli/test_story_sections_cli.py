@@ -104,6 +104,24 @@ def test_set_section_clear_detaches(tmp_path: Path) -> None:
     assert story.section_id is None
 
 
+def test_set_section_rejects_clear_with_key(tmp_path: Path) -> None:
+    """Противоречивое намерение — ошибка, а не тихая отвязка."""
+    runner = _init_project(tmp_path)
+    runner.invoke(main, ["story", "section", "add", "module-1", "Запасы", "-p", PROJECT])
+    _make_story(runner)
+    runner.invoke(main, ["story", "set-section", "US-001", "module-1", "-p", PROJECT])
+
+    r = runner.invoke(
+        main, ["story", "set-section", "US-001", "module-1", "--clear", "-p", PROJECT]
+    )
+    assert r.exit_code == 1
+    assert "конфликтует" in r.output
+
+    story, _ = _read("US-001")
+    assert story is not None
+    assert story.section_id is not None, "привязка не должна была слететь"
+
+
 def test_create_with_section_option(tmp_path: Path) -> None:
     runner = _init_project(tmp_path)
     runner.invoke(main, ["story", "section", "add", "module-1", "Запасы", "-p", PROJECT])

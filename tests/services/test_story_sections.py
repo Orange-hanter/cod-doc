@@ -75,6 +75,35 @@ def test_create_section_rejects_unsafe_key(engine_with_schema) -> None:  # type:
                 )
 
 
+def test_section_revision_does_not_land_in_story_history(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Адрес ревизии — пара (entity_kind, entity_id).
+
+    У `story_section` и `user_story` независимая нумерация row_id, поэтому
+    первая секция и первая история обе получают row_id=1. Пока секция писала
+    ревизию под `EntityKind.STORY`, её `create_section` оказывался в истории
+    чужой истории.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        sec = stories.create_section(
+            session, project_id=pid, key="module-1", title="Запасы", author="human:test"
+        )
+        story = _make_story(session, pid)
+        # Предпосылка теста: без совпадения row_id коллизию не поймать.
+        assert sec.row_id == story.row_id
+        story_row = story.row_id
+        section_row = sec.row_id
+
+    with transactional(factory) as session:
+        story_hist = rev.list_for_entity(session, EntityKind.STORY, story_row)
+        ops = [json.loads(r.diff)["op"] for r in story_hist]
+        assert "create_section" not in ops, "ревизия секции просочилась в историю истории"
+
+        section_hist = rev.list_for_entity(session, EntityKind.STORY_SECTION, section_row)
+        assert [json.loads(r.diff)["op"] for r in section_hist] == ["create_section"]
+
+
 def test_create_section_rejects_duplicate_key(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:

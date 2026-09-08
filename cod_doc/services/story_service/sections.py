@@ -51,10 +51,13 @@ def create_section(
     session.flush()
     assert section.row_id is not None
 
+    # Адрес ревизии — пара (entity_kind, entity_id). У story_section своя
+    # нумерация row_id, поэтому под STORY её писать нельзя: секция row_id=1
+    # оказалась бы в истории истории row_id=1.
     rev.write(
         session,
         project_id=project_id,
-        entity_kind=EntityKind.STORY,
+        entity_kind=EntityKind.STORY_SECTION,
         entity_id=section.row_id,
         author=author,
         diff=_diff("create_section", key=key, title=title, position=section.position),
@@ -65,7 +68,7 @@ def create_section(
         project_id,
         "story.section_created",
         author,
-        scope_kind="story_section",
+        scope_kind=EntityKind.STORY_SECTION.value,
         scope_id=key,
         payload={"key": key, "title": title, "position": section.position},
         summary=f"Story section {key} created",
