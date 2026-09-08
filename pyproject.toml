@@ -159,6 +159,10 @@ runtime-evaluated-decorators = [
 # ANN/PLR2004 exempt: literals ARE the test data, and mypy does not check
 # tests either — annotation pressure there buys nothing.
 "tests/**/*.py" = ["RUF001", "RUF002", "RUF003", "E501", "ANN", "PLR2004", "PERF"]
+# Разовые скрипты сопровождения: та же русская проза, что и в cod_doc.
+# В гейт CI (`ruff check cod_doc/ tests/`) не входят, но пусть
+# `ruff check scripts/` остаётся осмысленным.
+"scripts/**/*.py" = ["RUF001", "RUF002", "RUF003", "E501"]
 
 # ── RATCHET (2026-08-25): существующие нарушители на момент включения ──
 # Список может только уменьшаться. Починил файл — удали строку. Новые файлы
