@@ -113,9 +113,9 @@ def test_keep_tool_pure_logic() -> None:
 # docstring, cod_doc/mcp/server.py --profile help, docs/mcp-integration.md.
 EXPECTED_PROFILE_COUNTS = {
     "agent": 6,
-    "minimal": 20,
-    "standard": 107,
-    "full": 111,
+    "minimal": 21,
+    "standard": 112,
+    "full": 116,
 }
 
 

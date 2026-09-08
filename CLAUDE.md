@@ -95,7 +95,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `register(mcp)`; `mcp/server.py` вызывает их в цикле, затем `apply_profile()`
   **фильтрует уже зарегистрированный** каталог (`mcp/profiles.py`). Профиль
   `agent` — **дефолтный**, 6 task-centric тулов, каждый возвращает
-  самодостаточный payload; дальше `minimal` 20 / `standard` 106 / `full` 110.
+  самодостаточный payload; дальше `minimal` 21 / `standard` 112 / `full` 116.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   ПЯТИ местах: `mcp/profiles.py` (docstring), `server.py --profile`,
   `AGENTS.md` §5.9, этот файл и `docs/mcp-integration.md` (строка семейства
@@ -157,7 +157,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/20/106/110) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/21/112/116) в коде и доках совпадают |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
@@ -175,7 +175,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 ## Инструментарий сессии
 
 - MCP-сервер `cod-doc` (native stdio, `.mcp.json` явно ставит профиль
-  `standard`, не дефолтный `agent`) — 106 тулов `task_*`/`doc_*`/`plan_*`/…;
+  `standard`, не дефолтный `agent`) — 112 тулов `task_*`/`doc_*`/`plan_*`/…;
   предпочитай их ad-hoc Python-скриптам.
 - `/gate` — полный CI-гейт одной командой.
 - Проектные скиллы `.claude/skills/`: `task-flow` (checkout → complete c sha,

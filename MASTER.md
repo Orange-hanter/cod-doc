@@ -104,7 +104,7 @@ graph TD
 ### CI Pipeline (GitHub Actions)
 - **Описание:** Непрерывная интеграция: ruff-линтинг (blocking), mypy strict
   (blocking), pytest matrix Python 3.11/3.12/3.13, Docker build + smoke test.
-- **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:d9c7a1a33f0e`
+- **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:ee7ba290fd0f`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
 
@@ -144,7 +144,7 @@ graph TD
   БД вместо голого markdown, quick start на 5 строк, четыре поверхности,
   таблица ссылок на остальную документацию. Подставляется как
   `long_description` пакета (`pyproject.toml → readme`).
-- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:cdb02d871cd1`
+- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:a4a0ef0ae877`
 - **Статус:** `🟢 VERIFIED`
 
 ### Handbook (пользовательский справочник)
@@ -156,7 +156,7 @@ graph TD
 ### Гайд по документированию (tutorial)
 - **Описание:** Пошаговое руководство по созданию документации проекта с нуля
   через COD-DOC (~30 минут, пример weather-cli).
-- **Ссылка:** `📁 /docs/cod-doc-guide.md | 🗃️ doc:docs_cod-doc-guide_md | 🔑 sha:562c1f392f47`
+- **Ссылка:** `📁 /docs/cod-doc-guide.md | 🗃️ doc:docs_cod-doc-guide_md | 🔑 sha:d1cb6f8ae835`
 - **Статус:** `🟢 VERIFIED`
 
 ### Adoption Playbook (как завести на своих проектах) ⭐
@@ -170,7 +170,7 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:7c108ab70785`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:b04b83269f57`
 - **Статус:** `🟢 VERIFIED`
 
 ### ROADMAP (милстоуны и приоритеты) ⭐
@@ -217,7 +217,7 @@ graph TD
   },
   "handoffs": {
     "ci": {
-      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:d9c7a1a33f0e",
+      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:ee7ba290fd0f",
       "trigger": "push / pull_request в main и develop",
       "pipeline": "ruff → mypy → pytest (матрица 3.11/3.12/3.13) → docker build + smoke test"
     },
@@ -254,7 +254,7 @@ graph TD
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `7c108ab70785` | 2026-09-11 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `b04b83269f57` | 2026-09-11 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `0bf4dea86d70` | 2026-09-11 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
