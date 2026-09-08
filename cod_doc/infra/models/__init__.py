@@ -38,6 +38,7 @@ from .project import ProjectModel
 from .repo_index import RepoFileModel, RepoImportModel, RepoSymbolModel
 from .revisions import AgentRunModel, RevisionModel
 from .routines import RoutineModel, RoutineRunModel
+from .scenarios import ScenarioLinkModel, ScenarioModel, ScenarioStepModel
 from .stories import StoryAcceptanceModel, StoryLinkModel, UserStoryModel
 from .tags import DocumentTagModel, StoryTagModel, TagModel, TaskTagModel
 from .task_docs import TaskDocumentModel
@@ -76,6 +77,9 @@ __all__ = [
     "RevisionModel",
     "RoutineModel",
     "RoutineRunModel",
+    "ScenarioLinkModel",
+    "ScenarioModel",
+    "ScenarioStepModel",
     "SectionModel",
     "StoryAcceptanceModel",
     "StoryLinkModel",
