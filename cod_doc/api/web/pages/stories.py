@@ -471,7 +471,10 @@ def stories_list(
             "totals": {
                 "stories": len(enriched),
                 "draft": sum(1 for s in enriched if s["status"] == "draft"),
-                "active": sum(1 for s in enriched if s["status"] == "active"),
+                # `active` тут никогда не было среди UserStoryStatus
+                # (draft/accepted/delivered/deferred), поэтому чип всегда был
+                # нулём и не рендерился. Считаем реально существующий статус.
+                "delivered": sum(1 for s in enriched if s["status"] == "delivered"),
             },
             "context_docs": context_docs,
             "context_docs_fresh": context_docs_fresh,

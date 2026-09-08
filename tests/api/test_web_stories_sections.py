@@ -147,6 +147,23 @@ def test_group_toggle_keeps_sort_and_vice_versa(stories_client) -> None:  # noqa
     assert "sort=priority&amp;group_by=persona" in r2.text
 
 
+def test_delivered_chip_counts_a_real_status(stories_client) -> None:  # noqa: F811
+    """Чип считал статус 'active', которого нет в UserStoryStatus, — всегда 0."""
+    client, entry, pid, _ = stories_client
+    _seed(
+        entry,
+        pid,
+        [
+            ("US-001", "A", RU, Priority.HIGH, UserStoryStatus.DELIVERED, None),
+            ("US-002", "B", RU, Priority.HIGH, UserStoryStatus.DRAFT, None),
+        ],
+    )
+    r = client.get(f"/p/{entry.name}/stories")
+    assert "1 delivered" in r.text
+    assert "1 draft" in r.text
+    assert "active</span>" not in r.text
+
+
 def test_russian_narrative_now_renders_want_and_so_that(stories_client) -> None:  # noqa: F811
     """ADO-144: карточка перестала быть сырым абзацем на русском корпусе."""
     client, entry, pid, _ = stories_client
