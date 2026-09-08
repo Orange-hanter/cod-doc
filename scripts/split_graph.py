@@ -105,6 +105,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.prefix:
         parser.error("нужен хотя бы один --prefix")
+    blank = [value for value in args.prefix if not value.strip("/").strip()]
+    if blank:
+        parser.error(
+            "пустой --prefix совпадает с любым путём и схлопнул бы граф "
+            f"в одну партицию {REST!r}"
+        )
 
     graph = json.loads(args.graph.read_text(encoding="utf-8"))
     parts = split(graph, list(args.prefix))

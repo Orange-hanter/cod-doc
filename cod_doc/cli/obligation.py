@@ -36,7 +36,7 @@ def obligation() -> None:
 @obligation.command("export")
 @click.option("--project", "-p", required=True)
 @click.option("--head-sha", default="unknown")
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.option("--with-property-drafts", is_flag=True, default=False)
 @click.pass_context
 def obligation_export(

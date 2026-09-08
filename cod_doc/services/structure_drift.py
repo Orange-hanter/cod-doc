@@ -335,6 +335,7 @@ def _scenario_gap_findings(
                     str(item) for item in as_list(scenario.get("missingEvidence") or [], label="me")
                 ],
                 snapshot_fp=snapshot_fp,
+                discriminator=str(scenario.get("kind") or ""),
             )
         )
     return findings
@@ -378,9 +379,13 @@ def _finding(
     evidence: Sequence[str],
     missing: Sequence[str],
     snapshot_fp: str,
+    discriminator: str = "",
 ) -> dict[str, object]:
     refs = sorted({item for item in subject_refs if item})
-    fingerprint = finding_fingerprint(rule_id, refs)
+    # ``discriminator`` разводит находки, у которых совпадают rule_id и
+    # subjectRefs, но различается природа (например, вид сценария). В
+    # ``subjectRefs`` он не попадает: это идентичность, а не субъект.
+    fingerprint = finding_fingerprint(rule_id, [*refs, discriminator] if discriminator else refs)
     return {
         "id": fingerprint,
         "fingerprint": fingerprint,
@@ -536,7 +541,7 @@ def reconcile_findings(
     can_close = temporal_alignment == "aligned" and not truncated
     out: list[dict[str, object]] = []
 
-    for item in incoming:
+    for item in incoming_by.values():
         fp = str(item["fingerprint"])
         row = existing_by.get(fp)
         if row is None:
@@ -558,6 +563,9 @@ def reconcile_findings(
                 updated=now,
             )
             session.add(row)
+            # Строку видно следующим итерациям: повтор того же fingerprint в
+            # одном заходе обновит её, а не добавит вторую под UNIQUE.
+            existing_by[fp] = row
         else:
             row.summary = str(item["summary"])
             row.priority = str(item["priority"])

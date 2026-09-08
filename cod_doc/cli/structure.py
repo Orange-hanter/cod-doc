@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
 
     from cod_doc.config import Config
+    from cod_doc.infra.models.structure import CodeStructureSnapshotModel
 
 console = Console()
 
@@ -42,6 +43,33 @@ def _project_id(session: Session, project_name: str) -> int:
         _console().print(f"[red]Project '{project_name}' not in DB.[/red]")
         sys.exit(1)
     return proj.row_id
+
+
+def _pinned(
+    session: Session,
+    project_id: int,
+    *,
+    head_sha: str | None,
+    snapshot_fingerprint: str | None,
+) -> CodeStructureSnapshotModel:
+    """Закреплённый снапшот или ``ClickException``.
+
+    ``require_pinned_snapshot`` бросает ``StructureProtocolError`` — например,
+    когда не передан ни ``--head-sha``, ни ``--fingerprint``. Без перехвата
+    команда печатала голый traceback вместо строки с причиной.
+    """
+    from cod_doc.services import structure_service
+    from cod_doc.services.structure_protocol import StructureProtocolError
+
+    try:
+        return structure_service.require_pinned_snapshot(
+            session,
+            project_id,
+            head_sha=head_sha,
+            snapshot_fingerprint=snapshot_fingerprint,
+        )
+    except StructureProtocolError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _dump(payload: object, as_json: bool) -> None:
@@ -91,7 +119,7 @@ def structure_latest(
 @structure.command("get")
 @click.option("--project", "-p", required=True)
 @click.option("--fingerprint", required=True)
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_get(ctx: click.Context, project: str, fingerprint: str, as_json: bool) -> None:
     """Return a stored facts payload by fingerprint."""
@@ -118,7 +146,7 @@ def structure_get(ctx: click.Context, project: str, fingerprint: str, as_json: b
 @click.option("--fingerprint", "snapshot_fingerprint", default=None)
 @click.option("--cursor", default=None)
 @click.option("--limit", default=50, type=int)
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_entities(
     ctx: click.Context,
@@ -135,8 +163,11 @@ def structure_entities(
     cfg: Config = ctx.obj["config"]
     with transactional(_session(project, cfg), commit=False) as session:
         project_id = _project_id(session, project)
-        snapshot = structure_service.require_pinned_snapshot(
-            session, project_id, head_sha=head_sha, snapshot_fingerprint=snapshot_fingerprint
+        snapshot = _pinned(
+            session,
+            project_id,
+            head_sha=head_sha,
+            snapshot_fingerprint=snapshot_fingerprint,
         )
         payload = structure_service.list_entities(
             session, snapshot.row_id, cursor=cursor, limit=limit
@@ -150,7 +181,7 @@ def structure_entities(
 @click.option("--fingerprint", "snapshot_fingerprint", default=None)
 @click.option("--cursor", default=None)
 @click.option("--limit", default=50, type=int)
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_contracts(
     ctx: click.Context,
@@ -167,8 +198,11 @@ def structure_contracts(
     cfg: Config = ctx.obj["config"]
     with transactional(_session(project, cfg), commit=False) as session:
         project_id = _project_id(session, project)
-        snapshot = structure_service.require_pinned_snapshot(
-            session, project_id, head_sha=head_sha, snapshot_fingerprint=snapshot_fingerprint
+        snapshot = _pinned(
+            session,
+            project_id,
+            head_sha=head_sha,
+            snapshot_fingerprint=snapshot_fingerprint,
         )
         payload = structure_service.list_contracts(
             session, snapshot.row_id, cursor=cursor, limit=limit
@@ -180,7 +214,7 @@ def structure_contracts(
 @click.option("--project", "-p", required=True)
 @click.option("--head-sha", default=None)
 @click.option("--fingerprint", "snapshot_fingerprint", default=None)
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_drift_cmd(
     ctx: click.Context,
@@ -194,15 +228,17 @@ def structure_drift_cmd(
 
     from cod_doc.infra.db import transactional
     from cod_doc.infra.models.structure import StructureFindingModel
-    from cod_doc.services import structure_service
     from cod_doc.services.structure_drift import apply_waivers
     from cod_doc.services.structure_service import _header
 
     cfg: Config = ctx.obj["config"]
     with transactional(_session(project, cfg), commit=False) as session:
         project_id = _project_id(session, project)
-        snapshot = structure_service.require_pinned_snapshot(
-            session, project_id, head_sha=head_sha, snapshot_fingerprint=snapshot_fingerprint
+        snapshot = _pinned(
+            session,
+            project_id,
+            head_sha=head_sha,
+            snapshot_fingerprint=snapshot_fingerprint,
         )
         rows = list(
             session.execute(
@@ -234,7 +270,7 @@ def structure_drift_cmd(
 @structure.command("triage")
 @click.option("--project", "-p", required=True)
 @click.option("--limit", default=20, type=int)
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_triage(ctx: click.Context, project: str, limit: int, as_json: bool) -> None:
     from sqlalchemy import select
@@ -273,7 +309,7 @@ def structure_triage(ctx: click.Context, project: str, limit: int, as_json: bool
 @click.option("--project", "-p", required=True)
 @click.option("--head-sha", default=None)
 @click.option("--fingerprint", "snapshot_fingerprint", default=None)
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_scenarios(
     ctx: click.Context,
@@ -292,8 +328,11 @@ def structure_scenarios(
     cfg: Config = ctx.obj["config"]
     with transactional(_session(project, cfg), commit=False) as session:
         project_id = _project_id(session, project)
-        snapshot = structure_service.require_pinned_snapshot(
-            session, project_id, head_sha=head_sha, snapshot_fingerprint=snapshot_fingerprint
+        snapshot = _pinned(
+            session,
+            project_id,
+            head_sha=head_sha,
+            snapshot_fingerprint=snapshot_fingerprint,
         )
         row = session.execute(
             select(StructureAssessmentModel)
@@ -306,14 +345,17 @@ def structure_scenarios(
             payload_obj = structure_service.get_assessment_payload(row)
             assessments = as_object(payload_obj.get("assessments") or {}, label="assessments")
             scenarios = as_list(assessments.get("contractScenarios") or [], label="scenarios")
-    _dump({"items": scenarios, "snapshotFingerprint": snapshot.fingerprint}, as_json)
+        # Вывод — внутри блока: на выходе сессия закрывается, инстанс
+        # открепляется, и обращение к snapshot.fingerprint падало
+        # DetachedInstanceError на каждом вызове команды.
+        _dump({"items": scenarios, "snapshotFingerprint": snapshot.fingerprint}, as_json)
 
 
 @structure.command("diff")
 @click.option("--project", "-p", required=True)
 @click.option("--left", "left_id", required=True, type=int)
 @click.option("--right", "right_id", required=True, type=int)
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_diff(
     ctx: click.Context, project: str, left_id: int, right_id: int, as_json: bool
@@ -332,7 +374,7 @@ def structure_diff(
 @click.option("--project", "-p", required=True)
 @click.option("--head-sha", default=None)
 @click.option("--fingerprint", "snapshot_fingerprint", default=None)
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_link_suggest(
     ctx: click.Context,
@@ -353,8 +395,11 @@ def structure_link_suggest(
     cfg: Config = ctx.obj["config"]
     with transactional(_session(project, cfg)) as session:
         project_id = _project_id(session, project)
-        snapshot = structure_service.require_pinned_snapshot(
-            session, project_id, head_sha=head_sha, snapshot_fingerprint=snapshot_fingerprint
+        snapshot = _pinned(
+            session,
+            project_id,
+            head_sha=head_sha,
+            snapshot_fingerprint=snapshot_fingerprint,
         )
         facts = structure_service.get_snapshot_payload(snapshot)
         obligations = export_obligations(
@@ -390,7 +435,7 @@ def structure_link_suggest(
 @click.option("--obligation", required=True)
 @click.option("--contract", required=True)
 @click.option("--author", default="human")
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_link_confirm(
     ctx: click.Context,
@@ -423,7 +468,7 @@ def structure_link_confirm(
 @click.option("--reason", required=True)
 @click.option("--expires-at", required=True, help="ISO-8601 expiry")
 @click.option("--scope", default="")
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_waive(
     ctx: click.Context,
@@ -456,7 +501,7 @@ def structure_waive(
 
 @structure.command("waivers")
 @click.option("--project", "-p", required=True)
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_waivers(ctx: click.Context, project: str, as_json: bool) -> None:
     from sqlalchemy import select
@@ -488,7 +533,7 @@ def structure_waivers(ctx: click.Context, project: str, as_json: bool) -> None:
 @structure.command("replay")
 @click.option("--project", "-p", required=True)
 @click.option("--snapshot-id", required=True, type=int)
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_replay(ctx: click.Context, project: str, snapshot_id: int, as_json: bool) -> None:
     from cod_doc.infra.db import transactional
@@ -512,7 +557,7 @@ def structure_replay(ctx: click.Context, project: str, snapshot_id: int, as_json
 @click.option("--plan-id", required=True)
 @click.option("--section-id", required=True)
 @click.option("--author", default="human")
-@click.option("--json", "as_json", is_flag=True, default=True)
+@click.option("--json/--no-json", "as_json", default=True)
 @click.pass_context
 def structure_promote(
     ctx: click.Context,

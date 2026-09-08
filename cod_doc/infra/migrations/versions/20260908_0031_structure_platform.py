@@ -300,6 +300,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("structure_link_suggestion")
+    op.drop_index("ix_structure_finding_scope", table_name="structure_finding")
     op.drop_index("ix_structure_finding_status", table_name="structure_finding")
     op.drop_table("structure_finding")
     op.drop_table("structure_waiver")

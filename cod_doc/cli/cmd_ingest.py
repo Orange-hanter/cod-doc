@@ -375,6 +375,22 @@ def ingest_structure(
         as_object(json.loads(path.read_text(encoding="utf-8")), label="facts")
         for path in facts_paths
     ]
+    if len(facts_list) > 1:
+        # Партиции поколения обязаны различаться по scope. Иначе они сверяются
+        # в одной области, и вторая партиция видит находки первой как исчезнувшие
+        # — то есть молча закрывает то, что никто не чинил. Ровно тот отказ,
+        # ради предотвращения которого партиционирование и вводилось.
+        scopes = [
+            str(as_object(item.get("provenance") or {}, label="provenance").get("scope") or "")
+            for item in facts_list
+        ]
+        duplicates = sorted({value for value in scopes if scopes.count(value) > 1})
+        if duplicates:
+            shown = ", ".join(repr(value) for value in duplicates)
+            raise click.UsageError(
+                f"партиции одного поколения повторяют scope ({shown}); "
+                "продюсер должен запускаться с разным --scope на каждую партицию"
+            )
     assessments: list[dict[str, object] | None] = [
         as_object(json.loads(path.read_text(encoding="utf-8")), label="assessment")
         for path in assessment_paths

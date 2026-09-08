@@ -34,6 +34,7 @@ from cod_doc.services.structure_drift import (
 from cod_doc.services.structure_obligations import export_obligations
 from cod_doc.services.structure_protocol import (
     NORMALIZER_VERSION,
+    PUBLISHABLE_TRUST,
     RETENTION_PER_BRANCH,
     StructureProtocolError,
     as_list,
@@ -351,14 +352,19 @@ def _gc_branch(session: Session, project_id: int, branch_ref: str, scope: str = 
         ).scalars()
     )
     keep = {row.row_id for row in rows[:RETENTION_PER_BRANCH]}
-    referenced = set(
-        session.execute(
-            select(StructureFindingModel.last_seen_snapshot_id).where(
-                StructureFindingModel.project_id == project_id,
-                StructureFindingModel.status.in_(("open", "in_progress", "pending_verify")),
-            )
-        ).scalars()
-    )
+    referenced: set[int | None] = set()
+    for column in (
+        StructureFindingModel.last_seen_snapshot_id,
+        StructureFindingModel.first_seen_snapshot_id,
+        StructureFindingModel.resolved_by_snapshot_id,
+    ):
+        # Держим все снапшоты, на которые ссылается ЛЮБАЯ находка: колонки без
+        # FK, и удалённый снапшот оставил бы в отчёте висячий id.
+        referenced.update(
+            session.execute(
+                select(column).where(StructureFindingModel.project_id == project_id)
+            ).scalars()
+        )
     referenced.update(
         session.execute(
             select(StructureCurrentModel.snapshot_id).where(
@@ -617,11 +623,15 @@ def get_latest(
     if not head_sha and pr_number is None and not branch_ref:
         raise StructureProtocolError("latest without branch context is forbidden")
     if head_sha:
+        # Тир фильтруется здесь же: ветка по headSha минует ``structure_current``,
+        # и без фильтра недоверенный снапшот с тем же headSha выдавался бы как
+        # закреплённый граф — вопреки инварианту «untrusted не становится current».
         return session.execute(
             select(CodeStructureSnapshotModel)
             .where(
                 CodeStructureSnapshotModel.project_id == project_id,
                 CodeStructureSnapshotModel.head_sha == head_sha,
+                CodeStructureSnapshotModel.trust_tier.in_(tuple(PUBLISHABLE_TRUST)),
             )
             .order_by(CodeStructureSnapshotModel.created.desc())
             .limit(1)
