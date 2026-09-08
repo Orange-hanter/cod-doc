@@ -21,7 +21,7 @@ last_updated: 2026-04-28
 
 | Поле | Значения | Мэппинг в БД |
 |------|----------|--------------|
-| `type` | `module-spec`, `module-subdoc`, `execution-plan`, `task-section`, `execution-log`, `standard`, `architecture`, `vision`, `guide`, `user-story`, `decision`, `open-question`, `redirect`, `design`, `audit`, `audit-report`, `journal`, `plan`, `analysis`, `research`, `capability` | `document.type` |
+| `type` | `module-spec`, `module-subdoc`, `execution-plan`, `task-section`, `execution-log`, `standard`, `architecture`, `vision`, `guide`, `user-story`, `decision`, `open-question`, `redirect`, `design`, `audit`, `audit-report`, `journal`, `plan`, `analysis`, `research`, `capability`, `scenario-set` | `document.type` |
 | `status` | См. таблицу §2a (зависит от `type`); чужие написания — §2b | `document.status` |
 | `owner` | Строка (команда или роль) | `document.owner` |
 | `last_updated` | `YYYY-MM-DD` | `document.last_updated` |
@@ -43,7 +43,7 @@ last_updated: 2026-04-28
 | `execution-plan`, `task-section`, `execution-log` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`) | `done` / `cancelled` |
 | `user-story` | `draft` → `accepted` → `delivered` → `archived` | `archived` |
 | `audit-report`, `audit` | `active` (живой аудит **и** закрытый — в frontmatter его пишут `resolved`, см. §2b) → `deprecated` (замещён; в frontmatter `superseded`) | `deprecated` |
-| `design`, `analysis`, `research`, `capability`, `decision`, `open-question` | `draft` → `review` → `active` → `deprecated` | `deprecated` |
+| `design`, `analysis`, `research`, `capability`, `decision`, `open-question`, `scenario-set` | `draft` → `review` → `active` → `deprecated` | `deprecated` |
 | `plan` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`) | `done` / `cancelled` |
 | `journal` | `active` — журнал не «завершается», он либо ведётся, либо `deprecated` | `deprecated` |
 

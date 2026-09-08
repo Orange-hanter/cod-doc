@@ -245,12 +245,30 @@ V1 delivery — pull существующего CI artifact через дове�
 | `kind` | `entity_exists`, `exports`, `signature`, `depends_on`, `forbids_dependency`, `scenario` |
 | `doc_key`, `section_anchor`, `content_hash` | привязка к документу |
 | `subject_ref`, `expected` | structured expected |
-| `status` | `draft`, `confirmed` |
+| `status` | `draft`, `confirmed`, `retired` |
 | `provenance` | `manual`, `agent`, `import` |
+
+**Реализовано (TSC-001…TSC-007, 2026-09-08):** claim'ы с `kind = scenario`
+живут не в `doc_code_claim`, а в собственных таблицах `scenario` /
+`scenario_step` / `scenario_link` (миграция `0031_scenarios`) — см. §12.
+Поля `doc_key` / `section_anchor` / `doc_content_hash` / `subject_ref` /
+`status` / `provenance` перенесены как есть. Значение `retired` добавлено
+cod-doc'ом: id сценариев не переиспользуются, поэтому снятию нужен
+собственный статус.
 
 Неструктурированный prose может породить предложенный draft claim, но не участвует в строгом drift до подтверждения.
 
 ## 9. Сценарии и строгие статусы
+
+> **Авторская половина сдана отдельно (TSC-001…TSC-007, 2026-09-08).**
+> Виды сценариев из этого раздела реализованы дословно как `ScenarioKind`;
+> **статусы покрытия ниже — нет**. `scenario.status` несёт только claim-статус
+> §8 (`draft | confirmed | retired`), а `covered | partial | missing |
+> unverifiable` остаются доказательствами producer'а и появятся в
+> `scenario_assessment` (STR-002). Валидатор `SCV-003` отклоняет вердикт,
+> переданный как статус, с объяснением: жёсткие правила ниже неисполнимы,
+> если вердикт можно набрать руками.
+
 
 Для каждого obligation формируется scenario: `happy_path`, `error_path`, `boundary_value`, `invariant`, `integration`.
 
@@ -372,7 +390,13 @@ Blob-first, не только Document/Section:
 - `structure_assessment` — отдельная запись, ссылается на facts snapshot и obligations revision;
 - `doc_code_claim`, `structure_waiver` — durable cod-doc data.
 
-MVP не дублирует весь Graphify graph в SQL. После подтверждения query patterns нормализовать scoped `code_boundary`, `code_entity`, `code_contract`, `code_edge`, scenario index. `repo_file` / `repo_symbol` / `module_code` остаются fallback lookup.
+MVP не дублирует весь Graphify graph в SQL. После подтверждения query patterns нормализовать scoped `code_boundary`, `code_entity`, `code_contract`, `code_edge`.
+
+**Scenario index больше не отложен.** Он реализован в миграции `0031_scenarios`
+как `scenario` / `scenario_step` / `scenario_link` (TSC-001) и занимает именно
+этот слот. STR-002 не переделывает его, а присоединяет к нему append-only
+`scenario_assessment` по `scenario.row_id`: одна строка на прогон CI, чтобы
+ingest не переписывал авторские строки и не заливал `revision` шумом. `repo_file` / `repo_symbol` / `module_code` остаются fallback lookup.
 
 Связи: `external_ref(system=ai-reviewer)`; CODE links Document/Section ↔ entity/contract; structure hints → Finding pipeline; promoted findings → Task/Plan с affected_files и structure context.
 
@@ -409,7 +433,15 @@ cod-doc ctx structure -p <project> --scope <module|path|entity> --budget-tokens 
 
 **REST:** `/api/projects/{slug}/obligations`, `/structure/snapshots`, `/structure/latest`, `/structure/context`, `/structure/drift`, `/structure/scenarios`.
 
-**MCP:** `structure_get`, `structure_context`, `structure_drift`, `structure_scenarios`, `structure_diff`.
+**MCP (доказательная половина, STR-004):** `structure_get`, `structure_context`, `structure_drift`, `structure_scenarios`, `structure_diff`.
+
+**MCP (авторская половина, сдано TSC-007):** `scenario_create`, `scenario_get`,
+`scenario_list`, `scenario_update`, `scenario_retire`, `scenario_set_steps`,
+`scenario_link`, `scenario_export`, `scenario_coverage` — профили
+`standard`/`full`. Семейства не конкурируют и не пересекаются по именам:
+`scenario_*` **пишет намерения**, `structure_scenarios` **читает намерение ⨝
+доказательство**. CLI-зеркало — `cod-doc scenario new|list|show|update|retire|
+steps|link|unlink|export|coverage`.
 
 `structure_context` — BFS от seed, caps: 20 entities, 50 edges, 10 obligations, 15 gaps, 32KB JSON. Основной интерфейс для garage executor и Planner.
 
@@ -419,10 +451,11 @@ cod-doc ctx structure -p <project> --scope <module|path|entity> --budget-tokens 
 
 | Фаза | Содержание | Репозиторий | Статус |
 |------|------------|-------------|--------|
+| 0 | Авторская половина сценариев: таблицы, сервис, валидаторы, проекция в `docs/system/scenarios/`, CLI + MCP | cod-doc | ✅ TSC-001…TSC-007 (2026-09-08) |
 | 1 | Общий протокол: schemas, fixtures, contract tests | ai-reviewer + cod-doc | ✅ сделано в producer'е |
 | 2 | Producer в ai-reviewer (`lib/structure*.mjs`, `pr-review-structure`) | ai-reviewer | ✅ сделано |
 | 3 | Blob-first ingest, pull pilot | cod-doc | ⬜ STR-001 |
-| 4 | Scoped indexes, obligations export, drift, finding lifecycle | cod-doc | ⬜ STR-002 |
+| 4 | Scoped indexes, obligations export, drift, finding lifecycle, `scenario_assessment` поверх готового scenario index | cod-doc | ⬜ STR-002 |
 | 5 | Human triage loop, waiver, advisory CI (не merge blocker) | cod-doc | ⬜ STR-003 |
 | 6 | `structure_context`, MCP, agent task card enrichment | cod-doc + garage consumer | ⬜ STR-004 |
 | 7 | Exact providers, breaking diff, authenticated push | ai-reviewer | ⬜ |

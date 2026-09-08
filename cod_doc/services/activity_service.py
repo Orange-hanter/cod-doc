@@ -16,6 +16,8 @@ Canonical ``kind`` values (partial list — see proposal 09 / PCA-912):
     story.criterion_met / story.linked
     comment.created / comment.status_changed / comment.deleted
     link.synced / link.resolved / link.verified
+    scenario.created / scenario.updated / scenario.retired /
+    scenario.steps_set / scenario.linked / scenario.unlinked / scenario.exported
     approval.requested / approval.resolved / approval.cancelled
     commit_link.imported
     repo_index.scanned

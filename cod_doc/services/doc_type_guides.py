@@ -267,6 +267,23 @@ DOC_TYPE_GUIDES: dict[str, str] = {
         "  - Organised by what the user can do, NOT by module layout.\n"
         "  - Name every surface exactly (`cod-doc doc import`, `doc_export`)."
     ),
+    "scenario-set": (
+        "SCENARIO-SET documents are GENERATED from the `scenario` tables by\n"
+        "`scenario_service.export` — one file per capability. Do not author or\n"
+        "edit them by hand: a hand edit is drift, and the next export refuses to\n"
+        "overwrite it.\n"
+        "To change the content, change the scenarios:\n"
+        "  cod-doc scenario new | update | steps | retire\n"
+        "  cod-doc scenario export --group <capability>\n"
+        "Shape (fixed by the renderer):\n"
+        "  1. Overview — counts by scenario kind + a link back to the capability\n"
+        "  2. One `## SCN-NNN — <title>` section per scenario, with\n"
+        "     Preconditions / Steps / Expected result / Links\n"
+        "STRICT RULES:\n"
+        "  - Scenario kinds come from RFC 24 §9 and are not extended locally.\n"
+        "  - Coverage verdicts (covered/partial/missing/unverifiable) never\n"
+        "    appear here — they are producer evidence, not authored claims."
+    ),
 }
 
 
