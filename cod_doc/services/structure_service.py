@@ -6,6 +6,7 @@ inspection but never become current and never create findings or tasks.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -50,6 +51,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
     from sqlalchemy.orm import Session
+
+logger = logging.getLogger("cod_doc.services.structure")
 
 _DEFAULT_BRANCHES = frozenset({"main", "master"})
 
@@ -150,15 +153,46 @@ def _clear_indexes(session: Session, snapshot_id: int) -> None:
     session.execute(delete(CodeBoundaryModel).where(CodeBoundaryModel.snapshot_id == snapshot_id))
 
 
+def _objects(rows: Iterable[object], *, label: str) -> list[dict[str, object]]:
+    return [as_object(raw, label=label) for raw in rows if isinstance(raw, dict)]
+
+
+def _unique_by(
+    rows: Iterable[object], *, label: str, key: Callable[[dict[str, object]], str]
+) -> tuple[list[dict[str, object]], int]:
+    """Оставить первую запись на каждый id, вернуть её и число отброшенных.
+
+    Продюсер не гарантирует уникальность производных id: на реальном снапшоте
+    cod-doc два symbol-узла из JSON-схем схлопывались в один ``observedId``.
+    Индексы — производный артефакт под UNIQUE(snapshot_id, observed_id), поэтому
+    дубль здесь отбрасывается, а не роняет весь ingest. Blob остаётся полным:
+    ``replay_snapshot`` перестроит индексы из него, когда id станут уникальными.
+    """
+    seen: set[str] = set()
+    kept: list[dict[str, object]] = []
+    dropped = 0
+    for item in _objects(rows, label=label):
+        observed = key(item)
+        if observed in seen:
+            dropped += 1
+            continue
+        seen.add(observed)
+        kept.append(item)
+    return kept, dropped
+
+
 def materialize_indexes(session: Session, snapshot: CodeStructureSnapshotModel) -> dict[str, int]:
     payload = get_snapshot_payload(snapshot)
     facts = as_object(payload.get("facts"), label="facts")
     _clear_indexes(session, snapshot.row_id)
-    boundaries = 0
-    for raw in as_list(facts.get("boundaries"), label="boundaries"):
-        if not isinstance(raw, dict):
-            continue
-        item = as_object(raw, label="boundary")
+    dropped: dict[str, int] = {}
+
+    boundary_rows, dropped["boundaries"] = _unique_by(
+        as_list(facts.get("boundaries"), label="boundaries"),
+        label="boundary",
+        key=lambda item: str(item.get("id") or ""),
+    )
+    for item in boundary_rows:
         session.add(
             CodeBoundaryModel(
                 snapshot_id=snapshot.row_id,
@@ -169,12 +203,12 @@ def materialize_indexes(session: Session, snapshot: CodeStructureSnapshotModel) 
                 confidence=str(item.get("confidence") or "inferred"),
             )
         )
-        boundaries += 1
-    entities = 0
-    for raw in as_list(facts.get("entities"), label="entities"):
-        if not isinstance(raw, dict):
-            continue
-        item = as_object(raw, label="entity")
+    entity_rows, dropped["entities"] = _unique_by(
+        as_list(facts.get("entities"), label="entities"),
+        label="entity",
+        key=lambda item: str(item.get("observedId") or item.get("id") or ""),
+    )
+    for item in entity_rows:
         session.add(
             CodeEntityModel(
                 snapshot_id=snapshot.row_id,
@@ -186,12 +220,12 @@ def materialize_indexes(session: Session, snapshot: CodeStructureSnapshotModel) 
                 confidence=str(item.get("confidence") or "inferred"),
             )
         )
-        entities += 1
-    contracts = 0
-    for raw in as_list(facts.get("contracts"), label="contracts"):
-        if not isinstance(raw, dict):
-            continue
-        item = as_object(raw, label="contract")
+    contract_rows, dropped["contracts"] = _unique_by(
+        as_list(facts.get("contracts"), label="contracts"),
+        label="contract",
+        key=lambda item: str(item.get("id") or ""),
+    )
+    for item in contract_rows:
         session.add(
             CodeContractModel(
                 snapshot_id=snapshot.row_id,
@@ -202,12 +236,9 @@ def materialize_indexes(session: Session, snapshot: CodeStructureSnapshotModel) 
                 path=str(item.get("path") or item.get("file") or ""),
             )
         )
-        contracts += 1
-    edges = 0
-    for raw in as_list(facts.get("dependencies"), label="dependencies"):
-        if not isinstance(raw, dict):
-            continue
-        item = as_object(raw, label="edge")
+    # code_edge не имеет UNIQUE-ограничения: параллельные рёбра легитимны.
+    edge_rows = _objects(as_list(facts.get("dependencies"), label="dependencies"), label="edge")
+    for item in edge_rows:
         session.add(
             CodeEdgeModel(
                 snapshot_id=snapshot.row_id,
@@ -217,10 +248,24 @@ def materialize_indexes(session: Session, snapshot: CodeStructureSnapshotModel) 
                 confidence=str(item.get("confidence") or item.get("evidence") or "inferred"),
             )
         )
-        edges += 1
+    duplicates = sum(dropped.values())
+    if duplicates:
+        logger.warning(
+            "structure snapshot %s: %d дублирующихся id отброшено при построении "
+            "индексов (%s); blob сохранён целиком",
+            snapshot.fingerprint[:12],
+            duplicates,
+            ", ".join(f"{name}={count}" for name, count in sorted(dropped.items()) if count),
+        )
     snapshot.normalizer_version = NORMALIZER_VERSION
     session.flush()
-    return {"boundaries": boundaries, "entities": entities, "contracts": contracts, "edges": edges}
+    return {
+        "boundaries": len(boundary_rows),
+        "entities": len(entity_rows),
+        "contracts": len(contract_rows),
+        "edges": len(edge_rows),
+        "duplicates": duplicates,
+    }
 
 
 def _upsert_current(
@@ -427,6 +472,7 @@ def ingest_structure(
             "durationMs": duration_ms,
             "trustTier": tier,
             "publishedCurrent": published,
+            "duplicatesDropped": counts.get("duplicates", 0),
         },
         summary=f"structure ingest {snapshot.fingerprint[:12]} idempotent={idempotent}",
     )
