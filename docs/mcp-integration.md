@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **110 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **111 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -54,8 +54,8 @@ MCP (Model Context Protocol) — стандартный протокол для 
 ```bash
 cod-doc-mcp                              # agent (default cycle-5)
 cod-doc-mcp --profile minimal            # 20 cold-start tools
-cod-doc-mcp --profile standard           # 106 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 110 (включая legacy)
+cod-doc-mcp --profile standard           # 107 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 111 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 ```
 
@@ -298,13 +298,13 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **routine.\*** | 7 | Cron-style health checks | `routine_create`, `routine_list`, `routine_get`, `routine_update_status`, `routine_delete`, `routine_run_now`, `routine_history` |
 | **skill.\*** | 2 | Каталог skill-инструкций для агента | `skill_list`, `skill_get` |
 | **agent.\* (cycle-5)** | 6 | Task-centric surface для AI-агентов: pick → work → complete за 3 вызова | `agent_capabilities`, `agent_pick`, `agent_get`, `agent_report`, `agent_complete`, `agent_release` |
-| **adr.\* (ADR-002)** | 9 | Architecture Decision Records: CRUD + supersede DAG + task links + Mermaid diagrams + deprecate | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_add_diagram`, `adr_supersede`, `adr_deprecate`, `adr_link_task`, `adr_graph` |
+| **adr.\* (ADR-002)** | 10 | Architecture Decision Records: CRUD + supersede DAG + task links + Mermaid diagrams + deprecate + projection sync | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_sync_body`, `adr_add_diagram`, `adr_supersede`, `adr_deprecate`, `adr_link_task`, `adr_graph` |
 | **context / capabilities / session** | 9 | Admin: snowball-сборка контекста, L0 bootstrap, tool discovery + per-tool describe, change-log, safe-call envelope, workspace defaults | `context_get`, `capabilities`, `tool_search`, `tool_describe`, `tools_diff`, `tool_call_safe`, `set_default_project`, `get_default_project`, `clear_default_project` |
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
 | **Legacy (YAML агент)** | 3 | Остаток legacy-surface после STB-002 (2026-06-08): resume-вход + context-хелперы. YAML CRUD (проекты/задачи/MASTER/поиск + hash/verify) удалён — БД источник истины. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
 | **finding.\* (RFC 22)** | 4 | Внешние находки (ai-review / ZAIrgRush / routines): triage и промоушен в задачи. Только профили standard/full | `finding_list`, `finding_get`, `finding_promote`, `finding_dismiss` |
 | **ctx.\* (RFC 22)** | 3 | Контекст для внешних потребителей: `ctx_docs` = `doc_list`, `ctx_drift` = `doc_drift_all` (SYM-006D), `ctx_drift_gate` — детерминированный гейт документации по файлам PR с идемпотентным PR-комментарием (SYM-010). Только профили standard/full | `ctx_docs`, `ctx_drift`, `ctx_drift_gate` |
-| **ИТОГО** | **110** | | |
+| **ИТОГО** | **111** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
