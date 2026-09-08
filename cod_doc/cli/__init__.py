@@ -28,6 +28,9 @@ cod-doc story show       — детали истории
 cod-doc story create     — создать историю
 cod-doc story status     — обновить статус истории
 cod-doc story add-criterion — добавить критерий приёмки
+cod-doc story set-criterion — отметить критерий выполненным
+cod-doc story section add|list — секции (продуктовые модули)
+cod-doc story set-section — привязать историю к секции
 cod-doc story link       — связать историю с задачей/документом
 cod-doc story coverage   — покрытие истории
 cod-doc doc list         — список документов

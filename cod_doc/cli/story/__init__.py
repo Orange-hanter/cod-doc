@@ -9,6 +9,8 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_create,
     cmd_link,
     cmd_list,
+    cmd_section,
+    cmd_set_criterion,
     cmd_show,
     cmd_status,
 )

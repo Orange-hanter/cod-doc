@@ -71,11 +71,14 @@ def doc_to_dict(d: Any) -> dict[str, Any]:
     }
 
 
-def story_to_dict(s: Any) -> dict[str, Any]:
+def story_to_dict(s: Any, section_key: str | None = None) -> dict[str, Any]:
+    """ADO-143: ``section`` отдаём ключом секции, а не её row_id — наружу
+    полезен слаг, по которому можно позвать ``story_set_section``."""
     return {
         "story_id": s.story_id,
         "persona": s.persona,
         "narrative": s.narrative,
         "status": s.status.value,
         "priority": s.priority.value,
+        "section": section_key,
     }

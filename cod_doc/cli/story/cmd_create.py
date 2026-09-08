@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     multiple=True,
     help="Acceptance criterion (repeatable: -a 'crit 1' -a 'crit 2')",
 )
+@click.option("--section", "section_key", default=None, help="Story section key (slug)")
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None)
 @click.pass_context
@@ -51,6 +52,7 @@ def story_create(
     priority: str,
     status: str,
     acceptance_criteria: tuple[str, ...],
+    section_key: str | None,
     author: str,
     reason: str | None,
 ) -> None:
@@ -58,7 +60,7 @@ def story_create(
     from cod_doc.domain.entities import Priority, UserStoryStatus
     from cod_doc.infra.db import transactional
     from cod_doc.services import story_service
-    from cod_doc.services.story_service import StoryAlreadyExistsError
+    from cod_doc.services.story_service import SectionNotFoundError, StoryAlreadyExistsError
     from cod_doc.services.validation import ValidationError
 
     cfg: Config = ctx.obj["config"]
@@ -67,6 +69,12 @@ def story_create(
     try:
         with transactional(sf) as session:
             project_id = _require_project_id(session, project)
+            section_id = None
+            if section_key is not None:
+                section = story_service.get_section(session, project_id, section_key)
+                if section is None:
+                    raise SectionNotFoundError(section_key)
+                section_id = section.row_id
             s = story_service.create(
                 session,
                 project_id=project_id,
@@ -77,6 +85,7 @@ def story_create(
                 author=author,
                 status=UserStoryStatus(status),
                 acceptance=list(acceptance_criteria) or None,
+                section_id=section_id,
                 reason=reason,
             )
     except ValidationError as exc:
@@ -84,6 +93,9 @@ def story_create(
         sys.exit(1)
     except StoryAlreadyExistsError:
         console.print(f"[red]Story '{story_id}' already exists.[/red]")
+        sys.exit(1)
+    except SectionNotFoundError:
+        console.print(f"[red]Section '{section_key}' not found in {project}.[/red]")
         sys.exit(1)
 
     console.print(f"[green]✅ Created story [bold]{s.story_id}[/bold][/green]")
