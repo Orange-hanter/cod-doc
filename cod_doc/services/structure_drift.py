@@ -558,7 +558,11 @@ def reconcile_findings(
             continue
         row.last_seen_snapshot_id = snapshot_id
         row.updated = now
-        if row.status == "superseded":
+        # Терминальные статусы держатся сами по себе: находка, которая уже
+        # закрыта и по-прежнему отсутствует в снапшоте, не должна заново
+        # уезжать в pending_verify на каждом следующем снапшоте. Переоткрытие
+        # живёт в цикле выше — по факту повторного появления fingerprint.
+        if row.status in {"superseded", "resolved"}:
             out.append(_row_to_finding(row))
             continue
         if not can_close:
