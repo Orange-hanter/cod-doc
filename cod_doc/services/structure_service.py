@@ -328,13 +328,16 @@ def _publish_current(session: Session, snapshot: CodeStructureSnapshotModel) -> 
     return True
 
 
-def _gc_branch(session: Session, project_id: int, branch_ref: str) -> int:
+def _gc_branch(session: Session, project_id: int, branch_ref: str, scope: str = "") -> int:
+    # Ретеншн считается на (ветку, партицию): иначе N партиций делили бы одну
+    # квоту в RETENTION_PER_BRANCH снапшотов и вытесняли бы друг друга.
     rows = list(
         session.execute(
             select(CodeStructureSnapshotModel)
             .where(
                 CodeStructureSnapshotModel.project_id == project_id,
                 CodeStructureSnapshotModel.branch_ref == branch_ref,
+                CodeStructureSnapshotModel.scope == scope,
             )
             .order_by(CodeStructureSnapshotModel.created.desc())
         ).scalars()
@@ -426,7 +429,7 @@ def ingest_structure(
     if not idempotent:
         counts = materialize_indexes(session, snapshot)
         published = _publish_current(session, snapshot)
-        _gc_branch(session, project_id, snapshot.branch_ref)
+        _gc_branch(session, project_id, snapshot.branch_ref, snapshot.scope)
         bootstrap = _bootstrap_draft_claims(session, project_id, snapshot)
     else:
         published = False
@@ -578,6 +581,7 @@ def _ingest_assessment(
         snapshot_id=snapshot.row_id,
         temporal_alignment=str(validated.get("temporalAlignment") or "unknown"),
         truncated=snapshot.truncated,
+        scope=snapshot.scope,
     )
     return header, drift
 

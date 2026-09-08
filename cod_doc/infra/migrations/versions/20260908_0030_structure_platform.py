@@ -249,6 +249,7 @@ def upgrade() -> None:
             sa.ForeignKey("project.row_id", ondelete="CASCADE"),
             nullable=False,
         ),
+        sa.Column("scope", sa.String(255), nullable=False, server_default=""),
         sa.Column("fingerprint", sa.String(128), nullable=False),
         sa.Column("rule_id", sa.String(64), nullable=False),
         sa.Column("status", sa.String(32), nullable=False, server_default="open"),
@@ -264,9 +265,12 @@ def upgrade() -> None:
         sa.Column("promoted_task_id", sa.String(32), nullable=True),
         sa.Column("created", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("project_id", "fingerprint", name="uq_structure_finding_fp"),
+        sa.UniqueConstraint("project_id", "scope", "fingerprint", name="uq_structure_finding_fp"),
     )
     op.create_index("ix_structure_finding_status", "structure_finding", ["project_id", "status"])
+    op.create_index(
+        "ix_structure_finding_scope", "structure_finding", ["project_id", "scope", "status"]
+    )
 
     op.create_table(
         "structure_link_suggestion",

@@ -246,14 +246,18 @@ class StructureWaiverModel(Base):
 class StructureFindingModel(Base):
     __tablename__ = "structure_finding"
     __table_args__ = (
-        UniqueConstraint("project_id", "fingerprint", name="uq_structure_finding_fp"),
+        UniqueConstraint("project_id", "scope", "fingerprint", name="uq_structure_finding_fp"),
         Index("ix_structure_finding_status", "project_id", "status"),
+        Index("ix_structure_finding_scope", "project_id", "scope", "status"),
     )
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False
     )
+    # Партиция, внутри которой находка сверяется. Пустая строка — «весь
+    # репозиторий», единственный вариант до появления партиционирования.
+    scope: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
     rule_id: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="open")

@@ -503,7 +503,19 @@ def reconcile_findings(
     snapshot_id: int,
     temporal_alignment: str,
     truncated: bool,
+    scope: str = "",
 ) -> list[dict[str, object]]:
+    """Свести входящий drift с сохранёнными находками ВНУТРИ одной партиции.
+
+    Снапшот описывает ровно свой ``scope``; про находки других партиций он не
+    говорит ничего, поэтому сверка ограничена ``scope``. Иначе частичный
+    снапшот «закрывал» бы находки, которых он вообще не рассматривал.
+
+    ``truncated`` означает, что снапшот не покрыл даже собственную партицию:
+    часть сущностей отброшена по лимитам, и отсутствие находки во входящем
+    drift неотличимо от «до неё не дошли». Такой снапшот закрывать не вправе —
+    лечится разбиением на партиции, а не поднятием лимитов.
+    """
     incoming = [
         as_object(item, label="finding")
         for item in as_list(drift.get("findings"), label="findings")
@@ -511,7 +523,10 @@ def reconcile_findings(
     incoming_by = {str(item["fingerprint"]): item for item in incoming}
     existing_rows = list(
         session.execute(
-            select(StructureFindingModel).where(StructureFindingModel.project_id == project_id)
+            select(StructureFindingModel).where(
+                StructureFindingModel.project_id == project_id,
+                StructureFindingModel.scope == scope,
+            )
         ).scalars()
     )
     existing_by = {row.fingerprint: row for row in existing_rows}
@@ -525,6 +540,7 @@ def reconcile_findings(
         if row is None:
             row = StructureFindingModel(
                 project_id=project_id,
+                scope=scope,
                 fingerprint=fp,
                 rule_id=str(item["ruleId"]),
                 status="open",

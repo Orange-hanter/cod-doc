@@ -323,12 +323,20 @@ for _adapter_name in INGEST_ADAPTERS:
 
 @ingest.command("structure")
 @click.option("--project", "-p", required=True)
-@click.option("--facts", "facts_path", required=True, type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--facts",
+    "facts_paths",
+    required=True,
+    multiple=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="structure_facts payload; repeat once per партиции (--scope у продюсера).",
+)
 @click.option(
     "--assessment",
-    "assessment_path",
-    default=None,
+    "assessment_paths",
+    multiple=True,
     type=click.Path(exists=True, path_type=Path),
+    help="Оценка к соответствующему --facts: либо ни одной, либо столько же.",
 )
 @click.option(
     "--trust-tier",
@@ -341,44 +349,66 @@ for _adapter_name in INGEST_ADAPTERS:
 def ingest_structure(
     ctx: click.Context,
     project: str,
-    facts_path: Path,
-    assessment_path: Path | None,
+    facts_paths: tuple[Path, ...],
+    assessment_paths: tuple[Path, ...],
     trust_tier: str,
     as_json: bool,
 ) -> None:
-    """Store a structure_facts payload (and optional assessment) blob-first."""
+    """Store structure_facts payloads (and optional assessments) blob-first.
+
+    Повторяющийся ``--facts`` принимает поколение партиций за один вызов: каждая
+    партиция сверяет находки только внутри своего ``scope``, поэтому репозиторий,
+    не влезающий в лимиты одним снапшотом, разбивается на части, и каждая часть
+    остаётся полной внутри себя.
+    """
     from cod_doc.infra.db import transactional
     from cod_doc.services.structure_protocol import as_object
     from cod_doc.services.structure_service import ingest_structure as ingest_fn
 
     cfg: Config = ctx.obj["config"]
-    facts = as_object(json.loads(facts_path.read_text(encoding="utf-8")), label="facts")
-    assessment = None
-    if assessment_path is not None:
-        assessment = as_object(
-            json.loads(assessment_path.read_text(encoding="utf-8")), label="assessment"
+    if assessment_paths and len(assessment_paths) != len(facts_paths):
+        raise click.UsageError(
+            f"--assessment передан {len(assessment_paths)} раз(а) при {len(facts_paths)} --facts: "
+            "нужна либо ни одна оценка, либо по одной на каждый --facts"
         )
+    facts_list = [
+        as_object(json.loads(path.read_text(encoding="utf-8")), label="facts")
+        for path in facts_paths
+    ]
+    assessments: list[dict[str, object] | None] = [
+        as_object(json.loads(path.read_text(encoding="utf-8")), label="assessment")
+        for path in assessment_paths
+    ] or [None] * len(facts_list)
+
+    results: list[dict[str, object]] = []
     _entry, (factory, engine) = _open_entry(cfg, project)
     try:
         with transactional(factory) as session:
             project_id = _require_project_id(session, project)
-            result = ingest_fn(
-                session,
-                project_id,
-                facts=facts,
-                assessment=assessment,
-                trust_tier=trust_tier,
-                project_slug=project,
-                actor="cli",
-            )
+            for facts, assessment in zip(facts_list, assessments, strict=True):
+                results.append(
+                    ingest_fn(
+                        session,
+                        project_id,
+                        facts=facts,
+                        assessment=assessment,
+                        trust_tier=trust_tier,
+                        project_slug=project,
+                        actor="cli",
+                    )
+                )
     finally:
         engine.dispose()
     if as_json:
-        click.echo(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        payload: object = results[0] if len(results) == 1 else {"generation": results}
+        click.echo(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
         return
-    snap = result["snapshot"]
-    assert isinstance(snap, dict)
-    click.echo(
-        f"ingested fingerprint={snap['fingerprint']} "
-        f"idempotent={result['idempotent']} published={result['publishedCurrent']}"
-    )
+    for result in results:
+        snap = result["snapshot"]
+        assert isinstance(snap, dict)
+        scope = str(snap.get("scope") or "")
+        suffix = f" scope={scope}" if scope else ""
+        click.echo(
+            f"ingested fingerprint={snap['fingerprint']} "
+            f"idempotent={result['idempotent']} published={result['publishedCurrent']}{suffix}"
+        )
