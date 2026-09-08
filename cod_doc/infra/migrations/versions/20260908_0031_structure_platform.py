@@ -4,8 +4,8 @@ Stores immutable zlib-compressed producer payloads (facts + assessment)
 separately from DB↔Markdown projection drift. Scoped code_* indexes are
 materialized after a successful ingest for query/context slices.
 
-Revision ID: 0030_structure_platform
-Revises: 0029_drop_audit_log
+Revision ID: 0031_structure_platform
+Revises: 0030_document_body_pushdown
 Create Date: 2026-09-08
 """
 
@@ -14,8 +14,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0030_structure_platform"
-down_revision = "0029_drop_audit_log"
+revision = "0031_structure_platform"
+down_revision = "0030_document_body_pushdown"
 branch_labels = None
 depends_on = None
 
