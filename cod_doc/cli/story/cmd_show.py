@@ -30,11 +30,18 @@ def story_show(ctx: click.Context, story_id: str, project: str, as_json: bool) -
 
     acceptance = []
     links = []
+    section_key: str | None = None
+    section_title: str | None = None
     with transactional(sf) as session:
         s = story_service.get(session, story_id)
         if s is not None:
             acceptance = story_service.list_acceptance(session, story_id)
             links = story_service.list_links(session, story_id)
+            if s.section_id is not None:
+                for sec in story_service.list_sections(session, s.project_id):
+                    if sec.row_id == s.section_id:
+                        section_key, section_title = sec.key, sec.title
+                        break
 
     if s is None:
         console.print(f"[red]Story '{story_id}' not found.[/red]")
@@ -49,6 +56,7 @@ def story_show(ctx: click.Context, story_id: str, project: str, as_json: bool) -
                     "narrative": s.narrative,
                     "status": s.status.value,
                     "priority": s.priority.value,
+                    "section": section_key,
                     "acceptance": [
                         {"position": a.position, "criterion": a.criterion, "met": a.met}
                         for a in acceptance
@@ -73,6 +81,8 @@ def story_show(ctx: click.Context, story_id: str, project: str, as_json: bool) -
     console.print(f"  Status:   {icon} {s.status.value}")
     console.print(f"  Priority: {s.priority.value}")
     console.print(f"  Persona:  {s.persona}")
+    if section_key:
+        console.print(f"  Section:  {section_key} «{section_title}»")
     console.print(f"\n[bold]Narrative:[/bold]\n  {s.narrative}")
 
     if acceptance:
