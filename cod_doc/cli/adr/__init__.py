@@ -11,6 +11,7 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_new,
     cmd_show,
     cmd_supersede,
+    cmd_sync,
 )
 from ._group import adr
 

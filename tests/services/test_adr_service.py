@@ -666,3 +666,126 @@ def test_add_diagram_allowed_on_accepted(engine_with_schema) -> None:  # type: i
             title="post-accept",
         )
     assert d.position == 0
+
+
+# ----------------------------------------------------------------- #
+# sync_body — projection sync past the status gate (ADO-168)         #
+# ----------------------------------------------------------------- #
+
+
+def _revisions(session, adr_row_id: int) -> list[str]:  # type: ignore[no-untyped-def]
+    return list(
+        session.execute(
+            select(RevisionModel.diff).where(
+                RevisionModel.entity_kind == EntityKind.ADR.value,
+                RevisionModel.entity_id == adr_row_id,
+            )
+        ).scalars()
+    )
+
+
+def test_sync_body_updates_accepted_adr(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """The body of an ACCEPTED ADR follows its markdown; update() still refuses."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="accepted", decision="old")
+    with transactional(factory) as session:
+        r = adr_service.sync_body(
+            session,
+            project_id=1,
+            adr_id="ADR-001",
+            decision="corrected in the file",
+            alternatives="section the parser missed",
+        )
+    assert r.decision == "corrected in the file"
+    assert r.alternatives == "section the parser missed"
+    assert r.status == "accepted"
+
+
+def test_sync_body_updates_terminal_adr(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """A DEPRECATED ADR is still a record that can fall behind its file."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="accepted")
+        adr_service.deprecate(session, project_id=pid, adr_id="ADR-001")
+    with transactional(factory) as session:
+        r = adr_service.sync_body(
+            session, project_id=1, adr_id="ADR-001", decision="retired, but documented"
+        )
+    assert r.decision == "retired, but documented"
+    assert r.status == "deprecated"
+
+
+def test_sync_body_does_not_take_status(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Status stays a decision-level act — not something a projection can set."""
+    import inspect
+
+    assert "status" not in inspect.signature(adr_service.sync_body).parameters
+
+
+def test_update_still_gated_after_sync(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """The immutability guarantee for hand edits survives the new path."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_service.create(session, project_id=pid, title="x", status="accepted")
+        adr_service.create(session, project_id=pid, title="y", status="accepted")
+        adr_service.deprecate(session, project_id=pid, adr_id="ADR-002")
+    with transactional(factory) as session:
+        adr_service.sync_body(session, project_id=1, adr_id="ADR-001", context="c")
+        adr_service.sync_body(session, project_id=1, adr_id="ADR-002", context="c")
+    with pytest.raises(ADRImmutableError, match="frozen"), transactional(factory) as session:
+        adr_service.update(session, project_id=1, adr_id="ADR-001", context="by hand")
+    with pytest.raises(ADRImmutableError, match="terminal"), transactional(factory) as session:
+        adr_service.update(session, project_id=1, adr_id="ADR-002", context="by hand")
+
+
+def test_sync_body_audit_trail_is_distinguishable(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """A projection sync must never read as a hand edit of a decision."""
+    from cod_doc.infra.models import ActivityEventModel
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        row = adr_service.create(session, project_id=pid, title="x", status="accepted")
+        adr_row_id = row.row_id
+    with transactional(factory) as session:
+        adr_service.sync_body(session, project_id=1, adr_id="ADR-001", decision="d")
+    with transactional(factory) as session:
+        diffs = _revisions(session, adr_row_id)
+        kinds = list(
+            session.execute(
+                select(ActivityEventModel.kind).where(ActivityEventModel.scope_id == "ADR-001")
+            ).scalars()
+        )
+    assert any("sync_body" in d for d in diffs)
+    assert not any("op=update" in d for d in diffs)
+    assert "adr.body_synced" in kinds
+    assert "adr.updated" not in kinds
+
+
+def test_sync_body_noop_writes_nothing(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Re-running an importer over unchanged files must not spam the journal."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        row = adr_service.create(
+            session, project_id=pid, title="x", status="accepted", decision="same"
+        )
+        adr_row_id = row.row_id
+    with transactional(factory) as session:
+        before = len(_revisions(session, adr_row_id))
+    with transactional(factory) as session:
+        adr_service.sync_body(session, project_id=1, adr_id="ADR-001", decision="same")
+    with transactional(factory) as session:
+        assert len(_revisions(session, adr_row_id)) == before
+
+
+def test_sync_body_unknown_adr_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+    with pytest.raises(ADRNotFoundError), transactional(factory) as session:
+        adr_service.sync_body(session, project_id=1, adr_id="ADR-404", decision="d")

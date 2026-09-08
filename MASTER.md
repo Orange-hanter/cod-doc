@@ -170,7 +170,7 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:d015b53c85cf`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:7c108ab70785`
 - **Статус:** `🟢 VERIFIED`
 
 ### ROADMAP (милстоуны и приоритеты) ⭐
@@ -254,7 +254,7 @@ graph TD
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `d015b53c85cf` | 2026-09-11 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `7c108ab70785` | 2026-09-11 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `0bf4dea86d70` | 2026-09-11 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
@@ -291,6 +291,14 @@ graph TD
 ```json
 {
   "changelog": [
+    {
+      "date": "2026-09-09",
+      "version": "2.9",
+      "action": "ADO-168: добавлен adr_service.sync_body — путь синхронизации записи реестра ADR с markdown-проекцией мимо статусного гейта. Гейт неизменяемости решений сохранён: status не является параметром, след различим (ревизия op=sync_body, событие adr.body_synced). Поверхности: CLI adr sync, MCP adr_sync_body. Счётчики профилей 106→107 и 110→111, adr.* 9→10 тулов; хэш docs/mcp-integration.md пересчитан.",
+      "author": "agent:claude-opus-5",
+      "scope": "master",
+      "task": "ADO-168"
+    },
     {
       "date": "2026-09-11",
       "version": "2.8",
