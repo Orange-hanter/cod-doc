@@ -325,8 +325,12 @@ def task_status(
         console.print(f"[red]Task '{task_id}' not found.[/red]")
         sys.exit(1)
     except StatusTransitionError as exc:
-        # ADO-039: todo→in_progress enforce'ится через task_checkout
+        # ADO-039: todo→in_progress enforce'ится через checkout. Текст ошибки
+        # приходит из сервиса и называет MCP-тул `task_checkout`; для того, кто
+        # работает из терминала, дописываем реальную CLI-команду (ADO-157).
         console.print(f"[red]{exc}[/red]")
+        if "task_checkout" in str(exc):
+            console.print(f"[dim]  → cod-doc task checkout {task_id} -p {project}[/dim]")
         sys.exit(1)
 
     icon = _STATUS_ICON.get(t.status.value, "⚪")
@@ -527,3 +531,135 @@ def task_remove_dep(
         sys.exit(1)
 
     console.print(f"[green]✅ {t.task_id}: dependency on {blocker_id} removed.[/green]")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# task checkout / release
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@task.command("checkout")
+@click.argument("task_id")
+@click.option("--project", "-p", required=True, help="Project slug")
+@click.option("--agent", default="cli", show_default=True, help="Lock holder")
+@click.option(
+    "--expect",
+    "expected_statuses",
+    multiple=True,
+    help="Allowed pre-checkout statuses (repeatable; default: todo, pending)",
+)
+@click.pass_context
+def task_checkout(
+    ctx: click.Context,
+    task_id: str,
+    project: str,
+    agent: str,
+    expected_statuses: tuple[str, ...],
+) -> None:
+    """Atomically lock TASK_ID and move it to in-progress.
+
+    ADO-039 makes this the only legal path out of `pending`: `task status`
+    refuses the direct transition. Until ADO-157 the command existed only as
+    the MCP tool, so a CLI-only workflow could not follow the protocol at all.
+    """
+    from cod_doc.domain.entities import actor_kind_for_author
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import activity_service, checkout_service
+    from cod_doc.services.checkout_service import CheckoutConflictError, CheckoutStatusError
+
+    cfg: Config = ctx.obj["config"]
+    sf = _make_session(project, cfg)
+
+    try:
+        with transactional(sf) as session:
+            project_id = _require_project_id(session, project)
+            result = checkout_service.checkout(
+                session,
+                task_id,
+                agent=agent,
+                expected_statuses=list(expected_statuses) or None,
+            )
+            if not result.idempotent:
+                activity_service.emit(
+                    session,
+                    project_id,
+                    "task.checked_out",
+                    actor_kind=actor_kind_for_author(agent),
+                    actor_id=agent,
+                    scope_kind="task",
+                    scope_id=task_id,
+                    payload={
+                        "from_status": result.expected_status_at_checkout,
+                        "to_status": result.new_status,
+                    },
+                    summary=f"Task {task_id} checked out by {agent}",
+                )
+    except LookupError:
+        console.print(f"[red]Task '{task_id}' not found.[/red]")
+        sys.exit(1)
+    except CheckoutConflictError as exc:
+        # 409: чужой замок. Повторять бесполезно — это не гонка, а занятость.
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+    except CheckoutStatusError as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if result.idempotent:
+        console.print(f"[yellow]{task_id}: уже за {agent}, статус {result.new_status}[/yellow]")
+    else:
+        console.print(
+            f"[green]🔒 {task_id}: {result.expected_status_at_checkout} → "
+            f"{result.new_status}, держит {agent}[/green]"
+        )
+
+
+@task.command("release")
+@click.argument("task_id")
+@click.option("--project", "-p", required=True, help="Project slug")
+@click.option("--agent", default="cli", show_default=True, help="Lock holder")
+@click.option("--force", is_flag=True, help="Release regardless of who holds the lock")
+@click.pass_context
+def task_release(
+    ctx: click.Context,
+    task_id: str,
+    project: str,
+    agent: str,
+    force: bool,
+) -> None:
+    """Release the checkout lock on TASK_ID. Status is left unchanged."""
+    from cod_doc.domain.entities import actor_kind_for_author
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import activity_service, checkout_service
+    from cod_doc.services.checkout_service import CheckoutConflictError
+
+    cfg: Config = ctx.obj["config"]
+    sf = _make_session(project, cfg)
+
+    try:
+        with transactional(sf) as session:
+            project_id = _require_project_id(session, project)
+            result = checkout_service.release(session, task_id, agent=agent, force=force)
+            if not result.idempotent:
+                activity_service.emit(
+                    session,
+                    project_id,
+                    "task.released",
+                    actor_kind=actor_kind_for_author(agent),
+                    actor_id=agent,
+                    scope_kind="task",
+                    scope_id=task_id,
+                    payload={"force": force},
+                    summary=f"Task {task_id} released by {agent}",
+                )
+    except LookupError:
+        console.print(f"[red]Task '{task_id}' not found.[/red]")
+        sys.exit(1)
+    except CheckoutConflictError as exc:
+        console.print(f"[red]{exc} (сними с --force, если замок нужно сбросить)[/red]")
+        sys.exit(1)
+
+    if result.idempotent:
+        console.print(f"[yellow]{task_id}: замка не было[/yellow]")
+    else:
+        console.print(f"[green]🔓 {task_id}: замок снят, статус {result.new_status}[/green]")

@@ -23,6 +23,8 @@ cod-doc plan export      — экспорт markdown
 cod-doc plan critical-path — критический путь
 cod-doc plan forward     — цепочка prerequisites
 cod-doc plan reverse     — цепочка dependents
+cod-doc task checkout    — взять задачу в работу (pending → in-progress)
+cod-doc task release     — снять замок с задачи
 cod-doc story list       — список историй
 cod-doc story show       — детали истории
 cod-doc story create     — создать историю
