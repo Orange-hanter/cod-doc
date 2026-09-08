@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING, Any
 
 from cod_doc.domain.entities import Priority, TaskType
@@ -24,17 +23,17 @@ def _get_tool(mcp: FastMCP, name: str) -> Any:
     return mcp._tool_manager._tools[name].fn
 
 
-def test_capabilities_is_registered_no_required_params() -> None:
-    tools = asyncio.run(live_mcp.list_tools())
+async def test_capabilities_is_registered_no_required_params() -> None:
+    tools = await live_mcp.list_tools()
     by_name = {t.name: t for t in tools}
     assert "capabilities" in by_name
     required = by_name["capabilities"].inputSchema.get("required", [])
     assert required == [], "capabilities() must take no required params (it's the L0 entry point)"
 
 
-def test_capabilities_returns_version_tools_skills_enums_references() -> None:
+async def test_capabilities_returns_version_tools_skills_enums_references() -> None:
     capabilities = _get_tool(live_mcp, "capabilities")
-    result = capabilities()
+    result = await capabilities()
 
     assert isinstance(result, dict)
     # 1. Version reachable from a single key.
@@ -61,10 +60,10 @@ def test_capabilities_returns_version_tools_skills_enums_references() -> None:
     assert "agents_md" in result["references"]
 
 
-def test_capabilities_family_counts_sum_close_to_total() -> None:
+async def test_capabilities_family_counts_sum_close_to_total() -> None:
     """Большая часть тулов должна попадать в семейство (не в misc)."""
     capabilities = _get_tool(live_mcp, "capabilities")
-    result = capabilities()
+    result = await capabilities()
     fams = result["tools"]["families"]
     total = result["tools"]["total"]
     misc = fams.get("misc", 0)

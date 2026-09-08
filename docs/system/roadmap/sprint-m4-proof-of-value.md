@@ -6,7 +6,7 @@ source_of_truth: false
 canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
 created: 2026-08-30
-last_updated: 2026-08-30
+last_updated: 2026-09-02
 audience: [next-session-agent, contributors]
 related_docs:
   - ROADMAP.md

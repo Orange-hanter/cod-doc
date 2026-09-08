@@ -41,7 +41,7 @@ logger = logging.getLogger("cod_doc.api")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     cfg = Config.load()
     set_config(cfg)
     projects = cfg.list_projects()

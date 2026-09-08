@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
     from cod_doc.config import Config
     from cod_doc.domain.entities import Document
+    from cod_doc.services.drift_gate_service import GateReport
 
 console = Console()
 log = get_logger("cli.ctx")
@@ -243,24 +244,114 @@ def ctx_docs(
 
 @ctx.command("drift")
 @click.option("--project", "-p", required=True, help="Слаг проекта")
+@click.option(
+    "--changed-files",
+    multiple=True,
+    help="Сузить выборку до этих repo-относительных путей; повторяемый, допускает запятые",
+)
+@click.option(
+    "--pr",
+    type=int,
+    default=None,
+    help="Номер PR: без --changed-files берёт список файлов из него (`gh pr view`)",
+)
+@click.option(
+    "--repo",
+    default=None,
+    help="OWNER/NAME для `gh` (по умолчанию — репозиторий по пути проекта)",
+)
+@click.option(
+    "--comment",
+    "post_comment",
+    is_flag=True,
+    default=False,
+    help="Оставить/обновить комментарий гейта в --pr (идемпотентно, по маркеру)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="С --comment: показать тело комментария, ничего не отправляя",
+)
 @click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
 @click.pass_context
-def ctx_drift(ctx: click.Context, project: str, as_json: bool) -> None:
-    """DB↔markdown дрейф проекта (тот же shape, что и MCP ``ctx_drift``)."""
+def ctx_drift(
+    ctx: click.Context,
+    project: str,
+    changed_files: tuple[str, ...],
+    pr: int | None,
+    repo: str | None,
+    post_comment: bool,
+    dry_run: bool,
+    as_json: bool,
+) -> None:
+    """DB↔markdown дрейф проекта (тот же shape, что и MCP ``ctx_drift``).
+
+    С ``--changed-files`` / ``--pr`` превращается в drift-гейт PR (SYM-010):
+    выборка сужается до затронутых файлов, к дрейфу добавляются нерезолвящиеся
+    ссылки и frontmatter, а ``--comment`` кладёт находки в PR одним
+    комментарием под маркером ``cod-doc:drift-gate:<project>``. Повторный
+    прогон обновляет тот же комментарий.
+    """
     from cod_doc.infra.db import transactional
-    from cod_doc.services import projection_service
+    from cod_doc.services import drift_gate_service, gh_service, projection_service
 
     cfg: Config = ctx.obj["config"]
     factory, engine, root = _project_session(cfg, project)
 
+    if post_comment and pr is None:
+        raise click.ClickException("--comment требует --pr N")
+
+    files: list[str] | None = _normalise_path_patterns(changed_files) or None
+    if files is None and pr is not None:
+        try:
+            files = gh_service.pr_changed_files(pr, repo=repo, cwd=root)
+        except gh_service.GhError as exc:
+            raise click.ClickException(str(exc)) from exc
+
     try:
         with transactional(factory, commit=False) as session:
             project_id = _require_project_id(session, project)
-            report = projection_service.detect_project_drift(session, project_id, root_path=root)
+            report = projection_service.detect_project_drift(
+                session, project_id, root_path=root, paths=files
+            )
+            gate = (
+                drift_gate_service.collect(
+                    session,
+                    project=project,
+                    project_id=project_id,
+                    root_path=root,
+                    changed_files=files,
+                )
+                if files is not None
+                else None
+            )
     finally:
         engine.dispose()
 
-    payload = {
+    comment_info: dict[str, Any] | None = None
+    if gate is not None and post_comment and pr is not None:
+        body = drift_gate_service.render_comment(gate, pr=pr)
+        if dry_run:
+            comment_info = {"action": "dry_run", "body": body}
+        else:
+            try:
+                ref = gh_service.upsert_marker_comment(
+                    pr,
+                    body,
+                    drift_gate_service.marker(project),
+                    repo=repo,
+                    cwd=root,
+                )
+            except gh_service.GhError as exc:
+                raise click.ClickException(str(exc)) from exc
+            comment_info = {
+                "action": ref.action,
+                "comment_id": ref.comment_id,
+                "url": ref.url,
+            }
+
+    payload: dict[str, Any] = {
         "project": project,
         "total_docs": report.total_docs,
         "problem_count": report.problem_count,
@@ -277,30 +368,68 @@ def ctx_drift(ctx: click.Context, project: str, as_json: bool) -> None:
             for item in report.issues
         ],
     }
+    if files is not None:
+        payload["changed_files"] = files
+    if gate is not None:
+        payload["gate"] = gate.as_dict()
+    if comment_info is not None:
+        payload["comment"] = comment_info
 
     if as_json:
         print(_json.dumps(payload, ensure_ascii=False, indent=2))
         return
 
     console.rule(f"[bold]Контекст: дрейф — {project}[/bold]")
+    if files is not None:
+        console.print(f"Файлов из PR/фильтра: [cyan]{len(files)}[/cyan]")
     console.print("  " + "  ".join(f"{status}: {count}" for status, count in report.counts.items()))
     console.print(f"Всего документов: {report.total_docs}")
     console.print(f"Проблем: [cyan]{report.problem_count}[/cyan]")
-    if not report.issues:
-        console.print("[green]✅ Дрейф не обнаружен.[/green]")
-        return
 
-    table = Table(show_header=True, box=None, padding=(0, 1))
-    table.add_column("Статус", width=18)
-    table.add_column("Doc key", style="cyan")
-    table.add_column("Путь", style="dim")
-    for item in report.issues:
-        table.add_row(
-            item.report.status.value,
-            item.doc_key,
-            item.path,
-        )
-    console.print(table)
+    if report.issues:
+        table = Table(show_header=True, box=None, padding=(0, 1))
+        table.add_column("Статус", width=18)
+        table.add_column("Doc key", style="cyan")
+        table.add_column("Путь", style="dim")
+        for item in report.issues:
+            table.add_row(
+                item.report.status.value,
+                item.doc_key,
+                item.path,
+            )
+        console.print(table)
+    else:
+        console.print("[green]✅ Дрейф не обнаружен.[/green]")
+
+    if gate is not None:
+        _render_gate(gate, comment_info)
+
+
+def _render_gate(gate: GateReport, comment_info: dict[str, Any] | None) -> None:
+    """Человекочитаемая часть drift-гейта: находки + судьба комментария."""
+    console.print(f"Находок гейта: [cyan]{gate.finding_count}[/cyan] ({gate.counts_by_rule})")
+    if gate.findings:
+        gate_table = Table(show_header=True, box=None, padding=(0, 1))
+        gate_table.add_column("Правило", width=12)
+        gate_table.add_column("Код", width=22)
+        gate_table.add_column("Sev", width=8)
+        gate_table.add_column("Файл", style="dim")
+        gate_table.add_column("Находка")
+        for finding in gate.findings:
+            gate_table.add_row(
+                finding.rule, finding.code, finding.severity, finding.path, finding.title
+            )
+        console.print(gate_table)
+    if comment_info is None:
+        return
+    if comment_info["action"] == "dry_run":
+        console.print("[yellow]dry-run — комментарий не отправлен:[/yellow]")
+        console.print(comment_info["body"])
+        return
+    console.print(
+        f"Комментарий [{comment_info['action']}]: "
+        f"id={comment_info['comment_id']} {comment_info['url']}"
+    )
 
 
 @ctx.command("search")

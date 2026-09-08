@@ -7,6 +7,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from cod_doc.api.deps import get_config
 from cod_doc.api.web.templates_env import templates
+from cod_doc.core.embeddings.registry import list_embedding_adapters
+from cod_doc.core.embeddings.settings import DEFAULT_BATCH_SIZE
 from cod_doc.services import model_catalog
 
 from ._helpers import _masked_api_key, ensure_loopback_client
@@ -33,6 +35,11 @@ def settings_show(request: Request) -> HTMLResponse:
                 "agent_interval": cfg.agent_interval,
                 "embedding_model": cfg.embedding_model,
                 "embedding_backend": cfg.embedding_backend,
+                "embedding_api_key_masked": _masked_api_key(cfg.embedding_api_key),
+                "embedding_api_key_set": bool(cfg.embedding_api_key),
+                "embedding_base_url": cfg.embedding_base_url,
+                "embedding_dimensions": cfg.embedding_dimensions or "",
+                "embedding_batch_size": cfg.embedding_batch_size,
                 "lite_model": cfg.lite_model,
                 "doc_max_tokens_heavy": cfg.doc_max_tokens_heavy,
                 "doc_max_tokens_default": cfg.doc_max_tokens_default,
@@ -64,6 +71,10 @@ def settings_save(
     agent_interval: int = Form(...),
     embedding_model: str = Form(...),
     embedding_backend: str = Form("openai"),
+    embedding_api_key: str = Form(""),
+    embedding_base_url: str = Form(""),
+    embedding_dimensions: str = Form(""),
+    embedding_batch_size: int = Form(DEFAULT_BATCH_SIZE),
     lite_model: str = Form(""),
     doc_max_tokens_heavy: int = Form(64000),
     doc_max_tokens_default: int = Form(16000),
@@ -86,9 +97,21 @@ def settings_save(
     cfg.agent_interval = agent_interval
     cfg.embedding_model = embedding_model.strip()
     backend = embedding_backend.strip().lower()
-    if backend not in {"openai", "local"}:
+    # Нормализуем до save(): валидатор Config поднимает ValueError, а форма
+    # не должна ронять сервер из-за подделанного значения.
+    if backend not in list_embedding_adapters():
         backend = "openai"
     cfg.embedding_backend = backend
+    # ADO-071: второй секрет живёт по тем же правилам, что api_key —
+    # пусто = не трогать, "-" = удалить.
+    if embedding_api_key == "-":
+        cfg.embedding_api_key = ""
+    elif embedding_api_key.strip():
+        cfg.embedding_api_key = embedding_api_key.strip()
+    cfg.embedding_base_url = embedding_base_url.strip()
+    dimensions = embedding_dimensions.strip()
+    cfg.embedding_dimensions = int(dimensions) if dimensions.isdigit() else None
+    cfg.embedding_batch_size = max(1, embedding_batch_size)
     cfg.lite_model = lite_model.strip()
     cfg.doc_max_tokens_heavy = max(1024, doc_max_tokens_heavy)
     cfg.doc_max_tokens_default = max(1024, doc_max_tokens_default)

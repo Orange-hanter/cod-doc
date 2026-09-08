@@ -181,7 +181,9 @@ def test_structure_drift_is_not_projection_drift(engine_with_schema) -> None:
             project_slug="demo",
         )
         assert result["drift"] is not None
-        obligations = export_obligations(session, project_id, project_slug="demo", head_sha="abcdef1")
+        obligations = export_obligations(
+            session, project_id, project_slug="demo", head_sha="abcdef1"
+        )
         drift = compute_structure_drift(
             facts_payload=facts,
             assessment_payload=assessment,
@@ -210,9 +212,13 @@ def test_waiver_suppresses_triage_but_not_assessment(engine_with_schema) -> None
             trust_tier="trusted_local",
             project_slug="demo",
         )
-        row = session.execute(
-            select(StructureFindingModel).where(StructureFindingModel.project_id == project_id)
-        ).scalars().first()
+        row = (
+            session.execute(
+                select(StructureFindingModel).where(StructureFindingModel.project_id == project_id)
+            )
+            .scalars()
+            .first()
+        )
         assert row is not None
         upsert_waiver(
             session,
@@ -225,7 +231,17 @@ def test_waiver_suppresses_triage_but_not_assessment(engine_with_schema) -> None
         waived = apply_waivers(
             session,
             project_id,
-            [{"fingerprint": row.fingerprint, "ruleId": row.rule_id, "status": "open", "priority": "high", "summary": row.summary, "missingEvidence": [], "remediationTarget": "test"}],
+            [
+                {
+                    "fingerprint": row.fingerprint,
+                    "ruleId": row.rule_id,
+                    "status": "open",
+                    "priority": "high",
+                    "summary": row.summary,
+                    "missingEvidence": [],
+                    "remediationTarget": "test",
+                }
+            ],
         )
         assert waived[0]["suppressed"] is True
         assert triage_findings(waived) == []

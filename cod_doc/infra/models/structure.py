@@ -56,9 +56,7 @@ class CodeStructureSnapshotModel(Base):
         Integer, ForeignKey("code_structure_snapshot.row_id", ondelete="SET NULL")
     )
 
-    assessments: Mapped[list[StructureAssessmentModel]] = relationship(
-        back_populates="snapshot"
-    )
+    assessments: Mapped[list[StructureAssessmentModel]] = relationship(back_populates="snapshot")
 
 
 class StructureAssessmentModel(Base):
@@ -228,9 +226,7 @@ class DocCodeClaimModel(Base):
 class StructureWaiverModel(Base):
     __tablename__ = "structure_waiver"
     __table_args__ = (
-        UniqueConstraint(
-            "project_id", "finding_fingerprint", name="uq_structure_waiver_finding"
-        ),
+        UniqueConstraint("project_id", "finding_fingerprint", name="uq_structure_waiver_finding"),
     )
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)

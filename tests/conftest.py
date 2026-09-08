@@ -7,6 +7,7 @@ tests that intentionally create an empty config.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -20,9 +21,24 @@ def isolated_cod_doc_home(
 ) -> Path:
     home = tmp_path / "cod-doc-home"
     home.mkdir()
+
+    # ADO-070: прогон обязан быть герметичным. `Config` читает окружение с
+    # префиксом COD_DOC_ (env_prefix), поэтому любая внешняя COD_DOC_*
+    # подменяет поле конфига в тестах. Workflow CI выставляет
+    # COD_DOC_API_KEY=sk-test-placeholder — и тесты, проверяющие поведение
+    # «ключ не настроен», падали только в CI. Локально это не воспроизводилось,
+    # потому что переменной нет; а увидеть это раньше было нельзя — джоба
+    # умирала на alembic до самих тестов.
+    for key in [k for k in os.environ if k.startswith("COD_DOC_")]:
+        monkeypatch.delenv(key, raising=False)
+
+    # ADO-068: достаточно переменной окружения. Раньше здесь дополнительно
+    # подменялись константы cod_doc.config.CONFIG_DIR/CONFIG_FILE — они
+    # вычислялись на импорте, и без подмены изоляция не работала. Теперь путь
+    # резолвится в момент вызова (config_dir()/config_file()), поэтому setenv
+    # покрывает и внутрипроцессный код, и подпроцессы, которым окружение
+    # наследуется (см. tests/_alembic.py).
     monkeypatch.setenv("COD_DOC_HOME", str(home))
-    monkeypatch.setattr("cod_doc.config.CONFIG_DIR", home)
-    monkeypatch.setattr("cod_doc.config.CONFIG_FILE", home / "config.yaml")
 
     # Workspace discovery is a useful runtime fallback, but in tests it makes
     # an empty Config accidentally include the repository under test. Keep the

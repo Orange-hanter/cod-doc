@@ -250,6 +250,10 @@ cod-doc finding stability --project SLUG --sha SHA
   Критерий: на PR с переименованным якорем, на который ссылаются 3 места,
   cod-doc называет все три на 8 прогонах одного sha (Jaccard 1.00 против
   0.00–0.14 у LLM).
+- **Глубокий контур docs↔code/scenario** (structure, coverage, obligations):
+  см. [proposal 24](24-structure-contracts-scenarios.md) — после SYM-005..009;
+  не дублирует slimFinding/ctx drift, дополняет `structure_facts` /
+  `structure_assessment` и `structure_context` для garage executor.
 
 ### 3.6. Кросс-проектность (последняя фаза)
 

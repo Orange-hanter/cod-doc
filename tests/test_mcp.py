@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,6 @@ from mcp import StdioServerParameters
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
-import cod_doc.config as config_module
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 
@@ -20,9 +20,9 @@ from cod_doc.core.project import Project
 @pytest.fixture
 def mcp_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProjectEntry, Path]:
     config_dir = tmp_path / ".cod-doc-home"
-    config_file = config_dir / "config.yaml"
-    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
-    monkeypatch.setattr(config_module, "CONFIG_FILE", config_file)
+    # ADO-068: путь резолвится в момент вызова — достаточно COD_DOC_HOME.
+    config_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("COD_DOC_HOME", str(config_dir))
 
     repo = tmp_path / "mcp-repo"
     repo.mkdir()
@@ -36,7 +36,7 @@ def mcp_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Projec
 
 def _open_stdio_client(config_dir: Path):
     params = StdioServerParameters(
-        command=str(Path(__file__).resolve().parents[1] / ".venv" / "bin" / "python"),
+        command=sys.executable,  # ADO-070: не хардкодить .venv — в CI его нет
         # Tests assert presence of the kept legacy agent tools (run_agent_once,
         # …) which are hidden under the cycle-4 'standard' default. Pin
         # --profile full for back-compat coverage.
@@ -80,10 +80,13 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     # PCA-010: heartbeat-context surface
     assert "task_heartbeat_context" in tool_names
     # PCA-032: run-id audit trail
-    assert "run_list" in tool_names
     assert "run_get" in tool_names
+    # ADR-012 (ADO-044): run_list / run_revert / activity_for_run удалены —
+    # run_id пуст на всех мутациях, кроме встроенного раннера.
+    assert "run_list" not in tool_names
+    assert "run_revert" not in tool_names
+    assert "activity_for_run" not in tool_names
     # PCA-033: run-revert dry-run
-    assert "run_revert" in tool_names
     # PCA-003: agent-skill catalog
     assert "skill_list" in tool_names
     assert "skill_get" in tool_names
@@ -101,6 +104,7 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "finding_dismiss" in tool_names
     assert "ctx_docs" in tool_names
     assert "ctx_drift" in tool_names
+    assert "ctx_drift_gate" in tool_names
 
 
 # STB-002 (2026-06-08): removed test_mcp_add_task_and_get_master — it exercised

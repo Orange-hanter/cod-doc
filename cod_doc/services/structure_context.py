@@ -31,6 +31,8 @@ from cod_doc.services.structure_protocol import (
 from cod_doc.services.structure_service import get_assessment_payload, require_pinned_snapshot
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from sqlalchemy.orm import Session
 
 _MAX_DEPENDENCY_DEPTH = 3
@@ -110,9 +112,9 @@ def build_structure_context(
     relevant_obligations = _filter_obligations(obligations, selected, selected_entities)
     gaps = _gap_findings(session, project_id, selected)
     scenarios = _filter_scenarios(assessment_payload, selected, relevant_obligations)
-    suggested_files = sorted(
-        {str(item["path"]) for item in selected_entities if item.get("path")}
-    )[:_SUGGESTED_FILES]
+    suggested_files = sorted({str(item["path"]) for item in selected_entities if item.get("path")})[
+        :_SUGGESTED_FILES
+    ]
     payload: dict[str, object] = {
         "pinned": {
             "headSha": snapshot.head_sha,
@@ -150,7 +152,9 @@ def _load_graph(
         ).scalars()
     )
     edges = list(
-        session.execute(select(CodeEdgeModel).where(CodeEdgeModel.snapshot_id == snapshot_id)).scalars()
+        session.execute(
+            select(CodeEdgeModel).where(CodeEdgeModel.snapshot_id == snapshot_id)
+        ).scalars()
     )
     return entities, contracts, edges
 
@@ -188,7 +192,7 @@ def _walk_neighborhood(
 def _filter_obligations(
     obligations: dict[str, object],
     selected: set[str],
-    selected_entities: list[dict[str, object]],
+    selected_entities: Sequence[Mapping[str, object]],
 ) -> list[dict[str, object]]:
     names = _names(selected_entities)
     relevant: list[dict[str, object]] = []
@@ -257,7 +261,8 @@ def _gap_findings(
 def _apply_budget(payload: dict[str, object], *, budget_tokens: int) -> dict[str, object]:
     encoded = canonical_json(payload)
     truncated = (
-        len(encoded.encode("utf-8")) > MAX_CONTEXT_BYTES or len(encoded) // _TOKEN_DIVISOR > budget_tokens
+        len(encoded.encode("utf-8")) > MAX_CONTEXT_BYTES
+        or len(encoded) // _TOKEN_DIVISOR > budget_tokens
     )
     if truncated:
         deps = payload.get("dependencies")
@@ -273,5 +278,5 @@ def _apply_budget(payload: dict[str, object], *, budget_tokens: int) -> dict[str
     return payload
 
 
-def _names(entities: list[dict[str, object]]) -> list[str]:
+def _names(entities: Sequence[Mapping[str, object]]) -> list[str]:
     return [str(item.get("name") or "").lower() for item in entities if item.get("name")]

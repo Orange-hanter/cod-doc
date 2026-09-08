@@ -67,10 +67,10 @@ def test_invalid_profile_raises() -> None:
         mcp_server.apply_profile("custom-evil")
 
 
-def test_capabilities_reports_active_profile() -> None:
+async def test_capabilities_reports_active_profile() -> None:
     mcp_server.apply_profile("standard")
     capabilities = mcp_server.mcp._tool_manager._tools["capabilities"].fn
-    result = capabilities()
+    result = await capabilities()
     assert result["profile"] == "standard"
 
 
@@ -114,8 +114,8 @@ def test_keep_tool_pure_logic() -> None:
 EXPECTED_PROFILE_COUNTS = {
     "agent": 6,
     "minimal": 21,
-    "standard": 112,
-    "full": 116,
+    "standard": 111,
+    "full": 115,
 }
 
 
@@ -137,6 +137,7 @@ SYM_006D_TOOLS = {
     "finding_dismiss",
     "ctx_docs",
     "ctx_drift",
+    "ctx_drift_gate",
 }
 
 

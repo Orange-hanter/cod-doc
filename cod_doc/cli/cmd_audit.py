@@ -23,6 +23,8 @@ from rich.table import Table
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from sqlalchemy.orm import Session, sessionmaker
 
     from cod_doc.config import Config
@@ -189,16 +191,37 @@ def _documented_web_routes(cap_path: Path) -> set[tuple[str, str]]:
     return {(m.group(1), _normalize_route(m.group(2))) for m in _CAP_ROUTE_RE.finditer(text)}
 
 
+def _iter_route_entries(routes: object, prefix: str = "") -> Iterator[tuple[str, set[str]]]:
+    """Обойти routes рекурсивно, разворачивая обёртки включённых роутеров.
+
+    ADO-070: начиная с FastAPI 0.141 ``router.routes`` содержит не ``APIRoute``,
+    а обёртки ``_IncludedRouter`` — у них нет ни ``.path``, ни ``.methods``,
+    настоящие роуты лежат в ``.original_router.routes``, а префикс — в
+    ``.include_context.prefix``. Прежний плоский обход молча отдавал пустое
+    множество: `audit --web-routes` показывал ноль живых роутов и «дрейфа нет»,
+    то есть advisory-джоба CI была зелёной впустую. Обход держит обе версии:
+    на FastAPI < 0.141 обёрток просто нет.
+    """
+    for r in routes if isinstance(routes, list | tuple) else []:
+        included = getattr(r, "original_router", None)
+        if included is not None:
+            ctx = getattr(r, "include_context", None)
+            nested_prefix = getattr(ctx, "prefix", "") or ""
+            yield from _iter_route_entries(included.routes, prefix + nested_prefix)
+            continue
+        path = getattr(r, "path", None)
+        methods = getattr(r, "methods", None)
+        if path and methods:
+            yield prefix + path, set(methods)
+
+
 def _real_web_routes() -> set[tuple[str, str]]:
     """Live web routes from the pages + fragments routers (excludes /api, /ws)."""
     from cod_doc.api.web import fragments_router, pages_router
 
     routes: set[tuple[str, str]] = set()
-    for r in (*pages_router.routes, *fragments_router.routes):
-        path = getattr(r, "path", None)
-        methods = getattr(r, "methods", None)
-        if not path or not methods:
-            continue
+    entries = _iter_route_entries([*pages_router.routes, *fragments_router.routes])
+    for path, methods in entries:
         norm = _normalize_route(path)
         for method in methods:
             if method in ("HEAD", "OPTIONS"):
@@ -386,6 +409,18 @@ def audit(
             _check_frontmatter(d, findings)
             if drift:
                 _check_drift(d, root, session, findings)
+        from cod_doc.services.validation import audit_import_fallback
+
+        for issue in audit_import_fallback(docs):
+            findings.append(
+                AuditFinding(
+                    code=issue.code,
+                    severity=issue.severity,
+                    subject="project",
+                    message=issue.message,
+                    details=issue.details,
+                )
+            )
 
     error_count = sum(1 for f in findings if f.severity == "error")
     warning_count = sum(1 for f in findings if f.severity == "warning")

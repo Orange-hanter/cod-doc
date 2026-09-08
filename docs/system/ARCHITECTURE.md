@@ -99,16 +99,17 @@ related_code:
 
 ### 4.3 Embeddings
 
-Для concentrated-context retrieval (`ContextService`) хранится индекс эмбеддингов по документам и секциям. Реализации:
+Для concentrated-context retrieval (`ContextService`, уровень L3) хранится векторный индекс документов. Реализация — ChromaDB (`PersistentClient` в `chroma_path`, коллекция `cod_doc`, косинусная метрика); ранее заявленные `sqlite-vss`/`pgvector` не реализованы.
 
-- SQLite profile: `sqlite-vss` или faiss-файл рядом с БД.
-- Postgres profile: `pgvector`.
+**Провайдер эмбеддингов — выбор конфига и отдельная ось от LLM (ADO-071).** `cod_doc/core/embeddings/` — реестр адаптеров (`EmbeddingAdapter` + `registry.py`, внешние плагины из `~/.cod-doc/embeddings.json`), устроенный так же, как реестр LLM-адаптеров. Встроенные: `openai` (любой OpenAI-совместимый endpoint), `openrouter` (свой ключ, `dimensions`, `usage.cost`), `local` (sentence-transformers), `mock`. Ядро (`core/reindex.py`) принимает `EmbeddingSettings` и не знает ни одного провайдера по имени.
 
-Индексация — по событию `RevisionCommitted`, асинхронно, с fallback на полнотекстовый поиск.
+Идентичность коллекции фиксируется подписью `<backend>:<model>@<dimensions>` в её metadata: векторы разных моделей несравнимы, поэтому расхождение конфига с непустым индексом — явная ошибка с требованием пересобрать индекс, а не тихая деградация.
+
+Индексация — по явному вызову (`reindex_project`), поиск fail-open: любая ошибка бэкенда даёт пустой список, а громкий сигнал даёт `cod-doc embed status/probe`.
 
 ### 4.4 LLM provider
 
-Выбор провайдера — конфиг (OpenRouter, Anthropic API, local Ollama). Домен и сервисы не знают о конкретном провайдере; агент/оркестратор — знает. Это наследуется из текущего cod-doc (см. `cod_doc/agent/orchestrator.py`, `cod_doc/config.py`).
+Выбор провайдера — конфиг (OpenRouter, Anthropic API, local Ollama). Домен и сервисы не знают о конкретном провайдере; агент/оркестратор — знает. Это наследуется из текущего cod-doc (см. `cod_doc/agent/orchestrator.py`, `cod_doc/config.py`). Провайдер эмбеддингов выбирается **независимо** (§4.3): у чат-провайдера может не быть `/embeddings` вовсе.
 
 ## 5. Потоки данных
 
@@ -207,7 +208,7 @@ ContextService.build(target, depth)
 
 - Данные проекта не покидают БД без явного export.
 - Встроенный LLM-клиент не видит содержимого документов сверх того, что ContextService положил в сессию.
-- Audit-лог всех write-операций через MCP/REST — в таблице `Revision` + отдельном `AuditLog` (см. [DATA_MODEL.md §3.13](DATA_MODEL.md)).
+- Audit-лог всех write-операций через MCP/REST/CLI/TUI — в таблицах `Revision` (что изменилось) и `ActivityEvent` (кто и что сделал), см. [DATA_MODEL.md §3.13](DATA_MODEL.md). Пишутся одним атомарным вызовом `activity_service.write_revision_and_emit_event` внутри транзакции мутации (ADO-040). Отдельной таблицы `AuditLog` больше нет — она была объявлена, но за всю историю проекта не получила ни одного writer'а и удалена по ADR-012.
 - **`/api/v1` — единственная поверхность будущего Bearer-гейта** (контракт RFC 22 §3.3, см. `proposals/22-symbiosis-zairgrush-orakul.md`): `COD_DOC_API_TOKEN`, ASGI-middleware только на `/api/v1` (`cod_doc/api/v1/`), constant-time compare, 401 JSON. Гейт включается при появлении первого удалённого вызывающего. Legacy `/api/*` заморожен и Bearer-гейта не получит.
 
 ## 10. Error Model
@@ -254,7 +255,7 @@ class CodDocError(Exception):
 
 Любая ошибка в транзакции = полный rollback.
 Никаких partial updates: либо весь набор изменений (task + dependency + revision + section_totals refresh) применился, либо ни одно.
-`audit_log` пишется **до** commit'а с предварительным `result='pending'` и обновляется на `'ok'` / `'error:<code>'` после.
+След мутации (`revision` + `activity_event`) пишется **внутри** той же транзакции, что и сама мутация, — отдельного pre-commit-журнала нет (ADR-012). Ошибка write-path не оставляет записи вообще: транзакция откатывается целиком.
 
 ### 11.4 Идемпотентность
 
@@ -293,7 +294,7 @@ Server-профиль: REST/MCP требуют `Authorization: Bearer <token>`; 
 1. Резолв actor.
 2. Проверка allowed_tools/denied_tools (см. [capabilities/agents-and-skills.md §3](capabilities/agents-and-skills.md)).
 3. Проверка sensitivity_clearance vs target document (см. [standards/sensitive-data.md §3](standards/sensitive-data.md)).
-4. При deny — `AuthDeniedError(code='AUTHZ-001'|'AUTHZ-002')`, audit_log пишется обязательно.
+4. При deny — `AuthDeniedError(code='AUTHZ-001'|'AUTHZ-002')`. Отказы в журнал пока не пишутся: `activity_event` фиксирует только состоявшиеся мутации, а `audit_log` удалён (ADR-012). Гейт неактивен — включается вместе с Bearer-гейтом `/api/v1`.
 
 ## 12. Ссылки
 

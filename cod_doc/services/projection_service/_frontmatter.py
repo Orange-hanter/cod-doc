@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import re
 from datetime import date
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
@@ -20,9 +20,7 @@ _RESERVED_KEYS = ("projection_hash", "doc_key", "revision")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # What YAML round-trips through `frontmatter_json` can hold.
-YamlValue: TypeAlias = (
-    "str | int | float | bool | None | date | list[YamlValue] | dict[str, YamlValue]"
-)
+type YamlValue = "str | int | float | bool | date | list[YamlValue] | dict[str, YamlValue] | None"
 
 
 def _frontmatter_dict(model: DocumentModel) -> dict[str, Any]:
@@ -84,14 +82,15 @@ def _yaml_scalar(value: YamlValue) -> YamlValue:
 
 
 def _render_frontmatter(fm: dict[str, Any]) -> str:
-    dumped = cast(
-        "str",
-        yaml.dump(
-            {k: _yaml_scalar(v) for k, v in fm.items()},
-            sort_keys=False,
-            allow_unicode=True,
-            default_flow_style=False,
-        ),
+    # ADO-070: без cast — при установленных types-PyYAML (dev-extra) yaml.dump()
+    # уже типизирован как str, и cast становится redundant-cast'ом, на котором
+    # падает mypy в CI. Локально стабов может не быть — тогда тип шире, но
+    # присваивание в str-переменную всё равно проверяется возвращаемым типом.
+    dumped: str = yaml.dump(
+        {k: _yaml_scalar(v) for k, v in fm.items()},
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
     )
     return "---\n" + dumped + "---\n"
 

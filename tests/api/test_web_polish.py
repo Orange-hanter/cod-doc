@@ -69,7 +69,12 @@ def web_app_client(tmp_path: Path):
     # Register the route on the real app so we exercise the registered handler.
     from cod_doc.api.server import app
 
-    if "/__test_raises__" not in {r.path for r in app.routes}:  # type: ignore[attr-defined]
+    # ADO-070: getattr, а не r.path — с FastAPI 0.141 в app.routes лежат
+    # обёртки _IncludedRouter без атрибута path, и фикстура падала
+    # AttributeError'ом ещё до теста (видно было только в CI: локально
+    # стоит FastAPI постарее).
+    registered = {getattr(r, "path", None) for r in app.routes}
+    if "/__test_raises__" not in registered:
 
         @app.get("/__test_raises__")
         def _probe() -> None:
@@ -102,7 +107,8 @@ def test_weberror_handler_truncates_flash_cookie(web_app_client) -> None:
 
     from cod_doc.api.server import app
 
-    if "/__test_huge__" not in {r.path for r in app.routes}:  # type: ignore[attr-defined]
+    # ADO-070: см. комментарий в web_app_client — getattr вместо r.path.
+    if "/__test_huge__" not in {getattr(r, "path", None) for r in app.routes}:
 
         @app.get("/__test_huge__")
         def _huge() -> None:

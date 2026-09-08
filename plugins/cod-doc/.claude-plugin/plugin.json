@@ -1,0 +1,10 @@
+{
+  "name": "cod-doc",
+  "description": "Документация и задачи проекта живут в БД cod-doc, markdown — проекция. Плагин даёт MCP-сервер, скиллы task-flow/doc-sync, команды статуса/задач/дрейфа и напоминание о рассинхроне после правки markdown.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Daniil Akhramiuk"
+  },
+  "homepage": "https://github.com/Orange-hanter/cod-doc",
+  "keywords": ["documentation", "tasks", "mcp", "drift", "planning"]
+}

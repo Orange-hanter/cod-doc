@@ -16,8 +16,26 @@ import yaml
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-CONFIG_DIR = Path(os.environ.get("COD_DOC_HOME", Path.home() / ".cod-doc"))
-CONFIG_FILE = CONFIG_DIR / "config.yaml"
+
+def config_dir() -> Path:
+    """Каталог конфигурации; ``COD_DOC_HOME`` читается на КАЖДОМ вызове.
+
+    ADO-068: раньше это была константа уровня модуля. ``cod_doc.config``
+    импортируется на стадии коллекции тестов — то есть ДО того, как
+    autouse-фикстура ``tests/conftest.py`` подменит ``COD_DOC_HOME`` на tmp.
+    Путь замерзал на настоящем ``~/.cod-doc``, и ``Config.save()`` из тестов
+    писал в рабочий конфиг пользователя: там оказались ``model: m``,
+    ``api_key: sk-test`` и pytest-каталоги в ``projects:`` — побайтовая копия
+    тестовых фикстур. Это был рецидив находки F5 (аудит 2026-07-29), закрытой
+    ADO-001 за пять дней до того.
+    """
+    return Path(os.environ.get("COD_DOC_HOME", Path.home() / ".cod-doc"))
+
+
+def config_file() -> Path:
+    """Путь к ``config.yaml`` в актуальном :func:`config_dir`."""
+    return config_dir() / "config.yaml"
+
 
 # STB-011: cache the parsed config per file-path, keyed on (mtime, size).
 # Config.load() is on the hot path (every MCP tool resolves a project through
@@ -53,15 +71,27 @@ class ProjectEntry(BaseSettings):
         return self.root / self.master_md
 
 
+SECRET_FIELDS: tuple[str, ...] = ("api_key", "anthropic_api_key", "embedding_api_key")
+"""Поля-секреты. Единый список: `GET /api/config` отдаёт конфиг целиком, и
+забытое здесь поле утекает наружу (ADO-096 добавил второй ключ — эмбеддера)."""
+
+
 class Config(BaseSettings):
     """Глобальная конфигурация COD-DOC."""
 
+    # ADO-068: env_file здесь НЕ указан — путь к нему зависит от COD_DOC_HOME,
+    # а model_config вычисляется при создании класса, то есть на импорте.
+    # Подставляется в __init__ через _env_file, уже по актуальному окружению.
     model_config = SettingsConfigDict(
         env_prefix="COD_DOC_",
-        env_file=str(CONFIG_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="allow",
     )
+
+    def __init__(self, **values: object) -> None:
+        """Резолвит ``.env`` в момент создания объекта, а не на импорте модуля."""
+        values.setdefault("_env_file", str(config_dir() / ".env"))
+        super().__init__(**values)  # type: ignore[arg-type]
 
     # LLM adapter selection (PCA-302, proposal 10).
     # Built-in choices: "openai_compat" (default) | "anthropic" | "mock"
@@ -128,14 +158,43 @@ class Config(BaseSettings):
     )
 
     # ChromaDB / Embeddings
-    chroma_path: str = Field(default=str(CONFIG_DIR / "chroma"))
+    # ADO-068: default_factory, а не default — иначе путь замерзает на импорте.
+    chroma_path: str = Field(default_factory=lambda: str(config_dir() / "chroma"))
     embedding_backend: str = Field(
         default="openai",
         description=(
-            "'openai' — OpenAI-compatible /embeddings (default, needs api_key); "
-            "'local' — sentence-transformers via torch (no api_key, requires "
-            "the embeddings-local extra)."
+            "Провайдер эмбеддингов (ADO-071, независим от llm_adapter): "
+            "'openai' — generic OpenAI-совместимый /embeddings (по умолчанию); "
+            "'openrouter' — OpenRouter со своим ключом и поддержкой dimensions; "
+            "'local' — sentence-transformers через torch (без ключа, требует "
+            "extra embeddings-local); 'mock' — детерминированный, для тестов."
         ),
+    )
+    # ADO-071: у эмбеддера свои реквизиты. Пустые поля означают «как раньше»
+    # (для backend='openai' подставляются общие api_key/base_url), но
+    # backend='openrouter' ключ у LLM НЕ наследует — это разные ключи.
+    embedding_api_key: str = Field(
+        default="",
+        description="Выделенный ключ эмбеддера. Обязателен для backend='openrouter'.",
+    )
+    embedding_base_url: str = Field(
+        default="",
+        description=(
+            "Выделенный endpoint эмбеддера. Пусто → base_url для 'openai' и "
+            "https://openrouter.ai/api/v1 для 'openrouter'."
+        ),
+    )
+    embedding_dimensions: int | None = Field(
+        default=None,
+        description=(
+            "Размерность вектора (Matryoshka-обрезка на стороне провайдера). "
+            "Пусто → нативная размерность модели. Смена значения делает "
+            "существующую коллекцию несовместимой: нужен 'cod-doc embed reset'."
+        ),
+    )
+    embedding_batch_size: int = Field(
+        default=128,
+        description="Сколько документов уходит в один запрос эмбеддера.",
     )
     embedding_model: str = Field(
         default="openai/text-embedding-ada-002",
@@ -156,10 +215,32 @@ class Config(BaseSettings):
     api_host: str = Field(default="127.0.0.1")
     api_port: int = Field(default=8765)
 
-    @field_validator("api_key", mode="before")
+    @field_validator("api_key", "embedding_api_key", mode="before")
     @classmethod
     def _strip(cls, v: str) -> str:
         return str(v).strip()
+
+    @field_validator("embedding_backend", mode="before")
+    @classmethod
+    def _normalize_embedding_backend(cls, v: str) -> str:
+        """Неизвестный бэкенд — структурная ошибка, а не тихий фолбэк.
+
+        Сообщение обязано называть файл: ``Config.load()`` не обёрнут в try,
+        поэтому опечатка в YAML делает фатальной любую команду.
+        """
+        from cod_doc.core.embeddings.registry import list_embedding_adapters
+
+        value = str(v).strip().lower() or "openai"
+        # Список берём из реестра, а не из константы: внешний адаптер из
+        # ~/.cod-doc/embeddings.json — легальное значение.
+        allowed = list_embedding_adapters()
+        if value not in allowed:
+            raise ValueError(
+                f"embedding_backend={v!r} в {config_file()}; допустимые значения: "
+                f"{', '.join(allowed)} "
+                "(внешние адаптеры регистрируются в ~/.cod-doc/embeddings.json)"
+            )
+        return value
 
     # ── Persistence ──────────────────────────────────────────────────────────
 
@@ -172,7 +253,7 @@ class Config(BaseSettings):
         fresh ``Config`` is still constructed each call, so callers never share
         a mutable instance.
         """
-        path = CONFIG_FILE
+        path = config_file()
         if not path.exists():
             return cls()
         st = path.stat()
@@ -192,10 +273,11 @@ class Config(BaseSettings):
 
     def save(self) -> None:
         """Сохранить конфиг в файл."""
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        path = config_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
         data = self.model_dump()
-        CONFIG_FILE.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
-        _LOAD_CACHE.pop(str(CONFIG_FILE), None)  # STB-011: invalidate stale parse
+        path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False))
+        _LOAD_CACHE.pop(str(path), None)  # STB-011: invalidate stale parse
 
     # ── Projects ─────────────────────────────────────────────────────────────
 

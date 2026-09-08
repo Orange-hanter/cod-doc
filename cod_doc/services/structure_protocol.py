@@ -93,6 +93,18 @@ def as_list(value: object, *, label: str) -> list[object]:
     return list(value)
 
 
+def as_int(value: object, *, label: str) -> int:
+    """Сузить payload-значение до int: отсутствующее и пустое считаем нулём."""
+    if value is None or value == "":
+        return 0
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise StructureProtocolError(f"{label} must be a number")
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise StructureProtocolError(f"{label} must be a number") from exc
+
+
 def require_sha256(value: object, *, label: str) -> str:
     text = str(value or "")
     if not _SHA256_RE.fullmatch(text):
@@ -212,7 +224,11 @@ def validate_obligations_export(payload: Mapping[str, object]) -> dict[str, obje
         raise StructureProtocolError("obligation limit exceeded")
     for item in obligations:
         obligation = as_object(item, label="obligation")
-        if not obligation.get("id") or not obligation.get("contentHash") or not obligation.get("statement"):
+        if (
+            not obligation.get("id")
+            or not obligation.get("contentHash")
+            or not obligation.get("statement")
+        ):
             raise StructureProtocolError("obligation id, contentHash and statement are required")
         require_sha256(obligation.get("contentHash"), label="obligation.contentHash")
     return data
@@ -244,7 +260,9 @@ def compress_payload(payload: Mapping[str, object]) -> tuple[bytes, str, int]:
     return compressed, sha256_bytes(raw), len(raw)
 
 
-def decompress_payload(compressed: bytes, *, expected_sha256: str | None = None) -> dict[str, object]:
+def decompress_payload(
+    compressed: bytes, *, expected_sha256: str | None = None
+) -> dict[str, object]:
     if len(compressed) > MAX_COMPRESSED_BYTES:
         raise StructureProtocolError("compressed structure payload exceeds limit")
     decoder = zlib.decompressobj()

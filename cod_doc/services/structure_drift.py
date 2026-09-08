@@ -19,6 +19,7 @@ from cod_doc.infra.models.structure import (
     StructureWaiverModel,
 )
 from cod_doc.services.structure_protocol import (
+    as_int,
     as_list,
     as_object,
     finding_fingerprint,
@@ -26,7 +27,7 @@ from cod_doc.services.structure_protocol import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from sqlalchemy.orm import Session
 
@@ -67,7 +68,9 @@ def suggest_obligation_links(
         if isinstance(item, dict)
     }
     contracts = [
-        item for item in as_list(facts.get("contracts"), label="contracts") if isinstance(item, dict)
+        item
+        for item in as_list(facts.get("contracts"), label="contracts")
+        if isinstance(item, dict)
     ]
     suggestions: list[dict[str, object]] = []
     for raw in obligations:
@@ -117,10 +120,12 @@ def suggest_obligation_links(
                     "reasons": reasons,
                 }
             )
-        candidates.sort(key=lambda item: (-int(item["score"]), str(item["contractRef"])))
+        candidates.sort(
+            key=lambda item: (-as_int(item["score"], label="score"), str(item["contractRef"]))
+        )
         trimmed = candidates[:limit]
         resolution = "unresolved"
-        if len(trimmed) == 1 and int(trimmed[0]["score"]) >= _UNIQUE_SCORE:
+        if len(trimmed) == 1 and as_int(trimmed[0]["score"], label="score") >= _UNIQUE_SCORE:
             resolution = "unique"
         elif trimmed:
             resolution = "ambiguous"
@@ -161,8 +166,12 @@ def compute_structure_drift(
         for item in as_list(obligations_export.get("obligations"), label="obligations")
     ]
     suggestions = list(link_suggestions or suggest_obligation_links(obligations, facts_payload))
-    suggestion_by = {str(item.get("obligationRef")): item for item in suggestions if isinstance(item, dict)}
-    snapshot_fp = str((assessment_payload or {}).get("fingerprint") or facts_payload.get("fingerprint") or "")
+    suggestion_by = {
+        str(item.get("obligationRef")): item for item in suggestions if isinstance(item, dict)
+    }
+    snapshot_fp = str(
+        (assessment_payload or {}).get("fingerprint") or facts_payload.get("fingerprint") or ""
+    )
     findings: list[dict[str, object]] = []
     stale = _stale_graph_finding(provenance, snapshot_fp)
     if stale is not None:
@@ -187,7 +196,9 @@ def compute_structure_drift(
     }
 
 
-def _stale_graph_finding(provenance: dict[str, object], snapshot_fp: str) -> dict[str, object] | None:
+def _stale_graph_finding(
+    provenance: dict[str, object], snapshot_fp: str
+) -> dict[str, object] | None:
     if str(provenance.get("graphStatus") or "fresh") == "fresh":
         return None
     return _finding(
@@ -204,7 +215,7 @@ def _stale_graph_finding(provenance: dict[str, object], snapshot_fp: str) -> dic
 
 def _obligation_findings(
     obligations: Sequence[object],
-    suggestion_by: dict[str, object],
+    suggestion_by: Mapping[str, object],
     contract_ids: set[str],
     entity_ids: set[str],
     snapshot_fp: str,
@@ -214,7 +225,10 @@ def _obligation_findings(
         obligation = as_object(raw, label="obligation")
         if obligation.get("status") != "confirmed":
             continue
-        refs = [str(item) for item in as_list(obligation.get("contractRefs") or [], label="contractRefs")]
+        refs = [
+            str(item)
+            for item in as_list(obligation.get("contractRefs") or [], label="contractRefs")
+        ]
         obl_id = str(obligation.get("id") or "")
         if not refs:
             suggestion = as_object(suggestion_by.get(obl_id) or {}, label="suggestion")
@@ -285,7 +299,9 @@ def _claim_findings(
     return findings
 
 
-def _scenario_gap_findings(assessment_payload: dict[str, object], snapshot_fp: str) -> list[dict[str, object]]:
+def _scenario_gap_findings(
+    assessment_payload: dict[str, object], snapshot_fp: str
+) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
     assessments = as_object(assessment_payload.get("assessments") or {}, label="assessments")
     for raw in as_list(assessments.get("contractScenarios") or [], label="contractScenarios"):
@@ -300,7 +316,10 @@ def _scenario_gap_findings(assessment_payload: dict[str, object], snapshot_fp: s
                 "scenario.must_obligation_gap",
                 [
                     str(scenario.get("obligationRef") or ""),
-                    *[str(item) for item in as_list(scenario.get("contractRefs") or [], label="cr")],
+                    *[
+                        str(item)
+                        for item in as_list(scenario.get("contractRefs") or [], label="cr")
+                    ],
                 ],
                 priority="high" if status == "missing" else "medium",
                 remediation="test",
@@ -308,15 +327,21 @@ def _scenario_gap_findings(assessment_payload: dict[str, object], snapshot_fp: s
                     f"Scenario {scenario.get('kind')} is {status}: "
                     f"{scenario.get('statusReason') or scenario.get('reason') or status}"
                 ),
-                evidence=[str(item) for item in as_list(scenario.get("evidence") or [], label="ev")],
-                missing=[str(item) for item in as_list(scenario.get("missingEvidence") or [], label="me")],
+                evidence=[
+                    str(item) for item in as_list(scenario.get("evidence") or [], label="ev")
+                ],
+                missing=[
+                    str(item) for item in as_list(scenario.get("missingEvidence") or [], label="me")
+                ],
                 snapshot_fp=snapshot_fp,
             )
         )
     return findings
 
 
-def _hint_findings(assessment_payload: dict[str, object], snapshot_fp: str) -> list[dict[str, object]]:
+def _hint_findings(
+    assessment_payload: dict[str, object], snapshot_fp: str
+) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
     for raw in as_list(assessment_payload.get("hints") or [], label="hints"):
         if not isinstance(raw, dict):
@@ -333,7 +358,9 @@ def _hint_findings(assessment_payload: dict[str, object], snapshot_fp: str) -> l
                 remediation=str(hint.get("remediationTarget") or "test"),
                 summary=str(hint.get("summary") or rule),
                 evidence=[str(item) for item in as_list(hint.get("evidence") or [], label="hev")],
-                missing=[str(item) for item in as_list(hint.get("missingEvidence") or [], label="hme")],
+                missing=[
+                    str(item) for item in as_list(hint.get("missingEvidence") or [], label="hme")
+                ],
                 snapshot_fp=snapshot_fp,
             )
         )
@@ -401,7 +428,7 @@ def persist_link_suggestions(
                         project_id=project_id,
                         obligation_ref=obligation_ref,
                         contract_ref=contract_ref,
-                        score=int(candidate.get("score") or 0),
+                        score=as_int(candidate.get("score"), label="score"),
                         confidence=str(candidate.get("confidence") or "heuristic"),
                         reasons_json=reasons,
                         state="pending",
@@ -410,7 +437,7 @@ def persist_link_suggestions(
                     )
                 )
             elif row.state == "pending":
-                row.score = int(candidate.get("score") or 0)
+                row.score = as_int(candidate.get("score"), label="score")
                 row.confidence = str(candidate.get("confidence") or "heuristic")
                 row.reasons_json = reasons
                 row.updated = now
@@ -502,11 +529,11 @@ def reconcile_findings(
                 rule_id=str(item["ruleId"]),
                 status="open",
                 priority=str(item["priority"]),
-                subject_refs_json=list(item["subjectRefs"]),
+                subject_refs_json=as_list(item["subjectRefs"], label="subjectRefs"),
                 summary=str(item["summary"]),
                 remediation_target=str(item["remediationTarget"]),
-                evidence_json=list(item["evidence"]),
-                missing_evidence_json=list(item["missingEvidence"]),
+                evidence_json=as_list(item["evidence"], label="evidence"),
+                missing_evidence_json=as_list(item["missingEvidence"], label="missingEvidence"),
                 first_seen_snapshot_id=snapshot_id,
                 last_seen_snapshot_id=snapshot_id,
                 created=now,
@@ -516,9 +543,9 @@ def reconcile_findings(
         else:
             row.summary = str(item["summary"])
             row.priority = str(item["priority"])
-            row.subject_refs_json = list(item["subjectRefs"])
-            row.evidence_json = list(item["evidence"])
-            row.missing_evidence_json = list(item["missingEvidence"])
+            row.subject_refs_json = as_list(item["subjectRefs"], label="subjectRefs")
+            row.evidence_json = as_list(item["evidence"], label="evidence")
+            row.missing_evidence_json = as_list(item["missingEvidence"], label="missingEvidence")
             row.last_seen_snapshot_id = snapshot_id
             row.updated = now
             if row.status in {"resolved", "superseded"}:

@@ -161,13 +161,38 @@ def test_post_findings_emits_activity_event(v1_client, tmp_path: Path) -> None:
 
 
 def test_post_findings_invalid_payload_version(v1_client) -> None:
-    bad = {**_AI_REVIEW_EXPORT, "version": 2}
+    # ADO-069: раньше здесь стояла version=2 — и тест ломался ровно в тот
+    # коммит, в котором SYM-009 научил адаптер понимать v2. Негативный кейс
+    # обязан брать версию вне _KNOWN_VERSIONS, а не ту, которую завтра внедрят.
+    bad = {**_AI_REVIEW_EXPORT, "version": 99}
     r = v1_client.post(
         "/api/v1/projects/demo/findings",
         json={"adapter": "ai_review", "export": bad},
     )
     assert r.status_code == 400
     assert "version" in r.json()["detail"]
+
+
+def test_post_findings_accepts_export_version_2(v1_client) -> None:
+    """v2 аддитивна к v1: fp/verifierStatus/actionabilityScore (ai-reviewer#5).
+
+    Приём v2 — контракт upstream-PR; до ADO-069 он проверялся только через CLI
+    ingest, а API v1 держал ассерт «v2 отвергается».
+    """
+    export_v2 = {
+        **_AI_REVIEW_EXPORT,
+        "version": 2,
+        "findings": [
+            {**_AI_REVIEW_EXPORT["findings"][0], "verifierStatus": "confirmed"},
+            {**_AI_REVIEW_EXPORT["findings"][1], "actionabilityScore": 0.7},
+        ],
+    }
+    r = v1_client.post(
+        "/api/v1/projects/demo/findings",
+        json={"adapter": "ai_review", "export": export_v2},
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["created"] == 2
 
 
 def test_post_findings_unknown_adapter(v1_client) -> None:

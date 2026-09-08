@@ -151,13 +151,13 @@ def test_run_now_marks_failed_and_reraises_on_check_error(engine_with_schema, mo
 
 
 def test_load_plugins_warns_on_bad_adapter_file(tmp_path: Path, monkeypatch) -> None:
-    from pathlib import Path as _Path
-
     from cod_doc.agent.adapters import registry
 
-    monkeypatch.setattr(_Path, "home", lambda: tmp_path)
+    # ADO-068: реестр адаптеров резолвится через config_dir(), то есть по
+    # COD_DOC_HOME, а не по Path.home() — подменяем окружение, а не хоум.
     cod_dir = tmp_path / ".cod-doc"
     cod_dir.mkdir()
+    monkeypatch.setenv("COD_DOC_HOME", str(cod_dir))
     (cod_dir / "adapters.json").write_text("{ not valid json ]", encoding="utf-8")
     # Reset the one-shot gate so _load_plugins actually runs the body.
     monkeypatch.setattr(registry, "_plugins_loaded", False)

@@ -177,9 +177,7 @@ def register(mcp: FastMCP) -> None:
                 if row is not None:
                     payload = structure_service.get_assessment_payload(row)
                     assessments = as_object(payload.get("assessments") or {}, label="assessments")
-                    items = as_list(
-                        assessments.get("contractScenarios") or [], label="scenarios"
-                    )
+                    items = as_list(assessments.get("contractScenarios") or [], label="scenarios")
                 start = int(cursor or "0")
                 chunk = items[start : start + limit]
                 return {

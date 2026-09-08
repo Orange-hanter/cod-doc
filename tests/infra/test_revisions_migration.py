@@ -1,10 +1,13 @@
-"""COD-004 smoke: revision (§3.5) + audit_log (§3.13)."""
+"""COD-004 smoke: revision (§3.5).
+
+ADR-012 (ADO-044): кейсы `audit_log` сняты вместе с таблицей —
+миграция 0029_drop_audit_log.
+"""
 
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from sqlalchemy import select, text
@@ -12,19 +15,17 @@ from ulid import ULID
 
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import (
-    AuditLogModel,
     ProjectModel,
     RevisionModel,
 )
+from tests._alembic import run_alembic
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _run_alembic_upgrade(db_url: str) -> None:
-    env = {"PATH": "/usr/bin:/bin", "COD_DOC_DB_URL": db_url}
-    venv_alembic = REPO_ROOT / ".venv" / "bin" / "alembic"
-    cmd = [str(venv_alembic) if venv_alembic.exists() else "alembic", "upgrade", "head"]
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True, env=env, capture_output=True)
+    run_alembic("upgrade", "head", db_url=db_url)
 
 
 @pytest.fixture
@@ -58,12 +59,12 @@ def test_migration_creates_tables_and_indexes(engine_with_schema) -> None:  # ty
         indexes = {
             r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='index'"))
         }
-    assert {"revision", "audit_log"} <= tables
+    assert "revision" in tables
+    # ADR-012: audit_log удалена миграцией 0029 — её не должно быть в схеме.
+    assert "audit_log" not in tables
     assert {
         "ix_revision_entity",
         "ix_revision_parent",
-        "ix_audit_action",
-        "ix_audit_actor",
     } <= indexes
 
 
@@ -158,35 +159,7 @@ def test_revision_id_is_unique(engine_with_schema) -> None:  # type: ignore[no-u
         )
 
 
-def test_audit_log_persists_payload_as_json(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    """payload_json round-trips as a real dict, not stringified."""
-    factory = make_session_factory(engine_with_schema)
-    now = datetime.now(UTC)
-
-    with transactional(factory) as session:
-        proj_id = _add_project(session, "audit")
-        session.add(
-            AuditLogModel(
-                project_id=proj_id,
-                actor="agent:task-steward",
-                surface="mcp",
-                action="task.create",
-                payload_json={"task_id": "AUTH-025", "section": "A"},
-                result="ok",
-                at=now,
-            )
-        )
-
-    with transactional(factory) as session:
-        row = session.execute(
-            select(AuditLogModel).where(AuditLogModel.action == "task.create")
-        ).scalar_one()
-        assert row.payload_json == {"task_id": "AUTH-025", "section": "A"}
-        assert row.surface == "mcp"
-        assert row.result == "ok"
-
-
-def test_cascade_delete_project_drops_revisions_and_audit(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_cascade_delete_project_drops_revisions(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     now = datetime.now(UTC)
 
@@ -203,18 +176,6 @@ def test_cascade_delete_project_drops_revisions_and_audit(engine_with_schema) ->
                 diff="d",
             )
         )
-        session.add(
-            AuditLogModel(
-                project_id=proj_id,
-                actor="a",
-                surface="cli",
-                action="x.y",
-                payload_json={},
-                result="ok",
-                at=now,
-            )
-        )
-
     with transactional(factory) as session:
         session.delete(session.get(ProjectModel, proj_id))
 
@@ -222,7 +183,4 @@ def test_cascade_delete_project_drops_revisions_and_audit(engine_with_schema) ->
         rev = conn.execute(
             text("SELECT COUNT(*) FROM revision WHERE project_id = :p"), {"p": proj_id}
         ).scalar_one()
-        au = conn.execute(
-            text("SELECT COUNT(*) FROM audit_log WHERE project_id = :p"), {"p": proj_id}
-        ).scalar_one()
-    assert (rev, au) == (0, 0)
+    assert rev == 0

@@ -56,3 +56,25 @@ def test_patch_config_allows_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result == {"updated": True}
     assert stub.saved is True
     assert stub.model == "gpt-test"
+
+
+def test_read_config_never_leaks_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADO-096: GET /api/config отдаёт конфиг целиком — секреты вырезаются все.
+
+    Раньше вырезался только api_key, поэтому anthropic_api_key утекал; с
+    появлением второго ключа (эмбеддер) список стал единым (SECRET_FIELDS).
+    """
+    from cod_doc.config import SECRET_FIELDS, Config
+
+    cfg = Config(
+        api_key="sk-llm-secret",
+        anthropic_api_key="sk-ant-secret",
+        embedding_api_key="sk-or-secret",
+    )
+    monkeypatch.setattr(routes, "get_config", lambda: cfg)
+
+    data = routes.read_config()
+
+    for field in SECRET_FIELDS:
+        assert field not in data
+    assert "secret" not in str(data)

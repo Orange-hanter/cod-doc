@@ -5,6 +5,10 @@ Public API:
   an initial TASK revision.
 - `update_status` — set `task.status` to any value; no dep-gate (use
   `complete()` for the guarded transition to DONE).
+- `update_description` / `update_acceptance` / `update_priority` — grooming
+  правки уже созданной задачи (ADO-067); каждая пишет TASK revision +
+  activity event и выставлена в CLI (`cod-doc task update`) и MCP
+  (`task_update`).
 - `complete` — validate all blocking deps are DONE, then set `status=done` +
   `completed_at` + optional `completed_commit`; writes TASK revision.
 - `remove_dependency` — delete a task→task `dependency` edge (kind='blocks');
@@ -338,7 +342,7 @@ def update_status(
     new_status: TaskStatus,
     author: str,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
     via_checkout: bool = False,
     strict: bool = True,
     force: bool = False,
@@ -453,7 +457,7 @@ def _update_text_field(
     new_value: str,
     author: str,
     reason: str | None,
-    expected_parent_revision_id: str | None | object,
+    expected_parent_revision_id: str | object | None,
 ) -> Task:
     """Shared body for update_description / update_acceptance.
 
@@ -509,7 +513,7 @@ def update_description(
     new_description: str,
     author: str,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Replace task.description; writes a TASK revision (op=description)."""
     return _update_text_field(
@@ -530,7 +534,7 @@ def update_acceptance(
     new_acceptance: str,
     author: str,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Replace task.acceptance; writes a TASK revision (op=acceptance)."""
     return _update_text_field(
@@ -544,6 +548,61 @@ def update_acceptance(
     )
 
 
+def update_priority(
+    session: Session,
+    *,
+    task_id: str,
+    new_priority: Priority,
+    author: str,
+    reason: str | None = None,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
+) -> Task:
+    """Replace task.priority; writes a TASK revision (op=priority) + activity event.
+
+    ADO-067: приоритет был неизменяем после создания на всех поверхностях —
+    грумить бэклог (переоценить приоритет спринта) можно было только правкой
+    БД в обход сервисов. No-op, когда значение не меняется.
+
+    Revision и activity event пишутся одним атомарным вызовом
+    ``activity_service.write_revision_and_emit_event`` (правило ADO-040);
+    ``actor_kind`` выводится из ``author``.
+    """
+    model = _require_task(session, task_id)
+    old_priority = model.priority
+    if old_priority == new_priority.value:
+        t = TaskRepository(session).get_by_task_id(task_id)
+        assert t is not None
+        return t
+
+    model.priority = new_priority.value
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+
+    activity_service.write_revision_and_emit_event(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff("priority", old=old_priority, new=new_priority.value),
+        reason=reason,
+        expected_parent_revision_id=expected_parent_revision_id,
+        activity_kind="task.priority_changed",
+        activity_scope_kind="task",
+        activity_scope_id=task_id,
+        activity_payload={
+            "old_priority": old_priority,
+            "new_priority": new_priority.value,
+            "reason": reason,
+        },
+        activity_summary=f"Task {task_id}: priority {old_priority} → {new_priority.value}",
+    )
+
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return t
+
+
 def complete(
     session: Session,
     *,
@@ -551,7 +610,7 @@ def complete(
     author: str,
     commit_sha: str | None = None,
     reason: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Complete a task: validate deps → done, write revision.
 

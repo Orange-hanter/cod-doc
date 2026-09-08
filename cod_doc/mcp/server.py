@@ -125,7 +125,7 @@ def get_active_profile() -> str:
     show_default=True,
     help="Tool-surface profile (default: agent — cycle-5). agent=6 task-centric "
     "tools for AI workflows; minimal=21 cold-start curated CRUD; "
-    "standard=112 DB-backed tools without legacy; full=116 including legacy "
+    "standard=111 DB-backed tools without legacy; full=115 including legacy "
     "agent tools. Counts enforced by tests/test_server_profiles.py.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")

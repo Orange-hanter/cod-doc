@@ -39,6 +39,7 @@ related_docs:
 | FM-005 | warning | `last_updated` старше 180 дней при `status=active` | `audit_frontmatter` |
 | FM-006 | error | Несовместимая пара `type`/`status` (см. [frontmatter.md §2a](../standards/frontmatter.md)) | reserved (COD-031) |
 | FM-007 | warning | Отсутствует `sensitivity` для `module-spec`/`architecture`/`standard` | reserved (COD-025) |
+| TY-001 | error | Документы всё ещё на дефолте импорта (`module-spec`+`draft` без авторского `type:`) | `audit_import_fallback` |
 
 ### 2.2 Task plan (см. [standards/task-plan.md](../standards/task-plan.md))
 

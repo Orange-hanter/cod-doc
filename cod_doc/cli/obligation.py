@@ -56,9 +56,7 @@ def obligation_export(
         if proj is None or proj.row_id is None:
             click.echo(f"Project '{project}' not in DB.", err=True)
             sys.exit(1)
-        payload = export_obligations(
-            session, proj.row_id, project_slug=project, head_sha=head_sha
-        )
+        payload = export_obligations(session, proj.row_id, project_slug=project, head_sha=head_sha)
         if with_property_drafts:
             payload["propertyDrafts"] = generate_property_drafts(
                 as_list(payload.get("obligations"), label="obligations")

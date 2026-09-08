@@ -1,27 +1,42 @@
-# COD-DOC
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Orange-hanter/cod-doc/main/docs/assets/cod-doc/hero.png" alt="COD-DOC — Context Orchestrator for Documentation" width="100%">
+</p>
 
-**Context Orchestrator for Documentation** — an MCP server and autonomous agent
-that keeps project documentation honest.
+<p align="center">
+  <a href="https://pypi.org/project/cod-doc/"><img src="https://img.shields.io/pypi/v/cod-doc" alt="PyPI"></a>
+  <a href="https://pypi.org/project/cod-doc/"><img src="https://img.shields.io/pypi/pyversions/cod-doc" alt="Python 3.13+"></a>
+  <a href="https://github.com/Orange-hanter/cod-doc/actions/workflows/ci.yml"><img src="https://github.com/Orange-hanter/cod-doc/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <b>Docs that drift from code are worse than no docs.<br>
+  COD-DOC makes drift <i>detectable</i> — and gives both humans and LLM agents one shared, auditable interface to fix it.</b>
+</p>
+
+---
 
 Docs, tasks, plans, stories, links and revisions live in a database
 (`<project>/.cod-doc/state.db`). Markdown is a *projection* of that state, not
 the source of truth — so a doc can never silently drift away from the task that
 changed it.
 
-## Why a database instead of just markdown
+## Features
 
-- **Every edit is a revision.** Full history per document and per task, with
-  revert — not a `git blame` on a 900-line file.
-- **Drift is detectable.** Each projection carries a content hash, so
-  `cod-doc doc drift` tells you exactly which file was edited in place behind
-  the system's back.
-- **Humans and agents share one interface.** Anything in the service layer is
-  exposed through both the CLI and MCP — an agent has no private back door and
-  no missing capability.
-- **Links are first-class.** Documents, sections, tasks, ADRs and git commits
-  reference each other as rows, so renames cascade instead of rotting.
-
-![COD-DOC web UI — project overview](https://raw.githubusercontent.com/Orange-hanter/cod-doc/main/docs/assets/cod-doc/02-overview.png)
+- **Hash-verified docs.** Every markdown file carries a content hash of the DB
+  state it was projected from. `cod-doc doc drift` tells you exactly which file
+  was edited behind the system's back.
+- **Every edit is a revision.** Full append-only history per document and per
+  task, with revert — not a `git blame` on a 900-line file.
+- **First-class links.** Documents, sections, tasks, ADRs and git commits
+  reference each other as rows. Renames cascade instead of rotting.
+- **Task engine with atomic checkout.** 7-state task lifecycle, dependency
+  graph, plan sections, ready-queue — agents lock work instead of racing it.
+- **Built for LLM agents.** A dedicated 6-tool MCP profile (`agent_pick`,
+  `agent_report`, `agent_complete`, …) gives an agent everything it needs in
+  one call — no 100-tool cold start.
+- **Zero infrastructure.** Python 3.13+ and the SQLite that ships with it. No
+  daemon, no indexer, no external database — the project DB is a single file.
 
 ## Quick start
 
@@ -32,6 +47,17 @@ cod-doc import docs myproj            # ingest existing .md into the DB
 cod-doc serve                         # REST API + web UI on http://localhost:8765
 cod-doc-mcp --profile agent           # MCP over stdio for Claude Code / Desktop
 ```
+
+## Why not just…
+
+| | Markdown + Git | Wiki (Notion, Confluence) | COD-DOC |
+|---|:---:|:---:|:---:|
+| Detects doc↔code drift | ❌ | ❌ | ✅ content hashes |
+| Queryable structure (tasks, deps, links) | ❌ grep only | ⚠️ proprietary | ✅ SQL + API |
+| Native interface for LLM agents | ❌ | ⚠️ via API tokens | ✅ MCP, first-class |
+| Per-entity history & revert | ⚠️ per-file git log | ✅ | ✅ append-only revisions |
+| Lives in your repo, works offline | ✅ | ❌ SaaS | ✅ single SQLite file |
+| Human & agent share one contract | ❌ | ❌ | ✅ same service layer |
 
 ## Four equal surfaces
 
@@ -45,12 +71,15 @@ cod-doc-mcp --profile agent           # MCP over stdio for Claude Code / Desktop
 New functionality lands in the service layer and must appear in *both* the CLI
 and MCP — agent and human get an identical interface by construction.
 
-## Requirements
+## Screenshots
 
-Python 3.11+ (3.11 / 3.12 / 3.13 tested in CI). SQLite ships with Python; no
-external database, daemon or indexer is required. The project DB is a single
-file under `.cod-doc/` and must live on a local disk — WAL mode does not work
-on iCloud, NFS or SMB shares.
+| Overview | Docs | Tasks |
+|---|---|---|
+| ![Overview](https://raw.githubusercontent.com/Orange-hanter/cod-doc/main/docs/assets/cod-doc/02-overview.png) | ![Docs](https://raw.githubusercontent.com/Orange-hanter/cod-doc/main/docs/assets/cod-doc/03-docs-list.png) | ![Tasks](https://raw.githubusercontent.com/Orange-hanter/cod-doc/main/docs/assets/cod-doc/05-tasks.png) |
+
+| Plans | Task detail | Revision history |
+|---|---|---|
+| ![Plans](https://raw.githubusercontent.com/Orange-hanter/cod-doc/main/docs/assets/cod-doc/06-plans.png) | ![Task detail](https://raw.githubusercontent.com/Orange-hanter/cod-doc/main/docs/assets/cod-doc/05b-task-detail.png) | ![Revisions](https://raw.githubusercontent.com/Orange-hanter/cod-doc/main/docs/assets/cod-doc/07-revisions.png) |
 
 ## Documentation
 
@@ -64,6 +93,13 @@ on iCloud, NFS or SMB shares.
 | [`MASTER.md`](MASTER.md) | the project's own map, maintained by COD-DOC itself |
 
 The repository is documented in Russian; this README is the English entry point.
+
+## Requirements
+
+Python 3.13+ (3.13 tested in CI; 3.11/3.12 dropped 2026-09-07). SQLite ships with Python; no
+external database, daemon or indexer is required. The project DB is a single
+file under `.cod-doc/` and must live on a local disk — WAL mode does not work
+on iCloud, NFS or SMB shares.
 
 ## License
 

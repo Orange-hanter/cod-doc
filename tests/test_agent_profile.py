@@ -131,11 +131,11 @@ def test_agent_capabilities_payload_under_4kb() -> None:
     )
 
 
-def test_agent_capabilities_strict_subset_vs_admin_capabilities() -> None:
+async def test_agent_capabilities_strict_subset_vs_admin_capabilities() -> None:
     """agent_capabilities omits the admin-surface noise: total tool count,
     family breakdown, references mapping, session_meta etc."""
     agent_caps = live_mcp._tool_manager._tools["agent_capabilities"].fn()
-    admin_caps = live_mcp._tool_manager._tools["capabilities"].fn()
+    admin_caps = await live_mcp._tool_manager._tools["capabilities"].fn()
 
     # Keys NOT in agent_capabilities (kept admin-only).
     for admin_only in ("tools", "references", "server_name", "session"):

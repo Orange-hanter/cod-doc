@@ -446,20 +446,20 @@ def _enrich_l3_semantic(
 
     try:
         from cod_doc.config import Config
+        from cod_doc.core.embeddings import settings_from_config
         from cod_doc.core.reindex import search_documents
 
         cfg = Config.load()
-        # Local backend doesn't need an api_key; the openai backend does.
-        if cfg.embedding_backend == "openai" and not cfg.api_key:
+        # ADO-071: ключ эмбеддера отдельный, поэтому и проверка отдельная —
+        # офлайн-бэкендам ключ не нужен, сетевым обязателен.
+        settings = settings_from_config(cfg)
+        if not settings.is_usable:
             return  # no embedding backend → graceful skip
 
         hits = search_documents(
             query=query,
             chroma_path=cfg.chroma_path,
-            api_key=cfg.api_key,
-            base_url=cfg.base_url,
-            embedding_model=cfg.embedding_model,
-            embedding_backend=cfg.embedding_backend,
+            settings=settings,
             n_results=_MAX_SEMANTIC_HITS,
         )
         related["semantic"] = hits

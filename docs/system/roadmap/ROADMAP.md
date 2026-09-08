@@ -5,7 +5,7 @@ status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-06-05
-last_updated: 2026-08-27
+last_updated: 2026-09-03
 audience: [contributors, agents]
 related_docs:
   - ../MASTER.md
@@ -69,7 +69,7 @@ related_docs:
 | [audit-followups](audit-followups-task-plan.md) | ✅ done | закрыт STB-021 |
 | [agent-tools-completion](agent-tools-completion-task-plan.md) | ✅ done | закрыт STB-001 |
 | [stabilization-2026-06](../audit/2026-07-29-state-of-the-project.md) | 🔄 11 done / 1 cancelled | STB-012 → cancelled (re-scoped как ADO-013); открыт STB-023 |
-| **adoption-2026-08** | 🔄 0/26 | Треки C+D+E; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)) |
+| **adoption-2026-08** | 🔄 66/82 *(2026-09-02)* | Треки C+D+E; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)). Секции: C 23/26, D 26/37, E 17/19 |
 | RFC 16–21 (hackathon-track) | ❌ отбракованы 2026-08-29 | ADO-056: ни одна не закрывает спрос M2; пометки в [proposals/README.md](../../../proposals/README.md) |
 
 ## Смена приоритета: почему Adoption вперёд фич
@@ -119,8 +119,9 @@ byte-identical round-trip — перед первым `doc export` наружу)
 
 ## Треки
 
-Все задачи заведены в БД как план **`adoption-2026-08`** (26 задач: C — 9,
-D — 6, E — 11):
+Все задачи заведены в БД как план **`adoption-2026-08`** (на 2026-09-02 — 82
+задачи: C — 26, D — 37, E — 19; таблицы ниже перечисляют не весь состав, а
+опорные пункты треков):
 `cod-doc plan ready adoption-2026-08 -p cod-doc`.
 
 ### Трек C — Adoption (приоритет)
@@ -153,6 +154,20 @@ D — 6, E — 11):
 | **ADO-014** | Актуализировать `capabilities/project-bootstrap.md`: `project new` vs `project add` + `init` | low | — |
 | **STB-023** | `activity_subscribe` (SSE). Держать закрытым, пока не появится реальный event-driven сценарий | low | — |
 
+Находки сверки 2026-09-02 (планирование M5) — очередь спринта, контракты в БД
+(`task_doc key="contract"`):
+
+| ID | Задача | Приоритет | Блокируется |
+|---|---|---|---|
+| ~~**ADO-070**~~ | ~~CI на main не был зелёным ни разу с 2026-05-06~~ — **done 2026-09-03** (`bcb32f2`): три слоя причин (alembic через `sys.executable -m`, герметичность окружения + таймаут 25 мин, хардкод `.venv/bin/python` и обёртки FastAPI 0.141). [Run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088) — success, все 7 джоб | — | — |
+| ~~**ADO-069**~~ | ~~Красный гейт локально: v2-кейс отстал от адаптера~~ — **done 2026-09-03** (`3de0fd5`): негативный кейс на версию вне `_KNOWN_VERSIONS` + позитивный тест приёма v2 через API v1 | — | — |
+| ~~**ADO-068**~~ | ~~Тесты пишут в реальный `~/.cod-doc/config.yaml`~~ — **done 2026-09-03** (`3de0fd5`): `config_dir()`/`config_file()` вместо import-time констант, `adapters.json` уважает `COD_DOC_HOME`; реестр вычищен, `cod-doc` зарегистрирован | — | — |
+| ~~**ADO-066**~~ | ~~`capabilities`/`tool_search`/`tools_diff` падают под живым MCP-сервером~~ — **done 2026-09-03** (`3de0fd5`): тулы в async; тот же дефект в `snapshot_tools.py`; AST-гейт на `asyncio.run` под `cod_doc/mcp/` | — | — |
+| **ADO-067** | `task_update`: description/acceptance/priority недоступны в MCP и CLI — агент не может грумить бэклог | high | — |
+| **ADO-044** | Провенанс мутаций: run_id + audit_log + actor_kind — реализовать или снять контракт (консолидация ADO-043 + ADO-051) | medium | — |
+| ~~ADO-043~~ | ~~audit_log мёртвая~~ — `cancelled` 2026-09-02, свёрнута в ADO-044 | — | — |
+| ~~ADO-051~~ | ~~actor_kind startswith-эвристика~~ — `cancelled` 2026-09-02, свёрнута в ADO-044 | — | — |
+
 ### Трек E — Symbiosis ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md))
 
 Фаза 0 (самопочинка, блокирует пилоты) → Фазы 1–5 (hub, findings, петля,
@@ -172,6 +187,7 @@ ai-review, кросс-проектность). Полный план:
 | **SYM-009** | Фаза 3: ingest ai_review pull-моделью + upstream-PR slimFinding + finding stability | medium | SYM-006 |
 | **SYM-010** | Фаза 4a: ctx drift → PR-комментарий (гейт ссылок/frontmatter Orakul) | medium | SYM-009, ADO-017 |
 | **SYM-011** | Фаза 5: кросс-проектный поиск + `[[doc:slug:key]]` + фикс Chroma L3 + `agent_pick --projects` | low | SYM-005 |
+| **STR-001..004** | [RFC 24](../../../proposals/24-structure-contracts-scenarios.md): контур structure/contracts/scenarios — фазы 3–6 (сторона cod-doc); producer смержен в ai-reviewer 2026-09-03 | medium | — (SYM-005..009 done) |
 
 ### Трек B — Feature-трек (hackathon RFC, после C)
 
@@ -196,12 +212,19 @@ ai-review, кросс-проектность). Полный план:
 
 ## Три ближайших милстоуна
 
-> **Активный спринт — M4 «Доказательство ценности + разбор долга»:**
-> [sprint-m4-proof-of-value.md](sprint-m4-proof-of-value.md) — очередь без
-> дат (решение владельца 2026-08-30: порядок важен, сроки — нет):
-> 1) перерегистрация Orakul (ADO-062), 2) E5-C в бою — doc_context=executor
-> + замер (ADO-063, critical), 3) ADO-040 write-path wrapper,
-> 4) SYM-009 ingest ai_review.
+> **Активный спринт — M5 «Гейт, которому можно верить + симбиоз в бою»:**
+> [sprint-m5-trustworthy-gate.md](sprint-m5-trustworthy-gate.md) — очередь без
+> дат: 1) ADO-070 CI не зелёный ни разу с 2026-05-06, 2) ADO-069 единственный
+> красный тест локально, 3) ADO-068 тесты пишут в реальный конфиг (регресс F5),
+> 4) ADO-066 `capabilities`/`tool_search`/`tools_diff` падают под живым сервером,
+> 5) ADO-067 `task_update` в MCP/CLI, 6) ADO-065 разбор E5-C, 7) SYM-010
+> drift-гейт Orakul, 8) ADO-044 провенанс мутаций. Контракт каждой задачи —
+> в БД, `task_doc key="contract"`.
+> **M4 «Доказательство ценности» закрыт 2026-09-02:**
+> [sprint-m4-proof-of-value.md](sprint-m4-proof-of-value.md) — audit
+> [2026-09-02-sprint-m4-proof-of-value.md](../audit/2026-09-02-sprint-m4-proof-of-value.md);
+> все четыре пункта очереди выполнены (ADO-062/064, ADO-063, ADO-040, SYM-009),
+> E5-C доказан боевым прогоном за $0.98 с вердиктом «масштабируем».
 > **M3 «friction-log leftovers» закрыт досрочно 2026-08-30:**
 > [sprint-2026-08-30-m3-friction-log.md](sprint-2026-08-30-m3-friction-log.md)
 > — audit [2026-09-06-sprint-m3-friction.md](../audit/2026-09-06-sprint-m3-friction.md);
@@ -296,13 +319,57 @@ M3 перенацелён решением владельца.)*
    (medium; внешний риск — PR в ai-reviewer).
 
 **Готово, когда:**
-- [ ] Orakul зарегистрирован; чек M3 «проверено на корпусе Orakul» закрыт.
-- [ ] Решение по E5-C зафиксировано артефактом (ADR/findings + метрики).
-- [ ] ADO-040 done: write-path wrapper + 9 сервисов эмитят; ошибка emit видна.
-- [ ] Audit-отчёт M4 (active, в БД), ROADMAP обновлён.
+- [x] Orakul зарегистрирован; чек M3 «проверено на корпусе Orakul» закрыт. *(ADO-062, 405/405 in_sync)*
+- [x] Решение по E5-C зафиксировано артефактом (ADR/findings + метрики). *(ADO-063: вердикт «масштабируем», $0.98, s5dc done с 1 итерации)*
+- [x] ADO-040 done: write-path wrapper + 9 сервисов эмитят; ошибка emit видна. *(`3b2662b`)*
+- [x] Audit-отчёт M4 (active, в БД), ROADMAP обновлён. *([2026-09-02-sprint-m4-proof-of-value.md](../audit/2026-09-02-sprint-m4-proof-of-value.md))*
 
 **Риск:** E5-C покажет пустые блоки без маппинга путей; upstream-PR
-может зависнуть (SYM-009 переносится, спринт не блокируется).
+может зависнуть (SYM-009 переносится, спринт не блокируется). *(Не реализовался:
+маппинг путей включён в ADO-063, PR ai-reviewer#5 открыт.)*
+
+### M5 — «Гейт, которому можно верить + симбиоз в бою» *(очередь без дат)*
+
+Спринт задан не остатком бэклога, а шестью находками сверки 2026-09-02 (F1–F6
+audit-отчёта M4). Общий сюжет: **тест-окружение и боевое разошлись в обе
+стороны** — тесты не видят боевых дефектов и при этом пишут в боевое состояние,
+а гейт, который должен был это ловить, не работает и не проверяется.
+
+**Спринт закрыт 2026-09-06** — [audit-отчёт](../audit/2026-09-06-sprint-m5-trustworthy-gate.md).
+Очередь пройдена целиком; вне очереди въехали RFC 24 (`0044324`) и ADO-077
+(`a815866`). Заведено семь задач с замерами: ADO-071..075, ADO-077, STR-000.
+
+**Очередь (порядок = приоритет).** Пункты 1–4 закрыты 2026-09-03
+(`3de0fd5`, `087f00a`, `bcb32f2`), 5–8 — 2026-09-05/06.
+1. ✅ ADO-070 (critical) — CI на main не был зелёным ни разу с 2026-05-06
+   (`alembic` не на PATH); пункт «гейты зелёные» в DoD M1…M4 проверялся
+   только локальным прогоном.
+2. ✅ ADO-069 (critical) — единственный красный тест локально: v2-кейс отстал
+   от адаптера, приехавшего тем же коммитом (SYM-009). Вместе с п.1 даёт
+   первый зелёный прогон.
+3. ✅ ADO-068 (critical) — тесты пишут в реальный `~/.cod-doc/config.yaml`;
+   `CONFIG_DIR` заморожен на импорте; регресс F5 (ADO-001 прожил 5 дней).
+4. ✅ ADO-066 (critical) — `capabilities`/`tool_search`/`tools_diff` падают под
+   живым MCP-сервером; тесты зовут их синхронно и потому не видят.
+5. ✅ ADO-067 (high) — `task_update` в MCP и CLI (`1dc97d4`); анти-drift на
+   паритет поверхностей построен на AST-обнаружении, а не на ручном списке.
+6. ✅ ADO-065 (high) — разбор E5-C (`8b71ee5`): тестировщик занял 67.8%
+   wall-time, а не заявленные ~60%; F1–F5 разведены.
+7. ✅ SYM-010 (medium) — drift-гейт в PR Orakul (`a815866`); закрыт с оговоркой
+   по acceptance №4, живой прогон вскрыл ADO-077.
+8. ✅ ADO-044 (medium) — провенанс мутаций, ADR-012: `audit_log` и `run_id`
+   сняты, `actor_kind` сведён к одной точке вывода.
+
+**Готово, когда:**
+- [x] Зелёный прогон CI на main — со ссылкой на run id (главный критерий). *(ADO-070, `bcb32f2`: [run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088) — success, все 7 джоб, включая месяцами `skipped` Docker build)*
+- [x] `capabilities` отвечает через живой MCP-сервер. *(ADO-066, `3de0fd5`: тулы переведены в async; AST-гейт на `asyncio.run` под `cod_doc/mcp/`)*
+- [x] Прогон тестов не меняет реальный `~/.cod-doc/config.yaml`; `cod-doc` зарегистрирован. *(ADO-068, `3de0fd5`: `config_dir()`/`config_file()` вместо import-time констант; mtime после полного прогона не изменился)*
+- [x] Грумминг бэклога выполним через MCP и CLI без скриптов в service-слой. *(ADO-067, `1dc97d4`; применено в бою к ADO-075 и ADO-077)*
+- [x] Разбор E5-C — таблица по ролям, findings F1–F5 разведены. *(ADO-065, `8b71ee5`: [отчёт](../audit/2026-09-05-e5c-run-analysis.md))*
+- [x] Audit-отчёт M5 (active, в БД), ROADMAP обновлён. *([отчёт](../audit/2026-09-06-sprint-m5-trustworthy-gate.md))*
+
+**Риск:** зелёный CI вскроет слой дефектов, невидимых локально (CI ставит
+ruff без пина). Это не повод откладывать — именно это гейт и обязан ловить.
 
 ## Порядок исполнения
 
@@ -327,3 +394,5 @@ M3 перенацелён решением владельца.)*
 - **2026-08-29** — **M2 «Обратная связь встроена» закрыт досрочно** ([audit](../audit/2026-09-11-sprint-m2-feedback-loop.md)): все гола + стретч SYM-007 (13/13 ADR ZAIrgRush, 2 supersede). Коммиты `17b7137`…`cf328e7`. Suite 1562 passed, drift 123/123. Остаток friction-лога (#8/#10/#11/#14) → backlog, приоритизация на планировании M3.
 - **2026-08-29 (2)** — **M3-кикофф (ADO-056): Трек B отбракован целиком.** Сверка RFC 16–21 по коду + friction-лог M2 (#8/#10/#11/#14) + contract-audit: спрос не закрывается ни одной RFC → решение «отбракованы все», пометки в `proposals/README.md` (ADO-013 закрыт). Решение владельца: M3 перенацелен на остатки friction-лога M2 (#8/#10/#11/#14). Параллельно спринт H1: hardening по contract-аудиту (ADO-035/036/037/038/052/053/055 done).
 - **2026-08-30** — **M3 «friction-log leftovers» закрыт досрочно** (день в день со стартом; [audit](../audit/2026-09-06-sprint-m3-friction.md)): #8/#10/#11/#14 → ADO-058…061, friction-лог ADO-005 обнулён (0 открытых из 14); стретчи ADO-039 (enforce atomic checkout, `a2f3cfb`) и SYM-008 + ADO-057 (`cod-doc ctx docs|drift|search --json`, `0282835`; петля E5-C в ZAIrgRush, `4110cc6`) выполнены. Drift 130/130 (заодно зарегистрирован ранее не трекаемый `sprint-2026-08-27-m1-phase1.md`), ratchet 6 записей без роста. Незакрытый чек M3: проверка фиксов на корпусе Orakul — проект не зарегистрирован в этом окружении; фиксы верифицированы на живом корпусе ZAIrgRush (dry-run показывает warning'и неизвестных `type:`).
+- **2026-09-02** — **M4 «Доказательство ценности» закрыт** ([audit](../audit/2026-09-02-sprint-m4-proof-of-value.md)): все четыре пункта очереди (ADO-062/064 Orakul 405/405, ADO-063 E5-C `7bc156d` — вердикт «масштабируем» за $0.98, ADO-040 write-path `3b2662b`, SYM-009 ingest ai_review `2ac0631`). **Главная находка закрытия: CI на main не был зелёным ни разу с 2026-05-06** — 10 прогонов из 10 failure, причина `FileNotFoundError: 'alembic'` в фикстурах; значит пункт «гейты зелёные» в DoD M1…M4 проверялся только локальным прогоном. Ещё пять находок сверки: единственный красный тест локально (v2-кейс отстал от SYM-009), три MCP-тула падают под живым сервером (`asyncio.run` в running loop), тесты пишут в реальный `~/.cod-doc/config.yaml` (регресс F5), грумминг бэклога недоступен агенту (`task_update` только в web), три объявленных контракта без реализации (run_id 2004/2004 NULL, audit_log 0 строк / 0 писателей). Заведены ADO-066…070; ADO-043 и ADO-051 свёрнуты в ADO-044. Заведён спринт [M5 «Гейт, которому можно верить»](sprint-m5-trustworthy-gate.md) с контрактами задач в БД (новый ключ task_doc — `contract`).
+- **2026-09-03** — **M5: пункты 1–4 очереди закрыты, у проекта впервые зелёный CI.** [Run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088) — `conclusion: success`, все 7 джоб, включая `Docker build`, месяцами `skipped` (история main до этого: 10 failure + 2 cancelled, зелёных ноль). ADO-070 (`bcb32f2`), ADO-069/ADO-066/ADO-068 (`3de0fd5`) → done; доказательства «красное до / зелёное после» — в task_doc `verification` каждой задачи. Гейт лечился тремя слоями, и каждый следующий был не виден, пока держался предыдущий: (1) `alembic` — 24 места звали его через `.venv/bin` с подменой env на `PATH=/usr/bin:/bin`, то есть бинарь не находился никогда → единый `tests/_alembic.py` на `sys.executable -m alembic`; (2) прогон не был герметичным (workflow сам выставляет `COD_DOC_API_KEY`, а `Config` читает env по префиксу `COD_DOC_`) и `timeout-minutes: 10` убивал джобу на 64% тестов до печати трейсбеков; (3) хардкод `.venv/bin/python` в трёх тестах + FastAPI 0.141 обернул роуты в `_IncludedRouter` без `.path`, из-за чего `_real_web_routes()` молча возвращал пустое множество — **advisory-джоба «Web routes drift» была зелёной впустую**, ложное зелёное поверх красного гейта. Заодно закрыто расхождение гейтов: `ruff` запинен `>=0.16.5,<0.17` (CI ставил свежайший и приносил 10×RUF036), `mypy python_version=3.12` (под 3.11 падал на стабах numpy 2.5 и обрывал проверку целиком). Прогон 1639 passed локально и в репро-окружении CI. Остаток очереди M5: ADO-067, ADO-065, SYM-010, ADO-044.

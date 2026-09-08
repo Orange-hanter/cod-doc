@@ -109,6 +109,24 @@ backlog ─→ todo ─→ in_progress ─→ in_review ─→ done
 При записи новых задач используй канонические имена; legacy остаётся
 только для backward-compat.
 
+### Правка уже созданной задачи (grooming)
+
+Переформулировать скоуп и переоценить приоритет — штатная операция, а не
+повод лезть в БД (ADO-067):
+
+| Поверхность | Как |
+|---|---|
+| MCP | `task_update(project, task_id, description=…, acceptance=…, priority=…)` — любое подмножество полей; ответ содержит `updated_fields` |
+| CLI | `cod-doc task update TASK_ID -p SLUG --description … --acceptance … --priority …` |
+
+Каждое изменённое поле пишет ревизию и activity event
+(`task.description_updated` / `task.acceptance_updated` /
+`task.priority_changed`), поэтому `--reason` стоит заполнять.
+
+`title` тул не меняет: смена имени — это смена идентичности задачи, заводи
+новую и отменяй старую. Статус живёт отдельно (`task_update_status` /
+`task_checkout`).
+
 ## 6. Когда дробить задачу
 
 Дроби на subtasks (через `blocked_by`), если выполняется ХОТЯ БЫ ОДНО:

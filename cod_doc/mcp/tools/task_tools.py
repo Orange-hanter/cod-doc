@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.mcp.tools._db import require_project_id, session_factory, task_to_dict
 
 if TYPE_CHECKING:
@@ -530,7 +531,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "task.blocked",
-                    actor_kind="human",
+                    actor_kind=actor_kind_for_author(author),
                     actor_id=author,
                     scope_kind="task",
                     scope_id=task_id,
@@ -561,7 +562,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "task.unblocked",
-                    actor_kind="human",
+                    actor_kind=actor_kind_for_author(author),
                     actor_id=author,
                     scope_kind="task",
                     scope_id=task_id,
@@ -696,7 +697,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "task.status_changed",
-                    actor_kind="agent" if author.startswith("agent") else "human",
+                    actor_kind=actor_kind_for_author(author),
                     actor_id=author,
                     scope_kind="task",
                     scope_id=task_id,
@@ -708,6 +709,97 @@ def register(mcp: FastMCP) -> None:
         except StatusTransitionError as exc:
             raise ValueError(f"Invalid status transition: {exc}") from exc
         out = task_to_dict(t)
+        if dry_run:
+            out["dry_run"] = True
+        return out
+
+    @mcp.tool(name="task_update")
+    def task_update(
+        project: str,
+        task_id: str,
+        description: str | None = None,
+        acceptance: str | None = None,
+        priority: str | None = None,
+        author: str = "mcp",
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Groom an existing task: rewrite description / acceptance / priority.
+
+        ADO-067: до этого тула правка этих полей была доступна только из web —
+        агент не мог переформулировать скоуп собственной задачи или
+        переоценить приоритет штатным путём.
+
+        Передавай только те поля, которые меняешь; ``None`` = «не трогать».
+        Пустая строка — легальное значение (очистить поле). Хотя бы одно поле
+        обязательно, иначе ValueError.
+
+        priority: critical | high | medium | low.
+
+        Не меняет ``title`` (идентичность задачи), ``status`` (см.
+        ``task_update_status`` / ``task_checkout``) и принадлежность плану.
+
+        Каждое изменённое поле оставляет отдельную TASK-ревизию и activity
+        event; неизменившееся значение — no-op без ревизии.
+
+        ``dry_run=True`` валидирует и возвращает результат, откатывая транзакцию.
+        """
+        from cod_doc.domain.entities import Priority
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import task_service
+        from cod_doc.services.task_service import TaskNotFoundError
+
+        if description is None and acceptance is None and priority is None:
+            raise ValueError(
+                "task_update: pass at least one of description / acceptance / priority."
+            )
+        if priority is not None:
+            try:
+                priority_enum = Priority(priority)
+            except ValueError:
+                raise ValueError(
+                    f"Unknown priority: {priority!r}; expected one of {[p.value for p in Priority]}"
+                ) from None
+
+        sf, _ = session_factory(project)
+        changed: list[str] = []
+        try:
+            with transactional(sf, commit=not dry_run) as session:
+                require_project_id(session, project)
+                t = task_service.get(session, task_id)
+                if t is None:
+                    raise TaskNotFoundError(task_id)
+                if description is not None:
+                    t = task_service.update_description(
+                        session,
+                        task_id=task_id,
+                        new_description=description,
+                        author=author,
+                        reason=reason,
+                    )
+                    changed.append("description")
+                if acceptance is not None:
+                    t = task_service.update_acceptance(
+                        session,
+                        task_id=task_id,
+                        new_acceptance=acceptance,
+                        author=author,
+                        reason=reason,
+                    )
+                    changed.append("acceptance")
+                if priority is not None:
+                    t = task_service.update_priority(
+                        session,
+                        task_id=task_id,
+                        new_priority=priority_enum,
+                        author=author,
+                        reason=reason,
+                    )
+                    changed.append("priority")
+        except TaskNotFoundError:
+            raise ValueError(f"Task '{task_id}' not found.") from None
+        out = task_to_dict(t)
+        out["updated_fields"] = changed
         if dry_run:
             out["dry_run"] = True
         return out
@@ -752,7 +844,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     project_id,
                     "task.completed",
-                    actor_kind="agent" if author.startswith("agent") else "human",
+                    actor_kind=actor_kind_for_author(author),
                     actor_id=author,
                     scope_kind="task",
                     scope_id=task_id,

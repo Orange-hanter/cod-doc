@@ -57,7 +57,16 @@ def test_ingest_and_ctx_require_pin(tmp_path: Path) -> None:
     facts = FIXTURES / "structure-facts.v1.json"
     result = runner.invoke(
         ingest,
-        ["structure", "-p", "struct-proj", "--facts", str(facts), "--trust-tier", "trusted_local", "--json"],
+        [
+            "structure",
+            "-p",
+            "struct-proj",
+            "--facts",
+            str(facts),
+            "--trust-tier",
+            "trusted_local",
+            "--json",
+        ],
         obj={"config": cfg},
     )
     assert result.exit_code == 0, result.output

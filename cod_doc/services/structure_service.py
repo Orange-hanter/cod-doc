@@ -7,7 +7,7 @@ inspection but never become current and never create findings or tasks.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -52,7 +52,6 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 _DEFAULT_BRANCHES = frozenset({"main", "master"})
-_T = TypeVar("_T")
 
 
 def _header(row: CodeStructureSnapshotModel) -> dict[str, object]:
@@ -542,7 +541,11 @@ def replay_snapshot(session: Session, project_id: int, snapshot_id: int) -> dict
     if row is None or row.project_id != project_id:
         raise StructureProtocolError("snapshot not found")
     counts = materialize_indexes(session, row)
-    return {"snapshotId": snapshot_id, "normalizerVersion": row.normalizer_version, "indexes": counts}
+    return {
+        "snapshotId": snapshot_id,
+        "normalizerVersion": row.normalizer_version,
+        "indexes": counts,
+    }
 
 
 def get_latest(
@@ -649,7 +652,12 @@ def diff_snapshots(
 ) -> dict[str, object]:
     left = session.get(CodeStructureSnapshotModel, left_id)
     right = session.get(CodeStructureSnapshotModel, right_id)
-    if left is None or right is None or left.project_id != project_id or right.project_id != project_id:
+    if (
+        left is None
+        or right is None
+        or left.project_id != project_id
+        or right.project_id != project_id
+    ):
         raise StructureProtocolError("snapshot not found")
     left_entities = {
         row.observed_id: row
@@ -707,12 +715,12 @@ def _contract_dict(row: CodeContractModel) -> dict[str, object]:
     }
 
 
-def _page(
-    rows: Iterable[_T],
+def _page[T](
+    rows: Iterable[T],
     *,
     cursor: str | None,
     limit: int,
-    render: Callable[[_T], dict[str, object]],
+    render: Callable[[T], dict[str, object]],
 ) -> dict[str, object]:
     items = list(rows)
     start = int(cursor or "0")

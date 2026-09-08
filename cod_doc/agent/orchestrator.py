@@ -24,12 +24,13 @@ from cod_doc.agent.retry import (
     LLMError,
 )
 from cod_doc.agent.tools import TOOL_DEFINITIONS, ToolExecutor
+from cod_doc.core.embeddings import settings_from_config
 from cod_doc.core.project import Project, Task, TaskStatus
 
 if TYPE_CHECKING:
     from cod_doc.agent.adapters.base import LLMAdapter
     from cod_doc.agent.wake_context import WakeContext
-    from cod_doc.config import Config
+    from cod_doc.config import Config, ProjectEntry
 
 # Тип async-callback для запроса к человеку
 AskHumanAsync = Callable[[str, str], Awaitable[str]]
@@ -92,10 +93,7 @@ class Orchestrator:
             project,
             on_ask_human=on_ask_human if not async_on_ask_human else None,
             chroma_path=config.chroma_path,
-            api_key=config.api_key,
-            base_url=config.base_url,
-            embedding_model=config.embedding_model,
-            embedding_backend=config.embedding_backend,
+            embedding=settings_from_config(config),
         )
 
     # ── Public API ───────────────────────────────────────────────────────────
@@ -121,7 +119,7 @@ class Orchestrator:
         self,
         task: Task,
         wake: WakeContext | None = None,
-    ) -> AsyncGenerator[AgentEvent, None]:
+    ) -> AsyncGenerator[AgentEvent]:
         """Выполнить одну задачу. Стримит AgentEvent.
 
         ``wake`` (PCA-022): опциональный WakeContext, инжектится первым
@@ -208,7 +206,7 @@ class Orchestrator:
             )
             self.project.set_status("idle")
 
-    async def run_autonomous(self) -> AsyncGenerator[AgentEvent, None]:
+    async def run_autonomous(self) -> AsyncGenerator[AgentEvent]:
         """
         Автономный режим: читает MASTER.md, формирует задачи, выполняет их.
         Возвращает после завершения всех текущих задач.
@@ -461,7 +459,7 @@ class Orchestrator:
 
     async def _agent_loop(
         self, messages: list[dict[str, Any]], task: Task
-    ) -> AsyncGenerator[AgentEvent, None]:
+    ) -> AsyncGenerator[AgentEvent]:
         """Основной цикл агент ↔ LLM ↔ инструменты.
 
         При ошибке context_length_exceeded: повтор с урезанным контекстом.
@@ -620,7 +618,7 @@ class Orchestrator:
 
             messages.extend(tool_results)
 
-    async def _generate_tasks_from_master(self) -> AsyncGenerator[AgentEvent, None]:
+    async def _generate_tasks_from_master(self) -> AsyncGenerator[AgentEvent]:
         """Попросить LLM сгенерировать задачи на основе MASTER.md."""
         master = self.project.read_master()
         if not master:
@@ -669,6 +667,41 @@ class Orchestrator:
 # ── Daemon runner ─────────────────────────────────────────────────────────────
 
 
+def tick_project_routines(entry: ProjectEntry, log: Callable[[str], None]) -> None:
+    """PCA-919: тик планировщика рутин по БД одного проекта.
+
+    STO-028: БД резолвится так же, как её открывают CLI и MCP
+    (``db_url_for_entry``/``db_for_entry``). Раньше здесь был жёсткий
+    embedded-путь, и у hub-проекта демон внутри ``cod-doc serve`` вёл
+    журнал рутин в файл, который никто не читает, параллельно с cron-тиком.
+
+    Вынесено из ``run_daemon`` отдельной функцией, чтобы резолв можно было
+    проверить тестом, не поднимая бесконечный цикл демона.
+    """
+    from cod_doc.infra.db import (
+        db_for_entry,
+        db_url_for_entry,
+        sqlite_file_path,
+        transactional,
+    )
+    from cod_doc.infra.repositories import ProjectRepository
+    from cod_doc.services import routine_service
+
+    try:
+        db_file = sqlite_file_path(db_url_for_entry(entry))
+        if db_file is not None and not db_file.exists():
+            return  # БД ещё не инициализирована; для не-файловой проверять нечего
+        sf, _engine = db_for_entry(entry)
+        with transactional(sf) as session:
+            proj_db = ProjectRepository(session).get_by_slug(entry.name)
+            if proj_db and proj_db.row_id is not None:
+                fired = routine_service.tick(session, proj_db.row_id)
+                if fired:
+                    log(f"[{entry.name}] routines fired: {fired}")
+    except Exception as e:
+        log(f"[{entry.name}] routine tick error: {e}")
+
+
 async def run_daemon(config: Config, log_callback: Callable[[str], None] | None = None) -> None:
     """
     Daemon-режим: бесконечный цикл обработки задач по всем проектам.
@@ -694,25 +727,7 @@ async def run_daemon(config: Config, log_callback: Callable[[str], None] | None 
                 log(f"[{entry.name}] Ошибка инициализации: {e}")
                 continue
 
-            # PCA-919: tick routine scheduler before running agent tasks.
-            try:
-                from cod_doc.infra.db import make_engine, make_session_factory, transactional
-                from cod_doc.infra.repositories import ProjectRepository
-                from cod_doc.services import routine_service
-
-                db_path = entry.cod_doc_dir / "state.db"
-                if db_path.exists():  # skip if DB not yet initialised
-                    db_url = f"sqlite:///{db_path}"
-                    engine = make_engine(db_url)
-                    sf = make_session_factory(engine)
-                    with transactional(sf) as session:
-                        proj_db = ProjectRepository(session).get_by_slug(entry.name)
-                        if proj_db and proj_db.row_id is not None:
-                            fired = routine_service.tick(session, proj_db.row_id)
-                            if fired:
-                                log(f"[{entry.name}] routines fired: {fired}")
-            except Exception as e:
-                log(f"[{entry.name}] routine tick error: {e}")
+            tick_project_routines(entry, log)
 
             orch = Orchestrator(project, config)
             async for event in orch.run_autonomous():

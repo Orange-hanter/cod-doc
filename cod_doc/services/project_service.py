@@ -5,8 +5,9 @@ same thing:
 
 1. Ensure the on-disk `.cod-doc/` folder + `tasks.yaml` + `state.yaml` +
    `MASTER.md` exist (idempotent — see `cod_doc.core.project.Project.init`).
-2. Run Alembic migrations against the project's embedded SQLite (creates
-   `state.db` on first run).
+2. Run Alembic migrations against the DB the entry actually resolves to —
+   embedded SQLite (creates `state.db` on first run) или hub-БД из
+   `db_url` реестра (STO-027).
 3. Insert a `ProjectModel` row whose `slug` matches the legacy config name
    so `try_open_project_db` can map slug → DB row.
 
@@ -28,13 +29,13 @@ from alembic.config import Config as AlembicConfig
 
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import Project as ProjectEntity
-from cod_doc.infra.db import db_for_entry, transactional
+from cod_doc.infra.db import db_for_entry, db_url_for_entry, sqlite_file_path, transactional
 from cod_doc.infra.repositories import ProjectRepository
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-    from cod_doc.config import ProjectEntry
+    from cod_doc.config import Config, ProjectEntry
 
 
 @dataclass(slots=True)
@@ -46,6 +47,16 @@ class InitResult:
     files_created: bool
 
 
+@dataclass(slots=True)
+class MigrateResult:
+    """Итог `alembic upgrade head` по одной записи реестра (STO-009)."""
+
+    name: str
+    db_url: str
+    ok: bool
+    error: str | None = None
+
+
 def _alembic_config_for(db_url: str) -> AlembicConfig:
     """Build an in-memory Alembic config pointing at our packaged migrations."""
     cfg = AlembicConfig()
@@ -53,6 +64,35 @@ def _alembic_config_for(db_url: str) -> AlembicConfig:
     cfg.set_main_option("script_location", str(scripts_path))
     cfg.set_main_option("sqlalchemy.url", db_url)
     return cfg
+
+
+def migrate_entry(entry: ProjectEntry) -> MigrateResult:
+    """Накатить голову миграций на ту БД, которую откроет ``db_for_entry``.
+
+    STO-009: контейнерный bootstrap резолвил БД через ``resolve_db_url(root)``,
+    то есть всегда по embedded-пути, и на hub-проекте мигрировал не ту базу,
+    сообщая в лог `[migrate] ok`. Резолв здесь — общий (``db_url_for_entry``),
+    а причина падения возвращается вызывающему, а не глотается.
+    """
+    db_url = db_url_for_entry(entry)
+    try:
+        db_path = sqlite_file_path(db_url)
+        if db_path is not None:
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+        alembic_command.upgrade(_alembic_config_for(db_url), "head")
+    except Exception as exc:
+        return MigrateResult(
+            name=entry.name,
+            db_url=db_url,
+            ok=False,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+    return MigrateResult(name=entry.name, db_url=db_url, ok=True)
+
+
+def migrate_registered_projects(cfg: Config) -> list[MigrateResult]:
+    """Миграции по всем записям реестра; одна упавшая не останавливает остальные."""
+    return [migrate_entry(entry) for entry in cfg.list_projects()]
 
 
 def _bootstrap_default_routines(session: Session, project_id: int) -> None:
@@ -103,9 +143,17 @@ def init_project(entry: ProjectEntry) -> InitResult:
 
     # 2. Alembic upgrade. `state.db` is created by sqlite on first connection
     # by the alembic engine — even if absent before, this just creates it.
-    db_path = entry.cod_doc_dir / "state.db"
-    db_existed = db_path.exists()
-    cfg = _alembic_config_for(f"sqlite:///{db_path}")
+    # STO-027: мигрируем ту БД, которую откроет `db_for_entry` на шаге 3.
+    # В hub-режиме (`db_url` в реестре) она лежит вне рабочего дерева; резолв
+    # по embedded-пути создавал лишний пустой `.cod-doc/state.db` и ронял
+    # шаг 3 на сверке alembic-головы ненакатанного hub'а.
+    db_url = db_url_for_entry(entry)
+    db_path = sqlite_file_path(db_url)
+    if db_path is not None:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+    # Нефайловую БД (postgres) мы не создаём — она существует до init.
+    db_existed = db_path.exists() if db_path is not None else True
+    cfg = _alembic_config_for(db_url)
     alembic_command.upgrade(cfg, "head")
 
     # 3. ProjectModel row keyed by slug=entry.name (so `try_open_project_db`

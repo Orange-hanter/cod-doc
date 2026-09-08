@@ -3,37 +3,18 @@
 # Runs from /app where alembic.ini and cod_doc/infra/migrations/ live.
 set -e
 
-python - <<'PYEOF'
-import os
-import subprocess
-import sys
-
-try:
-    from cod_doc.config import Config
-    from cod_doc.infra.db import resolve_db_url
-
-    cfg = Config.load()
-    projects = cfg.list_projects()
-
-    if not projects:
-        print("[migrate] no projects registered yet — skipping", flush=True)
-    else:
-        for entry in projects:
-            db_url = resolve_db_url(entry.root)
-            env = {**os.environ, "COD_DOC_DB_URL": db_url}
-            result = subprocess.run(
-                ["alembic", "upgrade", "head"],
-                cwd="/app",
-                env=env,
-            )
-            label = entry.name
-            if result.returncode == 0:
-                print(f"[migrate] ok: {label}", flush=True)
-            else:
-                print(f"[migrate] warning: {label} returned rc={result.returncode}", flush=True)
-except Exception as exc:
-    print(f"[migrate] error: {exc}", file=sys.stderr, flush=True)
-    # Non-fatal: server may still work if schema already up-to-date.
-PYEOF
+# STO-009: миграции идут через `project migrate --all`, а не через инлайновый
+# python с `resolve_db_url(entry.root)`. Тот резолвил БД всегда по embedded-пути
+# `<root>/.cod-doc/state.db` и на hub-проекте (`db_url` в реестре) молча
+# мигрировал не ту базу, печатая `[migrate] ok`.
+#
+# Не фатально: сервер поднимается и на неудачной миграции (схема может быть уже
+# накатана снаружи), но причина каждой неудачи уходит в лог отдельной строкой,
+# а команда возвращает ненулевой код.
+if cod-doc project migrate --all; then
+    echo "[migrate] ok" >&2
+else
+    echo "[migrate] FAILED — см. строки выше; сервер стартует со схемой как есть" >&2
+fi
 
 exec cod-doc serve

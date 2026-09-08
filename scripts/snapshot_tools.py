@@ -34,9 +34,10 @@ from cod_doc.mcp.server import mcp
 DEFAULT_DIR = Path(__file__).resolve().parents[1] / ".cod-doc" / "tool_snapshots"
 
 
-def take_snapshot(name: str = "HEAD", out_dir: Path = DEFAULT_DIR) -> Path:
+async def take_snapshot_async(name: str = "HEAD", out_dir: Path = DEFAULT_DIR) -> Path:
+    """Асинхронное ядро: годится и из работающего event loop (ADO-066)."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    tools = asyncio.run(mcp.list_tools())
+    tools = await mcp.list_tools()
     payload = {
         "snapshot_name": name,
         "created_utc": datetime.now(UTC).isoformat(),
@@ -53,6 +54,11 @@ def take_snapshot(name: str = "HEAD", out_dir: Path = DEFAULT_DIR) -> Path:
     path = out_dir / f"{name}.json"
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return path
+
+
+def take_snapshot(name: str = "HEAD", out_dir: Path = DEFAULT_DIR) -> Path:
+    """Синхронная обёртка для CLI. Внутри работающего loop зови ``*_async``."""
+    return asyncio.run(take_snapshot_async(name=name, out_dir=out_dir))
 
 
 def main() -> None:

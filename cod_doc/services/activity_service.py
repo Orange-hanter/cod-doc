@@ -30,6 +30,8 @@ Public API
   activity event atomically in the current transaction.
 - ``list_events(session, project_id, …)`` → paginated event list
 - ``events_for_run(session, project_id, run_id)`` → list for one run
+  (ADR-012: run_id несут только мутации встроенного оркестратора;
+  единственный вызывающий — web-консоль ``/p/{slug}/run``)
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 
+from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.infra.models import ActivityEventModel
 from cod_doc.services import revision_service as rev
 from cod_doc.services.run_context import get_current_run_id
@@ -90,7 +93,15 @@ def emit(
 ) -> ActivityEventModel:
     """Insert a single activity event in the current session/transaction.
 
-    ``run_id`` defaults to the active contextvar value (set by ``run_scope``).
+    ``actor_kind`` — значение из :class:`domain.entities.ActorKind`;
+    выводить его из строки-автора нужно через
+    :func:`domain.entities.actor_kind_for_author`, а не собственной
+    эвристикой (ADR-012).
+
+    ``run_id`` берётся из активного contextvar'а (его ставит ``run_scope``
+    встроенного оркестратора). Для мутаций через MCP / CLI / REST скоуп
+    не открывается, поэтому колонка остаётся NULL — это ожидаемое
+    состояние, а не пропущенная запись (ADR-012).
     """
     event = ActivityEventModel(
         id=_make_id(),
@@ -110,20 +121,13 @@ def emit(
 
 
 def _actor_kind_for_author(author: str) -> str:
-    """Derive an activity-event actor_kind from a mutation author string.
+    """Тонкий ре-экспорт :func:`domain.entities.actor_kind_for_author`.
 
-    - ``agent:*`` / ``agent-…``      → ``agent``
-    - ``orchestrator:*`` / ``orchestrator-…`` → ``orchestrator``
-    - ``mcp``                        → ``system``
-    - anything else (``human:*``, ``cli``, etc.) → ``human``
+    ADR-012: сам вывод живёт в ``domain/``, потому что его зовут и
+    ``services/``, и ``mcp/`` — общий код едет вниз. Эта обёртка
+    сохранена ради существующих вызывающих внутри модуля и тестов.
     """
-    if author.startswith("agent"):
-        return "agent"
-    if author.startswith("orchestrator"):
-        return "orchestrator"
-    if author == "mcp":
-        return "system"
-    return "human"
+    return str(actor_kind_for_author(author))
 
 
 def emit_for_write(
@@ -166,7 +170,7 @@ def write_revision_and_emit_event(
     diff: str,
     reason: str | None,
     commit_sha: str | None = None,
-    expected_parent_revision_id: str | None | object = rev.NO_PARENT_CHECK,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
     activity_kind: str,
     activity_scope_kind: str | None = None,
     activity_scope_id: str | None = None,

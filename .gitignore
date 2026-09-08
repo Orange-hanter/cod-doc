@@ -6,6 +6,9 @@ dist/
 *.egg-info/
 .venv/
 venv/
+# `.venv/` со слэшем ловит только каталог. В worktree общий venv кладут
+# симлинком `.venv` — без этой строки он уезжает в индекс вместе с правкой.
+.venv
 .chroma/
 .cod-doc/
 .env
@@ -22,6 +25,9 @@ venv/
 .claude/
 .cursor/
 .mcp.json
+# Манифест MCP-сервера внутри плагина — часть поставки, а не локальная
+# настройка: без него `plugins/cod-doc` приезжает без сервера.
+!plugins/*/.mcp.json
 # ADO-020: anchored. Unanchored `models/` also matched `cod_doc/infra/models/`,
 # so five ORM modules that `cod_doc.infra.models.__init__` imports were never
 # committed — a fresh clone could not import the package at all.
@@ -31,3 +37,6 @@ venv/
 .cod-doc-playwright-*.py
 .cod-doc-pw-*.py
 .playwright-mcp/
+
+# macOS
+.DS_Store
