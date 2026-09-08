@@ -27,6 +27,7 @@ from ._types import (
     ScenarioGroupError,
     ScenarioNotFoundError,
 )
+from .coverage import group_coverage, project_coverage
 from .crud import (
     create,
     get,
@@ -36,9 +37,13 @@ from .crud import (
     retire,
     update,
 )
+from .export import DOC_KEY_PREFIX, doc_key_for, export_all, export_group
+from .links import link, list_links, unlink
+from .render import render_group_markdown, render_sections
 from .steps import add_step, list_steps, set_steps
 
 __all__ = [
+    "DOC_KEY_PREFIX",
     "CoverageStatusNotOwnedError",
     "ScenarioAlreadyExistsError",
     "ScenarioCoverage",
@@ -46,12 +51,22 @@ __all__ = [
     "ScenarioNotFoundError",
     "add_step",
     "create",
+    "doc_key_for",
+    "export_all",
+    "export_group",
     "get",
+    "group_coverage",
     "group_keys",
+    "link",
     "list_for_group",
     "list_for_project",
+    "list_links",
     "list_steps",
+    "project_coverage",
+    "render_group_markdown",
+    "render_sections",
     "retire",
     "set_steps",
+    "unlink",
     "update",
 ]
