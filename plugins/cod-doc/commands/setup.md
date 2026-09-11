@@ -1,45 +1,47 @@
 ---
-description: Подключить текущий репозиторий к cod-doc — project init, реестр, импорт документации, проверка MCP
-argument-hint: "[слаг проекта]"
+description: Connect the current repository to cod-doc — project init, registry, documentation import, an MCP check
+argument-hint: "[project slug]"
 ---
 
-Подключи текущий репозиторий к cod-doc. Слаг: `$1`, если не задан — предложи
-имя каталога репозитория и подтверди его у пользователя, прежде чем писать.
+Connect the current repository to cod-doc. Slug: `$1`, if not set — suggest
+the repository's catalog name and confirm it with the user before writing.
 
-**0. Проверка бинаря.** `cod-doc --version` (или `cod-doc --help`). Нет в
-PATH — ищи `.venv/bin/cod-doc` в репозитории; нет и там — установка
-(`pip install -e '.[dev]'` в чекауте cod-doc) и остановись, дальше идти не с
-чем.
+**0. Check the binary.** `cod-doc --version` (or `cod-doc --help`). Not in
+PATH — look for `.venv/bin/cod-doc` in the repository; not there either — install
+(`pip install -e '.[dev]'` in the cod-doc checkout) and stop, there is nothing to
+go on with.
 
-**1. Уже подключён?** Если `.cod-doc/state.db` есть — не инициализируй заново
-(`project init` перезаписывает состояние). Покажи, что там уже лежит
+**1. Already connected?** If `.cod-doc/state.db` exists — do not reinitialize
+(`project init` overwrites the state). Show what is already there
 (`sqlite3 -readonly .cod-doc/state.db "select slug, root_path from project"`),
-и переходи к шагу 4.
+and go to step 4.
 
-**2. Инициализация.**
+**2. Initialization.**
 
 ```
-cod-doc project init <slug>          # .cod-doc/, state.db со схемой, запись project
-cod-doc project add . -n <slug>      # регистрация в ~/.cod-doc/config.yaml
+cod-doc project init <slug>          # .cod-doc/, state.db with the schema, a project record
+cod-doc project add . -n <slug>      # registration in ~/.cod-doc/config.yaml
 ```
 
-**3. Импорт документации** — сперва вхолостую, чтобы увидеть охват:
+**3. Documentation import** — first dry, to see the scope:
 
 ```
 cod-doc import docs -p <slug> --dry-run --limit 0
 cod-doc import docs -p <slug> --exclude '*/node_modules' --exclude '*/.venv'
 ```
 
-Покажи пользователю план импорта и **дождись подтверждения** перед прогоном
-без `--dry-run`: импорт пишет в БД сотни документов, откатывать это дороже,
-чем согласовать.
+Show the import plan to the user and **wait for confirmation** before running
+without `--dry-run`: the import writes hundreds of documents to the DB, rolling it back is more expensive
+than agreeing on it.
 
-**4. Гигиена репозитория.** Убедись, что `.cod-doc/` в `.gitignore` (БД —
-локальное состояние, не артефакт репозитория), и предупреди, если это не так.
+**4. Repository hygiene.** Make sure `.cod-doc/` is in `.gitignore` (the DB is
+local state, not a repository artifact), and warn if it is not.
 
-**5. Проверка связки.** `cod-doc project status <slug>` и
-`cod-doc doc drift -p <slug> --all`. Если MCP-сервер плагина уже поднят —
-дёрни `task_summary`, чтобы убедиться, что сервер видит тот же проект.
+**5. MCP host config.** `cod-doc connect install --client cursor` (or
+`claude-code` / `all`), then `cod-doc connect doctor`. The plugin does
+not spawn MCP for Cursor; working tools show up as `user-cod-doc`.
+If MCP is already up — poke `task_summary` / `agent_capabilities` to
+make sure the server sees the same project.
 
-Итог доложи как чеклист: что создано, сколько документов импортировано, какой
-слаг использовать в командах `/cod-doc:*` дальше.
+Report the result as a checklist: what was created, how many documents imported, which
+slug to use in the `/cod-doc:*` commands next.

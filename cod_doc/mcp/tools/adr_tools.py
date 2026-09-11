@@ -8,6 +8,7 @@
 - ``adr_supersede`` — DAG edge + auto-flip old status.
 - ``adr_link_task`` — link ADR ↔ task.
 - ``adr_graph`` — full supersede DAG for visualisation.
+- ``adr_export`` — project ADRs to ``docs/adr/ADR-NNN.md``.
 
 Standard/full-profile surface. Agent profile reaches ADRs through
 ``agent_get(what='adr_full', ref=<adr_id>)`` once that branch is wired
@@ -312,3 +313,29 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return adr_service.graph(session, project_id)
+
+    @mcp.tool(name="adr_export")
+    def adr_export(project: str, out_dir: str | None = None) -> dict[str, int | list[str]]:
+        """Project every ADR to ``ADR-NNN.md`` files.
+
+        ``out_dir`` defaults to ``<project>/docs/adr`` inside the service.
+        Returns POSIX paths that were written (new or changed). An empty
+        list is an idempotent no-op, not an error. Does not commit git and
+        does not ``doc_import`` the resulting files.
+        """
+        from pathlib import Path
+
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_service
+
+        sf, _ = session_factory(project)
+        target: Path | None = Path(out_dir).expanduser() if out_dir else None
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            written = adr_service.export_to_disk(
+                session,
+                project_id=project_id,
+                out_dir=target,
+            )
+        paths = [p.as_posix() for p in written]
+        return {"written": paths, "count": len(paths)}

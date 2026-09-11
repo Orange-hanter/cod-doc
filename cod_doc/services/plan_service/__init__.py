@@ -35,6 +35,7 @@ from .audit import audit
 from .export import export, freeze_projection
 from .graph import chain_layout, critical_path, forward_chain, reverse_chain
 from .reads import (
+    SectionCountRow,
     get_by_scope,
     get_for_project,
     list_for_project,
@@ -43,6 +44,7 @@ from .reads import (
     ready_for_project,
     recalc,
     recalc_for_project,
+    sections_with_counts,
 )
 
 __all__ = [
@@ -52,6 +54,7 @@ __all__ = [
     "PlanAuditReport",
     "PlanNotFoundError",
     "PlanProgress",
+    "SectionCountRow",
     "SectionProgress",
     "TaskNotFoundInPlanError",
     "audit",
@@ -69,4 +72,5 @@ __all__ = [
     "recalc",
     "recalc_for_project",
     "reverse_chain",
+    "sections_with_counts",
 ]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from cod_doc.mcp.tools._db import require_project_id, session_factory, task_to_dict
 
@@ -28,6 +28,7 @@ def register(mcp: FastMCP) -> None:
         scope: str,
         principle: str = "from-rfc",
         sections: list[dict[str, Any]] | None = None,
+        author: str = "mcp",
     ) -> dict[str, Any]:
         """Create a new Plan in the project, optionally with initial sections.
 
@@ -43,57 +44,28 @@ def register(mcp: FastMCP) -> None:
         principle:  free-text origin tag (e.g. ``from-rfc`` / ``from-capability``).
         sections:   optional list of ``{"letter", "title", "slug", "position"}`` to
                     seed at create time. Each section gets validated by service.
+        author:     recorded on the ``plan.created`` activity event.
 
         Returns ``{"plan_id", "scope", "principle", "sections": [...]}``.
         Raises ``ValueError`` if scope already exists.
         """
-        from cod_doc.domain.entities import Plan, PlanSection
         from cod_doc.infra.db import transactional
-        from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
+        from cod_doc.services import plan_write_service
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
-            plan_repo = PlanRepository(session)
-            existing = plan_repo.get_by_scope(scope)
-            if existing is not None:
-                raise ValueError(f"Plan with scope '{scope}' already exists.")
-            new_plan = plan_repo.add(Plan(project_id=project_id, scope=scope, principle=principle))
-            assert new_plan.row_id is not None
-            plan_id = new_plan.row_id
-
-            sec_repo = PlanSectionRepository(session)
-            seeded: list[dict[str, Any]] = []
-            for spec in sections or []:
-                if not spec.get("letter") or not spec.get("title"):
-                    raise ValueError(
-                        f"section spec must include 'letter' and 'title' (got {spec!r})"
-                    )
-                sec = sec_repo.add(
-                    PlanSection(
-                        plan_id=plan_id,
-                        letter=str(spec["letter"]).upper(),
-                        title=str(spec["title"]),
-                        slug=str(spec.get("slug") or spec["title"]).strip(),
-                        position=int(spec.get("position", len(seeded))),
-                    )
-                )
-                seeded.append(
-                    {
-                        "section_id": sec.row_id,
-                        "letter": sec.letter,
-                        "title": sec.title,
-                        "slug": sec.slug,
-                        "position": sec.position,
-                    }
-                )
-
-        return {
-            "plan_id": plan_id,
-            "scope": scope,
-            "principle": principle,
-            "sections": seeded,
-        }
+            return cast(
+                "dict[str, Any]",
+                plan_write_service.create_plan(
+                    session,
+                    project_id=project_id,
+                    scope=scope,
+                    principle=principle,
+                    sections=sections,
+                    author=author,
+                ),
+            )
 
     @mcp.tool(name="plan_freeze")
     def plan_freeze(
@@ -136,43 +108,14 @@ def register(mcp: FastMCP) -> None:
         Use this before ``task_create`` to confirm the section_letter exists
         in the target plan.
         """
-        from sqlalchemy import case, func, select
-
         from cod_doc.infra.db import transactional
-        from cod_doc.infra.models import TaskModel
-        from cod_doc.infra.repositories import PlanSectionRepository
+        from cod_doc.services import plan_service
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
             require_project_id(session, project)
             plan_id = _require_plan_id(session, plan_scope)
-            sections = PlanSectionRepository(session).list_for_plan(plan_id)
-
-            rows = session.execute(
-                select(
-                    TaskModel.section_id,
-                    func.count(TaskModel.row_id).label("total"),
-                    func.sum(case((TaskModel.status == "done", 1), else_=0)).label("done"),
-                )
-                .where(TaskModel.plan_id == plan_id)
-                .group_by(TaskModel.section_id)
-            ).all()
-            counts: dict[int, tuple[int, int]] = {
-                r.section_id: (int(r.total or 0), int(r.done or 0)) for r in rows
-            }
-
-            return [
-                {
-                    "section_id": s.row_id,
-                    "letter": s.letter,
-                    "title": s.title,
-                    "slug": s.slug,
-                    "position": s.position,
-                    "task_count": counts.get(s.row_id or -1, (0, 0))[0],
-                    "done_count": counts.get(s.row_id or -1, (0, 0))[1],
-                }
-                for s in sorted(sections, key=lambda x: x.position)
-            ]
+            return cast("list[dict[str, Any]]", plan_service.sections_with_counts(session, plan_id))
 
     @mcp.tool(name="plan_section_create")
     def plan_section_create(
@@ -183,6 +126,7 @@ def register(mcp: FastMCP) -> None:
         slug: str | None = None,
         position: int | None = None,
         dry_run: bool = False,
+        author: str = "mcp",
     ) -> dict[str, Any]:
         """Append a section to an existing plan.
 
@@ -190,37 +134,23 @@ def register(mcp: FastMCP) -> None:
         defaults to ``count(existing) + 0`` so callers can omit it for tail
         appends.
         """
-        from cod_doc.domain.entities import PlanSection
         from cod_doc.infra.db import transactional
-        from cod_doc.infra.repositories import PlanSectionRepository
+        from cod_doc.services import plan_write_service
 
         sf, _ = session_factory(project)
         with transactional(sf, commit=not dry_run) as session:
             require_project_id(session, project)
             plan_id = _require_plan_id(session, plan_scope)
-            sec_repo = PlanSectionRepository(session)
-            current = sec_repo.list_for_plan(plan_id)
-            if any(s.letter.upper() == letter.upper() for s in current):
-                raise ValueError(
-                    f"Section letter '{letter}' already exists in plan '{plan_scope}'."
-                )
-            sec = sec_repo.add(
-                PlanSection(
-                    plan_id=plan_id,
-                    letter=letter.upper(),
-                    title=title,
-                    slug=slug or title.strip(),
-                    position=position if position is not None else len(current),
-                )
+            sec = plan_write_service.add_section(
+                session,
+                plan_id=plan_id,
+                letter=letter,
+                title=title,
+                slug=slug,
+                position=position,
+                author=author,
             )
-        out = {
-            "section_id": sec.row_id,
-            "plan_scope": plan_scope,
-            "letter": sec.letter,
-            "title": sec.title,
-            "slug": sec.slug,
-            "position": sec.position,
-        }
+        out: dict[str, Any] = {**sec, "plan_scope": plan_scope}
         if dry_run:
             out["dry_run"] = True
         return out

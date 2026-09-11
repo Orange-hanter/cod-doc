@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
-from sqlalchemy import select, text
+from sqlalchemy import case, func, select, text
 
-from cod_doc.domain.entities import Plan, PlanSection, Task
-from cod_doc.infra.models import PlanModel
+from cod_doc.domain.entities import Plan, PlanSection, Task, TaskStatus
+from cod_doc.infra.models import PlanModel, TaskModel
 from cod_doc.infra.repositories import (
     PlanRepository,
     PlanSectionRepository,
@@ -19,6 +19,16 @@ from ._types import PlanProgress, SectionProgress
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+
+class SectionCountRow(TypedDict):
+    section_id: int | None
+    letter: str
+    title: str
+    slug: str
+    position: int
+    task_count: int
+    done_count: int
 
 
 def get_by_scope(session: Session, scope: str) -> Plan | None:
@@ -33,6 +43,39 @@ def get_by_scope(session: Session, scope: str) -> Plan | None:
 def list_sections(session: Session, plan_id: int) -> list[PlanSection]:
     """Return the plan's sections in their stored order."""
     return PlanSectionRepository(session).list_for_plan(plan_id)
+
+
+def sections_with_counts(session: Session, plan_id: int) -> list[SectionCountRow]:
+    """Sections of a plan plus per-section task/done counts, sorted by position."""
+    sections = PlanSectionRepository(session).list_for_plan(plan_id)
+    rows = session.execute(
+        select(
+            TaskModel.section_id,
+            func.count(TaskModel.row_id).label("total"),
+            func.sum(case((TaskModel.status == TaskStatus.DONE, 1), else_=0)).label("done"),
+        )
+        .where(TaskModel.plan_id == plan_id)
+        .group_by(TaskModel.section_id)
+    ).all()
+    counts: dict[int, tuple[int, int]] = {
+        r.section_id: (int(r.total or 0), int(r.done or 0)) for r in rows
+    }
+
+    result: list[SectionCountRow] = []
+    for section in sorted(sections, key=lambda item: item.position):
+        total, done = (0, 0) if section.row_id is None else counts.get(section.row_id, (0, 0))
+        result.append(
+            {
+                "section_id": section.row_id,
+                "letter": section.letter,
+                "title": section.title,
+                "slug": section.slug,
+                "position": section.position,
+                "task_count": total,
+                "done_count": done,
+            }
+        )
+    return result
 
 
 def get_for_project(session: Session, project_id: int, plan_id: int) -> Plan | None:

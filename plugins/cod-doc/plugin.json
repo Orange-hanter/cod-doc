@@ -1,4 +1,5 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "cod-doc",
   "description": "Project docs and tasks live in the cod-doc DB; markdown is a projection. task-flow/doc-sync skills and status/task/drift/setup commands. MCP is installed with `cod-doc connect install`.",
   "version": "0.1.3",

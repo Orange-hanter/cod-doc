@@ -1,72 +1,85 @@
 ---
 name: doc-sync
 description: |
-  Синхронизация markdown ↔ БД в cod-doc: doc import после правки файла, hash
-  update для реестра MASTER.md, семантика drift, регистрация нового документа.
-  Триггеры: drift, doc import, edited_in_place, stale_export, MASTER.md, хэш,
-  реестр, правка документации, документ не виден в БД.
+  Markdown ↔ DB sync in cod-doc: doc import after editing a file, hash
+  update for the MASTER.md registry, drift semantics, registering a new
+  document. Triggers: drift, doc import, edited_in_place, stale_export,
+  MASTER.md, hash, registry, editing docs, document not visible in the DB.
 ---
 
-# Doc sync — markdown это проекция, истина в БД
+# Doc sync — markdown is a projection, the truth is in the DB
 
-Правка tracked-`.md` на диске оставляет БД позади → drift `edited_in_place`.
-PostToolUse-хук плагина напомнит (он проверяет файл по таблице `document`,
-поэтому молчит на untracked-файлах); дальше — вручную.
+Editing a tracked `.md` on disk leaves the DB behind → drift
+`edited_in_place`. The plugin's PostToolUse hook will remind you (it
+checks the file against the `document` table, so it stays silent on
+untracked files); then — manually.
 
-Слаг проекта: `cod-doc project list` или
+Project slug: `cod-doc project list` or
 `sqlite3 -readonly .cod-doc/state.db "select slug, root_path from project"`.
 
-## Правка существующего документа
+## Editing an existing document
+
+Prefer MCP when the tools are live:
+
+- `doc_import(project, path)` — frontmatter + body → DB
+- `doc_drift_all(project)` — check: `edited_in_place == 0`
+
+CLI fallback (no MCP session, or scripts/CI):
 
 ```bash
-cod-doc doc import <file.md> -p <slug>    # frontmatter + body → БД
-cod-doc doc drift -p <slug> --all         # контроль: edited_in_place == 0
+cod-doc doc import <file.md> -p <slug>    # frontmatter + body → DB
+cod-doc doc drift -p <slug> --all         # check: edited_in_place == 0
 ```
 
-Если файл входит в hash-реестр корневого `MASTER.md`:
+If the file is in the hash registry of the root `MASTER.md`:
+
+MCP: `hash_update(project)` then `doc_import(project, "MASTER.md")`.
+
+CLI fallback:
 
 ```bash
-cod-doc hash update                       # пересчёт реестра (правит MASTER.md)
-cod-doc doc import MASTER.md -p <slug>    # и сам MASTER.md — тоже в БД
+cod-doc hash update                       # recompute the registry (edits MASTER.md)
+cod-doc doc import MASTER.md -p <slug>    # and MASTER.md itself — into the DB too
 ```
 
-## Семантика drift
+## Drift semantics
 
-| Статус | Значение | Действие |
+| Status | Meaning | Action |
 |---|---|---|
-| `edited_in_place` | файл правлен, БД отстала | **дефект** → `doc import` |
-| `stale_export` | БД свежее, проекция на диске старее | **норма** в files-are-source; не трогать |
-| `missing` | файла нет | разобраться; вслепую не пересоздавать |
+| `edited_in_place` | file edited, DB lagged | **defect** → `doc import` |
+| `stale_export` | DB is fresher, the on-disk projection is older | **normal** in files-are-source; do not touch |
+| `missing` | no file | investigate; do not recreate blindly |
 
-`doc export` на диск — под guard'ом до byte-identical round-trip; наружу
-экспортировать не надо.
+`doc export` to disk is under a guard until byte-identical round-trip; do
+not export outward.
 
-## Новый документ → регистрация в БД
+## New document → register in the DB
 
-CLI `doc import` работает только по уже известным ключам. Новый файл
-регистрируется сервисом:
+The CLI `doc import` only works on already-known keys. A new file is
+registered by the service:
 
 ```python
 from cod_doc.domain.entities import DocumentType
 from cod_doc.services import import_service
-# внутри transactional(sf) as s:
+# inside transactional(sf) as s:
 import_service.import_markdown(
-    s, project_id=<id>, doc_key="docs/system/новый-документ",   # путь без .md
+    s, project_id=<id>, doc_key="docs/system/new-document",   # path without .md
     raw_markdown=raw, fallback_title="…",
     fallback_type=DocumentType.MODULE_SPEC,
     author="claude-x", reason="registration")
 ```
 
-Повторный `import_markdown` того же ключа падает — для обновления есть
-`import_or_update_markdown` (его и зовёт `doc import`).
+A repeated `import_markdown` of the same key fails — for updates there
+is `import_or_update_markdown` (this is what `doc import` calls).
 
-Массовая регистрация нового дерева документации — `cod-doc import docs -p
-<slug> --dry-run` сначала, и только после просмотра плана — без `--dry-run`.
+Bulk registration of a new documentation tree — `cod-doc import docs -p
+<slug> --dry-run` first, and only after reviewing the plan — without
+`--dry-run`.
 
-## Не забывай
+## Do not forget
 
-- Корневой `MASTER.md` — regen-on-write: правил его, импортируй его.
-- Числа в документации (счётчики тулов, документов) сторожат anti-drift тесты
-  проекта: правишь одну сторону — правь обе.
-- Тесты с CLI-выводом гоняй `env -u FORCE_COLOR`: rich красит вывод внутри
-  `CliRunner`, строковые ассерты падают на ANSI-кодах.
+- The root `MASTER.md` is regen-on-write: if you edited it, import it.
+- Numbers in the docs (tool counters, document counters) are guarded by
+  the project's anti-drift tests: editing one side — edit both.
+- Tests with CLI output run with `env -u FORCE_COLOR`: rich colors the
+  output inside `CliRunner`, string asserts fail on ANSI codes.

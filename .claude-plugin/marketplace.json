@@ -9,7 +9,7 @@
     {
       "name": "cod-doc",
       "source": "./plugins/cod-doc",
-      "description": "MCP-сервер cod-doc, скиллы task-flow / doc-sync, команды /cod-doc:status | task | drift | setup и хук о рассинхроне markdown ↔ БД",
+      "description": "скиллы task-flow / doc-sync, команды /cod-doc:status | task | drift | setup и хук о рассинхроне markdown ↔ БД. MCP ставится через `cod-doc connect install`",
       "category": "productivity"
     }
   ]

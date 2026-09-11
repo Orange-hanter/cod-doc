@@ -17,6 +17,9 @@ cod-doc task create      — создать задачу
 cod-doc task status      — обновить статус задачи
 cod-doc task complete    — завершить задачу
 cod-doc plan show        — прогресс плана
+cod-doc plan create      — создать план (опционально с секциями)
+cod-doc plan section-create — добавить секцию плана
+cod-doc plan sections    — секции плана с количеством задач
 cod-doc plan ready       — готовые задачи
 cod-doc plan audit       — аудит плана
 cod-doc plan export      — экспорт markdown
@@ -61,6 +64,9 @@ cod-doc embed status       — провайдер эмбеддингов: рез
 cod-doc embed probe        — живой вызов эмбеддера (размерность, цена, задержка)
 cod-doc embed models       — каталог моделей эмбеддингов провайдера
 cod-doc embed reset        — удалить векторную коллекцию (смена модели)
+cod-doc connect install    — write host MCP config with an absolute command
+cod-doc connect doctor     — resolve binary, handshake, inspect host configs
+cod-doc connect which      — print the resolved cod-doc-mcp path
 """
 
 from __future__ import annotations
@@ -71,6 +77,7 @@ from cod_doc.cli.adr import adr
 from cod_doc.cli.cmd_adapter import adapter
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_audit import audit
+from cod_doc.cli.cmd_connect import connect
 from cod_doc.cli.cmd_ctx import ctx
 from cod_doc.cli.cmd_embed import embed
 from cod_doc.cli.cmd_finding import finding
@@ -114,6 +121,7 @@ main.add_command(agent)
 main.add_command(hash)
 main.add_command(serve)
 main.add_command(mcp_server)
+main.add_command(connect)
 main.add_command(task)
 main.add_command(plan)
 main.add_command(story)

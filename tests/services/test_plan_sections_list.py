@@ -16,11 +16,16 @@ from cod_doc.domain.entities import Priority, TaskStatus, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.mcp.tools import plan_tools
-from cod_doc.services import task_service
+from cod_doc.services import plan_service, task_service
 
 
 def _get_tool(mcp: FastMCP, name: str) -> Any:
     return mcp._tool_manager._tools[name].fn
+
+
+def test_plan_service_imports_without_type_checking() -> None:
+    """Runtime bases like TypedDict must import; this is the `cod-doc web` path."""
+    assert callable(plan_service.sections_with_counts)
 
 
 def test_plan_sections_list_returns_letters_titles_and_counts(

@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
-# Резолвер окружения cod-doc для хуков и MCP-лаунчера плагина.
+# Environment resolver for plugin hooks and the MCP launcher.
 #
-# Источник вызова: `source "${CLAUDE_PLUGIN_ROOT}/scripts/cod-doc-env.sh"`.
-# После этого доступны (любая может быть пустой — вызывающий обязан проверить):
+# Source: `. "$(dirname "$0")/cod-doc-env.sh"`
+# After sourcing, these may be empty — the caller must check:
 #
-#   COD_DOC_BIN   — путь к CLI `cod-doc`
-#   COD_DOC_ROOT  — корень проекта, где лежит .cod-doc/state.db
-#   COD_DOC_SLUG  — слаг проекта в БД (аргумент для `-p`)
+#   COD_DOC_BIN   — path to the `cod-doc` CLI
+#   COD_DOC_ROOT  — project root that holds .cod-doc/state.db
+#   COD_DOC_SLUG  — project slug in the DB (argument for `-p`)
 #
-# Скрипт ничего не печатает и всегда возвращает 0: хук, который шумит или
-# валит сессию из-за неподключённого проекта, хуже отсутствующего хука.
+# Prints nothing and always returns 0: a hook that fails the session
+# because the project is not wired is worse than a missing hook.
 
-# --- корень проекта -----------------------------------------------------
-# Ищем .cod-doc/state.db вверх по дереву от каталога сессии. В git-worktree
-# такого каталога нет (.cod-doc не версионируется) — тогда берём корень
-# основного чекаута из `git worktree list`.
+# GUI hosts (Cursor) spawn with a stripped PATH. Re-add locations where
+# pip/uv/homebrew typically put the CLI, without overriding an explicit PATH.
+PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+export PATH
+
+# --- project root -------------------------------------------------------
+# Walk up from the session directory looking for .cod-doc/state.db.
+# A git worktree has no such directory (.cod-doc is unversioned) — then
+# take the primary checkout from `git worktree list`.
 _cd_find_root() {
 	local d="${1:-$PWD}"
 	while [ "$d" != "/" ] && [ -n "$d" ]; do
@@ -29,33 +34,62 @@ _cd_find_root() {
 
 COD_DOC_ROOT="${COD_DOC_ROOT:-}"
 if [ -z "$COD_DOC_ROOT" ]; then
-	COD_DOC_ROOT="$(_cd_find_root "${CLAUDE_PROJECT_DIR:-$PWD}" || true)"
+	# Agent Plugins spawn with cwd = plugin root; the user project is in
+	# host-specific env vars, not $PWD.
+	for _cd_start in \
+		"${CLAUDE_PROJECT_DIR:-}" \
+		"${CURSOR_PROJECT_DIR:-}" \
+		"${PWD}"; do
+		[ -n "$_cd_start" ] || continue
+		COD_DOC_ROOT="$(_cd_find_root "$_cd_start" || true)"
+		[ -n "$COD_DOC_ROOT" ] && break
+	done
+	unset _cd_start
 fi
 if [ -z "$COD_DOC_ROOT" ] && command -v git >/dev/null 2>&1; then
-	_cd_main="$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
+	_cd_git_start="${CLAUDE_PROJECT_DIR:-${CURSOR_PROJECT_DIR:-$PWD}}"
+	_cd_main="$(git -C "$_cd_git_start" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
 	if [ -n "$_cd_main" ] && [ -f "$_cd_main/.cod-doc/state.db" ]; then
 		COD_DOC_ROOT="$_cd_main"
 	fi
-	unset _cd_main
+	unset _cd_main _cd_git_start
 fi
 
-# --- бинарь -------------------------------------------------------------
+# --- binary -------------------------------------------------------------
+_cd_pick_bin() {
+	local candidate
+	for candidate in "$@"; do
+		if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+			printf '%s' "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
 if [ -n "${COD_DOC_BIN:-}" ] && [ -x "${COD_DOC_BIN}" ]; then
-	: # задан снаружи, уважаем
-elif [ -n "$COD_DOC_ROOT" ] && [ -x "$COD_DOC_ROOT/.venv/bin/cod-doc" ]; then
-	COD_DOC_BIN="$COD_DOC_ROOT/.venv/bin/cod-doc"
-elif [ -x "${CLAUDE_PROJECT_DIR:-$PWD}/.venv/bin/cod-doc" ]; then
-	COD_DOC_BIN="${CLAUDE_PROJECT_DIR:-$PWD}/.venv/bin/cod-doc"
-elif command -v cod-doc >/dev/null 2>&1; then
-	COD_DOC_BIN="$(command -v cod-doc)"
+	: # set from outside, keep it
 else
-	COD_DOC_BIN=""
+	COD_DOC_BIN="$(_cd_pick_bin \
+		"${COD_DOC_ROOT:+$COD_DOC_ROOT/.venv/bin/cod-doc}" \
+		"${CLAUDE_PROJECT_DIR:+$CLAUDE_PROJECT_DIR/.venv/bin/cod-doc}" \
+		"${CURSOR_PROJECT_DIR:+$CURSOR_PROJECT_DIR/.venv/bin/cod-doc}" \
+		"${PWD}/.venv/bin/cod-doc" \
+		"$HOME/.local/bin/cod-doc" \
+		"$HOME/.local/share/uv/tools/cod-doc/bin/cod-doc" \
+		"/opt/homebrew/bin/cod-doc" \
+		"/usr/local/bin/cod-doc" \
+		|| true)"
+	if [ -z "$COD_DOC_BIN" ] && command -v cod-doc >/dev/null 2>&1; then
+		COD_DOC_BIN="$(command -v cod-doc)"
+	fi
+	COD_DOC_BIN="${COD_DOC_BIN:-}"
 fi
 
-# --- слаг ---------------------------------------------------------------
-# COD_DOC_PROJECT (env) → строка project с совпавшим root_path → единственная
-# строка project. В embedded-БД проектов обычно один, но в мигрировавших БД
-# встречаются проекты-призраки — поэтому сперва точное совпадение пути.
+# --- slug ---------------------------------------------------------------
+# COD_DOC_PROJECT (env) → project row whose root_path matches → first row.
+# Embedded DBs usually have one project; migrated DBs can have ghosts, so
+# match the path first.
 COD_DOC_SLUG="${COD_DOC_PROJECT:-}"
 if [ -z "$COD_DOC_SLUG" ] && [ -n "$COD_DOC_ROOT" ] && command -v sqlite3 >/dev/null 2>&1; then
 	_cd_db="$COD_DOC_ROOT/.cod-doc/state.db"

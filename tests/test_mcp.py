@@ -105,6 +105,10 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "ctx_docs" in tool_names
     assert "ctx_drift" in tool_names
     assert "ctx_drift_gate" in tool_names
+    assert "doc_import" in tool_names
+    assert "hash_update" in tool_names
+    assert "search" in tool_names
+    assert "adr_export" in tool_names
 
 
 # STB-002 (2026-06-08): removed test_mcp_add_task_and_get_master — it exercised

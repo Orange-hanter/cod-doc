@@ -39,6 +39,7 @@ from cod_doc.services import (
     comment_service,
     commit_link_service,
     doc_service,
+    plan_write_service,
     repo_index_service,
     task_doc_service,
     task_service,
@@ -574,3 +575,58 @@ def test_repo_index_scan_emits_event(engine_with_schema, tmp_path: Path) -> None
             select(ActivityEventModel).where(ActivityEventModel.kind == "repo_index.scanned")
         ).scalar_one()
         assert ev.payload["files"] >= 1
+
+
+def test_plan_create_emits_event(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        plan_write_service.create_plan(
+            session,
+            project_id=p,
+            scope="awp-new",
+            principle="from-rfc",
+            sections=[{"letter": "A", "title": "Alpha"}],
+            author="human:test",
+        )
+
+    with transactional(factory) as session:
+        ev = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "plan.created")
+        ).scalar_one()
+        assert ev.scope_id == "awp-new"
+        assert ev.scope_kind == "plan"
+        assert ev.actor_kind == "human"
+
+
+def test_plan_section_create_emits_event(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        created = plan_write_service.create_plan(
+            session,
+            project_id=p,
+            scope="awp-sec",
+            principle="from-rfc",
+            sections=None,
+            author="human:test",
+        )
+        plan_id = created["plan_id"]
+        assert plan_id is not None
+        plan_write_service.add_section(
+            session,
+            plan_id=plan_id,
+            letter="A",
+            title="Alpha",
+            slug=None,
+            position=None,
+            author="mcp",
+        )
+
+    with transactional(factory) as session:
+        ev = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "plan.section_created")
+        ).scalar_one()
+        assert ev.scope_id == "awp-sec"
+        assert ev.payload["letter"] == "A"
+        assert ev.actor_kind == "system"

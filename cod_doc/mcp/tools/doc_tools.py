@@ -280,6 +280,42 @@ def register(mcp: FastMCP) -> None:
             "diff": result.diff,
         }
 
+    @mcp.tool(name="doc_import")
+    def doc_import(
+        project: str,
+        path: str,
+        author: str = "mcp",
+    ) -> dict[str, Any]:
+        """Import an already-registered projection file back into the DB.
+
+        ``path`` is relative to the project root, or absolute. Does not create
+        a new document — unknown paths raise ``ValueError`` (same as CLI
+        ``cod-doc doc import``). Bulk onboarding remains ``cod-doc import docs``.
+        Returns ``ImportReport.to_dict()`` plus ``path`` (relative to root).
+        """
+        from pathlib import Path
+
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import projection_service
+
+        sf, entry = session_factory(project)
+        root = Path(entry.path).expanduser().resolve()
+        file_path = Path(path).expanduser()
+        if not file_path.is_absolute():
+            file_path = root / file_path
+        file_path = file_path.resolve()
+
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            report = projection_service.import_document(
+                session, project_id, file_path, author=author, root_path=root
+            )
+        if report is None:
+            raise ValueError(f"No document in this project matches path: {file_path}")
+        payload = report.to_dict()
+        payload["path"] = file_path.relative_to(root).as_posix()
+        return payload
+
     @mcp.tool(name="doc_backfill_projection")
     def doc_backfill_projection(project: str, dry_run: bool = False) -> dict[str, Any]:
         """ADO-022: recover projection-fidelity columns from the files on disk.

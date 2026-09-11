@@ -1,22 +1,10 @@
 {
-  "_doc": "Copy this file to .mcp.json (gitignored) and pick ONE of the two server entries below. Then restart your MCP client (Claude Code / Claude Desktop / VS Code).",
-
+  "_doc": "Do not copy this by hand. Run `cod-doc connect install --client claude-code` (or `--client all`). The installer writes an absolute command. Plugin MCP is optional and only for Claude Code.",
   "mcpServers": {
-    "_pick_one_of": [
-      "cod-doc-docker — uses the running docker container (recommended; see docker-compose.yml)",
-      "cod-doc-native — uses the locally-installed cod-doc-mcp script (pip install -e .)"
-    ],
-
-    "cod-doc-docker": {
+    "cod-doc": {
       "type": "stdio",
-      "command": "docker",
-      "args": ["exec", "-i", "cod-doc", "cod-doc", "mcp"]
-    },
-
-    "cod-doc-native": {
-      "type": "stdio",
-      "command": "cod-doc-mcp",
-      "args": ["--transport", "stdio"]
+      "command": "/ABS/PATH/TO/.venv/bin/cod-doc-mcp",
+      "args": ["--profile", "standard"]
     }
   }
 }

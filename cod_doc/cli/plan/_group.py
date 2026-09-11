@@ -7,4 +7,4 @@ import click
 
 @click.group()
 def plan() -> None:
-    """Inspect and query plans (progress, ready tasks, audit, export)."""
+    """Inspect, create, and query plans (progress, ready tasks, audit, export)."""
