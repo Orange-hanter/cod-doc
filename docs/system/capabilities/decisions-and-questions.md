@@ -14,31 +14,31 @@ related_docs:
 
 # Capability — Decisions & Open Questions
 
-> Реестр архитектурных решений и нерешённых вопросов. Часть «Decisions»
-> теперь реализуется как [ADR System](adr-system.md); этот документ
-> сохраняется для «Open Questions» и истории.
+> A registry of architectural decisions and open questions. The "Decisions" part
+> is now implemented as the [ADR System](adr-system.md); this document
+> remains for "Open Questions" and history.
 
 ## 1. Decisions = ADR
 
-Решение, принятое в этом видении (см. [adr-vision.html](../adr-vision.html) §9):
-**Decision-сущность реализована как ADR**. Один префикс `ADR-NNN`, одна
-таблица, одно API. См. [adr-system.md](adr-system.md) для:
+The decision taken in this vision (see [adr-vision.html](../adr-vision.html) §9):
+**the Decision-entity is implemented as an ADR**. One prefix `ADR-NNN`, one
+table, one API. See [adr-system.md](adr-system.md) for:
 
-- доменной модели (status, supersedes, decided_by, decided_at, …);
-- MCP-тулов (`adr_create`, `adr_get`, `adr_list`, `adr_update`,
+- the domain model (status, supersedes, decided_by, decided_at, …);
+- MCP-tools (`adr_create`, `adr_get`, `adr_list`, `adr_update`,
   `adr_supersede`, `adr_link_task`, `adr_add_diagram`, `adr_graph`);
 - CLI (`cod-doc adr new/list/show/supersede/graph`);
-- Web UI (`/p/<slug>/adr` — список, форма, detail, supersede-граф).
+- Web UI (`/p/<slug>/adr` — list, form, detail, supersede-graph).
 
-«Decision» как отдельная сущность с префиксом `DEC-NNN` **не реализуется**.
-Если в проектных файлах остался `DEC-NNN`-формат — это исторический
-артефакт, его следует мигрировать в ADR через `adr_create` с
-`adr_id="ADR-NNN"` (см. [adr_migrator.py](../../../cod_doc/services/adr_migrator.py)).
+"Decision" as a separate entity with the `DEC-NNN` prefix **is not implemented**.
+If a `DEC-NNN`-format remains in project files — it is a historical
+artifact, it should be migrated to an ADR via `adr_create` with
+`adr_id="ADR-NNN"` (see [adr_migrator.py](../../../cod_doc/services/adr_migrator.py)).
 
-## 2. Open Questions (отдельная сущность)
+## 2. Open Questions (a separate entity)
 
-`OpenQuestion` остаётся параллельной мелкой сущностью: «формулировка
-вопроса без решения». Когда вопрос закрывается — он ссылается на ADR-id.
+`OpenQuestion` remains a parallel small entity: "a question
+formulation without a decision". When a question is closed — it references an ADR-id.
 
 ```yaml
 type: open-question
@@ -47,50 +47,50 @@ status: open | resolved | dropped
 owner: <responsible>
 created: YYYY-MM-DD
 related: [modules/M1-auth, ADR-014]
-resolved_by: ADR-014   # появляется при status=resolved
+resolved_by: ADR-014   # appears with status=resolved
 ```
 
-### 2.1 Операции (планируются)
+### 2.1 Operations (planned)
 
-| Операция | CLI | MCP |
+| Operation | CLI | MCP |
 |----------|-----|-----|
-| Открытый вопрос | `cod-doc question new` | `question_create` |
-| Закрыть вопрос | `cod-doc question resolve Q-021 --by ADR-014` | `question_resolve` |
-| Список открытых | `cod-doc question list --status open` | `question_list` |
+| Open question | `cod-doc question new` | `question_create` |
+| Close a question | `cod-doc question resolve Q-021 --by ADR-014` | `question_resolve` |
+| List open | `cod-doc question list --status open` | `question_list` |
 
-> **Статус реализации.** OpenQuestion-сущность ещё не выкачена; этот
-> раздел — спецификация. Приоритет — после стабилизации ADR System.
+> **Implementation status.** The OpenQuestion-entity is not yet rolled out; this
+> section is a specification. Priority — after the ADR System stabilizes.
 
-## 3. Связи
+## 3. Links
 
-- ADR ↔ task / document / module — через [adr-system](adr-system.md)
-  (таблицы `adr_task`, `adr_supersedes`; будущая `adr_link` для doc/module).
-- Auto-link `[ADR-NNN]` в любом markdown — через [auto-linking](auto-linking.md)
+- ADR ↔ task / document / module — via [adr-system](adr-system.md)
+  (tables `adr_task`, `adr_supersedes`; a future `adr_link` for doc/module).
+- Auto-link `[ADR-NNN]` in any markdown — via [auto-linking](auto-linking.md)
   (`LinkKind.ADR`).
-- `OpenQuestion` будет иметь свой `question_link` по образцу `story_link`.
+- `OpenQuestion` will have its own `question_link` modeled on `story_link`.
 
-## 4. Поверхность для агентов
+## 4. Surface for agents
 
-- `context.get(target=module:..., depth=L1)` включает ≤ 3 открытых
-  question + список ACCEPTED-ADR проекта (см. [context-retrieval](context-retrieval.md)).
-- При создании задачи можно указать `--addresses Q-021` или
-  `--implements ADR-014` — связи сохраняются.
+- `context.get(target=module:..., depth=L1)` includes ≤ 3 open
+  questions + a list of ACCEPTED-ADRs of the project (see [context-retrieval](context-retrieval.md)).
+- When creating a task you can specify `--addresses Q-021` or
+  `--implements ADR-014` — the links are saved.
 
-## 5. Когда писать ADR vs Open Question
+## 5. When to write an ADR vs an Open Question
 
-| Ситуация | Что создавать |
+| Situation | What to create |
 |----------|---------------|
-| Решено: «использовать X вместо Y», обоснование известно | **ADR** (статус `accepted`) |
-| Обсуждается: «X или Y, склоняемся к X но не уверены» | **ADR** (статус `proposed`) |
-| Вопрос без вариантов решения: «как мы будем масштабировать?» | **Open Question** |
-| Запрос на эксперимент: «попробовать ChromaDB vs Qdrant» | **Open Question** + ADR в финале |
+| Decided: "use X instead of Y", the rationale is known | **ADR** (status `accepted`) |
+| Discussed: "X or Y, leaning towards X but unsure" | **ADR** (status `proposed`) |
+| A question without solution options: "how will we scale?" | **Open Question** |
+| A request for an experiment: "try ChromaDB vs Qdrant" | **Open Question** + an ADR in the end |
 
-Подробнее про когда писать ADR — см. skill [adr-author](../../../cod_doc/skills/adr-author/SKILL.md).
+More on when to write an ADR — see the skill [adr-author](../../../cod_doc/skills/adr-author/SKILL.md).
 
-## 6. Что не делаем
+## 6. What we do not do
 
-- Не превращаем каждый комментарий в ADR — порог: «решение влияет на
-  ≥ 2 модуля или меняет схему БД».
-- Не автоматизируем формулировку — только хранение и связи.
-- Не делаем voting / quorum — ADR принимает один человек или агент;
-  это не RFC-процесс.
+- We do not turn every comment into an ADR — the threshold: "a decision affects
+  ≥ 2 modules or changes the DB schema".
+- We do not automate the formulation — only storage and links.
+- We do not do voting / quorum — an ADR is accepted by one person or agent;
+  this is not an RFC-process.

@@ -1,105 +1,105 @@
-# 01 — Skills layer: модульные `SKILL.md`
+# 01 — Skills layer: modular `SKILL.md`
 
-> Категория: 🎯 Прямое заимствование · Риск: низкий · Зависимости: —
+> Category: 🎯 Direct borrowing · Risk: low · Dependencies: —
 
-## Контекст: как у paperclip
+## Context: like paperclip
 
-В [`skills/`](https://github.com/paperclipai/paperclip/tree/master/skills) каждый скилл — это директория с:
-- `SKILL.md` — markdown с YAML-frontmatter (`name`, `description` — описание триггеров загрузки).
-- Опциональная папка `references/` — глубокие справочники, дозагружаются по требованию.
+In [`skills/`](https://github.com/paperclipai/paperclip/tree/master/skills) each skill is a directory with:
+- `SKILL.md` — markdown with YAML-frontmatter (`name`, `description` — description of load triggers).
+- Optional `references/` folder — deep references, loaded on demand.
 
-Примеры:
-- `paperclip` (основной) — heartbeat-протокол + ссылки на `references/api-reference.md`, `references/workflows.md`, `references/routines.md`.
-- `paperclip-converting-plans-to-tasks` — узкий скилл "как переводить план в issues".
-- `diagnose-why-work-stopped` — узкая диагностика стоп-состояний.
-- `para-memory-files` — отдельный паттерн памяти.
+Examples:
+- `paperclip` (main) — heartbeat protocol + links to `references/api-reference.md`, `references/workflows.md`, `references/routines.md`.
+- `paperclip-converting-plans-to-tasks` — narrow skill "how to convert a plan into issues".
+- `diagnose-why-work-stopped` — narrow diagnostics of stopped states.
+- `para-memory-files` — separate memory pattern.
 
-Главная идея: **системный промпт перестаёт быть монолитом**. LLM получает базовый промпт + index скиллов, а конкретный скилл «активируется» только когда задача матчит его триггеры из `description`.
+The main idea: **the system prompt stops being a monolith**. The LLM receives a base prompt + an index of skills, and a specific skill "activates" only when a task matches its triggers from `description`.
 
-## Текущее состояние cod-doc
+## Current state of cod-doc
 
-- Весь системный промпт — в [cod_doc/agent/prompts.py:3](cod_doc/agent/prompts.py#L3) одной константой.
-- Правила, которые сейчас живут в памяти агента (валидация FM-002/003/004/005, audit-cadence) — НЕ попадают в промпт; держатся в `MEMORY.md`.
-- Snowball Protocol заявлен (L0/L1/L2 для документов), но **сам агент** грузит свои инструкции одним блоком — это противоречит его же принципу.
-- Тулы агента уже умеют возвращать markdown — но нет «активируемых по триггеру» инструкций.
+- The entire system prompt is in [cod_doc/agent/prompts.py:3](cod_doc/agent/prompts.py#L3) as a single constant.
+- Rules that currently live in the agent's memory (FM-002/003/004/005 validation, audit-cadence) do NOT get into the prompt; they live in `MEMORY.md`.
+- Snowball Protocol is declared (L0/L1/L2 for documents), but **the agent itself** loads its instructions as a single block — this contradicts its own principle.
+- Agent tools already return markdown — but there are no "trigger-activated" instructions.
 
-## Предложение
+## Proposal
 
-Создать каталог `cod_doc/skills/` со следующей структурой:
+Create a `cod_doc/skills/` catalog with the following structure:
 
 ```
 cod_doc/skills/
-  orchestrator/                # базовый, всегда подгружается
-    SKILL.md                   # минимальный heartbeat-протокол + index
+  orchestrator/                # base, always loaded
+    SKILL.md                   # minimal heartbeat protocol + index
     references/
-      hybrid-refs.md           # формат ссылок 📁 | 🗃️ | 🔑
-      self-check.md            # формат self_check блока
+      hybrid-refs.md           # link format 📁 | 🗃️ | 🔑
+      self-check.md            # self_check block format
   validation/
-    SKILL.md                   # FM-002..FM-005, когда эскалировать
+    SKILL.md                   # FM-002..FM-005, when to escalate
     references/
       escalation-flow.md
   audit-cadence/
-    SKILL.md                   # закрытие фазы → audit-report; новая фаза → kickoff
+    SKILL.md                   # closing a phase → audit-report; new phase → kickoff
   drift-handling/
-    SKILL.md                   # что делать при STALE/BROKEN
+    SKILL.md                   # what to do on STALE/BROKEN
   plan-to-tasks/
-    SKILL.md                   # как разбивать план на task-узлы
+    SKILL.md                   # how to split a plan into task nodes
   doc-style/
-    SKILL.md                   # стиль документации, гибридные ссылки
+    SKILL.md                   # documentation style, hybrid links
 ```
 
-Frontmatter каждого скилла:
+Frontmatter of each skill:
 ```yaml
 ---
 name: validation
 description: >
-  Когда применять structural-валидацию (raise) vs advisory-аудит (issues).
-  Триггеры: запись в MASTER.md, создание/обновление doc, изменение хэшей.
-  FM-002/003 эскалируются как блокеры; FM-004/005 — advisory-комментарии.
+  When to apply structural validation (raise) vs advisory audit (issues).
+  Triggers: writing to MASTER.md, creating/updating a doc, changing hashes.
+  FM-002/003 escalate as blockers; FM-004/005 — advisory comments.
 ---
 ```
 
-**Загрузка:**
-- На старте оркестратора грузится только `orchestrator/SKILL.md` + список названий и `description` остальных скиллов.
-- Перед каждым LLM-вызовом — простой матчер (regex по триггер-словам в текущей задаче) подмешивает релевантные `SKILL.md` в систему.
-- `references/*.md` дозагружаются только когда сам скилл явно ссылается («see `references/X.md` for ...»).
+**Loading:**
+- At orchestrator startup, only `orchestrator/SKILL.md` + the list of names and `description` of the other skills are loaded.
+- Before each LLM call — a simple matcher (regex over trigger words in the current task) mixes relevant `SKILL.md` into the system.
+- `references/*.md` are loaded on demand only when the skill itself explicitly references ("see `references/X.md` for ...").
 
-## План внедрения
+## Implementation plan
 
-1. **Извлечь и поделить.** Разрезать [prompts.py](cod_doc/agent/prompts.py) на 3-4 базовых скилла. SYSTEM_PROMPT в коде остаётся, но становится тонким — собирает orchestrator/SKILL.md + триггерные.
-2. **Перенести memory-правила.** FM-валидацию, audit-cadence из `MEMORY.md` в соответствующие скиллы (это shared-знание, не личная память пользователя).
-3. **Триггер-матчер.** Простая функция `select_skills(task: Task) -> list[Path]` в [cod_doc/agent/](cod_doc/agent/). Можно начать с keyword-matching по `task.title + task.description + task.kind`.
-4. **MCP-tool `skill_list` / `skill_get`.** Чтобы агент сам мог запросить: «дай мне `audit-cadence`».
-5. **Тесты.** Каждому скиллу — тест-кейс задачи, на которой он должен/не должен активироваться.
+1. **Extract and split.** Cut [prompts.py](cod_doc/agent/prompts.py) into 3-4 base skills. SYSTEM_PROMPT stays in code, but becomes thin — it assembles orchestrator/SKILL.md + trigger skills.
+2. **Move memory-rules.** FM-validation, audit-cadence from `MEMORY.md` into the corresponding skills (this is shared knowledge, not the user's personal memory).
+3. **Trigger matcher.** A simple function `select_skills(task: Task) -> list[Path]` in [cod_doc/agent/](cod_doc/agent/). Can start with keyword-matching over `task.title + task.description + task.kind`.
+4. **MCP-tool `skill_list` / `skill_get`.** So the agent itself can request: "give me `audit-cadence`".
+5. **Tests.** Each skill — a test case of a task on which it should/should not activate.
 
-## Риски
+## Risks
 
-- **Дрейф между скиллами.** Решение: один базовый «orchestrator» — единственная точка истины для общих правил; остальные дополняют, не противоречат.
-- **Over-fragmentation.** Гранулярность не мельче, чем 1 скилл = 1 разговор. Рекомендация: до 8 скиллов на старте.
-- **Стоимость матчинга.** Дешёвый regex-матчер — fine. ML-классификатор не нужен.
+- **Drift between skills.** Solution: one base "orchestrator" — the single source of truth for common rules; the rest complement, not contradict.
+- **Over-fragmentation.** Granularity no finer than 1 skill = 1 conversation. Recommendation: up to 8 skills at start.
+- **Cost of matching.** Cheap regex matcher — fine. ML classifier is not needed.
 
-## Метрики успеха
+## Success metrics
 
-- Базовый системный промпт ≤ 30 строк (сейчас ~60).
-- Средний размер «активного» скилл-набора на iteration ≤ 2 скилла.
-- Нет правил, которые живут только в `MEMORY.md` и не имеют отражения в скилле (для shared-знаний).
+- Base system prompt ≤ 30 lines (currently ~60).
+- Average size of "active" skill set per iteration ≤ 2 skills.
+- No rules that live only in `MEMORY.md` and have no reflection in a skill (for shared knowledge).
 
-## Связанные
+## Related
 
-- 03 (wake-payload) — wake-payload решает, какие скиллы предзагрузить под конкретную задачу.
-- 11 (AGENTS.md) — AGENTS.md ссылается на скиллы как на канонические инструкции для контрибьюторов и агентов.
+- 03 (wake-payload) — wake-payload decides which skills to preload for a specific task.
+- 11 (AGENTS.md) — AGENTS.md references skills as canonical instructions for contributors and agents.
 
-## Замечания (контекст cod-doc)
+## Notes (cod-doc context)
 
-- **Перенос из личной памяти.** Правила `validation pattern` и `audit cadence` сейчас живут в `MEMORY.md` пользователя — это shared-знание, не личные preferences. Скилл-слой делает их частью репо и доступными любой будущей сессии/контрибьютору.
-- **Уже формализовано — пишется почти готовое.** FM-002/003/004/005 разбиты на структурные (raise) и advisory (issues), audit-cadence имеет чёткий триггер «закрытие фазы → audit-report; новая фаза → kickoff-brief». Описания скиллов `validation` и `audit-cadence` — фактически копипаст уже принятого правила.
-- **Противоречие со Snowball Protocol.** Сам системный промпт агента нарушает принцип, который проповедует для документов: грузится одним блоком. Скилл-слой устраняет split-brain — те же L0/L1/L2-семантика для агентского контекста.
-- **Дешёвый матчер.** Keyword-matcher по `task.title + task.description + task.kind` — fine; ML/LLM-классификатор overkill.
+- **Moving from personal memory.** The `validation pattern` and `audit cadence` rules currently live in the user's `MEMORY.md` — this is shared knowledge, not personal preferences. The skill layer makes them part of the repo and available to any future session/contributor.
+- **Already formalized — writing is nearly ready.** FM-002/003/004/005 are split into structural (raise) and advisory (issues), audit-cadence has a clear trigger "closing a phase → audit-report; new phase → kickoff-brief". The descriptions of the `validation` and `audit-cadence` skills are essentially a copy-paste of the already accepted rule.
+- **Contradiction with Snowball Protocol.** The agent's own system prompt violates the principle it preaches for documents: it loads as a single block. The skill layer eliminates the split-brain — the same L0/L1/L2 semantics for agent context.
+- **Cheap matcher.** Keyword-matcher over `task.title + task.description + task.kind` — fine; ML/LLM classifier is overkill.
 
-## Открытые вопросы
+## Open questions
 
-- **Q1.** Как разграничить `MEMORY.md` (личное) и `cod_doc/skills/` (shared)? Нужен ли формальный критерий «это знание о юзере vs о проекте»?
-- **Q2.** Версионирование скиллов — нужны ли revision-history и `skill_revert` по аналогии с docs, или git-история достаточна?
-- **Q3.** Конфликт триггеров — если 3+ скилла активируются на одной задаче, есть ли приоритет, или подмешиваем все?
-- **Q4.** Кто аудитит дрейф между скиллами и реальным поведением кода (FM-валидация в скилле vs реализация в `cod_doc/core/`)? Routine из [07](07-routines.md)?
-- **Q5.** Совместимость с встроенным `Skill` тулом Claude Code — если контрибьютор работает через CC и редактирует скилл, видит ли его агент cod-doc как канонический источник?
+- **Q1.** How to separate `MEMORY.md` (personal) and `cod_doc/skills/` (shared)? Is a formal criterion "this is knowledge about the user vs about the project" needed?
+- **Q2.** Skill versioning — do we need revision-history and `skill_revert` by analogy with docs, or is git history sufficient?
+- **Q3.** Trigger conflict — if 3+ skills activate on the same task, is there a priority, or do we mix all of them?
+- **Q4.** Who audits drift between skills and the actual code behavior (FM-validation in a skill vs implementation in `cod_doc/core/`)? A routine from [07](07-routines.md)?
+- **Q5.** Compatibility with the built-in `Skill` tool of Claude Code — if a contributor works via CC and edits a skill, does their cod-doc agent see it as the canonical source?

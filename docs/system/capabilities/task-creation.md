@@ -13,39 +13,39 @@ related_docs:
 
 # Capability — Task Creation
 
-> Стандартизированное и автоматическое создание задач без ручного заполнения YAML и ручной проверки формата.
+> Standardized and automatic task creation without manual YAML filling and manual format checking.
 
-## 1. Что нужно автоматизировать
+## 1. What needs to be automated
 
-На сегодня (Restate baseline) автор задачи обязан:
+Today (Restate baseline) the task author must:
 
-1. Знать структуру frontmatter (`id`, `title`, `section`, `status`, `depends_on`, `type`, `priority`, `affected_files`).
-2. Выбрать правильный ID из свободного диапазона секции.
-3. Подобрать verb-pattern для заголовка.
-4. Не нарушить enum-ы (`type`, `status`, `priority`).
-5. Руками пересчитать `tasks_total` / `tasks_done` в section frontmatter.
-6. Обновить Progress Overview и Next Batch в parent-plan.
-7. Пересобрать dependency graph.
+1. Know the frontmatter structure (`id`, `title`, `section`, `status`, `depends_on`, `type`, `priority`, `affected_files`).
+2. Pick the correct ID from the free range of the section.
+3. Choose a verb-pattern for the title.
+4. Not violate enums (`type`, `status`, `priority`).
+5. Manually recompute `tasks_total` / `tasks_done` in the section frontmatter.
+6. Update Progress Overview and Next Batch in the parent-plan.
+7. Rebuild the dependency graph.
 
-Каждый шаг — точка отказа. COD-DOC делает все семь автоматически.
+Each step is a point of failure. COD-DOC does all seven automatically.
 
-## 2. Основные поверхности
+## 2. Main surfaces
 
-| Поверхность | Команда |
+| Surface | Command |
 |-------------|---------|
 | CLI | `cod-doc task new --plan <plan> [--section <letter>] --title "<text>" --type <type> [--priority <p>] [--depends <ID,...>] [--affected <path,...>]` |
-| TUI | `cod-doc wizard task new` — пошаговая форма |
+| TUI | `cod-doc wizard task new` — step-by-step form |
 | MCP | `task.create({...})` |
 | REST | `POST /api/v1/tasks` |
 
-## 3. Контракт `task.create`
+## 3. The `task.create` contract
 
-Вход:
+Input:
 
 ```json
 {
   "plan": "M1-auth-module",
-  "section": "C",                       // letter ИЛИ null — сервис подберёт
+  "section": "C",                       // letter OR null — the service will pick
   "title": "Implement: account deactivation flow",
   "type": "feature",
   "priority": "high",                   // default: "medium"
@@ -59,7 +59,7 @@ related_docs:
 }
 ```
 
-Выход:
+Output:
 
 ```json
 {
@@ -70,63 +70,63 @@ related_docs:
 }
 ```
 
-## 4. Автоматика сервиса `TaskService.create`
+## 4. Automation of the `TaskService.create` service
 
-1. **Валидация title** → verb-pattern регэкс (`standards/task-plan.md §7`). Мисматч — возвращается список допустимых шаблонов, задача не создаётся.
-2. **Выбор section** если не задана — по `type`:
-   - `test` → первая секция `Test Coverage`, если есть.
-   - `feature` → секция с незавершёнными implement-задачами.
-   - иначе — последняя открытая секция.
-3. **Генерация id**:
-   - PREFIX = `plan.prefix` (кэшируется).
-   - NUMBER = `max(existing in section range) + 1`, clamp в пределы decade.
-   - Если decade заполнен — следующий свободный decade.
-4. **Проверка depends_on**:
-   - Все task_id существуют.
-   - Нет цикла (recursive CTE + inserted edge).
-   - Cross-plan допустимо.
-5. **Запись в БД** в одной транзакции:
+1. **Title validation** → verb-pattern regex (`standards/task-plan.md §7`). On mismatch, the list of allowed patterns is returned and the task is not created.
+2. **Section selection** if not specified — by `type`:
+   - `test` → first `Test Coverage` section, if any.
+   - `feature` → section with unfinished implement-tasks.
+   - otherwise — the last open section.
+3. **ID generation**:
+   - PREFIX = `plan.prefix` (cached).
+   - NUMBER = `max(existing in section range) + 1`, clamped to decade bounds.
+   - If the decade is full — the next free decade.
+4. **depends_on validation**:
+   - All task_ids exist.
+   - No cycle (recursive CTE + inserted edge).
+   - Cross-plan is allowed.
+5. **DB write** in a single transaction:
    - `task` row.
    - `dependency` rows.
    - `affected_file` rows.
    - `revision(entity_kind=task, ...)`.
-6. **Пост-действия** (тот же транзакционный scope):
-   - Пересчёт `section_totals` (view, автоматически).
-   - `PlanService.recalc(plan_id)` для обновления Progress Overview/Next Batch body.
-   - `LinkService.reindex(task.section.doc_id)` для новых исходящих ссылок.
-7. **Проекция**: если в конфиге проекта включён auto-export — markdown-файлы секций регенерируются.
+6. **Post-actions** (same transactional scope):
+   - Recompute `section_totals` (view, automatically).
+   - `PlanService.recalc(plan_id)` to update the Progress Overview/Next Batch body.
+   - `LinkService.reindex(task.section.doc_id)` for new outgoing links.
+7. **Projection**: if auto-export is enabled in the project config — section markdown files are regenerated.
 
-## 5. Запрещённые сценарии
+## 5. Forbidden scenarios
 
-- Создание таска без `plan` — запрет на уровне схемы (`NOT NULL`).
-- Ручная правка markdown без последующего import — не запрещена, но при следующем export перезапишется из БД.
-- Попытка создать таск с `status: done` сразу — error (нужно пройти `pending → in-progress → done`).
-- Циклы в `depends_on` — error при insert, с указанием узлов цикла.
+- Creating a task without a `plan` — forbidden at the schema level (`NOT NULL`).
+- Manual markdown edits without a subsequent import — not forbidden, but on the next export it will be overwritten from the DB.
+- Attempting to create a task with `status: done` immediately — error (you must go through `pending → in-progress → done`).
+- Cycles in `depends_on` — error on insert, with the cycle nodes listed.
 
-## 6. Batch-создание
+## 6. Batch creation
 
-Полезно при импорте user stories:
+Useful when importing user stories:
 
 ```bash
 cod-doc task bulk --plan M1-auth-module --from-yaml tasks.yaml
 ```
 
-где `tasks.yaml` — массив объектов того же формата. Операция транзакционна (всё или ничего).
+where `tasks.yaml` is an array of objects of the same format. The operation is transactional (all or nothing).
 
-## 7. Интеграция с user stories
+## 7. Integration with user stories
 
-Если в запросе указан `story_id`, создаётся `story_link(to_kind=task, relation=implemented_by)`. Позволяет потом получить «все задачи, реализующие US-014» без парсинга markdown.
+If `story_id` is specified in the request, a `story_link(to_kind=task, relation=implemented_by)` is created. This later allows getting "all tasks implementing US-014" without parsing markdown.
 
-## 8. Интеграция с логикой ready
+## 8. Integration with the ready logic
 
-Сразу после создания задачи:
+Right after creating a task:
 
-- Если у задачи пустой `depends_on` — она попадает в `ready_tasks`.
-- `PlanService.recalc_next_batch()` пересчитывает top-7 unblocked.
+- If the task has an empty `depends_on` — it goes into `ready_tasks`.
+- `PlanService.recalc_next_batch()` recomputes the top-7 unblocked.
 
-## 9. Примеры
+## 9. Examples
 
-### 9.1 Через CLI
+### 9.1 Via CLI
 
 ```bash
 cod-doc task new \
@@ -139,7 +139,7 @@ cod-doc task new \
 # → AUTH-025 created in C-AccountLifecycle
 ```
 
-### 9.2 Через MCP (агент)
+### 9.2 Via MCP (agent)
 
 ```
 → task.create({
@@ -151,8 +151,8 @@ cod-doc task new \
 ← { task_id: "AUTH-050", section: "A-Test-Coverage", status: "pending" }
 ```
 
-Никакой ручной работы с markdown, никаких конфликтов с `tasks_total`.
+No manual work with markdown, no conflicts with `tasks_total`.
 
-## 10. Миграция от Restate
+## 10. Migration from Restate
 
-При импорте существующих планов (см. [migration/from-restate.md](../migration/from-restate.md)) сервис `TaskService.import_bulk` принимает parsed markdown и прогоняет те же валидации, что и `task.create`. Нарушения формата Restate (встречающиеся, напр. `section: A MR Blockers` с пробелами) фиксятся автоматически + пишется revision `reason: "import-normalize"`.
+When importing existing plans (see [migration/from-restate.md](../migration/from-restate.md)) the `TaskService.import_bulk` service accepts parsed markdown and runs the same validations as `task.create`. Restate format violations (encountered, e.g. `section: A MR Blockers` with spaces) are fixed automatically + a revision is written with `reason: "import-normalize"`.

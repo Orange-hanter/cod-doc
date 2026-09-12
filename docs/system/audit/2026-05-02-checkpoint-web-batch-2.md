@@ -149,6 +149,6 @@ Section B (4/6 → 5/6) and flip the Plans tab live in one PR.
 
 ## 7. Changelog
 
-| Дата | Событие |
+| Date | Event |
 |---|---|
-| 2026-05-02 | Checkpoint после 4 коммитов batch-2 (commits 72209db → 85754af). 13/16 находок baseline-аудита закрыты; 3 новых внутренних item (WEB-053b, WEB-014b, mini-renderer table watch); 0 регрессий, suite 441 → 483. Endpoints shipped 5→8/14. |
+| 2026-05-02 | Checkpoint after 4 commits of batch-2 (commits 72209db → 85754af). 13/16 baseline-audit findings closed; 3 new internal items (WEB-053b, WEB-014b, mini-renderer table watch); 0 regressions, suite 441 → 483. Endpoints shipped 5→8/14. |

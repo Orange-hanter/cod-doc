@@ -16,24 +16,24 @@ related_code:
 
 # Capability — Observability & Indexing
 
-> **Назначение.** Метрики выполнения, тесная интеграция с git-историей,
-> связывание исходного кода с задачами/документами, индексация файловой и
-> объектной базы. Открывает «откуда что взялось и куда ведёт» как первоклассный
-> вопрос проекта.
+> **Purpose.** Execution metrics, tight integration with git history,
+> linking source code to tasks/documents, indexing of the file and
+> object base. Surfaces "where things came from and where they lead" as a
+> first-class question of the project.
 
-## 1. Зачем
+## 1. Why
 
-Сейчас в cod-doc есть фрагменты:
-- `revision_service` пишет историю мутаций — но без duration/cost.
-- `task.completed_commit` хранит SHA, но нет обратного индекса коммит → задача.
-- `affects_files` на задаче — список путей, но без validation/auto-derive.
-- `core/reindex.py` индексирует только markdown в ChromaDB.
-- `link_service` резолвит markdown-ссылки, но не понимает `[symbol_name](src/file.py)`.
+Today cod-doc has fragments:
+- `revision_service` writes mutation history — but without duration/cost.
+- `task.completed_commit` stores the SHA, but there is no reverse index commit → task.
+- `affects_files` on the task — a list of paths, but without validation/auto-derive.
+- `core/reindex.py` indexes only markdown in ChromaDB.
+- `link_service` resolves markdown links, but does not understand `[symbol_name](src/file.py)`.
 
-Боль: «что за коммит изменил эту задачу», «какие файлы относятся к US-014»,
-«где ещё упоминается этот класс» требуют ручного grep'а или git-blame.
+Pain: "which commit changed this task", "which files belong to US-014",
+"where else is this class mentioned" require manual grep or git-blame.
 
-## 2. Сущности
+## 2. Entities
 
 ### 2.1 TaskMetric (US-021)
 
@@ -43,17 +43,17 @@ class TaskMetric:
     task_id: str
     project_id: int
     duration_seconds: float       # completed_at - in_progress_started_at
-    run_id: str | None            # из PCA-030 (когда будет)
+    run_id: str | None            # from PCA-030 (when it arrives)
     llm_calls: int
     llm_tokens_in: int
     llm_tokens_out: int
     cost_usd: float | None
     iterations: int
-    failed_attempts: int          # сколько раз падал в FAILED перед DONE
+    failed_attempts: int          # how many times it fell into FAILED before DONE
     recorded_at: datetime
 ```
 
-Aggregations: per-priority, per-type, per-section, per-week — для метрик-страницы.
+Aggregations: per-priority, per-type, per-section, per-week — for the metrics page.
 
 ### 2.2 CommitLink (US-022)
 
@@ -62,15 +62,15 @@ Aggregations: per-priority, per-type, per-section, per-week — для метр�
 class CommitLink:
     commit_sha: str               # full or 12-hex
     project_id: int
-    task_ids: list[str]           # из commit message regex (PCA-XXX, COD-NNN)
+    task_ids: list[str]           # from commit message regex (PCA-XXX, COD-NNN)
     affected_paths: list[str]     # git diff --name-only
     author: str
     committed_at: datetime
     message_first_line: str
 ```
 
-Парсер: при `task.complete(commit_sha=...)` или batch-импорт `git log` — извлекает
-`PCA-NNN` / `COD-NNN` из commit message regex'ом, заполняет `affected_paths`.
+Parser: on `task.complete(commit_sha=...)` or batch-import of `git log` — extracts
+`PCA-NNN` / `COD-NNN` from the commit message via regex, fills `affected_paths`.
 
 ### 2.3 CodeRef (US-023)
 
@@ -86,55 +86,55 @@ class CodeRef:
     discovered_at: datetime
 ```
 
-Источники:
-- `task.affects_files` (явный список на задаче)
-- `parse_markdown` находит inline-refs `[`code-symbol`](src/path.py)` →
+Sources:
+- `task.affects_files` (explicit list on the task)
+- `parse_markdown` finds inline-refs `[`code-symbol`](src/path.py)` →
   link_service-ext (US-019 + US-023).
 
 ### 2.4 RepoIndex (US-024)
 
-Файловый индекс репозитория (отдельно от ChromaDB markdown-индекса):
+File index of the repository (separate from the ChromaDB markdown index):
 - `path` (relative)
 - `language` (python|js|ts|md|...)
 - `sha` (file hash)
 - `symbols` (functions/classes/exports — top-level)
-- `imports` (для python — `from X import Y`)
+- `imports` (for python — `from X import Y`)
 - `last_modified`
 
-`.gitignore`-aware. Перестраивается на git-hooks (pre-commit) или manual
+`.gitignore`-aware. Rebuilt on git-hooks (pre-commit) or manual
 `cod-doc reindex --files`.
 
 ### 2.5 DBObjectIndex (US-025)
 
-Внутренний search index для DB-content:
+Internal search index for DB content:
 - doc bodies (sections)
 - task description / acceptance / blocked_reason
 - story narrative / acceptance criteria
-- ADR context / decision / consequences (после ADR-001)
+- ADR context / decision / consequences (after ADR-001)
 - revision diffs (compact)
 
-Реализация — sqlite FTS5 виртуальная таблица или ChromaDB-embedding по коротким
-chunks. Цель — `cod-doc search "phrase"` возвращает unified ranked результат
-(docs + tasks + stories + ADR) с подсветкой scope.
+Implementation — sqlite FTS5 virtual table or ChromaDB-embedding over short
+chunks. Goal — `cod-doc search "phrase"` returns a unified ranked result
+(docs + tasks + stories + ADR) with scope highlighting.
 
-## 3. Интеграция с существующими capability
+## 3. Integration with existing capabilities
 
-| Capability | Дополнение |
+| Capability | Addition |
 |------------|------------|
-| `decisions-and-questions` | TaskMetric обогащает «почему столько времени ушло» |
-| `auto-linking` | CodeRef расширяет список парсимых форм |
-| `audit-and-ci` | metrics dashboard как новая section |
-| `web-frontend` | новые страницы /metrics, /index, /commits |
+| `decisions-and-questions` | TaskMetric enriches "why so much time was spent" |
+| `auto-linking` | CodeRef expands the list of parseable forms |
+| `audit-and-ci` | metrics dashboard as a new section |
+| `web-frontend` | new pages /metrics, /index, /commits |
 
 ## 4. UI
 
-- `/p/<slug>/metrics` — агрегаты: задач за неделю, p50/p95/p99 длительности,
-  cost по статус-секциям, sparkline по неделям.
-- `/p/<slug>/commits` — git-history с фильтрами по задаче/секции/автору.
-- На странице задачи `/p/<slug>/tasks/<id>` — панели:
+- `/p/<slug>/metrics` — aggregates: tasks per week, p50/p95/p99 duration,
+  cost by status sections, sparkline by weeks.
+- `/p/<slug>/commits` — git-history with filters by task/section/author.
+- On the task page `/p/<slug>/tasks/<id>` — panels:
   - Recent commits affecting `affects_files`.
-  - Code refs (file:lines с link to /repo/<path>).
-- `/p/<slug>/search?q=...` — unified search через DBObjectIndex.
+  - Code refs (file:lines with link to /repo/<path>).
+- `/p/<slug>/search?q=...` — unified search via DBObjectIndex.
 
 ## 5. CLI
 
@@ -148,22 +148,22 @@ cod-doc search "validation pattern"
 
 ## 6. Acceptance (capability-level)
 
-- TaskMetric записывается на каждое `task.complete`; aggregation API в Web UI.
-- CommitLink populated batch-import'ом + автоматически на `task.complete(commit_sha)`.
-- CodeRef'ы создаются auto при parse markdown с code-link форм.
-- RepoIndex покрывает 100% не-gitignored файлов; reindex runtime ≤ 5s на 1000 файлов.
-- DBObjectIndex отвечает на `search` query за ≤ 200ms на typical-sized проекте.
+- TaskMetric is recorded on every `task.complete`; aggregation API in Web UI.
+- CommitLink is populated by batch-import + automatically on `task.complete(commit_sha)`.
+- CodeRefs are created automatically when parsing markdown with code-link forms.
+- RepoIndex covers 100% of non-gitignored files; reindex runtime ≤ 5s per 1000 files.
+- DBObjectIndex answers a `search` query in ≤ 200ms on a typical-sized project.
 
-## 7. Не в scope
+## 7. Out of scope
 
-- Live performance profiling (`py-spy` / flame graphs) — отдельная capability.
-- Cross-project search (multi-tenant) — однопользовательская система.
-- AST-based deep code analysis (вытаскивание call-graphs) — overkill для
-  «где упоминается X»; достаточно symbol-name + path.
+- Live performance profiling (`py-spy` / flame graphs) — a separate capability.
+- Cross-project search (multi-tenant) — single-user system.
+- AST-based deep code analysis (extracting call-graphs) — overkill for
+  "where is X mentioned"; symbol-name + path is enough.
 
 ## 8. Roadmap
 
-Реализация — план [observability-and-indexing-task-plan.md](../roadmap/observability-and-indexing-task-plan.md),
-5 секций (A-E, по одной на сущность), 8 задач OBI-001..OBI-040. Всё помечено
-**опциональным** — включается по запросу пользователя, не блокирует Phase 1
+Implementation — plan [observability-and-indexing-task-plan.md](../roadmap/observability-and-indexing-task-plan.md),
+5 sections (A-E, one per entity), 8 tasks OBI-001..OBI-040. Everything is marked
+**optional** — enabled on user request, does not block Phase 1
 paperclip-adoption.

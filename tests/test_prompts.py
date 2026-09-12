@@ -47,8 +47,8 @@ def test_system_prompt_drops_yaml_and_keeps_body() -> None:
     "section",
     [
         "Snowball Protocol",
-        "Гибридные ссылки",
-        "Алгоритм выполнения задачи",
+        "Hybrid references",
+        "Task execution algorithm",
         "Fail-Fast",
         "self_check",
     ],

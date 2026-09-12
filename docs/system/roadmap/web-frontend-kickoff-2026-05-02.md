@@ -12,51 +12,52 @@ audience: [next-session-agent, contributors]
 
 # Web Frontend — Kickoff Brief (2026-05-02)
 
-> **Назначение.** Точка входа для следующего сеанса работы по web-секции.
-> Содержит: контекст, состояние, первый tick, критерии готовности, команды.
+> **Purpose.** Entry point for the next session of work on the web section.
+> Contains: context, state, first tick, readiness criteria, commands.
 >
-> **Не source of truth.** Канонические документы — capability и roadmap
-> (см. `canonical_source` в frontmatter). Этот файл живёт до закрытия Section F,
-> после чего архивируется.
+> **Not source of truth.** Canonical documents — the capability and roadmap
+> (see `canonical_source` in the frontmatter). This file lives until Section F
+> closes, after which it is archived.
 
 ## 1. TL;DR
 
-- Web-секция: **5/14 endpoints** реализованы (WEB-001..003, WEB-010, WEB-011).
-  Section A (Scaffold) закрыта.
-- 2026-05-02 проведён аудит → 13 новых задач, 2 повышены до high.
-- **Корень проблем — отсутствие фундамента**: engine на каждый запрос (perf),
-  web → infra прямые импорты (architecture), `<div id="alerts">` без модели (UX).
-- **Batch-1 закрыт 2026-05-02:** WEB-005, WEB-040, WEB-022, WEB-041, WEB-013 ✅.
-  11 / 16 находок baseline закрыты; checkpoint #1 → [batch-1](../audit/2026-05-02-checkpoint-web-batch-1.md).
-- **Batch-2 закрыт 2026-05-02:** WEB-006 (markdown), polish (013b/022b/054),
+- Web section: **5/14 endpoints** implemented (WEB-001..003, WEB-010, WEB-011).
+  Section A (Scaffold) is closed.
+- 2026-05-02 audit run → 13 new tasks, 2 raised to high.
+- **The root of the problems is the missing foundation**: an engine per
+  request (perf), web → infra direct imports (architecture), `<div id="alerts">`
+  without a model (UX).
+- **Batch-1 closed 2026-05-02:** WEB-005, WEB-040, WEB-022, WEB-041, WEB-013 ✅.
+  11 / 16 baseline findings closed; checkpoint #1 → [batch-1](../audit/2026-05-02-checkpoint-web-batch-1.md).
+- **Batch-2 closed 2026-05-02:** WEB-006 (markdown), polish (013b/022b/054),
   WEB-014 (overview agg + complete), WEB-021 (revisions log) ✅.
-  13 / 16 находок baseline закрыты; suite 441 → 483; endpoints 5→8/14;
+  13 / 16 baseline findings closed; suite 441 → 483; endpoints 5→8/14;
   checkpoint #2 → [batch-2](../audit/2026-05-02-checkpoint-web-batch-2.md).
-- **Batch-3 закрыт 2026-05-02:** WEB-004 (plan view), WEB-060 (settings),
+- **Batch-3 closed 2026-05-02:** WEB-004 (plan view), WEB-060 (settings),
   WEB-051 (asset versioning) ✅. **Section B closed (6/6).**
-  14 / 16 находок baseline закрыты; suite 483 → 500; endpoints 8→10/14;
+  14 / 16 baseline findings closed; suite 483 → 500; endpoints 8→10/14;
   checkpoint #3 → [batch-3](../audit/2026-05-02-checkpoint-web-batch-3.md).
-- **Batch-4 закрыт 2026-05-02:** WEB-012 (section patch), polish bundle
+- **Batch-4 closed 2026-05-02:** WEB-012 (section patch), polish bundle
   (WEB-052/053/053b/014b) ✅. **Section C closed (3/3).**
-  **16 / 16 baseline findings закрыты — audit `2026-05-02-section-web-frontend`
-  переведён в `resolved`.** Suite 500 → 512; endpoints 10→13/14;
+  **16 / 16 baseline findings closed — audit `2026-05-02-section-web-frontend`
+  moved to `resolved`.** Suite 500 → 512; endpoints 10→13/14;
   checkpoint #4 → [batch-4](../audit/2026-05-02-checkpoint-web-batch-4.md).
-- **Следующий шаг:** WEB-030 (SSE run console) — последний endpoint и
-  последний disabled-таб. Возможно, отдельной сессией — нужна
-  интеграция с `Orchestrator` и `hx-ext="sse"`.
+- **Next step:** WEB-030 (SSE run console) — the last endpoint and the last
+  disabled tab. Possibly a separate session — needs integration with
+  `Orchestrator` and `hx-ext="sse"`.
 
-## 2. Где что лежит
+## 2. Where things live
 
-| Документ | Назначение |
+| Document | Purpose |
 |---|---|
-| [docs/system/audit/2026-05-02-section-web-frontend.md](../audit/2026-05-02-section-web-frontend.md) | Аудит-отчёт. 16 находок, severity, links на код. |
-| [docs/system/capabilities/web-frontend.md](../capabilities/web-frontend.md) | Capability (целевое поведение). §3 — маршруты со status. §7 — DI-конвенция. §11 — текущее состояние. |
-| [docs/system/roadmap/web-frontend-task-plan.md](web-frontend-task-plan.md) | Execution plan. Section A..F. Backlog продуктивности. Mermaid-граф. |
-| [cod_doc/api/web/](../../../cod_doc/api/web/) | Код: pages, fragments, db_resolver (на удаление), templates_env. |
-| [cod_doc/templates/web/](../../../cod_doc/templates/web/) | Шаблоны: base, index, project/*, _frag/. |
-| [tests/api/test_web_*.py](../../../tests/api/) | 27 тестов, все зелёные. |
+| [docs/system/audit/2026-05-02-section-web-frontend.md](../audit/2026-05-02-section-web-frontend.md) | Audit report. 16 findings, severity, links to code. |
+| [docs/system/capabilities/web-frontend.md](../capabilities/web-frontend.md) | Capability (target behavior). §3 — routes with status. §7 — DI convention. §11 — current state. |
+| [docs/system/roadmap/web-frontend-task-plan.md](web-frontend-task-plan.md) | Execution plan. Section A..F. Productivity backlog. Mermaid graph. |
+| [cod_doc/api/web/](../../../cod_doc/api/web/) | Code: pages, fragments, db_resolver (to be removed), templates_env. |
+| [cod_doc/templates/web/](../../../cod_doc/templates/web/) | Templates: base, index, project/*, _frag/. |
+| [tests/api/test_web_*.py](../../../tests/api/) | 27 tests, all green. |
 
-## 3. Состояние реализации (матрица)
+## 3. Implementation state (matrix)
 
 | ID | Title | Section | Status | Priority |
 |---|---|---|:---:|:---:|
@@ -70,7 +71,7 @@ audience: [next-session-agent, contributors]
 | WEB-022 | Alerts/error model | C | ✅ done 2026-05-02 | high |
 | WEB-041 | Tabs include + disabled | E | ✅ done 2026-05-02 | medium |
 | WEB-013 | Index batch stats | F | ✅ done 2026-05-02 | high |
-| WEB-006 | Markdown render для doc_show | B | ✅ done 2026-05-02 | medium |
+| WEB-006 | Markdown render for doc_show | B | ✅ done 2026-05-02 | medium |
 | WEB-013b | empty-page summary clamp | F | ✅ done 2026-05-02 | low |
 | WEB-022b | log WebError events | C | ✅ done 2026-05-02 | low |
 | WEB-054 | flash_message length cap | F | ✅ done 2026-05-02 | low |
@@ -92,137 +93,137 @@ audience: [next-session-agent, contributors]
 28 total · **24 done / 4 pending** · expected order:
 WEB-030 → WEB-031 → WEB-042 + WEB-050 (cleanup bundle).
 
-## 4. Первый tick — WEB-005 (Engine cache + DI helper)
+## 4. First tick — WEB-005 (Engine cache + DI helper)
 
-**Цель.** Заменить per-request `make_engine + dispose` на кэшированный engine
-с TTL по mtime; ввести `get_project_db` FastAPI-dependency, чтобы убрать
-бойлерплейт из обработчиков и подготовить почву для WEB-040.
+**Goal.** Replace per-request `make_engine + dispose` with a cached engine
+with a TTL by mtime; introduce a `get_project_db` FastAPI dependency to
+remove boilerplate from handlers and set the stage for WEB-040.
 
-**Файлы:**
-- [cod_doc/api/deps.py](../../../cod_doc/api/deps.py) — добавить
+**Files:**
+- [cod_doc/api/deps.py](../../../cod_doc/api/deps.py) — add
   `get_engine_for_slug`, `get_project_db`, `dispose_all_engines`.
-- [cod_doc/api/server.py](../../../cod_doc/api/server.py) — в lifespan
-  shutdown вызвать `dispose_all_engines()`.
+- [cod_doc/api/server.py](../../../cod_doc/api/server.py) — in the lifespan
+  shutdown call `dispose_all_engines()`.
 - historical `cod_doc/api/web/db_resolver.py` —
-  оставить пока что; **в WEB-040 удалится**. Внутри переписать на использование
-  кэша из deps (минимальное изменение, чтобы тесты остались зелёными).
+  keep for now; **in WEB-040 it is removed**. Inside, rewrite it to use the
+  cache from deps (a minimal change so the tests stay green).
 - `tests/api/test_deps_engine_cache.py` — **NEW**.
 
-**Acceptance (повторяю из плана):**
-1. `get_engine_for_slug(slug)` возвращает закэшированный engine; кэш —
-   `dict[Path, tuple[Engine, float]]` с TTL по mtime файла state.db.
-2. `get_project_db(slug) -> Iterator[tuple[Session, int]]` — yield-style
-   FastAPI dependency, закрывает session после response.
-3. `dispose_all_engines()` вызывается в `app.lifespan` shutdown.
-4. Перфтест/микротест: 100 sequential `GET /p/{slug}/tasks` ускоряются за счёт
-   кэша. Записать измеренное число (X→Y ms).
-5. 3 теста: cache hit, cache invalidation по mtime, dispose-on-shutdown.
-6. Все 27 существующих тестов остаются зелёными.
+**Acceptance (repeated from the plan):**
+1. `get_engine_for_slug(slug)` returns a cached engine; the cache is
+   `dict[Path, tuple[Engine, float]]` with a TTL by mtime of the state.db file.
+2. `get_project_db(slug) -> Iterator[tuple[Session, int]]` — a yield-style
+   FastAPI dependency that closes the session after the response.
+3. `dispose_all_engines()` is called in `app.lifespan` shutdown.
+4. A perf/micro-test: 100 sequential `GET /p/{slug}/tasks` get faster thanks
+   to the cache. Record the measured number (X→Y ms).
+5. 3 tests: cache hit, cache invalidation by mtime, dispose-on-shutdown.
+6. All 27 existing tests stay green.
 
-**Архитектурные вопросы для размышления:**
-- **mtime vs explicit invalidation.** mtime прост, но fs-кэш на macOS/Linux
-  имеет 1-секундное разрешение. Для embedded sqlite это норма (write-флоу
-  меняет файл явно). Альтернатива — events. Старт: mtime, переходим если
-  всплывут гонки.
-- **TTL vs вечный кэш.** Вечный кэш + mtime-check на каждый lookup безопасен,
-  но lookup стоит fs-stat. TTL 5 секунд — компромисс, после чего stat-проверка.
-  Старт: TTL=5s + stat-on-stale.
-- **Поведение при `OperationalError`** (схема не накатана). Вернуть `None` →
-  обработчик отдаёт graceful warning, как сейчас в `db_resolver.py`. Не падать.
+**Architectural questions to ponder:**
+- **mtime vs explicit invalidation.** mtime is simple, but the fs cache on
+  macOS/Linux has 1-second resolution. For embedded sqlite this is fine (the
+  write flow changes the file explicitly). Alternative — events. Start:
+  mtime, switch if races show up.
+- **TTL vs eternal cache.** Eternal cache + an mtime-check on every lookup is
+  safe, but a lookup costs an fs-stat. A 5-second TTL is a compromise, after
+  which a stat check. Start: TTL=5s + stat-on-stale.
+- **Behavior on `OperationalError`** (schema not applied). Return `None` →
+  the handler emits a graceful warning, as `db_resolver.py` does now. Do not
+  crash.
 
-## 5. Команды для разработки
+## 5. Development commands
 
 ```bash
-# Зелёный suite до начала
+# Green suite before starting
 .venv/bin/pytest tests/ -q
 
-# Запустить только web-тесты
+# Run only web tests
 .venv/bin/pytest tests/api/ -q
 
-# Запустить dev-сервер (опционально для ручной проверки)
+# Run the dev server (optional, for manual checking)
 .venv/bin/uvicorn cod_doc.api.server:app --reload --port 8765
-# затем GET http://localhost:8765/
+# then GET http://localhost:8765/
 
-# Линт + типы
+# Lint + types
 .venv/bin/ruff check cod_doc tests
 .venv/bin/mypy cod_doc
 
-# Перед коммитом
+# Before commit
 .venv/bin/pytest tests/ -q && .venv/bin/ruff check cod_doc tests && .venv/bin/mypy cod_doc
 ```
 
-## 6. Definition of Done для Section F
+## 6. Definition of Done for Section F
 
-Section F закрывается, когда:
+Section F closes when:
 
-- [x] WEB-005 done — engine кэшируется; `get_project_db` доступен. (2026-05-02)
-- [x] WEB-040 done — `db_resolver.py` удалён; ruff banned-imports правило работает;
-      audit `2026-04-28-section-c-capabilities.md` переведён в `resolved`. (2026-05-02)
+- [x] WEB-005 done — the engine is cached; `get_project_db` is available. (2026-05-02)
+- [x] WEB-040 done — `db_resolver.py` is removed; the ruff banned-imports rule
+      works; audit `2026-04-28-section-c-capabilities.md` moved to `resolved`. (2026-05-02)
 - [x] WEB-022 done — `WebError` + middleware + `_frag/alert.html`;
-      `<div id="alerts">` живой. (2026-05-02)
-- [x] WEB-013 done — index загружается за один проход для N=20. (2026-05-02)
-- [ ] WEB-050 done — DI-pattern зафиксирован в capability §7 как
-      «единственно верный».
+      `<div id="alerts">` is alive. (2026-05-02)
+- [x] WEB-013 done — the index loads in a single pass for N=20. (2026-05-02)
+- [ ] WEB-050 done — the DI pattern is fixed in capability §7 as
+      "the only correct one".
 - [ ] WEB-051, WEB-052, WEB-053 done — versioning, error-branch coverage,
       conftest extract.
-- [ ] WEB-013b/022b/054 (sub-tickets из checkpoint-аудита) — закрыты.
-- [ ] Suite зелёный (>66 тестов, на каждой задаче пометить добавленные).
-- [ ] Audit-отчёт `2026-05-02-section-web-frontend.md` переведён в `resolved`.
-- [ ] Capability §11 «Текущее состояние» обновлено: endpoints shipped,
-      LOC, tests; «Архитектурный долг» очищен от закрытых строк.
+- [ ] WEB-013b/022b/054 (sub-tickets from the checkpoint audit) — closed.
+- [ ] Suite green (>66 tests, on each task note the added ones).
+- [ ] Audit report `2026-05-02-section-web-frontend.md` moved to `resolved`.
+- [ ] Capability §11 "Current state" updated: endpoints shipped,
+      LOC, tests; "Architectural debt" cleared of closed lines.
 
-## 7. Известные ADR-вопросы (отложено до своего времени)
+## 7. Known ADR questions (deferred until their time)
 
-| Когда | Вопрос | Варианты |
+| When | Question | Options |
 |---|---|---|
-| WEB-006 | Markdown rendering | (a) `markdown-it-py` (новая dep) (b) собственный mini-renderer поверх `DocService` (без deps) |
-| WEB-013 | Async stats или single-pass | (a) `asyncio.gather` + кэш (b) глобальная DB-агрегация (требует cross-DB) |
-| WEB-022 | Alerts: cookie-flash или session | (a) Signed cookie (b) Server-side session (новая dep `itsdangerous` уже у FastAPI) |
-| WEB-030 | SSE: in-memory pub/sub или EventBridge | (a) inmem (b) общий с CLI/MCP через event bus (новая абстракция) |
-| P-3 (palette) | Search backend | (a) SQL LIKE (b) FTS5 (c) chromadb (уже есть) |
+| WEB-006 | Markdown rendering | (a) `markdown-it-py` (new dep) (b) own mini-renderer over `DocService` (no deps) |
+| WEB-013 | Async stats or single-pass | (a) `asyncio.gather` + cache (b) global DB aggregation (needs cross-DB) |
+| WEB-022 | Alerts: cookie-flash or session | (a) Signed cookie (b) Server-side session (new dep `itsdangerous` already in FastAPI) |
+| WEB-030 | SSE: in-memory pub/sub or EventBridge | (a) inmem (b) shared with CLI/MCP via event bus (new abstraction) |
+| P-3 (palette) | Search backend | (a) SQL LIKE (b) FTS5 (c) chromadb (already present) |
 
-Каждый ADR — отдельная record в [docs/system/capabilities/decisions-and-questions.md](../capabilities/decisions-and-questions.md)
-после старта соответствующей задачи.
+Each ADR is a separate record in [docs/system/capabilities/decisions-and-questions.md](../capabilities/decisions-and-questions.md)
+after the corresponding task starts.
 
-## 8. Чек-лист «прежде чем закрывать любую web-задачу»
+## 8. Checklist "before closing any web task"
 
-Каждый PR в web-секции проверяется на:
+Every PR in the web section is checked for:
 
-- [ ] Только `cod_doc.services.*`, `cod_doc.api.deps`, `cod_doc.domain.entities` (enums)
-      импортируются в `cod_doc/api/web/`. Никакого `infra.*`.
-- [ ] HTMX-fragment имеет fallback на `<form>` без JS (POST/Redirect/GET).
-- [ ] Error-branch coverage: validation/conflict/integrity/domain — все 4 ветки
-      имеют тесты.
-- [ ] Capability §3 (таблица маршрутов) обновлена: status `✅` + ссылка на task id.
-- [ ] Capability §11 (метрики, текущее состояние) обновлено если изменились
-      числа.
-- [ ] Audit-отчёт от 2026-05-02: если фикс закрывает находку — поставить ✅
-      рядом с её SW-кодом.
-- [ ] Roadmap §Progress Overview пересчитан.
-- [ ] Suite зелёный, новые тесты названы по `WEB-XXX`-префиксу.
+- [ ] Only `cod_doc.services.*`, `cod_doc.api.deps`, `cod_doc.domain.entities` (enums)
+      are imported into `cod_doc/api/web/`. No `infra.*`.
+- [ ] The HTMX fragment has a `<form>` fallback without JS (POST/Redirect/GET).
+- [ ] Error-branch coverage: validation/conflict/integrity/domain — all 4 branches
+      have tests.
+- [ ] Capability §3 (route table) updated: status `✅` + link to the task id.
+- [ ] Capability §11 (metrics, current state) updated if the numbers changed.
+- [ ] Audit report of 2026-05-02: if the fix closes a finding — put ✅
+      next to its SW code.
+- [ ] Roadmap §Progress Overview recomputed.
+- [ ] Suite green, new tests named with the `WEB-XXX` prefix.
 
-## 9. Risk register (что может сломаться)
+## 9. Risk register (what can break)
 
-| Риск | Митигейшн |
+| Risk | Mitigation |
 |---|---|
-| Engine cache не инвалидируется при внешнем `cod-doc db migrate` | mtime-check на lookup ловит это; +тест с touch state.db |
-| Удаление `db_resolver.py` ломает orphan-импорты где-то | grep по репо в WEB-040; banned-imports rule в ruff после rm |
-| `WebError` middleware конфликтует с `routes.py` exception-handler-ами | Зарегистрировать через `app.exception_handler(WebError)` (не middleware) — изолированный scope; тестировать оба роутера |
-| Markdown-it-py добавляет ~150 KB к зависимостям | См. ADR в WEB-006; выбор будет зафиксирован до начала задачи |
-| SSE и Background Daemon (run_daemon) конкурируют за asyncio loop | WEB-030 деplore-ить с явным task-pool; интеграционный тест |
+| Engine cache is not invalidated on an external `cod-doc db migrate` | an mtime-check on lookup catches this; +a test with touch state.db |
+| Removing `db_resolver.py` breaks orphan imports somewhere | grep the repo in WEB-040; banned-imports rule in ruff after rm |
+| `WebError` middleware conflicts with `routes.py` exception handlers | Register via `app.exception_handler(WebError)` (not middleware) — isolated scope; test both routers |
+| Markdown-it-py adds ~150 KB to dependencies | See the ADR in WEB-006; the choice will be fixed before the task starts |
+| SSE and the Background Daemon (run_daemon) compete for the asyncio loop | Deploy WEB-030 with an explicit task-pool; an integration test |
 
-## 10. Что точно НЕ делаем в Section F
+## 10. What we definitely do NOT do in Section F
 
-- Не добавляем новые маршруты (Section B/C ждут).
-- Не трогаем CSS-дизайн (capability §1 это запрещает).
-- Не вводим dark mode, иконки-эмодзи, анимации.
-- Не пишем `markdown-it-py` интеграцию (это WEB-006).
-- Не пытаемся «по-быстрому» закрыть P-1..P-15 backlog'а — они в очереди.
+- Do not add new routes (Section B/C are waiting).
+- Do not touch the CSS design (capability §1 forbids it).
+- Do not introduce dark mode, icon emojis, animations.
+- Do not write the `markdown-it-py` integration (that is WEB-006).
+- Do not try to "quickly" close the P-1..P-15 backlog — they are in the queue.
 
 ---
 
 ## 11. Changelog
 
-| Дата | Событие |
+| Date | Event |
 |---|---|
-| 2026-05-02 | Создан kickoff-brief после аудита веб-секции. Точка входа в Section F. |
+| 2026-05-02 | Kickoff brief created after the web section audit. Entry point to Section F. |

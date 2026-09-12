@@ -13,86 +13,86 @@ related_docs:
   - system/audit/2026-07-29-state-of-the-project.md
 ---
 
-# Adoption Playbook — как начать пользоваться COD-DOC на своих проектах
+# Adoption Playbook — how to start using COD-DOC on your projects
 
-> **Кому.** Владельцу репозиториев, у которого cod-doc уже собран, но не
-> заведён ни на одном рабочем проекте.
-> **Чем отличается от [cod-doc-guide.md](cod-doc-guide.md).** Тот — туториал
-> «документация с нуля» на выдуманном примере. Этот — про **существующие**
-> репозитории с уже накопленным markdown.
+> **Who.** The owner of repositories who already has cod-doc built, but has
+> not set it up on any working project.
+> **How it differs from [cod-doc-guide.md](cod-doc-guide.md).** That one is a tutorial
+> "documentation from scratch" on a made-up example. This one is about **existing**
+> repositories with already accumulated markdown.
 
-## 0. Прежде всего: почини конфиг
+## 0. First of all: fix the config
 
-Сейчас `~/.cod-doc/config.yaml` — результат тестового прогона:
+Right now `~/.cod-doc/config.yaml` is the result of a test run:
 
 ```yaml
-model: test/model            # ← не настоящая модель
-api_key: sk-test-key         # ← не настоящий ключ
+model: test/model            # ← not a real model
+api_key: sk-test-key         # ← not a real key
 projects:
 - name: integration-test
-  path: /private/var/folders/.../pytest-57/.../my-repo   # ← временная папка pytest, её нет
+  path: /private/var/folders/.../pytest-57/.../my-repo   # ← a temporary pytest folder, it does not exist
 ```
 
-Пока это так — `cod-doc project list` показывает мусор, а `cod-doc agent run`
-не запустится. Минимум:
+While this is the case — `cod-doc project list` shows garbage, and `cod-doc agent run`
+will not start. The minimum:
 
 ```bash
 cod-doc project remove integration-test
 ```
 
-и правка `model` / `api_key` под ваш OpenRouter (`base_url` уже указывает
-на него). **ИИ-функции опциональны:** импорт, планы, задачи, drift, поиск,
-Web UI и весь MCP-слой работают без ключа. Ключ нужен только для
-`agent run`, `link suggest` и семантического L3 в `context_get`.
+and edit `model` / `api_key` for your OpenRouter (`base_url` already points
+to it). **AI functions are optional:** import, plans, tasks, drift, search,
+the Web UI and the entire MCP layer work without a key. The key is only needed for
+`agent run`, `link suggest` and the semantic L3 in `context_get`.
 
-## 1. Выбор пилота: не начинайте с любимого
+## 1. Choosing a pilot: do not start with your favorite
 
-Три критерия, по которым проект годится в пилоты:
+Three criteria by which a project is fit for piloting:
 
-1. **≥ 10 markdown-документов** — иначе cod-doc не даст ничего сверх `grep`.
-2. **Живой бэклог** — есть что трекать. Проект «дописан и лежит» ничего не покажет.
-3. **Вам не страшно.** Пилот — это место, где вы будете спотыкаться.
+1. **≥ 10 markdown documents** — otherwise cod-doc gives nothing beyond `grep`.
+2. **A live backlog** — there is something to track. A project that is "finished and lying around" will show nothing.
+3. **You are not afraid.** A pilot is a place where you will stumble.
 
-По этим критериям ваши репозитории раскладываются на четыре архетипа.
-Каждый — отдельный сценарий ниже.
+By these criteria your repositories fall into four archetypes.
+Each is a separate scenario below.
 
-| Архетип | Проект | md | Что проверяет |
+| Archetype | Project | md | What it tests |
 |---|---|---|---|
-| A. Инженерный, доко-тяжёлый | `_my/Mushrooms Shuchin` | 56 | ядро: импорт + план + открытые вопросы |
-| B. Код + доки | `_my/yana-reconciliation` | 40 | code-refs, commit-links, repo-index |
-| C. Чисто доковый | `_my/UrukhaiMark` | 33 | drift, ссылки, ADR |
-| D. Большая миграция | `_my/Restate` | 641 | предел масштабирования |
+| A. Engineering, doc-heavy | `_my/Mushrooms Shuchin` | 56 | core: import + plan + open questions |
+| B. Code + docs | `_my/yana-reconciliation` | 40 | code-refs, commit-links, repo-index |
+| C. Pure docs | `_my/UrukhaiMark` | 33 | drift, links, ADR |
+| D. Big migration | `_my/Restate` | 641 | scaling limit |
 
-**Рекомендация: начните с A, вторым возьмите B.** A даёт максимум отдачи на
-единицу усилий, B проверяет непроверенный слой (repo-index). C — слишком
-лёгкий, чтобы что-то найти. D — не пилот, см. §6.
+**Recommendation: start with A, take B second.** A gives the maximum return per
+unit of effort, B tests the untested layer (repo-index). C is too
+light to find anything. D is not a pilot, see §6.
 
 ---
 
-## 2. Сценарий A — инженерный проект с накопленной документацией
+## 2. Scenario A — an engineering project with accumulated documentation
 
-**Пилот: `_my/Mushrooms Shuchin`** (АСУ ТП: PLC, HMI, Modbus; 56 md, 40 коммитов).
+**Pilot: `_my/Mushrooms Shuchin`** (ICS: PLC, HMI, Modbus; 56 md, 40 commits).
 
-### Почему он идеален
+### Why it is ideal
 
-У проекта уже есть ровно та структура, которую cod-doc формализует, только
-собранная руками:
+The project already has exactly the structure that cod-doc formalizes, just
+assembled by hand:
 
 - `Документация/01_Функциональная_спецификация.md` … `21_План_доработки_HMI.md`
-  — **нумерованный корпус спек** ⇒ это Documents.
-- `Документация/03_Открытые_вопросы.md` — **открытые вопросы** ⇒ это задачи
-  и `decisions-and-questions`.
+  — **a numbered corpus of specs** ⇒ these are Documents.
+- `Документация/03_Открытые_вопросы.md` — **open questions** ⇒ these are tasks
+  and `decisions-and-questions`.
 - `Документация/09_Аудит_проекта_2026-07-08.md`, `07_Аудит_и_улучшения.md`
-  — **аудиты** ⇒ ровно каденция skill `audit-cadence`.
+  — **audits** ⇒ exactly the cadence of the `audit-cadence` skill.
 - `16_План_доработки_прошивки_ШУ-ЗМ.md`, `21_План_доработки_HMI.md`
-  — **планы** ⇒ это `plan_create` + задачи.
-- `02_Карта_сигналов_и_кросс-ссылки.md` — **кросс-ссылки вручную** ⇒ ровно
-  то, что делает link-система.
-- `Дефекты_исходных_документов.md` — вы уже ведёте **drift-лог** руками.
+  — **plans** ⇒ these are `plan_create` + tasks.
+- `02_Карта_сигналов_и_кросс-ссылки.md` — **cross-links by hand** ⇒ exactly
+  what the link system does.
+- `Дефекты_исходных_документов.md` — you already keep a **drift log** by hand.
 
-Плюс `AGENTS.md` и `CLAUDE.md` в корне — вы уже работаете там с агентами.
+Plus `AGENTS.md` and `CLAUDE.md` in the root — you already work there with agents.
 
-### Шаги
+### Steps
 
 ```bash
 cd "/Users/dakh/Git/_my/Mushrooms Shuchin"
@@ -100,69 +100,69 @@ cd "/Users/dakh/Git/_my/Mushrooms Shuchin"
 cod-doc project add . --name shuchin
 cod-doc project init shuchin
 
-# Разведка. Смотрите внимательно на каталог «Архив» — он попадёт в импорт.
+# Reconnaissance. Look carefully at the "Архив" catalog — it will get into the import.
 cod-doc import docs shuchin --dry-run
 ```
 
-**Решение по `Архив/`:** отсеките его флагом `--exclude` (SYM-004) и убедитесь
-по `--dry-run`, что в списке его больше нет. Иначе архивные документы будут
-всплывать в `search` и в `context_get` наравне с живыми.
+**Decision on `Архив/`:** cut it off with the `--exclude` flag (SYM-004) and make sure
+via `--dry-run` that it is no longer in the list. Otherwise archived documents will
+pop up in `search` and in `context_get` on a par with the live ones.
 
 ```bash
 cod-doc import docs shuchin --exclude 'Архив*' --dry-run
 cod-doc import docs shuchin --exclude 'Архив*'
 cod-doc reindex files -p shuchin
-cod-doc doc drift -p shuchin --all      # ожидаем 0 расхождений
-cod-doc audit -p shuchin                # frontmatter: находки будут, они advisory
+cod-doc doc drift -p shuchin --all      # expect 0 discrepancies
+cod-doc audit -p shuchin                # frontmatter: there will be findings, they are advisory
 ```
 
-Про `audit`: ваши документы писались без cod-doc-frontmatter, так что
-находки FM-* будут. Они **не** блокируют — не бросайтесь их чинить массово.
-Чините при следующей правке документа.
+About `audit`: your documents were written without cod-doc frontmatter, so
+FM-* findings will be there. They do **not** block — do not rush to fix them en masse.
+Fix them on the next edit of the document.
 
-### Первая ценность — за 20 минут
+### The first value — in 20 minutes
 
-Перенесите `03_Открытые_вопросы.md` в трекаемые задачи:
+Move `03_Открытые_вопросы.md` into tracked tasks:
 
 ```bash
-cod-doc plan ready -p shuchin      # пусто — плана ещё нет
+cod-doc plan ready -p shuchin      # empty — there is no plan yet
 ```
 
-Создайте план на текущий фронт работ (через MCP или Python — CLI
-`plan create` в текущем релизе нет, см. §7):
+Create a plan for the current work front (via MCP or Python — CLI
+`plan create` is not in the current release, see §7):
 
 ```
 plan_create(project="shuchin", scope="pnr-2026-08")
 plan_section_create(project="shuchin", plan_scope="pnr-2026-08", title="Открытые вопросы")
 ```
 
-Затем по одной задаче на вопрос — `task_create` с `acceptance`. После этого:
+Then one task per question — `task_create` with `acceptance`. After that:
 
 ```bash
-cod-doc plan ready -p shuchin        # очередь работ
-cod-doc search "Modbus" -p shuchin   # FTS по всему корпусу
+cod-doc plan ready -p shuchin        # the work queue
+cod-doc search "Modbus" -p shuchin   # FTS over the whole corpus
 ```
 
-**Что вы получите сразу:** `03_Открытые_вопросы.md` перестаёт быть простынёй,
-которую надо перечитывать целиком. Вопросы становятся узлами с зависимостями,
-а `plan ready` отвечает «что можно делать прямо сейчас».
+**What you get right away:** `03_Открытые_вопросы.md` stops being a wall of text
+that you have to reread in full. Questions become nodes with dependencies,
+and `plan ready` answers "what can be done right now".
 
-### Чего ожидать плохого
+### What to expect that is bad
 
-- Русские имена файлов → `doc_key` вида `Документация/03_Открытые_вопросы`.
-  Работает, но в CLI придётся квотировать. Это первый кандидат в friction-лог.
-- Нумерованные префиксы (`00_`…`21_`) cod-doc не понимает как порядок —
-  для него это просто часть ключа.
+- Russian file names → `doc_key` of the form `Документация/03_Открытые_вопросы`.
+  It works, but in the CLI you will have to quote. This is the first candidate for the friction log.
+- Numbered prefixes (`00_`…`21_`) cod-doc does not understand as order —
+  for it they are just part of the key.
 
 ---
 
-## 3. Сценарий B — код + документация
+## 3. Scenario B — code + documentation
 
-**Пилот: `_my/yana-reconciliation`** (Python-приложение; `app/`, `tests/`,
+**Pilot: `_my/yana-reconciliation`** (Python application; `app/`, `tests/`,
 `docs/`, 40 md).
 
-Проверяет слой, который на cod-doc самом никогда не работал (находка F2
-аудита 2026-07-29): **repo-index, code-refs, commit-links**.
+Tests the layer that has never worked on cod-doc itself (finding F2
+of the audit 2026-07-29): **repo-index, code-refs, commit-links**.
 
 ```bash
 cd /Users/dakh/Git/_my/yana-reconciliation
@@ -171,36 +171,36 @@ cod-doc project init yana
 cod-doc import docs yana --dry-run
 ```
 
-Отдельно решите по `cache/`, `uploads/`, `data/`, `reports/` — если там
-лежат `.txt`-дампы, они подпадут под импорт (расширение совпадает, смысл —
-нет). Выносите или обнуляйте на время импорта.
+Decide separately on `cache/`, `uploads/`, `data/`, `reports/` — if there
+are `.txt` dumps there, they will fall under the import (the extension matches, the meaning —
+does not). Move them out or empty them for the duration of the import.
 
 ```bash
 cod-doc import docs yana
-cod-doc reindex files -p yana      # ← ключевой шаг этого сценария
+cod-doc reindex files -p yana      # ← the key step of this scenario
 ```
 
-`reindex` строит `repo_file` / `repo_symbol` / `repo_import` с учётом
-`.gitignore`. После него работает поиск по символам, а не только по прозе.
+`reindex` builds `repo_file` / `repo_symbol` / `repo_import` taking into account
+`.gitignore`. After it, search by symbols works, not only by prose.
 
-Что тут стоит проверить и записать в friction-лог:
+What is worth checking here and recording in the friction log:
 
-- `docs/OPEN_QUESTIONS.md` и `docs/CORRESPONDENCE_LOG.md` — сущности, у
-  которых в cod-doc есть прямые аналоги (открытые вопросы, activity log).
-  Насколько удобно переезжает?
-- Code-refs формата `[label](app/module.py)` в документах — резолвятся ли
-  после `link backfill`?
-- `cod-doc search "<имя класса>" -p yana --scope doc` — находит ли
-  документацию по коду?
+- `docs/OPEN_QUESTIONS.md` and `docs/CORRESPONDENCE_LOG.md` — entities that
+  have direct analogs in cod-doc (open questions, activity log).
+  How conveniently do they migrate?
+- Code-refs of the form `[label](app/module.py)` in documents — do they resolve
+  after `link backfill`?
+- `cod-doc search "<class name>" -p yana --scope doc` — does it find
+  documentation about the code?
 
 ---
 
-## 4. Сценарий C — чисто доковый проект
+## 4. Scenario C — a pure docs project
 
-**Пилот: `_my/UrukhaiMark`** (33 md, всё в `docs/`, 4 коммита).
+**Pilot: `_my/UrukhaiMark`** (33 md, everything in `docs/`, 4 commits).
 
-Самый лёгкий заход — 10 минут, и хорош как **демо**, а не как пилот:
-здесь нет живого бэклога, а значит friction почти не всплывёт.
+The easiest entry — 10 minutes, and good as a **demo**, not as a pilot:
+there is no live backlog here, so friction will hardly surface.
 
 ```bash
 cd /Users/dakh/Git/_my/UrukhaiMark
@@ -210,39 +210,39 @@ cod-doc import docs urukhai
 cod-doc serve                       # → http://localhost:8765/p/urukhai
 ```
 
-Здесь стоит попробовать то, что в других сценариях второстепенно:
+Here it is worth trying what is secondary in other scenarios:
 
-- **ADR.** У проекта есть `docs/architecture.md` и `docs/open-questions.md`,
-  но нет зафиксированных решений. `cod-doc adr new` + `cod-doc adr graph`
-  дают supersede-DAG в Mermaid.
-- **Drift-цикл целиком.** Отредактируйте документ на диске мимо cod-doc →
-  `cod-doc doc drift -p urukhai --all` покажет `edited_in_place` → верните
-  через `doc import`. Это тот цикл, ради которого cod-doc и существует.
-- **Routine.** Заведите `doc_drift` по расписанию и убедитесь, что
-  автопроверка живёт вне cod-doc (это пункт C-7 роадмапа).
+- **ADR.** The project has `docs/architecture.md` and `docs/open-questions.md`,
+  but no recorded decisions. `cod-doc adr new` + `cod-doc adr graph`
+  give a supersede-DAG in Mermaid.
+- **The drift cycle in full.** Edit a document on disk bypassing cod-doc →
+  `cod-doc doc drift -p urukhai --all` will show `edited_in_place` → restore
+  via `doc import`. This is the cycle cod-doc exists for.
+- **Routine.** Set up `doc_drift` on a schedule and make sure the
+  auto-check lives outside cod-doc (this is item C-7 of the roadmap).
 
 ---
 
-## 5. Ежедневный цикл после заведения
+## 5. The daily cycle after onboarding
 
-Минимум, который окупает заведение:
+The minimum that pays off the onboarding:
 
 ```bash
-cod-doc plan ready -p <slug>          # что можно делать сейчас
-cod-doc search "<термин>" -p <slug>   # найти без grep по 50 файлам
-cod-doc doc drift -p <slug> --all     # доки не разъехались?
+cod-doc plan ready -p <slug>          # what can be done now
+cod-doc search "<term>" -p <slug>   # find without grep across 50 files
+cod-doc doc drift -p <slug> --all     # have the docs not diverged?
 ```
 
-Через MCP (Claude Code / Claude Desktop) — вместо ручного чейнинга:
+Via MCP (Claude Code / Claude Desktop) — instead of manual chaining:
 
 ```
-agent_capabilities()                  # L0: кто я, какие скиллы
-agent_pick(project="<slug>", agent_id="claude")   # задача + контекст + скиллы одним вызовом
-… работа …
+agent_capabilities()                  # L0: who am I, what skills
+agent_pick(project="<slug>", agent_id="claude")   # task + context + skills in one call
+… work …
 agent_complete(task_id=..., agent_id="claude")
 ```
 
-Подключение MCP — `.mcp.json` в корне рабочего проекта:
+Connecting MCP — `.mcp.json` in the root of the working project:
 
 ```json
 {
@@ -256,98 +256,97 @@ agent_complete(task_id=..., agent_id="claude")
 }
 ```
 
-Профиль `agent` даёт 6 тулов вместо 103 — именно то, что нужно в рабочей
-сессии. `standard` / `full` — для админских сценариев и отладки.
+The `agent` profile gives 6 tools instead of 103 — exactly what is needed in a working
+session. `standard` / `full` — for admin scenarios and debugging.
 
 ---
 
-## 6. Restate — отдельный разговор, не пилот
+## 6. Restate — a separate conversation, not a pilot
 
-`_my/Restate`: **641 markdown, 922 коммита**, `Docs/standards/` с девятью
-стандартами, `Docs/obsidian/` с вложенной структурой. Это тот самый проект,
-ради замены ручного стека которого cod-doc и задумывался
+`_my/Restate`: **641 markdown, 922 commits**, `Docs/standards/` with nine
+standards, `Docs/obsidian/` with a nested structure. This is the very project
+for whose manual stack replacement cod-doc was conceived
 ([VISION.md §1](system/VISION.md)).
 
-**Не берите его первым.** Причины:
+**Do not take it first.** Reasons:
 
-- `import docs` по умолчанию ограничен `--max-files 1000` — влезет, но
-  одним куском и без разбора на модули.
-- `Docs/_archive/` и `Docs/api/_archive/` придётся отсекать вручную:
-  `--exclude '*/_archive'` (SYM-004) — сам walker их не знает.
-- Обещанной в VISION команды `cod-doc import restate <path> --docs … --plans …
-  --standards …` **не существует**. Реальный импортёр (`services/restate_importer.py`,
-  несмотря на имя) — универсальный: только `import docs` и
-  `import legacy-tasks` из `.cod-doc/tasks.yaml`. Разбор чужих markdown-планов
-  в задачи не автоматизирован.
+- `import docs` by default is limited to `--max-files 1000` — it will fit, but
+  in one chunk and without splitting into modules.
+- `Docs/_archive/` and `Docs/api/_archive/` will have to be cut off manually:
+  `--exclude '*/_archive'` (SYM-004) — the walker itself does not know them.
+- The promised in VISION command `cod-doc import restate <path> --docs … --plans …
+  --standards …` **does not exist**. The real importer (`services/restate_importer.py`,
+  despite the name) is universal: only `import docs` and
+  `import legacy-tasks` from `.cod-doc/tasks.yaml`. Parsing someone else's markdown plans
+  into tasks is not automated.
 
-Правильный порядок: сначала M1/M2 роадмапа на пилотах A и B, потом Restate
-как отдельный план миграции — с решением, что переносить, а что оставить в
-Obsidian. Иначе первый же заход даст 641 документ без структуры и отвращение
-к инструменту.
+The right order: first M1/M2 of the roadmap on pilots A and B, then Restate
+as a separate migration plan — with a decision on what to port and what to leave in
+Obsidian. Otherwise the very first attempt will give 641 documents without structure and an aversion
+to the tool.
 
 ---
 
-## 7. Известные шероховатости (по состоянию на 2026-07-29)
+## 7. Known rough edges (as of 2026-07-29)
 
-Честный список — чтобы не наткнуться и не решить, что сломано:
+An honest list — so you do not stumble and decide it is broken:
 
-| Что | Статус | Обход |
+| What | Status | Workaround |
 |---|---|---|
-| **`cod-doc doc export` на старой БД переписывает frontmatter** | 🟡 ADO-010 закрыт 2026-08-25; остаточный риск ADO-022 у БД старше миграции `0025_projection_fidelity` | `doc backfill-projection` перед первым export'ом — см. ниже |
-| `cod-doc plan create` в CLI нет | планы создаются через MCP `plan_create` или Python | MCP-сессия или скрипт |
-| ~~`import docs` без флага исключений~~ | ✅ закрыто SYM-004: `--exclude` (повторяемый glob от корня репо) + `--dry-run` печатает итоговый список | — |
-| Markdown-планы не парсятся в задачи | автоматики нет | `task_create` вручную; skill `plan-to-tasks` |
-| `capabilities/project-bootstrap.md` описывает `project new` | документ опережает CLI (`add` + `init`) | следовать этому playbook'у, не capability |
-| 66 web-роутов не в таблице capability §3 | advisory-дрейф, D-1 роадмапа | на работу не влияет |
-| Глобальный конфиг с тестовыми значениями | §0 этого документа | почините до первого пилота |
+| **`cod-doc doc export` on an old DB rewrites frontmatter** | 🟡 ADO-010 closed 2026-08-25; residual risk ADO-022 for DBs older than migration `0025_projection_fidelity` | `doc backfill-projection` before the first export — see below |
+| ~~`cod-doc plan create` is not in the CLI~~ | ✅ `cod-doc plan create` / `plan section-create` / `plan sections` (same service as MCP `plan_create`) | — |
+| ~~`import docs` without an exclusions flag~~ | ✅ closed by SYM-004: `--exclude` (a repeatable glob from the repo root) + `--dry-run` prints the final list | — |
+| Markdown plans are not parsed into tasks | no automation | `task_create` by hand; the `plan-to-tasks` skill |
+| `capabilities/project-bootstrap.md` describes `project new` | the doc is ahead of the CLI (`add` + `init`) | follow this playbook, not the capability |
+| 66 web routes are not in the capability §3 table | advisory drift, D-1 of the roadmap | does not affect operation |
+| Global config with test values | §0 of this document | fix before the first pilot |
 
-### 🟡 Про `doc export` — подробнее
+### 🟡 About `doc export` — in more detail
 
-Порча контента из [F7 аудита](system/audit/2026-07-29-state-of-the-project.md)
-(преамбула склеивалась с первым заголовком, H1 терялся, `type: capability`
-подменялся на `module-spec`) закрыта в ADO-010 2026-08-25: import → export
-байт-идентичен на всём корпусе `docs/`.
+The content corruption from [F7 of the audit](system/audit/2026-07-29-state-of-the-project.md)
+(the preamble was glued to the first heading, H1 was lost, `type: capability`
+was replaced with `module-spec`) was closed in ADO-010 2026-08-25: import → export
+is byte-identical on the entire `docs/` corpus.
 
-**Остаточный риск для пилотов — ADO-022.** Если БД проекта заведена до
-миграции `0025_projection_fidelity`, у документов не записана форма исходного
-файла, и export пере-сериализует frontmatter (переставит ключи, файлу без
-frontmatter допишет выдуманный блок `type/status/owner`) и добавит `# H1`,
-которого в источнике не было. Именно так однажды переписались 107 файлов
-из 121.
+**Residual risk for pilots — ADO-022.** If the project DB was set up before
+migration `0025_projection_fidelity`, the documents do not have the original file
+form recorded, and export re-serializes the frontmatter (reorders keys, adds a made-up
+`type/status/owner` block to a file without frontmatter) and adds an `# H1`
+that was not in the source. That is exactly how 107 files out of 121 were once rewritten.
 
-`doc export` сам отказывается писать такой файл — в сообщении будет
-`frontmatter_raw` и `backfill`. Перед первым export'ом на такой БД выполните:
+`doc export` itself refuses to write such a file — the message will contain
+`frontmatter_raw` and `backfill`. Before the first export on such a DB run:
 
 ```bash
-cod-doc doc backfill-projection --project <slug> --dry-run   # посмотреть
-cod-doc doc backfill-projection --project <slug>             # починить
+cod-doc doc backfill-projection --project <slug> --dry-run   # look
+cod-doc doc backfill-projection --project <slug>             # fix
 ```
 
-Он восстанавливает форму из файлов на диске и не трогает метаданные, изменённые
-в БД. `--force-write` на этой ошибке — не обход, а сама порча.
+It restores the form from the files on disk and does not touch the metadata changed
+in the DB. `--force-write` on this error is not a workaround, it is the corruption itself.
 
-Если направление БД → markdown вам пока не нужно, работайте в режиме
-«**файлы — источник, БД — индекс**»: `import docs` при заведении,
-`doc import <file>` после ручных правок. Ваш markdown при этом не трогается
-вообще — импорт только читает.
+If the DB → markdown direction is not yet needed for you, work in the
+"**files are the source, the DB is the index**" mode: `import docs` on onboarding,
+`doc import <file>` after manual edits. Your markdown is not touched at all
+in this case — the import only reads.
 
-Состояние `stale_export` в `doc drift` при таком режиме **нормально** и
-чинить его не нужно: оно означает лишь «проекция ни разу не выгружалась».
-Тревожный статус — `edited_in_place` (БД отстала от файла), он лечится
-`doc import`.
+The `stale_export` state in `doc drift` in this mode is **normal** and
+does not need fixing: it only means "the projection has never been exported".
+The alarming state is `edited_in_place` (the DB is behind the file), it is cured
+by `doc import`.
 
-## 8. Как понять, что получилось
+## 8. How to tell if it worked
 
-Через две недели пилотов ответьте на три вопроса:
+After two weeks of pilots answer three questions:
 
-1. Открывали ли вы `plan ready` вместо того, чтобы вспоминать, что делать?
-2. Ловил ли `doc drift` расхождение раньше, чем вы сами?
-3. Искали ли через `cod-doc search` вместо `grep`?
+1. Did you open `plan ready` instead of trying to remember what to do?
+2. Did `doc drift` catch a divergence earlier than you yourself?
+3. Did you search via `cod-doc search` instead of `grep`?
 
-**Три «да»** — инструмент прижился, можно переходить к M3 роадмапа (фичи).
-**Три «нет»** — прижился не инструмент, а привычка; надо разбирать, что
-именно мешало (friction-лог, C-5), а не строить следующую фичу поверх.
+**Three "yes"** — the tool has taken root, you can move on to M3 of the roadmap (features).
+**Three "no"** — it is not the tool that has taken root, but the habit; you need to figure out what
+exactly was in the way (the friction log, C-5), and not build the next feature on top.
 
-Формализованная процедура заведения — skill
+The formalized onboarding procedure — the skill
 [`project-onboarding`](../cod_doc/skills/project-onboarding/SKILL.md);
-критерии «проект заведён» там же.
+the "project is set up" criteria are there too.

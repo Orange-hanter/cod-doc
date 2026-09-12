@@ -8,22 +8,22 @@ owner: cod-doc core
 last_updated: 2026-05-07
 ---
 
-# 🏛️ Архитектура: COD-DOC (LEGACY)
+# 🏛️ Architecture: COD-DOC (LEGACY)
 
-> ⚠️ **DEPRECATED.** Этот файл — устаревший L0/L1-обзор для агентского Snowball-протокола.
-> Актуальный источник истины: [`docs/system/ARCHITECTURE.md`](../docs/system/ARCHITECTURE.md).
-> При расхождении приоритет у canonical. Этот файл сохранён только для совместимости
-> со старыми ссылками из context_refs задач.
+> ⚠️ **DEPRECATED.** This file is an outdated L0/L1 overview for the agent Snowball protocol.
+> The current source of truth: [`docs/system/ARCHITECTURE.md`](../docs/system/ARCHITECTURE.md).
+> On disagreement, the canonical takes priority. This file is kept only for compatibility
+> with old references from task context_refs.
 
 > 📊 Meta: `{"version": "0.3", "last_updated": "2026-05-07", "layer": "arch", "context_depth": "L1", "status": "legacy-overview", "canonical_source": "docs/system/ARCHITECTURE.md"}`
 
 ## 1. Overview
 
-COD-DOC (Context Orchestrator for Documentation) — автономный агент управления документацией, построенный на многоуровневой модульной архитектуре с инверсией зависимостей (DIP).
+COD-DOC (Context Orchestrator for Documentation) is an autonomous documentation management agent built on a multi-layer modular architecture with dependency inversion (DIP).
 
-**Направление зависимостей:** `Presentation → Application → Domain ← Infrastructure`
+**Dependency direction:** `Presentation → Application → Domain ← Infrastructure`
 
-Domain Layer — ядро системы, не зависит ни от одного внешнего слоя. Все взаимодействия с инфраструктурой инвертированы через интерфейсы-порты.
+The Domain Layer is the core of the system and does not depend on any external layer. All interactions with infrastructure are inverted through interface ports.
 
 ```mermaid
 graph TB
@@ -63,202 +63,202 @@ graph TB
 
 ---
 
-## 2. Слои
+## 2. Layers
 
 ### 2.1 Presentation Layer
 
-**Назначение:** приём внешних команд, сериализация ответов.
+**Purpose:** receiving external commands, response serialization.
 
-| Компонент | Технология | Назначение |
+| Component | Technology | Purpose |
 |-----------|------------|------------|
-| CLI | `click` | Командная строка: `cod-doc`, `cod-doc-mcp` |
-| REST API | `FastAPI` + `uvicorn` | HTTP API для Web UI и внешних интеграций |
-| TUI | `Textual` | Терминальный интерфейс для интерактивной работы |
-| MCP Server | `mcp` | Model Context Protocol — интеграция с Claude, VS Code Copilot и др. |
-| Web UI | `Jinja2` + HTML/CSS/JS | Браузерный дашборд управления проектами |
+| CLI | `click` | Command line: `cod-doc`, `cod-doc-mcp` |
+| REST API | `FastAPI` + `uvicorn` | HTTP API for the Web UI and external integrations |
+| TUI | `Textual` | Terminal interface for interactive work |
+| MCP Server | `mcp` | Model Context Protocol — integration with Claude, VS Code Copilot, etc. |
+| Web UI | `Jinja2` + HTML/CSS/JS | Browser dashboard for project management |
 
-**Правила слоя:**
-- Не содержит бизнес-логики
-- Вызывает Application Services через DTO
-- Все эндпоинты типизированы (Pydantic-схемы)
+**Layer rules:**
+- Contains no business logic
+- Calls Application Services via DTO
+- All endpoints are typed (Pydantic schemas)
 
 ---
 
 ### 2.2 Application Layer
 
-**Назначение:** координация use-case'ов, оркестрация доменных объектов.
+**Purpose:** coordination of use cases, orchestration of domain objects.
 
-| Компонент | Описание |
+| Component | Description |
 |-----------|----------|
 | Use Cases | `CreateProject`, `QueueTask`, `ExecuteTask`, `IndexDocument`, `ArchiveProject` |
-| DTO Mappers | Преобразование доменных моделей ↔ Pydantic DTO |
-| Event Handlers | Реакция на доменные события: `on_task_completed`, `on_document_stale` |
+| DTO Mappers | Converting domain models ↔ Pydantic DTO |
+| Event Handlers | Reacting to domain events: `on_task_completed`, `on_document_stale` |
 
-**Правила слоя:**
-- Не содержит доменной логики (только делегирует Domain)
-- Не работает напрямую с БД/файлами (только через порты)
-- DTO — плоские структуры данных без поведения
+**Layer rules:**
+- Contains no domain logic (only delegates to Domain)
+- Does not work with DB/files directly (only via ports)
+- DTOs are flat data structures without behavior
 
 ---
 
 ### 2.3 Domain Layer
 
-**Назначение:** чистая бизнес-логика, независимая от инфраструктуры.
+**Purpose:** pure business logic, independent of infrastructure.
 
-| Компонент | Описание |
+| Component | Description |
 |-----------|----------|
-| **Aggregates** | `Project`, `Task`, `Document` (см. 📁 /models/domain.md) |
+| **Aggregates** | `Project`, `Task`, `Document` (see 📁 /models/domain.md) |
 | **Value Objects** | `HybridRef`, `ProjectStatus`, `TaskStatus`, `DocStatus` |
 | **Domain Events** | `ProjectCreated`, `TaskQueued`, `TaskStarted`, `TaskCompleted`, `TaskFailed`, `DocumentIndexed`, `DocumentBecameStale`, `ProjectArchived` |
 | **Ports (interfaces)** | `ProjectRepository`, `TaskRepository`, `DocumentRepository`, `VectorIndexer`, `LLMProvider`, `GitProvider` |
 
-**Правила слоя:**
-- Ноль внешних зависимостей (no `import fastapi`, no `import sqlalchemy`)
-- Все внешние вызовы — через абстрактные порты
-- Бизнес-инварианты проверяются внутри агрегатов
-- Никаких I/O операций внутри доменных методов
+**Layer rules:**
+- Zero external dependencies (no `import fastapi`, no `import sqlalchemy`)
+- All external calls go through abstract ports
+- Business invariants are checked inside aggregates
+- No I/O operations inside domain methods
 
 ---
 
 ### 2.4 Infrastructure Layer
 
-**Назначение:** реализация портов, работа с внешними системами.
+**Purpose:** implementation of ports, work with external systems.
 
-| Компонент | Технология | Реализует порт |
+| Component | Technology | Implements port |
 |-----------|------------|----------------|
 | SQL Repositories | `SQLAlchemy 2.0` + `alembic` | `ProjectRepository`, `TaskRepository`, `DocumentRepository` |
 | Vector Store | `ChromaDB` | `VectorIndexer` |
 | LLM Client | `openai` (OpenRouter API) | `LLMProvider` |
 | Git Adapter | `GitPython` | `GitProvider` |
-| File System | `Path` (stdlib) | `FileSystem` (внутренний порт) |
-| Background Agent | `asyncio` | `AgentScheduler` (внутренний порт) |
+| File System | `Path` (stdlib) | `FileSystem` (internal port) |
+| Background Agent | `asyncio` | `AgentScheduler` (internal port) |
 
-**Правила слоя:**
-- Единственный слой, имеющий право на I/O
-- Реализует интерфейсы, определённые в Domain
-- Подключается через DI (Dependency Injection)
-
----
-
-## 3. Архитектурные решения (ADR)
-
-> **Источник правды переехал.** ADR живут в БД как first-class сущность
-> (см. [capability adr-system](../docs/system/capabilities/adr-system.md))
-> с автонумерацией, supersede-цепочкой и Web-UI редактором.
-> Канонический список: `/p/<slug>/adr` в Web UI; markdown-проекция —
-> `docs/adr/ADR-NNN.md` (генерируется `cod-doc adr export`).
-> Таблицы ниже остаются как **bootstrap-источник** для одноразовой
-> миграции через [`adr_migrator.py`](../cod_doc/services/adr_migrator.py)
-> при инициализации нового проекта. Любые правки делать **в Web UI / CLI**,
-> не здесь.
-
-### ADR-001: Многослойная архитектура с DIP
-
-| Поле | Значение |
-|------|----------|
-| **Статус** | ✅ Принято |
-| **Дата** | 2026-04-05 |
-| **Контекст** | Агент должен работать с разными LLM-провайдерами, базами данных и файловыми системами, при этом бизнес-логика не должна зависеть от конкретных реализаций |
-| **Решение** | Классическая 4-слойная архитектура: Presentation → Application → Domain ← Infrastructure. Domain определяет порты, Infrastructure их реализует |
-| **Альтернативы** | Clean Architecture (избыточно), вертикальные срезы (размывает границы) |
-| **Последствия** | + Изолированная бизнес-логика, тестируемость, заменяемость инфраструктуры. − Больше boilerplate-кода для портов и DI |
-
-### ADR-002: Python 3.11+ с FastAPI
-
-| Поле | Значение |
-|------|----------|
-| **Статус** | ✅ Принято |
-| **Дата** | 2026-04-05 |
-| **Контекст** | Нужен асинхронный веб-сервер с OpenAPI-документацией и стабильная экосистема для AI/ML |
-| **Решение** | FastAPI + Pydantic v2 + SQLAlchemy 2.0 (async). Минимальная версия Python — 3.11 (поддержка `tomllib`, улучшенный asyncio) |
-| **Альтернативы** | Django Ninja, Litestar |
-| **Последствия** | + Автодокументация API, нативная асинхронность. − Привязка к экосистеме Pydantic/SQLAlchemy |
-
-### ADR-003: ChromaDB как векторное хранилище
-
-| Поле | Значение |
-|------|----------|
-| **Статус** | ✅ Принято |
-| **Дата** | 2026-04-05 |
-| **Контекст** | Документы нужно индексировать для семантического поиска зависимостей. Требуется локальное решение без внешних сервисов |
-| **Решение** | ChromaDB в embedded-режиме. Опциональный бэкенд — `sentence-transformers` для локальных эмбеддингов (без OpenAI) |
-| **Альтернативы** | Pinecone (SaaS-зависимость), FAISS (только индексация, нет метаданных) |
-| **Последствия** | + Полностью локально, простой API. − Embedded-режим не масштабируется горизонтально |
-
-### ADR-004: Snowball Protocol для загрузки контекста
-
-| Поле | Значение |
-|------|----------|
-| **Статус** | ✅ Принято |
-| **Дата** | 2026-04-05 |
-| **Контекст** | ИИ-агент должен минимизировать потребление токенов, загружая только необходимый контекст |
-| **Решение** | Трёхуровневый протокол: L0 (MASTER.md), L1 (+целевой файл), L2 (+зависимости). Гибридные ссылки с хэшами для проверки целостности |
-| **Альтернативы** | Полная загрузка всего репозитория, RAG-only подход |
-| **Последствия** | + Экономия токенов, fail-fast при расхождении хэшей. − Требует дисциплины при обновлении хэшей |
-
-### ADR-005: Хранение данных — PostgreSQL
-
-| Поле | Значение |
-|------|----------|
-| **Статус** | ✅ Принято |
-| **Дата** | 2026-04-05 |
-| **Контекст** | Проекты, задачи и метаданные документов требуют реляционного хранения с транзакциями и миграциями |
-| **Решение** | PostgreSQL через SQLAlchemy 2.0 (async) + Alembic для миграций. ULID как первичные ключи |
-| **Альтернативы** | SQLite (не подходит для продакшена), MongoDB (нет строгих схем) |
-| **Последствия** | + ACID, миграции. − Требует PostgreSQL в Docker |
+**Layer rules:**
+- The only layer with the right to I/O
+- Implements the interfaces defined in Domain
+- Connected via DI (Dependency Injection)
 
 ---
 
-## 4. Нефункциональные требования
+## 3. Architectural decisions (ADR)
 
-### 4.1 Производительность
+> **The source of truth has moved.** ADRs live in the DB as first-class entities
+> (see [capability adr-system](../docs/system/capabilities/adr-system.md))
+> with auto-numbering, a supersede chain, and a Web UI editor.
+> Canonical list: `/p/<slug>/adr` in the Web UI; the markdown projection is
+> `docs/adr/ADR-NNN.md` (generated by `cod-doc adr export`).
+> The tables below remain as a **bootstrap source** for one-time
+> migration via [`adr_migrator.py`](../cod_doc/services/adr_migrator.py)
+> when initializing a new project. Make any edits **in the Web UI / CLI**,
+> not here.
 
-| Метрика | Целевое значение |
+### ADR-001: Multi-layer architecture with DIP
+
+| Field | Value |
+|------|----------|
+| **Status** | ✅ Accepted |
+| **Date** | 2026-04-05 |
+| **Context** | The agent must work with different LLM providers, databases, and file systems, while the business logic must not depend on specific implementations |
+| **Decision** | Classic 4-layer architecture: Presentation → Application → Domain ← Infrastructure. Domain defines ports, Infrastructure implements them |
+| **Alternatives** | Clean Architecture (overkill), vertical slices (blurs boundaries) |
+| **Consequences** | + Isolated business logic, testability, replaceable infrastructure. − More boilerplate code for ports and DI |
+
+### ADR-002: Python 3.11+ with FastAPI
+
+| Field | Value |
+|------|----------|
+| **Status** | ✅ Accepted |
+| **Date** | 2026-04-05 |
+| **Context** | An async web server with OpenAPI documentation and a stable AI/ML ecosystem is needed |
+| **Decision** | FastAPI + Pydantic v2 + SQLAlchemy 2.0 (async). Minimum Python version — 3.11 (`tomllib` support, improved asyncio) |
+| **Alternatives** | Django Ninja, Litestar |
+| **Consequences** | + Auto API documentation, native async. − Tied to the Pydantic/SQLAlchemy ecosystem |
+
+### ADR-003: ChromaDB as the vector store
+
+| Field | Value |
+|------|----------|
+| **Status** | ✅ Accepted |
+| **Date** | 2026-04-05 |
+| **Context** | Documents need to be indexed for semantic dependency search. A local solution without external services is required |
+| **Decision** | ChromaDB in embedded mode. Optional backend — `sentence-transformers` for local embeddings (without OpenAI) |
+| **Alternatives** | Pinecone (SaaS dependency), FAISS (indexing only, no metadata) |
+| **Consequences** | + Fully local, simple API. − Embedded mode does not scale horizontally |
+
+### ADR-004: Snowball Protocol for context loading
+
+| Field | Value |
+|------|----------|
+| **Status** | ✅ Accepted |
+| **Date** | 2026-04-05 |
+| **Context** | The AI agent must minimize token consumption by loading only the necessary context |
+| **Decision** | Three-level protocol: L0 (MASTER.md), L1 (+target file), L2 (+dependencies). Hybrid references with hashes for integrity checks |
+| **Alternatives** | Loading the entire repository, RAG-only approach |
+| **Consequences** | + Token savings, fail-fast on hash mismatch. − Requires discipline when updating hashes |
+
+### ADR-005: Data storage — PostgreSQL
+
+| Field | Value |
+|------|----------|
+| **Status** | ✅ Accepted |
+| **Date** | 2026-04-05 |
+| **Context** | Projects, tasks, and document metadata require relational storage with transactions and migrations |
+| **Decision** | PostgreSQL via SQLAlchemy 2.0 (async) + Alembic for migrations. ULID as primary keys |
+| **Alternatives** | SQLite (not suitable for production), MongoDB (no strict schemas) |
+| **Consequences** | + ACID, migrations. − Requires PostgreSQL in Docker |
+
+---
+
+## 4. Non-functional requirements
+
+### 4.1 Performance
+
+| Metric | Target value |
 |---------|------------------|
-| Время ответа API (p95) | < 200ms |
-| Индексация документа (~10KB) | < 500ms |
-| Snowball L0→L1 загрузка | < 50ms |
-| Параллельные задачи | До 5 одновременных |
+| API response time (p95) | < 200ms |
+| Document indexing (~10KB) | < 500ms |
+| Snowball L0→L1 loading | < 50ms |
+| Parallel tasks | Up to 5 concurrent |
 
-### 4.2 Масштабируемость
+### 4.2 Scalability
 
-| Аспект | Стратегия |
+| Aspect | Strategy |
 |--------|-----------|
-| Горизонтальная | Stateless API + общая БД (несколько реплик API за балансировщиком) |
-| Очередь задач | PostgreSQL `SELECT ... FOR UPDATE SKIP LOCKED` как очередь (без Redis на старте) |
-| Векторный поиск | ChromaDB embedded — один инстанс на реплику |
+| Horizontal | Stateless API + shared DB (multiple API replicas behind a load balancer) |
+| Task queue | PostgreSQL `SELECT ... FOR UPDATE SKIP LOCKED` as a queue (no Redis at start) |
+| Vector search | ChromaDB embedded — one instance per replica |
 
-### 4.3 Отказоустойчивость
+### 4.3 Fault tolerance
 
-| Сценарий | Поведение |
+| Scenario | Behavior |
 |----------|-----------|
-| Потеря соединения с БД | Retry (exponential backoff, 3 попытки), затем перевод задачи в `failed` |
-| LLM Provider недоступен | Retry с другим провайдером (fallback-ключи), graceful degradation |
-| Файл не найден (BROKEN) | Статус `🔴 BROKEN`, задача останавливается с ask_human |
-| Хэш не совпадает (STALE) | Статус `🔴 STALE`, контент не используется до синхронизации |
+| DB connection lost | Retry (exponential backoff, 3 attempts), then transition the task to `failed` |
+| LLM Provider unavailable | Retry with another provider (fallback keys), graceful degradation |
+| File not found (BROKEN) | Status `🔴 BROKEN`, the task stops with ask_human |
+| Hash mismatch (STALE) | Status `🔴 STALE`, the content is not used until synchronization |
 
-### 4.4 Безопасность
+### 4.4 Security
 
-| Аспект | Решение |
+| Aspect | Solution |
 |--------|---------|
-| API ключи | Только через `.env` / env vars, никогда в коде |
-| Доступ к репозиториям | Только локальный файловый доступ, git clone по HTTPS |
-| API аутентификация | API key в заголовке `X-COD-DOC-API-Key` |
-| Изоляция проектов | Каждый проект в своей директории `/projects/<ulid>` |
+| API keys | Only via `.env` / env vars, never in code |
+| Repository access | Local file access only, git clone via HTTPS |
+| API authentication | API key in the `X-COD-DOC-API-Key` header |
+| Project isolation | Each project in its own `/projects/<ulid>` directory |
 
-### 4.5 Наблюдаемость
+### 4.5 Observability
 
-| Инструмент | Назначение |
+| Tool | Purpose |
 |------------|------------|
-| Docker HEALTHCHECK | `curl /api/health` каждые 30s |
-| Structured logging | JSON-логи в stdout |
-| Task lifecycle | Статусы задач (`pending → in_progress → completed/failed`) |
+| Docker HEALTHCHECK | `curl /api/health` every 30s |
+| Structured logging | JSON logs to stdout |
+| Task lifecycle | Task statuses (`pending → in_progress → completed/failed`) |
 
 ---
 
-## 5. Контракты между слоями
+## 5. Contracts between layers
 
-### 5.1 Application → Domain (порты)
+### 5.1 Application → Domain (ports)
 
 ```python
 # domain/ports.py
@@ -311,7 +311,7 @@ class DocumentResponse(BaseModel):
 
 ---
 
-## 6. Структура пакетов
+## 6. Package structure
 
 ```text
 cod_doc/
@@ -331,23 +331,23 @@ cod_doc/
 
 ---
 
-## 7. Технологический стек (сводка)
+## 7. Technology stack (summary)
 
-| Категория | Технология | Версия |
+| Category | Technology | Version |
 |-----------|------------|--------|
-| Язык | Python | 3.11+ |
-| Веб-фреймворк | FastAPI | 0.115+ |
-| ASGI-сервер | Uvicorn | 0.30+ |
-| СУБД | PostgreSQL (SQLAlchemy 2.0) | async |
-| Миграции | Alembic | 1.13+ |
-| Векторное хранилище | ChromaDB | 0.5+ |
-| LLM-провайдер | OpenRouter (OpenAI SDK) | 1.50+ |
+| Language | Python | 3.11+ |
+| Web framework | FastAPI | 0.115+ |
+| ASGI server | Uvicorn | 0.30+ |
+| DBMS | PostgreSQL (SQLAlchemy 2.0) | async |
+| Migrations | Alembic | 1.13+ |
+| Vector store | ChromaDB | 0.5+ |
+| LLM provider | OpenRouter (OpenAI SDK) | 1.50+ |
 | TUI | Textual | 0.80+ |
 | MCP | mcp | 1.0+ |
-| Валидация | Pydantic | 2.0+ |
-| Линтер | Ruff | 0.8+ |
-| Типизация | Mypy (strict) | 1.11+ |
-| Тестирование | Pytest + pytest-asyncio | 8.0+ |
-| Контейнеризация | Docker (python:3.12-slim) | — |
+| Validation | Pydantic | 2.0+ |
+| Linter | Ruff | 0.8+ |
+| Typing | Mypy (strict) | 1.11+ |
+| Testing | Pytest + pytest-asyncio | 8.0+ |
+| Containerization | Docker (python:3.12-slim) | — |
 | CI/CD | GitHub Actions | — |
 | Registry | GitHub Container Registry (GHCR) | — |

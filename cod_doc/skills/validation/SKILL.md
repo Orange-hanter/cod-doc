@@ -1,65 +1,64 @@
 ---
 name: validation
 description: |
-  Когда применять structural-валидацию (raise) vs advisory-аудит (issues).
-  FM-002 / FM-003 эскалируются как блокеры; FM-004 / FM-005 — advisory-комментарии.
-  Триггеры: запись в MASTER.md, создание/обновление doc, изменение хэшей,
+  When to apply structural validation (raise) vs advisory audit (issues).
+  FM-002 / FM-003 are escalated as blockers; FM-004 / FM-005 are advisory
+  comments. Triggers: write to MASTER.md, create/update doc, change hashes,
   frontmatter, sensitivity, validate, audit_*.
 ---
 
 # Skill — Validation pattern
 
-## Когда подгружается
+## When it loads
 
-Задачи и контексты, где идёт **запись** в БД (документ, таск, секция,
-ссылка), особенно если задействован frontmatter, sensitivity или хэши.
-Триггер-keywords: `validate`, `frontmatter`, `sensitivity`, `FM-002`,
-`FM-003`, `audit_`, `audit-` , `structural`, `valid`, `verify`.
+Tasks and contexts where a **write** to the DB happens (document, task,
+section, link), especially if frontmatter, sensitivity or hashes are
+involved. Trigger keywords: `validate`, `frontmatter`, `sensitivity`,
+`FM-002`, `FM-003`, `audit_`, `audit-`, `structural`, `valid`, `verify`.
 
-## Принципы
+## Principles
 
-Двухуровневая валидация:
+Two-level validation:
 
-1. **Structural — `validate_*`**: жёсткая проверка инвариантов write-path.
-   Любое нарушение → `ValidationError` (raise). Гейтит `DocService.create`,
-   `TaskService.create`, `StoryService.create` и т. п. Здесь живут
-   обязательные правила — без них объект **не должен** появиться в БД.
+1. **Structural — `validate_*`**: strict check of write-path invariants.
+   Any violation → `ValidationError` (raise). Gates `DocService.create`,
+   `TaskService.create`, `StoryService.create`, etc. The mandatory rules
+   live here — without them the object **must not** appear in the DB.
 
-2. **Advisory — `audit_*`**: возвращает `list[ValidationIssue]` без raise.
-   Используется для пред-коммитного `cod-doc audit`, future-CI и
-   write-path как мягкая подсветка проблем. Не блокирует.
+2. **Advisory — `audit_*`**: returns `list[ValidationIssue]` without
+   raising. Used for pre-commit `cod-doc audit`, future-CI and write-path
+   as a soft highlight of problems. Does not block.
 
-## FM-эскалации (frontmatter)
+## FM-escalations (frontmatter)
 
-| Код | Уровень | Что делать |
+| Code | Level | What to do |
 |-----|---------|-----------|
-| FM-002 | блокер | `validate_frontmatter` raise; запись отвергается |
-| FM-003 | блокер | то же |
-| FM-004 | advisory | `audit_frontmatter` возвращает issue; запись идёт |
-| FM-005 | advisory | то же |
-| FM-006 | advisory (sensitivity) | пишется как warning; не блокер |
-| FM-007 | advisory | warning при отсутствии `sensitivity` для
+| FM-002 | blocker | `validate_frontmatter` raises; the record is rejected |
+| FM-003 | blocker | same |
+| FM-004 | advisory | `audit_frontmatter` returns an issue; the record goes through |
+| FM-005 | advisory | same |
+| FM-006 | advisory (sensitivity) | written as a warning; not a blocker |
+| FM-007 | advisory | warning when `sensitivity` is missing for
         `module-spec/architecture/standard` |
 
-## Алгоритм
+## Algorithm
 
-1. Определить, **что записываем** — doc / task / story / section / link.
-2. Найти соответствующий `validate_*` в `cod_doc/services/validation/`.
-3. Если `ValidationError` — НЕ глотать; пробросить наверх с `error_code`
-   (FM-NNN или TP-NNN) для вывода человеку.
-4. После успешной записи — вызвать `audit_*` и приложить issues к ответу
-   как мягкие предупреждения.
+1. Determine **what** we are writing — doc / task / story / section / link.
+2. Find the corresponding `validate_*` in `cod_doc/services/validation/`.
+3. If `ValidationError` — do NOT swallow; propagate it upward with
+   `error_code` (FM-NNN or TP-NNN) for display to the human.
+4. After a successful write — call `audit_*` and attach the issues to the
+   response as soft warnings.
 
-## Что НЕ делать
+## What NOT to do
 
-- Не превращать advisory в блокеры по своему усмотрению — это ломает
+- Do not turn advisory into blockers at your discretion — this breaks the
   pre-existing pipeline.
-- Не пропускать `validate_*` "ради скорости" — write-path должен быть
-  гейтированным.
-- Не дописывать новые FM-коды в скилле; правила живут в
+- Do not skip `validate_*` "for speed" — the write-path must be gated.
+- Do not add new FM codes in the skill; the rules live in
   `cod_doc/services/validation/_rules/` + `standards/frontmatter.md`.
 
-## Связанное
+## Related
 
 - [standards/frontmatter.md](../../../docs/system/standards/frontmatter.md)
 - [services/validation/](../../services/validation/)

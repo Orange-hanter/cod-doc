@@ -1,36 +1,36 @@
 ---
-description: Взять задачу cod-doc в работу по протоколу (checkout → работа → complete со sha) или закрыть текущую
+description: Take a cod-doc task into work by the protocol (checkout → work → complete with a sha) or close the current one
 argument-hint: "next | <TASK-ID> | done <TASK-ID> <sha> | release <TASK-ID>"
 ---
 
-Аргумент: `$ARGUMENTS`.
+Argument: `$ARGUMENTS`.
 
-Определи слаг проекта сам (см. `/cod-doc:status`), если он не назван явно.
-Работай тулами MCP-сервера cod-doc; CLI — запасной путь, ad-hoc SQL по
-`state.db` на запись — запрещён (мимо ревизий и activity events).
+Determine the project slug yourself (see `/cod-doc:status`), if it is not named explicitly.
+Work with the cod-doc MCP server tools; the CLI is a fallback path, ad-hoc SQL against
+`state.db` for writes is forbidden (bypasses revisions and activity events).
 
-**Разбор аргумента**
+**Argument parsing**
 
-| Аргумент | Что делать |
+| Argument | What to do |
 |---|---|
-| пусто или `next` | `task_next_ready` (или `plan_ready` по активному плану) → покажи 3–5 верхних и **спроси**, какую брать; сам не захватывай |
-| `<TASK-ID>` | `task_get` → покажи описание и acceptance → `task_checkout(project, task_id, agent="claude-<тема>")` |
+| empty or `next` | `task_next_ready` (or `plan_ready` for the active plan) → show the top 3–5 and **ask** which one to take; do not grab one yourself |
+| `<TASK-ID>` | `task_get` → show the description and acceptance → `task_checkout(project, task_id, agent="claude-<topic>")` |
 | `done <TASK-ID> <sha>` | `task_complete(project, task_id, commit_sha=<sha>, author=...)` |
-| `release <TASK-ID>` | `task_release` — отпустить без закрытия |
+| `release <TASK-ID>` | `task_release` — release without closing |
 
-**Протокол (нарушать нельзя)**
+**Protocol (must not be violated)**
 
-1. Переход `todo → in_progress` — только через `task_checkout`. Прямой
-   `task_update_status` на этом переходе падает: checkout атомарен и ставит
-   лок, чужой лок — конфликт, а не перетирание.
-2. Пока задача в работе — прогресс пиши `task_log_progress`, а не в markdown.
-3. Закрытие — `task_complete` со sha реального коммита. Он проверяет
-   `blocked_by`, снимает лок, пишет revision + activity event. Закрытие
-   правкой .md — не закрытие; статус живёт в БД.
-4. Коммит — conventional + ID задачи: `feat(scope): TASK-ID — краткая суть`.
-5. Закрыл последнюю задачу секции плана — напомни про audit-отчёт
-   (`docs/system/audit/`, если проект следует этой конвенции).
+1. The `todo → in_progress` transition — only through `task_checkout`. A direct
+   `task_update_status` on this transition fails: checkout is atomic and takes
+   a lock, someone else's lock is a conflict, not an overwrite.
+2. While the task is in progress — write progress via `task_log_progress`, not into markdown.
+3. Closing — `task_complete` with the sha of the real commit. It checks
+   `blocked_by`, releases the lock, writes a revision + an activity event. Closing
+   by editing an .md is not closing; the status lives in the DB.
+4. The commit — conventional + the task ID: `feat(scope): TASK-ID — short summary`.
+5. Closed the last task of a plan section — remind about the audit report
+   (`docs/system/audit/`, if the project follows this convention).
 
-Перед `task_complete` убедись, что гейт проекта зелёный (в cod-doc это
-`/gate`), и что acceptance criterion выполнен буквально, а не «по смыслу».
-Если acceptance не выполнен — не закрывай, доложи расхождение.
+Before `task_complete` make sure the project gate is green (in cod-doc this is
+`/gate`), and that the acceptance criterion is met literally, not "by feel".
+If the acceptance is not met — do not close, report the discrepancy.

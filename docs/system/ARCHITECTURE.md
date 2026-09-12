@@ -16,7 +16,7 @@ related_code:
 
 # COD-DOC — Architecture
 
-Многослойная модульная архитектура. Ни один слой не ссылается на слой выше себя.
+A layered, modular architecture. No layer references the layer above it.
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -48,72 +48,72 @@ related_code:
 
 ## 1. Presentation layer
 
-| Поверхность | Назначение | Ограничения |
+| Surface | Purpose | Constraints |
 |-------------|-----------|-------------|
-| CLI `cod-doc` | Человек-оператор, скрипты, CI | Нет прямых SQL-запросов; только через сервисы |
-| TUI `cod-doc wizard`/`dashboard` | Интерактивная работа, онбординг | Использует тот же CLI-слой через in-process вызовы |
-| REST API (`cod_doc/api`) | Веб-клиенты, внешние интеграции | Стейтлесс, аутентификация через токен проекта |
-| MCP (`cod_doc/mcp`) | LLM-агенты | Пара tools на каждое сервисное действие; без intermediate shell |
+| CLI `cod-doc` | Human operator, scripts, CI | No direct SQL queries; only through services |
+| TUI `cod-doc wizard`/`dashboard` | Interactive work, onboarding | Uses the same CLI layer via in-process calls |
+| REST API (`cod_doc/api`) | Web clients, external integrations | Stateless, authentication via project token |
+| MCP (`cod_doc/mcp`) | LLM agents | A pair of tools per service action; no intermediate shell |
 
-Все четыре поверхности — **равные**: если функциональность добавлена в сервис, она обязана появиться в CLI и MCP минимум через пол-часа, чтобы агент и человек имели тождественный интерфейс (правило, взятое из Restate: `task-plan-ecosystem.md §6.4` — «CLI остаётся канонической альтернативой MCP»).
+All four surfaces are **equal**: if functionality is added to a service, it must appear in the CLI and MCP within at least half an hour, so that the agent and a human have an identical interface (a rule inherited from Restate: `task-plan-ecosystem.md §6.4` — "the CLI remains the canonical alternative to MCP").
 
-## 2. Application layer (сервисы)
+## 2. Application layer (services)
 
-| Сервис | Ответственность |
+| Service | Responsibility |
 |--------|----------------|
-| `DocService` | CRUD документов, генерация skeleton, импорт/экспорт markdown |
-| `TaskService` | CRUD задач, валидация формата (ID, type, title-verb-pattern) |
-| `PlanService` | Пересчёт `tasks_done`/`tasks_total`, Progress Overview, Next Batch |
-| `GraphService` | Зависимости, критический путь, циклы, reverse chain |
-| `ContextService` | Сборка «концентрированного контекста» по запросу (L0/L1/L2) |
-| `RevisionService` | Запись ревизий, diff-генерация, rollback |
-| `LinkService` | Резолвинг внутренних ссылок, обнаружение битых, обновление при переименовании |
-| `StoryService` | User stories, связывание историй с tasks и модулями |
+| `DocService` | Document CRUD, skeleton generation, markdown import/export |
+| `TaskService` | Task CRUD, format validation (ID, type, title-verb-pattern) |
+| `PlanService` | Recompute `tasks_done`/`tasks_total`, Progress Overview, Next Batch |
+| `GraphService` | Dependencies, critical path, cycles, reverse chain |
+| `ContextService` | Build "concentrated context" on demand (L0/L1/L2) |
+| `RevisionService` | Write revisions, diff generation, rollback |
+| `LinkService` | Resolve internal links, detect broken ones, update on rename |
+| `StoryService` | User stories, link stories to tasks and modules |
 
-Сервисы транзакционны: любая операция либо целиком коммитится, либо откатывается. Каждое write-действие сопровождается записью в `Revision`.
+Services are transactional: any operation either commits entirely or rolls back. Each write action is accompanied by a record in `Revision`.
 
 ## 3. Domain layer
 
-Чистые сущности — см. [DATA_MODEL.md](DATA_MODEL.md). Не имеют внешних зависимостей (никаких SQLAlchemy-моделей в домене; репозитории живут на уровне инфраструктуры и возвращают dataclass-сущности).
+Pure entities — see [DATA_MODEL.md](DATA_MODEL.md). They have no external dependencies (no SQLAlchemy models in the domain; repositories live at the infrastructure level and return dataclass entities).
 
 ## 4. Infrastructure layer
 
-### 4.1 Хранилище
+### 4.1 Storage
 
-Два профиля:
+Two profiles:
 
-| Профиль | СУБД | Назначение |
+| Profile | DBMS | Purpose |
 |---------|------|-----------|
-| `embedded` | SQLite в `.cod-doc/state.db` | Один локальный проект, без сервера |
-| `server` | PostgreSQL | Командная работа, CI, несколько клиентов на один проект |
+| `embedded` | SQLite in `.cod-doc/state.db` | A single local project, no server |
+| `server` | PostgreSQL | Teamwork, CI, multiple clients per project |
 
-Схема БД — общая; различаются диалекты (`JSON` vs `JSONB`, `TEXT` vs `VARCHAR`, `INTEGER` vs `BIGINT`). Миграции — Alembic.
+The DB schema is shared; dialects differ (`JSON` vs `JSONB`, `TEXT` vs `VARCHAR`, `INTEGER` vs `BIGINT`). Migrations are managed by Alembic.
 
 ### 4.2 Markdown projection
 
-`.cod-doc/mirror/` — дерево markdown-файлов, зеркалирующее БД. Не исходники, а **артефакт**. Правила:
+`.cod-doc/mirror/` — a tree of markdown files mirroring the DB. Not sources, but **artifacts**. Rules:
 
-- `export` регенерирует все файлы детерминированно.
-- `import` парсит файлы и пытается применить изменения через сервисы (не через прямую запись в БД).
-- Hash каждого файла хранится в `Document.projection_hash`. Если на диске hash не совпадает с последним exported-hash — файл считается edited-in-place, запускается reconciliation.
+- `export` regenerates all files deterministically.
+- `import` parses files and tries to apply changes through services (not via direct DB writes).
+- The hash of each file is stored in `Document.projection_hash`. If the on-disk hash does not match the last exported hash, the file is considered edited-in-place, and reconciliation is triggered.
 
 ### 4.3 Embeddings
 
-Для concentrated-context retrieval (`ContextService`, уровень L3) хранится векторный индекс документов. Реализация — ChromaDB (`PersistentClient` в `chroma_path`, коллекция `cod_doc`, косинусная метрика); ранее заявленные `sqlite-vss`/`pgvector` не реализованы.
+For concentrated-context retrieval (`ContextService`, level L3), a vector index of documents is stored. The implementation is ChromaDB (`PersistentClient` in `chroma_path`, collection `cod_doc`, cosine metric); the previously announced `sqlite-vss`/`pgvector` are not implemented.
 
-**Провайдер эмбеддингов — выбор конфига и отдельная ось от LLM (ADO-071).** `cod_doc/core/embeddings/` — реестр адаптеров (`EmbeddingAdapter` + `registry.py`, внешние плагины из `~/.cod-doc/embeddings.json`), устроенный так же, как реестр LLM-адаптеров. Встроенные: `openai` (любой OpenAI-совместимый endpoint), `openrouter` (свой ключ, `dimensions`, `usage.cost`), `local` (sentence-transformers), `mock`. Ядро (`core/reindex.py`) принимает `EmbeddingSettings` и не знает ни одного провайдера по имени.
+**The embedding provider is a config choice and a separate axis from the LLM (ADO-071).** `cod_doc/core/embeddings/` is a registry of adapters (`EmbeddingAdapter` + `registry.py`, external plugins from `~/.cod-doc/embeddings.json`), structured the same way as the LLM adapter registry. Built-in: `openai` (any OpenAI-compatible endpoint), `openrouter` (own key, `dimensions`, `usage.cost`), `local` (sentence-transformers), `mock`. The core (`core/reindex.py`) accepts `EmbeddingSettings` and does not know any provider by name.
 
-Идентичность коллекции фиксируется подписью `<backend>:<model>@<dimensions>` в её metadata: векторы разных моделей несравнимы, поэтому расхождение конфига с непустым индексом — явная ошибка с требованием пересобрать индекс, а не тихая деградация.
+The collection identity is fixed by the signature `<backend>:<model>@<dimensions>` in its metadata: vectors of different models are not comparable, so a config mismatch with a non-empty index is an explicit error requiring the index to be rebuilt, not a silent degradation.
 
-Индексация — по явному вызову (`reindex_project`), поиск fail-open: любая ошибка бэкенда даёт пустой список, а громкий сигнал даёт `cod-doc embed status/probe`.
+Indexing happens on explicit call (`reindex_project`); search is fail-open: any backend error yields an empty list, while `cod-doc embed status/probe` gives a loud signal.
 
 ### 4.4 LLM provider
 
-Выбор провайдера — конфиг (OpenRouter, Anthropic API, local Ollama). Домен и сервисы не знают о конкретном провайдере; агент/оркестратор — знает. Это наследуется из текущего cod-doc (см. `cod_doc/agent/orchestrator.py`, `cod_doc/config.py`). Провайдер эмбеддингов выбирается **независимо** (§4.3): у чат-провайдера может не быть `/embeddings` вовсе.
+The provider choice is a config (OpenRouter, Anthropic API, local Ollama). The domain and services do not know about the specific provider; the agent/orchestrator does. This is inherited from the current cod-doc (see `cod_doc/agent/orchestrator.py`, `cod_doc/config.py`). The embedding provider is chosen **independently** (§4.3): the chat provider may not have `/embeddings` at all.
 
-## 5. Потоки данных
+## 5. Data flows
 
-### 5.1 Создание задачи
+### 5.1 Creating a task
 
 ```text
 human|agent
@@ -121,27 +121,27 @@ human|agent
    ▼
 CLI/MCP ──► TaskService.create()
                │
-               ├─► валидирует формат (task-plan.md §5)
-               ├─► вычисляет ID в пределах section range
-               ├─► пишет Task в БД
-               ├─► пишет Revision
-               ├─► триггерит PlanService.recalc(plan_id)
-               └─► триггерит LinkService.reindex(doc=section_file)
+               ├─► validates the format (task-plan.md §5)
+               ├─► computes the ID within the section range
+               ├─► writes the Task to the DB
+               ├─► writes a Revision
+               ├─► triggers PlanService.recalc(plan_id)
+               └─► triggers LinkService.reindex(doc=section_file)
 ```
 
-### 5.2 Изменение документа
+### 5.2 Modifying a document
 
 ```text
 DocService.apply_patch(doc_id, patch)
    │
-   ├─► применяет diff к canonical body (в БД)
-   ├─► перерезолвит outgoing links (LinkService)
-   ├─► пишет Revision(diff, author, reason)
-   ├─► ставит задачу в очередь на re-embedding
-   └─► при export — обновляет markdown projection
+   ├─► applies the diff to the canonical body (in the DB)
+   ├─► re-resolves outgoing links (LinkService)
+   ├─► writes a Revision(diff, author, reason)
+   ├─► queues the task for re-embedding
+   └─► on export — updates the markdown projection
 ```
 
-### 5.3 Запрос контекста агентом
+### 5.3 Agent's context request
 
 ```text
 MCP: context.get(module="M1-auth", depth="L1")
@@ -149,97 +149,97 @@ MCP: context.get(module="M1-auth", depth="L1")
    ▼
 ContextService.build(target, depth)
    │
-   ├─► L0: только MASTER + explicit target
-   ├─► L1: + прямые связи (module-spec, открытый task-plan, последние 3 открытых stories)
-   ├─► L2: + depends_on-цепочки, ближайшие open questions, cross-module dependencies
+   ├─► L0: only MASTER + explicit target
+   ├─► L1: + direct links (module-spec, open task-plan, last 3 open stories)
+   ├─► L2: + depends_on chains, nearest open questions, cross-module dependencies
    │
-   └─► возвращает JSON + markdown-excerpts под token budget
+   └─► returns JSON + markdown-excerpts under a token budget
 ```
 
-## 6. Контракты между слоями
+## 6. Contracts between layers
 
-- Presentation → Application: typed DTO (pydantic).
-- Application → Domain: dataclass-сущности.
-- Domain → Infrastructure: абстрактные репозитории (`Protocol`), реализации в инфре.
+- Presentation → Application: typed DTOs (pydantic).
+- Application → Domain: dataclass entities.
+- Domain → Infrastructure: abstract repositories (`Protocol`), implementations in infra.
 
-Нельзя:
+Not allowed:
 
-- В MCP-сервере писать SQL напрямую.
-- В домене зависеть от `sqlite3`/`psycopg`.
-- В CLI дублировать бизнес-логику, которой нет в сервисе (если понадобилось — сначала сервис).
+- Writing SQL directly in the MCP server.
+- Depending on `sqlite3`/`psycopg` in the domain.
+- Duplicating business logic in the CLI that is not in the service (if needed — service first).
 
 ## 7. Inversion of dependencies
 
-`cod_doc/core/project.py` уже реализует часть домена (Task, TaskStatus). Миграция к целевой архитектуре:
+`cod_doc/core/project.py` already implements part of the domain (Task, TaskStatus). Migration to the target architecture:
 
-1. Выделить `cod_doc/domain/` с чистыми сущностями.
-2. Оставить `cod_doc/core/` как backward-compat shim, пока не переехали все потребители.
-3. Ввести `cod_doc/services/` (Doc, Task, Plan, …).
-4. Ввести `cod_doc/infra/repositories/` с адаптерами под SQLite/Postgres.
-5. Переписать `cod_doc/cli/`, `cod_doc/mcp/`, `cod_doc/api/` на сервисы.
-6. Удалить shim.
+1. Extract `cod_doc/domain/` with pure entities.
+2. Keep `cod_doc/core/` as a backward-compat shim until all consumers have migrated.
+3. Introduce `cod_doc/services/` (Doc, Task, Plan, …).
+4. Introduce `cod_doc/infra/repositories/` with adapters for SQLite/Postgres.
+5. Rewrite `cod_doc/cli/`, `cod_doc/mcp/`, `cod_doc/api/` on top of services.
+6. Remove the shim.
 
-Порядок — итеративный, см. [roadmap/cod-doc-task-plan.md](roadmap/cod-doc-task-plan.md).
+The order is iterative, see [roadmap/cod-doc-task-plan.md](roadmap/cod-doc-task-plan.md).
 
-## 8. Деплой и среды
+## 8. Deployment and environments
 
-| Профиль | Когда | БД | MCP | Auth | Projection |
+| Profile | When | DB | MCP | Auth | Projection |
 |---------|-------|-----|-----|------|------------|
-| **embedded** | один разработчик | SQLite `.cod-doc/state.db` | stdio | implicit OS user | FS mirror обязателен |
-| **server** | команда, один хост | Postgres | stdio и/или localhost HTTP | token (спека §12) | FS volume |
-| **cloud** | ИИ-агенты remote | Postgres | streamable-http + TLS | Bearer enforced | optional export |
+| **embedded** | single developer | SQLite `.cod-doc/state.db` | stdio | implicit OS user | FS mirror required |
+| **server** | team, single host | Postgres | stdio and/or localhost HTTP | token (spec §12) | FS volume |
+| **cloud** | remote AI agents | Postgres | streamable-http + TLS | Bearer enforced | optional export |
 
-- **Local embedded**: нет REST, только CLI + MCP.
-- **Shared Postgres (server)**: docker-compose стек, REST API активен;
-  MCP может жить на машине пользователя и ходить в общий Postgres.
-- **Cloud agent plane** (цель): один team-узел в облаке; несколько
-  независимых ИИ-клиентов (Cursor Cloud, Claude, orchestrator) —
-  децентрализованные воркеры через remote MCP; SoT = БД; markdown —
-  опциональная проекция. См.
+- **Local embedded**: no REST, only CLI + MCP.
+- **Shared Postgres (server)**: docker-compose stack, REST API active;
+  MCP can live on the user's machine and talk to a shared Postgres.
+- **Cloud agent plane** (target): one team node in the cloud; several
+  independent AI clients (Cursor Cloud, Claude, orchestrator) —
+  decentralized workers via remote MCP; SoT = DB; markdown —
+  optional projection. See
   [capabilities/cloud-agent-plane.md](capabilities/cloud-agent-plane.md)
-  и [roadmap/cloud-agent-plane-task-plan.md](roadmap/cloud-agent-plane-task-plan.md).
+  and [roadmap/cloud-agent-plane-task-plan.md](roadmap/cloud-agent-plane-task-plan.md).
 - **CI**: headless; CLI (`cod-doc audit`, `cod-doc plan next`,
   `cod-doc link verify`).
 
-Переключение — через `COD_DOC_DB_URL` (+ `COD_DOC_AUTH` / MCP transport
-для cloud).
+Switching is done via `COD_DOC_DB_URL` (+ `COD_DOC_AUTH` / MCP transport
+for cloud).
 
-## 9. Безопасность
+## 9. Security
 
-- Данные проекта не покидают БД без явного export.
-- Встроенный LLM-клиент не видит содержимого документов сверх того, что ContextService положил в сессию.
-- Audit-лог всех write-операций через MCP/REST/CLI/TUI — в таблицах `Revision` (что изменилось) и `ActivityEvent` (кто и что сделал), см. [DATA_MODEL.md §3.13](DATA_MODEL.md). Пишутся одним атомарным вызовом `activity_service.write_revision_and_emit_event` внутри транзакции мутации (ADO-040). Отдельной таблицы `AuditLog` больше нет — она была объявлена, но за всю историю проекта не получила ни одного writer'а и удалена по ADR-012.
-- **`/api/v1` — единственная поверхность будущего Bearer-гейта** (контракт RFC 22 §3.3, см. `proposals/22-symbiosis-zairgrush-orakul.md`): `COD_DOC_API_TOKEN`, ASGI-middleware только на `/api/v1` (`cod_doc/api/v1/`), constant-time compare, 401 JSON. Гейт включается при появлении первого удалённого вызывающего. Legacy `/api/*` заморожен и Bearer-гейта не получит.
+- Project data does not leave the DB without an explicit export.
+- The built-in LLM client does not see document contents beyond what ContextService put into the session.
+- Audit log of all write operations via MCP/REST/CLI/TUI — in the `Revision` (what changed) and `ActivityEvent` (who did what) tables, see [DATA_MODEL.md §3.13](DATA_MODEL.md). Written with a single atomic call to `activity_service.write_revision_and_emit_event` inside the mutation transaction (ADO-040). There is no separate `AuditLog` table anymore — it was declared but never got a single writer throughout the project's history and was removed per ADR-012.
+- **`/api/v1` — the only surface of the future Bearer gate** (RFC 22 §3.3 contract, see `proposals/22-symbiosis-zairgrush-orakul.md`): `COD_DOC_API_TOKEN`, ASGI middleware only on `/api/v1` (`cod_doc/api/v1/`), constant-time compare, 401 JSON. The gate is enabled when the first remote caller appears. Legacy `/api/*` is frozen and will not get a Bearer gate.
 
 ## 10. Error Model
 
-Единый набор исключений уровня домена/сервисов (`cod_doc.errors`). Все surface'ы (CLI, MCP, REST, TUI) маппят их в свой формат.
+A unified set of domain/service-level exceptions (`cod_doc.errors`). All surfaces (CLI, MCP, REST, TUI) map them to their own format.
 
-### 11.1 Иерархия
+### 11.1 Hierarchy
 
 ```
 CodDocError
-├── ValidationError       — нарушение формата (frontmatter, task verb-pattern, enum)
-├── NotFoundError         — целевая сущность не существует
-├── ConflictError         — состояние не позволяет операцию
-│   ├── DependencyError   — неудовлетворённые depends_on
-│   ├── CycleError        — попытка создать цикл в графе
-│   └── OptimisticLockError — parent_revision_id устарел (см. §11)
-├── AuthDeniedError       — actor не имеет права на инструмент / sensitivity
-├── IntegrityError        — нарушение схемы / FK / уникальности
-└── ExternalError         — провал внешнего сервиса (LLM, embeddings, git)
+├── ValidationError       — format violation (frontmatter, task verb-pattern, enum)
+├── NotFoundError         — target entity does not exist
+├── ConflictError         — state does not allow the operation
+│   ├── DependencyError   — unsatisfied depends_on
+│   ├── CycleError        — attempt to create a cycle in the graph
+│   └── OptimisticLockError — parent_revision_id is stale (see §11)
+├── AuthDeniedError       — actor has no right to the tool / sensitivity
+├── IntegrityError        — schema / FK / uniqueness violation
+└── ExternalError         — external service failure (LLM, embeddings, git)
 ```
 
-Каждое исключение несёт:
+Each exception carries:
 
 ```python
 class CodDocError(Exception):
-    code: str         # 'TP-004', 'FM-001', 'AUTHZ-001' — стабильный для интеграций
-    message: str      # человекочитаемое
-    details: dict     # структурированные поля (entity_id, suggestion, ...)
+    code: str         # 'TP-004', 'FM-001', 'AUTHZ-001' — stable for integrations
+    message: str      # human-readable
+    details: dict     # structured fields (entity_id, suggestion, ...)
 ```
 
-### 11.2 Маппинг по поверхностям
+### 11.2 Mapping per surface
 
 | Error → | CLI exit | MCP isError + payload | REST status | TUI |
 |---------|---------:|------------------------|-------------|-----|
@@ -251,26 +251,26 @@ class CodDocError(Exception):
 | ExternalError      | 7 | ↑ | 502 | retry-toast |
 | Unknown / panic    | 1 | ↑ | 500 | crash screen |
 
-### 11.3 Правило write-path
+### 11.3 Write-path rule
 
-Любая ошибка в транзакции = полный rollback.
-Никаких partial updates: либо весь набор изменений (task + dependency + revision + section_totals refresh) применился, либо ни одно.
-След мутации (`revision` + `activity_event`) пишется **внутри** той же транзакции, что и сама мутация, — отдельного pre-commit-журнала нет (ADR-012). Ошибка write-path не оставляет записи вообще: транзакция откатывается целиком.
+Any error in a transaction = full rollback.
+No partial updates: either the entire set of changes (task + dependency + revision + section_totals refresh) is applied, or none.
+The mutation trace (`revision` + `activity_event`) is written **inside** the same transaction as the mutation itself — there is no separate pre-commit journal (ADR-012). A write-path error leaves no record at all: the transaction rolls back entirely.
 
-### 11.4 Идемпотентность
+### 11.4 Idempotency
 
-- `task.create` принимает `idempotency_key` (опционально); повторный вызов с тем же ключом возвращает оригинальный результат.
-- `doc.patch_section` идемпотентен по `parent_revision_id` — повторный apply того же патча с тем же parent даёт тот же revision_id (детерминированный ULID при флаге `--deterministic`).
+- `task.create` accepts an `idempotency_key` (optional); a repeated call with the same key returns the original result.
+- `doc.patch_section` is idempotent by `parent_revision_id` — a repeated apply of the same patch with the same parent yields the same revision_id (deterministic ULID with the `--deterministic` flag).
 
 ## 11. Concurrency & Identity
 
 ### 12.1 Optimistic locking
 
-Запись revision требует `parent_revision_id` — последнюю известную revision сущности. Если за это время появилась новая — `OptimisticLockError`. Клиент перечитывает state и повторяет.
+Writing a revision requires `parent_revision_id` — the latest known revision of the entity. If a new one has appeared in the meantime — `OptimisticLockError`. The client re-reads the state and retries.
 
 ### 12.2 Identity
 
-Каждый actor имеет запись в таблице `actor` (отдельно от `agent_definition`):
+Each actor has a record in the `actor` table (separate from `agent_definition`):
 
 ```sql
 CREATE TABLE actor (
@@ -278,25 +278,25 @@ CREATE TABLE actor (
   project_id INTEGER NOT NULL REFERENCES project(row_id),
   kind       TEXT    NOT NULL,    -- 'human'|'agent'|'mcp'|'system'
   handle     TEXT    NOT NULL,    -- 'dakh','task-steward','claude-code'
-  token_hash TEXT,                -- SHA256 для server-profile; NULL для embedded
+  token_hash TEXT,                -- SHA256 for server-profile; NULL for embedded
   created    TEXT    NOT NULL,
   UNIQUE(project_id, kind, handle)
 );
 ```
 
-Embedded-профиль: единственный неявный actor `human:<os-user>` без токена.
-Server-профиль: REST/MCP требуют `Authorization: Bearer <token>`; токен резолвится в `actor.handle`. CLI-локально на сервере — через keyring.
+Embedded profile: a single implicit actor `human:<os-user>` without a token.
+Server profile: REST/MCP require `Authorization: Bearer <token>`; the token resolves to `actor.handle`. CLI locally on the server — via keyring.
 
 ### 12.3 Authz
 
-Перед каждым tool-call:
+Before every tool call:
 
-1. Резолв actor.
-2. Проверка allowed_tools/denied_tools (см. [capabilities/agents-and-skills.md §3](capabilities/agents-and-skills.md)).
-3. Проверка sensitivity_clearance vs target document (см. [standards/sensitive-data.md §3](standards/sensitive-data.md)).
-4. При deny — `AuthDeniedError(code='AUTHZ-001'|'AUTHZ-002')`. Отказы в журнал пока не пишутся: `activity_event` фиксирует только состоявшиеся мутации, а `audit_log` удалён (ADR-012). Гейт неактивен — включается вместе с Bearer-гейтом `/api/v1`.
+1. Resolve the actor.
+2. Check allowed_tools/denied_tools (see [capabilities/agents-and-skills.md §3](capabilities/agents-and-skills.md)).
+3. Check sensitivity_clearance vs target document (see [standards/sensitive-data.md §3](standards/sensitive-data.md)).
+4. On deny — `AuthDeniedError(code='AUTHZ-001'|'AUTHZ-002')`. Denials are not logged yet: `activity_event` records only completed mutations, and `audit_log` is removed (ADR-012). The gate is inactive — it is enabled together with the `/api/v1` Bearer gate.
 
-## 12. Ссылки
+## 12. References
 
 - [VISION.md](VISION.md)
 - [DATA_MODEL.md](DATA_MODEL.md)

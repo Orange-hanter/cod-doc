@@ -19,41 +19,41 @@ related_code:
 
 # Proposal 23 — Cloud decentralized agent plane
 
-> Категория: 🔵 Архитектура · Риск: высокий · Зависимости: 04 run-id,
+> Category: 🔵 Architecture · Risk: high · Dependencies: 04 run-id,
 > 06 checkout, 09 activity, 12 approvals
 >
-> **Статус: 🟠 DEFERRED (2026-09-07)** — зависимости реализованы, но задачи CAP-001…CAP-033
-> отложены до M6 «Hub + кросс-проектность». Приоритет сейчас на adoption (трек C/E Symbiosis).
-> См. [ROADMAP](../docs/system/roadmap/ROADMAP.md) → M6.
+> **Status: 🟠 DEFERRED (2026-09-07)** — dependencies are implemented, but tasks CAP-001…CAP-033
+> are deferred to M6 "Hub + cross-project". Priority now on adoption (track C/E Symbiosis).
+> See [ROADMAP](../docs/system/roadmap/ROADMAP.md) → M6.
 
-## Проблема
+## Problem
 
-Cycle-5 сделал агентский UX task-centric (`agent_pick` → complete), но
-**документация всё ещё не ведётся «только через сервис» в облаке**:
+Cycle-5 made the agent UX task-centric (`agent_pick` → complete), but
+**documentation is still not maintained "only through the service" in the cloud**:
 
-1. Agent profile не умеет писать документы (нет write-тула; CRUD
-   `doc_*` скрыт профилем).
-2. `DocService.patch_section` не экспонирован в MCP — gap относительно
-   capability doc-evolution.
-3. Remote MCP (`streamable-http`) есть, но без auth и с localhost bind.
-4. Session factory привязана к per-project sqlite path на локальном FS.
-5. Несколько ИИ (Cursor Cloud, Claude, daemon) не могут безопасно
-   работать как независимые воркеры против одной облачной SoT.
+1. Agent profile cannot write documents (no write-tool; CRUD
+   `doc_*` is hidden by the profile).
+2. `DocService.patch_section` is not exposed in MCP — a gap relative to
+   the capability doc-evolution.
+3. Remote MCP (`streamable-http`) exists, but without auth and with localhost bind.
+4. Session factory is bound to a per-project sqlite path on local FS.
+5. Multiple AIs (Cursor Cloud, Claude, daemon) cannot safely
+   work as independent workers against one cloud SoT.
 
-## Предложение
+## Proposal
 
-Ввести профиль деплоя **`cloud`** и capability
+Introduce a **`cloud`** deployment profile and the capability
 [cloud-agent-plane](../docs/system/capabilities/cloud-agent-plane.md):
 
-- Один team-узел COD-DOC в облаке (Postgres SoT).
-- Децентрализованные агенты = MCP-клиенты с Bearer → `actor`.
-- Расширить agent surface композитом **`agent_apply`** для doc/task
-  мутаций под checkout (не тащить 80 CRUD-тулов в agent profile).
-- Markdown projection сделать опциональной.
+- One team-node COD-DOC in the cloud (Postgres SoT).
+- Decentralized agents = MCP-clients with Bearer → `actor`.
+- Extend the agent surface with a composite **`agent_apply`** for doc/task
+  mutations under checkout (do not drag 80 CRUD-tools into the agent profile).
+- Make markdown projection optional.
 
-Это **не** multi-tenant SaaS и **не** P2P-федерация (явно out of scope).
+This is **not** multi-tenant SaaS and **not** P2P-federation (explicitly out of scope).
 
-## Дизайн `agent_apply`
+## `agent_apply` design
 
 ```text
 agent_apply(
@@ -69,53 +69,53 @@ agent_apply(
 ) -> {results: [...], run_id, revisions: [...]}
 ```
 
-Инварианты:
+Invariants:
 
-- Caller должен держать checkout на `task_id` (иначе `CheckoutError`).
-- Одна транзакция на вызов; все ops → один `run_id`.
-- Optimistic lock на секциях через `base_revision_id`.
-- Activity event на каждый successful op (proposal 09).
-- Sensitivity/authz до записи (ARCHITECTURE §12.3).
+- Caller must hold a checkout on `task_id` (otherwise `CheckoutError`).
+- One transaction per call; all ops → one `run_id`.
+- Optimistic lock on sections via `base_revision_id`.
+- Activity event per successful op (proposal 09).
+- Sensitivity/authz before write (ARCHITECTURE §12.3).
 
-Agent profile tool list становится:
+Agent profile tool list becomes:
 
 `agent_capabilities`, `agent_pick`, `agent_get`, **`agent_apply`**,
 `agent_report`, `agent_complete`, `agent_release` (7 tools).
 
-## Этапы внедрения
+## Implementation stages
 
-См. [cloud-agent-plane-task-plan.md](../docs/system/roadmap/cloud-agent-plane-task-plan.md)
-секции A–D (CAP-001…CAP-033).
+See [cloud-agent-plane-task-plan.md](../docs/system/roadmap/cloud-agent-plane-task-plan.md)
+sections A–D (CAP-001…CAP-033).
 
-Критический путь: Postgres shared session (CAP-005) → MCP patch
+Critical path: Postgres shared session (CAP-005) → MCP patch
 (CAP-010) → `agent_apply` (CAP-012) → Bearer (CAP-020) → no-FS mode
 (CAP-030).
 
-## Риски
+## Risks
 
-| Риск | Решение |
+| Risk | Solution |
 |------|---------|
-| Раздувание agent profile | Только композит `agent_apply`, не `doc_*` |
-| Ломаем local DX | Auth optional для stdio/embedded |
-| Агенты пишут мимо сервиса в git | Skill + handbook: FS не SoT в cloud |
-| Scope → SaaS | Non-goals в capability §7 |
+| Agent profile bloat | Only the composite `agent_apply`, not `doc_*` |
+| Break local DX | Auth optional for stdio/embedded |
+| Agents write past the service into git | Skill + handbook: FS is not SoT in cloud |
+| Scope → SaaS | Non-goals in capability §7 |
 
 ## Acceptance
 
-- Remote агент без доступа к диску проекта проходит полный doc-цикл
-  через MCP.
-- Два агента на одном cloud node не коррептят один checkout.
-- Спека и код identity совпадают (больше не «только ARCHITECTURE»).
+- A remote agent without access to the project disk goes through the full doc-cycle
+  via MCP.
+- Two agents on one cloud node do not corrupt one checkout.
+- Spec and code identity match (no longer "only ARCHITECTURE").
 
-## Связь с paperclip
+## Relation to paperclip
 
-Не отменяет Sections A–F paperclip-плана: heartbeat/wake/run_id/
-approvals — топливо для cloud workers. Новые agent-features по
-AGENTS.md → мыслить как продолжение task-centric surface (не
-раздувание internal CRUD).
+Does not cancel Sections A–F of the paperclip-plan: heartbeat/wake/run_id/
+approvals — fuel for cloud workers. New agent-features per
+AGENTS.md → think of as a continuation of the task-centric surface (not
+internal-CRD bloat).
 
-## Связь с M6
+## Relation to M6
 
-RFC 23 запланирован к запуску в **M6 «Hub + кросс-проектность»** после
-завершения трека C/E adoption (SYM-*). Задачи CAP-001…CAP-033 не начаты,
-ожидает приоритизации в плане M6.
+RFC 23 is scheduled to launch in **M6 "Hub + cross-project"** after
+completing track C/E adoption (SYM-*). Tasks CAP-001…CAP-033 are not started,
+awaiting prioritization in the M6 plan.

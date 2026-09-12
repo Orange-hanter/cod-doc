@@ -18,32 +18,32 @@ related_docs:
 
 # Capability — Cloud Agent Plane
 
-> COD-DOC как облачный control plane документации: любой ИИ-агент
-> (Cursor, Claude Code, встроенный orchestrator, CI) полностью ведёт
-> docs/tasks через MCP, без общего локального диска. Агенты —
-> децентрализованные воркеры; SoT — БД в облаке.
+> COD-DOC as a cloud control plane for documentation: any AI-agent
+> (Cursor, Claude Code, the built-in orchestrator, CI) fully manages
+> docs/tasks via MCP, without a shared local disk. Agents are
+> decentralized workers; the SoT is the DB in the cloud.
 
-## 1. Проблема
+## 1. The problem
 
-Сегодня COD-DOC уже умеет task-centric agent surface (cycle-5:
-`agent_pick` → work → `agent_complete`) и streamable-http MCP, но
-остаётся **локально-связанным**:
+Today COD-DOC already has a task-centric agent surface (cycle-5:
+`agent_pick` → work → `agent_complete`) and streamable-http MCP, but
+it remains **locally-bound**:
 
-| Факт сегодня | Почему мешает «ИИ ведёт docs в облаке» |
+| Fact today | Why it blocks "AI manages docs in the cloud" |
 |--------------|----------------------------------------|
-| MCP по умолчанию `stdio` на машине разработчика | Удалённый Cursor Cloud / другой хост не подключается |
-| `streamable-http` слушает `127.0.0.1`, без Bearer auth | Нельзя безопасно выставить в сеть |
-| Agent profile = 6 тулов **без записи документов** | Агент закрывает задачу, но не может патчить doc через тот же профиль |
-| `DocService.patch_section` есть, MCP `doc_patch_*` нет | Capability [doc-evolution](doc-evolution.md) обещает MCP-patch; surface отсутствует |
-| `project.root_path` + markdown projection на FS | Облачный узел требует монтирования чужих путей (`docker-compose` с host paths) |
-| Per-project SQLite по умолчанию | Несколько агентов/клиентов не разделяют одну SoT без Postgres |
-| Identity/authz описаны в ARCHITECTURE §12, кода нет | Любой, кто достучался до HTTP, имеет полный write |
+| MCP defaults to `stdio` on the developer's machine | A remote Cursor Cloud / another host cannot connect |
+| `streamable-http` listens on `127.0.0.1`, without Bearer auth | Cannot be safely exposed to the network |
+| Agent profile = 6 tools **without document writes** | The agent closes a task, but cannot patch a doc through the same profile |
+| `DocService.patch_section` exists, MCP `doc_patch_*` does not | The [doc-evolution](doc-evolution.md) capability promises MCP-patch; the surface is missing |
+| `project.root_path` + markdown projection on FS | A cloud node requires mounting foreign paths (`docker-compose` with host paths) |
+| Per-project SQLite by default | Multiple agents/clients do not share one SoT without Postgres |
+| Identity/authz described in ARCHITECTURE §12, no code | Anyone who reaches the HTTP has full write |
 
-Цель capability — закрыть эти разрывы без превращения COD-DOC в
-multi-tenant SaaS (это по-прежнему non-goal, см. VISION §5 и
-proposals/README «Что осталось за скобками»).
+The goal of the capability is to close these gaps without turning COD-DOC into
+a multi-tenant SaaS (this is still a non-goal, see VISION §5 and
+proposals/README "What was left out of scope").
 
-## 2. Целевая модель
+## 2. The target model
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -58,126 +58,126 @@ proposals/README «Что осталось за скобками»).
         │ (MCP client) │  │ (MCP client) │  │ (in-process) │
         └──────────────┘  └──────────────┘  └──────────────┘
                 ▲                 ▲                 ▲
-                │    нет общего диска между агентами │
-                └──────── децентрализованные воркеры ┘
+                │    no shared disk between agents │
+                └──────── decentralized workers ┘
 ```
 
-**Децентрализация** здесь означает:
+**Decentralization** here means:
 
-1. Много независимых ИИ-клиентов подключаются к одному облачному узлу.
-2. Координация — через БД (checkout lock, status machine, activity), не
-   через shared filesystem.
-3. Markdown на диске — **опциональная проекция** (git sync / object
-   storage / local mirror), не обязательное условие работы агента.
-4. Один узел = одна команда/набор проектов (не федерация multi-master и
-   не SaaS-тенанты). Федерация узлов — out of scope этой capability.
+1. Many independent AI-clients connect to one cloud node.
+2. Coordination — via the DB (checkout lock, status machine, activity), not
+   via a shared filesystem.
+3. Markdown on disk — an **optional projection** (git sync / object
+   storage / local mirror), not a prerequisite for the agent to work.
+4. One node = one team/set of projects (not a multi-master federation and
+   not SaaS-tenants). Federation of nodes — out of scope of this capability.
 
-## 3. Контракт для ИИ («полностью через сервис»)
+## 3. The contract for AI ("fully via the service")
 
-Агент **не** редактирует markdown файлы проекта напрямую как SoT.
-Канонический цикл:
+The agent **does not** edit the project's markdown files directly as the SoT.
+The canonical cycle:
 
 ```text
 1. agent_capabilities()
 2. agent_pick(project, agent_id)          # lock + task card + skills
-3. agent_apply / agent_get …              # мутации docs/tasks в БД
+3. agent_apply / agent_get …              # doc/task mutations in the DB
 4. agent_complete | agent_report | agent_release
 ```
 
-Минимальный **agent** surface после расширения (см. task-plan §B):
+The minimal **agent** surface after the extension (see task-plan §B):
 
-| Тул | Роль |
+| Tool | Role |
 |-----|------|
 | `agent_capabilities` | L0 bootstrap |
 | `agent_pick` | checkout + context card |
 | `agent_get` | deep fetch (`full_doc_body`, …) |
-| `agent_apply` | **новое**: атомарные мутации doc/task в рамках checkout |
+| `agent_apply` | **new**: atomic doc/task mutations within a checkout |
 | `agent_report` | progress / blocker / approval |
 | `agent_complete` | done + release |
 | `agent_release` | drop lock |
 
-`agent_apply` композирует существующие сервисы (`DocService.patch_section`,
-`doc_create`, rename, …) и пишет revision + activity + `run_id` в одной
-транзакции. Admin CRUD (`doc_*`, `task_*`) остаётся в `--profile
+`agent_apply` composes existing services (`DocService.patch_section`,
+`doc_create`, rename, …) and writes revision + activity + `run_id` in one
+transaction. Admin CRUD (`doc_*`, `task_*`) stays in `--profile
 standard|full`.
 
-### 3.1 Что считается «успехом полного ведения»
+### 3.1 What counts as "successful full management"
 
-ИИ-агент на чистом проекте, подключённый только к remote MCP:
+An AI-agent on a clean project, connected only to a remote MCP:
 
-1. Берёт ready-задачу через `agent_pick`.
-2. Читает/патчит документы, создаёт связанные docs/tasks.
-3. Эскалирует через `agent_report(kind='approval_request')` при FM.
-4. Закрывает задачу через `agent_complete`.
-5. Не монтирует `root_path` проекта и не пишет в git working tree
-   (проекция — отдельный export-job).
+1. Picks a ready-task via `agent_pick`.
+2. Reads/patches documents, creates related docs/tasks.
+3. Escalates via `agent_report(kind='approval_request')` on FM.
+4. Closes the task via `agent_complete`.
+5. Does not mount the project's `root_path` and does not write to the git working tree
+   (the projection — a separate export-job).
 
-Это усиливает VISION §6.4 («цикл только на COD-DOC-контракте») до
-облачного remote-клиента.
+This strengthens VISION §6.4 ("the cycle only on the COD-DOC contract") up to a
+cloud remote-client.
 
-## 4. Профиль деплоя `cloud`
+## 4. The `cloud` deployment profile
 
-Расширение [ARCHITECTURE.md §8](../ARCHITECTURE.md):
+An extension of [ARCHITECTURE.md §8](../ARCHITECTURE.md):
 
-| Параметр | `embedded` | `server` (сегодня) | `cloud` (цель) |
+| Parameter | `embedded` | `server` (today) | `cloud` (target) |
 |----------|------------|--------------------|----------------|
-| БД | SQLite | Postgres | Postgres (+ pgvector later) |
+| DB | SQLite | Postgres | Postgres (+ pgvector later) |
 | MCP | stdio | stdio / http localhost | streamable-http + TLS + Bearer |
-| REST/Web | optional | on | on, за reverse-proxy |
-| Auth | implicit OS user | token (спека) | token enforced |
-| Projection | обязательный FS mirror | FS volume | optional (export job / git sync) |
+| REST/web | optional | on | on, behind a reverse-proxy |
+| Auth | implicit OS user | token (spec) | token enforced |
+| Projection | mandatory FS mirror | FS volume | optional (export job / git sync) |
 | Agents | 1 local | N local clients | N remote workers |
-| Identity | `human:<os>` | `actor` + token_hash | то же + project-scoped tokens |
+| Identity | `human:<os>` | `actor` + token_hash | same + project-scoped tokens |
 
-Переключение: `COD_DOC_DB_URL=postgresql://…` +
+Switching: `COD_DOC_DB_URL=postgresql://…` +
 `COD_DOC_MCP_TRANSPORT=streamable-http` +
 `COD_DOC_AUTH=required`.
 
-## 5. Безопасность и identity
+## 5. Security and identity
 
-Реализует уже описанный контракт ARCHITECTURE §12:
+Implements the already-described contract of ARCHITECTURE §12:
 
-1. Каждый remote-вызов несёт `Authorization: Bearer <token>`.
-2. Токен → `actor(project_id, kind, handle)`.
+1. Every remote-call carries `Authorization: Bearer <token>`.
+2. Token → `actor(project_id, kind, handle)`.
 3. Authz: allowed_tools / sensitivity_clearance.
-4. Все write → `revision` + `activity` + `run_id` (proposals 04, 09).
-5. Checkout TTL + idempotent `agent_pick` защищают от гонок между
-   воркерами (proposal 06 / уже в коде).
+4. All writes → `revision` + `activity` + `run_id` (proposals 04, 09).
+5. Checkout TTL + idempotent `agent_pick` protect against races between
+   workers (proposal 06 / already in code).
 
-Web UI по-прежнему может стоять за reverse-proxy; MCP — отдельный
-порт/path с тем же token store.
+The Web UI can still sit behind a reverse-proxy; MCP — a separate
+port/path with the same token store.
 
-## 6. Проекции и git (не SoT)
+## 6. Projections and git (not SoT)
 
 - **SoT** = Postgres.
-- **Projection** = артефакт:
-  - on-demand `doc_export` / batch export в volume или object storage;
-  - optional git-sync worker (commit projection → repo), не блокирует
-    agent loop.
-- Drift detection остаётся для узлов, где projection включена; в
-  pure-cloud режиме drift против FS выключен.
+- **Projection** = an artifact:
+  - on-demand `doc_export` / batch export to a volume or object storage;
+  - an optional git-sync worker (commit projection → repo), does not block
+    the agent loop.
+- Drift detection remains for nodes where projection is enabled; in
+  pure-cloud mode drift against FS is off.
 
 ## 7. Non-goals
 
-- Multi-tenant SaaS с биллингом и org-chart (proposals/README).
-- Peer-to-peer федерация нескольких COD-DOC узлов.
-- Замена Plane/Jira / runtime бизнес-логики пользовательского проекта
+- Multi-tenant SaaS with billing and an org-chart (proposals/README).
+- Peer-to-peer federation of several COD-DOC nodes.
+- Replacing Plane/Jira / the runtime business-logic of a user project
   (VISION §5).
-- Обязательный shared NFS между агентами.
+- A mandatory shared NFS between agents.
 
 ## 8. Acceptance (capability-level)
 
-- [ ] Remote MCP client (не на том же хосте) проходит цикл
-      pick → apply(doc patch) → complete против Postgres.
-- [ ] Два параллельных агента с разными `agent_id` не получают один и
-      тот же checkout; второй видит idempotent replay или другую задачу.
-- [ ] Без валидного Bearer write отклоняется (`AuthDeniedError`).
-- [ ] Агент не требует `root_path` на диске сервера для мутации body.
-- [ ] Activity/run_id связывают все мутации одного heartbeat.
-- [ ] Документирован рецепт подключения Cursor Cloud / Claude к
-      `https://<host>/mcp`.
+- [ ] A remote MCP client (not on the same host) goes through the cycle
+      pick → apply(doc patch) → complete against Postgres.
+- [ ] Two parallel agents with different `agent_id` do not get the same
+      checkout; the second sees an idempotent replay or a different task.
+- [ ] Without a valid Bearer a write is rejected (`AuthDeniedError`).
+- [ ] The agent does not require `root_path` on the server disk to mutate a body.
+- [ ] Activity/run_id link all mutations of one heartbeat.
+- [ ] A recipe for connecting Cursor Cloud / Claude to
+      `https://<host>/mcp` is documented.
 
-## 9. Связанные артефакты
+## 9. Related artifacts
 
 - Kickoff: [roadmap/cloud-agent-plane-kickoff-2026-07-29.md](../roadmap/cloud-agent-plane-kickoff-2026-07-29.md)
 - Plan: [roadmap/cloud-agent-plane-task-plan.md](../roadmap/cloud-agent-plane-task-plan.md)

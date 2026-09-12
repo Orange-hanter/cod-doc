@@ -13,33 +13,33 @@ related_docs:
 
 # Capability — Concentrated Context Retrieval
 
-> Получение «минимально достаточного» контекста проекта по запросу. Замена ручному «прочитай весь Docs/obsidian/Modules/…».
+> Getting a "minimally sufficient" context of the project on request. A replacement for the manual "read the entire Docs/obsidian/Modules/…".
 
-## 1. Зачем
+## 1. Why
 
-Агент, начинающий сессию, в Restate тратит огромный бюджет на чтение больших файлов (`Architecture.md` 17K, `SYSTEM_OVERVIEW.md` 73K). Это известная боль (см. `AGENT_START.md`, Snowball Protocol). COD-DOC решает её **структурно**:
+An agent starting a session in Restate spends a huge budget reading large files (`Architecture.md` 17K, `SYSTEM_OVERVIEW.md` 73K). This is a known pain (see `AGENT_START.md`, Snowball Protocol). COD-DOC solves it **structurally**:
 
-- Документ в БД — это набор секций, каждая с anchor, title, body и контекстом (tags, links, story-связи).
-- Запрос на контекст возвращает JSON + цитатные фрагменты, подобранные под заданный token budget.
-- Нет «прочитать всё и выкинуть 90%».
+- A document in the DB is a set of sections, each with an anchor, title, body and context (tags, links, story-ties).
+- A context request returns JSON + quoted fragments, picked for a given token budget.
+- No "read everything and throw out 90%".
 
-Идейная близость: Restate `MASTER.md` `context_depth: L0/L1/L2` формализован в сервисе.
+Conceptual affinity: the Restate `MASTER.md` `context_depth: L0/L1/L2` is formalized in the service.
 
-## 2. Depth-уровни
+## 2. Depth levels
 
-| Level | Что включено | Когда |
+| Level | What is included | When |
 |-------|--------------|-------|
-| `L0` | MASTER + явный target документ (metadata only) | Старт сессии, высокоуровневый обзор |
-| `L1` | L0 + body target + прямые связи (module spec, открытый task-plan, ≤ 3 open questions, ≤ 3 user stories) | Работа внутри одного модуля |
-| `L2` | L1 + `depends_on`-цепочки, cross-module dependencies, соседние стандарты | Глубокая работа с границами |
-| `L3` | L2 + semantic-search top-k по всему корпусу | Только по явному запросу; дорогой |
+| `L0` | MASTER + explicit target document (metadata only) | Session start, high-level overview |
+| `L1` | L0 + body of the target + direct links (module spec, open task-plan, ≤ 3 open questions, ≤ 3 user stories) | Work inside one module |
+| `L2` | L1 + `depends_on`-chains, cross-module dependencies, neighboring standards | Deep work on boundaries |
+| `L3` | L2 + semantic-search top-k over the whole corpus | Only on explicit request; expensive |
 
-> L3 fail-open: если эмбеддер не настроен или недоступен, `related.semantic`
-> приходит пустым, а не роняет ответ. Проверка — `cod-doc embed status`
-> (резолв без сети) и `cod-doc embed probe` (живой вызов); провайдер
-> эмбеддингов настраивается независимо от LLM, см. HANDBOOK §10.4.
+> L3 fail-open: if the embedder is not configured or unavailable, `related.semantic`
+> comes back empty, rather than failing the response. The check is `cod-doc embed status`
+> (resolve without network) and `cod-doc embed probe` (a live call); the embedding
+> provider is configured independently of the LLM, see HANDBOOK §10.4.
 
-## 3. Контракт `context.get`
+## 3. The `context.get` contract
 
 ```json
 {
@@ -53,7 +53,7 @@ related_docs:
 }
 ```
 
-Ответ:
+Response:
 
 ```json
 {
@@ -82,64 +82,64 @@ related_docs:
 }
 ```
 
-## 4. Алгоритм сборки (L1)
+## 4. The assembly algorithm (L1)
 
-1. Резолв target.
-2. Pull target body + frontmatter.
-3. Если target — `module` или `document`:
-   - включить plan-progress: Progress Overview (из `plan_totals`), Next Batch (из `ready_tasks`).
-   - включить open questions для модуля (документ с type=`guide`, tag=`open-questions`).
-   - включить ≤ 3 user stories, linked через `story_link`.
-4. Если target — `task`:
-   - include section body + верхние 2 задачи depends_on + 2 reverse-dependents.
-5. Сборка ответа, compress-stages:
-   - a. Полный body target-секций (не урезается).
-   - b. Для связанных документов — `summary` field или первые 600 символов.
-   - c. Если бюджет превышен — секции связанных сортируются по tag-match, убираются с хвоста.
-6. Меткой `truncated: true` маркируется, если что-то обрезано.
+1. Resolve the target.
+2. Pull the target body + frontmatter.
+3. If the target is a `module` or `document`:
+   - include plan-progress: Progress Overview (from `plan_totals`), Next Batch (from `ready_tasks`).
+   - include open questions for the module (document with type=`guide`, tag=`open-questions`).
+   - include ≤ 3 user stories, linked via `story_link`.
+4. If the target is a `task`:
+   - include the section body + the top 2 depends_on tasks + 2 reverse-dependents.
+5. Assemble the response, compress-stages:
+   - a. Full body of the target-sections (not trimmed).
+   - b. For related documents — the `summary` field or the first 600 characters.
+   - c. If the budget is exceeded — sections of related ones are sorted by tag-match, removed from the tail.
+6. The `truncated: true` flag is set if something was trimmed.
 
 ## 5. Semantic search (L3)
 
-Используется только по явному запросу.
+Used only on explicit request.
 
-- Embeddings хранятся per-section (OpenAI/Anthropic-compatible или local-BGE, выбор — в конфиге).
-- Индекс обновляется асинхронно по событию `RevisionCommitted`.
-- Запрос возвращает top-k секций (default k=5) с distances и excerpts.
-- Не ходит в LLM-провайдер «на ходу» — всё локально через `sqlite-vss` / `pgvector`.
+- Embeddings are stored per-section (OpenAI/Anthropic-compatible or local-BGE, the choice is in the config).
+- The index is updated asynchronously on the `RevisionCommitted` event.
+- The query returns top-k sections (default k=5) with distances and excerpts.
+- Does not hit the LLM-provider "on the fly" — everything is local via `sqlite-vss` / `pgvector`.
 
-Идея скопирована у Restate `tools/lightrag`, но без внешнего сервиса — встроенный индекс сохраняет целостность.
+The idea is borrowed from the Restate `tools/lightrag`, but without an external service — the built-in index preserves integrity.
 
-## 6. Поверхности
+## 6. Surfaces
 
-| Поверхность | Команда |
+| Surface | Command |
 |-------------|---------|
 | CLI | `cod-doc context get --target module:M1-auth --depth L1 --budget 8000` |
-| MCP | `context.get(...)` — основной интерфейс для агентов |
+| MCP | `context.get(...)` — the main interface for agents |
 | REST | `GET /api/v1/context?target=...&depth=...` |
 
-## 7. Результат, пригодный для LLM-prompt
+## 7. A result suitable for an LLM-prompt
 
-Отдельная команда `cod-doc context prompt --target module:M1-auth --depth L1`:
+A separate command `cod-doc context prompt --target module:M1-auth --depth L1`:
 
-- Возвращает готовый markdown, где секции помечены заголовками `# Target`, `# Related Docs`, `# Task Progress`.
-- Формат стабильный → агент умеет парсить.
+- Returns a ready markdown, where sections are marked with headings `# Target`, `# Related Docs`, `# Task Progress`.
+- The format is stable → the agent knows how to parse it.
 
-## 8. Кэширование
+## 8. Caching
 
-- Ответ `context.get` кэшируется по `(target, depth, content_hash)`. Cache invalidation — при появлении новой revision на любом included объекте.
-- TTL можно отключить в конфиге (`cache.context.ttl`), в embedded-профиле кэш по умолчанию — on-disk sqlite KV.
+- The `context.get` response is cached by `(target, depth, content_hash)`. Cache invalidation — when a new revision appears on any included object.
+- TTL can be disabled in the config (`cache.context.ttl`), in the embedded profile the cache is by default on-disk sqlite KV.
 
-## 9. Интеграция с Snowball Protocol (наследие cod-doc)
+## 9. Integration with the Snowball Protocol (cod-doc legacy)
 
-Текущий `MASTER.md.j2` из cod-doc описывает уровни L0-L2 декларативно. В новом дизайне:
+The current `MASTER.md.j2` from cod-doc describes the L0-L2 levels declaratively. In the new design:
 
-- MASTER по-прежнему существует и рендерится из БД.
-- Но его «context_depth» больше не нужно читать руками — агент зовёт `context.get(depth=...)`, и ответ уже соответствует декларативному протоколу.
-- Поле `MASTER.meta.context_depth` остаётся — для совместимости и как отображение того, что сейчас загружено в последнюю сессию.
+- MASTER still exists and is rendered from the DB.
+- But its "context_depth" no longer needs to be read manually — the agent calls `context.get(depth=...)`, and the response already matches the declarative protocol.
+- The `MASTER.meta.context_depth` field remains — for compatibility and as a reflection of what is currently loaded into the last session.
 
-## 10. Пример использования агентом
+## 10. Example of use by an agent
 
-Запрос: «добавить rate-limit на logout в M1 AUTH».
+Request: "add a rate-limit on logout in M1 AUTH".
 
 ```
 1. context.get(target=module:M1-auth, depth=L1)
@@ -152,10 +152,10 @@ related_docs:
                      new_body=... rate-limit mention...)
 ```
 
-Всё — без чтения 70K байт и без ручного выбора «что релевантно».
+All — without reading 70K bytes and without a manual choice of "what is relevant".
 
-## 11. Гарантии
+## 11. Guarantees
 
-- Respuesta не включает контент других проектов, если target не cross-project.
-- Respuesta не включает ссылок на приватные секции (`audience: [internal]`) если вызов — `mcp:<external-client>`.
-- Size bound: если `truncated: true`, `meta.missing_hints[]` подсказывает, какие слоты выкинуты; агент может запросить их явным follow-up.
+- The response does not include content from other projects, unless the target is cross-project.
+- The response does not include links to private sections (`audience: [internal]`) if the call is `mcp:<external-client>`.
+- Size bound: if `truncated: true`, `meta.missing_hints[]` suggests which slots were dropped; the agent can request them with an explicit follow-up.

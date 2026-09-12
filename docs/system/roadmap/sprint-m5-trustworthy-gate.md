@@ -15,166 +15,178 @@ related_docs:
   - ../releases/2026-08-30-sprint-m4.md
 ---
 
-# Sprint M5 — «Гейт, которому можно верить + симбиоз в бою»
+# Sprint M5 — "A gate you can trust + symbiosis in the field"
 
-> **Принцип (решение владельца 2026-08-30, продлевается на M5).** Код пишет
-> AI-агент — сроки и окна не планируются. Спринт = **упорядоченная очередь
-> работ** с контрактами и критерием выхода. Порядок важен, даты — нет.
+> **Principle (owner decision 2026-08-30, extended to M5).** Code is written
+> by an AI agent — deadlines and windows are not planned. A sprint is an
+> **ordered queue of work** with contracts and an exit criterion. Order
+> matters, dates do not.
 >
-> **Не source of truth.** Статусы задач — в БД (план `adoption-2026-08`);
-> приоритеты — [ROADMAP.md](ROADMAP.md). У каждой задачи очереди в БД лежит
-> task_doc с ключом **`contract`** — скоуп, границы, acceptance, верификация,
-> риск. Читать перед стартом задачи: `task_doc_get(<ID>, key="contract")`.
+> **Not source of truth.** Task statuses are in the DB (plan `adoption-2026-08`);
+> priorities are in [ROADMAP.md](ROADMAP.md). Each queue task has a task_doc in
+> the DB with the key **`contract`** — scope, boundaries, acceptance,
+> verification, risk. Read it before starting the task:
+> `task_doc_get(<ID>, key="contract")`.
 
-## 0. Ground truth на старт спринта (сверено 2026-09-02)
+## 0. Ground truth at sprint start (reconciled 2026-09-02)
 
-Сверка сделана прогоном и запросами к живой БД, не пересказом прошлых отчётов.
+The reconciliation was done by running and querying the live DB, not by
+paraphrasing past reports.
 
-| Измерение | Значение |
+| Measurement | Value |
 |---|---|
-| Локальный прогон | **1 failed, 1629 passed** (748 s) |
-| CI на main | **10 прогонов из 10 — failure**, с 2026-05-06 по 2026-09-02. success — ноль |
+| Local run | **1 failed, 1629 passed** (748 s) |
+| CI on main | **10 runs out of 10 — failure**, from 2026-05-06 to 2026-09-02. success — zero |
 
-> **Обновление 2026-09-03 — пункты 1–4 очереди закрыты.** Первый зелёный прогон
-> CI за историю ветки: [run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088),
-> `conclusion: success`, все 7 джоб — включая `Docker build`, месяцами
-> `skipped`. Прогон 1639 passed. Задачи ADO-070 (`bcb32f2`), ADO-069, ADO-066,
-> ADO-068 (`3de0fd5`) → done, доказательства — в task_doc `verification`.
+> **Update 2026-09-03 — queue items 1–4 are closed.** The first green CI run
+> in the branch's history: [run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088),
+> `conclusion: success`, all 7 jobs — including `Docker build`, for months
+> `skipped`. The run is 1639 passed. Tasks ADO-070 (`bcb32f2`), ADO-069, ADO-066,
+> ADO-068 (`3de0fd5`) → done, evidence in task_doc `verification`.
 >
-> Починка гейта вскрыла ещё два слоя, невидимых, пока джоба умирала на alembic
-> за полторы минуты (раздел «Риски» это и предсказывал):
-> **(а)** прогон не был герметичным — workflow сам выставляет
-> `COD_DOC_API_KEY`, а `Config` читает env по префиксу `COD_DOC_`, поэтому
-> тесты «ключ не настроен» падали только в CI; плюс `timeout-minutes: 10` при
-> прогоне ~11 минут убивал джобу до печати трейсбеков;
-> **(б)** три теста спавнили MCP-сервер хардкодным `.venv/bin/python`, а
-> FastAPI 0.141 обернул роуты в `_IncludedRouter` без `.path` — из-за чего
-> `_real_web_routes()` молча возвращал пустое множество и advisory-джоба
-> «Web routes drift» была зелёной впустую. Ложное зелёное поверх красного
-> гейта — отдельный урок спринта.
+> Fixing the gate revealed two more layers that were invisible while the job
+> was dying on alembic in under a minute and a half (the "Risks" section
+> predicted exactly this):
+> **(a)** the run was not hermetic — the workflow itself sets
+> `COD_DOC_API_KEY`, and `Config` reads env by the `COD_DOC_` prefix, so the
+> "key not configured" tests failed only in CI; plus `timeout-minutes: 10`
+> with a ~11-minute run killed the job before tracebacks were printed;
+> **(b)** three tests spawned an MCP server with a hardcoded `.venv/bin/python`,
+> and FastAPI 0.141 wrapped routes in `_IncludedRouter` without `.path` — so
+> `_real_web_routes()` silently returned an empty set and the advisory job
+> "Web routes drift" was green in vain. A false green over a red gate is a
+> separate lesson of the sprint.
 | Drift cod-doc | 131 in_sync, 1 edited_in_place (`CLAUDE.md`), 0 missing |
-| План `adoption-2026-08` | 66 done / 82 |
-| Задачи проекта | 265 всего · 245 done · 15 pending (до этого планирования) |
-| `revision.run_id` | 2004 строки, NULL — **2004 (100%)** |
-| `activity_event.run_id` | 326 строк, NULL — **326 (100%)** |
-| `audit_log` | **0 строк, 0 писателей** |
-| `~/.cod-doc/config.yaml` | тестовые значения + 2 pytest-каталога; `cod-doc` не зарегистрирован |
+| Plan `adoption-2026-08` | 66 done / 82 |
+| Project tasks | 265 total · 245 done · 15 pending (before this planning) |
+| `revision.run_id` | 2004 rows, NULL — **2004 (100%)** |
+| `activity_event.run_id` | 326 rows, NULL — **326 (100%)** |
+| `audit_log` | **0 rows, 0 writers** |
+| `~/.cod-doc/config.yaml` | test values + 2 pytest directories; `cod-doc` not registered |
 
-### Что эта сверка изменила в картине мира
+### What this reconciliation changed in the worldview
 
-M4 закрылся на утверждении «гейты зелёные». Утверждение верно только про
-локальный прогон. **Реальный CI не был зелёным ни разу за историю ветки** —
-и, значит, пункт «гейты зелёные» в DoD спринтов M1…M4 не был проверен ничем,
-кроме ноутбука.
+M4 closed on the claim "gates are green". The claim is only true for the
+local run. **Real CI was never green in the branch's history** — and,
+therefore, the "gates green" item in the DoD of sprints M1…M4 was verified by
+nothing but a laptop.
 
-Четыре находки этого планирования складываются в один сюжет:
+Four findings of this planning add up to one story:
 
-- **ADO-070** — CI красный 4 месяца (`alembic` не на PATH раннера).
-- **ADO-069** — единственный красный тест локально: негативный кейс отстал от
-  адаптера v2, приехавшего тем же коммитом (SYM-009).
-- **ADO-066** — `capabilities` / `tool_search` / `tools_diff` падают под живым
-  MCP-сервером; тесты зовут их синхронно и потому не видят.
-- **ADO-068** — тесты пишут в реальный `~/.cod-doc/config.yaml`; регресс F5.
+- **ADO-070** — CI red for 4 months (`alembic` not on the runner's PATH).
+- **ADO-069** — the only red test locally: a negative case lagged behind the
+  v2 adapter that arrived in the same commit (SYM-009).
+- **ADO-066** — `capabilities` / `tool_search` / `tools_diff` fail under a
+  live MCP server; the tests call them synchronously and so do not see it.
+- **ADO-068** — tests write to the real `~/.cod-doc/config.yaml`; regression
+  of F5.
 
-Сюжет: **тест-окружение и боевое разошлись в обе стороны.** Тесты не видят
-боевых дефектов (ADO-066) и при этом пишут в боевое состояние (ADO-068);
-гейт, который должен был это ловить, не работает (ADO-070) и не проверяется
-(ADO-069). Это тот же класс, что F7 (`doc export` портил документы) — дефект,
-видимый только при реальном использовании, найденный за час работы руками
-против 1630 зелёных тестов.
+The story: **the test environment and production diverged in both
+directions.** Tests do not see production defects (ADO-066) and at the same
+time write to production state (ADO-068); the gate that was supposed to
+catch this does not work (ADO-070) and is not checked (ADO-069). This is the
+same class as F7 (`doc export` was corrupting documents) — a defect visible
+only in real use, found in an hour of manual work against 1630 green tests.
 
-## 1. Очередь (порядок = приоритет)
+## 1. Queue (order = priority)
 
-Контракт каждой задачи — в БД, `task_doc key="contract"`.
+The contract of each task is in the DB, `task_doc key="contract"`.
 
-| № | Задача | Приоритет | Суть |
+| № | Task | Priority | Essence |
 |---|---|---|---|
-| 1 | **ADO-070** | critical | Сделать CI гейтом: `alembic` не на PATH, первый зелёный прогон за 4 месяца |
-| 2 | **ADO-069** | critical | Единственный красный тест локально (v2-кейс отстал от SYM-009) |
-| 3 | **ADO-068** | critical | Тесты пишут в реальный конфиг; `CONFIG_DIR` заморожен на импорте; регресс F5 |
-| 4 | **ADO-066** | critical | `capabilities`/`tool_search`/`tools_diff` падают под живым сервером |
-| 5 | **ADO-067** | high | `task_update` (description/acceptance/priority) в MCP и CLI |
-| 6 | **ADO-065** | high | Разбор боевого прогона E5-C: стоимость/латентность по ролям |
-| 7 | **SYM-010** | medium | `ctx drift --changed-files` → PR-комментарий Orakul (RFC 22, фаза 4a) |
-| 8 | **ADO-044** | medium | Провенанс мутаций: run_id + audit_log + actor_kind — ADR «реализовать или снять» |
+| 1 | **ADO-070** | critical | Make CI a gate: `alembic` not on PATH, the first green run in 4 months |
+| 2 | **ADO-069** | critical | The only red test locally (v2 case lagged behind SYM-009) |
+| 3 | **ADO-068** | critical | Tests write to the real config; `CONFIG_DIR` frozen at import; regression of F5 |
+| 4 | **ADO-066** | critical | `capabilities`/`tool_search`/`tools_diff` fail under a live server |
+| 5 | **ADO-067** | high | `task_update` (description/acceptance/priority) in MCP and CLI |
+| 6 | **ADO-065** | high | Field-run analysis of E5-C: cost/latency by role |
+| 7 | **SYM-010** | medium | `ctx drift --changed-files` → Orakul PR comment (RFC 22, phase 4a) |
+| 8 | **ADO-044** | medium | Mutation provenance: run_id + audit_log + actor_kind — ADR "implement or lift" |
 
-**№1–2 идут парой:** вместе они дают первый зелёный прогон CI. Пока его нет,
-формулировка «гейт зелёный» в DoD остальных задач ничего не значит.
+**№1–2 go as a pair:** together they give the first green CI run. Without it,
+the "gate is green" wording in the DoD of the other tasks means nothing.
 
-**№1–6 — тело спринта.** №7–8 — хвост: берутся, если очередь дошла.
+**№1–6 — the body of the sprint.** №7–8 — the tail: taken if the queue
+reaches them.
 
-### Вне скоупа M5 (сознательно)
+### Out of scope for M5 (by design)
 
-- **ADO-042** (SQL из mcp/tools → repositories), **ADO-045** (DATA_MODEL ↔ 7-state),
-  **ADO-046** (server_default), **ADO-047** (FTS5 Postgres), **ADO-048**
-  (checkout-поля в домене), **ADO-049** (optimistic locking web),
-  **ADO-050** (статус-машина DocumentStatus) — бэклог секции D.
-- **ADO-014** (project-bootstrap doc) — low, опортунистично.
-- **SYM-011** (кросс-проектность) — low, по спросу.
-- **STB-023** (`activity_subscribe`) — держится закрытым намеренно.
-- **Трек B** — отбракован (ADO-056), не переоткрывать.
+- **ADO-042** (SQL from mcp/tools → repositories), **ADO-045** (DATA_MODEL ↔
+  7-state), **ADO-046** (server_default), **ADO-047** (FTS5 Postgres),
+  **ADO-048** (checkout fields in the domain), **ADO-049** (optimistic
+  locking web), **ADO-050** (DocumentStatus state machine) — section D
+  backlog.
+- **ADO-014** (project-bootstrap doc) — low, opportunistic.
+- **SYM-011** (cross-project) — low, on demand.
+- **STB-023** (`activity_subscribe`) — kept closed intentionally.
+- **Track B** — rejected (ADO-056), do not reopen.
 
-## 2. Консолидация бэклога (выполнена 2026-09-02)
+## 2. Backlog consolidation (done 2026-09-02)
 
-- **ADO-043** (M8, мёртвая `audit_log`) и **ADO-051** (M18, `actor_kind`
-  startswith-эвристика) → `cancelled`, свёрнуты в **ADO-044** «провенанс
-  мутаций». Три находки — один контракт, одно решение, один ADR. Тексты
-  находок сохранены в описании ADO-044. Прецедент склейки: ADO-040
-  (M4+M5+M15), ADO-045 (M10+M11).
-- Заведены **ADO-066, ADO-067, ADO-068, ADO-069, ADO-070** — все с замерами,
-  а не с формулировками «кажется, сломано».
-- Каждой задаче очереди приписан `task_doc key="contract"`.
+- **ADO-043** (M8, dead `audit_log`) and **ADO-051** (M18, `actor_kind`
+  startswith heuristic) → `cancelled`, folded into **ADO-044** "mutation
+  provenance". Three findings — one contract, one decision, one ADR. The
+  finding texts are preserved in the description of ADO-044. Precedent for
+  gluing: ADO-040 (M4+M5+M15), ADO-045 (M10+M11).
+- **ADO-066, ADO-067, ADO-068, ADO-069, ADO-070** were created — all with
+  measurements, not with "seems broken" wordings.
+- Each queue task is assigned a `task_doc key="contract"`.
 
-Итог: 15 pending → 18 pending, но состав другой — четыре critical-дефекта,
-найденных замером, вместо десяти разрозненных findings годичной давности.
+Result: 15 pending → 18 pending, but the composition is different — four
+critical defects found by measurement, instead of ten scattered findings a
+year old.
 
-**Новый ключ task_doc — `contract`.** Раньше были `design` (до), `verification`
-(после), `acceptance` (решение). `contract` фиксирует границы работы до старта:
-что входит, что НЕ входит, чем доказываем. Вводится этим спринтом.
+**The new task_doc key is `contract`.** Previously there were `design`
+(before), `verification` (after), `acceptance` (decision). `contract` fixes
+the boundaries of the work before the start: what is included, what is NOT
+included, how it is proven. Introduced by this sprint.
 
-## 3. Критерий выхода
+## 3. Exit criterion
 
-> **Спринт закрыт 2026-09-06.** Все шесть пунктов выполнены; очередь пройдена
-> целиком, включая хвост №7–8. Разбор —
-> [audit-отчёт M5](../audit/2026-09-06-sprint-m5-trustworthy-gate.md).
+> **Sprint closed 2026-09-06.** All six items are fulfilled; the queue was
+> walked through completely, including the tail №7–8. Breakdown —
+> [M5 audit report](../audit/2026-09-06-sprint-m5-trustworthy-gate.md).
 
-1. **Зелёный прогон CI на main** — со ссылкой на run id. Это главный критерий:
-   без него остальные пункты недоказуемы.
-2. `capabilities` отвечает через живой MCP-сервер.
-3. Реальный `~/.cod-doc/config.yaml` не меняется прогоном тестов; `cod-doc`
-   зарегистрирован.
-4. Грумминг бэклога выполним через MCP и CLI без скриптов в service-слой.
-5. Разбор E5-C — артефакт с таблицей по ролям, findings F1–F5 разведены.
-6. Audit-отчёт M5 (active, в БД), ROADMAP обновлён.
+1. **Green CI run on main** — with a link to the run id. This is the main
+   criterion: without it the other items are unprovable.
+2. `capabilities` responds through a live MCP server.
+3. The real `~/.cod-doc/config.yaml` is not changed by a test run; `cod-doc`
+   is registered.
+4. Backlog grooming is doable via MCP and CLI without scripts in the service
+   layer.
+5. E5-C analysis — an artifact with a table by role, findings F1–F5 are
+   resolved.
+6. M5 audit report (active, in the DB), ROADMAP updated.
 
-## 4. Порядок исполнения
+## 4. Execution order
 
-1. Оформление: этот sprint-док + audit-отчёт M4 + правки ROADMAP — один коммит.
-2. №1 → №8 строго по очереди; каждая задача `task_checkout` → `task_complete`
-   с `commit_sha`. Баг закрывается только после красного прогона ДО фикса
-   (правило AGENTS.md).
-3. Перед стартом задачи — прочитать её `contract`; если реальность разошлась
-   с контрактом, править контракт, а не молча менять скоуп.
-4. Финал: гейты (теперь включая CI), audit-отчёт, ROADMAP, коммит.
+1. Setup: this sprint doc + M4 audit report + ROADMAP edits — one commit.
+2. №1 → №8 strictly in order; each task `task_checkout` → `task_complete`
+   with `commit_sha`. A bug is closed only after a red run BEFORE the fix
+   (AGENTS.md rule).
+3. Before starting a task — read its `contract`; if reality diverged from
+   the contract, edit the contract, do not silently change the scope.
+4. Final: gates (now including CI), audit report, ROADMAP, commit.
 
-## 5. Риски
+## 5. Risks
 
-- **Зелёный CI вскроет новый слой дефектов**, невидимых локально: CI ставит
-  ruff без пина и приносит новые правила (9×RUF036, redundant-cast — замечено
-  2026-08-26). Это не повод откладывать: именно это гейт и обязан ловить.
-  Если объём велик — фиксируем списком и приоритизируем отдельно.
-- **ADO-068 не воспроизводится с ходу**: полный прогон 2026-09-02 mtime
-  реального конфига не изменил. Триггер условный; первый шаг задачи — найти
-  путь записи, а не чинить вслепую.
-- **SYM-010 зависит от чужого PR-потока** (Orakul). Пусто — задача переносится,
-  спринт не блокируется. Тот же риск, что был у SYM-009 в M4.
+- **A green CI will reveal a new layer of defects** invisible locally: CI
+  installs ruff without a pin and brings new rules (9×RUF036,
+  redundant-cast — noted 2026-08-26). This is not a reason to postpone: this
+  is exactly what the gate is supposed to catch. If the volume is large —
+  record as a list and prioritize separately.
+- **ADO-068 does not reproduce offhand**: the full run of 2026-09-02 did not
+  change the mtime of the real config. The trigger is conditional; the first
+  step of the task is to find the write path, not to fix blindly.
+- **SYM-010 depends on someone else's PR flow** (Orakul). Empty — the task
+  is moved, the sprint is not blocked. The same risk SYM-009 had in M4.
 
 ## 6. Definition of Done
 
-- [ ] Каждая задача очереди прошла `task_checkout` → `task_complete` с `commit_sha`.
-- [x] **Зелёный прогон CI на main** — не локальный прогон, а run id. *(run 33765619088, `conclusion: success`, 2026-09-03; все 7 джоб)*
-- [ ] Каждый баг закрыт с приложенным красным прогоном ДО фикса.
-- [ ] Правки трекаемых `.md` импортированы в тех же коммитах; финальный
-      `doc drift --all` — 100% in_sync.
-- [ ] `ruff` + `mypy` + `pytest` зелёные локально; ratchet не вырос.
-- [ ] Audit-отчёт M5 — status active, в БД, со ссылками на коммиты.
+- [ ] Each queue task went through `task_checkout` → `task_complete` with `commit_sha`.
+- [x] **Green CI run on main** — not a local run, but a run id. *(run 33765619088, `conclusion: success`, 2026-09-03; all 7 jobs)*
+- [ ] Each bug closed with an attached red run BEFORE the fix.
+- [ ] Edits of tracked `.md` are imported in the same commits; the final
+      `doc drift --all` is 100% in_sync.
+- [ ] `ruff` + `mypy` + `pytest` green locally; ratchet did not grow.
+- [ ] M5 audit report — status active, in the DB, with links to commits.

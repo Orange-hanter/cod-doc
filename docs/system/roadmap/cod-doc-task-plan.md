@@ -13,8 +13,8 @@ source_of_truth:
 
 # COD-DOC — Bootstrap Execution Plan
 
-> Dogfood нового стандарта. План внедрения COD-DOC разбит на секции и задачи согласно [standards/task-plan.md](../standards/task-plan.md).
-> Источник истины — БД (после того, как этап A будет готов). До тех пор — этот markdown.
+> Dogfooding the new standard. The COD-DOC rollout plan is split into sections and tasks per [standards/task-plan.md](../standards/task-plan.md).
+> The source of truth is the DB (after stage A is ready). Until then — this markdown.
 
 ## Navigation
 
@@ -36,43 +36,43 @@ source_of_truth:
 | G: Hardening & DevX | inline | 5 | 5 | 0 | ✅ done |
 | **TOTAL**   |        | **31** | **28** | **3** | |
 
-> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): сверка с кодом исправила устаревший учёт. **Закрыты в коде, ранее висели pending:** COD-033 (`context_tools.py` + `context_service.py` L0/L1), COD-040 (FTS5 search), COD-041 (ContextService L0/L1). **Реально остаются открытыми** → трекаются в плане `stabilization-2026-06`: COD-042/043 (ContextService L2/L3 семантика — сейчас заглушки, A1-4). COD-051 (Restate importer) — код есть и работает (`services/restate_importer.py`), помечен done.
+> **Status reconciliation 2026-06-05** (see [ROADMAP](ROADMAP.md)): reconciliation with the code corrected the stale accounting. **Closed in code, previously hung as pending:** COD-033 (`context_tools.py` + `context_service.py` L0/L1), COD-040 (FTS5 search), COD-041 (ContextService L0/L1). **Actually remain open** → tracked in the plan `stabilization-2026-06`: COD-042/043 (ContextService L2/L3 semantics — currently stubs, A1-4). COD-051 (Restate importer) — the code exists and works (`services/restate_importer.py`), marked done.
 >
-> **STB-014 closure 2026-06-14:** COD-052 (freeze + accept flow) закрыт. Сервис-слой
-> (`plan_service.freeze_projection`, `doc_service.accept`) уже существовал; добавлена
-> недостающая user-facing surface: MCP-тулы `plan_freeze` / `doc_accept` (каталог
-> 101→103) и CLI `cod-doc plan freeze` / `cod-doc doc accept`. Rollback документа уже
-> покрыт `revision_revert`.
+> **STB-014 closure 2026-06-14:** COD-052 (freeze + accept flow) closed. The service layer
+> (`plan_service.freeze_projection`, `doc_service.accept`) already existed; the missing
+> user-facing surface was added: MCP tools `plan_freeze` / `doc_accept` (catalog
+> 101→103) and CLI `cod-doc plan freeze` / `cod-doc doc accept`. Document rollback is
+> already covered by `revision_revert`.
 
 ## Gap Analysis Summary
 
-### Уже есть в cod-doc
+### Already in cod-doc
 
-- Проектный каркас (`cod_doc/core/project.py`), базовая модель Task, wizard, TUI.
-- MCP-сервер-заготовка (`cod_doc/mcp/server.py`).
-- REST API caркас (`cod_doc/api/`).
-- Агент (`cod_doc/agent/orchestrator.py`).
+- Project scaffold (`cod_doc/core/project.py`), the basic Task model, wizard, TUI.
+- An MCP server stub (`cod_doc/mcp/server.py`).
+- A REST API scaffold (`cod_doc/api/`).
+- The agent (`cod_doc/agent/orchestrator.py`).
 - Templates `MASTER.md.j2`.
 
-### Чего нет
+### What is missing
 
-- БД-схема из [DATA_MODEL.md](../DATA_MODEL.md).
-- Сервисный слой (Doc/Plan/Task/Link/Story/Revision/Context).
-- Валидация формата task-plan.
-- Автолинковка, section-парсинг, embeddings.
-- CLI/MCP-тулы целевого пакета.
-- Импортёр Restate.
+- The DB schema from [DATA_MODEL.md](../DATA_MODEL.md).
+- The service layer (Doc/Plan/Task/Link/Story/Revision/Context).
+- Task-plan format validation.
+- Auto-linking, section parsing, embeddings.
+- CLI/MCP tools of the target package.
+- The Restate importer.
 
 ## Next Batch
 
-Sections A–D (кроме COD-033) и COD-040 закрыты. CLI + MCP-тулы + embeddings pipeline готовы — система готова к dogfood (задачи хранятся в БД). Оставшиеся задачи: ContextService, Restate importer, freeze-flow.
+Sections A–D (except COD-033) and COD-040 are closed. CLI + MCP tools + the embeddings pipeline are ready — the system is ready for dogfooding (tasks are stored in the DB). Remaining tasks: ContextService, Restate importer, freeze-flow.
 
-- **COD-041** — Implement: ContextService L0/L1 — разблокирует COD-033 (MCP context.get) и COD-042
+- **COD-041** — Implement: ContextService L0/L1 — unblocks COD-033 (MCP context.get) and COD-042
 - **COD-033** — Implement: MCP tool context.get — depends on COD-041
-- **COD-050** — Test: frontmatter/task-plan parser (property-based) — нет зависимостей, параллельно
-- **COD-051** — Implement: Restate importer — depends on COD-032 + COD-050; нужен для bulk-переноса markdown task-plan'ов в БД
+- **COD-050** — Test: frontmatter/task-plan parser (property-based) — no dependencies, in parallel
+- **COD-051** — Implement: Restate importer — depends on COD-032 + COD-050; needed for a bulk transfer of markdown task-plans into the DB
 - **COD-052** — Implement: projection freeze + accept flow — depends on COD-023 + COD-051
-- **COD-042, COD-043** — ContextService L2/L3 + local torch backend — пониженный приоритет
+- **COD-042, COD-043** — ContextService L2/L3 + local torch backend — lowered priority
 
 ## Dependency Graph
 
@@ -160,13 +160,13 @@ affected_files:
   - cod_doc/infra/db.py
 ```
 
-**Description:** Поднять SQLAlchemy + Alembic. Создать таблицы `project`, `document`, `section`, `link` согласно [DATA_MODEL.md §3](../DATA_MODEL.md). Поддержать оба диалекта (SQLite/Postgres) — различие только в типах JSON.
+**Description:** Bring up SQLAlchemy + Alembic. Create the tables `project`, `document`, `section`, `link` per [DATA_MODEL.md §3](../DATA_MODEL.md). Support both dialects (SQLite/Postgres) — the difference is only in JSON types.
 
 **Acceptance:**
-- `alembic upgrade head` проходит на чистом SQLite и на чистом Postgres.
-- Базовые CRUD-операции через репозиторий (insert/select/update) покрыты smoke-тестами.
+- `alembic upgrade head` passes on a clean SQLite and on a clean Postgres.
+- Basic CRUD operations through the repository (insert/select/update) are covered by smoke tests.
 
-> ✅ **Implemented 2026-04-19** (commit `pending`): SQLAlchemy 2.0 + Alembic, схема §3.1-§3.4 (project/document/section/link с sensitivity, content_hash, preamble), репозитории Project/Document/Section, smoke-тесты `tests/infra/test_db_smoke.py` — 5/5 passed. Postgres-проверка отложена до фактического деплоя; SQL-диалект-нейтральный код.
+> ✅ **Implemented 2026-04-19** (commit `pending`): SQLAlchemy 2.0 + Alembic, schema §3.1-§3.4 (project/document/section/link with sensitivity, content_hash, preamble), repositories Project/Document/Section, smoke tests `tests/infra/test_db_smoke.py` — 5/5 passed. Postgres check deferred until actual deployment; SQL-dialect-neutral code.
 
 ### COD-002
 
@@ -185,11 +185,11 @@ affected_files:
   - tests/infra/test_tasks_migration.py
 ```
 
-**Description:** Таблицы из [DATA_MODEL.md §3.6-3.9](../DATA_MODEL.md). Вьюхи `section_totals`, `plan_totals`, `ready_tasks`.
+**Description:** Tables from [DATA_MODEL.md §3.6-3.9](../DATA_MODEL.md). Views `section_totals`, `plan_totals`, `ready_tasks`.
 
-**Acceptance:** миграция проходит; view возвращают корректные агрегаты на ручном seed.
+**Acceptance:** the migration passes; the views return correct aggregates on a manual seed.
 
-> ✅ **Implemented 2026-04-25** (commit `pending`): таблицы plan/plan_section/task/dependency/affected_file (§3.6-3.9), view'ы `section_totals` / `plan_totals` / `ready_tasks` (§4.1-§4.3) — `ready_tasks` фильтрует только по `kind='blocks'`. ORM-модели (`PlanModel`, `PlanSectionModel`, `TaskModel`, `DependencyModel`, `AffectedFileModel`) и domain dataclasses + enums. Smoke-тесты `tests/infra/test_tasks_migration.py` — 6/6 passed; общий suite — 11/11.
+> ✅ **Implemented 2026-04-25** (commit `pending`): tables plan/plan_section/task/dependency/affected_file (§3.6-3.9), views `section_totals` / `plan_totals` / `ready_tasks` (§4.1-§4.3) — `ready_tasks` filters only by `kind='blocks'`. ORM models (`PlanModel`, `PlanSectionModel`, `TaskModel`, `DependencyModel`, `AffectedFileModel`) and domain dataclasses + enums. Smoke tests `tests/infra/test_tasks_migration.py` — 6/6 passed; the overall suite — 11/11.
 
 ### COD-003
 
@@ -208,9 +208,9 @@ affected_files:
   - tests/infra/test_stories_migration.py
 ```
 
-**Description:** Stories и Modules из [DATA_MODEL.md §3.10-3.11](../DATA_MODEL.md).
+**Description:** Stories and Modules from [DATA_MODEL.md §3.10-3.11](../DATA_MODEL.md).
 
-> ✅ **Implemented 2026-04-25** (commit `pending`): таблицы user_story, story_acceptance, story_link, module, module_dependency, module_code (§3.10-3.11). Уникальные индексы: `user_story.story_id` и `module.module_id` — глобально (§6); `module_dependency(from, to)` — без дублей. Cascade delete от `user_story` на `story_acceptance` / `story_link`. ORM-модели + domain dataclasses + enums (`UserStoryStatus`, `StoryLinkKind`, `StoryRelation`, `ModuleStatus`, `ModuleCodeKind`). Smoke-тесты `tests/infra/test_stories_migration.py` — 7/7 passed; общий suite — 18/18.
+> ✅ **Implemented 2026-04-25** (commit `pending`): tables user_story, story_acceptance, story_link, module, module_dependency, module_code (§3.10-3.11). Unique indexes: `user_story.story_id` and `module.module_id` — globally (§6); `module_dependency(from, to)` — without duplicates. Cascade delete from `user_story` to `story_acceptance` / `story_link`. ORM models + domain dataclasses + enums (`UserStoryStatus`, `StoryLinkKind`, `StoryRelation`, `ModuleStatus`, `ModuleCodeKind`). Smoke tests `tests/infra/test_stories_migration.py` — 7/7 passed; the overall suite — 18/18.
 
 ### COD-004
 
@@ -229,9 +229,9 @@ affected_files:
   - tests/infra/test_revisions_migration.py
 ```
 
-**Description:** Revisions append-only, с индексами для `cod-doc log`. AuditLog для всех write-path вызовов.
+**Description:** Revisions append-only, with indexes for `cod-doc log`. AuditLog for all write-path calls.
 
-> ✅ **Implemented 2026-04-25** (commit `pending`): таблицы `revision` (§3.5) с unique `revision_id` (ULID, 26 chars) и индексами `ix_revision_entity` (entity_kind, entity_id, at) / `ix_revision_parent` для chain-walk; `audit_log` (§3.13) с `payload_json` (JSON-колонка) и индексами `ix_audit_action`, `ix_audit_actor` под фильтрацию по action/time и actor/time. CASCADE от project. ORM-модели + domain dataclasses + enums (`EntityKind`, `AuditSurface`). Smoke-тесты `tests/infra/test_revisions_migration.py` — 5/5 (chain through `parent_revision_id`, ULID uniqueness, JSON round-trip, cascade); общий suite — 23/23.
+> ✅ **Implemented 2026-04-25** (commit `pending`): tables `revision` (§3.5) with unique `revision_id` (ULID, 26 chars) and indexes `ix_revision_entity` (entity_kind, entity_id, at) / `ix_revision_parent` for chain-walk; `audit_log` (§3.13) with `payload_json` (JSON column) and indexes `ix_audit_action`, `ix_audit_actor` for filtering by action/time and actor/time. CASCADE from project. ORM models + domain dataclasses + enums (`EntityKind`, `AuditSurface`). Smoke tests `tests/infra/test_revisions_migration.py` — 5/5 (chain through `parent_revision_id`, ULID uniqueness, JSON round-trip, cascade); the overall suite — 23/23.
 
 ### COD-005
 
@@ -250,9 +250,9 @@ affected_files:
   - tests/infra/test_tags_migration.py
 ```
 
-**Description:** Таблицы `tag`, связующие таблицы; финальная проверка индексов.
+**Description:** Tables `tag`, junction tables; a final check of indexes.
 
-> ✅ **Implemented 2026-04-25** (commit `pending`): таблицы `tag` (uniq `(project_id, name)`), `document_tag`, `task_tag`, `story_tag` (§3.12) — junction-таблицы с composite PK и CASCADE на обе стороны. Replaced full-column `ix_link_unresolved` with the partial `ix_link_broken WHERE resolved = 0` (§3.4) — горячий read-path «broken-links» останется дешёвым по мере роста resolved-доли. ORM-модели + `Tag` dataclass. Smoke-тесты `tests/infra/test_tags_migration.py` — 6/6 (схема, partial-index наличие+условие, uniqueness per project, attach-to-doc/task/story, дубль через PK, cascade-delete тэга); общий suite — 29/29. **Section A (Data Core) closed.**
+> ✅ **Implemented 2026-04-25** (commit `pending`): tables `tag` (uniq `(project_id, name)`), `document_tag`, `task_tag`, `story_tag` (§3.12) — junction tables with a composite PK and CASCADE on both sides. Replaced the full-column `ix_link_unresolved` with the partial `ix_link_broken WHERE resolved = 0` (§3.4) — the hot read-path "broken-links" stays cheap as the resolved share grows. ORM models + `Tag` dataclass. Smoke tests `tests/infra/test_tags_migration.py` — 6/6 (schema, partial-index presence+condition, uniqueness per project, attach-to-doc/task/story, duplicate via PK, cascade-delete of a tag); the overall suite — 29/29. **Section A (Data Core) closed.**
 
 ---
 
@@ -273,16 +273,16 @@ affected_files:
   - tests/services/test_doc_service.py
 ```
 
-**Description:** Создание, чтение, патч секции, rename. Patch → unified diff → `revision`. Rename → cascade update ссылок (пока заготовка; реальный cascade — в COD-013).
+**Description:** Create, read, patch section, rename. Patch → unified diff → `revision`. Rename → cascade update of links (a stub for now; the real cascade — in COD-013).
 
 **Acceptance:**
-- `cod-doc doc new --type guide --title "Hello"` создаёт запись + skeleton.
-- `cod-doc doc patch ... --section X` пишет revision.
-- Тесты: создание/патч/rename; проверка frontmatter валидации.
+- `cod-doc doc new --type guide --title "Hello"` creates a record + skeleton.
+- `cod-doc doc patch ... --section X` writes a revision.
+- Tests: create/patch/rename; check frontmatter validation.
 
-> ✅ **Implemented 2026-04-25** (commit `pending`): функциональный API `create / get / get_sections / render_body / add_section / patch_section / rename`. Каждая мутация пишет revision: `create`/`rename` → `entity_kind=DOCUMENT`, `add_section`/`patch_section` → `entity_kind=SECTION` (DATA_MODEL §3.3 «Section.body — носитель»). `render_body` читает через view `document_body` (§4.3a). `patch_section` — no-op на одинаковом body; пробрасывает `expected_parent_revision_id` в RevisionService для optimistic concurrency. `rename` пишет JSON-patch diff `{op, from, to}`; cascade-update incoming-ссылок остался стуб-комментом — реальный cascade в COD-013. Кастомные исключения `DocumentNotFoundError` / `SectionNotFoundError`. Frontmatter-валидация остаётся за COD-020. Тесты — 15/15 (create+revision+UNIQUE+sections+render+patch path/no-op/conflict+rename path/no-op/unknown). Общий suite — 61/61.
+> ✅ **Implemented 2026-04-25** (commit `pending`): a functional API `create / get / get_sections / render_body / add_section / patch_section / rename`. Each mutation writes a revision: `create`/`rename` → `entity_kind=DOCUMENT`, `add_section`/`patch_section` → `entity_kind=SECTION` (DATA_MODEL §3.5 "Section.body — the carrier"). `render_body` reads through the view `document_body` (§4.3a). `patch_section` — no-op on an identical body; forwards `expected_parent_revision_id` to RevisionService for optimistic concurrency. `rename` writes a JSON-patch diff `{op, from, to}`; cascade-update of incoming links stayed a stub comment — the real cascade is in COD-013. Custom exceptions `DocumentNotFoundError` / `SectionNotFoundError`. Frontmatter validation remains with COD-020. Tests — 15/15 (create+revision+UNIQUE+sections+render+patch path/no-op/conflict+rename path/no-op/unknown). The overall suite — 61/61.
 
-> Зависимость дополнена `COD-015`: DocService использует RevisionService для записи revision; формально blocker'ом в исходной графе не значился, но фактически COD-015 был сделан перед COD-010, и API DocService опирается на `rev.write` / `rev.list_for_entity`.
+> The dependency is extended with `COD-015`: DocService uses RevisionService to write a revision; formally not a blocker in the original graph, but in fact COD-015 was done before COD-010, and the DocService API relies on `rev.write` / `rev.list_for_entity`.
 
 ### COD-011
 
@@ -300,9 +300,9 @@ affected_files:
   - tests/services/test_task_service.py
 ```
 
-**Description:** Создание задачи с валидацией формата, генерация id в пределах section-range, update status, complete (с проверкой depends_on). Пишет revision.
+**Description:** Create a task with format validation, generate an id within the section-range, update status, complete (with a depends_on check). Writes a revision.
 
-> ✅ **Implemented 2026-04-25** (commit `pending`): `TaskRepository` (get_by_task_id, list_for_plan), `task_service.py` — `create` (TaskStatus.PENDING, auto-ID `{prefix}-NNN` по max в плане, опциональные affected_files), `update_status` (no-op при одинаковом статусе), `complete` (проверяет все `kind='blocks'` зависимости → `TaskBlockedError`; игнорирует `relates`; пробрасывает `expected_parent_revision_id`), `get`, `list_for_plan`. Все мутации пишут JSON-patch revision через RevisionService. Тесты — 14/14 (create+auto-id+affected-files+revision, update-status/no-op/unknown, complete/blocked/unblocked-after-dep/relates-ignored/conflict). Общий suite — 126/126.
+> ✅ **Implemented 2026-04-25** (commit `pending`): `TaskRepository` (get_by_task_id, list_for_plan), `task_service.py` — `create` (TaskStatus.PENDING, auto-ID `{prefix}-NNN` by max in the plan, optional affected_files), `update_status` (no-op on the same status), `complete` (checks all `kind='blocks'` dependencies → `TaskBlockedError`; ignores `relates`; forwards `expected_parent_revision_id`), `get`, `list_for_plan`. All mutations write JSON-patch revisions through RevisionService. Tests — 14/14 (create+auto-id+affected-files+revision, update-status/no-op/unknown, complete/blocked/unblocked-after-dep/relates-ignored/conflict). The overall suite — 126/126.
 
 ### COD-012
 
@@ -321,9 +321,9 @@ affected_files:
   - tests/services/test_plan_service.py
 ```
 
-**Description:** Derived статусы секции/плана. `ready()` через view. `audit()` — проверка циклов, drift. `export()` — регенерация Progress Overview/Next Batch/Dependency Graph в markdown.
+**Description:** Derived statuses of section/plan. `ready()` through a view. `audit()` — cycle and drift check. `export()` — regeneration of Progress Overview/Next Batch/Dependency Graph in markdown.
 
-> ✅ **Implemented 2026-04-28** (commit `pending`): pure read-side сервис (без revisions). `recalc(plan_id)` читает `section_totals` + `plan_totals` (§4.1-§4.2), возвращает `PlanProgress` с `DerivedStatus` (`empty`/`pending`/`in-progress`/`done`) per-section и rolled-up на план — правило: `total==0`→empty, `done==total`→done, иначе `in-progress` если есть прогресс, `pending` иначе. `ready(plan_id, *, limit=None)` фильтрует view `ready_tasks` по плану, сортирует по priority (`critical < high < medium < low`) затем по `task_id` для стабильности. `audit(plan_id)` — итеративный DFS-cycle-detector только по `kind='blocks'` (canonicalize cycles по min-element, дубли отсекаются), drift-check `done_with_unfinished_blocks` ловит задачи помеченные done с открытыми блокирующими депами (например, после ручного `update_status`, минуя `complete()`). `export(plan_id)` рендерит three markdown projections: Progress Overview (markdown table), Next Batch (top-N ready по priority), Dependency Graph (Mermaid `graph TD`, edges blocker→blocked, node ID — `task_id` с `-`→`_`). `PlanRepository` + `PlanSectionRepository` добавлены под общий шаблон. Тесты — 18/18 (recalc empty/partial/done/unknown; ready visibility/scope/priority/limit; audit clean/cycle/non-blocks-ignored/drift; export PO+NB+Mermaid+empty); общий suite — 147/147.
+> ✅ **Implemented 2026-04-28** (commit `pending`): a pure read-side service (without revisions). `recalc(plan_id)` reads `section_totals` + `plan_totals` (§4.1-§4.2), returns `PlanProgress` with `DerivedStatus` (`empty`/`pending`/`in-progress`/`done`) per-section and rolled up to the plan — rule: `total==0`→empty, `done==total`→done, otherwise `in-progress` if there is progress, `pending` otherwise. `ready(plan_id, *, limit=None)` filters the view `ready_tasks` by plan, sorts by priority (`critical < high < medium < low`) then by `task_id` for stability. `audit(plan_id)` — an iterative DFS cycle detector only over `kind='blocks'` (canonicalize cycles by min-element, duplicates cut off), drift-check `done_with_unfinished_blocks` catches tasks marked done with open blocking deps (e.g., after a manual `update_status` bypassing `complete()`). `export(plan_id)` renders three markdown projections: Progress Overview (markdown table), Next Batch (top-N ready by priority), Dependency Graph (Mermaid `graph TD`, edges blocker→blocked, node ID — `task_id` with `-`→`_`). `PlanRepository` + `PlanSectionRepository` added under the common template. Tests — 18/18 (recalc empty/partial/done/unknown; ready visibility/scope/priority/limit; audit clean/cycle/non-blocks-ignored/drift; export PO+NB+Mermaid+empty); the overall suite — 147/147.
 
 ### COD-013
 
@@ -343,11 +343,11 @@ affected_files:
   - tests/services/test_link_service.py
 ```
 
-**Description:** Парсер ссылок (regex), резолвер, верификация, cascade при rename документа.
+**Description:** Link parser (regex), resolver, verification, cascade on document rename.
 
-> ✅ **Implemented 2026-04-28** (commit `pending`): pipeline `parse → sync_section → resolve → verify` + `rename_cascade`. Полное покрытие форм из [standards/document-link.md §1](../standards/document-link.md): canonical `[[doc:KEY]]`, section `[[doc:KEY#anchor]]`, task `[[task:ID]]`, story `[[story:ID]]`, wiki `[[Title]]` (exact match только; fuzzy отложен), markdown relative `[label](../path.md)` с anchor-формой, bare URL и markdown URL. Парсер чистый: regex-based, скипает fenced code blocks (заменяет на whitespace равной длины — сохраняет offsets), сортирует выдачу по позиции в body. `sync_section` транзакционно заменяет link-rows для секции; `resolve_section` авто-синкает если нет rows; `resolve` не штампует `to_doc_key` если target не найден (для CANONICAL/MARKDOWN), но штампует для SECTION-ref'a с broken-anchor — каскад полагается на `to_doc_key` для поиска. `verify_section` возвращает `VerifyReport(ok/broken/skipped)` — URL пропускает (no network на write-path, §7), остальные ре-резолвит и стампит `last_checked`/`broken_reason`. `rename_cascade(project_id, old, new, author)` транзакционно UPDATE'ит `link.to_doc_key` + переписывает `link.raw` + переписывает body секций (только canonical refs `[[doc:OLD…]]`, markdown-paths не трогаем — слишком хрупко без mapping'a путей) + пишет SECTION revision per изменённую секцию через DocService.patch_section. Возвращает `RenameCascadeReport(updated_links, rewritten_sections)`. **DocService.rename теперь авто-вызывает `rename_cascade` (cascade_links=True default)** — закрыли долг из COD-010 ([doc_service.py:265-330](../../../cod_doc/services/doc_service.py)). Тесты — 26/26 (parse: 11 сценариев, sync: 2, resolve: 7, verify: 2, rename_cascade: 4); общий suite — 177/177.
+> ✅ **Implemented 2026-04-28** (commit `pending`): pipeline `parse → sync_section → resolve → verify` + `rename_cascade`. Full coverage of the forms from [standards/document-link.md §1](../standards/document-link.md): canonical `[[doc:KEY]]`, section `[[doc:KEY#anchor]]`, task `[[task:ID]]`, story `[[story:ID]]`, wiki `[[Title]]` (exact match only; fuzzy deferred), markdown relative `[label](../path.md)` with anchor form, bare URL and markdown URL. The parser is clean: regex-based, skips fenced code blocks (replaces with whitespace of equal length — preserves offsets), sorts the output by position in body. `sync_section` transactionally replaces link-rows for a section; `resolve_section` auto-syncs if there are no rows; `resolve` does not stamp `to_doc_key` if the target is not found (for CANONICAL/MARKDOWN), but does stamp for a SECTION-ref with a broken anchor — the cascade relies on `to_doc_key` for lookup. `verify_section` returns `VerifyReport(ok/broken/skipped)` — URL is skipped (no network on the write-path, §7), the rest is re-resolved and stamps `last_checked`/`broken_reason`. `rename_cascade(project_id, old, new, author)` transactionally UPDATEs `link.to_doc_key` + rewrites `link.raw` + rewrites section bodies (only canonical refs `[[doc:OLD…]]`, markdown-paths are not touched — too fragile without a path mapping) + writes a SECTION revision per changed section through DocService.patch_section. Returns `RenameCascadeReport(updated_links, rewritten_sections)`. **DocService.rename now auto-calls `rename_cascade` (cascade_links=True default)** — closed the debt from COD-010 ([doc_service.py:265-330](../../../cod_doc/services/doc_service.py)). Tests — 26/26 (parse: 11 scenarios, sync: 2, resolve: 7, verify: 2, rename_cascade: 4); the overall suite — 177/177.
 
-> Зависимость дополнена `COD-010`: cascade-rewrite использует `DocService.patch_section` для записи SECTION revision'ов на каждый изменённый body. Cycle избегается local-import'ом link_service внутри `DocService.rename`.
+> The dependency is extended with `COD-010`: the cascade-rewrite uses `DocService.patch_section` to write SECTION revisions for every changed body. The cycle is avoided by a local import of link_service inside `DocService.rename`.
 
 ### COD-014
 
@@ -366,9 +366,9 @@ affected_files:
   - tests/services/test_story_service.py
 ```
 
-> ✅ **Implemented 2026-04-28** (commit `pending`): функциональный API `create / get / list_for_project / list_acceptance / list_links / list_tasks / update_status / add_criterion / set_criterion_met / link / coverage` (см. [cod_doc/services/story_service.py](../../../cod_doc/services/story_service.py)). Все мутации пишут JSON-patch revision'ы с `entity_kind=STORY` ([standards/revision-history.md](../standards/revision-history.md): `op` ∈ `create / status / add_criterion / criterion_met / link`). `update_status` — optimistic concurrency через `expected_parent_revision_id` (как в TaskService.complete). `add_criterion` авто-вычисляет `position = max + 1`. `link(to_kind, to_ref, relation)` — hard-error на broken reference (target task/document/module отсутствует в проекте; per [document-link.md §4](../standards/document-link.md)) + idempotent dedup на edge `(story, kind, ref, relation)` — повторный вызов возвращает существующий row без новой revision. `list_tasks` фильтрует только `relation=implemented_by` (per [user-stories-graph.md §5.2](../capabilities/user-stories-graph.md)). `coverage(story_id)` возвращает `StoryCoverage` с derived `CoverageStatus` (`draft|accepted|in-progress|delivered|deferred`, отдельный enum от persisted `UserStoryStatus` — DELIVERED не в DB-enum'е): DRAFT/DEFERRED — pinned (берётся из `user_story.status`); DELIVERED требует `tasks_total>0 AND all done AND all acceptance met`; IN_PROGRESS — хоть одна in-progress/done; иначе ACCEPTED. Возвращает разбивку `tasks_total/done/in_progress` + `acceptance_total/met`. `StoryRepository` + `StoryAcceptanceRepository` + `StoryLinkRepository` под общий шаблон. Кастомные исключения: `StoryNotFoundError`, `StoryAlreadyExistsError`, `AcceptanceNotFoundError`, `BrokenLinkError`. Тесты — 22/22 (CRUD: 5, update_status: 3, criteria: 3, link: 4, list_tasks: 1, coverage: 6); общий suite — 208/208. **Section B (Services) closed.**
+> ✅ **Implemented 2026-04-28** (commit `pending`): a functional API `create / get / list_for_project / list_acceptance / list_links / list_tasks / update_status / add_criterion / set_criterion_met / link / coverage` (see [cod_doc/services/story_service.py](../../../cod_doc/services/story_service.py)). All mutations write JSON-patch revisions with `entity_kind=STORY` ([standards/revision-history.md](../standards/revision-history.md): `op` ∈ `create / status / add_criterion / criterion_met / link`). `update_status` — optimistic concurrency via `expected_parent_revision_id` (as in TaskService.complete). `add_criterion` auto-computes `position = max + 1`. `link(to_kind, to_ref, relation)` — hard-error on a broken reference (target task/document/module is absent in the project; per [document-link.md §4](../standards/document-link.md)) + idempotent dedup on the edge `(story, kind, ref, relation)` — a repeat call returns the existing row without a new revision. `list_tasks` filters only `relation=implemented_by` (per [user-stories-graph.md §5.2](../capabilities/user-stories-graph.md)). `coverage(story_id)` returns `StoryCoverage` with a derived `CoverageStatus` (`draft|accepted|in-progress|delivered|deferred`, a separate enum from the persisted `UserStoryStatus` — DELIVERED is not in the DB enum): DRAFT/DEFERRED — pinned (taken from `user_story.status`); DELIVERED requires `tasks_total>0 AND all done AND all acceptance met`; IN_PROGRESS — at least one in-progress/done; otherwise ACCEPTED. Returns the breakdown `tasks_total/done/in_progress` + `acceptance_total/met`. `StoryRepository` + `StoryAcceptanceRepository` + `StoryLinkRepository` under the common template. Custom exceptions: `StoryNotFoundError`, `StoryAlreadyExistsError`, `AcceptanceNotFoundError`, `BrokenLinkError`. Tests — 22/22 (CRUD: 5, update_status: 3, criteria: 3, link: 4, list_tasks: 1, coverage: 6); the overall suite — 208/208. **Section B (Services) closed.**
 
-> Зависимость дополнена `COD-015`: каждая мутация пишет revision через RevisionService (как DocService/TaskService). Формально не в исходной графе — добавляем для точности.
+> The dependency is extended with `COD-015`: each mutation writes a revision through RevisionService (as DocService/TaskService). Formally not in the original graph — added for accuracy.
 
 ### COD-015
 
@@ -387,9 +387,9 @@ affected_files:
   - tests/services/test_revision_service.py
 ```
 
-**Description:** append-only запись, получение истории сущности, revert (через обратный сервисный вызов).
+**Description:** append-only write, get entity history, revert (through a reverse service call).
 
-> ✅ **Implemented 2026-04-25** (commit `pending`): `cod_doc/services/revision_service.py` — функциональный API: `write(session, *, project_id, entity_kind, entity_id, author, diff, ...)` (auto-fills ULID + chains via `parent_revision_id`), `list_for_entity(session, entity_kind, entity_id)` (oldest→newest), `RevisionConflictError` при mismatch `expected_parent_revision_id` (DATA_MODEL §3.5 optimistic concurrency). `revert` намеренно стуб — диспетчер по entity-сервисам, COD-022. Тесты — 9/9 passed (write/chain/list/filter/expected-parent match/mismatch/explicit-None varianты/revert NotImplementedError); общий suite — 46/46.
+> ✅ **Implemented 2026-04-25** (commit `pending`): `cod_doc/services/revision_service.py` — a functional API: `write(session, *, project_id, entity_kind, entity_id, author, diff, ...)` (auto-fills ULID + chains via `parent_revision_id`), `list_for_entity(session, entity_kind, entity_id)` (oldest→newest), `RevisionConflictError` on `expected_parent_revision_id` mismatch (DATA_MODEL §3.5 optimistic concurrency). `revert` is intentionally a stub — a dispatcher over entity services, COD-022. Tests — 9/9 passed (write/chain/list/filter/expected-parent match/mismatch/explicit-None variants/revert NotImplementedError); the overall suite — 46/46.
 
 ---
 
@@ -414,9 +414,9 @@ affected_files:
   - tests/services/test_doc_service.py
 ```
 
-**Description:** Централизованный модуль валидации, используемый DocService и TaskService. Правила из [standards/frontmatter.md](../standards/frontmatter.md) и [standards/task-plan.md](../standards/task-plan.md).
+**Description:** A centralized validation module used by DocService and TaskService. Rules from [standards/frontmatter.md](../standards/frontmatter.md) and [standards/task-plan.md](../standards/task-plan.md).
 
-> ✅ **Implemented 2026-04-28** (commits `426b33a` + follow-up): `cod_doc/services/validation.py` — единый источник истины для правил `task-plan.md` и `frontmatter.md`. Два уровня валидации: structural (`validate_*` → `ValidationError`, гейтят write-path во всех сервисах) и advisory (`audit_*` → `list[ValidationIssue]` без raise — для будущего `cod-doc audit` и CI). Подключено в `TaskService.create` (TP-001/TP-002/TP-005), `StoryService.create` (US-001), `DocService.create` (FM-002, FM-003 эскалируются из `audit_frontmatter` в `ValidationError`; FM-004/FM-005 остаются advisory). Тесты — `test_validation.py` (advisory-уровень, ~27 кейсов) + write-path негативные кейсы в `test_doc_service.py` (FM-002/FM-003). Не покрытые правила (TP-006…TP-011 — section-level cross-checks; FM-006 sensitivity — после Sensitive-Data таска) явно advisory. Общий suite — 326/326 + 3 новых теста.
+> ✅ **Implemented 2026-04-28** (commits `426b33a` + follow-up): `cod_doc/services/validation.py` — a single source of truth for the rules of `task-plan.md` and `frontmatter.md`. Two validation levels: structural (`validate_*` → `ValidationError`, gates the write-path in all services) and advisory (`audit_*` → `list[ValidationIssue]` without raise — for the future `cod-doc audit` and CI). Wired into `TaskService.create` (TP-001/TP-002/TP-005), `StoryService.create` (US-001), `DocService.create` (FM-002, FM-003 are escalated from `audit_frontmatter` to `ValidationError`; FM-004/FM-005 stay advisory). Tests — `test_validation.py` (advisory level, ~27 cases) + write-path negative cases in `test_doc_service.py` (FM-002/FM-003). Uncovered rules (TP-006…TP-011 — section-level cross-checks; FM-006 sensitivity — after the Sensitive-Data task) are explicitly advisory. The overall suite — 326/326 + 3 new tests.
 
 ### COD-021
 
@@ -433,7 +433,7 @@ affected_files:
   - tests/services/test_graph_service.py
 ```
 
-> ✅ **Implemented 2026-04-28** (commit `pending`): расширил `plan_service.py` тремя graph-функциями, реализующими [user-stories-graph.md §6](../capabilities/user-stories-graph.md). `forward_chain(session, task_id) → list[ChainEntry]` — рекурсивный CTE, стартует с task_id, следует по `from→to` edges (prerequisite-direction), возвращает все транзитивные блокеры в порядке depth. `reverse_chain(session, task_id) → list[ChainEntry]` — CTE в обратном направлении (`to→from`), возвращает зависимые задачи которые разблокируются. `critical_path(session, plan_id) → CriticalPathResult` — depth-CTE вычисляет максимальную глубину цепочки для каждой задачи плана, Python-backtrack реконструирует путь от source до sink по greedy (выбирает predecessor с `depth-1`; при tie — алфавитно). Возвращает `CriticalPathResult(task_ids, chain: list[ChainEntry], length)`. `PlanAuditReport` дополнен полем `critical_path_length` — `audit()` теперь вызывает `critical_path()` и включает его в отчёт. Новый exception `TaskNotFoundInPlanError` для unknown task_id в chain-функциях. Добавлены dataclasses `ChainEntry`, `CriticalPathResult` в `plan_service.py`. Тесты — 17/17 (forward: 6 сценариев, reverse: 4, critical_path: 7 — empty/single/linear/diamond/parallel/status-meta/unknown-plan); общий suite — 288/288.
+> ✅ **Implemented 2026-04-28** (commit `pending`): extended `plan_service.py` with three graph functions implementing [user-stories-graph.md §6](../capabilities/user-stories-graph.md). `forward_chain(session, task_id) → list[ChainEntry]` — a recursive CTE, starts from task_id, follows `from→to` edges (prerequisite direction), returns all transitive blockers in depth order. `reverse_chain(session, task_id) → list[ChainEntry]` — a CTE in the reverse direction (`to→from`), returns dependent tasks that get unblocked. `critical_path(session, plan_id) → CriticalPathResult` — a depth-CTE computes the max chain depth for each task of the plan, Python backtracking reconstructs the path from source to sink greedily (picks the predecessor with `depth-1`; on a tie — alphabetically). Returns `CriticalPathResult(task_ids, chain: list[ChainEntry], length)`. `PlanAuditReport` is extended with the field `critical_path_length` — `audit()` now calls `critical_path()` and includes it in the report. A new exception `TaskNotFoundInPlanError` for an unknown task_id in chain functions. Added dataclasses `ChainEntry`, `CriticalPathResult` in `plan_service.py`. Tests — 17/17 (forward: 6 scenarios, reverse: 4, critical_path: 7 — empty/single/linear/diamond/parallel/status-meta/unknown-plan); the overall suite — 288/288.
 
 ### COD-022
 
@@ -452,7 +452,7 @@ affected_files:
   - tests/services/test_revision_service.py
 ```
 
-> ✅ **Implemented 2026-04-28** (commit `pending`): два deliverable'а. (1) **RevisionService.revert dispatch** — `revert(session, revision_id, *, author)` заменила прежний stub: диспетчеризует по `entity_kind` + `op` из diff-payload: `TASK op=status` → `TaskService.update_status(old_status)`; `TASK op=complete` → `update_status(old_status)` (restores pre-done state); `SECTION` (unified diff) → `_restore_original_from_unified(diff)` + `DocService.patch_section` — кастомный парсер разрезает unified-diff по последнему `@@ ... @@` маркеру и извлекает `-`-lines (original) из content-секции, обходя баг формата хранения где `lineterm=""` + `"".join()` не добавляет `\n` после header-строк; `DOCUMENT op=rename` → `DocService.rename(old_doc_key, old_path)`. Неподдерживаемые entity_kind/op → `RevertNotSupportedError(NotImplementedError)`. Каждый revert создаёт новую revision (история append-only). (2) **Plan staleness signal** — `TaskService.complete()` теперь обновляет `plan.last_updated = now` в той же транзакции, что и task completion — сигнал для future projection-системы (COD-023) что экспорт устарел. Тесты — 9/9 (revert: TASK status, TASK complete, TASK unsupported-op, SECTION patch, SECTION writes-new-revision, DOCUMENT rename, unsupported entity_kind; plan staleness: 2). `test_revert_not_yet_implemented` заменён на `test_revert_raises_lookup_for_unknown_revision_id`. Общий suite — 297/297.
+> ✅ **Implemented 2026-04-28** (commit `pending`): two deliverables. (1) **RevisionService.revert dispatch** — `revert(session, revision_id, *, author)` replaced the former stub: dispatches by `entity_kind` + `op` from the diff payload: `TASK op=status` → `TaskService.update_status(old_status)`; `TASK op=complete` → `update_status(old_status)` (restores the pre-done state); `SECTION` (unified diff) → `_restore_original_from_unified(diff)` + `DocService.patch_section` — a custom parser splits the unified-diff by the last `@@ ... @@` marker and extracts the `-`-lines (original) from the content section, working around a storage-format bug where `lineterm=""` + `"".join()` does not add `\n` after header lines; `DOCUMENT op=rename` → `DocService.rename(old_doc_key, old_path)`. Unsupported entity_kind/op → `RevertNotSupportedError(NotImplementedError)`. Each revert creates a new revision (history is append-only). (2) **Plan staleness signal** — `TaskService.complete()` now updates `plan.last_updated = now` in the same transaction as the task completion — a signal for the future projection system (COD-023) that the export is stale. Tests — 9/9 (revert: TASK status, TASK complete, TASK unsupported-op, SECTION patch, SECTION writes-new-revision, DOCUMENT rename, unsupported entity_kind; plan staleness: 2). `test_revert_not_yet_implemented` is replaced by `test_revert_raises_lookup_for_unknown_revision_id`. The overall suite — 297/297.
 
 ### COD-023
 
@@ -469,7 +469,7 @@ affected_files:
   - tests/services/test_projection_service.py
 ```
 
-> ✅ **Implemented 2026-04-28** (commit `pending`): `cod_doc/services/projection_service.py` — pipeline `render_markdown → export_document → detect_drift → import_document` (см. [ARCHITECTURE.md §4.2](../ARCHITECTURE.md)). `render_markdown(session, document_id)` — pure-функция: рендерит YAML-frontmatter (type/status/sensitivity/source_of_truth/owner/title + extra из frontmatter_json, но НЕ включает reserved-поля `projection_hash`/`doc_key`/`revision`) + body из view `document_body`. `export_document(session, document_id, *, root_path, force=False)` — writes `root_path/document.path`, updates `document.projection_hash = SHA256(content)`. Идемпотентен: если projection_hash уже совпадает с текущим DB-контентом — skip (`written=False`), если `force=True` — перезаписывает безусловно. Создаёт parent-директории. Возвращает `ExportResult(document_id, path, written, content_hash)`. `detect_drift(session, document_id, *, root_path)` — сравнивает `projection_hash` (последний export), SHA256(текущий DB-контент), SHA256(файл на диске) → `DriftStatus` ∈ `IN_SYNC | STALE_EXPORT | EDITED_IN_PLACE | MISSING`. `import_document(session, project_id, file_path, *, author, root_path)` — читает файл, хеш совпадает → no-op; хеш отличается → parse YAML frontmatter → apply type/status/owner/sensitivity/source_of_truth через ORM. Полный section-body import — COD-051 (Restate importer). Ключевое решение: `projection_hash` НЕ входит в rendered markdown (reserved-field), иначе возникала circular hash dependency. Тесты — 15/15 (render: 3, export: 5, detect_drift: 4, import: 3); общий suite — 312/312. **Section C (Write Paths) closed.**
+> ✅ **Implemented 2026-04-28** (commit `pending`): `cod_doc/services/projection_service.py` — pipeline `render_markdown → export_document → detect_drift → import_document` (see [ARCHITECTURE.md §4.2](../ARCHITECTURE.md)). `render_markdown(session, document_id)` — a pure function: renders YAML frontmatter (type/status/sensitivity/source_of_truth/owner/title + extra from frontmatter_json, but does NOT include reserved fields `projection_hash`/`doc_key`/`revision`) + body from the view `document_body`. `export_document(session, document_id, *, root_path, force=False)` — writes `root_path/document.path`, updates `document.projection_hash = SHA256(content)`. Idempotent: if projection_hash already matches the current DB content — skip (`written=False`), if `force=True` — overwrites unconditionally. Creates parent directories. Returns `ExportResult(document_id, path, written, content_hash)`. `detect_drift(session, document_id, *, root_path)` — compares `projection_hash` (last export), SHA256(current DB content), SHA256(file on disk) → `DriftStatus` ∈ `IN_SYNC | STALE_EXPORT | EDITED_IN_PLACE | MISSING`. `import_document(session, project_id, file_path, *, author, root_path)` — reads the file, hash matches → no-op; hash differs → parse YAML frontmatter → apply type/status/owner/sensitivity/source_of_truth through ORM. Full section-body import — COD-051 (Restate importer). Key decision: `projection_hash` is NOT part of the rendered markdown (reserved field), otherwise a circular hash dependency arises. Tests — 15/15 (render: 3, export: 5, detect_drift: 4, import: 3); the overall suite — 312/312. **Section C (Write Paths) closed.**
 
 ---
 
@@ -491,7 +491,7 @@ affected_files:
   - cod_doc/cli/story.py
 ```
 
-> ✅ **Implemented:** `cod_doc/cli/task.py` (385 loc) — команды `list`, `show`, `create`, `status`, `complete`; `cod_doc/cli/plan.py` (428 loc); `cod_doc/cli/story.py` (489 loc). Все команды работают через DB-сессию (`_make_session`), принимают `--project` и `--json` флаги.
+> ✅ **Implemented:** `cod_doc/cli/task.py` (385 loc) — commands `list`, `show`, `create`, `status`, `complete`; `cod_doc/cli/plan.py` (428 loc); `cod_doc/cli/story.py` (489 loc). All commands work through a DB session (`_make_session`), accept `--project` and `--json` flags.
 
 ### COD-031
 
@@ -509,7 +509,7 @@ affected_files:
   - cod_doc/cli/revision.py
 ```
 
-> ✅ **Implemented:** `cod_doc/cli/doc.py` (519 loc), `cod_doc/cli/link.py` (248 loc), `cod_doc/cli/revision.py` (315 loc). `cod-doc audit --sensitivity` CLI-флаг включён в cmd_audit.py (деливерабль COD-025).
+> ✅ **Implemented:** `cod_doc/cli/doc.py` (519 loc), `cod_doc/cli/link.py` (248 loc), `cod_doc/cli/revision.py` (315 loc). The `cod-doc audit --sensitivity` CLI flag is included in cmd_audit.py (deliverable of COD-025).
 
 ### COD-032
 
@@ -526,7 +526,7 @@ affected_files:
   - cod_doc/mcp/tools/
 ```
 
-> ✅ **Implemented:** `cod_doc/mcp/tools/` — `task_tools.py` (`task.list`, `task.get`, `task.create`, `task.update_status`, `task.complete`), `doc_tools.py`, `plan_tools.py`, `story_tools.py`, `link_tools.py`, `revision_tools.py`. Каждый модуль регистрирует инструменты через `register(mcp: FastMCP)` — вызывается из `mcp/server.py`.
+> ✅ **Implemented:** `cod_doc/mcp/tools/` — `task_tools.py` (`task.list`, `task.get`, `task.create`, `task.update_status`, `task.complete`), `doc_tools.py`, `plan_tools.py`, `story_tools.py`, `link_tools.py`, `revision_tools.py`. Each module registers tools via `register(mcp: FastMCP)` — called from `mcp/server.py`.
 
 ### COD-033
 
@@ -558,7 +558,7 @@ affected_files:
   - cod_doc/core/reindex.py
 ```
 
-> ✅ **Implemented:** `cod_doc/core/reindex.py` (165 loc) — `reindex_project(root, cfg)` (индексирует markdown-файлы проекта в ChromaDB через OpenRouter `/embeddings` endpoint, модель `text-embedding-ada-002`) и `search_documents(query, collection, n)`. Backend настраивается через `Config` (`api_key`, `embedding_model`). Фактически использует ChromaDB, не sqlite-vss/pgvector — локальное хранилище без Postgres-зависимости.
+> ✅ **Implemented:** `cod_doc/core/reindex.py` (165 loc) — `reindex_project(root, cfg)` (indexes the project's markdown files into ChromaDB via the OpenRouter `/embeddings` endpoint, model `text-embedding-ada-002`) and `search_documents(query, collection, n)`. The backend is configured through `Config` (`api_key`, `embedding_model`). Actually uses ChromaDB, not sqlite-vss/pgvector — a local store without a Postgres dependency.
 
 ### COD-041
 
@@ -596,19 +596,19 @@ type: feature
 priority: low
 ```
 
-**Контекст.** На этапе bootstrap embeddings вынесены на OpenRouter (OpenAI-совместимый `/embeddings`, модель `openai/text-embedding-ada-002`) — это убрало ~2 GB CUDA/torch-зависимостей из Docker-сборки и сняло блокер деплоя. Решение временное: внешний провайдер означает (а) платный трафик за каждый reindex, (б) сетевую зависимость для офлайн-сценариев, (в) утечку содержимого документов наружу.
+**Context.** At the bootstrap stage embeddings were moved to OpenRouter (an OpenAI-compatible `/embeddings`, model `openai/text-embedding-ada-002`) — this removed ~2 GB of CUDA/torch dependencies from the Docker build and lifted the deployment blocker. The decision is temporary: an external provider means (a) paid traffic for every reindex, (b) a network dependency for offline scenarios, (c) leakage of document content outward.
 
-**Что сделать.**
-- Вернуть `sentence-transformers` (или альтернативу: `fastembed`, `infinity`) как опциональный extra `[embeddings-local]` в `pyproject.toml`.
-- В `Dockerfile` (или отдельном `Dockerfile.local`) ставить CPU-only torch с `https://download.pytorch.org/whl/cpu` чтобы не тянуть NVIDIA-пакеты.
-- Сделать выбор бекенда настраиваемым: `Config.embedding_backend = "openrouter" | "local"`, дефолт оставить `openrouter`.
-- В `core/reindex.get_collection()` переключаться между `OpenAIEmbeddingFunction` и `SentenceTransformerEmbeddingFunction` по конфигу.
-- Документировать миграцию: смена бекенда меняет dimension (ada-002 = 1536, MiniLM-L6-v2 = 384) → нужен wipe ChromaDB и полный reindex.
+**What to do.**
+- Bring back `sentence-transformers` (or an alternative: `fastembed`, `infinity`) as an optional extra `[embeddings-local]` in `pyproject.toml`.
+- In `Dockerfile` (or a separate `Dockerfile.local`) install CPU-only torch from `https://download.pytorch.org/whl/cpu` so as not to pull NVIDIA packages.
+- Make the backend choice configurable: `Config.embedding_backend = "openrouter" | "local"`, keep the default as `openrouter`.
+- In `core/reindex.get_collection()` switch between `OpenAIEmbeddingFunction` and `SentenceTransformerEmbeddingFunction` by config.
+- Document the migration: changing the backend changes the dimension (ada-002 = 1536, MiniLM-L6-v2 = 384) → a ChromaDB wipe and a full reindex are needed.
 
 **Definition of done.**
-- `pip install cod-doc[embeddings-local]` ставит torch CPU-only без CUDA-пакетов.
-- При `embedding_backend=local` reindex/search работают офлайн, без сетевых запросов.
-- README/docs описывают trade-offs (cost vs offline vs privacy) и шаги переключения.
+- `pip install cod-doc[embeddings-local]` installs CPU-only torch without CUDA packages.
+- With `embedding_backend=local` reindex/search work offline, without network requests.
+- README/docs describe the trade-offs (cost vs offline vs privacy) and the switching steps.
 
 ---
 
@@ -654,7 +654,7 @@ priority: high
 
 ## Section G: Hardening & DevX
 
-> Создан 2026-04-28 на основе [audit/2026-04-28-section-c-capabilities.md](../audit/2026-04-28-section-c-capabilities.md). Покрывает обвязку (CI, sensitive-data, TUI-тесты) и точечные follow-up'ы по реализованным сервисам.
+> Created 2026-04-28 based on [audit/2026-04-28-section-c-capabilities.md](../audit/2026-04-28-section-c-capabilities.md). Covers the wrapping (CI, sensitive-data, TUI tests) and pinpoint follow-ups on the implemented services.
 
 ### COD-014a
 
@@ -672,9 +672,9 @@ affected_files:
   - tests/services/test_link_service.py
 ```
 
-**Description:** В COD-013 `rename_cascade` намеренно пропускает markdown-relative ссылки (`[label](../path.md)`) — слишком хрупко без mapping'a путей. Подзадача: построить path-mapping `{old_path → new_path}` при rename документа, передать в LinkService, переписать markdown-relative refs тем же diff-flow что canonical refs. Тесты: rename M1-auth/overview → M1-auth/spec, проверить что входящие `[overview](../M1-auth/overview.md)` обновлены, плюс idempotency на повторный rename. Acceptance: 4+ тестов, общий suite green.
+**Description:** In COD-013 `rename_cascade` intentionally skips markdown-relative links (`[label](../path.md)`) — too fragile without a path mapping. Subtask: build a path mapping `{old_path → new_path}` on document rename, pass it to LinkService, rewrite markdown-relative refs with the same diff-flow as canonical refs. Tests: rename M1-auth/overview → M1-auth/spec, check that incoming `[overview](../M1-auth/overview.md)` are updated, plus idempotency on a repeat rename. Acceptance: 4+ tests, the overall suite green.
 
-> ✅ **Implemented 2026-05-01:** `rename_cascade` принимает `path_map: dict[str, str] | None`. Новые helpers: `_resolve_md_href` (резолвит `[label](rel.md)` против каталога source-документа через `posixpath.normpath`, скипает URLs/anchors-only), `_make_relative_href`, `_rewrite_markdown_relative_refs`. Кандидаты-секции расширены: при наличии `path_map` подтягиваем все секции с `LinkKind` ∈ {MARKDOWN, SECTION} (markdown-resolver `parse()` теряет `../` префиксы и не даёт надёжного `to_doc_key` для вложенных папок — см. inline-комментарий). `link.raw` для markdown-rows перезаписывается тем же helper'ом, чтобы re-resolve был стабилен. `DocService.rename` строит `{old_path: target_path}` когда `new_path` отличается, и кэскадирует даже при no-op doc_key (path-only rename). 6 новых тестов в `test_link_service.py` (markdown-rewrite через path_map, path-only rename, anchor preservation, idempotency, URL/anchor skip, end-to-end DocService.rename). Suite 357/357 зелёные.
+> ✅ **Implemented 2026-05-01:** `rename_cascade` accepts `path_map: dict[str, str] | None`. New helpers: `_resolve_md_href` (resolves `[label](rel.md)` against the source document catalog via `posixpath.normpath`, skips URLs/anchors-only), `_make_relative_href`, `_rewrite_markdown_relative_refs`. Candidate sections are extended: when `path_map` is present, pull in all sections with `LinkKind` ∈ {MARKDOWN, SECTION} (the markdown-resolver `parse()` loses `../` prefixes and does not give a reliable `to_doc_key` for nested folders — see the inline comment). `link.raw` for markdown-rows is rewritten by the same helper so that re-resolve is stable. `DocService.rename` builds `{old_path: target_path}` when `new_path` differs, and cascades even on a no-op doc_key (path-only rename). 6 new tests in `test_link_service.py` (markdown-rewrite via path_map, path-only rename, anchor preservation, idempotency, URL/anchor skip, end-to-end DocService.rename). Suite 357/357 green.
 
 ### COD-024
 
@@ -691,16 +691,16 @@ affected_files:
   - docs/system/capabilities/audit-and-ci.md
 ```
 
-**Description:** GitHub Actions workflow для PR-checks. Job'ы: `pytest` (full suite, sqlite по умолчанию + опциональный postgres-matrix), `mypy --strict cod_doc tests`, `ruff check cod_doc tests`. Trigger: `pull_request`, `push: main`. Cache: `.venv/` + `.mypy_cache/`. Acceptance: workflow зелёный на текущем `main`; PR без зелёной CI блокируется branch-protection (документация — README инструкция). Источник правил: [capabilities/audit-and-ci.md §3-4](../capabilities/audit-and-ci.md). После закрытия — `cod-doc audit --strict --staged` (pre-commit) пойдёт отдельной задачей в составе COD-031.
+**Description:** A GitHub Actions workflow for PR checks. Jobs: `pytest` (full suite, sqlite by default + an optional postgres-matrix), `mypy --strict cod_doc tests`, `ruff check cod_doc tests`. Trigger: `pull_request`, `push: main`. Cache: `.venv/` + `.mypy_cache/`. Acceptance: the workflow is green on the current `main`; a PR without green CI is blocked by branch-protection (documentation — README instructions). Source of rules: [capabilities/audit-and-ci.md §3-4](../capabilities/audit-and-ci.md). After closure — `cod-doc audit --strict --staged` (pre-commit) goes as a separate task as part of COD-031.
 
-> ✅ **Implemented 2026-04-28:** [.github/workflows/ci.yml](../../../.github/workflows/ci.yml) — три job'а:
-> - **pytest** (matrix `python-version: ['3.11', '3.12']`) — блокирующий; устанавливает `pip install -e '.[dev]'`, прогоняет `pytest -q`. На текущем `main` 329/329 зелёные.
-> - **ruff** (advisory, `continue-on-error: true`) — `ruff check` + `ruff format --check`. На текущем коде есть pre-existing debt (407 lint + 59 format), отслеживается **COD-024a**. Видимо в PR-status'ах, не блокирует.
-> - **mypy** (advisory, `continue-on-error: true`) — `mypy cod_doc` в strict-режиме. На текущем коде 101 ошибка в 28 файлах (в основном generic-type-args в API/agent/tui), отслеживается **COD-024a**.
+> ✅ **Implemented 2026-04-28:** [.github/workflows/ci.yml](../../../.github/workflows/ci.yml) — three jobs:
+> - **pytest** (matrix `python-version: ['3.11', '3.12']`) — blocking; installs `pip install -e '.[dev]'`, runs `pytest -q`. On the current `main` 329/329 green.
+> - **ruff** (advisory, `continue-on-error: true`) — `ruff check` + `ruff format --check`. On the current code there is pre-existing debt (407 lint + 59 format), tracked by **COD-024a**. Visible in PR statuses, does not block.
+> - **mypy** (advisory, `continue-on-error: true`) — `mypy cod_doc` in strict mode. On the current code 101 errors in 28 files (mostly generic-type-args in API/agent/tui), tracked by **COD-024a**.
 >
-> Concurrency-group отменяет суперседнутые runs. Кэш pip — через `cache-dependency-path: pyproject.toml`. Когда COD-024a закроется, `continue-on-error` снимется и оба линтера станут блокирующими (одна правка yaml).
+> The concurrency group cancels superseded runs. The pip cache — via `cache-dependency-path: pyproject.toml`. When COD-024a closes, `continue-on-error` is removed and both linters become blocking (a single yaml edit).
 >
-> Pre-commit hook (`cod-doc audit --strict --staged`) — отдельная задача в COD-031.
+> The pre-commit hook (`cod-doc audit --strict --staged`) — a separate task in COD-031.
 
 ### COD-024a
 
@@ -722,31 +722,31 @@ affected_files:
   - .github/workflows/ci.yml
 ```
 
-**Description:** Pre-existing technical debt от COD-024:
+**Description:** Pre-existing technical debt from COD-024:
 
-- **ruff**: 407 lint-ошибок (179 auto-fixable через `ruff check --fix`); 59 файлов нуждаются в `ruff format`. Основные категории — `E501` long lines, `RUF001` ambiguous Cyrillic chars в тестах, `B`/`SIM` reformulations.
-- **mypy strict**: 101 ошибка в 28 файлах. Основные категории:
-  - `[type-arg]` Missing type arguments for generic type "dict" / "Screen" / "App" — массово в `api/routes.py`, `api/webhooks.py`, `agent/orchestrator.py`, `tui/screens/*`.
-  - `[call-overload]` openai SDK overload mismatch в orchestrator (требует обновить аргументы под новую сигнатуру `AsyncCompletions.create`).
-  - `[call-arg]` FastMCP API mismatch в `mcp/server.py:528` и `cli/cmd_serve.py:43` (kwargs `host/port/stateless_http` не приняты — версия mcp обновилась).
-  - `[arg-type]` `transport` literal: текущий `str` нужно перевести на `Literal['stdio', 'sse', 'streamable-http']`.
+- **ruff**: 407 lint errors (179 auto-fixable via `ruff check --fix`); 59 files need `ruff format`. Main categories — `E501` long lines, `RUF001` ambiguous Cyrillic chars in tests, `B`/`SIM` reformulations.
+- **mypy strict**: 101 errors in 28 files. Main categories:
+  - `[type-arg]` Missing type arguments for generic type "dict" / "Screen" / "App" — massively in `api/routes.py`, `api/webhooks.py`, `agent/orchestrator.py`, `tui/screens/*`.
+  - `[call-overload]` openai SDK overload mismatch in orchestrator (needs the arguments updated to the new `AsyncCompletions.create` signature).
+  - `[call-arg]` FastMCP API mismatch in `mcp/server.py:528` and `cli/cmd_serve.py:43` (kwargs `host/port/stateless_http` not accepted — the mcp version updated).
+  - `[arg-type]` `transport` literal: the current `str` needs to move to `Literal['stdio', 'sse', 'streamable-http']`.
 
 **Acceptance:**
 - `ruff check cod_doc tests` zero errors.
 - `ruff format --check cod_doc tests` zero diffs.
 - `mypy cod_doc` zero errors (strict).
-- В `.github/workflows/ci.yml` снят `continue-on-error` для job'ов `ruff` и `mypy`.
+- In `.github/workflows/ci.yml` the `continue-on-error` is removed for the `ruff` and `mypy` jobs.
 
-**Стратегия:** делать batch'ами по слою (api → agent → tui → mcp/cli → tests). Авто-фиксы (`ruff check --fix`, `ruff format`) — отдельным коммитом для прозрачного review.
+**Strategy:** do it in batches by layer (api → agent → tui → mcp/cli → tests). Auto-fixes (`ruff check --fix`, `ruff format`) — a separate commit for transparent review.
 
-> ✅ **Implemented 2026-05-01:** debt cleared — `ruff check` zero, `ruff format --check` zero diffs (117 файлов), `mypy cod_doc` zero (87 файлов, strict). CI mypy job переведён в blocking (`continue-on-error` снят). Ключевые правки:
-> - `cod_doc/agent/orchestrator.py` — `# type: ignore[call-overload,misc]` на двух `chat.completions.create` (OpenAI SDK overloads против bare-dict messages); фильтр `tc.type == "function"` для tool_call union; `cast` импорт.
-> - `cod_doc/cli/cmd_serve.py` + `cod_doc/mcp/server.py` — `host/port/stateless_http` перенесены на `mcp.settings`; `transport` сужен до literal'ов.
-> - `cod_doc/tui/{app,screens/*}.py` — `BINDINGS: ClassVar[list[BindingType]]` (covariant), переименован `_StepBar._render` → `_refresh_label` (override-конфликт с `Static._render`).
-> - `cod_doc/core/{project,reindex}.py`, `cod_doc/agent/tools.py`, `cod_doc/api/{routes,webhooks}.py` — bare `dict` → `dict[str, Any]`; `cast(dict[str, Any], …)` для JSON-парсинга.
-> - `cod_doc/agent/retry.py`, `cod_doc/api/server.py` — `collections.abc` импорты в `TYPE_CHECKING` (TC003).
-> - `tests/test_orchestrator.py` — mock `tc.type = "function"` (мейнтенанс под новый фильтр).
-> - 73 файла отформатированы `ruff format`; suite 351/351 зелёные.
+> ✅ **Implemented 2026-05-01:** debt cleared — `ruff check` zero, `ruff format --check` zero diffs (117 files), `mypy cod_doc` zero (87 files, strict). The CI mypy job is moved to blocking (`continue-on-error` removed). Key edits:
+> - `cod_doc/agent/orchestrator.py` — `# type: ignore[call-overload,misc]` on two `chat.completions.create` (OpenAI SDK overloads vs bare-dict messages); the filter `tc.type == "function"` for the tool_call union; `cast` import.
+> - `cod_doc/cli/cmd_serve.py` + `cod_doc/mcp/server.py` — `host/port/stateless_http` moved to `mcp.settings`; `transport` narrowed to literals.
+> - `cod_doc/tui/{app,screens/*}.py` — `BINDINGS: ClassVar[list[BindingType]]` (covariant), renamed `_StepBar._render` → `_refresh_label` (override conflict with `Static._render`).
+> - `cod_doc/core/{project,reindex}.py`, `cod_doc/agent/tools.py`, `cod_doc/api/{routes,webhooks}.py` — bare `dict` → `dict[str, Any]`; `cast(dict[str, Any], …)` for JSON parsing.
+> - `cod_doc/agent/retry.py`, `cod_doc/api/server.py` — `collections.abc` imports in `TYPE_CHECKING` (TC003).
+> - `tests/test_orchestrator.py` — mock `tc.type = "function"` (maintenance for the new filter).
+> - 73 files formatted with `ruff format`; suite 351/351 green.
 
 ### COD-025
 
@@ -765,28 +765,28 @@ affected_files:
   - tests/services/test_sensitivity.py
 ```
 
-**Description:** Реализация [standards/sensitive-data.md](../standards/sensitive-data.md). Содержит:
+**Description:** Implementation of [standards/sensitive-data.md](../standards/sensitive-data.md). Contains:
 
-1. **SD-001 SensitivityScanner** — regex + entropy-detector для секретов (API keys, JWT, private keys); PII-сэмпл-чек (имя+email+телефон в пределах окна). Возвращает `list[SensitivityFinding]`. Подключается advisory в `audit_*` (write-path не блокирует, чтобы избежать ложных срабатываний).
-2. **SD-002 Redaction в проекциях** — `ProjectionService.export(audience='public')` маскирует поля по правилам из стандарта.
-3. **SD-003 Clearance-фильтрация контекста** — `ContextService.get(actor, …)` фильтрует документы по `actor.sensitivity_clearance` ≥ `document.sensitivity`. Поле `agent_definition.sensitivity_clearance` (миграция 0007 — добавляется здесь как preview, полная таблица — в Section D).
-4. **FM-007** активируется в `validation.audit_frontmatter` — warning при отсутствии `sensitivity` для `module-spec/architecture/standard`.
-5. CLI-флаг `cod-doc audit --sensitivity` (pre-commit hook) — реализуется вместе с COD-031.
+1. **SD-001 SensitivityScanner** — regex + entropy-detector for secrets (API keys, JWT, private keys); a PII sample check (name+email+phone within a window). Returns `list[SensitivityFinding]`. Wired in advisory into `audit_*` (does not block the write-path, to avoid false positives).
+2. **SD-002 Redaction in projections** — `ProjectionService.export(audience='public')` masks fields per the rules in the standard.
+3. **SD-003 Clearance filtering of context** — `ContextService.get(actor, …)` filters documents by `actor.sensitivity_clearance` ≥ `document.sensitivity`. The field `agent_definition.sensitivity_clearance` (migration 0007 — added here as a preview, the full table — in Section D).
+4. **FM-007** is activated in `validation.audit_frontmatter` — a warning when `sensitivity` is missing for `module-spec/architecture/standard`.
+5. CLI flag `cod-doc audit --sensitivity` (pre-commit hook) — implemented together with COD-031.
 
-Acceptance: 15+ тестов; SensitivityScanner детектит ≥4 паттерна секретов; redaction воспроизводимо; clearance-фильтр покрыт интеграционным тестом.
+Acceptance: 15+ tests; SensitivityScanner detects ≥4 secret patterns; redaction is reproducible; the clearance filter is covered by an integration test.
 
-> ✅ **Implemented 2026-05-01:** 36 тестов в `tests/services/test_sensitivity.py`. Доставленные компоненты:
-> - **SD-001 SensitivityScanner** — `cod_doc/services/sensitivity_scanner.py`: 5 high-confidence паттернов (`aws_access_key`, `github_pat`, `slack_token`, `pem_private_key`, `jwt_token`), generic high-entropy heuristic с порогом 4.5 bits/char и капом 25/документ, PII окно 80 chars (email+phone). Snippets частично замаскированы (`prefix…suffix`); line numbers 1-based.
-> - **SD-001 advisory** — `validation.audit_sensitivity(body, declared_sensitivity)` оборачивает scanner: high-conf секреты в public/internal → `severity=error`, в confidential/restricted → warning; PII всегда warning. Не raise — следует write-path-validation pattern (см. memory `validation_pattern.md`).
-> - **SD-002 Redaction** — `ProjectionService.render_markdown(audience=...)` и `export_document(audience=...)`. Audience tiers: public<internal<confidential<restricted. Когда audience не дотягивает — body заменяется на `> [content redacted: <level> — see DB]`. Frontmatter сохраняется, чтобы потребитель видел причину. Audience-specific export НЕ обновляет `projection_hash` — canonical drift detection не ломается.
-> - **SD-003 Clearance helper** — `sensitivity_scanner.clearance_meets(actor, doc)`: pure helper, единый источник истины для будущих ContextService/audit/redaction. Unknown clearance → public (наиболее ограничительно). Сама `ContextService` и миграция `agent_definition.sensitivity_clearance` отложены до Section D (таблица `agent_definition` ещё не существует) — `clearance_meets` используется как ready API.
-> - **FM-007** — `audit_frontmatter` warning при отсутствии `sensitivity` для `module-spec`/`architecture`/`standard`.
+> ✅ **Implemented 2026-05-01:** 36 tests in `tests/services/test_sensitivity.py`. Delivered components:
+> - **SD-001 SensitivityScanner** — `cod_doc/services/sensitivity_scanner.py`: 5 high-confidence patterns (`aws_access_key`, `github_pat`, `slack_token`, `pem_private_key`, `jwt_token`), a generic high-entropy heuristic with a threshold of 4.5 bits/char and a cap of 25/document, a PII window of 80 chars (email+phone). Snippets are partially masked (`prefix…suffix`); line numbers are 1-based.
+> - **SD-001 advisory** — `validation.audit_sensitivity(body, declared_sensitivity)` wraps the scanner: high-confidence secrets in public/internal → `severity=error`, in confidential/restricted → warning; PII is always a warning. Does not raise — follows the write-path-validation pattern (see memory `validation_pattern.md`).
+> - **SD-002 Redaction** — `ProjectionService.render_markdown(audience=...)` and `export_document(audience=...)`. Audience tiers: public<internal<confidential<restricted. When the audience does not reach — the body is replaced with `> [content redacted: <level> — see DB]`. The frontmatter is preserved, so the consumer sees the reason. An audience-specific export does NOT update `projection_hash` — the canonical drift detection is not broken.
+> - **SD-003 Clearance helper** — `sensitivity_scanner.clearance_meets(actor, doc)`: a pure helper, a single source of truth for the future ContextService/audit/redaction. Unknown clearance → public (most restrictive). The `ContextService` itself and the migration `agent_definition.sensitivity_clearance` are deferred to Section D (the `agent_definition` table does not exist yet) — `clearance_meets` is used as a ready API.
+> - **FM-007** — `audit_frontmatter` warning when `sensitivity` is missing for `module-spec`/`architecture`/`standard`.
 >
-> Защёл общий suite: 393/393 зелёные, ruff/mypy strict zero.
+> The overall suite is locked: 393/393 green, ruff/mypy strict zero.
 
 **Deferred to next sections:**
-- `cod-doc audit --sensitivity` CLI flag — в составе COD-031 (CLI audit).
-- Migration `0007_agent_clearance.py` + ContextService gating — Section D / E (зависит от схемы `agent_definition`).
+- `cod-doc audit --sensitivity` CLI flag — as part of COD-031 (CLI audit).
+- Migration `0007_agent_clearance.py` + ContextService gating — Section D / E (depends on the `agent_definition` schema).
 
 ### COD-026
 
@@ -805,19 +805,19 @@ affected_files:
   - cod_doc/tui/screens/wizard.py
 ```
 
-**Description:** Минимальное smoke-покрытие TUI (`cod_doc/tui/`). Использует `textual.pilot.Pilot` (поставляется с `textual`). Сценарии:
+**Description:** Minimal smoke coverage of the TUI (`cod_doc/tui/`). Uses `textual.pilot.Pilot` (shipped with `textual`). Scenarios:
 
-- App стартует и показывает `WizardScreen` если проект не инициализирован.
-- При наличии `.cod-doc/` показывает `DashboardScreen` со списком задач.
-- `AgentRunScreen` открывается при выборе ready-task; обработчики `Button.Pressed` не падают.
+- App boots and shows `WizardScreen` if the project is not initialized.
+- With `.cod-doc/` present, shows `DashboardScreen` with a task list.
+- `AgentRunScreen` opens on a ready-task selection; `Button.Pressed` handlers do not crash.
 
-Acceptance: 5+ тестов; не требует БД (мокать через fixture). Не покрываем визуальные regression — только маршрутизацию и не-исключения.
+Acceptance: 5+ tests; does not need a DB (mock via a fixture). We do not cover visual regressions — only routing and no-exceptions.
 
-> ✅ **Implemented 2026-05-01:** 9 smoke-тестов в `tests/tui/`:
-> - `test_app_boot.py` (3) — wizard при unconfigured Config, dashboard при наличии api_key, `q`-binding triggers app exit.
-> - `test_screens.py` (6) — каждый экран (`WizardScreen`, `DashboardScreen`, `AgentRunScreen`, `AddProjectDialog`, `AddTaskDialog`) монтируется без исключений; `r`-binding на пустом dashboard не падает.
-> - Использует `App.run_test()` + `Pilot.pause()`. `_ScreenHost` — минимальный host-App для изолированного теста одного screen'a. `Config` создаётся с tmp `cod_doc_home`, чтобы тесты не трогали реальный `~/.cod-doc/`.
+> ✅ **Implemented 2026-05-01:** 9 smoke tests in `tests/tui/`:
+> - `test_app_boot.py` (3) — wizard on an unconfigured Config, dashboard when api_key is present, the `q`-binding triggers app exit.
+> - `test_screens.py` (6) — every screen (`WizardScreen`, `DashboardScreen`, `AgentRunScreen`, `AddProjectDialog`, `AddTaskDialog`) mounts without exceptions; the `r`-binding on an empty dashboard does not crash.
+> - Uses `App.run_test()` + `Pilot.pause()`. `_ScreenHost` — a minimal host App for an isolated test of a single screen. `Config` is created with a tmp `cod_doc_home` so the tests do not touch the real `~/.cod-doc/`.
 >
-> **Bug surfaced and fixed:** WizardScreen использовал `id=f"model-{model_id}"` где `model_id` — `anthropic/claude-sonnet-4-6` (содержит `/` и `.`). Textual ругался `BadIdentifier` при mount. Добавлен `_model_widget_id()` helper, заменяющий `/` и `.` на `_`. Без smoke-тестов баг бы дожил до пользовательского запуска wizard'а.
+> **Bug surfaced and fixed:** WizardScreen used `id=f"model-{model_id}"` where `model_id` is `anthropic/claude-sonnet-4-6` (contains `/` and `.`). Textual complained `BadIdentifier` on mount. Added a `_model_widget_id()` helper that replaces `/` and `.` with `_`. Without smoke tests the bug would have lived until a user ran the wizard.
 >
-> Suite 402/402 зелёные, ruff/mypy strict zero.
+> Suite 402/402 green, ruff/mypy strict zero.

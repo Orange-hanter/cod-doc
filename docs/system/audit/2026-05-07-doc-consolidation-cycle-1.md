@@ -16,130 +16,128 @@ related_docs:
 
 # Documentation Consolidation — Cycle 1 (Anchor & Disambiguate)
 
-> **Назначение.** Зафиксировать находки по состоянию документации на старте 2026-05-07
-> и оформить первую волну консолидации: устранить двойной MASTER, освежить L0-набор
-> на корне, привести US-001..US-004 к фактическому состоянию delivered.
+> **Purpose.** Record the findings on the state of the documentation at the start of 2026-05-07
+> and formalize the first wave of consolidation: eliminate the double MASTER, refresh the L0 set
+> at the root, bring US-001..US-004 to the actual delivered state.
 
 ## 1. TL;DR
 
-- **2 параллельных мастер-индекса** — `/MASTER.md` (загрязнён фикстурным заголовком
-  `integration-test`, last_updated 2026-04-05) и `docs/system/MASTER.md` (актуальный,
+- **2 parallel master indexes** — `/MASTER.md` (polluted with a fixture heading
+  `integration-test`, last_updated 2026-04-05) and `docs/system/MASTER.md` (current,
   2026-05-02).
-- **Stale L0-набор** (`/arch`, `/specs`, `/models`) — frontmatter v0.1/0.2 от
-  2026-04-05; фактически живая архитектура описана в `docs/system/ARCHITECTURE.md`
-  и `docs/system/DATA_MODEL.md`.
-- **15 RFC** в `/proposals/` от 2026-05-06 не подключены к мастеру и не отражены в
-  беклоге БД (58 done, 0 pending).
-- **US-001..US-004 в draft**, фактически US-001/US-002/US-004 уже доставлены
-  (commits `bb197bf`, `7e72b30`, `4441ce2`); US-003 покрыт инвентарём `tool_defs.py`
-  (присутствуют все 6 целевых тулов).
+- **Stale L0 set** (`/arch`, `/specs`, `/models`) — frontmatter v0.1/0.2 from
+  2026-04-05; the actual live architecture is described in `docs/system/ARCHITECTURE.md`
+  and `docs/system/DATA_MODEL.md`.
+- **15 RFCs** in `/proposals/` from 2026-05-06 are not connected to the master and not reflected in
+  the DB backlog (58 done, 0 pending).
+- **US-001..US-004 in draft**, actually US-001/US-002/US-004 are already delivered
+  (commits `bb197bf`, `7e72b30`, `4441ce2`); US-003 is covered by the `tool_defs.py` inventory
+  (all 6 target tools are present).
 
 ## 2. Detailed Findings
 
-### F1 — Двойной MASTER, корень с фикстурой
+### F1 — Double MASTER, root with a fixture
 
-`/MASTER.md` начинается с заголовка `🧭 Project Navigator: integration-test` и
-meta-блока, где `repo` указывает на `/private/var/folders/.../pytest-17/test_agent_run_full_cycle0/my-repo`.
-Это явно остаток integration-теста, попавший в коммит. При этом все хеши в
-Validation Table (5.1) совпадают с дисковыми (через `check_stale_refs` —
-10/10 VALID), то есть **контент валиден, но meta вводит в заблуждение**.
+`/MASTER.md` starts with the heading `🧭 Project Navigator: integration-test` and
+a meta block where `repo` points to `/private/var/folders/.../pytest-17/test_agent_run_full_cycle0/my-repo`.
+This is clearly a remnant of an integration test that got into a commit. At the same time, all hashes in the
+Validation Table (5.1) match the disk ones (via `check_stale_refs` —
+10/10 VALID), i.e. **the content is valid, but the meta is misleading**.
 
-**Решение цикла 1:** перепрофилировать `/MASTER.md` в тонкий навигатор-агрегатор,
-указывающий на:
-- `docs/system/MASTER.md` — system-of-truth для целевого состояния COD-DOC,
-- `proposals/README.md` — каталог RFC,
-- `arch/architecture.md`, `specs/modules.md`, `models/domain.md` — bootstrap-
-  набор, оставляем для агентского L0-сценария, но помечаем явно legacy.
+**Cycle 1 decision:** repurpose `/MASTER.md` as a thin navigator-aggregator pointing to:
+- `docs/system/MASTER.md` — the system-of-truth for the target state of COD-DOC,
+- `proposals/README.md` — the RFC catalog,
+- `arch/architecture.md`, `specs/modules.md`, `models/domain.md` — the bootstrap
+  set, left for the agent L0 scenario, but explicitly marked as legacy.
 
-### F2 — Stale L0-набор
+### F2 — Stale L0 set
 
-| Файл | meta.version | meta.last_updated | Реальный канонический документ |
+| File | meta.version | meta.last_updated | Real canonical document |
 |------|--------------|-------------------|---------------------------------|
 | `arch/architecture.md` | 0.2 | 2026-04-05 | `docs/system/ARCHITECTURE.md` |
-| `specs/modules.md` | 0.2 | 2026-04-05 | (нет прямого аналога — раскрыто в `docs/system/capabilities/`) |
+| `specs/modules.md` | 0.2 | 2026-04-05 | (no direct analog — expanded in `docs/system/capabilities/`) |
 | `models/domain.md` | 0.1 | 2026-04-05 | `docs/system/DATA_MODEL.md` |
 
-Bootstrap-набор задумывался как L0-вход для агентского Snowball-протокола.
-В `docs/system/` развился более глубокий пакет с capability-разбивкой. Вместо
-удаления — обновляем frontmatter (статус `redirect` или ссылка на canonical),
-оставляем существующий контент как валидный обзор, добавляем pointer на
+The bootstrap set was conceived as the L0 input for the agent Snowball protocol.
+In `docs/system/` a deeper package with a capability breakdown evolved. Instead of
+deleting — we update the frontmatter (status `redirect` or a link to the canonical),
+leave the existing content as a valid overview, add a pointer to
 `docs/system/`.
 
-### F3 — Proposals не подключены к мастеру
+### F3 — Proposals are not connected to the master
 
-`/proposals/` содержит 15 RFC по адаптации паттернов paperclip:
+`/proposals/` contains 15 RFCs on adapting paperclip patterns:
 
-| Phase | Numbers | Тема |
+| Phase | Numbers | Topic |
 |-------|---------|------|
 | 1 | 01-04 | Skills layer, Heartbeat-context, Wake-payload, Run-id audit |
 | 2 | 05, 09, 12 | Issue documents, Activity log, Approvals |
 | 3 | 06, 07, 08, 11 | Atomic checkout, Routines (cron), Status taxonomy, AGENTS.md |
-| 4 | 10 | Adapter pattern для LLM |
+| 4 | 10 | Adapter pattern for LLM |
 | n/a | 13, 14, 15 | Import UX, Legacy-tasks migration UX, Link system & rendering |
 
-**Решение:** в Циклах 2-3 завести план `paperclip-adoption-task-plan` в
-`docs/system/roadmap/`, kickoff-brief, и сгенерировать stories+tasks для
-всех 15 предложений.
+**Decision:** in Cycles 2-3 open the plan `paperclip-adoption-task-plan` in
+`docs/system/roadmap/`, a kickoff-brief, and generate stories+tasks for
+all 15 proposals.
 
-### F4 — Stories US-001..US-004 фактически delivered
+### F4 — Stories US-001..US-004 actually delivered
 
-Проверено по коду:
+Verified by code:
 
-| Story | Acceptance ключевая | Код | Вывод |
+| Story | Key acceptance | Code | Conclusion |
 |-------|---------------------|-----|-------|
-| US-001 | context_refs в начальном промпте, превью ≤200 строк | `cod_doc/agent/orchestrator.py:176` `_render_context_refs(refs, max_lines=200)` | ✅ delivered |
-| US-002 | forward_chain в начальном промпте | `cod_doc/agent/orchestrator.py:205` `_render_prerequisites(task)`, retry с убиранием MASTER | ✅ delivered |
-| US-003 | tool palette = MCP palette | `cod_doc/agent/tool_defs.py` содержит все 6 целевых тулов: `plan_forward_chain`, `plan_reverse_chain`, `plan_ready`, `story_get`, `doc_body`, `link_list` | ✅ delivered |
-| US-004 | Task с blocked_by/affects_files/acceptance/story_id | `cod_doc/core/project.py:43-60` поля присутствуют, сериализуются туда-обратно (`to_dict`/`from_dict`) | ✅ delivered |
+| US-001 | context_refs in the initial prompt, preview ≤200 lines | `cod_doc/agent/orchestrator.py:176` `_render_context_refs(refs, max_lines=200)` | ✅ delivered |
+| US-002 | forward_chain in the initial prompt | `cod_doc/agent/orchestrator.py:205` `_render_prerequisites(task)`, retry with MASTER removed | ✅ delivered |
+| US-003 | tool palette = MCP palette | `cod_doc/agent/tool_defs.py` contains all 6 target tools: `plan_forward_chain`, `plan_reverse_chain`, `plan_ready`, `story_get`, `doc_body`, `link_list` | ✅ delivered |
+| US-004 | Task with blocked_by/affects_files/acceptance/story_id | `cod_doc/core/project.py:43-60` fields are present, serialized back and forth (`to_dict`/`from_dict`) | ✅ delivered |
 
-**Решение цикла 1:** перевести US-001..US-004 в статус `delivered` через
-`story_update_status`, добавить linked-доки на код-источник реализации.
-Расхождение между `coverage()` derived-status (`draft` — нет привязанных
-DB-задач) и pinned-status (`delivered`) фиксируем явно — DB-задачи сделаны
-до того, как Stories вошли в схему; backfill историческими привязками не
-делаем.
+**Cycle 1 decision:** move US-001..US-004 to status `delivered` via
+`story_update_status`, add linked-docs to the code source of the implementation.
+The divergence between the `coverage()` derived-status (`draft` — no linked
+DB tasks) and the pinned-status (`delivered`) is recorded explicitly — the DB tasks were done
+before Stories entered the schema; we do not backfill with historical links.
 
-### F5 — Прочие наблюдения
+### F5 — Other observations
 
-- В DB зарегистрирован документ `arch/arch/architecture` с двойным
-  префиксом — ошибочный bootstrap, кандидат на удаление в Цикле 4.
-- DB-документ `MASTER` помечен `status: draft, source_of_truth: true`,
-  тогда как сам файл живёт как L0 navigator. Привести к `redirect` или
-  обновить frontmatter после Цикла 1.
-- Свежие audit-файлы `2026-05-06-ai-usage-audit.md` и `2026-05-06-cli-vs-web-parity.md`
-  не упомянуты в `docs/system/MASTER.md` — добавить в Цикле 4.
+- The DB has a registered document `arch/arch/architecture` with a double
+  prefix — an erroneous bootstrap, a candidate for deletion in Cycle 4.
+- The DB document `MASTER` is marked `status: draft, source_of_truth: true`,
+  while the file itself lives as an L0 navigator. Bring to `redirect` or
+  update the frontmatter after Cycle 1.
+- The fresh audit files `2026-05-06-ai-usage-audit.md` and `2026-05-06-cli-vs-web-parity.md`
+  are not mentioned in `docs/system/MASTER.md` — add in Cycle 4.
 
 ## 3. Cycle-1 deliverables
 
-| # | Деливерабл | Файл/действие | Статус |
+| # | Deliverable | File/action | Status |
 |---|------------|----------------|--------|
 | D1 | Cycle-1 audit-report | `docs/system/audit/2026-05-07-doc-consolidation-cycle-1.md` | ✅ this file |
 | D2 | `/MASTER.md` → thin navigator | rewrite | ⏳ |
 | D3 | `arch/architecture.md` frontmatter refresh | edit meta + add canonical pointer | ⏳ |
 | D4 | `specs/modules.md` frontmatter refresh | edit meta + add canonical pointer | ⏳ |
 | D5 | `models/domain.md` frontmatter refresh | edit meta + add canonical pointer | ⏳ |
-| D6 | US-001..US-004 → delivered | `story_update_status` + `story_link` на код | ⏳ |
+| D6 | US-001..US-004 → delivered | `story_update_status` + `story_link` to code | ⏳ |
 | D7 | `docs/system/MASTER.md` changelog | append cycle-1 entry | ⏳ |
 
 ## 4. Out of cycle (handed off)
 
 - **Cycle 2:** Phase 1 RFC (01-04) → kickoff brief + execution plan + stories +
   tasks.
-- **Cycle 3:** Phase 2-4 RFC (05-12) и unscoped (13-15) → расширение плана.
-- **Cycle 4:** link integrity, hash refresh, удаление мусорного doc-record
-  `arch/arch/architecture`, нормализация doc-keys.
-- **Cycle 5:** финальный close-out audit + memory updates.
+- **Cycle 3:** Phase 2-4 RFC (05-12) and unscoped (13-15) → expand the plan.
+- **Cycle 4:** link integrity, hash refresh, delete the garbage doc-record
+  `arch/arch/architecture`, normalize doc-keys.
+- **Cycle 5:** final close-out audit + memory updates.
 
 ## 5. Acceptance for cycle 1
 
-- [ ] Корневой `/MASTER.md` не содержит фикстурного `integration-test`.
-- [ ] Корневой `/MASTER.md` имеет prominent ссылки на `docs/system/MASTER.md`,
+- [ ] The root `/MASTER.md` does not contain the fixture `integration-test`.
+- [ ] The root `/MASTER.md` has prominent links to `docs/system/MASTER.md`,
       `proposals/README.md`, `arch/architecture.md`, `specs/modules.md`,
       `models/domain.md`.
-- [ ] У всех трёх legacy-доков (`arch/architecture.md`, `specs/modules.md`,
-      `models/domain.md`) есть актуальный `last_updated: 2026-05-07` и
-      явный pointer на canonical-источник.
-- [ ] US-001..US-004 в статусе `delivered` с reason='cycle-1 verification'
-      и хотя бы одним `story_link`.
-- [ ] `docs/system/MASTER.md §6 Changelog` дополнен записью 2026-05-07.
-- [ ] `check_stale_refs(cod-doc)` всё ещё 10/10 VALID после правок.
+- [ ] All three legacy docs (`arch/architecture.md`, `specs/modules.md`,
+      `models/domain.md`) have an up-to-date `last_updated: 2026-05-07` and
+      an explicit pointer to the canonical source.
+- [ ] US-001..US-004 are in status `delivered` with reason='cycle-1 verification'
+      and at least one `story_link`.
+- [ ] `docs/system/MASTER.md §6 Changelog` is extended with an entry for 2026-05-07.
+- [ ] `check_stale_refs(cod-doc)` is still 10/10 VALID after the edits.

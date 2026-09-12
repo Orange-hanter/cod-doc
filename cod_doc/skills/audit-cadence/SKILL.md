@@ -1,33 +1,33 @@
 ---
 name: audit-cadence
 description: |
-  Закрытие фазы → audit-report в docs/system/audit/.
-  Открытие новой фазы → kickoff-brief в docs/system/roadmap/.
-  Триггеры: audit, phase, kickoff, close, complete, section, briefing,
+  Closing a phase → audit-report in docs/system/audit/.
+  Opening a new phase → kickoff-brief in docs/system/roadmap/.
+  Triggers: audit, phase, kickoff, close, complete, section, briefing,
   consolidation, milestone.
 ---
 
 # Skill — Audit cadence
 
-## Когда подгружается
+## When it loads
 
-Задачи, в которых пользователь / LLM **закрывают фазу работ**
-(секцию, milestone, consolidation cycle) или **открывают новую**.
-Триггер-keywords: `audit`, `phase`, `kickoff`, `close`, `complete
-section`, `consolidation`, `milestone`, `closure`, `briefing`.
+Tasks where the user / LLM **closes a phase of work** (section, milestone,
+consolidation cycle) or **opens a new one**. Trigger keywords: `audit`,
+`phase`, `kickoff`, `close`, `complete section`, `consolidation`,
+`milestone`, `closure`, `briefing`.
 
-## Два события, два артефакта
+## Two events, two artifacts
 
-| Событие | Артефакт | Куда кладётся |
+| Event | Artifact | Where it goes |
 |---------|----------|---------------|
-| Закрытие фазы / секции / cycle | **audit-report** (`type: audit-report`) | `docs/system/audit/<YYYY-MM-DD>-<scope>-cycle-N.md` (или `<section>.md`) |
-| Открытие новой фазы | **kickoff-brief** (`type: kickoff-brief`) | `docs/system/roadmap/<scope>-kickoff-<YYYY-MM-DD>.md` |
+| Closing a phase / section / cycle | **audit-report** (`type: audit-report`) | `docs/system/audit/<YYYY-MM-DD>-<scope>-cycle-N.md` (or `<section>.md`) |
+| Opening a new phase | **kickoff-brief** (`type: kickoff-brief`) | `docs/system/roadmap/<scope>-kickoff-<YYYY-MM-DD>.md` |
 
-Пример: завершён Phase 1 paperclip-adoption → пишется
-`audit/2026-XX-YY-paperclip-phase-1.md`. Стартует Phase 2 → пишется
+Example: Phase 1 paperclip-adoption is finished → write
+`audit/2026-XX-YY-paperclip-phase-1.md`. Phase 2 starts → write
 `roadmap/paperclip-phase-2-kickoff-2026-XX-YY.md`.
 
-## Скелет audit-report
+## audit-report skeleton
 
 ```
 ---
@@ -51,7 +51,7 @@ related_docs: [...]
 ## 6. Out of cycle (handed off → next)
 ```
 
-## Скелет kickoff-brief
+## kickoff-brief skeleton
 
 ```
 ---
@@ -67,26 +67,28 @@ audience: [next-session-agent, contributors]
 # <Phase> — Kickoff Brief
 
 ## 1. TL;DR
-## 2. Контекст / Состояние
-## 3. Первый tick (что сделать сразу)
+## 2. Context / State
+## 3. First tick (what to do right away)
 ## 4. Acceptance for this phase
-## 5. Команды
+## 5. Commands
 ```
 
-## Правила
+## Rules
 
-- В одном цикле — ровно **N** audit-отчётов на N циклов; findings одного
-  цикла → backlog в следующем (паттерн «findings → tasks → next cycle»).
+- In one cycle — exactly **N** audit-reports for N cycles; findings of
+  one cycle → backlog in the next (the "findings → tasks → next cycle"
+  pattern).
 - Audit-report — `source_of_truth: true`, kickoff-brief — `false`
-  (canonical_source указывает на execution-plan).
-- При закрытии секции переключай связанные docs со `status: active` →
-  `status: resolved` (для audit-отчётов прошлых циклов, чьи задачи
-  закрыты).
-- Kickoff-brief живёт до закрытия фазы; потом архивируется в audit-отчёт.
+  (canonical_source points to the execution-plan).
+- On closing a section, switch the related docs from `status: active` →
+  `status: resolved` (for audit-reports of past cycles whose tasks are
+  closed).
+- The kickoff-brief lives until the phase closes; then it is archived
+  into an audit-report.
 
-## Связанное
+## Related
 
-- [docs/system/MASTER.md](../../../docs/system/MASTER.md) — глобальный индекс
-  audit/ + roadmap/.
+- [docs/system/MASTER.md](../../../docs/system/MASTER.md) — global index
+  of audit/ + roadmap/.
 - [standards/frontmatter.md](../../../docs/system/standards/frontmatter.md) —
-  допустимые `type:` и `status:`.
+  valid `type:` and `status:`.

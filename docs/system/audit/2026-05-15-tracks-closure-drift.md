@@ -8,8 +8,8 @@ status: open  # findings pending remediation
 
 # Module audit — 4 tracks closed 2026-05-15
 
-> 5-dimensional drift check per skill `module-audit`. CI зелёный ≠ модуль
-> готов. Audit applied to four section closures done today:
+> 5-dimensional drift check per skill `module-audit`. CI green ≠ module
+> ready. Audit applied to four section closures done today:
 >
 > 1. paperclip-adoption-task-plan/G — Cycle-3 agent-UX audit (19 done / 2 cancelled)
 > 2. paperclip-adoption-task-plan/H — Cycle-5 agent-centric API (12 done)
@@ -148,7 +148,7 @@ audits don't keep rediscovering it.
 
 **F8 [docs] · severity: M** — No audit-reports for any section closures today.
 
-Memory `audit_cadence.md`: "закрытая секция → audit-report в
+Memory `audit_cadence.md`: "closed section → audit-report in
 `docs/system/audit/`". Closed today:
 
 | Section | Audit-report? |
@@ -196,7 +196,7 @@ observability/indexing items behind a single "Insights" parent tab.
 
 ## Summary
 
-| Измерение | F-count | Severity (C/M/L) |
+| Dimension | F-count | Severity (C/M/L) |
 |-----------|---------|------------------|
 | code      | 2 | C: 1 · M: 1 |
 | logic     | 3 | M: 1 · L: 2 |
@@ -211,7 +211,7 @@ Per skill `module-audit`: ≥1 finding ⇒ open a remediation plan
 (`plan_create`).
 
 **Recommended plan:** `cycle-5-drift-remediation-2026-05-15`,
-principle "Закрыть все F# из 2026-05-15 audit-report до перехода в
+principle "Close all F# from the 2026-05-15 audit-report before moving to
 cycle-6".
 
 Critical (block any next major release):

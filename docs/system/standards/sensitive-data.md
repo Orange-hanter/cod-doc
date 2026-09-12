@@ -12,51 +12,51 @@ related_docs:
 
 # Sensitive Data Standard
 
-> Документы могут содержать PII, секреты, бизнес-чувствительную информацию.
-> Стандарт ограничивает, что и кому отдавать, и как помечать.
+> Documents may contain PII, secrets, business-sensitive information.
+> The standard limits what to give to whom, and how to mark it.
 
-## 1. Поле `sensitivity` в Document
+## 1. The `sensitivity` field in Document
 
 ```yaml
 sensitivity: public | internal | confidential | restricted
 ```
 
-| Уровень | Что значит |
+| Level | What it means |
 |---------|-----------|
-| `public` | Можно публиковать вовне (open-source, лендинг) |
-| `internal` | Внутри организации; default |
-| `confidential` | Только перечисленные `audience` |
-| `restricted` | Доступ только по явному `actor allow-list` |
+| `public` | Can be published externally (open-source, landing page) |
+| `internal` | Inside the organization; default |
+| `confidential` | Only the listed `audience` |
+| `restricted` | Access only by an explicit `actor allow-list` |
 
-## 2. Запрещённый контент
+## 2. Forbidden content
 
-В body документов (любого уровня) запрещены:
+The following are forbidden in document bodies (at any level):
 
-- API-ключи, токены, пароли в открытом виде.
-- Полные PII (полные имена + контакты + адреса) клиентов в больших списках.
-- Дампы БД, превышающие 1000 строк.
+- API keys, tokens, passwords in plaintext.
+- Full PII (full names + contacts + addresses) of clients in large lists.
+- DB dumps exceeding 1000 rows.
 
-Detection — сервис `SensitivityScanner` (regex + entropy для секретов; сэмпл-чек для PII).
+Detection — the `SensitivityScanner` service (regex + entropy for secrets; a sample-check for PII).
 
-## 3. Поведение `context.get`
+## 3. Behavior of `context.get`
 
-- Если `actor=mcp:<external>` — секции с `sensitivity ≥ confidential` не возвращаются; маркер «redacted».
-- Если `actor=agent:<role>` — проверяется `agent_definition.sensitivity_clearance` (новое поле).
+- If `actor=mcp:<external>` — sections with `sensitivity ≥ confidential` are not returned; a "redacted" marker is left.
+- If `actor=agent:<role>` — `agent_definition.sensitivity_clearance` is checked (a new field).
 
-## 4. Поведение `export`
+## 4. Behavior of `export`
 
-- Markdown projection с `sensitivity ≥ confidential` помечается фронтматтером и **не** экспортируется в публичный CHANGELOG.
-- При `cod-doc projection freeze` confidential-секции рендерятся как заглушки `> [content redacted: confidential — see DB]` для public-копии (опционально).
+- A markdown projection with `sensitivity ≥ confidential` is marked in the frontmatter and is **not** exported to the public CHANGELOG.
+- On `cod-doc projection freeze`, confidential sections are rendered as stubs `> [content redacted: confidential — see DB]` for the public copy (optional).
 
 ## 5. Audit-checks
 
 `cod-doc audit --sensitivity`:
 
-- Документ без `sensitivity` поля → warning (default `internal`).
-- Найдены секрет-паттерны в `public`/`internal` → error.
-- Документ с `sensitivity=public` ссылается на confidential → warning.
+- A document without a `sensitivity` field → warning (default `internal`).
+- Secret patterns found in `public`/`internal` → error.
+- A document with `sensitivity=public` references a confidential one → warning.
 
-## 6. Не входит в стандарт
+## 6. Out of scope
 
-- Шифрование БД at-rest — задача инфраструктуры, не пакета.
-- Compliance (GDPR, SOC2) — требует отдельного аудита; этот стандарт даёт строительные блоки, но не сертификацию.
+- DB encryption at-rest — an infrastructure concern, not a package one.
+- Compliance (GDPR, SOC2) — requires a separate audit; this standard provides building blocks, not certification.

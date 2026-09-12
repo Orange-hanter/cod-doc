@@ -148,6 +148,6 @@ to close it before live-ops Section D opens).
 
 ## 7. Changelog
 
-| Дата | Событие |
+| Date | Event |
 |---|---|
-| 2026-05-02 | Checkpoint #3 после 3 коммитов batch-3 (5cc1617, d566956, d733840). 14 / 16 находок baseline закрыты; Section B (Read views) закрыта целиком (6/6). Endpoints shipped 8 → 10 / 14 (~71 %). Suite 483 → 500. 0 регрессий, 0 архитектурных нарушений. |
+| 2026-05-02 | Checkpoint #3 after 3 commits of batch-3 (5cc1617, d566956, d733840). 14 / 16 baseline findings closed; Section B (Read views) closed entirely (6/6). Endpoints shipped 8 → 10 / 14 (~71 %). Suite 483 → 500. 0 regressions, 0 architectural violations. |

@@ -17,26 +17,26 @@ related_docs:
 
 # Cloud Agent Plane — Kickoff Brief (2026-07-29)
 
-> **Назначение.** Точка входа в переход COD-DOC к облачному
-> documentation control plane, где ИИ полностью ведёт документацию
-> через сервис, а агенты работают как децентрализованные воркеры.
+> **Purpose.** Entry point for the COD-DOC transition to a cloud
+> documentation control plane, where AI fully maintains documentation
+> through the service, and agents operate as decentralized workers.
 >
-> **Не source of truth.** Канон — [cloud-agent-plane-task-plan.md](cloud-agent-plane-task-plan.md)
-> и capability [cloud-agent-plane.md](../capabilities/cloud-agent-plane.md).
+> **Not source of truth.** The canonical document is [cloud-agent-plane-task-plan.md](cloud-agent-plane-task-plan.md)
+> and the capability [cloud-agent-plane.md](../capabilities/cloud-agent-plane.md).
 
 ## 1. TL;DR
 
-- **Что:** Сделать COD-DOC облачным узлом (Postgres + remote MCP +
-  Bearer identity), расширить agent-профиль записью документов
-  (`agent_apply`), отвязать мутации от локального `root_path`.
-- **Почему:** Cycle-5 дал task-centric 6-tool surface, но агент всё ещё
-  «локальный»: stdio, нет MCP patch, нет enforced auth, projection
-  требует FS. Без этого ИИ не может вести docs «только через сервис»
-  из Cursor Cloud / удалённого Claude.
-- **Не делаем:** multi-tenant SaaS, P2P-федерацию узлов.
-- **Объём:** 4 секции CAP-A..CAP-D, ~18 задач (см. plan).
+- **What:** Turn COD-DOC into a cloud node (Postgres + remote MCP +
+  Bearer identity), extend the agent profile with document writes
+  (`agent_apply`), and decouple mutations from the local `root_path`.
+- **Why:** Cycle-5 delivered a task-centric 6-tool surface, but the agent
+  is still "local": stdio, no MCP patch, no enforced auth, projection
+  requires FS. Without this, AI cannot maintain docs "through the service
+  only" from Cursor Cloud / remote Claude.
+- **Not doing:** multi-tenant SaaS, P2P federation of nodes.
+- **Scope:** 4 sections CAP-A..CAP-D, ~18 tasks (see plan).
 
-## 2. Целевая картинка
+## 2. Target picture
 
 ```mermaid
 flowchart LR
@@ -59,43 +59,43 @@ flowchart LR
   Routines --> MCP
 ```
 
-## 3. Состояние на 2026-07-29
+## 3. State as of 2026-07-29
 
-| Элемент | Состояние |
-|---------|-----------|
+| Element | State |
+|---------|-------|
 | Agent profile 6 tools | ✅ cycle-5 |
 | Atomic checkout / idempotent pick | ✅ |
-| `streamable-http` transport | ✅ есть, bind 127.0.0.1, без auth |
-| Postgres dialect в миграциях | ✅ код; ❌ CI-прогон (IMPL-A-ME-2) |
-| docker-compose + Postgres | ❌ compose без postgres, host paths |
-| MCP `doc_patch_section` | ❌ сервис есть, MCP нет |
-| `agent_apply` (doc writes в agent profile) | ❌ |
-| Bearer → actor | ❌ спека ARCHITECTURE §12 |
-| Pure-DB mode без root_path | ❌ |
+| `streamable-http` transport | ✅ present, binds 127.0.0.1, no auth |
+| Postgres dialect in migrations | ✅ code; ❌ CI run (IMPL-A-ME-2) |
+| docker-compose + Postgres | ❌ compose without postgres, host paths |
+| MCP `doc_patch_section` | ❌ service exists, MCP does not |
+| `agent_apply` (doc writes in agent profile) | ❌ |
+| Bearer → actor | ❌ ARCHITECTURE §12 spec |
+| Pure-DB mode without root_path | ❌ |
 
-## 4. Первый tick (для следующего сеанса)
+## 4. First tick (for the next session)
 
-1. Прочитать capability
+1. Read the capability
    [`cloud-agent-plane.md`](../capabilities/cloud-agent-plane.md) §1–3.
-2. Взять **CAP-001** (Postgres CI smoke) — нет prerequisite, разблокирует
-   server/cloud профиль.
-3. Параллельно можно готовить CAP-010 (MCP `doc_patch_section`) — закрывает
-   gap doc-evolution ↔ MCP до появления `agent_apply`.
+2. Pick **CAP-001** (Postgres CI smoke) — no prerequisite, unblocks the
+   server/cloud profile.
+3. In parallel, you can prepare CAP-010 (MCP `doc_patch_section`) — closes
+   the doc-evolution ↔ MCP gap before `agent_apply` arrives.
 
 ## 5. Acceptance for Phase 1 (foundation + doc write path)
 
-- [ ] `alembic upgrade head` + pytest-маркер `pg` зелёные в CI.
-- [ ] `docker compose` поднимает `postgres` + `cod-doc` без host-specific
-      volume paths в репозитории.
-- [ ] MCP tool `doc_patch_section` персистит body + revision + activity.
-- [ ] Remote client к `streamable-http` с Bearer проходит
-      pick → patch → complete на одном проекте в Postgres.
+- [ ] `alembic upgrade head` + pytest marker `pg` are green in CI.
+- [ ] `docker compose` brings up `postgres` + `cod-doc` without host-specific
+      volume paths in the repository.
+- [ ] MCP tool `doc_patch_section` persists body + revision + activity.
+- [ ] A remote client to `streamable-http` with a Bearer token completes
+      pick → patch → complete on a single project in Postgres.
 
-## 6. Риски
+## 6. Risks
 
-| Риск | Митигация |
-|------|-----------|
-| Agent profile раздувается CRUD'ом | Один композитный `agent_apply`, не протаскивать весь `doc_*` |
-| Auth ломает local stdio DX | `COD_DOC_AUTH=optional` default для embedded; `required` только cloud |
-| Projection/git пользователи ждут файлы | Export-job + handbook рецепт; SoT явно БД |
-| Scope creep в SaaS | Non-goals зафиксированы в capability §7 и RFC 23 |
+| Risk | Mitigation |
+|------|------------|
+| Agent profile bloats with CRUD | One composite `agent_apply`, do not pull in all of `doc_*` |
+| Auth breaks local stdio DX | `COD_DOC_AUTH=optional` default for embedded; `required` only for cloud |
+| Projection/git users wait for files | Export-job + handbook recipe; SoT is explicitly the DB |
+| Scope creep into SaaS | Non-goals are fixed in capability §7 and RFC 23 |

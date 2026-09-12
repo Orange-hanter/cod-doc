@@ -14,120 +14,118 @@ related_docs:
   - ../audit/2026-09-06-sprint-m3-friction.md
 ---
 
-# Sprint M4 — «Доказательство ценности + разбор долга»
+# Sprint M4 — "Proof of value + debt triage"
 
-> **Принцип (решение владельца 2026-08-30).** Код пишет AI-агент — сроки и
-> окна не планируются. Спринт = **упорядоченная очередь работ** с чёткими
-> контрактами и критерием выхода. Порядок важен, даты — нет.
+> **Principle (owner decision 2026-08-30).** Code is written by an AI agent —
+> deadlines and windows are not planned. A sprint is an **ordered queue of
+> work** with clear contracts and an exit criterion. Order matters, dates do not.
 >
-> **Не source of truth.** Статусы задач — в БД (план `adoption-2026-08`);
-> приоритеты — [ROADMAP.md](ROADMAP.md).
+> **Not source of truth.** Task statuses are in the DB (plan `adoption-2026-08`);
+> priorities are in [ROADMAP.md](ROADMAP.md).
 
-## 0. Ground truth на старт спринта (сверено 2026-08-30)
+## 0. Ground truth at sprint start (reconciled 2026-08-30)
 
-- M3 закрыт досрочно: audit
+- M3 closed early: audit
   [2026-09-06-sprint-m3-friction.md](../audit/2026-09-06-sprint-m3-friction.md),
-  финальный коммит `1ae797e`. Friction-лог ADO-005 обнулён (0 из 14).
-- Suite 1601 passed, mypy чист (318 файлов), drift 130/130 in_sync,
-  ratchet 6 записей.
-- План `adoption-2026-08`: 61/78 done; остаток — секция D (12 задач,
-  единственный high — ADO-040) и секция E (SYM-009/010/011).
-- Пилот `orakul` не зарегистрирован в текущем окружении — открытый чек
-  M3 в ROADMAP («проверено на корпусе Orakul»).
-- SYM-008 дал механику моста cod-doc→ZAIrgRush, но `doc_context = off`:
-  метрики E5-C не собираются, ценность не доказана.
+  final commit `1ae797e`. Friction log ADO-005 reset to zero (0 of 14).
+- Suite 1601 passed, mypy clean (318 files), drift 130/130 in_sync,
+  ratchet 6 entries.
+- Plan `adoption-2026-08`: 61/78 done; the remainder is section D (12 tasks,
+  the only high is ADO-040) and section E (SYM-009/010/011).
+- The `orakul` pilot is not registered in the current environment — an open
+  M3 checkbox in ROADMAP ("verified on the Orakul corpus").
+- SYM-008 produced the cod-doc→ZAIrgRush bridge mechanics, but
+  `doc_context = off`: E5-C metrics are not collected, value is not proven.
 
-## 1. Очередь (порядок = приоритет)
+## 1. Queue (order = priority)
 
-### 1. Перерегистрация Orakul (разблокировка)
+### 1. Re-register Orakul (unblock)
 
-- `cod-doc project add` Orakul в текущем окружении; реимпорт корпуса.
-- Прогон фиксов M3 на корпусе 405 доков: dry-run `--limit 0`, счётчик
-  hidden-dirs, warning'и чужих `type:`.
-- Закрыть чек в ROADMAP («Каждый фикс проверен на пилотном корпусе
-  Orakul»).
-- Задача: ADO-062 (chore, high) — блокер доверия к пилотам.
+- `cod-doc project add` Orakul in the current environment; re-import the corpus.
+- Run the M3 fixes on the corpus of 405 docs: dry-run `--limit 0`, hidden-dirs
+  counter, warnings for foreign `type:`.
+- Close the checkbox in ROADMAP ("each fix verified on the Orakul pilot
+  corpus").
+- Task: ADO-062 (chore, high) — a blocker for trust in the pilots.
 
-### 2. E5-C в бою: doc_context=executor на реальной задаче ZAIrgRush
+### 2. E5-C in the field: doc_context=executor on a real ZAIrgRush task
 
-Главный вопрос спринта: есть ли ценность у моста cod-doc→петля.
+The main question of the sprint: is there value in the cod-doc→loop bridge.
 
-- Маппинг `task.paths` (.py) → doc-пути в `docctx.py`/конфиге — без него
-  блок документов пуст на реальных задачах (finding F1 аудита M3).
-- Включить `doc_context = "executor"` в конфиге swarm ZAIrgRush.
-- Прогнать 1–3 реальные задачи петли; метрики RFC 22 §3.4: latency/раунд,
-  breaker-open rate, субъективная оценка качества владельцем.
-- Результат — артефакт: findings + ADR/заметка в ZAIrgRush с решением
-  «масштабируем / выключаем» (оба исхода валидны).
-- Задача: ADO-063 (feature, critical) — критерий выхода M4.
+- Mapping `task.paths` (.py) → doc paths in `docctx.py`/config — without it,
+  the document block is empty on real tasks (finding F1 of the M3 audit).
+- Enable `doc_context = "executor"` in the ZAIrgRush swarm config.
+- Run 1–3 real loop tasks; RFC 22 §3.4 metrics: latency/round, breaker-open
+  rate, subjective quality assessment by the owner.
+- Result — an artifact: findings + ADR/note in ZAIrgRush with a decision to
+  "scale up / turn off" (both outcomes are valid).
+- Task: ADO-063 (feature, critical) — the M4 exit criterion.
 
-### 3. ADO-040 — единый write-path wrapper для activity events (high)
+### 3. ADO-040 — unified write-path wrapper for activity events (high)
 
-- Общий helper/декоратор write-пути (revision + activity + run_id).
-- Покрытие: adr/approval/task_doc/story/comment/checkout/link_resolver/
-  repo_index/commit_link сервисы эмитят события.
-- Ошибка emit — log/raise, не pass (сейчас глотается,
+- A shared write-path helper/decorator (revision + activity + run_id).
+- Coverage: adr/approval/task_doc/story/comment/checkout/link_resolver/
+  repo_index/commit_link services emit events.
+- Emit error — log/raise, not pass (currently swallowed,
   `task_service.py:405-420, 574-589`).
-- Задача уже в БД (ADO-040, секция D).
+- The task is already in the DB (ADO-040, section D).
 
-### 4. SYM-009 — ingest ai_review pull-моделью (medium)
+### 4. SYM-009 — ingest ai_review via a pull model (medium)
 
-- `cod-doc ingest ai_review --from-pr N` + поллер
+- `cod-doc ingest ai_review --from-pr N` + a poller
   `scripts/ingest-orakul-reviews.sh`.
-- Upstream-PR в ai-reviewer: fp/verifierStatus/actionabilityScore в
-  slimFinding + bump EXPORT_VERSION (их P0 #18, ~10 строк).
-- `cod-doc finding stability --sha`: попарный Jaccard из
+- Upstream PR in ai-reviewer: fp/verifierStatus/actionabilityScore in
+  slimFinding + bump EXPORT_VERSION (their P0 #18, ~10 lines).
+- `cod-doc finding stability --sha`: pairwise Jaccard from
   finding_source_run.
-- Acceptance (из БД): 3 исторических PR-экспорта импортированы,
-  повторные находки times_seen>1; git status Orakul чист; PR в
-  ai-reviewer открыт.
+- Acceptance (from the DB): 3 historical PR exports imported, repeat
+  findings times_seen>1; Orakul git status clean; PR in ai-reviewer opened.
 
-### 5. Хвост секции D (опционально, только после п.1–4)
+### 5. Section D tail (optional, only after items 1–4)
 
-ADO-042 (SQL → repositories), ADO-043 (audit_log: writers или удалить),
-ADO-045 (DATA_MODEL sync). Одна задача = один закрытый контракт; не
-цель спринта.
+ADO-042 (SQL → repositories), ADO-043 (audit_log: writers or delete),
+ADO-045 (DATA_MODEL sync). One task = one closed contract; not a sprint goal.
 
-### Вне скоупа M4
+### Out of scope for M4
 
-- SYM-010 (drift-гейт для Orakul) — до живого Orakul (п.1) и спроса из
-  п.2; кандидат в M5.
-- SYM-011 (кросс-проектность) — low, по спросу.
+- SYM-010 (drift gate for Orakul) — pending a live Orakul (item 1) and demand
+  from item 2; candidate for M5.
+- SYM-011 (cross-project) — low, on demand.
 - ADO-046…051 — backlog.
-- Трек B — отбракован (ADO-056), не переоткрывать.
+- Track B — rejected (ADO-056), do not reopen.
 
-## 2. Критерий выхода
+## 2. Exit criterion
 
-1. Orakul зарегистрирован; чек ROADMAP закрыт.
-2. Решение по E5-C зафиксировано артефактом (ADR/findings + метрики).
-3. ADO-040 done: wrapper + 9 сервисов эмитят; ошибка emit видна.
-4. Гейты зелёные: suite, ruff/format, mypy, drift 100%, ratchet ≤ 6.
-5. Audit-отчёт M4 (active, в БД), ROADMAP обновлён.
+1. Orakul is registered; the ROADMAP checkbox is closed.
+2. The decision on E5-C is recorded as an artifact (ADR/findings + metrics).
+3. ADO-040 done: wrapper + 9 services emit; an emit error is visible.
+4. Gates are green: suite, ruff/format, mypy, drift 100%, ratchet ≤ 6.
+5. M4 audit report (active, in the DB), ROADMAP updated.
 
-## 3. Порядок исполнения
+## 3. Execution order
 
-1. Оформление: этот sprint-док (doc create + import), задачи ADO-062/063
-   в БД (секция C), указатель в ROADMAP — один коммит.
-2. П.1 → п.2 → п.3 → п.4 строго по очереди; каждая задача
-   checkout → complete с `commit_sha`; баги — с красным прогоном.
-3. Финал: гейты, audit-отчёт, ROADMAP, коммит.
+1. Setup: this sprint doc (doc create + import), tasks ADO-062/063 in the DB
+   (section C), pointer in ROADMAP — one commit.
+2. Item 1 → item 2 → item 3 → item 4 strictly in order; each task goes
+   checkout → complete with `commit_sha`; bugs — with a red run.
+3. Final: gates, audit report, ROADMAP, commit.
 
-## 4. Риски
+## 4. Risks
 
-- **Пустые блоки в E5-C** без маппинга .py→doc-пути — маппинг включён в
-  п.2 явно.
-- **Upstream-PR в ai-reviewer (п.4) может зависнуть** — внешняя
-  зависимость; не влит к концу M4 → SYM-009 переносится, спринт не
-  блокируется.
-- **Скоуп-крип секции D**: п.5 опционален сознательно.
+- **Empty blocks in E5-C** without a .py→doc-path mapping — the mapping is
+  explicitly included in item 2.
+- **The upstream PR in ai-reviewer (item 4) may stall** — an external
+  dependency; if not merged by the end of M4, SYM-009 is moved, the sprint is
+  not blocked.
+- **Section D scope creep**: item 5 is optional by design.
 
 ## 5. Definition of Done
 
-- [ ] Каждая задача очереди прошла `task_checkout` → `task_complete` с
+- [ ] Each queue task went through `task_checkout` → `task_complete` with
       `commit_sha`.
-- [ ] Решение по E5-C — артефакт в ZAIrgRush (не «в голове»).
-- [ ] Правки трекаемых `.md` импортированы в тех же коммитах;
-      финальный `doc drift --all` — 100% in_sync.
-- [ ] `ruff` + `mypy` + `pytest` зелёные на последнем коммите;
+- [ ] The decision on E5-C is an artifact in ZAIrgRush (not "in the head").
+- [ ] Edits of tracked `.md` are imported in the same commits;
+      the final `doc drift --all` is 100% in_sync.
+- [ ] `ruff` + `mypy` + `pytest` are green on the last commit;
       ratchet ≤ 6.
-- [ ] Audit-отчёт M4 — status active, в БД, со ссылками на коммиты.
+- [ ] M4 audit report — status active, in the DB, with links to commits.

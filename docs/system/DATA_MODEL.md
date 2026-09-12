@@ -10,10 +10,10 @@ last_updated: 2026-04-25
 
 # COD-DOC — Data Model
 
-> Нормализованная схема хранения. Markdown — это проекция этой схемы.
-> Диалект SQLite указан как базовый; для Postgres — см. комментарии.
+> A normalized storage schema. Markdown is a projection of this schema.
+> The SQLite dialect is specified as the base; for Postgres — see comments.
 
-## 1. Обзор сущностей
+## 1. Entity overview
 
 ```text
 Project ─┬─< Document ─┬─< Section ─┬─< Block
@@ -36,18 +36,18 @@ Project ─┬─< Document ─┬─< Section ─┬─< Block
          │
          ├─< Tag ──< DocumentTag, TaskTag, StoryTag
          │
-         └─< ActivityEvent (всё, что прошло через write-path) ──< AgentRun (run_id)
+         └─< ActivityEvent (everything that went through the write-path) ──< AgentRun (run_id)
 ```
 
-## 2. Ключевые инварианты
+## 2. Key invariants
 
-- Все ID внешних сущностей (таск, модуль) — человекочитаемые (`AUTH-025`, `M1-auth`). БД хранит ещё и суррогатный `row_id` BIGINT PK.
-- `Revision` — иммутабельная история; никогда не апдейтится, только append.
-- `Link` — direct reference `(from_doc, to_ref)`; резолв в `to_doc_id` кэшируется, но всегда перепроверяется при чтении.
-- `Task.status` — enum из 3 значений; `Plan.status` — вычисляем, не хранится.
-- `tasks_done` / `tasks_total` секции — хранятся в `SectionTotals` как материализованное представление с триггером на изменение задач.
+- All external entity IDs (task, module) are human-readable (`AUTH-025`, `M1-auth`). The DB also stores a surrogate `row_id` BIGINT PK.
+- `Revision` — immutable history; never updated, append-only.
+- `Link` — a direct reference `(from_doc, to_ref)`; the resolution to `to_doc_id` is cached but always re-checked on read.
+- `Task.status` — an enum of 3 values; `Plan.status` — computed, not stored.
+- `tasks_done` / `tasks_total` of a section — stored in `SectionTotals` as a materialized view with a trigger on task changes.
 
-## 3. Таблицы
+## 3. Tables
 
 ### 3.1 `Project`
 
@@ -65,7 +65,7 @@ CREATE TABLE project (
 
 ### 3.2 `Document`
 
-`Document` хранит **только метаданные и frontmatter**. Body не дублируется здесь — он составляется из `section.body` (см. §3.3) через view §4.
+`Document` stores **only metadata and frontmatter**. The body is not duplicated here — it is assembled from `section.body` (see §3.3) via the view in §4.
 
 ```sql
 CREATE TABLE document (
@@ -79,11 +79,11 @@ CREATE TABLE document (
   sensitivity      TEXT    NOT NULL DEFAULT 'internal',  -- public|internal|confidential|restricted
   owner            TEXT,
   title            TEXT    NOT NULL,
-  preamble         TEXT    NOT NULL DEFAULT '',  -- текст до первого H2 (короткое описание/intro)
+  preamble         TEXT    NOT NULL DEFAULT '',  -- text before the first H2 (short description/intro)
   frontmatter_json TEXT    NOT NULL DEFAULT '{}',
-  frontmatter_raw  TEXT,                         -- ADO-010: YAML-блок как в файле; '' = файл был без frontmatter, NULL = документ заведён в БД ЛИБО строка создана до миграции 0025 (ADO-022)
-  title_in_body    INTEGER,                      -- ADO-010: был ли в источнике '# H1' (NULL = неизвестно → H1 рендерится; см. ADO-022)
-  projection_hash  TEXT,                         -- hash последнего export
+  frontmatter_raw  TEXT,                         -- ADO-010: YAML block as in the file; '' = the file had no frontmatter, NULL = the document was created in the DB OR the row was created before migration 0025 (ADO-022)
+  title_in_body    INTEGER,                      -- ADO-010: whether the source had '# H1' (NULL = unknown → H1 is rendered; see ADO-022)
+  projection_hash  TEXT,                         -- hash of the last export
   created          TEXT    NOT NULL,
   last_updated     TEXT    NOT NULL,
   last_reviewed    TEXT,
@@ -93,19 +93,11 @@ CREATE INDEX ix_document_type ON document(type, status);
 CREATE INDEX ix_document_sensitivity ON document(sensitivity);
 ```
 
-> **ADO-022.** У пары `frontmatter_raw` / `title_in_body` два разных источника
-> NULL, и различить их по самой строке нельзя: документ, заведённый в БД
-> (`doc create`), и документ, импортированный до миграции
-> `0025_projection_fidelity`. Для первого NULL — правда, для второго — потеря
-> данных: рендер пере-сериализует frontmatter из `frontmatter_json` и дописывает
-> `# H1`, которого в источнике не было. Поэтому `doc export` отказывается
-> переписывать такой файл, а лечится это `cod-doc doc backfill-projection`
-> (MCP: `doc_backfill_projection`) — восстановлением ровно этих двух колонок с
-> диска, без отката метаданных, которые меняли в БД.
+> **ADO-022.** The pair `frontmatter_raw` / `title_in_body` has two different sources of NULL, and they cannot be distinguished by the row itself: a document created in the DB (`doc create`) and a document imported before the `0025_projection_fidelity` migration. For the first, NULL is true; for the second, it is data loss: the render re-serializes the frontmatter from `frontmatter_json` and appends `# H1` that was not in the source. Therefore `doc export` refuses to overwrite such a file, and it is fixed with `cod-doc doc backfill-projection` (MCP: `doc_backfill_projection`) — restoring exactly these two columns from disk, without rolling back the metadata that was changed in the DB.
 
 ### 3.3 `Section`
 
-Секции документа — **канонический носитель body**. Тонкие правки, локальные ревизии, embeddings, ссылки — всё привязано к секции, не к документу.
+Document sections are the **canonical carrier of the body**. Fine-grained edits, local revisions, embeddings, links — everything is attached to the section, not to the document.
 
 ```sql
 CREATE TABLE section (
@@ -114,26 +106,26 @@ CREATE TABLE section (
   anchor       TEXT    NOT NULL,  -- 'data-model'
   heading      TEXT    NOT NULL,
   level        INTEGER NOT NULL,  -- 1..6
-  position     INTEGER NOT NULL,  -- порядок внутри документа
-  body         TEXT    NOT NULL,  -- canonical body этой секции
-  content_hash TEXT    NOT NULL,  -- sha256(body) — для invalidate embedding и detect drift
+  position     INTEGER NOT NULL,  -- order within the document
+  body         TEXT    NOT NULL,  -- canonical body of this section
+  content_hash TEXT    NOT NULL,  -- sha256(body) — for embedding invalidation and drift detection
   UNIQUE(document_id, anchor)
 );
 CREATE INDEX ix_section_position ON section(document_id, position);
 ```
 
-> **Решение DOC-HI-8:** `Document.body` упразднён; `Section.body` — единственный источник. Полное body документа собирается через view `document_body` (§4.4).
+> **Decision DOC-HI-8:** `Document.body` is abolished; `Section.body` is the single source. The full document body is assembled via the `document_body` view (§4.4).
 
 ### 3.4 `Link`
 
-Исходящие ссылки, выделенные из body секции.
+Outgoing links extracted from a section body.
 
 ```sql
 CREATE TABLE link (
   row_id           INTEGER PRIMARY KEY,
   project_id       INTEGER NOT NULL REFERENCES project(row_id),
   from_section_id  INTEGER NOT NULL REFERENCES section(row_id),
-  raw              TEXT    NOT NULL,  -- как написано: '[[M1 AUTH v2]]' или '../M1 AUTH v2.md'
+  raw              TEXT    NOT NULL,  -- as written: '[[M1 AUTH v2]]' or '../M1 AUTH v2.md'
   kind             TEXT    NOT NULL,  -- 'wiki','markdown','url','task','story'
   to_doc_key       TEXT,
   to_task_id       TEXT,
@@ -149,42 +141,42 @@ CREATE INDEX ix_link_broken      ON link(resolved) WHERE resolved = 0;
 
 ### 3.5 `Revision`
 
-Универсальная иммутабельная история.
+A universal immutable history.
 
 ```sql
 CREATE TABLE revision (
   row_id       INTEGER PRIMARY KEY,
-  revision_id  TEXT    NOT NULL UNIQUE,    -- ULID, 26 символов: '01HQX5Z9F0K8R...'
+  revision_id  TEXT    NOT NULL UNIQUE,    -- ULID, 26 chars: '01HQX5Z9F0K8R...'
   project_id   INTEGER NOT NULL REFERENCES project(row_id),
-  entity_kind  TEXT    NOT NULL,   -- см. enum ниже
-  entity_id    INTEGER NOT NULL,   -- row_id соответствующей сущности (полиморфно, без FK)
-  parent_revision_id TEXT,         -- предыдущая revision той же сущности; NULL если первая
+  entity_kind  TEXT    NOT NULL,   -- see enum below
+  entity_id    INTEGER NOT NULL,   -- row_id of the corresponding entity (polymorphic, no FK)
+  parent_revision_id TEXT,         -- previous revision of the same entity; NULL if first
   author       TEXT    NOT NULL,   -- 'agent:task-steward','human:dakh','mcp:claude'
-  at           TEXT    NOT NULL,   -- ISO-8601; должен соответствовать timestamp в revision_id
-  diff         TEXT    NOT NULL,   -- unified diff либо JSON-patch
+  at           TEXT    NOT NULL,   -- ISO-8601; must match the timestamp in revision_id
+  diff         TEXT    NOT NULL,   -- unified diff or JSON-patch
   reason       TEXT,
-  commit_sha   TEXT,               -- если привязано к git-коммиту
-  run_id       TEXT                -- телеметрия оркестратора; де-факто всегда NULL, см. §3.13.1
+  commit_sha   TEXT,               -- if tied to a git commit
+  run_id       TEXT                -- orchestrator telemetry; de facto always NULL, see §3.13.1
 );
 CREATE INDEX ix_revision_entity ON revision(entity_kind, entity_id, at);
 CREATE INDEX ix_revision_parent ON revision(parent_revision_id);
 ```
 
-**`entity_kind` ∈** `'document' | 'section' | 'task' | 'plan' | 'story' | 'link' | 'module'`. Сервис, инициирующий ревизию, отвечает за корректность `entity_kind + entity_id`.
+**`entity_kind` ∈** `'document' | 'section' | 'task' | 'plan' | 'story' | 'link' | 'module'`. The service initiating the revision is responsible for the correctness of `entity_kind + entity_id`.
 
-**Полиморфный `entity_id` без FK.** Намеренно: append-only история должна переживать удаление целевой сущности (audit-инвариант). Каскад от родительской таблицы НЕ затрагивает revision; «сиротские» ревизии — норма и читаются по `entity_kind + entity_id` за время жизни проекта.
+**Polymorphic `entity_id` without FK.** Intentional: append-only history must survive the deletion of the target entity (audit invariant). A cascade from the parent table does NOT affect revision; "orphan" revisions are normal and are read by `entity_kind + entity_id` over the project's lifetime.
 
-**`revision_id` = ULID** ([Crockford-base32, 128 бит, lexicographically sortable](https://github.com/ulid/spec)).
-Первые 48 бит — timestamp с миллисекундной точностью; оставшиеся 80 — random.
+**`revision_id` = ULID** ([Crockford-base32, 128 bits, lexicographically sortable](https://github.com/ulid/spec)).
+The first 48 bits are a timestamp with millisecond precision; the remaining 80 are random.
 
-Зачем ULID, а не AUTOINCREMENT INTEGER:
-- сортируется по времени без отдельного `at`-индекса;
-- генерируется на клиенте без round-trip в БД (важно для propose-flow и offline-сессий);
-- безопасно мерджится из нескольких реплик (нет конфликта sequence-counter).
+Why ULID instead of AUTOINCREMENT INTEGER:
+- sorts by time without a separate `at` index;
+- generated on the client without a DB round-trip (important for the propose-flow and offline sessions);
+- safely merged from multiple replicas (no sequence-counter conflict).
 
-`parent_revision_id` обеспечивает optimistic concurrency control: write-path в transaction'е делает `WHERE revision_id = (SELECT MAX(revision_id) FROM revision WHERE entity ...)`, и если кто-то ещё успел записать раньше — конфликт.
+`parent_revision_id` provides optimistic concurrency control: the write-path in a transaction does `WHERE revision_id = (SELECT MAX(revision_id) FROM revision WHERE entity ...)`, and if someone else managed to write earlier — a conflict.
 
-### 3.6 `Plan` и `Plan.Section`
+### 3.6 `Plan` and `Plan.Section`
 
 ```sql
 CREATE TABLE plan (
@@ -246,7 +238,7 @@ CREATE TABLE dependency (
   note         TEXT,
   UNIQUE(from_task_id, to_task_id, kind)
 );
--- Cycle detection: в сервисе, на каждый insert.
+-- Cycle detection: in the service, on every insert.
 ```
 
 ### 3.9 `AffectedFile`
@@ -262,7 +254,7 @@ CREATE TABLE affected_file (
 CREATE INDEX ix_affected_path ON affected_file(path);
 ```
 
-Используется для N:1 / N:M diff-based sync (как в Restate task-plan.md §4.6).
+Used for N:1 / N:M diff-based sync (as in Restate task-plan.md §4.6).
 
 ### 3.10 `UserStory`
 
@@ -339,20 +331,18 @@ CREATE TABLE task_tag     (task_id     INTEGER, tag_id INTEGER, PRIMARY KEY(task
 CREATE TABLE story_tag    (story_id    INTEGER, tag_id INTEGER, PRIMARY KEY(story_id, tag_id));
 ```
 
-### 3.13 `ActivityEvent` — журнал write-операций
+### 3.13 `ActivityEvent` — write-operation log
 
-Единый audit-таймлайн проекта: одна строка на каждую мутацию, пишется
-в той же транзакции, что и сама мутация (ADO-040), через
-`activity_service.write_revision_and_emit_event` / `emit_for_write`.
+A unified project audit timeline: one row per mutation, written in the same transaction as the mutation itself (ADO-040), via `activity_service.write_revision_and_emit_event` / `emit_for_write`.
 
 ```sql
 CREATE TABLE activity_event (
   id         TEXT    PRIMARY KEY,         -- UUIDv7, time-sortable
   project_id INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
   ts         TEXT    NOT NULL,
-  actor_kind TEXT    NOT NULL,            -- см. ActorKind ниже
-  actor_id   TEXT,                        -- строка-автор: 'human:dakh', 'agent:claude-opus-5'
-  run_id     TEXT,                        -- телеметрия оркестратора, см. §3.13.1
+  actor_kind TEXT    NOT NULL,            -- see ActorKind below
+  actor_id   TEXT,                        -- author string: 'human:dakh', 'agent:claude-opus-5'
+  run_id     TEXT,                        -- orchestrator telemetry, see §3.13.1
   kind       TEXT    NOT NULL,            -- 'task.status_changed', 'doc.updated', …
   scope_kind TEXT,                        -- 'task' | 'doc' | 'story' | 'approval' | 'run'
   scope_id   TEXT,
@@ -363,49 +353,25 @@ CREATE TABLE activity_event (
 
 **`actor_kind`** — enum `domain.entities.ActorKind`:
 `human | agent | orchestrator | routine | system | cli | api`.
-Выводится из строки-автора **только** через
-`domain.entities.actor_kind_for_author()` — единственную точку вывода
-(ADR-012). Канонический формат `actor_id` / `author` — `<kind>:<id>`
-(`human:dakh`, `agent:claude-opus-5`, `routine:doc_drift_daily`);
-оркестраторный прогон исторически пишется через дефис
-(`orchestrator-run-<name>`), резолвер понимает оба написания.
-`cli` и `api` — поверхностные акторы: проставляются явно на своих
-call-site'ах и из строки не выводятся.
+Derived from the author string **only** via `domain.entities.actor_kind_for_author()` — the single point of derivation (ADR-012). The canonical format of `actor_id` / `author` is `<kind>:<id>` (`human:dakh`, `agent:claude-opus-5`, `routine:doc_drift_daily`); an orchestrator run is historically written with a hyphen (`orchestrator-run-<name>`), the resolver understands both spellings.
+`cli` and `api` are surface actors: set explicitly at their call sites and not derived from the string.
 
-> **Строки до 2026-09-06 неточны.** До ADR-012 эвристика была
-> продублирована в одиннадцати местах в трёх вариантах, поэтому в истории
-> есть события `orchestrator-run-*` с `actor_kind='human'` и события
-> `agent:*` с `actor_kind='human'`. Бэкфилла нет намеренно: журнал
-> наблюдений не переписывается задним числом.
+> **Rows before 2026-09-06 are inaccurate.** Before ADR-012, the heuristic was duplicated in eleven places in three variants, so the history contains `orchestrator-run-*` events with `actor_kind='human'` and `agent:*` events with `actor_kind='human'`. There is no backfill by design: an observation log is not rewritten retroactively.
 
-#### 3.13.1 `AgentRun` и колонка `run_id` — телеметрия, не контракт
+#### 3.13.1 `AgentRun` and the `run_id` column — telemetry, not a contract
 
-`agent_run` — одна строка на вызов `Orchestrator.run_task` встроенного
-раннера. Колонка `run_id` есть в семи таблицах (`revision`,
-`activity_event`, `approval`, `agent_run`, `routine_run`, `finding`,
-плюс исторически `audit_log`) и заполняется **только** внутри
-`run_scope` / `start_orchestrator_run`.
+`agent_run` — one row per `Orchestrator.run_task` call of the built-in runner. The `run_id` column is present in seven tables (`revision`, `activity_event`, `approval`, `agent_run`, `routine_run`, `finding`, plus historically `audit_log`) and is populated **only** inside `run_scope` / `start_orchestrator_run`.
 
-**Мутации через MCP, CLI и REST run-скоуп не открывают, поэтому у них
-`run_id IS NULL`.** Замер на живой БД cod-doc 2026-09-06: `revision`
-2166/2166 NULL, `activity_event` 1114/1114 NULL, `agent_run` — одна
-строка от 2026-06-06.
+**Mutations via MCP, CLI, and REST do not open a run scope, so they have `run_id IS NULL`.** Measurement on the live cod-doc DB 2026-09-06: `revision` 2166/2166 NULL, `activity_event` 1114/1114 NULL, `agent_run` — one row from 2026-06-06.
 
-Это зафиксированное решение (ADR-012), а не незакрытый долг: правило
-«run-id на всех мутациях» снято из `AGENTS.md` §5.4, MCP-тулы
-`run_list` / `run_revert` / `activity_for_run` удалены. Колонки
-оставлены nullable — удалять их значило бы переписать append-only
-`revision` в каждой существующей БД ради нулевой выгоды. Не пиши код,
-который рассчитывает на непустой `run_id`.
+This is a fixed decision (ADR-012), not unclosed debt: the "run-id on all mutations" rule is lifted from `AGENTS.md` §5.4, MCP tools `run_list` / `run_revert` / `activity_for_run` are removed. The columns are left nullable — dropping them would mean rewriting the append-only `revision` in every existing DB for zero benefit. Do not write code that relies on a non-empty `run_id`.
 
-> **`audit_log` удалена** (миграция `0029_drop_audit_log`, 2026-09-06).
-> Таблица была объявлена журналом write-операций в ARCHITECTURE §9 и в
-> этом параграфе, но за всю историю проекта не получила ни одного
-> writer'а — 0 строк. Потребность закрывает `activity_event` выше.
+> **`audit_log` is removed** (migration `0029_drop_audit_log`, 2026-09-06).
+> The table was declared the write-operation log in ARCHITECTURE §9 and in this paragraph, but never got a single writer throughout the project's history — 0 rows. The need is covered by `activity_event` above.
 
 ### 3.14 `Embedding`
 
-Векторные представления секций для semantic-search (см. [capabilities/context-retrieval.md §5](capabilities/context-retrieval.md)).
+Vector representations of sections for semantic-search (see [capabilities/context-retrieval.md §5](capabilities/context-retrieval.md)).
 
 ```sql
 CREATE TABLE embedding (
@@ -414,29 +380,29 @@ CREATE TABLE embedding (
   section_id    INTEGER NOT NULL REFERENCES section(row_id) ON DELETE CASCADE,
   model         TEXT    NOT NULL,         -- 'openai:text-embedding-3-small','bge-small-en-v1.5'
   dim           INTEGER NOT NULL,         -- 1536 / 384 / ...
-  vector        BLOB    NOT NULL,         -- packed float32; pgvector использует своё
-  content_hash  TEXT    NOT NULL,         -- = section.content_hash на момент генерации
+  vector        BLOB    NOT NULL,         -- packed float32; pgvector uses its own
+  content_hash  TEXT    NOT NULL,         -- = section.content_hash at generation time
   generated_at  TEXT    NOT NULL,
   UNIQUE(section_id, model)
 );
 CREATE INDEX ix_embedding_section ON embedding(section_id);
-CREATE INDEX ix_embedding_stale ON embedding(content_hash);  -- быстрый join к section для invalidate
+CREATE INDEX ix_embedding_stale ON embedding(content_hash);  -- fast join to section for invalidation
 ```
 
 Lifecycle:
 
-- При commit revision на section → `EmbeddingService.enqueue(section_id)`.
-- Воркер вычисляет вектор, пишет / апдейтит row.
-- При смене `section.content_hash` запись считается stale и регенерируется.
-- При `DELETE section` — каскадно удаляется (CASCADE).
+- On commit of a revision on a section → `EmbeddingService.enqueue(section_id)`.
+- A worker computes the vector, writes / updates the row.
+- When `section.content_hash` changes, the record is considered stale and regenerated.
+- On `DELETE section` — cascaded (CASCADE).
 
-Чанкование: одна секция — один embedding row; если body > N токенов (default 1024) — секция считается «too large», поднимается warning `EMB-001` в audit, рекомендуется split.
+Chunking: one section — one embedding row; if body > N tokens (default 1024) — the section is considered "too large", a warning `EMB-001` is raised in the audit, a split is recommended.
 
-Pg-профиль использует `pgvector` тип `vector(<dim>)` вместо `BLOB` и индекс `ivfflat`/`hnsw`.
+The pg profile uses the `pgvector` type `vector(<dim>)` instead of `BLOB` and an `ivfflat`/`hnsw` index.
 
 ### 3.15 `Proposal`
 
-Pending-edit, ожидающий approve/reject (см. [capabilities/doc-evolution.md §5](capabilities/doc-evolution.md)).
+A pending edit awaiting approve/reject (see [capabilities/doc-evolution.md §5](capabilities/doc-evolution.md)).
 
 ```sql
 CREATE TABLE proposal (
@@ -444,7 +410,7 @@ CREATE TABLE proposal (
   proposal_id    TEXT    NOT NULL UNIQUE,    -- ULID
   project_id     INTEGER NOT NULL REFERENCES project(row_id),
   target_kind    TEXT    NOT NULL,           -- 'document'|'section'|'task'|'story'
-  target_id      INTEGER NOT NULL,           -- row_id целевой сущности
+  target_id      INTEGER NOT NULL,           -- row_id of the target entity
   author         TEXT    NOT NULL,           -- agent:... / mcp:... / human:...
   patch          TEXT    NOT NULL,           -- unified diff | json-patch
   reason         TEXT,
@@ -452,7 +418,7 @@ CREATE TABLE proposal (
   created        TEXT    NOT NULL,
   decided_at     TEXT,
   decided_by     TEXT,
-  resulting_revision_id TEXT                 -- ULID при status=approved
+  resulting_revision_id TEXT                 -- ULID when status=approved
 );
 CREATE INDEX ix_proposal_pending ON proposal(project_id, status) WHERE status='pending';
 CREATE INDEX ix_proposal_target ON proposal(target_kind, target_id);
@@ -460,14 +426,14 @@ CREATE INDEX ix_proposal_target ON proposal(target_kind, target_id);
 
 Lifecycle:
 
-- `propose_edit` → row с `status=pending`, ULID `proposal_id`.
-- `approve` → применяет patch через соответствующий сервис, пишет revision, проставляет `resulting_revision_id`, `status=approved`.
-- `reject` → `status=rejected`, без revision.
-- `withdraw` (автором или по таймауту) → `status=withdrawn`.
+- `propose_edit` → row with `status=pending`, ULID `proposal_id`.
+- `approve` → applies the patch through the corresponding service, writes a revision, sets `resulting_revision_id`, `status=approved`.
+- `reject` → `status=rejected`, no revision.
+- `withdraw` (by the author or on timeout) → `status=withdrawn`.
 
-Auto-approve для агентов с `auto_approve: true` ([agents-and-skills.md §1.1](capabilities/agents-and-skills.md)) — пропускает создание proposal-row, идёт прямо в revision.
+Auto-approve for agents with `auto_approve: true` ([agents-and-skills.md §1.1](capabilities/agents-and-skills.md)) — skips the proposal-row creation, goes straight to revision.
 
-## 4. Вычисляемые представления
+## 4. Computed views
 
 ### 4.1 `section_totals`
 
@@ -485,7 +451,7 @@ GROUP BY s.row_id;
 
 ### 4.2 `plan_totals`
 
-Аналогично — агрегат по плану. Используется при генерации Progress Overview.
+Analogous — an aggregate over the plan. Used when generating the Progress Overview.
 
 ### 4.3a `document_body`
 
@@ -514,9 +480,9 @@ LEFT JOIN (
 ) s ON s.document_id = d.row_id;
 ```
 
-> Реализовано в `cod_doc/infra/migrations/versions/20260825_0025_projection_fidelity.py`: SQLite-вариант использует `group_concat(... , char(10) || char(10))` поверх упорядоченного подзапроса (`SELECT ... ORDER BY position`); Postgres — `string_agg(... , E'\n\n' ORDER BY position)`. Оба варианта возвращают идентичный текст.
+> Implemented in `cod_doc/infra/migrations/versions/20260825_0025_projection_fidelity.py`: the SQLite variant uses `group_concat(... , char(10) || char(10))` over an ordered subquery (`SELECT ... ORDER BY position`); Postgres — `string_agg(... , E'\n\n' ORDER BY position)`. Both variants return identical text.
 
-> **ADO-010 (находка F7).** До миграции 0025 view склеивал `preamble` с первым заголовком без разделителя — `preamble` хранится без хвостового перевода строки, поэтому на выходе получалось `> …заранее.## 1. Зачем`. Это была порча контента, а не форматирование: любой `doc export` ломал документ. Разделитель `\n\n` вставляется только когда обе части непусты; агрегат секций вынесен в производную таблицу, чтобы условие могло его проверить, не повторяя `group_concat`.
+> **ADO-010 (finding F7).** Before migration 0025, the view glued `preamble` to the first heading without a separator — `preamble` is stored without a trailing newline, so the output was `> …in advance.## 1. Why`. This was content corruption, not formatting: any `doc export` broke the document. The `\n\n` separator is inserted only when both parts are non-empty; the section aggregate is moved into a derived table so the condition can check it without repeating `group_concat`.
 
 ### 4.3 `ready_tasks`
 
@@ -533,38 +499,38 @@ WHERE t.status='pending'
   );
 ```
 
-## 5. Миграции и seed
+## 5. Migrations and seed
 
-- Миграции — Alembic (`cod_doc/infra/migrations/`), нумерация `0001_*`, `0002_*`.
-- Seed добавляет только системные теги и enum-валидации.
-- Для импорта Restate — отдельный one-shot скрипт (см. [migration/from-restate.md](migration/from-restate.md)).
-- **JSON `NOT NULL`-колонки** (`project.config_json`, `document.frontmatter_json`) — `server_default '{}'`. Безопасны для raw INSERT и bulk-импорта.
-- **Таймстемп-колонки** (`created`, `last_updated`, `at`) — `NOT NULL` без `server_default`. Заполняются на стороне приложения (`_utcnow` в ORM); raw SQL должен передавать значения явно. Это компромисс: единый источник истины — Python-часовой пояс, без рассинхрона с серверным `current_timestamp` между диалектами.
+- Migrations are Alembic (`cod_doc/infra/migrations/`), numbered `0001_*`, `0002_*`.
+- Seed adds only system tags and enum validations.
+- For importing Restate — a separate one-shot script (see [migration/from-restate.md](migration/from-restate.md)).
+- **JSON `NOT NULL` columns** (`project.config_json`, `document.frontmatter_json`) — `server_default '{}'`. Safe for raw INSERT and bulk import.
+- **Timestamp columns** (`created`, `last_updated`, `at`) — `NOT NULL` without `server_default`. Filled on the application side (`_utcnow` in the ORM); raw SQL must pass values explicitly. This is a compromise: a single source of truth — the Python timezone, without desync with the server `current_timestamp` between dialects.
 
-## 6. Именование и id-формат
+## 6. Naming and id format
 
-| Сущность | Human ID | Правило |
+| Entity | Human ID | Rule |
 |----------|----------|---------|
 | Module   | `M<N>-<slug>` | `M1-auth`, `M10-agencies` |
-| Task     | `<PREFIX>-<NNN>` | `AUTH-025`; ранжирование по секциям как в Restate |
+| Task     | `<PREFIX>-<NNN>` | `AUTH-025`; ranging by sections as in Restate |
 | Story    | `US-<NNN>` | globally unique |
 | Plan     | `<MODULE-ID>-<kebab>` | `M1-auth-module` |
 | Document | `<path-without-ext>` | `modules/M1-auth/overview` |
 
-Все правила валидируются сервисами — см. [standards/task-plan.md](standards/task-plan.md).
+All rules are validated by services — see [standards/task-plan.md](standards/task-plan.md).
 
-## 7. Целостность
+## 7. Integrity
 
-Триггеры и сервисные правила:
+Triggers and service rules:
 
-1. **Insert Dependency** → run cycle-check, ошибка если появится цикл (BD-уровень: `CHECK from_task_id <> to_task_id` отсекает self-loops; полный cycle-check — в сервисе).
-2. **Update Task.status → done** → ensure все `depends_on` уже `done`, иначе error.
-3. **Delete Document** запрещён, пока на него есть живые `Link` (force-flag только в сервисе с audit).
-4. **Update Document.body** → триггерит пересчёт ссылок и (асинхронно) эмбеддингов.
-5. **Insert ModuleDependency** — на уровне БД `CHECK from_module <> to_module`; cycle-check — в сервисе.
+1. **Insert Dependency** → run a cycle-check, error if a cycle appears (DB level: `CHECK from_task_id <> to_task_id` cuts off self-loops; full cycle-check — in the service).
+2. **Update Task.status → done** → ensure all `depends_on` are already `done`, otherwise error.
+3. **Delete Document** is forbidden while there are live `Link`s to it (force-flag only in the service with audit).
+4. **Update Document.body** → triggers link recompute and (asynchronously) embeddings.
+5. **Insert ModuleDependency** — at the DB level `CHECK from_module <> to_module`; cycle-check — in the service.
 
-## 8. Почему не NoSQL / plain markdown
+## 8. Why not NoSQL / plain markdown
 
-- NoSQL не даёт ACID-транзакций на «создал задачу → пересчитал секцию → записал revision → обновил ссылки».
-- Plain markdown = Restate сегодня = уже знаем, что деградирует.
-- Реляционка даёт чистый recursive CTE для графа зависимостей и критического пути без внешнего графового движка.
+- NoSQL does not give ACID transactions on "created a task → recalculated a section → wrote a revision → updated links".
+- Plain markdown = Restate today = we already know it degrades.
+- A relational DB gives a clean recursive CTE for the dependency graph and the critical path without an external graph engine.

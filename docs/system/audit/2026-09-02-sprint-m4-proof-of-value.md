@@ -13,110 +13,110 @@ related_docs:
   - ../releases/2026-08-30-sprint-m4.md
 ---
 
-# Sprint M4 «Доказательство ценности + разбор долга» — Closure / Audit Report
+# Sprint M4 "Proof of value + debt review" — Closure / Audit Report
 
 ## 1. TL;DR
 
-Спринт M4 закрыт: все четыре пункта очереди выполнены, критерий выхода взят.
-Ценность моста cod-doc → петля агентов доказана боевым прогоном за $0.98
-с вердиктом «масштабируем».
+Sprint M4 is closed: all four queue items are done, the exit criterion is taken.
+The value of the cod-doc → agent loop bridge is proven by a combat run for $0.98
+with the verdict "we scale".
 
-Но закрытие сопровождается находкой, меняющей вес самого критерия: **пункт
-«гейты зелёные», проставленный в M1…M4, проверялся только локальным прогоном.
-Реальный CI не был зелёным ни разу с 2026-05-06.** Спринт закрывается по
-факту сделанного, а не по формулировке DoD; расхождение вынесено в M5
-первым приоритетом.
+But the closure is accompanied by a finding that changes the weight of the criterion itself: **the item
+"gates green", set in M1…M4, was only checked by a local run.
+The real CI was not green a single time since 2026-05-06.** The sprint is closed by
+the fact of what was done, not by the DoD formulation; the divergence is moved to M5
+as the first priority.
 
 ## 2. Deliverables
 
-| # | Пункт очереди | Задача | Артефакт | Статус |
+| # | Queue item | Task | Artifact | Status |
 |---|---|---|---|---|
-| 1 | Перерегистрация Orakul, верификация фиксов M3 на 405 доках | ADO-062 | 405/405 in_sync, 0 stale_export | ✅ done |
-| 1a | Инцидент `--force-write`: затёрт авторский frontmatter | ADO-064 | `be6f15a` — непарсибельный frontmatter сохраняется verbatim | ✅ done |
-| 2 | E5-C в бою: `doc_context=executor` + замер | ADO-063 | `7bc156d`; задача s5dc done с 1 итерации, $0.98 | ✅ done |
-| 3 | Единый write-path wrapper + activity events | ADO-040 | `3b2662b`; покрытие 9 семейств write-сайтов | ✅ done |
-| 4 | ingest ai_review pull-моделью | SYM-009 | `2ac0631`; upstream PR ai-reviewer#5 | ✅ done |
+| 1 | Re-registration of Orakul, verification of M3 fixes on 405 docs | ADO-062 | 405/405 in_sync, 0 stale_export | ✅ done |
+| 1a | The `--force-write` incident: overwritten author frontmatter | ADO-064 | `be6f15a` — unparseable frontmatter is preserved verbatim | ✅ done |
+| 2 | E5-C in combat: `doc_context=executor` + measurement | ADO-063 | `7bc156d`; the s5dc task done in 1 iteration, $0.98 | ✅ done |
+| 3 | A single write-path wrapper + activity events | ADO-040 | `3b2662b`; coverage of 9 write-site families | ✅ done |
+| 4 | ingest ai_review with a pull model | SYM-009 | `2ac0631`; upstream PR ai-reviewer#5 | ✅ done |
 
-Релиз-заметка: [`releases/2026-08-30-sprint-m4.md`](../releases/2026-08-30-sprint-m4.md).
+Release note: [`releases/2026-08-30-sprint-m4.md`](../releases/2026-08-30-sprint-m4.md).
 
 ## 3. Findings
 
-**F1 — CI на main не был зелёным ни разу за историю ветки.** `gh run list
---branch main`: 10 прогонов, 2026-05-06 … 2026-09-02, conclusion=failure у
-всех, success — ноль. Причина последнего: `FileNotFoundError: 'alembic'` в
-`tests/api/conftest.py:44` — фикстуры шеллят наружу в `alembic`, которого нет
-на PATH раннера. Локально он есть (`.venv/bin`), поэтому расхождение невидимо
-с ноутбука. Следствие: пункт «гейты зелёные» в DoD M1…M4 не был проверен
-ничем, кроме локального прогона. → **ADO-070 (critical)**.
+**F1 — CI on main was not green a single time in the history of the branch.** `gh run list
+--branch main`: 10 runs, 2026-05-06 … 2026-09-02, conclusion=failure for
+all of them, success — zero. The reason for the last one: `FileNotFoundError: 'alembic'` in
+`tests/api/conftest.py:44` — the fixtures shell out to `alembic`, which is not
+on the runner's PATH. Locally it is there (`.venv/bin`), so the divergence is invisible
+from the laptop. Consequence: the item "gates green" in the DoD M1…M4 was not checked by
+anything but a local run. → **ADO-070 (critical)**.
 
-**F2 — единственный красный тест локально.** Полный прогон на `2ac0631`:
-1 failed, 1629 passed. `test_post_findings_invalid_payload_version` ждёт 400
-на `version: 2`, но SYM-009 тем же коммитом научил адаптер понимать v2
-(`_KNOWN_VERSIONS = {1, 2}`). Фича и устаревший негативный кейс приехали
-вместе. → **ADO-069 (critical)**.
+**F2 — the only red test locally.** A full run on `2ac0631`:
+1 failed, 1629 passed. `test_post_findings_invalid_payload_version` expects 400
+on `version: 2`, but SYM-009 in the same commit taught the adapter to understand v2
+(`_KNOWN_VERSIONS = {1, 2}`). The feature and the outdated negative case arrived
+together. → **ADO-069 (critical)**.
 
-**F3 — три MCP-тула падают под живым сервером.** `capabilities`,
-`tool_search`, `tools_diff` бросают `RuntimeError: asyncio.run() cannot be
-called from a running event loop` (`context_tools.py:394, 454, 522`). Тесты
-достают функцию как `_tool_manager._tools[name].fn` и зовут синхронно — без
-event loop'а `asyncio.run()` легален, поэтому тестовый путь физически не
-способен воспроизвести боевой. `capabilities` — первая команда, которой агент
-осматривает незнакомый проект. → **ADO-066 (critical)**.
+**F3 — three MCP tools crash under a live server.** `capabilities`,
+`tool_search`, `tools_diff` throw `RuntimeError: asyncio.run() cannot be
+called from a running event loop` (`context_tools.py:394, 454, 522`). The tests
+get the function as `_tool_manager._tools[name].fn` and call it synchronously — without
+an event loop `asyncio.run()` is legal, so the test path is physically incapable of
+reproducing the combat case. `capabilities` is the first command an agent uses to
+survey an unfamiliar project. → **ADO-066 (critical)**.
 
-**F4 — тесты пишут в реальный `~/.cod-doc/config.yaml`.** В боевом конфиге
-`model: m`, `base_url: https://x`, `api_key: sk-test` — побайтовая копия
-тестовой фикстуры (`test_cmd_import.py:41` и ещё четыре файла) — плюс два
-pytest-каталога в `projects:`. Механизм: `config.py:19-20` вычисляет
-`CONFIG_DIR`/`CONFIG_FILE` на импорте, а `conftest.py:23` ставит
-`COD_DOC_HOME` в autouse-фикстуре — то есть уже после. Рецидив F5 аудита
-2026-07-29, закрытой ADO-001 25.08: фикс прожил пять дней. Оговорка: полный
-прогон 2026-09-02 mtime файла не изменил, значит триггер условный.
+**F4 — tests write to the real `~/.cod-doc/config.yaml`.** In the combat config
+`model: m`, `base_url: https://x`, `api_key: sk-test` — a byte-for-byte copy of
+the test fixture (`test_cmd_import.py:41` and four more files) — plus two
+pytest catalogs in `projects:`. Mechanism: `config.py:19-20` computes
+`CONFIG_DIR`/`CONFIG_FILE` on import, and `conftest.py:23` sets
+`COD_DOC_HOME` in an autouse fixture — i.e. already after. A relapse of F5 of the audit
+2026-07-29, closed by ADO-001 on 25.08: the fix lived five days. Caveat: the full
+run on 2026-09-02 did not change the file's mtime, so the trigger is conditional.
 → **ADO-068 (critical)**.
 
-**F5 — грумминг бэклога недоступен агенту.** `task_service.update_description`
-и `update_acceptance` подключены только к web; в MCP и CLI их нет.
-`update_priority` не существует нигде. Планирование M5 было вынуждено писать
-через service-слой скриптом. Нарушено правило четырёх поверхностей ровно на
-операции, которой агент управляет собственным бэклогом.
+**F5 — backlog grooming is unavailable to the agent.** `task_service.update_description`
+and `update_acceptance` are only connected to the web; in MCP and CLI they are missing.
+`update_priority` does not exist anywhere. The M5 planning was forced to write
+through the service layer with a script. The four-surfaces rule is violated exactly on
+the operation by which the agent manages its own backlog.
 → **ADO-067 (high)**.
 
-**F6 — три объявленных контракта не имеют реализации.** Замеры на живой БД:
-`revision.run_id` NULL в 2004 из 2004; `activity_event.run_id` NULL в 326 из
-326; `audit_log` — 0 строк и 0 писателей за всю историю; `run_scope()` не
-имеет ни одного продакшн-вызова. При этом AGENTS.md §5.4 утверждает «run-id
-на всех мутациях», ARCHITECTURE §9 и DATA_MODEL §3.13 описывают `audit_log`
-как журнал write-операций. → консолидировано в **ADO-044**.
+**F6 — three declared contracts have no implementation.** Measurements on the live DB:
+`revision.run_id` NULL in 2004 out of 2004; `activity_event.run_id` NULL in 326 out of
+326; `audit_log` — 0 rows and 0 writers in all history; `run_scope()` has
+not a single production call. At the same time AGENTS.md §5.4 claims "run-id
+on all mutations", ARCHITECTURE §9 and DATA_MODEL §3.13 describe `audit_log`
+as a log of write operations. → consolidated into **ADO-044**.
 
 ## 4. Plan health
 
-- План `adoption-2026-08`: 66 done / 82 на момент закрытия M4.
-- Drift: 131 in_sync, 1 edited_in_place (`CLAUDE.md` — догоняющая правка
-  документации после M4, импортируется этим же коммитом), 0 missing.
-- Задачи: 265 всего, 245 done, 5 cancelled, 15 pending → после консолидации
-  M5: 18 pending (2 свёрнуты в ADO-044, 5 заведены).
+- Plan `adoption-2026-08`: 66 done / 82 at the time of closing M4.
+- Drift: 131 in_sync, 1 edited_in_place (`CLAUDE.md` — a catch-up edit of
+  documentation after M4, imported by this same commit), 0 missing.
+- Tasks: 265 total, 245 done, 5 cancelled, 15 pending → after the consolidation
+  M5: 18 pending (2 are folded into ADO-044, 5 are opened).
 
 ## 5. Acceptance
 
-Критерий выхода M4 из [sprint-m4-proof-of-value.md](../roadmap/sprint-m4-proof-of-value.md):
+The exit criterion of M4 from [sprint-m4-proof-of-value.md](../roadmap/sprint-m4-proof-of-value.md):
 
-- [x] Orakul зарегистрирован; чек M3 «проверено на корпусе Orakul» закрыт —
+- [x] Orakul is registered; the M3 check "verified on the Orakul corpus" is closed —
       405/405 in_sync.
-- [x] Решение по E5-C зафиксировано артефактом — вердикт «масштабируем»,
-      $0.98, задача s5dc done с одной итерации.
-- [x] ADO-040 done: write-path wrapper, 9 семейств эмитят, глотание ошибок
-      emit устранено.
-- [x] Audit-отчёт M4 (этот документ), ROADMAP обновлён.
-- [x] Гейты зелёные — **с оговоркой**: локальный прогон 1629/1630, CI красный
-      (F1, F2). Пункт засчитан по фактическому состоянию кода, а формулировка
-      DoD переопределена в M5: «гейты зелёные» = зелёный CI.
+- [x] The decision on E5-C is recorded by an artifact — the verdict "we scale",
+      $0.98, the s5dc task done in one iteration.
+- [x] ADO-040 done: write-path wrapper, 9 families emit, the swallowing of emit errors
+      is eliminated.
+- [x] The M4 audit report (this document), ROADMAP is updated.
+- [x] Gates green — **with a caveat**: local run 1629/1630, CI red
+      (F1, F2). The item is counted by the actual state of the code, and the formulation
+      of the DoD is redefined in M5: "gates green" = green CI.
 
 ## 6. Out of cycle → M5
 
-Findings F1–F6 переданы в спринт
-[M5 «Гейт, которому можно верить»](../roadmap/sprint-m5-trustworthy-gate.md)
-задачами ADO-066…070 и консолидированной ADO-044. Порядок очереди M5 задан
-этими находками, а не остатком бэклога: сначала гейт, которому можно верить,
-потом всё остальное.
+Findings F1–F6 are passed to the sprint
+[M5 "A gate you can trust"](../roadmap/sprint-m5-trustworthy-gate.md)
+as tasks ADO-066…070 and the consolidated ADO-044. The order of the M5 queue is set
+by these findings, not by the backlog remainder: first a gate you can trust,
+then everything else.
 
-Хвост секции D (ADO-042, 045, 046, 047, 048, 049, 050) и SYM-011 сознательно
-оставлены в бэклоге — см. «Вне скоупа M5».
+The tail of section D (ADO-042, 045, 046, 047, 048, 049, 050) and SYM-011 are consciously
+left in the backlog — see "Out of scope of M5".

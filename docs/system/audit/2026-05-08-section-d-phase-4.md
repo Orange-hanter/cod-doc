@@ -16,32 +16,32 @@ related_docs:
 
 # Section D — Closure Report (Phase 4: LLM Adapter Pattern)
 
-> **Назначение.** Зафиксировать закрытие 3 задач Section D
-> (PCA-300, PCA-301, PCA-302) и findings → backlog.
+> **Purpose.** Record the closure of 3 tasks of Section D
+> (PCA-300, PCA-301, PCA-302) and findings → backlog.
 
 ## 1. TL;DR
 
-- **PCA-300** — `LLMAdapter` Protocol + нейтральные типы
+- **PCA-300** — `LLMAdapter` Protocol + neutral types
   (`ChatResponse`, `ChatMessage`, `ChatChoice`, `ToolCall`, `FunctionCall`,
-  `AdapterCapabilities`) в `cod_doc/agent/adapters/base.py`. Нейтральный
-  формат зеркалит OpenAI-структуру, так что парсинг ответов в orchestrator
-  остался неизменным.
-- **PCA-301** — три встроенных адаптера: `openai_compat` (прозрачная
-  замена прежнего захардкоженного `AsyncOpenAI`), `anthropic` (нативный
-  SDK + format-converters для tool-use), `mock` (детерминированная очередь
-  для тестов, устраняет сетевые вызовы).
-- **PCA-302** — `AdapterRegistry` с plugin-loader (JSON-файл), поле
-  `Config.llm_adapter` (default `openai_compat`), DI в
+  `AdapterCapabilities`) in `cod_doc/agent/adapters/base.py`. The neutral
+  format mirrors the OpenAI structure, so parsing responses in the orchestrator
+  remained unchanged.
+- **PCA-301** — three built-in adapters: `openai_compat` (a transparent
+  replacement of the former hardcoded `AsyncOpenAI`), `anthropic` (a native
+  SDK + format-converters for tool-use), `mock` (a deterministic queue
+  for tests, eliminates network calls).
+- **PCA-302** — `AdapterRegistry` with a plugin-loader (JSON file), the
+  `Config.llm_adapter` field (default `openai_compat`), DI in
   `Orchestrator.__init__(adapter=...)`, `_generate_tasks_from_master`
-  обновлён. Все 13 тестов `test_orchestrator.py` мигрированы на
-  `MockAdapter` (убраны патчи `AsyncOpenAI`).
-- **26 новых тестов** в `tests/test_adapters.py`. **996 tests pass**
+  updated. All 13 tests of `test_orchestrator.py` are migrated to
+  `MockAdapter` (the `AsyncOpenAI` patches are removed).
+- **26 new tests** in `tests/test_adapters.py`. **996 tests pass**
   (970 → 996).
 - **4 findings** (H1-H4) → backlog Section F (PCA-924..927).
 
 ## 2. Section D deliverables
 
-| # | Деливерабл | Файл / артефакт | Статус |
+| # | Deliverable | File / artifact | Status |
 |---|------------|------------------|--------|
 | D1 | Section D audit-report | `docs/system/audit/2026-05-08-section-d-phase-4.md` | ✅ |
 | D2 | `LLMAdapter` Protocol + types | `cod_doc/agent/adapters/base.py` | ✅ |
@@ -53,69 +53,69 @@ related_docs:
 | D8 | `Config.llm_adapter` + `anthropic_api_key` | `cod_doc/config.py` | ✅ |
 | D9 | `Orchestrator` DI refactor | `cod_doc/agent/orchestrator.py` | ✅ |
 | D10 | Adapter tests (26) | `tests/test_adapters.py` | ✅ |
-| D11 | `test_orchestrator.py` мигрирован на MockAdapter | `tests/test_orchestrator.py` | ✅ |
+| D11 | `test_orchestrator.py` migrated to MockAdapter | `tests/test_orchestrator.py` | ✅ |
 
 ## 3. Acceptance per task
 
-- [x] **PCA-300** — Protocol + нейтральные типы определены; `LLMAdapter`
-      помечен `@runtime_checkable`; `MockAdapter` проходит isinstance-проверку.
-- [x] **PCA-301** — `openai_compat` поведение идентично прежнему (нет
-      регрессий, 970 предыдущих тестов зелёные). `anthropic` конвертирует
-      tool-use в обе стороны. `mock` с пустой очередью возвращает дефолтный
-      "done". Запись вызовов в `calls`.
+- [x] **PCA-300** — Protocol + neutral types are defined; `LLMAdapter`
+      is marked `@runtime_checkable`; `MockAdapter` passes the isinstance check.
+- [x] **PCA-301** — `openai_compat` behavior is identical to the former (no
+      regressions, 970 previous tests are green). `anthropic` converts
+      tool-use both ways. `mock` with an empty queue returns the default
+      "done". Calls are recorded in `calls`.
 - [x] **PCA-302** — `Orchestrator(project, config, adapter=mock_adapter)`
-      wire adapter напрямую; без adapter → выбор из реестра по
-      `config.llm_adapter`. Все тесты оркестратора используют MockAdapter,
-      сетевых вызовов нет.
+      wires the adapter directly; without an adapter → selection from the registry by
+      `config.llm_adapter`. All orchestrator tests use MockAdapter,
+      there are no network calls.
 
 ## 4. Findings (→ backlog)
 
-### H1 — Streaming не реализован *(medium)*
+### H1 — Streaming is not implemented *(medium)*
 
-`AdapterCapabilities.streaming=False` для всех адаптеров. `stream_chat()`
-не входит в Protocol (намеренно оставлен на Phase 2 per proposal 10 §61).
-UI streaming (показ промежуточного thinking) работает через event loop
-orchestrator'а, а не через SDK streaming — это правильно для текущей
-архитектуры. Если понадобится live-streaming ответа до tool-call'а —
-нужно добавить `stream_chat` в Protocol + реализовать в обоих адаптерах.
+`AdapterCapabilities.streaming=False` for all adapters. `stream_chat()`
+is not part of the Protocol (intentionally left for Phase 2 per proposal 10 §61).
+UI streaming (showing intermediate thinking) works through the event loop
+of the orchestrator, not through SDK streaming — this is correct for the current
+architecture. If live-streaming of the response before the tool-call is needed —
+we need to add `stream_chat` to the Protocol + implement it in both adapters.
 
-**Рекомендация:** не делать сейчас. Зафиксировать как backlog.
+**Recommendation:** do not do it now. Record as backlog.
 
-### H2 — Cost tracking нормализован нулём для `openai_compat` *(low)*
+### H2 — Cost tracking is normalized to zero for `openai_compat` *(low)*
 
-`cost_estimate` в `openai_compat` возвращает `Decimal(0)` — нет статического
-справочника цен для OpenRouter-моделей. `anthropic` содержит примерный
-прайс для 3 моделей. Без корректных цен метрика `AgentRun.llm_tokens_in/out`
-есть, но `cost_event` отсутствует.
+`cost_estimate` in `openai_compat` returns `Decimal(0)` — there is no static
+price directory for OpenRouter models. `anthropic` contains an approximate
+price for 3 models. Without correct prices the metric `AgentRun.llm_tokens_in/out`
+exists, but `cost_event` is missing.
 
-**Рекомендация:** добавить статический dict цен для популярных OpenRouter
-моделей (claude-sonnet, gpt-4o, gemini-pro) в `openai_compat.py`. Источник —
-захардкоженный JSON в репо, обновляемый вручную. Отдельная F-задача.
+**Recommendation:** add a static dict of prices for popular OpenRouter
+models (claude-sonnet, gpt-4o, gemini-pro) to `openai_compat.py`. Source —
+a hardcoded JSON in the repo, updated manually. A separate F-task.
 
-### H3 — Проверка capabilities не реализована *(low)*
+### H3 — Capabilities check is not implemented *(low)*
 
-Proposal 10 Q6: «что делать если задача требует tool_use, а
-`capabilities.tool_use=False`?». В текущей реализации orchestrator не
-проверяет capabilities перед вызовом — если адаптер не поддерживает
-tool_use, он просто упадёт с ошибкой от SDK.
+Proposal 10 Q6: "what to do if a task requires tool_use, but
+`capabilities.tool_use=False`?". In the current implementation the orchestrator does not
+check capabilities before the call — if the adapter does not support
+tool_use, it will just fail with an error from the SDK.
 
-**Рекомендация:** добавить проверку в `Orchestrator.__init__`:
+**Recommendation:** add a check in `Orchestrator.__init__`:
 ```python
 if not self.adapter.capabilities.tool_use:
     raise ValueError(f"Adapter {self.adapter.name!r} must support tool_use")
 ```
 Trivial + defensive.
 
-### H4 — `self.client` deprecated shim не задокументирован *(low)*
+### H4 — `self.client` deprecated shim is not documented *(low)*
 
-В `Orchestrator.__init__` добавлен `self.client = getattr(self.adapter, "_client", None)` как legacy shim для кода, который обращается к `orchestrator.client` напрямую. Deprecated-warning не испускается, и нет списка таких мест.
+In `Orchestrator.__init__` `self.client = getattr(self.adapter, "_client", None)` is added as a legacy shim for code that accesses `orchestrator.client` directly. No deprecation warning is emitted, and there is no list of such places.
 
-**Рекомендация:** grep `orchestrator.client` + добавить `DeprecationWarning`
-при обращении к `self.client`. Удалить shim в следующей major-версии.
+**Recommendation:** grep `orchestrator.client` + add a `DeprecationWarning`
+on access to `self.client`. Remove the shim in the next major version.
 
-## 5. Метрики
+## 5. Metrics
 
-| Метрика | До Section D | После | Δ |
+| Metric | Before Section D | After | Δ |
 |---------|-------------:|------:|--:|
 | LLM backends | 1 (hardcoded) | 3 built-in + plugin | +∞ |
 | Adapter modules | — | 5 | +5 |
@@ -124,25 +124,25 @@ Trivial + defensive.
 | Section D done tasks | 0 | 3 | +3 |
 | Total A+B+C+D done | 35 | 38 | +3 |
 
-## 6. Что не вошло (out of scope)
+## 6. What was not included (out of scope)
 
-- **ollama adapter** (proposal 10 §82) — нет запроса на локальные модели.
+- **ollama adapter** (proposal 10 §82) — no request for local models.
 - **Streaming** (H1) — see above.
-- **External adapters CLI** (`cod-doc adapter add`) — только JSON plugin loader.
-- **Cost dashboard** (H2) — нет UI-страницы для cost_estimate.
+- **External adapters CLI** (`cod-doc adapter add`) — only the JSON plugin loader.
+- **Cost dashboard** (H2) — no UI page for cost_estimate.
 
-## 7. Следующий шаг
+## 7. Next step
 
-Sections A, B, C, D закрыты. **38 done tasks** суммарно.
+Sections A, B, C, D are closed. **38 done tasks** in total.
 
-Открытые направления:
-- **Section E (UX & Migration, PCA-400..422)** — 7 задач. Folder manifest
-  scanner, web import UI, legacy YAML migration, link redesign. Высокая
-  видимость, средний риск.
-- **Section F backlog** — 12 + 4 = 16 накопленных задач (F1-F6 + G1-G6 +
-  H1-H4). Можно консолидировать до открытия Section E.
+Open directions:
+- **Section E (UX & Migration, PCA-400..422)** — 7 tasks. Folder manifest
+  scanner, web import UI, legacy YAML migration, link redesign. High
+  visibility, medium risk.
+- **Section F backlog** — 12 + 4 = 16 accumulated tasks (F1-F6 + G1-G6 +
+  H1-H4). Can be consolidated before opening Section E.
 
-Findings H1-H4 заведены как PCA-924..927 в Section F.
+Findings H1-H4 are opened as PCA-924..927 in Section F.
 
-Рекомендация: **Section E** (завершает весь RFC-беклог), либо
-**Section F consolidation** (быстрые wins G2/G3/H3/H4).
+Recommendation: **Section E** (completes the entire RFC backlog), or
+**Section F consolidation** (quick wins G2/G3/H3/H4).

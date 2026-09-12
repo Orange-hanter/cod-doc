@@ -14,9 +14,9 @@ related_docs:
 
 # ADR System — Execution Plan
 
-> Реализация capability «ADR Documents» (см. [capabilities/adr-system.md](../capabilities/adr-system.md)).
-> ADR — first-class сущность в БД, MCP-API, CLI, Web UI с визуальным
-> редактором и Mermaid-графом supersede-цепочек.
+> Implementation of the "ADR Documents" capability (see [capabilities/adr-system.md](../capabilities/adr-system.md)).
+> An ADR is a first-class entity in the DB, MCP API, CLI, and Web UI with a
+> visual editor and a Mermaid graph of supersede chains.
 
 ## Navigation
 
@@ -32,7 +32,7 @@ related_docs:
 | C | Templates & Migration | 2 | ✅ done |
 | **TOTAL** | | **8** | ✅ done |
 
-> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): код подтверждает 8/8 done — миграция `20260515_0018_adr_tables.py`, `services/adr_service.py` (+ immutability/deprecate), 9 MCP-тулов `adr_*`, CLI `cod_doc/cli/adr/`, web-страницы `api/web/pages/adr.py` (list/new/show/graph). БД: ADR-001..008 = done.
+> **Status reconciliation 2026-06-05** (see [ROADMAP](ROADMAP.md)): the code confirms 8/8 done — migration `20260515_0018_adr_tables.py`, `services/adr_service.py` (+ immutability/deprecate), 9 MCP tools `adr_*`, CLI `cod_doc/cli/adr/`, web pages `api/web/pages/adr.py` (list/new/show/graph). DB: ADR-001..008 = done.
 
 ## Dependency Graph
 
@@ -59,12 +59,12 @@ graph TD
 
 ## Acceptance per section
 
-- **Section A** — `adr` таблица + `AdrService` + 7 MCP-тулов работают;
-  автонумерация без коллизий; supersede-цепочка cycle-проверяется.
-- **Section B** — три Web-страницы (`/p/<slug>/adr`, `/adr/new`, `/adr/<id>`,
-  `/adr/graph`) рендерят список, форму, детальный view, граф; Mermaid live-preview.
-- **Section C** — default ADR-шаблон в `templates/`; миграция 5 ADR из
-  `arch/architecture.md §5` в БД с supersede-цепочкой.
+- **Section A** — the `adr` table + `AdrService` + 7 MCP tools work;
+  autonumbering without collisions; the supersede chain is cycle-checked.
+- **Section B** — three web pages (`/p/<slug>/adr`, `/adr/new`, `/adr/<id>`,
+  `/adr/graph`) render the list, form, detail view, graph; Mermaid live-preview.
+- **Section C** — a default ADR template in `templates/`; migration of 5
+  ADRs from `arch/architecture.md §5` into the DB with a supersede chain.
 
 ---
 
@@ -86,9 +86,9 @@ affects_files:
   - cod_doc/domain/entities.py
 ```
 
-Таблицы: `adr` (id auto ADR-NNN, project_id FK, status enum, context/decision/consequences TEXT, decided_by, decided_at, superseded_by FK NULL); `adr_diagram` (adr_id FK, position, mermaid_source, caption); `adr_supersedes` (from FK, to FK, reason, kind='supersedes'); `adr_task` (adr_id FK, task_id FK).
+Tables: `adr` (id auto ADR-NNN, project_id FK, status enum, context/decision/consequences TEXT, decided_by, decided_at, superseded_by FK NULL); `adr_diagram` (adr_id FK, position, mermaid_source, caption); `adr_supersedes` (from FK, to FK, reason, kind='supersedes'); `adr_task` (adr_id FK, task_id FK).
 
-**Acceptance:** миграция up/down; автонумерация ADR-NNN per project через `MAX(id)` подсчёт + lock; smoke-CRUD; supersede-DAG-проверка вынесена в service-слой.
+**Acceptance:** migration up/down; ADR-NNN autonumbering per project via `MAX(id)` count + lock; smoke-CRUD; supersede-DAG check moved to the service layer.
 
 ### ADR-002 — Implement: AdrService + MCP tools
 
@@ -106,9 +106,9 @@ affects_files:
   - cod_doc/agent/tool_defs.py
 ```
 
-Сервис: `create / get / list / update / supersede / deprecate / add_diagram / link_task / graph`. Каждая мутация пишет revision с `entity_kind=ADR`. supersede-cycle detection (DFS) перед update. autonumber через section_repo-pattern с проверкой UNIQUE.
+Service: `create / get / list / update / supersede / deprecate / add_diagram / link_task / graph`. Each mutation writes a revision with `entity_kind=ADR`. supersede-cycle detection (DFS) before update. Autonumber via the section_repo pattern with a UNIQUE check.
 
-**Acceptance:** 7 MCP-тулов в `tool_defs.py`; cycle-detection rejects `ADR-A supersedes ADR-B; ADR-B supersedes ADR-A`; 15+ unit tests.
+**Acceptance:** 7 MCP tools in `tool_defs.py`; cycle-detection rejects `ADR-A supersedes ADR-B; ADR-B supersedes ADR-A`; 15+ unit tests.
 
 ### ADR-003 — Implement: CLI commands (cod-doc adr ...)
 
@@ -125,9 +125,9 @@ affects_files:
   - cod_doc/cli/__init__.py
 ```
 
-CLI-команды через click: `new` (с `--context-file/--decision-file/--consequences-file`), `list --status`, `show ADR-NNN`, `supersede OLD NEW --reason`, `graph --format mermaid|json`.
+CLI commands via click: `new` (with `--context-file/--decision-file/--consequences-file`), `list --status`, `show ADR-NNN`, `supersede OLD NEW --reason`, `graph --format mermaid|json`.
 
-**Acceptance:** все 5 команд работают; help-тексты; integration-тест на end-to-end (создать ADR → list → show → supersede → graph).
+**Acceptance:** all 5 commands work; help texts; an integration test for end-to-end (create ADR → list → show → supersede → graph).
 
 ---
 
@@ -149,9 +149,9 @@ affects_files:
   - cod_doc/api/web/routes.py
 ```
 
-Список ADR с цветовыми badge (PROPOSED/ACCEPTED/DEPRECATED/SUPERSEDED), фильтры (status, год), сортировка по decided_at DESC. Пагинация 50/page. Карточка показывает supersedes/superseded_by chips.
+ADR list with color badges (PROPOSED/ACCEPTED/DEPRECATED/SUPERSEDED), filters (status, year), sort by decided_at DESC. Pagination 50/page. The card shows supersedes/superseded_by chips.
 
-**Acceptance:** страница рендерится за <100ms на 100 ADR; HTMX-фильтры без full-reload.
+**Acceptance:** the page renders in <100ms on 100 ADRs; HTMX filters without a full reload.
 
 ### ADR-005 — Implement: /adr/new visual editor + /adr/<id> detail page
 
@@ -170,9 +170,9 @@ affects_files:
   - cod_doc/static/js/adr_editor.js
 ```
 
-Форма с textarea-блоками (Context/Decision/Consequences) + markdown preview сбоку. Mermaid-блоки добавляются кнопкой «+ Diagram», live-preview через клиентский mermaid.js (уже используется для plan-graphs). Supersedes — multi-select из ACCEPTED-ADR (HTMX combobox). Detail-страница рендерит markdown через server-side renderer (см. [`api/web/markdown.py`](../../../cod_doc/api/web/markdown.py)) + Mermaid через клиентский lib.
+A form with textarea blocks (Context/Decision/Consequences) + a markdown preview on the side. Mermaid blocks are added with a "+ Diagram" button, live-preview via the client-side mermaid.js (already used for plan-graphs). Supersedes — a multi-select from ACCEPTED ADRs (HTMX combobox). The detail page renders markdown via a server-side renderer (see [`api/web/markdown.py`](../../../cod_doc/api/web/markdown.py)) + Mermaid via the client-side lib.
 
-**Acceptance:** создание ADR через UI без CLI/MCP; Mermaid-preview обновляется при печати; supersede-форма не позволяет выбрать самого себя или создать цикл.
+**Acceptance:** creating an ADR via the UI without CLI/MCP; the Mermaid preview updates while typing; the supersede form does not allow selecting itself or creating a cycle.
 
 ### ADR-006 — Implement: /adr/graph supersede-chain visualization
 
@@ -190,9 +190,9 @@ affects_files:
   - cod_doc/services/adr_service.py
 ```
 
-Серверный рендер `adr_graph(format='mermaid')` → клиентский Mermaid.js → SVG с кликабельными узлами (анкоры на /adr/<id>). Цвета по статусу (как в badges). При больших DAG — фильтр «только последняя версия в каждой цепочке».
+Server-side render `adr_graph(format='mermaid')` → client-side Mermaid.js → SVG with clickable nodes (anchors to /adr/<id>). Colors by status (as in badges). For large DAGs — a filter "only the latest version in each chain".
 
-**Acceptance:** граф из 50+ ADR рендерится <1s; узел с кликом ведёт на детальную; статусы цветово отделены.
+**Acceptance:** a graph of 50+ ADRs renders in <1s; a clicked node leads to the detail page; statuses are color-separated.
 
 ---
 
@@ -202,7 +202,7 @@ affects_files:
 
 ```yaml
 id: ADR-007
-title: "Add: default ADR-шаблон + миграция 5 ADR из arch/architecture.md §5"
+title: "Add: default ADR template + migrate 5 ADR from arch/architecture.md §5"
 section: C-Templates-Migration
 status: pending
 depends_on: [ADR-002]
@@ -214,9 +214,9 @@ affects_files:
   - tests/services/test_adr_migrator.py
 ```
 
-Шаблон `templates/adr_default.md.j2` (Title/Status/Context/Decision/Consequences). Скрипт-разовка `adr_migrator.py` парсит `arch/architecture.md §5 ADR` (5 решений) → создаёт ADR-001..ADR-005 в БД через `AdrService.create`, статус `ACCEPTED`, `decided_by='COD-DOC Orchestrator'`, `decided_at=2026-04-05`.
+Template `templates/adr_default.md.j2` (Title/Status/Context/Decision/Consequences). A one-off script `adr_migrator.py` parses `arch/architecture.md §5 ADR` (5 decisions) → creates ADR-001..ADR-005 in the DB via `AdrService.create`, status `ACCEPTED`, `decided_by='COD-DOC Orchestrator'`, `decided_at=2026-04-05`.
 
-**Acceptance:** 5 ADR в БД после миграции; arch/architecture.md §5 заменён на ссылку «См. /p/<slug>/adr»; idempotency — повторный запуск не дублирует.
+**Acceptance:** 5 ADRs in the DB after the migration; arch/architecture.md §5 replaced with a link "See /p/<slug>/adr"; idempotency — a repeat run does not duplicate.
 
 ### ADR-008 — Tests + HANDBOOK section
 
@@ -234,6 +234,6 @@ affects_files:
   - docs/HANDBOOK.md
 ```
 
-End-to-end: create ADR → supersede → graph. Web-тесты через Playwright (как в существующих web-тестах). HANDBOOK section «ADR — как принимать архитектурные решения» с примером flow.
+End-to-end: create ADR → supersede → graph. Web tests via Playwright (as in the existing web tests). HANDBOOK section "ADR — how to make architectural decisions" with an example flow.
 
-**Acceptance:** 25+ tests суммарно (unit + integration + web); HANDBOOK обновлён; suite зелёный.
+**Acceptance:** 25+ tests total (unit + integration + web); HANDBOOK updated; suite green.

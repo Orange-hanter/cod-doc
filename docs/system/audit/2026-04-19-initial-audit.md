@@ -14,192 +14,192 @@ related_docs:
 
 # Initial Audit — `docs/system/`
 
-> Аудит первоначального пакета документации COD-DOC (16 файлов, ~3100 строк, статус `draft`).
-> Цель аудита — найти противоречия, пробелы, неработающие ссылки, недоговорённости в моделях, прежде чем что-либо превращать в код.
-> Severity: **critical** — блокирует реализацию, **high** — нужно решить до этапа A roadmap, **medium** — после A, **low** — косметика.
+> Audit of the initial COD-DOC documentation package (16 files, ~3100 lines, status `draft`).
+> The goal of the audit is to find contradictions, gaps, broken links, and under-specified models before turning anything into code.
+> Severity: **critical** — blocks implementation, **high** — must be resolved before roadmap stage A, **medium** — after A, **low** — cosmetic.
 
-## Сводка
+## Summary
 
-| Severity | Count | Куда |
+| Severity | Count | Where |
 |----------|------:|------|
-| critical | 2 | трекаются в follow-up плане как DOC-CRT-* |
+| critical | 2 | tracked in the follow-up plan as DOC-CRT-* |
 | high     | 9 | ↳ DOC-HI-* |
 | medium   | 7 | ↳ DOC-ME-* |
 | low      | 5 | ↳ DOC-LO-* |
-| **итого** | **23** | |
+| **total** | **23** | |
 
-Полный список и приоритезация — [../roadmap/audit-followups-task-plan.md](../roadmap/audit-followups-task-plan.md).
+The full list and prioritization is in [../roadmap/audit-followups-task-plan.md](../roadmap/audit-followups-task-plan.md).
 
-## 1. Покрытие требований пользователя
+## 1. Coverage of user requirements
 
-Заявленные пользователем capabilities проверены против пакета:
+The capabilities declared by the user were checked against the package:
 
-| Требование | Покрыто | Где |
-|-----------|---------|-----|
-| Создание задач | ✅ | capabilities/task-creation, standards/task-plan |
-| Развитие документации | ✅ | capabilities/doc-evolution |
-| Автолинковка | ✅ | capabilities/auto-linking, standards/document-link |
-| Ссылки на документы | ✅ | standards/document-link |
-| История изменений | ✅ | standards/revision-history |
-| Концентрированный контекст | ✅ | capabilities/context-retrieval |
-| Ведение плана | ✅ | capabilities/plan-management |
-| User stories + граф зависимостей | ✅ | capabilities/user-stories-graph |
+| Requirement | Covered | Where |
+|-------------|--------|-------|
+| Task creation | ✅ | capabilities/task-creation, standards/task-plan |
+| Documentation evolution | ✅ | capabilities/doc-evolution |
+| Auto-linking | ✅ | capabilities/auto-linking, standards/document-link |
+| Document links | ✅ | standards/document-link |
+| Revision history | ✅ | standards/revision-history |
+| Concentrated context | ✅ | capabilities/context-retrieval |
+| Plan management | ✅ | capabilities/plan-management |
+| User stories + dependency graph | ✅ | capabilities/user-stories-graph |
 
-Базовые требования закрыты. Дальше — пробелы, которые всплыли при перекрёстном чтении.
+The baseline requirements are covered. Below are the gaps that surfaced during cross-reading.
 
-## 2. Critical — блокирует реализацию
+## 2. Critical — blocks implementation
 
-### CRT-1. Не определён формат `revision_id`
+### CRT-1. The `revision_id` format is not defined
 
-`revision-history.md` использует id `r_abc123`, `r_01hq…`, `r_def456`; формат не зафиксирован. ID должен быть стабильным по времени и сортируемым.
+`revision-history.md` uses ids `r_abc123`, `r_01hq…`, `r_def456`; the format is not fixed. The ID must be stable over time and sortable.
 
-**Фикс:** ULID (`01HQX...`), документировать в `standards/revision-history.md §2`.
+**Fix:** ULID (`01HQX...`), documented in `standards/revision-history.md §2`.
 
-### CRT-2. Не определена таблица `embedding`
+### CRT-2. The `embedding` table is not defined
 
-`capabilities/context-retrieval.md` обещает semantic-search с per-section embeddings, но в `DATA_MODEL.md` нет соответствующей таблицы (`embedding`, `embedding_chunk`).
+`capabilities/context-retrieval.md` promises semantic-search with per-section embeddings, but `DATA_MODEL.md` has no corresponding table (`embedding`, `embedding_chunk`).
 
-**Фикс:** добавить §3.14 в `DATA_MODEL.md`.
+**Fix:** add §3.14 to `DATA_MODEL.md`.
 
-## 3. High — нужно до начала Section A roadmap
+## 3. High — required before Section A of the roadmap
 
-### HI-1. Open Questions / архитектурные решения не моделируются
+### HI-1. Open Questions / architectural decisions are not modeled
 
-Restate имеет `Open Questions.md` как канонический реестр нерешённых вопросов. В пакете нет ни capability, ни сущности, ни шаблона.
+Restate has `Open Questions.md` as the canonical registry of unresolved questions. The package has neither a capability, nor an entity, nor a template for this.
 
-**Фикс:** новая capability `decisions-and-questions.md`, новые типы документов в `frontmatter.md` (`decision`, `open-question`).
+**Fix:** a new capability `decisions-and-questions.md`, new document types in `frontmatter.md` (`decision`, `open-question`).
 
-### HI-2. Нет каталога агентов / ролей
+### HI-2. No catalog of agents / roles
 
-Restate использует `.github/agents/` (task-steward, docs-review, logical-commits). COD-DOC говорит про «agent:task-steward» в author-полях `revision`, но не определяет: какие агенты существуют, что им разрешено, как они объявляются в проекте.
+Restate uses `.github/agents/` (task-steward, docs-review, logical-commits). COD-DOC refers to `agent:task-steward` in the author fields of `revision`, but does not define: which agents exist, what they are allowed to do, how they are declared in a project.
 
-**Фикс:** новая capability `agents-and-skills.md` + поле `agents/` в проекте, аналог `.github/agents/` Restate.
+**Fix:** a new capability `agents-and-skills.md` + an `agents/` field in the project, analogous to Restate's `.github/agents/`.
 
-### HI-3. Нет стандарта чувствительных данных
+### HI-3. No sensitive-data standard
 
-В Restate `Sensitive Data Protection Standard.md` — кросс-проектный документ. У нас нет аналога; при этом БД содержит body документов, которые могут содержать PII.
+In Restate `Sensitive Data Protection Standard.md` is a cross-project document. We have no analog; meanwhile the DB stores document bodies that may contain PII.
 
-**Фикс:** `standards/sensitive-data.md` + поле `sensitivity` в `Document`.
+**Fix:** `standards/sensitive-data.md` + a `sensitivity` field on `Document`.
 
-### HI-4. `cod-doc project new` не описан
+### HI-4. `cod-doc project new` is not described
 
-Migration ссылается на `cod-doc project new --slug restate`, но что это создаёт в БД, какие skeleton-документы, какие агенты — нигде не описано.
+Migration refers to `cod-doc project new --slug restate`, but what it creates in the DB, which skeleton documents, which agents — is described nowhere.
 
-**Фикс:** capability `project-bootstrap.md`.
+**Fix:** capability `project-bootstrap.md`.
 
-### HI-5. Audit-чеки разбросаны
+### HI-5. Audit checks are scattered
 
-Правила валидации перечислены в каждом из 6 capability + frontmatter + task-plan. Нет одного места, где понятно, что именно делает `cod-doc audit --strict`.
+Validation rules are listed in each of the 6 capabilities + frontmatter + task-plan. There is no single place where it is clear what exactly `cod-doc audit --strict` does.
 
-**Фикс:** capability `audit-and-ci.md` со сводным каталогом проверок и CLI/CI-интеграцией.
+**Fix:** capability `audit-and-ci.md` with a consolidated catalog of checks and CLI/CI integration.
 
-### HI-6. Не определена модель ошибок
+### HI-6. The error model is not defined
 
-Сервисы возвращают `revision_id`, но что происходит при ошибке? Какой код, какая структура, как MCP/REST это передают? — нигде.
+Services return `revision_id`, but what happens on error? Which code, which structure, how MCP/REST convey it? — nowhere.
 
-**Фикс:** новая секция в `ARCHITECTURE.md §11 Error model` + reusable `Error` enum для всех поверхностей.
+**Fix:** a new section in `ARCHITECTURE.md §11 Error model` + a reusable `Error` enum for all surfaces.
 
-### HI-7. Конкурентность и auth для shared Postgres профиля
+### HI-7. Concurrency and auth for the shared Postgres profile
 
-ARCHITECTURE упоминает Postgres-профиль с REST API, но не описаны: optimistic-locking, авторизация запросов, identity (как surface отличает `human:dakh` от `mcp:claude`).
+ARCHITECTURE mentions a Postgres profile with REST API, but does not describe: optimistic-locking, request authorization, identity (how a surface distinguishes `human:dakh` from `mcp:claude`).
 
-**Фикс:** `ARCHITECTURE.md §12 Concurrency & Identity` + capability `multi-user-mode.md` либо подсекция в `project-bootstrap`.
+**Fix:** `ARCHITECTURE.md §12 Concurrency & Identity` + capability `multi-user-mode.md` or a subsection in `project-bootstrap`.
 
-### HI-8. `Document.body` vs `Section.body` дублируют контент
+### HI-8. `Document.body` vs `Section.body` duplicate content
 
-В DATA_MODEL обе таблицы хранят body. Не сказано, что — материализованная проекция (production) и что — denormalized cache. При записи будут расхождения.
+In DATA_MODEL both tables store body. It is not stated which is the materialized projection (production) and which is the denormalized cache. On writes there will be divergence.
 
-**Фикс:** объявить `Section.body` derived (`body` хранится только в `document`; секции выделяются view с substring-индексами по anchor-границам), либо наоборот — `document.body` derived view над секциями. Решить в `DATA_MODEL.md §3.2-3.3`.
+**Fix:** declare `Section.body` derived (`body` is stored only in `document`; sections are extracted via a view with substring indexes over anchor boundaries), or the reverse — `document.body` is a derived view over sections. Decide in `DATA_MODEL.md §3.2-§3.3`.
 
-### HI-9. Нет таблицы `proposal` для review-flow
+### HI-9. No `proposal` table for the review-flow
 
-`doc-evolution.md` обещает `doc.propose_edit` с `pending_approval`. Нет таблицы для хранения предложений между propose и approve.
+`doc-evolution.md` promises `doc.propose_edit` with `pending_approval`. There is no table to store proposals between propose and approve.
 
-**Фикс:** добавить `proposal` в `DATA_MODEL.md §3.15`.
+**Fix:** add `proposal` to `DATA_MODEL.md §3.15`.
 
-## 4. Medium — после фундамента
+## 4. Medium — after the foundation
 
-### ME-1. Documentation Graph — генерируемый артефакт не описан
+### ME-1. Documentation Graph — the generated artifact is not described
 
-Restate рендерит `Documentation Graph.md` руками. У нас сервис обладает всей информацией, но рецепт генерации и формат файла не описан.
+Restate renders `Documentation Graph.md` by hand. Our service has all the information, but the generation recipe and file format are not described.
 
-**Фикс:** в `capabilities/auto-linking.md` (или в новой `documentation-graph.md`).
+**Fix:** in `capabilities/auto-linking.md` (or in a new `documentation-graph.md`).
 
-### ME-2. Нет процедуры backup/restore БД
+### ME-2. No DB backup/restore procedure
 
-Локальный `.cod-doc/state.db` — единственный source of truth. Что делать, если он повреждён.
+The local `.cod-doc/state.db` is the single source of truth. What to do if it is corrupted.
 
-**Фикс:** capability `backup-and-export.md`.
+**Fix:** capability `backup-and-export.md`.
 
-### ME-3. Нет CI-блюпринта
+### ME-3. No CI blueprint
 
-Сказано «CI: cod-doc audit, plan next, link verify» — без конкретики (GitHub Actions, GitLab CI). Нет шаблона.
+It says "CI: cod-doc audit, plan next, link verify" — without specifics (GitHub Actions, GitLab CI). No template.
 
-**Фикс:** добавить в `audit-and-ci.md` (см. HI-5) example pipeline.
+**Fix:** add to `audit-and-ci.md` (see HI-5) an example pipeline.
 
-### ME-4. `frontmatter.md` и `task-plan.md` пересекаются по `status`
+### ME-4. `frontmatter.md` and `task-plan.md` overlap on `status`
 
-Frontmatter перечисляет 4 значения (`draft`/`review`/`active`/`deprecated`), task-plan — 3 (`pending`/`in-progress`/`done`). Restate явно показал, что путаница. У нас отмечено вскользь — нужно явно отделить набор-словарей.
+Frontmatter lists 4 values (`draft`/`review`/`active`/`deprecated`), task-plan — 3 (`pending`/`in-progress`/`done`). Restate clearly showed the confusion. We mention it in passing — need to explicitly separate the sets of dictionaries.
 
-**Фикс:** `standards/frontmatter.md §3.1 Status sets — by document type`.
+**Fix:** `standards/frontmatter.md §3.1 Status sets — by document type`.
 
-### ME-5. Нет обработки `transclusion` (`![[…]]`)
+### ME-5. No handling of `transclusion` (`![[…]]`)
 
-Auto-linking упоминает поддержку, но как это интегрируется с rebuild и embeddings — не сказано (тот же контент дважды индексируется?).
+Auto-linking mentions support, but how it integrates with rebuild and embeddings is not said (the same content indexed twice?).
 
-**Фикс:** subsection в `standards/document-link.md §12 Transclusion`.
+**Fix:** a subsection in `standards/document-link.md §12 Transclusion`.
 
-### ME-6. Нет правил приоритизации задач
+### ME-6. No task prioritization rules
 
-`task-plan.md` определяет 4 уровня priority, но не правила, *как* их выставлять.
+`task-plan.md` defines 4 priority levels, but no rules for *how* to set them.
 
-**Фикс:** §5.6 в `standards/task-plan.md` — расширить.
+**Fix:** §5.6 in `standards/task-plan.md` — expand.
 
-### ME-7. `audit_log` vs `revision` — границы перекрываются
+### ME-7. `audit_log` vs `revision` — boundaries overlap
 
-`revision` пишется при изменении сущности, `audit_log` — при write-path вызове. Но успешный write-path производит revision; зачем тогда audit_log? Сейчас правила пересекаются.
+`revision` is written when an entity changes, `audit_log` — on a write-path call. But a successful write-path produces a revision; why then audit_log? Currently the rules overlap.
 
-**Фикс:** `revision-history.md §13 audit_log boundary` — пояснить (audit_log: read запросы, неудачные попытки, MCP-метаданные; revision: только успешные state-mutations).
+**Fix:** `revision-history.md §13 audit_log boundary` — explain (audit_log: read requests, failed attempts, MCP metadata; revision: only successful state-mutations).
 
-## 5. Low — косметика
+## 5. Low — cosmetic
 
-### LO-1. Опечатка «zamyka» в `doc-evolution.md:152`
+### LO-1. Typo "zamyka" in `doc-evolution.md:152`
 
-Кириллическое «замыкает» по-латински. Исправить.
+A Cyrillic word written in Latin letters. Fix.
 
-### LO-2. Несовпадение терминов «section file» / «section files»
+### LO-2. Inconsistent terms "section file" / "section files"
 
-Smешано в task-plan. Унифицировать в «section file» (единственное число) при описании структуры.
+Mixed in task-plan. Unify to "section file" (singular) when describing structure.
 
-### LO-3. `tools/task-plan-ecosystem.md §3` ссылка на Restate без префикса
+### LO-3. `tools/task-plan-ecosystem.md §3` reference to Restate without prefix
 
-В `frontmatter.md §7` — ссылка на Restate-док без явной пометки. Добавить «(Restate)» для ясности.
+In `frontmatter.md §7` — a reference to a Restate doc without an explicit marker. Add "(Restate)" for clarity.
 
-### LO-4. Нет языкового стандарта документов
+### LO-4. No document language standard
 
-Все docs на русском, имена сущностей — на английском. Зафиксировать в `MASTER.md §7`.
+All docs are in Russian, entity names in English. Fix in `MASTER.md §7`.
 
-### LO-5. `MASTER.md` не имеет changelog-таблицы
+### LO-5. `MASTER.md` has no changelog table
 
-Декларирует, что после `active` любой документ обязан вести revision, но сам не показывает шаблон.
+It declares that after `active` any document must keep a revision, but does not show the template itself.
 
-## 6. Подтверждённое (на чём аудит не нашёл проблем)
+## 6. Confirmed (where the audit found no issues)
 
-- Cross-references между файлами в основном корректны (после исправления §7→§3.13 в ARCHITECTURE).
-- Соответствие Restate-форматов (frontmatter, task-plan) — точное.
-- Граничные правила (cycle detection, depends_on gate, projection_hash) — описаны и непротиворечивы.
-- Migration-план реалистичен: есть rollback (frozen projection), есть warn-mode для legacy-формата.
-- Roadmap покрывает все capabilities; зависимости в графе валидны (циклов нет).
+- Cross-references between files are mostly correct (after fixing §7→§3.13 in ARCHITECTURE).
+- Conformance to Restate formats (frontmatter, task-plan) is exact.
+- Boundary rules (cycle detection, depends_on gate, projection_hash) — are described and consistent.
+- The migration plan is realistic: there is a rollback (frozen projection), there is a warn-mode for the legacy format.
+- The roadmap covers all capabilities; dependencies in the graph are valid (no cycles).
 
-## 7. Решения по аудиту
+## 7. Audit decisions
 
-1. **Применить trivial fix** немедленно (готово: `ARCHITECTURE.md` §9 ссылка `§7` → `§3.13`).
-2. **Создать стаб-капабилити** для HI-1..HI-5 в этом же шаге (компактные документы).
-3. **Завести follow-up план** ([../roadmap/audit-followups-task-plan.md](../roadmap/audit-followups-task-plan.md)) — все 23 пункта как задачи.
-4. **Заблокировать реализацию section A roadmap-а** (`COD-001..005`) до закрытия CRT-1, CRT-2, HI-8, HI-9 — иначе схема будет переделана.
+1. **Apply trivial fix** immediately (done: `ARCHITECTURE.md` §9 reference `§7` → `§3.13`).
+2. **Create stub-capabilities** for HI-1..HI-5 in this same step (compact documents).
+3. **Open a follow-up plan** ([../roadmap/audit-followups-task-plan.md](../roadmap/audit-followups-task-plan.md)) — all 23 items as tasks.
+4. **Block implementation of section A of the roadmap** (`COD-001..005`) until CRT-1, CRT-2, HI-8, HI-9 are closed — otherwise the schema will be redone.
 
-## 8. Дальнейшие аудиты
+## 8. Subsequent audits
 
-- После закрытия audit-followups плана → второй проход (focus: реализация vs документация).
-- Перед `status: active` пакета → формальный sign-off от owner.
-- Раз в месяц после миграции Restate → автоматический `cod-doc audit --strict` по самим докам пакета (dogfood).
+- After the audit-followups plan is closed → a second pass (focus: implementation vs documentation).
+- Before `status: active` of the package → formal sign-off from the owner.
+- Once a month after the Restate migration → automatic `cod-doc audit --strict` on the package docs themselves (dogfood).

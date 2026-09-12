@@ -146,6 +146,6 @@ now be flipped to `resolved` — all 16 findings closed across batches
 
 ## 8. Changelog
 
-| Дата | Событие |
+| Date | Event |
 |---|---|
-| 2026-05-02 | Checkpoint #4 после 2 коммитов batch-4 (5c206c4, ae21041). **16 / 16 baseline findings closed.** Section C closed (3/3). Suite 500 → 512. Endpoints shipped 10/14 → 13/14 (~93 %). 0 регрессий, baseline-аудит готов к переводу в `resolved`. |
+| 2026-05-02 | Checkpoint #4 after 2 commits of batch-4 (5c206c4, ae21041). **16 / 16 baseline findings closed.** Section C closed (3/3). Suite 500 → 512. Endpoints shipped 10/14 → 13/14 (~93 %). 0 regressions, baseline audit ready to be moved to `resolved`. |

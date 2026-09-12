@@ -1,59 +1,59 @@
-# Гайд: документация проекта с нуля через COD-DOC
+# Guide: project documentation from scratch via COD-DOC
 
-> Пошаговое руководство на реальном примере.
-> Время: ~30 минут. Результат: полностью документированный проект.
+> A step-by-step guide on a real example.
+> Time: ~30 minutes. Result: a fully documented project.
 
 ---
 
-## Что понадобится
+## What you need
 
-- Python 3.11+ с установленным `cod-doc`
-- Любой проект с исходным кодом (мы создадим демо-проект)
-- Терминал
+- Python 3.11+ with `cod-doc` installed
+- Any project with source code (we will create a demo project)
+- A terminal
 
-## Шаг 0. Установка cod-doc
+## Step 0. Install cod-doc
 
 ```bash
 pip install cod-doc
-# или если клонирован репозиторий:
+# or if the repository is cloned:
 cd /path/to/cod-doc && pip install -e .
 ```
 
-Проверяем:
+Check:
 ```bash
 cod-doc --help
 ```
 
 ---
 
-## Шаг 0a. Подключение MCP-сервера (для Claude Code / Claude Desktop)
+## Step 0a. Connecting the MCP server (for Claude Code / Claude Desktop)
 
 ```bash
-# В корне репозитория cod-doc:
+# In the root of the cod-doc repository:
 cp .mcp.json.example .mcp.json
-# Откройте .mcp.json и оставьте ОДНУ из двух конфигураций (docker или native).
-# Перезапустите MCP-клиент.
+# Open .mcp.json and leave ONE of the two configurations (docker or native).
+# Restart the MCP client.
 ```
 
-`.mcp.json` уже в `.gitignore` — каждый разработчик держит свою копию. Готовый шаблон содержит два варианта запуска:
+`.mcp.json` is already in `.gitignore` — each developer keeps their own copy. The ready template contains two launch options:
 
-- **`cod-doc-docker`** — подключается к работающему `docker compose up` контейнеру (рекомендуется; проекты монтируются через `docker-compose.yml`).
-- **`cod-doc-native`** — использует CLI-скрипт `cod-doc-mcp` (требует `pip install -e .`).
+- **`cod-doc-docker`** — connects to a running `docker compose up` container (recommended; projects are mounted via `docker-compose.yml`).
+- **`cod-doc-native`** — uses the `cod-doc-mcp` CLI script (requires `pip install -e .`).
 
-После подключения клиент получает доступ ко всем `mcp__cod-doc__*` тулам (`task.list`, `task.summary`, `context.get`, `doc.create`, …).
+After connecting, the client gets access to all `mcp__cod-doc__*` tools (`task.list`, `task.summary`, `context.get`, `doc.create`, …).
 
 ---
 
-## Шаг 1. Создаём демо-проект
+## Step 1. Create a demo project
 
-Для этого гайда создадим простой Python CLI — прогноз погоды.
+For this guide, we will create a simple Python CLI — a weather forecast.
 
 ```bash
 mkdir ~/weather-cli && cd ~/weather-cli
 git init
 ```
 
-Создаем структуру:
+Create the structure:
 ```
 weather-cli/
 ├── weather/
@@ -67,32 +67,32 @@ weather-cli/
 └── README.md
 ```
 
-> Подставьте сюда свой проект — шаги одинаковые для любого стека.
+> Substitute your own project here — the steps are the same for any stack.
 
 ---
 
-## Шаг 2. Регистрация проекта в cod-doc
+## Step 2. Register the project in cod-doc
 
-### Вариант A: через CLI (интерактивный wizard)
+### Option A: via CLI (interactive wizard)
 
 ```bash
 cod-doc wizard
 ```
 
-Wizard задаст вопросы:
-1. **API-ключ OpenAI** — нужен для автономного агента (можно пропустить для ручного режима)
-2. **Имя проекта** — `weather-cli`
-3. **Путь** — `/Users/you/weather-cli`
-4. **MASTER.md** — имя файла навигатора (по умолчанию `MASTER.md`)
+The wizard will ask:
+1. **OpenAI API key** — needed for the autonomous agent (can be skipped for manual mode)
+2. **Project name** — `weather-cli`
+3. **Path** — `/Users/you/weather-cli`
+4. **MASTER.md** — the navigator file name (default `MASTER.md`)
 
-### Вариант B: через MCP (программно)
+### Option B: via MCP (programmatically)
 
 ```bash
-# Запускаем MCP-сервер
+# Start the MCP server
 cod-doc mcp --transport stdio
 ```
 
-Или через Python:
+Or via Python:
 ```python
 import asyncio
 from mcp import StdioServerParameters
@@ -107,7 +107,7 @@ async def main():
         async with ClientSession(read, write) as session:
             await session.initialize()
 
-            # Регистрируем проект
+            # Register the project
             result = await session.call_tool("add_project", {
                 "name": "weather-cli",
                 "path": "/Users/you/weather-cli",
@@ -117,54 +117,54 @@ async def main():
 asyncio.run(main())
 ```
 
-### Вариант C: через REST API
+### Option C: via REST API
 
 ```bash
-cod-doc serve  # запускает FastAPI на :8765
+cod-doc serve  # starts FastAPI on :8765
 
 curl -X POST http://localhost:8765/api/projects \
   -H "Content-Type: application/json" \
   -d '{"name": "weather-cli", "path": "/Users/you/weather-cli"}'
 ```
 
-### Что произошло
+### What happened
 
-cod-doc создал в проекте:
+cod-doc created in the project:
 ```
 weather-cli/
-├── .cod-doc/           # ← служебная директория
-│   ├── tasks.yaml      # очередь задач
-│   └── state.yaml      # состояние агента
-├── MASTER.md           # ← навигатор документации
-└── ... (ваш код)
+├── .cod-doc/           # ← service directory
+│   ├── tasks.yaml      # task queue
+│   └── state.yaml      # agent state
+├── MASTER.md           # ← documentation navigator
+└── ... (your code)
 ```
 
-`.cod-doc/` добавлена в `.gitignore`.
+`.cod-doc/` is added to `.gitignore`.
 
 ---
 
-## Шаг 3. Изучаем сгенерированный MASTER.md
+## Step 3. Explore the generated MASTER.md
 
-Откройте `MASTER.md` — это главный навигатор проекта. Новый формат v0.2:
+Open `MASTER.md` — this is the main project navigator. The new v0.2 format:
 
-- **Верхняя часть** — для людей: обзор, таблица разделов, чеклист, журнал
-- **Нижняя часть** (`<details>`) — для LLM: метаданные, хэши, ссылки, протоколы
+- **Top part** — for humans: overview, section table, checklist, log
+- **Bottom part** (`<details>`) — for the LLM: metadata, hashes, links, protocols
 
-> Ключевой принцип: MASTER.md — единственная точка входа.
-> Агент (и человек) читает сначала его, а потом переходит к нужным файлам.
+> Key principle: MASTER.md is the single entry point.
+> The agent (and a human) reads it first, then goes to the needed files.
 
 ---
 
-## Шаг 4. Создаём структуру документации
+## Step 4. Create the documentation structure
 
-cod-doc использует 4 директории:
+cod-doc uses 4 directories:
 
-| Директория | Назначение | Примеры |
+| Directory | Purpose | Examples |
 |------------|-----------|---------|
-| `specs/` | Что должен делать продукт | Требования, user stories, API-контракты |
-| `arch/` | Как устроен код | Архитектура, компоненты, data flow |
-| `models/` | Структуры данных | Модели, DTO, схемы БД |
-| `docs/` | Всё остальное | Обзор, операции, FAQ, onboarding |
+| `specs/` | What the product should do | Requirements, user stories, API contracts |
+| `arch/` | How the code is organized | Architecture, components, data flow |
+| `models/` | Data structures | Models, DTO, DB schemas |
+| `docs/` | Everything else | Overview, operations, FAQ, onboarding |
 
 ```bash
 mkdir -p specs arch models docs
@@ -172,37 +172,37 @@ mkdir -p specs arch models docs
 
 ---
 
-## Шаг 5. Создаём первый документ (ручной режим)
+## Step 5. Create the first document (manual mode)
 
-Создадим `docs/overview.md`:
+Create `docs/overview.md`:
 
 ```markdown
 # Weather CLI
 
-## Назначение
-CLI-утилита для получения прогноза погоды из терминала.
+## Purpose
+A CLI utility to get a weather forecast from the terminal.
 
-## Возможности
-- Текущая погода по городу
-- Прогноз на N дней
-- Форматы вывода: таблица, JSON, compact
+## Features
+- Current weather by city
+- Forecast for N days
+- Output formats: table, JSON, compact
 
-## Стек
+## Stack
 - Python 3.11+
 - Click (CLI framework)
 - httpx (HTTP client)
 - OpenWeatherMap API
 ```
 
-### Генерируем ссылку для MASTER.md
+### Generate a reference for MASTER.md
 
-**Через CLI:**
+**Via CLI:**
 ```bash
 cod-doc hash calc docs/overview.md
 # → sha:a1b2c3d4e5f6  docs/overview.md
 ```
 
-**Через MCP:**
+**Via MCP:**
 ```python
 result = await session.call_tool("generate_ref", {
     "project_name": "weather-cli",
@@ -211,41 +211,41 @@ result = await session.call_tool("generate_ref", {
 # → 📁 /docs/overview.md | 🗃️ doc:docs_overview_md | 🔑 sha:a1b2c3d4e5f6
 ```
 
-### Добавляем в MASTER.md
+### Add to MASTER.md
 
-В таблицу разделов:
+In the section table:
 ```markdown
-| Обзор | [docs/overview.md](docs/overview.md) | Назначение, стек, возможности | 🟢 |
+| Overview | [docs/overview.md](docs/overview.md) | Purpose, stack, features | 🟢 |
 ```
 
-В секцию LLM-метаданных (`<details>`):
+In the LLM metadata section (`<details>`):
 ```markdown
 #### Overview
-- **Ссылка:** `📁 /docs/overview.md | 🗃️ doc:docs_overview_md | 🔑 sha:a1b2c3d4e5f6`
-- **Статус:** `🟢 VERIFIED`
+- **Reference:** `📁 /docs/overview.md | 🗃️ doc:docs_overview_md | 🔑 sha:a1b2c3d4e5f6`
+- **Status:** `🟢 VERIFIED`
 ```
 
 ---
 
-## Шаг 6. Массовое создание через задачи
+## Step 6. Bulk creation via tasks
 
-Вместо ручного создания каждого файла — ставим задачи агенту.
+Instead of creating each file manually — set tasks for the agent.
 
-### Через CLI:
+### Via CLI:
 ```bash
-cod-doc task add weather-cli "Описать архитектуру CLI" --priority 1
-cod-doc task add weather-cli "Описать API-клиент" --priority 2
-cod-doc task add weather-cli "Описать модель WeatherData" --priority 3
+cod-doc task add weather-cli "Describe the CLI architecture" --priority 1
+cod-doc task add weather-cli "Describe the API client" --priority 2
+cod-doc task add weather-cli "Describe the WeatherData model" --priority 3
 ```
 
-### Через MCP:
+### Via MCP:
 ```python
 for title, prio in [
-    ("Описать архитектуру CLI", 1),
-    ("Описать API-клиент weather/api.py", 2),
-    ("Описать модель WeatherData", 3),
-    ("Описать форматирование вывода", 4),
-    ("Написать operations runbook", 5),
+    ("Describe the CLI architecture", 1),
+    ("Describe the API client weather/api.py", 2),
+    ("Describe the WeatherData model", 3),
+    ("Describe the output formatting", 4),
+    ("Write an operations runbook", 5),
 ]:
     await session.call_tool("add_task", {
         "project_name": "weather-cli",
@@ -254,7 +254,7 @@ for title, prio in [
     })
 ```
 
-### Смотрим очередь:
+### Look at the queue:
 ```python
 result = await session.call_tool("list_tasks", {
     "project_name": "weather-cli",
@@ -264,22 +264,22 @@ result = await session.call_tool("list_tasks", {
 
 ---
 
-## Шаг 7. Автономный агент (если есть API-ключ)
+## Step 7. Autonomous agent (if you have an API key)
 
 ```bash
 cod-doc agent weather-cli --autonomous
 ```
 
-Агент:
-1. Прочитает MASTER.md
-2. Возьмёт следующую задачу из очереди
-3. Прочитает исходный код через инструменты
-4. Создаст/обновит файл документации
-5. Пересчитает хэши
-6. Обновит MASTER.md
-7. Повторит для следующей задачи
+The agent:
+1. Reads MASTER.md
+2. Takes the next task from the queue
+3. Reads the source code via tools
+4. Creates/updates the documentation file
+5. Recomputes hashes
+6. Updates MASTER.md
+7. Repeats for the next task
 
-### Через MCP:
+### Via MCP:
 ```python
 events = await session.call_tool("run_agent_once", {
     "project_name": "weather-cli",
@@ -287,54 +287,54 @@ events = await session.call_tool("run_agent_once", {
 })
 ```
 
-> Без API-ключа — создавайте документы вручную (шаг 5) или через Copilot (шаг 10).
+> Without an API key — create documents manually (step 5) or via Copilot (step 10).
 
 ---
 
-## Шаг 8. Проверка целостности
+## Step 8. Integrity check
 
-### Проверить хэши:
+### Check hashes:
 ```bash
 cod-doc hash update MASTER.md
 ```
 
-### Через MCP:
+### Via MCP:
 ```python
-# Найти устаревшие ссылки
+# Find stale references
 result = await session.call_tool("check_stale_refs", {
     "project_name": "weather-cli",
 })
 # → {"summary": {"total": 5, "valid": 4, "stale": 1, "broken": 0}}
 
-# Обновить хэши
+# Update hashes
 result = await session.call_tool("update_master_hashes", {
     "project_name": "weather-cli",
 })
 # → {"updated": 1, "warnings": []}
 ```
 
-**Статусы:**
-- `VALID` — файл не менялся, хэш совпадает
-- `STALE` — файл изменён, хэш устарел → нужно обновить
-- `BROKEN` — файл удалён → нужно убрать из MASTER.md
+**Statuses:**
+- `VALID` — the file has not changed, the hash matches
+- `STALE` — the file has changed, the hash is outdated → needs updating
+- `BROKEN` — the file was deleted → remove from MASTER.md
 
 ---
 
-## Шаг 9. Семантический поиск
+## Step 9. Semantic search
 
-cod-doc индексирует документы в ChromaDB для поиска по смыслу.
+cod-doc indexes documents in ChromaDB for meaning-based search.
 
-### Индексация:
+### Indexing:
 ```python
 await session.call_tool("reindex", {"project_name": "weather-cli"})
 # → {"indexed": 5, "errors": []}
 ```
 
-### Поиск:
+### Search:
 ```python
 await session.call_tool("search_docs", {
     "project_name": "weather-cli",
-    "query": "как обрабатываются ошибки API",
+    "query": "how API errors are handled",
     "n_results": 3,
 })
 # → [{"path": "arch/api-client.md", "score": 0.87, "snippet": "..."}]
@@ -342,19 +342,19 @@ await session.call_tool("search_docs", {
 
 ---
 
-## Шаг 10. Интеграция с Copilot / LLM
+## Step 10. Integration with Copilot / LLM
 
-Полный раздел планировался как `docs/llm-integration.md`; пока canonical
-материал живёт в системных capability/RFC-доках.
+The full section was planned as `docs/llm-integration.md`; for now the canonical
+material lives in the system capability/RFC docs.
 
-Кратко:
+In short:
 
 ### VS Code + Copilot Chat
-1. Добавить MCP-сервер в `.vscode/mcp.json`
-2. Copilot получает доступ к 23 инструмента cod-doc
-3. Можно спросить: "покажи статус проекта", "какие задачи не закрыты", "обнови хэши"
+1. Add the MCP server to `.vscode/mcp.json`
+2. Copilot gets access to 23 cod-doc tools
+3. You can ask: "show the project status", "which tasks are not closed", "update hashes"
 
-### Claude Desktop / любой MCP-клиент
+### Claude Desktop / any MCP client
 ```json
 {
   "mcpServers": {
@@ -366,61 +366,61 @@ await session.call_tool("search_docs", {
 }
 ```
 
-### REST API для любых систем
+### REST API for any systems
 ```bash
 cod-doc serve  # → http://localhost:8765/api/...
 ```
 
 ---
 
-## Шаг 11. Повседневная работа
+## Step 11. Day-to-day work
 
-### Код изменился → обновляем доку:
+### Code changed → update the docs:
 ```
-1. cod-doc hash update MASTER.md        # находим устаревшее
-2. Обновляем затронутые файлы
-3. cod-doc hash update MASTER.md        # фиксируем новые хэши
+1. cod-doc hash update MASTER.md        # find what is stale
+2. Update the affected files
+3. cod-doc hash update MASTER.md        # record the new hashes
 4. git commit
 ```
 
-### Добавляем новый модуль:
+### Add a new module:
 ```
-1. Создаём файл в нужной директории (specs/, arch/, models/, docs/)
-2. cod-doc hash calc path/to/file.md    # получаем хэш
-3. Добавляем строку в MASTER.md (таблица разделов + LLM-секция)
+1. Create a file in the right directory (specs/, arch/, models/, docs/)
+2. cod-doc hash calc path/to/file.md    # get the hash
+3. Add a row to MASTER.md (section table + LLM section)
 4. git commit
 ```
 
-### Ревью документации:
+### Documentation review:
 ```python
-# Проверяем покрытие
+# Check coverage
 status = await session.call_tool("get_project_status", {"project_name": "weather-cli"})
 
-# Ищем проблемы
+# Find issues
 stale = await session.call_tool("check_stale_refs", {"project_name": "weather-cli"})
 ```
 
 ---
 
-## Итого: что мы использовали
+## Summary: what we used
 
-| Возможность | CLI | MCP | REST |
+| Feature | CLI | MCP | REST |
 |-------------|-----|-----|------|
-| Регистрация проекта | `cod-doc wizard` | `add_project` | `POST /api/projects` |
-| Создание задач | `cod-doc task add` | `add_task` | `POST /api/projects/{name}/tasks` |
-| Просмотр задач | `cod-doc task list` | `list_tasks` | `GET /api/projects/{name}/tasks` |
-| Расчёт хэшей | `cod-doc hash calc` | `hash_file` | — |
-| Обновление хэшей | `cod-doc hash update` | `update_master_hashes` | — |
-| Проверка целостности | — | `check_stale_refs` | — |
-| Генерация ссылки | — | `generate_ref` | — |
-| Чтение файла | — | `read_file` | — |
-| Список файлов | — | `list_files` | — |
-| Семантический поиск | — | `search_docs` | — |
-| Индексация | — | `reindex` | — |
-| Запуск агента | `cod-doc agent` | `run_agent_once` | `WS /ws/projects/{name}/run` |
-| Конфигурация | `cod-doc wizard` | `check_config` | `GET /api/config` |
+| Register a project | `cod-doc wizard` | `add_project` | `POST /api/projects` |
+| Create tasks | `cod-doc task add` | `add_task` | `POST /api/projects/{name}/tasks` |
+| View tasks | `cod-doc task list` | `list_tasks` | `GET /api/projects/{name}/tasks` |
+| Compute hashes | `cod-doc hash calc` | `hash_file` | — |
+| Update hashes | `cod-doc hash update` | `update_master_hashes` | — |
+| Integrity check | — | `check_stale_refs` | — |
+| Generate a reference | — | `generate_ref` | — |
+| Read a file | — | `read_file` | — |
+| List files | — | `list_files` | — |
+| Semantic search | — | `search_docs` | — |
+| Indexing | — | `reindex` | — |
+| Run the agent | `cod-doc agent` | `run_agent_once` | `WS /ws/projects/{name}/run` |
+| Configuration | `cod-doc wizard` | `check_config` | `GET /api/config` |
 
-### MCP-only инструменты (23 штуки):
+### MCP-only tools (23):
 `list_projects` · `get_project_status` · `add_project` · `remove_project` ·
 `list_tasks` · `add_task` · `update_task` · `next_pending_task` ·
 `get_master` · `update_master_hashes` · `check_stale_refs` · `generate_ref` ·

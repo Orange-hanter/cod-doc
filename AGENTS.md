@@ -1,54 +1,59 @@
-# AGENTS.md — Гид для контрибьюторов (people & AI)
+# AGENTS.md — Contributor Guide (people & AI)
 
-> **Кому это.** Любой автор PR'а в этом репо — человек или AI-агент. Прочесть до
-> первого commit'а. Дополняет `MASTER.md` (что есть в проекте) ответом на «как
-> с этим работать».
+> **Who this is for.** Any PR author in this repo — human or AI agent. Read
+> before the first commit. Complements `MASTER.md` (what is in the project)
+> with the answer to "how to work with it".
 
-> ⚠️ **Cycle-5 implemented (2026-05-15, closed 2026-06-04 by AGN-001).** MCP API
-> task-centric: agent profile экспонирует 6 тулов (`agent_pick`, `agent_report`,
-> `agent_complete`, `agent_release`, `agent_get`, `agent_capabilities`).
-> Bodies реализованы в `cod_doc/services/agent_service.py`; MCP-обёртки в
-> `cod_doc/mcp/tools/agent_tools.py` (тонкий wrapper-слой, не stubs). Покрытие:
-> `tests/services/test_agent_pick.py`, `tests/services/test_agent_workflow.py`,
-> `tests/services/test_agent_profile_contract.py`. 106-tool CRUD surface
-> (`task_*`, `doc_*`, `plan_*`, …) остаётся для `--profile standard|full`
-> (admin / CLI / web). Tracked в plan
-> `paperclip-adoption-task-plan` section H. Новые agent-features → секция H,
-> не plan_create-style расширения internal surface.
+> ⚠️ **Cycle-5 implemented (2026-05-15, closed 2026-06-04 by AGN-001).**
+> The MCP API is task-centric: the agent profile exposes 6 tools
+> (`agent_pick`, `agent_report`, `agent_complete`, `agent_release`,
+> `agent_get`, `agent_capabilities`). Bodies are implemented in
+> `cod_doc/services/agent_service.py`; MCP wrappers in
+> `cod_doc/mcp/tools/agent_tools.py` (a thin wrapper layer, not stubs).
+> Coverage: `tests/services/test_agent_pick.py`,
+> `tests/services/test_agent_workflow.py`,
+> `tests/services/test_agent_profile_contract.py`. The 110-tool CRUD
+> surface (`task_*`, `doc_*`, `plan_*`, …) remains for
+> `--profile standard|full` (admin / CLI / web). Tracked in plan
+> `paperclip-adoption-task-plan` section H. New agent-features → section
+> H, not plan_create-style extensions of the internal surface.
 
-## 1. Цель проекта
+## 1. Project goal
 
-COD-DOC — система управления документацией с MCP-интеграцией: docs, tasks,
-plans, stories, links, revisions — все живут в SQLite + Markdown проекций.
+COD-DOC — a documentation management system with MCP integration: docs,
+tasks, plans, stories, links, revisions — all live in SQLite + Markdown
+projections.
 
-Текущая итерация — Phase 3 paperclip-adoption (Section C — atomic checkout,
-routines, 7-state TaskStatus, AGENTS.md). См. `MASTER.md` → Project Status.
+The current iteration — Phase 3 paperclip-adoption (Section C — atomic
+checkout, routines, 7-state TaskStatus, AGENTS.md). See `MASTER.md` →
+Project Status.
 
-## 2. Прочесть в первую очередь
+## 2. Read first
 
-1. [`MASTER.md`](MASTER.md) — карта проекта, Quick Actions, навигация.
-2. [`docs/system/MASTER.md`](docs/system/MASTER.md) — index системной документации.
-3. [`docs/system/ARCHITECTURE.md`](docs/system/ARCHITECTURE.md) — слои и инварианты.
-4. [`docs/system/DATA_MODEL.md`](docs/system/DATA_MODEL.md) — схема БД.
-5. [`cod_doc/skills/orchestrator/SKILL.md`](cod_doc/skills/orchestrator/SKILL.md) —
-   heartbeat-протокол агента (proposal 01).
-6. Если работаешь с RFC — [`proposals/README.md`](proposals/README.md).
+1. [`MASTER.md`](MASTER.md) — project map, Quick Actions, navigation.
+2. [`docs/system/MASTER.md`](docs/system/MASTER.md) — system docs index.
+3. [`docs/system/ARCHITECTURE.md`](docs/system/ARCHITECTURE.md) — layers
+   and invariants.
+4. [`docs/system/DATA_MODEL.md`](docs/system/DATA_MODEL.md) — DB schema.
+5. [`cod_doc/skills/orchestrator/SKILL.md`](cod_doc/skills/orchestrator/SKILL.md)
+   — the agent heartbeat protocol (proposal 01).
+6. If working with RFCs — [`proposals/README.md`](proposals/README.md).
 
-## 3. Карта репо
+## 3. Repo map
 
 ```
 cod_doc/
-├── agent/         # оркестратор + LLM, prompts, skills runtime
+├── agent/         # orchestrator + LLM, prompts, skills runtime
 ├── api/           # FastAPI + web pages + websocket
 ├── cli/           # click CLI
-├── core/          # доменные модели и контракты (TaskStatus, EntityKind, …)
+├── core/          # domain models and contracts (TaskStatus, EntityKind, …)
 ├── domain/        # entities (StrEnum + dataclasses)
 ├── infra/         # SQLAlchemy: models, migrations, repositories, sql helpers
-├── mcp/           # MCP сервер + tools (один файл = одна tool-семья)
-├── services/      # бизнес-логика — пишется в Python, тесты в tests/services/
-├── skills/        # YAML-frontmatter Markdown инструкции для агента
+├── mcp/           # MCP server + tools (one file = one tool family)
+├── services/      # business logic — written in Python, tests in tests/services/
+├── skills/        # YAML-frontmatter Markdown instructions for the agent
 └── tui/           # textual TUI (legacy)
-proposals/         # RFC-проекты (numbered: 01-skills-layer.md, …)
+proposals/         # RFC drafts (numbered: 01-skills-layer.md, …)
 docs/system/       # canonical system docs (audit/, capabilities/, roadmap/)
 tests/             # pytest suites: services/ + mcp/ + api/ + agent/ + …
 ```
@@ -61,78 +66,81 @@ alembic upgrade head            # init/upgrade local SQLite schema
 pytest tests/ -v --tb=short     # run the suite
 ```
 
-При первом старте задайте `COD_DOC_DB_URL` или используйте default
+On first start set `COD_DOC_DB_URL` or use the default
 `sqlite:///./cod-doc.db`.
 
 ## 5. Core engineering rules
 
-1. **Hash-verified docs.** Любое изменение `doc.body` → пересчёт sha →
-   обновление `MASTER.md` секции с хэшами (через `update_master_hashes`).
-2. **Snowball Protocol.** Грузить контекст по уровням L0/L1/L2 (см.
+1. **Hash-verified docs.** Any change to `doc.body` → recompute sha →
+   update the `MASTER.md` section with hashes (via
+   `update_master_hashes`).
+2. **Snowball Protocol.** Load context by levels L0/L1/L2 (see
    `docs/system/capabilities/context-retrieval.md`).
-3. **Атомарный checkout.** `todo → in_progress` только через
-   `task_checkout` (proposal 06, PCA-200). **Enforce включён** (ADO-039,
-   Phase 2): прямой `update_status(todo→in_progress)` бросает
-   `StatusTransitionError` на всех поверхностях; web-форма идёт через
+3. **Atomic checkout.** `todo → in_progress` only through
+   `task_checkout` (proposal 06, PCA-200). **Enforce is on** (ADO-039,
+   Phase 2): a direct `update_status(todo→in_progress)` raises
+   `StatusTransitionError` on all surfaces; the web form goes through
    `checkout_service.checkout`.
-4. **`run_id` — телеметрия, не контракт** (ADR-012, ADO-044). Правило
-   «run-id на всех мутациях» **снято**: `run_scope(...)` открывает только
-   встроенный раннер (`agent/orchestrator.py`), а работа идёт через MCP,
-   где скоуп не открывается. Замер 2026-09-06: `revision` 2166/2166 и
-   `activity_event` 1114/1114 с `run_id IS NULL`. Колонка оставлена
-   nullable — не пиши код, который рассчитывает на её непустоту.
-   Кто сделал мутацию, несёт `author` / `actor_id`, а не `run_id`.
+4. **`run_id` is telemetry, not a contract** (ADR-012, ADO-044). The
+   "run-id on all mutations" rule is **lifted**: `run_scope(...)` is
+   opened only by the built-in runner (`agent/orchestrator.py`), and work
+   goes through MCP, where the scope is not opened. Measurement
+   2026-09-06: `revision` 2166/2166 and `activity_event` 1114/1114 with
+   `run_id IS NULL`. The column is left nullable — do not write code that
+   relies on its non-emptiness. Who made the mutation is carried by
+   `author` / `actor_id`, not `run_id`.
 5. **Validate transitions.** `task_status_machine.validate_transition`
-   вызывается в `task_service.update_status` — добавляешь новый статус →
-   обнови `ALLOWED_TRANSITIONS`.
-6. **Activity events на каждой мутации.** Любой новый MCP-write-tool
-   эмитит `activity_service.emit(...)` в той же транзакции (proposal 09).
-   Не покрытые сейчас тулы — Section F backlog (PCA-912).
-   `actor_kind` **всегда** выводится через
-   `domain.entities.actor_kind_for_author(author)` — единственную точку
-   вывода (ADR-012); собственная эвристика на call-site'е
-   (`author.startswith("agent")`, `"run" in agent`) запрещена и ловится
-   `tests/test_actor_kind_single_source.py`. Канонический формат
-   `author` / `actor_id` — `<kind>:<id>` (`human:dakh`,
-   `agent:claude-opus-5`, `routine:doc_drift_daily`); словарь ролей —
-   `domain.entities.ActorKind`.
-7. **MCP-tool контракты.** Регистрация в `cod_doc/mcp/server.py`
-   синхронно с реализацией; docstring идёт в `tools/list`. Для тестов —
-   `tests/test_mcp.py::test_mcp_lists_tools` smoke-проверяет имена.
-8. **MCP echo-without-persist gap.** При добавлении новых полей в
-   `task_create` / `doc_create` — проверь, что они **персистятся** в
-   связанных таблицах (dependency / story_link / affected_file), а не
-   только эхо-возвращаются. См. `tests/services/test_task_create.py`
-   (полное покрытие после PCA-936).
-9. **MCP server profiles** (PCA-951, cycle-4 default-switch). Запуск:
+   is called in `task_service.update_status` — adding a new status →
+   update `ALLOWED_TRANSITIONS`.
+6. **Activity events on every mutation.** Any new MCP-write-tool emits
+   `activity_service.emit(...)` in the same transaction (proposal 09).
+   Currently uncovered tools — Section F backlog (PCA-912).
+   `actor_kind` is **always** derived through
+   `domain.entities.actor_kind_for_author(author)` — the single point of
+   derivation (ADR-012); own heuristics at the call site
+   (`author.startswith("agent")`, `"run" in agent`) are forbidden and
+   caught by `tests/test_actor_kind_single_source.py`. The canonical
+   format of `author` / `actor_id` is `<kind>:<id>` (`human:dakh`,
+   `agent:claude-opus-5`, `routine:doc_drift_daily`); the role dictionary
+   is `domain.entities.ActorKind`.
+7. **MCP-tool contracts.** Registration in `cod_doc/mcp/server.py` is
+   in sync with the implementation; the docstring goes into `tools/list`.
+   For tests — `tests/test_mcp.py::test_mcp_lists_tools` smoke-checks the
+   names.
+8. **MCP echo-without-persist gap.** When adding new fields to
+   `task_create` / `doc_create` — check that they **persist** in the
+   related tables (dependency / story_link / affected_file), not just
+   get echoed back. See `tests/services/test_task_create.py` (full
+   coverage after PCA-936).
+9. **MCP server profiles** (PCA-951, cycle-4 default-switch). Run:
    ```
    cod-doc-mcp                                # agent (default)
    cod-doc-mcp --profile minimal              # 20-tool cold-start
-   cod-doc-mcp --profile full                 # все 110, включая legacy
-   COD_DOC_PROFILE=full cod-doc-mcp           # через env
+   cod-doc-mcp --profile full                 # all 114, including legacy
+   COD_DOC_PROFILE=full cod-doc-mcp           # via env
    ```
-   - ``agent`` — **default**: 6 task-centric тулов для AI-агентов
+   - ``agent`` — **default**: 6 task-centric tools for AI agents
      (`agent_pick`, `agent_report`, `agent_complete`, `agent_release`,
      `agent_get`, `agent_capabilities`).
-   - ``minimal`` — 20-tool cold-start surface для свежих интеграций.
-   - ``standard`` — 106 DB-backed тулов без legacy YAML.
-   - ``full`` — все 110 тулов, включая legacy. Только для админ-сценариев
-     и обратной совместимости с до-cycle-3 интеграциями.
-   Counts зафиксированы тестом
+   - ``minimal`` — 20-tool cold-start surface for fresh integrations.
+   - ``standard`` — 110 DB-backed tools without legacy YAML.
+   - ``full`` — all 114 tools, including legacy. Only for admin scenarios
+     and backward compatibility with pre-cycle-3 integrations.
+   Counts are pinned by the test
    `tests/test_server_profiles.py::test_profile_counts_match_documented_values` —
-   при добавлении/удалении тула обнови числа там и здесь.
-   См. `cod_doc/mcp/profiles.py`.
+   when adding/removing a tool, update the numbers there and here.
+   See `cod_doc/mcp/profiles.py`.
 
 ## 6. DB schema change workflow
 
-1. Edit модель в `cod_doc/infra/models/<file>.py`.
-2. Создать миграцию: `alembic revision -m "<name>"` →
+1. Edit the model in `cod_doc/infra/models/<file>.py`.
+2. Create a migration: `alembic revision -m "<name>"` →
    `cod_doc/infra/migrations/versions/<rev>.py`.
-3. Заполнить `upgrade()` + `downgrade()` (обязательно симметрично).
-4. `alembic upgrade head` локально + `alembic downgrade -1` smoke-test.
-5. Если меняется enum / domain — обнови `cod_doc/domain/entities.py`.
-6. Тесты: `tests/services/conftest.py::engine_with_schema` автоматом
-   подхватит новую миграцию.
+3. Fill `upgrade()` + `downgrade()` (mandatory symmetric).
+4. `alembic upgrade head` locally + `alembic downgrade -1` smoke-test.
+5. If an enum / domain changes — update `cod_doc/domain/entities.py`.
+6. Tests: `tests/services/conftest.py::engine_with_schema` will
+   automatically pick up the new migration.
 
 ## 7. Verification before hand-off
 
@@ -143,56 +151,62 @@ mypy cod_doc/
 pytest tests/ --tb=short --timeout=120
 ```
 
-Всё зелёное → готов PR. Если что-то не запускалось — явно отметь в
-PR-описании «not run, because <reason>».
+All green → the PR is ready. If something was not run — explicitly note
+in the PR description "not run, because <reason>".
 
-Политика качества (запрет голого `Any`, магических чисел, потолок сложности,
-ratchet существующего долга) — в
+The quality policy (ban on bare `Any`, magic numbers, complexity
+ceiling, ratchet of existing debt) — in
 [`docs/system/standards/code-quality.md`](docs/system/standards/code-quality.md);
-конфигурация-истина — `pyproject.toml`.
+the source-of-truth config is `pyproject.toml`.
 
 ## 8. Validation pattern
 
-Из memory project (validation_pattern.md):
+From the memory project (validation_pattern.md):
 
-- **Структурная** — `validate_*()` raise. FM-002, FM-003 escalate
-  через `approval_request(approval_type='fm_escalation', ...)` (PCA-121).
-- **Advisory** — `audit_*()` collect issues. FM-004, FM-005 пишутся в
-  audit-report или activity_log, не блокируют.
+- **Structural** — `validate_*()` raise. FM-002, FM-003 escalate via
+  `approval_request(approval_type='fm_escalation', ...)` (PCA-121).
+- **Advisory** — `audit_*()` collect issues. FM-004, FM-005 are written
+  to an audit-report or activity_log, do not block.
 
 ## 9. Audit cadence
 
-- **Закрытая секция плана** (например, Section A → Section B → Section C)
-  → `docs/system/audit/<date>-section-<X>-<name>.md` с TL;DR / deliverables /
-  findings / acceptance / next step.
-- **Открытие новой фазы** → kickoff brief в `docs/system/roadmap/`.
-- **N циклов аудита подряд** на одном направлении → ровно N audit-отчётов
-  с findings F1/F2/...; findings → backlog (Section F) в следующем цикле.
+- **A closed plan section** (e.g. Section A → Section B → Section C) →
+  `docs/system/audit/<date>-section-<X>-<name>.md` with TL;DR / deliverables
+  / findings / acceptance / next step.
+- **Opening a new phase** → a kickoff brief in `docs/system/roadmap/`.
+- **N audit cycles in a row** on one direction → exactly N audit-reports
+  with findings F1/F2/...; findings → backlog (Section F) in the next
+  cycle.
 
 ## 10. PR requirements
 
-Шаблон — `.github/PULL_REQUEST_TEMPLATE.md`. Обязательные поля:
+The template is `.github/PULL_REQUEST_TEMPLATE.md`. Mandatory fields:
 
-- **Что изменено** — bullet list
-- **Зачем** — мотивация (ссылка на task / RFC)
-- **Как проверить** — шаги
-- **Риски** — что может сломаться
-- **Model used** — модель / автор (или `human-authored`)
-- **Checklist** — все пункты Definition of Done
+- **What changed** — bullet list
+- **Why** — motivation (link to a task / RFC)
+- **How to verify** — steps
+- **Risks** — what can break
+- **Model used** — the model / author (or `human-authored`)
+- **Checklist** — all Definition of Done items
 
 ## 11. Definition of Done
 
-- [ ] Поведение соответствует acceptance criterion'у задачи или RFC.
-- [ ] `ruff`, `mypy`, `pytest` зелёные локально.
-- [ ] Контракты синхронизированы (модель ↔ migration ↔ MCP ↔ docs).
-- [ ] Если изменение видимо в UI — приложен скриншот / описание.
-- [ ] Activity events эмитятся при write-операциях (proposal 09 / PCA-912).
-- [ ] Закрытие задачи в БД через `task_complete` или `task_update_status`.
-- [ ] Если закрыта секция плана — audit-report в `docs/system/audit/`.
+- [ ] The behavior matches the acceptance criterion of the task or RFC.
+- [ ] `ruff`, `mypy`, `pytest` are green locally.
+- [ ] Contracts are synchronized (model ↔ migration ↔ MCP ↔ docs).
+- [ ] If the change is visible in the UI — a screenshot / description
+  is attached.
+- [ ] Activity events are emitted on write operations (proposal 09 /
+  PCA-912).
+- [ ] Closing the task in the DB via `task_complete` or
+  `task_update_status`.
+- [ ] If a plan section is closed — an audit-report in
+  `docs/system/audit/`.
 
-## 12. Скиллы для агента
+## 12. Skills for the agent
 
-Файлы под `cod_doc/skills/<name>/SKILL.md` — единый источник инструкций для
-LLM. Frontmatter `name: …` + `description: …` определяет, когда скилл
-активируется matcher'ом (см. `skill_matcher.py`). Пишешь новое поведение
-агента → новый скилл (или обнови существующий), не правь системный prompt.
+Files under `cod_doc/skills/<name>/SKILL.md` — the single source of
+instructions for the LLM. The frontmatter `name: …` + `description: …`
+determines when the skill is activated by the matcher (see
+`skill_matcher.py`). Writing new agent behavior → a new skill (or update
+an existing one), do not edit the system prompt.

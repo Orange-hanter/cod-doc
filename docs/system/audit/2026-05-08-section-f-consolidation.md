@@ -14,41 +14,41 @@ related_docs:
 
 # Section F — Consolidation Report (Backlog Findings)
 
-> **Назначение.** Зафиксировать закрытие 8 задач из накопленного backlog
+> **Purpose.** Record the closure of 8 tasks from the accumulated backlog
 > (PCA-912, PCA-919, PCA-920, PCA-923, PCA-926, PCA-927, PCA-929, PCA-930)
-> и findings → оставшийся backlog.
+> and findings → the remaining backlog.
 
 ## 1. TL;DR
 
-- **PCA-926** (H3) — Capabilities check в `Orchestrator.__init__`: `ValueError`
-  если `adapter.capabilities.tool_use=False`.
-- **PCA-927** (H4) — `orchestrator.client` преобразован в property с
+- **PCA-926** (H3) — Capabilities check in `Orchestrator.__init__`: `ValueError`
+  if `adapter.capabilities.tool_use=False`.
+- **PCA-927** (H4) — `orchestrator.client` converted to a property with
   `DeprecationWarning`. Backing attribute: `self._legacy_client`.
-- **PCA-923** (G6) — `Project.next_pending_task()` принимает и 'pending'
-  (legacy), и 'todo' (новая таксономия).
-- **PCA-930** (I3) — `suggest_for_section()` проверяет `collection.count()==0`
-  перед запросом; `n_results` ограничен `collection.count()`.
-- **PCA-920** (G3) — 4 noop check заменены реальными реализациями:
+- **PCA-923** (G6) — `Project.next_pending_task()` accepts both 'pending'
+  (legacy) and 'todo' (new taxonomy).
+- **PCA-930** (I3) — `suggest_for_section()` checks `collection.count()==0`
+  before the query; `n_results` is bounded by `collection.count()`.
+- **PCA-920** (G3) — 4 noop checks replaced with real implementations:
   `_check_stale_refs` (MASTER.md hybrid refs), `_check_link_integrity`
-  (link.verify для всех секций), `_check_doc_drift` (projection_service),
-  `_check_task_stale` (task_service). Добавлен `_get_project_root()` хелпер.
-- **PCA-919** (G2) — `routine_service.tick(session, project_id)` с
-  `_cron_interval_minutes()` (парсит `*/N`, `0 */N`, `0 0`). Вызывается
-  из `run_daemon` перед каждым циклом агента.
-- **PCA-912** (F1) — `activity_service.emit()` добавлен в:
+  (link.verify for all sections), `_check_doc_drift` (projection_service),
+  `_check_task_stale` (task_service). Added a `_get_project_root()` helper.
+- **PCA-919** (G2) — `routine_service.tick(session, project_id)` with
+  `_cron_interval_minutes()` (parses `*/N`, `0 */N`, `0 0`). Called
+  from `run_daemon` before each agent cycle.
+- **PCA-912** (F1) — `activity_service.emit()` added to:
   `task.complete`, `task_update_status`, `task.set_blocker`,
-  `task.clear_blocker`, `doc.create`, `doc.rename`. События:
+  `task.clear_blocker`, `doc.create`, `doc.rename`. Events:
   task.completed / task.status_changed / task.blocked / task.unblocked /
   doc.created / doc.renamed.
-- **PCA-929** (I2) — `import_or_update_markdown()` в `import_service.py`:
-  create для новых doc_key, patch_section для существующих.
-  `POST /docs/import/apply` переключён на новую функцию.
-- **0 новых тестов** (всё покрыто существующим suite). **1008 tests pass**.
-- **11 задач остаются** в backlog (PCA-913..918, 921, 922, 924, 925, 928).
+- **PCA-929** (I2) — `import_or_update_markdown()` in `import_service.py`:
+  create for new doc_key, patch_section for existing ones.
+  `POST /docs/import/apply` switched to the new function.
+- **0 new tests** (everything is covered by the existing suite). **1008 tests pass**.
+- **11 tasks remain** in the backlog (PCA-913..918, 921, 922, 924, 925, 928).
 
 ## 2. Section F deliverables
 
-| # | Деливерабл | Файл / артефакт | Статус |
+| # | Deliverable | File / artifact | Status |
 |---|------------|------------------|--------|
 | F1 | Capabilities check | `cod_doc/agent/orchestrator.py` | ✅ |
 | F2 | `client` → property + DeprecationWarning | `cod_doc/agent/orchestrator.py` | ✅ |
@@ -116,9 +116,9 @@ Static pricing dict for popular OpenRouter models in `openai_compat.py`.
 ### Deferred — I1 (PCA-928): sha256 storage in DocumentModel *(medium)*
 Needs Alembic migration + column `content_sha256_head` in `document` table.
 
-## 5. Метрики
+## 5. Metrics
 
-| Метрика | До Section F | После | Δ |
+| Metric | Before Section F | After | Δ |
 |---------|-------------:|------:|--:|
 | Real routine checks | 1 (approval_stale) | 5 | +4 |
 | ActivityEmitter coverage | 3 tools (approvals) | 9 tools | +6 |
@@ -127,12 +127,12 @@ Needs Alembic migration + column `content_sha256_head` in `document` table.
 | Section F closed | 0 | 8 | +8 |
 | Grand total done (A–F) | 45 | 53 | +8 |
 
-## 6. Следующий шаг
+## 6. Next step
 
-Весь RFC (proposals 01–15) реализован. 53 задачи закрыты.
+The entire RFC (proposals 01–15) is implemented. 53 tasks are closed.
 
-11 задач остаются в backlog; приоритет следующего цикла:
-- **PCA-913** (F2 auto-transition) — high, понятная задача
-- **PCA-918** (G1 strict=True) — high, но требует осторожности
-- **PCA-916** (F5 heartbeat-context) — medium, важно для агента
+11 tasks remain in the backlog; the priority of the next cycle:
+- **PCA-913** (F2 auto-transition) — high, a clear task
+- **PCA-918** (G1 strict=True) — high, but requires care
+- **PCA-916** (F5 heartbeat-context) — medium, important for the agent
 - **PCA-921** (G4 checkout guard) — medium, defensive

@@ -19,32 +19,32 @@ related_docs:
 
 # Section C — Closure Report (Phase 3: Extensions)
 
-> **Назначение.** Зафиксировать закрытие 7 задач Section C
-> (PCA-200/201/210/211/220/221/230) и описать findings → backlog.
+> **Purpose.** Record the closure of 7 tasks of Section C
+> (PCA-200/201/210/211/220/221/230) and describe findings → backlog.
 
 ## 1. TL;DR
 
 - **PCA-220 + 221** — TaskStatus 7-state taxonomy (proposal 08).
-  Аддитивное расширение enum (legacy pending/in-progress/done сохранены).
-  State-machine `task_status_machine.py` с `validate_transition` интегрирована
-  в `task_service.update_status` в **warn-mode** (proposal 06 §89: Phase 1
+  An additive extension of the enum (legacy pending/in-progress/done are preserved).
+  The state machine `task_status_machine.py` with `validate_transition` is integrated
+  into `task_service.update_status` in **warn-mode** (proposal 06 §89: Phase 1
   permissive, Phase 2 enforce). `strict=True` opt-in.
-- **PCA-200 + 201** — атомарный checkout (proposal 06).
-  Migration 0014 + `checkout_service.py` + 2 MCP-тула. `CheckoutConflictError`
-  на 409, idempotent для same agent. Activity events на checkout/release.
+- **PCA-200 + 201** — atomic checkout (proposal 06).
+  Migration 0014 + `checkout_service.py` + 2 MCP tools. `CheckoutConflictError`
+  on 409, idempotent for the same agent. Activity events on checkout/release.
 - **PCA-210 + 211** — routines (proposal 07).
-  Migration 0014 (объединено), `routine_service.py` + 7 MCP-тулов.
-  Один реальный check (`approval_stale` — закрывает Section B finding F3),
-  4 noop-плейсхолдера для daemon wiring.
-- **PCA-230** — `AGENTS.md` (proposal 11). 12 разделов в корне +
-  обновлённый PR-template (Model used + DoD).
-- **Тестовое покрытие:** 41 новый unit-тест. Полный suite — **970 passed**
-  (было 929).
-- **6 findings** (G1-G6) → backlog в Section F (PCA-918..923).
+  Migration 0014 (merged), `routine_service.py` + 7 MCP tools.
+  One real check (`approval_stale` — closes Section B finding F3),
+  4 noop placeholders for daemon wiring.
+- **PCA-230** — `AGENTS.md` (proposal 11). 12 sections at the root +
+  an updated PR-template (Model used + DoD).
+- **Test coverage:** 41 new unit tests. Full suite — **970 passed**
+  (was 929).
+- **6 findings** (G1-G6) → backlog in Section F (PCA-918..923).
 
 ## 2. Section C deliverables
 
-| # | Деливерабл | Файл / артефакт | Статус |
+| # | Deliverable | File / artifact | Status |
 |---|------------|------------------|--------|
 | D1 | Section C audit-report | `docs/system/audit/2026-05-08-section-c-phase-3.md` | ✅ |
 | D2 | Migration `0014_task_checkout_and_routine` | `cod_doc/infra/migrations/versions/20260508_0014_*.py` | ✅ |
@@ -60,110 +60,110 @@ related_docs:
 
 ## 3. Acceptance per task
 
-- [x] **PCA-220 (migration)** — `TaskStatus` содержит canonical 7-state +
-      legacy aliases; нет breaking changes для существующих task rows
-      (хранятся as-is).
-- [x] **PCA-221 (feature)** — `validate_transition` с матрицей; +1
-      pragmatic deviation (in_progress → todo) задокументирована в коде.
-      Интеграция в `update_status` через warn-mode по умолчанию.
-- [x] **PCA-200 (feature)** — `task_checkout` и `task_release` MCP-тулы;
-      idempotent для same agent; conflict raises с advisory «never retry»;
-      `release_stale` для cleanup.
-- [x] **PCA-201 (refactor)** — `update_status` принимает `via_checkout` /
-      `strict` / `force`; revert flow wires force=True. Полное enforcement
-      отложено в Phase 2 (см. F-задачу PCA-922).
-- [x] **PCA-210 (migration)** — `routine` + `routine_run` tables со всеми
-      полями proposal 07 (trigger / cron / on_finding / concurrency / catch_up);
-      round-trip up→down→up работает.
-- [x] **PCA-211 (feature)** — 7 MCP-тулов; `concurrency=skip` соблюдается;
-      `routine.fired` / `routine.found_issue` events эмитятся; `approval_stale`
-      check работает end-to-end (closes F3 from Section B audit).
-- [x] **PCA-230 (docs)** — `AGENTS.md` 12 секций; PR-template содержит
-      `Model used` и Definition of Done.
+- [x] **PCA-220 (migration)** — `TaskStatus` contains the canonical 7-state +
+      legacy aliases; no breaking changes for existing task rows
+      (stored as-is).
+- [x] **PCA-221 (feature)** — `validate_transition` with a matrix; +1
+      pragmatic deviation (in_progress → todo) is documented in the code.
+      Integration into `update_status` via warn-mode by default.
+- [x] **PCA-200 (feature)** — `task_checkout` and `task_release` MCP tools;
+      idempotent for the same agent; conflict raises with an advisory "never retry";
+      `release_stale` for cleanup.
+- [x] **PCA-201 (refactor)** — `update_status` accepts `via_checkout` /
+      `strict` / `force`; the revert flow wires force=True. Full enforcement
+      is deferred to Phase 2 (see the F-task PCA-922).
+- [x] **PCA-210 (migration)** — `routine` + `routine_run` tables with all
+      the fields of proposal 07 (trigger / cron / on_finding / concurrency / catch_up);
+      the round-trip up→down→up works.
+- [x] **PCA-211 (feature)** — 7 MCP tools; `concurrency=skip` is respected;
+      `routine.fired` / `routine.found_issue` events are emitted; the `approval_stale`
+      check works end-to-end (closes F3 from the Section B audit).
+- [x] **PCA-230 (docs)** — `AGENTS.md` 12 sections; the PR-template contains
+      `Model used` and Definition of Done.
 
 ## 4. Findings (→ backlog)
 
-### G1 — Checkout enforcement отложен (warn-mode по умолчанию) *(high)*
+### G1 — Checkout enforcement is deferred (warn-mode by default) *(high)*
 
-**Что сейчас:** `task_service.update_status` принимает любую невалидную
-transition silently (warn-mode). Per proposal 06 §89 это правильно для
-Phase 1, но Phase 2 enforcement не оформлен как задача.
+**What is now:** `task_service.update_status` accepts any invalid
+transition silently (warn-mode). Per proposal 06 §89 this is correct for
+Phase 1, but Phase 2 enforcement is not formalized as a task.
 
-**Последствие:** агент может делать `pending → done` или
-`backlog → in_progress` обходя checkout, и state-machine не остановит.
+**Consequence:** an agent can do `pending → done` or
+`backlog → in_progress` bypassing checkout, and the state machine will not stop it.
 
-**Рекомендация:** оформить Phase 2 enforcement как задачу. Она требует:
-(а) грепа всех существующих callers `update_status`, (б) добавления
-`strict=True` где безопасно, (в) переключение default'а после миграции.
+**Recommendation:** formalize Phase 2 enforcement as a task. It requires:
+(a) a grep of all existing callers of `update_status`, (b) adding
+`strict=True` where safe, (c) switching the default after the migration.
 
-### G2 — Scheduler daemon не реализован *(high)*
+### G2 — Scheduler daemon is not implemented *(high)*
 
-**Что сейчас:** `routine_service.run_now()` работает по запросу (manual
-trigger). Cron-расписание (`routine.cron`, `trigger='cron'`) хранится в
-БД, но никакого процесса, читающего эти строки и вызывающего `run_now`
-по расписанию, нет.
+**What is now:** `routine_service.run_now()` works on demand (manual
+trigger). The cron schedule (`routine.cron`, `trigger='cron'`) is stored in
+the DB, but there is no process that reads these rows and calls `run_now`
+on a schedule.
 
-**Последствие:** `approval_stale` (закрывающий F3) триггерится только
-при ручном вызове `routine_run_now`. Аналогично `doc_drift` /
-`task_stale` / `link_integrity` — ждут cron-loop.
+**Consequence:** `approval_stale` (closing F3) is triggered only
+on a manual call to `routine_run_now`. Similarly `doc_drift` /
+`task_stale` / `link_integrity` — wait for a cron loop.
 
-**Рекомендация:** реализовать `cod_doc/services/routine_scheduler.py`
-с `croniter` + tick-loop (или `apscheduler`). Запуск через CLI команду
-`cod-doc routine daemon`. Вне scope этого Section C — отдельная F-задача.
+**Recommendation:** implement `cod_doc/services/routine_scheduler.py`
+with `croniter` + a tick loop (or `apscheduler`). Launch via the CLI command
+`cod-doc routine daemon`. Out of scope of this Section C — a separate F-task.
 
-### G3 — 4 из 5 check'ов в catalog — noop placeholders *(high)*
+### G3 — 4 of 5 checks in the catalog — noop placeholders *(high)*
 
-**Что сейчас:** `CHECK_CATALOG` содержит 5 имён, но только `approval_stale`
-делает реальную работу. `stale_refs` / `link_integrity` / `doc_drift` /
-`task_stale` возвращают `{"findings": [], "note": "noop"}`.
+**What is now:** `CHECK_CATALOG` contains 5 names, but only `approval_stale`
+does real work. `stale_refs` / `link_integrity` / `doc_drift` /
+`task_stale` return `{"findings": [], "note": "noop"}`.
 
-**Последствие:** routine с этими именами создаётся, но фактически
-ничего не проверяет. Видимость нулевая.
+**Consequence:** a routine with these names is created, but in fact
+checks nothing. Visibility is zero.
 
-**Рекомендация:** обернуть существующие MCP-тулы (`check_stale_refs`,
-`link.verify`, `doc.drift`, `task.stale`) в check-функции. Каждая —
-отдельная F-задача (4 small PRs).
+**Recommendation:** wrap the existing MCP tools (`check_stale_refs`,
+`link.verify`, `doc.drift`, `task.stale`) into check functions. Each —
+a separate F-task (4 small PRs).
 
-### G4 — Write-tools (task_complete, task_set_blocker) не проверяют checkout *(medium)*
+### G4 — Write-tools (task_complete, task_set_blocker) do not check checkout *(medium)*
 
-**Что сейчас:** PCA-201 acceptance говорит «все мутирующие task-тулы
-требуют валидный активный checkout», но `task_complete`,
-`task_set_blocker`, `task_clear_blocker`, `task_log_progress` пока
-ничего не проверяют. Только `update_status` опционально валидирует
-transition, не ownership.
+**What is now:** PCA-201 acceptance says "all mutating task tools
+require a valid active checkout", but `task_complete`,
+`task_set_blocker`, `task_clear_blocker`, `task_log_progress` so far
+check nothing. Only `update_status` optionally validates the
+transition, not ownership.
 
-**Рекомендация:** добавить helper `_warn_no_checkout(session, task_id,
-agent)` в `cod_doc/mcp/tools/_db.py` + вызвать из 4 write-тулов
+**Recommendation:** add a helper `_warn_no_checkout(session, task_id,
+agent)` to `cod_doc/mcp/tools/_db.py` + call it from 4 write-tools
 (warn-mode). Phase 2 — enforce.
 
-### G5 — Routine `update_existing_task` policy не реализована *(medium)*
+### G5 — The Routine `update_existing_task` policy is not implemented *(medium)*
 
-**Что сейчас:** `on_finding='create_task'` создаёт новую задачу при каждом
-finding'е (вернее, создавал бы, если бы было кодирование — сейчас даже
-этой ветки нет в `run_now`). Policy `update_existing_task` (нужна для
-повторяющихся drift'ов на одних доках, чтобы не плодить дубли) —
-proposal 07 §91 называет её must-have.
+**What is now:** `on_finding='create_task'` creates a new task on every
+finding (rather, would create, if there were coding — right now even
+this branch is not in `run_now`). The policy `update_existing_task` (needed for
+recurring drifts on the same docs, so as not to breed duplicates) —
+proposal 07 §91 calls it a must-have.
 
-**Рекомендация:** реализовать signature-deduplication: hash от
-`(check_name, scope_kind, scope_id, finding_kind)` → если открытая
-задача с таким signature существует, добавить comment вместо новой
-задачи. F-задача.
+**Recommendation:** implement signature-deduplication: a hash of
+`(check_name, scope_kind, scope_id, finding_kind)` → if an open
+task with such a signature exists, add a comment instead of a new
+task. F-task.
 
-### G6 — `task_status_machine` не интегрирован в legacy `next_pending_task` *(low)*
+### G6 — `task_status_machine` is not integrated into the legacy `next_pending_task` *(low)*
 
-**Что сейчас:** legacy MCP-тул `next_pending_task` возвращает task со
-status='pending' (legacy строка). Новые callers ожидающие 'todo' могут
-не находить задачи. `normalise()` не используется в legacy slice.
+**What is now:** the legacy MCP tool `next_pending_task` returns a task with
+status='pending' (legacy string). New callers expecting 'todo' may
+not find tasks. `normalise()` is not used in the legacy slice.
 
-**Рекомендация:** обернуть SELECT в `next_pending_task` чтобы он матчил
-оба варианта (`status IN ('pending', 'todo')`); или deprecate сам тул
-(уже планируется в PCA-411).
+**Recommendation:** wrap the SELECT in `next_pending_task` so that it matches
+both variants (`status IN ('pending', 'todo')`); or deprecate the tool itself
+(already planned in PCA-411).
 
-## 5. Метрики
+## 5. Metrics
 
-| Метрика | До Section C | После | Δ |
+| Metric | Before Section C | After | Δ |
 |---------|-------------:|------:|--:|
-| Tables в schema | 22 | 24 | +2 |
+| Tables in schema | 22 | 24 | +2 |
 | Migrations | 13 | 14 | +1 |
 | Service modules | 28 | 31 | +3 |
 | MCP write-tools | 41 | 50 | +9 (checkout=2, routine=7) |
@@ -171,30 +171,30 @@ status='pending' (legacy строка). Новые callers ожидающие 't
 | Section C done tasks | 0 | 7 | +7 |
 | Total Section A+B+C done | 28 | 35 | +7 |
 
-## 6. Что не вошло (out of scope)
+## 6. What was not included (out of scope)
 
-- **Web UI** для checkout / routines (timeline, approval inbox, kanban
-  по новым статусам) — отдельные задачи.
-- **CLI** для `cod-doc checkout / routine` команд — нет.
-- **Кастомные routines из UI** (proposal 07 Q5) — только встроенные.
-- **Cron daemon** (см. G2) — отдельная задача.
-- **Pre-commit hook** на required PR-секции (proposal 11 Q3) — нет.
+- **Web UI** for checkout / routines (timeline, approval inbox, kanban
+  by new statuses) — separate tasks.
+- **CLI** for `cod-doc checkout / routine` commands — no.
+- **Custom routines from the UI** (proposal 07 Q5) — only built-in ones.
+- **Cron daemon** (see G2) — a separate task.
+- **Pre-commit hook** on required PR sections (proposal 11 Q3) — no.
 
-## 7. Следующий шаг
+## 7. Next step
 
-Section A (Phase 1) ✅, B (Phase 2) ✅, C (Phase 3) ✅ закрыты.
+Section A (Phase 1) ✅, B (Phase 2) ✅, C (Phase 3) ✅ are closed.
 
-Открытые направления:
-- **Section D (Phase 4 — Adapter, PCA-300..302)** — 3 задачи; LLMAdapter
-  Protocol + openai_compat / claude_native + AdapterRegistry. Зависит
-  только от Section A (закрыта). Маленькая.
-- **Section E (UX & Migration, PCA-400..422)** — 7 задач. Web UI / import
-  improvements / link redesign. Низкий риск, высокая видимость.
-- **Section F backlog** — пополнилась findings F1-F6 (Section B) +
-  G1-G6 (Section C). Если выбираем «consolidation cycle» —
-  можно расчистить F-bucket до открытия Phase 4/5.
+Open directions:
+- **Section D (Phase 4 — Adapter, PCA-300..302)** — 3 tasks; LLMAdapter
+  Protocol + openai_compat / claude_native + AdapterRegistry. Depends
+  only on Section A (closed). Small.
+- **Section E (UX & Migration, PCA-400..422)** — 7 tasks. Web UI / import
+  improvements / link redesign. Low risk, high visibility.
+- **Section F backlog** — replenished with findings F1-F6 (Section B) +
+  G1-G6 (Section C). If we choose a "consolidation cycle" —
+  the F-bucket can be cleared before opening Phase 4/5.
 
-Findings G1-G6 заведены как PCA-918..923 в Section F.
+Findings G1-G6 are filed as PCA-918..923 in Section F.
 
-Рекомендация: открыть Section D (compact, 3 tasks) или Section F
-(consolidation cycle на накопленные findings) перед Section E.
+Recommendation: open Section D (compact, 3 tasks) or Section F
+(a consolidation cycle on the accumulated findings) before Section E.

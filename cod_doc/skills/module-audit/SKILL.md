@@ -1,133 +1,134 @@
 ---
 name: module-audit
 description: |
-  Обязательный 5-мерный drift-аудит при закрытии модуля или крупной
-  задачи: code / logic / style / tests / docs. CI зелёный ≠ модуль
-  готов. Финдинги пишутся в audit-report; при ≥ 1 finding — открывается
-  remediation plan.
-  Триггеры: модуль готов, закрыть модуль, finish module, complete module,
+  Mandatory 5-dimensional drift audit on closing a module or a large task:
+  code / logic / style / tests / docs. Green CI ≠ module ready. Findings
+  are written to an audit-report; with ≥ 1 finding a remediation plan is
+  opened.
+  Triggers: module ready, close module, finish module, complete module,
   module done, large task done, milestone, end of phase, post-merge,
-  готово, завершён, выкатили, drift check, drift, audit drift, дрифт,
-  module audit, completion audit.
+  drift check, drift, audit drift, module audit, completion audit.
 ---
 
 # Skill — Module audit (drift check)
 
-## Когда подгружается
+## When it loads
 
-При закрытии **модуля** (any `docs/modules/<m>.md` с активным статусом)
-или **крупной задачи** (multi-day, multi-file, multi-AC). Также при
-ручном запросе «проведи аудит» / «check drift».
+On closing a **module** (any `docs/modules/<m>.md` with an active status)
+or a **large task** (multi-day, multi-file, multi-AC). Also on a manual
+request "run an audit" / "check drift".
 
-Не путать со `audit-cadence`: тот про закрытие фаз / consolidation
-cycles проекта целиком; этот — про **дрифт-чек по 5 измерениям** для
-одного модуля.
+Do not confuse with `audit-cadence`: that one is about closing phases /
+consolidation cycles of the project as a whole; this one is about a
+**drift check across 5 dimensions** for a single module.
 
-## Принцип
+## Principle
 
-Закрытие модуля БЕЗ 5-мерного аудита — pencil-whip. CI зелёный ≠
-модуль готов. CI проверяет **только** code+test, но не logic / style /
-docs. Дрифт между этими слоями накапливается тихо и обнаруживается
-позже как «странные баги» / «документация не совпадает с кодом» /
-«а это вообще ещё работает?».
+Closing a module WITHOUT a 5-dimensional audit is a pencil-whip. Green
+CI ≠ module ready. CI checks **only** code+test, but not logic / style /
+docs. Drift between these layers accumulates quietly and surfaces later
+as "strange bugs" / "docs do not match code" / "does this even still
+work?".
 
-Аудит делается ВСЕГДА в одном и том же порядке (1→5), даже если
-кажется, что измерение «не применимо». Если измерение не применимо —
-явно пиши «N/A» с причиной.
+The audit is ALWAYS done in the same order (1→5), even if a dimension
+seems "not applicable". If a dimension is not applicable — explicitly
+write "N/A" with a reason.
 
-## 5 измерений дрифта
+## 5 drift dimensions
 
-### 1. Code drift — реализация vs спецификация
+### 1. Code drift — implementation vs specification
 
-Проверь, что то, что НАПИСАНО в коде, соответствует тому, что
-ОБЪЯВЛЕНО в спецификациях.
+Check that what is WRITTEN in the code matches what is DECLARED in the
+specifications.
 
-| Сверяем | С чем |
+| We compare | Against what |
 |---------|-------|
-| Публичные функции / методы / endpoints | `docs/modules/<m>.md` § Signatures / Endpoints |
-| Data shapes (структуры, JSON-схемы, ORM-модели) | `DATA_MODEL.md`, миграции |
-| Файловый layout, dependency-направления | `ARCHITECTURE.md` compose / layer-диаграмма |
-| Имена сущностей (тип, поле, переменная) | Везде, где они объявлены |
+| Public functions / methods / endpoints | `docs/modules/<m>.md` § Signatures / Endpoints |
+| Data shapes (structures, JSON-schemas, ORM-models) | `DATA_MODEL.md`, migrations |
+| File layout, dependency directions | `ARCHITECTURE.md` compose / layer diagram |
+| Entity names (type, field, variable) | Everywhere they are declared |
 
-Инструменты: `doc_drift`, `check_stale_refs`, `hash_file`, ручной diff.
+Tools: `doc_drift`, `check_stale_refs`, `hash_file`, manual diff.
 
-Симптом code-drift: «функция называется по-другому, чем в module-spec»,
-«в DATA_MODEL колонка `email`, а в коде `mail`».
+Symptom of code-drift: "the function is named differently than in the
+module-spec", "in DATA_MODEL the column is `email`, but in code `mail`".
 
-### 2. Logic drift — поведение vs user-story / AC
+### 2. Logic drift — behavior vs user-story / AC
 
-**Это самое незаметное измерение.** CI его не ловит. Только мысленный
-walk-through и интеграционный прогон.
+**This is the most subtle dimension.** CI does not catch it. Only a
+mental walk-through and an integration run.
 
-- Перечитай **acceptance criteria** каждой задачи модуля. Реализовано
-  ли _именно это_, или «похожее»?
-- Перечитай связанные **user-stories**. Сценарий проходит от начала до
-  конца? Алтернативные ветки (refused / error) тоже покрыты?
-- Edge cases из stories покрыты или silently dropped?
-- Smoke-flow: пройди руками 1 happy + 1 error путь.
+- Re-read the **acceptance criteria** of each task in the module. Is
+  _exactly that_ implemented, or "something similar"?
+- Re-read the related **user-stories**. Does the scenario run from start
+  to finish? Are alternative branches (refused / error) also covered?
+- Are edge cases from the stories covered or silently dropped?
+- Smoke-flow: walk through 1 happy + 1 error path by hand.
 
-Симптом logic-drift: «всё работает, но не _то_, что просили», «мы
-реализовали запись в БД, а в AC сказано: «после записи отправить
-notification» — забыли».
+Symptom of logic-drift: "everything works, but not _what_ was asked",
+"we implemented a DB write, but the AC says: 'send a notification after
+the write' — forgot".
 
-### 3. Style drift — стиль кода / документов
+### 3. Style drift — code / doc style
 
-- **Lint**: `ruff` / `mypy` / formatter — нулевой output. Если warning'и
-  накопились — это уже drift.
-- **Naming**: snake_case в Python, kebab в slug'ах, согласованность
-  однотипных идентификаторов (`auth_handler` vs `auth_h`).
-- **Docs prose**: см. skill `doc-style` — язык, ссылки, frontmatter,
-  заголовки, гибридные refs.
-- **Code structure**: dependency injection вместо globals, нет import
-  cycles, нет TODO без owner'а.
+- **Lint**: `ruff` / `mypy` / formatter — zero output. If warnings have
+  accumulated — that is already drift.
+- **Naming**: snake_case in Python, kebab in slugs, consistency of
+  similar identifiers (`auth_handler` vs `auth_h`).
+- **Docs prose**: see skill `doc-style` — language, links, frontmatter,
+  headings, hybrid refs.
+- **Code structure**: dependency injection instead of globals, no
+  import cycles, no TODO without an owner.
 
-### 4. Test drift — тесты здоровы
+### 4. Test drift — tests are healthy
 
-- CI зелёный.
-- Новые модули / функции имеют тесты — **особенно error paths и edge
-  cases**, не только happy.
-- Coverage не упал относительно baseline (если есть).
-- Удалённые / переименованные фичи → удалены / переименованы и их
-  тесты. Никаких «orphaned» тестов на несуществующие функции.
-- Имена тестов описывают _что_ тестируется, не _как_ (`test_login_with_expired_token_returns_401`, не `test_login_2`).
-- Flaky тесты помечены `@pytest.mark.flaky` с задачей на устранение.
+- CI is green.
+- New modules / functions have tests — **especially error paths and
+  edge cases**, not only happy.
+- Coverage did not drop relative to baseline (if any).
+- Removed / renamed features → their tests removed / renamed too. No
+  "orphaned" tests for non-existent functions.
+- Test names describe _what_ is tested, not _how_
+  (`test_login_with_expired_token_returns_401`, not `test_login_2`).
+- Flaky tests are marked `@pytest.mark.flaky` with a task to fix.
 
-### 5. Documentation drift — документы отражают реальность
+### 5. Documentation drift — docs reflect reality
 
-- **Гибридные ссылки**: `link_verify` / `check_stale_refs` — все
-  статусы 🟢. Ни одного 🔴 STALE / BROKEN.
-- **Хэши**: `update_master_hashes` после любых правок исходников,
-  которые упомянуты в MASTER.md.
-- **Frontmatter `status`**: модулям активного релиза → `active`. Если
-  модуль deprecated — переведи статус и упомяни в MASTER.md.
-- **MASTER.md**: добавь / обнови раздел модуля, если public API менялся.
-- **ADR / decision-log**: новые архитектурные решения зафиксированы.
+- **Hybrid references**: `link_verify` / `check_stale_refs` — all
+  statuses 🟢. Not a single 🔴 STALE / BROKEN.
+- **Hashes**: `update_master_hashes` after any edits to sources
+  mentioned in MASTER.md.
+- **Frontmatter `status`**: modules of an active release → `active`. If
+  a module is deprecated — switch the status and mention it in MASTER.md.
+- **MASTER.md**: add / update the module section if the public API
+  changed.
+- **ADR / decision-log**: new architectural decisions recorded.
 
-## Выходной артефакт: audit-report
+## Output artifact: audit-report
 
-**`audit-report`** в `docs/system/audit/<YYYY-MM-DD>-<module>-drift.md`.
+**`audit-report`** in `docs/system/audit/<YYYY-MM-DD>-<module>-drift.md`.
 
-Формат заголовка / frontmatter — см. skill `audit-cadence`.
+Header / frontmatter format — see skill `audit-cadence`.
 
-В разделе **Findings** перечисли проблемы по каждому измерению с
-префиксом `[code]` / `[logic]` / `[style]` / `[test]` / `[docs]`:
+In the **Findings** section list problems per dimension with the prefix
+`[code]` / `[logic]` / `[style]` / `[test]` / `[docs]`:
 
 ```
-F1 [code] PublicAPI `auth.refresh_token()` объявлена в module-spec,
-   отсутствует в коде. Либо реализовать, либо удалить из спеки.
-F2 [logic] AC задачи AUTH-007 «при revoke токена отправить webhook»
-   не выполнен — webhook отсутствует в логе вызовов.
-F3 [style] Идентификатор `auth_h` (3 места) inconsistent с
-   `auth_handler` (12 мест). Унифицировать.
-F4 [test] Нет тестов для error-path `raise OnMissingToken` в
+F1 [code] PublicAPI `auth.refresh_token()` is declared in the module-spec,
+   missing in code. Either implement, or remove from the spec.
+F2 [logic] AC of task AUTH-007 "send a webhook on token revoke" is
+   not fulfilled — the webhook is missing from the call log.
+F3 [style] Identifier `auth_h` (3 places) is inconsistent with
+   `auth_handler` (12 places). Unify.
+F4 [test] No tests for the error-path `raise OnMissingToken` in
    `auth/middleware.py:42`.
-F5 [docs] `auth.md` § Endpoints stale: 3 endpoints переименованы в
-   коде, в доке остались старые имена.
+F5 [docs] `auth.md` § Endpoints stale: 3 endpoints renamed in code,
+   old names remain in the doc.
 ```
 
-В конце таблица сводки:
+At the end a summary table:
 
-| Измерение | F-count | Severity (C/M/L) |
+| Dimension | F-count | Severity (C/M/L) |
 |-----------|---------|---------------------|
 | code  | 1 | C: 1 |
 | logic | 1 | C: 1 |
@@ -135,42 +136,42 @@ F5 [docs] `auth.md` § Endpoints stale: 3 endpoints переименованы �
 | test  | 1 | M: 1 |
 | docs  | 1 | M: 1 |
 
-## Если findings ≥ 1
+## If findings ≥ 1
 
-Открой **remediation plan** через `plan_create`:
+Open a **remediation plan** via `plan_create`:
 
 ```
 scope: "<module>-drift-remediation-<YYYY-MM-DD>"
-principle: "Закрыть все F# из audit-report до перевода модуля в active"
+principle: "Close all F# from the audit-report before moving the module to active"
 ```
 
-В план добавь по одной задаче на каждый finding с
-`type=bug/refactor/docs/test`, `priority` по severity, `description`
-со ссылкой на F# в audit-report.
+Add one task per finding to the plan with
+`type=bug/refactor/docs/test`, `priority` by severity, `description`
+with a reference to F# in the audit-report.
 
-Только после закрытия remediation plan модуль переводится в `active`.
+Only after closing the remediation plan is the module moved to `active`.
 
-## Анти-паттерны
+## Anti-patterns
 
-- ❌ **«Прошло CI → готово».** Только Code+Test покрыто; Logic /
-  Style / Docs — нет.
-- ❌ Аудит только своего слоя (например, только code-drift) — это
-  «частичный» аудит, не drift-check. Все 5 измерений обязательны.
-- ❌ Закрыть модуль с открытыми `F1..FN` без remediation plan.
-- ❌ audit-report без сводной таблицы по типам.
-- ❌ Findings без severity (`C` / `M` / `L`) — невозможно
-  приоритезировать remediation.
-- ❌ «Аудит сделал, нашёл 0 проблем» без явного перечисления
-  проверенных пунктов. Иначе невозможно отличить «всё ок» от «не
-  проверил».
+- ❌ **"CI passed → ready".** Only Code+Test is covered; Logic / Style /
+  Docs are not.
+- ❌ Auditing only your own layer (e.g. only code-drift) — this is a
+  "partial" audit, not a drift-check. All 5 dimensions are mandatory.
+- ❌ Closing a module with open `F1..FN` without a remediation plan.
+- ❌ An audit-report without a summary table by type.
+- ❌ Findings without severity (`C` / `M` / `L`) — impossible to
+  prioritize remediation.
+- ❌ "Ran the audit, found 0 problems" without explicitly listing the
+  checked items. Otherwise it is impossible to distinguish "all ok" from
+  "did not check".
 
-## Связанное
+## Related
 
-- Skill `audit-cadence` — формат audit-report (общий шаблон + куда
-  кладётся файл).
-- Skill `drift-handling` — что делать со STALE / BROKEN ссылками,
+- Skill `audit-cadence` — audit-report format (shared template + where
+  the file goes).
+- Skill `drift-handling` — what to do with STALE / BROKEN references,
   hash-mismatch.
-- Skill `doc-style` — конвенции style-drift для docs prose.
-- Skill `task-standard` — формат задач, которые попадут в remediation
+- Skill `doc-style` — style-drift conventions for docs prose.
+- Skill `task-standard` — task format that will go into the remediation
   plan.
-- `docs/system/standards/task-plan.md` § «Closing a module».
+- `docs/system/standards/task-plan.md` § "Closing a module".

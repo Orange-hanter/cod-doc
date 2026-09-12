@@ -58,7 +58,7 @@ def test_parser_captures_context_and_decision() -> None:
     by_id = {r["adr_id"]: r for r in records}
     # ADR-001: 4-layer architecture; context mentions LLM providers.
     assert "LLM" in (by_id["ADR-001"]["context"] or "")
-    assert "DIP" in (by_id["ADR-001"]["decision"] or "") or "4-слойная" in (
+    assert "DIP" in (by_id["ADR-001"]["decision"] or "") or "4-layer" in (
         by_id["ADR-001"]["decision"] or ""
     )
     # ADR-005: PostgreSQL decision.

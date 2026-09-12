@@ -13,9 +13,9 @@ related_docs:
 
 # Capability — Project Bootstrap
 
-> Что происходит при `cod-doc project new`: записи в БД, скелетные документы, агенты, конфиг.
+> What happens on `cod-doc project new`: DB records, skeleton documents, agents, config.
 
-## 1. Команда
+## 1. Command
 
 ```bash
 cod-doc project new \
@@ -26,12 +26,12 @@ cod-doc project new \
   [--from-template restate|generic|empty]
 ```
 
-## 2. Что создаётся
+## 2. What gets created
 
-### 2.1 Запись `project`
-- `slug`, `title`, `root_path`, `created`, дефолтный `config_json`.
+### 2.1 The `project` record
+- `slug`, `title`, `root_path`, `created`, default `config_json`.
 
-### 2.2 Дефолтные документы
+### 2.2 Default documents
 
 | doc_key | type | sensitivity |
 |---------|------|-------------|
@@ -43,42 +43,42 @@ cod-doc project new \
 | `standards/task-plan` | `standard` (clone from system) | internal |
 | `standards/document-link` | `standard` (clone from system) | internal |
 
-Шаблоны живут в `cod_doc/templates/projects/<template>/`. Это аналог Restate-стека «из коробки».
+Templates live in `cod_doc/templates/projects/<template>/`. This is the analogue of the Restate stack "out of the box".
 
-### 2.3 Дефолтные агенты
+### 2.3 Default agents
 
-Импортируются из системного каталога ([agents-and-skills.md §2](agents-and-skills.md)): `task-steward`, `docs-reviewer`, `link-verifier`, `migrator`, `release-manager`.
+Imported from the system catalog ([agents-and-skills.md §2](agents-and-skills.md)): `task-steward`, `docs-reviewer`, `link-verifier`, `migrator`, `release-manager`.
 
-### 2.4 MCP-регистрация
+### 2.4 MCP registration
 
-CLI спрашивает: `Register MCP for Claude Code? [Y/n]`. Если да — пишет конфиг в `~/.claude/mcp.json` или `.mcp.json` проекта.
+The CLI asks: `Register MCP for Claude Code? [Y/n]`. If yes — writes the config to `~/.claude/mcp.json` or the project's `.mcp.json`.
 
 ### 2.5 Hooks
 
-Опционально (`--with-hooks`):
+Optional (`--with-hooks`):
 - git pre-commit: `cod-doc audit --strict --staged`
 - git post-commit: `cod-doc task sync_from_diff`
 
-## 3. Профиль
+## 3. Profile
 
-| Параметр | embedded | server |
+| Parameter | embedded | server |
 |----------|----------|--------|
-| БД | `.cod-doc/state.db` (SQLite) | `COD_DOC_DB_URL` (Postgres) |
+| DB | `.cod-doc/state.db` (SQLite) | `COD_DOC_DB_URL` (Postgres) |
 | REST API | off | on |
 | Embeddings | sqlite-vss | pgvector |
 | Auth | local user | token-based |
 
-## 4. Идемпотентность
+## 4. Idempotency
 
-Повторный `project new --slug <existing>` — error. Для пересоздания: `cod-doc project drop <slug> --confirm`. Drop не удаляет markdown-проекцию (только запись в БД); `--purge` удаляет всё.
+Re-running `project new --slug <existing>` — error. To recreate: `cod-doc project drop <slug> --confirm`. Drop does not delete the markdown projection (only the DB record); `--purge` deletes everything.
 
-## 5. Импорт существующего проекта
+## 5. Importing an existing project
 
 `cod-doc project new --from-existing <root>`:
-- сканирует `<root>` на markdown с frontmatter;
-- не создаёт дефолтные документы (использует существующие);
-- запускает аналог [migration/from-restate.md](../migration/from-restate.md) этапов 3-7.
+- scans `<root>` for markdown with frontmatter;
+- does not create default documents (uses the existing ones);
+- runs the analogue of [migration/from-restate.md](../migration/from-restate.md) stages 3-7.
 
-## 6. Audit после bootstrap
+## 6. Audit after bootstrap
 
-Финальный шаг команды — `cod-doc audit --strict`. Проект не считается готовым, пока не вернёт 0 errors.
+The final step of the command is `cod-doc audit --strict`. The project is not considered ready until it returns 0 errors.

@@ -7,7 +7,7 @@ canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
 created: 2026-08-29
 last_updated: 2026-08-29
-closed: 2026-08-29 (досрочно)
+closed: 2026-08-29 (early)
 audit: ../audit/2026-09-05-sprint-h1-hardening.md
 audience: [next-session-agent, contributors]
 related_docs:
@@ -17,156 +17,157 @@ related_docs:
   - ../audit/2026-08-29-contract-audit.md
 ---
 
-# Sprint 2026-08-29 → 2026-09-05 — «H1: hardening + M3-кикофф»
+# Sprint 2026-08-29 → 2026-09-05 — "H1: hardening + M3 kickoff"
 
-> **Назначение.** Закрыть критикалы и high-находки contract-аудита
-> (ADO-034) и провести аналитический кикофф M3 — выбор фичи по спросу без
-> реализации. Решения владельца: формат «харденинг + M3-кикофф», окно 1
-> неделя (2026-08-29 → 2026-09-05).
+> **Purpose.** Close the criticals and high findings of the contract audit
+> (ADO-034) and run an analytical M3 kickoff — choosing a feature by demand
+> without implementation. Owner decisions: "hardening + M3 kickoff" format,
+> 1-week window (2026-08-29 → 2026-09-05).
 >
-> **Не source of truth.** Статусы задач — в БД (план `adoption-2026-08`);
-> приоритеты — [ROADMAP.md](ROADMAP.md).
+> **Not source of truth.** Task statuses are in the DB (plan `adoption-2026-08`);
+> priorities are in [ROADMAP.md](ROADMAP.md).
 
-## 0. Ground truth на старт спринта (сверено 2026-08-29)
+## 0. Ground truth at sprint start (reconciled 2026-08-29)
 
-- M2 закрыт досрочно: audit
+- M2 closed early: audit
   [2026-09-11-sprint-m2-feedback-loop.md](../audit/2026-09-11-sprint-m2-feedback-loop.md),
-  коммит `30c43f7`.
-- Contract-аудит ADO-034 закрыт: отчёт
+  commit `30c43f7`.
+- Contract audit ADO-034 closed: report
   [2026-08-29-contract-audit.md](../audit/2026-08-29-contract-audit.md),
-  коммит `fd84f0b`; 21 задача в backlog section D (ADO-035…055).
-- Suite 1562 passed, drift 125/125 in_sync (CLI), дерево git чистое.
-- Сверка SYM-005/006 проведена 2026-08-29: **обе задачи done** — код и
-  тесты покрывают acceptance (hub init, миграции 0026/0027/0028, dedup
-  times_seen, 8 конкурентных ingest, api/v1, MCP finding_*/ctx_*).
-  Единственный gap — CLI `cod-doc ctx` — вынесен в ADO-057 (medium, backlog).
-- Friction-лог ADO-005: открытые кандидаты #8 (dry-run лимит 50 строк),
-  #10 (битый path для `*.txt`), #11 (скрытые каталоги — docs), #14
-  (русскоязычный frontmatter / diataxis-quadrant) — вход для G3.
+  commit `fd84f0b`; 21 tasks in backlog section D (ADO-035…055).
+- Suite 1562 passed, drift 125/125 in_sync (CLI), git tree clean.
+- Reconciliation of SYM-005/006 done 2026-08-29: **both tasks done** — code
+  and tests cover acceptance (hub init, migrations 0026/0027/0028, dedup
+  times_seen, 8 concurrent ingest, api/v1, MCP finding_*/ctx_*).
+  The only gap — CLI `cod-doc ctx` — moved to ADO-057 (medium, backlog).
+- Friction log ADO-005: open candidates #8 (dry-run limit of 50 lines),
+  #10 (broken path for `*.txt`), #11 (hidden directories — docs), #14
+  (Russian frontmatter / diataxis-quadrant) — input for G3.
 
-## 1. Цели
+## 1. Goals
 
-- **G1 — Критикалы аудита.** ADO-035 (loopback-гварда `PATCH /api/config`),
+- **G1 — Audit criticals.** ADO-035 (loopback guard for `PATCH /api/config`),
   ADO-036 (DocumentRepository round-trip: `frontmatter_raw`/`title_in_body`/
-  `content_sha256_head`), ADO-037 (legacy `/api/projects/*` — решение
-  «удалить vs на сервисы» в task-doc до реализации).
-- **G2 — High-харденинг.** ADO-038 (`complete()` + `validate_transition`),
-  ADO-055 (import не теряет секции молча), ADO-053 (audience-export не пишет
-  в канонический путь), ADO-052 (доки профилей MCP ↔ код: default `agent`,
-  counts 6/20/107/111).
-- **G3 — M3-кикофф (аналитика, без реализации фичи).** ADO-056: выбор RFC
-  Трека B (16–20) по friction-логу M2 (#8/#10/#11/#14) и contract-аудиту;
-  перепроверка секции «Текущее состояние» выбранной RFC по коду;
-  обоснование выбора записью в ROADMAP; решение о `plan_create`.
-  Отбраковка устаревших RFC → пометки в `proposals/README.md`
-  (закрывает ADO-013).
-- **Книжка:** сверка статусов SYM-005/006 с кодом (прогресс по коду vs БД),
-  корректировка БД.
+  `content_sha256_head`), ADO-037 (legacy `/api/projects/*` — the decision
+  "delete vs move to services" goes in task-doc before implementation).
+- **G2 — High hardening.** ADO-038 (`complete()` + `validate_transition`),
+  ADO-055 (import does not silently drop sections), ADO-053 (audience-export
+  does not write to the canonical path), ADO-052 (MCP profile docs ↔ code:
+  default `agent`, counts 6/20/107/111).
+- **G3 — M3 kickoff (analytics, no feature implementation).** ADO-056: choose
+  a Track B RFC (16–20) based on the M2 friction log (#8/#10/#11/#14) and the
+  contract audit; re-verify the "Current state" section of the chosen RFC
+  against the code; record the rationale for the choice in ROADMAP; decide on
+  `plan_create`. Rejecting stale RFCs → notes in `proposals/README.md`
+  (closes ADO-013).
+- **Bookkeeping:** reconcile the statuses of SYM-005/006 with the code
+  (progress in code vs DB), correct the DB.
 
-## 2. Контракты задач
+## 2. Task contracts
 
-### G1 — критикалы
+### G1 — criticals
 
-- **ADO-035:** `PATCH /api/config` с нелокального адреса → 403; симметрия с
-  `POST /settings` покрыта тестом (`routes.py:49-55` сейчас без
-  `ensure_loopback_client`).
-- **ADO-036:** round-trip через `DocumentRepository` сохраняет
-  `frontmatter_raw`/`title_in_body`/`content_sha256_head` — тест читает
-  строку БД напрямую, не dataclass (`document_repo.py:23-66`).
-- **ADO-037:** решение (удалить / перевести на сервисы) зафиксировано в
-  task-doc 'design' **до** кода; если удаление — эндпоинты отвечают 410/404
-  и удалены из `web-frontend.md §3` (audit 0/0); если сервисы — Revision +
-  activity event + тесты паритета.
+- **ADO-035:** `PATCH /api/config` from a non-local address → 403; symmetry
+  with `POST /settings` is covered by a test (`routes.py:49-55` currently
+  without `ensure_loopback_client`).
+- **ADO-036:** a round-trip through `DocumentRepository` preserves
+  `frontmatter_raw`/`title_in_body`/`content_sha256_head` — the test reads
+  the DB row directly, not the dataclass (`document_repo.py:23-66`).
+- **ADO-037:** the decision (delete / move to services) is recorded in
+  task-doc 'design' **before** code; if deletion — endpoints return 410/404
+  and are removed from `web-frontend.md §3` (audit 0/0); if services — Revision +
+  activity event + parity tests.
 
-### G2 — high-харденинг
+### G2 — high hardening
 
-- **ADO-038:** `complete()` на задаче в `cancelled`/`backlog` →
-  StatusTransitionError; легальные переходы (`in_progress`→done и пр.)
-  продолжают работать — параметризованный тест по ALLOWED_TRANSITIONS
+- **ADO-038:** `complete()` on a task in `cancelled`/`backlog` →
+  StatusTransitionError; legal transitions (`in_progress`→done, etc.)
+  keep working — a parameterized test over ALLOWED_TRANSITIONS
   (`task_service.py:516-550`).
-- **ADO-055:** искусственно сломанная секция видна в `ImportReport.warnings`,
-  импорт не падает и не молчит — тест (`import_service.py:461-488` двойной
-  `except: pass`).
-- **ADO-053:** после `export(audience=...)` `doc drift` остаётся in_sync и
-  `doc import` того же пути не меняет canonical body — интеграционный тест
-  (`export.py:226-272`).
-- **ADO-052:** runtime-замер counts воспроизводим одной командой (скрипт в
-  task-doc 'verification'), числа в AGENTS.md/profiles.py/server.py help
-  совпадают с замером (agent=6/minimal=20/standard=107/full=111);
-  `test_mcp_lists_tools` или новый smoke ловит расхождение реестра и
-  профилей.
+- **ADO-055:** an artificially broken section is visible in
+  `ImportReport.warnings`, the import neither crashes nor stays silent — a
+  test (`import_service.py:461-488` double `except: pass`).
+- **ADO-053:** after `export(audience=...)` `doc drift` stays in_sync and
+  `doc import` of the same path does not change the canonical body — an
+  integration test (`export.py:226-272`).
+- **ADO-052:** a runtime measurement of counts is reproducible with one
+  command (script in task-doc 'verification'), the numbers in
+  AGENTS.md/profiles.py/server.py help match the measurement
+  (agent=6/minimal=20/standard=107/full=111);
+  `test_mcp_lists_tools` or a new smoke test catches a divergence between
+  the registry and the profiles.
 
-### G3 — M3-кикофф
+### G3 — M3 kickoff
 
-- **ADO-056:** выбор RFC содержит ссылки на конкретные записи friction-лога
-  (ADO-005 journal) и/или findings контракт-аудита; секция «Текущее
-  состояние» выбранной RFC перепроверена по коду с датой сверки; решение
-  «реализуем / отбракованы все» зафиксировано в ROADMAP.md и task-doc
-  'acceptance'. Каждая отбракованная RFC из 16–21 помечена в
-  `proposals/README.md` с причиной в одну строку.
+- **ADO-056:** the RFC choice contains links to specific friction-log entries
+  (ADO-005 journal) and/or contract-audit findings; the "Current state"
+  section of the chosen RFC is re-verified against the code with a
+  reconciliation date; the decision "implement / all rejected" is recorded in
+  ROADMAP.md and task-doc 'acceptance'. Each rejected RFC from 16–21 is
+  marked in `proposals/README.md` with a one-line reason.
 
-### Стретч (по остатку темпа)
+### Stretch (subject to remaining pace)
 
-- ADO-039 (enforce atomic checkout — Phase-2 решение зафиксировать).
-- ADO-041 (agent_service ← mcp.tools._db импорт).
+- ADO-039 (enforce atomic checkout — record the Phase-2 decision).
+- ADO-041 (agent_service ← mcp.tools._db import).
 - ADO-054 (`on_finding='create_task'`).
-- SYM-008 (петля E5-C) — только если сверка подтвердит разблокировку.
+- SYM-008 (E5-C loop) — only if reconciliation confirms it is unblocked.
 
-### Вне скоупа
+### Out of scope
 
-ADO-040 (большой write-path wrapper — кандидат на отдельный спринт),
-ADO-042…051, SYM-009/010/011, STB-023, ADO-014, реализация фичи M3.
+ADO-040 (large write-path wrapper — candidate for a separate sprint),
+ADO-042…051, SYM-009/010/011, STB-023, ADO-014, M3 feature implementation.
 
-## 3. Порядок исполнения
+## 3. Execution order
 
-1. Оформление: этот sprint-док (doc create + import), указатель в
-   ROADMAP.md, задача ADO-056 в БД, сверка SYM-005/006.
-2. G1: ADO-035 → ADO-036 → ADO-037 (каждая: checkout → фикс + тест →
-   ruff/mypy/pytest → коммит с подтверждением → task_complete с sha).
+1. Setup: this sprint doc (doc create + import), pointer in ROADMAP.md, task
+   ADO-056 in the DB, reconciliation of SYM-005/006.
+2. G1: ADO-035 → ADO-036 → ADO-037 (each: checkout → fix + test →
+   ruff/mypy/pytest → commit with confirmation → task_complete with sha).
 3. G2: ADO-038 → ADO-055 → ADO-053 → ADO-052.
-4. G3: ADO-056 — research-субагент по RFC 16–20 + friction-лог; выбор
-   фиксируем в ROADMAP; ADO-013 закрыть в рамках отбраковки.
-5. Стретч в порядке списка.
-6. Финал: полный suite + ruff + mypy + drift; audit-отчёт
-   `docs/system/audit/2026-09-05-sprint-h1-hardening.md`; чекбоксы в
-   ROADMAP.md; закрытие спринта.
+4. G3: ADO-056 — a research subagent over RFC 16–20 + friction log; record
+   the choice in ROADMAP; close ADO-013 as part of the rejection pass.
+5. Stretch in the listed order.
+6. Final: full suite + ruff + mypy + drift; audit report
+   `docs/system/audit/2026-09-05-sprint-h1-hardening.md`; checkboxes in
+   ROADMAP.md; closing the sprint.
 
-## 4. Риски
+## 4. Risks
 
-- **ADO-037 — решение «удалить» ломает чьи-то интеграции:** legacy
-  `/api/projects/*` публичен; митигация — сначала task-doc с решением
-  владельца, deprecation-warning перед удалением.
-- **ADO-036 может потянуть рассинхрон существующих строк:** поля уже в схеме
-  (миграция 0025), меняются только маппинги — миграция не нужна; если
-  вскроется рассинхрон — отдельная задача, не раздуваем.
-- **G3 может не найти достойную RFC** (friction указывает на importer/docs,
-  а не на RFC 16–20): тогда честный исход — «M3 пересобран под friction»,
-  запись в ROADMAP, это не провал спринта.
-- **Темп:** прошлые спринты закрывались за 1–2 дня; недельное окно — с
-  запасом, стретч реален.
+- **ADO-037 — the "delete" decision breaks someone's integrations:** legacy
+  `/api/projects/*` is public; mitigation — first a task-doc with the owner's
+  decision, a deprecation warning before removal.
+- **ADO-036 may pull a desync of existing rows:** the fields are already in
+  the schema (migration 0025), only the mappings change — no migration
+  needed; if a desync is discovered — a separate task, do not inflate.
+- **G3 may not find a worthy RFC** (friction points at importer/docs, not at
+  RFC 16–20): then the honest outcome is "M3 rebuilt around friction", a
+  note in ROADMAP, this is not a sprint failure.
+- **Pace:** previous sprints closed in 1–2 days; the one-week window has
+  margin, the stretch is realistic.
 
 ## 5. Definition of Done
 
-Каждый пункт проверяем одной командой/одним артефактом — не «сделано», а
-«доказано».
+Each item is verified by a single command/artifact — not "done", but "proven".
 
-- [x] Каждая bug-задача G1/G2 имеет **регрессионный тест, который падает на
-      main без фикса** (вывод `pytest <test>` на коммите до фикса — в
-      task-doc 'verification').
-- [x] ADO-037: решение в task-doc 'design' до кода (см. контракт выше).
-- [x] ADO-056 + отбраковка RFC 16–21 в `proposals/README.md` (закрывает
+- [x] Each bug task in G1/G2 has a **regression test that fails on main
+      without the fix** (output of `pytest <test>` on the commit before the
+      fix — in task-doc 'verification').
+- [x] ADO-037: decision in task-doc 'design' before code (see the contract
+      above).
+- [x] ADO-056 + rejection of RFC 16–21 in `proposals/README.md` (closes
       ADO-013).
-- [x] SYM-005/006: статусы в БД совпадают с кодом (finding_tools.py и
-      миграции 0027/0028 в main ↔ статусы задач) — сверка 2026-08-29, обе
-      done, gap `cod-doc ctx` → ADO-057.
-- [x] Все задачи спринта прошли `task_checkout` → `task_complete` с
-      `commit_sha`; в истории нет «висячих» in-progress.
-- [x] Каждая правка трекаемого `.md` закрыта `doc import` в том же коммите;
-      финальный `doc drift --all` — 100% in_sync (126/126).
+- [x] SYM-005/006: statuses in the DB match the code (finding_tools.py and
+      migrations 0027/0028 in main ↔ task statuses) — reconciliation
+      2026-08-29, both done, gap `cod-doc ctx` → ADO-057.
+- [x] All sprint tasks went through `task_checkout` → `task_complete` with
+      `commit_sha`; the history has no "dangling" in-progress.
+- [x] Each edit of a tracked `.md` is closed by `doc import` in the same
+      commit; the final `doc drift --all` is 100% in_sync (126/126).
 - [x] `ruff check` + `ruff format --check` + `mypy cod_doc/` +
-      `pytest tests/ --timeout=120` — зелёные на последнем коммите спринта.
-- [x] Ratchet не вырос: `pyproject.toml [per-file-ignores]` — строк не
-      больше, чем на старте; новых `# noqa`/`# type: ignore` без
-      комментария-обоснования — ноль (grep-проверка по диффу спринта).
-- [x] Audit-отчёт `docs/system/audit/2026-09-05-sprint-h1-hardening.md` —
-      status active, в БД, со ссылками на все коммиты спринта.
+      `pytest tests/ --timeout=120` — green on the last commit of the sprint.
+- [x] The ratchet did not grow: `pyproject.toml [per-file-ignores]` — no more
+      lines than at the start; new `# noqa`/`# type: ignore` without a
+      justification comment — zero (grep check over the sprint diff).
+- [x] Audit report `docs/system/audit/2026-09-05-sprint-h1-hardening.md` —
+      status active, in the DB, with links to all sprint commits.

@@ -1,37 +1,37 @@
 # 08 — Status taxonomy: `in_review` ≠ `blocked`
 
-> Категория: 🟡 Адаптация · Риск: низкий · Зависимости: —
+> Category: 🟡 Adaptation · Risk: low · Dependencies: —
 
-## Контекст: как у paperclip
+## Context: like paperclip
 
-Полный набор: `backlog | todo | in_progress | in_review | done | blocked | cancelled`.
+Full set: `backlog | todo | in_progress | in_review | done | blocked | cancelled`.
 
-Скилл явно фиксирует семантику каждого:
+The skill explicitly fixes the semantics of each:
 
-| Статус        | Семантика                                                                                  |
+| Status        | Semantics                                                                                  |
 | ------------- | ------------------------------------------------------------------------------------------ |
-| `backlog`     | Парконуто, не сейчас. Не для активного heartbeat.                                          |
-| `todo`        | Готово к работе, не взято. Переход в `in_progress` **только** через `checkout`.            |
-| `in_progress` | Активно ведётся, есть owner с lock'ом.                                                     |
-| `in_review`   | **Здоровая waiting-path** — ждёт ревью/апрува/ответа. НЕ синоним done.                     |
-| `blocked`     | Не может двигаться, пока что-то не изменится. Обязательно `blockedByIssueIds` или owner.   |
-| `done`        | Закрыто.                                                                                   |
-| `cancelled`   | Отменено намеренно, не возобновится.                                                       |
+| `backlog`     | Parked, not now. Not for an active heartbeat.                                              |
+| `todo`        | Ready to work, not taken. Transition to `in_progress` **only** through `checkout`.         |
+| `in_progress` | Actively in progress, has an owner with a lock.                                            |
+| `in_review`   | **Healthy waiting-path** — waiting for review/approval/answer. NOT a synonym of done.     |
+| `blocked`     | Cannot move until something changes. Mandatory `blockedByIssueIds` or owner.              |
+| `done`        | Closed.                                                                                    |
+| `cancelled`   | Cancelled intentionally, will not resume.                                                   |
 
-Ключевой паттерн: `in_review` — это **explicit waiting posture**. Когда агент создаёт approval-request или ждёт человеческого решения, задача идёт в `in_review`, не в `blocked`.
+Key pattern: `in_review` is an **explicit waiting posture**. When the agent creates an approval-request or waits for a human decision, the task goes to `in_review`, not to `blocked`.
 
-`cancelled` blocker НЕ считается resolved — нужно явно убрать или заменить.
+A `cancelled` blocker does NOT count as resolved — it must be explicitly removed or replaced.
 
-## Текущее состояние cod-doc
+## Current state of cod-doc
 
-В [cod_doc/core/project.py](cod_doc/core/project.py) `TaskStatus` существует, но:
-- `in_review` (если есть) семантически смешан с `blocked`,
-- нет жёсткого правила «`todo → in_progress` только через checkout» (см. [06](06-atomic-checkout.md)),
-- FM-002/FM-003 эскалации (из памяти агента) не имеют выделенного статуса — обычно живут в комментариях или ad-hoc «отложил пока спрошу».
+In [cod_doc/core/project.py](cod_doc/core/project.py) `TaskStatus` exists, but:
+- `in_review` (if present) is semantically mixed with `blocked`,
+- there is no hard rule "`todo → in_progress` only through checkout" (see [06](06-atomic-checkout.md)),
+- FM-002/FM-003 escalations (from the agent's memory) have no dedicated status — they usually live in comments or ad-hoc "postponed while I ask".
 
-## Предложение
+## Proposal
 
-### 1. Зафиксировать набор статусов как канонический
+### 1. Fix the set of statuses as canonical
 
 ```python
 class TaskStatus(StrEnum):
@@ -44,77 +44,77 @@ class TaskStatus(StrEnum):
     CANCELLED = 'cancelled'
 ```
 
-Если в текущем коде части этих статусов не было — миграция с маппингом старых значений.
+If some of these statuses are missing in the current code — a migration with a mapping of old values.
 
-### 2. Жёсткие правила переходов
+### 2. Hard transition rules
 
-| From          | Допустимые To                                  | Условие                                |
-| ------------- | ---------------------------------------------- | -------------------------------------- |
-| `backlog`     | `todo`, `cancelled`                            | —                                      |
-| `todo`        | `in_progress`                                  | **только** через `task_checkout` (06)  |
-| `todo`        | `blocked`, `backlog`, `cancelled`              | прямой PATCH OK                        |
-| `in_progress` | `in_review`, `blocked`, `done`, `cancelled`    | требует валидный checkout              |
-| `in_review`   | `in_progress`, `done`, `cancelled`             | по resolve approval/ревью              |
-| `blocked`     | `todo`, `in_progress`, `cancelled`             | `todo` авто при resolve `blockedBy`    |
-| `done`        | `todo`, `in_progress`                          | reopen, требует подтверждение          |
-| `cancelled`   | `todo`                                         | reopen, явно                           |
+| From          | Allowed To                                      | Condition                                |
+| ------------- | ----------------------------------------------- | ---------------------------------------- |
+| `backlog`     | `todo`, `cancelled`                             | —                                        |
+| `todo`        | `in_progress`                                   | **only** through `task_checkout` (06)    |
+| `todo`        | `blocked`, `backlog`, `cancelled`               | direct PATCH OK                          |
+| `in_progress` | `in_review`, `blocked`, `done`, `cancelled`     | requires a valid checkout                |
+| `in_review`   | `in_progress`, `done`, `cancelled`               | on resolve approval/review               |
+| `blocked`     | `todo`, `in_progress`, `cancelled`              | `todo` auto on resolve `blockedBy`       |
+| `done`        | `todo`, `in_progress`                           | reopen, requires confirmation            |
+| `cancelled`   | `todo`                                          | reopen, explicitly                       |
 
-### 3. Привязка к существующим паттернам cod-doc
+### 3. Binding to existing cod-doc patterns
 
-Из памяти проекта:
-- **FM-002, FM-003 (структурная валидация → raise)** → задача переходит в `blocked` с `blockedByIssueIds=[<новая task на починку>]`.
-- **FM-004, FM-005 (advisory)** → задача остаётся в `in_progress`, добавляется comment в activity log.
-- **Approval-request** (см. [12](12-approvals.md)) → `in_review` с явным `pending_approval_id`.
+From project memory:
+- **FM-002, FM-003 (structural validation → raise)** → the task transitions to `blocked` with `blockedByIssueIds=[<new task for the fix>]`.
+- **FM-004, FM-005 (advisory)** → the task stays in `in_progress`, a comment is added to the activity log.
+- **Approval-request** (see [12](12-approvals.md)) → `in_review` with an explicit `pending_approval_id`.
 
-### 4. Auto-wake правила
+### 4. Auto-wake rules
 
-- При закрытии задачи (`status=done`) — все её `blockedBy`-зависимые автоматически проверяются: если все блокеры resolved → wake assignee dependent-задачи (см. [03](03-wake-payload.md)).
-- `cancelled` НЕ resolves blocker. UI и MCP-tool `task_set_blocker` warn'ят, если в blocker'ах есть cancelled задача.
+- On closing a task (`status=done`) — all its `blockedBy`-dependents are automatically checked: if all blockers resolved → wake the assignee of the dependent task (see [03](03-wake-payload.md)).
+- `cancelled` does NOT resolve a blocker. UI and the MCP-tool `task_set_blocker` warn if there is a cancelled task in the blockers.
 
 ### 5. UI
 
-- Колонки kanban: `backlog | todo | in_progress | in_review | done`. `blocked` — оверлей-бейдж (показывает блокеры), `cancelled` — отдельный фильтр.
-- Карточка `in_review` явно показывает «waiting for: <approval/user/review>».
+- Kanban columns: `backlog | todo | in_progress | in_review | done`. `blocked` — an overlay badge (shows blockers), `cancelled` — a separate filter.
+- The `in_review` card explicitly shows "waiting for: <approval/user/review>".
 
-## План внедрения
+## Implementation plan
 
-1. **Аудит текущего перечня TaskStatus.** Что уже есть, что добавить.
-2. **State-machine.** Чистая функция `validate_transition(from, to, context) -> Result`. Тесты на каждый переход.
-3. **Refactor MCP-тулов.** `task_update_status` использует state-machine.
-4. **Auto-wake hook.** При переходе в `done` или `cancelled` — событие, обработчик пробуждает зависимых.
-5. **UI.** Обновление kanban-колонок.
-6. **Документация.** Раздел в скилле `validation` (см. [01](01-skills-layer.md)).
+1. **Audit the current list of TaskStatus.** What is already there, what to add.
+2. **State-machine.** A pure function `validate_transition(from, to, context) -> Result`. Tests for each transition.
+3. **Refactor MCP-tools.** `task_update_status` uses the state-machine.
+4. **Auto-wake hook.** On transition to `done` or `cancelled` — an event, the handler wakes dependents.
+5. **UI.** Update kanban columns.
+6. **Documentation.** A section in the `validation` skill (see [01](01-skills-layer.md)).
 
-## Риски
+## Risks
 
-- **Backward compatibility.** Если какие-то задачи уже в "не из списка" статусах — миграция должна их явно смаппить. Скрипт миграции с предпросмотром.
-- **`in_review` overload.** Соблазн положить туда всё «не готово, но не блокировано». Решение: правило «у `in_review` всегда есть `pending_*` поле — approval, comment, doc-revision-pending».
+- **Backward compatibility.** If some tasks are already in "not from the list" statuses — the migration must explicitly map them. A migration script with a preview.
+- **`in_review` overload.** The temptation to put there everything "not ready, but not blocked". Solution: a rule "an `in_review` always has a `pending_*` field — approval, comment, doc-revision-pending".
 
-## Метрики успеха
+## Success metrics
 
-- 0 задач в `in_progress` без валидного checkout'а.
-- Каждая `blocked`-задача имеет либо `blockedByIssueIds`, либо `blocker_owner: <user>`.
-- Среднее время в `in_review` сокращено (видимость → быстрее реакция).
+- 0 tasks in `in_progress` without a valid checkout.
+- Every `blocked` task has either `blockedByIssueIds` or `blocker_owner: <user>`.
+- Average time in `in_review` reduced (visibility → faster reaction).
 
-## Связанные
+## Related
 
-- 06 (checkout) — определяет, как происходит `todo → in_progress`.
-- 12 (approvals) — типичный источник `in_review` статуса.
-- 09 (activity log) — переходы статусов — события первого класса.
+- 06 (checkout) — defines how `todo → in_progress` happens.
+- 12 (approvals) — the typical source of the `in_review` status.
+- 09 (activity log) — status transitions — first-class events.
 
-## Замечания (контекст cod-doc)
+## Notes (cod-doc context)
 
-- **Аудит существующего перечня — первая задача.** Прежде чем фиксировать набор, нужно посмотреть в [cod_doc/core/project.py](cod_doc/core/project.py): возможно `in_review` уже есть, возможно нет. От этого зависит объём миграции.
-- **`hypothesis` уже в dev-deps.** Идеально подходит для покрытия state-machine — генерируем (from, to) пары, проверяем закон «либо разрешён, либо отказ с причиной». Не упустить негативные кейсы.
-- **Migration с предпросмотром.** Скрипт миграции должен сначала показать, какие задачи изменят статус и в какой, и только при confirm применить. Отдельная команда `cod-doc migrate-statuses --dry-run`.
-- **`in_review` overload — реальный риск.** Соблазн положить туда «ну, не блокировано, но не активно». Правило «у `in_review` всегда есть `pending_*` поле» (approval_id / comment_id / doc_revision_id) — обязательная инвариант.
-- **Auto-wake при resolve блокеров.** Сейчас `task_clear_blocker` уже есть, но не пробуждает зависимых. Связать с [03](03-wake-payload.md): clear → emit event → собрать wake-context для зависимой задачи.
+- **Auditing the existing list — the first task.** Before fixing the set, look in [cod_doc/core/project.py](cod_doc/core/project.py): maybe `in_review` is already there, maybe not. The volume of migration depends on this.
+- **`hypothesis` is already in dev-deps.** Perfectly suited for covering the state-machine — we generate (from, to) pairs, check the law "either allowed, or refusal with a reason". Don't miss negative cases.
+- **Migration with preview.** The migration script must first show which tasks change status and to what, and only on confirm apply. A separate command `cod-doc migrate-statuses --dry-run`.
+- **`in_review` overload — a real risk.** The temptation to put there "well, not blocked, but not active". The rule "an `in_review` always has a `pending_*` field" (approval_id / comment_id / doc_revision_id) — a mandatory invariant.
+- **Auto-wake on blocker resolve.** `task_clear_blocker` already exists now, but does not wake dependents. Tie to [03](03-wake-payload.md): clear → emit event → assemble wake-context for the dependent task.
 
-## Открытые вопросы
+## Open questions
 
-- **Q1.** Что делать с задачами, чей текущий статус не из канонического списка (если такие найдены)? Маппинг по эвристике или ручной триаж?
-- **Q2.** `done → todo` reopen — требует чего: флага `force=True`, approval'а, или явного комментария в audit?
-- **Q3.** При `cancelled` — что с TaskDocuments ([05](05-issue-documents.md)): freeze (read-only), оставить editable, или soft-delete?
-- **Q4.** Колонка `cancelled` в kanban — отдельная колонка, фильтр «Show cancelled», или скрыто всегда?
-- **Q5.** `blocked` без `blockedByIssueIds` (только `blocker_owner: <user>`) — допустимо или ошибка валидации?
-- **Q6.** Тайм-аут на `in_review` — есть ли smart-default (например, 7 дней без resolve → wake оператору), или только через [12](12-approvals.md)?
+- **Q1.** What to do with tasks whose current status is not from the canonical list (if any are found)? Mapping by heuristic or manual triage?
+- **Q2.** `done → todo` reopen — what does it require: a `force=True` flag, an approval, or an explicit comment in audit?
+- **Q3.** On `cancelled` — what about TaskDocuments ([05](05-issue-documents.md)): freeze (read-only), leave editable, or soft-delete?
+- **Q4.** The `cancelled` column in kanban — a separate column, a "Show cancelled" filter, or always hidden?
+- **Q5.** `blocked` without `blockedByIssueIds` (only `blocker_owner: <user>`) — allowed or a validation error?
+- **Q6.** Timeout on `in_review` — is there a smart-default (e.g. 7 days without resolve → wake the operator), or only through [12](12-approvals.md)?

@@ -1,29 +1,29 @@
 # 03 — Wake-payload pattern
 
-> Категория: 🎯 Прямое · Риск: низкий · Зависимости: 02
+> Category: 🎯 Direct · Risk: low · Dependencies: 02
 
-## Контекст: как у paperclip
+## Context: like paperclip
 
-При запуске агента через heartbeat в среду инжектятся переменные:
+When the agent is launched via heartbeat, the environment gets injected variables:
 - `PAPERCLIP_TASK_ID`, `PAPERCLIP_WAKE_REASON`, `PAPERCLIP_WAKE_COMMENT_ID`, `PAPERCLIP_APPROVAL_ID`, `PAPERCLIP_APPROVAL_STATUS`, `PAPERCLIP_LINKED_ISSUE_IDS`.
-- Самое важное: `PAPERCLIP_WAKE_PAYLOAD_JSON` — готовый компактный JSON с issue summary + новыми комментариями + причиной wake.
+- The most important: `PAPERCLIP_WAKE_PAYLOAD_JSON` — a ready compact JSON with issue summary + new comments + the wake reason.
 
-Скилл прямо требует:
+The skill directly requires:
 > *"Use it first. For comment wakes, treat that batch as the highest-priority new context in the heartbeat: in your first task update or response, acknowledge the latest comment and say how it changes your next action before broad repo exploration."*
 
-Эффект: агент **не делает** «сначала прочитаю всё, потом подумаю». Он сразу видит причину, контекст и может действовать.
+Effect: the agent **does not** "first read everything, then think". It immediately sees the reason, the context, and can act.
 
-Есть и **scoped-wake fast path:** если wake указывает на конкретную задачу, агент пропускает шаги «identity / inbox / pick work» и идёт сразу на checkout.
+There is also a **scoped-wake fast path:** if the wake points to a specific task, the agent skips the "identity / inbox / pick work" steps and goes straight to checkout.
 
-## Текущее состояние cod-doc
+## Current state of cod-doc
 
-- В [cod_doc/agent/orchestrator.py](cod_doc/agent/orchestrator.py) запуск агента выглядит как «получи проект, читай очередь». Нет различия «холодный старт vs возобновление по конкретному триггеру».
-- Системный промпт диктует: «1. Прочитай MASTER.md (L0)» — агент рефлекторно делает это всегда, даже когда поднят на конкретный таск.
-- `run_agent_once` в MCP принимает контекст, но не использует его как «scoped wake».
+- In [cod_doc/agent/orchestrator.py](cod_doc/agent/orchestrator.py) launching the agent looks like "get the project, read the queue". There is no distinction "cold start vs resumption by a specific trigger".
+- The system prompt dictates: "1. Read MASTER.md (L0)" — the agent reflexively does this always, even when raised for a specific task.
+- `run_agent_once` in MCP accepts context, but does not use it as "scoped wake".
 
-## Предложение
+## Proposal
 
-Ввести понятие **WakeContext** в [cod_doc/agent/](cod_doc/agent/), который собирается **до** первого LLM-вызова и инжектится в систему как первое сообщение «WAKE PAYLOAD: ...».
+Introduce the notion of **WakeContext** in [cod_doc/agent/](cod_doc/agent/), which is assembled **before** the first LLM call and injected into the system as the first message "WAKE PAYLOAD: ...".
 
 ```python
 @dataclass
@@ -32,17 +32,17 @@ class WakeContext:
     task_id: str | None
     triggering_doc_ref: str | None
     triggering_revision_id: str | None
-    payload: dict  # результат task_heartbeat_context (см. 02) если есть task_id
-    skills_to_preload: list[str]  # из триггер-матчера
+    payload: dict  # result of task_heartbeat_context (see 02) if there is a task_id
+    skills_to_preload: list[str]  # from the trigger matcher
 ```
 
-**Сборка:**
-- Точка входа в `run_agent_once` / daemon принимает `WakeContext`.
-- Если `task_id` задан → сразу вызвать `task_heartbeat_context` и положить в `payload`.
-- Если `triggering_doc_ref` (например, drift-проверка нашла STALE) → положить срез по доку + список зависимых задач.
+**Assembly:**
+- The entry point in `run_agent_once` / daemon accepts `WakeContext`.
+- If `task_id` is set → immediately call `task_heartbeat_context` and put it in `payload`.
+- If `triggering_doc_ref` (e.g. drift check found STALE) → put a slice over the doc + list of dependent tasks.
 
-**Инжекция в LLM:**
-- Первое сообщение в conversation — структурированный системный месседж:
+**Injection into LLM:**
+- The first message in the conversation — a structured system message:
   ```
   WAKE PAYLOAD
   reason: doc_drift
@@ -51,47 +51,47 @@ class WakeContext:
 
   Acknowledge this in your first action.
   ```
-- Орестратор-скилл (см. [01](01-skills-layer.md)) обязывает агента подтвердить wake-context в первом self_check.
+- The orchestrator skill (see [01](01-skills-layer.md)) obliges the agent to acknowledge the wake-context in the first self_check.
 
 **Scoped fast path:**
-- Если `reason in {task_assigned, approval_resolved, doc_drift}` и `payload` содержит достаточно данных — скилл-инструкция говорит «не вызывай `get_master`, не сканируй очередь, сразу выполняй».
+- If `reason in {task_assigned, approval_resolved, doc_drift}` and `payload` contains enough data — the skill instruction says "do not call `get_master`, do not scan the queue, act immediately".
 
-## План внедрения
+## Implementation plan
 
-1. **Модель `WakeContext`** + `WakeReason` enum.
-2. **Сборщик** `build_wake_context(task_id?, doc_ref?, ...) -> WakeContext` — переиспользует [02](02-heartbeat-context.md).
-3. **Адаптация `Orchestrator.run`** — принимает `WakeContext`, инжектит в conversation как первое user-message блоком (или поверх system).
-4. **Обновление `run_agent_once` MCP-tool** — принимает явные триггер-параметры.
-5. **Обновление daemon** ([cod_doc/services/](cod_doc/services/)) — при пробуждении из drift/cron/UI собирает корректный `WakeContext`.
-6. **Скилл-правило** в `orchestrator/SKILL.md`: «если есть WAKE PAYLOAD — действуй по нему, MASTER.md не читать».
+1. **`WakeContext` model** + `WakeReason` enum.
+2. **Assembler** `build_wake_context(task_id?, doc_ref?, ...) -> WakeContext` — reuses [02](02-heartbeat-context.md).
+3. **Adapt `Orchestrator.run`** — accepts `WakeContext`, injects it into the conversation as the first user-message block (or on top of system).
+4. **Update `run_agent_once` MCP-tool** — accepts explicit trigger parameters.
+5. **Update daemon** ([cod_doc/services/](cod_doc/services/)) — on wake from drift/cron/UI assembles the correct `WakeContext`.
+6. **Skill rule** in `orchestrator/SKILL.md`: "if there is a WAKE PAYLOAD — act on it, do not read MASTER.md".
 
-## Риски
+## Risks
 
-- **Stale payload.** Если daemon собрал payload минуту назад, а состояние изменилось — у агента устаревшая картина. Решение: payload включает `assembled_at` и `since_revision_id`; агент при подозрении делает `task_heartbeat_context(since_revision_id=...)` для дельты.
-- **Соблазн положить в payload «всё».** Решение: жёсткий лимит размера (например, 4KB), всё свыше — агент дёрнет сам.
+- **Stale payload.** If the daemon assembled the payload a minute ago and the state changed — the agent has a stale picture. Solution: payload includes `assembled_at` and `since_revision_id`; the agent on suspicion calls `task_heartbeat_context(since_revision_id=...)` for the delta.
+- **Temptation to put "everything" into the payload.** Solution: a hard size limit (e.g. 4KB), everything above — the agent fetches itself.
 
-## Метрики успеха
+## Success metrics
 
-- Для wake'ов с явным triggering source: 0 вызовов `get_master` в первом round-trip.
-- Время до первого продуктивного действия (write/update) сокращено vs cold-start.
+- For wakes with an explicit triggering source: 0 calls of `get_master` in the first round-trip.
+- Time to first productive action (write/update) reduced vs cold-start.
 
-## Связанные
+## Related
 
-- 02 (heartbeat-context) — payload это в основном результат heartbeat-context.
-- 04 (run-id) — wake-context присваивает `run_id`, который потом тегает все мутации.
-- 07 (routines) — routine при срабатывании создаёт wake с `reason=routine_<name>` и нужным payload.
+- 02 (heartbeat-context) — payload is mostly the result of heartbeat-context.
+- 04 (run-id) — wake-context assigns the `run_id`, which then tags all mutations.
+- 07 (routines) — a routine on trigger creates a wake with `reason=routine_<name>` and the needed payload.
 
-## Замечания (контекст cod-doc)
+## Notes (cod-doc context)
 
-- **Daemon уже триггерится по drift.** После COD-070..077 в [cod_doc/services/](cod_doc/services/) есть пробуждение по drift'у/UI-событиям, но без структурированного wake-context'а — каждый источник лепит свой набор аргументов. Единый `build_wake_context()` устраняет хаос.
-- **Рефлекторное чтение MASTER.md.** Системный промпт сейчас прямо требует «1. Read MASTER.md (L0)» — это правильно для cold-start, но дорого для wake'а на конкретный таск. Скилл-инструкция должна явно различать два режима.
-- **Race payload vs реальное состояние.** Между сборкой payload и стартом агента возможны внешние мутации. `assembled_at` + `since_revision_id` дают агенту способ проверить актуальность одним дешёвым вызовом, но это надо явно прописать в скилле, иначе агент будет доверять stale-payload'у.
-- **Multiple reasons.** Если за 5 секунд произошли drift + approval_resolved + comment — собирать один wake с массивом reasons или N отдельных? Реальный сценарий для single-user — редкий, но семантика должна быть зафиксирована.
+- **Daemon already triggers on drift.** After COD-070..077 in [cod_doc/services/](cod_doc/services/) there is wake on drift/UI events, but without a structured wake-context — each source patches its own set of arguments. A unified `build_wake_context()` eliminates the chaos.
+- **Reflexive reading of MASTER.md.** The system prompt now directly requires "1. Read MASTER.md (L0)" — this is correct for cold-start, but expensive for a wake on a specific task. The skill instruction must explicitly distinguish the two modes.
+- **Race between payload and real state.** Between payload assembly and agent start, external mutations are possible. `assembled_at` + `since_revision_id` give the agent a way to check freshness with one cheap call, but this must be explicitly written in the skill, otherwise the agent will trust the stale-payload.
+- **Multiple reasons.** If within 5 seconds drift + approval_resolved + comment happened — do we assemble one wake with an array of reasons or N separate ones? A real scenario for single-user is rare, but the semantics must be fixed.
 
-## Открытые вопросы
+## Open questions
 
-- **Q1.** Транспорт WakeContext — env vars (как paperclip), CLI argv, stdin-JSON, или отдельный MCP-вызов с `wake_id`? Влияет на как daemon запускает агента.
-- **Q2.** Что делать, если payload собрался, но агент не стартанул (краш, kill)? Записать `run.aborted` событие или wake-context просто потерян?
-- **Q3.** Логирование самого wake'а в activity log ([09](09-activity-log.md)) — даже если run не запустился? `wake.scheduled` / `wake.fired` / `wake.aborted`?
-- **Q4.** Дебаунс — если за 1 секунду пришло 3 одинаковых wake'а (дрожание watcher'а), что делать?
-- **Q5.** Может ли пользователь вручную «пересобрать» payload и перезапустить run (для отладки), не теряя историю?
+- **Q1.** WakeContext transport — env vars (like paperclip), CLI argv, stdin-JSON, or a separate MCP call with `wake_id`? Affects how the daemon launches the agent.
+- **Q2.** What to do if the payload was assembled but the agent did not start (crash, kill)? Record a `run.aborted` event or is the wake-context simply lost?
+- **Q3.** Logging the wake itself in the activity log ([09](09-activity-log.md)) — even if the run did not start? `wake.scheduled` / `wake.fired` / `wake.aborted`?
+- **Q4.** Debounce — if 3 identical wakes arrive within 1 second (watcher jitter), what to do?
+- **Q5.** Can the user manually "reassemble" the payload and restart the run (for debugging) without losing history?

@@ -1,148 +1,162 @@
 ---
 name: project-onboarding
 description: |
-  Как завести существующий репозиторий под COD-DOC: register → init →
-  import docs → plan → первая задача. Порядок шагов, что импортировать, а
-  что нет, как не сломать чужой markdown, критерии «проект заведён».
-  Триггеры: onboard, onboarding, завести проект, подключить проект,
-  новый проект, project add, project init, import docs, bootstrap,
-  adopt, adoption, register project, начать использовать.
+  How to onboard an existing repository under COD-DOC: register → init →
+  import docs → plan → first task. Step order, what to import and what
+  not, how not to break someone else's markdown, "project onboarded"
+  criteria. Triggers: onboard, onboarding, project add, project init,
+  import docs, bootstrap, adopt, adoption, register project, start using.
 ---
 
 # Skill — Project onboarding
 
-## Когда подгружается
+## When it loads
 
-Задачи, в которых **существующий репозиторий** (не cod-doc) заводится под
-COD-DOC. Триггер-keywords: `onboard`, `project add`, `project init`,
-`import docs`, `bootstrap`, «завести проект», «подключить проект»,
-«начать использовать».
+Tasks where an **existing repository** (not cod-doc) is onboarded under
+COD-DOC. Trigger keywords: `onboard`, `project add`, `project init`,
+`import docs`, `bootstrap`, "start using".
 
-Не для создания документации с нуля — это [`docs/cod-doc-guide.md`](../../../docs/cod-doc-guide.md).
+Not for creating documentation from scratch — that is
+[`docs/cod-doc-guide.md`](../../../docs/cod-doc-guide.md).
 
-## Инвариант, который нельзя нарушать
+## Invariant you must not break
 
-**Импорт не переписывает markdown пользователя.** `import docs` только
-читает файлы и заводит `Document`-записи; исходники остаются нетронутыми
-до первого явного `doc export`. Пока пользователь не попросил экспорт —
-БД догоняет файлы, а не наоборот.
+**Import does not rewrite the user's markdown.** `import docs` only
+reads files and creates `Document` records; the sources stay untouched
+until the first explicit `doc export`. Until the user asks for an
+export — the DB catches up to the files, not the other way around.
 
-Отсюда правило: **onboarding всегда начинается с `--dry-run`.**
+Hence the rule: **onboarding always starts with `--dry-run`.**
 
-## Канонический порядок
+## Canonical order
 
 ```bash
-# 1. Глобальный реестр ~/.cod-doc/config.yaml: путь + имя (slug из --name).
-#    Шаг ОБЯЗАТЕЛЕН (ADO-029): без него CLI резолвит проект только из cwd —
-#    cron/routines и любой запуск вне каталога репозитория упадут с
-#    «Project not found» (живой случай: первый cron-тик ADO-024 на пилоте).
+# 1. Global registry ~/.cod-doc/config.yaml: path + name (slug from --name).
+#    Step is MANDATORY (ADO-029): without it the CLI resolves the project
+#    only from cwd — cron/routines and any run outside the repository
+#    directory will fail with "Project not found" (live case: first cron
+#    tick ADO-024 on the pilot).
 cod-doc project add /path/to/repo --name my-app
 
-# 2. Локальное состояние: .cod-doc/state.db + миграции
+# 2. Local state: .cod-doc/state.db + migrations
 cod-doc project init my-app
 
-# 3. Разведка: что вообще попадёт в БД (--dry-run печатает итоговый список)
+# 3. Reconnaissance: what will actually land in the DB (--dry-run prints the final list)
 cod-doc import docs my-app --dry-run
 
-# 3b. Увидел мусор — отсеки и посмотри снова, до записи в БД
+# 3b. Saw garbage — cut it out and look again, before writing to the DB
 cod-doc import docs my-app --exclude 'experiments/stand*' --exclude '*/_archive' --dry-run
 
-# 4. Импорт (по умолчанию cap 1000 файлов) — с теми же --exclude
+# 4. Import (default cap 1000 files) — with the same --exclude
 cod-doc import docs my-app --exclude 'experiments/stand*' --exclude '*/_archive'
 
-# 5. Индекс кода: repo_file / repo_symbol / imports
+# 5. Code index: repo_file / repo_symbol / imports
 cod-doc reindex files -p my-app
 
-# 6. Проверка: drift должен быть 0, frontmatter-находки — advisory
+# 6. Verification: drift must be 0, frontmatter findings — advisory
 cod-doc doc drift -p my-app --all
 cod-doc audit -p my-app
 ```
 
-`import all` прогоняет пайплайны подряд — годится, когда репозиторий уже
-разведан `--dry-run`, но на первом заходе предпочитай пошаговый вариант.
+`import all` runs the pipelines in sequence — fine when the repository
+is already reconnoitered with `--dry-run`, but on the first pass prefer
+the step-by-step variant.
 
-## Что импортировать, а что нет
+## What to import and what not
 
-Расширения: `.md`, `.rst`, `.txt`, `.markdown`. Walker **сам** пропускает
-дотфайлы, любые дот-директории и шумные сборочные каталоги (`_SKIP_DIRS`:
-`.git`, `.venv`, `venv`, `node_modules`, `__pycache__`, `dist`, `build`,
-`.pytest_cache`, `.mypy_cache`, `.cod-doc`, `.chroma`, `cod_doc.egg-info`).
-Скип дот-директорий (`.cursor`, `.claude`, …) не молчаливый: `--dry-run`
-печатает их списком — «Скрытые каталоги пропущены (N): …». Длинный список
-кандидатов dry-run режет до 50 строк; полный список — `--limit 0`.
+Extensions: `.md`, `.rst`, `.txt`, `.markdown`. The walker **itself**
+skips dotfiles, any dot-directories and noisy build directories
+(`_SKIP_DIRS`: `.git`, `.venv`, `venv`, `node_modules`, `__pycache__`,
+`dist`, `build`, `.pytest_cache`, `.mypy_cache`, `.cod-doc`, `.chroma`,
+`cod_doc.egg-info`).
 
-Всё остальное решает `--exclude` (SYM-004) — повторяемый glob-паттерн по пути
-**относительно корня репозитория**:
+Skipping dot-directories (`.cursor`, `.claude`, …) is not silent:
+`--dry-run` prints them as a list — "Hidden directories skipped (N): …".
+A long candidate list dry-run truncates to 50 lines; the full list —
+`--limit 0`.
 
-- `--exclude 'experiments/stand*'` — стенды и всё их содержимое;
-- паттерн сверяется и с путём файла, и с каждым его каталогом-предком, поэтому
-  каталожный паттерн вычищает поддерево целиком (`--exclude 'docs/_archive'`);
-- это **не** gitignore: `*` перекрывает `/`, так что `docs/*` заматчит и
-  `docs/a/b/c.md`. Проверяй паттерн через `--dry-run`, а не на глаз.
+Everything else is decided by `--exclude` (SYM-004) — a repeatable glob
+pattern by path **relative to the repository root**:
 
-Решение всё ещё за тобой — флаг только исполняет его:
+- `--exclude 'experiments/stand*'` — stands and all their contents;
+- the pattern is matched against both the file path and each of its
+  ancestor directories, so a directory pattern cleans the whole subtree
+  (`--exclude 'docs/_archive'`);
+- this is **not** gitignore: `*` crosses `/`, so `docs/*` will match
+  `docs/a/b/c.md`. Verify the pattern via `--dry-run`, not by eye.
 
-| Категория | Решение |
+The decision is still yours — the flag only executes it:
+
+| Category | Decision |
 |---|---|
-| `docs/`, `README.md`, ADR, спеки, планы, `CHANGELOG.md` | импортировать |
-| `_archive/`, `Архив/`, `old/` | **решить явно**: архив раздувает FTS и тянет мёртвый контекст в `context_get` |
-| Сгенерированные API-доки (OpenAPI-дампы, autodoc) | не импортировать: проекция кода, не источник |
-| Вендорные / чужие лицензионные тексты, submodule-доки | не импортировать |
-| `.txt` с данными (логи, дампы, фикстуры) | не импортировать: расширение совпадает, смысл — нет |
+| `docs/`, `README.md`, ADR, specs, plans, `CHANGELOG.md` | import |
+| `_archive/`, `Archive/`, `old/` | **decide explicitly**: an archive inflates FTS and pulls dead context into `context_get` |
+| Generated API docs (OpenAPI dumps, autodoc) | do not import: a projection of code, not a source |
+| Vendor / third-party license texts, submodule docs | do not import |
+| `.txt` with data (logs, dumps, fixtures) | do not import: the extension matches, the meaning does not |
 
-Если `--dry-run` показывает такое — добавь `--exclude` и прогони `--dry-run`
-ещё раз, пока список не станет чистым. Импортировать «а потом почистим» —
-anti-pattern: удаление документа после импорта тянет за собой ревизии и
-ссылки.
+If `--dry-run` shows such a thing — add `--exclude` and run `--dry-run`
+again until the list is clean. Importing "and cleaning up later" is an
+anti-pattern: deleting a document after import pulls revisions and
+links along.
 
-## Первый план
+## First plan
 
-Импорт даёт документы, но не даёт **трекинг**. Проект считается заведённым
-только когда есть план и в нём есть задачи:
+Import gives documents, but does not give **tracking**. A project is
+considered onboarded only when there is a plan and it has tasks:
 
-1. `plan_create(scope=...)` — scope в kebab-case, по имени фронта работ
-   (`web-mvp`, `stabilization-2026-07`), не по имени репозитория.
-2. Секции плана — фазы, а не модули (`plan_section_create`).
-3. Первые задачи — через `task_create`; формат и обязательные поля см.
-   skill `task-standard`, декомпозицию — skill `plan-to-tasks`.
+1. `plan_create(scope=...)` — scope in kebab-case, by the name of the
+   work front (`web-mvp`, `stabilization-2026-07`), not by the repository
+   name.
+2. Plan sections — phases, not modules (`plan_section_create`).
+3. First tasks — via `task_create`; format and mandatory fields see
+   skill `task-standard`, decomposition — skill `plan-to-tasks`.
 
-Если у проекта уже есть markdown-план с задачами — разбирай его вручную в
-`task_create`-вызовы; автоматического парсера чужих форматов планов нет.
+If the project already has a markdown-plan with tasks — parse it
+manually into `task_create` calls; there is no automatic parser for
+someone else's plan formats.
 
-## Критерии «проект заведён»
+## "Project onboarded" criteria
 
-Все пять — обязательны:
+All five — mandatory:
 
-- [ ] `cod-doc project list` показывает проект со статусом, отличным от `unknown`.
-- [ ] `cod-doc doc drift -p <slug> --all` → `missing` == 0 и `edited_in_place` == 0.
-      (`stale_export` при режиме «файлы — источник» **ожидаем** и не является дефектом.)
-- [ ] `cod-doc audit -p <slug>` → 0 error-severity находок (warning допустимы).
-- [ ] Есть ≥ 1 план с ≥ 1 задачей; `cod-doc plan ready -p <slug>` возвращает непустой список.
-- [ ] `cod-doc search "<любой доменный термин>" -p <slug>` находит документы (FTS-индекс живой).
+- [ ] `cod-doc project list` shows the project with a status other than
+  `unknown`.
+- [ ] `cod-doc doc drift -p <slug> --all` → `missing` == 0 and
+  `edited_in_place` == 0. (`stale_export` in "files are the source" mode
+  is **expected** and is not a defect.)
+- [ ] `cod-doc audit -p <slug>` → 0 error-severity findings (warnings
+  are allowed).
+- [ ] There is ≥ 1 plan with ≥ 1 task; `cod-doc plan ready -p <slug>`
+  returns a non-empty list.
+- [ ] `cod-doc search "<any domain term>" -p <slug>` finds documents
+  (the FTS index is alive).
 
-Пока хоть один пункт не выполнен — проект заведён наполовину, и агентский
-цикл (`agent_pick`) на нём будет отдавать неполный контекст.
+Until at least one item is not done — the project is half-onboarded,
+and the agent cycle (`agent_pick`) on it will give incomplete context.
 
 ## Anti-patterns
 
-- **Импорт без `--dry-run`.** Утаскивает архивы и вендорные доки; чистить
-  потом дороже, чем посмотреть заранее.
-- **`doc export` на чужом репозитории без необходимости.** ADO-010 закрыт:
-  round-trip byte-identical, но guard всё равно откажется писать поверх
-  правки руками или в чужой checkout без `--force-write`. Режим по
-  умолчанию для пилотов — «файлы — источник, БД — индекс»: `import docs`
-  при заведении, `doc import <file>` после ручных правок; экспорт — только
-  когда БД сознательно становится источником.
-- **Один общий план на весь репозиторий.** Планы — по фронтам работ;
-  «сделать всё» не декомпозируется и не даёт `plan ready`.
-- **Онбординг ради онбординга.** Если в репозитории 2 markdown-файла и нет
-  задач — cod-doc не даст ничего сверх `grep`. Заводить стоит проекты, где
-  есть либо ≥ 10 документов, либо живой бэклог.
+- **Import without `--dry-run`.** Drags archives and vendor docs;
+  cleaning up later is more expensive than looking ahead.
+- **`doc export` on someone else's repository without need.** ADO-010
+  is closed: round-trip byte-identical, but the guard will still refuse
+  to write over a hand edit or into someone else's checkout without
+  `--force-write`. The default mode for pilots is "files are the source,
+  the DB is the index": `import docs` on onboarding, `doc import <file>`
+  after manual edits; export — only when the DB consciously becomes the
+  source.
+- **One common plan for the whole repository.** Plans are per work
+  front; "do everything" does not decompose and gives no `plan ready`.
+- **Onboarding for the sake of onboarding.** If the repository has 2
+  markdown files and no tasks — cod-doc gives nothing beyond `grep`.
+  Worth onboarding projects that have either ≥ 10 documents or a live
+  backlog.
 
-## Связанное
+## Related
 
-- [capabilities/project-bootstrap.md](../../../docs/system/capabilities/project-bootstrap.md) — целевое состояние capability.
-- [docs/adoption-playbook.md](../../../docs/adoption-playbook.md) — сценарии по типам проектов.
+- [capabilities/project-bootstrap.md](../../../docs/system/capabilities/project-bootstrap.md) — the target state of the capability.
+- [docs/adoption-playbook.md](../../../docs/adoption-playbook.md) — scenarios by project type.
 - [docs/HANDBOOK.md §4](../../../docs/HANDBOOK.md) — Quick Start.
-- skill `task-standard`, skill `plan-to-tasks` — что делать после импорта.
-- skill `ground-truth-reconcile` — регулярная сверка после онбординга.
+- skill `task-standard`, skill `plan-to-tasks` — what to do after import.
+- skill `ground-truth-reconcile` — regular reconciliation after onboarding.

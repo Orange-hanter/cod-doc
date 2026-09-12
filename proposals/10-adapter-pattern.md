@@ -1,22 +1,22 @@
-# 10 — Adapter pattern для LLM-исполнителей
+# 10 — Adapter pattern for LLM executors
 
-> Категория: 🔵 Архитектура · Риск: высокий · Зависимости: 01
+> Category: 🔵 Architecture · Risk: high · Dependencies: 01
 
-## Контекст: как у paperclip
+## Context: like paperclip
 
-В [`packages/adapters/`](https://github.com/paperclipai/paperclip/tree/master/packages/adapters):
+In [`packages/adapters/`](https://github.com/paperclipai/paperclip/tree/master/packages/adapters):
 - `claude-local`, `codex-local`, `cursor-local`, `gemini-local`, `acpx-local`, `pi-local`, `opencode-local`, `openclaw-gateway`.
 
-Все регистрируются в **mutable registry** (см. [`adapter-plugin.md`](https://github.com/paperclipai/paperclip/blob/master/adapter-plugin.md)):
+All register in a **mutable registry** (see [`adapter-plugin.md`](https://github.com/paperclipai/paperclip/blob/master/adapter-plugin.md)):
 ```ts
 registerServerAdapter(adapter)
 unregisterServerAdapter(type)
 requireServerAdapter(type)
 ```
 
-Внешние адаптеры могут грузиться через JSON-конфиг (`~/.paperclip/adapter-plugins.json`). Принцип: ядро не должно содержать hardcoded import'ов исполнителей.
+External adapters can be loaded via JSON-config (`~/.paperclip/adapter-plugins.json`). Principle: the core must not contain hardcoded imports of executors.
 
-## Текущее состояние cod-doc
+## Current state of cod-doc
 
 [cod_doc/agent/orchestrator.py:70-77](cod_doc/agent/orchestrator.py#L70-L77):
 ```python
@@ -27,16 +27,16 @@ self.client = AsyncOpenAI(
 )
 ```
 
-— OpenAI-совместимый клиент захардкожен в конструкторе. Чтобы:
-- использовать Claude напрямую (anthropic SDK с tool-use)
-- запустить локальную модель (llama.cpp, ollama)
-- A/B-тестировать модели
+— an OpenAI-compatible client is hardcoded in the constructor. To:
+- use Claude directly (anthropic SDK with tool-use)
+- run a local model (llama.cpp, ollama)
+- A/B-test models
 
-— нужно править `Orchestrator`. Это блокирует эксперименты.
+— you need to edit `Orchestrator`. This blocks experiments.
 
-## Предложение
+## Proposal
 
-### 1. Интерфейс `LLMAdapter`
+### 1. `LLMAdapter` interface
 
 ```python
 class LLMAdapter(Protocol):
@@ -74,18 +74,18 @@ def get_adapter(name: str, config: dict) -> LLMAdapter: ...
 def list_adapters() -> list[str]: ...
 ```
 
-### 3. Встроенные адаптеры
+### 3. Built-in adapters
 
-| Адаптер           | Backend                          | Когда                            |
-| ----------------- | -------------------------------- | -------------------------------- |
-| `openai-compat`   | OpenAI SDK / OpenRouter / vLLM   | default (текущее поведение)      |
-| `anthropic`       | anthropic SDK                    | для Claude tool-use native       |
-| `ollama`          | ollama HTTP                      | локальные модели                 |
-| `mock`            | детерминированный фейк           | тесты                            |
+| Adapter          | Backend                          | When                            |
+| ---------------- | -------------------------------- | -------------------------------- |
+| `openai-compat`  | OpenAI SDK / OpenRouter / vLLM   | default (current behavior)      |
+| `anthropic`      | anthropic SDK                    | for Claude tool-use native       |
+| `ollama`         | ollama HTTP                      | local models                     |
+| `mock`           | deterministic fake               | tests                            |
 
-### 4. Конфигурация
+### 4. Configuration
 
-В [cod_doc/config.py](cod_doc/config.py):
+In [cod_doc/config.py](cod_doc/config.py):
 ```toml
 [llm]
 adapter = "anthropic"
@@ -95,66 +95,66 @@ api_key = "..."
 model = "claude-opus-4-7"
 ```
 
-Селектор адаптера — единственное, что меняется при смене бэкенда.
+The adapter selector — the only thing that changes when switching the backend.
 
 ### 5. Tool-use mapping
 
-Самая сложная часть — разные SDK имеют разные форматы tool-use:
-- OpenAI: `tools=[{type:"function", function:{name, parameters}}]`, `tool_calls` в response.
+The hardest part — different SDKs have different tool-use formats:
+- OpenAI: `tools=[{type:"function", function:{name, parameters}}]`, `tool_calls` in response.
 - Anthropic: `tools=[{name, description, input_schema}]`, `content=[{type:"tool_use", ...}]`.
 
-Решение: **внутренний нейтральный формат** в [tool_defs.py](cod_doc/agent/tool_defs.py), каждый адаптер маппит в свой SDK-специфичный.
+Solution: a **neutral internal format** in [tool_defs.py](cod_doc/agent/tool_defs.py), each adapter maps to its SDK-specific one.
 
-### 6. Внешние адаптеры (Phase 2)
+### 6. External adapters (Phase 2)
 
-Аналог `~/.paperclip/adapter-plugins.json` — `~/.cod-doc/llm-adapters.json` со ссылками на python-пакеты, реализующие протокол. Не делать на старте.
+Analog of `~/.paperclip/adapter-plugins.json` — `~/.cod-doc/llm-adapters.json` with references to python packages implementing the protocol. Do not do at start.
 
-## План внедрения
+## Implementation plan
 
-1. **Определить протокол `LLMAdapter`** + типы (`Message`, `ToolDef`, `ChatResponse`, `StreamEvent`).
-2. **Извлечь existing OpenAI-логику** в `cod_doc/agent/adapters/openai_compat.py`. Оркестратор больше НЕ создаёт client напрямую.
-3. **Refactor `Orchestrator`** — принимает `adapter: LLMAdapter` через DI; всё взаимодействие через интерфейс.
-4. **Registry + конфиг.** Селектор по имени.
-5. **Реализация `anthropic`-адаптера.** Нативный tool-use.
-6. **Реализация `mock`-адаптера** — поднимает покрытие тестами оркестратора.
-7. **Документация.** Раздел в HANDBOOK: «как добавить адаптер».
+1. **Define the `LLMAdapter` protocol** + types (`Message`, `ToolDef`, `ChatResponse`, `StreamEvent`).
+2. **Extract existing OpenAI logic** into `cod_doc/agent/adapters/openai_compat.py`. The orchestrator no longer creates the client directly.
+3. **Refactor `Orchestrator`** — accepts `adapter: LLMAdapter` via DI; all interaction through the interface.
+4. **Registry + config.** Selector by name.
+5. **Implement the `anthropic` adapter.** Native tool-use.
+6. **Implement the `mock` adapter** — raises test coverage of the orchestrator.
+7. **Documentation.** A section in HANDBOOK: "how to add an adapter".
 
-## Риски
+## Risks
 
-- **Большой scope.** Самое тяжёлое из всех proposals. Начинать только когда есть реальная потребность сменить бэкенд (либо для тестов).
-- **Tool-use semantic drift.** SDK ведут себя чуть по-разному (например, Claude параллельные tool calls в одном response, OpenAI — sequential). Адаптер должен скрывать это, но возможны утечки абстракции.
-- **Cost-tracking.** Если модели стоят по-разному, единая метрика стоимости должна нормализоваться. Заменить heuristics на per-adapter `cost_estimate`.
+- **Big scope.** The heaviest of all proposals. Start only when there is a real need to switch the backend (or for tests).
+- **Tool-use semantic drift.** SDKs behave slightly differently (e.g. Claude parallel tool calls in one response, OpenAI — sequential). The adapter must hide this, but abstraction leaks are possible.
+- **Cost-tracking.** If models cost differently, a unified cost metric must normalize. Replace heuristics with per-adapter `cost_estimate`.
 
-## Метрики успеха
+## Success metrics
 
-- Смена LLM-бэкенда — изменение в config, ноль изменений в [orchestrator.py](cod_doc/agent/orchestrator.py).
-- Юнит-тесты оркестратора используют `mock`-адаптер, не делают сетевых вызовов.
-- Минимум 2 working backend'а (`openai-compat` + `anthropic`) на момент закрытия фазы.
+- Switching the LLM backend — a change in config, zero changes in [orchestrator.py](cod_doc/agent/orchestrator.py).
+- Unit tests of the orchestrator use the `mock` adapter, make no network calls.
+- At least 2 working backends (`openai-compat` + `anthropic`) at phase close.
 
-## Связанные
+## Related
 
-- 01 (skills) — скилл-загрузка не зависит от адаптера, общая на всех.
-- Все остальные proposals — нейтральны к выбору адаптера.
+- 01 (skills) — skill loading does not depend on the adapter, common to all.
+- All other proposals — neutral to the adapter choice.
 
-## Когда НЕ делать
+## When NOT to do
 
-- Пока единственный backend — OpenRouter с разными моделями (адаптер `openai-compat` это уже покрывает).
-- Пока нет ощутимой выгоды от Claude-native tool-use или локальной модели.
-- Это чисто архитектурный долг — берёмся, если ясен сценарий потребления.
+- While the only backend is OpenRouter with different models (the `openai-compat` adapter already covers this).
+- While there is no tangible benefit from Claude-native tool-use or a local model.
+- This is pure architectural debt — take it on if the consumption scenario is clear.
 
-## Замечания (контекст cod-doc)
+## Notes (cod-doc context)
 
-- **`mock` адаптер как side-task.** Полный registry — большой scope, но `mock` адаптер для тестов оркестратора можно вытащить отдельно: создать минимальный интерфейс под две реализации (real OpenAI-compat + mock). Это уже даёт детерминированные тесты [orchestrator.py](cod_doc/agent/orchestrator.py), не открывая всю абстракцию.
-- **Tool-use semantic drift — реальная боль.** OpenAI делает tool calls последовательно, Anthropic — параллельно в одном response. Это не «мелкая разница SDK», это семантика. Адаптер обязан скрывать, и это требует тестового покрытия по обоим бэкендам.
-- **Cost-tracking нормализация.** `claude-opus` и `gpt-4o` стоят разных денег за токен; единая метрика `cost_event` должна содержать абсолютное значение в одной валюте, а не «токены». Источник pricing — статический справочник в коде или внешний API?
-- **Когда НЕ делать — RFC сам говорит.** Пока единственный реальный сценарий — OpenRouter с разными моделями, текущий `openai-compat` это покрывает. Не браться, пока не появится явный запрос на Claude-native или локальную модель.
-- **Streaming.** Если в UI streaming-режим важен (показ промежуточного thinking), это нужно учесть в протоколе с самого начала, иначе придётся переделывать.
+- **`mock` adapter as a side-task.** A full registry is a big scope, but a `mock` adapter for orchestrator tests can be pulled out separately: create a minimal interface under two implementations (real OpenAI-compat + mock). This already gives deterministic tests of [orchestrator.py](cod_doc/agent/orchestrator.py) without opening the whole abstraction.
+- **Tool-use semantic drift — a real pain.** OpenAI does tool calls sequentially, Anthropic — in parallel in one response. This is not "a minor SDK difference", this is semantics. The adapter must hide it, and this requires test coverage on both backends.
+- **Cost-tracking normalization.** `claude-opus` and `gpt-4o` cost differently per token; a unified `cost_event` metric must contain an absolute value in one currency, not "tokens". Source of pricing — a static reference in code or an external API?
+- **When NOT to do — the RFC itself says.** While the only real scenario is OpenRouter with different models, the current `openai-compat` covers it. Do not take it on until there is an explicit request for Claude-native or a local model.
+- **Streaming.** If a streaming mode in UI is important (showing intermediate thinking), it must be accounted for in the protocol from the start, otherwise a rework will be needed.
 
-## Открытые вопросы
+## Open questions
 
-- **Q1.** Можно ли вытащить `mock`-адаптер отдельным PR без полного registry — как минимальная dependency-injection точка в `Orchestrator`?
-- **Q2.** Источник pricing-данных для `cost_estimate` — захардкожен в коде, отдельный JSON в репо, или внешний API (LiteLLM, OpenRouter)?
-- **Q3.** Streaming в UI — поддерживается сейчас? Если нет — закладывать в адаптер сразу или non-streaming MVP?
-- **Q4.** Конфиг секретов адаптеров — env vars, отдельный secret-store, или в `~/.cod-doc/credentials.toml`?
-- **Q5.** Внешние адаптеры через JSON-конфиг (Phase 2) — нужны ли вообще, или достаточно встроенных + `mock`?
-- **Q6.** Capability mismatch — что делать, если задача требует tool-use, а адаптер `capabilities.tool_use=False` (например, локальная модель без поддержки)? Авто-fallback на другой адаптер или ошибка?
+- **Q1.** Can the `mock` adapter be pulled out as a separate PR without the full registry — as a minimal dependency-injection point in `Orchestrator`?
+- **Q2.** Source of pricing data for `cost_estimate` — hardcoded in code, a separate JSON in the repo, or an external API (LiteLLM, OpenRouter)?
+- **Q3.** Streaming in UI — is it supported now? If not — lay it into the adapter at once or a non-streaming MVP?
+- **Q4.** Adapter secrets config — env vars, a separate secret-store, or in `~/.cod-doc/credentials.toml`?
+- **Q5.** External adapters via JSON-config (Phase 2) — are they needed at all, or are built-in + `mock` enough?
+- **Q6.** Capability mismatch — what to do if a task requires tool-use, but the adapter has `capabilities.tool_use=False` (e.g. a local model without support)? Auto-fallback to another adapter or an error?

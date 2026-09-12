@@ -17,8 +17,8 @@ related_docs:
 # Web Frontend — Mid-Section Checkpoint #1 (2026-05-02)
 
 > Cadence checkpoint after the first 5 commits of Section F (Hardening) +
-> follow-on into Section E. Triggered by the user's rule «каждые 3-6 коммита
-> — аудит». Goal: confirm the batch is healthy, log new surfaces, decide
+> follow-on into Section E. Triggered by the user's rule "every 3-6 commits
+> — audit". Goal: confirm the batch is healthy, log new surfaces, decide
 > what (if anything) must be addressed before continuing with the remaining
 > WEB-022 → WEB-006 → WEB-014 chain.
 >
@@ -169,6 +169,6 @@ a daily-friction issue (anchors don't work).
 
 ## 7. Changelog
 
-| Дата | Событие |
+| Date | Event |
 |---|---|
-| 2026-05-02 | Checkpoint после 5 коммитов batch-1 Section F+E (commits 10689ac → 517fc02). 11 / 16 находок baseline-аудита закрыты; 4 новых внутренних item (WEB-013b/022b/054 + bump WEB-053 → medium); 0 регрессий, suite 418 → 441. |
+| 2026-05-02 | Checkpoint after 5 commits of batch-1 Section F+E (commits 10689ac → 517fc02). 11 / 16 baseline-audit findings closed; 4 new internal items (WEB-013b/022b/054 + bump WEB-053 → medium); 0 regressions, suite 418 → 441. |

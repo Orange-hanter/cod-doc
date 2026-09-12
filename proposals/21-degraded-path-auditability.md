@@ -1,56 +1,56 @@
-# 21 — Degraded-Path Auditability + Error Audit Trail (гибрид)
+# 21 — Degraded-Path Auditability + Error Audit Trail (hybrid)
 
-> Категория: 🟡 Адаптация · Риск: средний · Зависимости: proposal 04 (run-id), proposal 09 (activity log), proposal 17 (Living Specification)
+> Category: 🟡 Adaptation · Risk: medium · Dependencies: proposal 04 (run-id), proposal 09 (activity log), proposal 17 (Living Specification)
 
-## Контекст: что показало сравнение двух ревью
+## Context: what two reviews showed
 
-В 2026-06-04 проведено **параллельное** ревью COD-DOC двумя независимыми моделями (`miniMax-m3` и `deepseek-v4-pro`). Обе нашли одну и ту же центральную проблему — **видимость degraded paths и ошибок в production**:
+On 2026-06-04 a **parallel** review of COD-DOC was conducted by two independent models (`miniMax-m3` and `deepseek-v4-pro`). Both found the same central problem — **visibility of degraded paths and errors in production**:
 
-- В коде **8 мест** с `# pragma: no cover` (degraded path / defensive guard).
-- Degraded paths **никогда не выполняются** в тестах, но критичны для production (event_bus deferred commit, run_context project resolution, websocket cleanup).
-- Service-level exceptions (`TaskNotFoundError`, `StatusTransitionError`, `TaskBlockedError`) **не пишутся** структурно — только HTTP 500 / MCP error response.
-- `activity_log` (proposal 09) пишет **успешные** события, но не ошибки.
+- In the code there are **8 places** with `# pragma: no cover` (degraded path / defensive guard).
+- Degraded paths **never execute** in tests, but are critical for production (event_bus deferred commit, run_context project resolution, websocket cleanup).
+- Service-level exceptions (`TaskNotFoundError`, `StatusTransitionError`, `TaskBlockedError`) are **not** written structurally — only HTTP 500 / MCP error response.
+- `activity_log` (proposal 09) writes **successful** events, but not errors.
 
-**Совпало в обоих отчётах:**
-- 5/5 top weaknesses (cycle-5 stubs, legacy YAML/DB дубли, pragma:no cover, skill matcher fragility, Config.load I/O).
-- 11/15 top observations включая: AGT-003..007 stubs, 5 legacy_*.py файлов (863 строки dead code), `task: Any` workaround в `agent_service.py:119`, `event_bus._subscribers` global state leak, `Config.load()` без кеша.
+**Matched in both reports:**
+- 5/5 top weaknesses (cycle-5 stubs, legacy YAML/DB duplicates, pragma:no cover, skill matcher fragility, Config.load I/O).
+- 11/15 top observations including: AGT-003..007 stubs, 5 legacy_*.py files (863 lines of dead code), `task: Any` workaround in `agent_service.py:119`, `event_bus._subscribers` global state leak, `Config.load()` without a cache.
 
-**Расхождение в подходе к RFC #21:**
+**Divergence in the approach to RFC #21:**
 
-| Подход | Pro | Mine | Компромисс |
+| Approach | Pro | Mine | Compromise |
 |---|---|---|---|
-| Storage для hard errors (TaskNotFound, StatusTransition) | DB-таблица `error_audit` | (не предлагал) | **DB-таблица** — для post-mortem |
-| Storage для soft failures (degraded paths, defensive guards) | (не предлагал) | In-memory ring buffer 100 | **Ring buffer** — дешёво, не раздувает БД |
-| Trigger | Декоратор / context manager | `@degraded_path("CODE")` | **Оба** |
-| Visibility | Web UI + MCP | WebSocket через activity event | **Оба** |
+| Storage for hard errors (TaskNotFound, StatusTransition) | DB-table `error_audit` | (did not propose) | **DB-table** — for post-mortem |
+| Storage for soft failures (degraded paths, defensive guards) | (did not propose) | In-memory ring buffer 100 | **Ring buffer** — cheap, does not bloat the DB |
+| Trigger | Decorator / context manager | `@degraded_path("CODE")` | **Both** |
+| Visibility | Web UI + MCP | WebSocket via activity event | **Both** |
 
-Этот RFC — **гибрид** двух подходов: разные storage tiers для разных классов ошибок.
+This RFC is a **hybrid** of two approaches: different storage tiers for different classes of errors.
 
-## Текущее состояние
+## Current state
 
-Найдено 8 мест с `pragma: no cover`:
+Found 8 places with `pragma: no cover`:
 
-| File:line | Code (новое) | Severity | Назначение |
+| File:line | Code (new) | Severity | Purpose |
 |---|---|---|---|
-| `event_bus.py:123` | `EVENT_FLUSH_FAILED` | warning | deferred event flush после commit |
-| `event_bus.py:132` | `EVENT_DROP_FAILED` | warning | deferred event drop после rollback |
-| `run_context.py:140` | `RUN_CONTEXT_DB_MISSING` | warning | orchestrator не нашёл БД проекта |
-| `run_context.py:179` | `RUN_START_DEGRADED` | warning | run_scope стартовал degraded |
-| `run_context.py:214` | `RUN_FINALIZE_DEGRADED` | warning | run_scope финишировал degraded |
+| `event_bus.py:123` | `EVENT_FLUSH_FAILED` | warning | deferred event flush after commit |
+| `event_bus.py:132` | `EVENT_DROP_FAILED` | warning | deferred event drop after rollback |
+| `run_context.py:140` | `RUN_CONTEXT_DB_MISSING` | warning | orchestrator did not find the project DB |
+| `run_context.py:179` | `RUN_START_DEGRADED` | warning | run_scope started degraded |
+| `run_context.py:214` | `RUN_FINALIZE_DEGRADED` | warning | run_scope finished degraded |
 | `websocket.py:48` | `WS_CLEANUP_FAILED` | warning | WS connection cleanup |
 | `routine_service.py:463` | `ROUTINE_DEFENSIVE_GUARD` | info | routine defensive guard |
 | `adapters/registry.py:93` | `PLUGIN_LOAD_FAILED` | info | best-effort plugin loading |
 
-**Существующая инфраструктура:**
+**Existing infrastructure:**
 - `cod_doc/services/activity_service.py` — `emit/list/get` (proposal 09).
-- `cod_doc/infra/models/traces.py` — `ToolTraceModel` (успешные tool calls).
-- `cod_doc/services/run_context.py` — `run_scope` с contextvar `run_id`.
+- `cod_doc/infra/models/traces.py` — `ToolTraceModel` (successful tool calls).
+- `cod_doc/services/run_context.py` — `run_scope` with contextvar `run_id`.
 
-## Предложение
+## Proposal
 
-### 5.1. Два storage tier'а
+### 5.1. Two storage tiers
 
-**Tier 1: In-memory ring buffer для soft failures (degraded paths).**
+**Tier 1: In-memory ring buffer for soft failures (degraded paths).**
 
 ```python
 # cod_doc/services/degraded_audit.py
@@ -65,16 +65,16 @@ class DegradedPathRecord:
 class DegradedPathAudit:
     """Process-local ring buffer (capacity 100) + counter by code.
     
-    Потеряется при рестарте — это намеренно: это **runtime metric**,
-    а не audit log. Не раздувает БД.
+    Lost on restart — this is intentional: it is a **runtime metric**,
+    not an audit log. Does not bloat the DB.
     """
     def record(self, code: str, location: str, **context) -> None: ...
-    def stats(self) -> dict[str, int]: ...         # code → count (с накоплением)
+    def stats(self) -> dict[str, int]: ...         # code → count (accumulating)
     def recent(self, limit: int = 50) -> list[DegradedPathRecord]: ...
-    def reset(self) -> None: ...                   # для тестов
+    def reset(self) -> None: ...                   # for tests
 ```
 
-**Tier 2: DB-таблица `error_audit` для hard exceptions.**
+**Tier 2: DB-table `error_audit` for hard exceptions.**
 
 ```sql
 CREATE TABLE error_audit (
@@ -110,7 +110,7 @@ class ErrorAuditService:
     ) -> ErrorAuditRecord: ...
 ```
 
-### 5.2. Декораторы / context managers
+### 5.2. Decorators / context managers
 
 **Soft (Tier 1):**
 ```python
@@ -119,7 +119,7 @@ def _flush_pending_events(session: Session) -> None: ...
 
 @contextmanager
 def degraded_path(code: str, *, severity: str = "warning", **context):
-    """Catches exceptions, records degraded-path event, **re-raises**."""
+    """Catches exceptions, records a degraded-path event, **re-raises**."""
     try:
         yield
     except Exception as exc:
@@ -144,7 +144,7 @@ def audit_errors(
     project_id: int | None = None,
     task_id: str | None = None,
 ):
-    """Wraps service call — catches exceptions, writes error_audit row, re-raises."""
+    """Wraps a service call — catches exceptions, writes an error_audit row, re-raises."""
     try:
         yield
     except Exception as exc:
@@ -158,9 +158,9 @@ def audit_errors(
         raise
 ```
 
-### 5.3. Применение к существующим точкам
+### 5.3. Application to existing points
 
-**Tier 1 (degraded paths) — обернуть 8 мест:**
+**Tier 1 (degraded paths) — wrap 8 places:**
 
 | File:line | Wrap as |
 |---|---|
@@ -173,11 +173,11 @@ def audit_errors(
 | `routine_service.py:463` | `@degraded_path("ROUTINE_DEFENSIVE_GUARD", severity="info")` |
 | `adapters/registry.py:93` | `@degraded_path("PLUGIN_LOAD_FAILED", severity="info")` |
 
-**Tier 2 (hard exceptions) — обернуть service-слоевые raise:**
+**Tier 2 (hard exceptions) — wrap service-layer raises:**
 
-| File | Изменение |
+| File | Change |
 |---|---|
-| `task_service.py` (20+ мест) | `with audit_errors(session, error_code_prefix="TASK", project_id=..., task_id=...):` |
+| `task_service.py` (20+ places) | `with audit_errors(session, error_code_prefix="TASK", project_id=..., task_id=...):` |
 | `adr_service.py` | `with audit_errors(session, error_code_prefix="ADR"):` |
 | `doc_service.py` | `with audit_errors(session, error_code_prefix="DOC"):` |
 | `plan_service/` | `with audit_errors(session, error_code_prefix="PLAN"):` |
@@ -186,12 +186,12 @@ def audit_errors(
 ### 5.4. MCP surface
 
 ```
-# Tier 1 (in-memory, дешёвые вызовы)
+# Tier 1 (in-memory, cheap calls)
 degraded_audit_stats() -> {code: count}
 degraded_audit_recent(limit=50, code?) -> list[DegradedPathRecord]
 degraded_audit_reset() -> None  # admin only
 
-# Tier 2 (DB-backed, для post-mortem)
+# Tier 2 (DB-backed, for post-mortem)
 error_audit_list(project?, run_id?, task_id?, severity?, limit=50, offset=0) -> list[ErrorAuditRecord]
 error_audit_get(row_id) -> ErrorAuditRecord
 error_audit_count_by_severity(project, since_days=7) -> {severity: count}
@@ -199,54 +199,54 @@ error_audit_count_by_severity(project, since_days=7) -> {severity: count}
 
 ### 5.5. Web UI
 
-- `/admin/health` — виджет с degraded_audit stats (counter + last trigger).
-- `/p/<project>/errors` — таблица error_audit с filter-bar (по severity, error_code, task_id, дате).
-- WebSocket event `error.occurred` при `severity='critical'`.
+- `/admin/health` — a widget with degraded_audit stats (counter + last trigger).
+- `/p/<project>/errors` — an error_audit table with a filter-bar (by severity, error_code, task_id, date).
+- WebSocket event `error.occurred` on `severity='critical'`.
 
 ### 5.6. Activity events
 
-Каждое degraded-path / hard-error срабатывание эмитит activity event:
+Every degraded-path / hard-error trigger emits an activity event:
 ```python
 activity_service.emit(
-    kind="degraded_path.triggered",  # или "error.occurred"
+    kind="degraded_path.triggered",  # or "error.occurred"
     project=project_id,
     payload={"code": code, "location": location, "severity": severity, "context": context},
     run_id=get_current_run_id(),
 )
 ```
 
-WebSocket-подписчики получают эти события в real-time → live UI показывает красный индикатор.
+WebSocket subscribers receive these events in real-time → the live UI shows a red indicator.
 
-## Эффект
+## Effect
 
-| Метрика | До | После |
+| Metric | Before | After |
 |---|---|---|
-| Видимость degraded path | 0 (silent) | Real-time counter + last 100 in-memory |
-| Post-mortem через 3 месяца | Невозможно (нет persistence) | DB-таблица `error_audit` |
-| MTTD (mean time to detect) | Часы (tail -f logs) | Минуты (`degraded_audit_stats()`) |
-| CI-сигнал на регрессию в degraded path | Нет | Тесты на каждый из 8 кодов |
-| WebSocket "stale state" debugging | Непонятно | `error_audit` показывает `EVENT_FLUSH_FAILED` |
-| Покрытие кода (coverage) | `# pragma: no cover` × 8 | 100% (degraded paths тестируются) |
-| Storage growth | Нулевой | Минимальный: in-memory ring buffer + 1 DB-таблица для hard errors |
+| Visibility of a degraded path | 0 (silent) | Real-time counter + last 100 in-memory |
+| Post-mortem in 3 months | Impossible (no persistence) | DB-table `error_audit` |
+| MTTD (mean time to detect) | Hours (tail -f logs) | Minutes (`degraded_audit_stats()`) |
+| CI signal on a degraded-path regression | None | Tests for each of the 8 codes |
+| WebSocket "stale state" debugging | Unclear | `error_audit` shows `EVENT_FLUSH_FAILED` |
+| Code coverage | `# pragma: no cover` × 8 | 100% (degraded paths are tested) |
+| Storage growth | Zero | Minimal: in-memory ring buffer + 1 DB-table for hard errors |
 
-## Зависимости
+## Dependencies
 
-| Proposal / компонент | Нужно для |
+| Proposal / component | Needed for |
 |---|---|
-| `04-run-id` (proposal 04) | `run_id` в contextvar, пробрасывается в context |
+| `04-run-id` (proposal 04) | `run_id` in contextvar, propagated into context |
 | `09-activity-log` (proposal 09) | `activity_service.emit(kind='error.occurred')` |
-| `17-Living-Specification` (hackathon-track 17) | Drift detector опирается на degraded_audit stats |
-| `event_bus._subscribers` dispose (из analysis) | Корректный shutdown, иначе ring buffer теряется странно |
+| `17-Living-Specification` (hackathon-track 17) | Drift detector relies on degraded_audit stats |
+| `event_bus._subscribers` dispose (from analysis) | Correct shutdown, otherwise ring buffer is lost strangely |
 
-## Структура
+## Structure
 
 ```
 cod_doc/services/
 ├── degraded_audit.py                # Tier 1: in-memory ring buffer + decorator
 ├── error_audit_service.py           # Tier 2: DB-backed ErrorAuditService + audit_errors()
 cod_doc/infra/models/
-├── degraded_path.py                 # (опц.) DB-модель для degraded path, если решим в Tier 1 тоже persist
-├── error_audit.py                   # SQLAlchemy модель
+├── degraded_path.py                 # (opt.) DB-model for degraded path, if we decide Tier 1 also persists
+├── error_audit.py                   # SQLAlchemy model
 cod_doc/infra/migrations/versions/
 └── <rev>_add_error_audit.py         # alembic
 cod_doc/mcp/tools/
@@ -257,57 +257,57 @@ cod_doc/api/
 cod_doc/templates/web/
 └── errors.html                      # filter-bar table
 tests/services/
-├── test_degraded_audit.py           # 8 unit-тестов (по одному на каждый код)
-├── test_error_audit_service.py      # commit-rollback изоляция
-└── test_audit_errors_decorator.py   # проверка re-raise
+├── test_degraded_audit.py           # 8 unit-tests (one per code)
+├── test_error_audit_service.py      # commit-rollback isolation
+└── test_audit_errors_decorator.py   # re-raise check
 ```
 
-## Риски и митигация
+## Risks and mitigation
 
-| Риск | Митигация |
+| Risk | Mitigation |
 |---|---|
-| Ring buffer переполняется (capacity 100) при шторме | FIFO-вытеснение + счётчик `dropped: N` в stats |
-| `audit_errors` сам упадёт при записи → recursive error | Обёртка в `try/except` с `logging.exception()` как last resort |
-| `degraded_path` decorator маскирует bug (вместо fix — обёртка) | Комментарий в коде: «# degraded path: фиксировать срабатывание, потом чинить root cause» |
-| DB-таблица `error_audit` раздувается | TTL-чистка: `DELETE FROM error_audit WHERE created < datetime('now', '-90 days')` через routine (proposal 07) |
-| Web UI на `/admin/health` раскрывает security info | Через существующий `task_role` check; degraded_audit counter — open, hard errors — admin-only |
-| Ложное чувство безопасности (тесты на degraded paths) | Тесты проверяют **срабатывание**, а не отсутствие. Если degraded path не нужен — удалить, а не тестировать. |
+| Ring buffer overflows (capacity 100) in a storm | FIFO eviction + a `dropped: N` counter in stats |
+| `audit_errors` itself crashes on write → recursive error | Wrap in `try/except` with `logging.exception()` as last resort |
+| `degraded_path` decorator masks a bug (wrapper instead of fix) | Comment in code: "# degraded path: record the trigger, then fix the root cause" |
+| DB-table `error_audit` bloats | TTL-cleanup: `DELETE FROM error_audit WHERE created < datetime('now', '-90 days')` via routine (proposal 07) |
+| Web UI on `/admin/health` discloses security info | Through the existing `task_role` check; degraded_audit counter — open, hard errors — admin-only |
+| False sense of security (tests for degraded paths) | Tests check **the trigger**, not the absence. If a degraded path is not needed — delete, do not test. |
 
 ## Acceptance Criteria
 
 ### Tier 1 (in-memory)
-- [ ] `cod_doc/services/degraded_audit.py` существует, покрыт unit-тестами.
-- [ ] 8 мест с `pragma: no cover` обёрнуты в `@degraded_path(...)` или `with degraded_path(...):`.
-- [ ] `tests/services/test_degraded_audit.py` — тест на каждый из 8 кодов.
-- [ ] `degraded_audit_stats()` через MCP возвращает `{code: count}` после срабатывания.
-- [ ] `degraded_audit_recent(limit=10)` возвращает последние 10 записей в FIFO порядке.
-- [ ] Ring buffer capacity 100: 200 срабатываний → `dropped: 100` в stats.
-- [ ] `activity_log` содержит `kind='degraded_path.triggered'` при срабатывании.
-- [ ] WebSocket получает degraded_path event в real-time.
+- [ ] `cod_doc/services/degraded_audit.py` exists, covered by unit tests.
+- [ ] 8 places with `pragma: no cover` are wrapped in `@degraded_path(...)` or `with degraded_path(...):`.
+- [ ] `tests/services/test_degraded_audit.py` — a test for each of the 8 codes.
+- [ ] `degraded_audit_stats()` via MCP returns `{code: count}` after a trigger.
+- [ ] `degraded_audit_recent(limit=10)` returns the last 10 records in FIFO order.
+- [ ] Ring buffer capacity 100: 200 triggers → `dropped: 100` in stats.
+- [ ] `activity_log` contains `kind='degraded_path.triggered'` on a trigger.
+- [ ] WebSocket receives a degraded_path event in real-time.
 
 ### Tier 2 (DB)
-- [ ] `alembic upgrade head` создаёт таблицу `error_audit` с индексами.
-- [ ] `ErrorAuditService.record()` пишет строку при вызове.
-- [ ] `audit_errors(...)` context manager пишет строку + re-raises (caller всё ещё видит исключение).
-- [ ] `error_audit_list(project, severity='critical')` возвращает корректный список.
-- [ ] Web UI `/p/<project>/errors` показывает таблицу с фильтрацией.
-- [ ] Тест на commit-rollback изоляцию: ошибка внутри транзакции → rollback → `error_audit` записалась в **отдельной** транзакции (не откатилась вместе).
-- [ ] TTL-чистка через routine: `DELETE FROM error_audit WHERE created < now-90d`.
+- [ ] `alembic upgrade head` creates the `error_audit` table with indexes.
+- [ ] `ErrorAuditService.record()` writes a row on call.
+- [ ] `audit_errors(...)` context manager writes a row + re-raises (caller still sees the exception).
+- [ ] `error_audit_list(project, severity='critical')` returns the correct list.
+- [ ] Web UI `/p/<project>/errors` shows a table with filtering.
+- [ ] Test for commit-rollback isolation: an error inside a transaction → rollback → `error_audit` is written in a **separate** transaction (not rolled back together).
+- [ ] TTL-cleanup via routine: `DELETE FROM error_audit WHERE created < now-90d`.
 
-## Альтернативы
+## Alternatives
 
-1. **Только logging (текущее состояние)** — решает «увидеть», но не «посчитать» и не «сохранить».
-2. **Только DB-таблица (proposal pro)** — решает persistence, но раздувает БД на degraded paths, которые не стоят внимания.
-3. **Только ring buffer (proposal mine)** — решает runtime-visibility, но не даёт post-mortem через 3 месяца.
-4. **Sentry / APM** — внешняя зависимость, не подходит для self-hosted.
-5. **Расширение activity_log (proposal 09)** — дешевле, но activity log не хранит traceback и не предназначен для долгосрочного хранения ошибок.
+1. **Only logging (current state)** — solves "see", but not "count" and not "persist".
+2. **Only DB-table (proposal pro)** — solves persistence, but bloats the DB on degraded paths that don't deserve attention.
+3. **Only ring buffer (proposal mine)** — solves runtime-visibility, but does not give a post-mortem in 3 months.
+4. **Sentry / APM** — external dependency, not suitable for self-hosted.
+5. **Extend activity_log (proposal 09)** — cheaper, but activity log does not store traceback and is not meant for long-term error storage.
 
-## Источники
+## Sources
 
-- `cod_doc/services/event_bus.py:122-132` — deferred commit/rollback хуки.
+- `cod_doc/services/event_bus.py:122-132` — deferred commit/rollback hooks.
 - `cod_doc/services/run_context.py:140,179,214` — degraded paths.
-- `cod_doc/services/task_service.py` (851 строка, 20+ raise) — service exceptions.
-- `cod_doc/infra/models/traces.py` — `ToolTraceModel` (паттерн для SQLAlchemy model).
-- `cod_doc/agent/adapters/base.py:115-137` — `@runtime_checkable Protocol` (паттерн для type-safe wrappers).
-- 2026-06-04 self-improvement comparison (miniMax-m3 vs deepseek-v4-pro) — audit-отчёт `2026-06-04-self-improvement-compared.md`.
-- Paperclip `wake-payload pattern` — паттерн «agent получает structured error context, не текстовый лог».
+- `cod_doc/services/task_service.py` (851 lines, 20+ raises) — service exceptions.
+- `cod_doc/infra/models/traces.py` — `ToolTraceModel` (pattern for a SQLAlchemy model).
+- `cod_doc/agent/adapters/base.py:115-137` — `@runtime_checkable Protocol` (pattern for type-safe wrappers).
+- 2026-06-04 self-improvement comparison (miniMax-m3 vs deepseek-v4-pro) — audit report `2026-06-04-self-improvement-compared.md`.
+- Paperclip `wake-payload pattern` — the pattern "agent gets structured error context, not a text log".

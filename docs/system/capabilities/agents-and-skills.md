@@ -12,10 +12,10 @@ related_docs:
 
 # Capability — Agents & Skills Catalog
 
-> Каталог ролей агентов проекта; формализует, что появляется в `revision.author=agent:<role>`.
-> Аналог Restate `.github/agents/` и `.github/skills/`, но первоклассный объект COD-DOC.
+> A catalog of project agent roles; formalizes what appears in `revision.author=agent:<role>`.
+> The analogue of the Restate `.github/agents/` and `.github/skills/`, but a first-class object of COD-DOC.
 
-## 1. Сущности
+## 1. Entities
 
 ### 1.1 `AgentDefinition`
 
@@ -31,16 +31,16 @@ allowed_tools:
   - plan.recalc
   - revision.list
 denied_tools:
-  - doc.patch_section          # task-steward не пишет код-доки
-  - context.get                # ему достаточно plan.* запросов
-auto_approve: true             # revision-ы пишутся сразу, без proposal-flow
+  - doc.patch_section          # task-steward does not write code-docs
+  - context.get                # plan.* queries are enough for it
+auto_approve: true             # revisions are written immediately, without a proposal-flow
 ```
 
-В БД — таблица `agent_definition(project_id, agent_id, body, last_updated)`.
+In the DB — table `agent_definition(project_id, agent_id, body, last_updated)`.
 
 ### 1.2 `SkillDefinition`
 
-Skill — короткий рецепт для повторяющейся операции (Restate `.github/skills/docs-sync`). В нашей модели — markdown-документ `type=skill` без отдельной таблицы.
+A skill — a short recipe for a recurring operation (Restate `.github/skills/docs-sync`). In our model — a markdown-document `type=skill` without a separate table.
 
 ```yaml
 type: skill
@@ -52,21 +52,21 @@ steps:
   - "For each stale doc, propose patch via doc.propose_edit"
 ```
 
-## 2. Базовый каталог (поставляется по умолчанию)
+## 2. The base catalog (shipped by default)
 
 | agent_id | scope |
 |----------|-------|
 | `task-steward` | task-planning, audit |
 | `docs-reviewer` | doc evolution, links |
 | `migrator` | one-time imports |
-| `link-verifier` | system-job для link verify |
+| `link-verifier` | system-job for link verify |
 | `release-manager` | export-changelog, milestone tagging |
 
-Пользователь может расширять / переопределять через `cod-doc agent new`.
+The user can extend / override via `cod-doc agent new`.
 
-## 3. Применение allowed/denied
+## 3. Applying allowed/denied
 
-При вызове MCP-тула:
+On an MCP-tool call:
 
 ```python
 def authorize(actor: str, tool: str) -> Decision:
@@ -80,14 +80,14 @@ def authorize(actor: str, tool: str) -> Decision:
     return Allow()
 ```
 
-Audit-log обязательно фиксирует deny.
+The audit-log always records a deny.
 
-## 4. Связь с roadmap
+## 4. Relationship with the roadmap
 
-- `roadmap/cod-doc-task-plan.md` COD-032 (MCP tools) обязан учитывать allowed-list.
-- `roadmap/audit-followups-task-plan.md` DOC-HI-2 — дописать каталог по умолчанию + миграцию.
+- `roadmap/cod-doc-task-plan.md` COD-032 (MCP tools) must respect the allowed-list.
+- `roadmap/audit-followups-task-plan.md` DOC-HI-2 — write the default catalog + migration.
 
-## 5. Что не делаем
+## 5. What we do not do
 
-- Не запускаем агентов из COD-DOC — они работают извне (Claude Code, Copilot, локальные скрипты).
-- Не храним промпты агентов — это обязанность среды (Restate хранит в `.github/agents/*.md`; мы можем держать ссылки `prompt_doc_key` на документ типа `guide`, но не парсим).
+- We do not run agents from COD-DOC — they work externally (Claude Code, Copilot, local scripts).
+- We do not store agent prompts — that is the responsibility of the environment (Restate stores them in `.github/agents/*.md`; we can keep `prompt_doc_key` references to a `guide`-type document, but do not parse them).

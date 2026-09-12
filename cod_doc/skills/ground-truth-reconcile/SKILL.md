@@ -1,117 +1,126 @@
 ---
 name: ground-truth-reconcile
 description: |
-  Трёхсторонняя сверка БД ↔ markdown ↔ код, когда статусы задач и планов
-  разъехались с реальностью. Порядок арбитража, как доказывать «сделано»
-  по коду, чем это отличается от hash-drift. Триггеры: reconcile, сверка,
-  ground truth, source of truth, статусы разъехались, stale status,
-  устарел статус, три источника, ревизия плана, что реально сделано.
+  Three-way reconciliation of DB ↔ markdown ↔ code when task and plan
+  statuses diverge from reality. Arbitration order, how to prove "done"
+  by code, how it differs from hash-drift. Triggers: reconcile, ground
+  truth, source of truth, stale status, three sources, plan revision,
+  what is actually done.
 ---
 
 # Skill — Ground-truth reconciliation
 
-## Когда подгружается
+## When it loads
 
-Когда возникает вопрос **«что тут на самом деле сделано?»**: markdown-план
-говорит `pending`, БД говорит `done`, а в коде лежит рабочая реализация.
-Триггер-keywords: `reconcile`, `ground truth`, `source of truth`, «сверка»,
-«статусы разъехались», «что реально сделано», «план устарел».
+When the question arises **"what is actually done here?"**: the
+markdown-plan says `pending`, the DB says `done`, and the code holds a
+working implementation. Trigger keywords: `reconcile`, `ground truth`,
+`source of truth`, "statuses diverged", "what is actually done", "the
+plan is stale".
 
-Это **не** `drift-handling`. Разница:
+This is **not** `drift-handling`. The difference:
 
 | | `drift-handling` | `ground-truth-reconcile` |
 |---|---|---|
-| Предмет | хэш документа vs файл на диске | статус задачи vs реализация в коде |
-| Симптом | `stale_export`, `edited_in_place` | «в плане pending, а в коде готово» |
-| Инструмент | `doc_drift`, `check_stale_refs` | чтение кода + тестов, `plan audit` |
-| Исход | `doc export` / `import` | `task complete` / `task status` + правка плана |
+| Subject | document hash vs file on disk | task status vs implementation in code |
+| Symptom | `stale_export`, `edited_in_place` | "pending in the plan, but done in code" |
+| Tool | `doc_drift`, `check_stale_refs` | reading code + tests, `plan audit` |
+| Outcome | `doc export` / `import` | `task complete` / `task status` + plan edit |
 
-## Порядок арбитража (не переставлять)
+## Arbitration order (do not reorder)
 
-1. **БД (`.cod-doc/state.db`) — source of truth для трекаемых задач.**
-   Статус задачи определяется записью в БД, а не markdown-таблицей.
-2. **Код — арбитр при расхождении.** Если БД и markdown спорят, смотрим,
-   что реально реализовано, и приводим обоих к коду.
-3. **markdown Progress Overview — вторичен.** Пересобирается из БД.
+1. **The DB (`.cod-doc/state.db`) is the source of truth for tracked
+   tasks.** The task status is determined by the record in the DB, not
+   by a markdown table.
+2. **Code is the arbiter on divergence.** If the DB and markdown
+   disagree, we look at what is actually implemented and bring both to
+   the code.
+3. **The markdown Progress Overview is secondary.** It is rebuilt from
+   the DB.
 
-## Что считается доказательством «сделано»
+## What counts as proof of "done"
 
-Заявить `done` можно только с **тремя** ссылками:
+You can claim `done` only with **three** references:
 
-- **Реализация** — `file.py:line` с именем функции/класса, а не «есть в сервисе».
-- **Покрытие** — конкретный тест-файл (лучше — имя теста), который её гоняет.
-- **Acceptance** — построчная сверка с полем `acceptance` задачи.
+- **Implementation** — `file.py:line` with the function/class name, not
+  "there is one in the service".
+- **Coverage** — a specific test file (better — the test name) that runs
+  it.
+- **Acceptance** — line-by-line check against the task's `acceptance`
+  field.
 
-Нет теста → задача не `done`, а `pending` с уточнённым описанием. «Код
-вроде есть» — не доказательство: ровно так рождается обратный дрейф, когда
-план врёт в оптимистичную сторону.
+No test → the task is not `done`, but `pending` with a refined
+description. "The code seems to be there" is not proof: this is exactly
+how reverse drift is born, when the plan lies in the optimistic
+direction.
 
-### Частый частный случай: stub-остаток
+### A common special case: a stub remnant
 
-Реализация готова, тесты есть, но docstring / комментарий / AGENTS.md всё
-ещё пишет «to be implemented». Это **не** повод держать задачу открытой —
-это отдельная правка на одну строку. Порядок: снять устаревший текст →
-закрыть задачу → упомянуть в reason. Так закрывались STB-001 (agent_tools)
-и STB-013 (context_service L2/L3).
+The implementation is ready, tests exist, but the docstring / comment /
+AGENTS.md still says "to be implemented". This is **not** a reason to
+keep the task open — it is a separate one-line edit. Order: remove the
+stale text → close the task → mention in the reason. This is how STB-001
+(agent_tools) and STB-013 (context_service L2/L3) were closed.
 
-## Алгоритм прогона
+## Run algorithm
 
 ```bash
-# 1. Что БД считает открытым
+# 1. What the DB considers open
 sqlite3 .cod-doc/state.db \
   "SELECT t.task_id, pl.scope, t.title, t.priority
      FROM task t JOIN plan pl ON pl.row_id = t.plan_id
     WHERE t.status = 'pending';"
 
-# 2. Целостность планов: циклы + done-с-незакрытыми-блокерами
+# 2. Plan integrity: cycles + done-with-unclosed-blockers
 cod-doc plan audit <scope> -p <slug> --json
 
-# 3. Для каждой pending-задачи — искать реализацию в коде
-#    (имена из description / acceptance)
+# 3. For each pending task — look for the implementation in code
+#    (names from description / acceptance)
 
-# 4. Закрывать только доказанное, с reason-ссылками на file:line + тест
+# 4. Close only the proven ones, with reason-referencess to file:line + test
 cod-doc task complete <ID> -p <slug> \
   --author "reconcile-YYYY-MM-DD" \
-  --reason "<реализация file:line> + <тест-файл>; acceptance выполнен"
+  --reason "<implementation file:line> + <test-file>; acceptance fulfilled"
 
-# 5. Синхронизировать markdown-планы из БД, не наоборот
+# 5. Sync markdown-plans from the DB, not the other way
 ```
 
-Направление шага 5 — единственно допустимое. Правка markdown-статуса без
-соответствующей записи в БД воспроизводит ровно ту проблему, которую
-сверка чинит.
+The direction of step 5 is the only admissible one. Editing the
+markdown-status without a corresponding record in the DB reproduces
+exactly the problem the reconciliation fixes.
 
-## Что делать с находками
+## What to do with findings
 
-| Находка | Действие |
+| Finding | Action |
 |---|---|
-| В коде готово, в БД `pending` | `task complete` с reason-доказательством |
-| В БД `done`, в коде нет | `task status <ID> pending` + завести баг на регресс |
-| Задача потеряла смысл | `cancelled`, а не тихое удаление — история нужна |
-| План есть в markdown, но не в БД | либо завести через `plan_create`, либо пометить план архивным; «полу-план» хуже отсутствия |
-| Расхождение ≥ 3 задач | это уже фаза → audit-отчёт, см. skill `audit-cadence` |
+| Done in code, `pending` in the DB | `task complete` with a reason-proof |
+| `done` in the DB, missing in code | `task status <ID> pending` + file a regression bug |
+| The task lost its meaning | `cancelled`, not a silent deletion — history is needed |
+| Plan exists in markdown, but not in the DB | either create it via `plan_create`, or mark the plan archival; a "half-plan" is worse than none |
+| Divergence ≥ 3 tasks | this is already a phase → audit-report, see skill `audit-cadence` |
 
-## Каденция
+## Cadence
 
-Прогонять сверку **при закрытии фазы** и **перед составлением роадмапа** —
-иначе планируешь поверх вымышленного состояния. Между фазами достаточно
-`plan audit` в CI.
+Run the reconciliation **on closing a phase** and **before drafting the
+roadmap** — otherwise you plan on top of a fictional state. Between
+phases, `plan audit` in CI is enough.
 
 ## Anti-patterns
 
-- **Верить markdown-таблице Progress Overview.** Она вторична по
-  определению; её и чиним.
-- **Закрывать задачи пачкой «похоже всё сделано».** Каждая — со своим
-  доказательством, иначе сверка сама становится источником вранья.
-- **Чинить только в одну сторону.** Дрейф двусторонний: находятся и
-  недозакрытые, и переоткрытые задачи.
-- **Оставлять расхождение неописанным.** Итог сверки — audit-отчёт в
-  `docs/system/audit/`, иначе через месяц никто не вспомнит, почему статусы
-  поменялись.
+- **Trusting the markdown Progress Overview table.** It is secondary by
+  definition; it is what we are fixing.
+- **Closing tasks in a batch "looks like it's all done".** Each one with
+  its own proof, otherwise the reconciliation itself becomes a source of
+  lies.
+- **Fixing only in one direction.** Drift is two-sided: both
+  under-closed and over-reopened tasks are found.
+- **Leaving the divergence undescribed.** The outcome of the
+  reconciliation is an audit-report in `docs/system/audit/`, otherwise in a
+  month no one will remember why the statuses changed.
 
-## Связанное
+## Related
 
-- [roadmap/ROADMAP.md](../../../docs/system/roadmap/ROADMAP.md) — «Правило источника истины».
-- [audit/2026-06-05-doc-drift-source-of-truth.md](../../../docs/system/audit/2026-06-05-doc-drift-source-of-truth.md) — первый прогон.
-- skill `audit-cadence` — оформление результата.
-- skill `drift-handling` — соседняя, но другая проблема.
+- [roadmap/ROADMAP.md](../../../docs/system/roadmap/ROADMAP.md) — "The source-of-truth rule".
+- [audit/2026-06-05-doc-drift-source-of-truth.md](../../../docs/system/audit/2026-06-05-doc-drift-source-of-truth.md) — the first run.
+- skill `audit-cadence` — formatting the result.
+- skill `drift-handling` — a neighboring, but different, problem.

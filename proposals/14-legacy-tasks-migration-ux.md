@@ -14,186 +14,185 @@ related:
   - cod_doc/mcp/tools/task_tools.py
 ---
 
-# Proposal 14 · Миграция legacy-задач из YAML в БД через UI
+# Proposal 14 · Migration of legacy tasks from YAML to DB via UI
 
-> 🎯 Цель: закрыть «двухслойное» хранилище задач. Сегодня одни и те же
-> проекты держат задачи и в `.cod-doc/tasks.yaml` (старый YAML), и в
-> БД-таблице `task` (COD-032). Импорт уже есть, но только в CLI — UI
-> только показывает «Legacy YAML tasks (N), not yet migrated» и не
-> предлагает ничего нажать. Нужна одна кнопка «Импортировать в БД» +
-> правила, исключающие повторное появление YAML-задач.
+> 🎯 Goal: close the "two-layer" task storage. Today the same
+> projects keep tasks both in `.cod-doc/tasks.yaml` (old YAML) and in
+> the DB table `task` (COD-032). Import already exists, but only in CLI — UI
+> only shows "Legacy YAML tasks (N), not yet migrated" and offers nothing
+> to click. Need one "Import to DB" button + rules that prevent YAML tasks
+> from reappearing.
 
-## 1. Что не так сейчас
+## 1. What is wrong now
 
-### 1.1. Симптомы
+### 1.1. Symptoms
 
-[`tasks_list.html:10-15`](cod_doc/templates/web/project/tasks_list.html#L10-L15) и
+[`tasks_list.html:10-15`](cod_doc/templates/web/project/tasks_list.html#L10-L15) and
 [`tasks_legacy_list.html:15-18`](cod_doc/templates/web/project/tasks_legacy_list.html#L15-L18):
 
-| Симптом | Причина |
+| Symptom | Cause |
 | --- | --- |
-| На `/p/{slug}/tasks` стоит «В этом проекте пока нет задач», а сверху висит ссылка «Legacy YAML tasks (34)» | Страница читает только DB; legacy — параллельный мир в `tasks.yaml` |
-| Чтобы перенести 34 задачи в БД, нужно открыть терминал и запустить `cod-doc import legacy-tasks <slug>` | UI вообще не знает про эту команду — нет ни эндпоинта, ни кнопки |
-| Banner «not yet migrated» висит даже после того, как пользователь уже всё проверил и считает, что мигрировать не надо | Нет состояния «принято решение не мигрировать»; нет dry-run, нет diff |
-| `add_task` / `update_task` через legacy MCP писали в YAML (`legacy_project_tools.py`, removed in `c310503`) | Старые тулзы были зарегистрированы рядом с новыми ([`task_tools.py`](cod_doc/mcp/tools/task_tools.py)) и не помечены deprecated → агенты иногда выбирали legacy |
-| Legacy-страница показывает только id/title/status/priority/updated, без description/result | Read-only превью без полного содержимого — пользователь не видит, что именно мигрируется |
+| On `/p/{slug}/tasks` it says "There are no tasks in this project yet", and at the top hangs a link "Legacy YAML tasks (34)" | The page reads only DB; legacy is a parallel world in `tasks.yaml` |
+| To migrate 34 tasks to DB, you need to open a terminal and run `cod-doc import legacy-tasks <slug>` | UI does not know about this command at all — neither an endpoint nor a button |
+| The "not yet migrated" banner hangs even after the user has already checked everything and believes no migration is needed | There is no "decided not to migrate" state; no dry-run, no diff |
+| `add_task` / `update_task` via legacy MCP wrote to YAML (`legacy_project_tools.py`, removed in `c310503`) | The old tools were registered next to the new ones ([`task_tools.py`](cod_doc/mcp/tools/task_tools.py)) and were not marked deprecated → agents sometimes picked legacy |
+| The legacy page shows only id/title/status/priority/updated, without description/result | A read-only preview without full content — the user does not see what exactly is migrated |
 
-### 1.2. Почему получается
+### 1.2. Why it happens
 
-Хронология (по `git log` и архитектурным меткам):
+Timeline (per `git log` and architectural marks):
 
-1. **До COD-032** — единственное хранилище задач было `tasks.yaml`.
-   Класс [`Project`](cod_doc/core/project.py#L120-L207) и legacy MCP-тулзы
-   (`add_task`, `update_task`, `next_pending_task`) работают с ним
-   напрямую. Все 37 текущих записей в `.cod-doc/tasks.yaml` — наследие
-   этого периода.
-2. **COD-032+** — заведена реляционная схема (`task` + `plan` +
-   `plan_section` + ревизии). Параллельно появились `task_tools.py`,
-   web-UI `/tasks`, агентский конвейер (`agent/orchestrator.py`).
-   Старый код **не удалили** — он продолжил обслуживать существующие
-   потоки, чтобы не ломать привычные сценарии.
-3. **COD-051** — добавили `cod-doc import legacy-tasks` для bulk-переноса
+1. **Before COD-032** — the only task storage was `tasks.yaml`.
+   The [`Project`](cod_doc/core/project.py#L120-L207) class and legacy MCP-tools
+   (`add_task`, `update_task`, `next_pending_task`) work with it directly.
+   All 37 current records in `.cod-doc/tasks.yaml` are heritage of this period.
+2. **COD-032+** — a relational schema was introduced (`task` + `plan` +
+   `plan_section` + revisions). In parallel `task_tools.py`,
+   web-UI `/tasks`, the agent pipeline (`agent/orchestrator.py`) appeared.
+   The old code **was not removed** — it kept serving existing flows
+   so as not to break familiar scenarios.
+3. **COD-051** — added `cod-doc import legacy-tasks` for bulk transfer
    ([`cmd_import.py:84-117`](cod_doc/cli/cmd_import.py#L84-L117) +
    [`restate_importer.py:242-335`](cod_doc/services/restate_importer.py#L242-L335)).
-   Это сняло срочность миграции, но создало стабильное «болото»: импорт
-   есть → нет повода удалять YAML, YAML есть → legacy-тулзы продолжают
-   писать туда же. UI отразил болото в виде отдельной вкладки.
-4. **Сейчас** — в репо `cod-doc` сам по себе: 37 задач в YAML, 0 в БД
-   (для проекта GatewayDemo на скриншоте). И так почти у всех проектов,
-   которые завели до COD-051.
+   This removed the urgency of migration, but created a stable "swamp":
+   import exists → no reason to delete YAML, YAML exists → legacy tools keep
+   writing to it. UI reflected the swamp as a separate tab.
+4. **Now** — in the `cod-doc` repo itself: 37 tasks in YAML, 0 in DB
+   (for the GatewayDemo project on the screenshot). And so it is for almost
+   all projects started before COD-051.
 
-Корневая причина одна: **импорт реализован, но не предъявлен пользователю
-как «нормальное» действие**. Пока кнопка не нажимается из браузера, она
-не нажимается вовсе.
+The root cause is one: **import is implemented, but not presented to the user
+as a "normal" action**. While the button is not clickable from the browser,
+it is not clicked at all.
 
-## 2. Предлагаемая модель
+## 2. Proposed model
 
-### 2.1. Один цикл: Preview → Import → Freeze
+### 2.1. One cycle: Preview → Import → Freeze
 
-На странице `/p/{slug}/tasks/legacy` добавить блок действий **сверху**
-таблицы:
+On the `/p/{slug}/tasks/legacy` page add an action block **at the top**
+of the table:
 
 ```
 [ 🔍 Preview import ]   [ 📥 Import all (N) ]   [ ❄ Mark as archived ]
 ```
 
-- **Preview import** (dry-run) — открывает diff-модал: «будет создано
-  N задач в plan `imported-legacy`, K из них уже похожи на DB-задачи
-  (по title hash) → пометим как duplicates». Никаких изменений в БД.
-- **Import all** — без флажков, без выбора подмножества. Импортирует
-  всё содержимое YAML одной транзакцией, показывает summary
-  (`imported / skipped / errors`). После успеха — кнопка превращается
-  в «✓ Imported on YYYY-MM-DD HH:MM».
-- **Mark as archived** — для случая «не надо мигрировать, оставьте
-  как есть». Просто переименовывает `tasks.yaml` →
-  `tasks.archived.yaml` и убирает baner с `/tasks`.
+- **Preview import** (dry-run) — opens a diff-modal: "N tasks will be
+  created in plan `imported-legacy`, K of them already look like DB-tasks
+  (by title hash) → mark as duplicates". No changes to DB.
+- **Import all** — no flags, no subset selection. Imports the entire YAML
+  content in one transaction, shows a summary
+  (`imported / skipped / errors`). On success — the button turns into
+  "✓ Imported on YYYY-MM-DD HH:MM".
+- **Mark as archived** — for the case "no need to migrate, leave as is".
+  Simply renames `tasks.yaml` → `tasks.archived.yaml` and removes the
+  banner from `/tasks`.
 
-Никаких частичных импортов, никакого выбора чекбоксами — массовый перенос
-данных, не повседневный workflow. Если что-то пошло не так — `git revert`
-БД-миграцию (ревизии уже это умеют через `restate-import:*` reason).
+No partial imports, no checkbox selection — a bulk data transfer, not a
+daily workflow. If something goes wrong — `git revert` the DB-migration
+(revisions already support this via the `restate-import:*` reason).
 
-### 2.2. HTTP-эндпоинты
+### 2.2. HTTP endpoints
 
-Добавить в [`api/web/pages/tasks.py`](cod_doc/api/web/pages/tasks.py):
+Add to [`api/web/pages/tasks.py`](cod_doc/api/web/pages/tasks.py):
 
-| Method | Path | Назначение |
+| Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/p/{slug}/tasks/legacy/import?dry_run=1` | Возвращает HTML-фрагмент с diff (план импорта). Без записи. |
-| `POST` | `/p/{slug}/tasks/legacy/import` | Реальный импорт. Возвращает HTML-фрагмент с summary + ссылкой «Open imported plan». |
-| `POST` | `/p/{slug}/tasks/legacy/archive` | Переименовывает yaml. Идемпотентно. |
+| `POST` | `/p/{slug}/tasks/legacy/import?dry_run=1` | Returns an HTML fragment with the diff (import plan). No write. |
+| `POST` | `/p/{slug}/tasks/legacy/import` | Real import. Returns an HTML fragment with a summary + a link "Open imported plan". |
+| `POST` | `/p/{slug}/tasks/legacy/archive` | Renames yaml. Idempotent. |
 
-Все три — htmx-эндпоинты (HTML, не JSON). Защита: `X-CSRF-Token` или
-`SameSite` cookie — проверить, что используется на других POST-формах
-(например, на `/p/{slug}/daemon/start`).
+All three are htmx-endpoints (HTML, not JSON). Protection: `X-CSRF-Token` or
+`SameSite` cookie — check what is used on other POST-forms
+(e.g. on `/p/{slug}/daemon/start`).
 
-Реализация ровно поверх уже существующего
+Implementation exactly over the already existing
 [`restate_importer.import_legacy_tasks`](cod_doc/services/restate_importer.py#L242-L335):
-для dry-run — `session.rollback()` и сериализация `summary`; для
-архива — `yaml_path.rename(yaml_path.with_suffix(".archived.yaml"))`.
+for dry-run — `session.rollback()` and serialize `summary`; for
+archive — `yaml_path.rename(yaml_path.with_suffix(".archived.yaml"))`.
 
-### 2.3. Состояние «migrated» как признак, а не как факт
+### 2.3. The "migrated" state as a fact, not a flag
 
-После успешного импорта:
+After a successful import:
 
-- На странице `/p/{slug}/tasks` baner с «Legacy YAML tasks (34) — not
-  yet migrated» меняется на «📦 Legacy YAML tasks (34) — imported
-  YYYY-MM-DD into plan `imported-legacy`». Это нужно прочитать из
-  БД (плана с scope `imported-legacy` и кол-ва задач в нём), а не
-  хранить отдельный флаг.
-- На странице `/p/{slug}/tasks/legacy` сверху появляется блок
-  «✓ Уже импортировано N → M; повторный импорт создаст дубли». Кнопка
-  «Import all» становится секондари + требует подтверждения.
+- On `/p/{slug}/tasks` the banner "Legacy YAML tasks (34) — not
+  yet migrated" changes to "📦 Legacy YAML tasks (34) — imported
+  YYYY-MM-DD into plan `imported-legacy`". This must be read from
+  the DB (the plan with scope `imported-legacy` and the count of tasks in it),
+  not stored as a separate flag.
+- On `/p/{slug}/tasks/legacy` at the top appears a block
+  "✓ Already imported N → M; a repeated import will create duplicates". The
+  "Import all" button becomes secondary + requires confirmation.
 
-### 2.4. Закрыть write-путь в YAML
+### 2.4. Close the write path to YAML
 
-Это критично — иначе после импорта снова накопится разрыв.
+This is critical — otherwise after import the gap will accumulate again.
 
-1. В legacy `legacy_project_tools.py` (removed in `c310503`)
-   у `add_task` / `update_task` менять docstring на
+1. In legacy `legacy_project_tools.py` (removed in `c310503`)
+   change the docstring of `add_task` / `update_task` to
    `"DEPRECATED — use mcp__cod-doc__task_create instead"`.
-2. На уровне реализации `Project.add_task` ([`core/project.py:188-192`](cod_doc/core/project.py#L188-L192))
-   при `tasks.yaml` уже архивированном → бросать `RuntimeError("legacy
-   tasks.yaml archived; use DB-backed task_create")`. Не «молча писать
-   в новый YAML» — это гарантирует, что архивирование = окончательное.
-3. После закрытия первой партии проектов (3-4 штуки) — выкинуть
-   write-методы `Project.add_task / update_task` целиком, оставить
-   только read-side (`get_tasks`, `_load_tasks`) для legacy-страницы.
+2. At the implementation level `Project.add_task` ([`core/project.py:188-192`](cod_doc/core/project.py#L188-L192))
+   when `tasks.yaml` is already archived → raise `RuntimeError("legacy
+   tasks.yaml archived; use DB-backed task_create")`. Not "silently write
+   to a new YAML" — this guarantees that archiving = final.
+3. After closing the first batch of projects (3-4) — drop the write
+   methods `Project.add_task / update_task` entirely, leave only the
+   read-side (`get_tasks`, `_load_tasks`) for the legacy page.
 
-### 2.5. Расширенное превью на legacy-странице
+### 2.5. Extended preview on the legacy page
 
-Сейчас [`tasks_legacy_list.html:48-69`](cod_doc/templates/web/project/tasks_legacy_list.html#L48-L69)
-показывает 5 колонок. Перед «нажми import» пользователь должен видеть,
-что именно мигрируется. Минимум:
+Now [`tasks_legacy_list.html:48-69`](cod_doc/templates/web/project/tasks_legacy_list.html#L48-L69)
+shows 5 columns. Before "click import" the user must see what exactly is
+migrated. Minimum:
 
-- Раскрывающийся `<details>` на каждой строке: description + result.
-- Колонка «target plan-section» — для ясности, что всё попадёт в
-  один синтетический plan (`imported-legacy / Imported (legacy)`).
+- An expandable `<details>` on each row: description + result.
+- A "target plan-section" column — for clarity that everything lands in
+  one synthetic plan (`imported-legacy / Imported (legacy)`).
 
-## 3. Что не делаем
+## 3. What we do not do
 
-- **Двусторонний sync YAML↔DB.** Это рассинхронизация, а не миграция.
-  YAML — источник для одноразового импорта, дальше read-only → archive.
-- **UI-редактор YAML.** Если задачу хочется поправить — мигрируй проект
-  в БД и редактируй там.
-- **Авто-импорт при первом заходе на страницу.** Пользователь должен
-  явно нажать кнопку — у него могут быть веские причины не мигрировать
-  (например, экспериментальный проект на удаление).
-- **Selectable rows / частичный импорт.** Это разовая операция; UX
-  с чекбоксами увеличивает поверхность багов, а ценность нулевая.
+- **Two-way sync YAML↔DB.** That is desynchronization, not migration.
+  YAML is the source for a one-time import, then read-only → archive.
+- **A YAML editor in UI.** If a task needs editing — migrate the project
+  to DB and edit there.
+- **Auto-import on first page visit.** The user must explicitly click the
+  button — they may have valid reasons not to migrate
+  (e.g. an experimental project slated for deletion).
+- **Selectable rows / partial import.** This is a one-time operation; a UX
+  with checkboxes increases the bug surface, and the value is zero.
 
-## 4. План работ
+## 4. Work plan
 
-| Шаг | Задача | Файлы |
+| Step | Task | Files |
 | --- | --- | --- |
-| 1 | `POST /tasks/legacy/import` (htmx-эндпоинт + dry-run) | `api/web/pages/tasks.py`, `templates/.../tasks_legacy_list.html` |
-| 2 | `POST /tasks/legacy/archive` | те же |
-| 3 | Обновить `tasks_list.html` baner: «imported / not yet imported / archived» по состоянию БД и `tasks.archived.yaml` | `templates/.../tasks_list.html`, `api/web/pages/tasks.py:tasks_list` |
-| 4 | Раскрывающееся превью description/result на legacy-странице | `templates/.../tasks_legacy_list.html` |
-| 5 | Пометить deprecated `add_task`/`update_task` MCP, поднять `RuntimeError` на write при archived state | historical `mcp/tools/legacy_project_tools.py`, `core/project.py` |
-| 6 | Тест: legacy → import → repeat-import = no-op (через duplicate detection в `task_service.create`) | `tests/web/test_tasks_page.py`, `tests/services/test_restate_importer.py` |
-| 7 | После 3-4 успешных миграций — удалить write-методы legacy полностью | `core/project.py`, historical `mcp/tools/legacy_project_tools.py` |
+| 1 | `POST /tasks/legacy/import` (htmx-endpoint + dry-run) | `api/web/pages/tasks.py`, `templates/.../tasks_legacy_list.html` |
+| 2 | `POST /tasks/legacy/archive` | same |
+| 3 | Update `tasks_list.html` banner: "imported / not yet imported / archived" by DB state and `tasks.archived.yaml` | `templates/.../tasks_list.html`, `api/web/pages/tasks.py:tasks_list` |
+| 4 | Expandable preview of description/result on the legacy page | `templates/.../tasks_legacy_list.html` |
+| 5 | Mark `add_task`/`update_task` MCP deprecated, raise `RuntimeError` on write in archived state | historical `mcp/tools/legacy_project_tools.py`, `core/project.py` |
+| 6 | Test: legacy → import → repeat-import = no-op (via duplicate detection in `task_service.create`) | `tests/web/test_tasks_page.py`, `tests/services/test_restate_importer.py` |
+| 7 | After 3-4 successful migrations — remove legacy write methods entirely | `core/project.py`, historical `mcp/tools/legacy_project_tools.py` |
 
-Шаги 1-4 — одна задача (`COD-XXX: legacy tasks UI import`). Шаги 5-7 —
-отдельная следом, чтобы не смешивать UX и deprecation в один PR.
+Steps 1-4 — one task (`COD-XXX: legacy tasks UI import`). Steps 5-7 —
+a separate one right after, so as not to mix UX and deprecation in one PR.
 
-## 5. Риски и контрмеры
+## 5. Risks and countermeasures
 
-| Риск | Контрмера |
+| Risk | Countermeasure |
 | --- | --- |
-| Повторный нажим Import → дубли в БД | `restate_importer` уже использует `task_service.create(allow_duplicate=True, reason="restate-import:<id>")`; нужно поменять на `allow_duplicate=False` + skip-by-title. После архивации YAML повторный запуск физически невозможен |
-| Архивирование удаляет данные, которые ещё могут понадобиться | `tasks.yaml → tasks.archived.yaml` — переименование, не удаление; в `git history` файл всё равно лежит |
-| Пользователь нажал Import, но пайплайн уронил половину задач | `import_legacy_tasks` уже использует savepoint per-row (COD-071), частичный успех видно в summary; ошибки логируются с title-ключом |
-| MCP-агент в фоне всё ещё пишет в YAML параллельно с импортом | Рекомендация: выполнять импорт при остановленном daemon (новая UI-кнопка stop/start уже есть — `b07a97e`); долгосрочно — RuntimeError на write после archive |
+| Repeated Import click → duplicates in DB | `restate_importer` already uses `task_service.create(allow_duplicate=True, reason="restate-import:<id>")`; needs to change to `allow_duplicate=False` + skip-by-title. After YAML archiving a repeat run is physically impossible |
+| Archiving deletes data that may still be needed | `tasks.yaml → tasks.archived.yaml` — a rename, not a delete; in `git history` the file is still there |
+| User clicked Import, but the pipeline dropped half the tasks | `import_legacy_tasks` already uses savepoint per-row (COD-071), partial success is visible in summary; errors are logged with the title key |
+| An MCP agent in the background still writes to YAML in parallel with the import | Recommendation: run the import with the daemon stopped (the new UI stop/start button already exists — `b07a97e`); long-term — RuntimeError on write after archive |
 
-## 6. Критерии приёмки
+## 6. Acceptance criteria
 
-- На странице `/p/{slug}/tasks/legacy` есть кнопка «📥 Import all», по
-  которой за один клик 37 задач из YAML появляются в БД с планом
+- On `/p/{slug}/tasks/legacy` there is an "📥 Import all" button, by
+  which in one click 37 tasks from YAML appear in the DB with the plan
   `imported-legacy`.
-- Повторный клик не создаёт дублей.
-- После успешного импорта пользователь может перейти на `/p/{slug}/tasks`
-  и увидеть импортированные задачи в общем списке.
-- После «Mark as archived» legacy-баннер с `/tasks` исчезает; страница
-  `/tasks/legacy` отдаёт 404 или «archived 2026-…».
-- `add_task` через legacy MCP на архивированном проекте падает с
-  понятным сообщением, а не пишет в новый файл.
+- A repeated click does not create duplicates.
+- After a successful import the user can go to `/p/{slug}/tasks`
+  and see the imported tasks in the common list.
+- After "Mark as archived" the legacy banner disappears from `/tasks`; the
+  `/tasks/legacy` page returns 404 or "archived 2026-…".
+- `add_task` via legacy MCP on an archived project fails with
+  a clear message, not writes to a new file.

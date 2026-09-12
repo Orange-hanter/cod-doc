@@ -1,85 +1,88 @@
 ---
 name: drift-handling
 description: |
-  Что делать при STALE / BROKEN / drift расхождении: hash mismatch,
-  edited_in_place, missing files. Триггеры: drift, stale, broken,
-  hash, mismatch, sync, sha, verify, projection_hash.
+  What to do on STALE / BROKEN / drift divergence: hash mismatch,
+  edited_in_place, missing files. Triggers: drift, stale, broken, hash,
+  mismatch, sync, sha, verify, projection_hash.
 ---
 
 # Skill — Drift handling
 
-## Когда подгружается
+## When it loads
 
-Задачи / контексты, где появляется расхождение между БД-проекцией и
-файлом на диске, либо устаревший хэш в гибридной ссылке.
-Триггер-keywords: `drift`, `stale`, `broken`, `hash`, `mismatch`,
+Tasks / contexts where a divergence appears between the DB projection
+and the file on disk, or a stale hash in a hybrid reference.
+Trigger keywords: `drift`, `stale`, `broken`, `hash`, `mismatch`,
 `sha:`, `verify`, `projection_hash`, `update_master_hashes`,
 `check_stale_refs`.
 
-## Канонические статусы (`doc_drift`)
+## Canonical statuses (`doc_drift`)
 
-| Статус | Что означает | Что делать |
+| Status | What it means | What to do |
 |--------|-------------|-----------|
-| `in_sync` | DB content hash == projection_hash == file hash | ничего |
-| `stale_export` | DB content изменился относительно последней экспорт-проекции | `doc.export(force=False)` или `force=True` после ручной проверки — но сперва проверь ADO-022 (ниже) |
-| `edited_in_place` | Файл правился в обход revision-flow (file hash расходится с projection_hash) | reconciliation-flow: либо `import_document`, либо ручной merge с записью revision |
-| `missing` | Файл удалён | если дока удалили — `doc.deprecate`; если случайность — восстановить из git history |
+| `in_sync` | DB content hash == projection_hash == file hash | nothing |
+| `stale_export` | DB content changed relative to the last export projection | `doc.export(force=False)` or `force=True` after manual verification — but first check ADO-022 (below) |
+| `edited_in_place` | The file was edited bypassing the revision-flow (file hash diverges from projection_hash) | reconciliation-flow: either `import_document`, or a manual merge with a recorded revision |
+| `missing` | File deleted | if the doc was deleted — `doc.deprecate`; if accidental — restore from git history |
 
-## Канонические статусы (`check_stale_refs`)
+## Canonical statuses (`check_stale_refs`)
 
-| Статус | Что делать |
+| Status | What to do |
 |--------|-----------|
 | `VALID` | OK |
-| `STALE` | хэш в `MASTER.md` устарел → `update_master_hashes` после проверки контента |
-| `BROKEN` | файл отсутствует на диске → задача восстановления через `task_create` |
+| `STALE` | hash in `MASTER.md` is stale → `update_master_hashes` after content verification |
+| `BROKEN` | file is missing on disk → recovery task via `task_create` |
 
-## Алгоритм при обнаружении drift'а
+## Algorithm on detecting drift
 
-1. Читать текущий статус через `doc_drift(doc_key)`.
-2. Если `stale_export` и контент в БД — source of truth → `doc_export`.
-3. Если `edited_in_place`:
-   a. Прочитать файл и DB-content.
-   b. Если правки **намеренные** → `import_document(file_path)` (применит
-      content к БД + запишет revision).
-   c. Если правки **нечаянные** → восстановить из БД (`doc_export
-      force=True`).
-4. Если `missing` → решить, удалили или потерялся; зависит от
-   `last_updated` и git log.
+1. Read the current status via `doc_drift(doc_key)`.
+2. If `stale_export` and the content in the DB is the source of truth →
+   `doc_export`.
+3. If `edited_in_place`:
+   a. Read the file and DB-content.
+   b. If the edits are **intentional** → `import_document(file_path)`
+      (will apply the content to the DB + write a revision).
+   c. If the edits are **accidental** → restore from the DB
+      (`doc_export force=True`).
+4. If `missing` → decide whether deleted or lost; depends on
+   `last_updated` and git log.
 
-## Старая БД: сначала `doc_backfill_projection` (ADO-022)
+## Old DB: first `doc_backfill_projection` (ADO-022)
 
-Если БД проекта заведена до миграции `0025_projection_fidelity`, у документов
-`frontmatter_raw` и `title_in_body` = NULL — БД не помнит, как был устроен
-файл. Массовый `doc_export` на такой БД **переписывает frontmatter** (ключи
-переставляются, файлу без frontmatter дописывается выдуманный блок
-`type/status/owner`) и добавляет `# H1`, которого в источнике не было. Именно
-так однажды пострадали 107 файлов из 121.
+If the project DB was set up before the `0025_projection_fidelity`
+migration, documents have `frontmatter_raw` and `title_in_body` = NULL —
+the DB does not remember how the file was structured. A bulk `doc_export`
+on such a DB **rewrites frontmatter** (keys get reordered, a file without
+frontmatter gets a fabricated `type/status/owner` block appended) and
+adds an `# H1` that was not in the source. This is exactly how 107 of 121
+files were once damaged.
 
-- `doc_export` теперь сам отказывается писать такой файл. В сообщении есть
-  слова `frontmatter_raw` и `backfill`.
-- Лечение — `doc_backfill_projection(project)`: восстанавливает две колонки
-  формы из файлов на диске. Доменные поля не трогает, поэтому изменения
-  метаданных, сделанные в БД и ещё не выгруженные (например `doc_accept`),
-  переживают операцию.
-- `force_write=true` на этой ошибке — **не лечение, а сама порча.** Применять
-  только осознанно и только когда файл на диске заведомо не нужен.
-- `doc import` тоже снимет отказ, но применит frontmatter файла обратно к БД,
-  то есть откатит несэкспортированные правки метаданных. Это второй вариант,
-  не первый.
+- `doc_export` now refuses to write such a file itself. The message
+  contains the words `frontmatter_raw` and `backfill`.
+- The cure is `doc_backfill_projection(project)`: it restores the two
+  form columns from files on disk. It does not touch domain fields, so
+  metadata changes made in the DB and not yet exported (e.g.
+  `doc_accept`) survive the operation.
+- `force_write=true` on this error is **not a cure, but the corruption
+  itself.** Apply it consciously and only when the file on disk is
+  knowingly not needed.
+- `doc import` also lifts the refusal, but applies the file's frontmatter
+  back to the DB, i.e. rolls back unexported metadata edits. This is the
+  second option, not the first.
 
-Порядок на пилотном проекте: `doc_backfill_projection` → `doc_drift_all` →
-только потом `doc_export`.
+Order on the pilot project: `doc_backfill_projection` → `doc_drift_all` →
+only then `doc_export`.
 
-## Что НЕ делать
+## What NOT to do
 
-- Не запускать `update_master_hashes` "наугад" — сначала убедись, что
-  контент валиден; иначе зафиксируешь broken state.
-- Не правь `projection_hash` руками; это поле обновляется только
+- Do not run `update_master_hashes` "at random" — first make sure the
+  content is valid; otherwise you will fix a broken state.
+- Do not edit `projection_hash` by hand; this field is updated only by
   `doc_export`.
-- Не глотай `STALE`/`BROKEN` молча — поднимай задачу через
-  `task_create` с типом `bug` или `chore`.
+- Do not swallow `STALE` / `BROKEN` silently — raise a task via
+  `task_create` with type `bug` or `chore`.
 
-## Связанное
+## Related
 
 - [capabilities/doc-evolution.md](../../../docs/system/capabilities/doc-evolution.md)
 - [services/projection_service](../../services/projection_service/)

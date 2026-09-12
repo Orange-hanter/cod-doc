@@ -16,126 +16,128 @@ audience: [contributors, agents]
 
 # Audit — State of the Project (2026-07-29)
 
-> **Контекст.** Последняя полная сверка — [2026-06-05](2026-06-05-doc-drift-source-of-truth.md),
-> она породила план `stabilization-2026-06` (Трек A). С тех пор прошло 12 коммитов,
-> закрывших почти весь трек, но роадмап не переписывался. Этот отчёт фиксирует
-> фактическое состояние на 2026-07-29 и служит основанием для новой
-> [ROADMAP.md](../roadmap/ROADMAP.md).
+> **Context.** The last full reconciliation — [2026-06-05](2026-06-05-doc-drift-source-of-truth.md),
+> produced the `stabilization-2026-06` plan (Track A). Since then, 12 commits
+> landed, closing almost the entire track, but the roadmap was not rewritten.
+> This report captures the actual state as of 2026-07-29 and serves as the
+> basis for a new [ROADMAP.md](../roadmap/ROADMAP.md).
 
 ## TL;DR
 
-**Трек A (стабилизация) закрыт: 12 из 13 задач.** Проект перешёл из состояния
-«есть подтверждённые кодом дыры» в состояние «инженерно здоров, но не
-использован». Главный дефицит сместился с качества кода на **отсутствие
-внешних пользователей**: cod-doc собой не пользуются нигде, кроме самого
-себя.
+**Track A (stabilization) is closed: 12 of 13 tasks.** The project moved from
+"has code-confirmed holes" to "engineering-sound but unused". The main deficit
+shifted from code quality to **lack of external users**: cod-doc is not used
+anywhere except by itself.
 
-Ключевой вывод для приоритизации: следующий фронт — **не** очередная фича из
-`proposals/`, а adoption. См. [ROADMAP.md](../roadmap/ROADMAP.md).
+Key takeaway for prioritization: the next front is **not** another feature
+from `proposals/`, but adoption. See [ROADMAP.md](../roadmap/ROADMAP.md).
 
-## 1. Инженерное здоровье — проверено, не заявлено
+## 1. Engineering health — verified, not declared
 
-Все цифры получены прогоном на 2026-07-29, не переписаны из прошлых отчётов.
+All numbers were obtained by a run on 2026-07-29, not copied from previous
+reports.
 
-| Проверка | Команда | Результат |
+| Check | Command | Result |
 |---|---|---|
-| Тесты | `pytest tests/` | **1356 passed**, 0 failed (408 s) |
-| Линт | `ruff check cod_doc/ tests/` | All checks passed |
-| Типы | `mypy cod_doc/` | Success, 287 source files, 0 issues |
+| Tests | `pytest tests/` | **1356 passed**, 0 failed (408 s) |
+| Lint | `ruff check cod_doc/ tests/` | All checks passed |
+| Types | `mypy cod_doc/` | Success, 287 source files, 0 issues |
 | Projection drift | `doc drift -p cod-doc --all` | 106 in_sync, 0 stale, 0 edited, 0 missing |
 | Frontmatter | `audit -p cod-doc` | 0 findings (0 errors, 0 warnings) |
-| Целостность планов | `plan audit <scope>` ×5 | 0 issues, 0 циклов, 0 done-с-блокерами |
-| `pragma: no cover` | `grep -rn` | **0** (было 8; закрыто STB-010) |
+| Plan integrity | `plan audit <scope>` ×5 | 0 issues, 0 cycles, 0 done-with-blockers |
+| `pragma: no cover` | `grep -rn` | **0** (was 8; closed by STB-010) |
 
-Объём: 43 356 строк в `cod_doc/`, 29 271 строка тестов — соотношение 1:0.68.
+Volume: 43 356 lines in `cod_doc/`, 29 271 lines of tests — ratio 1:0.68.
 
-## 2. Содержимое БД (source of truth)
+## 2. DB contents (source of truth)
 
-| Сущность | Количество |
+| Entity | Count |
 |---|---|
-| Документы | 106 |
-| Задачи | 183 (179 `done`, 2 `pending`, 2 `cancelled`) |
-| Планы | 5 |
+| Documents | 106 |
+| Tasks | 183 (179 `done`, 2 `pending`, 2 `cancelled`) |
+| Plans | 5 |
 | User stories | 25 (20 accepted, 4 delivered, 1 draft) |
 | ADR | 6 |
-| Ссылки | 607 |
-| Ревизии | 1479 |
+| Links | 607 |
+| Revisions | 1479 |
 | Routines | 1 |
-| MCP-тулы | **103** (профиль `agent` — 6) |
-| Skills | **12** (было 9) |
+| MCP tools | **103** (`agent` profile — 6) |
+| Skills | **12** (was 9) |
 
-## 3. Что закрылось с 2026-06-05
+## 3. What closed since 2026-06-05
 
-План `stabilization-2026-06` — **12/13 done**:
+The `stabilization-2026-06` plan — **12/13 done**:
 
-| ID | Задача | Коммит |
+| ID | Task | Commit |
 |---|---|---|
-| STB-001 | Section H: agent-tools docstring + 4 integration-теста | `9967b82` |
-| STB-002 | Удалены 5 legacy YAML-модулей (863 строки dead code) | `c310503` |
-| STB-003 | WEB-031: import progress через WebSocket | `196bde4` |
+| STB-001 | Section H: agent-tools docstring + 4 integration tests | `9967b82` |
+| STB-002 | Removed 5 legacy YAML modules (863 lines of dead code) | `c310503` |
+| STB-003 | WEB-031: import progress via WebSocket | `196bde4` |
 | STB-004 | WEB-042: `cod-doc audit --web-routes` | `65c83f9` |
-| STB-010 | 8 degraded paths покрыты тестами, `pragma: no cover` снят | `91f9a97` |
-| STB-011 | Кеш `Config.load()` (mtime+size keyed) | `72863f9` |
-| STB-013 | COD-042/043: ContextService L2/L3 | *(см. §4)* |
+| STB-010 | 8 degraded paths covered by tests, `pragma: no cover` lifted | `91f9a97` |
+| STB-011 | `Config.load()` cache (mtime+size keyed) | `72863f9` |
+| STB-013 | COD-042/043: ContextService L2/L3 | *(see §4)* |
 | STB-014 | COD-052: freeze/rollback projection | `b4ad388` |
-| STB-020 | Хвост refactor-large-files подтверждён | — |
-| STB-021 | audit-followups: 10 doc-задач | `53ce40c` |
+| STB-020 | Tail of refactor-large-files confirmed | — |
+| STB-021 | audit-followups: 10 doc tasks | `53ce40c` |
 | STB-022 | Audit micro-cleanups (typing, event_bus leak, skill loader) | `823d6a1` |
 
-## 4. Находки этой сверки
+## 4. Findings of this reconciliation
 
-### F1 — STB-013 висел `pending` при готовой реализации *(закрыто)*
+### F1 — STB-013 was hanging `pending` with a ready implementation *(closed)*
 
-`ContextService` L2/L3 значились «заглушками». Сверка с кодом показала
-обратное:
+`ContextService` L2/L3 were listed as "stubs". Reconciliation with the code
+showed otherwise:
 
-- **L2** — `_enrich_l2_task()` (dependency chains через `plan_service.forward_chain` /
-  `reverse_chain`) и `_enrich_l2_document()` (cross-doc links) в
+- **L2** — `_enrich_l2_task()` (dependency chains via `plan_service.forward_chain` /
+  `reverse_chain`) and `_enrich_l2_document()` (cross-doc links) in
   `cod_doc/services/context_service.py`.
-- **L3** — `_enrich_l3_semantic()` там же: поиск по ChromaDB с graceful skip,
-  когда embedding-backend не сконфигурирован.
-- **Покрытие** — `tests/services/test_context_service.py`: depth-кейсы `L2`
-  (task + document) и `L3`.
+- **L3** — `_enrich_l3_semantic()` in the same file: ChromaDB search with a
+  graceful skip when the embedding backend is not configured.
+- **Coverage** — `tests/services/test_context_service.py`: depth cases for `L2`
+  (task + document) and `L3`.
 
-Единственным реальным остатком был устаревший module docstring («L2/L3
-deferred to COD-042»). Снят; задача закрыта с reason-доказательством.
-Классический случай из skill `ground-truth-reconcile` § «stub-остаток».
+The only real leftover was a stale module docstring ("L2/L3 deferred to
+COD-042"). Removed; the task closed with a reason-evidence. A classic case
+from the `ground-truth-reconcile` skill § "stub-leftover".
 
-### F2 — repo-index не был построен для самого cod-doc *(закрыто)*
+### F2 — repo-index was never built for cod-doc itself *(closed)*
 
-`repo_file` / `repo_symbol` содержали **0** записей: capability
-`observability-and-indexing` реализована (OBI-030), но на собственном
-проекте никогда не запускалась. После `cod-doc reindex files -p cod-doc`:
-**625 файлов, 3021 символ, 3967 импортов**, 57 583 пропущено по `.gitignore`.
+`repo_file` / `repo_symbol` contained **0** records: the
+`observability-and-indexing` capability is implemented (OBI-030), but was
+never run on the project itself. After `cod-doc reindex files -p cod-doc`:
+**625 files, 3021 symbols, 3967 imports**, 57 583 skipped per `.gitignore`.
 
-Симптом шире одной таблицы: **проект не догфудит собственные возможности.**
+The symptom is wider than one table: **the project does not dogfood its own
+capabilities.**
 
-### F3 — route drift: 66 недокументированных web-роутов *(открыто)*
+### F3 — route drift: 66 undocumented web routes *(open)*
 
-`cod-doc audit --web-routes` (сам инструмент из STB-004) на живом приложении
-даёт **67 расхождений**: 1 documented-but-missing (WR-1) и **66**
-undocumented (WR-2) — включая `POST /settings` и
+`cod-doc audit --web-routes` (the very tool from STB-004) on the live app
+yields **67 discrepancies**: 1 documented-but-missing (WR-1) and **66**
+undocumented (WR-2) — including `POST /settings` and
 `POST /p/{slug}/tasks/{task_id}/fields/{field}/improve`.
 
-Таблица роутов в `capabilities/web-frontend.md §3` отстала от кода на целую
-секцию функциональности. Проверка advisory и CI не валит — поэтому дрейф и
-накопился. → задача в новом роадмапе.
+The route table in `capabilities/web-frontend.md §3` lags behind the code by
+a whole feature section. The check is advisory and CI does not fail on it —
+which is why the drift accumulated. → a task in the new roadmap.
 
-### F4 — L0-payload агента упёрся в собственный потолок *(закрыто)*
+### F4 — the agent's L0 payload hit its own ceiling *(closed)*
 
-`agent_capabilities()` держит бюджет < 4 КБ (тест
-`test_agent_capabilities_payload_under_4kb`). Каталог скиллов инлайнился в
-payload целиком, включая хвосты `Триггеры: ...` — при 12 скиллах вышло
-4543 байта.
+`agent_capabilities()` keeps the budget under 4 KB (test
+`test_agent_capabilities_payload_under_4kb`). The skill catalog was inlined
+into the payload in full, including the `Triggers: ...` tails — at 12 skills
+that came out to 4543 bytes.
 
-Триггер-списки нужны **серверному** матчеру (`skill_service.match`), а не
-агенту. Убраны из L0, подпись ужата до одной клаузы (120 → 60 символов):
-**3586 байт, запас 510** (≈ 4 скилла). Payload перестал расти линейно от
-каталога.
+Trigger lists are needed by the **server-side** matcher
+(`skill_service.match`), not by the agent. Removed from L0, the signature
+was trimmed to a single clause (120 → 60 characters): **3586 bytes, 510 of
+headroom** (≈ 4 skills). The payload stopped growing linearly with the
+catalog.
 
-### F5 — глобальный конфиг непригоден для реальной работы *(закрыто 2026-08-25, ADO-001)*
+### F5 — global config is unfit for real work *(closed 2026-08-25, ADO-001)*
 
-`~/.cod-doc/config.yaml` содержит артефакты тестового прогона:
+`~/.cod-doc/config.yaml` contains artifacts from a test run:
 
 ```yaml
 model: test/model
@@ -145,150 +147,156 @@ projects:
   path: /private/var/folders/.../pytest-57/test_agent_run_full_cycle0/my-repo
 ```
 
-Единственный зарегистрированный проект — временная директория pytest,
-которой давно нет. Реальные проекты пользователя не заведены ни один.
-Прямое следствие: `cod-doc project list` показывает мусор, а агентский цикл
-(`agent run`) не запустить — модель не сконфигурирована.
+The only registered project is a temporary pytest directory that no longer
+exists. Not a single real user project is registered.
 
-Это **не** баг кода, это незаполненный конфиг. Но именно он — первое, что
-видит новый пользователь.
+Direct consequence: `cod-doc project list` shows garbage, and the agent
+cycle (`agent run`) cannot be launched — the model is not configured.
 
-**Закрыто 2026-08-25 (ADO-001):** `integration-test` удалён из реестра
-(`project remove`, playbook §0), в конфиг прописаны рабочий OpenRouter-ключ и
-модель `anthropic/claude-sonnet-4-6`, заведён первый реальный проект
-(`cod-doc`). Ключ проверен по `/api/v1/key`; `cod-doc agent run cod-doc
---no-autonomous` проходит конфиг-гейт («Нет задач в очереди», exit 0).
+This is **not** a code bug, it is an unfilled config. But it is exactly the
+first thing a new user sees.
 
-### F6 — нет корневого README *(открыто)*
+**Closed 2026-08-25 (ADO-001):** `integration-test` was removed from the
+registry (`project remove`, playbook §0), a working OpenRouter key and the
+model `anthropic/claude-sonnet-4-6` were written into the config, and the
+first real project (`cod-doc`) was registered. The key was verified against
+`/api/v1/key`; `cod-doc agent run cod-doc --no-autonomous` passes the
+config gate ("No tasks in queue", exit 0).
 
-В корне репозитория нет `README.md`. `pyproject.toml` подставляет как
-readme `docs/cod-doc-guide.md` — 30-минутный туториал, а не витрина. Для
-проекта, который позиционируется в hackathon-треке (RFC 16–20) и должен
-объясняться за 30 секунд, это дыра в воронке.
+### F6 — no root README *(open)*
 
-### F7 — `doc export` повреждает документ *(закрыто 2026-08-25, ADO-010)*
+There is no `README.md` at the repository root. `pyproject.toml` substitutes
+`docs/cod-doc-guide.md` as the readme — a 30-minute tutorial rather than a
+showcase. For a project positioned in a hackathon track (RFC 16–20) that
+must explain itself in 30 seconds, this is a hole in the funnel.
 
-Найдено при попытке привести 7 новоимпортированных документов в `in_sync`.
-`doc export` прогнан на `docs/system/capabilities/backup-and-export.md`;
-файл **восстановлен из копии сразу же**, в репозитории повреждений нет.
+### F7 — `doc export` corrupts the document *(closed 2026-08-25, ADO-010)*
 
-Три дефекта round-trip'а:
+Found while trying to bring 7 newly imported documents into `in_sync`.
+`doc export` was run on `docs/system/capabilities/backup-and-export.md`;
+the file **was restored from a copy immediately**, there is no corruption
+in the repository.
 
-1. **Склейка preamble с первым заголовком.** View `document_body` делает
-   `d.preamble || <секции>` без разделителя, а `preamble` в БД не
-   оканчивается переводом строки. На выходе:
-   `> …аудит были согласованы заранее.## 1. Зачем` — блок-цитата и
-   заголовок H2 сливаются в одну строку. Это **порча контента**, а не
-   форматирование.
-2. **Потеря H1.** Заголовок документа разбирается в `document.title` и при
-   рендере переиспускается только как frontmatter-поле `title:`.
-   `render_markdown` = frontmatter + body, а H1 не входит ни в preamble, ни
-   в секции. Любой export теряет заголовок документа.
-3. **Подмена `type`.** `capability` и `audit-report` отсутствуют в enum
-   `DocumentType`, хотя `standards/frontmatter.md §2` перечисляет
-   `audit-report` как валидный, а ~14 документов используют
-   `type: capability`. Импортёр молча подставляет `MODULE_SPEC` — и export
-   пишет обратно неверный тип. Вынесено отдельно как ADO-015.
+Three round-trip defects:
 
-Плюс косметика: ключи frontmatter переупорядочиваются по алфавиту, даты
-берутся в кавычки, теряется финальный перевод строки.
+1. **Preamble glued to the first heading.** The `document_body` view does
+   `d.preamble || <sections>` without a separator, and `preamble` in the DB
+   does not end with a newline. The output:
+   `> …the audits were agreed in advance.## 1. Why` — the blockquote and
+   the H2 heading merge into a single line. This is **content corruption**,
+   not a formatting issue.
+2. **Loss of H1.** The document title is parsed into `document.title` and on
+   render is re-emitted only as the frontmatter field `title:`.
+   `render_markdown` = frontmatter + body, and H1 is in neither preamble nor
+   sections. Any export loses the document title.
+3. **Substitution of `type`.** `capability` and `audit-report` are missing
+   from the `DocumentType` enum, although `standards/frontmatter.md §2`
+   lists `audit-report` as valid and ~14 documents use
+   `type: capability`. The importer silently substitutes `MODULE_SPEC` —
+   and export writes back the wrong type. Split out separately as ADO-015.
 
-**Почему не всплыло раньше.** `grep` по репозиторию не находит ни одного
-следа склейки, и все capability-доки сохранили H1 — значит **`doc export`
-на документах этого проекта не запускался ни разу**. 106 документов
-числятся `in_sync` потому, что их `projection_hash` проставлялся на
-write-path, а не экспортом.
+Plus cosmetics: frontmatter keys get reordered alphabetically, dates are
+quoted, the final newline is lost.
 
-**Почему это critical.** «Markdown — только проекция, генерируется из БД
-при export» — центральное обещание [VISION §2](../VISION.md). Направление
-БД → markdown сейчас непригодно к использованию, то есть **ключевая премиса
-системы не проверена**. Это же обесценивает совет «не экспортируйте сразу
-после импорта» из playbook'а: он верен, но по другой причине, чем
-предполагалось.
+**Why it did not surface earlier.** `grep` across the repository finds no
+trace of the gluing, and all capability docs kept their H1 — which means
+**`doc export` was never run on this project's documents**. The 106
+documents are listed as `in_sync` because their `projection_hash` was set
+on the write-path, not by export.
+
+**Why this is critical.** "Markdown is only a projection, generated from
+the DB on export" is the central promise of [VISION §2](../VISION.md). The
+DB → markdown direction is currently unusable, i.e. **a core premise of
+the system is unverified**. This also undermines the playbook advice "do
+not export right after import": it is correct, but for a different reason
+than assumed.
 
 → ADO-010 (critical), ADO-015 (medium).
 
-**Закрыто 2026-08-25 (ADO-010).** Миграция `0025_projection_fidelity`:
-разделитель `\n\n` между `preamble` и первой секцией в view `document_body`;
-H1 возвращается из `document.title` (новая колонка `title_in_body` помнит,
-был ли он в источнике); frontmatter переиспускается **дословно** из новой
-колонки `frontmatter_raw` — пере-сериализация из JSON ломала порядок ключей,
-брала даты в кавычки и переписывала flow-списки (40 из 71 дока) блочными.
-`type: capability` / `audit-report` больше не переписывается на `module-spec`
-на экспорте — тихая подмена в БД остаётся предметом ADO-015.
+**Closed 2026-08-25 (ADO-010).** Migration `0025_projection_fidelity`: a
+`\n\n` separator between `preamble` and the first section in the
+`document_body` view; H1 is restored from `document.title` (a new
+`title_in_body` column remembers whether it was in the source); frontmatter
+is re-emitted **verbatim** from the new `frontmatter_raw` column —
+re-serialization from JSON broke key order, quoted dates, and rewrote flow
+lists (40 of 71 docs) as block lists. `type: capability` / `audit-report`
+is no longer rewritten to `module-spec` on export — the silent
+substitution in the DB remains the subject of ADO-015.
 
-Проверено на живом корпусе: **71 из 71** документа `docs/` проходят
-`import → export` байт-в-байт (регресс-тест
-`tests/services/test_projection_roundtrip.py` пинит 8 разнотипных из них
-плюс fixed-point). Из 118 markdown-файлов репозитория расходятся 4 служебных
-(`.github/`): им дописывается пустая строка после `---` или после заголовка
-секции — пробельная нормализация, не потеря содержимого.
+Verified on the live corpus: **71 of 71** documents in `docs/` pass
+`import → export` byte-for-byte (the regression test
+`tests/services/test_projection_roundtrip.py` pins 8 of different types
+plus a fixed point). Of the 118 markdown files in the repository, 4 service
+ones (`.github/`) diverge: an empty line is appended after `---` or after a
+section heading — whitespace normalization, not content loss.
 
-Дополнительно (этап 1, блокер пилотов): `doc export --dry-run` печатает
-unified diff и ничего не пишет, а сам export отказывается перезаписать файл,
-не совпадающий ни с последним export'ом, ни с последним принятым import'ом,
-и — на CLI/MCP — писать в чужой checkout. Обе защиты снимает `--force-write`.
+Additionally (stage 1, blocker of pilots): `doc export --dry-run` prints a
+unified diff and writes nothing, and the export itself refuses to overwrite
+a file that matches neither the last export nor the last accepted import,
+and — on CLI/MCP — to write into a foreign checkout. Both guards are lifted
+by `--force-write`.
 
-## 5. Каталог скиллов: что извлечено
+## 5. Skill catalog: what was extracted
 
-До сверки — 9 скиллов, покрывавших **внутренний** цикл агента (постановка
-задач, валидация, drift, аудит). Анализ 215 коммитов показал три
-повторяющихся рабочих цикла **без** формализации:
+Before the reconciliation — 9 skills covering the **internal** agent cycle
+(task setup, validation, drift, audit). Analysis of 215 commits revealed
+three recurring work cycles **without** formalization:
 
-| Новый скилл | Повторялся | Почему не покрывался старыми |
+| New skill | Recurred | Why it was not covered by the old ones |
 |---|---|---|
-| `project-onboarding` | каждый заход «завести проект» | `task-standard` и `plan-to-tasks` начинаются **после** импорта; шага «репозиторий → БД» не было ни в одном скилле |
-| `ground-truth-reconcile` | 2026-06-05, 2026-07-29 | `drift-handling` про хэш документа vs файл; здесь — статус задачи vs реализация в коде. Другой предмет, другой арбитр, другой исход |
-| `rfc-authoring` | 21 RFC | формат сложился по прецеденту (мета-строка, «Текущее состояние», non-goals), но нигде не записан — каждый новый RFC переизобретал структуру |
+| `project-onboarding` | every "set up a project" entry | `task-standard` and `plan-to-tasks` start **after** import; the "repository → DB" step was in no skill |
+| `ground-truth-reconcile` | 2026-06-05, 2026-07-29 | `drift-handling` is about document hash vs file; here it is task status vs implementation in code. Different subject, different arbiter, different outcome |
+| `rfc-authoring` | 21 RFCs | the format evolved by precedent (meta-line, "Current state", non-goals), but was never written down — every new RFC reinvented the structure |
 
-Итог: **12 скиллов**. Разделены в `orchestrator/SKILL.md` на четыре группы —
-работа с задачами, целостность, закрытие фаз, вход в проект.
+Result: **12 skills**. Split in `orchestrator/SKILL.md` into four groups —
+working with tasks, integrity, closing phases, project onboarding.
 
-Наблюдение о перекосе: **21 RFC против 5 планов**. Предложений написано
-вчетверо больше, чем фронтов работ по ним. Это зафиксировано как
-anti-pattern в самом `rfc-authoring` («RFC вместо задачи»).
+Observation on the skew: **21 RFCs vs 5 plans**. Four times more proposals
+were written than work fronts based on them. This is recorded as an
+anti-pattern in `rfc-authoring` itself ("RFC instead of a task").
 
-## 6. Открытый бэклог после сверки
+## 6. Open backlog after the reconciliation
 
 `stabilization-2026-06` — 2 `pending`:
 
-| ID | Задача | Приоритет | Комментарий |
+| ID | Task | Priority | Comment |
 |---|---|---|---|
-| STB-012 | RFC #21: degraded-path auditability | high | Мотивация частично устарела: 8 `pragma: no cover` уже закрыты STB-010. Актуальным остаётся Tier-2 (`error_audit` для hard exceptions); Tier-1 (ring buffer) потерял основание → пересмотр в ADO-013 |
-| STB-023 | PCA-947: `activity_subscribe` (SSE) | low | Нужен только при event-driven orchestration; спроса нет |
+| STB-012 | RFC #21: degraded-path auditability | high | The motivation is partly stale: 8 `pragma: no cover` are already closed by STB-010. What remains relevant is Tier-2 (`error_audit` for hard exceptions); Tier-1 (ring buffer) lost its basis → revisited in ADO-013 |
+| STB-023 | PCA-947: `activity_subscribe` (SSE) | low | Only needed for event-driven orchestration; there is no demand |
 
-Находки этого отчёта заведены в БД как план **`adoption-2026-08`**
-(13 задач, 2 секции) — БД остаётся единым трекером:
+The findings of this report were registered in the DB as the plan
+**`adoption-2026-08`** (13 tasks, 2 sections) — the DB remains the single
+tracker:
 
-| Секция | Задачи | Источник |
+| Section | Tasks | Source |
 |---|---|---|
-| C — Adoption | ADO-001 … ADO-007 | F5, F6 + пилоты по playbook'у |
+| C — Adoption | ADO-001 … ADO-007 | F5, F6 + playbook pilots |
 | D — Residual debt | ADO-010 … ADO-015 | F7, F3, F2, STB-012 |
 
-Critical: **ADO-001** (конфиг непригоден) и **ADO-010** (export повреждает
-документ).
+Critical: **ADO-001** (config unfit) and **ADO-010** (export corrupts the
+document).
 
-## 7. Вывод
+## 7. Conclusion
 
-Трек A выполнил свою задачу: технический долг закрыт, suite зелёный,
-источники истины сходятся. Но **F2, F5, F6 и F7 указывают в одну сторону** —
-cod-doc построен и не используется, и там, где его не использовали,
-он не работает.
+Track A did its job: technical debt is closed, the suite is green, the
+sources of truth converge. But **F2, F5, F6 and F7 all point the same way** —
+cod-doc is built and not used, and where it was not used, it does not work.
 
-F7 — самое сильное подтверждение: центральное обещание системы («markdown —
-проекция из БД») сломано ровно потому, что этой дорогой ни разу не прошли.
-Догфудинг нашёл за один вечер то, чего не нашли 1356 тестов, два LLM-ревью
-и три аудита — потому что все они смотрели на код, а не пользовались им.
+F7 is the strongest confirmation: the central promise of the system
+("markdown is a projection from the DB") is broken precisely because no
+one ever walked that path. Dogfooding found in a single evening what 1356
+tests, two LLM reviews, and three audits did not — because all of them
+looked at the code, but did not use it.
 
-Отсюда приоритизация новой ROADMAP: Трек C (Adoption) выше Трека B (фичи),
-а ADO-010 идёт вперёд обоих — экспортом нельзя пользоваться на пилотах,
-пока он портит документы.
+Hence the prioritization of the new ROADMAP: Track C (Adoption) is above
+Track B (features), and ADO-010 goes ahead of both — export cannot be used
+on pilots while it corrupts documents.
 
-Обоснование и milestones — [ROADMAP.md](../roadmap/ROADMAP.md).
+Rationale and milestones — [ROADMAP.md](../roadmap/ROADMAP.md).
 
 ## Changelog
 
-| Дата | Событие |
+| Date | Event |
 |------|---------|
-| 2026-07-29 | **State-of-the-project audit.** Прогон 1356 тестов / ruff / mypy / drift / plan audit ×5 — всё зелёное. Закрыт STB-013 (F1: L2/L3 реализованы, снят устаревший docstring). Построен repo-index (F2: 625 файлов / 3021 символ). Ужат L0-payload `agent_capabilities` (F4: 4543 → 3586 байт). Извлечены 3 скилла: `project-onboarding`, `ground-truth-reconcile`, `rfc-authoring` (9 → 12). Пересчитаны 4 STALE-хэша в корневом `MASTER.md`. Зарегистрированы в БД 7 неучтённых документов. Найден **F7: `doc export` повреждает документ** (склейка preamble с заголовком, потеря H1, подмена `type`) — файл восстановлен, в репозитории повреждений нет. Открытыми зафиксированы F3 (66 undocumented routes), F5 (конфиг из тестового прогона), F6 (нет корневого README), F7. Заведён план `adoption-2026-08` — 13 задач ADO-001…ADO-015. |
-| 2026-08-25 | **ADO-001 закрыт — F5 снята.** `~/.cod-doc/config.yaml` починен: `integration-test` удалён из реестра (`project remove`), прописаны рабочий OpenRouter-ключ (проверен по `/api/v1/key`) и модель `anthropic/claude-sonnet-4-6`, заведён первый реальный проект `cod-doc` (идемпотентный бутстрап SYM-001). Smoke: `agent run cod-doc --no-autonomous` → «Нет задач в очереди», exit 0. |
+| 2026-07-29 | **State-of-the-project audit.** Run of 1356 tests / ruff / mypy / drift / plan audit ×5 — all green. Closed STB-013 (F1: L2/L3 implemented, stale docstring removed). Built repo-index (F2: 625 files / 3021 symbols). Trimmed the `agent_capabilities` L0 payload (F4: 4543 → 3586 bytes). Extracted 3 skills: `project-onboarding`, `ground-truth-reconcile`, `rfc-authoring` (9 → 12). Recomputed 4 STALE hashes in the root `MASTER.md`. Registered 7 untracked documents in the DB. Found **F7: `doc export` corrupts the document** (preamble glued to the heading, loss of H1, substitution of `type`) — the file was restored, there is no corruption in the repository. F3 (66 undocumented routes), F5 (config from a test run), F6 (no root README), F7 recorded as open. Created the `adoption-2026-08` plan — 13 tasks ADO-001…ADO-015. |
+| 2026-08-25 | **ADO-001 closed — F5 lifted.** `~/.cod-doc/config.yaml` fixed: `integration-test` removed from the registry (`project remove`), a working OpenRouter key (verified against `/api/v1/key`) and the model `anthropic/claude-sonnet-4-6` were written in, the first real project `cod-doc` was registered (idempotent bootstrap SYM-001). Smoke: `agent run cod-doc --no-autonomous` → "No tasks in queue", exit 0. |

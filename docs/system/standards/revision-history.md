@@ -13,150 +13,150 @@ related_docs:
 
 # Revision History Standard
 
-> Единая модель истории изменений для всех сущностей COD-DOC.
-> Заменяет ручные changelog-таблицы в markdown-документах (как в Restate `Docs/MASTER_DOCUMENTATION.md` или модульных спеках).
+> A unified change-history model for all COD-DOC entities.
+> Replaces manual changelog tables in markdown documents (as in Restate `Docs/MASTER_DOCUMENTATION.md` or module specs).
 
-## 1. Принцип
+## 1. Principle
 
-- Каждый write-path вызов пишет **одну** `revision`-запись (append-only).
-- Revision содержит diff, автора, timestamp, причину, опционально commit SHA.
-- Прошлая версия body восстанавливается проигрыванием diffs в обратном порядке.
-- Таблица `revision` — имутабельна; компактирование (squash старых revision) — отдельным сервисным job-ом с сохранением snapshot каждые N изменений.
+- Every write-path call writes **one** `revision` record (append-only).
+- A revision contains a diff, author, timestamp, reason, optionally a commit SHA.
+- A past body version is restored by playing diffs in reverse order.
+- The `revision` table is immutable; compaction (squashing old revisions) — a separate service job with a snapshot every N changes.
 
-## 2. Схема записи
+## 2. Record schema
 
 ```yaml
 revision_id: ULID                # 26 chars, '01HQX5Z9F0K8RNG6CB7VHQK4XX'
-parent_revision_id: ULID | null  # предыдущая revision той же сущности
+parent_revision_id: ULID | null  # previous revision of the same entity
 entity_kind: document | task | plan | story | link | module | proposal
 entity_id: <row_id>
 author: agent:<name> | human:<login> | mcp:<client> | system:<service>
-at: ISO-8601                     # должен соответствовать timestamp в revision_id
+at: ISO-8601                     # must match the timestamp in revision_id
 diff: unified-diff | json-patch
 reason: freeform string (recommended)
 commit_sha: optional
 ```
 
-**Формат `revision_id`** — ULID (Crockford-base32, 26 символов, 128 бит). Первые 48 бит — timestamp ms; остальные 80 — random. Сортируется лексикографически по времени; безопасен при offline-сессиях и нескольких репликах. Подробнее — `revision` в [DATA_MODEL.md §3.5](../DATA_MODEL.md).
+**The `revision_id` format** — ULID (Crockford-base32, 26 chars, 128 bits). The first 48 bits are a ms timestamp; the remaining 80 are random. Sorts lexicographically by time; safe for offline sessions and multiple replicas. Details — `revision` in [DATA_MODEL.md §3.5](../DATA_MODEL.md).
 
-## 3. Когда пишется revision
+## 3. When a revision is written
 
-| Событие | entity_kind | Комментарий |
+| Event | entity_kind | Comment |
 |---------|-------------|-------------|
 | `DocService.create` | document | `diff` = `+ entire body` |
 | `DocService.apply_patch` | document | canonical unified diff |
-| `DocService.rename` | document | diff по метаданным |
-| `TaskService.create` / `update` / `complete` | task | JSON-patch по изменённым полям |
-| `PlanService.recalc` | plan | revision только если `Progress Overview` действительно изменился |
+| `DocService.rename` | document | diff by metadata |
+| `TaskService.create` / `update` / `complete` | task | JSON-patch by changed fields |
+| `PlanService.recalc` | plan | a revision only if `Progress Overview` actually changed |
 | `StoryService.*` | story | JSON-patch |
-| `LinkService.resolve_bulk` | link | агрегированная revision на все изменённые ссылки |
-| `DocService.rename` + cascade | document × N | одна revision на каждый затронутый документ (для навигации) |
+| `LinkService.resolve_bulk` | link | an aggregated revision over all changed links |
+| `DocService.rename` + cascade | document × N | one revision per affected document (for navigation) |
 
 ## 4. Author
 
-Поле `author` обязательно. Форматы:
+The `author` field is mandatory. Formats:
 
-- `human:<login>` — человеческая сессия CLI/TUI.
-- `agent:<role>` — LLM-агент (`agent:task-steward`, `agent:doc-reviewer`).
-- `mcp:<client>` — внешний MCP-клиент (`mcp:claude-code`, `mcp:copilot`).
-- `system:<service>` — фоновые job-ы (`system:link-verifier`).
+- `human:<login>` — a human CLI/TUI session.
+- `agent:<role>` — an LLM agent (`agent:task-steward`, `agent:doc-reviewer`).
+- `mcp:<client>` — an external MCP client (`mcp:claude-code`, `mcp:copilot`).
+- `system:<service>` — background jobs (`system:link-verifier`).
 
-Подмена author запрещена на уровне API: MCP-клиент не может писать `human:...`.
+Author substitution is forbidden at the API level: an MCP client cannot write `human:...`.
 
-## 5. Diff-форматы
+## 5. Diff formats
 
-- Текстовые поля документов (`body`, `section.body`) — **unified diff**.
-- Структурные сущности (task, story) — **JSON-patch** (RFC 6902).
-- Переименования документов — JSON-patch по frontmatter + пустой diff для body.
+- Text fields of documents (`body`, `section.body`) — **unified diff**.
+- Structural entities (task, story) — **JSON-patch** (RFC 6902).
+- Document renames — JSON-patch by frontmatter + an empty diff for the body.
 
-## 6. Причина (`reason`)
+## 6. Reason (`reason`)
 
-Рекомендована, но не обязательна. Используется:
+Recommended, but not mandatory. Used:
 
-- В `cod-doc log <doc-key>` для человекочитаемой истории.
-- В MCP `revision.list` — агент читает «почему так сделано», не поднимая код.
-- В `export-changelog` для публичного CHANGELOG.md.
+- In `cod-doc log <doc-key>` for a human-readable history.
+- In MCP `revision.list` — the agent reads "why it was done this way" without lifting the code.
+- In `export-changelog` for the public CHANGELOG.md.
 
-Формат: одна-две строки на человеческом языке.
+Format: one or two lines in human language.
 
-Для task-ов причина = `status:pending→in-progress` когда reason не указан явно.
+For tasks, the reason = `status:pending→in-progress` when reason is not specified explicitly.
 
-## 7. Связь с Git
+## 7. Relation to Git
 
-Если COD-DOC вызван в контексте git-коммита (через pre-commit hook или CLI с `--commit`), `commit_sha` проставляется автоматически.
+If COD-DOC is invoked in the context of a git commit (via a pre-commit hook or CLI with `--commit`), `commit_sha` is set automatically.
 
-Обратно: `cod-doc log --since <sha>` умеет вытащить все revision, привязанные к коммитам с этого SHA.
+Conversely: `cod-doc log --since <sha>` can extract all revisions tied to commits from that SHA.
 
 ## 8. Rollback
 
 `cod-doc revision revert <revision_id>`:
 
-1. Читает diff обратно.
-2. Применяет inverse через соответствующий сервис.
-3. Пишет **новую** revision с `reason: "revert of <revision_id>"` (никогда не удаляет старую).
+1. Reads the diff backwards.
+2. Applies the inverse via the corresponding service.
+3. Writes a **new** revision with `reason: "revert of <revision_id>"` (never deletes the old one).
 
-Запрещено:
+Forbidden:
 
-- Прямое удаление записи `revision`.
-- Rollback без соответствующей сервисной операции (нельзя писать «сырой» контент напрямую).
+- Direct deletion of a `revision` record.
+- Rollback without a corresponding service operation (cannot write "raw" content directly).
 
-## 9. Экспорт в public CHANGELOG
+## 9. Export to a public CHANGELOG
 
-Команда `cod-doc export-changelog --since YYYY-MM-DD`:
+The `cod-doc export-changelog --since YYYY-MM-DD` command:
 
-- Группирует revision по дню.
-- Фильтрует только `entity_kind ∈ {document, task, plan}` с `status=active` либо `status=done`.
-- Группирует по модулю.
-- Генерирует markdown-отчёт, пригодный для публикации (аналог Restate `Docs/MASTER_DOCUMENTATION.md §Change Log`).
+- Groups revisions by day.
+- Filters only `entity_kind ∈ {document, task, plan}` with `status=active` or `status=done`.
+- Groups by module.
+- Generates a markdown report suitable for publication (analog of Restate `Docs/MASTER_DOCUMENTATION.md §Change Log`).
 
-## 10. Формат внутридокументной истории
+## 10. Format of in-document history
 
-Для документов, где важен «визуальный» changelog прямо в теле (напр. master doc), поддерживается секция `## Changelog`. Её **тело генерируется** из `revision` таблицы при export — редактировать руками нельзя (COD-DOC перезапишет).
+For documents where a "visual" changelog right in the body matters (e.g. a master doc), a `## Changelog` section is supported. Its **body is generated** from the `revision` table on export — manual editing is forbidden (COD-DOC will overwrite it).
 
 ```markdown
 ## Changelog
 
-| Дата | Событие |
+| Date | Event |
 |------|---------|
-| 2026-04-19 | Первая версия. |
-| 2026-04-20 | Добавлена секция "Data Model". |
+| 2026-04-19 | First version. |
+| 2026-04-20 | Added the "Data Model" section. |
 ```
 
-## 11. Ретенция
+## 11. Retention
 
-- По умолчанию — бессрочно.
-- Compact-job `cod-doc revision compact --older-than 365d` создаёт snapshot каждые N дней и удаляет «промежуточные» diffs. Исходная операция сохраняется как финальный snapshot.
-- Revision для статусов задач (low-value) могут сжиматься до `task-status-series` за день.
+- By default — indefinite.
+- A compact job `cod-doc revision compact --older-than 365d` creates a snapshot every N days and deletes "intermediate" diffs. The original operation is preserved as the final snapshot.
+- Revisions for task statuses (low-value) can be compressed into a `task-status-series` per day.
 
-## 12. Просмотр
+## 12. Viewing
 
-| Команда | Что показывает |
+| Command | What it shows |
 |---------|----------------|
-| `cod-doc log <doc-key>` | История документа с diff |
-| `cod-doc log task <AUTH-025>` | История задачи |
-| `cod-doc log --plan <plan> --since 7d` | Всё, что менялось в плане за неделю |
-| `cod-doc revision show <id>` | Детали одной revision |
-| MCP `revision.list(target)` | Агент-эквивалент |
+| `cod-doc log <doc-key>` | Document history with diff |
+| `cod-doc log task <AUTH-025>` | Task history |
+| `cod-doc log --plan <plan> --since 7d` | Everything that changed in the plan over a week |
+| `cod-doc revision show <id>` | Details of a single revision |
+| MCP `revision.list(target)` | Agent equivalent |
 
-## 13. Граница `audit_log` ↔ `revision` (DOC-ME-7)
+## 13. The `audit_log` ↔ `revision` boundary (DOC-ME-7)
 
-`revision` и `audit_log` — две разные таблицы с непересекающейся ответственностью.
-Правило простое: **`revision` фиксирует успешные мутации состояния, `audit_log`
-фиксирует всё остальное наблюдаемое поведение системы.**
+`revision` and `audit_log` are two different tables with non-overlapping responsibilities.
+The rule is simple: **`revision` records successful state mutations, `audit_log`
+records everything else observable in the system's behavior.**
 
 | | `revision` | `audit_log` |
 |---|---|---|
-| Что | успешные state-mutations сущностей (doc/task/story/plan/adr/…) | read-запросы, отказы authz, MCP-метаданные, неудачные write-попытки |
-| Когда пишется | только после коммита изменения | при любом значимом событии, в т.ч. отклонённом |
-| Обратимо | да — несёт diff для rollback (§8) | нет — это журнал фактов, не источник состояния |
-| Кто читает | `cod-doc log`, `revision.list`, export-changelog | аудит безопасности, диагностика, метрики |
+| What | successful state-mutations of entities (doc/task/story/plan/adr/…) | read-requests, authz denials, MCP-metadata, failed write attempts |
+| When written | only after the change is committed | on any significant event, including rejected ones |
+| Reversible | yes — carries the diff for rollback (§8) | no — it is a journal of facts, not a source of state |
+| Who reads | `cod-doc log`, `revision.list`, export-changelog | security audit, diagnostics, metrics |
 
-Пример на одной операции `task.update_status`:
+An example on a single `task.update_status` operation:
 
-- **ok** (переход разрешён, закоммичен) → запись в `revision` (+ опционально activity event).
-- **denied** (authz / `StatusTransitionError` / blocked-by-deps) → запись в `audit_log`
-  с причиной отказа; **revision не пишется** (состояние не изменилось).
+- **ok** (transition allowed, committed) → a record in `revision` (+ optionally an activity event).
+- **denied** (authz / `StatusTransitionError` / blocked-by-deps) → a record in `audit_log`
+  with the reason for denial; **no revision is written** (state did not change).
 
-Следствие: число `revision` ≈ число фактических изменений; `audit_log` шире и
-включает попытки и чтения. Для «что реально менялось» — `revision`; для «что
-происходило, включая отказы» — `audit_log`.
+Corollary: the number of `revision`s ≈ the number of actual changes; `audit_log` is broader and
+includes attempts and reads. For "what actually changed" — `revision`; for "what
+happened, including denials" — `audit_log`.

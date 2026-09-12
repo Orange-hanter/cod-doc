@@ -19,28 +19,28 @@ related_docs:
 
 # Paperclip Adoption — Kickoff Brief (2026-05-07)
 
-> **Назначение.** Точка входа в работу по адаптации паттернов
-> [paperclipai/paperclip](https://github.com/paperclipai/paperclip) для cod-doc.
-> Контекст, состояние, первый tick, критерии готовности, команды.
+> **Purpose.** Entry point for the work on adapting the patterns of
+> [paperclipai/paperclip](https://github.com/paperclipai/paperclip) for cod-doc.
+> Context, state, first tick, readiness criteria, commands.
 >
-> **Не source of truth.** Канонический документ — execution-plan
-> [paperclip-adoption-task-plan.md](paperclip-adoption-task-plan.md). Этот файл
-> живёт до закрытия Phase 1, после чего архивируется.
+> **Not source of truth.** The canonical document is the execution plan
+> [paperclip-adoption-task-plan.md](paperclip-adoption-task-plan.md). This file
+> lives until Phase 1 closes, after which it is archived.
 
 ## 1. TL;DR
 
-- **Что:** Привести четыре «прямых заимствования» из paperclip — Skills layer,
-  Heartbeat-context, Wake-payload, Run-id audit — в исполняемый беклог.
-- **Почему сейчас:** консолидационный цикл 2026-05-07 (см. [Cycle 1
-  audit](../audit/2026-05-07-doc-consolidation-cycle-1.md)) выявил, что 15 RFC
-  лежат в `/proposals/` без структурированного беклога; 58 done-задач в БД,
-  но 0 pending.
-- **Объём:** 4 stories (US-005..US-008), Section A в плане,
-  17 задач PCA-001..PCA-034.
-- **Риск:** низкий. Все 4 предложения помечены paperclip-индексом как
-  «🎯 Прямое заимствование, риск низкий».
+- **What:** Bring four "direct borrowings" from paperclip — Skills layer,
+  Heartbeat-context, Wake-payload, Run-id audit — into an executable backlog.
+- **Why now:** the consolidation cycle of 2026-05-07 (see [Cycle 1
+  audit](../audit/2026-05-07-doc-consolidation-cycle-1.md)) revealed that 15 RFCs
+  sit in `/proposals/` without a structured backlog; 58 done tasks in the DB,
+  but 0 pending.
+- **Scope:** 4 stories (US-005..US-008), Section A in the plan,
+  17 tasks PCA-001..PCA-034.
+- **Risk:** low. All 4 proposals are tagged with a paperclip index as
+  "🎯 Direct borrowing, low risk".
 
-## 2. Дерево предложений Phase 1
+## 2. Phase 1 proposal tree
 
 ```mermaid
 graph TD
@@ -57,39 +57,39 @@ graph TD
     class P01,P02,P03,P04 story;
 ```
 
-Минимально-разумный порядок: 01 → (02 параллельно) → 03 → 04.
+Reasonable minimal order: 01 → (02 in parallel) → 03 → 04.
 
-## 3. Состояние на 2026-05-07
+## 3. State as of 2026-05-07
 
-| Элемент | Состояние |
-|---------|-----------|
-| RFC написаны | ✅ proposals/01-04 (2026-05-06) |
-| Stories заведены | ⏳ создаются в этом цикле (US-005..US-008) |
-| Section A плана | ⏳ создаётся в этом цикле |
-| Tasks (PCA-001..PCA-034) | ⏳ создаются в этом цикле |
-| Реализация | ❌ pending |
+| Element | State |
+|---------|-------|
+| RFCs written | ✅ proposals/01-04 (2026-05-06) |
+| Stories created | ⏳ created in this cycle (US-005..US-008) |
+| Section A of the plan | ⏳ created in this cycle |
+| Tasks (PCA-001..PCA-034) | ⏳ created in this cycle |
+| Implementation | ❌ pending |
 
-## 4. Первый tick (для следующего сеанса)
+## 4. First tick (for the next session)
 
-1. Прочитать [`proposals/01-skills-layer.md`](../../../proposals/01-skills-layer.md) и
-   `cod_doc/agent/prompts.py:3` (текущий монолитный SYSTEM_PROMPT).
-2. Открыть `plan_ready(plan_scope='paperclip-adoption-task-plan')` —
-   первая ready-задача в зависимостях должна быть **PCA-001** (нет prerequisite).
-3. Запустить через `task.complete` обычный flow.
+1. Read [`proposals/01-skills-layer.md`](../../../proposals/01-skills-layer.md) and
+   `cod_doc/agent/prompts.py:3` (the current monolithic SYSTEM_PROMPT).
+2. Open `plan_ready(plan_scope='paperclip-adoption-task-plan')` —
+   the first ready task in the dependency graph should be **PCA-001** (no prerequisite).
+3. Run the usual flow via `task.complete`.
 
 ## 5. Acceptance for Phase 1
 
-- [ ] Все 4 stories US-005..US-008 имеют ≥1 task.
-- [ ] `cod_doc/skills/` существует, разрезание SYSTEM_PROMPT не повышает
-      строк в `prompts.py` (тонкий сборщик).
-- [ ] `task_heartbeat_context` MCP-tool работает; orchestrator зовёт его
-      раньше `get_master`, если есть текущая task_id.
-- [ ] `WakeContext` инжектится как первое user-message; для wake_reason ∈
-      {task_assigned, doc_drift, approval_resolved} `get_master` не вызывается.
-- [ ] `agent_runs` таблица наполняется; `run_get(run_id)` возвращает все
-      мутации одного прогона.
+- [ ] All 4 stories US-005..US-008 have ≥1 task.
+- [ ] `cod_doc/skills/` exists; splitting SYSTEM_PROMPT does not increase
+      lines in `prompts.py` (thin assembler).
+- [ ] `task_heartbeat_context` MCP-tool works; the orchestrator calls it
+      before `get_master` if there is a current task_id.
+- [ ] `WakeContext` is injected as the first user-message; for wake_reason ∈
+      {task_assigned, doc_drift, approval_resolved} `get_master` is not called.
+- [ ] The `agent_runs` table is populated; `run_get(run_id)` returns all
+      mutations of a single run.
 
-## 6. Команды
+## 6. Commands
 
 ```bash
 # Plan navigation
@@ -100,5 +100,5 @@ codex-doc plan progress --plan paperclip-adoption-task-plan
 codex-doc agent run --task PCA-003
 
 # After Phase 1 closes:
-# →  audit-report 2026-XX-XX-paperclip-phase-1.md (memory-pattern: закрытая фаза → audit-report)
+# →  audit-report 2026-XX-XX-paperclip-phase-1.md (memory-pattern: closed phase → audit-report)
 ```

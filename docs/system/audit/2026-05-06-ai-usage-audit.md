@@ -1,6 +1,6 @@
 ---
 type: audit-report
-scope: AI/LLM-использование в COD-DOC (orchestrator + ai_generate + ai_text + MCP)
+scope: AI/LLM usage in COD-DOC (orchestrator + ai_generate + ai_text + MCP)
 status: active
 source_of_truth: true
 owner: cod-doc core
@@ -26,88 +26,88 @@ related_code:
 
 # AI usage — System Audit (2026-05-06)
 
-> Полный inventory всех точек, где COD-DOC обращается к LLM либо отдаёт
-> tools для внешних AI-агентов. Цель — зафиксировать поверхность,
-> ограничения и боли пользователя; в §6 предложены направления развития.
+> A complete inventory of all points where COD-DOC calls an LLM or
+> exposes tools to external AI agents. The goal is to record the surface,
+> limitations and user pain points; §6 proposes directions for development.
 
 ## 0. TL;DR
 
-- **8 AI-поверхностей** (orchestrator + 6 generation/improve flow + embeddings).
-- **Один провайдер** — OpenRouter (OpenAI-compatible API). Прямых вызовов
-  на `api.anthropic.com` нет.
-- **Default-модель** — `anthropic/claude-sonnet-4-6`, переключаема через
+- **8 AI surfaces** (orchestrator + 6 generation/improve flow + embeddings).
+- **One provider** — OpenRouter (OpenAI-compatible API). No direct calls
+  to `api.anthropic.com`.
+- **Default model** — `anthropic/claude-sonnet-4-6`, switchable via
   [config.py:64](../../../cod_doc/config.py).
-- **Promp caching отсутствует** во всех вызовах — даже при повторной отправке
-  MASTER.md и больших system-prompts. Главный источник потенциальной экономии.
-- **Retry only в orchestrator-loop** ([retry.py](../../../cod_doc/agent/retry.py));
-  все `ai_generate`/`ai_text` вызовы — single-shot try/except.
-- **Cost tracking отсутствует**: токены пишутся в `trace_call`, но не
-  агрегируются в дашборд и не превращаются в $.
-- **Streaming только в orchestrator** через WebSocket
-  [api/websocket.py](../../../cod_doc/api/websocket.py); генерация stories/tasks/docs/improve —
-  blocking, без HTMX-progress.
-- **Human-in-the-loop**: есть инструмент `ask_human` (агент может спросить),
-  но нет обязательной approve-стадии в орхестраторе. Web-flow approve через
-  preview→save (хорошо), CLI/daemon flow approve опционален.
+- **Prompt caching is absent** in all calls — even when resubmitting
+  MASTER.md and large system-prompts. The main source of potential savings.
+- **Retry only in the orchestrator-loop** ([retry.py](../../../cod_doc/agent/retry.py));
+  all `ai_generate`/`ai_text` calls — single-shot try/except.
+- **Cost tracking is absent**: tokens are written to `trace_call`, but are not
+  aggregated into a dashboard and are not converted into $.
+- **Streaming only in the orchestrator** via WebSocket
+  [api/websocket.py](../../../cod_doc/api/websocket.py); generation of stories/tasks/docs/improve —
+  blocking, without HTMX-progress.
+- **Human-in-the-loop**: there is an `ask_human` tool (the agent can ask),
+  but there is no mandatory approve stage in the orchestrator. Web-flow approve via
+  preview→save (good), CLI/daemon flow approve is optional.
 
-## Сводка
+## Summary
 
-| Severity | Count | Описание |
+| Severity | Count | Description |
 |---|---:|---|
 | critical | 0 | — |
-| high | 4 | Нет prompt caching; нет cost tracking; retry на gen-flows; UX блокирующих ожиданий |
-| medium | 6 | Streaming генерации; provenance AI-output; budget guard; embeddings не интегрированы; rate-limit UX; context-degrade видимость |
-| low | 3 | Каталог моделей вручную; deprecated-version detection; cost prediction до запуска |
-| **итого** | **13** | — |
+| high | 4 | No prompt caching; no cost tracking; retry on gen-flows; UX of blocking waits |
+| medium | 6 | Generation streaming; AI-output provenance; budget guard; embeddings not integrated; rate-limit UX; context-degrade visibility |
+| low | 3 | Manual model catalog; deprecated-version detection; cost prediction before launch |
+| **total** | **13** | — |
 
 ---
 
-## 1. Inventory: где AI вызывается
+## 1. Inventory: where AI is called
 
-### 1.1 Orchestrator loop (главный AI-runner)
+### 1.1 Orchestrator loop (main AI-runner)
 
-**Где:** [cod_doc/agent/orchestrator.py:21,70-87,407-415](../../../cod_doc/agent/orchestrator.py),
+**Where:** [cod_doc/agent/orchestrator.py:21,70-87,407-415](../../../cod_doc/agent/orchestrator.py),
 [prompts.py](../../../cod_doc/agent/prompts.py), [tool_defs.py](../../../cod_doc/agent/tool_defs.py),
 [tools.py](../../../cod_doc/agent/tools.py), [retry.py](../../../cod_doc/agent/retry.py).
 
-| Аспект | Значение |
+| Aspect | Value |
 |---|---|
-| Клиент | `AsyncOpenAI(base_url=cfg.base_url, api_key=cfg.api_key)` |
-| Модель | `cfg.model` (default `anthropic/claude-sonnet-4-6`) |
-| System prompt | `prompts.py` — Snowball Protocol, fail-fast, гибридные ссылки |
+| Client | `AsyncOpenAI(base_url=cfg.base_url, api_key=cfg.api_key)` |
+| Model | `cfg.model` (default `anthropic/claude-sonnet-4-6`) |
+| System prompt | `prompts.py` — Snowball Protocol, fail-fast, hybrid references |
 | Tools | `read_file`, `write_file`, `calc_hash`, `get_context`, `get_project_status`, `create_task`, `update_task`, `story_get`, `story_link`, `ask_human`, `search_docs`, `reindex` |
-| Retry | `with_retry` (4 попытки, exp backoff, jitter) для transient (RateLimit/5xx/Connection) |
-| Context-degrade | 3 ступени (`no_master` → `refs_only` → `minimal`) при `context_length_exceeded` |
-| Budget | Soft cap `cfg.max_context_tokens` (default 100K), мягкое урезание перед запросом |
+| Retry | `with_retry` (4 attempts, exp backoff, jitter) for transient (RateLimit/5xx/Connection) |
+| Context-degrade | 3 stages (`no_master` → `refs_only` → `minimal`) on `context_length_exceeded` |
+| Budget | Soft cap `cfg.max_context_tokens` (default 100K), soft trimming before the request |
 | Trace | `trace_service.record(kind="chat", task_id, input_tokens, output_tokens, tool_calls)` |
 | Stream → UI | `event_bus.publish(slug, ...)` → WebSocket `/ws/projects/{slug}` (TUI/Web) |
 
-**Ограничения:**
-- Один монолитный system prompt, без `cache_control` блоков → каждый
-  iteration платит за весь prompt заново.
-- `with_retry` не различает `RateLimit-with-retry-after` vs generic 429:
-  использует один и тот же `2^attempt` backoff, что может вызвать ранний
-  rebound при честном rate-limit от OpenRouter.
-- `context_length_exceeded` лестница умна, но **не сохраняет, какой level
-  был достаточен**: следующая итерация снова стартует с L0 и может снова
-  получить 429.
-- Tool execution (`ToolExecutor.execute`) не имеет timeout — медленный
-  `read_file` на большом файле блокирует loop.
+**Limitations:**
+- One monolithic system prompt, without `cache_control` blocks → each
+  iteration pays for the whole prompt again.
+- `with_retry` does not distinguish `RateLimit-with-retry-after` vs generic 429:
+  it uses the same `2^attempt` backoff, which can cause an early
+  rebound on a fair rate-limit from OpenRouter.
+- The `context_length_exceeded` ladder is smart, but **does not remember which
+  level was sufficient**: the next iteration starts at L0 again and may
+  hit 429 again.
+- Tool execution (`ToolExecutor.execute`) has no timeout — a slow
+  `read_file` on a large file blocks the loop.
 
-### 1.2 Generation pipelines (AI-genrate в Web)
+### 1.2 Generation pipelines (AI-generation in Web)
 
-**Где:** [cod_doc/services/ai_generate.py](../../../cod_doc/services/ai_generate.py),
-вызывается из [api/web/pages/docs.py](../../../cod_doc/api/web/pages/docs.py),
+**Where:** [cod_doc/services/ai_generate.py](../../../cod_doc/services/ai_generate.py),
+called from [api/web/pages/docs.py](../../../cod_doc/api/web/pages/docs.py),
 [api/web/pages/stories.py](../../../cod_doc/api/web/pages/stories.py).
 
-| Функция | Цель | System prompt | Endpoint |
+| Function | Purpose | System prompt | Endpoint |
 |---|---|---|---|
-| `generate_stories` | Из подборки docs → JSON список stories | `_STORY_SYSTEM_PROMPT` | `POST /p/{slug}/stories/generate` |
-| `generate_tasks_for_story` | Story → 2-4ч задачи | `_TASK_SYSTEM_PROMPT` | `POST /p/{slug}/stories/{id}/tasks/generate` |
-| `generate_doc_from_sources` | N docs → новый документ | `_DOC_SYSTEM_PROMPT` | `POST /p/{slug}/docs/generate` |
-| `generate_master_from_folder` | Скан папки → MASTER.md draft | `_MASTER_SYSTEM_PROMPT` | используется в `import_master/scan` |
+| `generate_stories` | From a selection of docs → JSON list of stories | `_STORY_SYSTEM_PROMPT` | `POST /p/{slug}/stories/generate` |
+| `generate_tasks_for_story` | Story → 2-4h tasks | `_TASK_SYSTEM_PROMPT` | `POST /p/{slug}/stories/{id}/tasks/generate` |
+| `generate_doc_from_sources` | N docs → new document | `_DOC_SYSTEM_PROMPT` | `POST /p/{slug}/docs/generate` |
+| `generate_master_from_folder` | Folder scan → MASTER.md draft | `_MASTER_SYSTEM_PROMPT` | used in `import_master/scan` |
 
-Все 4 функции делят helper `_chat_json` ([ai_generate.py:305-348](../../../cod_doc/services/ai_generate.py#L305)):
+All 4 functions share the helper `_chat_json` ([ai_generate.py:305-348](../../../cod_doc/services/ai_generate.py#L305)):
 
 ```python
 client = OpenAI(api_key=cfg.api_key, base_url=cfg.base_url)
@@ -119,96 +119,97 @@ completion = client.chat.completions.create(
 )
 ```
 
-**Ограничения** (все четыре flow):
-- **Single-shot try/except** — никакого retry. Один RateLimit → AIBackendError → красная плашка в UI.
-- **Sync API** (`OpenAI`, не `AsyncOpenAI`) → блокирует event loop FastAPI на
-  длительные генерации (наблюдаемо: 10-30 секунд на crowded MASTER.md).
-- **Нет streaming** — пользователь ждёт молча. Только спиннер HTMX.
-- **JSON-mode без strict schema validation на стороне модели**: парсинг
-  через `json.loads` + ручные `_coerce_story/task/...`. На малых моделях
-  иногда возвращается prose поверх JSON → AIBackendError.
-- **User-message обрезается до 60K символов** в `generate_stories` —
-  для больших проектов выходит за scope без warning'а.
-- **Нет prompt cache** (даже когда тот же набор docs шлётся повторно).
+**Limitations** (all four flows):
+- **Single-shot try/except** — no retry at all. One RateLimit → AIBackendError → red banner in the UI.
+- **Sync API** (`OpenAI`, not `AsyncOpenAI`) → blocks the FastAPI event loop
+  during long generations (observed: 10-30 seconds on a crowded MASTER.md).
+- **No streaming** — the user waits silently. Only an HTMX spinner.
+- **JSON-mode without strict schema validation on the model side**: parsing
+  via `json.loads` + manual `_coerce_story/task/...`. On small models
+  prose is sometimes returned on top of JSON → AIBackendError.
+- **User-message is trimmed to 60K characters** in `generate_stories` —
+  for large projects it goes out of scope without a warning.
+- **No prompt cache** (even when the same set of docs is sent again).
 
-### 1.3 `improve_text` (inline AI-редактура полей)
+### 1.3 `improve_text` (inline AI-editing of fields)
 
-**Где:** [cod_doc/services/ai_text.py:48-104](../../../cod_doc/services/ai_text.py),
+**Where:** [cod_doc/services/ai_text.py:48-104](../../../cod_doc/services/ai_text.py),
 endpoint [tasks_fields.py:199](../../../cod_doc/api/web/fragments/tasks_fields.py).
 
 ```bash
 POST /p/{slug}/tasks/{task_id}/fields/{field}/improve
 ```
 
-| Аспект | Значение |
+| Aspect | Value |
 |---|---|
-| System prompt | `_SYSTEM_PROMPT` — senior technical editor, сохраняет markdown + язык |
-| User message | `intent` (что изменить) + `text` (исходный) |
+| System prompt | `_SYSTEM_PROMPT` — senior technical editor, preserves markdown + language |
+| User message | `intent` (what to change) + `text` (original) |
 | Trace | `trace_service.record(kind="improve", ...)` |
-| UI | Возвращает HTMX-фрагмент с suggested-text, пользователь принимает/отклоняет |
+| UI | Returns an HTMX fragment with suggested-text, the user accepts/rejects |
 
-**Ограничения:**
-- Никакого diff-вью: пользователь видит готовый текст, но не **что
-  именно** изменилось. Принять = переписать всё одним блоком.
-- Нет сохранения истории intent'ов — каждый раз пишешь «сделай короче»
-  заново.
-- Тот же синхронный sync OpenAI client → блокирует event loop.
+**Limitations:**
+- No diff view: the user sees the final text, but not **what exactly**
+  changed. Accept = rewrite everything in one block.
+- No history of intents saved — every time you write "make it shorter"
+  from scratch.
+- Same synchronous sync OpenAI client → blocks the event loop.
 
 ### 1.4 Generate tasks from MASTER (autonomous mode)
 
-**Где:** [orchestrator.py:521-567](../../../cod_doc/agent/orchestrator.py).
+**Where:** [orchestrator.py:521-567](../../../cod_doc/agent/orchestrator.py).
 
-Daemon-loop при наличии `daemon_enabled=true` берёт первые ~4000 символов
-MASTER.md, формирует **inline prompt** и просит LLM создать задачи через
-ограниченный tool-set (`create_task`, `get_project_status`).
+The daemon-loop, when `daemon_enabled=true`, takes the first ~4000 characters
+of MASTER.md, forms an **inline prompt** and asks the LLM to create tasks via
+a limited tool-set (`create_task`, `get_project_status`).
 
-**Ограничения:**
-- **Inline prompt без шаблона** — нет version control, нельзя A/B тестировать.
-- **Hard-coded 4000 символов** обрезки MASTER — для крупных проектов
-  половина контекста теряется без warning'а.
-- Нет idempotency: повторный запуск может создать дубликаты задач, кроме
-  как через `task_find_duplicate` (MCP-only utility).
+**Limitations:**
+- **Inline prompt without a template** — no version control, no A/B testing.
+- **Hard-coded 4000 characters** of MASTER trimming — for large projects
+  half the context is lost without a warning.
+- No idempotency: a re-run can create duplicate tasks, except
+  via `task_find_duplicate` (MCP-only utility).
 
-### 1.5 Embeddings (опционально)
+### 1.5 Embeddings (optional)
 
-**Где:** [cod_doc/services/](../../../cod_doc/services/) (ChromaDB),
-конфиг в [config.py:87-103](../../../cod_doc/config.py).
+**Where:** [cod_doc/services/](../../../cod_doc/services/) (ChromaDB),
+config in [config.py:87-103](../../../cod_doc/config.py).
 
-| Аспект | Значение |
+| Aspect | Value |
 |---|---|
 | Backend | `embedding_backend` ∈ {`openai` (default), `local` sentence-transformers} |
-| Модель | default `openai/text-embedding-ada-002` |
-| Хранилище | ChromaDB на диске (`cfg.chroma_path`) |
-| Tools | `search_docs(query)`, `reindex()` — доступны агенту через `tool_defs.py` |
+| Model | default `openai/text-embedding-ada-002` |
+| Storage | ChromaDB on disk (`cfg.chroma_path`) |
+| Tools | `search_docs(query)`, `reindex()` — available to the agent via `tool_defs.py` |
 
-**Ограничения:**
-- **Не интегрировано в основной loop** — orchestrator не делает retrieval
-  автоматически перед LLM-вызовом. Доступно только если LLM сам решит
-  вызвать `search_docs`.
-- **Нет hook'ов на изменения** — индекс обновляется руками через
-  `reindex()`. После `doc_create`/`section_patch` Chroma не знает.
-- Default `text-embedding-ada-002` — устаревшая модель (2022), точность
-  заметно ниже `text-embedding-3-small`/`-large` (2024) при том же ценнике.
+**Limitations:**
+- **Not integrated into the main loop** — the orchestrator does not do
+  retrieval automatically before the LLM call. Available only if the LLM
+  itself decides to call `search_docs`.
+- **No hooks on changes** — the index is updated manually via
+  `reindex()`. After `doc_create`/`section_patch` Chroma does not know.
+- Default `text-embedding-ada-002` — an outdated model (2022), accuracy
+  noticeably lower than `text-embedding-3-small`/`-large` (2024) at the
+  same price.
 
-### 1.6 MCP server (внешние AI потребляют наши tools)
+### 1.6 MCP server (external AI consumes our tools)
 
-**Где:** [cod_doc/mcp/](../../../cod_doc/mcp/), запуск `cod-doc mcp`.
+**Where:** [cod_doc/mcp/](../../../cod_doc/mcp/), launched via `cod-doc mcp`.
 
-Это inverse-направление: **наши инструменты экспортируются** во внешний
-MCP-клиент (Claude Code, Claude Desktop), который сам решает, когда их
-звать. Мы здесь не платим за токены — платит хост-агент.
+This is the inverse direction: **our tools are exported** to an external
+MCP client (Claude Code, Claude Desktop), which decides itself when to
+call them. We do not pay for tokens here — the host agent pays.
 
-**Ограничения** (с т.з. нашего проекта):
-- Нет per-tool authorization model — клиент имеет полный доступ к доменной
-  модели проекта. Для multi-tenant сценария недостаточно.
-- `tools/list` отдаётся целиком (~50 tools); большие LLM это поглощают,
-  но мелкие модели путаются в выборе.
+**Limitations** (from our project's perspective):
+- No per-tool authorization model — the client has full access to the
+  project's domain model. Insufficient for a multi-tenant scenario.
+- `tools/list` is returned in full (~50 tools); large LLMs absorb this,
+  but small models get confused in the choice.
 
 ---
 
-## 2. Конфигурация и управление ключами
+## 2. Configuration and key management
 
-| Поле | Default | Где | UI |
+| Field | Default | Where | UI |
 |---|---|---|---|
 | `api_key` | — (required) | [config.py:58](../../../cod_doc/config.py) | `/settings` (password input) |
 | `base_url` | `https://openrouter.ai/api/v1` | config.py:60 | `/settings` |
@@ -220,292 +221,291 @@ MCP-клиент (Claude Code, Claude Desktop), который сам решае
 | `agent_enabled` | false | config.py | `/settings` |
 | `agent_interval` | (sec) | config.py | `/settings` |
 
-Хранится в `~/.cod-doc/config.yaml` либо в env (`COD_DOC_*`).
+Stored in `~/.cod-doc/config.yaml` or in env (`COD_DOC_*`).
 
-**Ограничения:**
-- Один глобальный `api_key` на все проекты — нельзя выставить разные
-  тарифные ключи для prod-data и sandbox.
-- API-ключ читается plain-text из `config.yaml` (perms 0600 не enforce'ятся).
-- **Нет валидации** ключа на сохранении: ошибка вылезет только при первом
-  AI-вызове.
+**Limitations:**
+- One global `api_key` for all projects — you cannot set different
+  tariff keys for prod-data and sandbox.
+- API key is read plain-text from `config.yaml` (perms 0600 are not enforced).
+- **No key validation** on save: the error only shows up on the first
+  AI call.
 
 ---
 
-## 3. Каталог моделей и провенанс
+## 3. Model catalog and provenance
 
-[model_catalog.py](../../../cod_doc/services/model_catalog.py) описывает
-8 моделей: Sonnet 4.6 / Opus 4 / Haiku 4.5, GPT-5, GPT-4.1-mini,
-Gemini 2.5 Pro, DeepSeek R1, Llama 3.3-70b. Используется только для
-dropdown в Settings, **не валидирует** выбранную модель.
+[model_catalog.py](../../../cod_doc/services/model_catalog.py) describes
+8 models: Sonnet 4.6 / Opus 4 / Haiku 4.5, GPT-5, GPT-4.1-mini,
+Gemini 2.5 Pro, DeepSeek R1, Llama 3.3-70b. Used only for the
+dropdown in Settings, **does not validate** the selected model.
 
-**Provenance AI-output в БД:**
+**Provenance of AI-output in the DB:**
 
-| Сущность | Признак «AI-сгенерировано» |
+| Entity | "AI-generated" marker |
 |---|---|
-| Document | `frontmatter.generated_from = [source_doc_keys]` (только для `/docs/generate`) |
+| Document | `frontmatter.generated_from = [source_doc_keys]` (only for `/docs/generate`) |
 | Story | `Revision.reason = "ai-generate"` |
-| Task | `Revision.reason = "ai-generate:{story_id}"` или daemon-флоу |
-| Field improve | revision `reason="ai-improve:{field}"` (см. tasks_fields.py — требует ручной проверки) |
+| Task | `Revision.reason = "ai-generate:{story_id}"` or daemon-flow |
+| Field improve | revision `reason="ai-improve:{field}"` (see tasks_fields.py — requires manual review) |
 
-**Ограничения:**
-- Признак AI-author размазан по `Revision.reason` — **нет агрегата**
-  «все AI-сгенерированные сущности проекта». Аналитика «сколько AI vs human
-  пишет» из БД достаётся регулярным выражением по reason.
-- Нет связи `revision → trace_call` — невозможно из конкретной правки
-  попасть в её LLM-вызов (tokens, latency, model).
-- Document `frontmatter.generated_from` не индексируется → запрос «что
-  сгенерировано из MASTER.md» = сканирование всех docs.
+**Limitations:**
+- The AI-author marker is spread across `Revision.reason` — **there is no aggregate**
+  "all AI-generated entities of the project". Analytics "how much AI vs human
+  writes" is extracted from the DB with a regular expression over reason.
+- No link `revision → trace_call` — it is impossible to get from a specific
+  edit to its LLM call (tokens, latency, model).
+- Document `frontmatter.generated_from` is not indexed → the query "what
+  is generated from MASTER.md" = scanning all docs.
 
 ---
 
-## 4. Логирование и tracing
+## 4. Logging and tracing
 
-**Trace-таблица** ([trace_service.py](../../../cod_doc/services/trace_service.py)):
-поля `model`, `task_id`, `kind` (chat/search/reindex/improve), `input_tokens`,
+**Trace table** ([trace_service.py](../../../cod_doc/services/trace_service.py)):
+fields `model`, `task_id`, `kind` (chat/search/reindex/improve), `input_tokens`,
 `output_tokens`, `duration_ms`, `tool_calls` (JSON), `error`.
 
-**Где видно пользователю:**
-- Вкладка «Trace» на task-detail (если task_id связан) — list newest-first.
-- Глобальной страницы «AI activity» нет.
+**Where the user sees it:**
+- The "Trace" tab on task-detail (if task_id is linked) — list newest-first.
+- There is no global "AI activity" page.
 
-**Ограничения:**
-- `task_id` может быть NULL → orphan-traces (например, доковая генерация
-  не привязана к задаче) **невидимы** в UI. Доступ только через прямой
-  SQL-запрос.
-- **Нет ретеншн-полиси** — таблица растёт линейно, vacuum нет.
-- **Нет cost-колонки**. Чтобы посчитать $, нужен JOIN с `model_catalog.py`
-  (статика в коде, не в БД).
-- Tool_calls как JSON-string → нет fast-фильтра «все вызовы read_file»
-  без LIKE.
+**Limitations:**
+- `task_id` can be NULL → orphan-traces (for example, doc generation
+  not linked to a task) are **invisible** in the UI. Access only via a direct
+  SQL query.
+- **No retention policy** — the table grows linearly, no vacuum.
+- **No cost column**. To calculate $, you need a JOIN with `model_catalog.py`
+  (static in code, not in the DB).
+- Tool_calls as a JSON-string → no fast filter "all read_file calls"
+  without LIKE.
 
 ---
 
-## 5. Ограничения и боли (резюме)
+## 5. Limitations and pain points (summary)
 
 ### 5.1 High
 
-#### AI-HI-1. Нет prompt caching
-**Симптом:** каждый orchestrator-iteration отправляет один и тот же
-~3K-токенный system prompt + MASTER.md заново. На 50-step задаче —
-переплата ×50. Все четыре `ai_generate.*` flow тоже без cache.
+#### AI-HI-1. No prompt caching
+**Symptom:** each orchestrator-iteration sends the same
+~3K-token system prompt + MASTER.md again. On a 50-step task —
+overpayment ×50. All four `ai_generate.*` flows are also without cache.
 
-**Где:** [orchestrator.py:407-415](../../../cod_doc/agent/orchestrator.py),
+**Where:** [orchestrator.py:407-415](../../../cod_doc/agent/orchestrator.py),
 [ai_generate.py:320-328](../../../cod_doc/services/ai_generate.py).
 
-OpenRouter поддерживает Anthropic prompt caching (через `cache_control`
-блоки) и провайдер-специфичные cache hints. Не используется.
+OpenRouter supports Anthropic prompt caching (via `cache_control`
+blocks) and provider-specific cache hints. Not used.
 
-#### AI-HI-2. Нет cost tracking и budget guard
-**Симптом:** пользователь не видит затрат. Daemon-режим с `agent_enabled`
-+ `agent_interval=60` может за ночь сжечь $50 без алерта. Cost-fields
-нет ни в `trace_call`, ни в UI.
+#### AI-HI-2. No cost tracking and budget guard
+**Symptom:** the user does not see the costs. Daemon mode with `agent_enabled`
++ `agent_interval=60` can burn $50 overnight without an alert. Cost fields
+are absent both in `trace_call` and in the UI.
 
-#### AI-HI-3. Generation flows без retry
-**Симптом:** transient 429/503/connection-reset на `/docs/generate` или
-`/stories/generate` → красная плашка, пользователь жмёт refresh, всё
-заново (платим за второй prompt). [ai_generate.py:329-330](../../../cod_doc/services/ai_generate.py)
-ловит **любой** Exception как fatal.
+#### AI-HI-3. Generation flows without retry
+**Symptom:** transient 429/503/connection-reset on `/docs/generate` or
+`/stories/generate` → red banner, the user hits refresh, everything
+starts over (we pay for the second prompt). [ai_generate.py:329-330](../../../cod_doc/services/ai_generate.py)
+catches **any** Exception as fatal.
 
-#### AI-HI-4. Блокирующий UX долгих генераций
-**Симптом:** `/docs/generate` на крупном корпусе занимает 20-40 сек.
-Пользователь видит спиннер, не понимает «жив ли запрос», иногда
-F5 → дубль. Нет streaming, нет «X% complete», нет cancel.
+#### AI-HI-4. Blocking UX of long generations
+**Symptom:** `/docs/generate` on a large corpus takes 20-40 sec.
+The user sees a spinner, does not understand "is the request alive", sometimes
+F5 → duplicate. No streaming, no "X% complete", no cancel.
 
 ### 5.2 Medium
 
-#### AI-ME-1. Generation использует sync `OpenAI` в FastAPI handler
+#### AI-ME-1. Generation uses sync `OpenAI` in a FastAPI handler
 [ai_generate.py:317](../../../cod_doc/services/ai_generate.py) — sync
-client внутри def-handler'а. Блокирует event loop. Под нагрузкой даже
-один-два параллельных запроса делают весь Web фоновым.
+client inside a def-handler. Blocks the event loop. Under load even
+one or two parallel requests make the whole Web background.
 
-#### AI-ME-2. Streaming доступен только в orchestrator (WS)
-Web-flow генерации (stories/tasks/docs/improve) — single-shot. Нет SSE,
-нет partial-render. WEB-030 (SSE run console) для daemon-loop ещё не
-реализован.
+#### AI-ME-2. Streaming is available only in the orchestrator (WS)
+Web-flow generation (stories/tasks/docs/improve) — single-shot. No SSE,
+no partial-render. WEB-030 (SSE run console) for the daemon-loop is not
+implemented yet.
 
-#### AI-ME-3. Embeddings не используются автоматически
-ChromaDB настроен и работает, но retrieval перед LLM-вызовом не делается.
-Агент должен сам додуматься позвать `search_docs` — на практике редко.
-Эффективность контекста ниже потенциальной.
+#### AI-ME-3. Embeddings are not used automatically
+ChromaDB is configured and works, but retrieval before the LLM call is not done.
+The agent must itself think to call `search_docs` — in practice, rarely.
+Context efficiency is below potential.
 
-#### AI-ME-4. Provenance AI-output фрагментирован
-См. §3. Аналитика «AI-vs-human» = regex по `revision.reason` + сканирование
-`frontmatter`. Нет JOIN`ов на trace_call → cost-per-document не
-посчитать.
+#### AI-ME-4. AI-output provenance is fragmented
+See §3. Analytics "AI-vs-human" = regex over `revision.reason` + scanning
+`frontmatter`. No JOINs to trace_call → cost-per-document cannot
+be calculated.
 
-#### AI-ME-5. Context-degrade не fed back
-`orchestrator.py` после успеха в degraded-режиме всё равно стартует следующую
-итерацию с L0. Если нагрузка стабильна, мы каждый раз платим за один и
-тот же 429.
+#### AI-ME-5. Context-degrade is not fed back
+`orchestrator.py` after a success in degraded mode still starts the next
+iteration at L0. If the load is stable, we pay for the same 429 every time.
 
-#### AI-ME-6. Rate-limit UX без `Retry-After`
-[retry.py:108-141](../../../cod_doc/agent/retry.py) использует синтетический
-exp backoff даже при наличии `Retry-After` header'а от OpenRouter — может
-ретраить раньше или позже оптимального.
+#### AI-ME-6. Rate-limit UX without `Retry-After`
+[retry.py:108-141](../../../cod_doc/agent/retry.py) uses a synthetic
+exp backoff even when there is a `Retry-After` header from OpenRouter — may
+retry earlier or later than optimal.
 
 ### 5.3 Low
 
-#### AI-LO-1. `model_catalog.py` обновляется вручную
-При выходе Sonnet 4.7 нужен code-PR. Нет sync с OpenRouter `/v1/models`.
+#### AI-LO-1. `model_catalog.py` is updated manually
+When Sonnet 4.7 is released, a code-PR is needed. No sync with OpenRouter `/v1/models`.
 
-#### AI-LO-2. Нет deprecated-version detection
-Если `cfg.model` выпадает из списка моделей у провайдера — узнаём через
-fail в проде.
+#### AI-LO-2. No deprecated-version detection
+If `cfg.model` drops out of the provider's model list — we find out via
+a failure in prod.
 
-#### AI-LO-3. Нет cost-prediction до запуска
-В `/docs/generate` нет поля «estimated cost: $X.XX» на основе размера
-source-docs × cost модели. Пользователь жмёт «Generate» вслепую.
+#### AI-LO-3. No cost-prediction before launch
+In `/docs/generate` there is no field "estimated cost: $X.XX" based on the size
+of source-docs × model cost. The user clicks "Generate" blindly.
 
 ---
 
-## 6. Предложения по развитию (для решения болей пользователя)
+## 6. Proposals for development (to solve user pain)
 
-Группированы по типу боли. Каждая запись — backlog-кандидат, не план.
-Закрытие — после отдельного RFC/proposal.
+Grouped by pain type. Each entry is a backlog candidate, not a plan.
+Closure — after a separate RFC/proposal.
 
-### 6.1 Деньги и контроль расхода
+### 6.1 Money and spend control
 
-**P-1. Cost tracking + dashboard** *(закрывает AI-HI-2, AI-LO-3)*
-- Добавить колонку `cost_usd` в `trace_call` (compute из `model_catalog`
-  при записи).
-- Страница `/p/{slug}/ai-activity` (или вкладка в `/settings/usage`):
+**P-1. Cost tracking + dashboard** *(closes AI-HI-2, AI-LO-3)*
+- Add a `cost_usd` column to `trace_call` (compute from `model_catalog`
+  on write).
+- Page `/p/{slug}/ai-activity` (or a tab in `/settings/usage`):
   taxonomies — model × kind × day.
-- Soft budget в `config.yaml`: `daily_budget_usd` → daemon-loop стопится
-  при достижении.
-- Hard guard на `/docs/generate` и подобные: если запрос превысит
-  N% дневного бюджета — confirm-dialog.
+- Soft budget in `config.yaml`: `daily_budget_usd` → the daemon-loop stops
+  when reached.
+- Hard guard on `/docs/generate` and similar: if the request exceeds
+  N% of the daily budget — a confirm-dialog.
 
-**P-2. Cost-prediction перед запуском**
-- На форме `/docs/generate`: лайв-счётчик «~$0.04 input, ~$0.02 output, max ~$0.30»
-  на основе токенайзинга source-docs (`tiktoken` или эвристика).
-- То же для `/stories/generate`, `/improve`.
-- Боль: пользователь жмёт «Generate» и **знает**, что покупает.
+**P-2. Cost-prediction before launch**
+- On the `/docs/generate` form: a live counter "~$0.04 input, ~$0.02 output, max ~$0.30"
+  based on tokenizing source-docs (`tiktoken` or a heuristic).
+- Same for `/stories/generate`, `/improve`.
+- Pain: the user clicks "Generate" and **knows** what they are buying.
 
-**P-3. Prompt caching** *(закрывает AI-HI-1)*
-- В orchestrator: вынести system prompt + MASTER.md в `cache_control`-блок
-  (Anthropic-style через OpenRouter).
-- Замерить Cache-hit rate в `trace_call` (новое поле `cache_read_tokens`,
+**P-3. Prompt caching** *(closes AI-HI-1)*
+- In the orchestrator: move the system prompt + MASTER.md into a `cache_control`-block
+  (Anthropic-style via OpenRouter).
+- Measure the Cache-hit rate in `trace_call` (new fields `cache_read_tokens`,
   `cache_write_tokens`).
-- ROI: на 50-step задаче — экономия input-tokens 80-90%.
-- Боль: пользователь видит, что повторные запуски стоят на порядок дешевле.
+- ROI: on a 50-step task — input-tokens savings of 80-90%.
+- Pain: the user sees that repeated runs cost an order of magnitude less.
 
-### 6.2 UX долгих операций
+### 6.2 UX of long operations
 
-**P-4. Streaming генерации в Web** *(закрывает AI-HI-4, AI-ME-2)*
-- Перевести `/docs/generate`, `/stories/generate`, `/improve` на async
-  +`stream=True` + SSE (`hx-ext="sse"` уже работает в `_layout/project_tabs.html`).
-- Partial render: показывать секции по мере прибытия.
-- Кнопка «Cancel» — `DELETE /jobs/{job_id}`.
-- Боль: ожидание перестаёт ощущаться как «зависло».
+**P-4. Streaming generation in Web** *(closes AI-HI-4, AI-ME-2)*
+- Move `/docs/generate`, `/stories/generate`, `/improve` to async
+  +`stream=True` + SSE (`hx-ext="sse"` already works in `_layout/project_tabs.html`).
+- Partial render: show sections as they arrive.
+- "Cancel" button — `DELETE /jobs/{job_id}`.
+- Pain: the wait stops feeling like "it's frozen".
 
-**P-5. Retry для generation flows** *(закрывает AI-HI-3)*
-- Применить `with_retry` ко всем `_chat_json`-вызовам.
-- Различать transient (429/503/connection) vs fatal (auth/4xx-other).
-- Боль: один отвал сети не теряет работу.
+**P-5. Retry for generation flows** *(closes AI-HI-3)*
+- Apply `with_retry` to all `_chat_json` calls.
+- Distinguish transient (429/503/connection) vs fatal (auth/4xx-other).
+- Pain: a single network drop does not lose the work.
 
-**P-6. Async-везде в Web AI-handler'ах** *(закрывает AI-ME-1)*
-- Поменять [ai_generate.py:_chat_json](../../../cod_doc/services/ai_generate.py)
-  на `async def` + `AsyncOpenAI`.
-- FastAPI-handler'ы переключить с `def` на `async def`.
-- Боль: при двух пользователях UI не подвисает.
+**P-6. Async-everywhere in Web AI-handlers** *(closes AI-ME-1)*
+- Change [ai_generate.py:_chat_json](../../../cod_doc/services/ai_generate.py)
+  to `async def` + `AsyncOpenAI`.
+- Switch FastAPI handlers from `def` to `async def`.
+- Pain: with two users the UI does not hang.
 
-### 6.3 Качество AI-вывода и доверие
+### 6.3 AI-output quality and trust
 
-**P-7. Diff-view для `improve`** *(закрывает часть AI-ME-x в §1.3)*
-- Возвращать не plain-text, а diff (старый ↔ новый) как в `_frag/section_view`.
-- Поле «Why?» — почему AI предложил эту правку (опциональный prompt-trick:
-  попросить вернуть `{before, after, rationale}`).
-- Боль: пользователь видит **что именно** меняется и решает осознанно.
+**P-7. Diff-view for `improve`** *(closes part of AI-ME-x in §1.3)*
+- Return not plain-text, but a diff (old ↔ new) as in `_frag/section_view`.
+- A "Why?" field — why the AI proposed this edit (optional prompt-trick:
+  ask to return `{before, after, rationale}`).
+- Pain: the user sees **what exactly** changes and decides consciously.
 
-**P-8. Embeddings retrieval перед LLM-вызовом** *(закрывает AI-ME-3)*
-- Hook'и на `doc_create` / `section_patch` / `task_create` →
-  пересчёт Chroma-вектора (background task).
-- В orchestrator: перед основным LLM-вызовом — top-K retrieval по текущей
-  задаче, добавление в `<context_refs>`.
-- Миграция default embedding-модели на `text-embedding-3-small`.
-- Боль: агент находит релевантные секции **сам**, без необходимости
-  явно перечислять refs в задаче.
+**P-8. Embeddings retrieval before the LLM call** *(closes AI-ME-3)*
+- Hooks on `doc_create` / `section_patch` / `task_create` →
+  recompute the Chroma vector (background task).
+- In the orchestrator: before the main LLM call — top-K retrieval on the current
+  task, added to `<context_refs>`.
+- Migrate the default embedding model to `text-embedding-3-small`.
+- Pain: the agent finds relevant sections **on its own**, without the need
+  to explicitly list refs in the task.
 
-**P-9. Provenance UI: agg AI-output** *(закрывает AI-ME-4)*
-- Колонка `created_by_kind` в `Document` / `Task` / `Story`: `human|ai|hybrid`.
-- Внешний ключ `revision.trace_call_id`.
-- Страница `/p/{slug}/ai-activity` (см. P-1) показывает: «AI создал N tasks /
-  M docs за период, средняя стоимость $X».
-- Боль: «можно ли доверять этому документу?» — ответ виден, не догадка.
+**P-9. Provenance UI: agg AI-output** *(closes AI-ME-4)*
+- A `created_by_kind` column in `Document` / `Task` / `Story`: `human|ai|hybrid`.
+- A foreign key `revision.trace_call_id`.
+- The page `/p/{slug}/ai-activity` (see P-1) shows: "AI created N tasks /
+  M docs over the period, average cost $X".
+- Pain: "can I trust this document?" — the answer is visible, not a guess.
 
 ### 6.4 Reliability
 
-**P-10. Honor `Retry-After`** *(закрывает AI-ME-6)*
-- В [retry.py](../../../cod_doc/agent/retry.py): если в exception есть
-  `retry_after` (RateLimitError parses header), использовать его вместо
+**P-10. Honor `Retry-After`** *(closes AI-ME-6)*
+- In [retry.py](../../../cod_doc/agent/retry.py): if the exception has
+  `retry_after` (RateLimitError parses the header), use it instead of
   exp backoff.
 
-**P-11. Адаптивный context-level memory** *(закрывает AI-ME-5)*
-- Сохранять в `task_meta` last successful context-level (`L0|no_master|refs_only`).
-- Следующая итерация стартует с него, не с L0.
+**P-11. Adaptive context-level memory** *(closes AI-ME-5)*
+- Save to `task_meta` the last successful context-level (`L0|no_master|refs_only`).
+- The next iteration starts from it, not from L0.
 
 **P-12. Tool-execution timeout**
-- В `ToolExecutor.execute` — `asyncio.wait_for(..., timeout=30)`.
-- Боль: orchestrator не висит на rogue read_file из 1GB-лога.
+- In `ToolExecutor.execute` — `asyncio.wait_for(..., timeout=30)`.
+- Pain: the orchestrator does not hang on a rogue read_file of a 1GB log.
 
-### 6.5 Долго-играющий backlog (P-13..15)
+### 6.5 Long-running backlog (P-13..15)
 
-**P-13. Per-project / per-environment API-ключ**
-Сейчас один global. Дать override в `Project.config` для разделения
-prod/sandbox-расходов.
+**P-13. Per-project / per-environment API key**
+Currently one global. Allow an override in `Project.config` to separate
+prod/sandbox spending.
 
-**P-14. Auto-sync `model_catalog`** *(закрывает AI-LO-1, AI-LO-2)*
-Cron-job (или ленивый refresh при старте) → fetch OpenRouter `/v1/models`
-→ update local catalog. Detection deprecation → warning в `/settings`.
+**P-14. Auto-sync `model_catalog`** *(closes AI-LO-1, AI-LO-2)*
+Cron-job (or a lazy refresh on start) → fetch OpenRouter `/v1/models`
+→ update the local catalog. Deprecation detection → warning in `/settings`.
 
-**P-15. Обязательная approval-stage для daemon-режима**
-Сейчас daemon пишет в БД напрямую. Добавить `daemon_approval_required=true`:
-вместо commit'а агент создаёт `proposal` (см. [proposals/12-approvals.md](../../../proposals/12-approvals.md)),
-человек ревьюит в UI, нажимает accept. Боль: автономный режим перестаёт
-быть «страшным».
+**P-15. Mandatory approval-stage for daemon mode**
+Currently the daemon writes to the DB directly. Add `daemon_approval_required=true`:
+instead of a commit, the agent creates a `proposal` (see [proposals/12-approvals.md](../../../proposals/12-approvals.md)),
+the human reviews in the UI, clicks accept. Pain: the autonomous mode stops
+being "scary".
 
 ---
 
-## 7. Топ-5 изменений с максимальным impact
+## 7. Top-5 changes with maximum impact
 
-| # | Предложение | Закрывает | Затраты | Польза |
+| # | Proposal | Closes | Cost | Benefit |
 |---|---|---|---|---|
-| 1 | **P-3 Prompt caching** | AI-HI-1 | средние (контракт `cache_control`) | -80 % input-tokens на повторных запусках |
-| 2 | **P-1 Cost tracking + dashboard** | AI-HI-2, AI-LO-3 | средние (новые поля + page) | пользователь перестаёт бояться daemon |
-| 3 | **P-4 Streaming генерации** | AI-HI-4, AI-ME-2 | средние (async переход + SSE) | UX перестаёт «зависать» |
-| 4 | **P-5 Retry для gen-flows** | AI-HI-3 | малые (применить `with_retry`) | устранение «случайных» падений |
-| 5 | **P-8 Embeddings retrieval** | AI-ME-3 | средние (hook'и + миграция модели) | агент сам находит контекст |
+| 1 | **P-3 Prompt caching** | AI-HI-1 | medium (`cache_control` contract) | -80% input-tokens on repeated runs |
+| 2 | **P-1 Cost tracking + dashboard** | AI-HI-2, AI-LO-3 | medium (new fields + page) | the user stops fearing the daemon |
+| 3 | **P-4 Generation streaming** | AI-HI-4, AI-ME-2 | medium (async transition + SSE) | the UX stops "freezing" |
+| 4 | **P-5 Retry for gen-flows** | AI-HI-3 | small (apply `with_retry`) | eliminating "random" failures |
+| 5 | **P-8 Embeddings retrieval** | AI-ME-3 | medium (hooks + model migration) | the agent finds context on its own |
 
 ---
 
-## 8. Методология
+## 8. Methodology
 
-1. Inventory собран grep'ом по `cod_doc/`:
+1. The inventory was collected via grep over `cod_doc/`:
    - `grep -rnE "AsyncOpenAI|OpenAI\(|claude|openrouter|cache_control|stream="`,
    - `grep -rn "AIBackendError\|trace_service\|response_format"`,
-   - проверены `cod_doc/agent/`, `cod_doc/services/`, `cod_doc/api/web/pages/`,
+   - checked `cod_doc/agent/`, `cod_doc/services/`, `cod_doc/api/web/pages/`,
      `cod_doc/api/web/fragments/`, `cod_doc/mcp/`.
-2. Каждое утверждение в §1-§4 проверено чтением файла на указанной строке.
+2. Each claim in §1-§4 was verified by reading the file at the indicated line.
 3. Severity:
-   - **high** — пользователь теряет деньги или продуктивность каждый день;
-   - **medium** — UX-degradation, обходимое;
-   - **low** — гигиена, операционные риски.
-4. Предложения в §6 не претендуют на план; это backlog-затравка для
-   отдельных RFC.
+   - **high** — the user loses money or productivity every day;
+   - **medium** — UX-degradation, avoidable;
+   - **low** — hygiene, operational risks.
+4. The proposals in §6 do not claim to be a plan; this is backlog seed for
+   separate RFCs.
 
-## 9. Что осталось вне scope
+## 9. What remained out of scope
 
-- **Безопасность ключей** (encryption-at-rest, env-only) — отдельный
+- **Key security** (encryption-at-rest, env-only) — a separate
   security audit.
-- **Качество промптов** (prompt-engineering review system-prompts) —
-  требует A/B-тестинга, отдельный workstream.
-- **Этика AI-output** (галлюцинации, fail-fast в prompts.py есть, но
-  не оценены количественно) — отдельный quality-audit.
-- **MCP authorization model** — будет рассматриваться при появлении
-  multi-tenant сценария.
+- **Prompt quality** (prompt-engineering review of system-prompts) —
+  requires A/B testing, a separate workstream.
+- **AI-output ethics** (hallucinations, fail-fast exists in prompts.py but
+  not assessed quantitatively) — a separate quality-audit.
+- **MCP authorization model** — will be considered when a
+  multi-tenant scenario appears.
 
 ## 10. Changelog
 
-| Дата | Событие |
+| Date | Event |
 |---|---|
-| 2026-05-06 | Аудит проведён. 13 находок (4 high, 6 medium, 3 low). 15 предложений сгруппированы по типу боли. Топ-5 приоритизирован. |
+| 2026-05-06 | Audit conducted. 13 findings (4 high, 6 medium, 3 low). 15 proposals grouped by pain type. Top-5 prioritized. |

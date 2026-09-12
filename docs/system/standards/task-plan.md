@@ -14,36 +14,36 @@ related_docs:
 
 # Task Plan Standard
 
-> Целевой формат задач и планов в COD-DOC.
-> За основу взят Restate (`Docs/standards/task-plan.md`) — формат проверен на десятках активных планов.
-> Отличие: в COD-DOC формат markdown — это **проекция**; источник истины — БД. Все правила ниже равно применяются и к БД-сущностям, и к экспортированному markdown.
+> The target format of tasks and plans in COD-DOC.
+> Based on Restate (`Docs/standards/task-plan.md`) — the format is proven on dozens of active plans.
+> Difference: in COD-DOC the markdown format is a **projection**; the source of truth is the DB. All rules below apply equally to DB entities and to exported markdown.
 
-## 1. Два формата
+## 1. Two formats
 
-| Формат | Когда |
+| Format | When |
 |--------|-------|
-| **Split** | План ≥ 15 задач или модуль редактируется параллельно несколькими исполнителями. Parent plan + dedicated `tasks/section-*.md`. |
-| **Inline** | Короткий план (≤ 15 задач), один автор. Все секции — в одном файле. |
+| **Split** | A plan ≥ 15 tasks or the module is edited in parallel by several contributors. Parent plan + dedicated `tasks/section-*.md`. |
+| **Inline** | A short plan (≤ 15 tasks), one author. All sections in one file. |
 
-Миграция между форматами идёт через `cod-doc plan convert --format split`.
+Migration between formats goes through `cod-doc plan convert --format split`.
 
-> **Терминология (DOC-LO-2).** Различаем: **section** — раздел плана (DB-сущность
-> `plan_section`, буква + slug, резервирует decade номеров, см. §8); **section-file** —
-> markdown-файл `tasks/section-<letter>-<slug>.md`, существует только в split-формате
-> как проекция одной section. В inline-формате section'ы живут в одном файле плана и
-> отдельных section-files нет. «Файл секции» = section-file; «секция» = section.
+> **Terminology (DOC-LO-2).** Distinguish: **section** — a plan division (DB entity
+> `plan_section`, letter + slug, reserves a decade of numbers, see §8); **section-file** — a
+> markdown file `tasks/section-<letter>-<slug>.md`, exists only in the split format
+> as a projection of one section. In the inline format, sections live in one plan file
+> and there are no separate section-files. "Section file" = section-file; "section" = section.
 
-## 2. Структура файлов (projection)
+## 2. File structure (projection)
 
 ```text
 docs/plans/<module-slug>/
 ├── <module>-task-plan.md            ← parent (execution plan)
-├── <module>-completed-tasks.md      ← при ≥ 20 задач
+├── <module>-completed-tasks.md      ← when ≥ 20 tasks
 └── tasks/
-    └── section-<letter>-<slug>.md   ← только для split
+    └── section-<letter>-<slug>.md   ← only for split
 ```
 
-Корневая директория для планов — настраиваемая (`project.config.json` / `config_json`). По умолчанию `docs/plans/`; при импорте Restate — `Docs/obsidian/Modules/<Module>/`.
+The root directory for plans is configurable (`project.config.json` / `config_json`). The default is `docs/plans/`; on Restate import — `Docs/obsidian/Modules/<Module>/`.
 
 ## 3. Execution plan — frontmatter
 
@@ -57,60 +57,60 @@ created: YYYY-MM-DD
 last_updated: YYYY-MM-DD
 source_of_truth:
   module_spec: modules/<module>/overview
-completed_log: plans/<module>/<module>-completed-tasks   # если ≥ 20 задач
+  completed_log: plans/<module>/<module>-completed-tasks   # when ≥ 20 tasks
 ---
 ```
 
-Правила: идентичны Restate §2.1 с поправкой на `doc_key` вместо относительных путей.
+Rules: identical to Restate §2.1 with the adjustment for `doc_key` instead of relative paths.
 
-## 4. Обязательные секции execution-plan
+## 4. Mandatory sections of an execution-plan
 
-1. **Navigation** — ссылки на Home, module spec, NAVIGATION, completed-log.
-2. **Progress Overview** — генерируется из `section_totals`; трогать руками нельзя.
-3. **Gap Analysis Summary** — что уже реализовано, что — нет.
-4. **Next Batch** — до 7 задач; генерируется из view `ready_tasks`.
-5. **Dependency Graph** — Mermaid; обязателен при ≥ 15 задач.
+1. **Navigation** — links to Home, module spec, NAVIGATION, completed-log.
+2. **Progress Overview** — generated from `section_totals`; manual editing is forbidden.
+3. **Gap Analysis Summary** — what is already implemented, what is not.
+4. **Next Batch** — up to 7 tasks; generated from the `ready_tasks` view.
+5. **Dependency Graph** — Mermaid; mandatory when ≥ 15 tasks.
 
-## 5. Task — обязательные поля
+## 5. Task — mandatory fields
 
-| Поле | Валидация |
+| Field | Validation |
 |------|-----------|
-| `id` | `<PREFIX>-<NNN>`; PREFIX ∈ `[A-Z]{2,5}`; globally unique по проекту |
-| `title` | начинается с verb pattern (§ 7) |
+| `id` | `<PREFIX>-<NNN>`; PREFIX ∈ `[A-Z]{2,5}`; globally unique within the project |
+| `title` | starts with a verb pattern (§ 7) |
 | `section` | `<LETTER>-<KebabSlug>` |
 | `status` | `pending` / `in-progress` / `done` |
-| `type` | см. § 6 |
+| `type` | see § 6 |
 | `priority` | `critical` / `high` / `medium` / `low` |
-| `depends_on` | массив task-id; проверяется на циклы и существование |
+| `depends_on` | array of task-ids; checked for cycles and existence |
 
-Рекомендовано:
+Recommended:
 
-- `affected_files` — для feature/test/bug/refactor. Включает pg diff-based sync (см. § 9).
+- `affected_files` — for feature/test/bug/refactor. Includes pg diff-based sync (see § 9).
 
 ### 5.1 Priority rubric (DOC-ME-6)
 
-`priority` выставляется по матрице **blocker × user-impact × scope** — не «на глаз»:
+`priority` is set by the **blocker × user-impact × scope** matrix — not "by eye":
 
-| Priority | Blocker | User-impact | Когда |
+| Priority | Blocker | User-impact | When |
 |----------|---------|-------------|-------|
-| `critical` | блокирует релиз / ломает прод | потеря данных, недоступность | чинить немедленно |
-| `high` | блокирует ≥1 зависимую задачу | заметный для пользователя/агента | в текущем батче |
-| `medium` | не блокирует, но в плане цикла | косвенный / DX | ближайший месяц |
-| `low` | оппортунистично | незаметный (рефактор, доки, чистка) | по возможности |
+| `critical` | blocks a release / breaks prod | data loss, unavailability | fix immediately |
+| `high` | blocks ≥1 dependent task | noticeable to the user/agent | in the current batch |
+| `medium` | does not block, but in the cycle plan | indirect / DX | the nearest month |
+| `low` | opportunistic | unnoticeable (refactor, docs, cleanup) | when possible |
 
-Правила:
+Rules:
 
-- **Эскалация:** задача, блокирующая ≥2 другие (`depends_on`-реверс), — минимум `high`.
-- **Деэскалация:** чистый рефактор/доки без поведенческого эффекта — `low`, даже если объёмный.
-- **Tie-break:** при равенстве берётся бо́льший приоритет (safety-first).
+- **Escalation:** a task blocking ≥2 others (`depends_on`-reverse) — at least `high`.
+- **De-escalation:** a pure refactor/docs with no behavioral effect — `low`, even if voluminous.
+- **Tie-break:** on a tie, the higher priority is taken (safety-first).
 
-## 6. Типы задач (closed enum)
+## 6. Task types (closed enum)
 
 `test`, `e2e-test`, `feature`, `migration`, `refactor`, `bug`, `docs`, `frontend`, `api-docs`.
 
-Запрещено: `implementation` (use `feature`), compound `migration+feature` (split).
+Forbidden: `implementation` (use `feature`), compound `migration+feature` (split).
 
-## 7. Verb-patterns заголовков
+## 7. Verb-patterns of titles
 
 | Pattern | Type |
 |---------|------|
@@ -124,38 +124,38 @@ completed_log: plans/<module>/<module>-completed-tasks   # если ≥ 20 за�
 | `Design + document: <subject>` | api-docs |
 | `Docs: <subject>` | docs |
 
-Нарушение — hard error `cod-doc audit`.
+A violation is a hard error of `cod-doc audit`.
 
-## 8. Нумерация внутри плана
+## 8. Numbering within a plan
 
-Каждая секция резервирует decade: A → 001-009, B → 010-019, C → 020-029, …
-`cod-doc task new --plan <plan> --section B` сам выберет ближайший свободный номер.
-Подзадача: `<PARENT>A`, `<PARENT>B` (`AGN-021A`).
+Each section reserves a decade: A → 001-009, B → 010-019, C → 020-029, …
+`cod-doc task new --plan <plan> --section B` will pick the nearest free number itself.
+Subtask: `<PARENT>A`, `<PARENT>B` (`AGN-021A`).
 
 ## 9. `affected_files` — diff-based status sync
 
-| Паттерн | Действие |
+| Pattern | Action |
 |---------|----------|
-| N:1 (один task матчит changed files) | `task.status` auto-update через `TaskService` |
-| N:M (несколько task-ов) | Агент показывает кандидатов, пользователь выбирает |
-| 0 match | Fallback: ищем `[<TASK-ID>]` в commit message |
-| task уже `done` | Skip |
+| N:1 (one task matches changed files) | `task.status` auto-update via `TaskService` |
+| N:M (several tasks) | The agent shows candidates, the user chooses |
+| 0 match | Fallback: look for `[<TASK-ID>]` in the commit message |
+| task already `done` | Skip |
 
-Алгоритм применяется:
-- через git pre-commit hook (`cod-doc hooks install --git`);
-- через MCP `task.sync_from_diff`.
+The algorithm is applied:
+- via a git pre-commit hook (`cod-doc hooks install --git`);
+- via MCP `task.sync_from_diff`.
 
-Это прямой перенос механики из Restate `Docs/standards/task-plan.md §4.6`, но без логики Logical Commits — тут достаточно вызова сервиса.
+This is a direct port of the mechanics from Restate `Docs/standards/task-plan.md §4.6`, but without the Logical Commits logic — a service call is enough here.
 
 ## 10. Completed tasks log
 
-- Не нужен при < 10 задач.
-- Рекомендован при ≥ 10.
-- Обязателен при ≥ 20.
+- Not needed with < 10 tasks.
+- Recommended with ≥ 10.
+- Mandatory with ≥ 20.
 
-Log генерируется полностью из БД; ручных правок быть не должно.
+The log is generated entirely from the DB; there should be no manual edits.
 
-Формат:
+Format:
 
 ```markdown
 | ID | Title | Section | Commit | Date |
@@ -163,19 +163,19 @@ Log генерируется полностью из БД; ручных прав
 | AGN-001 | Test: getMyAgency returns profile | A-Test-Coverage | a187f6d | 2026-04-08 |
 ```
 
-## 11. Переход задачи в `done`
+## 11. Transitioning a task to `done`
 
-Правила (применяются сервисом `TaskService.complete`):
+Rules (applied by the `TaskService.complete` service):
 
-1. Все `depends_on` должны быть `done`.
-2. Обязателен `completion note`: `> ✅ **Implemented YYYY-MM-DD** (commit `<sha>`): <one-liner>.`
-3. При split-формате запись остаётся в section-файле; в completed-log добавляется строка.
-4. Пишется `revision` с `diff` по задаче.
-5. Triggering `PlanService.recalc()` для пересчёта Progress Overview.
+1. All `depends_on` must be `done`.
+2. A `completion note` is mandatory: `> ✅ **Implemented YYYY-MM-DD** (commit `<sha>`): <one-liner>.`
+3. In the split format, the entry stays in the section-file; a row is added to the completed-log.
+4. A `revision` with the `diff` for the task is written.
+5. Triggering `PlanService.recalc()` to recompute the Progress Overview.
 
-## 12. Dependency Graph (проекция)
+## 12. Dependency Graph (projection)
 
-Из БД в markdown — через Mermaid:
+From the DB to markdown — via Mermaid:
 
 ```mermaid
 graph TD
@@ -186,30 +186,29 @@ graph TD
   AUTH_021 --> AUTH_022
 ```
 
-Cross-plan зависимости — те же самые `depends_on`, БД видит их автоматически. Правило Restate про «loadExecutionPlans() резолвит cross-plan» у нас вырождается — все задачи и так в одном запросе.
+Cross-plan dependencies are the same `depends_on`; the DB sees them automatically. The Restate rule about "loadExecutionPlans() resolves cross-plan" degenerates here — all tasks are in one query anyway.
 
-## 13. Чеклист при создании нового плана
+## 13. Checklist when creating a new plan
 
 ```markdown
 - [ ] Frontmatter: type, scope, status, principle, created, last_updated, source_of_truth
 - [ ] Navigation section
 - [ ] Gap Analysis
-- [ ] Секции пронумерованы A, B, C, ...
-- [ ] Все task id уникальны и попадают в range секции
-- [ ] Каждая задача имеет title/type/priority/status/depends_on
-- [ ] affected_files указан для feature/test/bug/refactor
-- [ ] Progress Overview и Next Batch сгенерированы (не руками)
-- [ ] Dependency Graph при ≥ 15 задачах
-- [ ] completed_log при ≥ 20 задачах
-- [ ] `cod-doc audit` без ошибок
+- [ ] Sections numbered A, B, C, ...
+- [ ] All task ids are unique and fall within the section range
+- [ ] Each task has title/type/priority/status/depends_on
+- [ ] affected_files specified for feature/test/bug/refactor
+- [ ] Progress Overview and Next Batch generated (not by hand)
+- [ ] Dependency Graph when ≥ 15 tasks
+- [ ] completed_log when ≥ 20 tasks
+- [ ] `cod-doc audit` without errors
 ```
 
-## 14. Обратная совместимость со стандартом Restate
+## 14. Backward compatibility with the Restate standard
 
-Форматы совместимы: импорт Restate task-plan работает без ручного редактирования при условии:
+The formats are compatible: Restate task-plan import works without manual editing provided:
+- The files follow Restate §1-§8 in full.
+- The mandatory fields are present.
+- There are no forbidden enum values (`active`, `implementation`, compound types).
 
-- Файлы следуют Restate §1-§8 полностью.
-- Обязательные поля присутствуют.
-- Нет запрещённых enum-значений (`active`, `implementation`, compound types).
-
-Подробности миграции — [migration/from-restate.md](../migration/from-restate.md).
+Migration details — [migration/from-restate.md](../migration/from-restate.md).

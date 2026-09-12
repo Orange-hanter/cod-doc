@@ -1,78 +1,77 @@
 ---
 name: task-standard
 description: |
-  Стандарт постановки и оформления задач. Title-формат, обязательные и
-  рекомендуемые поля, когда добавлять acceptance, как пользоваться
-  blocked_by / story_id / affects_files, семантика priority, status-flow,
-  когда дробить задачу, anti-patterns.
-  Триггеры: task, task_create, add_task, update_task, поставить, задача,
-  задачу, бэклог, decompose, breakdown, новая задача, постановка, plan task.
+  Standard for setting up and formatting tasks. Title format, mandatory and
+  recommended fields, when to add acceptance, how to use blocked_by /
+  story_id / affects_files, priority semantics, status-flow, when to split
+  a task, anti-patterns.
+  Triggers: task, task_create, add_task, update_task, decompose, breakdown,
+  new task, plan task, acceptance, blocked_by, story_id, affects_files.
 ---
 
 # Skill — Task standard
 
-## Когда подгружается
+## When it loads
 
-Задачи, в которых LLM / пользователь **создаёт**, **разбивает** или
-**ставит** задачу: `task_create`, `task_update_status`, `plan_create`,
-ручная постановка через web / MCP. Триггер-keywords: `task`,
-`task_create`, `add_task`, `update_task`, `acceptance`, `blocked_by`,
-`story_id`, `affects_files`, `задача`, `задачу`, `бэклог`,
-`decompose`, `breakdown`, `новая задача`, `постановка`, `plan task`.
+Tasks where the LLM / user **creates**, **splits**, or **sets up** a task:
+`task_create`, `task_update_status`, `plan_create`, manual setup via web /
+MCP. Trigger keywords: `task`, `task_create`, `add_task`, `update_task`,
+`acceptance`, `blocked_by`, `story_id`, `affects_files`, `decompose`,
+`breakdown`, `plan task`.
 
-## Принцип
+## Principle
 
-Задача — узел графа исполнения. Она ДОЛЖНА быть атомарной (один
-исполнитель, один merge), верифицируемой (есть DoD) и узнаваемой (имя
-описывает действие, а не предметную область).
+A task is a node in the execution graph. It MUST be atomic (one executor,
+one merge), verifiable (has a DoD), and recognizable (the name describes an
+action, not a subject area).
 
 ## 1. Title
 
-- **Глагол первым**, императив: «Implement X», «Refactor Y»,
-  «Fix Z», «Audit module Auth», «Migrate from A to B».
-- **≤ 80 символов**, без точки в конце, без emoji.
-- **Без vague-слов** («улучшить ui», «поправить», «доделать», «sort
-  out»). Если непонятно ЧТО сделать — задача ещё не готова, верни в
-  backlog с TODO в description.
+- **Verb first**, imperative: "Implement X", "Refactor Y", "Fix Z",
+  "Audit module Auth", "Migrate from A to B".
+- **≤ 80 characters**, no trailing period, no emoji.
+- **No vague words** ("improve ui", "fix", "finish", "sort out"). If it is
+  unclear WHAT to do — the task is not ready yet, return it to the backlog
+  with a TODO in the description.
 
-## 2. Обязательные поля при создании
+## 2. Mandatory fields on creation
 
-| Поле | Зачем |
+| Field | Why |
 |------|-------|
-| `title` | См. §1 |
+| `title` | See §1 |
 | `type` | `feature` / `bug` / `refactor` / `test` / `docs` / `chore` |
-| `priority` | См. §4 — фильтрация и сортировка ready-batch |
-| `plan_id` | Сирота без плана = invisible в kanban-board |
-| `section_id` | Группировка внутри плана |
+| `priority` | See §4 — filtering and sorting of the ready-batch |
+| `plan_id` | An orphan without a plan = invisible on the kanban board |
+| `section_id` | Grouping within the plan |
 
-Запрещено создавать задачу без `plan_id`. Если плана нет — сначала
-`plan_create`, потом `task_create`.
+Creating a task without `plan_id` is forbidden. If there is no plan —
+first `plan_create`, then `task_create`.
 
-## 3. Рекомендуемые (почти обязательные) поля
+## 3. Recommended (almost mandatory) fields
 
-| Поле | Когда обязательно |
-|------|---------------------|
-| `description` | Всегда для `feature` / `refactor`. Описывает ПОЧЕМУ + контекст; не пересказывает title. |
-| `acceptance` | Для `priority >= medium`. Definition of Done — формат checklist'а. Без AC задача не закрывается. |
-| `affects_files` | Если scope ограничен ≤ 5 файлами. Используется аудитом drift. |
-| `blocked_by` | Task_id'ы, которые ДОЛЖНЫ завершиться раньше. Не «было бы хорошо», а технически невозможно начать без них. |
-| `story_id` | Если задача реализует часть user-story — обязательно. Связывает execution с requirements. |
+| Field | When mandatory |
+|------|-------|
+| `description` | Always for `feature` / `refactor`. Describes WHY + context; does not retell the title. |
+| `acceptance` | For `priority >= medium`. Definition of Done — checklist format. Without AC a task is not closed. |
+| `affects_files` | If the scope is limited to ≤ 5 files. Used by the drift audit. |
+| `blocked_by` | Task_ids that MUST complete earlier. Not "would be nice", but technically impossible to start without them. |
+| `story_id` | If the task implements part of a user-story — mandatory. Links execution to requirements. |
 
 ## 4. Priority semantics
 
-- `critical` — инцидент / блокер релиза. Берёшь СЕГОДНЯ, всё остальное
-  откладывается.
-- `high` — попадает в текущий sprint / следующий ready-batch.
-- `medium` — default. Берётся в порядке готовности.
-- `low` — nice-to-have. Готов отложить на квартал. Не блокирует ни одну
-  user-story.
+- `critical` — incident / release blocker. You take it TODAY, everything
+  else is postponed.
+- `high` — falls into the current sprint / next ready-batch.
+- `medium` — default. Taken in order of readiness.
+- `low` — nice-to-have. Ready to postpone for a quarter. Does not block
+  any user-story.
 
-Не более **20%** задач плана должны иметь `critical` / `high` — иначе
-приоритеты обесцениваются.
+No more than **20%** of plan tasks should have `critical` / `high` —
+otherwise priorities become devalued.
 
 ## 5. Status flow
 
-Каноническая 7-state taxonomy (proposal 08, единый источник —
+Canonical 7-state taxonomy (proposal 08, single source —
 `cod_doc/services/task_status_machine.py::ALLOWED_TRANSITIONS`):
 
 ```
@@ -81,78 +80,82 @@ backlog ─→ todo ─→ in_progress ─→ in_review ─→ done
                        ↓              ↓
                     blocked        cancelled
                        │
-                       └──→ todo (после устранения blocker)
+                       └──→ todo (after the blocker is resolved)
 ```
 
-- `backlog` — в плане, но не приоритезирована.
+- `backlog` — in the plan, but not prioritized.
 - `todo` — ready to pick up.
-- `in_progress` — взята в работу. Должны быть коммиты ≤ 24h.
-  **Переход `todo → in_progress` идёт ТОЛЬКО через `task_checkout`**
-  (proposal 06, PCA-200) — `task_update_status` его отклонит.
-- `in_review` — код / док готов, ждёт review. AC не помечен ✓ до review.
-- `blocked` — **ВСЕГДА** заполняй `blocked_reason`. Без причины — невозможно разблокировать.
-- `done` — выполнено, AC checklist все ✓, drift-check (см. skill `module-audit`) пройден для модуля при необходимости.
-- `cancelled` — отменено. Зачем — комментарий через `task_log_progress`.
+- `in_progress` — taken into work. There must be commits ≤ 24h.
+  **The `todo → in_progress` transition goes ONLY through `task_checkout`**
+  (proposal 06, PCA-200) — `task_update_status` will reject it.
+- `in_review` — code / docs ready, awaiting review. AC is not marked ✓
+  until review.
+- `blocked` — **ALWAYS** fill `blocked_reason`. Without a reason it is
+  impossible to unblock.
+- `done` — completed, AC checklist all ✓, drift-check (see skill
+  `module-audit`) passed for the module if needed.
+- `cancelled` — cancelled. Why — a comment via `task_log_progress`.
 
-### Legacy-алиасы
+### Legacy aliases
 
-В старых задачах / `tasks.yaml` встретится 3-state набор. Они валидны
-наравне с каноническими — `task_status_machine.normalise` коллапсирует их
-в соответствующий bucket до проверки перехода:
+In older tasks / `tasks.yaml` you will encounter a 3-state set. They are
+valid on a par with the canonical ones —
+`task_status_machine.normalise` collapses them into the corresponding
+bucket before checking the transition:
 
 | Legacy | Canonical |
 |--------|-----------|
 | `pending` | `todo` |
-| `in-progress` (с дефисом) | `in_progress` (с underscore) |
+| `in-progress` (with hyphen) | `in_progress` (with underscore) |
 | `done` | `done` |
 
-При записи новых задач используй канонические имена; legacy остаётся
-только для backward-compat.
+When writing new tasks use canonical names; legacy remains for
+backward-compat only.
 
-### Правка уже созданной задачи (grooming)
+### Editing an already created task (grooming)
 
-Переформулировать скоуп и переоценить приоритет — штатная операция, а не
-повод лезть в БД (ADO-067):
+Reformulating the scope and re-evaluating the priority is a routine
+operation, not a reason to dig into the DB (ADO-067):
 
-| Поверхность | Как |
+| Surface | How |
 |---|---|
-| MCP | `task_update(project, task_id, description=…, acceptance=…, priority=…)` — любое подмножество полей; ответ содержит `updated_fields` |
+| MCP | `task_update(project, task_id, description=…, acceptance=…, priority=…)` — any subset of fields; the response contains `updated_fields` |
 | CLI | `cod-doc task update TASK_ID -p SLUG --description … --acceptance … --priority …` |
 
-Каждое изменённое поле пишет ревизию и activity event
+Each changed field writes a revision and an activity event
 (`task.description_updated` / `task.acceptance_updated` /
-`task.priority_changed`), поэтому `--reason` стоит заполнять.
+`task.priority_changed`), so `--reason` is worth filling in.
 
-`title` тул не меняет: смена имени — это смена идентичности задачи, заводи
-новую и отменяй старую. Статус живёт отдельно (`task_update_status` /
-`task_checkout`).
+The tool does not change `title`: renaming is changing the task identity,
+create a new one and cancel the old one. Status lives separately
+(`task_update_status` / `task_checkout`).
 
-## 6. Когда дробить задачу
+## 6. When to split a task
 
-Дроби на subtasks (через `blocked_by`), если выполняется ХОТЯ БЫ ОДНО:
+Split into subtasks (via `blocked_by`) if AT LEAST ONE holds:
 
-- ≥ 1 рабочий день одного исполнителя
-- > 3 файлов меняется одним merge
-- AC раскладывается на «выполнить A» + «выполнить B» + «выполнить C»
-- Разные типы (`feature` + `test` + `docs`) — каждое отдельной задачей
+- ≥ 1 working day of one executor
+- > 3 files changed by one merge
+- AC decomposes into "do A" + "do B" + "do C"
+- Different types (`feature` + `test` + `docs`) — each as a separate task
 
-Subtask наследует `plan_id` / `section_id` родителя.
+A subtask inherits the parent's `plan_id` / `section_id`.
 
 ## 7. Anti-patterns
 
-- ❌ «Улучшить документацию» — нет scope, нет DoD.
-- ❌ in_progress без коммитов > 24h — назначь blocker или верни в todo.
-- ❌ done без проверки AC — pencil-whip.
-- ❌ blocked без `blocked_reason` — невозможно разблокировать.
-- ❌ Задача без `plan_id` — orphan. Сначала создай / выбери план.
-- ❌ Все задачи priority=high — обесценивает фильтр.
-- ❌ AC формата «должно работать» — не верифицируемо. Пиши как checklist:
-      «✓ POST /api/x возвращает 201 с {id, created_at}; ✓ DB-row создан
-      в таблице Y; ✓ тест в tests/api/test_x.py покрывает happy + 400-error».
+- ❌ "Improve the documentation" — no scope, no DoD.
+- ❌ in_progress without commits > 24h — assign a blocker or return to todo.
+- ❌ done without AC check — pencil-whip.
+- ❌ blocked without `blocked_reason` — impossible to unblock.
+- ❌ Task without `plan_id` — orphan. First create / choose a plan.
+- ❌ All tasks priority=high — devalues the filter.
+- ❌ AC of the form "should work" — not verifiable. Write as a checklist:
+      "✓ POST /api/x returns 201 with {id, created_at}; ✓ DB-row created
+      in table Y; ✓ test in tests/api/test_x.py covers happy + 400-error".
 
-## Связанное
+## Related
 
-- Полная спецификация формата: `docs/system/standards/task-plan.md`.
-- Skill `plan-to-tasks` — как раскладывать execution-plan на узлы.
-- Skill `module-audit` — что проверять при закрытии модуля.
-- Skill `validation` — write-path валидация структуры задач.
+- Full format specification: `docs/system/standards/task-plan.md`.
+- Skill `plan-to-tasks` — how to decompose an execution-plan into nodes.
+- Skill `module-audit` — what to check when closing a module.
+- Skill `validation` — write-path validation of task structure.

@@ -1,89 +1,92 @@
 ---
 name: adr-author
 description: |
-  Когда писать ADR (Architecture Decision Record) и как сформулировать его
-  Context / Decision / Alternatives / Consequences. Скилл подгружается, когда
-  агент или человек принимает архитектурное решение, затрагивающее ≥ 2
-  модуля или меняющее схему БД / контракт между слоями.
-  Триггеры: adr, decision, supersede, deprecate, rationale, trade-off,
+  When to write an ADR (Architecture Decision Record) and how to frame its
+  Context / Decision / Alternatives / Consequences. The skill loads when
+  an agent or human makes an architectural decision affecting ≥ 2 modules
+  or changing the DB schema / contract between layers.
+  Triggers: adr, decision, supersede, deprecate, rationale, trade-off,
   architecture, alternative, choose, switch, replace, migrate.
 ---
 
 # Skill — ADR Author
 
-## Когда подгружается
+## When it loads
 
-Задачи, в которых обсуждается или фиксируется архитектурное решение.
-Триггер-keywords: `ADR`, `decision`, `supersede`, `rationale`,
-`trade-off`, `alternative`, «выбрать», «заменить», «отказаться от».
+Tasks where an architectural decision is discussed or recorded.
+Trigger keywords: `ADR`, `decision`, `supersede`, `rationale`,
+`trade-off`, `alternative`, "choose", "replace", "abandon".
 
-## Когда писать ADR (порог)
+## When to write an ADR (threshold)
 
-Запиши ADR, если **хотя бы одно** из:
+Write an ADR if **at least one** holds:
 
-- решение затрагивает ≥ 2 модуля (например, `domain` + `infra`);
-- меняется схема БД (таблица, колонка, индекс, миграция);
-- меняется контракт между слоями (тип в `domain/entities.py`, MCP-тул,
-  Web-маршрут, формат CLI);
-- решение задаёт **политику**, которой все обязаны следовать
-  («все мутации пишут revision», «все запросы идут через repository»);
-- решение **откатывает** предыдущее (`supersedes ADR-NNN`).
+- the decision affects ≥ 2 modules (e.g. `domain` + `infra`);
+- the DB schema changes (table, column, index, migration);
+- the contract between layers changes (a type in `domain/entities.py`,
+  an MCP tool, a web route, a CLI format);
+- the decision sets a **policy** everyone must follow
+  ("all mutations write a revision", "all requests go through a
+  repository");
+- the decision **reverts** a previous one (`supersedes ADR-NNN`).
 
-**Не** пиши ADR для:
+**Do not** write an ADR for:
 
-- внутренней реализации одного модуля без внешнего эффекта;
-- мелких рефакторов / переименований;
-- багфиксов без архитектурных следствий;
-- выбора имени переменной / стиля кода (это standards, не ADR).
+- the internal implementation of one module without external effect;
+- minor refactors / renames;
+- bugfixes without architectural consequences;
+- choosing a variable name / code style (that is standards, not ADR).
 
-## Структура ADR
+## ADR structure
 
-ADR в COD-DOC — четыре markdown-поля плюс метаданные. Каждое поле имеет
-конкретное назначение; не путай их.
+An ADR in COD-DOC is four markdown fields plus metadata. Each field has
+a specific purpose; do not confuse them.
 
-### 1. Context (что решаем)
+### 1. Context (what we are deciding)
 
-**Опиши проблему, не решение.** Что не работает в нынешнем состоянии?
-Какие ограничения / силы / зависимости заставляют принимать решение
-сейчас?
+**Describe the problem, not the solution.** What does not work in the
+current state? What constraints / forces / dependencies force a decision
+now?
 
-> Шаблон-вопросы:
-> - Что было раньше?
-> - Что изменилось / что появилось нового?
-> - Какие альтернативные пути уже рассмотрены или отвергнуты?
-> - Какие constraints (perf, deadline, размер команды, существующий код)?
+> Template questions:
+> - What was there before?
+> - What changed / what new appeared?
+> - What alternative paths have already been considered or rejected?
+> - What are the constraints (perf, deadline, team size, existing code)?
 
-Хороший Context — 2–6 абзацев. Если он умещается в одно предложение —
-скорее всего, ADR не нужен.
+A good Context is 2–6 paragraphs. If it fits in one sentence — most
+likely an ADR is not needed.
 
-### 2. Decision (что выбрали)
+### 2. Decision (what we chose)
 
-**Утверждение в настоящем времени.** «Мы используем X». Не «попробуем X»,
-не «вероятно X лучше». ADR — обязательство.
+**A statement in the present tense.** "We use X". Not "we will try X",
+not "X is probably better". An ADR is a commitment.
 
-Если решение составное — перечисли пунктами. Сразу укажи **что НЕ
-выбрали** для контраста (это работает лучше, чем длинный Decision).
+If the decision is composite — list it as bullets. Immediately state
+**what we did NOT choose** for contrast (this works better than a long
+Decision).
 
 ### 3. Alternatives considered
 
-**Что отвергнуто и почему.** Минимум 2 альтернативы. Без этого ADR
-неотличим от мнения.
+**What was rejected and why.** At least 2 alternatives. Without this an
+ADR is indistinguishable from an opinion.
 
-Формат для каждой:
-- название;
-- одно-два предложения «почему отвергли» (не «не подходит», а
-  «вызвало бы X»).
+Format for each:
+- name;
+- one or two sentences "why rejected" (not "does not fit", but
+  "would cause X").
 
 ### 4. Consequences
 
-**Что изменится после принятия решения.** Раздели на:
+**What will change after the decision is adopted.** Split into:
 
-- **Положительные** — что станет лучше / появится возможность;
-- **Отрицательные / стоимость** — что станет хуже / какие compromises;
-- **Будущие задачи** — что нужно сделать как следствие (ссылка на
-  task_id, если есть).
+- **Positive** — what will improve / a new opportunity appears;
+- **Negative / cost** — what will get worse / what compromises;
+- **Future tasks** — what needs to be done as a consequence (link to
+  task_id if any).
 
-> Не пиши «положительных нет» — если их правда нет, ADR не нужен.
+> Do not write "no positives" — if there really are none, an ADR is not
+> needed.
 
 ## Lifecycle
 
@@ -93,49 +96,50 @@ PROPOSED ──accept──▶ ACCEPTED ──supersede──▶ SUPERSEDED
    └─reject──▶ DEPRECATED └─deprecate──▶ DEPRECATED
 ```
 
-- **PROPOSED** — заявка. Тело редактируемое.
-- **ACCEPTED** — действующее решение. Тело immutable (только supersede
-  / deprecate / add_diagram).
-- **SUPERSEDED** — заменено конкретным ADR (поле `superseded_by`). Статус
-  выставляется сервисом автоматически при `adr_supersede`.
-- **DEPRECATED** — отменено без замены. Терминал.
+- **PROPOSED** — a submission. The body is editable.
+- **ACCEPTED** — the active decision. The body is immutable (only
+  supersede / deprecate / add_diagram).
+- **SUPERSEDED** — replaced by a specific ADR (the `superseded_by`
+  field). The status is set automatically by the service on
+  `adr_supersede`.
+- **DEPRECATED** — cancelled without a replacement. Terminal.
 
 ## Supersede vs Update
 
-| Хочется | Что делать |
+| You want | What to do |
 |---------|------------|
-| Исправить опечатку в ACCEPTED ADR | Тело immutable; создавай новый ADR с `supersedes` |
-| Изменить решение существенно | Новый ADR + supersede |
-| Уточнить контекст из «знаем теперь» | Новый ADR + supersede |
-| ADR ещё в PROPOSED, нужно доработать | `adr_update` (можно мутировать) |
+| Fix a typo in an ACCEPTED ADR | The body is immutable; create a new ADR with `supersedes` |
+| Change the decision substantially | New ADR + supersede |
+| Clarify the context from "we now know" | New ADR + supersede |
+| The ADR is still PROPOSED, needs work | `adr_update` (can mutate) |
 
-## Авторство
+## Authorship
 
-- Человек: `decided_by: human:<email>`.
-- Агент: `decided_by: agent:<run-id>` (run_id берётся из `run_context`
-  автоматически при записи revision).
+- Human: `decided_by: human:<email>`.
+- Agent: `decided_by: agent:<run-id>` (run_id is taken from `run_context`
+  automatically when a revision is written).
 
-## Связи
+## Links
 
-- **Задача → ADR:** `adr_link_task(adr_id="<ADR-NNN>", task_id="COD-123",
-  relation=implements)`. Если задача — следствие решения.
-- **ADR в markdown:** пиши просто `ADR-NNN` или `[[adr:ADR-NNN]]` —
-  link-сервис распарсит и зарезолвит.
+- **Task → ADR:** `adr_link_task(adr_id="<ADR-NNN>", task_id="COD-123",
+  relation=implements)`. If the task is a consequence of the decision.
+- **ADR in markdown:** just write `ADR-NNN` or `[[adr:ADR-NNN]]` — the
+  link-service will parse and resolve it.
 
-## Один проход агента
+## One agent pass
 
-Если ты — агент и пишешь ADR в рамках одной задачи:
+If you are an agent writing an ADR within one task:
 
-1. Сформулируй Context (2–3 абзаца).
-2. Перечисли 2+ альтернативы.
-3. Выбери одну, обоснуй в Decision.
+1. Frame the Context (2–3 paragraphs).
+2. List 2+ alternatives.
+3. Pick one, justify in the Decision.
 4. Distill Consequences (+ / − / next tasks).
-5. `adr_create(...)` со `status="proposed"`. Не выставляй `accepted`
-   самостоятельно — это человек делает в Web UI или через CLI.
-6. Если решение заменяет старое — после `accept` (это сделает человек)
-   вызови `adr_supersede(superseding=NEW, superseded=OLD, reason=...)`.
+5. `adr_create(...)` with `status="proposed"`. Do not set `accepted`
+   yourself — a human does it in the Web UI or via CLI.
+6. If the decision replaces an old one — after `accept` (a human does it)
+   call `adr_supersede(superseding=NEW, superseded=OLD, reason=...)`.
 
-## Ссылки
+## References
 
 - [Capability adr-system](../../../docs/system/capabilities/adr-system.md)
 - [Vision](../../../docs/system/adr-vision.html)

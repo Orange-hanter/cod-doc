@@ -1,49 +1,49 @@
-# 19 — Context-Scout: «умный grep» через cod-doc MCP
+# 19 — Context-Scout: "smart grep" via cod-doc MCP
 
-> Категория: 🟡 Адаптация · Риск: низкий · Зависимости: doc_search (FTS5), OBI-040 (FTS5), model_catalog
+> Category: 🟡 Adaptation · Risk: low · Dependencies: doc_search (FTS5), OBI-040 (FTS5), model_catalog
 
-## Контекст: «а где у нас…?»
+## Context: "where do we…?"
 
-Vibecoder постоянно задаёт проекту вопросы, на которые `grep` отвечает плохо:
+A vibecoder constantly asks the project questions that `grep` answers poorly:
 
-- «Где у нас считается food cost?» → `grep -r "food_cost" cod_doc/` покажет 30 строк, не объяснит, какая из них актуальна.
-- «Почему мы перешли с YAML на SQLite для БД?» → нужен контекст ADR-001, не git log.
-- «Какие задачи блокируют релиз?» → `task_list_blocked` есть, но без группировки по «почему заблокировано».
+- "Where do we compute food cost?" → `grep -r "food_cost" cod_doc/` shows 30 lines, does not explain which one is current.
+- "Why did we switch from YAML to SQLite for the DB?" → you need ADR-001 context, not git log.
+- "Which tasks block the release?" → `task_list_blocked` exists, but without grouping by "why blocked".
 
-Существующие тулы cod-doc уже умеют искать по частям:
-- `doc_search` — FTS5 по `docs/**`.
-- `task_search` (через `task_list` + filters) — по tasks.
-- `adr_list` / `adr_get` — по ADR.
+Existing cod-doc tools can already search by parts:
+- `doc_search` — FTS5 over `docs/**`.
+- `task_search` (via `task_list` + filters) — over tasks.
+- `adr_list` / `adr_get` — over ADRs.
 - OBI-040 — unified FTS5 (repos + docs + tasks).
 
-**Не хватает:** единой точки входа, которая **агрегирует** результаты из всех этих источников и возвращает **human-friendly summary**.
+**Missing:** a single entry point that **aggregates** results from all these sources and returns a **human-friendly summary**.
 
-## Текущее состояние cod-doc
+## Current state of cod-doc
 
-- FTS5 индексы: `docs` (`search_service`), `tasks`, `repo_index` (OBI-040), `code_ref`.
-- MCP: `doc_search` (через `doc_list` + filters), `task_list`, `task_summary`, `adr_list`.
-- `tool_search`, `tool_describe` — поиск по самим MCP-тулам.
-- **Нет:** агрегатора, который один раз спрашивает все 4 источника и выдаёт ranked summary.
+- FTS5 indexes: `docs` (`search_service`), `tasks`, `repo_index` (OBI-040), `code_ref`.
+- MCP: `doc_search` (via `doc_list` + filters), `task_list`, `task_summary`, `adr_list`.
+- `tool_search`, `tool_describe` — search over the MCP-tools themselves.
+- **Missing:** an aggregator that asks all 4 sources once and returns a ranked summary.
 
-## Предложение
+## Proposal
 
-Создать `cod_doc/services/context_scout.py` + CLI-команду `cod-doc scout`:
+Create `cod_doc/services/context_scout.py` + CLI command `cod-doc scout`:
 
 ### 4.1. Pipeline
 
 ```
-scout(query="где считается food cost", project="mozarella", limit=10)
+scout(query="where is food cost computed", project="mozarella", limit=10)
   ↓
   1. doc_search(query)              → top 5 docs (FTS5 ranked)
-  2. task_search(query)             → top 5 tasks (status filter опц.)
+  2. task_search(query)             → top 5 tasks (status filter opt.)
   3. adr_search(query)              → top 3 ADRs
-  4. code_ref_search(query)         → top 5 файлов (через OBI-040)
+  4. code_ref_search(query)         → top 5 files (via OBI-040)
   ↓
-  5. LLM-rerank (опц.): "вот 18 кандидатов, выбери top-5, дай 1-абзацный answer"
+  5. LLM-rerank (opt.): "here are 18 candidates, pick top-5, give a 1-paragraph answer"
   ↓
   6. Return:
      {
-       "answer": "...",                          # LLM-синтез
+       "answer": "...",                          # LLM synthesis
        "evidence": [
          {"type": "doc",   "id": "...", "title": "...", "snippet": "..."},
          {"type": "task",  "id": "COD-456", "status": "in_progress", "title": "..."},
@@ -57,13 +57,13 @@ scout(query="где считается food cost", project="mozarella", limit=10
 ### 4.2. CLI
 
 ```bash
-$ cod-doc scout "где считается food cost" --project=mozarella
+$ cod-doc scout "where is food cost computed" --project=mozarella
 
 📍 Answer (claude-sonnet-4-6, 1.2s):
-   Food cost считается в `cod_doc/services/food_cost.py`, метод `calculate_dish_cost`.
-   Использует таблицу `recipes` + `warehouse_stock`. Связанная задача COD-456 (in_progress),
-   документация: docs/system/DATA_MODEL.md#recipes. ADR-005 определяет,
-   что food cost должен учитывать depletion из QuickResto.
+   Food cost is computed in `cod_doc/services/food_cost.py`, method `calculate_dish_cost`.
+   Uses the `recipes` + `warehouse_stock` tables. Related task COD-456 (in_progress),
+   docs: docs/system/DATA_MODEL.md#recipes. ADR-005 defines
+   that food cost must account for depletion from QuickResto.
 
 📂 Evidence (5):
    1. 📄 docs/system/DATA_MODEL.md (rank 0.92)
@@ -74,53 +74,53 @@ $ cod-doc scout "где считается food cost" --project=mozarella
       "QuickResto depletion flow → recipes → food_cost"
    4. 🗂️ cod_doc/services/food_cost.py (3 references)
    5. 📄 docs/handbook/mozarella/restaurant-ops.md (rank 0.71)
-      "...food cost рассчитывается ежедневно в 23:00..."
+      "...food cost is computed daily at 23:00..."
 
 💰 Cost: $0.0012 (1240 in / 380 out)
 
-$ cod-doc scout "почему SQLite а не Postgres" --no-llm  # быстрый режим, без LLM-rerank
+$ cod-doc scout "why SQLite and not Postgres" --no-llm  # fast mode, no LLM-rerank
 📂 Evidence (8):
    1. 📐 ADR-001 (ACCEPTED) "Single-tenant SQLite as canonical state"
    2. 📄 docs/system/ARCHITECTURE.md#storage
    ...
 ```
 
-### 4.3. MCP-тул
+### 4.3. MCP-tool
 
 ```
 scout(query, project?, limit=10, use_llm=true, model?) -> ScoutResult
 ```
 
-### 4.4. Опции
+### 4.4. Options
 
-| Флаг | Поведение |
+| Flag | Behavior |
 |---|---|
-| `--no-llm` | Без LLM-rerank, чистый FTS5 → ranked list |
-| `--type=doc,task` | Фильтр по типам evidence (по умолчанию все 4) |
-| `--status=in_progress` | Только задачи в этом статусе |
-| `--json` | Машиночитаемый вывод (для пайплайнов) |
-| `--since=7d` | Только недавние сущности |
+| `--no-llm` | No LLM-rerank, pure FTS5 → ranked list |
+| `--type=doc,task` | Filter by evidence types (default all 4) |
+| `--status=in_progress` | Only tasks in this status |
+| `--json` | Machine-readable output (for pipelines) |
+| `--since=7d` | Only recent entities |
 
-## Эффект
+## Effect
 
-| Метрика | До | После |
+| Metric | Before | After |
 |---|---|---|
-| Время на вопрос «где это в коде» | 5-15 мин (grep + ручной обход) | 5-15 сек (`scout` + 1 экран) |
-| Контекст для LLM-агента | 1-2К токенов на ручной сбор | 1 вызов, structured response |
-| Onboarding: «расскажи про проект» | день (читать MASTER.md) | 5 мин (10 запросов в scout) |
+| Time to "where is it in the code" | 5-15 min (grep + manual walk) | 5-15 sec (`scout` + 1 screen) |
+| Context for an LLM-agent | 1-2K tokens on manual collection | 1 call, structured response |
+| Onboarding: "tell me about the project" | a day (read MASTER.md) | 5 min (10 queries to scout) |
 
-## Зависимости
+## Dependencies
 
-| Компонент | Нужно для |
+| Component | Needed for |
 |---|---|
-| `doc_search` (FTS5) | поиск по docs |
-| `task_list` / `task_search` | поиск по задачам |
-| `adr_list` | поиск по ADR |
+| `doc_search` (FTS5) | search over docs |
+| `task_list` / `task_search` | search over tasks |
+| `adr_list` | search over ADRs |
 | OBI-040 (`01ba3ab`) | unified FTS5 (repos + docs + tasks) |
-| `model_catalog` (COD-059) | выбор LLM для rerank |
-| agent_pick (`30fffed`) | pattern для project context resolution |
+| `model_catalog` (COD-059) | LLM choice for rerank |
+| agent_pick (`30fffed`) | pattern for project context resolution |
 
-## Структура
+## Structure
 
 ```
 cod_doc/services/
@@ -134,32 +134,32 @@ tests/services/
 └── test_context_scout.py
 ```
 
-## Риски и митигация
+## Risks and mitigation
 
-| Риск | Митигация |
+| Risk | Mitigation |
 |---|---|
-| LLM-rerank галлюцинирует (упоминает несуществующий task) | Evidence-валидация: каждый `evidence.id` проверяется в БД перед возвратом. Если LLM сослался на несуществующее — fallback к FTS5-only с warning. |
-| Latency (4 параллельных поиска + LLM) | Параллельный FTS5 (asyncio.gather); LLM-кэш на (query, project, 1h TTL). |
-| Privacy: LLM видит task titles | `privacy=true` task'и фильтруются из evidence (как в proposal 18). |
-| Разные FTS5 индексы используют разные токенизаторы | Нормализация запроса в scout: lowercase + trim + Unicode NFKC + длина min 2 символа. |
+| LLM-rerank hallucinates (mentions a non-existent task) | Evidence-validation: every `evidence.id` is checked in DB before return. If the LLM referenced a non-existent one — fallback to FTS5-only with a warning. |
+| Latency (4 parallel searches + LLM) | Parallel FTS5 (asyncio.gather); LLM-cache on (query, project, 1h TTL). |
+| Privacy: LLM sees task titles | `privacy=true` tasks are filtered out of evidence (like in proposal 18). |
+| Different FTS5 indexes use different tokenizers | Query normalization in scout: lowercase + trim + Unicode NFKC + min length 2 chars. |
 
 ## Acceptance criteria
 
-1. `cod-doc scout "..."` работает end-to-end, печатает Answer + Evidence + Cost.
-2. `--no-llm` работает без LLM, latency < 1 сек на 100К docs.
-3. LLM-rerank evidence проходит валидацию: все id существуют в БД.
-4. `--json` режим возвращает машиночитаемый JSON для пайплайнов.
-5. Cost tracking: реальное количество токенов (input/output) и стоимость в USD.
-6. Privacy: task с `privacy=true` отсутствует в evidence.
+1. `cod-doc scout "..."` works end-to-end, prints Answer + Evidence + Cost.
+2. `--no-llm` works without LLM, latency < 1 sec on 100K docs.
+3. LLM-rerank evidence passes validation: all ids exist in DB.
+4. `--json` mode returns machine-readable JSON for pipelines.
+5. Cost tracking: real token count (input/output) and cost in USD.
+6. Privacy: a task with `privacy=true` is absent from evidence.
 
-## Альтернативы
+## Alternatives
 
-- **`ripgrep + fzf + ручной обход`** — то, что делаем сейчас, не масштабируется.
-- **Embeddings-based semantic search** — дороже, требует embedding-индекса, не использует существующий FTS5.
-- **Просто встроить `grep` в CLI** — игнорирует структуру cod-doc, не использует ADR/task связи.
+- **`ripgrep + fzf + manual walk`** — what we do now, does not scale.
+- **Embeddings-based semantic search** — more expensive, requires an embedding index, does not use the existing FTS5.
+- **Just embed `grep` into CLI** — ignores cod-doc structure, does not use ADR/task links.
 
-## Источники
+## Sources
 
-- Cursor `@codebase` — pattern «задай вопрос проекту, получи ranked evidence».
-- Sourcegraph Code Search — референс UX.
-- Paperclip [`skill: paperclip-converting-plans-to-tasks`](https://github.com/paperclipai/paperclip) — узкий skill для одной задачи (наш scout = обратный skill: задача → где в коде).
+- Cursor `@codebase` — the pattern "ask the project a question, get ranked evidence".
+- Sourcegraph Code Search — UX reference.
+- Paperclip [`skill: paperclip-converting-plans-to-tasks`](https://github.com/paperclipai/paperclip) — a narrow skill for one task (our scout = the reverse skill: task → where in code).

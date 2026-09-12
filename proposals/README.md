@@ -1,99 +1,100 @@
-# Proposals: заимствования из `paperclipai/paperclip`
+# Proposals: borrowings from `paperclipai/paperclip`
 
-> 📊 Meta: `{"source": "github.com/paperclipai/paperclip", "studied": "2026-05-06", "context": "control plane для AI-агентских компаний (TS/Node monorepo)"}`
+> 📊 Meta: `{"source": "github.com/paperclipai/paperclip", "studied": "2026-05-06", "context": "control plane for AI-agent companies (TS/Node monorepo)"}`
 
-Набор RFC по адаптации удачных паттернов paperclip для cod-doc. Не «копировать монорепу», а взять конкретные приёмы, которые уже хорошо ложатся на существующую модель cod-doc (Snowball Protocol, MASTER.md, MCP-tools, revision-система).
+A set of RFCs on adapting successful paperclip patterns for cod-doc. Not "copy the monorepo", but take specific techniques that already fit the existing cod-doc model well (Snowball Protocol, MASTER.md, MCP-tools, the revision system).
 
-## Принципы отбора
+## Selection principles
 
-- **Берём:** то, что усиливает существующие концепции cod-doc или закрывает явные пробелы (контекст-стоимость, аудит, повторяемость).
-- **Не берём:** multi-tenant, hiring/org-chart, budget hard-stops, плагины с out-of-process workers — overkill для документ-центричного однопользовательского инструмента.
+- **Take:** what strengthens existing cod-doc concepts or closes explicit gaps (context cost, audit, repeatability).
+- **Do not take:** multi-tenant, hiring/org-chart, budget hard-stops, plugins with out-of-process workers — overkill for a document-centric single-user tool.
 
-## Карта предложений
+## Proposal map
 
-| #   | Документ                                                  | Категория       | Эффект                                          | Риск    |
+| #   | Document                                                  | Category       | Effect                                          | Risk    |
 | --- | --------------------------------------------------------- | --------------- | ----------------------------------------------- | ------- |
-| 01  | [Skills layer](01-skills-layer.md)                        | 🎯 Прямое       | Модульный SYSTEM_PROMPT, Snowball для агента    | низкий  |
-| 02  | [Heartbeat-context endpoint](02-heartbeat-context.md)     | 🎯 Прямое       | -50% токенов на iteration старт                 | низкий  |
-| 03  | [Wake-payload pattern](03-wake-payload.md)                | 🎯 Прямое       | Убирает рефлекторное чтение MASTER.md           | низкий  |
-| 04  | [Run-id audit trail](04-run-id-audit.md)                  | 🎯 Прямое       | "Что натворил агент на прогоне X" из коробки    | низкий  |
-| 05  | [Issue documents с ревизиями](05-issue-documents.md)      | 🟡 Адаптация    | Pinned plan/acceptance/verification на задаче   | средний |
-| 06  | [Атомарный checkout](06-atomic-checkout.md)               | 🟡 Адаптация    | Защита от race в UI/CLI/MCP                     | низкий  |
-| 07  | [Routines (cron)](07-routines.md)                         | 🟡 Адаптация    | Авто-проверки drift/links/hashes по расписанию  | средний |
-| 08  | [Status taxonomy](08-status-taxonomy.md)                  | 🟡 Адаптация    | `in_review` ≠ `blocked`; FM-эскалации формализуются | низкий |
-| 09  | [Activity & events log](09-activity-log.md)               | 🟡 Адаптация    | Единый таймлайн поверх revisions                | средний |
-| 10  | [Adapter pattern для LLM](10-adapter-pattern.md)          | 🔵 Архитектура  | Plug-in Claude/локальных моделей без переписи   | высокий |
-| 11  | [AGENTS.md как контракт](11-agents-md.md)                 | 🔵 Архитектура  | Правила вклада для людей и агентов              | низкий  |
-| 12  | [First-class approvals](12-approvals.md)                  | 🔵 Архитектура  | Структурный заменитель ad-hoc эскалаций         | средний |
-| 13  | [Import UX redesign](13-import-ux-redesign.md)            | 🟡 Адаптация    | Современный wizard для импорта YAML/JSON         | средний |
-| 14  | [Legacy tasks migration UX](14-legacy-tasks-migration-ux.md) | 🟡 Адаптация | Миграция legacy-задач в DB-формат               | средний |
-| 15  | [Link system and rendering](15-link-system-and-rendering.md) | 🟡 Адаптация | Гибкие cross-refs между сущностями              | средний |
+| 01  | [Skills layer](01-skills-layer.md)                        | 🎯 Direct       | Modular SYSTEM_PROMPT, Snowball for the agent    | low  |
+| 02  | [Heartbeat-context endpoint](02-heartbeat-context.md)     | 🎯 Direct       | -50% tokens on iteration start                 | low  |
+| 03  | [Wake-payload pattern](03-wake-payload.md)                | 🎯 Direct       | Removes reflexive reading of MASTER.md           | low  |
+| 04  | [Run-id audit trail](04-run-id-audit.md)                  | 🎯 Direct       | "What the agent did in run X" out of the box    | low  |
+| 05  | [Issue documents with revisions](05-issue-documents.md)  | 🟡 Adaptation   | Pinned plan/acceptance/verification on a task   | medium |
+| 06  | [Atomic checkout](06-atomic-checkout.md)                 | 🟡 Adaptation   | Race protection in UI/CLI/MCP                    | low  |
+| 07  | [Routines (cron)](07-routines.md)                         | 🟡 Adaptation   | Auto drift/links/hashes checks on a schedule    | medium |
+| 08  | [Status taxonomy](08-status-taxonomy.md)                 | 🟡 Adaptation   | `in_review` ≠ `blocked`; FM-escalations formalized | low |
+| 09  | [Activity & events log](09-activity-log.md)              | 🟡 Adaptation   | Unified timeline over revisions                 | medium |
+| 10  | [Adapter pattern for LLM](10-adapter-pattern.md)        | 🔵 Architecture | Plug-in Claude/local models without a rewrite   | high |
+| 11  | [AGENTS.md as a contract](11-agents-md.md)                | 🔵 Architecture | Contribution rules for humans and agents        | low  |
+| 12  | [First-class approvals](12-approvals.md)                 | 🔵 Architecture | A structural replacement for ad-hoc escalations | medium |
+| 13  | [Import UX redesign](13-import-ux-redesign.md)            | 🟡 Adaptation   | A modern wizard for YAML/JSON import             | medium |
+| 14  | [Legacy tasks migration UX](14-legacy-tasks-migration-ux.md) | 🟡 Adaptation | Migration of legacy tasks into DB format        | medium |
+| 15  | [Link system and rendering](15-link-system-and-rendering.md) | 🟡 Adaptation | Flexible cross-refs between entities            | medium |
 
-## 🔌 Hackathon-track (внешние RFC, 2026-06-04)
+## 🔌 Hackathon-track (external RFCs, 2026-06-04)
 
-> Набор RFC, рождённых из brainstorm по vibecoding-идеям. Не про paperclip —
-> про применение cod-doc как infrastructure для vibecoder'ов и multi-agent систем.
-> Каждая идея ложится на существующие proposal 01-15, расширяя их пользовательский value.
+> A set of RFCs born from a brainstorm on vibecoding ideas. Not about
+> paperclip — about using cod-doc as infrastructure for vibecoders and
+> multi-agent systems. Each idea builds on existing proposals 01-15,
+> extending their user value.
 
-| #   | Документ                                                | Категория      | Эффект                                            | Риск    |
+| #   | Document                                                | Category      | Effect                                            | Risk    |
 | --- | ------------------------------------------------------- | -------------- | ------------------------------------------------- | ------- |
-| 16  | [AI-Pair-Hacker](16-ai-pair-hacker.md)                  | 🔵 Архитектура | cod-doc в git-hooks vibecoder'а, авто-документирование | средний |
-| 17  | [Living Specification](17-living-specification.md)      | 🟡 Адаптация   | ADR ↔ tasks ↔ code ↔ docs drift detector          | средний |
-| 18  | [Vibecoder's Diary](18-vibecoders-diary.md)             | 🟡 Адаптация   | activity_log → human-friendly daily doc          | низкий  |
-| 19  | [Context-Scout](19-context-scout.md)                    | 🟡 Адаптация   | «Умный grep» через cod-doc MCP, ranked evidence  | низкий  |
-| 20  | [Multi-Agent Standup](20-multi-agent-standup.md)        | 🔵 Архитектура | 2+ агента в одной инстанции без race             | высокий |
-| 21  | [Degraded-Path Auditability + Error Audit Trail](21-degraded-path-auditability.md) | 🟡 Адаптация | Видимость degraded paths и hard exceptions     | средний |
+| 16  | [AI-Pair-Hacker](16-ai-pair-hacker.md)                  | 🔵 Architecture | cod-doc in vibecoder's git-hooks, auto-documentation | medium |
+| 17  | [Living Specification](17-living-specification.md)      | 🟡 Adaptation   | ADR ↔ tasks ↔ code ↔ docs drift detector          | medium |
+| 18  | [Vibecoder's Diary](18-vibecoders-diary.md)             | 🟡 Adaptation   | activity_log → human-friendly daily doc          | low  |
+| 19  | [Context-Scout](19-context-scout.md)                    | 🟡 Adaptation   | "Smart grep" via cod-doc MCP, ranked evidence    | low  |
+| 20  | [Multi-Agent Standup](20-multi-agent-standup.md)        | 🔵 Architecture | 2+ agents in one instance without races         | high |
+| 21  | [Degraded-Path Auditability + Error Audit Trail](21-degraded-path-auditability.md) | 🟡 Adaptation | Visibility of degraded paths and hard exceptions | medium |
 
-> ❌ **Отбраковка 2026-08-29 (ADO-056, закрывает ADO-013).** Спрос M2
-> (friction-лог ADO-005 #8/#10/#11/#14) не закрывается ни одной из RFC 16–21;
-> сверка секций «Текущее состояние» по коду 2026-08-29. Итог M3-кикоффа —
-> «отбракованы все»; см. [ROADMAP](../docs/system/roadmap/ROADMAP.md) → M3.
+> ❌ **Rejection 2026-08-29 (ADO-056, closes ADO-013).** The M2 demand
+> (friction-log ADO-005 #8/#10/#11/#14) is not closed by any of RFCs 16–21;
+> verification of the "Current state" sections against code 2026-08-29. The M3-kickoff outcome —
+> "all rejected"; see [ROADMAP](../docs/system/roadmap/ROADMAP.md) → M3.
 >
-> - **16** — отбракована: внешняя часть поглощена RFC 22 (Symbiosis); нет friction-обоснования.
-> - **17** — отбракована: drift-контроль ADR↔code уже ведётся в рамках RFC 22; нет friction-обоснования.
-> - **18** — отбракована: ни одна запись friction-лога M2 не просит daily diary.
-> - **19** — отбракована: быстрая победа, но не решает зафиксированные проблемы M2 (#8/#10/#11/#14).
-> - **20** — отбракована: multi-agent пилот уже живёт в RFC 22; нет friction-обоснования.
-> - **21** — отбракована: секция «Текущее состояние» устарела (8× `# pragma: no cover` отсутствуют в коде, `ToolTraceModel` не существует); findings M4/M5/M8/M15 требуют нового RFC.
+> - **16** — rejected: the external part is absorbed by RFC 22 (Symbiosis); no friction-justification.
+> - **17** — rejected: ADR↔code drift control is already done within RFC 22; no friction-justification.
+> - **18** — rejected: no friction-log entry asks for a daily diary.
+> - **19** — rejected: a quick win, but does not solve the recorded M2 problems (#8/#10/#11/#14).
+> - **20** — rejected: a multi-agent pilot already lives in RFC 22; no friction-justification.
+> - **21** — rejected: the "Current state" section is stale (8× `# pragma: no cover` are absent from the code, `ToolTraceModel` does not exist); findings M4/M5/M8/M15 need a new RFC.
 
 ## 🤝 Symbiosis-track (2026-08-24)
 
-> RFC 22 заменяет гипотетических «vibecoder'ов» из 16/17 двумя реальными
-> пилотами (ZAIrgRush, Orakul/ai-review) и поглощает внешнюю часть этих
-> предложений. Приоритет задаёт ROADMAP (adoption > фичи).
+> RFC 22 replaces the hypothetical "vibecoders" from 16/17 with two real
+> pilots (ZAIrgRush, Orakul/ai-review) and absorbs the external part of these
+> proposals. Priority is set by ROADMAP (adoption > features).
 
-| #   | Документ                                                | Категория      | Эффект                                            | Риск    |
+| #   | Document                                                | Category      | Effect                                            | Risk    |
 | --- | ------------------------------------------------------- | -------------- | ------------------------------------------------- | ------- |
-| 22  | [Symbiosis: ZAIrgRush + Orakul](22-symbiosis-zairgrush-orakul.md) | 🔵 Архитектура | Hub-БД, findings-ingest, doc-контекст для внешней петли и AI-ревью | высокий |
-| 24  | [Structure, contracts & scenarios](24-structure-contracts-scenarios.md) | 🔵 Архитектура · **черновик** | Единый контур docs↔code: obligations/facts/assessment, scenario coverage, `structure_context` для garage | высокий |
+| 22  | [Symbiosis: ZAIrgRush + Orakul](22-symbiosis-zairgrush-orakul.md) | 🔵 Architecture | Hub-DB, findings-ingest, doc-context for the external loop and AI-review | high |
+| 24  | [Structure, contracts & scenarios](24-structure-contracts-scenarios.md) | 🔵 Architecture · **draft** | Unified docs↔code contour: obligations/facts/assessment, scenario coverage, `structure_context` for garage | high |
 
 ## ☁️ Cloud-track (2026-07-29)
 
-> Спроектирован Cursor-агентом в ветке `cursor/cloud-agent-plane-bff6` (draft PR
-> #3) до программы Symbiosis. Влит 2026-08-25 **под номером 23**: в ветке RFC
-> шёл как «16» и сталкивался с [16-ai-pair-hacker](16-ai-pair-hacker.md).
-> Приоритет задаёт [ROADMAP](../docs/system/roadmap/ROADMAP.md) — adoption выше
-> облачных профилей, задачи CAP-001…CAP-033 не начаты.
+> Designed by a Cursor-agent in branch `cursor/cloud-agent-plane-bff6` (draft PR
+> #3) before the Symbiosis program. Merged 2026-08-25 **as number 23**: in the RFC branch
+> it went as "16" and clashed with [16-ai-pair-hacker](16-ai-pair-hacker.md).
+> Priority is set by [ROADMAP](../docs/system/roadmap/ROADMAP.md) — adoption above
+> cloud profiles, tasks CAP-001…CAP-033 are not started.
 
-| #   | Документ                                                | Категория      | Эффект                                            | Риск    |
+| #   | Document                                                | Category      | Effect                                            | Risk    |
 | --- | ------------------------------------------------------- | -------------- | ------------------------------------------------- | ------- |
-| 23  | [Cloud decentralized agent plane](23-cloud-decentralized-agent-plane.md) | 🔵 Архитектура | Team-узел в облаке, ИИ-воркеры через remote MCP, SoT = Postgres | высокий |
+| 23  | [Cloud decentralized agent plane](23-cloud-decentralized-agent-plane.md) | 🔵 Architecture | A team-node in the cloud, AI-workers via remote MCP, SoT = Postgres | high |
 
-### Рекомендуемый порядок для hackathon-track
+### Recommended order for the hackathon-track
 
-> ⚠️ Отменён отбраковкой 2026-08-29 (см. выше): все RFC 16–21 отклонены,
-> порядок ниже оставлен как исторический контекст.
+> ⚠️ Canceled by the rejection 2026-08-29 (see above): all RFCs 16–21 are declined,
+> the order below is left as historical context.
 
-**Быстрые победы (1-2 недели каждая):**
-- 18 Vibecoder's Diary (закрывает `09-activity-log` пользовательским value)
-- 19 Context-Scout (CLI + FTS5, минимум нового кода)
-- 17 Living Specification (routines + ADR-system = естественное расширение)
+**Quick wins (1-2 weeks each):**
+- 18 Vibecoder's Diary (closes `09-activity-log` with user value)
+- 19 Context-Scout (CLI + FTS5, minimum new code)
+- 17 Living Specification (routines + ADR-system = a natural extension)
 
-**Тяжёлые (3-4 недели):**
-- 16 AI-Pair-Hacker (нужна интеграция с vibecoder-инструментами)
-- 20 Multi-Agent Standup (нужен registry, demo, документация)
+**Heavy (3-4 weeks):**
+- 16 AI-Pair-Hacker (needs integration with vibecoder tools)
+- 20 Multi-Agent Standup (needs a registry, a demo, docs)
 
-## Рекомендуемый порядок внедрения
+## Recommended implementation order
 
 ```mermaid
 graph LR
@@ -119,29 +120,29 @@ graph LR
     %% Symbiosis-track
     E --> Q[22 Symbiosis ZAIrgRush+Orakul]
     J --> Q
-    Q -.поглощает внешнюю часть.-> O
-    Q -.поглощает внешнюю часть.-> M
+    Q -.absorbs the external part of.-> O
+    Q -.absorbs the external part of.-> M
     Q --> R[24 Structure contracts scenarios]
-    R -.поглощает внешнюю часть.-> M
+    R -.absorbs the external part of.-> M
 ```
 
-**Фаза 1 (быстрые победы):** 01 → 03 → 02 → 04
-**Фаза 2 (структурный аудит):** 09 → 05 → 12
-**Фаза 3 (расширения):** 06 → 08 → 07 → 11
-**Фаза 4 (hackathon-track MVP):** 18 → 19 → 17
-**Фаза 5 (hackathon-track scale-up):** 16 → 20
-**Фаза 6 (по необходимости):** 10
-**Symbiosis-track (2026-08, приоритет по ROADMAP):** 22 — вместо 16/20 как путь к реальным пользователям; **24** — глубокий контур structure/scenario; prerequisite SYM-005..009 выполнен, producer смержен 2026-09-03, сторона cod-doc — фазы 3–6
+**Phase 1 (quick wins):** 01 → 03 → 02 → 04
+**Phase 2 (structural audit):** 09 → 05 → 12
+**Phase 3 (extensions):** 06 → 08 → 07 → 11
+**Phase 4 (hackathon-track MVP):** 18 → 19 → 17
+**Phase 5 (hackathon-track scale-up):** 16 → 20
+**Phase 6 (on demand):** 10
+**Symbiosis-track (2026-08, priority per ROADMAP):** 22 — instead of 16/20 as the path to real users; **24** — the deep structure/scenario contour; prerequisite SYM-005..009 done, producer merged 2026-09-03, cod-doc side — phases 3–6
 
-## Что осталось за скобками
+## What stayed out of scope
 
-Намеренно НЕ рассматривается:
-- **Multi-company isolation** — cod-doc multi-project, но не SaaS.
-- **Budget/cost hard-stops** — не масштаб задачи (один агент на проект).
-- **Org chart / hiring / OpenClaw onboarding** — про управление агентскими командами, не про документы.
-- **Plugin system с IPC-воркерами** — слишком тяжёлая инфраструктура.
+Intentionally NOT considered:
+- **Multi-company isolation** — cod-doc is multi-project, but not SaaS.
+- **Budget/cost hard-stops** — not the scale of the task (one agent per project).
+- **Org chart / hiring / OpenClaw onboarding** — about managing agent teams, not about documents.
+- **Plugin system with IPC-workers** — too heavy infrastructure.
 
-## Источники
+## Sources
 
-- [paperclipai/paperclip](https://github.com/paperclipai/paperclip) (TypeScript, MIT, ~62k stars на 2026-05-06)
-- Ключевые файлы изучены: `AGENTS.md`, `ROADMAP.md`, `skills/paperclip/SKILL.md`, `skills/para-memory-files/SKILL.md`, `skills/diagnose-why-work-stopped/SKILL.md`, `skills/paperclip-converting-plans-to-tasks/SKILL.md`, `adapter-plugin.md`, структура `packages/`, `server/src/`.
+- [paperclipai/paperclip](https://github.com/paperclipai/paperclip) (TypeScript, MIT, ~62k stars as of 2026-05-06)
+- Key files studied: `AGENTS.md`, `ROADMAP.md`, `skills/paperclip/SKILL.md`, `skills/para-memory-files/SKILL.md`, `skills/diagnose-why-work-stopped/SKILL.md`, `skills/paperclip-converting-plans-to-tasks/SKILL.md`, `adapter-plugin.md`, the `packages/` structure, `server/src/`.

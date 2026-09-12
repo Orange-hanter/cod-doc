@@ -10,56 +10,55 @@ related:
   - cod_doc/services/import_service.py
 ---
 
-# Proposal 13 · Переработка импорта документов
+# Proposal 13 · Document import redesign
 
-> 🎯 Цель: убрать ручной ввод `doc_key` и однофайловую загрузку, заменить
-> на сканирование папки + выбор из списка. Минимизировать текстовый ввод
-> везде, где это ещё не сделано.
+> 🎯 Goal: remove manual `doc_key` entry and single-file upload, replace
+> with folder scanning + selection from a list. Minimize text input
+> everywhere it is not yet done.
 
-## 1. Что не так сейчас
+## 1. What is wrong now
 
-[`docs_list.html:128-162`](cod_doc/templates/web/project/docs_list.html#L128-L162) и
+[`docs_list.html:128-162`](cod_doc/templates/web/project/docs_list.html#L128-L162) and
 [`docs.py:439-496`](cod_doc/api/web/pages/docs.py#L439-L496):
 
-| Симптом                                                                   | Причина                                                                         |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Кнопка «📥 Import markdown» в верхней панели не работает                  | `href="#import-section"` — якорь есть, но `<details>` не открывается, скролл уходит «в никуда» |
-| Поле `Doc key` (`modules/M1-foo/overview`) — пользователь должен знать схему ключей | Импорт устроен «один файл за раз», ключ = ручной ввод путь-как-строка           |
-| Импорт по одному файлу через `<input type="file">`                        | Нет батч-режима. Чтобы залить 30 модулей — 30 кликов                            |
-| `Type` дублируется с тем, что обычно лежит в frontmatter `type:`           | Лишний контрол при том, что parse_markdown уже умеет читать FM                   |
-| Подсказка «или: `cod-doc doc import …`» появляется при каждом импорте     | Учит CLI вместо того, чтобы делать UI самодостаточным                            |
+| Symptom                                                                   | Cause                                                                         |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| The "📥 Import markdown" button in the top bar does not work              | `href="#import-section"` — the anchor exists, but `<details>` does not open, the scroll goes "nowhere" |
+| The `Doc key` field (`modules/M1-foo/overview`) — the user must know the key scheme | Import is "one file at a time", key = manual input path-as-string           |
+| Import one file at a time via `<input type="file">`                       | No batch mode. To upload 30 modules — 30 clicks                            |
+| `Type` duplicates what is usually in the frontmatter `type:`              | A redundant control given that parse_markdown already reads FM                   |
+| The hint "or: `cod-doc doc import …`" appears on every import             | Teaches CLI instead of making the UI self-sufficient                            |
 
-И сквозная боль (см. user feedback): по проекту слишком много мест, где
-человек печатает строки руками вместо выбора из списка.
+And a cross-cutting pain (see user feedback): across the project there are too many places where a human types strings by hand instead of picking from a list.
 
-## 2. Предлагаемая модель
+## 2. Proposed model
 
-### 2.1. Источник правды — папка проекта, не одиночный upload
+### 2.1. Source of truth — the project folder, not a single upload
 
-Пользователь указывает **папку** (один раз, в Settings проекта или при
-импорте drag-n-drop'ом). Сервер строит **manifest** — индекс всех `.md`
-файлов с их frontmatter. Сравнивает с тем, что уже в БД. Показывает
-diff: «новые / изменённые / удалённые / без изменений».
+The user points to a **folder** (once, in project Settings or on import
+via drag-n-drop). The server builds a **manifest** — an index of all `.md`
+files with their frontmatter. Compares with what is already in the DB.
+Shows a diff: "new / changed / deleted / unchanged".
 
-### 2.2. Сканирование без LLM
+### 2.2. Scanning without LLM
 
-Никаких AI-проходов. Достаточно того, что parser уже умеет:
+No AI passes. What the parser already can do is enough:
 
-- `parse_markdown()` из [`import_service.py`](cod_doc/services/import_service.py)
+- `parse_markdown()` from [`import_service.py`](cod_doc/services/import_service.py)
   → frontmatter + H1 + sections.
-- Чтение всех `*.md` в папке (`os.walk` + `.gitignore`-aware фильтр).
-- Содержимое грузим **только при импорте**; для индекса достаточно
+- Reading all `*.md` in the folder (`os.walk` + `.gitignore`-aware filter).
+- Content is loaded **only on import**; for the index it is enough to have
   `(path, mtime, sha256(head_4kb), frontmatter_dict, h1_title)`.
 
-`doc_key` выводится автоматически:
-- если в frontmatter есть `doc_key:` — берём его;
-- иначе путь относительно root, без `.md`, без префикса `docs/`
-  (`modules/M1-foo/overview.md` → `modules/M1-foo/overview`).
+`doc_key` is derived automatically:
+- if the frontmatter has `doc_key:` — take it;
+- otherwise the path relative to root, without `.md`, without the `docs/`
+  prefix (`modules/M1-foo/overview.md` → `modules/M1-foo/overview`).
 
-То есть **поле «Doc key» исчезает из формы** в 95% случаев. Остаётся
-только как «advanced override» в раскрытой детали строки.
+That is, the "Doc key" field **disappears from the form** in 95% of cases.
+It remains only as an "advanced override" in the expanded row detail.
 
-### 2.3. UI — список с чекбоксами
+### 2.3. UI — a list with checkboxes
 
 ```
 ┌─ Import from folder ─────────────────────────────────────────┐
@@ -79,63 +78,63 @@ diff: «новые / изменённые / удалённые / без изме
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Каждая строка — кнопка (вся строка clickable toggle). Никаких текстовых
-полей. Тип проставляется из frontmatter; если не указан — выбор из
-dropdown в развёрнутой детали (но не обязательное действие — есть
-дефолт).
+Each row is a button (the whole row is a clickable toggle). No text
+fields. The type is set from the frontmatter; if not specified — a
+selection from a dropdown in the expanded detail (but not a mandatory
+action — there is a default).
 
 ### 2.4. Backend — endpoints
 
 - `GET /p/{slug}/docs/import/scan?path=...` → JSON manifest:
   `[{path, doc_key, type, title, status: "new"|"changed"|"unchanged"|"missing", reason}]`.
-- `POST /p/{slug}/docs/import/apply` с телом `{paths: [...]}` — импорт
-  выбранных. Идемпотентный: changed → новая ревизия, unchanged → noop.
-- Существующий `POST /p/{slug}/docs/import` оставить как backward-compat
-  для CLI/REST, но из UI не использовать.
+- `POST /p/{slug}/docs/import/apply` with body `{paths: [...]}` — import
+  of the selected. Idempotent: changed → new revision, unchanged → noop.
+- The existing `POST /p/{slug}/docs/import` stays as backward-compat
+  for CLI/REST, but is not used from UI.
 
-### 2.5. Источник папки
+### 2.5. Folder source
 
-Три варианта по убыванию автоматизма:
-1. **Auto** — папка задаётся в Settings проекта (`project.docs_root`,
-   относительно git-root). Самый частый кейс.
-2. **One-shot** — drag-n-drop папки в браузер. Использует
-   `webkitdirectory` или File System Access API.
-3. **Path input** — текстовое поле как fallback, скрыто под «advanced».
+Three variants in descending order of automation:
+1. **Auto** — the folder is set in project Settings (`project.docs_root`,
+   relative to git-root). The most common case.
+2. **One-shot** — drag-n-drop a folder into the browser. Uses
+   `webkitdirectory` or the File System Access API.
+3. **Path input** — a text field as a fallback, hidden under "advanced".
 
-## 3. Минимизация ввода — общий принцип проекта
+## 3. Input minimization — a general principle of the project
 
-Сделать пройденным мерилом для каждой формы вопрос: «можно ли
-заменить input на select / chip / drag-n-drop / checkbox?». Кандидаты
-на следующий заход (вне scope этого предложения, но в одном русле):
+Make the test measure for each form the question: "can the input be
+replaced with a select / chip / drag-n-drop / checkbox?". Candidates
+for the next pass (out of scope of this proposal, but in the same vein):
 
-- Создание задачи (`task_create`): `module`, `priority`, `assignee` —
-  всё селекты, но `title` ещё руками. Можно предлагать шаблоны.
-- New blank doc: `doc_key` тоже руками. Можно складывать его из
-  `(folder picker, title input)` где folder = выбор из существующих.
-- Filter bar — уже хорошо.
+- Task creation (`task_create`): `module`, `priority`, `assignee` —
+  all selects, but `title` is still by hand. Templates can be offered.
+- New blank doc: `doc_key` is also by hand. It can be assembled from
+  `(folder picker, title input)` where folder = a choice from existing.
+- Filter bar — already good.
 
-## 4. Шаги внедрения
+## 4. Implementation steps
 
-1. Починить кнопку «Import markdown» в шапке (открывать `<details>` JS'ом
-   при клике на anchor) — чтобы не оставлять её сломанной до большой
-   переделки. **Маленький отдельный COD-task.**
-2. Завести `project.docs_root` (миграция + поле в Settings).
-3. Добавить `services/import_service.scan_folder()` — чистая функция,
-   возвращает manifest без записи в БД.
-4. Endpoint `GET /docs/import/scan` + страница `/docs/import` с чекбокс-списком.
-5. Endpoint `POST /docs/import/apply` (батч) + переиспользует
-   `import_markdown()` per-file внутри одной транзакции.
-6. Заменить старую форму в `docs_list.html` ссылкой «Bulk import →».
-7. Удалить старую `<details>` после миграции существующих flow.
+1. Fix the "Import markdown" button in the header (open `<details>` with JS
+   on anchor click) — so it is not left broken until the big rework.
+   **A small separate COD-task.**
+2. Introduce `project.docs_root` (migration + a field in Settings).
+3. Add `services/import_service.scan_folder()` — a pure function,
+   returns a manifest without writing to the DB.
+4. Endpoint `GET /docs/import/scan` + page `/docs/import` with a checkbox-list.
+5. Endpoint `POST /docs/import/apply` (batch) + reuses
+   `import_markdown()` per-file inside one transaction.
+6. Replace the old form in `docs_list.html` with a "Bulk import →" link.
+7. Remove the old `<details>` after migrating existing flows.
 
-## 5. Открытые вопросы
+## 5. Open questions
 
-- **Что делать с MISSING?** (файл удалили в FS, но в БД он active.)
-  Варианты: ничего не делать (decoupled storage), пометить `deprecated`,
-  показать как warning без действия по умолчанию. → склоняюсь к
-  warning-only, действие через отдельную кнопку.
-- **Конфликт `doc_key`** между двумя файлами с одинаковым
-  frontmatter `doc_key:` — показывать ошибку в строке manifest, импорт
-  блокировать.
-- **Sub-projects** — если `docs_root` содержит вложенные проекты со
-  своими `.cod-doc/`, их пропускать.
+- **What to do with MISSING?** (the file was deleted in FS, but in DB it
+  is active.) Variants: do nothing (decoupled storage), mark `deprecated`,
+  show as a warning without a default action. → leaning toward
+  warning-only, action via a separate button.
+- **`doc_key` conflict** between two files with the same
+  frontmatter `doc_key:` — show an error in the manifest row, block the
+  import.
+- **Sub-projects** — if `docs_root` contains nested projects with
+  their own `.cod-doc/`, skip them.

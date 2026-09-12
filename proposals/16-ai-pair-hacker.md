@@ -1,142 +1,142 @@
-# 16 — AI-Pair-Hacker: cod-doc в петле vibecoder'а
+# 16 — AI-Pair-Hacker: cod-doc in the vibecoder's loop
 
-> Категория: 🔵 Архитектура · Риск: средний · Зависимости: 06 atomic-checkout, 09 activity-log, OBI (code-ref)
+> Category: 🔵 Architecture · Risk: medium · Dependencies: 06 atomic-checkout, 09 activity-log, OBI (code-ref)
 
-## Контекст: vibecoder-боль
+## Context: vibecoder pain
 
-Vibecoding (Claude Code / OpenCode / Cursor) радикально ускоряет написание кода, но создаёт системную боль:
+Vibecoding (Claude Code / OpenCode / Cursor) radically accelerates writing code, but creates systemic pain:
 
-- **Дрейф документации.** Код обгоняет доки. Через неделю автор не помнит, зачем менял `task_service.update_status` и какие edge cases покрывал.
-- **Потерянный контекст.** «Где у нас считается food cost?» — вопрос, на который grep отвечает плохо, а `git log --all -S "food cost"` — ещё хуже.
-- **Нет post-hoc аудита.** «Что натворил агент на прогоне X?» — сейчас нельзя ответить без ручного просмотра `git log`.
+- **Documentation drift.** Code outpaces docs. A week later the author does not remember why they changed `task_service.update_status` and which edge cases they covered.
+- **Lost context.** "Where do we compute food cost?" — a question that `grep` answers poorly, and `git log --all -S "food cost"` — even worse.
+- **No post-hoc audit.** "What did the agent do in run X?" — currently unanswerable without a manual `git log` review.
 
-Существующие предложения cod-doc уже закрывают **часть** проблемы:
-- `09-activity-log` пишет каждую мутацию в `activity_service.emit(...)`.
-- `06-atomic-checkout` защищает от race в UI/CLI/MCP.
-- OBI (code-ref parser, `22f7e45`, `01ba3ab`) линкует коммиты ↔ файлы ↔ сущности.
+Existing cod-doc proposals already close **part** of the problem:
+- `09-activity-log` writes every mutation to `activity_service.emit(...)`.
+- `06-atomic-checkout` protects from races in UI/CLI/MCP.
+- OBI (code-ref parser, `22f7e45`, `01ba3ab`) links commits ↔ files ↔ entities.
 
-**Не закрыто:** никто не **связывает** конкретный edit vibecoder'а с конкретной задачей / документом в cod-doc в реальном времени.
+**Not closed:** no one **links** a specific vibecoder edit to a specific task / document in cod-doc in real time.
 
-## Текущее состояние cod-doc
+## Current state of cod-doc
 
-- `MCP-сервер` экспонирует 119 тулов, в т.ч. `task_*`, `doc_*`, `plan_*`, `activity_*`, `commit_link_*` (`OBI-010/011`).
-- `activity_service` эмитит события на каждую мутацию (proposal 09 / PCA-912).
-- `commit_link_service` (OBI-010) уже умеет линковать коммиты ↔ задачи.
-- `task_checkout` (PCA-200) — атомарный захват задачи.
-- **Нет:** плагина / обёртки, который бы дёргал cod-doc **из** vibecoder-loop'а.
+- The `MCP-server` exposes 119 tools, including `task_*`, `doc_*`, `plan_*`, `activity_*`, `commit_link_*` (`OBI-010/011`).
+- `activity_service` emits events on every mutation (proposal 09 / PCA-912).
+- `commit_link_service` (OBI-010) already knows how to link commits ↔ tasks.
+- `task_checkout` (PCA-200) — atomic task acquisition.
+- **Missing:** a plugin / wrapper that would call cod-doc **from** the vibecoder loop.
 
-## Предложение
+## Proposal
 
-Создать **отдельный sub-project** `cod-doc-pair/` (или модуль внутри `cod_doc/agent/`) — лёгкий Python-клиент + CLI, который интегрируется с vibecoder-инструментами и cod-doc MCP:
+Create a **separate sub-project** `cod-doc-pair/` (or a module inside `cod_doc/agent/`) — a lightweight Python client + CLI that integrates with vibecoder tools and cod-doc MCP:
 
-### 4.1. Pre-edit hook: «а это задокументировано?»
+### 4.1. Pre-edit hook: "is this documented?"
 
-Перед `git commit` или перед крупным `Edit` плагин спрашивает у cod-doc:
+Before `git commit` or before a big `Edit` the plugin asks cod-doc:
 ```
 cod-doc pre-edit --project=mozarella --files=cod_doc/services/food_cost.py
-  → возвращает: релевантные tasks (status: in_progress), связанные docs, последние activity events
-  → MCP-тулы: task_search, doc_search, activity_list, commit_link_service.search_by_files
+  → returns: relevant tasks (status: in_progress), related docs, recent activity events
+  → MCP-tools: task_search, doc_search, activity_list, commit_link_service.search_by_files
 ```
 
-Если найдена активная задача — плагин предлагает разработчику:
-1. «Этот edit продолжает task COD-123 (in_progress). Продолжить?»
-2. «Этот edit не относится ни к одной открытой задаче. Создать новую?»
+If an active task is found — the plugin offers the developer:
+1. "This edit continues task COD-123 (in_progress). Continue?"
+2. "This edit is not related to any open task. Create a new one?"
 
-### 4.2. Post-commit hook: авто-документирование
+### 4.2. Post-commit hook: auto-documentation
 
-После `git commit` плагин:
-1. Парсит commit message → ищет `COD-XXX` / `PCA-XXX` / `(#PR)`.
-2. Через `commit_link_service` линкует SHA ↔ task.
-3. Если в коммите затронуты `docs/**` — не трогает (документация обновляется явно).
-4. Если затронут только код — генерит **черновик** обновления связанного `task_doc` (через `task_doc_put`) и помечает `proposed: true`.
+After `git commit` the plugin:
+1. Parses the commit message → looks for `COD-XXX` / `PCA-XXX` / `(#PR)`.
+2. Via `commit_link_service` links SHA ↔ task.
+3. If the commit touches `docs/**` — does not touch (docs are updated explicitly).
+4. If only code is touched — generates a **draft** update of the related `task_doc` (via `task_doc_put`) and marks `proposed: true`.
 
-### 4.3. Скилл `cod-doc/pair-hacker/SKILL.md`
+### 4.3. Skill `cod-doc/pair-hacker/SKILL.md`
 
-Активируется, когда vibecoder-агент (OpenCode / Claude Code) работает в проекте с активным cod-doc. Содержит:
-- Когда делать `agent_pick` (перед началом работы).
-- Когда делать `task_checkout` (перед edit).
-- Когда делать `agent_report` (если застрял).
-- Когда делать `agent_complete` (после commit).
-- Формат `commit_link` (tag-pattern в commit message).
+Activates when a vibecoder-agent (OpenCode / Claude Code) works in a project with active cod-doc. Contains:
+- When to do `agent_pick` (before starting work).
+- When to do `task_checkout` (before edit).
+- When to do `agent_report` (if stuck).
+- When to do `agent_complete` (after commit).
+- The `commit_link` format (tag-pattern in commit message).
 
-### 4.4. CLI-команда
+### 4.4. CLI command
 
 ```bash
-cod-doc pair-hook install       # ставит git hooks (pre-commit, post-commit, commit-msg)
-cod-doc pair-hook status        # показывает, на каких задачах сейчас работает агент
-cod-doc pair-hook sync          # подтягивает activity_log за день → предлагает обновления task_doc
-cod-doc pair-hook checkout TASK-123  # атомарный захват + уведомление других агентов
+cod-doc pair-hook install       # installs git hooks (pre-commit, post-commit, commit-msg)
+cod-doc pair-hook status        # shows on which tasks the agent is currently working
+cod-doc pair-hook sync          # pulls activity_log for the day → offers task_doc updates
+cod-doc pair-hook checkout TASK-123  # atomic acquisition + notification of other agents
 ```
 
-## Эффект
+## Effect
 
-| Метрика | До | После |
+| Metric | Before | After |
 |---|---|---|
-| Дрейф docs vs code | 2-3 недели | <1 день (post-commit hook) |
-| Время на «что делал агент X?» | 30+ минут | 1 минута (`activity_for_run` + `commit_link_service`) |
-| Onboarding нового vibecoder'а в проект | день | 30 минут (читает `task_summary` + связанные `task_doc`) |
+| Docs vs code drift | 2-3 weeks | <1 day (post-commit hook) |
+| Time to "what did agent X do?" | 30+ minutes | 1 minute (`activity_for_run` + `commit_link_service`) |
+| Onboarding a new vibecoder to a project | a day | 30 minutes (reads `task_summary` + related `task_doc`) |
 
-## Структура
+## Structure
 
 ```
 cod-doc-pair/                     # standalone Python package
 ├── pyproject.toml
 ├── src/cod_doc_pair/
 │   ├── cli.py                    # click CLI (install/status/sync/checkout)
-│   ├── mcp_client.py             # тонкий async MCP-клиент к cod-doc серверу
+│   ├── mcp_client.py             # thin async MCP-client to cod-doc server
 │   ├── hooks/
-│   │   ├── pre_commit.py         # проверка in_progress tasks, связанных с файлами
+│   │   ├── pre_commit.py         # check in_progress tasks related to files
 │   │   ├── post_commit.py        # commit_link + auto task_doc proposal
 │   │   └── commit_msg.py         # tag-pattern validator (COD-XXX, PCA-XXX)
 │   ├── integrations/
-│   │   ├── opencode_hook.py      # адаптер к OpenCode CLI hook API
-│   │   ├── claude_code_hook.py   # адаптер к Claude Code settings.json hooks
+│   │   ├── opencode_hook.py      # adapter to OpenCode CLI hook API
+│   │   ├── claude_code_hook.py   # adapter to Claude Code settings.json hooks
 │   │   └── cursor_rule.py        # Cursor rules (.cursorrules)
-│   └── skill_md/                 # → копируется в cod_doc/skills/pair-hacker/SKILL.md
+│   └── skill_md/                 # → copied to cod_doc/skills/pair-hacker/SKILL.md
 └── tests/
 ```
 
-## Зависимости
+## Dependencies
 
-| Proposal | Нужно для |
+| Proposal | Needed for |
 |---|---|
-| `06-atomic-checkout` (PCA-200) | race-protection между парой vibecoder'ов в одном проекте |
-| `09-activity-log` (PCA-912) | post-commit hook пишет события |
-| `OBI-010/011` (commit_link) | линк SHA ↔ task |
-| Cycle-5 agent profile (AGT-001..007) | `--profile minimal` поверхность для быстрого старта |
+| `06-atomic-checkout` (PCA-200) | race-protection between a pair of vibecoders in the same project |
+| `09-activity-log` (PCA-912) | post-commit hook writes events |
+| `OBI-010/011` (commit_link) | link SHA ↔ task |
+| Cycle-5 agent profile (AGT-001..007) | `--profile minimal` surface for a quick start |
 
-## Риски и митигация
+## Risks and mitigation
 
-| Риск | Митигация |
+| Risk | Mitigation |
 |---|---|
-| Post-commit hook создаёт шум в `task_doc` (предлагает нерелевантные обновления) | `proposed: true` + human-in-the-loop; PR review перед merge |
-| Git hooks замедляют commit | Только асинхронные операции; pre-commit ≤ 200ms timeout |
-| Разные vibecoder-инструменты имеют разные hook API | `integrations/` модуль — по одному адаптеру на инструмент, общая core-логика |
-| Пользователь работает в проекте без cod-doc init | `cod-doc pair-hook install` отказывается с понятной ошибкой |
+| Post-commit hook creates noise in `task_doc` (offers irrelevant updates) | `proposed: true` + human-in-the-loop; PR review before merge |
+| Git hooks slow down commit | Only async operations; pre-commit ≤ 200ms timeout |
+| Different vibecoder tools have different hook APIs | `integrations/` module — one adapter per tool, common core logic |
+| User works in a project without cod-doc init | `cod-doc pair-hook install` refuses with a clear error |
 
-## Acceptance criteria (для RFC-задачи)
+## Acceptance criteria (for the RFC task)
 
-1. `cod-doc-pair` устанавливается через `pip install cod-doc-pair` отдельно от cod-doc.
-2. `cod-doc pair-hook install` ставит 3 git hook'а (pre-commit, post-commit, commit-msg).
-3. После `git commit` с `COD-123` в message — `commit_link_service` показывает связь в течение 1 сек.
-4. Pre-commit hook с `in_progress` задачей в стеке — блокирует commit, требуя ack.
-5. Интеграция с OpenCode / Claude Code — через 1 файл настройки.
-6. `SKILL.md pair-hacker` автоматически подгружается агентом при `agent_pick`.
+1. `cod-doc-pair` installs via `pip install cod-doc-pair` separately from cod-doc.
+2. `cod-doc pair-hook install` installs 3 git hooks (pre-commit, post-commit, commit-msg).
+3. After `git commit` with `COD-123` in the message — `commit_link_service` shows the link within 1 sec.
+4. Pre-commit hook with an `in_progress` task on the stack — blocks commit, requiring ack.
+5. Integration with OpenCode / Claude Code — via 1 settings file.
+6. `SKILL.md pair-hacker` is auto-loaded by the agent on `agent_pick`.
 
 ## Roadmap
 
-- **Phase 1 (1-2 недели):** core + git hooks + commit_link.
-- **Phase 2 (1 неделя):** OpenCode + Claude Code адаптеры.
+- **Phase 1 (1-2 weeks):** core + git hooks + commit_link.
+- **Phase 2 (1 week):** OpenCode + Claude Code adapters.
 - **Phase 3 (ongoing):** auto task_doc proposal (LLM), Cursor rules, IntelliJ plugin.
 
-## Альтернативы, которые **не** выбрали
+## Alternatives we did **not** choose
 
-- **Doc-gen из кода (Sphinx/MkStrings):** не решает «что делал агент X» и не линкует с задачами.
-- **Просто требовать от vibecoder'а писать доки:** не работает на практике (проверено).
-- **AI-агент, читающий git log вручную:** работает, но тратит 1-2К токенов на каждый «а что здесь было» — snowball protocol уже умеет лучше.
+- **Doc-gen from code (Sphinx/MkStrings):** does not solve "what did agent X do" and does not link with tasks.
+- **Just require the vibecoder to write docs:** does not work in practice (verified).
+- **An AI agent reading git log manually:** works, but spends 1-2K tokens on each "what was here" — the snowball protocol already does better.
 
-## Источники
+## Sources
 
-- Реальный workflow: danil@Mozarella + lurkers-dev (3+ проекта под vibecoding).
-- Paperclip [`skills/`](https://github.com/paperclipai/paperclip/tree/master/skills) — паттерн «активируемый по триггеру skill».
-- Cursor `.cursorrules`, Claude Code `settings.json` hooks — оба поддерживают кастомные pre/post-action скрипты.
+- Real workflow: danil@Mozarella + lurkers-dev (3+ projects under vibecoding).
+- Paperclip [`skills/`](https://github.com/paperclipai/paperclip/tree/master/skills) — the "trigger-activated skill" pattern.
+- Cursor `.cursorrules`, Claude Code `settings.json` hooks — both support custom pre/post-action scripts.

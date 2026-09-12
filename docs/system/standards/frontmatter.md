@@ -10,141 +10,141 @@ last_updated: 2026-04-28
 
 # Frontmatter Standard
 
-> Описывает обязательные и рекомендованные поля YAML frontmatter для всех документов проекта, управляемого COD-DOC.
-> Наследуется от Restate (`Docs/standards/frontmatter.md`) с расширениями под БД-валидацию.
+> Describes the mandatory and recommended YAML frontmatter fields for all documents of a project managed by COD-DOC.
+> Inherited from Restate (`Docs/standards/frontmatter.md`) with extensions for DB validation.
 
-## 1. Общее правило
+## 1. General rule
 
-Каждый документ имеет frontmatter. Когда документ создаётся через `cod-doc doc new`, frontmatter генерируется автоматически из полей сущности `Document`. При ручном редактировании markdown и последующем import — COD-DOC парсит frontmatter и применяет как patch к записи `Document`.
+Every document has frontmatter. When a document is created via `cod-doc doc new`, the frontmatter is generated automatically from the `Document` entity's fields. On manual markdown editing and subsequent import — COD-DOC parses the frontmatter and applies it as a patch to the `Document` record.
 
-## 2. Обязательные поля
+## 2. Mandatory fields
 
-| Поле | Значения | Мэппинг в БД |
+| Field | Values | DB mapping |
 |------|----------|--------------|
 | `type` | `module-spec`, `module-subdoc`, `execution-plan`, `task-section`, `execution-log`, `standard`, `architecture`, `vision`, `guide`, `user-story`, `decision`, `open-question`, `redirect`, `design`, `audit`, `audit-report`, `journal`, `plan`, `analysis`, `research`, `capability` | `document.type` |
-| `status` | См. таблицу §2a (зависит от `type`); чужие написания — §2b | `document.status` |
-| `owner` | Строка (команда или роль) | `document.owner` |
+| `status` | See table §2a (depends on `type`); alien spellings — §2b | `document.status` |
+| `owner` | A string (team or role) | `document.owner` |
 | `last_updated` | `YYYY-MM-DD` | `document.last_updated` |
-| `source_of_truth` | `true` / `false` *(или вложенный dict для `execution-plan` — см. §7)* | `document.source_of_truth` |
+| `source_of_truth` | `true` / `false` *(or a nested dict for `execution-plan` — see §7)* | `document.source_of_truth` |
 
-Источник истины по списку `type` — enum `DocumentType` (`cod_doc/domain/entities.py`);
-таблица выше обязана совпадать с ним значение в значение. Восемь типов
+The source of truth for the `type` list — the enum `DocumentType` (`cod_doc/domain/entities.py`);
+the table above must match it value for value. Eight types
 (`design`, `audit`, `audit-report`, `journal`, `plan`, `analysis`, `research`,
-`capability`) добавлены в ADO-015: они уже жили в корпусах, но импорт молча
-превращал их в `module-spec`.
+`capability`) were added in ADO-015: they already lived in the corpora, but import silently
+turned them into `module-spec`.
 
-## 2a. Допустимые `status` по `type`
+## 2a. Allowed `status` per `type`
 
-Каждый `type` определяет своё подмножество `status`. Несовместимая пара (например `type: execution-plan` + `status: active`) → error.
+Each `type` defines its own subset of `status`. An incompatible pair (e.g. `type: execution-plan` + `status: active`) → error.
 
-| `type` | Допустимые `status` | Терминал |
+| `type` | Allowed `status` | Terminal |
 |--------|---------------------|----------|
 | `module-spec`, `module-subdoc`, `standard`, `architecture`, `vision`, `guide`, `redirect` | `draft` → `review` → `active` → `deprecated` | `deprecated` |
-| `execution-plan`, `task-section`, `execution-log` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`) | `done` / `cancelled` |
+| `execution-plan`, `task-section`, `execution-log` | `pending` → `in-progress` → `done` (opt. `blocked`, `cancelled`) | `done` / `cancelled` |
 | `user-story` | `draft` → `accepted` → `delivered` → `archived` | `archived` |
-| `audit-report`, `audit` | `active` (живой аудит **и** закрытый — в frontmatter его пишут `resolved`, см. §2b) → `deprecated` (замещён; в frontmatter `superseded`) | `deprecated` |
+| `audit-report`, `audit` | `active` (a live audit **and** a closed one — in frontmatter it is written `resolved`, see §2b) → `deprecated` (superseded; in frontmatter `superseded`) | `deprecated` |
 | `design`, `analysis`, `research`, `capability`, `decision`, `open-question` | `draft` → `review` → `active` → `deprecated` | `deprecated` |
-| `plan` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`) | `done` / `cancelled` |
-| `journal` | `active` — журнал не «завершается», он либо ведётся, либо `deprecated` | `deprecated` |
+| `plan` | `pending` → `in-progress` → `done` (opt. `blocked`, `cancelled`) | `done` / `cancelled` |
+| `journal` | `active` — a journal is not "completed", it is either kept or `deprecated` | `deprecated` |
 
-## 2b. Чужие статусы при импорте
+## 2b. Alien statuses on import
 
-В БД живут ровно четыре значения `status`: `draft`, `review`, `active`,
-`deprecated`. Чужие корпуса пишут иначе (`living`, `final`, `done`, `accepted`,
-`archived`, `superseded`, …). Импорт не выбрасывает их и не притворяется, что
-понял: таблица `_ALIEN_STATUS_ALIASES` (`cod_doc/services/import_service.py`)
-переводит известные написания, и **каждая такая замена попадает в
-`ImportReport.warnings`** с `reason: alias`. Написание, которого нет в таблице,
-даёт `draft` и `reason: unknown`.
+Exactly four `status` values live in the DB: `draft`, `review`, `active`,
+`deprecated`. Alien corpora write differently (`living`, `final`, `done`, `accepted`,
+`archived`, `superseded`, …). Import does not throw them away or pretend to
+understand: the table `_ALIEN_STATUS_ALIASES` (`cod_doc/services/import_service.py`)
+translates known spellings, and **every such replacement goes into
+`ImportReport.warnings`** with `reason: alias`. A spelling not in the table
+yields `draft` and `reason: unknown`.
 
-| Чужое написание | Канонический `status` |
+| Alien spelling | Canonical `status` |
 |---|---|
 | `living`, `final`, `done`, `complete`, `completed`, `resolved`, `accepted`, `delivered`, `published`, `current`, `stable`, `in-progress` | `active` |
 | `proposed`, `pending`, `wip`, `todo` | `draft` |
 | `in-review`, `reviewing` | `review` |
 | `archived`, `resolved`, `superseded`, `obsolete`, `rejected`, `cancelled` | `deprecated` |
 
-Побочный эффект, о котором стоит знать: `final`, `done` и `resolved` становятся `active`,
-поэтому FM-005 (`stale-doc`) начинает считать возраст исторических документов.
-Это осознанный выбор — «завершённый» документ не то же самое, что снятый с
-эксплуатации.
+A side effect worth knowing: `final`, `done` and `resolved` become `active`,
+so FM-005 (`stale-doc`) starts counting the age of historical documents.
+This is a conscious choice — a "completed" document is not the same as one
+decommissioned from operation.
 
-## 3. Условно-обязательные
+## 3. Conditionally mandatory
 
-- `last_reviewed` — для `type` ∈ {`module-spec`, `architecture`, `standard`}.
-- `created` — для любых, но COD-DOC заполнит автоматически при создании.
-- Если `source_of_truth: false`:
-  - `canonical_source` — одна из известных `doc_key`.
-  - `scope` — причина существования (`legacy-redirect`, `derived-analysis-redirect`, `domain-appendix-redirect`).
-  - `audience` — не пустой массив.
-  - `related_code` — массив (может быть пустым `[]`).
+- `last_reviewed` — for `type` ∈ {`module-spec`, `architecture`, `standard`}.
+- `created` — for any, but COD-DOC will fill it in automatically on creation.
+- If `source_of_truth: false`:
+  - `canonical_source` — one of the known `doc_key`.
+  - `scope` — the reason for existence (`legacy-redirect`, `derived-analysis-redirect`, `domain-appendix-redirect`).
+  - `audience` — a non-empty array.
+  - `related_code` — an array (may be empty `[]`).
 
-## 4. Рекомендованные поля
+## 4. Recommended fields
 
-| Поле | Назначение |
+| Field | Purpose |
 |------|------------|
-| `tags` | Массив строк; мэппится в `tag` + `document_tag` |
-| `project` | Slug проекта |
+| `tags` | Array of strings; maps to `tag` + `document_tag` |
+| `project` | Project slug |
 | `audience` | `[contributors, agents, product, ...]` |
-| `related_code` | Массив путей |
-| `implemented_in` | Dict (`backend: [...]`, `tests: [...]`) — для module-spec |
-| `depends_on` | Массив ссылок на модули — для module-spec |
-| `api_navigation` | Dict — для module-spec |
-| `schema` | Dict — для module-spec |
-| `task_plan` | Путь к плану модуля |
+| `related_code` | Array of paths |
+| `implemented_in` | Dict (`backend: [...]`, `tests: [...]`) — for module-spec |
+| `depends_on` | Array of links to modules — for module-spec |
+| `api_navigation` | Dict — for module-spec |
+| `schema` | Dict — for module-spec |
+| `task_plan` | Path to the module's plan |
 
-## 5. Поля, зарезервированные COD-DOC
+## 5. Fields reserved by COD-DOC
 
-Эти поля COD-DOC проставляет автоматически и может перезаписать при export:
+These fields COD-DOC sets automatically and may overwrite on export:
 
-| Поле | Назначение |
+| Field | Purpose |
 |------|-----------|
-| `doc_key` | Идентификатор в БД (`modules/M1-auth/overview`) |
-| `projection_hash` | Хеш последнего экспорта |
-| `cod_doc_generated` | `true` если документ сгенерирован полностью из шаблона |
-| `revision` | ID последней revision |
+| `doc_key` | Identifier in the DB (`modules/M1-auth/overview`) |
+| `projection_hash` | Hash of the last export |
+| `cod_doc_generated` | `true` if the document was generated entirely from a template |
+| `revision` | ID of the last revision |
 
-Автор не должен редактировать их вручную; при конфликте побеждает БД.
+The author must not edit them manually; on a conflict, the DB wins.
 
-## 6. Валидация
+## 6. Validation
 
-Служба `DocService.validate_frontmatter(doc)` выполняется:
+The `DocService.validate_frontmatter(doc)` service runs:
 
-1. На каждом write-path действии.
-2. На команде `cod-doc audit`.
-3. На git pre-commit hook (устанавливается через `cod-doc hooks install`).
+1. On every write-path action.
+2. On the `cod-doc audit` command.
+3. On the git pre-commit hook (installed via `cod-doc hooks install`).
 
-Правила:
+Rules:
 
-- `FM-001` Неизвестное значение `type` → error. На пути **import** это не error, а
-  предупреждение: значение вне enum откатывается к fallback в БД и попадает в
-  `ImportReport.warnings` (`reason: unknown`), а **файл при этом не
-  переписывается** — за это отвечает `_raw_matches_db` (ADO-010). Импорт чужого
-  корпуса не имеет права ни ронять прогон, ни править чужой markdown.
-- `FM-002` `status=active` при пустом `owner` → error.
-- `FM-003` `source_of_truth: false` без `canonical_source` → error (для `execution-plan` см. §7 — dict-вариант исключён).
-- `FM-004` `last_updated` в будущем → warning.
-- `FM-005` `last_updated` старше 180 дней для `status=active` → warning (`stale-doc`).
-- `FM-006` Несовместимая пара `type`/`status` (см. §2a) → error.
-- `FM-007` *(reserved, см. [sensitive-data.md](sensitive-data.md))* Отсутствие `sensitivity` для документов с `type` ∈ `{module-spec, architecture, standard}` → warning. Реализуется в задаче COD-025.
+- `FM-001` Unknown `type` value → error. On the **import** path, this is not an error, but
+  a warning: a value outside the enum falls back to a fallback in the DB and goes into
+  `ImportReport.warnings` (`reason: unknown`), and **the file is not rewritten**
+  — that is the responsibility of `_raw_matches_db` (ADO-010). Importing an alien corpus
+  has no right to either fail the run or edit the alien markdown.
+- `FM-002` `status=active` with an empty `owner` → error.
+- `FM-003` `source_of_truth: false` without `canonical_source` → error (for `execution-plan` see §7 — the dict variant is excluded).
+- `FM-004` `last_updated` in the future → warning.
+- `FM-005` `last_updated` older than 180 days for `status=active` → warning (`stale-doc`).
+- `FM-006` Incompatible `type`/`status` pair (see §2a) → error.
+- `FM-007` *(reserved, see [sensitive-data.md](sensitive-data.md))* Missing `sensitivity` for documents with `type` ∈ `{module-spec, architecture, standard}` → warning. Implemented in task COD-025.
 
-## 7. Соотношение с task-plan ecosystem
+## 7. Relationship with the task-plan ecosystem
 
-Task-plan использует узкое подмножество и переопределяет часть значений:
+Task-plan uses a narrow subset and overrides some values:
 
-- `status` в execution-plan: `pending` / `in-progress` / `done` (а не `draft`/`active`).
-- `source_of_truth` в execution-plan: nested dict с указанием источников каждого аспекта (vision, architecture, data_model, …) вместо boolean. Пример:
+- `status` in execution-plan: `pending` / `in-progress` / `done` (not `draft`/`active`).
+- `source_of_truth` in execution-plan: a nested dict indicating the sources of each aspect (vision, architecture, data_model, …) instead of a boolean. Example:
   ```yaml
   source_of_truth:
     vision: docs/system/VISION.md
     architecture: docs/system/ARCHITECTURE.md
   ```
-  При write-path валидации FM-003 (требование `canonical_source` при `false`) не применяется — наличие dict эквивалентно «у плана есть источники».
-- `owner` не требуется (владелец — Task Steward по конвенции).
+  On write-path validation, FM-003 (the `canonical_source` requirement when `false`) does not apply — the presence of the dict is equivalent to "the plan has sources".
+- `owner` is not required (the owner is Task Steward by convention).
 
-Подробнее: [task-plan.md](task-plan.md) и Restate `tools/task-plan-ecosystem.md §3`.
+Details: [task-plan.md](task-plan.md) and Restate `tools/task-plan-ecosystem.md §3`.
 
-## 8. Примеры
+## 8. Examples
 
 ### 8.1 Canonical module spec
 

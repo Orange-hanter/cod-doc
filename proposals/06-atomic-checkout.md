@@ -1,8 +1,8 @@
-# 06 — Атомарный checkout задач
+# 06 — Atomic task checkout
 
-> Категория: 🟡 Адаптация · Риск: низкий · Зависимости: 08 (статусы)
+> Category: 🟡 Adaptation · Risk: low · Dependencies: 08 (statuses)
 
-## Контекст: как у paperclip
+## Context: like paperclip
 
 ```
 POST /api/issues/:id/checkout
@@ -12,90 +12,90 @@ POST /api/issues/:id/checkout
 }
 ```
 
-Семантика:
-- Если issue в `expectedStatuses` → атомарно перевести в `in_progress`, заassign на agent, выдать lock.
-- Если уже за этим агентом — вернуть OK (idempotent).
-- Если за другим — `409 Conflict`. Скилл: **«Never retry a 409»**.
-- Все мутации задачи требуют валидного активного checkout'а.
+Semantics:
+- If the issue is in `expectedStatuses` → atomically transition to `in_progress`, assign to agent, issue a lock.
+- If already with this agent → return OK (idempotent).
+- If with another → `409 Conflict`. Skill: **"Never retry a 409"**.
+- All task mutations require a valid active checkout.
 
-Эффект:
-- Невозможно «случайно» работать с чужой задачей.
-- Невозможно стартануть задачу не из ожидаемого состояния (catch a stale plan).
-- Status-transition `todo → in_progress` — **через checkout**, не через прямой PATCH (это правило).
+Effect:
+- Impossible to "accidentally" work on someone else's task.
+- Impossible to start a task from a non-expected state (catch a stale plan).
+- The `todo → in_progress` transition — **through checkout**, not through a direct PATCH (this is the rule).
 
-## Текущее состояние cod-doc
+## Current state of cod-doc
 
-- В [task_tools.py](cod_doc/mcp/tools/task_tools.py) `task_update_status` принимает любой переход без оптимистичной проверки.
-- Возможные сценарии гонки:
-  - UI-вкладка показывает задачу `todo`, оператор нажимает «start» → агент уже её взял и она `in_progress`. UI перепишет неконсистентно.
-  - Daemon триггерит wake по drift'у, в это время человек правит ту же задачу через CLI.
-- Нет понятия «активный исполнитель задачи в данный момент».
+- In [task_tools.py](cod_doc/mcp/tools/task_tools.py) `task_update_status` accepts any transition without an optimistic check.
+- Possible race scenarios:
+  - A UI tab shows the task `todo`, the operator clicks "start" → the agent already took it and it's `in_progress`. UI rewrites inconsistently.
+  - The daemon triggers a wake on drift, while a human edits the same task via CLI.
+- There is no notion of "the active executor of the task right now".
 
-## Предложение
+## Proposal
 
-1. **Добавить поля** в Task ([cod_doc/core/project.py](cod_doc/core/project.py)):
-   - `checked_out_by: str | None` (run_id или 'human:<user>')
+1. **Add fields** to Task ([cod_doc/core/project.py](cod_doc/core/project.py)):
+   - `checked_out_by: str | None` (run_id or 'human:<user>')
    - `checked_out_at: datetime | None`
    - `expected_status_at_checkout: TaskStatus | None`
 
 2. **MCP-tool `task_checkout(task_id, agent='orchestrator'|'human:<id>', expected_statuses: list[TaskStatus])`:**
-   - Атомарная транзакция: проверка статуса ∈ expected_statuses + установка `checked_out_by`.
-   - Если уже заheckout-ен этим же актором → OK (идемпотентность).
-   - Если другим → `CheckoutConflictError(409)`.
-   - Переход `todo → in_progress` происходит **здесь**, не через `task_update_status`.
+   - Atomic transaction: check status ∈ expected_statuses + set `checked_out_by`.
+   - If already checked out by the same actor → OK (idempotency).
+   - If by another → `CheckoutConflictError(409)`.
+   - The `todo → in_progress` transition happens **here**, not via `task_update_status`.
 
 3. **MCP-tool `task_release(task_id, run_id)`:**
-   - Снимает lock. Вызывается явно (после задачи) или автоматически по таймауту daemon'а.
+   - Releases the lock. Called explicitly (after the task) or automatically by timeout from the daemon.
 
-4. **Все write-тулы задач** проверяют: операция возможна только если caller владеет checkout'ом (или явный `force=True` для админских кейсов).
+4. **All task write-tools** check: the operation is possible only if the caller owns the checkout (or an explicit `force=True` for admin cases).
 
-5. **Stale-checkout watchdog:** daemon раз в N минут чистит lock'и старше TTL (например, 30 минут без активности run'а).
+5. **Stale-checkout watchdog:** a daemon every N minutes cleans locks older than TTL (e.g. 30 minutes without run activity).
 
-## Изменения в скилле орchestrator'а
+## Changes in the orchestrator skill
 
-- «Перед мутацией задачи — `task_checkout`. На 409 — НЕ ретраить, выбирать другую задачу или эскалировать».
-- «По завершении — `task_release` явно».
+- "Before mutating a task — `task_checkout`. On 409 — do NOT retry, pick another task or escalate".
+- "On completion — `task_release` explicitly".
 
-## План внедрения
+## Implementation plan
 
-1. **Миграция БД.** Поля `checked_out_by`, `checked_out_at`, `expected_status_at_checkout`.
-2. **Атомарная функция `_checkout`.** Через `SELECT ... FOR UPDATE` или (для SQLite) `BEGIN IMMEDIATE` + проверка-обновление в одной транзакции.
-3. **MCP-тулы** `task_checkout`, `task_release`.
-4. **Refactor `task_update_status`:** запретить прямой переход `todo → in_progress` (только через checkout); остальные переходы — через update, но с проверкой ownership.
-5. **UI:** показ «in use by: orchestrator-run-X» на карточке; кнопка «force release» для админа.
-6. **Watchdog** в [cod_doc/services/](cod_doc/services/).
+1. **DB migration.** Fields `checked_out_by`, `checked_out_at`, `expected_status_at_checkout`.
+2. **Atomic function `_checkout`.** Via `SELECT ... FOR UPDATE` or (for SQLite) `BEGIN IMMEDIATE` + check-update in one transaction.
+3. **MCP-tools** `task_checkout`, `task_release`.
+4. **Refactor `task_update_status`:** forbid the direct `todo → in_progress` transition (only through checkout); other transitions — through update, but with an ownership check.
+5. **UI:** show "in use by: orchestrator-run-X" on the card; a "force release" button for the admin.
+6. **Watchdog** in [cod_doc/services/](cod_doc/services/).
 
-## Риски
+## Risks
 
-- **Поломка существующего флоу.** В коде уже могут быть места, делающие прямой `todo → in_progress`. Решение: миграция в два шага — сначала добавить checkout как опцию (warn без него), затем enforce.
-- **Lock-leak.** Падение оркестратора без release. Решение: TTL + watchdog (см. выше).
-- **UX-трение для одиночного пользователя.** В 95% случаев lock'а просто нет, и это работает прозрачно. Conflict — редкое явление, но когда возникает — спасает.
+- **Breaking existing flow.** There may already be places in the code doing a direct `todo → in_progress`. Solution: a two-step migration — first add checkout as an option (warn without it), then enforce.
+- **Lock-leak.** Orchestrator crash without release. Solution: TTL + watchdog (see above).
+- **UX friction for a single user.** In 95% of cases there is simply no lock, and this works transparently. A conflict is a rare event, but when it happens — it saves you.
 
-## Метрики успеха
+## Success metrics
 
-- 0 race-условий при параллельной работе UI + daemon.
-- Все задачи с `status=in_progress` имеют валидный `checked_out_by`.
-- Watchdog ловит < 1% «зависших» checkout'ов в неделю (если больше — баг где-то ещё).
+- 0 race conditions on parallel UI + daemon work.
+- All tasks with `status=in_progress` have a valid `checked_out_by`.
+- The watchdog catches < 1% "stuck" checkouts per week (if more — the bug is elsewhere).
 
-## Связанные
+## Related
 
-- 04 (run-id) — `checked_out_by` хранит run_id оркестратора.
-- 08 (статусы) — определяет `expectedStatuses` для разных переходов.
-- 09 (activity log) — checkout/release — события первого класса.
+- 04 (run-id) — `checked_out_by` stores the orchestrator's run_id.
+- 08 (statuses) — defines `expectedStatuses` for different transitions.
+- 09 (activity log) — checkout/release — first-class events.
 
-## Замечания (контекст cod-doc)
+## Notes (cod-doc context)
 
-- **SQLite — `BEGIN IMMEDIATE`.** У нас sqlite-бэкенд, поэтому `SELECT ... FOR UPDATE` неприменим. Нужен явный `BEGIN IMMEDIATE` + проверка-обновление в одной транзакции. Тесты должны явно покрывать гонку — `pytest-xdist` или ручной thread-stress.
-- **Поэтапный enforce.** Жёсткое требование checkout'а сразу подломит существующие места, делающие прямой `task_update_status(todo→in_progress)`. Phase 1 — warn-режим с логом «no checkout, proceeded», Phase 2 — enforce.
-- **UI после COD-078.** UI redesign добавил быстрые действия — реальная вероятность гонки UI ↔ daemon выросла. Это аргумент в пользу скорейшего внедрения.
-- **«In use by» индикатор.** Нужно показывать `checked_out_by` на карточке задачи; для single-user — иногда это будет `human:dakh`, иногда `orchestrator-run-X`. Различать визуально.
-- **Реальный объём гонок.** Перед внедрением имеет смысл добавить лог-хак: писать в activity log, когда сейчас `task_update_status` меняет статус задачи, которую кто-то трогал < 5 секунд назад. Так увидим частоту реальной проблемы.
+- **SQLite — `BEGIN IMMEDIATE`.** We have a sqlite backend, so `SELECT ... FOR UPDATE` does not apply. We need an explicit `BEGIN IMMEDIATE` + check-update in one transaction. Tests must explicitly cover the race — `pytest-xdist` or manual thread-stress.
+- **Phased enforce.** A hard checkout requirement will immediately break existing places doing a direct `task_update_status(todo→in_progress)`. Phase 1 — warn-mode with a log "no checkout, proceeded", Phase 2 — enforce.
+- **UI after COD-078.** The UI redesign added quick actions — the real probability of a UI ↔ daemon race grew. This is an argument for faster adoption.
+- **"In use by" indicator.** We need to show `checked_out_by` on the task card; for single-user it will sometimes be `human:dakh`, sometimes `orchestrator-run-X`. Distinguish visually.
+- **Real volume of races.** Before adoption it makes sense to add a log hack: write to the activity log when `task_update_status` now changes the status of a task someone touched < 5 seconds ago. That way we see the frequency of the real problem.
 
-## Открытые вопросы
+## Open questions
 
-- **Q1.** Watchdog TTL — 30 минут разумно для одиночного агента? Если агент делает долгую LLM-итерацию (>10 мин), heartbeat'ы на продление lock'а или достаточно широкого TTL?
-- **Q2.** Существующие задачи в `in_progress` без checkout — поставить `checked_out_by='legacy:human'` при миграции или сбросить в `todo`?
-- **Q3.** «Force release» из UI — кто имеет право (любой локальный пользователь cod-doc), или нужен признак owner?
-- **Q4.** Идемпотентность для CLI — повторный `cod-doc task checkout COD-N` той же сессией возвращает OK без перезаписи `checked_out_at`?
-- **Q5.** Что делать с lock'ом при `cancelled` — авто-release или explicit?
-- **Q6.** UI обновляет статус через polling или websocket? От этого зависит, сколько race'ов вообще видны юзеру.
+- **Q1.** Watchdog TTL — is 30 minutes reasonable for a single agent? If the agent does a long LLM iteration (>10 min), heartbeats to extend the lock or a wide enough TTL?
+- **Q2.** Existing tasks in `in_progress` without checkout — set `checked_out_by='legacy:human'` on migration or reset to `todo`?
+- **Q3.** "Force release" from UI — who has the right (any local cod-doc user), or is an owner attribute needed?
+- **Q4.** Idempotency for CLI — does a repeated `cod-doc task checkout COD-N` by the same session return OK without overwriting `checked_out_at`?
+- **Q5.** What to do with the lock on `cancelled` — auto-release or explicit?
+- **Q6.** Does the UI update the status via polling or websocket? This affects how many races the user sees at all.

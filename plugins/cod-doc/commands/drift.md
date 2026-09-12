@@ -1,40 +1,40 @@
 ---
-description: Проверить дрейф markdown ↔ БД cod-doc и починить edited_in_place через doc import
-argument-hint: "[путь к .md | --all] [--fix]"
+description: Check markdown ↔ cod-doc DB drift and fix edited_in_place via doc import
+argument-hint: "[path to .md | --all] [--fix]"
 ---
 
-Аргумент: `$ARGUMENTS` (пусто = `--all`, без починки).
+Argument: `$ARGUMENTS` (empty = `--all`, without fixing).
 
-Слаг проекта резолвь как в `/cod-doc:status`.
+Resolve the project slug as in `/cod-doc:status`.
 
-**Проверка**
+**Check**
 
 ```
-<cod-doc> doc drift -p <slug> --all --json      # или MCP ctx_drift / doc_drift_all
+<cod-doc> doc drift -p <slug> --all --json      # or MCP ctx_drift / doc_drift_all
 ```
 
-**Семантика — путать нельзя**
+**Semantics — do not confuse**
 
-| Статус | Значение | Действие |
+| Status | Meaning | Action |
 |---|---|---|
-| `edited_in_place` | файл правлен на диске, БД отстала | **дефект** → `doc import` |
-| `stale_export` | БД свежее проекции на диске | **норма** в files-are-source режиме; не трогать |
-| `missing` | файла на диске нет | разбираться, вслепую не пересоздавать |
+| `edited_in_place` | the file was edited on disk, the DB is behind | **defect** → `doc import` |
+| `stale_export` | the DB is ahead of the on-disk projection | **norm** in files-are-source mode; do not touch |
+| `missing` | the file is not on disk | investigate, do not recreate blindly |
 
-**Починка** (только если в аргументе есть `--fix`)
+**Fix** (only if `--fix` is in the argument)
 
-Для каждого `edited_in_place`:
+For each `edited_in_place`:
 
 ```
 <cod-doc> doc import <path> -p <slug>
 ```
 
-Если правленый файл входит в hash-реестр корневого `MASTER.md` — после
-импорта ещё `<cod-doc> hash update`, а затем `doc import MASTER.md`,
-иначе реестр разъедется с файлами.
+If the edited file is part of the hash registry of the root `MASTER.md` — after
+the import also `<cod-doc> hash update`, and then `doc import MASTER.md`,
+otherwise the registry will diverge from the files.
 
-`doc export` на диск не запускай — он под guard'ом до byte-identical
+Do not run `doc export` to disk — it is under a guard until byte-identical
 round-trip.
 
-Финал: повторный `doc drift --all`, в ответе — было/стало по каждому статусу
-и список файлов, которые импортировал. Ничего не импортируй без `--fix`.
+Finale: a repeat `doc drift --all`, in the answer — before/after for each status
+and the list of files that were imported. Do not import anything without `--fix`.

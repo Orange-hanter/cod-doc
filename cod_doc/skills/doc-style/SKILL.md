@@ -1,84 +1,85 @@
 ---
 name: doc-style
 description: |
-  Стиль документации: язык, заголовки, гибридные ссылки, статусы.
-  Триггеры: style, format, language, frontmatter, hybrid, link,
-  ссылка, заголовок, проза.
+  Documentation style: language, headings, hybrid references, statuses.
+  Triggers: style, format, language, frontmatter, hybrid, link, heading,
+  prose.
 ---
 
 # Skill — Documentation style
 
-## Когда подгружается
+## When it loads
 
-Задачи, в которых **пишется или редактируется доковая проза** —
-capability, audit, kickoff, README, HANDBOOK. Триггер-keywords:
-`style`, `format`, `frontmatter`, `hybrid`, `link`, `ссылка`,
-`заголовок`, `markdown`, `проза`, `документация`, `doc`.
+Tasks where **documentation prose is written or edited** — capability,
+audit, kickoff, README, HANDBOOK. Trigger keywords: `style`, `format`,
+`frontmatter`, `hybrid`, `link`, `markdown`, `prose`, `documentation`,
+`doc`.
 
-## Язык
+## Language
 
-- **Проза — на языке проекта** (для cod-doc по умолчанию русский, если
-  пользователь не сказал иное).
-- **Идентификаторы** (поля, типы, status, имена сущностей и таблиц,
-  task_id, doc_key) — **всегда на английском**, даже в русской прозе.
-- Не смешивай транслит и кириллицу в идентификаторах.
+- **Prose — in the project language** (for cod-doc default English, unless
+  the user says otherwise).
+- **Identifiers** (fields, types, status, entity and table names,
+  task_id, doc_key) — **always in English**, regardless of prose language.
+- Do not mix translit and the prose language in identifiers.
 
-## Заголовки
+## Headings
 
-- `# Title` — один на документ, в начале (после frontmatter).
-- `## N. Section` — нумерация для длинных доков; для коротких — без
-  цифр.
-- `### Subsection` — третий уровень. Глубже — редкое исключение.
+- `# Title` — one per document, at the top (after frontmatter).
+- `## N. Section` — numbering for long docs; for short ones — without
+  numbers.
+- `### Subsection` — third level. Deeper is a rare exception.
 
-## Гибридные ссылки
+## Hybrid references
 
-Формат:
+Format:
 
 ```
 📁 /path/to/file.ext | 🗃️ doc:sanitized_path | 🔑 sha:12hexchars
 ```
 
-Полный формат — для записей в `MASTER.md` Validation Table (раздел 5.1).
-Для inline — markdown-relative: `[label](relative/path.md)`.
+The full format is for entries in the `MASTER.md` Validation Table
+(section 5.1). For inline — markdown-relative: `[label](relative/path.md)`.
 
-Статусы (badge'и):
+Statuses (badges):
 
-- `🟢 VERIFIED` — все три компонента согласованы.
-- `🟡 DRAFT` — черновик, ещё не прошёл валидацию.
-- `🟡 LEGACY` — корректный, но обзорный; canonical_source где-то ещё.
-- `🔴 STALE` — хэш устарел.
-- `🔴 BROKEN` — файл / doc-key отсутствует.
+- `🟢 VERIFIED` — all three components agree.
+- `🟡 DRAFT` — draft, has not passed validation yet.
+- `🟡 LEGACY` — correct but reviewable; canonical_source is elsewhere.
+- `🔴 STALE` — hash is stale.
+- `🔴 BROKEN` — file / doc-key is missing.
 
 ## Frontmatter
 
-Каждый документ в `docs/system/` имеет YAML-frontmatter; обязательные
-поля — `type`, `status`, `source_of_truth`, `owner`. Полная спецификация:
+Every document in `docs/system/` has YAML-frontmatter; mandatory fields
+are `type`, `status`, `source_of_truth`, `owner`. Full spec:
 [standards/frontmatter.md](../../../docs/system/standards/frontmatter.md).
 
-## Структура
+## Structure
 
-- Не дублируй информацию между файлами. Если раздел нужен в двух доках —
-  вынеси в отдельный markdown и ссылайся.
-- Длинные таблицы → markdown-table; не псевдо-asciiart.
-- Mermaid-диаграммы для зависимостей; код-блоки с ```mermaid.
-- Списки — `- ` (не `*`); нумерованные `1. 2. 3.` (не `1) 2)`).
+- Do not duplicate information between files. If a section is needed in
+  two docs — extract it into a separate markdown and link to it.
+- Long tables → markdown-table; not pseudo-asciiart.
+- Mermaid diagrams for dependencies; code blocks with ```mermaid.
+- Lists — `- ` (not `*`); numbered `1. 2. 3.` (not `1) 2)`).
 
-## Стиль абзацев
+## Paragraph style
 
-- Краткость > полнота. Один абзац — одна мысль.
-- Не пиши "очень", "достаточно", "просто", "в общем" — обычно вода.
-- Активный залог: «сервис пишет revision», не «revision записывается
-  сервисом».
+- Brevity > completeness. One paragraph — one thought.
+- Do not write "very", "sufficient", "simply", "in general" — usually
+  filler.
+- Active voice: "the service writes a revision", not "a revision is
+  written by the service".
 
-## Что НЕ делать
+## What NOT to do
 
-- Не сочинять примеры, которые не существуют в коде. Если ссылаешься на
-  файл — проверь, что он есть (`check_stale_refs` или прямое чтение).
-- Не вставлять ASCII-art из символов; используй mermaid для схем.
-- Не оставлять `TODO` без owner'а и контекста.
+- Do not invent examples that do not exist in the code. If you reference
+  a file — check it exists (`check_stale_refs` or a direct read).
+- Do not insert ASCII-art from characters; use mermaid for diagrams.
+- Do not leave a `TODO` without an owner and context.
 
-## Связанное
+## Related
 
 - [standards/document-link.md](../../../docs/system/standards/document-link.md)
 - [standards/frontmatter.md](../../../docs/system/standards/frontmatter.md)
-- skill `audit-cadence` — при создании audit-report / kickoff.
+- skill `audit-cadence` — when creating an audit-report / kickoff.

@@ -12,12 +12,12 @@ related_docs:
   - ../MASTER.md
 ---
 
-# Observability & Indexing — Execution Plan (опционально)
+# Observability & Indexing — Execution Plan (optional)
 
-> Реализация capability [observability-and-indexing](../capabilities/observability-and-indexing.md).
-> **Помечено опциональным**: эти задачи не блокируют Phase 1
-> paperclip-adoption и могут запускаться независимо. Каждая стори
-> доставляет самостоятельную ценность.
+> Implementation of the capability [observability-and-indexing](../capabilities/observability-and-indexing.md).
+> **Marked optional**: these tasks do not block Phase 1 of
+> paperclip-adoption and can be run independently. Each story
+> delivers standalone value.
 
 ## Navigation
 
@@ -29,14 +29,14 @@ related_docs:
 
 | Section | Story | Title | Tasks | Status |
 |:--------|:------|:------|------:|:-------|
-| A | US-021 | Метрики и скорость выполнения задач | 2 | ✅ done |
-| B | US-022 | Тесная интеграция коммитов | 2 | ✅ done |
-| C | US-023 | Связывание исходного кода с задачами/документами | 2 | ✅ done |
-| D | US-024 | Индексирование файловой базы репозитория | 1 | ✅ done |
-| E | US-025 | Индексирование объектной базы проекта | 1 | ✅ done |
+| A | US-021 | Task metrics and execution speed | 2 | ✅ done |
+| B | US-022 | Tight commit integration | 2 | ✅ done |
+| C | US-023 | Linking source code to tasks/documents | 2 | ✅ done |
+| D | US-024 | Indexing the repository file base | 1 | ✅ done |
+| E | US-025 | Indexing the project object base | 1 | ✅ done |
 | **TOTAL** | | | **8** | ✅ done |
 
-> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): код подтверждает 8/8 done — `metrics_service.py` + web `/metrics`, `commit_link_service.py` + web `/commits`, code-refs (`api/web/pages/code_refs.py`), `repo_index_service.py` (repo_file/repo_symbol), `search_service.py` FTS5 (`db_search_idx*`). БД: OBI-001..008 = done.
+> **Status reconciliation 2026-06-05** (see [ROADMAP](ROADMAP.md)): the code confirms 8/8 done — `metrics_service.py` + web `/metrics`, `commit_link_service.py` + web `/commits`, code-refs (`api/web/pages/code_refs.py`), `repo_index_service.py` (repo_file/repo_symbol), `search_service.py` FTS5 (`db_search_idx*`). DB: OBI-001..008 = done.
 
 ## Dependency Graph
 
@@ -62,15 +62,15 @@ graph TD
 
 ## Acceptance per section
 
-- **A** — `task.complete` записывает TaskMetric; `/metrics` отображает p50/p95
-  и cost-aggregations.
-- **B** — commit-task linkage парсится из commit-message regex + `git log`
-  batch-import; страница задачи показывает recent commits.
-- **C** — markdown parser распознаёт `[label](src/file.py)` как code-ref;
-  страница задачи имеет панель «Code refs».
-- **D** — `cod-doc reindex --files` строит RepoIndex (.gitignore-aware,
-  symbols/imports для python).
-- **E** — `cod-doc search "phrase"` возвращает ранжированные результаты
+- **A** — `task.complete` records a TaskMetric; `/metrics` shows p50/p95
+  and cost aggregations.
+- **B** — commit-task linkage is parsed from commit-message regex + a `git log`
+  batch import; the task page shows recent commits.
+- **C** — the markdown parser recognizes `[label](src/file.py)` as a code-ref;
+  the task page has a "Code refs" panel.
+- **D** — `cod-doc reindex --files` builds a RepoIndex (.gitignore-aware,
+  symbols/imports for python).
+- **E** — `cod-doc search "phrase"` returns ranked results
   (docs + tasks + stories + ADR + revisions).
 
 ---
@@ -95,13 +95,13 @@ affects_files:
   - tests/services/test_metrics_service.py
 ```
 
-`task_metric` table + writer hook in `task.complete()`. Captures duration
+`task_metric` table + a writer hook in `task.complete()`. Captures duration
 (completed_at − created or last in-progress timestamp), run_id (PCA-030
-when available), iterations (from agent loop), llm_calls/tokens/cost (from
-`trace_call` table if connected).
+when available), iterations (from the agent loop), llm_calls/tokens/cost (from
+the `trace_call` table if connected).
 
-**Acceptance:** при `task.complete` создаётся ровно одна запись TaskMetric;
-агрегаты `metrics.aggregate(by='priority'|'type'|'section')` возвращают
+**Acceptance:** on `task.complete` exactly one TaskMetric row is created;
+aggregates `metrics.aggregate(by='priority'|'type'|'section')` return
 p50/p95/p99 + total_count + sum_cost_usd; 8+ tests.
 
 ### OBI-002 — Implement: /p/<slug>/metrics page
@@ -120,12 +120,12 @@ affects_files:
   - cod_doc/templates/web/project/metrics_dashboard.html
 ```
 
-Страница с фильтрами (since/until/by_section). Sparkline через клиентский
-Mermaid. Cost-aggregations с конвертацией в USD (если model-pricing есть в
+A page with filters (since/until/by_section). Sparkline via client-side
+Mermaid. Cost aggregations with a USD conversion (if model pricing is in
 config).
 
-**Acceptance:** страница рендерит метрики за последние 7/30/90 дней;
-HTMX-фильтры обновляют без full-reload; 4+ web-tests.
+**Acceptance:** the page renders metrics for the last 7/30/90 days;
+HTMX filters update without a full reload; 4+ web tests.
 
 ---
 
@@ -149,14 +149,14 @@ affects_files:
   - tests/services/test_commit_link_service.py
 ```
 
-`commit_link` table + service. Regex для распознавания task_ids в commit
-messages (`PCA-001`, `COD-042`, `ADR-005`). При `task.complete(commit_sha)`
-авто-извлекаются `affected_paths` через `git diff --name-only`. Batch-импорт
-`git log` для исторических коммитов: `commit_link_service.import_history(
-since='2026-04-01')`.
+`commit_link` table + service. A regex to recognize task_ids in commit
+messages (`PCA-001`, `COD-042`, `ADR-005`). On `task.complete(commit_sha)`
+`affected_paths` are auto-extracted via `git diff --name-only`. A batch
+import of `git log` for historical commits:
+`commit_link_service.import_history(since='2026-04-01')`.
 
-**Acceptance:** unit-tests на regex + batch import + автоматическую запись
-из `task.complete`; 10+ tests.
+**Acceptance:** unit tests for regex + batch import + automatic recording
+from `task.complete`; 10+ tests.
 
 ### OBI-011 — Implement: commits panel on task page + /commits index
 
@@ -176,11 +176,11 @@ affects_files:
   - cod_doc/templates/web/project/_frag/commits_panel.html
 ```
 
-На `/p/<slug>/tasks/<id>` — панель «Recent commits» с group-by by-day.
+On `/p/<slug>/tasks/<id>` — a "Recent commits" panel grouped by day.
 `/p/<slug>/commits` — full-text + filter (author / task / month).
 
-**Acceptance:** обе страницы рендерятся за <100ms на 500 commits; кликабельные
-SHA → внешний git host (если configured) или `git show`-фрагмент.
+**Acceptance:** both pages render in <100ms on 500 commits; clickable
+SHA → external git host (if configured) or a `git show` fragment.
 
 ---
 
@@ -204,13 +204,14 @@ affects_files:
   - tests/services/test_code_ref_parser.py
 ```
 
-Расширение `link_service.parser` — распознавать `[label](src/path.py)`
-(или `.ts`, `.js` и т.п. — расширения из `cod_doc/services/code_extensions.py`)
-как `LinkKind.CODE`. Resolver проверяет существование файла, опционально
-парсит anchor `#symbol_name`. Запись в `code_ref` table при `link_service.sync_section`.
+Extend `link_service.parser` — recognize `[label](src/path.py)`
+(or `.ts`, `.js`, etc. — extensions from `cod_doc/services/code_extensions.py`)
+as `LinkKind.CODE`. The resolver checks the file exists, optionally parses
+the `#symbol_name` anchor. Write to the `code_ref` table on
+`link_service.sync_section`.
 
-**Acceptance:** парсер distinguishes code от markdown; resolver fail-fast при
-несуществующем файле; 12+ tests.
+**Acceptance:** the parser distinguishes code from markdown; the resolver
+is fail-fast on a non-existent file; 12+ tests.
 
 ### OBI-021 — Implement: web code-refs panel on task/doc pages
 
@@ -229,11 +230,11 @@ affects_files:
   - cod_doc/templates/web/project/_frag/code_refs_panel.html
 ```
 
-Панель «Code refs» на странице задачи и документа. Кликабельные `path:line`
-ведут на `/p/<slug>/repo/<path>` (нужна US-024) либо external git host.
+A "Code refs" panel on the task and document pages. Clickable `path:line`
+lead to `/p/<slug>/repo/<path>` (needs US-024) or an external git host.
 
-**Acceptance:** панель показывает affects_files + parsed code-refs; на
-hover — preview первых 20 строк файла.
+**Acceptance:** the panel shows affects_files + parsed code-refs; on
+hover — a preview of the first 20 lines of the file.
 
 ---
 
@@ -257,13 +258,13 @@ affects_files:
   - tests/services/test_repo_index.py
 ```
 
-Сканер репозитория — `os.walk` с `.gitignore`-aware фильтром
-(`pathspec` lib). Извлекает symbols/imports для Python (через `ast`); для
-других языков — только metadata (path/sha/lang/size). Пишет в `repo_index`
-table. CLI: `cod-doc reindex --files`.
+A repository scanner — `os.walk` with a `.gitignore`-aware filter
+(`pathspec` lib). Extracts symbols/imports for Python (via `ast`); for
+other languages — only metadata (path/sha/lang/size). Writes to the
+`repo_index` table. CLI: `cod-doc reindex --files`.
 
-**Acceptance:** runtime ≤ 5s на 1000 files; gitignore-respect; symbols/imports
-для python; 8+ tests.
+**Acceptance:** runtime ≤ 5s on 1000 files; gitignore-respected;
+symbols/imports for python; 8+ tests.
 
 ---
 
@@ -288,10 +289,10 @@ affects_files:
   - tests/services/test_search_service.py
 ```
 
-Виртуальная FTS5 таблица — индексирует doc body, task description/acceptance,
-story narrative, ADR fields, revision diff snippets. Триггеры sync на mutate.
-CLI: `cod-doc search "phrase" [--scope=docs|tasks|stories|all]`. Web:
+A virtual FTS5 table — indexes doc body, task description/acceptance,
+story narrative, ADR fields, revision diff snippets. Triggers sync on
+mutate. CLI: `cod-doc search "phrase" [--scope=docs|tasks|stories|all]`. Web:
 `/p/<slug>/search?q=...`.
 
-**Acceptance:** запрос возвращает ранжированные результаты ≤ 200ms на типовом
-проекте; результаты группируются по scope; 10+ tests.
+**Acceptance:** a query returns ranked results in ≤ 200ms on a typical
+project; results are grouped by scope; 10+ tests.

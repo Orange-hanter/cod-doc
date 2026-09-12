@@ -1,50 +1,52 @@
-# Reference — Гибридные ссылки
+# Reference — Hybrid references
 
-> Дозагружается при работе с MASTER.md, hash-проверкой, drift-устранением.
+> Loaded additionally when working with MASTER.md, hash verification,
+> drift resolution.
 
-## 1. Формат
+## 1. Format
 
 ```
 📁 /path/to/file.ext | 🗃️ doc:sanitized_path | 🔑 sha:12hexchars
 ```
 
-Три компонента, разделены ` | `:
+Three components, separated by ` | `:
 
-| Часть | Что значит |
+| Part | Meaning |
 |-------|------------|
-| `📁 path` | Абсолютный или relative-к-корню путь файла на диске. Должен существовать. |
-| `🗃️ doc:KEY` | Стабильный doc_key в БД (нормализованный путь, заменены `/`→`_`). |
-| `🔑 sha:12hex` | Первые 12 hex SHA-256 от содержимого файла. Совпадает с `hash_file()`. |
+| `📁 path` | Absolute or root-relative path of the file on disk. Must exist. |
+| `🗃️ doc:KEY` | Stable doc_key in the DB (normalized path, `/` → `_`). |
+| `🔑 sha:12hex` | First 12 hex of SHA-256 of the file contents. Matches `hash_file()`. |
 
-## 2. Статусы
+## 2. Statuses
 
-| Статус | Значение |
+| Status | Meaning |
 |--------|----------|
-| `🟢 VERIFIED` | Все три компонента согласованы: файл на диске → хэш совпадает с записанным → doc_key привязан в БД. |
-| `🟡 DRAFT` | Документ создан, но ещё не прошёл валидацию (typically newly authored). |
-| `🟡 LEGACY` | Документ корректен по содержанию, но переведён в legacy-статус с указанием `canonical_source`. |
-| `🔴 STALE` | Файл на диске изменился, хэш в ссылке устарел. Требует `update_master_hashes`. |
-| `🔴 BROKEN` | Файл отсутствует на диске или doc_key не найден в БД. Требует восстановления через `task_create`. |
+| `🟢 VERIFIED` | All three components agree: file on disk → hash matches the recorded one → doc_key is bound in the DB. |
+| `🟡 DRAFT` | The document is created, but has not passed validation yet (typically newly authored). |
+| `🟡 LEGACY` | The document is correct in content, but moved to legacy status with a `canonical_source`. |
+| `🔴 STALE` | The file on disk changed, the hash in the reference is stale. Needs `update_master_hashes`. |
+| `🔴 BROKEN` | The file is missing on disk or the doc_key is not found in the DB. Needs recovery via `task_create`. |
 
 ## 3. Edge cases
 
-### 3.1 Doc-key нормализация
+### 3.1 Doc-key normalization
 
-`docs/system/MASTER.md` → `doc:docs_system_MASTER_md` (нижнее подчёркивание
-вместо `/` и `.`). Регистр сохраняется.
+`docs/system/MASTER.md` → `doc:docs_system_MASTER_md` (underscores instead
+of `/` and `.`). Case is preserved.
 
-### 3.2 Hash mismatch при человеческой правке
+### 3.2 Hash mismatch on a human edit
 
-Если файл правился вне revision-flow и `check_stale_refs` показывает
-`stale_export` → запустить `update_master_hashes` после ручной верификации,
-что контент валиден.
+If the file was edited outside the revision-flow and `check_stale_refs`
+shows `stale_export` → run `update_master_hashes` after manual
+verification that the content is valid.
 
-### 3.3 Нескольких ссылок на один doc_key
+### 3.3 Multiple references to one doc_key
 
-Допустимо: одна ссылка из `MASTER.md`, другая — из секции другого дока. При
-rename — `link_service.rename_cascade` обновляет все.
+Allowed: one reference from `MASTER.md`, another — from a section of
+another doc. On rename — `link_service.rename_cascade` updates all.
 
-## 4. Что НЕ ссылка
+## 4. What is NOT a reference
 
-Markdown-relative `[label](path/to.md)` без trio — это **markdown-link**,
-не гибридная ссылка. Резолвится через `link_service`, не через `check_stale_refs`.
+A markdown-relative `[label](path/to.md)` without the trio is a
+**markdown-link**, not a hybrid reference. It is resolved via
+`link_service`, not via `check_stale_refs`.

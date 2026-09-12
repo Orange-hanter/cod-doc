@@ -1,100 +1,108 @@
 ---
 name: rfc-authoring
 description: |
-  Как писать RFC в proposals/: структура (контекст → текущее состояние →
-  предложение → миграция → риски), обязательная категория/риск/зависимости,
-  критерий «RFC готов к декомпозиции». Триггеры: rfc, proposal, предложение,
-  заимствование, idea, borrow, adapt, новая возможность, концепт,
-  proposals, NN-.
+  How to write an RFC in proposals/: structure (context → current state →
+  proposal → migration → risks), mandatory category/risk/dependencies,
+  the "RFC ready for decomposition" criterion. Triggers: rfc, proposal,
+  borrowing, idea, borrow, adapt, new capability, concept, proposals,
+  NN-.
 ---
 
 # Skill — RFC authoring
 
-## Когда подгружается
+## When it loads
 
-Когда идея крупнее задачи, но ещё не план: заимствование чужого паттерна,
-новая capability, архитектурный сдвиг. Триггер-keywords: `RFC`, `proposal`,
-«предложение», «заимствование», «концепт», `proposals/`.
+When an idea is larger than a task, but not yet a plan: borrowing
+someone else's pattern, a new capability, an architectural shift. Trigger
+keywords: `RFC`, `proposal`, "concept", `proposals/`.
 
-**Порог.** RFC пишется, если идея (а) трогает ≥ 2 слоя или вводит новую
-сущность БД, **или** (б) требует ≥ 5 задач. Меньше — это просто задача
-через `task_create`. Архитектурное *решение* по уже принятому направлению —
-не RFC, а ADR (skill `adr-author`).
+**Threshold.** An RFC is written if the idea (a) touches ≥ 2 layers or
+introduces a new DB entity, **or** (b) requires ≥ 5 tasks. Less — that
+is just a task via `task_create`. An architectural *decision* on an
+already-adopted direction is not an RFC, but an ADR (skill `adr-author`).
 
-## Формат файла
+## File format
 
-`proposals/NN-kebab-slug.md`, где `NN` — следующий свободный двузначный
-номер. Номер **не переиспользуется** даже после отклонения RFC.
+`proposals/NN-kebab-slug.md`, where `NN` is the next free two-digit
+number. The number is **not reused** even after the RFC is rejected.
 
-Первая строка после заголовка — обязательная мета-строка:
+The first line after the heading is a mandatory meta-line:
 
 ```markdown
-# 21 — Degraded-Path Auditability + Error Audit Trail (гибрид)
+# 21 — Degraded-Path Auditability + Error Audit Trail (hybrid)
 
-> Категория: 🟡 Адаптация · Риск: средний · Зависимости: proposal 04, proposal 09
+> Category: 🟡 Adaptation · Risk: medium · Dependencies: proposal 04, proposal 09
 ```
 
-| Поле | Значения |
+| Field | Values |
 |---|---|
-| Категория | 🎯 Прямое (ложится на существующую модель) · 🟡 Адаптация (нужна доработка) · 🔵 Архитектура (меняет границы слоёв) |
-| Риск | низкий · средний · высокий |
-| Зависимости | номера других proposal или «нет» |
+| Category | 🎯 Direct (fits the existing model) · 🟡 Adaptation (needs work) · 🔵 Architecture (changes layer boundaries) |
+| Risk | low · medium · high |
+| Dependencies | numbers of other proposals or "none" |
 
-## Структура тела
+## Body structure
 
-1. **Контекст** — какая боль, откуда known. Если заимствование — назвать
-   источник и что именно изучено.
-2. **Текущее состояние** — что уже есть в коде, с `file:line`. Секция
-   обязательна: без неё RFC предлагает то, что уже реализовано.
-3. **Предложение** — конкретика: сигнатуры, схема таблицы, имена тулов.
-   Псевдокод допустим, «сделать хорошо» — нет.
-4. **Миграция / обратная совместимость** — что ломается, что делать с
-   существующими данными.
-5. **Риски и что не делаем** — явные non-goals. Эта секция экономит больше
-   времени, чем все остальные.
-6. **Оценка** — грубая: сколько задач, какой порядок недель.
+1. **Context** — what pain, where known from. If borrowing — name the
+   source and what exactly was studied.
+2. **Current state** — what already exists in the code, with `file:line`.
+   The section is mandatory: without it the RFC proposes what is already
+   implemented.
+3. **Proposal** — concrete: signatures, table schema, tool names.
+   Pseudocode is allowed, "make it nice" is not.
+4. **Migration / backward compatibility** — what breaks, what to do with
+   existing data.
+5. **Risks and what we do not do** — explicit non-goals. This section
+   saves more time than all the others.
+6. **Estimate** — rough: how many tasks, what order of weeks.
 
-## Регистрация
+## Registration
 
-RFC не существует, пока не попал в две точки:
+An RFC does not exist until it lands in two places:
 
-1. Строка в таблице [`proposals/README.md`](../../../proposals/README.md)
-   (`# | Документ | Категория | Эффект | Риск`).
-2. Место в графе внедрения там же (mermaid) — от чего зависит, что
-   разблокирует.
+1. A row in the [`proposals/README.md`](../../../proposals/README.md)
+   table (`# | Document | Category | Effect | Risk`).
+2. A place in the adoption graph there (mermaid) — what it depends on,
+   what it unblocks.
 
-RFC без строки в README — черновик в личной папке, а не предложение.
+An RFC without a row in README is a draft in a personal folder, not a
+proposal.
 
-## Критерий «готов к декомпозиции»
+## "Ready for decomposition" criterion
 
-- [ ] Секция «Текущее состояние» проверена по коду, не по памяти.
-- [ ] Есть хотя бы один конкретный контракт (сигнатура / SQL / имя тула).
-- [ ] Non-goals выписаны.
-- [ ] Зависимости от других RFC названы номерами.
-- [ ] Оценка в задачах и неделях есть.
+- [ ] The "Current state" section is verified against the code, not from
+  memory.
+- [ ] There is at least one concrete contract (signature / SQL / tool
+  name).
+- [ ] Non-goals are written out.
+- [ ] Dependencies on other RFCs are named by numbers.
+- [ ] An estimate in tasks and weeks is present.
 
-Дальше — `plan_create` на свой scope и разбиение через skill
-`plan-to-tasks`. **Не** дописывать задачи RFC в чужой существующий план.
+Next — `plan_create` on your own scope and decomposition via skill
+`plan-to-tasks`. **Do not** append RFC tasks to someone else's existing
+plan.
 
-## Жизненный цикл
+## Lifecycle
 
-RFC — не документ статуса. Он **не** переезжает в `done`: реализация
-трекается планом в БД. Отклонённый RFC остаётся в `proposals/` с явной
-пометкой в README о причине — это дешёвая защита от повторного изобретения.
+An RFC is not a status document. It does **not** move to `done`:
+implementation is tracked by the plan in the DB. A rejected RFC stays
+in `proposals/` with an explicit note in README about the reason — this
+is a cheap protection against re-inventing.
 
 ## Anti-patterns
 
-- **RFC вместо задачи.** 21 RFC на 5 планов — уже перекос; писать RFC на
-  то, что делается за день, значит плодить бэклог из документов.
-- **«Текущее состояние» по памяти.** RFC #21 описывал 8 мест с
-  `pragma: no cover`, которые к моменту реализации уже были закрыты
-  задачей STB-010 — часть предложения устарела раньше старта.
-- **RFC без non-goals.** Скоуп расползается на первой же задаче.
-- **Реализация RFC без плана.** Задачи растворяются в чужих секциях, и
-  прогресс по RFC становится неизмеримым.
+- **An RFC instead of a task.** 21 RFCs for 5 plans is already a skew;
+  writing an RFC for what is done in a day means growing a backlog of
+  documents.
+- **"Current state" from memory.** RFC #21 described 8 places with
+  `pragma: no cover` that by the time of implementation were already
+  closed by task STB-010 — part of the proposal was stale before the
+  start.
+- **An RFC without non-goals.** The scope creeps on the very first task.
+- **Implementing an RFC without a plan.** Tasks dissolve into someone
+  else's sections, and progress on the RFC becomes unmeasurable.
 
-## Связанное
+## Related
 
-- [proposals/README.md](../../../proposals/README.md) — каталог и порядок внедрения.
-- skill `plan-to-tasks` — следующий шаг после принятия.
-- skill `adr-author` — для решений, а не предложений.
+- [proposals/README.md](../../../proposals/README.md) — catalog and adoption order.
+- skill `plan-to-tasks` — the next step after adoption.
+- skill `adr-author` — for decisions, not proposals.

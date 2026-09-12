@@ -14,20 +14,20 @@ related_docs:
 
 # Capability — User Stories & Dependency Graph
 
-> User stories как first-class сущности; граф зависимостей — между задачами, историями и модулями.
+> User stories as first-class entities; the dependency graph — between tasks, stories and modules.
 
-## 1. Проблема ручного подхода
+## 1. The problem with the manual approach
 
-В Restate: `Docs/obsidian/User Stories.md` — один огромный файл (~50K). Связь «какая задача реализует историю US-014» живёт только в голове автора. Связь «какие истории затрагивает модуль M1» — мучительный grep. При рефакторинге — частичный дрейф.
+In Restate: `Docs/obsidian/User Stories.md` — one huge file (~50K). The link "which task implements the US-014 story" lives only in the author's head. The link "which stories module M1 touches" — a painful grep. On refactoring — partial drift.
 
 COD-DOC:
 
-- Каждая story = запись в `user_story`.
-- Связи с задачами/документами/модулями — в `story_link`.
-- Acceptance criteria — отдельные записи, с флагом «met».
-- Всё ↔ всё — SQL-запросом.
+- Each story = a record in `user_story`.
+- Links to tasks/documents/modules — in `story_link`.
+- Acceptance criteria — separate records, with a "met" flag.
+- Everything ↔ everything — via a SQL query.
 
-## 2. Структура user story
+## 2. The user story structure
 
 ```yaml
 ---
@@ -58,37 +58,37 @@ manually register each agent.
   - [[task:AGN-013]] — expiration check
 ```
 
-## 3. Операции
+## 3. Operations
 
-| Операция | Сервис |
+| Operation | Service |
 |----------|--------|
-| Создать историю | `StoryService.create` |
-| Добавить acceptance-критерий | `StoryService.add_criterion` |
-| Отметить критерий met/unmet | `StoryService.update_criterion` |
-| Связать с задачей/документом/модулем | `StoryService.link` |
-| Список покрытых историей задач | `StoryService.tasks(story_id)` |
-| Список историй, касающихся модуля | `StoryService.by_module(module_id)` |
-| Статус покрытия (derived) | `StoryService.coverage(story_id)` |
+| Create a story | `StoryService.create` |
+| Add an acceptance criterion | `StoryService.add_criterion` |
+| Mark a criterion met/unmet | `StoryService.update_criterion` |
+| Link to a task/document/module | `StoryService.link` |
+| List tasks covered by a story | `StoryService.tasks(story_id)` |
+| List stories touching a module | `StoryService.by_module(module_id)` |
+| Coverage status (derived) | `StoryService.coverage(story_id)` |
 
-## 4. Покрытие (derived)
+## 4. Coverage (derived)
 
-Статус истории выводится из связей:
+The story status is derived from the links:
 
-- `accepted` — история утверждена продуктом, но не имеет `implemented_by` задач.
-- `in-progress` — ≥ 1 задача в `in-progress` или `done`.
-- `delivered` — все `implemented_by` задачи `done` **и** все `acceptance` met.
-- `deferred` — story snooze; не фигурирует в ready списках.
-- `draft` — черновик, не готов к разработке.
+- `accepted` — the story is approved by the product, but has no `implemented_by` tasks.
+- `in-progress` — ≥ 1 task in `in-progress` or `done`.
+- `delivered` — all `implemented_by` tasks are `done` **and** all `acceptance` are met.
+- `deferred` — the story is snoozed; does not appear in ready lists.
+- `draft` — a draft, not ready for development.
 
-Автоматический расчёт `PlanService.recalc_story_coverage()` — дергается на каждое изменение task или criterion.
+Automatic computation `PlanService.recalc_story_coverage()` — triggered on every task or criterion change.
 
-## 5. Граф зависимостей — общая модель
+## 5. The dependency graph — the shared model
 
-COD-DOC поддерживает **два вида рёбер**:
+COD-DOC supports **two kinds of edges**:
 
 ### 5.1 Task → Task (`dependency.kind=blocks`)
 
-Основной граф, как в Restate. Используется для Progress Overview, Next Batch, critical path.
+The main graph, as in Restate. Used for Progress Overview, Next Batch, critical path.
 
 ### 5.2 Story → X (`story_link`)
 
@@ -98,33 +98,33 @@ COD-DOC поддерживает **два вида рёбер**:
 - `relates_to`    → Story
 - `blocked_by`    → Story
 
-Позволяет строить «двойной граф»: история → задачи → модули.
+Allows building a "double graph": story → tasks → modules.
 
-## 6. Запросы к графу
+## 6. Graph queries
 
-Команды:
+Commands:
 
 ```bash
 cod-doc graph forward AUTH-025
-  # -> все задачи, которые нужно сделать ДО AUTH-025
+  # -> all tasks that must be done BEFORE AUTH-025
 
 cod-doc graph reverse AUTH-020
-  # -> что разблокируется, когда AUTH-020 станет done
+  # -> what gets unblocked when AUTH-020 becomes done
 
 cod-doc graph critical-path --plan M1-auth-module
-  # -> самая длинная цепочка блокеров
+  # -> the longest chain of blockers
 
 cod-doc graph story US-014
-  # -> история + её tasks + их цепочки blocks, всё дерево
+  # -> the story + its tasks + their blocks chains, the whole tree
 
 cod-doc graph module M10-agencies
-  # -> все истории, связанные с модулем; все задачи, связанные с историями;
-  #    все задачи, связанные с планом модуля напрямую
+  # -> all stories linked to the module; all tasks linked to the stories;
+  #    all tasks linked to the module's plan directly
 ```
 
-## 7. SQL-основа
+## 7. SQL basis
 
-Прямое отражение БД:
+A direct reflection of the DB:
 
 ```sql
 -- Forward dependency chain
@@ -141,15 +141,15 @@ JOIN task t ON t.row_id = chain.row_id
 ORDER BY chain.depth;
 ```
 
-Аналогично reverse-chain / critical path (longest path DAG).
+Similarly reverse-chain / critical path (longest path DAG).
 
 ## 8. Visualization
 
-- **Mermaid** — для проекций в markdown (план, story).
-- **DOT (Graphviz)** — для внешних инструментов.
-- **JSON** — для веб-UI / других клиентов.
+- **Mermaid** — for projections in markdown (plan, story).
+- **DOT (Graphviz)** — for external tools.
+- **JSON** — for the web-UI / other clients.
 
-Пример Mermaid для story:
+Example Mermaid for a story:
 
 ```mermaid
 graph TD
@@ -164,34 +164,34 @@ graph TD
   AGN_013 --> AGN_050
 ```
 
-## 9. Story-driven планирование
+## 9. Story-driven planning
 
-Сервис `PlanService.propose_tasks_for_story(story_id)`:
+The `PlanService.propose_tasks_for_story(story_id)` service:
 
-- Смотрит acceptance criteria.
-- Предлагает LLM-сгенерированные draft-задачи (`type=feature|test`) с привязкой к модулю/плану.
-- Автор/агент принимает — задачи создаются через `TaskService.bulk_create`.
+- Looks at the acceptance criteria.
+- Proposes LLM-generated draft-tasks (`type=feature|test`) tied to a module/plan.
+- The author/agent accepts — the tasks are created via `TaskService.bulk_create`.
 
-Это не «магия» — это оркестратор, который использует уже существующие сервисы. Но это заменяет ручной процесс «прочитал US, придумал 5 задач, вписал в план».
+This is not "magic" — it is an orchestrator that uses already-existing services. But it replaces the manual process "read the US, come up with 5 tasks, write them into the plan".
 
-## 10. Traceability-отчёт
+## 10. Traceability report
 
 `cod-doc report traceability`:
 
-- Список stories со статусом покрытия.
-- Список модулей с количеством stories/tasks.
-- Недоставленные acceptance criteria.
-- Stories, потерявшие связи (`implemented_by` задача удалена).
+- A list of stories with coverage status.
+- A list of modules with the number of stories/tasks.
+- Undelivered acceptance criteria.
+- Stories that lost links (`implemented_by` task deleted).
 
-## 11. Интеграция с другими capability
+## 11. Integration with other capabilities
 
-- **Task creation**: при создании задачи можно сразу указать `--story US-014`.
-- **Doc evolution**: при rename story — все input-ссылки обновляются.
-- **Context retrieval**: L1 ответа по модулю включает ≤ 3 stories; L2 — их acceptance critetria.
-- **Plan management**: Next Batch внутри плана можно фильтровать по `--story US-014`.
+- **Task creation**: when creating a task you can immediately specify `--story US-014`.
+- **Doc evolution**: on story rename — all input-links are updated.
+- **Context retrieval**: an L1 response for a module includes ≤ 3 stories; L2 — their acceptance criteria.
+- **Plan management**: Next Batch within a plan can be filtered by `--story US-014`.
 
-## 12. Что не делаем
+## 12. What we do not do
 
-- Не превращаем story в тикет Plane/Jira — это задача `plane-sync` интеграции, отдельный capability (вне пакета).
-- Не считаем «story points» — приоритезация только через `priority` (крит/хай/мед/лоу).
-- Не генерируем story автоматически — слишком рискованно; продуктная валидация остаётся человеческой.
+- We do not turn a story into a Plane/Jira ticket — that is the job of the `plane-sync` integration, a separate capability (outside the package).
+- We do not count "story points" — prioritization is only via `priority` (crit/high/med/low).
+- We do not auto-generate stories — too risky; product validation stays human.

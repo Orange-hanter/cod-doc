@@ -12,15 +12,15 @@ source_of_truth:
 
 # Refactor: Large Files — Execution Plan
 
-> Подготовительный план разбиения файлов > 400 строк на компактные модули, согласованные по логике. **Только декомпозиция** — public API сервисов/команд/маршрутов остаётся прежним; изменения видны как новые внутренние модули и `from … import …` в местах сборки.
+> A preparatory plan to split files > 400 lines into compact modules aligned by logic. **Decomposition only** — the public API of services/commands/routes stays the same; changes are visible as new internal modules and `from … import …` at assembly points.
 >
-> Цель — снизить когнитивную нагрузку и упростить параллельную работу: после рефакторинга каждый модуль ≤ ~350 строк, с чёткой темой ответственности.
+> The goal is to reduce cognitive load and simplify parallel work: after the refactor each module is ≤ ~350 lines, with a clear topic of responsibility.
 >
-> **Не входит в скоуп:** тесты остаются зелёными байт-в-байт, никакого изменения поведения, никаких новых фич, никакого «попутного» рефакторинга. Все правки за пределами разбиения вносятся отдельными задачами.
+> **Out of scope:** tests stay byte-for-byte green, no behavior change, no new features, no "drive-by" refactoring. Any edits outside the split go as separate tasks.
 
 ## Navigation
 
-- [Task-plan стандарт](../standards/task-plan.md)
+- [Task-plan standard](../standards/task-plan.md)
 - [Implementation roadmap](cod-doc-task-plan.md)
 - [Web frontend roadmap](web-frontend-task-plan.md)
 
@@ -38,22 +38,22 @@ source_of_truth:
 | H: Tests | 6 | 0 | 6 | pending |
 | **TOTAL** | **20** | **20** | **0** | ✅ done |
 
-> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): таблица выше была устаревшим черновиком («0 done») — сверка с кодом показала, что декомпозиция **уже выполнена**: пакеты `cod_doc/services/{plan_service,link_service,story_service,validation,projection_service}/`, `cod_doc/infra/models/` (20 файлов), `cod_doc/cli/{doc,plan,story}/`, `cod_doc/api/web/{pages,fragments}/`, `cod_doc/tui/screens/wizard/`, CSS-split (`static/app.css` → `static/css/_*.css`). Остаточный low-value пункт (standalone frontmatter-parser COD-050 — логика встроена в `projection_service/_frontmatter.py`) не блокирует. План закрыт.
+> **Status reconciliation 2026-06-05** (see [ROADMAP](ROADMAP.md)): the table above was a stale draft ("0 done") — reconciliation with the code showed the decomposition **is already done**: packages `cod_doc/services/{plan_service,link_service,story_service,validation,projection_service}/`, `cod_doc/infra/models/` (20 files), `cod_doc/cli/{doc,plan,story}/`, `cod_doc/api/web/{pages,fragments}/`, `cod_doc/tui/screens/wizard/`, CSS-split (`static/app.css` → `static/css/_*.css`). A residual low-value item (a standalone frontmatter parser COD-050 — the logic is embedded in `projection_service/_frontmatter.py`) does not block. The plan is closed.
 
-## Принципы декомпозиции
+## Decomposition principles
 
-Применяются ко всем задачам ниже без повторений.
+Applied to all tasks below without repetition.
 
-1. **Public API не меняется.** Имена сервис-функций, CLI-команд, FastAPI-маршрутов, MCP-инструментов и моделей ORM остаются на тех же import-путях. Допускается re-export из `__init__.py` или из исходного «фасадного» модуля.
-2. **Файлы — по теме, не по размеру.** Сначала находим связки (parse / resolve / verify; CRUD vs graph queries; pages vs htmx fragments) — затем выносим в отдельный модуль. Цель ≤ 350 строк, но 200 — нормально, 400 — допустимо для модуля с одной плотной темой.
-3. **Никаких циклических импортов.** Если выделение порождает цикл — пересмотреть границу или ввести `_internals.py` с общими хелперами.
-4. **Тесты не двигаем.** В Section H разбиваются ТОЛЬКО уже большие тестовые модули, и только если у них есть естественная граница (по фиче / по сценарию). Структура fixture'ов сохраняется.
-5. **Каждая задача — одна PR.** PR содержит ровно перенос кода + минимальные импорт-правки + (если нужно) re-export. Никаких исправлений типов, форматирования, вынужденных правок поведения. Если по пути обнаружен баг — отдельная задача.
-6. **Verify-loop:** `pytest -q` + `ruff check` + `mypy` зелёные ДО и ПОСЛЕ задачи. Diff коммита читается за пять минут.
+1. **The public API does not change.** Service-function names, CLI commands, FastAPI routes, MCP tools, and ORM models stay on the same import paths. A re-export from `__init__.py` or from the original "facade" module is allowed.
+2. **Files by topic, not by size.** First find clusters (parse / resolve / verify; CRUD vs graph queries; pages vs htmx fragments) — then move them into a separate module. The target is ≤ 350 lines, but 200 is fine, 400 is acceptable for a module with one dense topic.
+3. **No cyclic imports.** If the extraction creates a cycle — rethink the boundary or introduce an `_internals.py` with shared helpers.
+4. **Tests are not moved.** In Section H ONLY already large test modules are split, and only if they have a natural boundary (by feature / by scenario). The fixture structure is preserved.
+5. **One task — one PR.** The PR contains exactly the code move + minimal import fixes + (if needed) a re-export. No type fixes, formatting, or forced behavior changes. If a bug is found along the way — a separate task.
+6. **Verify-loop:** `pytest -q` + `ruff check` + `mypy` green BEFORE and AFTER the task. The commit diff reads in five minutes.
 
 ## Naming convention
 
-`PREFIX = RFL` (refactor large files). Нумерация по секциям: A → 001-009, B → 010-019, C → 020-029, …
+`PREFIX = RFL` (refactor large files). Numbering by section: A → 001-009, B → 010-019, C → 020-029, …
 
 ---
 
@@ -63,13 +63,13 @@ source_of_truth:
 
 **Type:** refactor   **Priority:** high   **Section:** A-Web-Layer
 
-**Текущее состояние.** Один файл с маршрутами под все страницы: index, project overview, docs (list/show/import), tasks (list/show), plans (list/show), revisions log, settings (GET/POST). Внутри сидят два самостоятельных хелпера (`_masked_api_key`, `_preview`) и константы лимитов.
+**Current state.** One file with routes for all pages: index, project overview, docs (list/show/import), tasks (list/show), plans (list/show), revisions log, settings (GET/POST). Inside sit two standalone helpers (`_masked_api_key`, `_preview`) and limit constants.
 
-**Целевая структура.** Создать пакет `cod_doc/api/web/pages/` с инициализацией и подмодулями:
+**Target structure.** Create a package `cod_doc/api/web/pages/` with an init and submodules:
 
 ```
 cod_doc/api/web/pages/
-├── __init__.py        # router = APIRouter(); include sub-routers (или re-export)
+├── __init__.py        # router = APIRouter(); include sub-routers (or re-export)
 ├── index.py           # GET /  + INDEX_*_LIMIT
 ├── project.py         # GET /p/{slug}, POST /p/{slug}/init  + OVERVIEW_*_LIMIT, _preview
 ├── docs.py            # GET /p/{slug}/docs, GET /p/{slug}/docs/{key}, POST /docs/import
@@ -79,13 +79,13 @@ cod_doc/api/web/pages/
 └── settings.py        # GET/POST /settings  + _masked_api_key
 ```
 
-`__init__.py`: создаёт `router = APIRouter()` и подключает суб-роутеры через `router.include_router(...)`. Старый импорт `from cod_doc.api.web.pages import router` продолжает работать. Шаблоны (`templates/...`) и пути URL — без изменений.
+`__init__.py`: creates `router = APIRouter()` and includes sub-routers via `router.include_router(...)`. The old import `from cod_doc.api.web.pages import router` keeps working. Templates (`templates/...`) and URL paths — unchanged.
 
 **Acceptance.**
-- [ ] Все исходные маршруты доступны на тех же URL и возвращают тот же HTML.
-- [ ] Импорт `from cod_doc.api.web.pages import router` (как в [cod_doc/api/server.py](../../../cod_doc/api/server.py)) работает без правок.
-- [ ] Каждый файл ≤ 250 LOC.
-- [ ] `pytest tests/api/` зелёный, ручной smoke `curl /` / `/p/<slug>` / `/settings` совпадает с baseline.
+- [ ] All original routes are available at the same URLs and return the same HTML.
+- [ ] The import `from cod_doc.api.web.pages import router` (as in [cod_doc/api/server.py](../../../cod_doc/api/server.py)) works without edits.
+- [ ] Each file ≤ 250 LOC.
+- [ ] `pytest tests/api/` green, a manual smoke `curl /` / `/p/<slug>` / `/settings` matches the baseline.
 
 ---
 
@@ -93,25 +93,25 @@ cod_doc/api/web/pages/
 
 **Type:** refactor   **Priority:** high   **Section:** A-Web-Layer
 
-**Текущее состояние.** Один файл, в котором перемешаны три независимых HTMX-сценария: смена статуса задачи, инлайн-патчинг секций документов, инлайн-редактирование полей задачи (description / acceptance), плюс «complete» из ready-блока. Общие хелперы (`_is_htmx`, `_render_*`) живут рядом.
+**Current state.** One file mixing three independent HTMX scenarios: task status change, inline patching of document sections, inline editing of task fields (description / acceptance), plus "complete" from the ready block. Shared helpers (`_is_htmx`, `_render_*`) live nearby.
 
-**Целевая структура.** Пакет `cod_doc/api/web/fragments/`:
+**Target structure.** Package `cod_doc/api/web/fragments/`:
 
 ```
 cod_doc/api/web/fragments/
 ├── __init__.py        # router + include_router
-├── _shared.py         # _is_htmx, _render_task_row (общая для status/complete)
+├── _shared.py         # _is_htmx, _render_task_row (shared by status/complete)
 ├── tasks_status.py    # POST /tasks/{id}/status, POST /tasks/{id}/complete
 ├── tasks_fields.py    # GET/POST /tasks/{id}/fields/{field}/...  + _TASK_FIELDS map
 └── sections.py        # GET/POST /docs/{key}/sections/{anchor}/...  + _resolve_section
 ```
 
-`_TASK_FIELDS` — приватный реестр, переезжает в `tasks_fields.py`. `_resolve_section` — в `sections.py`. Re-export `router` из `__init__.py`.
+`_TASK_FIELDS` — a private registry, moves to `tasks_fields.py`. `_resolve_section` — to `sections.py`. Re-export `router` from `__init__.py`.
 
 **Acceptance.**
-- [ ] HTMX swap-таргеты возвращают тот же HTML (визуально + diff на байтах).
-- [ ] Cookie-flash и OOB-alert поведение сохранено (особенно в `task_complete` с Referer-fallback).
-- [ ] Каждый файл ≤ 220 LOC.
+- [ ] HTMX swap targets return the same HTML (visually + a byte diff).
+- [ ] Cookie-flash and OOB-alert behavior is preserved (especially in `task_complete` with the Referer fallback).
+- [ ] Each file ≤ 220 LOC.
 
 ---
 
@@ -121,13 +121,13 @@ cod_doc/api/web/fragments/
 
 **Type:** refactor   **Priority:** high   **Section:** B-Services
 
-**Текущее состояние.** В одном файле живут пять разнотипных подсистем: dataclass-DTO, `recalc`-агрегации (вьюшки), `ready`-выборка, `audit` + цикл-детектор (DFS), `export`-рендеры markdown, `forward/reverse/critical_path` через CTE. Файл уже размечен `── Internals/recalc/ready/audit/export/Graph queries ──` — границы есть, осталось материализовать.
+**Current state.** One file holds five heterogeneous subsystems: dataclass-DTO, `recalc` aggregations (views), `ready` selection, `audit` + cycle detector (DFS), `export` markdown renders, `forward/reverse/critical_path` via CTE. The file is already marked with `── Internals/recalc/ready/audit/export/Graph queries ──` — the boundaries are there, just materialize them.
 
-**Целевая структура.** Превратить в пакет `cod_doc/services/plan/`:
+**Target structure.** Turn into a package `cod_doc/services/plan/`:
 
 ```
 cod_doc/services/plan/
-├── __init__.py            # re-export всего публичного API (см. __all__ снизу)
+├── __init__.py            # re-export the whole public API (see __all__ below)
 ├── _types.py              # DerivedStatus, SectionProgress, PlanProgress,
 │                          # PlanAuditReport, ChainEntry, CriticalPathResult,
 │                          # PlanNotFoundError, TaskNotFoundInPlanError
@@ -136,15 +136,15 @@ cod_doc/services/plan/
 ├── audit.py               # audit + _find_cycles
 ├── export.py              # export + _render_progress_overview / _render_next_batch /
 │                          # _render_dependency_graph / _mermaid_node_id
-└── graph.py               # forward_chain, reverse_chain, critical_path + SQL CTE-константы
+└── graph.py               # forward_chain, reverse_chain, critical_path + SQL CTE constants
 ```
 
-Обратная совместимость: модуль `cod_doc/services/plan_service.py` остаётся как тонкий фасад с `from cod_doc.services.plan import *  # noqa: F401,F403` — все вызовы `from cod_doc.services import plan_service as plans` продолжают работать.
+Backward compatibility: the module `cod_doc/services/plan_service.py` stays as a thin facade with `from cod_doc.services.plan import *  # noqa: F401,F403` — all calls `from cod_doc.services import plan_service as plans` keep working.
 
 **Acceptance.**
-- [ ] `tests/services/test_plan_service.py` — без изменений, зелёный.
-- [ ] Каждый модуль ≤ 250 LOC; `graph.py` может быть до 320 LOC из-за двух CTE.
-- [ ] `from cod_doc.services import plan_service` и `from cod_doc.services.plan_service import recalc` работают.
+- [ ] `tests/services/test_plan_service.py` — unchanged, green.
+- [ ] Each module ≤ 250 LOC; `graph.py` may be up to 320 LOC due to two CTEs.
+- [ ] `from cod_doc.services import plan_service` and `from cod_doc.services.plan_service import recalc` work.
 
 ---
 
@@ -152,9 +152,9 @@ cod_doc/services/plan/
 
 **Type:** refactor   **Priority:** high   **Section:** B-Services
 
-**Текущее состояние.** Файл совмещает три независимых ответственности: чистый regex-парсер ссылок (parse + классификация wiki-inner), DB-bound resolve/verify (с шестью `_resolve_*` хелперами), rename-cascade (две системы перезаписи: канонические `[[doc:OLD]]` и markdown-relative с path_map).
+**Current state.** The file combines three independent responsibilities: a pure regex link parser (parse + wiki-inner classification), DB-bound resolve/verify (with six `_resolve_*` helpers), rename-cascade (two rewrite systems: canonical `[[doc:OLD]]` and markdown-relative with path_map).
 
-**Целевая структура.** Пакет `cod_doc/services/link/`:
+**Target structure.** Package `cod_doc/services/link/`:
 
 ```
 cod_doc/services/link/
@@ -162,24 +162,24 @@ cod_doc/services/link/
 ├── _types.py              # ParsedLink, VerifyReport, RenameCascadeReport,
 │                          # LinkNotFoundError
 ├── parser.py              # PURE: parse, _strip_fenced_code, _href_to_doc_key,
-│                          # _classify_wiki_inner + regex-константы
+│                          # _classify_wiki_inner + regex constants
 ├── resolver.py            # _resolve_canonical/_resolve_section_anchor/
 │                          # _resolve_task/_resolve_story/_resolve_wiki +
 │                          # _apply_resolution + sync_section/resolve/resolve_section/
 │                          # verify_section/list_for_section
 ├── _section_helpers.py    # _section_or_raise, _project_id_for_section,
-│                          # _link_or_raise (внутренние, общие)
+│                          # _link_or_raise (internal, shared)
 └── rename_cascade.py      # rename_cascade, _rewrite_canonical_refs,
                            # _rewrite_markdown_relative_refs, _resolve_md_href,
                            # _make_relative_href
 ```
 
-Фасад: `cod_doc/services/link_service.py` → `from cod_doc.services.link import *  # noqa`.
+Facade: `cod_doc/services/link_service.py` → `from cod_doc.services.link import *  # noqa`.
 
 **Acceptance.**
-- [ ] `tests/services/test_link_service.py` (932 LOC, 35+ тестов) — зелёный без правок.
-- [ ] `parser.py` НЕ импортирует SQLAlchemy (чистая функция — это инвариант, который мы хотим закрепить).
-- [ ] Каждый модуль ≤ 280 LOC.
+- [ ] `tests/services/test_link_service.py` (932 LOC, 35+ tests) — green without edits.
+- [ ] `parser.py` does NOT import SQLAlchemy (a pure function — this is the invariant we want to lock in).
+- [ ] Each module ≤ 280 LOC.
 
 ---
 
@@ -187,9 +187,9 @@ cod_doc/services/link/
 
 **Type:** refactor   **Priority:** medium   **Section:** B-Services
 
-**Текущее состояние.** Один файл, но темы уже отчётливо разделены пунктирами: create/get/list, update_status, acceptance-criteria, link, coverage. Плюс утилита `_validate_link_target` (важная — предотвращает broken links).
+**Current state.** One file, but the topics are already clearly separated by dotted lines: create/get/list, update_status, acceptance-criteria, link, coverage. Plus the `_validate_link_target` utility (important — prevents broken links).
 
-**Целевая структура.** Пакет `cod_doc/services/story/`:
+**Target structure.** Package `cod_doc/services/story/`:
 
 ```
 cod_doc/services/story/
@@ -205,11 +205,11 @@ cod_doc/services/story/
 └── coverage.py            # coverage
 ```
 
-Файл `cod_doc/services/story_service.py` остаётся как фасад с re-export.
+The file `cod_doc/services/story_service.py` stays as a facade with re-export.
 
 **Acceptance.**
-- [ ] `tests/services/test_story_service.py` (605 LOC) — зелёный.
-- [ ] Каждый модуль ≤ 200 LOC.
+- [ ] `tests/services/test_story_service.py` (605 LOC) — green.
+- [ ] Each module ≤ 200 LOC.
 
 ---
 
@@ -217,13 +217,13 @@ cod_doc/services/story/
 
 **Type:** refactor   **Priority:** low   **Section:** B-Services
 
-**Файл на грани (404 LOC).** Темы уже разделены: render_markdown (pure, с redaction-логикой и audience-rank), export_document, detect_drift, import_document, плюс `_safe_target` (security-критический хелпер) и `_parse_frontmatter`/`_apply_frontmatter_to_model`.
+**A file on the edge (404 LOC).** The topics are already separated: render_markdown (pure, with redaction logic and audience-rank), export_document, detect_drift, import_document, plus `_safe_target` (a security-critical helper) and `_parse_frontmatter`/`_apply_frontmatter_to_model`.
 
-**Решение:** разбиваем — потому что:
-1. `_safe_target` — security-guard, должен быть в одном модуле с тестами на path-escape (см. `test_export_refuses_*` в [test_projection_service.py](../../../tests/services/test_projection_service.py)).
-2. Audience-redaction (`_audience_blocks_sensitivity`, `_REDACTION_MARKER`) — отдельный концепт (COD-025/SD-002), у него свой жизненный цикл.
+**Decision:** split — because:
+1. `_safe_target` — a security guard, must be in one module with path-escape tests (see `test_export_refuses_*` in [test_projection_service.py](../../../tests/services/test_projection_service.py)).
+2. Audience redaction (`_audience_blocks_sensitivity`, `_REDACTION_MARKER`) — a separate concept (COD-025/SD-002), with its own lifecycle.
 
-**Целевая структура.** Пакет `cod_doc/services/projection/`:
+**Target structure.** Package `cod_doc/services/projection/`:
 
 ```
 cod_doc/services/projection/
@@ -236,13 +236,13 @@ cod_doc/services/projection/
 ├── render.py              # render_markdown (uses _frontmatter + _redaction)
 ├── export.py              # export_document
 ├── drift.py               # detect_drift
-└── import_doc.py          # import_document  (имя `import.py` запрещено — keyword)
+└── import_doc.py          # import_document  (the name `import.py` is forbidden — keyword)
 ```
 
 **Acceptance.**
-- [ ] `tests/services/test_projection_service.py` (411 LOC) — зелёный.
-- [ ] Каждый модуль ≤ 130 LOC.
-- [ ] `_safety.py` импортируется только из `export.py` / `drift.py`; парсер frontmatter не знает про путь к диску.
+- [ ] `tests/services/test_projection_service.py` (411 LOC) — green.
+- [ ] Each module ≤ 130 LOC.
+- [ ] `_safety.py` is imported only from `export.py` / `drift.py`; the frontmatter parser does not know about the disk path.
 
 ---
 
@@ -250,13 +250,13 @@ cod_doc/services/projection/
 
 **Type:** refactor   **Priority:** low   **Section:** B-Services
 
-**Файл на грани (402 LOC).** Внутри две явные категории: structural validators (raise `ValidationError`) и advisory validators (return `list[ValidationIssue]`). Согласно memory `validation_pattern.md` разделение по этой границе — основной паттерн проекта; материализация в коде усилит его.
+**A file on the edge (402 LOC).** Inside there are two explicit categories: structural validators (raise `ValidationError`) and advisory validators (return `list[ValidationIssue]`). Per the memory `validation_pattern.md`, splitting along this boundary is the project's main pattern; materializing it in code reinforces it.
 
-**Целевая структура.** Пакет `cod_doc/services/validation/`:
+**Target structure.** Package `cod_doc/services/validation/`:
 
 ```
 cod_doc/services/validation/
-├── __init__.py            # re-export всего, чтобы from cod_doc.services import validation сохранилось
+├── __init__.py            # re-export everything so from cod_doc.services import validation keeps working
 ├── _errors.py             # ValidationError, ValidationIssue
 ├── _patterns.py           # _TASK_ID_RE, _STORY_ID_RE, _SECTION_SLUG_RE,
 │                          # _ID_PREFIX_RE, _VERB_PATTERNS, _FORBIDDEN_TYPE_ALIASES,
@@ -266,11 +266,11 @@ cod_doc/services/validation/
 └── advisory.py            # audit_task_title, audit_frontmatter, audit_sensitivity
 ```
 
-Все импорты вида `from cod_doc.services import validation` и `from cod_doc.services.validation import ValidationError` продолжают работать.
+All imports of the form `from cod_doc.services import validation` and `from cod_doc.services.validation import ValidationError` keep working.
 
 **Acceptance.**
-- [ ] Все вызовы `validation.validate_*` / `validation.audit_*` в [doc_service](../../../cod_doc/services/doc_service.py), [story_service](../../../cod_doc/services/story_service.py), [task_service](../../../cod_doc/services/task_service.py) работают без правок импортов.
-- [ ] Тесты на validation (если есть отдельные) и интеграционные тесты сервисов — зелёные.
+- [ ] All calls `validation.validate_*` / `validation.audit_*` in [doc_service](../../../cod_doc/services/doc_service.py), [story_service](../../../cod_doc/services/story_service.py), [task_service](../../../cod_doc/services/task_service.py) work without import edits.
+- [ ] Tests on validation (if any separate ones) and the integration tests of the services — green.
 
 ---
 
@@ -280,18 +280,18 @@ cod_doc/services/validation/
 
 **Type:** refactor   **Priority:** medium   **Section:** C-Infra
 
-**Текущее состояние.** Один файл с 17 SQLAlchemy-моделями. Они уже группируются по доменам, но визуально это «стена кода» — найти `LinkModel` или `RevisionModel` глазами сложно.
+**Current state.** One file with 17 SQLAlchemy models. They already group by domain, but visually it is a "wall of code" — finding `LinkModel` or `RevisionModel` by eye is hard.
 
-**Особенность:** SQLAlchemy чувствителен к порядку загрузки моделей (relationships ссылаются на классы по имени-строке, но `Base.metadata` должна знать обо всех таблицах ДО первого `create_all`). Поэтому `__init__.py` пакета **обязан импортировать все подмодули** для side-effect регистрации в `Base.metadata`.
+**Caveat:** SQLAlchemy is sensitive to model load order (relationships reference classes by string name, but `Base.metadata` must know about all tables BEFORE the first `create_all`). So the package `__init__.py` **must import all submodules** for the side-effect of registration in `Base.metadata`.
 
-**Целевая структура.** Пакет `cod_doc/infra/models/`:
+**Target structure.** Package `cod_doc/infra/models/`:
 
 ```
 cod_doc/infra/models/
 ├── __init__.py            # from .base import Base
 │                          # from .project import ProjectModel
 │                          # from .documents import DocumentModel, SectionModel, LinkModel
-│                          # ...  (импорт ради регистрации + re-export)
+│                          # ...  (import for registration + re-export)
 ├── base.py                # Base, _utcnow
 ├── project.py             # ProjectModel
 ├── documents.py           # DocumentModel, SectionModel, LinkModel
@@ -303,16 +303,16 @@ cod_doc/infra/models/
 └── tags.py                # TagModel, DocumentTagModel, TaskTagModel, StoryTagModel
 ```
 
-`__init__.py` ре-экспортирует ВСЕ модели и сам `Base`. Импорт `from cod_doc.infra.models import DocumentModel` (как в [doc_service.py](../../../cod_doc/services/doc_service.py)) сохраняется.
+`__init__.py` re-exports ALL models and `Base` itself. The import `from cod_doc.infra.models import DocumentModel` (as in [doc_service.py](../../../cod_doc/services/doc_service.py)) is preserved.
 
-**Особое внимание.**
-- Alembic-миграции сравниваются с `Base.metadata.tables` — после рефакторинга `alembic check` (или `alembic revision --autogenerate --dry-run`) НЕ должен показывать diff.
-- Поведение каскадов и string-based `relationship(...foreign_keys="DependencyModel.from_task_id")` не меняется (имена классов те же).
+**Special attention.**
+- Alembic migrations compare against `Base.metadata.tables` — after the refactor `alembic check` (or `alembic revision --autogenerate --dry-run`) must NOT show a diff.
+- Cascade behavior and string-based `relationship(...foreign_keys="DependencyModel.from_task_id")` do not change (the class names are the same).
 
 **Acceptance.**
-- [ ] `pytest` зелёный (включая alembic-fixture тесты в `tests/services/`).
-- [ ] `alembic check` ↔ `Base.metadata` — без diff.
-- [ ] Каждый модуль ≤ 130 LOC.
+- [ ] `pytest` is green (including the alembic-fixture tests in `tests/services/`).
+- [ ] `alembic check` ↔ `Base.metadata` — no diff.
+- [ ] Each module ≤ 130 LOC.
 
 ---
 
@@ -322,14 +322,14 @@ cod_doc/infra/models/
 
 **Type:** refactor   **Priority:** medium   **Section:** D-CLI
 
-**Текущее состояние.** `@click.group()` с восемью командами: list, show, create, rename, body, export, drift, import. Каждая команда — самодостаточна, у группы общий префикс `--project` и три helper-функции (`_make_session`, `_require_project_id`, `_get_root_path`).
+**Current state.** A `@click.group()` with eight commands: list, show, create, rename, body, export, drift, import. Each command is self-contained, the group has a common `--project` prefix and three helper functions (`_make_session`, `_require_project_id`, `_get_root_path`).
 
-**Целевая структура.** Пакет `cod_doc/cli/doc/`:
+**Target structure.** Package `cod_doc/cli/doc/`:
 
 ```
 cod_doc/cli/doc/
-├── __init__.py            # group `doc` определяется здесь;
-│                          # импортирует сub-команды для регистрации
+├── __init__.py            # the `doc` group is defined here;
+│                          # imports sub-commands for registration
 ├── _common.py             # _make_session, _require_project_id, _get_root_path,
 │                          # _STATUS_ICON, _DRIFT_ICON
 ├── cmd_list.py            # @doc.command("list")
@@ -342,7 +342,7 @@ cod_doc/cli/doc/
 └── cmd_import.py          # @doc.command("import")
 ```
 
-Паттерн регистрации — как у `cod_doc/mcp/tools/` (уже работающий precedent в кодовой базе).
+The registration pattern — as in `cod_doc/mcp/tools/` (an already working precedent in the codebase).
 
 `__init__.py`:
 ```python
@@ -352,13 +352,13 @@ def doc() -> None: ...
 from . import cmd_list, cmd_show, cmd_create, cmd_rename, cmd_body, cmd_export, cmd_drift, cmd_import  # noqa: E402, F401
 ```
 
-Каждый `cmd_*.py` начинается с `from . import doc` (или `from cod_doc.cli.doc import doc`) и регистрируется через `@doc.command(...)`.
+Each `cmd_*.py` starts with `from . import doc` (or `from cod_doc.cli.doc import doc`) and is registered via `@doc.command(...)`.
 
 **Acceptance.**
-- [ ] `cod-doc doc --help` показывает те же подкоманды.
-- [ ] `cod-doc doc list -p X`, `cod-doc doc create ...`, `cod-doc doc drift ...` работают как раньше.
-- [ ] Импорт `from cod_doc.cli.doc import doc` (где бы он ни был — через `entry_points` или через `cli/__main__.py`) сохраняется.
-- [ ] Каждый файл команды ≤ 100 LOC.
+- [ ] `cod-doc doc --help` shows the same subcommands.
+- [ ] `cod-doc doc list -p X`, `cod-doc doc create ...`, `cod-doc doc drift ...` work as before.
+- [ ] The import `from cod_doc.cli.doc import doc` (wherever it is — via `entry_points` or via `cli/__main__.py`) is preserved.
+- [ ] Each command file ≤ 100 LOC.
 
 ---
 
@@ -366,11 +366,11 @@ from . import cmd_list, cmd_show, cmd_create, cmd_rename, cmd_body, cmd_export, 
 
 **Type:** refactor   **Priority:** medium   **Section:** D-CLI
 
-**Аналогично RFL-030.** Семь команд: list, show, create, status, add-criterion, link, coverage. `_STATUS_ICON`, `_COVERAGE_ICON`, `_make_session`, `_require_project_id` → `_common.py`.
+**Analogous to RFL-030.** Seven commands: list, show, create, status, add-criterion, link, coverage. `_STATUS_ICON`, `_COVERAGE_ICON`, `_make_session`, `_require_project_id` → `_common.py`.
 
-**Целевая структура.** `cod_doc/cli/story/__init__.py` + `_common.py` + `cmd_<name>.py` × 7.
+**Target structure.** `cod_doc/cli/story/__init__.py` + `_common.py` + `cmd_<name>.py` × 7.
 
-**Acceptance.** Аналогично RFL-030: команды и импорты работают, каждый `cmd_*.py` ≤ 100 LOC.
+**Acceptance.** Analogous to RFL-030: commands and imports work, each `cmd_*.py` ≤ 100 LOC.
 
 ---
 
@@ -378,11 +378,11 @@ from . import cmd_list, cmd_show, cmd_create, cmd_rename, cmd_body, cmd_export, 
 
 **Type:** refactor   **Priority:** medium   **Section:** D-CLI
 
-**Аналогично RFL-030.** Семь команд: show, ready, audit, export, critical-path, forward, reverse. Дополнительно — общий хелпер `_render_chain` (используется forward + reverse) → в `_common.py`.
+**Analogous to RFL-030.** Seven commands: show, ready, audit, export, critical-path, forward, reverse. Additionally — the shared helper `_render_chain` (used by forward + reverse) → into `_common.py`.
 
-**Целевая структура.** `cod_doc/cli/plan/__init__.py` + `_common.py` (с `_render_chain`) + `cmd_<name>.py` × 7.
+**Target structure.** `cod_doc/cli/plan/__init__.py` + `_common.py` (with `_render_chain`) + `cmd_<name>.py` × 7.
 
-**Acceptance.** Аналогично RFL-030.
+**Acceptance.** Analogous to RFL-030.
 
 ---
 
@@ -392,19 +392,19 @@ from . import cmd_list, cmd_show, cmd_create, cmd_rename, cmd_body, cmd_export, 
 
 **Type:** refactor   **Priority:** medium   **Section:** E-MCP
 
-**Текущее состояние.** Файл регистрирует ~18 inline-инструментов и три ресурса/три промпта на FastMCP-инстансе. При этом DB-tools уже вынесены в [cod_doc/mcp/tools/](../../../cod_doc/mcp/tools/) — но «легаси»-инструменты (project/task management, MASTER.md hashes, context delivery, agent orchestration, config, semantic search) остались в `server.py`.
+**Current state.** The file registers ~18 inline tools and three resources/three prompts on a FastMCP instance. Meanwhile the DB-tools are already moved to [cod_doc/mcp/tools/](../../../cod_doc/mcp/tools/) — but the "legacy" tools (project/task management, MASTER.md hashes, context delivery, agent orchestration, config, semantic search) stayed in `server.py`.
 
-**Целевая структура.** Доперенос в существующий пакет `cod_doc/mcp/tools/`:
+**Target structure.** Move the rest into the existing package `cod_doc/mcp/tools/`:
 
 ```
 cod_doc/mcp/
-├── server.py              # ТОЛЬКО создание FastMCP-инстанса, регистрация всех tools/
-│                          # пакетов, click main()  — ~80 LOC
+├── server.py              # ONLY create the FastMCP instance, register all tools/
+│                          # packages, click main()  — ~80 LOC
 └── tools/
-    ├── _legacy_helpers.py # _config, _project, _project_summary  (внутр. utils)
+    ├── _legacy_helpers.py # _config, _project, _project_summary  (internal utils)
     ├── project_tools.py   # NEW: list_projects, get_project_status, add_project, remove_project
     ├── task_tools_legacy.py # NEW: list_tasks, add_task, update_task, next_pending_task
-    │                        #     (НЕ путать с существующим task_tools.py — DB-side)
+    │                        #     (do NOT confuse with the existing task_tools.py — DB-side)
     ├── master_tools.py    # NEW: get_master, update_master_hashes, check_stale_refs, generate_ref
     ├── context_tools.py   # NEW: read_context, read_file, list_files
     ├── hash_tools.py      # NEW: hash_file, verify_hash
@@ -417,7 +417,7 @@ cod_doc/mcp/
                   revision_tools.py, story_tools.py, task_tools.py)
 ```
 
-Каждый новый модуль экспортирует `register(mcp)`-функцию (как существующий [doc_tools.py](../../../cod_doc/mcp/tools/doc_tools.py)). `server.py` сводится к:
+Each new module exports a `register(mcp)` function (as the existing [doc_tools.py](../../../cod_doc/mcp/tools/doc_tools.py) does). `server.py` shrinks to:
 
 ```python
 mcp = FastMCP("COD-DOC", json_response=True)
@@ -428,12 +428,12 @@ for mod in (project_tools, task_tools_legacy, master_tools, context_tools,
     mod.register(mcp)
 ```
 
-**Внимание:** `task_tools.py` (DB-side) и `task_tools_legacy.py` (YAML-side, через `Project`) — РАЗНЫЕ инструменты, нельзя сливать. Подобрать имя получше — например, `project_tasks_tools.py` или `legacy/task_tools.py` (вложенная папка `tools/legacy/` если их в итоге много).
+**Attention:** `task_tools.py` (DB-side) and `task_tools_legacy.py` (YAML-side, via `Project`) are DIFFERENT tools, do not merge them. Pick a better name — e.g., `project_tasks_tools.py` or `legacy/task_tools.py` (a nested `tools/legacy/` folder if there are many in the end).
 
 **Acceptance.**
-- [ ] `cod-doc-mcp` (или эквивалентный entry-point) поднимается, список tools/resources/prompts через MCP `list_tools` совпадает с baseline (захватить до и после).
+- [ ] `cod-doc-mcp` (or an equivalent entry-point) starts, the list of tools/resources/prompts via MCP `list_tools` matches the baseline (capture before and after).
 - [ ] `server.py` ≤ 100 LOC.
-- [ ] Каждый новый `*_tools.py` ≤ 200 LOC.
+- [ ] Each new `*_tools.py` ≤ 200 LOC.
 
 ---
 
@@ -443,9 +443,9 @@ for mod in (project_tools, task_tools_legacy, master_tools, context_tools,
 
 **Type:** refactor   **Priority:** low   **Section:** F-TUI
 
-**Текущее состояние.** Один экран Textual со встроенным `_StepBar`-виджетом, четырьмя шагами (welcome / API / project / done) и валидацией. ~165 LOC из 450 — это `DEFAULT_CSS` (стили).
+**Current state.** One Textual screen with an embedded `_StepBar` widget, four steps (welcome / API / project / done) and validation. ~165 LOC of 450 is `DEFAULT_CSS` (styles).
 
-**Целевая структура.**
+**Target structure.**
 
 ```
 cod_doc/tui/screens/wizard/
@@ -453,19 +453,19 @@ cod_doc/tui/screens/wizard/
 ├── screen.py              # class WizardScreen + compose() + on_mount()
 ├── _stepbar.py            # class _StepBar
 ├── _styles.py             # WIZARD_CSS (string constant)
-├── _steps.py              # statelessные render-функции для каждого шага:
+├── _steps.py              # stateless render functions for each step:
 │                          # render_welcome(), render_api_step(), render_project_step(),
-│                          # render_done_step()  — возвращают list[Widget]
+│                          # render_done_step()  — return list[Widget]
 ├── _validation.py         # validate_and_save_api(config, ...),
 │                          # validate_and_save_project(config, ...)
 └── _models.py             # MODELS-list, STEPS-list, _model_widget_id()
 ```
 
-`screen.py` импортирует `WIZARD_CSS` и присваивает `DEFAULT_CSS = WIZARD_CSS`. Метод `compose()` вызывает render-функции из `_steps.py`. Валидаторы изолированы от UI и тестируемы в unit-тестах (если они появятся).
+`screen.py` imports `WIZARD_CSS` and assigns `DEFAULT_CSS = WIZARD_CSS`. The `compose()` method calls render functions from `_steps.py`. The validators are isolated from the UI and testable in unit tests (if they appear).
 
 **Acceptance.**
-- [ ] `cod-doc tui` запускает wizard, четыре шага навигируются как раньше.
-- [ ] Сохранение конфигурации (`config.save()`) выполняется в тех же точках.
+- [ ] `cod-doc tui` launches the wizard, the four steps navigate as before.
+- [ ] Saving the configuration (`config.save()`) runs at the same points.
 - [ ] `screen.py` ≤ 180 LOC; `_steps.py` ≤ 130 LOC.
 
 ---
@@ -476,15 +476,15 @@ cod_doc/tui/screens/wizard/
 
 **Type:** refactor   **Priority:** low   **Section:** G-Static
 
-**Текущее состояние.** Один монолитный CSS с уже размеченными комментариями-секциями: layout/topbar, grid/tables, tabs, cards, master-preview, doc viewer (split + sections-nav + section bodies), overview agg blocks, settings form, section inline edit (WEB-012), overview tightening, **task detail page** (≈ 350 LOC — самая большая зона), alerts, pagination. Ключевая проблема — навигация: «найти стили задачной hero-зоны» = scroll до line 370.
+**Current state.** One monolithic CSS with already marked comment-sections: layout/topbar, grid/tables, tabs, cards, master-preview, doc viewer (split + sections-nav + section bodies), overview agg blocks, settings form, section inline edit (WEB-012), overview tightening, **task detail page** (≈ 350 LOC — the largest zone), alerts, pagination. The key problem is navigation: "find the styles of the task hero zone" = scroll to line 370.
 
-**Решение.** Раздробить на партиалы и собирать через CSS-import (или конкатенацией при сборке).
+**Decision.** Break into partials and assemble via CSS-import (or concatenation at build time).
 
-**Целевая структура.**
+**Target structure.**
 
 ```
 cod_doc/static/
-├── app.css                # точка входа; @import-ит партиалы в правильном порядке:
+├── app.css                # entry point; @imports partials in the right order:
 │                          #   tokens → base → layout → components/* → pages/*
 ├── htmx.min.js
 └── css/
@@ -501,10 +501,10 @@ cod_doc/static/
     │   └── settings.css   # settings form
     └── pages/
         └── task-detail.css # task-hero, status-tone-*, prio-stripe-*, hero-meta, …
-                            # (≈ 350 LOC, самая большая часть)
+                            # (≈ 350 LOC, the largest part)
 ```
 
-`app.css` после рефакторинга:
+`app.css` after the refactor:
 ```css
 @import "css/tokens.css";
 @import "css/base.css";
@@ -519,31 +519,31 @@ cod_doc/static/
 @import "css/pages/task-detail.css";
 ```
 
-**Альтернатива (если CSS @import создаёт лишние HTTP-роундтрипы):** оставить один `app.css`, но генерировать его конкатенацией в Makefile / build-step. На решение влияет факт раздачи статики FastAPI без HTTP/2 push — оценить нагрузочно отдельно.
+**Alternative (if CSS @import creates extra HTTP round-trips):** keep a single `app.css`, but generate it by concatenation in a Makefile / build-step. The decision is informed by the fact that FastAPI serves static assets without HTTP/2 push — evaluate the load separately.
 
-**Внимание.**
-- Селекторы и каскадный порядок ДОЛЖНЫ совпадать (порядок @import = порядок исходного файла, плюс «overview tightening» ПОСЛЕ исходного `.cards`/`.overview-grid`).
-- Включить в `package_data` (см. [pyproject.toml](../../../pyproject.toml)) папку `css/**`.
-- Проверить визуально все пять страниц через playwright-скрипты (`.cod-doc-pw-*.py` уже есть в репозитории) до и после.
+**Attention.**
+- Selectors and the cascade order MUST match (the @import order = the order of the original file, plus "overview tightening" AFTER the original `.cards`/`.overview-grid`).
+- Include the folder `css/**` in `package_data` (see [pyproject.toml](../../../pyproject.toml)).
+- Visually check all five pages via playwright scripts (`.cod-doc-pw-*.py` already exist in the repo) before and after.
 
 **Acceptance.**
-- [ ] Все страницы рендерятся идентично (скриншоты совпадают, baseline в `/tmp/cod-doc-playwright-shots/`).
-- [ ] Каждый партиал ≤ 200 LOC; `pages/task-detail.css` допускается до 380 LOC.
-- [ ] Раздача через `/static/css/*` работает (StaticFiles mount уже есть).
+- [ ] All pages render identically (screenshots match, baseline in `/tmp/cod-doc-playwright-shots/`).
+- [ ] Each partial ≤ 200 LOC; `pages/task-detail.css` may be up to 380 LOC.
+- [ ] Serving via `/static/css/*` works (the StaticFiles mount is already there).
 
 ---
 
 ## Section H — Tests
 
-> Тесты режутся только если у них есть **естественная сценарная граница**. Цель — НЕ уменьшить файл во что бы то ни стало, а сгруппировать тесты по поведению, чтобы при падении ясно, какая фича сломалась.
+> Tests are split only if they have a **natural scenario boundary**. The goal is NOT to shrink the file at all costs, but to group tests by behavior so that on a failure it is clear which feature broke.
 >
-> Везде сохраняется паттерн `engine_with_schema` / `_run_alembic_upgrade` / `db_url` fixture — они переносятся в `tests/services/conftest.py` (если ещё не там) ДО разбиения. Это отдельная подзадача внутри RFL-070.
+> Everywhere the pattern `engine_with_schema` / `_run_alembic_upgrade` / `db_url` fixture is preserved — they move to `tests/services/conftest.py` (if not there yet) BEFORE the split. This is a separate subtask inside RFL-070.
 
 ### RFL-070 — Refactor: extract shared fixtures into `tests/services/conftest.py`
 
 **Type:** refactor   **Priority:** medium   **Section:** H-Tests
 
-**Зачем.** Все тестовые модули в `tests/services/` повторяют:
+**Why.** All test modules in `tests/services/` repeat:
 ```python
 def _run_alembic_upgrade(db_url: str) -> None: ...
 @pytest.fixture
@@ -552,21 +552,21 @@ def db_url(tmp_path: Path) -> str: ...
 def engine_with_schema(db_url: str): ...
 ```
 
-(исторически одинаковые блоки жили в `test_doc_service.py`, `test_task_service.py`,
-`test_plan_service.py`, `test_story_service.py`, `test_link_service.py`; после
-разрезания см. текущие focused tests: [test_doc_create.py](../../../tests/services/test_doc_create.py),
+(historically identical blocks lived in `test_doc_service.py`, `test_task_service.py`,
+`test_plan_service.py`, `test_story_service.py`, `test_link_service.py`; after
+the split see the current focused tests: [test_doc_create.py](../../../tests/services/test_doc_create.py),
 [test_task_create.py](../../../tests/services/test_task_create.py),
 [test_plan_recalc.py](../../../tests/services/test_plan_recalc.py),
 [test_story_crud.py](../../../tests/services/test_story_crud.py),
 [test_link_parser.py](../../../tests/services/test_link_parser.py),
 [test_projection_service.py](../../../tests/services/test_projection_service.py)).
 
-**Действие.** Создать (или дополнить) `tests/services/conftest.py` с этими тремя элементами. Удалить копии из шести модулей. ⚠️ ПРЕДВАРЯЕТ задачи RFL-071..RFL-075 — без неё каждое последующее разбиение раздувает дублирование.
+**Action.** Create (or extend) `tests/services/conftest.py` with these three elements. Remove the copies from the six modules. ⚠️ PRECEDES tasks RFL-071..RFL-075 — without it every subsequent split inflates the duplication.
 
 **Acceptance.**
-- [ ] `pytest tests/services/ -q` зелёный.
-- [ ] В каждом из шести `test_*.py` фикстуры удалены, а тесты остаются на месте.
-- [ ] Сокращение строк по каждому файлу ~25 LOC (= общий минус ~150 LOC до основного разбиения).
+- [ ] `pytest tests/services/ -q` is green.
+- [ ] In each of the six `test_*.py` the fixtures are removed, and the tests stay in place.
+- [ ] Line reduction per file ~25 LOC (= a total minus ~150 LOC before the main split).
 
 ---
 
@@ -574,15 +574,15 @@ def engine_with_schema(db_url: str): ...
 
 **Type:** refactor   **Priority:** medium   **Section:** H-Tests
 
-**Существующая разметка** (см. `# ====` маркеры): parser tests / sync_section / resolve / verify / rename_cascade / rename_cascade with path_map / DocService↔link cascade.
+**Existing markup** (see the `# ====` markers): parser tests / sync_section / resolve / verify / rename_cascade / rename_cascade with path_map / DocService↔link cascade.
 
-**Целевая структура.**
+**Target structure.**
 
 ```
 tests/services/link/
 ├── __init__.py
 ├── _helpers.py              # _seed_project, _add_doc, _add_doc_with_path
-├── test_parser.py           # block 1: чистые парсер-тесты (без БД)
+├── test_parser.py           # block 1: pure parser tests (no DB)
 ├── test_sync_section.py     # block 2
 ├── test_resolve.py          # block 3
 ├── test_verify.py           # block 4
@@ -591,8 +591,8 @@ tests/services/link/
 ```
 
 **Acceptance.**
-- [ ] `pytest tests/services/link/ -q` — то же количество тестов, тот же результат.
-- [ ] Каждый файл ≤ 250 LOC.
+- [ ] `pytest tests/services/link/ -q` — the same number of tests, the same result.
+- [ ] Each file ≤ 250 LOC.
 
 ---
 
@@ -600,9 +600,9 @@ tests/services/link/
 
 **Type:** refactor   **Priority:** low   **Section:** H-Tests
 
-**Существующая разметка:** create / update_status / acceptance / link / coverage.
+**Existing markup:** create / update_status / acceptance / link / coverage.
 
-**Целевая структура.**
+**Target structure.**
 
 ```
 tests/services/story/
@@ -615,7 +615,7 @@ tests/services/story/
 └── test_coverage.py
 ```
 
-**Acceptance.** Каждый файл ≤ 200 LOC; счётчик тестов сохранён.
+**Acceptance.** Each file ≤ 200 LOC; the test count is preserved.
 
 ---
 
@@ -623,9 +623,9 @@ tests/services/story/
 
 **Type:** refactor   **Priority:** low   **Section:** H-Tests
 
-**Группы:** create + create-validation / sections (add/list) / render_body / patch_section + concurrency / rename / path-validation.
+**Groups:** create + create-validation / sections (add/list) / render_body / patch_section + concurrency / rename / path-validation.
 
-**Целевая структура.**
+**Target structure.**
 
 ```
 tests/services/doc/
@@ -634,12 +634,12 @@ tests/services/doc/
 ├── test_create.py
 ├── test_sections.py         # add_section, get_sections
 ├── test_render_body.py
-├── test_patch_section.py    # включая concurrency conflict
+├── test_patch_section.py    # including the concurrency conflict
 ├── test_rename.py
-└── test_path_validation.py  # SD-100, абсолютные/traversal-пути
+└── test_path_validation.py  # SD-100, absolute/traversal paths
 ```
 
-**Acceptance.** Каждый файл ≤ 200 LOC.
+**Acceptance.** Each file ≤ 200 LOC.
 
 ---
 
@@ -647,9 +647,9 @@ tests/services/doc/
 
 **Type:** refactor   **Priority:** low   **Section:** H-Tests
 
-**Группы (по разметке `# ====`):** recalc / ready / audit / export.
+**Groups (by the `# ====` markup):** recalc / ready / audit / export.
 
-**Целевая структура.**
+**Target structure.**
 
 ```
 tests/services/plan/
@@ -661,9 +661,9 @@ tests/services/plan/
 └── test_export.py
 ```
 
-После выполнения RFL-074 имеет смысл также вынести `forward_chain` / `reverse_chain` / `critical_path` тесты в `test_graph.py` (если они существуют — найти и доперенести).
+After RFL-074 it also makes sense to move the `forward_chain` / `reverse_chain` / `critical_path` tests into `test_graph.py` (if they exist — find and move them too).
 
-**Acceptance.** Каждый файл ≤ 200 LOC.
+**Acceptance.** Each file ≤ 200 LOC.
 
 ---
 
@@ -671,9 +671,9 @@ tests/services/plan/
 
 **Type:** refactor   **Priority:** low   **Section:** H-Tests
 
-**Группы:** create (+ id-generation, validation) / update_status / complete (с deps + concurrency) / list_for_plan.
+**Groups:** create (+ id-generation, validation) / update_status / complete (with deps + concurrency) / list_for_plan.
 
-**Целевая структура.**
+**Target structure.**
 
 ```
 tests/services/task/
@@ -685,55 +685,55 @@ tests/services/task/
 └── test_list.py
 ```
 
-**Acceptance.** Каждый файл ≤ 200 LOC.
+**Acceptance.** Each file ≤ 200 LOC.
 
 ---
 
-## Out of scope (не трогаем сейчас)
+## Out of scope (do not touch now)
 
-Файлы > 400 LOC, которые НЕ попадают в этот план — с обоснованием:
+Files > 400 LOC that are NOT covered by this plan — with a rationale:
 
-| Файл | LOC | Причина не разбивать |
+| File | LOC | Reason not to split |
 |:-----|----:|:---------------------|
-| `docs/system/roadmap/web-frontend-task-plan.md` | 1339 | Документ-план — намеренно один файл, разбиение разорвёт связность Progress Overview / Next Batch. |
-| `docs/system/roadmap/cod-doc-task-plan.md` | 815 | Аналогично. |
-| `docs/HANDBOOK.md` | 759 | Single-document product guide (см. коммит f897bc0). Разбиение противоречит замыслу. |
-| `docs/system/roadmap/audit-followups-task-plan.md` | 511 | Активный план, см. выше. |
-| `docs/system/DATA_MODEL.md` | 499 | Архитектурный документ; рекомендации по разбиению — отдельный аудит. |
-| `docs/cod-doc-guide.md` | 412 | Гайд для пользователя; разбиение возможно, но требует UX-решения. |
-| `tests/services/test_projection_service.py` | 411 | На грани, темы хорошо размечены, но всего 411 — разбиение даст 4 файла по ~100 LOC, что не оправдано. Если RFL-070 уберёт ~25 LOC fixture'ов — станет 386, граница. **Решение:** не делим в этой итерации. |
+| `docs/system/roadmap/web-frontend-task-plan.md` | 1339 | A plan document — intentionally one file; a split would break the cohesion of Progress Overview / Next Batch. |
+| `docs/system/roadmap/cod-doc-task-plan.md` | 815 | Likewise. |
+| `docs/HANDBOOK.md` | 759 | A single-document product guide (see commit f897bc0). A split contradicts the intent. |
+| `docs/system/roadmap/audit-followups-task-plan.md` | 511 | An active plan, see above. |
+| `docs/system/DATA_MODEL.md` | 499 | An architectural document; split recommendations — a separate audit. |
+| `docs/cod-doc-guide.md` | 412 | A user guide; a split is possible but needs a UX decision. |
+| `tests/services/test_projection_service.py` | 411 | On the edge, the topics are well marked, but only 411 — a split would give 4 files of ~100 LOC, which is not justified. If RFL-070 removes ~25 LOC of fixtures — it becomes 386, on the boundary. **Decision:** do not split in this iteration. |
 
 ## Sequencing
 
-Безопасный порядок:
+A safe order:
 
-1. **RFL-070** (вынос fixtures в conftest.py) — **первым**, иначе каждое разбиение тестов раздувает дублирование.
-2. **RFL-014** (validation), **RFL-013** (projection) — самые маленькие сервисы, низкий риск, отрабатываем паттерн «сервис → пакет с фасадом».
-3. **RFL-010** (plan_service), **RFL-011** (link_service), **RFL-012** (story_service) — крупные сервисы; используем уже отработанный паттерн.
-4. **RFL-020** (models) — отдельной PR, с особым вниманием к alembic-diff.
-5. **RFL-001** (pages), **RFL-002** (fragments) — web-слой; smoke-тестируем через playwright.
-6. **RFL-040** (mcp/server) — много мелких регистраций, низкий риск.
-7. **RFL-030**, **RFL-031**, **RFL-032** (CLI) — параллелятся.
-8. **RFL-050** (TUI wizard) — изолированная зона, можно когда угодно.
-9. **RFL-060** (CSS) — после визуального снапшота через playwright.
-10. **RFL-071..RFL-075** (тесты) — последними, когда public API сервисов уже стабилизирован.
+1. **RFL-070** (move fixtures to conftest.py) — **first**, otherwise every test split inflates duplication.
+2. **RFL-014** (validation), **RFL-013** (projection) — the smallest services, low risk, work out the "service → package with a facade" pattern.
+3. **RFL-010** (plan_service), **RFL-011** (link_service), **RFL-012** (story_service) — large services; use the already worked-out pattern.
+4. **RFL-020** (models) — a separate PR, with special attention to the alembic diff.
+5. **RFL-001** (pages), **RFL-002** (fragments) — the web layer; smoke-test via playwright.
+6. **RFL-040** (mcp/server) — many small registrations, low risk.
+7. **RFL-030**, **RFL-031**, **RFL-032** (CLI) — run in parallel.
+8. **RFL-050** (TUI wizard) — an isolated zone, can be done anytime.
+9. **RFL-060** (CSS) — after a visual snapshot via playwright.
+10. **RFL-071..RFL-075** (tests) — last, when the public API of the services is already stable.
 
-Каждая задача — отдельный PR, ≤ ~600 LOC diff, легко ревьюируется.
+Each task — a separate PR, ≤ ~600 LOC diff, easy to review.
 
-## Verify-loop (общее для всех задач)
+## Verify-loop (common to all tasks)
 
 ```bash
-# до разбиения — захватить baseline
+# before the split — capture the baseline
 pytest -q  > /tmp/baseline.txt
 ruff check
 mypy cod_doc
 
-# после разбиения
+# after the split
 pytest -q  > /tmp/after.txt
-diff /tmp/baseline.txt /tmp/after.txt   # должно быть пусто (или только время)
+diff /tmp/baseline.txt /tmp/after.txt   # should be empty (or only time)
 ruff check
 mypy cod_doc
 
-# для web/CSS — playwright скриншоты до/после
-python .cod-doc-pw-task-detail.py   # уже в репо
+# for web/CSS — playwright screenshots before/after
+python .cod-doc-pw-task-detail.py   # already in the repo
 ```

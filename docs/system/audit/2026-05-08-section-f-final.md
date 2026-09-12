@@ -14,26 +14,26 @@ related_docs:
 
 # Section F — Final Closure Report (8 remaining backlog tasks)
 
-> **Назначение.** Зафиксировать закрытие последних 8 задач из backlog
-> (PCA-914, 915, 917, 921, 922, 924, 925, 928). Вместе с предыдущей
-> консолидацией это закрывает весь paperclip-adoption RFC-беклог.
+> **Purpose.** Record the closure of the last 8 tasks from the backlog
+> (PCA-914, 915, 917, 921, 922, 924, 925, 928). Together with the previous
+> consolidation this closes the entire paperclip-adoption RFC backlog.
 
 ## 1. TL;DR
 
-- **PCA-915** (F4) — `_uuid7()` (RFC 9562 §5.7) в `activity_service`. Время-сортируемые ID без новых зависимостей.
-- **PCA-925** (H2) — `_PRICING_USD_PER_MTOK` dict в `openai_compat.py`. Покрывает claude-sonnet-4-6, claude-opus-4, claude-3-5-{sonnet,haiku}, gpt-4o, gpt-4o-mini, o1, gemini-2.0-flash, gemini-pro. Lookup с/без `provider/` префикса.
-- **PCA-917** (F6) — `_revert_task_doc()` в `revision_service`; `EntityKind.TASK_DOC` теперь поддерживается в `revert()`.
-- **PCA-921** (G4) — `checkout_service.warn_if_no_checkout()` + вызовы в `task.complete`, `task.set_blocker`, `task.log_progress`. Логирует warning, не падает.
-- **PCA-928** (I1) — `DocumentModel.content_sha256_head` + migration `0016_document_sha256`. `scan_folder()` сравнивает stored sha с file head → корректный `changed` статус. `import_or_update_markdown(source_sha256=...)` сохраняет sha при импорте; bulk-import endpoint передаёт sha.
-- **PCA-914** (F3) — `_bootstrap_default_routines()` в `project_service.init_project`. Создаёт `approval_stale_default` routine (cron `*/15 * * * *`) при инициализации проекта. Idempotent.
-- **PCA-922** (G5) — `_update_or_create_finding_task()` в `routine_service.run_now()` для `on_finding=update_existing_task`. Stable signature (`<!-- routine:NAME -->`) в description обеспечивает дедупликацию.
-- **PCA-924** (H1) — `ChatChunk` тип + `stream_chat()` в `MockAdapter`. `supports_streaming(adapter)` хелпер. Real adapters (openai_compat / anthropic) пока не реализуют — Protocol не требует. **2 новых теста**.
-- **2 новых тестa** (streaming). **1010 tests pass** (1008 → 1010).
-- **0 deferred findings** — backlog полностью пуст. **61 task done** (53 → 61).
+- **PCA-915** (F4) — `_uuid7()` (RFC 9562 §5.7) in `activity_service`. Time-sortable IDs without new dependencies.
+- **PCA-925** (H2) — `_PRICING_USD_PER_MTOK` dict in `openai_compat.py`. Covers claude-sonnet-4-6, claude-opus-4, claude-3-5-{sonnet,haiku}, gpt-4o, gpt-4o-mini, o1, gemini-2.0-flash, gemini-pro. Lookup with/without the `provider/` prefix.
+- **PCA-917** (F6) — `_revert_task_doc()` in `revision_service`; `EntityKind.TASK_DOC` is now supported in `revert()`.
+- **PCA-921** (G4) — `checkout_service.warn_if_no_checkout()` + calls in `task.complete`, `task.set_blocker`, `task.log_progress`. Logs a warning, does not fail.
+- **PCA-928** (I1) — `DocumentModel.content_sha256_head` + migration `0016_document_sha256`. `scan_folder()` compares the stored sha with the file head → correct `changed` status. `import_or_update_markdown(source_sha256=...)` stores the sha on import; the bulk-import endpoint passes the sha.
+- **PCA-914** (F3) — `_bootstrap_default_routines()` in `project_service.init_project`. Creates an `approval_stale_default` routine (cron `*/15 * * * *`) on project init. Idempotent.
+- **PCA-922** (G5) — `_update_or_create_finding_task()` in `routine_service.run_now()` for `on_finding=update_existing_task`. A stable signature (`<!-- routine:NAME -->`) in the description ensures deduplication.
+- **PCA-924** (H1) — `ChatChunk` type + `stream_chat()` in `MockAdapter`. `supports_streaming(adapter)` helper. Real adapters (openai_compat / anthropic) do not implement it yet — the Protocol does not require it. **2 new tests**.
+- **2 new tests** (streaming). **1010 tests pass** (1008 → 1010).
+- **0 deferred findings** — the backlog is completely empty. **61 tasks done** (53 → 61).
 
 ## 2. Section F final deliverables
 
-| # | Задача | Файл / артефакт | Статус |
+| # | Task | File / artifact | Status |
 |---|--------|------------------|--------|
 | 1 | UUID7 generator | `cod_doc/services/activity_service.py` | ✅ |
 | 2 | Pricing dict + cost_estimate | `cod_doc/agent/adapters/openai_compat.py` | ✅ |
@@ -61,9 +61,9 @@ related_docs:
 - [x] **PCA-922** — Routine with `on_finding=update_existing_task` finds open task with `<!-- routine:NAME -->` signature and updates; otherwise creates a fallback task with `id_prefix="ROU"`.
 - [x] **PCA-924** — `MockAdapter.stream_chat()` yields `ChatChunk` for text (≥1 content_delta + 1 finish) and tool-calls (1 tool_call_delta + 1 finish); `supports_streaming(adapter)` returns True.
 
-## 4. Метрики
+## 4. Metrics
 
-| Метрика | До | После | Δ |
+| Metric | Before | After | Δ |
 |---------|---:|------:|--:|
 | `tests/` total | 1008 | 1010 | +2 |
 | Alembic migrations | 15 | 16 | +1 |
@@ -73,10 +73,10 @@ related_docs:
 | Section F closed | 8 | 16 | +8 |
 | **Grand total done (A–F)** | **53** | **61** | **+8** |
 
-## 5. RFC статус — DRAINED
+## 5. RFC status — DRAINED
 
-Весь paperclip-adoption RFC-беклог (PCA-001..PCA-930) реализован.
-Sections A, B, C, D, E, F полностью закрыты.
+The entire paperclip-adoption RFC backlog (PCA-001..PCA-930) is implemented.
+Sections A, B, C, D, E, F are fully closed.
 
 | Section | Phase | Tasks | Status |
 |:--------|:------|------:|:-------|
@@ -88,26 +88,26 @@ Sections A, B, C, D, E, F полностью закрыты.
 | F | Tooling fixes + backlog | 21 | ✅ |
 | **TOTAL** | | **61** | **✅** |
 
-## 6. Что не входило в RFC (для следующих циклов)
+## 6. What was not in the RFC (for next cycles)
 
-Эти направления возникали по ходу работы, но не входили в исходный
-RFC-беклог:
+These directions came up during the work but were not part of the original
+RFC backlog:
 
-- **Real-adapter streaming** — `OpenAICompatAdapter.stream_chat()` и
-  `AnthropicAdapter.stream_chat()`. Protocol готов, MockAdapter работает.
-  SDK-streaming требует переработки `Orchestrator._agent_loop`, чтобы
-  агент мог потреблять чанки до tool-call'а.
-- **Web UI «Suggested links»** — подвал doc_show.html, accept/reject
-  кнопки для `link_suggestion` (proposal 15 §2.3.3 шаг 15.7).
-- **Cost dashboard** — UI-страница для `AgentRun.llm_tokens_in/out` ×
-  pricing dict, агрегаты по модели и проекту.
-- **Routine UI** — web-страница `/p/{slug}/routines` для CRUD + history
-  (сейчас доступно только через MCP/CLI).
+- **Real-adapter streaming** — `OpenAICompatAdapter.stream_chat()` and
+  `AnthropicAdapter.stream_chat()`. The Protocol is ready, the MockAdapter works.
+  SDK-streaming requires reworking `Orchestrator._agent_loop` so that the
+  agent can consume chunks before the tool-call.
+- **Web UI "Suggested links"** — the footer of doc_show.html, accept/reject
+  buttons for `link_suggestion` (proposal 15 §2.3.3 step 15.7).
+- **Cost dashboard** — a UI page for `AgentRun.llm_tokens_in/out` ×
+  the pricing dict, aggregates by model and project.
+- **Routine UI** — a web page `/p/{slug}/routines` for CRUD + history
+  (currently available only through MCP/CLI).
 - **External adapters CLI** — `cod-doc adapter add NAME --module=…`
-  (сейчас только через JSON plugin loader).
+  (currently only through the JSON plugin loader).
 
-## 7. Рекомендация
+## 7. Recommendation
 
-RFC drained. Следующий шаг — либо новый RFC от пользователя, либо
-proactive consolidation cycle (повторный аудит чистого репозитория с
-новой парой глаз).
+RFC drained. The next step is either a new RFC from the user, or
+a proactive consolidation cycle (a re-audit of the clean repository with
+a fresh pair of eyes).

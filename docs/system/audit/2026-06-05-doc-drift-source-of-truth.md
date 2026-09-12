@@ -103,7 +103,7 @@ Second pass result:
 Git history shows that commit `5cf35ab` introduced `adr_migrator.py` to parse
 legacy ADR tables from `arch/architecture.md` into DB rows. The current DB had
 only `ADR-001`, and that row is a newer proposed decision named "LLM
-Cross-Session Memory Layer", not the legacy "Многослойная архитектура с DIP".
+Cross-Session Memory Layer", not the legacy "Multi-layer architecture with DIP".
 
 Applied recovery:
 
@@ -114,7 +114,7 @@ Applied recovery:
 - Reconciled the `ADR-001` conflict by renumbering the live "LLM Cross-Session
   Memory Layer" row to `ADR-009`, preserving its row id, creation timestamp,
   author, context, and decision.
-- Created the legacy accepted `ADR-001` ("Многослойная архитектура с DIP") via
+- Created the legacy accepted `ADR-001` ("Multi-layer architecture with DIP") via
   the same git-history migrator.
 - Wrote an ADR revision and `adr.renumbered` activity event for the
   `ADR-001` -> `ADR-009` move, including the git-history rationale.

@@ -1,14 +1,14 @@
 # COD-DOC Session Log
 
-> Дата: 2025-04-05  
-> Формат: asciinema-style текстовый лог  
-> Цель: исправление TUI wizard, добавление debug-логирования, верификация
+> Date: 2025-04-05  
+> Format: asciinema-style text log  
+> Goal: fix the TUI wizard, add debug logging, verification
 
 ---
 
-## 1. Диагностика: Static.Focus crash
+## 1. Diagnostics: Static.Focus crash
 
-**Проблема:** Wizard TUI падал при запуске из-за несовместимости с текущей версией Textual.
+**Problem:** The TUI Wizard crashed on launch due to incompatibility with the current version of Textual.
 
 ```
 $ cd /Users/dakh/Git/cod-doc
@@ -20,7 +20,7 @@ Traceback (most recent call last):
 AttributeError: type object 'Static' has no attribute 'Focus'
 ```
 
-**Исправление:** `Static.Focus` → `Static.focus` (строчная `f`) + обобщённая сигнатура обработчика.
+**Fix:** `Static.Focus` → `Static.focus` (lowercase `f`) + a generalized handler signature.
 
 ```diff
 - @on(Static.Focus)
@@ -32,56 +32,56 @@ AttributeError: type object 'Static' has no attribute 'Focus'
 
 ---
 
-## 2. Добавление debug-логирования в TUI
+## 2. Adding debug logging to the TUI
 
 ### 2.1 app.py — CodDocApp
 
 ```
 $ grep -n "debug" cod_doc/tui/app.py
-# Добавлен параметр debug_log_file в конструктор
-# Метод _configure_tui_debug_logger() создаёт FileHandler для namespace cod_doc.tui
-# Debug-события: mount, screen selection
+# Added a debug_log_file parameter to the constructor
+# The _configure_tui_debug_logger() method creates a FileHandler for the cod_doc.tui namespace
+# Debug events: mount, screen selection
 ```
 
 ### 2.2 wizard.py — WizardScreen
 
 ```
-# Debug-логи на каждом шаге:
+# Debug logs at each step:
 #   mount, step transitions, validation failures, save actions, finish
 ```
 
 ### 2.3 dashboard.py — DashboardScreen
 
 ```
-# Debug-логи: mount, reload projects, select project
+# Debug logs: mount, reload projects, select project
 ```
 
 ### 2.4 agent_run.py — AgentRunScreen
 
 ```
-# Debug-логи: mount, button presses, start/stop agent, events, errors, finish
-# Исправлено: переменная log -> rich_log в методе _log() чтобы не затенять модульный logger
+# Debug logs: mount, button presses, start/stop agent, events, errors, finish
+# Fixed: log -> rich_log in the _log() method so it doesn't shadow the module logger
 ```
 
 ---
 
-## 3. CLI: --debug-log-file и --text fallback
+## 3. CLI: --debug-log-file and --text fallback
 
-### 3.1 Добавлены опции
+### 3.1 Added options
 
 ```
 $ .venv/bin/cod-doc wizard --help
 Usage: cod-doc wizard [OPTIONS]
 
-  Запустить мастер настройки.
+  Run the setup wizard.
 
 Options:
-  --debug-log-file TEXT  Путь к файлу debug-лога wizard
-  --text                 Запустить текстовый wizard без TUI
+  --debug-log-file TEXT  Path to the wizard debug log file
+  --text                 Run a text wizard without TUI
   --help                 Show this message and exit.
 ```
 
-### 3.2 Авто-fallback при краше TUI
+### 3.2 Auto-fallback on TUI crash
 
 ```python
 # cli.py — wizard command
@@ -89,13 +89,13 @@ try:
     app.run()
 except Exception:
     log.exception("Wizard launch failed")
-    console.print("[yellow]Переключаюсь на текстовый wizard.[/yellow]")
+    console.print("[yellow]Falling back to the text wizard.[/yellow]")
     _run_text_wizard(cfg)
 ```
 
 ---
 
-## 4. Верификация: тесты
+## 4. Verification: tests
 
 ```
 $ cd /Users/dakh/Git/cod-doc
@@ -106,7 +106,7 @@ $ .venv/bin/python -m pytest tests/ -q --tb=short
 
 ---
 
-## 5. Верификация: text wizard
+## 5. Verification: text wizard
 
 ```
 $ mkdir -p /tmp/test-wizard-proj
@@ -121,16 +121,16 @@ MASTER.md
 EOF
 
 COD-DOC text wizard
-Настройка через обычный терминал без TUI.
+Setup via a plain terminal without TUI.
 
 OpenRouter API key: LLM model [anthropic/claude-sonnet-4-6]: Base URL [https://openrouter.ai/api/v1]:
 Path to first project [/Users/dakh/Git/cod-doc]: Project name: Path to MASTER.md [MASTER.md]:
 12:14:35 DEBUG    cli: Text wizard saved API config
 12:14:35 DEBUG    cli [project=test-wizard-proj]: Text wizard initialized project
-✅ Настройка завершена. Проект 'test-wizard-proj' добавлен.
+✅ Setup complete. Project 'test-wizard-proj' added.
 ```
 
-### Валидация ошибки (несуществующий каталог)
+### Error validation (nonexistent directory)
 
 ```
 $ .venv/bin/cod-doc --log-level DEBUG wizard --text <<EOF
@@ -142,17 +142,17 @@ test-proj
 MASTER.md
 EOF
 
-Error: Директория не найдена: /private/tmp/nonexistent-dir
+Error: Directory not found: /private/tmp/nonexistent-dir
 EXIT: 1
 ```
 
 ---
 
-## 6. Верификация: TUI wizard
+## 6. Verification: TUI wizard
 
 ```
 $ .venv/bin/cod-doc wizard --debug-log-file /tmp/wizard-debug.log
-# TUI запустился корректно (alternate buffer)
+# TUI launched correctly (alternate buffer)
 
 $ cat /tmp/wizard-debug.log
 2026-04-05 15:14:42,649 DEBUG cod_doc.tui.app: TUI debug logging enabled
@@ -160,24 +160,24 @@ $ cat /tmp/wizard-debug.log
 
 ---
 
-## 7. Верификация: project list и cleanup
+## 7. Verification: project list and cleanup
 
 ```
 $ .venv/bin/cod-doc project list
 ┌──────────────────┬────────────────────────────┬───────────┬─────────┬─────────────┐
-│ Имя              │ Путь                       │ MASTER.md │ Статус  │ Задачи      │
+│ Name             │ Path                       │ MASTER.md │ Status  │ Tasks       │
 ├──────────────────┼────────────────────────────┼───────────┼─────────┼─────────────┤
 │ integration-test │ /private/var/folders/...   │ ✅        │ 🟢 idle  │ 🟡1 🟢0 🔴0  │
 │ test-wizard-proj │ /private/tmp/test-wiz...   │ ✅        │ 🟢 idle  │ 🟡0 🟢0 🔴0  │
 └──────────────────┴────────────────────────────┴───────────┴─────────┴─────────────┘
 
 $ .venv/bin/cod-doc project remove test-wizard-proj
-Проект 'test-wizard-proj' удалён из реестра.
+Project 'test-wizard-proj' removed from the registry.
 ```
 
 ---
 
-## 8. Верификация: import agent_run после fix
+## 8. Verification: import agent_run after the fix
 
 ```
 $ .venv/bin/python -c "from cod_doc.tui.screens.agent_run import AgentRunScreen; print('OK')"
@@ -186,9 +186,9 @@ agent_run import OK
 
 ---
 
-## 9. Исправление: log shadowing в agent_run.py
+## 9. Fix: log shadowing in agent_run.py
 
-**Проблема:** Метод `_log()` объявлял локальную переменную `log` (RichLog widget), затеняя модульную переменную `log` (Logger).
+**Problem:** The `_log()` method declared a local variable `log` (the RichLog widget), shadowing the module-level variable `log` (the Logger).
 
 ```diff
   def _log(self, message: str, style: str = "white", prefix: str = "") -> None:
@@ -205,9 +205,9 @@ agent_run import OK
 
 ---
 
-## Итог
+## Summary
 
-| Задача | Статус |
+| Task | Status |
 |--------|--------|
 | Fix Static.Focus → Static.focus | ✅ |
 | Debug logging: app, wizard, dashboard, agent_run | ✅ |
@@ -215,6 +215,6 @@ agent_run import OK
 | CLI --text wizard fallback | ✅ |
 | Auto-fallback TUI → text | ✅ |
 | Fix log shadowing in agent_run.py | ✅ |
-| Text wizard: работает | ✅ |
-| TUI wizard: запускается | ✅ |
-| 49/49 тестов: pass | ✅ |
+| Text wizard: works | ✅ |
+| TUI wizard: launches | ✅ |
+| 49/49 tests: pass | ✅ |

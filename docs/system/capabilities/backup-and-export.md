@@ -15,96 +15,96 @@ audience: [contributors, agents]
 
 # Capability — Backup, Export & Recovery
 
-> ⚠️ **Намечено, не реализовано (на 2026-06-08).** Это спецификация будущей
-> возможности (DOC-ME-2). Команды `cod-doc backup|restore|export` ещё не
-> существуют в CLI; документ задаёт целевой контракт, чтобы реализация и
-> аудит были согласованы заранее.
+> ⚠️ **Planned, not implemented (as of 2026-06-08).** This is a specification of a future
+> capability (DOC-ME-2). The `cod-doc backup|restore|export` commands do not yet
+> exist in the CLI; the document sets the target contract so that implementation and
+> audit are agreed in advance.
 
-## 1. Зачем
+## 1. Why
 
-БД (`.cod-doc/state.db`) — источник истины для документов, задач, ссылок и
-истории (см. [DATA_MODEL.md](../DATA_MODEL.md)). Markdown — это проекция. Значит
-надёжность данных = надёжность БД, и нужны три операции: снять снимок, восстановить
-его, и выгрузить данные в нейтральный формат для миграции на другое хранилище.
+The DB (`.cod-doc/state.db`) is the source of truth for documents, tasks, links and
+history (see [DATA_MODEL.md](../DATA_MODEL.md)). Markdown is a projection. So
+data reliability = DB reliability, and three operations are needed: take a snapshot, restore
+it, and export the data to a neutral format for migration to another storage.
 
 ## 2. Backup
 
 `cod-doc backup --output state.tar.gz`
 
-- Архивирует `.cod-doc/state.db` **плюс** projection-hash baseline (чтобы
-  восстановление можно было сверить с принятым состоянием проекции).
-- Включает версию схемы (alembic revision), чтобы `restore` мог проверить
-  совместимость.
-- Безопасно на горячей БД: снимок берётся через `VACUUM INTO` / резервное
-  копирование SQLite, не копированием файла под нагрузкой.
+- Archives `.cod-doc/state.db` **plus** the projection-hash baseline (so that
+  restoration can be checked against the accepted projection state).
+- Includes the schema version (alembic revision), so `restore` can verify
+  compatibility.
+- Safe on a hot DB: the snapshot is taken via `VACUUM INTO` / SQLite backup,
+  not by copying the file under load.
 
 ## 3. Restore
 
 `cod-doc restore <archive>`
 
-- Проверяет совместимость миграций: если alembic-revision архива новее/старее
-  текущего кода — отказ с инструкцией (накатить миграции / обновить пакет), а не
-  тихая порча.
-- Восстанавливает БД и сверяет projection-hash: расхождение → предупреждение
-  `restore-drift`, а не молчаливая перезапись markdown.
-- Идемпотентен по отношению к уже совпадающему состоянию.
+- Checks migration compatibility: if the archive's alembic-revision is newer/older
+  than the current code — refuses with an instruction (apply migrations / update the package), rather than
+  silent corruption.
+- Restores the DB and checks the projection-hash: a mismatch → a
+  `restore-drift` warning, not a silent markdown overwrite.
+- Idempotent with respect to an already-matching state.
 
 ## 4. Export
 
 `cod-doc export --format markdown|json|sqlite-dump`
 
-Выгрузка для миграции к другому хранилищу или внешнего анализа:
+An export for migration to another storage or external analysis:
 
-- `markdown` — рендер всех документов в проекцию (controlled-операция, см.
-  предупреждение о round-trip ниже).
-- `json` — структурированный дамп сущностей (documents/sections/tasks/links/
-  revisions) для импорта в другую систему.
-- `sqlite-dump` — сырой SQL-дамп схемы и данных.
+- `markdown` — render all documents into a projection (a controlled operation, see
+  the round-trip warning below).
+- `json` — a structured dump of entities (documents/sections/tasks/links/
+  revisions) for import into another system.
+- `sqlite-dump` — a raw SQL dump of the schema and data.
 
-## 5. Риски и ограничения
+## 5. Risks and limitations
 
-- **Round-trip fidelity.** Закрыто в ADO-010 (находка F7 аудита 2026-07-29):
-  `import → export` байт-идентичен для всех 71 документа `docs/` — frontmatter
-  переиспускается дословно (`document.frontmatter_raw`), H1 восстанавливается
-  из `document.title`, `preamble` отделён от первой секции. Пере-сериализация
-  frontmatter включается только когда БД разошлась с файлом по
+- **Round-trip fidelity.** Closed in ADO-010 (finding F7 of the audit 2026-07-29):
+  `import → export` is byte-identical for all 71 documents in `docs/` — frontmatter
+  is re-emitted verbatim (`document.frontmatter_raw`), H1 is restored
+  from `document.title`, `preamble` is separated from the first section. Re-serialization
+  of frontmatter is enabled only when the DB has diverged from the file on
   `type/status/owner/sensitivity/source_of_truth/title`.
-  Известные нормализации (не документы, а служебные файлы): если после
-  закрывающего `---` не было пустой строки, она появится; отсутствующая пустая
-  строка после заголовка секции тоже добавляется. Прежний чек-поинт —
+  Known normalizations (not documents, but service files): if there was no
+  empty line after the closing `---`, one appears; a missing empty
+  line after a section heading is also added. The previous checkpoint —
   [audit/2026-06-05-doc-drift-source-of-truth.md](../audit/2026-06-05-doc-drift-source-of-truth.md).
-- **Защита от перезаписи.** `doc export` отказывается писать поверх файла,
-  который не совпадает ни с последним export'ом, ни с последним принятым
-  import'ом (правка руками); поверх чужого репозитория (на CLI/MCP); и —
-  ADO-022 — поверх файла, форму которого БД не помнит (`frontmatter_raw` /
-  `title_in_body` = NULL у строк старше миграции `0025_projection_fidelity`);
-  и — ADO-015 — поверх файла, чей `type:` в БД подменён коэрцией старого
-  билда (`frontmatter_json` называет тип, который строка не хранит, — ровно
-  те строки, что чинит `0026_document_type_recoercion`).
-  `--dry-run` показывает unified diff, `--force-write` снимает все четыре
-  защиты.
-- **Лечение legacy-БД (ADO-022).** Третья защита снимается не `--force-write`,
-  а `cod-doc doc backfill-projection --project <slug>` (MCP:
-  `doc_backfill_projection`): он восстанавливает `frontmatter_raw` /
-  `title_in_body` из файлов на диске и не трогает доменные поля, так что
-  правки метаданных, сделанные в БД и ещё не выгруженные, переживают операцию —
-  в отличие от `doc import`, который применил бы frontmatter файла обратно к
-  строке. Файла нет на диске → строка остаётся NULL (`file_missing`); файл
-  байт-в-байт равен нашему последнему export'у → восстанавливать нечего
-  (`skipped`). Повторный запуск идемпотентен, `--dry-run` только считает.
-- **Лечение legacy-БД (ADO-015).** Четвёртая защита снимается только
-  применением миграций (`cod-doc project init <slug>` / `alembic upgrade
-  head`): `0026_document_type_recoercion` возвращает в `document.type`
-  авторское значение из `frontmatter_json`. Пока миграция не применена, гард
-  срабатывает — обновить пакет, не обновив БД, стало опасно ровно потому, что
-  ADO-015 сделал `capability`/`audit-report`/… хранимыми и тем снял прежнюю
-  защиту «неизвестное значение отдаём дословно».
-- **Совместимость схемы.** `restore` без проверки alembic-revision запрещён.
-- **Секреты.** Бэкап может содержать `sensitivity: internal` контент — хранить
-  как секрет, не коммитить в публичный репозиторий.
+- **Overwrite protection.** `doc export` refuses to write over a file
+  that matches neither the last export nor the last accepted
+  import (a manual edit); over a foreign repository (on CLI/MCP); and —
+  ADO-022 — over a file whose form the DB does not remember (`frontmatter_raw` /
+  `title_in_body` = NULL on rows older than migration `0025_projection_fidelity`);
+  and — ADO-015 — over a file whose `type:` in the DB was subverted by an old
+  build's coercion (`frontmatter_json` names a type that the row does not store — exactly
+  the rows that `0026_document_type_recoercion` fixes).
+  `--dry-run` shows a unified diff, `--force-write` lifts all four
+  protections.
+- **Healing a legacy DB (ADO-022).** The third protection is lifted not by `--force-write`,
+  but by `cod-doc doc backfill-projection --project <slug>` (MCP:
+  `doc_backfill_projection`): it restores `frontmatter_raw` /
+  `title_in_body` from files on disk and does not touch domain fields, so
+  metadata edits made in the DB and not yet exported survive the operation —
+  unlike `doc import`, which would apply the file's frontmatter back to the
+  row. No file on disk → the row stays NULL (`file_missing`); the file is
+  byte-for-byte equal to our last export → nothing to restore
+  (`skipped`). A re-run is idempotent, `--dry-run` only counts.
+- **Healing a legacy DB (ADO-015).** The fourth protection is lifted only
+  by applying migrations (`cod-doc project init <slug>` / `alembic upgrade
+  head`): `0026_document_type_recoercion` restores in `document.type`
+  the authorial value from `frontmatter_json`. Until the migration is applied, the guard
+  fires — updating the package without updating the DB has become dangerous precisely because
+  ADO-015 made `capability`/`audit-report`/… stored and thus removed the former
+  protection "an unknown value is emitted verbatim".
+- **Schema compatibility.** `restore` without an alembic-revision check is forbidden.
+- **Secrets.** A backup may contain `sensitivity: internal` content — store it
+  as a secret, do not commit it to a public repository.
 
-## 6. Связь с CI
+## 6. Relationship with CI
 
-Регулярный `cod-doc backup` можно завести как routine (cron) или CI-job; артефакт
-кэшируется/выгружается так же, как описано в
+A regular `cod-doc backup` can be set up as a routine (cron) or CI-job; the artifact
+is cached/uploaded the same way as described in
 [audit-and-ci.md §4.4](audit-and-ci.md).

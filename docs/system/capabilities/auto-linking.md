@@ -13,157 +13,157 @@ related_docs:
 
 # Capability — Auto-Linking
 
-> Поиск, резолвинг и поддержание ссылок без ручной работы.
+> Finding, resolving and maintaining links without manual work.
 
-## 1. Что автоматизируется
+## 1. What is automated
 
-### 1.1 Резолвинг существующих ссылок
-Любая ссылка в markdown тела секции парсится и разрешается против БД. Результат — в `link` (см. [DATA_MODEL.md §3.4](../DATA_MODEL.md)).
+### 1.1 Resolving existing links
+Any link in the markdown body of a section is parsed and resolved against the DB. The result goes into `link` (see [DATA_MODEL.md §3.4](../DATA_MODEL.md)).
 
-### 1.2 Выявление potential-links
-Когда в тексте упомянут модуль / задача / документ без явной ссылки, COD-DOC предлагает превратить упоминание в ссылку.
+### 1.2 Discovering potential-links
+When a module / task / document is mentioned in the text without an explicit link, COD-DOC offers to turn the mention into a link.
 
-Паттерны:
+Patterns:
 
-| Паттерн | Трактовка |
+| Pattern | Interpretation |
 |---------|-----------|
-| `AUTH-025` вне кода | → `[[task:AUTH-025]]` |
-| `M1 AUTH` / `M1-auth` в тексте | → `[[doc:modules/M1-auth/overview]]` |
-| `US-014` вне кода | → `[[story:US-014]]` |
-| Имя документа (по `title`) | → кандидат в canonical ref |
+| `AUTH-025` outside code | → `[[task:AUTH-025]]` |
+| `M1 AUTH` / `M1-auth` in text | → `[[doc:modules/M1-auth/overview]]` |
+| `US-014` outside code | → `[[story:US-014]]` |
+| Document name (by `title`) | → canonical ref candidate |
 
-Предложения показываются в `cod-doc audit --linkable`, но не применяются автоматически без подтверждения.
+Suggestions are shown in `cod-doc audit --linkable`, but are not applied automatically without confirmation.
 
-### 1.3 Поддержка при переименовании
-Rename документа / задачи — все входящие ссылки обновляются атомарно (см. [standards/document-link.md §5](../standards/document-link.md)).
+### 1.3 Support on rename
+Rename of a document / task — all incoming links are updated atomically (see [standards/document-link.md §5](../standards/document-link.md)).
 
-### 1.4 Верификация битости
-Регулярный job `cod-doc link verify`:
+### 1.4 Broken-link verification
+A regular job `cod-doc link verify`:
 
-- Проходит всю таблицу `link`.
-- Внутренние ссылки — пытается перерезолвить.
-- Внешние URL (при флаге `--external`) — HTTP HEAD с таймаутом.
-- Результат в `link.resolved` / `link.broken_reason` / `link.last_checked`.
+- Walks the entire `link` table.
+- Internal links — tries to re-resolve.
+- External URLs (with the `--external` flag) — HTTP HEAD with a timeout.
+- Result in `link.resolved` / `link.broken_reason` / `link.last_checked`.
 
-## 2. Индексация
+## 2. Indexing
 
-При любом patch `DocService`:
+On every patch `DocService`:
 
-1. Выделяет ссылки из body через markdown-AST (remark) + regex для wiki/canonical-ссылок.
-2. Diff vs предыдущий набор → insert/update/delete в `link`.
-3. Резолвит новые ссылки через `LinkService.resolve`.
-4. Кэширует результат.
+1. Extracts links from the body via a markdown-AST (remark) + regex for wiki/canonical links.
+2. Diff vs the previous set → insert/update/delete in `link`.
+3. Resolves new links via `LinkService.resolve`.
+4. Caches the result.
 
-## 3. Алгоритм резолвинга
+## 3. The resolving algorithm
 
 ```text
 INPUT: raw_link, from_section
-1. Parse форму (canonical|wiki|markdown|task|story|url)
-2. По форме → стратегия:
+1. Parse the form (canonical|wiki|markdown|task|story|url)
+2. By form → strategy:
    canonical → doc_key exact
    wiki      → doc_key exact → title exact → fuzzy (Lev ≤ 2) → None
    markdown  → normalize(from_section.path, raw.path) → document.path exact → None
    task      → task_id exact → None
    story     → story_id exact → None
-   url       → skip (только verify по запросу)
-3. Если resolved → set link.resolved=1 и target-поля
-4. Иначе → link.resolved=0, link.broken_reason="not-found"
+   url       → skip (verify only on request)
+3. If resolved → set link.resolved=1 and target fields
+4. Otherwise → link.resolved=0, link.broken_reason="not-found"
 ```
 
-Fuzzy-match требует подтверждения: при импорте — warning; при auto-suggestion — показывается как кандидат.
+Fuzzy-match requires confirmation: on import — a warning; on auto-suggestion — shown as a candidate.
 
-## 4. Cascade update при переименовании
+## 4. Cascade update on rename
 
-Процедура:
+The procedure:
 
 ```python
 def rename(doc, new_doc_key):
     with tx():
         old_key = doc.doc_key
         doc.doc_key = new_doc_key
-        # update входящих ссылок
+        # update incoming links
         for link in Link.query.filter_by(to_doc_key=old_key):
             link.to_doc_key = new_doc_key
             affected_sections.add(link.from_section)
-        # revision на документе
+        # revision on the document
         Revision.create(entity_kind='document', entity_id=doc.row_id,
                         diff=frontmatter_diff, reason=f"rename {old_key}→{new_doc_key}")
-        # revision на каждой затронутой секции (body не меняется,
-        # но canonical-ref в рендере другой — поэтому diff проекции)
+        # revision on each affected section (body does not change,
+        # but the canonical-ref in the render is different — hence a projection diff)
         for section in affected_sections:
             refresh_projection(section)
 ```
 
-Gotcha: если входящая ссылка была написана как markdown-relative, body-текст тоже обновляется (потому что path изменился) — там уже полноценный diff.
+Gotcha: if an incoming link was written as markdown-relative, the body text is also updated (because the path changed) — that is already a full diff.
 
 ## 5. Graph queries
 
-На базе `link` доступны готовые запросы:
+Ready-made queries on the `link` table:
 
-- **Обратные ссылки** (`cod-doc link incoming <doc>`) — кто на меня ссылается.
-- **Исходящие** (`cod-doc link outgoing <doc>`) — куда я ссылаюсь.
-- **Осиротевшие документы** (`cod-doc audit --orphans`) — `source_of_truth=true`, но входящих 0 (кроме root MASTER и NAVIGATION).
-- **Кластер доков** (`cod-doc graph cluster --around <doc>`) — BFS по `link` до глубины `N`.
+- **Backlinks** (`cod-doc link incoming <doc>`) — who links to me.
+- **Outgoing** (`cod-doc link outgoing <doc>`) — where I link to.
+- **Orphan documents** (`cod-doc audit --orphans`) — `source_of_truth=true`, but 0 incoming (except root MASTER and NAVIGATION).
+- **Doc cluster** (`cod-doc graph cluster --around <doc>`) — BFS over `link` up to depth `N`.
 
 ### 5.1 Documentation graph (DOC-ME-1) — 🟡 planned
 
-> ⚠️ **Намечено, не реализовано (на 2026-06-08).** Спецификация будущей команды;
-> сейчас доступен только ADR-граф (`cod-doc adr graph`).
+> ⚠️ **Planned, not implemented (as of 2026-06-08).** Specification of a future command;
+> currently only the ADR-graph is available (`cod-doc adr graph`).
 
-`cod-doc graph documentation --format mermaid|dot` — генерируемый аналог
-(Restate) `Documentation Graph.md`: рендерит граф `link` между документами в
-Mermaid или Graphviz/DOT для вставки в обзор или CI-артефакт. Уровни охвата:
+`cod-doc graph documentation --format mermaid|dot` — a generated analogue of
+(Restate) `Documentation Graph.md`: renders the `link` graph between documents in
+Mermaid or Graphviz/DOT for insertion into an overview or a CI artifact. Coverage levels:
 
-- `--scope full` — весь проект (узлы = документы, рёбра = resolved-ссылки).
-- `--scope module <prefix>` — поддерево одного модуля (`modules/M1-auth/*`).
-- `--scope hottest --top N` — N документов с наибольшим числом входящих ссылок
-  (ranking по `link.to_doc_key`), чтобы видеть «центры тяжести» документации.
+- `--scope full` — the whole project (nodes = documents, edges = resolved links).
+- `--scope module <prefix>` — the subtree of one module (`modules/M1-auth/*`).
+- `--scope hottest --top N` — N documents with the most incoming links
+  (ranking by `link.to_doc_key`), to see the "centers of gravity" of the documentation.
 
-Источник данных — та же таблица `link`, что и graph-queries выше; команда
-read-only и не пишет в БД.
+The data source is the same `link` table as the graph-queries above; the command
+is read-only and does not write to the DB.
 
-## 6. MCP поверхность
+## 6. MCP surface
 
-| Tool | Операция |
+| Tool | Operation |
 |------|----------|
-| `link.list_broken` | Список битых ссылок с причинами |
-| `link.incoming` | Обратные ссылки |
-| `link.outgoing` | Прямые |
-| `link.suggest` | Для куска текста вернуть потенциальные автоссылки |
+| `link.list_broken` | List of broken links with reasons |
+| `link.incoming` | Backlinks |
+| `link.outgoing` | Forward links |
+| `link.suggest` | For a piece of text, return potential auto-links |
 
-## 7. Запрет тихой автозамены
+## 7. No silent auto-replacement
 
-COD-DOC **не перекладывает фразы в ссылки без согласования**. Аргумент: ложное срабатывание (упомянули «auth» в общем смысле) создаёт мусорные ссылки. Автозамена делается только:
+COD-DOC **does not turn phrases into links without confirmation**. Argument: a false positive (mentioning "auth" in a general sense) creates junk links. Auto-replacement is done only:
 
-- При явной команде `cod-doc link autofix <doc>`.
-- Через MCP `link.apply_suggestions(ids=[...])`.
+- On an explicit command `cod-doc link autofix <doc>`.
+- Via MCP `link.apply_suggestions(ids=[...])`.
 
-## 8. Валидация при записи
+## 8. Validation on write
 
-Write-path для `DocService.patch_section` включает hard-check:
+The write-path for `DocService.patch_section` includes a hard-check:
 
-- Новая ссылка, которая не резолвится, но явно задана автором → error (с сообщением «target-документ не существует; создайте или исправьте»).
-- Ссылка на задачу, которой нет в БД → error.
-- Ссылка на anchor, которого нет → error.
+- A new link that does not resolve, but is explicitly set by the author → error (with the message "target document does not exist; create or fix it").
+- A link to a task that is not in the DB → error.
+- A link to an anchor that does not exist → error.
 
-Это главный страхующий механизм от «тихого распада документации».
+This is the main safeguard against "silent documentation decay".
 
-## 9. Обработка Obsidian-специфики
+## 9. Handling Obsidian specifics
 
-- `[[Document Name]]` парсится как wiki-link.
-- `![[Document Name]]` (transclusion) — поддерживается при export: рендерится как цитата из целевого документа.
-- Алиасы (`[[Doc|alias]]`) — сохраняются при экспорте, не теряются при rename.
+- `[[Document Name]]` is parsed as a wiki-link.
+- `![[Document Name]]` (transclusion) — supported on export: rendered as a quote from the target document.
+- Aliases (`[[Doc|alias]]`) — preserved on export, not lost on rename.
 
-## 10. Интеграция с code-ссылками
+## 10. Integration with code-links
 
-Помимо doc-ссылок, `related_code` / `implemented_in` фронтматтера — это ссылки на код. COD-DOC:
+Besides doc-links, `related_code` / `implemented_in` frontmatter — these are links to code. COD-DOC:
 
-- Проверяет существование путей при `audit`.
-- Ставит warning `code-drift`, если ref устарел.
-- Может обновлять массив из workspace-map (аналог Restate `Docs/workspace-map.yaml`), если код-ссылка указана как prefix.
+- Checks the existence of paths during `audit`.
+- Sets a `code-drift` warning if the ref is stale.
+- Can update the array from the workspace-map (analogous to the Restate `Docs/workspace-map.yaml`) if the code-link is given as a prefix.
 
-## 11. Производительность
+## 11. Performance
 
-- Таблица `link` индексирована по `to_doc_key`, `to_task_id`, `resolved`.
-- Полный `link verify` на проект уровня Restate (~500 docs, ~4000 links) укладывается в несколько секунд — это чистый SQL.
-- Внешние URL — отдельно и асинхронно, не блокирует write-path.
+- The `link` table is indexed by `to_doc_key`, `to_task_id`, `resolved`.
+- A full `link verify` on a Restate-level project (~500 docs, ~4000 links) fits in a few seconds — this is pure SQL.
+- External URLs — separately and asynchronously, does not block the write-path.

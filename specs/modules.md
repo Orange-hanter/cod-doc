@@ -1,71 +1,71 @@
-# 🧩 Спецификация модулей: COD-DOC
+# 🧩 Module Specification: COD-DOC
 
 > 📊 Meta: `{"version": "0.3", "last_updated": "2026-05-07", "scope": "specs", "layer": "modules", "status": "legacy-overview", "canonical_source": "docs/system/capabilities/"}`
 
-> **🟡 LEGACY (обзорный документ).** Контракт api/app/domain/infra здесь —
-> compact bootstrap-обзор. Активная capability-разбивка по одному файлу на
-> возможность — в [`docs/system/capabilities/`](../docs/system/capabilities/).
+> **🟡 LEGACY (overview document).** The api/app/domain/infra contract here is
+> a compact bootstrap overview. The active capability breakdown, one file per
+> capability, is in [`docs/system/capabilities/`](../docs/system/capabilities/).
 
-## 1. Обзор
+## 1. Overview
 
-Модульная система COD-DOC разделена на четыре слоя: **api** (Presentation), **app** (Application), **domain** (Domain), **infra** (Infrastructure). Каждый модуль — изолированный Python-пакет с чётко определёнными контрактами.
+The COD-DOC modular system is split into four layers: **api** (Presentation), **app** (Application), **domain** (Domain), **infra** (Infrastructure). Each module is an isolated Python package with clearly defined contracts.
 
-**Направление зависимостей:** `api → app → domain ← infra`
+**Dependency direction:** `api → app → domain ← infra`
 
 ---
 
-## 2. Модуль: `api/` (Presentation Layer)
+## 2. Module: `api/` (Presentation Layer)
 
-**Ответственность:** приём внешних запросов, маршрутизация, сериализация ответов.
+**Responsibility:** receiving external requests, routing, response serialization.
 
-### 2.1 Контракты (входящие)
+### 2.1 Contracts (incoming)
 
-| Компонент | Протокол | Формат | Описание |
+| Component | Protocol | Format | Description |
 |-----------|----------|--------|----------|
-| `GET /api/health` | HTTP | `{"status": "ok", "version": str}` | Health-check для Docker/балансировщика |
-| `GET /api/projects` | HTTP | `list[ProjectResponse]` | Список активных проектов |
-| `POST /api/projects` | HTTP | `ProjectCreateRequest → ProjectResponse` | Создание проекта |
-| `GET /api/projects/{id}` | HTTP | `ProjectResponse` | Детали проекта |
-| `POST /api/projects/{id}/tasks` | HTTP | `TaskCreateRequest → TaskResponse` | Добавление задачи |
-| `GET /api/projects/{id}/tasks` | HTTP | `list[TaskResponse]` | Список задач проекта |
-| `GET /api/projects/{id}/documents` | HTTP | `list[DocumentResponse]` | Список документов проекта |
-| `POST /api/search` | HTTP | `SearchRequest → list[DocumentResponse]` | Семантический поиск |
+| `GET /api/health` | HTTP | `{"status": "ok", "version": str}` | Health-check for Docker/load balancer |
+| `GET /api/projects` | HTTP | `list[ProjectResponse]` | List of active projects |
+| `POST /api/projects` | HTTP | `ProjectCreateRequest → ProjectResponse` | Create a project |
+| `GET /api/projects/{id}` | HTTP | `ProjectResponse` | Project details |
+| `POST /api/projects/{id}/tasks` | HTTP | `TaskCreateRequest → TaskResponse` | Add a task |
+| `GET /api/projects/{id}/tasks` | HTTP | `list[TaskResponse]` | List of project tasks |
+| `GET /api/projects/{id}/documents` | HTTP | `list[DocumentResponse]` | List of project documents |
+| `POST /api/search` | HTTP | `SearchRequest → list[DocumentResponse]` | Semantic search |
 
-### 2.2 Контракты (исходящие)
+### 2.2 Contracts (outgoing)
 
 ```python
-# api → app (через DI)
+# api → app (via DI)
 class ApiDependencies:
-    """Предоставляется через deps.py (FastAPI Depends)."""
+    """Provided via deps.py (FastAPI Depends)."""
     create_project_uc: CreateProjectUseCase
     queue_task_uc: QueueTaskUseCase
     get_project_uc: GetProjectUseCase
     search_docs_uc: SearchDocumentsUseCase
 ```
 
-### 2.3 Правила модуля
-- ❌ Не содержит бизнес-логики
-- ❌ Не обращается к БД напрямую
-- ✅ Все эндпоинты типизированы через Pydantic-схемы
-- ✅ Зависимости инжектируются через `fastapi.Depends`
+### 2.3 Module rules
+- ❌ Contains no business logic
+- ❌ Does not access the DB directly
+- ✅ All endpoints are typed via Pydantic schemas
+- ✅ Dependencies are injected via `fastapi.Depends`
 
 ---
 
-## 3. Модуль: `app/` (Application Layer)
+## 3. Module: `app/` (Application Layer)
 
-**Ответственность:** оркестрация use-case'ов, координация доменных объектов и инфраструктуры.
+**Responsibility:** orchestration of use cases, coordination of domain objects and infrastructure.
 
 ### 3.1 Use Cases
 
-| Use Case | Вход | Выход | Побочные эффекты |
+| Use Case | Input | Output | Side effects |
 |----------|------|-------|-------------------|
-| `CreateProject` | `name: str, repo_path: Path` | `Project` | Сохраняет в `ProjectRepository`, публикует `ProjectCreated` |
-| `QueueTask` | `project_id: ULID, title: str, ...` | `Task` | Сохраняет в `TaskRepository`, публикует `TaskQueued` |
-| `ExecuteTask` | `task_id: ULID` | `Task` (с result) | Вызывает LLM/Git/FS через порты, обновляет статус |
-| `IndexDocument` | `project_id: ULID, path: str` | `Document` | Читает файл, вычисляет sha256, индексирует в ChromaDB |
-| `SearchDocuments` | `project_id: ULID, query: str, n: int` | `list[Document]` | Семантический поиск через `VectorIndexer` |
-| `CheckStale` | `project_id: ULID` | `list[Document]` | Сравнивает хэши, публикует `DocumentBecameStale` |
-| `ArchiveProject` | `project_id: ULID` | `Project` | Переводит в `archived`, публикует `ProjectArchived` |
+| `CreateProject` | `name: str, repo_path: Path` | `Project` | Saves to `ProjectRepository`, publishes `ProjectCreated` |
+| `QueueTask` | `project_id: ULID, title: str, ...` | `Task` | Saves to `TaskRepository`, publishes `TaskQueued` |
+| `ExecuteTask` | `task_id: ULID` | `Task` (with result) | Calls LLM/Git/FS via ports, updates status |
+| `IndexDocument` | `project_id: ULID, path: str` | `Document` | Reads the file, computes sha256, indexes in ChromaDB |
+| `SearchDocuments` | `project_id: ULID, query: str, n: int` | `list[Document]` | Semantic search via `VectorIndexer` |
+| `CheckStale` | `project_id: ULID` | `list[Document]` | Compares hashes, publishes `DocumentBecameStale` |
+| `ArchiveProject` | `project_id: ULID` | `Project` | Transitions to `archived`, publishes `ProjectArchived` |
 
 ### 3.2 DTO (Data Transfer Objects)
 
@@ -109,27 +109,27 @@ class DocumentResponse(BaseModel):
 
 ### 3.3 Event Handlers
 
-| Handler | Событие | Действие |
+| Handler | Event | Action |
 |---------|---------|----------|
-| `on_document_stale` | `DocumentBecameStale` | Создаёт задачу на переиндексацию |
-| `on_task_completed` | `TaskCompleted` | Обновляет статус документов, затронутых задачей |
-| `on_project_created` | `ProjectCreated` | Сканирует репозиторий, создаёт задачи на индексацию |
+| `on_document_stale` | `DocumentBecameStale` | Creates a reindex task |
+| `on_task_completed` | `TaskCompleted` | Updates the status of documents affected by the task |
+| `on_project_created` | `ProjectCreated` | Scans the repository, creates indexing tasks |
 
-### 3.4 Правила модуля
-- ❌ Не содержит доменной логики (только делегирует Domain)
-- ❌ Не работает с БД/файлами напрямую (только через порты)
-- ✅ DTO — плоские структуры, без поведения
-- ✅ Каждый use case — атомарная операция
+### 3.4 Module rules
+- ❌ Contains no domain logic (only delegates to Domain)
+- ❌ Does not work with DB/files directly (only via ports)
+- ✅ DTOs are flat structures, with no behavior
+- ✅ Each use case is an atomic operation
 
 ---
 
-## 4. Модуль: `domain/` (Domain Layer)
+## 4. Module: `domain/` (Domain Layer)
 
-**Ответственность:** чистая бизнес-логика, независимая от инфраструктуры.
+**Responsibility:** pure business logic, independent of infrastructure.
 
-### 4.1 Агрегаты
+### 4.1 Aggregates
 
-| Агрегат | Файл | Корень | Дочерние сущности |
+| Aggregate | File | Root | Child entities |
 |---------|------|--------|-------------------|
 | `Project` | `project.py` | ✅ | `Task`, `Document` |
 | `Task` | `task.py` | — | — |
@@ -137,17 +137,17 @@ class DocumentResponse(BaseModel):
 
 ### 4.2 Value Objects
 
-| VO | Файл | Поля |
+| VO | File | Fields |
 |----|------|------|
 | `HybridRef` | `values.py` | `path: str`, `doc_id: str`, `sha: str` |
 | `ProjectStatus` | `values.py` | Enum: `active`, `paused`, `archived` |
 | `TaskStatus` | `values.py` | Enum: `pending`, `in_progress`, `completed`, `failed`, `cancelled` |
 | `DocStatus` | `values.py` | Enum: `VERIFIED`, `DRAFT`, `STALE`, `BROKEN` |
 
-### 4.3 Порты (абстрактные интерфейсы)
+### 4.3 Ports (abstract interfaces)
 
 ```python
-# domain/ports.py — единственное место определения контрактов infra
+# domain/ports.py — the single place to define infra contracts
 
 class IProjectRepository(Protocol):
     async def get(self, project_id: ULID) -> Project | None: ...
@@ -176,34 +176,34 @@ class IGitProvider(Protocol):
     async def commit(self, path: Path, message: str, files: list[str]) -> str: ...
 ```
 
-### 4.4 Доменные события
+### 4.4 Domain events
 
-| Событие | Модуль-источник | Подписчики (app) |
+| Event | Source module | Subscribers (app) |
 |---------|-----------------|-------------------|
 | `ProjectCreated` | `Project.create()` | `on_project_created` |
-| `TaskQueued` | `Task.queue()` | — (логгирование) |
-| `TaskStarted` | `Task.start()` | — (логгирование) |
+| `TaskQueued` | `Task.queue()` | — (logging) |
+| `TaskStarted` | `Task.start()` | — (logging) |
 | `TaskCompleted` | `Task.complete()` | `on_task_completed` |
 | `TaskFailed` | `Task.fail()` | — |
 | `DocumentIndexed` | `Document.index()` | — |
 | `DocumentBecameStale` | `Document.check_hash()` | `on_document_stale` |
 | `ProjectArchived` | `Project.archive()` | — |
 
-### 4.5 Правила модуля
-- ❌ Ноль внешних зависимостей (no `import fastapi`, no `import sqlalchemy`)
-- ❌ Никаких I/O операций
-- ✅ Все внешние вызовы — через порты (Protocol)
-- ✅ Бизнес-инварианты проверяются внутри агрегатов
+### 4.5 Module rules
+- ❌ Zero external dependencies (no `import fastapi`, no `import sqlalchemy`)
+- ❌ No I/O operations
+- ✅ All external calls go through ports (Protocol)
+- ✅ Business invariants are checked inside aggregates
 
 ---
 
-## 5. Модуль: `infra/` (Infrastructure Layer)
+## 5. Module: `infra/` (Infrastructure Layer)
 
-**Ответственность:** реализация портов, работа с внешними системами.
+**Responsibility:** implementation of ports, work with external systems.
 
-### 5.1 Реализации портов
+### 5.1 Port implementations
 
-| Порт | Реализация | Технология |
+| Port | Implementation | Technology |
 |------|------------|------------|
 | `IProjectRepository` | `SqlProjectRepository` | SQLAlchemy 2.0 (async) + PostgreSQL |
 | `ITaskRepository` | `SqlTaskRepository` | SQLAlchemy 2.0 (async) + PostgreSQL |
@@ -213,13 +213,13 @@ class IGitProvider(Protocol):
 | `IGitProvider` | `GitPythonAdapter` | GitPython |
 | `IFileSystem` | `LocalFileSystem` | `pathlib.Path` (stdlib) |
 
-### 5.2 Конфигурация (DI wiring)
+### 5.2 Configuration (DI wiring)
 
 ```python
-# infra/di.py — точка сборки зависимостей
+# infra/di.py — the dependency assembly point
 
 def configure(app: FastAPI) -> None:
-    """Связывает порты с реализациями."""
+    """Binds ports to implementations."""
 
     # infra → domain
     app.state.project_repo = SqlProjectRepository(session_factory)
@@ -228,21 +228,21 @@ def configure(app: FastAPI) -> None:
     app.state.indexer = ChromaIndexer(persist_dir)
     app.state.llm = OpenRouterProvider(api_key)
 
-    # app → domain (через порты)
+    # app → domain (via ports)
     app.state.create_project_uc = CreateProjectUseCase(app.state.project_repo)
     app.state.queue_task_uc = QueueTaskUseCase(app.state.task_repo)
     ...
 ```
 
-### 5.3 Правила модуля
-- ✅ Единственный слой с правом на I/O
-- ✅ Реализует интерфейсы, определённые в `domain/ports.py`
-- ✅ Подключается через DI (зависимости не хардкодятся)
-- ✅ Транзакционность через `session_factory` SQLAlchemy
+### 5.3 Module rules
+- ✅ The only layer with the right to I/O
+- ✅ Implements the interfaces defined in `domain/ports.py`
+- ✅ Connected via DI (dependencies are not hardcoded)
+- ✅ Transactionality via the SQLAlchemy `session_factory`
 
 ---
 
-## 6. Схема зависимостей
+## 6. Dependency scheme
 
 ```mermaid
 graph LR
@@ -289,32 +289,32 @@ graph LR
     DI --> UC
 ```
 
-### Правила зависимостей
+### Dependency rules
 
-| Из модуля | Может импортировать | Не может импортировать |
+| From module | Can import | Cannot import |
 |-----------|--------------------|-----------------------|
 | `api/` | `app/`, `domain/` | `infra/` |
 | `app/` | `domain/` | `infra/`, `api/` |
-| `domain/` | — (только stdlib) | `infra/`, `app/`, `api/`, любые фреймворки |
+| `domain/` | — (stdlib only) | `infra/`, `app/`, `api/`, any frameworks |
 | `infra/` | `domain/` | `app/`, `api/` |
 
 ---
 
-## 7. Зависимости документа
+## 7. Document dependencies
 
 ```
 specs/modules.md
-  ← arch/architecture.md     (архитектурный контекст: слои, ADR, стек)
-  ← models/domain.md         (доменные модели: агрегаты, VO, порты)
+  ← arch/architecture.md     (architectural context: layers, ADRs, stack)
+  ← models/domain.md         (domain models: aggregates, VO, ports)
 ```
 
 ---
 
-## 8. Статус реализации
+## 8. Implementation status
 
-| Модуль | Контракты | Реализация | Статус |
+| Module | Contracts | Implementation | Status |
 |--------|-----------|------------|--------|
-| `domain/` | Определены | Не начата | `🟡 DRAFT` |
-| `infra/` | Определены (ports) | Не начата | `🟡 DRAFT` |
-| `app/` | Определены | Не начата | `🟡 DRAFT` |
-| `api/` | Определены | Не начата | `🟡 DRAFT` |
+| `domain/` | Defined | Not started | `🟡 DRAFT` |
+| `infra/` | Defined (ports) | Not started | `🟡 DRAFT` |
+| `app/` | Defined | Not started | `🟡 DRAFT` |
+| `api/` | Defined | Not started | `🟡 DRAFT` |

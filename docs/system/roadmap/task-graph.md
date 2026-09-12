@@ -11,12 +11,15 @@ source_of_truth:
 
 # Task Dependency Graph
 
-> Объединённый граф всех задач: COD (bootstrap) + WEB (frontend).
-> Зелёный = done, серый = pending/in-progress.
-> Источник истины — планы выполнения; этот файл генерируется вручную при обновлении планов.
+> A unified graph of all tasks: COD (bootstrap) + WEB (frontend).
+> Green = done, gray = pending/in-progress.
+> Source of truth — execution plans; this file is generated manually when
+> the plans are updated.
 >
-> 🧭 **Верхний индекс приоритетов — [ROADMAP.md](ROADMAP.md)** (треки A/B, ground-truth статусы).
-> Этот граф датирован 2026-05-01 и охватывает только COD/WEB; актуальный бэклог см. в ROADMAP.
+> 🧭 **Top priority pointer — [ROADMAP.md](ROADMAP.md)** (tracks A/B,
+> ground-truth statuses).
+> This graph is dated 2026-05-01 and covers only COD/WEB; for the current
+> backlog see ROADMAP.
 
 ## Summary
 
@@ -206,10 +209,10 @@ graph TD
 
 ## Critical paths
 
-**К COD-032 (MCP tools):** COD-020 → COD-030 → COD-032 ← COD-031 ← COD-023 / COD-013
+**To COD-032 (MCP tools):** COD-020 → COD-030 → COD-032 ← COD-031 ← COD-023 / COD-013
 
-**К COD-033 (MCP context.get):** COD-010 → COD-040 → COD-041 → COD-033
+**To COD-033 (MCP context.get):** COD-010 → COD-040 → COD-041 → COD-033
 
-**К COD-052 (projection freeze):** COD-032 → COD-051 → COD-052 ← COD-023
+**To COD-052 (projection freeze):** COD-032 → COD-051 → COD-052 ← COD-023
 
-**К WEB-040 (arch hygiene):** WEB-002 + WEB-003 + WEB-010 + WEB-011 → WEB-040
+**To WEB-040 (arch hygiene):** WEB-002 + WEB-003 + WEB-010 + WEB-011 → WEB-040

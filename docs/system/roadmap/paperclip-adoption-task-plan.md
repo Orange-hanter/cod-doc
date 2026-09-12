@@ -15,11 +15,11 @@ related_docs:
 
 # Paperclip Adoption — Execution Plan
 
-> Канонический беклог по 15 RFC из `/proposals/`. Делит работу на 5 секций,
-> отображающих фазы из [proposals/README.md](../../../proposals/README.md):
-> Phase 1 (быстрые победы), Phase 2 (структурный аудит), Phase 3 (расширения),
-> Phase 4 (по необходимости), Phase 5 (UX и миграция, не имеет phase-номера в
-> README, но включает unscoped proposals 13/14/15).
+> The canonical backlog over 15 RFCs from `/proposals/`. Splits the work
+> into 5 sections reflecting the phases from [proposals/README.md](../../../proposals/README.md):
+> Phase 1 (quick wins), Phase 2 (structural audit), Phase 3 (extensions),
+> Phase 4 (as needed), Phase 5 (UX and migration, has no phase number in
+> the README, but includes the unscoped proposals 13/14/15).
 
 ## Navigation
 
@@ -40,14 +40,14 @@ related_docs:
 | H | Agent tools completion (cycle-5 cleanup) | 16, 20 | — (AGN-001..003, 010..013, 020..021) | 9 | 🟡 pending |
 | **TOTAL** | | 15 | 15 | **52** | ✅ done |
 
-> **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): «🟡 pending» — устаревший черновик. БД: PCA = 82 done, 2 cancelled (PCA-935 hide-legacy, PCA-947 activity_subscribe). Сверка с кодом подтвердила, что все 15 RFC-паттернов (01–15) реализованы и подключены. **Исключение — Section H** (agent-tools docstring + integration-тесты): код AGT done, но остаточная работа трекается отдельно в [agent-tools-completion-task-plan.md](agent-tools-completion-task-plan.md) и в плане `stabilization-2026-06` (ROADMAP, A0-1).
+> **Status reconciliation 2026-06-05** (see [ROADMAP](ROADMAP.md)): "🟡 pending" is a stale draft. DB: PCA = 82 done, 2 cancelled (PCA-935 hide-legacy, PCA-947 activity_subscribe). Reconciliation with the code confirmed that all 15 RFC patterns (01–15) are implemented and wired. **Exception — Section H** (agent-tools docstring + integration tests): the AGT code is done, but the residual work is tracked separately in [agent-tools-completion-task-plan.md](agent-tools-completion-task-plan.md) and in the plan `stabilization-2026-06` (ROADMAP, A0-1).
 
-> Cycle 2 наполнил Section A (PCA-001..PCA-034). Cycle 3 (2026-05-07) расширил
-> план Sections B/C/D/E (Phase 2-4 + UX) и добавил Section F с tooling-фиксами
-> по результатам cycle-2 audit (G1-G3). Section H добавлен 2026-06-04 после
-> [self-improvement audit](../audit/2026-06-04-self-improvement-compared.md):
-> cycle-5 agent profile функционален, но нужны docstring-фикс и integration tests.
-> План — [agent-tools-completion-task-plan.md](agent-tools-completion-task-plan.md).
+> Cycle 2 filled Section A (PCA-001..PCA-034). Cycle 3 (2026-05-07) expanded
+> the plan with Sections B/C/D/E (Phase 2-4 + UX) and added Section F with
+> tooling fixes from the cycle-2 audit (G1-G3). Section H was added 2026-06-04
+> after the [self-improvement audit](../audit/2026-06-04-self-improvement-compared.md):
+> the cycle-5 agent profile is functional, but needs a docstring fix and integration tests.
+> The plan — [agent-tools-completion-task-plan.md](agent-tools-completion-task-plan.md).
 
 ## Dependency Graph
 
@@ -68,19 +68,19 @@ graph TD
 
 ## Acceptance per section
 
-- **Section A** — закрыта, когда orchestrator грузит skills из каталога,
-  `task_heartbeat_context` существует и используется первым на heartbeat,
-  `WakeContext` инжектится, `run_id` фиксируется в БД.
-- **Section B** — закрыта, когда `issue_doc` (pinned plan/acceptance/verification),
-  `activity_log` (timeline поверх revisions) и `approval` сущности живут в БД
-  и UI.
-- **Section C** — закрыта, когда atomic checkout снимает race в UI/CLI/MCP,
-  `routine` сущность исполняет drift/links/hashes по cron, status taxonomy
-  расширена `in_review`, появился `AGENTS.md`.
-- **Section D** — закрыта, когда LLM-провайдер можно переключить через
-  config (Claude/OpenRouter/local) без переписи orchestrator.
-- **Section E** — закрыта, когда импорт из Restate (proposal 14) и редизайн
-  ссылок (proposal 15) реализованы.
+- **Section A** — closed when the orchestrator loads skills from a catalog,
+  `task_heartbeat_context` exists and is used first on a heartbeat,
+  `WakeContext` is injected, `run_id` is recorded in the DB.
+- **Section B** — closed when `issue_doc` (pinned plan/acceptance/verification),
+  `activity_log` (a timeline over revisions) and `approval` entities live in
+  the DB and UI.
+- **Section C** — closed when atomic checkout removes the race in UI/CLI/MCP,
+  the `routine` entity runs drift/links/hashes on cron, the status taxonomy
+  is extended with `in_review`, `AGENTS.md` appears.
+- **Section D** — closed when the LLM provider can be switched via
+  config (Claude/OpenRouter/local) without rewriting the orchestrator.
+- **Section E** — closed when the import from Restate (proposal 14) and the
+  link redesign (proposal 15) are implemented.
 
 ---
 
@@ -106,15 +106,15 @@ affects_files:
   - cod_doc/agent/prompts.py
 ```
 
-**Description:** Создать каталог `cod_doc/skills/orchestrator/` с базовым
-`SKILL.md` (heartbeat-протокол + index скиллов) и references (hybrid-refs,
-self-check). Извлечь из `prompts.py:3` минимальное ядро. Старый
-`SYSTEM_PROMPT` оставить тонким сборщиком: подгружает orchestrator/SKILL.md +
-динамически добавляет триггерные скиллы (PCA-002).
+**Description:** Create the catalog `cod_doc/skills/orchestrator/` with a
+base `SKILL.md` (heartbeat protocol + skill index) and references
+(hybrid-refs, self-check). Extract the minimal core from `prompts.py:3`.
+Keep the old `SYSTEM_PROMPT` as a thin assembler: loads
+orchestrator/SKILL.md + dynamically adds trigger skills (PCA-002).
 
-**Acceptance:** `cod_doc/skills/orchestrator/SKILL.md` существует с YAML-
-frontmatter `name`/`description`; `prompts.py` ≤ 50 строк (или собирает
-динамически); тесты orchestrator проходят без регрессий.
+**Acceptance:** `cod_doc/skills/orchestrator/SKILL.md` exists with YAML
+frontmatter `name`/`description`; `prompts.py` ≤ 50 lines (or assembles
+dynamically); orchestrator tests pass without regressions.
 
 #### PCA-002 — Implement: skill matcher + dynamic injection
 
@@ -137,13 +137,14 @@ affects_files:
   - cod_doc/skills/doc-style/SKILL.md
 ```
 
-**Description:** Реализовать функцию `select_skills(task: Task) -> list[Path]`
-с keyword-matching по `task.title + task.description + task.kind` против
-`description` каждого скилла. Перед каждым LLM-вызовом — собирать system из
-orchestrator/SKILL.md + triggered. Создать 5 нон-базовых скиллов (см. proposal 01).
+**Description:** Implement the function
+`select_skills(task: Task) -> list[Path]` with keyword-matching over
+`task.title + task.description + task.kind` against the `description` of
+each skill. Before each LLM call — assemble the system from
+orchestrator/SKILL.md + triggered. Create 5 non-base skills (see proposal 01).
 
-**Acceptance:** unit-тесты на 5+ задач с разными keyword-сценариями; нет
-утечек скиллов между LLM-вызовами; общий suite зелёный.
+**Acceptance:** unit tests on 5+ tasks with different keyword scenarios; no
+skill leaks between LLM calls; the overall suite is green.
 
 #### PCA-003 — Implement: skill_list / skill_get MCP tools
 
@@ -161,12 +162,12 @@ affects_files:
   - cod_doc/agent/tool_defs.py
 ```
 
-**Description:** MCP-тулы для самого агента (и внешних клиентов) посмотреть
-каталог скиллов и взять конкретный. `skill_list()` → `[{name, description,
-path}]`; `skill_get(name)` → полный markdown.
+**Description:** MCP tools for the agent itself (and external clients) to
+view the skill catalog and fetch a specific one. `skill_list()` →
+`[{name, description, path}]`; `skill_get(name)` → the full markdown.
 
-**Acceptance:** оба тула зарегистрированы в `tool_defs.py`; интеграционный
-тест поднимает MCP, вызывает `skill_list`, парсит ответ.
+**Acceptance:** both tools are registered in `tool_defs.py`; an integration
+test brings up MCP, calls `skill_list`, parses the response.
 
 #### PCA-004 — Test: skill activation matrix
 
@@ -183,11 +184,11 @@ affects_files:
   - tests/agent/test_skill_matcher.py
 ```
 
-**Description:** Тест-матрица: каждый из 6 скиллов матчится на 1+ позитивный
-кейс и не матчится на 1+ негативный (например, `audit-cadence` не подгружается
-для feature-задачи без аудитной семантики).
+**Description:** A test matrix: each of the 6 skills matches 1+ positive
+case and does not match 1+ negative case (e.g., `audit-cadence` is not
+loaded for a feature task without audit semantics).
 
-**Acceptance:** 12+ тест-кейсов; pytest зелёный.
+**Acceptance:** 12+ test cases; pytest green.
 
 ### A.2 Heartbeat-context (proposal 02 → US-006)
 
@@ -207,21 +208,21 @@ affects_files:
   - cod_doc/services/heartbeat_service.py
 ```
 
-**Description:** MCP-tool `task_heartbeat_context(task_id, since_revision_id?)`.
-Возвращает компактный JSON: task (id/status/title/blocked_by/linked_docs),
-ancestry (story/project), linked_docs_summary (ref/section/sha/status БЕЗ
-полных тел), recent_changes (если задан `since_revision_id`),
-active_skills_hint, next_action_guess. Реализовать как композицию `task_get`
-+ `revision_list`-since + `link_list` без новой персистентности.
+**Description:** MCP tool `task_heartbeat_context(task_id, since_revision_id?)`.
+Returns a compact JSON: task (id/status/title/blocked_by/linked_docs),
+ancestry (story/project), linked_docs_summary (ref/section/sha/status
+WITHOUT full bodies), recent_changes (if `since_revision_id` is given),
+active_skills_hint, next_action_guess. Implement as a composition of
+`task_get` + `revision_list`-since + `link_list` without new persistence.
 
-**Acceptance:** размер ответа ≤ 4 KB на типовом heartbeat; нет полных
-markdown-тел; интеграционный тест с разными `since_revision_id`.
+**Acceptance:** response size ≤ 4 KB on a typical heartbeat; no full
+markdown bodies; an integration test with different `since_revision_id`.
 
 #### PCA-011 — Refactor: orchestrator prefer heartbeat over get_master
 
 ```yaml
 id: PCA-011
-title: "Refactor: orchestrator зовёт task_heartbeat_context раньше get_master"
+title: "Refactor: orchestrator calls task_heartbeat_context before get_master"
 section: A-Skills-Heartbeat
 status: pending
 depends_on: [PCA-010]
@@ -234,13 +235,12 @@ affects_files:
   - cod_doc/skills/orchestrator/SKILL.md
 ```
 
-**Description:** Если у запуска есть `task_id` — вызывать
-`task_heartbeat_context` первым; `get_master` оставлять как fallback для
-cold-start (нет конкретной задачи). Прописать это правило в
-`orchestrator/SKILL.md`.
+**Description:** If the run has a `task_id` — call `task_heartbeat_context`
+first; keep `get_master` as a fallback for cold-start (no specific task).
+Write this rule into `orchestrator/SKILL.md`.
 
-**Acceptance:** на heartbeat'ах с `task_id` `get_master` не вызывается
-(unit-тест на orchestrator); cold-start продолжает работать.
+**Acceptance:** on heartbeats with `task_id` `get_master` is not called
+(a unit test on the orchestrator); cold-start still works.
 
 #### PCA-012 — Test: heartbeat-context payload + cursor
 
@@ -258,10 +258,10 @@ affects_files:
   - tests/mcp/test_task_heartbeat_context.py
 ```
 
-**Description:** Payload-shape тесты (все ключи, типы, размер ≤ 4 KB),
-cursor-семантика (передаём `since_revision_id` → получаем только дельту).
+**Description:** Payload-shape tests (all keys, types, size ≤ 4 KB),
+cursor semantics (pass `since_revision_id` → get only the delta).
 
-**Acceptance:** 6+ тест-кейсов, suite зелёный.
+**Acceptance:** 6+ test cases, suite green.
 
 ### A.3 Wake-payload (proposal 03 → US-007)
 
@@ -283,9 +283,9 @@ affects_files:
 **Description:** Dataclass `WakeContext(reason, task_id, triggering_doc_ref,
 triggering_revision_id, payload, skills_to_preload, assembled_at)`.
 `WakeReason` enum: `cold_start | task_assigned | doc_drift |
-approval_resolved | manual`. Жёсткий size-limit на `payload` (например, 4 KB).
+approval_resolved | manual`. A hard size-limit on `payload` (e.g., 4 KB).
 
-**Acceptance:** validate-методы; unit-тесты на конструктор и size-cap.
+**Acceptance:** validate methods; unit tests on the constructor and size-cap.
 
 #### PCA-021 — Implement: build_wake_context()
 
@@ -302,12 +302,12 @@ affects_files:
   - cod_doc/agent/wake_context.py
 ```
 
-**Description:** Builder, переиспользует `task_heartbeat_context` (PCA-010)
-для `payload` если задан `task_id`. Для `doc_drift` — кладёт срез по доку
-+ список зависимых задач. Для cold_start — `payload={}`,
+**Description:** A builder that reuses `task_heartbeat_context` (PCA-010)
+for `payload` if `task_id` is given. For `doc_drift` — puts a slice over
+the doc + a list of dependent tasks. For cold_start — `payload={}`,
 `skills_to_preload=['orchestrator']`.
 
-**Acceptance:** 5 unit-тестов покрывают каждый WakeReason.
+**Acceptance:** 5 unit tests cover each WakeReason.
 
 #### PCA-022 — Refactor: Orchestrator.run accepts WakeContext
 
@@ -325,13 +325,13 @@ affects_files:
   - cod_doc/skills/orchestrator/SKILL.md
 ```
 
-**Description:** Сигнатура `Orchestrator.run` теперь принимает
-`wake: WakeContext`. Первое сообщение в conversation — структурированный
-блок `WAKE PAYLOAD ...`. Скилл-правило в `orchestrator/SKILL.md`: «если есть
-WAKE PAYLOAD — действуй по нему, MASTER.md не читать (для scoped wake)».
+**Description:** The signature of `Orchestrator.run` now takes
+`wake: WakeContext`. The first message in the conversation is a structured
+block `WAKE PAYLOAD ...`. Skill rule in `orchestrator/SKILL.md`: "if there
+is a WAKE PAYLOAD — act on it, do not read MASTER.md (for scoped wake)".
 
-**Acceptance:** для wake_reason ∈ {task_assigned, doc_drift,
-approval_resolved} `get_master` не вызывается на первом round-trip.
+**Acceptance:** for wake_reason ∈ {task_assigned, doc_drift,
+approval_resolved} `get_master` is not called on the first round-trip.
 
 #### PCA-023 — Update: run_agent_once accepts trigger params
 
@@ -348,12 +348,12 @@ affects_files:
   - cod_doc/mcp/tools/agent_tools.py
 ```
 
-**Description:** MCP-tool `run_agent_once(project, task_id?,
-triggering_doc_ref?, wake_reason?)`. Внутри собирает `WakeContext` и зовёт
-`Orchestrator.run`.
+**Description:** MCP tool `run_agent_once(project, task_id?,
+triggering_doc_ref?, wake_reason?)`. Inside, it assembles a `WakeContext`
+and calls `Orchestrator.run`.
 
-**Acceptance:** integration-тест: вызов `run_agent_once` с `task_id` →
-агент завершает задачу, не читая MASTER.md.
+**Acceptance:** an integration test: calling `run_agent_once` with
+`task_id` → the agent completes the task without reading MASTER.md.
 
 #### PCA-024 — Test: scoped fast-path
 
@@ -371,11 +371,11 @@ affects_files:
   - tests/agent/test_orchestrator_wake.py
 ```
 
-**Description:** Покрыть 4 сценария: cold_start (читает MASTER), task_assigned
-(не читает), doc_drift (читает только триггер-док), approval_resolved (читает
-только approval). Замокать `get_master` и проверить число вызовов.
+**Description:** Cover 4 scenarios: cold_start (reads MASTER), task_assigned
+(does not read), doc_drift (reads only the trigger doc), approval_resolved
+(reads only the approval). Mock `get_master` and check the call count.
 
-**Acceptance:** 4+ тестов, suite зелёный.
+**Acceptance:** 4+ tests, suite green.
 
 ### A.4 Run-id audit (proposal 04 → US-008)
 
@@ -396,12 +396,12 @@ affects_files:
   - cod_doc/domain/entities.py
 ```
 
-**Description:** Таблица `agent_runs (run_id PK, started_at, finished_at,
+**Description:** Table `agent_runs (run_id PK, started_at, finished_at,
 wake_reason, triggering_task_id, triggering_doc_ref, llm_calls,
-llm_tokens_in, llm_tokens_out, status, summary)`. Колонка `run_id` (NULL)
-на `revision` и `audit_log`. UUID7 для сортируемости.
+llm_tokens_in, llm_tokens_out, status, summary)`. Column `run_id` (NULL)
+on `revision` and `audit_log`. UUID7 for sortability.
 
-**Acceptance:** миграция вверх и вниз; smoke-тест на CRUD.
+**Acceptance:** migration up and down; a smoke test on CRUD.
 
 #### PCA-031 — Implement: contextvar run_id propagation
 
@@ -421,12 +421,13 @@ affects_files:
   - cod_doc/services/audit_service.py
 ```
 
-**Description:** Orchestrator при старте генерирует `run_id` (UUID7). Через
-`contextvar` (или явный аргумент в ToolExecutor) пробрасывается во все
-мутирующие сервисы. RevisionService.write и audit_log пишут `run_id`.
+**Description:** The orchestrator generates a `run_id` (UUID7) at start.
+Through a `contextvar` (or an explicit argument in ToolExecutor) it is
+propagated into all mutating services. RevisionService.write and
+audit_log write `run_id`.
 
-**Acceptance:** integration-тест: один прогон → все 3+ мутаций имеют
-один и тот же `run_id`.
+**Acceptance:** an integration test: one run → all 3+ mutations have the
+same `run_id`.
 
 #### PCA-032 — Implement: run_list / run_get MCP tools
 
@@ -444,12 +445,12 @@ affects_files:
   - cod_doc/agent/tool_defs.py
 ```
 
-**Description:** `run_list(since?, limit?, status?)` — недавние прогоны.
-`run_get(run_id)` — все мутации этого прогона: doc revisions, task status
+**Description:** `run_list(since?, limit?, status?)` — recent runs.
+`run_get(run_id)` — all mutations of this run: doc revisions, task status
 changes, master updates.
 
-**Acceptance:** оба тула зарегистрированы; integration-тест перебирает
-прогон агента, проверяет полноту `run_get`.
+**Acceptance:** both tools are registered; an integration test walks an
+agent run, checks the completeness of `run_get`.
 
 #### PCA-033 — Implement: run_revert (read-only first)
 
@@ -467,13 +468,13 @@ affects_files:
   - cod_doc/mcp/tools/run_tools.py
 ```
 
-**Description:** `run_revert(run_id, dry_run=True)` сначала только перечисляет
-обратные операции (через `revision_revert dry-run`), не выполняя их.
-Конфликты (последующий прогон затронул те же артефакты) подсвечивает явно.
-Реальный revert — отдельная задача в Cycle 3+.
+**Description:** `run_revert(run_id, dry_run=True)` first only lists the
+reverse operations (via `revision_revert dry-run`), without executing
+them. Conflicts (a subsequent run touched the same artifacts) are
+highlighted explicitly. A real revert — a separate task in Cycle 3+.
 
-**Acceptance:** dry_run возвращает `[(operation, result, conflicts)]`; пишет
-revision при реальном revert (тест в Section B).
+**Acceptance:** dry_run returns `[(operation, result, conflicts)]`;
+writes a revision on a real revert (test in Section B).
 
 #### PCA-034 — Test: run_id linkage across mutations
 
@@ -491,12 +492,12 @@ affects_files:
   - tests/mcp/test_run_tools.py
 ```
 
-**Description:** End-to-end: запустить агента с моком LLM, который делает
-3 мутации (doc_create, task_complete, update_master_hashes) — проверить,
-что `run_get` возвращает все три, а `revision`-таблица содержит одинаковый
+**Description:** End-to-end: run an agent with an LLM mock that makes 3
+mutations (doc_create, task_complete, update_master_hashes) — check that
+`run_get` returns all three, and the `revision` table contains the same
 `run_id`.
 
-**Acceptance:** 5+ тестов; suite зелёный.
+**Acceptance:** 5+ tests; suite green.
 
 ---
 
@@ -545,11 +546,11 @@ affects_files:
 
 ## Section F: Tooling fixes (cycle-2 gaps)
 
-> Заведена в Cycle 3 (2026-05-07) для закрытия API-gap'ов из
+> Created in Cycle 3 (2026-05-07) to close the API gaps from
 > [cycle-2 audit §3](../audit/2026-05-07-doc-consolidation-cycle-2.md).
-> Без этих фиксов любая работа с RFC-беклогом полагается на прямой Python-доступ
-> к БД для plan/section bootstrap, и blocked_by/story_id/affects_files не
-> прорастают в граф зависимостей.
+> Without these fixes, any work with the RFC backlog relies on direct
+> Python access to the DB for plan/section bootstrap, and
+> blocked_by/story_id/affects_files do not propagate into the dependency graph.
 
 | Task | Type | Priority | Title |
 |------|------|----------|-------|
