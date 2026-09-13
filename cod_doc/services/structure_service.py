@@ -300,6 +300,26 @@ def materialize_indexes(session: Session, snapshot: CodeStructureSnapshotModel) 
     }
 
 
+def _get_current(
+    session: Session,
+    project_id: int,
+    *,
+    slot: str,
+    slot_key: str,
+) -> StructureCurrentModel | None:
+    return session.execute(
+        select(StructureCurrentModel).where(
+            StructureCurrentModel.project_id == project_id,
+            StructureCurrentModel.slot == slot,
+            StructureCurrentModel.slot_key == slot_key,
+        )
+    ).scalar_one_or_none()
+
+
+def _preferred_branch_slot(branch_ref: str) -> str:
+    return "latest_main" if branch_ref in _DEFAULT_BRANCHES else "latest_branch"
+
+
 def _upsert_current(
     session: Session,
     project_id: int,
@@ -308,13 +328,7 @@ def _upsert_current(
     slot_key: str,
     snapshot_id: int,
 ) -> None:
-    row = session.execute(
-        select(StructureCurrentModel).where(
-            StructureCurrentModel.project_id == project_id,
-            StructureCurrentModel.slot == slot,
-            StructureCurrentModel.slot_key == slot_key,
-        )
-    ).scalar_one_or_none()
+    row = _get_current(session, project_id, slot=slot, slot_key=slot_key)
     if row is None:
         session.add(
             StructureCurrentModel(
@@ -672,18 +686,17 @@ def get_latest(
             .limit(1)
         ).scalar_one_or_none()
     if pr_number is not None:
-        slot, key = "latest_pr", str(pr_number)
-    elif branch_ref in _DEFAULT_BRANCHES:
-        slot, key = "latest_main", str(branch_ref)
+        current = _get_current(session, project_id, slot="latest_pr", slot_key=str(pr_number))
     else:
-        slot, key = "latest_branch", str(branch_ref)
-    current = session.execute(
-        select(StructureCurrentModel).where(
-            StructureCurrentModel.project_id == project_id,
-            StructureCurrentModel.slot == slot,
-            StructureCurrentModel.slot_key == key,
-        )
-    ).scalar_one_or_none()
+        # Publish uses latest_main when isDefaultBranch is true even if the
+        # name is not main/master. Lookup must try both branch slots so
+        # get_latest(branch_ref="develop") still finds that pointer.
+        key = str(branch_ref)
+        preferred = _preferred_branch_slot(key)
+        current = _get_current(session, project_id, slot=preferred, slot_key=key)
+        if current is None:
+            fallback = "latest_branch" if preferred == "latest_main" else "latest_main"
+            current = _get_current(session, project_id, slot=fallback, slot_key=key)
     if current is None:
         return None
     return session.get(CodeStructureSnapshotModel, current.snapshot_id)

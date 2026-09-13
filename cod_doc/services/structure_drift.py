@@ -47,6 +47,10 @@ _HINT_RULES = frozenset(
         "scenario.surviving_contract_mutant",
     }
 )
+# Absence of a fingerprint must not demote these. Promote sets in_progress;
+# resolved/superseded are already closed. Reopen happens only when the
+# fingerprint comes back in a later snapshot.
+_ABSENCE_HELD_STATUSES = frozenset({"superseded", "resolved", "in_progress"})
 
 
 def _normalized(value: object) -> str:
@@ -641,11 +645,9 @@ def reconcile_findings(
         # `referenced` в ретеншн-GC — переставал защищаться снапшот с реальной
         # уликой.
         row.updated = now
-        # Терминальные статусы держатся сами по себе: находка, которая уже
-        # закрыта и по-прежнему отсутствует в снапшоте, не должна заново
-        # уезжать в pending_verify на каждом следующем снапшоте. Переоткрытие
-        # живёт в цикле выше — по факту повторного появления fingerprint.
-        if row.status in {"superseded", "resolved"}:
+        # Held statuses stay put while the fingerprint is gone. Reopen lives
+        # in the loop above — only if the fingerprint comes back.
+        if row.status in _ABSENCE_HELD_STATUSES or row.promoted_task_id:
             out.append(_row_to_finding(row))
             continue
         if not can_close:

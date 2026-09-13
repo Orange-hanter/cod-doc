@@ -79,3 +79,63 @@ def test_resolved_finding_does_not_reopen_on_later_clean_snapshots(engine_with_s
     assert seen[2] and all(s == "resolved" for s in seen[2]), seen[2]
     assert all(s == "resolved" for s in seen[3]), f"4th clean snapshot flipped: {seen[3]}"
     assert all(s == "resolved" for s in seen[4]), f"5th clean snapshot flipped: {seen[4]}"
+
+
+def test_promoted_finding_stays_in_progress_on_later_clean_snapshots(
+    engine_with_schema,
+) -> None:
+    factory = make_session_factory(engine_with_schema)
+    facts = _facts()
+    assessment = _assessment()
+    with transactional(factory) as session:
+        project_id = _project(session)
+        ingest_structure(
+            session,
+            project_id,
+            facts=facts,
+            assessment=assessment,
+            trust_tier="trusted_local",
+            project_slug="demo",
+        )
+        rows = list(
+            session.execute(
+                select(StructureFindingModel).where(StructureFindingModel.project_id == project_id)
+            ).scalars()
+        )
+        assert rows
+        for row in rows:
+            row.status = "in_progress"
+            row.promoted_task_id = "STR-001"
+        session.flush()
+
+        closed = copy.deepcopy(assessment)
+        closed["assessments"]["contractScenarios"] = [
+            {
+                **closed["assessments"]["contractScenarios"][0],
+                "status": "covered",
+                "statusReason": "test link, execution and scenario-specific evidence satisfied",
+                "missingEvidence": [],
+            }
+        ]
+        closed["hints"] = []
+        nxt_facts = copy.deepcopy(facts)
+        nxt_facts["fingerprint"] = _hex("a")
+        nxt_assess = copy.deepcopy(closed)
+        nxt_assess["fingerprint"] = _hex("b")
+        nxt_assess["factsFingerprint"] = nxt_facts["fingerprint"]
+        ingest_structure(
+            session,
+            project_id,
+            facts=nxt_facts,
+            assessment=nxt_assess,
+            trust_tier="trusted_local",
+            project_slug="demo",
+        )
+        after = list(
+            session.execute(
+                select(StructureFindingModel).where(StructureFindingModel.project_id == project_id)
+            ).scalars()
+        )
+        assert after
+        assert all(row.status == "in_progress" for row in after)
+        assert all(row.promoted_task_id == "STR-001" for row in after)

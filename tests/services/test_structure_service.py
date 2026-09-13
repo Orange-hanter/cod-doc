@@ -166,6 +166,41 @@ def test_trusted_ingest_publishes_latest_main_not_pr(engine_with_schema) -> None
     assert pr.fingerprint != main.fingerprint
 
 
+def test_get_latest_finds_default_branch_that_is_not_main(engine_with_schema) -> None:
+    factory = make_session_factory(engine_with_schema)
+    facts = _facts()
+    facts["fingerprint"] = _hex("d")
+    facts["provenance"]["branchRef"] = "develop"
+    facts["provenance"]["isDefaultBranch"] = True
+    with transactional(factory) as session:
+        project_id = _project(session)
+        ingest_structure(
+            session, project_id, facts=facts, trust_tier="trusted_local", project_slug="demo"
+        )
+        develop = get_latest(session, project_id, branch_ref="develop")
+        main = get_latest(session, project_id, branch_ref="main")
+    assert develop is not None
+    assert develop.branch_ref == "develop"
+    assert develop.fingerprint == _hex("d")
+    assert main is None
+
+
+def test_get_latest_finds_named_feature_branch(engine_with_schema) -> None:
+    factory = make_session_factory(engine_with_schema)
+    facts = _facts()
+    facts["fingerprint"] = _hex("f")
+    facts["provenance"]["branchRef"] = "feature/x"
+    facts["provenance"]["isDefaultBranch"] = False
+    with transactional(factory) as session:
+        project_id = _project(session)
+        ingest_structure(
+            session, project_id, facts=facts, trust_tier="trusted_local", project_slug="demo"
+        )
+        feature = get_latest(session, project_id, branch_ref="feature/x")
+    assert feature is not None
+    assert feature.branch_ref == "feature/x"
+
+
 def test_structure_drift_is_not_projection_drift(engine_with_schema) -> None:
     factory = make_session_factory(engine_with_schema)
     facts = _facts()
