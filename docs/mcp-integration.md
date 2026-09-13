@@ -19,7 +19,7 @@ cod-doc provides 4 access layers:
 | **MCP** | **LLM clients** | **Copilot, Claude, agents** |
 
 MCP (Model Context Protocol) — a standard protocol for connecting an LLM
-to external tools. cod-doc implements an MCP server with **114 tools**
+to external tools. cod-doc implements an MCP server with **120 tools**
 (the exact number is validated by the test `tests/test_mcp_integration_doc.py`),
 grouped into 4 profiles.
 
@@ -120,9 +120,9 @@ missing feature. These are the same operations:
 
 ```bash
 cod-doc-mcp                              # agent (default cycle-5)
-cod-doc-mcp --profile minimal            # 20 cold-start tools
-cod-doc-mcp --profile standard           # 110 CRUD tools (without legacy)
-cod-doc-mcp --profile full               # all 114 (including legacy)
+cod-doc-mcp --profile minimal            # 21 cold-start tools
+cod-doc-mcp --profile standard           # 116 CRUD tools (without legacy)
+cod-doc-mcp --profile full               # all 120 (including legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # via env
 ```
 
@@ -171,7 +171,7 @@ cod-doc connect install --client vscode
 
 Writes `<project>/.vscode/mcp.json` with an absolute `command` (the
 file is gitignored). After connecting, the entire MCP surface is
-available in Copilot Chat (**114 tools** in the current release).
+available in Copilot Chat (**120 tools** in the current release).
 Example requests:
 
 - "Show the status of the weather-cli project"
@@ -359,15 +359,16 @@ An LLM can parse MASTER.md and build a project map even without MCP.
 | **routine.\*** | 7 | Cron-style health checks | `routine_create`, `routine_list`, `routine_get`, `routine_update_status`, `routine_delete`, `routine_run_now`, `routine_history` |
 | **skill.\*** | 2 | Catalog of skill-instructions for the agent | `skill_list`, `skill_get` |
 | **agent.\* (cycle-5)** | 6 | Task-centric surface for AI agents: pick → work → complete in 3 calls | `agent_capabilities`, `agent_pick`, `agent_get`, `agent_report`, `agent_complete`, `agent_release` |
-| **adr.\* (ADR-002)** | 10 | Architecture Decision Records: CRUD + supersede DAG + task links + Mermaid diagrams + deprecate + export | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_add_diagram`, `adr_supersede`, `adr_deprecate`, `adr_link_task`, `adr_graph`, `adr_export` |
+| **adr.\* (ADR-002)** | 11 | Architecture Decision Records: CRUD + supersede DAG + task links + Mermaid diagrams + deprecate + export + projection sync | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_sync_body`, `adr_add_diagram`, `adr_supersede`, `adr_deprecate`, `adr_link_task`, `adr_graph`, `adr_export` |
 | **context / capabilities / session** | 9 | Admin: snowball context assembly, L0 bootstrap, tool discovery + per-tool describe, change-log, safe-call envelope, workspace defaults | `context_get`, `capabilities`, `tool_search`, `tool_describe`, `tools_diff`, `tool_call_safe`, `set_default_project`, `get_default_project`, `clear_default_project` |
 | **check_config** | 1 | Server self-diagnostics | `check_config` |
 | **Legacy (YAML agent)** | 3 | Remainder of the legacy surface after STB-002 (2026-06-08): resume-entry + context-helpers. YAML CRUD (projects/tasks/MASTER/search + hash/verify) is removed — the DB is the source of truth. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
 | **finding.\* (RFC 22)** | 4 | External findings (ai-review / ZAIrgRush / routines): triage and promotion to tasks. Only the standard/full profiles | `finding_list`, `finding_get`, `finding_promote`, `finding_dismiss` |
 | **ctx.\* (RFC 22)** | 3 | Context for external consumers: `ctx_docs` = `doc_list`, `ctx_drift` = `doc_drift_all` (SYM-006D), `ctx_drift_gate` — a deterministic documentation gate by PR files with an idempotent PR comment (SYM-010). Only the standard/full profiles | `ctx_docs`, `ctx_drift`, `ctx_drift_gate` |
+| **structure.\*** | 5 | Pinned code-structure snapshots, drift, scenarios and BFS context (not projection drift; not ai_review findings) | `structure_get`, `structure_context`, `structure_drift`, `structure_scenarios`, `structure_diff` |
 | **search.\*** | 1 | FTS5 corpus | `search` |
 | **hash.\*** | 1 | MASTER hybrid-ref registry | `hash_update` |
-| **TOTAL** | **114** | | |
+| **TOTAL** | **120** | | |
 
 The legacy family duplicates part of the DB surface (for example `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) and is marked `DEPRECATED` in
@@ -401,7 +402,7 @@ and rely on the DB surface; `--profile standard` hides legacy completely.
 | Copilot Chat | ✅ | ✅ | ❌ | Partial |
 | Claude Desktop | ✅ | ✅ | ❌ | Via copy-paste |
 | CI/CD | ❌ | ✅ | ✅ | ❌ |
-| Number of tools | 114 | 114 | ~8 | 0 |
+| Number of tools | 120 | 120 | ~8 | 0 |
 | Semantic search | ✅ | ✅ | ❌ | ❌ |
 | Agent launch | ✅ | ✅ | ✅ (WS) | ❌ |
 

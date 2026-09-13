@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-DomainT = TypeVar("DomainT")
-ModelT = TypeVar("ModelT")
 
-
-class BaseRepository(Generic[DomainT, ModelT]):
+class BaseRepository[DomainT, ModelT]:
     """Generic repository: SQLAlchemy model <-> domain entity.
 
     Subclasses implement `_to_domain(model)` and `_to_model(entity)`.

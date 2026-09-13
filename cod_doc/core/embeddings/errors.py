@@ -207,7 +207,7 @@ def _hint_for(
     return ""
 
 
-def sync_retry(
+def sync_retry[T](
     call: Callable[[], T],
     *,
     attempts: int = _DEFAULT_ATTEMPTS,

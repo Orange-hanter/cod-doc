@@ -65,6 +65,7 @@ def _tool_family(name: str) -> str:
         "run_",
         "skill_",
         "ctx_",
+        "structure_",
         "doc_",
         "task_",
     ):

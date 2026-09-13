@@ -12,7 +12,7 @@
 > `cod_doc/mcp/tools/agent_tools.py` (a thin wrapper layer, not stubs).
 > Coverage: `tests/services/test_agent_pick.py`,
 > `tests/services/test_agent_workflow.py`,
-> `tests/services/test_agent_profile_contract.py`. The 110-tool CRUD
+> `tests/services/test_agent_profile_contract.py`. The 116-tool CRUD
 > surface (`task_*`, `doc_*`, `plan_*`, …) remains for
 > `--profile standard|full` (admin / CLI / web). Tracked in plan
 > `paperclip-adoption-task-plan` section H. New agent-features → section
@@ -115,16 +115,16 @@ On first start set `COD_DOC_DB_URL` or use the default
 9. **MCP server profiles** (PCA-951, cycle-4 default-switch). Run:
    ```
    cod-doc-mcp                                # agent (default)
-   cod-doc-mcp --profile minimal              # 20-tool cold-start
-   cod-doc-mcp --profile full                 # all 114, including legacy
+   cod-doc-mcp --profile minimal              # 21-tool cold-start
+   cod-doc-mcp --profile full                 # all 120, including legacy
    COD_DOC_PROFILE=full cod-doc-mcp           # via env
    ```
    - ``agent`` — **default**: 6 task-centric tools for AI agents
      (`agent_pick`, `agent_report`, `agent_complete`, `agent_release`,
      `agent_get`, `agent_capabilities`).
-   - ``minimal`` — 20-tool cold-start surface for fresh integrations.
-   - ``standard`` — 110 DB-backed tools without legacy YAML.
-   - ``full`` — all 114 tools, including legacy. Only for admin scenarios
+   - ``minimal`` — 21-tool cold-start surface for fresh integrations.
+   - ``standard`` — 116 DB-backed tools without legacy YAML.
+   - ``full`` — all 120 tools, including legacy. Only for admin scenarios
      and backward compatibility with pre-cycle-3 integrations.
    Counts are pinned by the test
    `tests/test_server_profiles.py::test_profile_counts_match_documented_values` —

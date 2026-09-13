@@ -458,31 +458,32 @@ Analogous — an aggregate over the plan. Used when generating the Progress Over
 ```sql
 CREATE VIEW document_body AS
 SELECT
-  d.row_id AS document_id,
-  d.preamble
-    || CASE
-         WHEN d.preamble <> '' AND COALESCE(s.body, '') <> ''
-         THEN E'\n\n'
-         ELSE ''
-       END
-    || COALESCE(s.body, '') AS body
-FROM document d
-LEFT JOIN (
+  document_id,
+  preamble
+    || CASE WHEN preamble <> '' AND sec <> '' THEN E'\n\n' ELSE '' END
+    || sec AS body
+FROM (
   SELECT
-    document_id,
-    string_agg(
-      repeat('#', level) || ' ' || heading || E'\n\n' || body,
-      E'\n\n'
-      ORDER BY position
-    ) AS body
-  FROM section
-  GROUP BY document_id
-) s ON s.document_id = d.row_id;
+    d.row_id AS document_id,
+    d.preamble AS preamble,
+    COALESCE((
+      SELECT string_agg(
+        repeat('#', s.level) || ' ' || s.heading || E'\n\n' || s.body,
+        E'\n\n'
+        ORDER BY s.position
+      )
+      FROM section s
+      WHERE s.document_id = d.row_id
+    ), '') AS sec
+  FROM document d
+) AS t;
 ```
 
-> Implemented in `cod_doc/infra/migrations/versions/20260825_0025_projection_fidelity.py`: the SQLite variant uses `group_concat(... , char(10) || char(10))` over an ordered subquery (`SELECT ... ORDER BY position`); Postgres — `string_agg(... , E'\n\n' ORDER BY position)`. Both variants return identical text.
+> Implemented in `cod_doc/infra/migrations/versions/20260908_0030_document_body_pushdown.py`: the SQLite variant uses `group_concat(... , char(10) || char(10))` over an ordered subquery (`SELECT ... WHERE document_id = d.row_id ORDER BY position`); Postgres — `string_agg(... , E'\n\n' ORDER BY position)`. Both variants return identical text.
 
-> **ADO-010 (finding F7).** Before migration 0025, the view glued `preamble` to the first heading without a separator — `preamble` is stored without a trailing newline, so the output was `> …in advance.## 1. Why`. This was content corruption, not formatting: any `doc export` broke the document. The `\n\n` separator is inserted only when both parts are non-empty; the section aggregate is moved into a derived table so the condition can check it without repeating `group_concat`.
+> **ADO-010 (finding F7).** Before migration 0025, the view glued `preamble` to the first heading without a separator — `preamble` is stored without a trailing newline, so the output was `> …in advance.## 1. Why`. This was content corruption, not formatting: any `doc export` broke the document. The `\n\n` separator is inserted only when both parts are non-empty; the section aggregate is computed once in an inner `SELECT` so the condition can check it without repeating `string_agg`.
+
+> **Performance (migration 0030).** Form 0025 assembled sections in a derived table with `GROUP BY document_id` and joined it to `document`. SQLite does not push the outer `WHERE document_id = ?` into that grouping: it materializes the aggregate over the **entire** `section` table and only then takes one row, so reading one document cost O(all sections in the project), and walking all documents cost O(documents × sections). On the cod-doc corpus (150 documents, 1200 sections) 150 single reads took 250–450 ms; that is what `GET /p/{slug}` sat on, running `detect_project_drift` over every document. The correlated subquery yields `SEARCH section USING INDEX ix_section_position (document_id=?)` — the same 150 reads take 6 ms, and reading all rows at once did not regress (8.4 → 5.1 ms). Output text is byte-identical — a hard requirement, because `document.projection_hash` is computed from it.
 
 ### 4.3 `ready_tasks`
 

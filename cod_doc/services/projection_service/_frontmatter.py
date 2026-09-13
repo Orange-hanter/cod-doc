@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import re
 from datetime import date
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
@@ -20,9 +20,7 @@ _RESERVED_KEYS = ("projection_hash", "doc_key", "revision")
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # What YAML round-trips through `frontmatter_json` can hold.
-YamlValue: TypeAlias = (
-    "str | int | float | bool | date | list[YamlValue] | dict[str, YamlValue] | None"
-)
+type YamlValue = "str | int | float | bool | date | list[YamlValue] | dict[str, YamlValue] | None"
 
 
 def _frontmatter_dict(model: DocumentModel) -> dict[str, Any]:

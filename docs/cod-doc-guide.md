@@ -7,7 +7,7 @@
 
 ## What you need
 
-- Python 3.11+ with `cod-doc` installed
+- Python 3.13+ with `cod-doc` installed
 - Any project with source code (we will create a demo project)
 - A terminal
 
@@ -188,7 +188,7 @@ A CLI utility to get a weather forecast from the terminal.
 - Output formats: table, JSON, compact
 
 ## Stack
-- Python 3.11+
+- Python 3.13+
 - Click (CLI framework)
 - httpx (HTTP client)
 - OpenWeatherMap API

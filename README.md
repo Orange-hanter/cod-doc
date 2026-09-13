@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/cod-doc/"><img src="https://img.shields.io/pypi/v/cod-doc" alt="PyPI"></a>
-  <a href="https://pypi.org/project/cod-doc/"><img src="https://img.shields.io/pypi/pyversions/cod-doc" alt="Python 3.11+"></a>
+  <a href="https://pypi.org/project/cod-doc/"><img src="https://img.shields.io/pypi/pyversions/cod-doc" alt="Python 3.13+"></a>
   <a href="https://github.com/Orange-hanter/cod-doc/actions/workflows/ci.yml"><img src="https://github.com/Orange-hanter/cod-doc/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
@@ -35,7 +35,7 @@ changed it.
 - **Built for LLM agents.** A dedicated 6-tool MCP profile (`agent_pick`,
   `agent_report`, `agent_complete`, …) gives an agent everything it needs in
   one call — no 100-tool cold start.
-- **Zero infrastructure.** Python 3.11+ and the SQLite that ships with it. No
+- **Zero infrastructure.** Python 3.13+ and the SQLite that ships with it. No
   daemon, no indexer, no external database — the project DB is a single file.
 
 ## Quick start
@@ -96,7 +96,7 @@ The repository is documented in Russian; this README is the English entry point.
 
 ## Requirements
 
-Python 3.11+ (3.11 / 3.12 / 3.13 tested in CI). SQLite ships with Python; no
+Python 3.13+ (3.13 tested in CI; 3.11/3.12 dropped 2026-09-07). SQLite ships with Python; no
 external database, daemon or indexer is required. The project DB is a single
 file under `.cod-doc/` and must live on a local disk — WAL mode does not work
 on iCloud, NFS or SMB shares.

@@ -101,7 +101,7 @@ Things not visible from a single file:
   `apply_profile()` **filters the already-registered** catalog
   (`mcp/profiles.py`). The `agent` profile is the **default**, 6
   task-centric tools, each returns a self-sufficient payload; then
-  `minimal` 20 / `standard` 110 / `full` 114. The counters are pinned
+  `minimal` 21 / `standard` 116 / `full` 120. The counters are pinned
   by the test `test_server_profiles.py` and duplicated in FIVE places:
   `mcp/profiles.py` (docstring), `server.py --profile`, `AGENTS.md` §5.9,
   this file and `docs/mcp-integration.md` (the family row + TOTAL) —
@@ -167,7 +167,7 @@ desynchronization — if you edit one side, edit both:
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md does not call non-existent tools |
 | `test_mcp_integration_doc.py` | numbers in `docs/mcp-integration.md` = the real `len(list_tools())` |
 | `test_web_routes_audit.py` | live web routes are documented |
-| `test_server_profiles.py` | profile counts (6/20/106/110) match in code and docs |
+| `test_server_profiles.py` | profile counts (6/21/116/120) match in code and docs |
 | `test_actor_kind_single_source.py` | `actor_kind` is derived only through `domain.entities.actor_kind_for_author` (ADR-012) |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | layers do not import upward |
 | `services/test_activity_write_path.py` | every write-service emits an activity event |
@@ -186,7 +186,7 @@ desynchronization — if you edit one side, edit both:
 ## Session tooling
 
 - The `cod-doc` MCP server (native stdio, `.mcp.json` explicitly sets the
-  `standard` profile, not the default `agent`) — 110 tools
+  `standard` profile, not the default `agent`) — 116 tools
   `task_*`/`doc_*`/`plan_*`/…; prefer them to ad-hoc Python scripts.
 - `/gate` — the full CI gate in one command.
 - Project skills `.claude/skills/`: `task-flow` (checkout → complete with

@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 from sqlalchemy import select
@@ -152,8 +152,6 @@ def parse_markdown(raw: str) -> ParsedMarkdown:
 # ── ADO-015: coercion that reports itself ────────────────────────────────────
 
 CoercionReason = Literal["unknown", "alias"]
-
-_ENUM = TypeVar("_ENUM", bound=StrEnum)
 
 
 @dataclass(slots=True, frozen=True)
@@ -288,15 +286,15 @@ def _diataxis_type(
     return fallback
 
 
-def _coerce_enum(
-    enum_cls: type[_ENUM],
+def _coerce_enum[ENUM: StrEnum](
+    enum_cls: type[ENUM],
     raw: object,
-    default: _ENUM,
+    default: ENUM,
     *,
     field_name: str,
     sink: list[CoercedField],
-    aliases: Mapping[str, _ENUM] | None = None,
-) -> _ENUM:
+    aliases: Mapping[str, ENUM] | None = None,
+) -> ENUM:
     """Coerce a frontmatter value into *enum_cls*, recording what was bent.
 
     An absent or empty value falls back to *default* in silence — that is a

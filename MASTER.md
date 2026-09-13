@@ -106,7 +106,7 @@ graph TD
 ### CI Pipeline (GitHub Actions)
 - **Description:** Continuous integration: ruff linting (blocking), mypy strict
   (blocking), pytest matrix Python 3.11/3.12/3.13, Docker build + smoke test.
-- **Reference:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:d9c7a1a33f0e`
+- **Reference:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:ee7ba290fd0f`
 - **Status:** `🟢 VERIFIED`
 - **Responsible agent:** `@Orchestrator`
 
@@ -146,7 +146,7 @@ graph TD
   a DB instead of bare markdown, a 5-line quick start, the four surfaces,
   a table of links to the rest of the docs. Substituted as the package's
   `long_description` (`pyproject.toml → readme`).
-- **Reference:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:cdb02d871cd1`
+- **Reference:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:a4a0ef0ae877`
 - **Status:** `🟢 VERIFIED`
 
 ### Handbook (user reference)
@@ -234,9 +234,9 @@ graph TD
   },
   "handoffs": {
     "ci": {
-      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:d9c7a1a33f0e",
+      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:ee7ba290fd0f",
       "trigger": "push / pull_request to main and develop",
-      "pipeline": "ruff → mypy → pytest (matrix 3.11/3.12/3.13) → docker build + smoke test"
+      "pipeline": "ruff → mypy → pytest (matrix 3.13) → docker build + smoke test"
     },
     "cd": {
       "workflow": "📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:bec2cea789cd",
@@ -261,7 +261,7 @@ graph TD
 | # | Document | 🗃️ doc-id | 🔑 Hash (sha:12) | 📅 Verified | Status |
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (this file) | `doc:MASTER_md` | regen-on-write | 2026-07-29 | 🟢 VERIFIED |
-| 2 | CI Pipeline | `doc:github_workflows_ci_yml` | `d9c7a1a33f0e` | 2026-09-07 | 🟢 VERIFIED |
+| 2 | CI Pipeline | `doc:github_workflows_ci_yml` | `ee7ba290fd0f` | 2026-09-07 | 🟢 VERIFIED |
 | 3 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-07-29 | 🟢 VERIFIED |
 | 4 | Architecture (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-07-29 | 🟡 LEGACY |
 | 5 | Module Specification (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-07-29 | 🟡 LEGACY |
@@ -270,7 +270,7 @@ graph TD
 | 8 | Documentation guide | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-07-29 | 🟢 VERIFIED |
 | 9 | MCP integration | `doc:docs_mcp-integration_md` | `2ea2686b2180` | 2026-09-11 | 🟢 VERIFIED |
 | 10 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `d48789a446d6` | 2026-09-11 | 🟢 VERIFIED |
-| 11 | README (showcase) | `doc:README_md` | `cdb02d871cd1` | 2026-09-07 | 🟢 VERIFIED |
+| 11 | README (showcase) | `doc:README_md` | `a4a0ef0ae877` | 2026-09-07 | 🟢 VERIFIED |
 
 > **Total:** 11 documents | 🟢 VERIFIED: 8 | 🟡 LEGACY: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >
@@ -310,6 +310,14 @@ graph TD
       "action": "Restored sections removed by the autonomous daemon on 2026-09-07 (commits 03b3c60, 0522c0f): §4 Quick Actions & Handoffs, §5 Validation & Changelog (registry of 11 documents + self-check), Snowball Protocol. Removed changelog entries with future dates (2026-09-12, 2026-09-13) — the daemon took the model cutoff date as the current date. Registry §5.1 recounted: 5 hashes updated (ci.yml, models/domain.md, HANDBOOK.md, mcp-integration.md, README.md), the files changed via legitimate commits. Hybrid references in §3 re-verified: 16/16 VALID. Daemon disabled (agent_enabled=false).",
       "author": "claude-opus-5",
       "scope": "master"
+    },
+    {
+      "date": "2026-09-09",
+      "version": "2.9",
+      "action": "ADO-168: added adr_service.sync_body — a path to sync an ADR registry row with its markdown projection, bypassing the status gate. Decision immutability is kept: status is not a parameter; the trail is distinct (revision op=sync_body, event adr.body_synced). Surfaces: CLI adr sync, MCP adr_sync_body.",
+      "author": "agent:claude-opus-5",
+      "scope": "master",
+      "task": "ADO-168"
     },
     {
       "date": "2026-09-07",

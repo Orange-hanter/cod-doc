@@ -56,9 +56,9 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
     # Header KPI cards: prefer DB-aggregated totals (single source of truth
     # with the Plan-progress block below). Fall back to legacy YAML stats
     # when the DB isn't initialised — same shape so the template doesn't
-    # need to branch.
-    yaml_stats: dict[str, Any] = proj.stats()
-    db_total = db_done = db_in_progress = 0
+    # need to branch. `proj.stats()` разбирает весь legacy-`tasks.yaml`, поэтому
+    # зовётся ниже и только если БД не дала чисел.
+    db_total = db_done = db_in_progress = db_failed = 0
 
     with try_open_project_db(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
@@ -120,6 +120,10 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                     }
                 )
 
+            db_failed = int(
+                task_svc.summarize_for_project(session, project_db_id)["by_status"].get("failed", 0)
+            )
+
             project_health = health_svc.build_project_health(
                 session,
                 project_db_id,
@@ -134,15 +138,16 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
             )
 
     if db_available and any((db_total, db_done, db_in_progress)):
-        kpi = {
-            **yaml_stats,
+        kpi: dict[str, Any] = {
+            **proj.run_state(),
             "total": db_total,
             "done": db_done,
             "in_progress": db_in_progress,
             "pending": db_total - db_done - db_in_progress,
+            "failed": db_failed,
         }
     else:
-        kpi = yaml_stats
+        kpi = proj.stats()
 
     return templates.TemplateResponse(
         request,
