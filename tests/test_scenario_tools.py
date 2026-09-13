@@ -73,9 +73,19 @@ def test_scenario_tools_are_standard_and_full_only() -> None:
         assert not keep_tool(name, "agent"), name
 
 
-def test_no_structure_name_is_claimed() -> None:
-    """RFC 24 §14 reserves structure_* for the evidence surface (STR-004)."""
-    assert not {n for n in _registered_names() if n.startswith("structure_")}
+def test_scenario_and_structure_families_do_not_collide() -> None:
+    """RFC 24 §14: scenario_* writes intentions; structure_* reads evidence.
+
+    The reservation this test originally guarded is now filled by PR #6.
+    The load-bearing rule is the name split, not emptiness of structure_*.
+    """
+    names = _registered_names()
+    structure = {n for n in names if n.startswith("structure_")}
+    overlap = SCENARIO_TOOLS & structure
+    assert not overlap, overlap
+    assert "structure_scenarios" in structure
+    assert "scenario_coverage" in names
+    assert "structure_coverage" not in names
 
 
 # --------------------------------------------------------------------------- #

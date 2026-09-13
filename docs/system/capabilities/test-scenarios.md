@@ -48,7 +48,7 @@ next to the capability it belongs to»), привязать его к capability
 ## 4. Как устроено
 
 Три таблицы (`scenario`, `scenario_step`, `scenario_link`, миграция
-`0031_scenarios`; см. [DATA_MODEL §3.16](../DATA_MODEL.md)) и сервис
+`0032_scenarios`; см. [DATA_MODEL §3.16](../DATA_MODEL.md)) и сервис
 `cod_doc/services/scenario_service/`. Вид сценария берётся дословно из
 [RFC 24 §9](../../../proposals/24-structure-contracts-scenarios.md):
 `happy_path`, `error_path`, `boundary_value`, `invariant`, `integration`.

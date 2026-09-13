@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **120 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **125 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -53,9 +53,9 @@ MCP (Model Context Protocol) — стандартный протокол для 
 
 ```bash
 cod-doc-mcp                              # agent (default cycle-5)
-cod-doc-mcp --profile minimal            # 20 cold-start tools
-cod-doc-mcp --profile standard           # 116 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 120 (включая legacy)
+cod-doc-mcp --profile minimal            # 21 cold-start tools
+cod-doc-mcp --profile standard           # 121 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 125 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 ```
 
@@ -100,7 +100,7 @@ COD_DOC_PROFILE=full cod-doc-mcp         # через env
 
 ### Что можно делать
 
-После подключения в Copilot Chat доступна вся MCP-поверхность (120 тулов на текущий релиз). Примеры запросов:
+После подключения в Copilot Chat доступна вся MCP-поверхность (125 тулов на текущий релиз). Примеры запросов:
 
 - "Покажи статус проекта weather-cli"
 - "Какие задачи не закрыты?"
@@ -305,7 +305,8 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **finding.\* (RFC 22)** | 4 | Внешние находки (ai-review / ZAIrgRush / routines): triage и промоушен в задачи. Только профили standard/full | `finding_list`, `finding_get`, `finding_promote`, `finding_dismiss` |
 | **ctx.\* (RFC 22)** | 3 | Контекст для внешних потребителей: `ctx_docs` = `doc_list`, `ctx_drift` = `doc_drift_all` (SYM-006D), `ctx_drift_gate` — детерминированный гейт документации по файлам PR с идемпотентным PR-комментарием (SYM-010). Только профили standard/full | `ctx_docs`, `ctx_drift`, `ctx_drift_gate` |
 | **scenario.\* (RFC 24 §9)** | 9 | Сценарии тестирования: авторская половина RFC 24 — что должно быть верно (вид, предусловия, шаги, ожидаемый результат, якорь в capability-документе) и проекция в `docs/system/scenarios/`. Вердикты покрытия сюда не попадают: это доказательства producer'а (STR-002). Только профили standard/full | `scenario_create`, `scenario_get`, `scenario_list`, `scenario_update`, `scenario_retire`, `scenario_set_steps`, `scenario_link`, `scenario_export`, `scenario_coverage` |
-| **ИТОГО** | **120** | | |
+| **structure.\*** | 5 | Pinned code-structure snapshots, drift, scenarios and BFS context (not projection drift; not ai_review findings) | `structure_get`, `structure_context`, `structure_drift`, `structure_scenarios`, `structure_diff` |
+| **ИТОГО** | **125** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
@@ -340,7 +341,7 @@ docstring соответствующих тулов. Для новых инте�
 | Copilot Chat | ✅ | ✅ | ❌ | Частично |
 | Claude Desktop | ✅ | ✅ | ❌ | Через copy-paste |
 | CI/CD | ❌ | ✅ | ✅ | ❌ |
-| Кол-во инструментов | 120 | 120 | ~8 | 0 |
+| Кол-во инструментов | 125 | 125 | ~8 | 0 |
 | Семантический поиск | ✅ | ✅ | ❌ | ❌ |
 | Запуск агента | ✅ | ✅ | ✅ (WS) | ❌ |
 

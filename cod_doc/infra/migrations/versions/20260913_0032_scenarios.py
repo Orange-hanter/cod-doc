@@ -9,9 +9,13 @@ No `server_default` is used: every write goes through `scenario_service`, and
 quoted server-side literals have already broken PostgreSQL `CREATE TABLE` in
 earlier migrations (STO-019).
 
-Revision ID: 0031_scenarios
-Revises: 0030_document_body_pushdown
-Create Date: 2026-09-08
+Originally written as 0031_scenarios against 0030_document_body_pushdown.
+Main took 0031 for the structure platform (PR #6) while this branch was open,
+so the revision is retargeted onto 0031_structure_platform.
+
+Revision ID: 0032_scenarios
+Revises: 0031_structure_platform
+Create Date: 2026-09-13
 """
 
 from __future__ import annotations
@@ -24,8 +28,8 @@ from alembic import op
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-revision: str = "0031_scenarios"
-down_revision: str | None = "0030_document_body_pushdown"
+revision: str = "0032_scenarios"
+down_revision: str | None = "0031_structure_platform"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

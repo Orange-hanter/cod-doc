@@ -250,7 +250,7 @@ V1 delivery — pull существующего CI artifact через дове�
 
 **Реализовано (TSC-001…TSC-007, 2026-09-08):** claim'ы с `kind = scenario`
 живут не в `doc_code_claim`, а в собственных таблицах `scenario` /
-`scenario_step` / `scenario_link` (миграция `0031_scenarios`) — см. §12.
+`scenario_step` / `scenario_link` (миграция `0032_scenarios`) — см. §12.
 Поля `doc_key` / `section_anchor` / `doc_content_hash` / `subject_ref` /
 `status` / `provenance` перенесены как есть. Значение `retired` добавлено
 cod-doc'ом: id сценариев не переиспользуются, поэтому снятию нужен
@@ -392,7 +392,7 @@ Blob-first, не только Document/Section:
 
 MVP не дублирует весь Graphify graph в SQL. После подтверждения query patterns нормализовать scoped `code_boundary`, `code_entity`, `code_contract`, `code_edge`.
 
-**Scenario index больше не отложен.** Он реализован в миграции `0031_scenarios`
+**Scenario index больше не отложен.** Он реализован в миграции `0032_scenarios`
 как `scenario` / `scenario_step` / `scenario_link` (TSC-001) и занимает именно
 этот слот. STR-002 не переделывает его, а присоединяет к нему append-only
 `scenario_assessment` по `scenario.row_id`: одна строка на прогон CI, чтобы

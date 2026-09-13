@@ -147,6 +147,7 @@ runtime-evaluated-decorators = [
 # API surface uses Pydantic schemas as parameter types — those need to stay
 # at runtime regardless of TYPE_CHECKING heuristics.
 "cod_doc/api/routes.py" = ["TC001", "TC002", "TC003"]
+"cod_doc/api/structure.py" = ["TC001", "TC002", "TC003"]
 "cod_doc/api/webhooks.py" = ["TC001", "TC002", "TC003"]
 "cod_doc/api/deps.py" = ["TC001", "TC002", "TC003"]
 "cod_doc/api/web/*.py" = ["TC001", "TC002", "TC003"]
