@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-13
 related_docs:
   - ../standards/task-plan.md
   - task-creation.md
@@ -27,15 +27,23 @@ related_docs:
 
 ## 2. Операции
 
-| Операция | Сервис |
+`PlanService` — **read-path**: progress, ready-set, audit, export, graph
+queries. Create/section-create живут в MCP/CLI и пишут через репозиторий, не
+через этот пакет.
+
+| Операция | Где |
 |----------|--------|
-| Создать план | `PlanService.create` |
-| Добавить секцию | `PlanService.add_section` |
-| Переиспользовать секцию (move to split) | `PlanService.split_inline_to_section_files` |
-| Пересчитать | `PlanService.recalc` |
-| Получить ready-tasks | `PlanService.ready(plan, max_tasks)` |
-| Экспорт | `PlanService.export(plan)` |
-| Закрыть план | `PlanService.close` (когда все задачи done) |
+| Создать план | MCP `plan_create` (CLI create нет) |
+| Добавить секцию | MCP `plan_section_create` (CLI section-create нет) |
+| Список секций | MCP `plan_sections_list` |
+| Пересчитать progress | `plan_service.recalc` ← MCP `plan_progress` / CLI `cod-doc plan show` |
+| Ready-tasks | `plan_service.ready` ← MCP `plan_ready` / CLI `cod-doc plan ready` |
+| Экспорт проекции | `plan_service.export` ← MCP `plan_export` / CLI `cod-doc plan export` |
+| Freeze | `plan_service.freeze_projection` ← MCP `plan_freeze` / CLI `cod-doc plan freeze` |
+| Аудит | `plan_service.audit` ← MCP `plan_audit` / CLI `cod-doc plan audit` |
+| Граф | `forward_chain` / `reverse_chain` / `critical_path` — нет отдельной команды `plan graph` |
+
+`PlanService.close` и `split_inline_to_section_files` **не существуют**.
 
 ## 3. Progress Overview — generated artifact
 
@@ -82,13 +90,18 @@ Top-N из `ready_tasks`, упорядочено по `priority desc`, `created 
 
 ## 5. Статус плана (derived)
 
-| Условие | Статус |
-|---------|--------|
-| Все задачи `pending` | `pending` |
-| ≥ 1 `in-progress` либо смешанное | `in-progress` |
-| Все `done` | `done` |
+Считается в `plan_service._derive_status(total, done, in_progress)` из
+view `plan_totals` / `section_totals`. Это **не** `TaskStatus`.
 
-Автоматически в `plan_totals` view. В body parent-plan статус рендерится как «Plan Status: …».
+| Условие | `DerivedStatus` |
+|---------|--------|
+| `total == 0` | `empty` |
+| `done == total` | `done` |
+| `in_progress > 0` или `done > 0` | `in-progress` |
+| иначе (все задачи ещё не взяты) | `pending` |
+
+Capability раньше утверждала «все задачи pending → pending» и не знала
+`empty`. Код — источник истины.
 
 ## 6. Completed-tasks log
 
@@ -142,15 +155,25 @@ cod-doc plan convert --plan M2-dev-module --format split
 
 ## 10. MCP-поверхность
 
+Имена — `snake_case` (`plan_*`), не dotted `plan.list`. Профили
+`standard` / `full`.
+
 | Tool | Операция |
 |------|----------|
-| `plan.list` | Список планов с progress |
-| `plan.ready` | Ready tasks |
-| `plan.audit` | Валидация |
-| `plan.graph` | Граф зависимостей |
-| `plan.next_batch` | Синтетический список: ready × priority × предпочтения агента |
+| `plan_create` | Создать план, опционально с секциями |
+| `plan_section_create` | Добавить секцию |
+| `plan_sections_list` | Секции с task counts |
+| `plan_progress` | `recalc`: total/done/remaining + derived status |
+| `plan_ready` | Ready-set, priority-ordered |
+| `plan_audit` | Циклы + done-drift |
+| `plan_export` | Markdown-проекции |
+| `plan_freeze` | Snapshot проекции в Document |
+| `plan_critical_path` | Длиннейшая цепочка зависимостей |
+| `plan_forward_chain` | Prerequisites задачи |
+| `plan_reverse_chain` | Dependents задачи |
 
-Цель — избавить агент от чтения parent-plan файла при рутинных запросах.
+`plan.list` / `plan.graph` / `plan.next_batch` **не зарегистрированы**.
+CLI-зеркало: `cod-doc plan show|ready|audit|export|freeze|critical-path|forward|reverse`.
 
 ## 11. UI (TUI/веб)
 
