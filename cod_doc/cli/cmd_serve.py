@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 import click
+
+from cod_doc.mcp.profiles import VALID_PROFILES
 
 if TYPE_CHECKING:
     from cod_doc.config import Config
@@ -17,7 +20,6 @@ if TYPE_CHECKING:
 @click.pass_context
 def serve(ctx: click.Context, host: str | None, port: int | None, reload: bool) -> None:
     """Запустить REST API сервер (production)."""
-    import os
 
     import uvicorn
 
@@ -43,15 +45,15 @@ def serve(ctx: click.Context, host: str | None, port: int | None, reload: bool) 
 )
 @click.option("--host", default="127.0.0.1", show_default=True)
 @click.option("--port", default=8001, type=int, show_default=True)
-@click.pass_context
-def mcp_server(ctx: click.Context, transport: str, host: str, port: int) -> None:
+@click.option(
+    "--profile",
+    type=click.Choice(sorted(VALID_PROFILES)),
+    default=os.environ.get("COD_DOC_PROFILE", "agent"),
+    show_default=True,
+    help="Same catalog filter as `cod-doc-mcp --profile` (ADO-079).",
+)
+def mcp_server(transport: str, host: str, port: int, profile: str) -> None:
     """Запустить MCP-сервер поверх COD-DOC."""
-    from cod_doc.mcp.server import mcp
+    from cod_doc.mcp.server import run_mcp_server
 
-    if transport == "streamable-http":
-        mcp.settings.host = host
-        mcp.settings.port = port
-        mcp.settings.stateless_http = True
-        mcp.run(transport="streamable-http")
-        return
-    mcp.run(transport="stdio")
+    run_mcp_server(transport=transport, host=host, port=port, profile=profile)

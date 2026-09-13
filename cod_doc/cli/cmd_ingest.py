@@ -6,6 +6,7 @@ import json
 import subprocess
 import tempfile
 from contextlib import contextmanager
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
@@ -62,6 +63,97 @@ def _download_pr_artifact(pr: int, dest: Path, repo: Path | None = None) -> None
     log.debug("gh run download output: %s", result.stdout)
 
 
+_AI_REVIEW_VERSIONS = frozenset({1, 2})
+
+
+def _load_json_object(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _is_ai_review_export(payload: dict[str, Any]) -> bool:
+    return payload.get("version") in _AI_REVIEW_VERSIONS and "findings" in payload
+
+
+def select_ai_review_artifact(dest: Path) -> Path:
+    """Pick the review export in a downloaded artifact (ADO-094).
+
+    Prefer a JSON object with ``version`` 1|2 and a ``findings`` key. Zero
+    or several such files is an error — never silently take ``sorted()[0]``.
+    """
+    json_files = sorted(dest.rglob("*.json"))
+    if not json_files:
+        raise click.ClickException("Artifact contains no .json files.")
+    candidates = [
+        path
+        for path in json_files
+        if (payload := _load_json_object(path)) is not None and _is_ai_review_export(payload)
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    names = ", ".join(path.name for path in json_files)
+    if not candidates:
+        raise click.ClickException(
+            "Artifact contains no ai-review export (JSON object with version 1|2 "
+            f"and a findings key). Files: {names}"
+        )
+    chosen_names = ", ".join(path.name for path in candidates)
+    raise click.ClickException(
+        f"Artifact has {len(candidates)} ai-review exports ({chosen_names}); "
+        "pass --input to pick one."
+    )
+
+
+def review_failure_message(payload: dict[str, Any]) -> str | None:
+    """Return an error if the export is a failed LLM review, not a clean PR (ADO-095)."""
+    llm_failed = payload.get("llmFailed") is True
+    would_block = payload.get("wouldBlock") is True
+    if not llm_failed and not would_block:
+        return None
+    errors = payload.get("llmErrors")
+    extra = f" llmErrors={errors!r}" if errors else ""
+    return (
+        f"ai-review did not complete (llmFailed={llm_failed}, wouldBlock={would_block})."
+        f"{extra} Not treated as a clean PR."
+    )
+
+
+def _emit_review_failed(
+    ctx: click.Context,
+    project: str,
+    reason: str,
+    payload: dict[str, Any],
+) -> None:
+    from cod_doc.infra.db import transactional
+    from cod_doc.services.activity_service import emit
+
+    cfg: Config = ctx.obj["config"]
+    _entry, (factory, engine) = _open_entry(cfg, project)
+    try:
+        with transactional(factory) as session:
+            project_id = _require_project_id(session, project)
+            emit(
+                session,
+                project_id=project_id,
+                kind="finding.ingest_failed",
+                actor_kind="cli",
+                scope_kind="source_run",
+                scope_id="cli-ingest-ai_review",
+                payload={
+                    "llmFailed": payload.get("llmFailed"),
+                    "wouldBlock": payload.get("wouldBlock"),
+                    "llmErrors": payload.get("llmErrors"),
+                    "reason": reason,
+                },
+                summary=reason,
+            )
+    finally:
+        engine.dispose()
+
+
 @contextmanager
 def _resolve_input_stream(
     input_stream: TextIO,
@@ -77,17 +169,8 @@ def _resolve_input_stream(
     with tempfile.TemporaryDirectory(prefix="cod-doc-ingest-") as td:
         dest = Path(td)
         _download_pr_artifact(from_pr, dest, repo=repo)
-        json_files = sorted(dest.rglob("*.json"))
-        if not json_files:
-            raise click.ClickException(
-                f"Artifact `pr-review-export-{from_pr}` contains no .json files."
-            )
-        if len(json_files) > 1:
-            log.warning(
-                "Artifact contains multiple JSON files; using %s",
-                json_files[0].name,
-            )
-        with json_files[0].open("r", encoding="utf-8") as fh:
+        chosen = select_ai_review_artifact(dest)
+        with chosen.open("r", encoding="utf-8") as fh:
             yield fh
 
 
@@ -276,15 +359,41 @@ def ai_review_cmd(
 ) -> None:
     """Ingest an ai-review JSON export (file, stdin, or PR artifact)."""
     with _resolve_input_stream(input_stream, from_pr=from_pr, repo=repo) as stream:
-        _run_ingest(
-            ctx,
-            adapter_name="ai_review",
-            project=project,
-            input_stream=stream,
-            dry_run=dry_run,
-            as_json=as_json,
-            pr=from_pr,
-        )
+        raw_text = stream.read()
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise click.ClickException(f"Invalid JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise click.ClickException("ai_review payload must be a JSON object")
+    failure = review_failure_message(payload)
+    if failure:
+        if not dry_run:
+            _emit_review_failed(ctx, project, failure, payload)
+        if as_json:
+            console.print(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "review_failed": True,
+                        "reason": failure,
+                        "llmFailed": payload.get("llmFailed"),
+                        "wouldBlock": payload.get("wouldBlock"),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        raise click.ClickException(failure)
+
+    _run_ingest(
+        ctx,
+        adapter_name="ai_review",
+        project=project,
+        input_stream=StringIO(raw_text),
+        dry_run=dry_run,
+        as_json=as_json,
+        pr=from_pr,
+    )
 
 
 # Register a generic subcommand for every non-ai_review adapter.

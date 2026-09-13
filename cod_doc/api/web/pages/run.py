@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
 from cod_doc.api.web.templates_env import templates
+from cod_doc.core.project import Project
 from cod_doc.services import activity_service, run_service
 
 router = APIRouter()
@@ -49,6 +50,24 @@ def _decorate_run(r: dict[str, Any]) -> dict[str, Any]:
     return {**r, "age": _humanize_age(r["started_at"])}
 
 
+def _console_context(
+    proj: Project,
+    *,
+    runs: list[dict[str, Any]],
+    active_run: dict[str, Any] | None,
+    selected_run: dict[str, Any] | None,
+    selected_events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "project": {"name": proj.entry.name},
+        "runs": runs,
+        "active_run": active_run,
+        "selected_run": selected_run,
+        "selected_events": selected_events,
+        "daemon_enabled": proj.entry.daemon_enabled,
+    }
+
+
 @router.get("/p/{slug}/run", response_class=HTMLResponse)
 def run_console(
     request: Request,
@@ -66,13 +85,13 @@ def run_console(
     return templates.TemplateResponse(
         request,
         "project/run_console.html",
-        {
-            "project": {"name": proj.entry.name},
-            "runs": runs,
-            "active_run": active_run,
-            "selected_run": None,
-            "selected_events": [],
-        },
+        _console_context(
+            proj,
+            runs=runs,
+            active_run=active_run,
+            selected_run=None,
+            selected_events=[],
+        ),
     )
 
 
@@ -106,11 +125,11 @@ def run_detail(
     return templates.TemplateResponse(
         request,
         "project/run_console.html",
-        {
-            "project": {"name": proj.entry.name},
-            "runs": runs,
-            "active_run": active_run,
-            "selected_run": _decorate_run(run),
-            "selected_events": events,
-        },
+        _console_context(
+            proj,
+            runs=runs,
+            active_run=active_run,
+            selected_run=_decorate_run(run),
+            selected_events=events,
+        ),
     )

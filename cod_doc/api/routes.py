@@ -27,7 +27,7 @@ from cod_doc.core.project import Project
 from cod_doc.domain.entities import TaskStatus, TaskType
 from cod_doc.infra.db import make_session_factory
 from cod_doc.infra.repositories import ProjectRepository
-from cod_doc.services import project_health_service, task_service
+from cod_doc.services import project_health_service, project_stats, task_service
 
 logger = logging.getLogger("cod_doc.api")
 
@@ -70,11 +70,10 @@ def update_config(update: ConfigUpdate, request: Request) -> dict[str, Any]:
 @router.get("/projects")
 def list_projects() -> list[dict[str, Any]]:
     cfg = get_config()
-    result = []
-    for entry in cfg.list_projects():
-        proj = Project(entry)
-        result.append({**entry.model_dump(), "stats": proj.stats()})
-    return result
+    return [
+        {**entry.model_dump(), "stats": project_stats.stats_for_entry(entry)}
+        for entry in cfg.list_projects()
+    ]
 
 
 @router.post("/projects", status_code=201)
@@ -100,7 +99,7 @@ def read_project(name: str) -> dict[str, Any]:
     proj = get_project(name)
     return {
         **proj.entry.model_dump(),
-        "stats": proj.stats(),
+        "stats": project_stats.stats_for_entry(proj.entry),
         "master_exists": proj.entry.master_path.exists(),
     }
 
@@ -310,3 +309,50 @@ async def daemon_start() -> dict[str, Any]:
         raise HTTPException(400, "agent_enabled=False в конфиге — измени настройку сначала")
     started = start_daemon(log_callback=lambda m: logger.info(m))
     return {"started": started, "running": daemon_is_running()}
+
+
+@router.post("/projects/{name}/daemon/stop")
+def project_daemon_stop(name: str) -> dict[str, Any]:
+    """Pause the autonomous agent for one project (ADO-110).
+
+    Sets ``daemon_enabled=false`` so the next daemon tick skips this
+    project. Does not abort an in-flight run and does not stop the global
+    daemon process.
+    """
+    cfg = get_config()
+    if cfg.get_project(name) is None:
+        raise HTTPException(404, f"Проект не найден: {name}")
+    try:
+        entry = cfg.set_project_daemon_enabled(name, enabled=False)
+    except KeyError as exc:
+        raise HTTPException(
+            400,
+            "Project is not in the registry; daemon_enabled cannot be persisted.",
+        ) from exc
+    return {
+        "name": entry.name,
+        "daemon_enabled": False,
+        "scope": "project",
+        "global_daemon_running": daemon_is_running(),
+    }
+
+
+@router.post("/projects/{name}/daemon/start")
+def project_daemon_start(name: str) -> dict[str, Any]:
+    """Resume the autonomous agent for one project (ADO-110)."""
+    cfg = get_config()
+    if cfg.get_project(name) is None:
+        raise HTTPException(404, f"Проект не найден: {name}")
+    try:
+        entry = cfg.set_project_daemon_enabled(name, enabled=True)
+    except KeyError as exc:
+        raise HTTPException(
+            400,
+            "Project is not in the registry; daemon_enabled cannot be persisted.",
+        ) from exc
+    return {
+        "name": entry.name,
+        "daemon_enabled": True,
+        "scope": "project",
+        "global_daemon_running": daemon_is_running(),
+    }
