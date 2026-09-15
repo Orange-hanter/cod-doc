@@ -6,8 +6,9 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+import pytest
 from click.testing import CliRunner
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,9 +17,6 @@ from cod_doc.cli import main
 from cod_doc.config import Config
 from cod_doc.infra.db import make_engine
 from cod_doc.infra.models import ActivityEventModel, FindingModel, FindingSourceRunModel
-
-if TYPE_CHECKING:
-    import pytest
 
 
 def _ai_payload(*, head_sha: str = "abc123", pr: int = 42) -> dict[str, Any]:
@@ -302,3 +300,175 @@ def test_ingest_dry_run_does_not_emit_activity_event(
 
     events = _activity_events("p")
     assert len(events) == 0
+
+
+def _swarm_decoy() -> dict[str, Any]:
+    """JSON that sorts before the real export and has no ``findings`` key."""
+    return {"version": 1, "kind": "swarm", "models": ["a", "b"]}
+
+
+def test_select_ai_review_artifact_skips_swarm_decoy(tmp_path: Path) -> None:
+    dest = tmp_path / "artifact"
+    dest.mkdir()
+    (dest / "orakul-ai-review-swarm.json").write_text(json.dumps(_swarm_decoy()), encoding="utf-8")
+    real = dest / "orakul-ai-review.json"
+    real.write_text(json.dumps(_ai_payload()), encoding="utf-8")
+
+    from cod_doc.cli.cmd_ingest import select_ai_review_artifact
+
+    assert select_ai_review_artifact(dest) == real
+
+
+def test_select_ai_review_artifact_fails_when_several_exports(tmp_path: Path) -> None:
+    import click
+
+    from cod_doc.cli.cmd_ingest import select_ai_review_artifact
+
+    dest = tmp_path / "artifact"
+    dest.mkdir()
+    (dest / "x-y.json").write_text(json.dumps(_ai_payload()), encoding="utf-8")
+    (dest / "x.json").write_text(json.dumps(_ai_payload(head_sha="other")), encoding="utf-8")
+    with pytest.raises(click.ClickException, match="2 ai-review exports"):
+        select_ai_review_artifact(dest)
+
+
+def test_select_ai_review_artifact_fails_when_none(tmp_path: Path) -> None:
+    import click
+
+    from cod_doc.cli.cmd_ingest import select_ai_review_artifact
+
+    dest = tmp_path / "artifact"
+    dest.mkdir()
+    (dest / "orakul-ai-review-swarm.json").write_text(json.dumps(_swarm_decoy()), encoding="utf-8")
+    with pytest.raises(click.ClickException, match="no ai-review export"):
+        select_ai_review_artifact(dest)
+
+
+def test_ingest_from_pr_picks_real_export_not_first_sorted(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    isolated_cod_doc_home: Path,
+) -> None:
+    _init_project(tmp_path, "p")
+    findings = [_ai_payload()["findings"][0] | {"fp": f"fp-{i}"} for i in range(11)]
+    real_payload = {**_ai_payload(), "findings": findings}
+
+    def _fake_download(pr: int, dest: Path, repo: Path | None = None) -> None:
+        (dest / "orakul-ai-review-swarm.json").write_text(
+            json.dumps(_swarm_decoy()), encoding="utf-8"
+        )
+        (dest / "orakul-ai-review.json").write_text(json.dumps(real_payload), encoding="utf-8")
+
+    monkeypatch.setattr("cod_doc.cli.cmd_ingest._download_pr_artifact", _fake_download)
+
+    result = CliRunner().invoke(
+        main,
+        ["ingest", "ai_review", "--project", "p", "--from-pr", "42", "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["created"] == 11
+    fcount, _rcount = _db_counts("p")
+    assert fcount == 11
+
+
+def test_ingest_from_pr_fails_on_ambiguous_exports(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    isolated_cod_doc_home: Path,
+) -> None:
+    _init_project(tmp_path, "p")
+
+    def _fake_download(pr: int, dest: Path, repo: Path | None = None) -> None:
+        (dest / "x-y.json").write_text(json.dumps(_ai_payload()), encoding="utf-8")
+        (dest / "x.json").write_text(json.dumps(_ai_payload(head_sha="zz")), encoding="utf-8")
+
+    monkeypatch.setattr("cod_doc.cli.cmd_ingest._download_pr_artifact", _fake_download)
+
+    result = CliRunner().invoke(
+        main,
+        ["ingest", "ai_review", "--project", "p", "--from-pr", "42"],
+    )
+    assert result.exit_code != 0
+    assert "2 ai-review exports" in result.output
+    fcount, _rcount = _db_counts("p")
+    assert fcount == 0
+
+
+def test_ingest_llm_failed_is_not_a_clean_pr(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    _init_project(tmp_path, "p")
+    infile = tmp_path / "export.json"
+    payload = {
+        "version": 1,
+        "findings": [],
+        "llmFailed": True,
+        "wouldBlock": False,
+        "llmErrors": ["timeout"],
+    }
+    infile.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main,
+        ["ingest", "ai_review", "--project", "p", "--input", str(infile), "--json"],
+    )
+    assert result.exit_code != 0
+    assert "Not treated as a clean PR" in result.output
+    assert "review_failed" in result.output
+    fcount, _rcount = _db_counts("p")
+    assert fcount == 0
+    events = _activity_events("p")
+    assert len(events) == 1
+    assert events[0].kind == "finding.ingest_failed"
+
+
+def test_ingest_would_block_is_not_a_clean_pr(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    _init_project(tmp_path, "p")
+    infile = tmp_path / "export.json"
+    payload = {
+        "version": 1,
+        "findings": [_ai_payload()["findings"][0]],
+        "wouldBlock": True,
+    }
+    infile.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main,
+        ["ingest", "ai_review", "--project", "p", "--input", str(infile)],
+    )
+    assert result.exit_code != 0
+    assert "wouldBlock=True" in result.output
+    fcount, _rcount = _db_counts("p")
+    assert fcount == 0
+
+
+def test_ingest_honest_zero_findings_succeeds(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    _init_project(tmp_path, "p")
+    infile = tmp_path / "export.json"
+    infile.write_text(json.dumps({"version": 1, "findings": []}), encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main,
+        ["ingest", "ai_review", "--project", "p", "--input", str(infile), "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["created"] == 0
+    assert data["updated"] == 0
+
+
+def test_ingest_llm_failed_dry_run_does_not_emit(
+    tmp_path: Path, isolated_cod_doc_home: Path
+) -> None:
+    _init_project(tmp_path, "p")
+    infile = tmp_path / "export.json"
+    infile.write_text(
+        json.dumps({"version": 1, "findings": [], "llmFailed": True}),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["ingest", "ai_review", "--project", "p", "--input", str(infile), "--dry-run"],
+    )
+    assert result.exit_code != 0
+    assert _activity_events("p") == []
