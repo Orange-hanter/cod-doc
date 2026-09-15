@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-15
 related_docs:
   - ../audit/2026-04-19-initial-audit.md
   - ../migration/from-restate.md
@@ -14,6 +14,14 @@ related_docs:
 # Capability — Project Bootstrap
 
 > Что происходит при `cod-doc project new`: записи в БД, скелетные документы, агенты, конфиг.
+
+## 0. As implemented (2026-09-15)
+
+CLI: `cod-doc project list|add|remove|init|migrate|status`.
+`project_service.init_project` идемпотентен (повторный вызов безопасен).
+Embedded SoT — `<root>/.cod-doc/state.db`. MCP не создаёт проект: только
+`set_default_project` / `get_default_project` / `clear_default_project`.
+Команды `project new` нет.
 
 ## 1. Команда
 

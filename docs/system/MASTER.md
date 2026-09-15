@@ -69,6 +69,8 @@ docs/system/
 │   ├── project-bootstrap.md        ← `cod-doc project new`
 │   ├── web-frontend.md             ← server-rendered Web UI (Jinja + HTMX)
 │   ├── cloud-agent-plane.md        ← облачный SoT + remote ИИ-воркеры
+│   ├── backup-and-export.md        ← backup/restore CLI ещё нет; export = проекции
+│   ├── test-scenarios.md           ← авторская половина RFC 24 §9
 │   └── audit-and-ci.md             ← каталог проверок + git/CI
 │
 ├── scenarios/                      ← ГЕНЕРИРУЕТСЯ scenario_service, по файлу

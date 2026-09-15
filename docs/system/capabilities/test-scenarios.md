@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-09-08
-last_updated: 2026-09-08
+last_updated: 2026-09-15
 related_docs:
   - ../../../proposals/24-structure-contracts-scenarios.md
   - user-stories-graph.md
@@ -19,6 +19,13 @@ related_docs:
 > ожидаемый результат — как сущность в БД, с проекцией в
 > `docs/system/scenarios/`. Доказательство того, что тест это подтверждает,
 > сюда не входит по конструкции.
+
+## 0. As implemented (2026-09-15)
+
+Три таблицы, миграция `0032_scenarios`. MCP `scenario_*` (standard/full),
+CLI `cod-doc scenario`. Статусы claim: `draft|confirmed|retired`. Вердикт
+покрытия как статус → `SCV-003`. `scenario coverage` — какие kinds описаны,
+не какие тесты зелёные.
 
 ## 1. Что система умеет
 

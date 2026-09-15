@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-15
 related_docs:
   - ../ARCHITECTURE.md
   - ../DATA_MODEL.md
@@ -14,6 +14,13 @@ related_docs:
 # Capability — Concentrated Context Retrieval
 
 > Получение «минимально достаточного» контекста проекта по запросу. Замена ручному «прочитай весь Docs/obsidian/Modules/…».
+
+## 0. As implemented (2026-09-15)
+
+MCP `context_get` с depth `L0|L1|L2|L3`. Невалидный depth → `ValueError`.
+L3 semantic — fail-open: нет эмбеддера → `related.semantic=[]`.
+`hints.open_questions` всегда пустой список. CLI — `cod-doc ctx docs|drift|search`,
+не `context get`.
 
 ## 1. Зачем
 

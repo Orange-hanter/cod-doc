@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-13
+last_updated: 2026-09-15
 related_docs:
   - ../standards/task-plan.md
   - task-creation.md
@@ -105,53 +105,35 @@ Capability раньше утверждала «все задачи pending → p
 
 ## 6. Completed-tasks log
 
-- Создаётся автоматически при переходе первой задачи в `done`, **если** план ≥ 10 задач.
-- Обновляется при каждом `complete`.
-- Содержит table + optional Implementation Details (markdown-секция, генерируется по tag `#implementation-note` на revision).
+Колонка `plan.completed_log_id` есть в схеме. Автосоздание log-документа
+при пороге «≥ 10 задач» **не реализовано**: ни `complete`, ни `plan_service`
+её не заполняют. След закрытия задачи — `revision` + `activity_event`, не
+generated completed-log.
 
 ## 7. Dependency Graph
 
-Реконструируется по `dependency`-таблице:
+Рёбра — таблица `dependency` (`kind='blocks'`). Живые запросы:
 
-```mermaid
-graph TD
-  AUTH_020["AUTH-020 (tests)"]
-  AUTH_021["AUTH-021 (migration)"]
-  AUTH_022["AUTH-022 (feature)"]
-  AUTH_020 --> AUTH_021
-  AUTH_021 --> AUTH_022
-```
+- MCP/CLI `plan_critical_path` / `cod-doc plan critical-path`
+- `plan_forward_chain` / `plan_reverse_chain`
 
-Правила рендера:
-
-- Node: `<ID> (<type-short>)`, coloring по статусу (optional, через Mermaid classDef).
-- Обязателен при ≥ 15 задач (правило Restate).
-- Cross-plan зависимости видны — node префиксится module-id.
-
-Команда `cod-doc plan graph --plan M1-auth-module --format mermaid|dot|json`.
+Отдельной команды `cod-doc plan graph` нет, Mermaid/dot-экспорта нет.
+Restate-правила «рисовать с ≥ 15 задач» и prefix module-id для cross-plan
+рёбер в этом сервисе не живут.
 
 ## 8. Аудит плана
 
-`cod-doc plan audit [--plan <scope>]` проверяет:
+`plan_service.audit` → `PlanAuditReport`: циклы среди `blocks`, done-задачи
+чьи blocking-зависимости ещё не done, длина critical path. CLI
+`cod-doc plan audit` / MCP `plan_audit`.
 
-- Progress Overview ↔ db:`plan_totals` не расходятся (не должны, т. к. генерится).
-- Нет задач со `status=done`, у которых есть `pending` `depends_on` → error.
-- Нет циклов в зависимостях.
-- Нет «сиротских» секций без задач.
-- `last_updated` плана соответствует `max(task.last_updated)`.
-- completed-log есть при ≥ 20 задачах.
-
-Строгий режим `--strict` выходит ненулевым кодом — подходит для CI.
+Не проверяет: Progressive Overview vs `plan_totals`, сиротские секции,
+`last_updated`, наличие completed-log. Флага `--strict` нет.
 
 ## 9. Поддержка inline ↔ split переходов
 
-```bash
-cod-doc plan convert --plan M2-dev-module --format split
-# создаёт tasks/section-*.md, удаляет inline-секции из parent-plan
-# → файлы выдерживают 400-строчный лимит Restate
-```
-
-Обратный переход поддерживается, но не рекомендуется (Restate §7.2: «переход от inline к split — одностороннее изменение»).
+`cod-doc plan convert` и `PlanService.split_inline_to_section_files`
+**не существуют**. Секции плана — строки в БД, не выбор формата markdown.
 
 ## 10. MCP-поверхность
 
@@ -177,16 +159,19 @@ CLI-зеркало: `cod-doc plan show|ready|audit|export|freeze|critical-path|f
 
 ## 11. UI (TUI/веб)
 
-- TUI-дашборд `cod-doc dashboard` уже есть у cod-doc; адаптируется под новую модель.
-- Дополнительные виджеты: «Next Batch», «Stale plans», «Broken dependencies».
-- Web-UI (REST + SPA) — опционально; REST-эндпоинты уже обеспечивают всё нужное.
+Web: страницы плана под `/p/{slug}/…` (`cod_doc/api/web/pages/plans.py`,
+overview считает `ready_for_project` по всем планам проекта). TUI
+`cod-doc dashboard` — legacy. Виджетов «Stale plans» / «Broken
+dependencies» как отдельных поверхностей нет.
 
 ## 12. Работа с несколькими планами
 
-В отличие от Restate, где каждый план — независимый markdown, здесь все планы — один набор task-ов в БД. Возможные запросы:
+Все планы проекта — строки в одной SQLite. Ready-set:
 
-- «Покажи все ready-tasks по всем планам» → `task.ready(scope=project)`.
-- «Критический путь по всему проекту» → `task.critical_path(scope=project)`.
-- «Список задач, от которых зависит AUTH-025» → `task.dependency_chain(AUTH-025, direction=forward)`.
+- по плану — MCP `plan_ready` / CLI `cod-doc plan ready`
+- по проекту — MCP `task_next_ready` (опциональный `plan_scope`); web
+  overview зовёт `plan_service.ready_for_project`
 
-Реализовано одним SQL-запросом с recursive CTE.
+Тулов `task.ready` / `task.critical_path` / `task.dependency_chain` нет.
+Critical path и цепочки — `plan_critical_path` / `plan_forward_chain` /
+`plan_reverse_chain` и всегда привязаны к одному плану.

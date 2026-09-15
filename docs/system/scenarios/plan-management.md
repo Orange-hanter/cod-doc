@@ -51,7 +51,7 @@ plan_progress reports total=2, done=1 for that section and derived status `in-pr
 
 ### Notes
 
-First corpus group for TSC-001 (plan-management). Claims match code, not the pre-2026-09-13 capability prose.
+TSC-001. Claims match code as of 2026-09-13.
 
 ## SCN-002 — plan_progress refuses an unknown plan scope
 
@@ -73,7 +73,7 @@ The call raises ValueError: Plan 'does-not-exist' not found.
 
 ### Notes
 
-First corpus group for TSC-001 (plan-management). Claims match code, not the pre-2026-09-13 capability prose.
+TSC-001. Claims match code as of 2026-09-13.
 
 ## SCN-003 — A plan with no tasks reports derived status empty
 
@@ -95,7 +95,7 @@ plan_progress reports total=0, done=0, status `empty`.
 
 ### Notes
 
-First corpus group for TSC-001 (plan-management). Claims match code, not the pre-2026-09-13 capability prose.
+TSC-001. Claims match code as of 2026-09-13.
 
 ## SCN-004 — plan_progress is derived from plan_totals, not stored on the plan row
 
@@ -118,7 +118,7 @@ Both reads return identical total, done, in_progress and per-section remaining.
 
 ### Notes
 
-First corpus group for TSC-001 (plan-management). Claims match code, not the pre-2026-09-13 capability prose.
+TSC-001. Claims match code as of 2026-09-13.
 
 ## SCN-005 — plan_ready is available on both MCP and CLI
 
@@ -141,4 +141,4 @@ Both surfaces return the same ready-set (same task_ids, same order).
 
 ### Notes
 
-First corpus group for TSC-001 (plan-management). Claims match code, not the pre-2026-09-13 capability prose.
+TSC-001. Claims match code as of 2026-09-13.

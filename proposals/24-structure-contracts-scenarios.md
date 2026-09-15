@@ -248,7 +248,7 @@ V1 delivery — pull существующего CI artifact через дове�
 | `status` | `draft`, `confirmed`, `retired` |
 | `provenance` | `manual`, `agent`, `import` |
 
-**Реализовано (TSC-001…TSC-007, 2026-09-08):** claim'ы с `kind = scenario`
+**Реализовано (TSC-001…TSC-014 в коммитах PR #27, 2026-09-08):** claim'ы с `kind = scenario`
 живут не в `doc_code_claim`, а в собственных таблицах `scenario` /
 `scenario_step` / `scenario_link` (миграция `0032_scenarios`) — см. §12.
 Поля `doc_key` / `section_anchor` / `doc_content_hash` / `subject_ref` /
@@ -260,7 +260,9 @@ cod-doc'ом: id сценариев не переиспользуются, по�
 
 ## 9. Сценарии и строгие статусы
 
-> **Авторская половина сдана отдельно (TSC-001…TSC-007, 2026-09-08).**
+> **Авторская половина сдана отдельно (TSC-001…TSC-014 в коммитах PR #27, 2026-09-08).**
+> Живая БД проекта нумерует корпус отдельно: `TSC-001` = plan-management,
+> `TSC-002` = остальные capability-группы.
 > Виды сценариев из этого раздела реализованы дословно как `ScenarioKind`;
 > **статусы покрытия ниже — нет**. `scenario.status` несёт только claim-статус
 > §8 (`draft | confirmed | retired`), а `covered | partial | missing |
@@ -451,7 +453,7 @@ steps|link|unlink|export|coverage`.
 
 | Фаза | Содержание | Репозиторий | Статус |
 |------|------------|-------------|--------|
-| 0 | Авторская половина сценариев: таблицы, сервис, валидаторы, проекция в `docs/system/scenarios/`, CLI + MCP | cod-doc | ✅ TSC-001…TSC-007 (2026-09-08) |
+| 0 | Авторская половина сценариев: таблицы, сервис, валидаторы, проекция в `docs/system/scenarios/`, CLI + MCP | cod-doc | ✅ TSC-001…TSC-014 (PR #27, 2026-09-08); корпус в БД: TSC-001 plan-management, TSC-002 остальные группы |
 | 1 | Общий протокол: schemas, fixtures, contract tests | ai-reviewer + cod-doc | ✅ сделано в producer'е |
 | 2 | Producer в ai-reviewer (`lib/structure*.mjs`, `pr-review-structure`) | ai-reviewer | ✅ сделано |
 | 3 | Blob-first ingest, pull pilot | cod-doc | ⬜ STR-001 |

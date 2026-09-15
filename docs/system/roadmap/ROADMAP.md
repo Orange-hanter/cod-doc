@@ -187,7 +187,9 @@ ai-review, кросс-проектность). Полный план:
 | **SYM-009** | Фаза 3: ingest ai_review pull-моделью + upstream-PR slimFinding + finding stability | medium | SYM-006 |
 | **SYM-010** | Фаза 4a: ctx drift → PR-комментарий (гейт ссылок/frontmatter Orakul) | medium | SYM-009, ADO-017 |
 | **SYM-011** | Фаза 5: кросс-проектный поиск + `[[doc:slug:key]]` + фикс Chroma L3 + `agent_pick --projects` | low | SYM-005 |
-| **TSC-001..007** | [RFC 24](../../../proposals/24-structure-contracts-scenarios.md) §9, авторская половина: таблицы `scenario`/`scenario_step`/`scenario_link` (миграция 0032), сервис + валидаторы `SCV-*`, проекция в `docs/system/scenarios/`, CLI + MCP `scenario_*` | **✅ done 2026-09-08** | — |
+| **TSC-001..014** (PR #27, commit-ids) | [RFC 24](../../../proposals/24-structure-contracts-scenarios.md) §9, авторская половина: таблицы `scenario`/`scenario_step`/`scenario_link` (миграция 0032), сервис + валидаторы `SCV-*`, проекция в `docs/system/scenarios/`, CLI + MCP `scenario_*`, skill `scenario-author`. Эти ID жили в коммитах PR, не в живой БД. | **✅ done 2026-09-08** | — |
+| **TSC-001** (DB, corpus) | Первый корпус: пять RFC 24 §9 kinds для `plan-management`, claims против кода | **✅ done 2026-09-13** | — |
+| **TSC-002** (DB, corpus) | Остальные capability-группы: пять kinds каждая, code-true; cleanup коллизии ID | high | TSC-001 (DB) |
 | **STR-001..004** | [RFC 24](../../../proposals/24-structure-contracts-scenarios.md): контур structure/contracts/scenarios — фазы 3–6 (сторона cod-doc), **доказательная половина**: снапшоты, `scenario_assessment` поверх готового scenario index, structure drift, triage; producer смержен в ai-reviewer 2026-09-03 | medium | — (SYM-005..009 done) |
 
 ### Трек B — Feature-трек (hackathon RFC, после C)
