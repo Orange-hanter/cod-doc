@@ -133,13 +133,28 @@
 }
 
 (( $+functions[_cod_doc_sql] )) || _cod_doc_sql() {
-  # Один read-only вызов. Плоский путь, а НЕ file:-URI: URI требует
+  # Один вызов sqlite3. Плоский путь, а НЕ file:-URI: URI требует
   # percent-encoding, а пути проектов могут содержать пробелы.
   local sql=$1 db out
   (( $+commands[sqlite3] )) || return 1
   db=$(_cod_doc_db) || return 1
   [[ -n $db && -r $db ]] || return 1
-  out=$(sqlite3 -readonly -batch -noheader -cmd '.timeout 300' "$db" "$sql" 2>/dev/null) || return 1
+
+  if ! out=$(sqlite3 -readonly -batch -noheader -cmd '.timeout 300' "$db" "$sql" 2>/dev/null); then
+    # WAL-базу БЕЗ файла -shm рядом нельзя открыть только на чтение: SQLite
+    # обязана создать разделяемый индекс, а -readonly ей это запрещает —
+    # SQLITE_CANTOPEN(14). Состояние штатное, а не аварийное: -wal и -shm
+    # удаляются при чистом закрытии ПОСЛЕДНЕГО соединения, так что у
+    # спокойного проекта их обычно и нет.
+    #
+    # Второй заход — обычное открытие с query_only=1: изменить данные
+    # по-прежнему нельзя, а служебный -shm создать можно. Побочный эффект —
+    # появление -wal/-shm рядом с БД; ровно это делает и любой вызов
+    # самого `cod-doc`.
+    out=$(sqlite3 -batch -noheader -cmd '.timeout 300' -cmd 'pragma query_only=1' \
+          "$db" "$sql" 2>/dev/null) || return 1
+  fi
+
   [[ -n $out ]] || return 1
   print -r -- "$out"
 }
