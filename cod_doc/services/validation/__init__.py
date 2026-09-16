@@ -21,6 +21,11 @@ Codes:
 - `TP-004` — title verb-pattern mismatch (advisory)
 - `TP-005` — forbidden task type alias
 - `US-001` — story_id format (`^[A-Z]{2,4}-\\d{3}$`)
+- `SCV-001` — scenario_id format (`^SCN-\\d{3}$`)
+- `SCV-002` — scenario kind outside the RFC 24 §9 vocabulary
+- `SCV-003` — scenario status: a §9 coverage verdict used as a §8 claim status
+- `SCV-004` — scenario group_key format (`^[a-z0-9][a-z0-9-]{0,63}$`)
+- `SCV-005` — scenario body: empty preconditions / expected / steps
 - `FM-002` — `status=active` with empty `owner`
 - `FM-003` — `source_of_truth=false` without `canonical_source`
 - `FM-004` — `last_updated` is in the future
@@ -44,6 +49,11 @@ from .advisory import (
 from .structural import (
     validate_doc_path,
     validate_id_prefix,
+    validate_scenario_body,
+    validate_scenario_group_key,
+    validate_scenario_id,
+    validate_scenario_kind,
+    validate_scenario_status,
     validate_section_slug,
     validate_story_id,
     validate_task_id,
@@ -60,6 +70,11 @@ __all__ = [
     "is_import_fallback",
     "validate_doc_path",
     "validate_id_prefix",
+    "validate_scenario_body",
+    "validate_scenario_group_key",
+    "validate_scenario_id",
+    "validate_scenario_kind",
+    "validate_scenario_status",
     "validate_section_slug",
     "validate_story_id",
     "validate_task_id",

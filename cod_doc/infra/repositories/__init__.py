@@ -5,6 +5,11 @@ from cod_doc.infra.repositories.document_repo import DocumentRepository, Section
 from cod_doc.infra.repositories.link_repo import LinkRepository
 from cod_doc.infra.repositories.plan_repo import PlanRepository, PlanSectionRepository
 from cod_doc.infra.repositories.project_repo import ProjectRepository
+from cod_doc.infra.repositories.scenario_repo import (
+    ScenarioLinkRepository,
+    ScenarioRepository,
+    ScenarioStepRepository,
+)
 from cod_doc.infra.repositories.story_repo import (
     StoryAcceptanceRepository,
     StoryLinkRepository,
@@ -20,6 +25,9 @@ __all__ = [
     "PlanRepository",
     "PlanSectionRepository",
     "ProjectRepository",
+    "ScenarioLinkRepository",
+    "ScenarioRepository",
+    "ScenarioStepRepository",
     "SectionRepository",
     "StoryAcceptanceRepository",
     "StoryLinkRepository",

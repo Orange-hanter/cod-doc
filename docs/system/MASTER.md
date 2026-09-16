@@ -69,7 +69,12 @@ docs/system/
 │   ├── project-bootstrap.md        ← `cod-doc project new`
 │   ├── web-frontend.md             ← server-rendered Web UI (Jinja + HTMX)
 │   ├── cloud-agent-plane.md        ← облачный SoT + remote ИИ-воркеры
+│   ├── backup-and-export.md        ← backup/restore CLI ещё нет; export = проекции
+│   ├── test-scenarios.md           ← авторская половина RFC 24 §9
 │   └── audit-and-ci.md             ← каталог проверок + git/CI
+│
+├── scenarios/                      ← ГЕНЕРИРУЕТСЯ scenario_service, по файлу
+│   └── <capability>.md             ←   на capability; правь сценарии, не файл
 │
 ├── audit/
 │   ├── 2026-04-19-initial-audit.md         ← первый формальный аудит пакета
@@ -133,6 +138,7 @@ docs/system/
 | Получение концентрированного контекста | [capabilities/context-retrieval.md](capabilities/context-retrieval.md) |
 | Ведение плана | [capabilities/plan-management.md](capabilities/plan-management.md) + [standards/task-plan.md](standards/task-plan.md) |
 | Пользовательские истории и граф зависимостей | [capabilities/user-stories-graph.md](capabilities/user-stories-graph.md) |
+| Сценарии тестирования (что должно быть верно) | `scenarios/<capability>.md` — проекция таблиц `scenario*`; авторская половина [RFC 24 §9](../../proposals/24-structure-contracts-scenarios.md), вердикты покрытия сюда не входят |
 | ИИ ведёт docs через облачный COD-DOC (remote агенты) | [capabilities/cloud-agent-plane.md](capabilities/cloud-agent-plane.md) + [roadmap/cloud-agent-plane-task-plan.md](roadmap/cloud-agent-plane-task-plan.md) |
 
 ---
@@ -146,6 +152,7 @@ docs/system/
 | DATA_MODEL | draft | cod-doc core |
 | standards/* | draft | cod-doc core |
 | capabilities/* | draft | cod-doc core |
+| scenarios/* (генерируется scenario_service) | draft | cod-doc core |
 | migration/from-restate | draft | cod-doc core |
 | roadmap/ROADMAP | active | cod-doc core |
 | roadmap/cod-doc-task-plan | active | cod-doc core |

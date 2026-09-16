@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-28
+last_updated: 2026-09-15
 related_docs:
   - ../audit/2026-04-19-initial-audit.md
   - ../audit/2026-04-28-section-c-capabilities.md
@@ -14,6 +14,13 @@ related_docs:
 # Capability — Audit & CI
 
 > Сводный каталог проверок `cod-doc audit` и схема интеграции с git/CI.
+
+## 0. As implemented (2026-09-15)
+
+`validate_*` бросает; `audit_*` собирает issues. `doc_service.create`
+эскалирует FM-002/FM-003 в `ValidationError`. Drift-гейт: MCP
+`ctx_drift_gate` / CLI `cod-doc ctx drift --comment|--pr`. FM-006 reserved,
+не код. CLI `cod-doc audit`.
 
 ## 1. Уровни запуска
 

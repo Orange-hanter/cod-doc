@@ -77,7 +77,7 @@ graph TD
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
   capabilities/*, standards/*, audit/*, roadmap/*, migration/. Это source of
   truth для поведения системы и единая точка входа для контрибьютора.
-- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:f203fd5d25ad`
+- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:52a9035cec7a`
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
@@ -170,13 +170,13 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:698c2a947583`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:ddc9ec9dc420`
 - **Статус:** `🟢 VERIFIED`
 
 ### ROADMAP (милстоуны и приоритеты) ⭐
 - **Описание:** Милстоуны M1–M6, статусы фаз, декомпозиция планов. M1–M5 закрыты,
   M6 (hub + кросс-проектность) в подготовке.
-- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:0bf4dea86d70`
+- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:1291176ea6cc`
 - **Статус:** `🟢 VERIFIED`
 
 ### RFC 22: Symbiosis (ZAIrgRush + Orakul)
@@ -243,7 +243,7 @@ graph TD
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
-| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `f203fd5d25ad` | 2026-09-11 | 🟢 VERIFIED |
+| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `52a9035cec7a` | 2026-09-15 | 🟢 VERIFIED |
 | 3 | proposals/README.md | `doc:proposals_README_md` | `92a044375021` | 2026-09-11 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `d9c7a1a33f0e` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-09-11 | 🟢 VERIFIED |
@@ -254,11 +254,11 @@ graph TD
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `698c2a947583` | 2026-09-13 | 🟢 VERIFIED |
-| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `0bf4dea86d70` | 2026-09-11 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `689bb19233e9` | 2026-09-15 | 🟢 VERIFIED |
+| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `1291176ea6cc` | 2026-09-15 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
-| 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `1cd50d7a2cba` | 2026-09-11 | 🟡 DRAFT |
+| 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
 
 > **Всего:** 17 документов | 🟢 VERIFIED: 12 | 🟡 LEGACY: 3 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >

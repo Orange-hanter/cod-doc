@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-07
-last_updated: 2026-05-07
+last_updated: 2026-09-15
 audience: [contributors, agents]
 related_code:
   - cod_doc/services/task_service.py
@@ -20,6 +20,15 @@ related_code:
 > связывание исходного кода с задачами/документами, индексация файловой и
 > объектной базы. Открывает «откуда что взялось и куда ведёт» как первоклассный
 > вопрос проекта.
+
+## 0. As implemented (2026-09-15)
+
+`task_service.complete` зовёт `metrics_service.record_on_complete` (ошибка
+метрик не валит complete). Таблица `task_metrics` / `TaskMetricsModel`:
+длительности, revision_count, commit_count, priority, type — без
+`llm_calls`/`cost_usd`. Поиск: `search_service` + CLI `cod-doc search` /
+`ctx search`; web `GET /p/{slug}/metrics`. Сущности `TaskMetric` из §2.1
+как dataclass нет.
 
 ## 1. Зачем
 

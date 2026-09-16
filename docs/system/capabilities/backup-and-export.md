@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-06-08
-last_updated: 2026-06-08
+last_updated: 2026-09-15
 related_docs:
   - ../DATA_MODEL.md
   - ../standards/revision-history.md
@@ -19,6 +19,13 @@ audience: [contributors, agents]
 > возможности (DOC-ME-2). Команды `cod-doc backup|restore|export` ещё не
 > существуют в CLI; документ задаёт целевой контракт, чтобы реализация и
 > аудит были согласованы заранее.
+
+## 0. As implemented (2026-09-15)
+
+`cod-doc backup|restore` нет. Реальный export — проекции: `doc export`,
+`plan export`, `adr export`, `scenario export`, с `ExportGuardError` на
+ручную правку и чужой checkout. SoT для восстановления — файл
+`.cod-doc/state.db` (+ alembic), не dump-CLI.
 
 ## 1. Зачем
 

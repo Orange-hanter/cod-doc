@@ -5,7 +5,7 @@ status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-28
-last_updated: 2026-08-28
+last_updated: 2026-09-15
 related_docs:
   - ../ARCHITECTURE.md
   - ../VISION.md
@@ -24,6 +24,13 @@ related_code:
 # Capability — Web Frontend
 
 > Чисто функциональный веб-интерфейс к COD-DOC: список проектов, документы, задачи, планы, ревизии, лог запусков агента. Без визуальной полировки и без отдельного фронтенд-стека: server-rendered Jinja + точечные HTMX-фрагменты, отдаваемые тем же FastAPI.
+
+## 0. As implemented (2026-09-15)
+
+Страницы в `cod_doc/api/web/pages/` + REST `/api/*`. HTML — не JSON API.
+Ключи URL — slug / doc_key / task_id. Checkout `todo→in_progress` тот же
+протокол, что MCP. Неизвестный slug — ошибка страницы, не 200 с пустым
+проектом.
 
 ## 1. Цель и не-цели
 
