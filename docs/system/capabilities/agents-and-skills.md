@@ -64,8 +64,8 @@ steps:
 
 | agent_id | scope |
 |----------|-------|
-| `task-steward` | task-planning, audit |
-| `docs-reviewer` | doc evolution, links |
+| `docs-reviewer` | **дефолт (RFC 25)** — корпус, drift, ссылки, поиск, Snowball |
+| `task-steward` | постановка планов; не исполнение feature-очереди оркестратором |
 | `migrator` | one-time imports |
 | `link-verifier` | system-job для link verify |
 | `release-manager` | export-changelog, milestone tagging |

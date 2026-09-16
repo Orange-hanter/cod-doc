@@ -4,17 +4,16 @@
 > первого commit'а. Дополняет `MASTER.md` (что есть в проекте) ответом на «как
 > с этим работать».
 
-> ⚠️ **Cycle-5 implemented (2026-05-15, closed 2026-06-04 by AGN-001).** MCP API
-> task-centric: agent profile экспонирует 6 тулов (`agent_pick`, `agent_report`,
-> `agent_complete`, `agent_release`, `agent_get`, `agent_capabilities`).
-> Bodies реализованы в `cod_doc/services/agent_service.py`; MCP-обёртки в
-> `cod_doc/mcp/tools/agent_tools.py` (тонкий wrapper-слой, не stubs). Покрытие:
-> `tests/services/test_agent_pick.py`, `tests/services/test_agent_workflow.py`,
-> `tests/services/test_agent_profile_contract.py`. 121-tool CRUD surface
-> (`task_*`, `doc_*`, `plan_*`, …) остаётся для `--profile standard|full`
-> (admin / CLI / web). Tracked в plan
-> `paperclip-adoption-task-plan` section H. Новые agent-features → секция H,
-> не plan_create-style расширения internal surface.
+> ⚠️ **RFC 25 (2026-09-15): дефолтный агент — куратор документации, не
+> исполнитель задач.** Скилл `orchestrator` запрещает `agent_pick` /
+> `task_checkout` по feature/bug/refactor. Поверхность `agent` ещё 6
+> cycle-5 тулов (`agent_capabilities`, `agent_pick`, `agent_get`,
+> `agent_report`, `agent_complete`, `agent_release`) — своп на
+> `ctx_search`/`ctx_docs`/`ctx_drift`/`context_get` идёт планом
+> `doc-curator-2026-09`. До свопа: не вызывай `agent_pick`. Coding-агент
+> (человек поручил написать код) — `--profile standard|full`.
+> Cycle-5 bodies: `cod_doc/services/agent_service.py`, обёртки
+> `cod_doc/mcp/tools/agent_tools.py`. Счётчики 6/21/121/125 пока те же.
 
 ## 1. Цель проекта
 
@@ -111,9 +110,10 @@ pytest tests/ -v --tb=short     # run the suite
    cod-doc-mcp --profile full                 # все 125, включая legacy
    COD_DOC_PROFILE=full cod-doc-mcp           # через env
    ```
-   - ``agent`` — **default**: 6 task-centric тулов для AI-агентов
-     (`agent_pick`, `agent_report`, `agent_complete`, `agent_release`,
-     `agent_get`, `agent_capabilities`).
+   - ``agent`` — **default**: 6 тулов. Исторически task-centric
+     (`agent_pick`…`agent_release`). RFC 25 перепрофилирует набор на
+     документацию/поиск; до свопа оркестратор **не** берёт продуктовые
+     задачи. Актуальный allowlist — `cod_doc/mcp/profiles.py::AGENT_TOOLS`.
    - ``minimal`` — 21-tool cold-start surface для свежих интеграций.
    - ``standard`` — 121 DB-backed тулов без legacy YAML.
    - ``full`` — все 125 тулов, включая legacy. Только для админ-сценариев
