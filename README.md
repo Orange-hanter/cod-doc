@@ -89,6 +89,7 @@ and MCP — agent and human get an identical interface by construction.
 | [`docs/HANDBOOK.md`](docs/HANDBOOK.md) | reference: install, CLI, web UI tour, config, troubleshooting |
 | [`docs/adoption-playbook.md`](docs/adoption-playbook.md) | adopting COD-DOC on an existing repo with accumulated markdown |
 | [`docs/mcp-integration.md`](docs/mcp-integration.md) | wiring the MCP server into Claude Code, Claude Desktop, VS Code |
+| [`docs/zsh-completion.md`](docs/zsh-completion.md) | zsh tab-completion: install, how live DB values are resolved |
 | [`AGENTS.md`](AGENTS.md) | contributing: DB workflow, Definition of Done, PR requirements |
 | [`MASTER.md`](MASTER.md) | the project's own map, maintained by COD-DOC itself |
 
