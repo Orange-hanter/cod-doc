@@ -39,15 +39,47 @@ def test_prelude_parses_standalone() -> None:
     assert proc.returncode == 0, proc.stderr
 
 
-def test_prelude_declares_no_local_named_path() -> None:
-    """`path` в zsh привязан к $PATH — локальная переменная ломает поиск команд.
+#: Специальные параметры zsh. Объявить такой `local` — значит тихо сломать
+#: поведение шелла: `local path` рвёт $PATH (функция перестаёт находить свою
+#: запись в реестре и молчит), `local status` ломает проверки кода возврата,
+#: `local reply` конфликтует с соглашением compsys. Список неполный по
+#: замыслу — здесь только то, что реально может понадобиться как рабочее имя.
+_ZSH_SPECIALS = frozenset(
+    {
+        "argv",
+        "cdpath",
+        "commands",
+        "fignore",
+        "fpath",
+        "functions",
+        "histchars",
+        "mailpath",
+        "manpath",
+        "options",
+        "parameters",
+        "path",
+        "prompt",
+        "psvar",
+        "random",
+        "reply",
+        "signals",
+        "status",
+    }
+)
 
-    Ошибка тихая: функция просто перестаёт находить свою запись в реестре.
-    Ловили на живом коде, поэтому проверяем явно.
-    """
+
+def test_prelude_avoids_zsh_special_parameter_names() -> None:
+    """`local path` ломает $PATH — ловили на живом коде, ошибка была тихой."""
+    offenders: list[str] = []
     for lineno, line in enumerate(PRELUDE_PATH.read_text(encoding="utf-8").splitlines(), 1):
         stripped = line.strip()
         if not stripped.startswith("local "):
             continue
-        names = stripped.removeprefix("local ").split()
-        assert "path" not in names, f"prelude.zsh:{lineno}: `local path` ломает $PATH"
+        declared = stripped.removeprefix("local ").split()
+        for name in declared:
+            bare = name.lstrip("-").split("=", 1)[0]
+            if bare in _ZSH_SPECIALS:
+                offenders.append(f"prelude.zsh:{lineno}: local {bare}")
+    assert not offenders, "специальные параметры zsh нельзя брать локальными: " + "; ".join(
+        offenders
+    )
