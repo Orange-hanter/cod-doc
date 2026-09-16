@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-07-29
-last_updated: 2026-07-29
+last_updated: 2026-09-15
 related_docs:
   - ../ARCHITECTURE.md
   - ../VISION.md
@@ -22,6 +22,13 @@ related_docs:
 > (Cursor, Claude Code, встроенный orchestrator, CI) полностью ведёт
 > docs/tasks через MCP, без общего локального диска. Агенты —
 > децентрализованные воркеры; SoT — БД в облаке.
+
+## 0. As implemented (2026-09-15)
+
+Реализовано локально: MCP `--transport streamable-http` слушает
+`127.0.0.1` по умолчанию; `POST /settings` — loopback-only (403 иначе,
+SYM-003). Bearer/TLS, Postgres-SoT и cloud-профиль **не** реализованы.
+Agent profile — 6 тулов. SoT по-прежнему embedded SQLite.
 
 ## 1. Проблема
 

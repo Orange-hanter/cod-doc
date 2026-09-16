@@ -51,6 +51,9 @@ class DocumentType(StrEnum):
     ANALYSIS = "analysis"
     RESEARCH = "research"
     CAPABILITY = "capability"
+    # Projection of the ``scenario`` tables — one file per capability. Generated
+    # by ``scenario_service.export``; never authored by hand.
+    SCENARIO_SET = "scenario-set"
 
 
 class DocumentStatus(StrEnum):
@@ -175,6 +178,73 @@ class ADRTaskRelation(StrEnum):
     RELATES = "relates"
 
 
+class ScenarioKind(StrEnum):
+    """Test-scenario shapes, taken verbatim from [RFC 24 §9].
+
+    The vocabulary is owned by RFC 24 and must not be extended locally: the
+    structure producer in ai-reviewer emits assessments keyed by these very
+    names, so a divergent value here would silently fail to join.
+    """
+
+    HAPPY_PATH = "happy_path"
+    ERROR_PATH = "error_path"
+    BOUNDARY_VALUE = "boundary_value"
+    INVARIANT = "invariant"
+    INTEGRATION = "integration"
+
+
+class ScenarioStatus(StrEnum):
+    """Claim status of a scenario — [RFC 24 §8], not §9 coverage.
+
+    RFC 24 draws a hard line between two halves:
+
+    - **intention** (this enum) — a claim authored by a human or an agent:
+      ``draft`` while it is being written, ``confirmed`` once someone stands
+      behind it, ``retired`` when it no longer applies. ``retired`` is a
+      deliberate cod-doc extension of the RFC's ``draft | confirmed`` pair:
+      scenario ids are never reused, so retirement needs its own value.
+    - **evidence** (NOT this enum) — whether a test actually proves the claim.
+      RFC 24 §9's ``covered | partial | missing | unverifiable`` are *derived*
+      from producer evidence under hard rules (an aggregate-LCOV ceiling, a
+      ``statusReason`` on every verdict, ``unresolved`` never decaying into
+      ``missing``). Those rules are unenforceable if a human can type the
+      verdict, so coverage never becomes a column here: STR-002 stores it in a
+      separate append-only ``scenario_assessment`` keyed on ``scenario.row_id``.
+    """
+
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    RETIRED = "retired"
+
+
+class ScenarioProvenance(StrEnum):
+    """Who authored the claim — [RFC 24 §8]."""
+
+    MANUAL = "manual"
+    AGENT = "agent"
+    IMPORT = "import"
+
+
+class ScenarioLinkKind(StrEnum):
+    """What a scenario can point at.
+
+    ``CRITERION`` references one ``story_acceptance`` row as
+    ``<story_id>#<position>`` — the seam that lets a later change give
+    ``story_coverage`` a test dimension without touching that table.
+    """
+
+    TASK = "task"
+    STORY = "story"
+    DOCUMENT = "document"
+    CRITERION = "criterion"
+
+
+class ScenarioRelation(StrEnum):
+    VERIFIES = "verifies"
+    SPECIFIED_IN = "specified_in"
+    EXERCISED_BY = "exercised_by"
+
+
 class ModuleStatus(StrEnum):
     PROPOSED = "proposed"
     ACTIVE = "active"
@@ -199,6 +269,7 @@ class EntityKind(StrEnum):
     LINK = "link"
     MODULE = "module"
     ADR = "adr"
+    SCENARIO = "scenario"
 
 
 class ActorKind(StrEnum):
@@ -421,6 +492,56 @@ class StoryLink:
     to_kind: StoryLinkKind
     to_ref: str
     relation: StoryRelation
+    row_id: int | None = None
+
+
+@dataclass(slots=True)
+class Scenario:
+    """One authored test scenario — the intention half of [RFC 24 §9].
+
+    Anchored on a document (``doc_key`` + ``section_anchor``) rather than on a
+    module: the ``module`` table is empty in practice, while capability
+    documents are the real grouping. ``module_id`` stays reserved for the day
+    modules are registered.
+    """
+
+    project_id: int
+    scenario_id: str
+    title: str
+    kind: ScenarioKind
+    group_key: str
+    preconditions: str
+    expected: str
+    author: str
+    status: ScenarioStatus = ScenarioStatus.DRAFT
+    provenance: ScenarioProvenance = ScenarioProvenance.MANUAL
+    position: int = 0
+    document_id: int | None = None
+    doc_key: str | None = None
+    section_anchor: str | None = None
+    doc_content_hash: str | None = None
+    module_id: int | None = None
+    subject_ref: str | None = None
+    notes: str | None = None
+    row_id: int | None = None
+    created: datetime | None = None
+    last_updated: datetime | None = None
+
+
+@dataclass(slots=True)
+class ScenarioStep:
+    scenario_row_id: int
+    position: int
+    text: str
+    row_id: int | None = None
+
+
+@dataclass(slots=True)
+class ScenarioLink:
+    scenario_row_id: int
+    to_kind: ScenarioLinkKind
+    to_ref: str
+    relation: ScenarioRelation
     row_id: int | None = None
 
 

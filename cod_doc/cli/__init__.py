@@ -51,6 +51,7 @@ cod-doc ingest structure — принять structure facts/assessment snapshot
 cod-doc obligation export — экспортировать obligations_export.v1
 cod-doc structure latest|get|drift|triage|entities|contracts|scenarios
 cod-doc ctx structure     — pinned SHA structure_context
+cod-doc scenario new|list|show|update|retire|steps|link|unlink|export|coverage
 
 cod-doc import docs      — импорт .md/.rst/.txt из репо как Documents
 cod-doc import legacy-tasks — миграция .cod-doc/tasks.yaml в DB
@@ -95,6 +96,7 @@ from cod_doc.cli.obligation import obligation
 from cod_doc.cli.plan import plan
 from cod_doc.cli.revision import revision
 from cod_doc.cli.routine import routine
+from cod_doc.cli.scenario import scenario
 from cod_doc.cli.story import story
 from cod_doc.cli.structure import structure
 from cod_doc.cli.task import task
@@ -125,6 +127,7 @@ main.add_command(mcp_server)
 main.add_command(task)
 main.add_command(plan)
 main.add_command(story)
+main.add_command(scenario)
 main.add_command(doc)
 main.add_command(link)
 main.add_command(revision)

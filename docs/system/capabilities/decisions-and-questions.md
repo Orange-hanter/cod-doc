@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-05-17
+last_updated: 2026-09-15
 related_docs:
   - adr-system.md
   - ../audit/2026-04-19-initial-audit.md
@@ -17,6 +17,12 @@ related_docs:
 > Реестр архитектурных решений и нерешённых вопросов. Часть «Decisions»
 > теперь реализуется как [ADR System](adr-system.md); этот документ
 > сохраняется для «Open Questions» и истории.
+
+## 0. As implemented (2026-09-15)
+
+Decisions = `adr_*` / `cod-doc adr` / таблица ADR (`ADR-NNN`).
+`DocumentType.open-question` есть; сущности `OpenQuestion`, CRUD MCP и
+заполнения `context_get.hints.open_questions` нет.
 
 ## 1. Decisions = ADR
 

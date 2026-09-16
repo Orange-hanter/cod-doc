@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-15
 related_docs:
   - ../audit/2026-04-19-initial-audit.md
 ---
@@ -14,6 +14,14 @@ related_docs:
 
 > Каталог ролей агентов проекта; формализует, что появляется в `revision.author=agent:<role>`.
 > Аналог Restate `.github/agents/` и `.github/skills/`, но первоклассный объект COD-DOC.
+
+## 0. As implemented (2026-09-15)
+
+MCP `agent_pick` / `agent_get` / `agent_report` / `agent_complete` /
+`agent_release` / `agent_capabilities` (профиль `agent` — ровно 6 тулов).
+Пустой ready-set → `{"task": null, "reason": "no_ready_tasks"}`. Скиллы —
+`cod_doc/skills/<name>/SKILL.md`, подбор `skill_matcher`. CLI `cod-doc agent`
+не дублирует каждый `agent_*` тул.
 
 ## 1. Сущности
 

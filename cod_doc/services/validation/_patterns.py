@@ -30,6 +30,14 @@ _VERB_PATTERNS: list[tuple[re.Pattern[str], TaskType]] = [
 # Forbidden type aliases per [task-plan.md §6].
 _FORBIDDEN_TYPE_ALIASES = {"implementation", "migration+feature"}
 
+_SCENARIO_ID_RE = re.compile(r"^SCN-\d{3}$")
+_SCENARIO_GROUP_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+
+# [RFC 24 §9] coverage verdicts. They are producer-derived evidence, never a
+# hand-typed claim status — `validate_scenario_status` rejects them by name so
+# the mistake is caught with an explanation instead of an opaque enum error.
+_SCENARIO_COVERAGE_VERDICTS = frozenset({"covered", "partial", "missing", "unverifiable"})
+
 _FM007_REQUIRED_TYPES = frozenset(
     {
         DocumentType.MODULE_SPEC.value,

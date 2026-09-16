@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-07
-last_updated: 2026-05-07
+last_updated: 2026-09-15
 audience: [contributors, agents]
 related_code:
   - cod_doc/services/adr_service.py
@@ -19,6 +19,13 @@ related_code:
 > **Назначение.** First-class система ADR-документов: автонумерация,
 > статусы, supersede-цепочки, визуальный редактор в Web UI и Mermaid-граф
 > зависимостей решений. ADR — отдельная сущность, не свободный markdown.
+
+## 0. As implemented (2026-09-15)
+
+MCP `adr_create` / `adr_update` / `adr_supersede` / `adr_deprecate` /
+`adr_graph` / `adr_link_task`. CLI `cod-doc adr new|list|show|sync|export|…`.
+id `ADR-NNN`. `update()` на accepted/terminal → `ADRImmutableError`.
+Web `/p/{slug}/adr`.
 
 ## 1. Зачем
 

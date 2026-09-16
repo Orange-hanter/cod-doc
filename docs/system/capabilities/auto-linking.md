@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-15
 related_docs:
   - ../standards/document-link.md
   - ../DATA_MODEL.md
@@ -14,6 +14,13 @@ related_docs:
 # Capability — Auto-Linking
 
 > Поиск, резолвинг и поддержание ссылок без ручной работы.
+
+## 0. As implemented (2026-09-15)
+
+MCP `link_list` / `link_sync` / `link_verify` / `link_suggest_for_section`.
+CLI: `cod-doc link list|sync|verify|suggest|backfill`. Тула
+`link_apply_suggestions` нет. Тихая автозамена текста ссылки запрещена
+контрактом §7.
 
 ## 1. Что автоматизируется
 
