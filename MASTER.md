@@ -57,7 +57,6 @@ graph TD
 
     Legacy --> Arch["arch/architecture.md"]
     Legacy --> Specs["specs/modules.md"]
-    Legacy --> Models["models/domain.md"]
 
     Root --> Readme["README.md (витрина, EN)"]
     Root --> Hand["docs/HANDBOOK.md"]
@@ -71,7 +70,7 @@ graph TD
 ## 3. 🧩 Modular Sections
 
 > Каждый раздел — ссылка на один файл. Для агента: `@Orchestrator: раскрой раздел "..."`.
-> Хеши проверены `check_stale_refs(cod-doc)` 2026-09-11 → **14/14 VALID**.
+> Хеши проверены `update_hashes` 2026-09-16 → **13/13 VALID** (ADO-172).
 
 ### System Documentation Index (canonical) ⭐
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
@@ -131,14 +130,6 @@ graph TD
 - **Статус:** `🟡 LEGACY`
 - **Ответственный агент:** `@Orchestrator`
 
-### Доменные модели (L0 bootstrap) — legacy
-- **Описание:** Aggregates (Project, Task, Document), Value Objects, доменные
-  события, порты-репозитории. Canonical schema-описание — в
-  [`docs/system/DATA_MODEL.md`](docs/system/DATA_MODEL.md).
-- **Ссылка:** `📁 /models/domain.md | 🗃️ doc:models_domain_md | 🔑 sha:8ce613932ac9`
-- **Статус:** `🟡 LEGACY`
-- **Ответственный агент:** `@Orchestrator`
-
 ### README (витрина проекта, английский) ⭐
 - **Описание:** Точка входа для внешнего читателя GitHub/PyPI: что это, зачем
   БД вместо голого markdown, quick start на 5 строк, четыре поверхности,
@@ -170,7 +161,7 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:ddc9ec9dc420`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:1aa938f76c26`
 - **Статус:** `🟢 VERIFIED`
 
 ### ROADMAP (милстоуны и приоритеты) ⭐
@@ -249,23 +240,24 @@ graph TD
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
 | 7 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-09-11 | 🟡 LEGACY |
-| 8 | Доменные модели (legacy) | `doc:models_domain_md` | `8ce613932ac9` | 2026-09-13 | 🟡 LEGACY |
-| 9 | README (витрина) | `doc:README_md` | `cdb02d871cd1` | 2026-09-11 | 🟢 VERIFIED |
-| 10 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
-| 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-09-11 | 🟢 VERIFIED |
-| 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `689bb19233e9` | 2026-09-15 | 🟢 VERIFIED |
-| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `1291176ea6cc` | 2026-09-15 | 🟢 VERIFIED |
-| 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
-| 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
-| 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
+| 8 | README (витрина) | `doc:README_md` | `cdb02d871cd1` | 2026-09-11 | 🟢 VERIFIED |
+| 9 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
+| 10 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-09-11 | 🟢 VERIFIED |
+| 11 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
+| 12 | MCP-интеграция | `doc:docs_mcp-integration_md` | `689bb19233e9` | 2026-09-16 | 🟢 VERIFIED |
+| 13 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `1291176ea6cc` | 2026-09-15 | 🟢 VERIFIED |
+| 14 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
+| 15 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
+| 16 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
 
-> **Всего:** 17 документов | 🟢 VERIFIED: 12 | 🟡 LEGACY: 3 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+> **Всего:** 16 документов | 🟢 VERIFIED: 12 | 🟡 LEGACY: 2 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >
-> **Проверка 2026-09-11:** Все 16 ссылок в Context Map и Modular Sections
-> валидированы. Хэши пересчитаны через `calc_hash`, файлы существуют на диске.
-> Legacy-документы (arch/specs/models) помечены 🟡 — канонические источники
-> в `docs/system/`. RFC 23 и RFC 24 добавлены как DRAFT (спроектированы, не начаты).
+> **Проверка 2026-09-16 (ADO-172):** запись `models/domain.md` удалена —
+> файла не было на диске и документа не было в БД, а реестр всё равно
+> заявлял `🔴 BROKEN: 0`. Остальные 15 путей проверены на существование,
+> хэши пересчитаны через `update_hashes`. Legacy-документы (arch/specs)
+> помечены 🟡 — канонические источники в `docs/system/`. RFC 23 и RFC 24 —
+> DRAFT (спроектированы, не начаты).
 >
 > **Canonical-пакет** (`docs/system/`) — отдельный реестр документов, см.
 > [`docs/system/MASTER.md §5`](docs/system/MASTER.md).
