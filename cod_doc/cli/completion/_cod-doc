@@ -234,6 +234,38 @@
   _describe -t cod-doc-adrs 'ADR' rows
 }
 
+(( $+functions[_cod_doc_adrs_other] )) || _cod_doc_adrs_other() {
+  # `adr supersede НОВЫЙ СТАРЫЙ` берёт два РАЗНЫХ идентификатора. Повтор
+  # первого CLI отвергнет, так что предлагать его — вредный совет.
+  local row
+  local -a rows kept
+  rows=( ${(f)"$(_cod_doc_sql "select a.adr_id || ':' || a.status || ' · ' || replace(replace(a.title, ':', ' -'), char(10), ' ') from adr a join project p on p.row_id = a.project_id where 1=1 $(_cod_doc_where_project) order by a.adr_id limit 2000;")"} )
+  for row in $rows; do
+    # ${line[(re)…]} — обратный индекс: непусто, если такой элемент уже набран.
+    # Флаг `e` обязателен: без него значение трактуется как ПАТТЕРН, и
+    # идентификатор со спецсимволом сопоставлялся бы не с собой.
+    [[ -n ${line[(re)${row%%:*}]} ]] && continue
+    kept+=( $row )
+  done
+  (( $#kept )) || return 1
+  _describe -t cod-doc-adrs 'ADR' kept
+}
+
+(( $+functions[_cod_doc_task_blockers] )) || _cod_doc_task_blockers() {
+  # `task remove-dep TASK_ID BLOCKER_ID` снимает СУЩЕСТВУЮЩЕЕ ребро, поэтому
+  # второй аргумент — не «любая из 400 задач», а только блокеры первой.
+  # Нет блокеров — молча пусто: это честнее, чем предложить заведомо
+  # несуществующее ребро.
+  local owner filter=""
+  local -a rows
+  owner="${line[1]}"
+  _cod_doc_safe_slug "$owner" || return 1
+  filter="and t.task_id = '${owner//\'/\'\'}'"
+  rows=( ${(f)"$(_cod_doc_sql "select b.task_id || ':' || b.status || ' · ' || replace(replace(b.title, ':', ' -'), char(10), ' ') from dependency d join task t on t.row_id = d.from_task_id join task b on b.row_id = d.to_task_id join project p on p.row_id = t.project_id where d.kind = 'blocks' $(_cod_doc_where_project) $filter order by b.task_id limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-task-blockers 'blocker' rows
+}
+
 (( $+functions[_cod_doc_stories] )) || _cod_doc_stories() {
   local -a rows
   rows=( ${(f)"$(_cod_doc_sql "select s.story_id || ':' || s.status || ' · ' || substr(replace(replace(s.narrative, ':', ' -'), char(10), ' '), 1, 60) from user_story s join project p on p.row_id = s.project_id where 1=1 $(_cod_doc_where_project) order by s.story_id limit 2000;")"} )
@@ -571,7 +603,7 @@ _cod-doc() {
     '(--reason)--reason=[Why the replacement]:reason' \
     '(- *)--help[Show this message and exit.]' \
     '1:superseding-adr-id:_cod_doc_adrs' \
-    '2:superseded-adr-id:_cod_doc_adrs' && ret=0
+    '2:superseded-adr-id:_cod_doc_adrs_other' && ret=0
   return ret
 }
 
@@ -2605,7 +2637,7 @@ _cod-doc() {
     '(--reason)--reason=:reason' \
     '(- *)--help[Show this message and exit.]' \
     '1:task-id:_cod_doc_tasks' \
-    '2:blocker-id:_cod_doc_tasks' && ret=0
+    '2:blocker-id:_cod_doc_task_blockers' && ret=0
   return ret
 }
 

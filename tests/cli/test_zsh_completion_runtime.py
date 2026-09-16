@@ -127,6 +127,50 @@ def test_registry_parses_real_yaml_shape(tmp_path: Path, registry_home: Path) ->
     assert proc.stdout.splitlines() == [f"proj\t{tmp_path / 'proj'}\t"]
 
 
+_EXCLUDE_PROBE = """
+# Данные подменяем: проверяем ЛОГИКУ отсева, а не SQL — его стережёт
+# test_zsh_completion_queries.py на свежей схеме.
+_cod_doc_sql() { print -rl -- 'ADR-001:accepted · Первый' 'ADR-002:accepted · Второй' }
+_describe() {
+  local arr=${@[-1]}
+  local -a vals; vals=( ${(P)arr} )
+  print -rl -- ${vals%%:*}
+}
+typeset -A opt_args
+typeset -a words line
+line=(ADR-001)
+_cod_doc_adrs_other || print -r -- "ПУСТО"
+"""
+
+
+def test_adrs_other_drops_already_typed_id(tmp_path: Path, registry_home: Path) -> None:
+    """`adr supersede НОВЫЙ СТАРЫЙ` берёт два РАЗНЫХ id — повтор CLI отвергнет."""
+    proc = _run_prelude(registry_home, _EXCLUDE_PROBE, tmp_path)
+    assert proc.stdout.split() == ["ADR-002"], proc.stdout + proc.stderr
+
+
+def test_adrs_other_is_silent_when_everything_is_typed(tmp_path: Path, registry_home: Path) -> None:
+    """Отсеяли всё — молчим, а не показываем пустой список."""
+    probe = _EXCLUDE_PROBE.replace("line=(ADR-001)", "line=(ADR-001 ADR-002)")
+    proc = _run_prelude(registry_home, probe, tmp_path)
+    assert proc.stdout.strip() == "ПУСТО", proc.stdout + proc.stderr
+
+
+def test_task_blockers_needs_a_valid_first_positional(tmp_path: Path, registry_home: Path) -> None:
+    """Без разумного TASK_ID во втором аргументе подсказывать нечего."""
+    _wal_db_without_sidecars(tmp_path)
+    probe = """
+typeset -A opt_args
+opt_args[--project]='proj'
+typeset -a words line
+line=("не;валидный id")
+_cod_doc_task_blockers || print -r -- "ПУСТО"
+"""
+    proc = _run_prelude(registry_home, probe, tmp_path)
+    assert proc.stdout.strip() == "ПУСТО", proc.stdout + proc.stderr
+    assert proc.stderr.strip() == "", proc.stderr
+
+
 def test_postgres_project_is_skipped(tmp_path: Path) -> None:
     """Непустой не-sqlite db_url -> дополнять нечем, молчим."""
     home = tmp_path / "home"

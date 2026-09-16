@@ -65,6 +65,7 @@ graph TD
     Root --> Guide["docs/cod-doc-guide.md"]
     Root --> Play["docs/adoption-playbook.md"]
     Root --> MCP["docs/mcp-integration.md"]
+    Root --> Zsh["docs/zsh-completion.md"]
     Root --> CI[".github/workflows/ci.yml"]
     Root --> CD[".github/workflows/cd.yml"]
 ```
@@ -73,6 +74,8 @@ graph TD
 
 > Каждый раздел — ссылка на один файл. Для агента: `@Orchestrator: раскрой раздел "..."`.
 > Хеши проверены `update_hashes` 2026-09-16 → **14/14 VALID** (CUR-001).
+> 2026-09-17 (ADO-170): добавлена запись `docs/zsh-completion.md`, `update_hashes`
+> пересчитал её ссылку; остальные шестнадцать совпали без изменений.
 
 ### System Documentation Index (canonical) ⭐
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
@@ -170,6 +173,14 @@ graph TD
 - **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:ac2e0145f7a1`
 - **Статус:** `🟢 VERIFIED`
 
+### Zsh-дополнение
+- **Описание:** Установка и устройство zsh-completion: артефакт генерируется из
+  click-дерева, значения (слаги, task_id, doc_key, plan.scope, якоря) читаются
+  напрямую из реестра и read-only SQLite. Почему дополнение не зовёт `cod-doc`,
+  как понимается «какой проект», и грабли zsh, на которых уже наступили.
+- **Ссылка:** `📁 /docs/zsh-completion.md | 🗃️ doc:docs_zsh-completion_md | 🔑 sha:f177c8373beb`
+- **Статус:** `🟢 VERIFIED`
+
 ### ROADMAP (милстоуны и приоритеты) ⭐
 - **Описание:** Милстоуны M1–M6, статусы фаз, декомпозиция планов. M1–M5 закрыты,
   M6 (hub + кросс-проектность) в подготовке.
@@ -256,8 +267,9 @@ graph TD
 | 15 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
 | 16 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
 | 17 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `501adb258c5a` | 2026-09-16 | 🟢 VERIFIED |
+| 18 | Zsh-дополнение | `doc:docs_zsh-completion_md` | `f177c8373beb` | 2026-09-17 | 🟢 VERIFIED |
 
-> **Всего:** 17 документов | 🟢 VERIFIED: 13 | 🟡 LEGACY: 2 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+> **Всего:** 18 документов | 🟢 VERIFIED: 14 | 🟡 LEGACY: 2 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >
 > **Проверка 2026-09-16 (ADO-172):** запись `models/domain.md` удалена —
 > файла не было на диске и документа не было в БД, а реестр всё равно
