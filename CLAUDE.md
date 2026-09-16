@@ -61,7 +61,16 @@ cod-doc doc drift --project cod-doc --all # дрейф БД ↔ markdown без 
 cod-doc ctx docs|drift|search --json     # контекст для промпта в JSON (ctx docs --include-body — с телом)
 cod-doc ingest ai_review -p cod-doc --from-pr 123   # findings из артефакта PR через gh; далее finding_promote
 cod-doc ctx drift -p orakul --pr 562 --comment      # drift-гейт PR: находки → идемпотентный комментарий (--dry-run для проверки)
+cod-doc completion zsh                   # печатает готовый _cod-doc; установка — scripts/install-zsh-completion.sh
 ```
+
+Zsh-дополнение (`docs/zsh-completion.md`): артефакт
+`cod_doc/cli/completion/_cod-doc` **генерируется** из click-дерева
+(`python -m cod_doc.cli.completion --write`) и коммитится. Правил CLI —
+регенерируй, иначе падает `tests/cli/test_zsh_completion_drift.py`.
+Значения (слаги проектов, task_id, doc_key, plan.scope…) берутся напрямую из
+`~/.cod-doc/config.yaml` и read-only SQLite: звать из дополнения сам `cod-doc`
+нельзя — `--help` стоит ~470 мс.
 
 Миграции: `alembic revision -m "<name>"` → заполнить симметричные
 `upgrade()`/`downgrade()` → `alembic upgrade head` + `alembic downgrade -1`
@@ -162,6 +171,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 | `services/test_task_mutation_surface_parity.py` | мутация задачи в `task_service` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
+| `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
+| `cli/test_zsh_completion_queries.py` | SQL дополнения выполняется на свежей схеме (ловит переименование колонки) |
 
 ## Тестовые фикстуры
 

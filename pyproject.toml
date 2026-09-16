@@ -82,6 +82,8 @@ include = ["cod_doc*"]
     "static/*.js",
     "static/css/*.css",
     "skills/**/*.md",
+    "cli/completion/_cod-doc",
+    "cli/completion/*.zsh",
     "py.typed",
 ]
 
