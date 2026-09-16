@@ -1,6 +1,6 @@
 # 🧭 Project Navigator: cod-doc
 
-> 📊 Meta: `{"version": "2.8", "last_updated": "2026-09-11", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
+> 📊 Meta: `{"version": "2.9", "last_updated": "2026-09-16", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
 
 > **Этот файл — тонкий L0-навигатор для агента и нового контрибьютора.**
 > Source of truth целевого состояния системы — [`docs/system/MASTER.md`](docs/system/MASTER.md).
@@ -17,12 +17,14 @@
 - **Текущий статус:** 🟢 ACTIVE — **M5 «Гейт, которому можно верить + симбиоз в бою» закрыт 2026-09-06**.
   Прогон 2026-09-07: 1639 тестов зелёные, ruff/mypy чистые, ~137 документов
   (`stale_export`=0 после reconcile миграций 0026–0029). Поверхность:
-  ~110 MCP-тулов (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
+  125 MCP-тулов (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
   CI на main впервые зелёный (`bcb32f2`, [run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088)).
-- **Текущий приоритет: adoption через симбиоз.** Пилоты переназначены на
-  **ZAIrgRush** (мульти-агентная петля) и **Orakul/ai-review** (LLM-ревью PR) —
-  [RFC 22](proposals/22-symbiosis-zairgrush-orakul.md), решение 2026-08-25.
-  cod-doc отдаёт спеки/ADR/контекст, пилоты возвращают findings и измерения.
+- **Текущий приоритет: агент-куратор документации (RFC 25) + adoption через симбиоз.**
+  Дефолтный ИИ-агент **не исполняет продуктовые задачи** — поддерживает корпус,
+  доступность и поиск ([RFC 25](proposals/25-doc-curator-agent.md), план
+  `doc-curator-2026-09`). Пилоты симбиоза — **ZAIrgRush** и **Orakul/ai-review**
+  ([RFC 22](proposals/22-symbiosis-zairgrush-orakul.md)): cod-doc отдаёт
+  спеки/ADR/контекст, пилоты возвращают findings.
 - **Подготовка к M6 «Hub + кросс-проектность»:** M1–M5 закрыты, ведётся
   подготовка к M6. **Цели M6:** (1) кросс-проектный поиск через hub-БД
   (`[[doc:slug:key]]`), (2) фикс ChromaDB L3-режима для мульти-проектности,
@@ -70,7 +72,7 @@ graph TD
 ## 3. 🧩 Modular Sections
 
 > Каждый раздел — ссылка на один файл. Для агента: `@Orchestrator: раскрой раздел "..."`.
-> Хеши проверены `update_hashes` 2026-09-16 → **13/13 VALID** (ADO-172).
+> Хеши проверены `update_hashes` 2026-09-16 → **14/14 VALID** (CUR-001).
 
 ### System Documentation Index (canonical) ⭐
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
@@ -80,7 +82,7 @@ graph TD
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
-- **Описание:** 24 RFC в четырёх треках:
+- **Описание:** 25 RFC в пяти треках:
   - **01–15 (paperclip-track):** 🟢 Реализованы — адаптация паттернов paperclipai/paperclip
     (skills, heartbeat, wake-payload, run-id, issue docs, checkout, routines,
     status taxonomy, activity log, adapter pattern, AGENTS.md, approvals,
@@ -97,13 +99,17 @@ graph TD
   - **24 (structure-track):** 🟡 Черновик — Единый контур structure/contracts/scenarios
     (docs↔code граница, obligations_export, structure_facts, scenario assessment).
     Поглощает внешнюю часть RFC 17, зависит от RFC 22.
-- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:92a044375021`
+  - **25 (doc-curator-track):** 🟢 Принят к декомпозиции 2026-09-15 — дефолтный
+    агент = куратор документации и поиска, не исполнитель ADO-/SYM-задач.
+    План `doc-curator-2026-09`. Частично реанимирует поисковый контракт RFC 19.
+    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:298b46c240c6`
+- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:0597cc787589`
 - **Статус:** `🟢 VERIFIED`
 
 ### CI Pipeline (GitHub Actions)
 - **Описание:** Непрерывная интеграция: ruff-линтинг (blocking), mypy strict
   (blocking), pytest matrix Python 3.11/3.12/3.13, Docker build + smoke test.
-- **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:ee7ba290fd0f`
+- **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:1c3ca847f98a`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
 
@@ -135,7 +141,7 @@ graph TD
   БД вместо голого markdown, quick start на 5 строк, четыре поверхности,
   таблица ссылок на остальную документацию. Подставляется как
   `long_description` пакета (`pyproject.toml → readme`).
-- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:a4a0ef0ae877`
+- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:854acd4125da`
 - **Статус:** `🟢 VERIFIED`
 
 ### Handbook (пользовательский справочник)
@@ -161,13 +167,13 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:1aa938f76c26`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:ac2e0145f7a1`
 - **Статус:** `🟢 VERIFIED`
 
 ### ROADMAP (милстоуны и приоритеты) ⭐
 - **Описание:** Милстоуны M1–M6, статусы фаз, декомпозиция планов. M1–M5 закрыты,
   M6 (hub + кросс-проектность) в подготовке.
-- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:1291176ea6cc`
+- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:8e67b66ffca0`
 - **Статус:** `🟢 VERIFIED`
 
 ### RFC 22: Symbiosis (ZAIrgRush + Orakul)
@@ -208,7 +214,7 @@ graph TD
   },
   "handoffs": {
     "ci": {
-      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:ee7ba290fd0f",
+      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:1c3ca847f98a",
       "trigger": "push / pull_request в main и develop",
       "pipeline": "ruff → mypy → pytest (матрица 3.11/3.12/3.13) → docker build + smoke test"
     },
@@ -249,8 +255,9 @@ graph TD
 | 14 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
 | 15 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
 | 16 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
+| 17 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `501adb258c5a` | 2026-09-16 | 🟢 VERIFIED |
 
-> **Всего:** 16 документов | 🟢 VERIFIED: 12 | 🟡 LEGACY: 2 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+> **Всего:** 17 документов | 🟢 VERIFIED: 13 | 🟡 LEGACY: 2 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >
 > **Проверка 2026-09-16 (ADO-172):** запись `models/domain.md` удалена —
 > файла не было на диске и документа не было в БД, а реестр всё равно
@@ -258,6 +265,11 @@ graph TD
 > хэши пересчитаны через `update_hashes`. Legacy-документы (arch/specs)
 > помечены 🟡 — канонические источники в `docs/system/`. RFC 23 и RFC 24 —
 > DRAFT (спроектированы, не начаты).
+>
+> **Проверка 2026-09-16 (CUR-001):** добавлена строка 17 — RFC 25
+> Doc-curator agent. Помечен 🟢 VERIFIED, а не DRAFT: в отличие от RFC 23/24
+> он принят к декомпозиции и его секция A реализована этим же заходом
+> (план `doc-curator-2026-09`, задачи CUR-001…003).
 >
 > **Canonical-пакет** (`docs/system/`) — отдельный реестр документов, см.
 > [`docs/system/MASTER.md §5`](docs/system/MASTER.md).

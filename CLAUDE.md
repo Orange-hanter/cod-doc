@@ -103,8 +103,10 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - **MCP: один файл = одна семья тулов.** `mcp/tools/*_tools.py` экспортируют
   `register(mcp)`; `mcp/server.py` вызывает их в цикле, затем `apply_profile()`
   **фильтрует уже зарегистрированный** каталог (`mcp/profiles.py`). Профиль
-  `agent` — **дефолтный**, 6 task-centric тулов, каждый возвращает
-  самодостаточный payload; дальше `minimal` 21 / `standard` 121 / `full` 125.
+  `agent` — **дефолтный**, 6 тулов. Исторически task-centric (`agent_pick`…).
+  RFC 25: роль оркестратора — куратор документации и поиска; `agent_pick`
+  не использовать. Своп allowlist — план `doc-curator-2026-09`. Дальше
+  `minimal` 21 / `standard` 121 / `full` 125.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   ПЯТИ местах: `mcp/profiles.py` (docstring), `server.py --profile`,
   `AGENTS.md` §5.9, этот файл и `docs/mcp-integration.md` (строка семейства

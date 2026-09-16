@@ -66,6 +66,7 @@
 | --- | ------------------------------------------------------- | -------------- | ------------------------------------------------- | ------- |
 | 22  | [Symbiosis: ZAIrgRush + Orakul](22-symbiosis-zairgrush-orakul.md) | 🔵 Архитектура | Hub-БД, findings-ingest, doc-контекст для внешней петли и AI-ревью | высокий |
 | 24  | [Structure, contracts & scenarios](24-structure-contracts-scenarios.md) | 🔵 Архитектура · **черновик** | Единый контур docs↔code: obligations/facts/assessment, scenario coverage, `structure_context` для garage | высокий |
+| 25  | [Doc-curator agent](25-doc-curator-agent.md) | 🔵 Архитектура · **принят к декомпозиции** | Дефолтный агент = куратор документации и поиска, не исполнитель задач | средний |
 
 ## ☁️ Cloud-track (2026-07-29)
 
@@ -123,6 +124,8 @@ graph LR
     Q -.поглощает внешнюю часть.-> M
     Q --> R[24 Structure contracts scenarios]
     R -.поглощает внешнюю часть.-> M
+    Q --> S[25 Doc-curator agent]
+    N -.полезный контракт search.-> S
 ```
 
 **Фаза 1 (быстрые победы):** 01 → 03 → 02 → 04
@@ -132,6 +135,7 @@ graph LR
 **Фаза 5 (hackathon-track scale-up):** 16 → 20
 **Фаза 6 (по необходимости):** 10
 **Symbiosis-track (2026-08, приоритет по ROADMAP):** 22 — вместо 16/20 как путь к реальным пользователям; **24** — глубокий контур structure/scenario; prerequisite SYM-005..009 выполнен, producer смержен 2026-09-03, сторона cod-doc — фазы 3–6
+**Doc-curator-track (2026-09-15, RFC 25):** дефолтный агент перестаёт исполнять задачи; роль — документация + поиск. План `doc-curator-2026-09`. RFC 19 не воскрешаем целиком — только FTS-агрегатор поверх `search_service.search`.
 
 ## Что осталось за скобками
 

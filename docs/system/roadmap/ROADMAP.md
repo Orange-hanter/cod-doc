@@ -5,7 +5,7 @@ status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-06-05
-last_updated: 2026-09-03
+last_updated: 2026-09-15
 audience: [contributors, agents]
 related_docs:
   - ../MASTER.md
@@ -119,9 +119,27 @@ byte-identical round-trip — перед первым `doc export` наружу)
 
 ## Треки
 
-Все задачи заведены в БД как план **`adoption-2026-08`** (на 2026-09-02 — 82
-задачи: C — 26, D — 37, E — 19; таблицы ниже перечисляют не весь состав, а
-опорные пункты треков):
+### Трек RFC 25 — Doc-curator (приоритет агентского направления, 2026-09-15)
+
+Дефолтный ИИ-агент больше не исполняет продуктовые задачи. Роль: корпус,
+доступность, поиск. Контракт — [RFC 25](../../../proposals/25-doc-curator-agent.md);
+план в БД — **`doc-curator-2026-09`** (`cod-doc plan ready doc-curator-2026-09 -p cod-doc`).
+Очередь ADO-/SYM- на профиле `standard` не отменяется — её берёт человек
+или coding-агент, не оркестратор.
+
+| Секция | Содержание |
+|---|---|
+| A | Политика: скилл `orchestrator`, VISION, AGENTS.md, MASTER |
+| B | Своп `AGENT_TOOLS` + MCP `ctx_search` (обёртка `search_service.search`) |
+| C | Качество поиска: пустой индекс, бюджет, кросс-проект (SYM-011) |
+| D | `curator_next` / daemon `cod-doc agent run` как doc-health, не task loop |
+
+Adoption (ниже) остаётся программой пилотов. Агент в пилотах — источник
+контекста и санитар, не воркер, который закрывает чужой бэклог.
+
+Все прочие задачи adoption заведены в БД как план **`adoption-2026-08`**
+(на 2026-09-02 — 82 задачи: C — 26, D — 37, E — 19; таблицы ниже — опорные
+пункты, не полный состав):
 `cod-doc plan ready adoption-2026-08 -p cod-doc`.
 
 ### Трек C — Adoption (приоритет)
