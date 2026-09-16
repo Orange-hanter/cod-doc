@@ -59,6 +59,7 @@ graph TD
 
     Legacy --> Arch["arch/architecture.md"]
     Legacy --> Specs["specs/modules.md"]
+    Legacy --> Models["models/domain.md"]
 
     Root --> Readme["README.md (витрина, EN)"]
     Root --> Hand["docs/HANDBOOK.md"]
@@ -72,7 +73,7 @@ graph TD
 ## 3. 🧩 Modular Sections
 
 > Каждый раздел — ссылка на один файл. Для агента: `@Orchestrator: раскрой раздел "..."`.
-> Хеши проверены `update_hashes` 2026-09-16 → **14/14 VALID** (CUR-001).
+> Хеши проверены `update_hashes` 2026-09-17 → **15/15 VALID** (ADO-174).
 
 ### System Documentation Index (canonical) ⭐
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
@@ -134,6 +135,15 @@ graph TD
   [`docs/system/capabilities/`](docs/system/capabilities/).
 - **Ссылка:** `📁 /specs/modules.md | 🗃️ doc:specs_modules_md | 🔑 sha:5c335c97fd99`
 - **Статус:** `🟡 LEGACY`
+- **Ответственный агент:** `@Orchestrator`
+
+### Доменные модели (L0 bootstrap) — legacy
+- **Описание:** Aggregates (Project, Task, Document), Value Objects, доменные
+  события, порты-репозитории. Canonical schema-описание — в
+  [`docs/system/DATA_MODEL.md`](docs/system/DATA_MODEL.md).
+- **Ссылка:** `📁 /models/domain.md | 🗃️ doc:models_domain_md | 🔑 sha:8ce613932ac9`
+- **Статус:** `🟡 LEGACY` — проекция под `.gitignore` (`/models/`), в репозиторий
+  не версионируется; источник истины — документ `models/domain` в БД.
 - **Ответственный агент:** `@Orchestrator`
 
 ### README (витрина проекта, английский) ⭐
@@ -246,25 +256,31 @@ graph TD
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
 | 7 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-09-11 | 🟡 LEGACY |
-| 8 | README (витрина) | `doc:README_md` | `cdb02d871cd1` | 2026-09-11 | 🟢 VERIFIED |
-| 9 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
-| 10 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-09-11 | 🟢 VERIFIED |
-| 11 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
-| 12 | MCP-интеграция | `doc:docs_mcp-integration_md` | `689bb19233e9` | 2026-09-16 | 🟢 VERIFIED |
-| 13 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `1291176ea6cc` | 2026-09-15 | 🟢 VERIFIED |
-| 14 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
-| 15 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
-| 16 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
-| 17 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `501adb258c5a` | 2026-09-16 | 🟢 VERIFIED |
+| 8 | Доменные модели (legacy) | `doc:models_domain_md` | `8ce613932ac9` | 2026-09-17 | 🟡 LEGACY |
+| 9 | README (витрина) | `doc:README_md` | `cdb02d871cd1` | 2026-09-11 | 🟢 VERIFIED |
+| 10 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
+| 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `562c1f392f47` | 2026-09-11 | 🟢 VERIFIED |
+| 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `689bb19233e9` | 2026-09-16 | 🟢 VERIFIED |
+| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `1291176ea6cc` | 2026-09-15 | 🟢 VERIFIED |
+| 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
+| 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
+| 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
+| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `501adb258c5a` | 2026-09-16 | 🟢 VERIFIED |
 
-> **Всего:** 17 документов | 🟢 VERIFIED: 13 | 🟡 LEGACY: 2 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+> **Всего:** 18 документов | 🟢 VERIFIED: 13 | 🟡 LEGACY: 3 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >
-> **Проверка 2026-09-16 (ADO-172):** запись `models/domain.md` удалена —
-> файла не было на диске и документа не было в БД, а реестр всё равно
-> заявлял `🔴 BROKEN: 0`. Остальные 15 путей проверены на существование,
-> хэши пересчитаны через `update_hashes`. Legacy-документы (arch/specs)
-> помечены 🟡 — канонические источники в `docs/system/`. RFC 23 и RFC 24 —
-> DRAFT (спроектированы, не начаты).
+> **Проверка 2026-09-17 (ADO-174):** строка `models/domain.md` возвращена.
+> В ADO-172 она была удалена по ошибке — как «файла нет на диске, документа
+> нет в БД». Неверно и то и другое: файл лежит в основном чекауте, но под
+> `.gitignore` (`/models/`), поэтому не виден ни в истории git, ни в
+> воркtree, где ignored-файлы не выкладываются; документ в БД есть под
+> ключом `models/domain`, а не `models_domain_md` — последнее лишь
+> отображаемый doc-id в этом реестре. Проверять существование проекции
+> нужно в основном чекауте и по ключу из БД.
+>
+> Legacy-документы (arch/specs/models) помечены 🟡 — канонические источники
+> в `docs/system/`. RFC 23 и RFC 24 — DRAFT (спроектированы, не начаты).
 >
 > **Проверка 2026-09-16 (CUR-001):** добавлена строка 17 — RFC 25
 > Doc-curator agent. Помечен 🟢 VERIFIED, а не DRAFT: в отличие от RFC 23/24
