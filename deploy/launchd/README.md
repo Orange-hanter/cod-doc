@@ -5,7 +5,7 @@
 
 | Демон | Порт | Профиль | Тулов |
 |---|---|---|---|
-| `com.cod-doc.mcp` | 8801 | `standard` | 112 |
+| `com.cod-doc.mcp` | 8801 | `standard` | 121 |
 | `com.cod-doc.mcp-agent` | 8802 | `agent` | 6 |
 
 Профиль применяется деструктивно (`apply_profile` удаляет записи из каталога
