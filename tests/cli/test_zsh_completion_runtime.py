@@ -89,17 +89,24 @@ def test_readonly_path_is_tried_first(tmp_path: Path, registry_home: Path) -> No
     что уже лежало рядом.
     """
     db = _wal_db_without_sidecars(tmp_path)
-    warm = sqlite3.connect(db)  # держим соединение -> sidecar'ы существуют
-    warm.execute("select 1").fetchone()
+    warm = sqlite3.connect(db)
+    # Нужна ЗАПИСЬ, а не чтение: одного select'а мало — Linux материализует
+    # -wal/-shm лениво, и на CI каталог оставался с одним state.db. Пишем и
+    # держим соединение открытым, чтобы sidecar'ы не исчезли.
+    warm.execute("insert into project(slug) values ('warm')")
+    warm.commit()
     before = sorted(p.name for p in db.parent.iterdir())
-    assert "state.db-shm" in before
+    if "state.db-shm" not in before:
+        warm.close()
+        pytest.skip("платформа не материализует -shm — предпосылку теста не создать")
 
     proc = _run_prelude(registry_home, _PROBE, tmp_path)
     after = sorted(p.name for p in db.parent.iterdir())
     # Закрываем только ПОСЛЕ снимка: чистое закрытие последнего соединения
     # само удаляет sidecar'ы и сделало бы сравнение бессмысленным.
     warm.close()
-    assert proc.stdout.strip() == "proj", proc.stdout + proc.stderr
+    # Вторая строка — та самая 'warm', которой мы прогревали WAL.
+    assert proc.stdout.split() == ["proj", "warm"], proc.stdout + proc.stderr
     assert after == before
 
 

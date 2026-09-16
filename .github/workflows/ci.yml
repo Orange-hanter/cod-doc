@@ -97,7 +97,10 @@ jobs:
       # и на runner'е без zsh он молча пропустится — то есть гейт, ради
       # которого он написан, тихо исчезнет. Отдельная job, чтобы не вешать
       # apt на десятиминутную `test`.
-      - run: sudo apt-get update && sudo apt-get install -y zsh
+      # sqlite3 тоже явно: runtime-тесты гоняют prelude настоящим zsh, а он
+      # без CLI-бинарника честно уходит в тихий `return 1` — тест бы упал не
+      # на регрессии, а на составе образа.
+      - run: sudo apt-get update && sudo apt-get install -y zsh sqlite3
       - run: pip install '.[dev]'
       - run: python -m cod_doc.cli.completion --check
       - run: zsh -n cod_doc/cli/completion/_cod-doc
