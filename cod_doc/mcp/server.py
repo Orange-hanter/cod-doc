@@ -20,6 +20,7 @@ from mcp.server.fastmcp import FastMCP
 from cod_doc.logging_config import get_logger, setup_logging
 from cod_doc.mcp.profiles import VALID_PROFILES, keep_tool
 from cod_doc.mcp.tools import (
+    _workspace,
     activity_tools,
     adr_tools,
     agent_tools,
@@ -115,7 +116,14 @@ def get_active_profile() -> str:
 
 
 def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> None:
-    """Apply ``profile`` and serve. Shared by ``cod-doc-mcp`` and ``cod-doc mcp``."""
+    """Apply ``profile`` and serve. Shared by ``cod-doc-mcp`` and ``cod-doc mcp``.
+
+    ``streamable-http`` means one process fronts every local harness, so the
+    per-session default project is disabled for the lifetime of the process
+    (see ``cod_doc/mcp/tools/_workspace.py``) and ``project`` becomes required
+    on every DB-backed tool.
+    """
+    _workspace.set_shared(transport == "streamable-http")
     stats = apply_profile(profile)
     _log.info(
         "mcp_profile_applied",
