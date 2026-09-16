@@ -1,22 +1,14 @@
 {
-  "_doc": "Copy this file to .mcp.json (gitignored) and pick ONE of the two server entries below. Then restart your MCP client (Claude Code / Claude Desktop / VS Code).",
+  "_doc": "Copy to .mcp.json (gitignored) ONLY if you need a per-project registration. Prefer registering cod-doc once per harness instead: `claude mcp add --transport http cod-doc http://127.0.0.1:8801/mcp -s user` for Claude Code, or the same block in ~/.cursor/mcp.json for Cursor. Duplicate registrations were what produced a doubled tool catalog (ADO-171).",
+
+  "_daemon": "The URL below is served by a single always-on daemon, not a per-session subprocess. Install it with deploy/launchd/cod-doc-mcp-daemon.sh install — :8801 is the standard profile (121 tools), :8802 is the agent profile (6). The profile is chosen by port, not by a client flag.",
+
+  "_project_is_required": "On the shared daemon every DB-backed tool needs an explicit `project` argument; there is no per-session default and set_default_project refuses. See cod_doc/mcp/tools/_workspace.py.",
 
   "mcpServers": {
-    "_pick_one_of": [
-      "cod-doc-docker — uses the running docker container (recommended; see docker-compose.yml)",
-      "cod-doc-native — uses the locally-installed cod-doc-mcp script (pip install -e .)"
-    ],
-
-    "cod-doc-docker": {
-      "type": "stdio",
-      "command": "docker",
-      "args": ["exec", "-i", "cod-doc", "cod-doc", "mcp"]
-    },
-
-    "cod-doc-native": {
-      "type": "stdio",
-      "command": "cod-doc-mcp",
-      "args": ["--transport", "stdio"]
+    "cod-doc": {
+      "type": "http",
+      "url": "http://127.0.0.1:8801/mcp"
     }
   }
 }
