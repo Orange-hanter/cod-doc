@@ -57,7 +57,16 @@ cod-doc-mcp --profile minimal            # 21 cold-start tools
 cod-doc-mcp --profile standard           # 121 CRUD tools (без legacy)
 cod-doc-mcp --profile full               # все 125 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
+# CLI equivalent (ADO-079): same catalog filter
+cod-doc mcp --profile standard
 ```
+
+For IDE `.mcp.json` / `.claude/settings.json`, prefer the **`cod-doc-mcp` entry
+point with an absolute path** so the process sees the workspace DB. `cod-doc mcp`
+now applies `--profile` / `COD_DOC_PROFILE` (default `agent`) the same way
+`cod-doc-mcp` does — it is no longer an unfiltered catalog. Do **not** wire
+clients through `docker exec … cod-doc mcp`: the container volume is a different
+database than the checkout on disk.
 
 ### Migration guide (cycle-3/4 → cycle-5)
 

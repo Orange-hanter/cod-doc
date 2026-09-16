@@ -117,6 +117,22 @@ def get_active_profile() -> str:
     return _ACTIVE_PROFILE
 
 
+def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> None:
+    """Apply ``profile`` and serve. Shared by ``cod-doc-mcp`` and ``cod-doc mcp``."""
+    stats = apply_profile(profile)
+    _log.info(
+        "mcp_profile_applied",
+        extra={"event_type": "mcp_profile_applied", **stats},
+    )
+    if transport == "streamable-http":
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.settings.stateless_http = True
+        mcp.run(transport="streamable-http")
+        return
+    mcp.run(transport="stdio")
+
+
 @click.command()
 @click.option("--transport", type=click.Choice(["stdio", "streamable-http"]), default="stdio")
 @click.option("--host", default="127.0.0.1", show_default=True)
@@ -143,18 +159,7 @@ def main(
 ) -> None:
     """Run the COD-DOC MCP server."""
     setup_logging(level=log_level, fmt=log_format)
-    stats = apply_profile(profile)
-    _log.info(
-        "mcp_profile_applied",
-        extra={"event_type": "mcp_profile_applied", **stats},
-    )
-    if transport == "streamable-http":
-        mcp.settings.host = host
-        mcp.settings.port = port
-        mcp.settings.stateless_http = True
-        mcp.run(transport="streamable-http")
-        return
-    mcp.run(transport="stdio")
+    run_mcp_server(transport=transport, host=host, port=port, profile=profile)
 
 
 if __name__ == "__main__":

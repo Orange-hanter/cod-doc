@@ -9,6 +9,7 @@ cod-doc project init     — инициализировать .cod-doc/ в пр�
 cod-doc hub init         — создать/мигрировать глобальную hub-БД
 cod-doc agent run        — запустить агент для проекта
 cod-doc serve            — запустить REST API сервер
+cod-doc mcp              — MCP stdio/HTTP; --profile same as cod-doc-mcp
 cod-doc hash calc        — вычислить хэш файла
 cod-doc hash update      — обновить хэши в MASTER.md
 cod-doc task list        — список задач

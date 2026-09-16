@@ -45,7 +45,7 @@ def project() -> None:
 @click.pass_context
 def project_list(ctx: click.Context) -> None:
     """Список всех зарегистрированных проектов."""
-    from cod_doc.core.project import Project
+    from cod_doc.services import project_stats
 
     cfg: Config = ctx.obj["config"]
     projects = cfg.list_projects()
@@ -61,8 +61,9 @@ def project_list(ctx: click.Context) -> None:
     table.add_column("Задачи")
 
     for entry in projects:
-        proj = Project(entry)
-        stats = proj.stats()
+        stats = project_stats.stats_for_entry(entry)
+        by_status = stats["by_status"]
+        task_bits = [f"{name} {count}" for name, count in by_status.items() if count]
         master_exists = "✅" if entry.master_path.exists() else "❌"
         status_icon = {"idle": "🟢", "running": "🔵"}.get(stats["status"], "⚪")
         table.add_row(
@@ -70,7 +71,7 @@ def project_list(ctx: click.Context) -> None:
             entry.path,
             master_exists,
             f"{status_icon} {stats['status']}",
-            f"🟡{stats['pending']} 🟢{stats['done']} 🔴{stats['failed']}",
+            " · ".join(task_bits) if task_bits else "0",
         )
     console.print(table)
 
@@ -168,7 +169,8 @@ def project_migrate(ctx: click.Context, name: str | None, all_projects: bool) ->
 @click.pass_context
 def project_status(ctx: click.Context, name: str, as_json: bool) -> None:
     """Подробный статус проекта: задачи, ссылки, последний запуск."""
-    from cod_doc.core.project import Project, TaskStatus
+    from cod_doc.core.project import Project
+    from cod_doc.services import project_stats
 
     cfg: Config = ctx.obj["config"]
     entry = cfg.get_project(name)
@@ -177,8 +179,8 @@ def project_status(ctx: click.Context, name: str, as_json: bool) -> None:
         sys.exit(1)
 
     proj = Project(entry)
-    stats = proj.stats()
-    tasks = proj.get_tasks()
+    stats = project_stats.stats_for_entry(entry)
+    by_status = stats["by_status"]
     next_actions = proj.extract_next_actions()
 
     master_content = proj.read_master() or ""
@@ -188,7 +190,6 @@ def project_status(ctx: click.Context, name: str, as_json: bool) -> None:
         data = {
             "project": name,
             "stats": stats,
-            "tasks": [t.to_dict() for t in tasks],
             "next_actions": next_actions,
             "broken_links": broken_links,
         }
@@ -205,29 +206,11 @@ def project_status(ctx: click.Context, name: str, as_json: bool) -> None:
 
     console.print()
     console.print("[bold]📋 Задачи:[/bold]")
-    if not tasks:
+    if stats["total"] == 0:
         console.print("  [dim]Нет задач[/dim]")
     else:
-        icons = {
-            TaskStatus.PENDING: "🟡",
-            TaskStatus.IN_PROGRESS: "🔵",
-            TaskStatus.DONE: "🟢",
-            TaskStatus.FAILED: "🔴",
-            TaskStatus.BLOCKED: "⚠️",
-        }
-        table = Table(show_header=True, box=None, padding=(0, 2))
-        table.add_column("ID", style="dim", width=10)
-        table.add_column("Статус", width=14)
-        table.add_column("Приор.", width=6)
-        table.add_column("Название")
-        for t in tasks:
-            table.add_row(
-                t.id,
-                f"{icons.get(t.status, '⚪')} {t.status.value}",
-                str(t.priority),
-                t.title,
-            )
-        console.print(table)
+        bits = [f"{name_} {count}" for name_, count in by_status.items() if count]
+        console.print(f"  {' · '.join(bits)}  (source={stats['source']})")
 
     if broken_links:
         console.print()

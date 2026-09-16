@@ -161,7 +161,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/routines/{name}/toggle` | Включение/выключение routine | `routine_service.update_status` | ✅ | PCA-920 |
 | `POST /p/{slug}/routines/{name}/run` | Ручной запуск routine | `routine_service.run_now` | ✅ | PCA-920 |
 | `POST /p/{slug}/routines/{name}/delete` | Удаление routine | `routine_service.delete` | ✅ | PCA-920 |
-| `GET /p/{slug}/run` | Live agent console + история запусков | `run_service.list_recent` + `activity_service` | ✅ | WEB-030 |
+| `GET /p/{slug}/run` | Live agent console + история запусков; Stop/Resume ставит `daemon_enabled` только этого проекта (глобальный daemon и in-flight run не abort'ятся) | `run_service.list_recent` + `activity_service`; HTMX POST project daemon stop/start | ✅ | WEB-030 / ADO-110 |
 | `GET /p/{slug}/run/{run_id}` | Деталь одного запуска агента | `run_service.get_one` + `activity_service.events_for_run` | ✅ | WEB-030 |
 | **Поиск, коммиты, code-refs, метрики, затраты**  | | | |
 | `GET /p/{slug}/search` | FTS5-поиск по tasks/docs/stories/ADRs | `search_service.search` | ✅ | OBI-040 |

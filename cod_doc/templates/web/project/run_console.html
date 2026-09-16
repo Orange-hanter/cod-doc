@@ -10,6 +10,21 @@
 <div class="page-header">
   <h1>Agent Console</h1>
   <div class="page-header-actions">
+    {% if daemon_enabled %}
+      <button type="button" class="btn btn-secondary btn-sm" id="agent-console-stop"
+              hx-post="/api/projects/{{ project.name }}/daemon/stop"
+              hx-on::after-request="window.location.assign('/p/{{ project.name }}/run')"
+              title="Pauses this project only. The global daemon keeps running; next tick skips this project.">
+        Stop this project
+      </button>
+    {% else %}
+      <button type="button" class="btn btn-primary btn-sm" id="agent-console-resume"
+              hx-post="/api/projects/{{ project.name }}/daemon/start"
+              hx-on::after-request="window.location.assign('/p/{{ project.name }}/run')"
+              title="Sets daemon_enabled=true for this project. Other projects are unchanged.">
+        Resume this project
+      </button>
+    {% endif %}
     <a class="btn btn-secondary btn-sm" href="/p/{{ project.name }}/run">Reset view</a>
     <a class="btn btn-secondary btn-sm" href="/p/{{ project.name }}/costs">Costs →</a>
   </div>
@@ -20,6 +35,9 @@
 <p class="muted">
   Live timeline оркестратора: thinking, tool_call, tool_result, errors. Подключение по WebSocket
   <code>/ws/projects/{{ project.name }}</code>; история ниже — из таблицы <code>agent_run</code>.
+  Stop/Resume на этой странице ставит <code>daemon_enabled</code> только для
+  <strong>{{ project.name }}</strong> — глобальный демон и другие проекты не глушатся.
+  Текущий run не abort'ится.
 </p>
 
 {% set _is_replay = selected_run is not none %}
