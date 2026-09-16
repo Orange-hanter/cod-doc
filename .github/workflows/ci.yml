@@ -84,6 +84,29 @@ jobs:
       - run: cod-doc project add . --name cod-doc
       - run: cod-doc audit --web-routes -p cod-doc
 
+  # ── Zsh completion ────────────────────────────────────────────────────────
+  zsh-completion:
+    name: Zsh completion (drift + syntax)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # Ставим zsh ЯВНО: тест синтаксиса помечен skipif(which("zsh") is None),
+      # и на runner'е без zsh он молча пропустится — то есть гейт, ради
+      # которого он написан, тихо исчезнет. Отдельная job, чтобы не вешать
+      # apt на десятиминутную `test`.
+      # sqlite3 тоже явно: runtime-тесты гоняют prelude настоящим zsh, а он
+      # без CLI-бинарника честно уходит в тихий `return 1` — тест бы упал не
+      # на регрессии, а на составе образа.
+      - run: sudo apt-get update && sudo apt-get install -y zsh sqlite3
+      - run: pip install '.[dev]'
+      - run: python -m cod_doc.cli.completion --check
+      - run: zsh -n cod_doc/cli/completion/_cod-doc
+      - run: zsh -n cod_doc/cli/completion/prelude.zsh
+      - run: pytest tests/cli/ -q -k zsh_completion --tb=short
+
   # ── Docker Build (smoke test) ─────────────────────────────────────────────
   docker:
     name: Docker build

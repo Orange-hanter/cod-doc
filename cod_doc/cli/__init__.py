@@ -68,6 +68,7 @@ cod-doc embed status       — провайдер эмбеддингов: рез
 cod-doc embed probe        — живой вызов эмбеддера (размерность, цена, задержка)
 cod-doc embed models       — каталог моделей эмбеддингов провайдера
 cod-doc embed reset        — удалить векторную коллекцию (смена модели)
+cod-doc completion zsh     — напечатать zsh-completion (установка — scripts/)
 """
 
 from __future__ import annotations
@@ -90,6 +91,7 @@ from cod_doc.cli.cmd_reindex import reindex
 from cod_doc.cli.cmd_search import search as search_cmd
 from cod_doc.cli.cmd_serve import mcp_server, serve
 from cod_doc.cli.cmd_tui import tui, wizard
+from cod_doc.cli.completion.cmd import completion
 from cod_doc.cli.doc import doc
 from cod_doc.cli.link import link
 from cod_doc.cli.obligation import obligation
@@ -144,6 +146,7 @@ main.add_command(adr)
 main.add_command(embed)
 main.add_command(reindex)
 main.add_command(search_cmd)
+main.add_command(completion)
 
 
 if __name__ == "__main__":
