@@ -37,7 +37,7 @@ def story_coverage(ctx: click.Context, story_id: str, project: str, as_json: boo
         sys.exit(1)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "story_id": cov.story_id,

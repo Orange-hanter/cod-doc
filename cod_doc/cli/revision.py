@@ -179,7 +179,7 @@ def revision_list(
     revisions = revisions[-limit:]  # newest last; show last N
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 [
                     {
@@ -245,7 +245,7 @@ def revision_show(ctx: click.Context, revision_id: str, project: str, as_json: b
         r = revision_service._to_domain(model)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "revision_id": r.revision_id,

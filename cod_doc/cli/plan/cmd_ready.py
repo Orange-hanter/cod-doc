@@ -36,7 +36,7 @@ def plan_ready(
         tasks = plan_service.ready(session, plan_id, limit=limit)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 [
                     {

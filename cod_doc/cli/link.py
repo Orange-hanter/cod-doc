@@ -128,7 +128,7 @@ def link_list(
                 links.extend(link_service.list_for_section(session, sid))
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 [
                     {
@@ -275,7 +275,7 @@ def link_verify(ctx: click.Context, doc_key: str, project: str, anchor: str, as_
         report = link_service.verify_section(session, sec_id)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "doc_key": doc_key,

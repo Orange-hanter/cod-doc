@@ -281,7 +281,7 @@ def _run_ingest(
 
     total = result.created + result.updated
     if as_json:
-        console.print(
+        click.echo(
             json.dumps(
                 {
                     "adapter": adapter_name,
@@ -371,7 +371,7 @@ def ai_review_cmd(
         if not dry_run:
             _emit_review_failed(ctx, project, failure, payload)
         if as_json:
-            console.print(
+            click.echo(
                 json.dumps(
                     {
                         "ok": False,

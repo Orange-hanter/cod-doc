@@ -193,7 +193,7 @@ def project_status(ctx: click.Context, name: str, as_json: bool) -> None:
             "next_actions": next_actions,
             "broken_links": broken_links,
         }
-        console.print(_json.dumps(data, ensure_ascii=False, indent=2))
+        click.echo(_json.dumps(data, ensure_ascii=False, indent=2))
         return
 
     status_icon = {"idle": "🟢", "running": "🔵", "error": "🔴"}.get(stats["status"], "⚪")

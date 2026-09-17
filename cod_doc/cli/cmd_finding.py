@@ -110,7 +110,7 @@ def stability(
             "stability needs at least 2 runs."
         )
         if as_json:
-            console.print(json.dumps({"error": msg, "runs": run_ids}, ensure_ascii=False))
+            click.echo(json.dumps({"error": msg, "runs": run_ids}, ensure_ascii=False))
         else:
             console.print(f"[yellow]{msg}[/yellow]")
         return
@@ -131,7 +131,7 @@ def stability(
             "matrix": [[round(v, 4) for v in row] for row in matrix],
             "summary": {k: round(v, 4) for k, v in summary.items()},
         }
-        console.print(json.dumps(data, ensure_ascii=False, indent=2))
+        click.echo(json.dumps(data, ensure_ascii=False, indent=2))
         return
 
     labels = [f"…{r[-_RUN_LABEL_TAIL:]}" if len(r) > _RUN_LABEL_TAIL else r for r in run_ids]

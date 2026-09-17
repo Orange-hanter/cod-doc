@@ -79,7 +79,7 @@ def doc_drift(
 
     if all_docs:
         if as_json:
-            console.print(
+            click.echo(
                 _json.dumps(
                     {
                         "project": project,
@@ -124,7 +124,7 @@ def doc_drift(
     assert doc_key is not None
     assert d is not None
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "doc_key": doc_key,
