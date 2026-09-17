@@ -53,7 +53,7 @@
           <tr>
             <td><a href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.adr_id }}</a></td>
             <td>{{ it.status_icon }} {{ it.status }}</td>
-            <td>{{ it.decided_at or "—" }}</td>
+            <td>{{ it.decided_at | short_date }}</td>
             <td>{{ it.title }}</td>
             <td class="muted">{{ it.author }}</td>
           </tr>
