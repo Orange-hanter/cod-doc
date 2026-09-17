@@ -69,7 +69,7 @@ related_docs:
 | [audit-followups](audit-followups-task-plan.md) | ✅ done | закрыт STB-021 |
 | [agent-tools-completion](agent-tools-completion-task-plan.md) | ✅ done | закрыт STB-001 |
 | [stabilization-2026-06](../audit/2026-07-29-state-of-the-project.md) | 🔄 11 done / 1 cancelled | STB-012 → cancelled (re-scoped как ADO-013); открыт STB-023 |
-| **adoption-2026-08** | 🔄 66/82 *(2026-09-02)* | Треки C+D+E+W; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)). Секции: C 23/26, D 26/37, E 17/19, **I Web UI — 55 задач, заведена 2026-09-17** |
+| **adoption-2026-08** | 🔄 100/229 *(2026-09-17)* | Треки C+D+E+W; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)). Секции: C 24/27, D 50/96, E 18/20, F 1/1, G 5/28, H 2/2, **I Web UI 0/55** (заведена 2026-09-17) |
 | RFC 16–21 (hackathon-track) | ❌ отбракованы 2026-08-29 | ADO-056: ни одна не закрывает спрос M2; пометки в [proposals/README.md](../../../proposals/README.md) |
 
 ## Смена приоритета: почему Adoption вперёд фич
