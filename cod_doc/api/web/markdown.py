@@ -9,8 +9,17 @@ to section bodies. Block-level features:
 - Blockquotes `> …` (collapsible consecutive lines)
 - GFM tables: header `|`-row + delimiter `|---|:--:|` + body rows (COD-079)
 - Paragraphs separated by blank lines
+- Thematic break: `---` / `***` / `___` (три и более маркера, пробелы между
+  ними допустимы) → `<hr />` (ADO-112)
+- HTML-комментарии вырезаются; `<!-- @REVIEW: … -->` остаётся видимым как
+  отдельный callout (ADO-111)
 
-What we still DO NOT render: footnotes, images, nested lists, GFM task-lists.
+What we still DO NOT render: footnotes, images, nested lists, GFM task-lists,
+**setext-заголовки**. Последнее — сознательно: строка из дефисов под текстом
+по CommonMark дала бы `<h2>`, и документ, начинающийся с YAML-frontmatter,
+отрисовался бы как `<hr>` + `<h2>title: x</h2>` — YAML уехал бы в оглавление
+и в `_slugify`-якоря. `<hr>` + абзац инертнее, а у единственного вызывающего
+с сырым frontmatter (`pages/project.py`) блок срезает `strip_frontmatter`.
 
 Inline features (escaped first, then matched):
 - `code`, **bold**, *italic*, [text](url)
@@ -28,6 +37,14 @@ from __future__ import annotations
 
 import re
 from html import escape as html_escape
+
+# ADO-112: одиночная строка из трёх и более `-`/`*`/`_`. Пробелы и табы
+# между маркерами допустимы, поэтому `- - -` тоже горизонтальная черта —
+# и именно поэтому ветка обязана стоять ВЫШЕ проверки буллита.
+_THEMATIC_BREAK = re.compile(r"^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$")
+# ADO-111: заметка ревьюера остаётся видимой, остальные комментарии глотаются.
+_REVIEW_COMMENT = re.compile(r"^@REVIEW\b[:\s]*(.*)$", re.DOTALL)
+_FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 
 _INLINE_CODE = re.compile(r"`([^`]+)`")
 _BOLD = re.compile(r"\*\*([^*]+)\*\*")
@@ -49,6 +66,126 @@ def _shield_inline_code(match: re.Match[str]) -> str:
     for ch, entity in (("*", "&#42;"), ("[", "&#91;"), ("`", "&#96;")):
         content = content.replace(ch, entity)
     return f"<code>{content}</code>"
+
+
+def strip_frontmatter(text: str) -> str:
+    r"""Срезать ведущий YAML-frontmatter — блок между двумя строками ``---``.
+
+    Публичная и **opt-in**: в теле документа из БД ведущий ``---`` — законная
+    горизонтальная черта, и вырезать его нельзя. ``import_service`` разбирает
+    frontmatter ещё при импорте, поэтому ``doc.preamble`` и тела секций сюда
+    приходят уже без него. Единственный вызывающий с сырым файлом —
+    ``pages/project.py`` (первые N строк MASTER.md с диска).
+    """
+    return _FRONTMATTER.sub("", text, count=1)
+
+
+def _strip_html_comments(lines: list[str]) -> list[str]:
+    """Вырезать HTML-комментарии, сохранив ``@REVIEW`` как маркер-строку.
+
+    Почему отдельным проходом до основного цикла, а не веткой в нём:
+    многострочный комментарий иначе рвётся blank-flush'ем на абзацы, а его
+    внутренние ``#`` и ``- `` интерпретируются как разметка.
+
+    Инвариантов четыре:
+
+    * внутри тройной ограды не трогаем ничего — пример кода с комментарием
+      обязан выжить;
+    * текст до и после комментария на той же строке сохраняется;
+    * строка, ставшая пустой после вырезания, удаляется целиком, иначе одна
+      заметка посреди абзаца разорвёт его надвое;
+    * незакрытый комментарий возвращается дословно вместе с хвостом документа
+      — тот же принцип, что у незакрытой ограды: контент не теряем, ``<!--``
+      отрисуется экранированным.
+
+    Escape-first не нарушается: функция только удаляет символы из сырого
+    текста, до ``html_escape`` в :func:`_render_inline`.
+    """
+    out: list[str] = []
+    in_fence = False
+    i = 0
+    total = len(lines)
+
+    while i < total:
+        raw = lines[i]
+        if raw.startswith("```"):
+            in_fence = not in_fence
+            out.append(raw)
+            i += 1
+            continue
+        if in_fence:
+            out.append(raw)
+            i += 1
+            continue
+
+        kept = ""
+        rest = raw
+        markers: list[str] = []
+        touched = False
+        cursor = i
+
+        while True:
+            open_at = rest.find("<!--")
+            if open_at == -1:
+                kept += rest
+                break
+            kept += rest[:open_at]
+            touched = True
+            after = rest[open_at + 4 :]
+            close = after.find("-->")
+            if close != -1:
+                body = after[:close]
+                rest = after[close + 3 :]
+            else:
+                body_parts = [after]
+                probe = cursor + 1
+                while probe < total and "-->" not in lines[probe]:
+                    body_parts.append(lines[probe])
+                    probe += 1
+                if probe >= total:
+                    # Не закрыт до конца документа — отдать хвост как есть.
+                    out.append(raw)
+                    out.extend(lines[i + 1 :])
+                    return out
+                closing = lines[probe]
+                at = closing.find("-->")
+                body_parts.append(closing[:at])
+                rest = closing[at + 3 :]
+                body = "\n".join(body_parts)
+                cursor = probe
+            marker = _review_marker(body)
+            if marker:
+                markers.append(marker)
+
+        # Пустой остаток непустой строки выбрасываем: иначе blank-flush
+        # разорвёт абзац вокруг заметки.
+        if not touched:
+            out.append(raw)
+        elif kept.strip():
+            out.append(kept)
+        out.extend(markers)
+        i = cursor + 1
+
+    return out
+
+
+def _review_marker(body: str) -> str | None:
+    """Свернуть тело ``@REVIEW``-комментария в одну служебную строку.
+
+    ADO-111: acceptance требует, чтобы заметка осталась видна — как комментарий
+    к секции или как callout, — но повторный GET не должен плодить дубликаты.
+    Рендерим callout прямо в HTML: персистентности нет, значит и дублей нет.
+    """
+    m = _REVIEW_COMMENT.match(body.strip())
+    if m is None:
+        return None
+    text = " ".join(m.group(1).split())
+    return f"{_REVIEW_MARKER}{text}" if text else None
+
+
+#: Служебный префикс между стрипом комментариев и диспетчером блоков.
+#: В исходном markdown встретиться не может: символ вне BMP-набора разметки.
+_REVIEW_MARKER = "\x00@REVIEW\x00"
 
 
 def _render_inline(text: str) -> str:
@@ -194,7 +331,7 @@ def render_markdown(text: str) -> str:
         flush_ol_list()
         flush_blockquote()
 
-    raw_lines = text.splitlines()
+    raw_lines = _strip_html_comments(text.splitlines())
     i = 0
     while i < len(raw_lines):
         line = raw_lines[i]
@@ -239,6 +376,22 @@ def render_markdown(text: str) -> str:
             html, end_idx = table_render
             blocks.append(html)
             i = end_idx
+            continue
+        # ADO-111: заметка ревьюера — отдельный блок, не проза документа.
+        if line.startswith(_REVIEW_MARKER):
+            flush_all()
+            note = _render_inline(line[len(_REVIEW_MARKER) :])
+            blocks.append(f'<aside class="md-review"><strong>REVIEW</strong> {note}</aside>')
+            i += 1
+            continue
+        # ADO-112: горизонтальная черта. Порядок обязателен — ниже стоит
+        # проверка буллита (`- `/`* `), которая превратила бы `- - -` в список
+        # из одного пункта; выше стоит табличная, чтобы `|---|---|` остался
+        # delimiter-строкой таблицы.
+        if _THEMATIC_BREAK.match(line):
+            flush_all()
+            blocks.append("<hr />")
+            i += 1
             continue
         # Heading? Slugify into id-attribute so anchor scroll works on TOC links.
         m = _HEADING.match(line)
