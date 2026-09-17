@@ -138,7 +138,7 @@ def adapter_show(name: str) -> None:
         plugins = {e["name"]: e for e in _load_plugin_entries()}
         if name in plugins:
             console.print("[yellow]External plugin entry exists but failed to load:[/yellow]")
-            console.print(json.dumps(plugins[name], indent=2))
+            click.echo(json.dumps(plugins[name], indent=2))
         else:
             console.print(f"[red]Unknown adapter: {name}[/red]")
         sys.exit(1)

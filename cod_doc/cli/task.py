@@ -116,7 +116,7 @@ def task_list(ctx: click.Context, project: str, filter_status: str | None, as_js
             }
             for t in tasks
         ]
-        console.print(_json.dumps(data, ensure_ascii=False, indent=2))
+        click.echo(_json.dumps(data, ensure_ascii=False, indent=2))
         return
 
     if not tasks:
@@ -167,7 +167,7 @@ def task_show(ctx: click.Context, task_id: str, project: str, as_json: bool) -> 
         sys.exit(1)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "task_id": t.task_id,

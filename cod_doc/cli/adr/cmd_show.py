@@ -37,7 +37,7 @@ def adr_show(ctx: click.Context, project: str, adr_id: str, as_json: bool) -> No
         payload = adr_service.adr_to_dict(session, row)
 
     if as_json:
-        console.print(_json.dumps(payload, indent=2, ensure_ascii=False))
+        click.echo(_json.dumps(payload, indent=2, ensure_ascii=False))
         return
 
     icon = STATUS_ICON.get(payload["status"], "•")

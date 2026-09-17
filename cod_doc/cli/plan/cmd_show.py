@@ -33,7 +33,7 @@ def plan_show(ctx: click.Context, plan_scope: str, project: str, as_json: bool) 
         progress = plan_service.recalc(session, plan_id)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "plan_id": progress.plan_id,

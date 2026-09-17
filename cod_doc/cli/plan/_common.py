@@ -6,6 +6,7 @@ import json as _json
 import sys
 from typing import TYPE_CHECKING
 
+import click
 from rich.console import Console
 from rich.table import Table
 
@@ -56,7 +57,7 @@ def _render_chain(
     as_json: bool,
 ) -> None:
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 [
                     {

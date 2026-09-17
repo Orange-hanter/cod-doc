@@ -61,7 +61,7 @@ def doc_show(ctx: click.Context, doc_key: str, project: str, sections: bool, as_
                 {"anchor": s.anchor, "heading": s.heading, "level": s.level, "position": s.position}
                 for s in sec_list
             ]
-        console.print(_json.dumps(data, indent=2, ensure_ascii=False))
+        click.echo(_json.dumps(data, indent=2, ensure_ascii=False))
         return
 
     icon = _STATUS_ICON.get(d.status.value, "⚪")
