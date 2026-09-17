@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from cod_doc.core.import_limits import DEFAULT_MAX_FILES as _DEFAULT_MAX_FILES
 from cod_doc.domain.entities import (
     Plan,
     PlanSection,
@@ -47,7 +48,11 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-DEFAULT_MAX_FILES = 1000
+# ADO-179: сама константа переехала в `core.import_limits`, чтобы декоратор
+# опции `--max-files` в CLI мог прочитать её, не импортируя этот модуль (а с
+# ним SQLAlchemy) на старте. Здесь — ре-экспорт для обратной совместимости.
+DEFAULT_MAX_FILES = _DEFAULT_MAX_FILES
+
 _DOC_EXTENSIONS = {".md", ".rst", ".txt", ".markdown"}
 _SKIP_DIRS = {
     ".git",

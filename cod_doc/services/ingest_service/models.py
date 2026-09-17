@@ -9,13 +9,10 @@ adapters portable across export-format versions.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from cod_doc.services.finding_service import (
-    FindingSeed,
-    fingerprint_ai_review,
-    fingerprint_zairgrush,
-)
+if TYPE_CHECKING:
+    from cod_doc.services.finding_service import FindingSeed
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +41,17 @@ class RawFinding:
 
     def to_seed(self) -> FindingSeed:
         """Convert to a fingerprinted ``FindingSeed`` ready for dedup ingest."""
+        # ADO-179: импорт в теле, а не на уровне модуля. `finding_service`
+        # тянет `task_service` и SQLAlchemy (~227 мс), а этот модуль
+        # ре-экспортируется из `ingest_service/__init__.py`, который читает
+        # CLI ради одного списка адаптеров — и платил за всю цепочку на
+        # каждом запуске, включая `--help`.
+        from cod_doc.services.finding_service import (
+            FindingSeed,
+            fingerprint_ai_review,
+            fingerprint_zairgrush,
+        )
+
         if self.source == "ai_review":
             fingerprint, basis = fingerprint_ai_review(
                 path=self.path,

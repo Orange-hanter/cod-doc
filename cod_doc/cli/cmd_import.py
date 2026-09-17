@@ -8,9 +8,12 @@ from typing import TYPE_CHECKING
 import click
 from rich.console import Console
 
-from cod_doc.infra.db import db_for_entry, transactional
-from cod_doc.infra.repositories import ProjectRepository
-from cod_doc.services import restate_importer
+# ADO-179: `infra.db`, `infra.repositories` и `restate_importer` тянут
+# SQLAlchemy, а на уровне модуля это оплачивал каждый вызов cod-doc, включая
+# --help. Импорты переехали в тела функций. Константа `--max-files` нужна
+# декоратору, то есть на уровне модуля, — поэтому она живёт в лёгком
+# `core.import_limits`, а `restate_importer` её ре-экспортирует.
+from cod_doc.core.import_limits import DEFAULT_MAX_FILES
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
@@ -40,6 +43,8 @@ def import_cmd() -> None:
 def _open_session(
     cfg: Config, project_name: str
 ) -> tuple[ProjectEntry, sessionmaker[Session], Engine]:
+    from cod_doc.infra.db import db_for_entry
+
     entry = cfg.get_project(project_name)
     if entry is None:
         raise click.ClickException(f"Проект не найден: {project_name}")
@@ -67,6 +72,8 @@ def _resolve_project_name(positional: str | None, option: str | None) -> str:
 
 
 def _project_db_id(session: Session, project_name: str) -> int:
+    from cod_doc.infra.repositories import ProjectRepository
+
     proj = ProjectRepository(session).get_by_slug(project_name)
     if proj is None or proj.row_id is None:
         raise click.ClickException(
@@ -82,7 +89,7 @@ def _project_db_id(session: Session, project_name: str) -> int:
 @click.option(
     "--max-files",
     type=int,
-    default=restate_importer.DEFAULT_MAX_FILES,
+    default=DEFAULT_MAX_FILES,
     show_default=True,
     help="Cap на количество файлов в одном прогоне.",
 )
@@ -105,6 +112,9 @@ def cmd_import_docs(
     limit: int,
 ) -> None:
     """Импортировать .md/.rst/.txt файлы как Documents."""
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import restate_importer
+
     cfg: Config = ctx.obj["config"]
     name = _resolve_project_name(project_name, project_opt)
     entry, factory, engine = _open_session(cfg, name)
@@ -168,6 +178,9 @@ def cmd_import_legacy_tasks(
     ctx: click.Context, project_name: str | None, project_opt: str | None, dry_run: bool
 ) -> None:
     """Перенести записи из .cod-doc/tasks.yaml в DB-таблицу task."""
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import restate_importer
+
     cfg: Config = ctx.obj["config"]
     name = _resolve_project_name(project_name, project_opt)
     entry, factory, engine = _open_session(cfg, name)
@@ -219,7 +232,7 @@ def cmd_import_all(
         project_name=name,
         project_opt=None,
         dry_run=dry_run,
-        max_files=restate_importer.DEFAULT_MAX_FILES,
+        max_files=DEFAULT_MAX_FILES,
         exclude=exclude,
     )
     ctx.invoke(cmd_import_legacy_tasks, project_name=name, project_opt=None, dry_run=dry_run)
