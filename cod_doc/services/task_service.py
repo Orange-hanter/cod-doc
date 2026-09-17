@@ -16,7 +16,8 @@ Public API:
 
 ID format:  `<PREFIX>-<NNN>` (e.g. `COD-011`, `AUTH-025`). Caller passes
 `id_prefix` when `task_id=None`; the service finds the current max sequence
-within the plan and increments. Format validation is COD-020's job.
+within the PROJECT and increments — тот же скоуп, что у ограничения
+`UNIQUE (project_id, task_id)`. Format validation is COD-020's job.
 
 Caller owns the transaction (`transactional()` from `cod_doc.infra.db`).
 """
@@ -92,10 +93,17 @@ def _require_task(session: Session, task_id: str) -> TaskModel:
     return model
 
 
-def _next_task_id(session: Session, plan_id: int, prefix: str) -> str:
-    """Return the next unused `{prefix}-NNN` id within the plan."""
+def _next_task_id(session: Session, project_id: int, prefix: str) -> str:
+    """Return the next unused `{prefix}-NNN` id within the PROJECT.
+
+    Скоуп обязан совпадать с ограничением целостности. Оно — ``UNIQUE
+    (project_id, task_id)`` (`uq_task_project_task_id`), а не по плану:
+    считая максимум внутри плана, мы выдавали ``{prefix}-001`` каждый раз,
+    когда префикс появлялся в новом плане, и немедленно упирались в занятый
+    id из соседнего плана того же проекта (ADO-177).
+    """
     stmt = select(TaskModel.task_id).where(
-        TaskModel.plan_id == plan_id,
+        TaskModel.project_id == project_id,
         TaskModel.task_id.like(f"{prefix}-%"),
     )
     max_n = 0
@@ -224,7 +232,7 @@ def create(
         if not id_prefix:
             raise ValueError("provide task_id or id_prefix")
         validation.validate_id_prefix(id_prefix)
-        task_id = _next_task_id(session, plan_id, id_prefix)
+        task_id = _next_task_id(session, project_id, id_prefix)
     else:
         validation.validate_task_id(task_id)
     validation.validate_task_type(type.value)
