@@ -70,7 +70,8 @@ Zsh-дополнение (`docs/zsh-completion.md`): артефакт
 регенерируй, иначе падает `tests/cli/test_zsh_completion_drift.py`.
 Значения (слаги проектов, task_id, doc_key, plan.scope…) берутся напрямую из
 `~/.cod-doc/config.yaml` и read-only SQLite: звать из дополнения сам `cod-doc`
-нельзя — `--help` стоит ~470 мс.
+нельзя: даже после ADO-179 `--help` стоит ~180 мс против ~20 мс у прямого
+чтения SQLite, а на нажатие TAB это разница между «мгновенно» и «заметно».
 
 Миграции: `alembic revision -m "<name>"` → заполнить симметричные
 `upgrade()`/`downgrade()` → `alembic upgrade head` + `alembic downgrade -1`
@@ -176,6 +177,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
 | `cli/test_zsh_completion_queries.py` | SQL дополнения выполняется на свежей схеме (ловит переименование колонки) |
 | `cli/test_zsh_completion_runtime.py` | prelude в настоящем zsh: WAL-БД без `-shm`, Postgres-проект, нет файла — молчат, а не шумят |
+| `cli/test_cli_startup_is_light.py` | `import cod_doc.cli` не тянет SQLAlchemy/Alembic; импорты `infra`/`services` живут в телах команд (ADO-179) |
+| `cli/test_json_output_is_parseable.py` | `--json` печатается через `click.echo`, а не rich: иначе перенос и разметка молча портят значения (ADO-176) |
 
 ## Тестовые фикстуры
 

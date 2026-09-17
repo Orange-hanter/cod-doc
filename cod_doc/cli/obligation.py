@@ -9,9 +9,6 @@ from typing import TYPE_CHECKING
 
 import click
 
-from cod_doc.services.structure_obligations import export_obligations, generate_property_drafts
-from cod_doc.services.structure_protocol import as_list
-
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
 
@@ -47,8 +44,15 @@ def obligation_export(
     with_property_drafts: bool,
 ) -> None:
     """Export versioned obligations_export.v1 from specs, stories and claims."""
+    # ADO-179: всё это тянет SQLAlchemy, поэтому импорты живут в теле команды,
+    # а не на уровне модуля — иначе за них платит каждый вызов cod-doc.
     from cod_doc.infra.db import transactional
     from cod_doc.infra.repositories import ProjectRepository
+    from cod_doc.services.structure_obligations import (
+        export_obligations,
+        generate_property_drafts,
+    )
+    from cod_doc.services.structure_protocol import as_list
 
     cfg: Config = ctx.obj["config"]
     with transactional(_session(project, cfg), commit=False) as session:
