@@ -2621,7 +2621,7 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
-    '(-s --status)'{-s+,--status=}'[Filter by status. Совпадение точное по хранимому значению; `pending…]:filter-status:(backlog todo in_progress in_review blocked cancelled pending in-progress done)' \
+    '(-s --status)'{-s+,--status=}'[Filter by status. Легаси-написание и каноническое — один бакет; `-s…]:filter-status:(backlog todo in_progress in_review blocked cancelled pending in-progress done)' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret

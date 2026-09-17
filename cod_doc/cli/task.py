@@ -85,9 +85,8 @@ def task() -> None:
     default=None,
     type=click.Choice(_STATUS_VALUES),
     help=(
-        "Filter by status. Совпадение точное по хранимому значению: "
-        "`pending` и `todo` — один бакет по смыслу, но разные строки в базе "
-        "(ADO-182)."
+        "Filter by status. Легаси-написание и каноническое — один бакет: "
+        "`-s pending` и `-s todo` дают одинаковый результат."
     ),
 )
 @click.option("--json", "as_json", is_flag=True, default=False)

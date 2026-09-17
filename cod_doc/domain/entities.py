@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from datetime import date, datetime
@@ -115,6 +115,40 @@ class TaskStatus(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in-progress"
     DONE = "done"
+
+
+#: Легаси-написание → канонический бакет.
+#:
+#: Карта живёт здесь, а не в `services/task_status_machine.py`, потому что это
+#: свойство самого перечисления, и читать её нужно в том числе из `infra`:
+#: репозиторий фильтрует по статусу, а импортировать `services` из `infra`
+#: запрещено слоями (ADO-182). `task_status_machine` её ре-экспортирует, так
+#: что прежние читатели (`mcp/tools/agent_tools.py`,
+#: `mcp/tools/context_tools.py`) ничего не замечают.
+TASK_STATUS_ALIASES: Final[dict[str, str]] = {
+    "pending": "todo",
+    "in-progress": "in_progress",
+    # Остальные новые имена уже канонические.
+}
+
+
+def canonical_task_status(status: str | TaskStatus) -> str:
+    """Свести легаси- или каноническое написание к каноническому бакету."""
+    raw = status.value if isinstance(status, TaskStatus) else str(status)
+    return TASK_STATUS_ALIASES.get(raw, raw)
+
+
+def equivalent_task_statuses(status: str | TaskStatus) -> frozenset[str]:
+    """Все ХРАНИМЫЕ написания, означающие тот же бакет, что и ``status``.
+
+    Нужна фильтрам: в базе одновременно лежат и `pending`, и `todo`, и это
+    один бакет по смыслу. Сравнение точной строкой резало класс
+    эквивалентности — запрос «что готово к работе» возвращал либо 123 задачи,
+    либо 6, но никогда 129 (ADO-182).
+    """
+    bucket = canonical_task_status(status)
+    values = {bucket} | {raw for raw, canon in TASK_STATUS_ALIASES.items() if canon == bucket}
+    return frozenset(values)
 
 
 class TaskType(StrEnum):
