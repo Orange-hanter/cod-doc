@@ -19,7 +19,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pytest
 from click.testing import CliRunner
 
 from cod_doc.cli import main
@@ -32,6 +31,8 @@ from cod_doc.services import task_service
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    import pytest
 
 CLI_ROOT = Path(__file__).resolve().parents[2] / "cod_doc" / "cli"
 
