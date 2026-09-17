@@ -2,6 +2,8 @@
 
 Public API:
 - ``reindex_all(session, project_id)`` — wipe + repopulate index.
+- ``ensure_index(session, project_id)`` — RFC 25 §3.2 (CUR-007): reindex
+  only if the index is still empty (used by ``ctx_search`` for lazy bootstrap).
 - ``search(session, project_id, query, *, scope=None, limit=20)`` —
   ranked hits (bm25) grouped by kind.
 
@@ -211,6 +213,30 @@ def reindex_all(session: Session, project_id: int) -> dict[str, int]:
     session.flush()
     counts["total"] = sum(counts[k] for k in ("task", "doc", "story", "adr", "finding"))
     return counts
+
+
+def ensure_index(session: Session, project_id: int) -> dict[str, Any]:
+    """RFC 25 §3.2 (CUR-007): lazy reindex for ``ctx_search``.
+
+    A brand-new project (or one whose index was wiped) has zero rows in
+    ``db_search_idx`` — searching it silently returns nothing forever unless
+    someone remembers to run ``reindex_all``. This is the guard: called
+    before every ``ctx_search`` query, it checks the current per-kind row
+    counts and, only when the index is completely empty, runs a full
+    ``reindex_all`` to populate it. A non-empty index is left untouched —
+    this is a one-shot bootstrap, not a periodic refresh.
+    """
+    rows = session.execute(
+        text("SELECT kind, count(*) AS n FROM db_search_idx WHERE project_id = :pid GROUP BY kind"),
+        {"pid": project_id},
+    ).all()
+    by_kind: dict[str, int] = {r.kind: int(r.n) for r in rows}
+    total = sum(by_kind.values())
+    if total == 0:
+        counts = reindex_all(session, project_id)
+        by_kind = {k: counts[k] for k in ("task", "doc", "story", "adr", "finding")}
+        return {"total": counts["total"], "by_kind": by_kind, "reindexed": True}
+    return {"total": total, "by_kind": by_kind, "reindexed": False}
 
 
 def _escape_fts(query: str) -> str:
