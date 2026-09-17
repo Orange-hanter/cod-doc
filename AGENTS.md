@@ -13,7 +13,7 @@
 > `doc-curator-2026-09`. До свопа: не вызывай `agent_pick`. Coding-агент
 > (человек поручил написать код) — `--profile standard|full`.
 > Cycle-5 bodies: `cod_doc/services/agent_service.py`, обёртки
-> `cod_doc/mcp/tools/agent_tools.py`. Счётчики 6/21/121/125 пока те же.
+> `cod_doc/mcp/tools/agent_tools.py`. Счётчики 6/21/122/126 пока те же.
 
 ## 1. Цель проекта
 
@@ -107,7 +107,7 @@ pytest tests/ -v --tb=short     # run the suite
    ```
    cod-doc-mcp                                # agent (default)
    cod-doc-mcp --profile minimal              # 21-tool cold-start
-   cod-doc-mcp --profile full                 # все 125, включая legacy
+   cod-doc-mcp --profile full                 # все 126, включая legacy
    COD_DOC_PROFILE=full cod-doc-mcp           # через env
    ```
    - ``agent`` — **default**: 6 тулов. Исторически task-centric
@@ -115,8 +115,8 @@ pytest tests/ -v --tb=short     # run the suite
      документацию/поиск; до свопа оркестратор **не** берёт продуктовые
      задачи. Актуальный allowlist — `cod_doc/mcp/profiles.py::AGENT_TOOLS`.
    - ``minimal`` — 21-tool cold-start surface для свежих интеграций.
-   - ``standard`` — 121 DB-backed тулов без legacy YAML.
-   - ``full`` — все 125 тулов, включая legacy. Только для админ-сценариев
+   - ``standard`` — 122 DB-backed тулов без legacy YAML.
+   - ``full`` — все 126 тулов, включая legacy. Только для админ-сценариев
      и обратной совместимости с до-cycle-3 интеграциями.
    Counts зафиксированы тестом
    `tests/test_server_profiles.py::test_profile_counts_match_documented_values` —

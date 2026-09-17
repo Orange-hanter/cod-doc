@@ -152,7 +152,7 @@ def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> Non
     show_default=True,
     help="Tool-surface profile (default: agent — cycle-5). agent=6 task-centric "
     "tools for AI workflows; minimal=21 cold-start curated CRUD; "
-    "standard=121 DB-backed tools without legacy; full=125 including legacy "
+    "standard=122 DB-backed tools without legacy; full=126 including legacy "
     "agent tools. Counts enforced by tests/test_server_profiles.py.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")
