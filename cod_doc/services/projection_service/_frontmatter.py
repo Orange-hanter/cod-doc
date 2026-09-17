@@ -208,3 +208,59 @@ def _apply_frontmatter_to_model(model: DocumentModel, fm: dict[str, Any]) -> Non
             model.sensitivity = Sensitivity(fm["sensitivity"]).value
     if "source_of_truth" in fm and isinstance(fm["source_of_truth"], bool):
         model.source_of_truth = fm["source_of_truth"]
+
+
+# ADO-092: the three enum fields a file can disagree with the DB about.
+_COMPARED_ENUM_FIELDS: tuple[tuple[str, str], ...] = (
+    ("type", "type"),
+    ("status", "status"),
+    ("sensitivity", "sensitivity"),
+)
+
+
+def metadata_mismatches(model: DocumentModel, file_text: str) -> tuple[str, ...]:
+    """Frontmatter keys where the file on disk disagrees with the DB row.
+
+    `detect_drift` compares content hashes, and content is rendered *from* the
+    DB — so a row whose status was coerced on import renders a file identical
+    to the one on disk and reports `in_sync`. That is how ADO-092 hid for three
+    days: 36 documents said `authoritative` on disk and `draft` in the DB, and
+    every drift report called them synchronised.
+
+    An unrepresentable value is reported too, and is in fact the case worth
+    reporting most. A value the enum *can* hold is rendered into the file, so a
+    divergence also changes the content hash and `detect_drift` already sees
+    it; this check only names the field. A value the enum *cannot* hold takes
+    the `_raw_matches_db` escape hatch, the file is re-emitted verbatim, the
+    hashes match — and the disagreement is invisible to every other signal.
+    That is the shape ADO-092 had.
+
+    The remedy differs and the caller should say so: a representable
+    divergence is fixed by a write, an unrepresentable one by teaching cod-doc
+    the value, as ADO-092 did for `authoritative`.
+    """
+    fm = _parse_frontmatter(file_text)
+    if not fm:
+        return ()
+    out: list[str] = []
+    enums: dict[str, tuple[type[DocumentType | DocumentStatus | Sensitivity], str]] = {
+        "type": (DocumentType, model.type),
+        "status": (DocumentStatus, model.status),
+        "sensitivity": (Sensitivity, model.sensitivity),
+    }
+    for key, _ in _COMPARED_ENUM_FIELDS:
+        if key not in fm:
+            continue
+        enum_cls, db_value = enums[key]
+        raw = str(fm[key])
+        try:
+            authored = enum_cls(raw).value
+        except ValueError:
+            # Not representable: the DB holds a fallback and the file keeps
+            # what it said, so the two disagree for as long as the value stays
+            # unknown. Reported — silence here is what hid ADO-092.
+            out.append(key)
+            continue
+        if authored != db_value:
+            out.append(key)
+    return tuple(out)

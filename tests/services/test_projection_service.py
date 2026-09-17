@@ -476,3 +476,94 @@ def test_create_rejects_absolute_path() -> None:
     with pytest.raises(validation.ValidationError) as exc:
         validation.validate_doc_path("/Users/victim/.ssh/authorized_keys")
     assert exc.value.code == "SD-100"
+
+
+def test_drift_reports_a_status_the_db_disagrees_with(engine_with_schema, root_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """ADO-092: the check that would have caught the coerced statuses.
+
+    `detect_drift` compares content hashes, and content is rendered *from* the
+    DB — so a row whose status was coerced on import renders a file byte-equal
+    to the one on disk and reports `in_sync`. That is exactly how 36 coerced
+    documents stayed invisible for three days behind `edited_in_place: 0`.
+
+    Content stays untouched here: only the frontmatter disagrees, and the
+    report has to say so anyway.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        doc_id = _make_doc(session, project_id, status=DocumentStatus.ACTIVE)
+        target = proj.export_document(session, doc_id, root_path=root_path).path
+
+        target.write_text(
+            target.read_text(encoding="utf-8").replace("status: active", "status: authoritative"),
+            encoding="utf-8",
+        )
+
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.metadata_mismatch == ("status",)
+
+
+def test_drift_reports_a_status_no_version_of_the_db_can_hold(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path
+) -> None:
+    """The unstorable value is the one worth reporting most.
+
+    A representable divergence is rendered into the file, so it also moves the
+    content hash and `detect_drift` already catches it. An unstorable one takes
+    the `_raw_matches_db` escape hatch: the file is re-emitted verbatim, the
+    hashes agree, and nothing else in the system says the DB holds something
+    different. That is precisely the shape ADO-092 had, and staying silent here
+    is what let it live for three days behind `edited_in_place: 0`.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        doc_id = _make_doc(session, project_id, status=DocumentStatus.ACTIVE)
+        target = proj.export_document(session, doc_id, root_path=root_path).path
+
+        target.write_text(
+            target.read_text(encoding="utf-8").replace("status: active", "status: marinated"),
+            encoding="utf-8",
+        )
+
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.metadata_mismatch == ("status",)
+
+
+def test_project_drift_lists_a_metadata_mismatch_even_when_content_is_in_sync(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path
+) -> None:
+    """The summary must surface it, not only the per-document report.
+
+    Built on the one combination that really does read `in_sync` while the DB
+    and the file disagree: a status the enum cannot store. The import wrote the
+    fallback into the row and kept the authored block in the file, so the
+    rendered content matches byte-for-byte. Before ADO-092 such a document was
+    counted `in_sync` and dropped from `issues` — an operator reading the
+    summary saw a clean project while 36 rows held the wrong status.
+    """
+    from cod_doc.services import import_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        raw = "---\ntype: guide\nstatus: marinated\nowner: backend-team\n---\n\n# T\n\nBody.\n"
+        report = import_service.import_markdown(
+            session,
+            project_id=project_id,
+            doc_key="canon",
+            raw_markdown=raw,
+            path="canon.md",
+            author="human:test",
+        )
+        doc_id = report.document.row_id
+        assert doc_id is not None
+        proj.export_document(session, doc_id, root_path=root_path)
+
+        summary = proj.detect_project_drift(session, project_id, root_path=root_path)
+        assert summary.counts["metadata_mismatch"] == 1
+        assert [i.doc_key for i in summary.issues] == ["canon"]
+        # The point of the test: content agrees, metadata does not.
+        assert summary.issues[0].report.status is proj.DriftStatus.IN_SYNC
+        assert summary.issues[0].report.metadata_mismatch == ("status",)

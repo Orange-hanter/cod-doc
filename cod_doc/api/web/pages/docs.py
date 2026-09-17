@@ -197,7 +197,7 @@ def docs_list(
             "view": "flat" if view == "flat" else "tree",
             "filters": {"q": q, "type": type_filter, "status": status_filter},
             "counts": counts,
-            "doc_status_options": ["draft", "review", "active", "deprecated"],
+            "doc_status_options": ["draft", "review", "active", "authoritative", "deprecated"],
         },
     )
 
@@ -239,7 +239,7 @@ def doc_new_form(
         {
             "project": {"name": proj.entry.name},
             "document_types": _DOCUMENT_TYPES,
-            "doc_status_options": ["draft", "review", "active", "deprecated"],
+            "doc_status_options": ["draft", "review", "active", "authoritative", "deprecated"],
             "sensitivity_options": ["public", "internal", "confidential", "restricted"],
             "prefill_description": description,
             "prefill_type": type,
