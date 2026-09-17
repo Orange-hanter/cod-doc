@@ -6,7 +6,13 @@ from typing import Any
 
 from sqlalchemy import select
 
-from cod_doc.domain.entities import Priority, Task, TaskStatus, TaskType
+from cod_doc.domain.entities import (
+    Priority,
+    Task,
+    TaskStatus,
+    TaskType,
+    equivalent_task_statuses,
+)
 from cod_doc.infra.models import TaskModel
 from cod_doc.infra.repositories.base import BaseRepository
 
@@ -83,7 +89,13 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
     ) -> list[Task]:
         stmt = select(TaskModel).where(TaskModel.project_id == project_id)
         if status is not None:
-            stmt = stmt.where(TaskModel.status == status.value)
+            # ADO-182: сравнение точной строкой резало класс эквивалентности.
+            # `pending` и `todo` — один бакет по смыслу, но в базе лежат оба
+            # написания одновременно, поэтому фильтр возвращал либо одну
+            # группу, либо другую, и спросить «что готово к работе» целиком
+            # было нельзя. Для бакетов без синонимов множество из одного
+            # элемента, то есть поведение прежнее.
+            stmt = stmt.where(TaskModel.status.in_(equivalent_task_statuses(status)))
         if priority is not None:
             stmt = stmt.where(TaskModel.priority == priority.value)
         stmt = stmt.order_by(TaskModel.plan_id, TaskModel.section_id, TaskModel.task_id)

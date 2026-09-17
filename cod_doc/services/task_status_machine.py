@@ -22,7 +22,11 @@ maps it to the canonical bucket so callers don't need to care.
 
 from __future__ import annotations
 
-from cod_doc.domain.entities import TaskStatus
+from cod_doc.domain.entities import (
+    TASK_STATUS_ALIASES,
+    TaskStatus,
+    canonical_task_status,
+)
 
 
 class StatusTransitionError(ValueError):
@@ -39,18 +43,17 @@ class StatusTransitionError(ValueError):
 # Normalisation                                                                #
 # --------------------------------------------------------------------------- #
 
-# Map raw status strings (legacy + new) to canonical buckets.
-_LEGACY_ALIASES: dict[str, str] = {
-    "pending": "todo",
-    "in-progress": "in_progress",
-    # "done" and the rest of the new names already match canonical form.
-}
+# ADO-182: сама карта переехала в `domain.entities` — её читает и `infra`
+# (репозиторий фильтрует по статусу), а импорт `services` из `infra` запрещён
+# слоями. Здесь — ре-экспорт под прежним именем: `mcp/tools/agent_tools.py` и
+# `mcp/tools/context_tools.py` кладут её в payload как
+# `task_status_legacy_aliases`, и этот контракт меняться не должен.
+_LEGACY_ALIASES: dict[str, str] = TASK_STATUS_ALIASES
 
 
 def normalise(status: str | TaskStatus) -> str:
     """Collapse legacy or canonical status to the canonical bucket name."""
-    raw = status.value if isinstance(status, TaskStatus) else str(status)
-    return _LEGACY_ALIASES.get(raw, raw)
+    return canonical_task_status(status)
 
 
 # --------------------------------------------------------------------------- #
