@@ -145,31 +145,20 @@ async def test_async_on_ask_human(project: Project, config: Config) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_autonomous_no_tasks_generates_from_master(
-    project: Project, config: Config
-) -> None:
-    """Если задач нет, агент анализирует MASTER.md и создаёт задачи."""
-    orch = _orch(
-        project,
-        config,
-        [
-            MockAdapter.tool_call_response(
-                "create_task",
-                {"title": "Создать спецификацию", "priority": 1},
-                call_id="call_1",
-            ),
-            MockAdapter.text_response("Создал задачу."),
-            MockAdapter.text_response("Задача выполнена."),
-        ],
-    )
+async def test_run_autonomous_no_tasks_is_idle(project: Project, config: Config) -> None:
+    """RFC 25 / CUR-017: пустая очередь → idle, LLM не вызывается, задачи не создаются."""
+    adapter = MockAdapter()
+    adapter.chat = AsyncMock(side_effect=AssertionError("LLM must not be called when idle"))  # type: ignore[method-assign]
+
+    orch = Orchestrator(project, config, adapter=adapter)
     events = []
     async for event in orch.run_autonomous():
         events.append(event)
 
     types = [e.type for e in events]
-    assert "thinking" in types
-    all_tasks = project.get_tasks()
-    assert len(all_tasks) >= 1
+    assert types == ["thinking", "done"]
+    assert "idle" in str(events[-1].data)
+    assert project.get_tasks() == []
 
 
 # --------------------------------------------------------------------------- #

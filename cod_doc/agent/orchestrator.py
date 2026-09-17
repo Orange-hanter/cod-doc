@@ -1,13 +1,17 @@
 """
 Автономный агент-оркестратор COD-DOC.
 
-Алгоритм:
-1. Прочитать MASTER.md (L0)
-2. Спарсить next_actions или взять следующую задачу из очереди
-3. Если задач нет — сгенерировать их из состояния MASTER.md
-4. Выполнить задачу через цикл LLM + инструменты
-5. Обновить MASTER.md, хэши, changelog
-6. Повторить или встать в idle
+RFC 25: роль оркестратора — куратор документации и поиска, не исполнитель
+продуктовых задач (ADO-*). Legacy daemon (`cod-doc agent run`) больше не
+генерирует задачи из MASTER.md сам — эта автогенерация удалена вместе с
+CUR-017.
+
+Алгоритм автономного режима:
+1. Взять следующую задачу из очереди (если она есть).
+2. Если очередь пуста — встать в idle; тик рутин делает `run_daemon`
+   отдельным вызовом `tick_project_routines`, до `run_autonomous`.
+3. Если задача есть — выполнить её через цикл LLM + инструменты
+   (`run_task`), обновить MASTER.md/хэши/changelog по ходу выполнения.
 """
 
 from __future__ import annotations
@@ -55,7 +59,12 @@ class AgentEvent:
 
 
 class Orchestrator:
-    """Автономный агент управления документацией."""
+    """Автономный агент-куратор документации (RFC 25).
+
+    Не генерирует и не исполняет продуктовые задачи сам: ``run_autonomous``
+    только забирает и выполняет то, что уже стоит в очереди, а при пустой
+    очереди переходит в idle без побочных эффектов.
+    """
 
     def __init__(
         self,
@@ -209,30 +218,26 @@ class Orchestrator:
 
     async def run_autonomous(self) -> AsyncGenerator[AgentEvent]:
         """
-        Автономный режим: читает MASTER.md, формирует задачи, выполняет их.
-        Возвращает после завершения всех текущих задач.
+        Автономный режим: выполняет следующую задачу из очереди, если она есть.
+
+        RFC 25: не генерирует продуктовые задачи из MASTER.md (легаси
+        `_generate_tasks_from_master` удалён в CUR-017) — пустая очередь
+        означает idle, а не повод создать себе работу. Тик рутин — забота
+        `run_daemon`/`tick_project_routines`, не этого метода.
         """
         yield AgentEvent(
             "thinking", f"Запуск автономного режима для проекта: {self.project.entry.name}"
         )
 
-        # Шаг 1: Проверить очередь
         task = self.project.next_pending_task()
-
-        # Шаг 2: Если задач нет — сгенерировать из MASTER.md
-        if not task:
-            yield AgentEvent("thinking", "Нет задач в очереди. Анализирую MASTER.md...")
-            async for event in self._generate_tasks_from_master():
-                yield event
-            task = self.project.next_pending_task()
-
         if not task:
             yield AgentEvent(
-                "done", "Задач для выполнения не найдено. Проект в актуальном состоянии."
+                "done",
+                "idle: no pending tasks; routines are ticked by run_daemon",
             )
             return
 
-        # Шаг 3: Выполнить задачу
+        # Выполнить задачу
         async for event in self.run_task(task):
             yield event
 
@@ -618,51 +623,6 @@ class Orchestrator:
                 )
 
             messages.extend(tool_results)
-
-    async def _generate_tasks_from_master(self) -> AsyncGenerator[AgentEvent]:
-        """Попросить LLM сгенерировать задачи на основе MASTER.md."""
-        master = self.project.read_master()
-        if not master:
-            yield AgentEvent("error", "MASTER.md не найден — невозможно сгенерировать задачи")
-            return
-
-        prompt = (
-            "Проанализируй MASTER.md и создай задачи для приведения документации в актуальное состояние. "
-            "Используй инструмент create_task для каждой задачи. "
-            "Если документация полностью актуальна — ничего не создавай.\n\n"
-            f"## MASTER.md\n\n```markdown\n{master[:4000]}\n```"
-        )
-        messages = [{"role": "user", "content": prompt}]
-
-        try:
-            llm_msgs = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
-            allowed = {
-                t["function"]["name"]
-                for t in TOOL_DEFINITIONS
-                if t["function"]["name"] in ("create_task", "get_project_status")
-            }
-            tools_subset = [t for t in TOOL_DEFINITIONS if t["function"]["name"] in allowed]
-            response = await self.adapter.chat(
-                llm_msgs,
-                tools_subset,
-                model=self.config.model,
-                max_tokens=2048,
-            )
-        except LLMError as e:
-            yield AgentEvent("error", f"Ошибка генерации задач: {e}")
-            return
-
-        msg = response.choices[0].message
-        if msg.tool_calls:
-            for tc in msg.tool_calls:
-                if tc.type != "function":
-                    continue
-                if tc.function.name == "create_task":
-                    result = self.executor.execute("create_task", tc.function.arguments)
-                    yield AgentEvent("tool_result", {"name": "create_task", "result": result})
-
-        if msg.content:
-            yield AgentEvent("message", msg.content)
 
 
 # ── Daemon runner ─────────────────────────────────────────────────────────────

@@ -649,7 +649,7 @@ _cod-doc() {
 (( $+functions[_cod_doc_agent_commands] )) || _cod_doc_agent_commands() {
   local -a cmds
   cmds=(
-    'run:Запустить агент для проекта.'
+    'run:Запустить legacy-агент для проекта (RFC 25).'
   )
   _describe -t cod-doc-agent-commands 'cod-doc agent command' cmds
 }
@@ -660,7 +660,7 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-t --task)'{-t+,--task=}'[Заголовок новой задачи для выполнения]:task' \
-    '(--autonomous --no-autonomous)'{--autonomous,--no-autonomous}'[Авто-генерация задач из MASTER.md]' \
+    '(--autonomous --no-autonomous)'{--autonomous,--no-autonomous}'[legacy (RFC 25); не исполняет продуктовые ADO-*; без --task выполня…]' \
     '(- *)--help[Show this message and exit.]' \
     '1:project-name:_cod_doc_projects' && ret=0
   return ret
