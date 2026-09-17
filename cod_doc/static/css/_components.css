@@ -2820,3 +2820,81 @@ details > summary { cursor: pointer; }
   line-height: 1.5;
 }
 .standard-detail .standard-triggers { margin-top: var(--space-3); }
+
+/* ── ADR (ADO-133 / ADO-136 / ADO-135) ────────────────────────────────── */
+/* До ADO-133 вкладка использовала 18 классов `adr-*`, ни у одного из которых
+   не было правила: страница рисовалась браузерным дефолтом. Разметка переехала
+   на общий словарь (.page-header / .filter-bar / .grid / .task-card /
+   .settings-form / .task-hero); здесь остаётся только то, чему аналога нет. */
+
+/* Статусы ADR. Готовые `badge-*` описывают статусы ЗАДАЧ, `ds-chip-*` —
+   документов; из пяти значений ADRStatus совпадает ровно одно имя, поэтому
+   мапить ADR на чужие тона нельзя — вышло бы «accepted = done». */
+.badge-proposed   { background: var(--warning-soft-bg); color: var(--warning-soft-fg); border-color: var(--warning-border); }
+.badge-accepted   { background: var(--success-soft-bg); color: var(--success-soft-fg); border-color: var(--success-border); }
+.badge-superseded { background: var(--info-soft-bg);    color: var(--info-soft-fg);    border-color: var(--info-border); }
+.badge-deprecated { background: var(--bg-alt);          color: var(--muted);           border-color: var(--border-soft); }
+.badge-rejected   { background: var(--danger-soft-bg);  color: var(--danger-soft-fg);  border-color: var(--danger-border); }
+
+/* Клик по всей строке списка. Растянутая ссылка, а не `onclick`: работает
+   без JS и сохраняет обычное поведение ссылки (средняя кнопка, копирование
+   адреса). Готового row-link паттерна в приложении не было. */
+.adr-table tbody tr { position: relative; }
+.adr-table .adr-row-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+/* Заголовок остаётся собственной ссылкой поверх оверлея. */
+.adr-table td a { position: relative; z-index: 1; }
+
+/* ADO-135: возврат к списку виден с любой глубины прокрутки. */
+.adr-back {
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: 2;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-1) 0;
+  background: var(--bg);
+  font-size: 13px;
+}
+
+/* Формы: двухколоночный ряд и инлайн-форма деприкации. */
+.adr-form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+.adr-form-inline {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-3);
+}
+.adr-reason-inline { flex: 1; min-width: 0; }
+
+/* Заблокированный ADR: карточка-предупреждение, а не обычный блок. */
+.adr-locked { border-left: 3px solid var(--warning-border); }
+
+.adr-diagram { margin-bottom: var(--space-4); }
+.adr-diagram h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.adr-tasks, .adr-graph-nodes {
+  margin: 0;
+  padding-left: var(--space-4);
+  line-height: 1.7;
+}
+
+/* Автоссылка ADR-NNN в прозе (markdown.py:343). Класс переименовывать нельзя —
+   он зафиксирован тестами рендерера. */
+.adr-ref {
+  border-bottom: 1px dashed var(--border-strong);
+  text-decoration: none;
+}
+.adr-ref:hover { border-bottom-style: solid; }

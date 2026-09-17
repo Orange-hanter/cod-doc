@@ -23,11 +23,18 @@ from sqlalchemy.orm import Session
 from cod_doc.api.deps import get_project, get_project_db
 from cod_doc.api.web.markdown import autolink_adr_refs, render_markdown
 from cod_doc.api.web.templates_env import templates
+from cod_doc.domain.entities import ADRStatus
 from cod_doc.services import adr_service
 from cod_doc.services.adr_service import ADRAlreadyExistsError, ADRNotFoundError
 
 router = APIRouter()
 
+
+#: Единственный источник списка статусов для форм и фильтра.
+#: До ADO-133 тот же литерал из пяти строк был выписан трижды — в списке,
+#: в форме создания и на детальной странице; новый член ``ADRStatus``
+#: пришлось бы добавлять в каждое место руками.
+STATUS_OPTIONS: list[str] = [s.value for s in ADRStatus]
 
 _STATUS_ICON = {
     "proposed": "✏️",
@@ -86,7 +93,7 @@ def adr_list(
             "project": proj.entry,
             "items": items,
             "status_filter": status,
-            "status_options": ["proposed", "accepted", "superseded", "deprecated", "rejected"],
+            "status_options": STATUS_OPTIONS,
         },
     )
 
@@ -105,7 +112,7 @@ def adr_new_form(
         {
             "project": proj.entry,
             "form_action": f"/p/{slug}/adr/new",
-            "status_options": ["proposed", "accepted", "superseded", "deprecated", "rejected"],
+            "status_options": STATUS_OPTIONS,
             "default_status": "proposed",
         },
     )
@@ -224,7 +231,7 @@ def adr_show(
             "project": proj.entry,
             "adr": payload,
             "candidates": candidates,
-            "status_options": ["proposed", "accepted", "superseded", "deprecated", "rejected"],
+            "status_options": STATUS_OPTIONS,
         },
     )
 
