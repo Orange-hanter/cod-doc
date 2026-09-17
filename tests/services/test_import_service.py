@@ -531,3 +531,43 @@ def test_update_path_reports_add_failure(
     section_warnings = [w for w in report.warnings if w.field == "section:second"]
     assert len(section_warnings) == 1
     assert section_warnings[0].applied == "skipped"
+
+
+def test_authoritative_is_stored_as_authored(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-092: the status the corpora actually write, no longer coerced.
+
+    Before this, `authoritative` fell past the alias table into the unknown
+    fallback and every import wrote `draft`. In the Gateway pilot that was 36
+    documents, including all 24 ADRs and the canonical architecture document —
+    and because `doc drift` compares content and not frontmatter, every report
+    called them synchronised while it happened.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        report = _import(
+            session, project_id, "canon", "---\nstatus: authoritative\n---\n\n# T\n\nBody.\n"
+        )
+        model = session.get(DocumentModel, report.document.row_id)
+        assert model is not None
+        assert model.status == "authoritative"
+        # Stored as authored, so nothing was bent and nothing is reported.
+        assert report.warnings == []
+
+
+def test_authoritative_survives_a_reimport(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """The update path, not only create — that is where the pilot lost it.
+
+    Its 36 documents went in through the very first `import docs`, and every
+    later per-file import kept writing `draft` over the row.
+    """
+    raw = "---\nstatus: authoritative\n---\n\n# T\n\nBody.\n"
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        _import(session, project_id, "canon", raw)
+        report = _import(session, project_id, "canon", raw)
+        model = session.get(DocumentModel, report.document.row_id)
+        assert model is not None
+        assert model.status == "authoritative"
+        assert report.warnings == []

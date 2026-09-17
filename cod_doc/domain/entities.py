@@ -60,6 +60,17 @@ class DocumentStatus(StrEnum):
     DRAFT = "draft"
     REVIEW = "review"
     ACTIVE = "active"
+    # A document the project treats as the source of truth on its subject, not
+    # merely one that is current. Added by ADO-092 for the same reason ADO-015
+    # added eight document types: real corpora were authoring it, and every
+    # import turned it into `draft` — in one pilot, 36 documents including all
+    # 24 ADRs and the canonical architecture document.
+    #
+    # `active` was not a sufficient home for it. The distinction the projects
+    # draw is between "in force" and "settles disagreements", and collapsing
+    # the second into the first loses the only thing the status was written to
+    # say.
+    AUTHORITATIVE = "authoritative"
     DEPRECATED = "deprecated"
 
 

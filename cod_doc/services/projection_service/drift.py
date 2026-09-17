@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ._frontmatter import metadata_mismatches
 from ._internals import _require_doc_model
 from ._safety import _safe_target, _sha256
-from ._types import DriftReport, DriftStatus, ProjectDriftItem, ProjectDriftReport
+from ._types import (
+    METADATA_MISMATCH_COUNT_KEY,
+    DriftReport,
+    DriftStatus,
+    ProjectDriftItem,
+    ProjectDriftReport,
+)
 from .render import render_markdown
 
 if TYPE_CHECKING:
@@ -54,7 +61,9 @@ def detect_drift(
             file_hash=None,
         )
 
-    file_hash = _sha256(file_path.read_text(encoding="utf-8"))
+    file_text = file_path.read_text(encoding="utf-8")
+    file_hash = _sha256(file_text)
+    mismatch = metadata_mismatches(model, file_text)
 
     accepted_file_hash = getattr(model, "content_sha256_head", None)
     if model.projection_hash != db_hash:
@@ -72,6 +81,7 @@ def detect_drift(
         projection_hash=model.projection_hash,
         db_content_hash=db_hash,
         file_hash=file_hash,
+        metadata_mismatch=mismatch,
     )
 
 
@@ -103,6 +113,9 @@ def detect_project_drift(
         docs = docs[:limit]
 
     counts = {status.value: 0 for status in DriftStatus}
+    # ADO-092: counted separately from the four content states, because a
+    # metadata mismatch can sit on a document in any of them.
+    counts[METADATA_MISMATCH_COUNT_KEY] = 0
     issues: list[ProjectDriftItem] = []
     checked = 0
 
@@ -112,7 +125,11 @@ def detect_project_drift(
         checked += 1
         report = detect_drift(session, doc.row_id, root_path=root_path)
         counts[report.status.value] += 1
-        if report.status is not DriftStatus.IN_SYNC:
+        if report.metadata_mismatch:
+            counts[METADATA_MISMATCH_COUNT_KEY] += 1
+        # A metadata mismatch is an issue even when the content is in sync —
+        # that combination is exactly the one that hid the ADO-092 status loss.
+        if report.status is not DriftStatus.IN_SYNC or report.metadata_mismatch:
             issues.append(
                 ProjectDriftItem(
                     doc_key=doc.doc_key,
