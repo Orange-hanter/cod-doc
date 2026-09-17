@@ -115,7 +115,7 @@ graph TD
 ### CI Pipeline (GitHub Actions)
 - **Описание:** Непрерывная интеграция: ruff-линтинг (blocking), mypy strict
   (blocking), pytest matrix Python 3.11/3.12/3.13, Docker build + smoke test.
-- **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:1c3ca847f98a`
+- **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:fe11e3504b18`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
 
@@ -237,7 +237,7 @@ graph TD
   },
   "handoffs": {
     "ci": {
-      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:1c3ca847f98a",
+      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:fe11e3504b18",
       "trigger": "push / pull_request в main и develop",
       "pipeline": "ruff → mypy → pytest (матрица 3.11/3.12/3.13) → docker build + smoke test"
     },
@@ -265,7 +265,7 @@ graph TD
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
 | 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `52a9035cec7a` | 2026-09-15 | 🟢 VERIFIED |
 | 3 | proposals/README.md | `doc:proposals_README_md` | `0597cc787589` | 2026-09-11 | 🟢 VERIFIED |
-| 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `1c3ca847f98a` | 2026-09-11 | 🟢 VERIFIED |
+| 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `fe11e3504b18` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
 | 7 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-09-11 | 🟡 LEGACY |

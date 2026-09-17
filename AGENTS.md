@@ -57,8 +57,11 @@ tests/             # pytest suites: services/ + mcp/ + api/ + agent/ + …
 ```bash
 pip install -e .[dev]
 alembic upgrade head            # init/upgrade local SQLite schema
-pytest tests/ -v --tb=short     # run the suite
+pytest tests/ -n auto --dist loadfile -v --tb=short   # run the suite
 ```
+
+`-n auto --dist loadfile` — так же, как в CI. Один тест/модуль в отладке гоняй
+без них: воркеры глотают `-s`, `--pdb` и ломают пошаговую отладку.
 
 При первом старте задайте `COD_DOC_DB_URL` или используйте default
 `sqlite:///./cod-doc.db`.
@@ -140,7 +143,7 @@ pytest tests/ -v --tb=short     # run the suite
 ruff check cod_doc/ tests/
 ruff format --check cod_doc/ tests/
 mypy cod_doc/
-pytest tests/ --tb=short --timeout=120
+pytest tests/ -n auto --dist loadfile --tb=short --timeout=120
 ```
 
 Всё зелёное → готов PR. Если что-то не запускалось — явно отметь в
