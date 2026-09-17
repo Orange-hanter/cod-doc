@@ -10,6 +10,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from cod_doc.domain.entities import TaskStatus
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -25,6 +26,23 @@ _STATUS_ICON = {
     "in-progress": "🔵",
     "done": "🟢",
 }
+
+#: Единственный источник статусов для CLI (ADO-178).
+#:
+#: Раньше здесь стоял литерал из трёх значений, продублированный в двух
+#: командах, и CLI не знал про `backlog`, `in_review`, `blocked`, `cancelled`
+#: и канонический `todo` — при том что `cancelled` и `todo` в базе уже есть.
+#:
+#: Список берётся из `TaskStatus`, так что новое состояние появляется в CLI
+#: само. Легаси-алиасы (`pending`, `in-progress`) входят в перечисление и
+#: остаются принимаемыми — старые скрипты не ломаются.
+#:
+#: Допустимость самого ПЕРЕХОДА проверяет не Choice, а
+#: `task_status_machine.validate_transition`: протокольное правило ADO-039
+#: (`todo → in_progress` только через `task_checkout`) обходить через
+#: расширение списка нельзя, и ошибка от машины состояний объясняет причину
+#: лучше, чем «нет такого статуса».
+_STATUS_VALUES = [s.value for s in TaskStatus]
 
 
 def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
@@ -65,14 +83,17 @@ def task() -> None:
     "-s",
     "filter_status",
     default=None,
-    type=click.Choice(["pending", "in-progress", "done"]),
-    help="Filter by status",
+    type=click.Choice(_STATUS_VALUES),
+    help=(
+        "Filter by status. Совпадение точное по хранимому значению: "
+        "`pending` и `todo` — один бакет по смыслу, но разные строки в базе "
+        "(ADO-182)."
+    ),
 )
 @click.option("--json", "as_json", is_flag=True, default=False)
 @click.pass_context
 def task_list(ctx: click.Context, project: str, filter_status: str | None, as_json: bool) -> None:
     """List tasks for a project."""
-    from cod_doc.domain.entities import TaskStatus
     from cod_doc.infra.db import transactional
     from cod_doc.services import task_service
 
@@ -287,9 +308,7 @@ def task_create(
 
 @task.command("status")
 @click.argument("task_id")
-@click.argument(
-    "new_status", metavar="STATUS", type=click.Choice(["pending", "in-progress", "done"])
-)
+@click.argument("new_status", metavar="STATUS", type=click.Choice(_STATUS_VALUES))
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None)
@@ -303,7 +322,6 @@ def task_status(
     reason: str | None,
 ) -> None:
     """Update task status (does not validate deps; use 'complete' for done)."""
-    from cod_doc.domain.entities import TaskStatus
     from cod_doc.infra.db import transactional
     from cod_doc.services import task_service
     from cod_doc.services.task_service import TaskNotFoundError
