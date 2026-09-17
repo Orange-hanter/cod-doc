@@ -22,11 +22,22 @@ pattern, audit cadence). Этот файл их не дублирует.
 pip install -e '.[dev]'
 alembic upgrade head                     # схема локальной SQLite
 
-.venv/bin/pytest tests/ -q --tb=short                       # весь прогон (~1639 тестов)
+.venv/bin/pytest tests/ -n auto --dist loadfile -q --tb=short   # весь прогон (~2090 тестов)
 .venv/bin/pytest tests/services/test_task_create.py -q      # один модуль
 .venv/bin/pytest tests/services/test_task_create.py::test_create_auto_generates_task_id -v   # один тест
 .venv/bin/pytest tests/ -k "checkout" -q                    # по подстроке
 ```
+
+`-n auto --dist loadfile` — только для полного прогона, ровно как в CI.
+Распараллеливание по файлам, а не дефолтное `load` по отдельным тестам: тесты
+делят внутрипроцессные глобалы (каталог тулов `mcp._tool_manager._tools`,
+process-wide состояние API в autouse-фикстуре), и файл целиком на одном
+воркере сохраняет ту же последовательность, что и обычный прогон; разница по
+времени с `load` — в пределах 8%.
+
+Флаги нарочно **не** в `addopts`: под воркерами не работают `-s` и `--pdb`, а
+на одном модуле накладные расходы на их старт больше выигрыша. Отлаживаешь
+конкретный тест — зови pytest без `-n`.
 
 Gate перед hand-off — ровно то, что гоняет CI (`.github/workflows/ci.yml`),
 всё блокирующее:
@@ -35,7 +46,7 @@ Gate перед hand-off — ровно то, что гоняет CI (`.github/w
 .venv/bin/ruff check cod_doc/ tests/
 .venv/bin/ruff format --check cod_doc/ tests/
 .venv/bin/mypy cod_doc/                  # strict
-.venv/bin/pytest tests/ --tb=short --timeout=120
+.venv/bin/pytest tests/ -n auto --dist loadfile --tb=short --timeout=120
 ```
 
 **«Гейт зелёный» = зелёный CI, а не локальный прогон** (ADO-070). Гейты
