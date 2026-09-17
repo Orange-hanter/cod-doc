@@ -198,6 +198,16 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - `tests/services/conftest.py::engine_with_schema` — прогоняет
   `alembic upgrade head` в tmp SQLite, поэтому новая миграция подхватывается
   автоматически, без правки фикстур.
+- `tests/_alembic.py::run_alembic` — единственная точка запуска alembic из
+  тестов. `upgrade head` по ещё не существующему файлу SQLite обслуживается
+  **копией шаблона**: настоящий alembic гоняется один раз за процесс, дальше
+  `shutil.copyfile` (~1 мс вместо ~0.5 с). Прогон из-за этого 89 с, а не 534 с.
+  Кэш инвалидируется по размеру/mtime файлов
+  `cod_doc/infra/migrations/versions/*.py`. Всё остальное — конкретная ревизия,
+  `downgrade`, non-SQLite URL, уже существующий файл (миграционные тесты
+  наливают данные на старой ревизии, потом гонят upgrade) — идёт в подпроцесс,
+  как раньше. Пишешь фикстуру со схемой — зови `run_alembic`, а не
+  `subprocess.run` напрямую.
 - `asyncio_mode = "auto"` — async-тесты не требуют маркера.
 
 ## Инструментарий сессии
