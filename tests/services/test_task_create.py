@@ -347,3 +347,99 @@ def test_plan_ready_excludes_tasks_with_unfinished_blockers(engine_with_schema) 
         ready_ids = {t.task_id for t in ready}
         assert "MY-001" in ready_ids
         assert "MY-002" not in ready_ids
+
+
+def _second_plan(session: Session, project_id: int, scope: str) -> tuple[int, int]:
+    """Ещё один план в ТОМ ЖЕ проекте."""
+    now = datetime.now(UTC)
+    plan = PlanModel(project_id=project_id, scope=scope, created=now, last_updated=now)
+    session.add(plan)
+    session.flush()
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Core", slug="A-Core", position=0)
+    session.add(sec)
+    session.flush()
+    return plan.row_id, sec.row_id
+
+
+def test_auto_id_counts_across_the_whole_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-177: нумерация обязана идти по проекту, а не по плану.
+
+    `task_id` уникален по `(project_id, task_id)`. Пока максимум искался
+    внутри плана, префикс, впервые появившийся во втором плане, стартовал
+    с `001` и упирался в занятый id из первого — `UNIQUE constraint failed`.
+    """
+    factory = make_session_factory(engine_with_schema)
+
+    with transactional(factory) as session:
+        proj, plan_a, sec_a = _seed_plan(session)
+        for n in range(3):
+            tasks.create(
+                session,
+                project_id=proj,
+                plan_id=plan_a,
+                section_id=sec_a,
+                id_prefix="SHR",
+                title=f"в первом плане {n}",
+                type=TaskType.FEATURE,
+                priority=Priority.LOW,
+                author="x",
+            )
+
+        plan_b, sec_b = _second_plan(session, proj, "p-plan-2")
+        moved = tasks.create(
+            session,
+            project_id=proj,
+            plan_id=plan_b,
+            section_id=sec_b,
+            id_prefix="SHR",
+            title="первая задача во втором плане",
+            type=TaskType.FEATURE,
+            priority=Priority.LOW,
+            author="x",
+        )
+
+        assert moved.task_id == "SHR-004", (
+            "во втором плане счётчик обязан продолжиться с максимума по проекту, "
+            "а не начаться заново с 001"
+        )
+
+
+def test_auto_id_is_isolated_between_projects(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Расширили скоуп до проекта — но не дальше: соседний проект не влияет."""
+    factory = make_session_factory(engine_with_schema)
+
+    with transactional(factory) as session:
+        proj_a, plan_a, sec_a = _seed_plan(session)
+        tasks.create(
+            session,
+            project_id=proj_a,
+            plan_id=plan_a,
+            section_id=sec_a,
+            id_prefix="ISO",
+            title="в первом проекте",
+            type=TaskType.FEATURE,
+            priority=Priority.LOW,
+            author="x",
+        )
+
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="q", title="Q", root_path="/tmp/q", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+        plan_b, sec_b = _second_plan(session, other.row_id, "q-plan")
+
+        first = tasks.create(
+            session,
+            project_id=other.row_id,
+            plan_id=plan_b,
+            section_id=sec_b,
+            id_prefix="ISO",
+            title="в другом проекте",
+            type=TaskType.FEATURE,
+            priority=Priority.LOW,
+            author="x",
+        )
+
+        assert first.task_id == "ISO-001", "нумерация не должна течь между проектами"
