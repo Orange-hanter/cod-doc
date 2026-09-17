@@ -264,45 +264,39 @@ def test_engine_cache_avoids_recreation_on_repeated_lookups(
 
 
 def test_engine_cache_perf_smoke(configured_project) -> None:
-    """Sanity check: cached path is meaningfully faster than 'cold' creation.
+    """Печатает cold/warm тайминги в лог прогона. Утверждений о времени — нет.
 
-    Сравнение по **минимуму из нескольких раундов**, а не по одному замеру.
-    Докстринг тут обещал «not a strict assertion — CI noise can flip wall-clock
-    comparisons», а ниже стояло ровно строгое сравнение двух одиночных замеров.
-    На полном параллельном прогоне (`-n auto`) оно однажды и упало: тёплый цикл
-    сняли с ядра, и средний вызов «обогнал» холодное создание движка.
-    Воспроизвести падение прицельно не удалось — тем более незачем оставлять
-    в гейте сравнение, устойчивость которого зависит от планировщика.
+    Раньше здесь стояло `assert warm_avg_us < cold_us` — сравнение двух
+    замеров wall-clock. Собственный докстринг теста это же и опровергал
+    («not a strict assertion — CI noise can flip wall-clock comparisons»), и
+    под параллельным прогоном (`-n auto`) сравнение падало: тёплый цикл
+    снимают с ядра, средний вызов раздувается и «обгоняет» холодное создание.
+    Минимум по нескольким раундам, которым это чинили первым заходом, тоже не
+    спас — при восьми воркерах чистого раунда может не случиться ни одного.
 
-    Шум умеет делать замер только *больше*, поэтому минимум — устойчивая
-    статистика: у тёплого пути (словарный lookup) и холодного (сборка engine
-    в SQLAlchemy) разница на порядки, и минимум по раундам её не теряет.
+    Свойство, ради которого тест писался — «тёплый путь не пересоздаёт
+    engine», — уже под детерминированной защитой соседей, без единого
+    таймера: `test_engine_cache_avoids_recreation_on_repeated_lookups`
+    (100 lookup'ов → ровно один `make_engine`), `..._returns_same_engine`
+    (identity) и `..._ttl_skips_stat` (нет лишнего `stat`). Заголовок секции
+    выше так и гласит: counter-based, not wall-clock.
+
+    Поэтому тут остаются только цифры для глаза в логах CI. Нужна настоящая
+    защита от перфоманс-регрессии — её надо мерить бенчмарком на незанятой
+    машине, а не ассертом внутри параллельного прогона.
     """
     entry, _ = configured_project
 
-    rounds = 5
-    cold_samples: list[float] = []
-    warm_samples: list[float] = []
+    # Cold: dispose then time first lookup.
+    dispose_all_engines()
+    t0 = time.perf_counter()
+    get_engine_for_slug(entry.name)
+    cold_us = (time.perf_counter() - t0) * 1_000_000
 
-    for _ in range(rounds):
-        # Cold: dispose then time first lookup.
-        dispose_all_engines()
-        t0 = time.perf_counter()
+    # Warm: 100 cached lookups → средний вызов в µs.
+    t1 = time.perf_counter()
+    for _ in range(100):
         get_engine_for_slug(entry.name)
-        cold_samples.append((time.perf_counter() - t0) * 1_000_000)
-
-        # Warm: 100 cached lookups → средний вызов в µs.
-        t1 = time.perf_counter()
-        for _ in range(100):
-            get_engine_for_slug(entry.name)
-        warm_samples.append((time.perf_counter() - t1) * 10_000)
-
-    cold_us = min(cold_samples)
-    warm_avg_us = min(warm_samples)
+    warm_avg_us = (time.perf_counter() - t1) * 10_000
 
     print(f"\n[WEB-005 perf] cold={cold_us:.1f}µs warm_avg={warm_avg_us:.1f}µs")
-    # Warm path doesn't even re-stat (TTL>0); should be sub-microsecond on any CI.
-    assert warm_avg_us < cold_us, (
-        f"Warm path should be faster than cold creation; "
-        f"cold={cold_us:.1f}µs warm={warm_avg_us:.1f}µs"
-    )
