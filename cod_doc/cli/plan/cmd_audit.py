@@ -33,7 +33,7 @@ def plan_audit(ctx: click.Context, plan_scope: str, project: str, as_json: bool)
         report = plan_service.audit(session, plan_id)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "plan_id": report.plan_id,

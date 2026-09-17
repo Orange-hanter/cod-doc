@@ -392,7 +392,7 @@ def audit(
             if not as_json:
                 console.print("[dim]No staged .md files — nothing to audit.[/dim]")
             else:
-                console.print(_json.dumps({"findings": [], "total": 0, "errors": 0}))
+                click.echo(_json.dumps({"findings": [], "total": 0, "errors": 0}))
             return
 
     findings: list[AuditFinding] = []
@@ -426,7 +426,7 @@ def audit(
     warning_count = sum(1 for f in findings if f.severity == "warning")
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "findings": [

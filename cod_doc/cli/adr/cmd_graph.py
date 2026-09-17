@@ -37,7 +37,7 @@ def adr_graph(ctx: click.Context, project: str, fmt: str) -> None:
         graph = adr_service.graph(session, project_id)
 
     if fmt == "json":
-        console.print(_json.dumps(graph, indent=2, ensure_ascii=False))
+        click.echo(_json.dumps(graph, indent=2, ensure_ascii=False))
         return
 
     # Mermaid block.

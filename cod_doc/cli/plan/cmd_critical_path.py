@@ -32,7 +32,7 @@ def plan_critical_path(ctx: click.Context, plan_scope: str, project: str, as_jso
         result = plan_service.critical_path(session, plan_id)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "plan_id": result.plan_id,
