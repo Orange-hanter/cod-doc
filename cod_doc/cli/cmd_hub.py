@@ -8,7 +8,6 @@ import click
 from rich.console import Console
 
 from cod_doc.logging_config import get_logger
-from cod_doc.services import hub_service
 
 console = Console()
 log = get_logger("cli.hub")
@@ -22,6 +21,10 @@ def hub() -> None:
 @hub.command("init")
 def hub_init() -> None:
     """Создать/мигрировать ~/.cod-doc/hub.db (идемпотентно)."""
+    # ADO-179: импорт внутри тела. `hub_service` тянет alembic + SQLAlchemy,
+    # а на уровне модуля это оплачивал КАЖДЫЙ вызов cod-doc, включая --help.
+    from cod_doc.services import hub_service
+
     db_path = hub_service.init_hub()
 
     # Убедиться, что WAL включён (SYM-002).
