@@ -223,6 +223,38 @@
   _describe -t cod-doc-adrs 'ADR' rows
 }
 
+(( $+functions[_cod_doc_adrs_other] )) || _cod_doc_adrs_other() {
+  # `adr supersede НОВЫЙ СТАРЫЙ` берёт два РАЗНЫХ идентификатора. Повтор
+  # первого CLI отвергнет, так что предлагать его — вредный совет.
+  local row
+  local -a rows kept
+  rows=( ${(f)"$(_cod_doc_sql "@@SQL:adrs@@")"} )
+  for row in $rows; do
+    # ${line[(re)…]} — обратный индекс: непусто, если такой элемент уже набран.
+    # Флаг `e` обязателен: без него значение трактуется как ПАТТЕРН, и
+    # идентификатор со спецсимволом сопоставлялся бы не с собой.
+    [[ -n ${line[(re)${row%%:*}]} ]] && continue
+    kept+=( $row )
+  done
+  (( $#kept )) || return 1
+  _describe -t cod-doc-adrs 'ADR' kept
+}
+
+(( $+functions[_cod_doc_task_blockers] )) || _cod_doc_task_blockers() {
+  # `task remove-dep TASK_ID BLOCKER_ID` снимает СУЩЕСТВУЮЩЕЕ ребро, поэтому
+  # второй аргумент — не «любая из 400 задач», а только блокеры первой.
+  # Нет блокеров — молча пусто: это честнее, чем предложить заведомо
+  # несуществующее ребро.
+  local owner filter=""
+  local -a rows
+  owner="${line[1]}"
+  _cod_doc_safe_slug "$owner" || return 1
+  filter="and t.task_id = '${owner//\'/\'\'}'"
+  rows=( ${(f)"$(_cod_doc_sql "@@SQL:task_blockers@@")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-task-blockers 'blocker' rows
+}
+
 (( $+functions[_cod_doc_stories] )) || _cod_doc_stories() {
   local -a rows
   rows=( ${(f)"$(_cod_doc_sql "@@SQL:stories@@")"} )

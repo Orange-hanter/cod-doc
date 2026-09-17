@@ -51,6 +51,14 @@ _SETTLE = 4.0
 #: ~/.cod-doc/config.yaml, иначе кейсы с данными честно скажут «пусто».
 LIVE_PROJECT = "cod-doc"
 
+#: ADR, от которого пляшет кейс `adr supersede`: он обязан ИСЧЕЗНУТЬ из
+#: списка второго аргумента.
+LIVE_ADR = "ADR-001"
+
+#: Задача заведомо без блокеров — второй аргумент `remove-dep` обязан
+#: промолчать, а не предложить все четыреста.
+UNBLOCKED_TASK = "ADO-170"
+
 
 def _spawn(zdotdir: str, cwd: str, env_extra: dict[str, str]) -> tuple[int, int]:
     env = dict(os.environ)
@@ -113,7 +121,11 @@ def _make_zdotdir(tmp: pathlib.Path) -> pathlib.Path:
         "autoload -Uz compinit\n"
         f"compinit -u -d {tmp}/zcompdump\n"
         "zstyle ':completion:*' menu no\n"
-        "unsetopt ALWAYS_TO_END AUTO_MENU\n"
+        # LIST_AMBIGUOUS по умолчанию ВКЛЮЧЁН: когда у кандидатов есть общий
+        # префикс, zsh вставляет его и список не показывает вовсе. Для
+        # проверки СОСТАВА списка это слепота — `adr show <TAB>` выдавал
+        # «ADR-0» вместо одиннадцати строк. Гасим.
+        "unsetopt ALWAYS_TO_END AUTO_MENU LIST_AMBIGUOUS\n"
         "setopt NO_BEEP\n"
         f"PS1='{_PROMPT}'\n",
         encoding="utf-8",
@@ -178,6 +190,20 @@ def main() -> int:
                 str(REPO),
                 {},
                 True,
+            ),
+            (
+                "adr supersede: второй аргумент без уже набранного первого",
+                f"cod-doc adr supersede -p {LIVE_PROJECT} {LIVE_ADR} ",
+                str(REPO),
+                {},
+                True,
+            ),
+            (
+                "remove-dep: у задачи без блокеров второй аргумент пуст",
+                f"cod-doc task remove-dep -p {LIVE_PROJECT} {UNBLOCKED_TASK} ",
+                str(REPO),
+                {},
+                False,
             ),
             (
                 "нет реестра и нет БД вверх по дереву",

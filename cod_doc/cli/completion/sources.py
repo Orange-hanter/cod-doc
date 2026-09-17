@@ -119,6 +119,21 @@ COMPLETION_QUERIES: Final[dict[str, str]] = {
          order by sc.group_key
          limit {QUERY_LIMIT};
     """,
+    # `task remove-dep TASK_ID BLOCKER_ID` снимает СУЩЕСТВУЮЩЕЕ ребро, поэтому
+    # второй аргумент — не «любая задача», а только блокеры первой. Направление
+    # ребра: from = задача, to = блокер, kind='blocks'
+    # (services/task_service.py::remove_dependency).
+    "task_blockers": f"""
+        select b.task_id || ':' || b.status || ' · ' ||
+               replace(replace(b.title, ':', ' -'), char(10), ' ')
+          from dependency d
+          join task t on t.row_id = d.from_task_id
+          join task b on b.row_id = d.to_task_id
+          join project p on p.row_id = t.project_id
+         where d.kind = 'blocks' {PROJECT_FILTER} {EXTRA_FILTER}
+         order by b.task_id
+         limit {QUERY_LIMIT};
+    """,
     "revisions": f"""
         select r.revision_id || ':' || r.entity_kind || ' · ' ||
                replace(replace(coalesce(r.reason, ''), ':', ' -'), char(10), ' ')
@@ -171,6 +186,11 @@ PATH_SOURCES: Final[dict[tuple[str, str], str]] = {
     ("routine run", "name"): f"{_P}_routines",
     ("adapter remove", "name"): f"{_P}_adapters",
     ("adapter show", "name"): f"{_P}_adapters",
+    # Парные позиционные: второй аргумент сужаем по первому, иначе он
+    # предлагает тот же список вместе с уже набранным значением, а такой
+    # вызов CLI гарантированно отвергнет.
+    ("task remove-dep", "blocker_id"): f"{_P}_task_blockers",
+    ("adr supersede", "superseded_adr_id"): f"{_P}_adrs_other",
     # Пути, объявленные как обычный str (click.Path разбирается сам).
     ("project add", "path"): "_files -/",
     ("hash calc", "file_path"): "_files",
