@@ -163,6 +163,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/routines/{name}/delete` | Удаление routine | `routine_service.delete` | ✅ | PCA-920 |
 | `GET /p/{slug}/run` | Live agent console + история запусков; Stop/Resume ставит `daemon_enabled` только этого проекта (глобальный daemon и in-flight run не abort'ятся) | `run_service.list_recent` + `activity_service`; HTMX POST project daemon stop/start | ✅ | WEB-030 / ADO-110 |
 | `GET /p/{slug}/run/{run_id}` | Деталь одного запуска агента | `run_service.get_one` + `activity_service.events_for_run` | ✅ | WEB-030 |
+| `GET /p/{slug}/run/{run_id}/step/{index}` | Полное тело одного шага прогона (кнопка «показать целиком»); страница его не зовёт | `run_service.get_step` | ✅ | ADO-115 |
 | **Поиск, коммиты, code-refs, метрики, затраты**  | | | |
 | `GET /p/{slug}/search` | FTS5-поиск по tasks/docs/stories/ADRs | `search_service.search` | ✅ | OBI-040 |
 | `POST /p/{slug}/search/reindex` | Перестроение FTS-индекса проекта | `search_service.reindex_all` | ✅ | OBI-040 |
@@ -233,13 +234,43 @@ cod_doc/static/
 - В URL-ах используется `slug` проекта и `doc_key` / `task_id` — те же ключи, что в БД и MCP. Это даёт совпадение URL ↔ ссылка в markdown.
 - **Время форматирует шаблон, а не хендлер (ADO-154).** Страница отдаёт доменное значение как есть (`datetime` или ISO-строку из сервиса), шаблон выбирает форму фильтром из [`cod_doc/api/web/dates.py`](../../../cod_doc/api/web/dates.py): `relative_time` (свежесть), `short_datetime` (`2026-09-17 14:03`), `short_date`, `ts_tooltip` (полный ISO в `title=`, не в ячейке). `.isoformat()` в `cod_doc/api/web/pages/` законен **только** при сериализации — `JSONResponse` или JSON-файл на диске, — но никогда для контекста шаблона. `strftime`, `replace("T", " ")` и срезы `[:10]`/`[:19]` в шаблонах запрещены: до ADO-154 их было восемь штук, и каждый ломался по-своему. Стерегут `tests/api/test_web_template_dates.py` (линт по исходникам) и `tests/api/test_web_raw_datetime_guard.py` (инвариант на отрендеренной странице).
 
-## 6. Live-операции (агент, импорт)
+## 6. Live-операции и реплей прогона
 
-Длинные операции (`Orchestrator.run_autonomous`, импорт Restate) отдаются через **Server-Sent Events**, не через WebSocket. Причина:
+Раздел приведён к коду в ADO-115. До этого он описывал систему, которой нет:
+обещал SSE (`hx-ext="sse"`) и роут отмены `DELETE /p/{slug}/run/{run_id}`,
+которого в приложении не существует.
 
-- SSE — простой `text/event-stream`, нативно поддерживается HTMX (`hx-ext="sse"`), не требует JS-библиотек.
-- WebSocket в [webhooks.py](../../../cod_doc/api/webhooks.py#L120) остаётся для машинных клиентов; web-консоль использует SSE.
-- Подключение one-way (сервер → клиент); отмена — через `DELETE /p/{slug}/run/{run_id}`.
+**Живая лента — WebSocket, а не SSE.** Консоль агента подписана на
+[`cod_doc_ws.js`](../../../cod_doc/static/cod_doc_ws.js), тот же канал, что
+в [webhooks.py](../../../cod_doc/api/webhooks.py#L120). Переписывать на SSE
+ради соответствия документу не надо — надо было починить документ.
+
+**Отмена — `POST /api/daemon/stop`**, а не `DELETE` по прогону.
+
+**Реплей.** Шаги прогона (`agent.thinking`, `agent.tool_call`,
+`agent.tool_result`, `agent.error`, `agent.started`, `agent.stopped`) пишутся
+в `activity_event` с `run_id` и `scope_kind='run'` — поэтому
+`/p/{slug}/run/{run_id}` показывает тот же таймлайн после перезагрузки.
+Kind'ы в реплее и в живой ленте совпадают намеренно: шаблон строит
+`kind-<хвост>`, JS строит тот же класс из живого события, и одна разметка
+строки обслуживает оба случая.
+
+До ADO-115 шаги никуда не писались: лента жила только в шине, а
+`/run/<id>` находил ноль строк и показывал «run упал до первого write-tool».
+Прогоны, созданные раньше, так и останутся с пустым экраном — он про это
+теперь и говорит.
+
+**Обрезка и полный текст.** В `activity_event` текстовое поле шага обрезано
+до 2000 символов, в БД пишется не больше 500 шагов на прогон (ровно тот
+`limit`, который страница и запрашивает). Полное тело каждого шага лежит
+рядом, в `<project>/.cod-doc/runs/<run_id>.jsonl`, и достаётся роутом
+`GET /p/{slug}/run/{run_id}/step/{index}` по кнопке «показать целиком».
+Подробности контура — в
+[`agents-and-skills.md`](agents-and-skills.md#5-прогоны-оркестратора-и-их-шаги).
+
+**ADR-012 не отменяется.** В ленте прогона видны шаги оркестратора, а не
+мутации через MCP/CLI/REST: у последних `run_id IS NULL`, и это ожидаемое
+состояние, а не пропущенная запись.
 
 ## 7. Соответствие сервисам и DI-конвенция
 

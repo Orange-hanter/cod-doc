@@ -21,7 +21,12 @@ Canonical ``kind`` values (partial list — see proposal 09 / PCA-912):
     approval.requested / approval.resolved / approval.cancelled
     commit_link.imported
     repo_index.scanned
-    run.started / run.finished / run.failed
+    agent.started / agent.thinking / agent.tool_call / agent.tool_result /
+    agent.message / agent.error / agent.blocked / agent.stopped
+      — шаги встроенного оркестратора (ADO-115). Пишутся ТОЛЬКО внутри
+      прогона, через `run_context.record_step`, и всегда несут `run_id`
+      и `scope_kind='run'`. Прежняя тройка `run.started / run.finished /
+      run.failed` числилась здесь, но не эмитилась ниоткуда.
 
 Public API
 ----------

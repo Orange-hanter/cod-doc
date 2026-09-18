@@ -95,9 +95,14 @@
         <h2>{% if _is_replay %}Run timeline{% else %}Live timeline{% endif %}</h2>
         <div class="agent-stream-filters" role="group" aria-label="Filter events">
           <button type="button" class="agent-stream-filter active" data-kind="all" aria-pressed="true">All</button>
-          <button type="button" class="agent-stream-filter" data-kind="thinking" aria-pressed="false">Thinking <span class="count">0</span></button>
-          <button type="button" class="agent-stream-filter" data-kind="tool_call" aria-pressed="false">Tool <span class="count">0</span></button>
-          <button type="button" class="agent-stream-filter" data-kind="error" aria-pressed="false">Error <span class="count">0</span></button>
+          {# ADO-115: на реплее числа приходят с сервера — там `events` уже на
+             руках, и второй раз их считать незачем. На живой странице
+             `event_counts` пуст, рендерится 0, дальше ведёт JS как прежде.
+             Считается `tool_call`, а НЕ сумма call+result: иначе число не
+             сойдётся с тем, что покажет одноимённый фильтр. #}
+          <button type="button" class="agent-stream-filter" data-kind="thinking" aria-pressed="false">Thinking <span class="count">{{ event_counts.get('thinking', 0) }}</span></button>
+          <button type="button" class="agent-stream-filter" data-kind="tool_call" aria-pressed="false">Tool <span class="count">{{ event_counts.get('tool_call', 0) }}</span></button>
+          <button type="button" class="agent-stream-filter" data-kind="error" aria-pressed="false">Error <span class="count">{{ event_counts.get('error', 0) }}</span></button>
         </div>
       </header>
       <div class="agent-stream-body" id="agent-stream-body">
@@ -113,10 +118,19 @@
               </div>
             {% endfor %}
           {% else %}
+            {# ADO-115: прежний текст обвинял write-tools («run упал до первого
+               write-tool»), хотя шаги просто никогда не писались на диск. Все
+               прогоны до этой правки останутся с этим экраном навсегда, поэтому
+               он обязан говорить правду. #}
             <div class="agent-stream-empty">
               <div class="icon">∅</div>
-              <div>В этом run нет записанных activity-событий.</div>
-              <div class="muted-tiny" style="margin-top: 4px;">Возможно, run упал до первого write-tool вызова.</div>
+              <div>Шаги этого прогона не записаны.</div>
+              <div class="muted-tiny" style="margin-top: 4px;">
+                Шаги пишутся начиная с ADO-115 — у прогонов до неё в журнале только мутации.
+                {% if selected_run and selected_run.status == 'failed' %}
+                  Этот прогон завершился с ошибкой: возможно, он упал до первого шага.
+                {% endif %}
+              </div>
             </div>
           {% endif %}
         {% else %}

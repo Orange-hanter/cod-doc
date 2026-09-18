@@ -108,7 +108,8 @@
         step.textContent = String(msg.payload.data).slice(0, 240);
       }
     }
-    if (msg.kind === 'agent.stopped' || msg.kind === 'agent.done' || msg.kind === 'agent.error') {
+    // ADO-115: `agent.done` оркестратор не публикует нигде — арм был мёртвым.
+    if (msg.kind === 'agent.stopped' || msg.kind === 'agent.error') {
       const status = document.getElementById('cod-agent-status');
       if (status) {
         const step = status.querySelector('.cod-agent-step');

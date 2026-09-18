@@ -7,6 +7,7 @@ enforced by ``tests/api/test_web_layer_imports.py``).
 
 from __future__ import annotations
 
+import json
 from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
@@ -53,6 +54,47 @@ def list_recent(session: Session, project_id: int, *, limit: int = 50) -> list[d
         .all()
     )
     return [_to_dict(r) for r in rows]
+
+
+def get_step(project_path: str, run_id: str, index: int) -> dict[str, Any] | None:
+    """Полное тело одного шага прогона из sidecar-файла.
+
+    ADO-115. В `activity_event` тело обрезано до 2000 символов — этого
+    хватает читать ленту, но не хватает разбирать аварию. Полный текст
+    лежит в `<project>/.cod-doc/runs/<run_id>.jsonl`, и достаётся он
+    отсюда, а не из веб-слоя: правило «web зовёт сервис, а не файловый
+    API» стережёт `tests/api/test_web_layer_imports.py`.
+
+    Возвращает `None`, если файла нет (прогон старше ADO-115, sidecar
+    подчищен, шага с таким индексом не было) — это не ошибка, а штатное
+    «деталей не сохранилось».
+    """
+    from cod_doc.services.run_context import run_steps_path
+
+    try:
+        path = run_steps_path(project_path, run_id)
+    except ValueError:
+        # Небезопасный run_id — до файловой системы не доходим вовсе.
+        return None
+    if not path.exists():
+        return None
+
+    try:
+        with path.open(encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    # Оборванная строка (прогон убит на середине записи) —
+                    # пропускаем её, а не теряем весь файл.
+                    continue
+                if isinstance(row, dict) and row.get("i") == index:
+                    return row
+    except OSError:
+        return None
+    return None
 
 
 def get_one(session: Session, project_id: int, run_id: str) -> dict[str, Any] | None:
