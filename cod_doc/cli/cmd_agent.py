@@ -27,11 +27,24 @@ def agent() -> None:
 @click.argument("project_name")
 @click.option("--task", "-t", default=None, help="Заголовок новой задачи для выполнения")
 @click.option(
-    "--autonomous/--no-autonomous", default=True, help="Авто-генерация задач из MASTER.md"
+    "--autonomous/--no-autonomous",
+    default=True,
+    help=(
+        "legacy (RFC 25): не исполняет продуктовые ADO-*; "
+        "без --task выполняет следующую задачу из очереди, если она уже там, "
+        "иначе сразу выходит в idle (routines тикает run_daemon, не эта команда)"
+    ),
 )
 @click.pass_context
 def agent_run(ctx: click.Context, project_name: str, task: str | None, autonomous: bool) -> None:
-    """Запустить агент для проекта."""
+    """Запустить legacy-агент для проекта (RFC 25).
+
+    Legacy daemon: не исполняет продуктовые задачи (ADO-*) сам. Без `--task`
+    он лишь забирает и выполняет то, что уже стоит в очереди; при пустой
+    очереди сразу выходит в idle — автогенерация задач из MASTER.md удалена
+    (CUR-017). Тик routines — забота `run_daemon`/`tick_project_routines`,
+    не этой команды.
+    """
     from cod_doc.agent.orchestrator import Orchestrator
     from cod_doc.core.project import Project
     from cod_doc.core.project import Task as PTask
