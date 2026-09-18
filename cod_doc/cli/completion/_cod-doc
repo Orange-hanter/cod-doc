@@ -822,6 +822,7 @@ _cod-doc() {
       curcontext="${curcontext%:*:*}:cod-doc-doc-$words[1]:"
       case $words[1] in
         (accept)              _cod_doc_doc_accept && ret=0 ;;
+        (add-section)         _cod_doc_doc_add_section && ret=0 ;;
         (backfill-projection) _cod_doc_doc_backfill_projection && ret=0 ;;
         (body)                _cod_doc_doc_body && ret=0 ;;
         (create)              _cod_doc_doc_create && ret=0 ;;
@@ -830,6 +831,7 @@ _cod-doc() {
         (export)              _cod_doc_doc_export && ret=0 ;;
         (import)              _cod_doc_doc_import && ret=0 ;;
         (list)                _cod_doc_doc_list && ret=0 ;;
+        (patch)               _cod_doc_doc_patch && ret=0 ;;
         (rename)              _cod_doc_doc_rename && ret=0 ;;
         (show)                _cod_doc_doc_show && ret=0 ;;
         (*)                   _default && ret=0 ;;
@@ -843,6 +845,7 @@ _cod-doc() {
   local -a cmds
   cmds=(
     'accept:Promote a DRAFT/REVIEW document to ACTIVE (writes a revision).'
+    'add-section:Add section ANCHOR to DOC_KEY.'
     'backfill-projection:Recover projection-fidelity columns from the files on disk (ADO-022…'
     'body:Print the full rendered body of a document.'
     'create:Create a new document record.'
@@ -851,6 +854,7 @@ _cod-doc() {
     'export:Export a document projection to disk (writes <project-root>/<doc.pa…'
     'import:Import frontmatter changes from a projection file back into the DB.'
     'list:List all documents for a project.'
+    'patch:Replace the body of section ANCHOR in DOC_KEY.'
     'rename:Rename a document key (and optionally its path); cascades incoming…'
     'show:Show document metadata (and optionally sections).'
   )
@@ -867,6 +871,27 @@ _cod-doc() {
     '(--reason)--reason=[Optional reason for the acceptance]:reason' \
     '(- *)--help[Show this message and exit.]' \
     '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_add_section] )) || _cod_doc_doc_add_section() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--heading)--heading=[Section heading text]:heading' \
+    '(--level)--level=[Markdown heading level]:level' \
+    '(--position)--position=[Index in the document; default appends to the end]:position' \
+    '(--body-file)--body-file=[File with the section body; '\''-'\'' reads stdin]:body-file' \
+    '(--body)--body=[Body inline (for one-liners)]:body' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--dry-run)--dry-run[Show what would be added without writing anything]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' \
+    '2:anchor:_cod_doc_doc_sections' && ret=0
   return ret
 }
 
@@ -977,6 +1002,25 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_patch] )) || _cod_doc_doc_patch() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--body-file)--body-file=[File with the new section body; '\''-'\'' reads stdin]:body-file' \
+    '(--body)--body=[New body inline (for one-liners)]:body' \
+    '(--expected-revision)--expected-revision=[Revision id you last saw; a newer head aborts the write instead of…]:expected-revision' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--dry-run)--dry-run[Show the unified diff without writing anything]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' \
+    '2:anchor:_cod_doc_doc_sections' && ret=0
   return ret
 }
 

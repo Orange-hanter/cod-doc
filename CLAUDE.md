@@ -121,7 +121,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `agent` — **дефолтный**, 6 тулов. Исторически task-centric (`agent_pick`…).
   RFC 25: роль оркестратора — куратор документации и поиска; `agent_pick`
   не использовать. Своп allowlist — план `doc-curator-2026-09`. Дальше
-  `minimal` 21 / `standard` 126 / `full` 130.
+  `minimal` 21 / `standard` 128 / `full` 132.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   ПЯТИ местах: `mcp/profiles.py` (docstring), `server.py --profile`,
   `AGENTS.md` §5.9, этот файл и `docs/mcp-integration.md` (строка семейства
@@ -183,7 +183,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/21/126/130) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/21/128/132) в коде и доках совпадают |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
@@ -220,7 +220,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
   субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
-  (профиль `standard`, 126 тулов `task_*`/`doc_*`/`plan_*`/…) и
+  (профиль `standard`, 128 тулов `task_*`/`doc_*`/`plan_*`/…) и
   `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6). Управление —
   `deploy/launchd/cod-doc-mcp-daemon.sh`. Предпочитай тулы ad-hoc
   Python-скриптам.

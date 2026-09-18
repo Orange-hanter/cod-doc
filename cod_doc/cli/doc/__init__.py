@@ -10,6 +10,7 @@ from __future__ import annotations
 # Importing the cmd modules registers each click command on the `doc` group.
 from . import (  # noqa: F401 — registration side-effects
     cmd_accept,
+    cmd_add_section,
     cmd_backfill,
     cmd_body,
     cmd_create,
@@ -18,6 +19,7 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_export,
     cmd_import,
     cmd_list,
+    cmd_patch,
     cmd_rename,
     cmd_show,
 )
