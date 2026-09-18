@@ -94,7 +94,12 @@ def section_list(ctx: click.Context, project: str, as_json: bool) -> None:
     unsectioned = counts.get(None, 0)
 
     if as_json:
-        console.print(
+        # ADO-176: машинный вывод — через click.echo, НЕ через rich.
+        # `rich.Console` переносит строку по ширине терминала и рвёт JSON
+        # внутри строкового значения; заголовки секций русские и длинные,
+        # так что до переноса тут недалеко. Гейт —
+        # tests/cli/test_json_output_is_parseable.py.
+        click.echo(
             json_mod.dumps(
                 [
                     {

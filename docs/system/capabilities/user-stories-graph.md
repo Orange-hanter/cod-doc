@@ -30,7 +30,16 @@ COD-DOC:
 
 - Каждая story = запись в `user_story`.
 - Связи с задачами/документами/модулями — в `story_link`.
-- Acceptance criteria — отдельные записи, с флагом «met».
+- Acceptance criteria — отдельные записи, с флагом «met». Флаг
+  выставляется с обеих машинных поверхностей: `story_set_criterion_met`
+  (MCP) и `cod-doc story set-criterion` (CLI). До ADO-145 у
+  `set_criterion_met` не было ни одного вызывающего: флаг существовал в
+  схеме, но выставить его было нечем, и `CoverageStatus.DELIVERED` был
+  недостижим для любой истории с критериями.
+- Секции (`story_section`) — реестр продуктовых модулей проекта; история
+  ссылается на секцию через `user_story.section_id`. До ADO-143 секция
+  угадывалась регексом по прозе нарратива и на нелатинском корпусе не
+  угадывалась никогда.
 - Всё ↔ всё — SQL-запросом.
 
 ## 2. Структура user story
@@ -66,15 +75,26 @@ manually register each agent.
 
 ## 3. Операции
 
+Сервис — модуль-пакет `cod_doc/services/story_service/`, а не класс;
+имена ниже сверены с `__all__`.
+
 | Операция | Сервис |
 |----------|--------|
-| Создать историю | `StoryService.create` |
-| Добавить acceptance-критерий | `StoryService.add_criterion` |
-| Отметить критерий met/unmet | `StoryService.update_criterion` |
-| Связать с задачей/документом/модулем | `StoryService.link` |
-| Список покрытых историей задач | `StoryService.tasks(story_id)` |
-| Список историй, касающихся модуля | `StoryService.by_module(module_id)` |
-| Статус покрытия (derived) | `StoryService.coverage(story_id)` |
+| Создать историю | `story_service.create` |
+| Добавить acceptance-критерий | `story_service.add_criterion` |
+| Отметить критерий met/unmet | `story_service.set_criterion_met` |
+| Связать с задачей/документом/модулем | `story_service.link` |
+| Список покрытых историей задач | `story_service.list_tasks(story_id)` |
+| Статус покрытия (derived) | `story_service.coverage(story_id)` |
+| Завести секцию | `story_service.create_section` |
+| Привязать историю к секции | `story_service.assign_section` |
+| Секции проекта | `story_service.list_sections` / `section_keys` |
+
+«Список историй, касающихся модуля» в этой таблице стоял как
+`StoryService.by_module(module_id)` — такой функции нет и не было. Связи с
+модулем живут в `story_link` (`to_kind='module'`), и разворачиваются
+запросом, а не отдельным методом; заводить его — отдельное решение, а не
+правка документа.
 
 ## 4. Покрытие (derived)
 
