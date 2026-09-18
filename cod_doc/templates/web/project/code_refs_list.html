@@ -98,10 +98,27 @@
       const data = await load(path);
       pathEl.textContent = path + (data.missing ? '  (missing)' : '');
       bodyEl.textContent = data.lines.join('\n');
+      // ADO-126: раньше превью безусловно ставилось справа от строки, а
+      // таблица шире экрана — окно уезжало за правый край и было недоступно.
+      // Показываем, замеряем и только потом укладываем внутрь вьюпорта.
       const rect = row.getBoundingClientRect();
-      preview.style.left = `${rect.right + 10}px`;
-      preview.style.top = `${window.scrollY + rect.top}px`;
       preview.hidden = false;
+      preview.style.left = '0px';
+      preview.style.top = '0px';
+      const box = preview.getBoundingClientRect();
+      const margin = 10;
+      let left = rect.right + margin;
+      if (left + box.width > window.innerWidth - margin) {
+        // Не влезает справа — пробуем слева от строки, иначе прижимаем к краю.
+        const leftSide = rect.left - box.width - margin;
+        left = leftSide >= margin ? leftSide : Math.max(margin, window.innerWidth - box.width - margin);
+      }
+      let top = rect.top;
+      if (top + box.height > window.innerHeight - margin) {
+        top = Math.max(margin, window.innerHeight - box.height - margin);
+      }
+      preview.style.left = `${window.scrollX + left}px`;
+      preview.style.top = `${window.scrollY + top}px`;
     });
     row.addEventListener('mouseleave', () => { preview.hidden = true; });
   });
@@ -126,11 +143,13 @@
 .status-broken { color: var(--warning, #f59e0b); cursor: help; }
 .code-ref-preview {
   position: absolute;
+  /* Ширина ограничена вьюпортом: на узком экране окно не должно быть шире
+     экрана, иначе укладка упрётся в отрицательный left. */
+  max-width: min(600px, calc(100vw - 20px));
   z-index: 1000;
-  max-width: 600px;
   max-height: 480px;
   overflow: auto;
-  background: var(--bg-card);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
@@ -140,7 +159,7 @@
 .code-ref-preview-path {
   font-family: monospace;
   font-size: 0.7rem;
-  color: var(--text-muted);
+  color: var(--muted);
   margin-bottom: 6px;
 }
 .code-ref-preview-body { margin: 0; }
