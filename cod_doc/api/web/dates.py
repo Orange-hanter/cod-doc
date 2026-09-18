@@ -21,9 +21,9 @@ ADO-154. До этого модуля фильтр был один — ``relativ
 from __future__ import annotations
 
 import math
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
-DateLike = datetime | str | None
+DateLike = datetime | date | str | None
 
 _MINUTE = 60
 _HOUR = 3600
@@ -42,11 +42,21 @@ def coerce(value: DateLike) -> datetime | None:
     Наивный `datetime` считается уже UTC (``replace``, не ``astimezone``):
     БД хранит время в UTC, и прежний ``astimezone`` трактовал наивную строку
     как локальную, сдвигая дельту на offset машины.
+
+    Голая `date` (колонка ``sa.Date`` — сейчас это только ``adr.decided_at``)
+    разворачивается в полночь UTC. Порядок проверок значим: `datetime` —
+    подкласс `date`, и обратная последовательность срезала бы время у всех
+    штампов. Пока ветки не было, ``/p/<slug>/adr`` падал с 500 на
+    ``'datetime.date' object has no attribute 'strip'`` — список ADR читает
+    `decided_at` доменной сущностью как есть, тогда как detail-страница
+    проходила через ``adr_to_dict`` и отдавала строку.
     """
     if value is None:
         return None
     if isinstance(value, datetime):
         return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day, tzinfo=UTC)
     raw = value.strip()
     if not raw:
         return None

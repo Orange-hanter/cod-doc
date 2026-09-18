@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -51,6 +51,10 @@ def adr_client(tmp_path: Path, migrate_db):
             project_id=proj.row_id,
             title="Layered architecture with DIP",
             status="accepted",
+            # `decided_at` заполнен нарочно: колонка — `sa.Date`, и до
+            # ADO-188 каждая запись с датой роняла список ADR в 500. Фикстура
+            # оставляла поле пустым, поэтому весь набор тестов проходил мимо.
+            decided_at=date(2026, 4, 5),
             context="LLM-provider abstraction needed",
             decision="4-layer + DIP",
             adr_id="ADR-001",
@@ -100,6 +104,20 @@ def test_adr_list_shows_status_icon(adr_client) -> None:  # type: ignore[no-unty
     r = client.get(f"/p/{entry.name}/adr")
     # Default 'accepted' icon is the green check.
     assert "✅" in r.text
+
+
+def test_adr_list_renders_decided_at(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """ADO-188: `sa.Date` приходит в шаблон голой `date`, а не строкой.
+
+    Фильтр ``short_date`` разбирал только `datetime` и `str`, поэтому
+    ``/p/<slug>/adr`` отдавал 500 на любом проекте, где у ADR проставлена
+    дата решения. Detail-страница не падала — там `decided_at` проходит
+    через ``adr_to_dict`` и приезжает строкой.
+    """
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr")
+    assert r.status_code == 200
+    assert "2026-04-05" in r.text
 
 
 # ----------------------------------------------------------------- #

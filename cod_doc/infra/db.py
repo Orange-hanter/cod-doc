@@ -224,6 +224,30 @@ def _alembic_head_revision() -> str:
     return head
 
 
+def assert_schema_head(engine: Engine, label: str, *, prefix: str = "") -> None:
+    """Поднять ``SchemaMismatchError``, если ``alembic_version`` != голова.
+
+    Вынесено из ``db_for_entry`` ради embedded-БД: hub сверялся с головой с
+    самого начала, а ``<root>/.cod-doc/state.db`` — нет, и отставшая на одну
+    миграцию БД роняла страницу голым 500 (``no such column:
+    user_story.section_id``) вместо 503 с подсказкой про
+    ``alembic upgrade head``. Формулировки сообщений оставлены прежними —
+    на них смотрит `tests/infra/test_db_for_entry.py`.
+    """
+    head = _alembic_head_revision()
+    try:
+        with engine.connect() as conn:
+            current = conn.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar_one_or_none()
+    except Exception as exc:
+        raise SchemaMismatchError(f"{prefix}schema check failed for {label!r}: {exc}") from exc
+    if current != head:
+        raise SchemaMismatchError(
+            f"{prefix}schema mismatch for {label!r}: expected {head!r}, found {current!r}"
+        )
+
+
 def db_for_entry(entry: ProjectEntry) -> tuple[sessionmaker[Session], Engine]:
     """Фабрика сессий и движок для записи проекта.
 
@@ -241,23 +265,11 @@ def db_for_entry(entry: ProjectEntry) -> tuple[sessionmaker[Session], Engine]:
     engine = cached_engine(url)
 
     if hub:
-        head = _alembic_head_revision()
         try:
-            with engine.connect() as conn:
-                current = conn.execute(
-                    text("SELECT version_num FROM alembic_version")
-                ).scalar_one_or_none()
-        except Exception as exc:
+            assert_schema_head(engine, getattr(entry, "name", "<unknown>"), prefix="hub ")
+        except SchemaMismatchError:
             engine.dispose()
-            raise SchemaMismatchError(
-                f"hub schema check failed for {getattr(entry, 'name', '<unknown>')!r}: {exc}"
-            ) from exc
-        if current != head:
-            engine.dispose()
-            raise SchemaMismatchError(
-                f"hub schema mismatch for {getattr(entry, 'name', '<unknown>')!r}: "
-                f"expected {head!r}, found {current!r}"
-            )
+            raise
 
     return make_session_factory(engine), engine
 
