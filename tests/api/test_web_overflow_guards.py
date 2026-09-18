@@ -160,3 +160,26 @@ def test_no_template_uses_undeclared_css_variables() -> None:
 
     unknown = sorted(used - declared)
     assert not unknown, f"шаблоны ссылаются на необъявленные токены: {unknown}"
+
+
+def test_story_line_text_can_shrink_and_break() -> None:
+    """ADO-144: колонка разобранного нарратива обязана ужиматься И переносить.
+
+    `.story-line` — сетка `60px 1fr`, а трек `1fr` по умолчанию
+    `min-width: auto`: он не сужается ниже самого длинного неразрывного
+    слова. Такие слова в нарративах штатные — например
+    `(backlog/todo/in_progress/in_review/blocked/done|cancelled)` из
+    US-012: ни пробела, ни дефиса, ни одной точки переноса.
+
+    Дефект появился ровно в тот момент, когда русские нарративы начали
+    разбираться: до этого текст лежал широким абзацем
+    `.story-narrative-raw` и переносился сам, а в узкой колонке вылез на
+    73px за карточку и дал горизонтальную полосу всей странице.
+
+    Нужны обе декларации. `overflow-wrap` без `min-width: 0` не помогает
+    (трек уже растянут под слово, переносить нечего), `min-width: 0` без
+    `overflow-wrap` — тоже (трек ужался, слово торчит наружу).
+    """
+    body = _rule(".story-line-text")
+    assert "min-width: 0" in body, "трек 1fr не сможет ужаться ниже длинного слова"
+    assert "overflow-wrap: anywhere" in body, "длинное слово не получит точку переноса"

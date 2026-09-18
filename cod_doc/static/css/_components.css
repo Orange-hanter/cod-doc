@@ -377,7 +377,19 @@
 }
 .story-line-want .story-line-label { color: var(--accent); }
 .story-line-so-that .story-line-label { color: var(--success); }
-.story-line-text { color: var(--fg); }
+/* ADO-144: `min-width: 0` + `overflow-wrap` здесь обязательны вдвоём.
+   Трек `1fr` в `.story-line` по умолчанию `min-width: auto`, то есть не
+   ужимается ниже самого длинного неразрывного слова, а такие слова в
+   нарративах штатные: «(backlog/todo/in_progress/in_review/blocked/done|
+   cancelled)» из US-012 — один токен без единой точки переноса. До
+   разбора нарратива текст лежал широким абзацем `.story-narrative-raw` и
+   переносился сам; в узкой колонке он выдавил карточку на 73px наружу и
+   дал горизонтальную полосу всей странице. */
+.story-line-text {
+  color: var(--fg);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .story-line-so-that .story-line-text { color: var(--fg); font-style: italic; opacity: 0.92; }
 
 .story-narrative-raw {
