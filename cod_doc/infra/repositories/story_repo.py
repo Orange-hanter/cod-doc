@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from cod_doc.domain.entities import (
     Priority,
@@ -180,5 +180,26 @@ class StorySectionRepository(BaseRepository[StorySection, StorySectionModel]):
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
 
     def next_position(self, project_id: int) -> int:
-        rows = self.list_for_project(project_id)
-        return max((s.position for s in rows), default=0) + 1
+        """Следующая позиция в конце списка.
+
+        ADO-161. Считается агрегатом, а не выгрузкой всех секций проекта:
+        читать N строк и их поля ради одного максимума — лишняя работа
+        ровно на каждой ``create_section``.
+
+        Гонка здесь остаётся и названа сознательно: два параллельных
+        создания могут получить один и тот же номер. На SQLite (один
+        писатель) вызовы сериализуются, а последствие — дублирующийся
+        ``position``, который деградирует до сортировки по ``key``
+        (см. ``list_for_project``), а не до ошибки или потери данных.
+        ``position`` — advisory-порядок показа, и это его контракт.
+
+        Закрыть гонку по-настоящему нечем, пока БД — SQLite:
+        ``SELECT … FOR UPDATE`` он игнорирует, а
+        ``UniqueConstraint(project_id, position)`` сломал бы легитимное
+        ручное переупорядочивание. Фикс повешен зависимостью на переезд
+        на Postgres.
+        """
+        stmt = select(func.max(StorySectionModel.position)).where(
+            StorySectionModel.project_id == project_id
+        )
+        return (self.session.execute(stmt).scalar() or 0) + 1

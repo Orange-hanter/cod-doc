@@ -22,7 +22,15 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
-def db_url(tmp_path: Path) -> str:
+def db_url(tmp_path: Path, isolated_cod_doc_home: Path) -> str:
+    """URL выбрасываемой БД под ``tmp_path``.
+
+    ADO-162: зависимость от ``isolated_cod_doc_home`` объявлена явно, хотя
+    фикстура и autouse. Она подменяет ``COD_DOC_HOME`` и глушит
+    workspace-discovery — то есть от неё зависит, во что резолвится БД
+    внутри ``run_alembic``. Autouse гарантирует, что фикстура отработает,
+    но не порядок относительно этой; явный аргумент — гарантирует.
+    """
     return f"sqlite:///{tmp_path / 'sections.db'}"
 
 
@@ -30,8 +38,16 @@ def db_url(tmp_path: Path) -> str:
 def engine_with_schema(db_url: str):  # type: ignore[no-untyped-def]
     run_alembic("upgrade", "head", db_url=db_url)
     engine = make_engine(db_url)
-    yield engine
-    engine.dispose()
+    try:
+        yield engine
+    finally:
+        # ADO-162. Обычное падение теста теардаун не пропускает — pytest
+        # доводит генератор до конца в любом случае. ``finally`` закрывает
+        # другой путь: исключение, брошенное ВНУТРЬ генератора (ошибка
+        # теардауна соседней фикстуры, прерывание), на котором строка после
+        # ``yield`` не выполнилась бы, и хэндл SQLite жил бы до конца
+        # процесса.
+        engine.dispose()
 
 
 def _add_project(session, slug: str = "p") -> int:  # type: ignore[no-untyped-def]
@@ -84,7 +100,10 @@ def test_section_key_unique_per_project(engine_with_schema) -> None:  # type: ig
         session.add(StorySectionModel(project_id=p2, key="module-1", title="Другое", position=1))
         session.flush()
 
-    with pytest.raises(IntegrityError), transactional(factory) as session:
+    with (
+        pytest.raises(IntegrityError, match="story_section"),
+        transactional(factory) as session,
+    ):
         proj = session.execute(select(ProjectModel).where(ProjectModel.slug == "one")).scalar_one()
         session.add(
             StorySectionModel(project_id=proj.row_id, key="module-1", title="Дубль", position=2)

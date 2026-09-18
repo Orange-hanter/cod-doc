@@ -23,6 +23,10 @@ from ._types import SectionAlreadyExistsError, SectionNotFoundError
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+#: Потолок заголовка секции. Не безопасность, а вёрстка: заголовок —
+#: подпись группы в списке историй и в чипе фильтра.
+_MAX_SECTION_TITLE = 256
+
 
 def create_section(
     session: Session,
@@ -34,8 +38,23 @@ def create_section(
     author: str,
     reason: str | None = None,
 ) -> StorySection:
-    """Завести секцию. ``position`` по умолчанию — в конец списка."""
+    """Завести секцию. ``position`` по умолчанию — в конец списка.
+
+    ADO-160: ``title`` и ``position`` проверяются здесь, а не отдельным
+    валидатором из ``services/validation/structural.py``. Инъекционный риск
+    несёт ``key`` — он уходит в сегмент URL и в ``querySelector``, и у него
+    свой валидатор с кодом ``US-002``. ``title`` только отображается и
+    экранируется Jinja, так что ему нужна не защита, а вменяемость: без
+    этих двух проверок первый же ``story_section_create`` с пустым title
+    рисует безымянную группу, неотличимую от «No section».
+    """
     validation.validate_story_section_key(key)
+    if not title.strip():
+        raise ValueError("Story section title must not be empty")
+    if len(title) > _MAX_SECTION_TITLE:
+        raise ValueError(f"Story section title must be at most {_MAX_SECTION_TITLE} characters")
+    if position is not None and position < 0:
+        raise ValueError("Story section position must not be negative")
     repo = StorySectionRepository(session)
     if repo.get_by_key(project_id, key) is not None:
         raise SectionAlreadyExistsError(key)

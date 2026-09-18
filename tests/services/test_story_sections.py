@@ -69,10 +69,14 @@ def test_create_section_rejects_unsafe_key(engine_with_schema) -> None:  # type:
     with transactional(factory) as session:
         pid = _seed_project(session)
         for bad in ("Module 1", "module/1", "module.1", "Модуль-1", "MODULE-1", ""):
-            with pytest.raises(ValidationError):
+            # Контракт — это код ошибки, а не проза сообщения: по нему
+            # поверхности маршрутизируют отказ. В текст сообщения код не
+            # входит, поэтому `match=` тут не годится — проверяем атрибут.
+            with pytest.raises(ValidationError) as exc:
                 stories.create_section(
                     session, project_id=pid, key=bad, title="X", author="human:test"
                 )
+            assert exc.value.code == "US-002"
 
 
 def test_section_revision_does_not_land_in_story_history(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -104,6 +108,71 @@ def test_section_revision_does_not_land_in_story_history(engine_with_schema) -> 
         assert [json.loads(r.diff)["op"] for r in section_hist] == ["create_section"]
 
 
+def test_create_section_rejects_blank_title(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-160: пустой title рисует безымянную группу, неотличимую от «No section»."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        for bad in ("", "   ", "\t\n"):
+            with pytest.raises(ValueError, match="must not be empty"):
+                stories.create_section(
+                    session, project_id=pid, key="module-1", title=bad, author="human:test"
+                )
+
+
+def test_create_section_rejects_oversized_title(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Потолок — вёрстка, а не безопасность: title подписывает группу и чип фильтра."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        with pytest.raises(ValueError, match="at most 256"):
+            stories.create_section(
+                session, project_id=pid, key="module-1", title="x" * 257, author="human:test"
+            )
+        # Граница включительно — 256 проходит.
+        stories.create_section(
+            session, project_id=pid, key="module-2", title="x" * 256, author="human:test"
+        )
+
+
+def test_create_section_rejects_negative_position(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        with pytest.raises(ValueError, match="must not be negative"):
+            stories.create_section(
+                session,
+                project_id=pid,
+                key="module-1",
+                title="Запасы",
+                position=-1,
+                author="human:test",
+            )
+
+
+def test_next_position_ignores_other_projects(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-161: агрегат обязан быть отфильтрован по проекту, как и выгрузка до него."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        other = ProjectModel(slug="q", title="Q", root_path="/tmp/q", config_json={})
+        other.created = other.updated = datetime.now(UTC)
+        session.add(other)
+        session.flush()
+        for i in range(5):
+            stories.create_section(
+                session,
+                project_id=int(other.row_id),
+                key=f"other-{i}",
+                title=f"O{i}",
+                author="human:test",
+            )
+        first = stories.create_section(
+            session, project_id=pid, key="module-1", title="Запасы", author="human:test"
+        )
+        assert first.position == 1, "позиция посчитана по чужому проекту"
+
+
 def test_create_section_rejects_duplicate_key(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -111,7 +180,7 @@ def test_create_section_rejects_duplicate_key(engine_with_schema) -> None:  # ty
         stories.create_section(
             session, project_id=pid, key="module-1", title="Запасы", author="human:test"
         )
-        with pytest.raises(stories.SectionAlreadyExistsError):
+        with pytest.raises(stories.SectionAlreadyExistsError, match="module-1"):
             stories.create_section(
                 session, project_id=pid, key="module-1", title="Другое", author="human:test"
             )
@@ -188,7 +257,7 @@ def test_assign_unknown_section_raises(engine_with_schema) -> None:  # type: ign
     with transactional(factory) as session:
         pid = _seed_project(session)
         _make_story(session, pid)
-        with pytest.raises(stories.SectionNotFoundError):
+        with pytest.raises(stories.SectionNotFoundError, match="nope"):
             stories.assign_section(session, story_id="US-001", key="nope", author="human:test")
 
 
@@ -199,7 +268,7 @@ def test_assign_section_unknown_story_raises(engine_with_schema) -> None:  # typ
         stories.create_section(
             session, project_id=pid, key="module-1", title="Запасы", author="human:test"
         )
-        with pytest.raises(stories.StoryNotFoundError):
+        with pytest.raises(stories.StoryNotFoundError, match="US-999"):
             stories.assign_section(session, story_id="US-999", key="module-1", author="human:test")
 
 
