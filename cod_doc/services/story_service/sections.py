@@ -23,10 +23,6 @@ from ._types import SectionAlreadyExistsError, SectionNotFoundError
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-#: Потолок заголовка секции. Не безопасность, а вёрстка: заголовок —
-#: подпись группы в списке историй и в чипе фильтра.
-_MAX_SECTION_TITLE = 256
-
 
 def create_section(
     session: Session,
@@ -40,21 +36,16 @@ def create_section(
 ) -> StorySection:
     """Завести секцию. ``position`` по умолчанию — в конец списка.
 
-    ADO-160: ``title`` и ``position`` проверяются здесь, а не отдельным
-    валидатором из ``services/validation/structural.py``. Инъекционный риск
-    несёт ``key`` — он уходит в сегмент URL и в ``querySelector``, и у него
-    свой валидатор с кодом ``US-002``. ``title`` только отображается и
-    экранируется Jinja, так что ему нужна не защита, а вменяемость: без
-    этих двух проверок первый же ``story_section_create`` с пустым title
-    рисует безымянную группу, неотличимую от «No section».
+    ADO-160: все три проверки живут в ``services/validation/structural.py``
+    рядом с ``validate_story_section_key`` и бросают ``ValidationError`` с
+    кодом (``US-002`` / ``US-003`` / ``US-004``). Код — это контракт: по
+    нему поверхности маршрутизируют отказ, тогда как голый ``ValueError``
+    неотличим от любого другого и заставляет разбирать текст сообщения.
     """
     validation.validate_story_section_key(key)
-    if not title.strip():
-        raise ValueError("Story section title must not be empty")
-    if len(title) > _MAX_SECTION_TITLE:
-        raise ValueError(f"Story section title must be at most {_MAX_SECTION_TITLE} characters")
-    if position is not None and position < 0:
-        raise ValueError("Story section position must not be negative")
+    validation.validate_story_section_title(title)
+    if position is not None:
+        validation.validate_story_section_position(position)
     repo = StorySectionRepository(session)
     if repo.get_by_key(project_id, key) is not None:
         raise SectionAlreadyExistsError(key)
