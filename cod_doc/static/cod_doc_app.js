@@ -214,7 +214,7 @@
         setIdle('error');
       } else if (k === 'agent.blocked') {
         appendEvent('blocked', msg.payload, msg.ts);
-      } else if (k === 'agent.stopped' || k === 'agent.done') {
+      } else if (k === 'agent.stopped') {
         const reason = (msg.payload && msg.payload.reason) || k.split('.')[1];
         appendEvent('stopped', msg.payload, msg.ts);
         setIdle(reason);

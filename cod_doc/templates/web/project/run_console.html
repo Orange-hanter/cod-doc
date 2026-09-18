@@ -95,9 +95,14 @@
         <h2>{% if _is_replay %}Run timeline{% else %}Live timeline{% endif %}</h2>
         <div class="agent-stream-filters" role="group" aria-label="Filter events">
           <button type="button" class="agent-stream-filter active" data-kind="all" aria-pressed="true">All</button>
-          <button type="button" class="agent-stream-filter" data-kind="thinking" aria-pressed="false">Thinking <span class="count">0</span></button>
-          <button type="button" class="agent-stream-filter" data-kind="tool_call" aria-pressed="false">Tool <span class="count">0</span></button>
-          <button type="button" class="agent-stream-filter" data-kind="error" aria-pressed="false">Error <span class="count">0</span></button>
+          {# ADO-115: на реплее числа приходят с сервера — там `events` уже на
+             руках, и второй раз их считать незачем. На живой странице
+             `event_counts` пуст, рендерится 0, дальше ведёт JS как прежде.
+             Считается `tool_call`, а НЕ сумма call+result: иначе число не
+             сойдётся с тем, что покажет одноимённый фильтр. #}
+          <button type="button" class="agent-stream-filter" data-kind="thinking" aria-pressed="false">Thinking <span class="count">{{ event_counts.get('thinking', 0) }}</span></button>
+          <button type="button" class="agent-stream-filter" data-kind="tool_call" aria-pressed="false">Tool <span class="count">{{ event_counts.get('tool_call', 0) }}</span></button>
+          <button type="button" class="agent-stream-filter" data-kind="error" aria-pressed="false">Error <span class="count">{{ event_counts.get('error', 0) }}</span></button>
         </div>
       </header>
       <div class="agent-stream-body" id="agent-stream-body">
@@ -107,16 +112,39 @@
               <div class="agent-event kind-{{ ev.kind|replace('agent.', '') }}" data-kind="{{ ev.kind|replace('agent.', '') }}">
                 <span class="ts">{{ ev.ts_short or "" }}</span>
                 <span class="kind">{{ ev.kind|replace('agent.', '')|replace('_', ' ') }}</span>
+                {#- ADO-115: `-` по обе стороны обязательны. У `.body` стоит
+                    `white-space: pre-wrap`, поэтому отступ самого шаблона
+                    попадает В ТЕКСТ: каждый шаг начинался с 19 пробелов, и
+                    первая строка уезжала вправо на ~130px относительно
+                    переноса. До ADO-115 лента всегда была пуста, и увидеть
+                    это было негде. -#}
                 <span class="body">
-                  {% if ev.summary %}{{ ev.summary }}{% elif ev.payload and ev.payload.data %}{{ ev.payload.data|string|truncate(800) }}{% else %}<span class="muted">—</span>{% endif %}
+                  {%- if ev.summary %}{{ ev.summary }}
+                  {%- elif ev.payload and ev.payload.data %}{{ ev.payload.data|string|truncate(800) }}
+                  {#- У started/stopped нет поля `data`: у них осмысленны
+                      заголовок задачи и причина остановки. Без этих двух
+                      веток самая информативная строка ленты — какая задача
+                      началась — показывала прочерк. -#}
+                  {%- elif ev.payload and ev.payload.title %}{{ ev.payload.title }}
+                  {%- elif ev.payload and ev.payload.reason %}{{ ev.payload.reason }}
+                  {%- else %}<span class="muted">—</span>{% endif -%}
                 </span>
               </div>
             {% endfor %}
           {% else %}
+            {# ADO-115: прежний текст обвинял write-tools («run упал до первого
+               write-tool»), хотя шаги просто никогда не писались на диск. Все
+               прогоны до этой правки останутся с этим экраном навсегда, поэтому
+               он обязан говорить правду. #}
             <div class="agent-stream-empty">
               <div class="icon">∅</div>
-              <div>В этом run нет записанных activity-событий.</div>
-              <div class="muted-tiny" style="margin-top: 4px;">Возможно, run упал до первого write-tool вызова.</div>
+              <div>Шаги этого прогона не записаны.</div>
+              <div class="muted-tiny" style="margin-top: 4px;">
+                Шаги пишутся начиная с ADO-115 — у прогонов до неё в журнале только мутации.
+                {% if selected_run and selected_run.status == 'failed' %}
+                  Этот прогон завершился с ошибкой: возможно, он упал до первого шага.
+                {% endif %}
+              </div>
             </div>
           {% endif %}
         {% else %}

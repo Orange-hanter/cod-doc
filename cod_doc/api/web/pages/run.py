@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
@@ -64,8 +64,31 @@ def _console_context(
         "active_run": active_run,
         "selected_run": selected_run,
         "selected_events": selected_events,
+        "event_counts": _event_counts(selected_events),
         "daemon_enabled": proj.entry.daemon_enabled,
     }
+
+
+def _event_counts(events: list[dict[str, Any]]) -> dict[str, int]:
+    """Счётчики фильтров для реплея.
+
+    ADO-115: в шаблоне они были захардкожены нулями и обновлялись только JS
+    на живых событиях — то есть в реплее оставались нулями навсегда, даже
+    когда события появились. Считаем здесь: `events` уже на руках, второй
+    раз их доставать незачем.
+
+    Ключ — хвост kind'а после `agent.`, ровно как его строит шаблон
+    (`kind-{{ ev.kind|replace('agent.','') }}`) и кнопки-фильтры. Считается
+    `tool_call`, а не сумма call+result, иначе число не сойдётся с тем, что
+    покажет одноимённый фильтр.
+    """
+    counts: dict[str, int] = {}
+    for event in events:
+        kind = event.get("kind")
+        if isinstance(kind, str) and kind.startswith("agent."):
+            short = kind.removeprefix("agent.")
+            counts[short] = counts.get(short, 0) + 1
+    return counts
 
 
 @router.get("/p/{slug}/run", response_class=HTMLResponse)
@@ -133,3 +156,31 @@ def run_detail(
             selected_events=events,
         ),
     )
+
+
+@router.get("/p/{slug}/run/{run_id}/step/{index}", response_class=JSONResponse)
+def run_step_detail(
+    slug: str,
+    run_id: str,
+    index: int,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> JSONResponse:
+    """Полное тело одного шага прогона — кнопка «показать целиком» на строке.
+
+    ADO-115. Страница этот роут не зовёт, поэтому инвариант «один SQL на
+    страницу» не нарушается: он отвечает только на явный клик.
+
+    `run_id` приходит из URL и становится ИМЕНЕМ ФАЙЛА, поэтому сперва
+    проверяется существование самого прогона в БД (заодно это скоупит
+    ответ проектом), а разбор пути делает сервис через `validate_run_id`.
+    """
+    proj = get_project(slug)
+    session, project_db_id = db
+
+    if run_service.get_one(session, project_db_id, run_id) is None:
+        raise HTTPException(404, f"Run not found: {run_id}")
+
+    step = run_service.get_step(str(proj.entry.path), run_id, index)
+    if step is None:
+        raise HTTPException(404, f"Step {index} not recorded for run {run_id}")
+    return JSONResponse(step)

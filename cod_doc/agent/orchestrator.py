@@ -138,7 +138,7 @@ class Orchestrator:
 
         from ulid import ULID
 
-        from cod_doc.services import event_bus
+        from cod_doc.services import event_bus, run_context
         from cod_doc.services.run_context import (
             finalize_orchestrator_run,
             start_orchestrator_run,
@@ -161,9 +161,14 @@ class Orchestrator:
         if wake is not None:
             messages.insert(0, {"role": "user", "content": wake.to_message_block()})
 
-        await event_bus.publish(
-            slug, "agent.started", {"task_id": task.id, "title": task.title, "run_id": run_id}
-        )
+        started = {"task_id": task.id, "title": task.title, "run_id": run_id}
+        await event_bus.publish(slug, "agent.started", started)
+        # ADO-115: то же событие — на диск. Kind'ы совпадают с теми, что
+        # уходят в шину, и это решающее ограничение: шаблон строит класс
+        # `kind-{{ ev.kind|replace('agent.','') }}`, а JS строит тот же класс
+        # из живого события. Совпадение формата даёт реплею живой CSS и
+        # рабочие кнопки-фильтры без единой правки разметки строки.
+        run_context.record_step("agent.started", started)
         yield AgentEvent("thinking", f"Начинаю задачу: {task.title}")
 
         run_status = "done"
@@ -171,11 +176,9 @@ class Orchestrator:
             iterations = 0
             async for event in self._agent_loop(messages, task):
                 # Mirror thinking/tool events to the UI as agent.step.
-                await event_bus.publish(
-                    slug,
-                    f"agent.{event.type}",
-                    {"task_id": task.id, "data": event.data, "iteration": iterations},
-                )
+                step = {"task_id": task.id, "data": event.data, "iteration": iterations}
+                await event_bus.publish(slug, f"agent.{event.type}", step)
+                run_context.record_step(f"agent.{event.type}", step)
                 yield event
                 iterations += 1
                 if iterations > self.config.max_iterations:
@@ -183,17 +186,15 @@ class Orchestrator:
                     self.project.update_task(
                         task.id, status=TaskStatus.FAILED, result="Max iterations exceeded"
                     )
-                    await event_bus.publish(
-                        slug,
-                        "agent.stopped",
-                        {"task_id": task.id, "reason": "max_iterations"},
-                    )
+                    stopped = {"task_id": task.id, "reason": "max_iterations"}
+                    await event_bus.publish(slug, "agent.stopped", stopped)
+                    run_context.record_step("agent.stopped", stopped)
                     run_status = "failed"
                     break
             else:
-                await event_bus.publish(
-                    slug, "agent.stopped", {"task_id": task.id, "reason": "completed"}
-                )
+                stopped = {"task_id": task.id, "reason": "completed"}
+                await event_bus.publish(slug, "agent.stopped", stopped)
+                run_context.record_step("agent.stopped", stopped)
         except BaseException:
             run_status = "failed"
             raise
