@@ -41,7 +41,7 @@ related_code:
 ### Не-цели
 
 - Не SPA. Никакого React/Vue/Svelte, никакого build-pipeline, никакого client-side router-а.
-- Не визуальный продукт. Нет дизайн-системы, нет тёмной темы, нет анимаций. Минимальный CSS (один файл, ~200 строк, `pico.css`-подобный baseline или собственный).
+- Не визуальный продукт: нет отдельного дизайн-отдела и нет анимаций сверх `--motion-fast`/`--motion-mid`. Но **дизайн-токены и тёмная тема есть** и обязательны к использованию: `:root` в `css/_base.css:13-89` + переопределение под `[data-theme="dark"]`. Компонент, захардкодивший цвет мимо токена, — регресс.
 - Не публичный. Аутентификация — отложена; интерфейс рассчитан на запуск локально либо за reverse-proxy с basic-auth.
 - Не replacement для TUI. TUI остаётся для оффлайн-/быстрых сценариев. Web — для ситуаций «проще навести курсор».
 
@@ -52,7 +52,7 @@ related_code:
 | Сервер | FastAPI (тот же `cod_doc.api.server:app`) | Уже есть, общий lifespan и DI |
 | Шаблоны | Jinja2 (`jinja2` уже в deps) | Server-rendered HTML; одна модель, никакой генерации схем |
 | Интерактивность | HTMX (через `<script src="/static/htmx.min.js">`) | `hx-get`/`hx-post`/`hx-swap` для inline-редактирования и фрагментов; SSE для live-логов |
-| Стили | Один `static/app.css` (~150-300 строк, raw CSS) | Без сборщика, без PostCSS, без Tailwind |
+| Стили | `static/app.css` — точка входа с тремя `@import`: `css/_base.css` (токены + каркас), `css/_components.css`, `css/_task_detail.css`; ~3500 строк суммарно, raw CSS | Без сборщика, без PostCSS, без Tailwind. Порядок импортов load-bearing: токены → компоненты → страничные переопределения |
 | Граф зависимостей | Mermaid через `<script type="module">` (CDN или локально) | Уже используется в task-plan markdown — переиспользуем |
 
 Никаких новых зависимостей в `pyproject.toml` сверх уже имеющихся (`fastapi`, `jinja2`).
@@ -183,47 +183,46 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 
 ## 4. HTML-структура
 
-> **Целевая структура.** Реальное состояние и матрица «есть/нет» — в
-> [roadmap/web-frontend-task-plan.md](../roadmap/web-frontend-task-plan.md)
-> Progress Overview. Добавлять файлы под TBD-эндпоинты заранее **не нужно** —
-> создавайте только то, что закрывает живая задача.
+Снимок на 2026-09-17. `pages.py` и `fragments.py` давно стали пакетами, а
+`db_resolver.py` удалён (WEB-040) — прежняя версия этого раздела помечала ❌
+семь уже отгруженных шаблонов и ссылалась на удалённый файл.
 
 ```text
 cod_doc/api/web/
-├── __init__.py            # router = APIRouter()         ← ✅
-├── pages.py               # GET-страницы                  ← ✅
-├── fragments.py           # HTMX-фрагменты                ← ✅
-├── templates_env.py       # Jinja2Templates + STATIC_DIR  ← ✅
-└── db_resolver.py         # bridge slug → DB session      ← ⚠ удалить в WEB-040
-                           #   (заменить на get_project_db в cod_doc.api.deps)
+├── __init__.py            # re-export pages_router / fragments_router
+├── pages/                 # одна страница = один модуль (19 шт.)
+├── fragments/             # HTMX swap-цели (tasks_status, tasks_fields, sections)
+├── dates.py               # фильтры времени — единственная точка (ADO-154)
+├── markdown.py            # свой рендерер, без библиотеки
+├── errors.py              # WebError → alert-баннер + flash-cookie
+└── templates_env.py       # Jinja2Templates, фильтры, globals, cache-bust
 
-cod_doc/templates/web/
-├── base.html              # <html>, htmx, app.css; #alerts ← ✅
-├── _layout/               # макросы — общие фрагменты         ❌ (WEB-041)
-│   ├── project_tabs.html  # tabs nav (active=…)               ❌ (WEB-041)
-│   ├── header.html                                           ❌
-│   └── nav.html                                              ❌
-├── index.html             # список проектов               ← ✅
-├── settings.html                                            ❌ (WEB-020)
-├── project/
-│   ├── show.html          # дашборд                       ← ✅
-│   ├── docs_list.html     # список документов             ← ✅
-│   ├── doc_show.html      # просмотр документа            ← ✅ (raw markdown — WEB-006)
-│   ├── tasks_list.html    # таблица задач + фильтр        ← ✅
-│   ├── plan_show.html     # Plan + Mermaid                ❌ (WEB-004)
-│   ├── revisions.html     # лог ревизий                   ❌ (WEB-021)
-│   └── run.html           # SSE-консоль                   ❌ (WEB-030)
-└── _frag/
-    ├── task_row.html      # строка таблицы задач          ← ✅
-    ├── section_view.html  # секция документа              ❌ (WEB-012)
-    ├── section_edit.html  # textarea + concurrency token  ❌ (WEB-012)
-    └── alert.html         # ошибка/уведомление в #alerts  ❌ (WEB-022)
+cod_doc/templates/web/     # 50 файлов
+├── base.html              # <html>, htmx, mermaid, hljs, тема, #alerts
+├── _layout/project_tabs.html   # единственный источник таб-бара
+├── index.html, settings.html, standards/
+├── project/               # 26 страниц проекта
+└── _frag/                 # 19 HTMX-фрагментов
 
 cod_doc/static/
-├── app.css                # ~210 LOC, raw CSS             ← ✅
-├── htmx.min.js            # v2.0.4 vendored                ← ✅
-└── mermaid.min.js                                          ❌ (WEB-004)
+├── app.css                # только @import трёх партиалов
+├── css/_base.css          # дизайн-токены, каркас, .grid, .crumbs, .tabs
+├── css/_components.css    # ~55 секций компонентов
+├── css/_task_detail.css   # композиция детальной страницы
+├── cod_doc_app.js, cod_doc_ws.js, htmx.min.js
 ```
+
+Правило переиспользования (ADO-133): новая страница берёт разметку из общего
+словаря — `.page-header`, `.filter-bar`, `.grid`, `.task-card`,
+`.settings-form` + `.field` + `.form-actions`, `.badge`, `.task-hero`. Свой
+класс заводится только под то, чему аналога нет, и **сразу с правилом**:
+вкладка ADR полгода рисовалась браузерным дефолтом именно потому, что её 18
+классов `adr-*` не имели ни одного правила. Стережёт
+`tests/api/test_web_adr.py::test_no_dead_adr_selectors`.
+
+Важная деталь словаря: у `.field` и `.form-actions` **нет собственных правил** —
+существуют только `.settings-form .field`, `.docs-import-form .field` и т.п.
+Без класса-предка на самой форме эти классы снова окажутся мёртвыми.
 
 ## 5. UX-инварианты
 
@@ -341,7 +340,7 @@ endpoints — service-helper типа `plan_service.get_for_project(...)`.
 ## 8. Тестирование
 
 - **Smoke**: `fastapi.testclient.TestClient`, каждая страница 200 на seed-проекте.
-  Текущий suite — `tests/api/test_web_*.py`, **137 тестов, все зелёные**.
+  Текущий suite — `tests/api/`, **464 теста, все зелёные**.
 - **Error-branch coverage** (часть DoD каждой write-path задачи):
   - валидация формы (400 на garbage),
   - конфликт ревизий (`RevisionConflictError`),
