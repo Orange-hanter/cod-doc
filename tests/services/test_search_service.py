@@ -175,6 +175,61 @@ def test_reindex_is_idempotent(engine_with_schema) -> None:  # type: ignore[no-u
 
 
 # ----------------------------------------------------------------- #
+# ensure_index (RFC 25 §3.2, CUR-007: lazy reindex for ctx_search)   #
+# ----------------------------------------------------------------- #
+
+
+def test_ensure_index_reindexes_when_empty(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make_task(session, pid, plid, sid, "SRP-030", "Implement lazy reindex")
+
+    with transactional(factory) as session:
+        n = session.execute(
+            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=1")
+        ).scalar_one()
+    assert int(n) == 0  # nothing indexed yet — reindex_all never ran
+
+    with transactional(factory) as session:
+        meta = search_service.ensure_index(session, project_id=1)
+    assert meta["reindexed"] is True
+    assert meta["total"] == 1
+    assert meta["by_kind"]["task"] == 1
+
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="reindex")
+    assert result["total"] == 1
+    assert result["by_kind"]["task"][0]["ref"] == "SRP-030"
+
+
+def test_ensure_index_is_noop_when_populated(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make_task(session, pid, plid, sid, "SRP-031", "Already indexed task")
+    with transactional(factory) as session:
+        search_service.reindex_all(session, project_id=1)
+
+    # A task added *after* the reindex is deliberately left unindexed — it
+    # is the marker that proves ensure_index did not touch the index below.
+    with transactional(factory) as session:
+        _make_task(session, pid, plid, sid, "SRP-032", "Added after reindex")
+
+    with transactional(factory) as session:
+        meta = search_service.ensure_index(session, project_id=1)
+    assert meta["reindexed"] is False
+    assert meta["total"] == 1
+    assert meta["by_kind"] == {"task": 1}
+
+    with transactional(factory) as session:
+        n = session.execute(
+            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=1")
+        ).scalar_one()
+    assert int(n) == 1  # untouched — the late-added task is still not indexed
+
+
+# ----------------------------------------------------------------- #
 # Search                                                              #
 # ----------------------------------------------------------------- #
 
