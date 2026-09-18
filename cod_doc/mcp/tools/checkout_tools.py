@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cod_doc.domain.entities import actor_kind_for_author
-from cod_doc.mcp.tools._db import require_project_id, session_factory
+from cod_doc.mcp.tools._db import session_factory
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -45,37 +44,23 @@ def register(mcp: FastMCP) -> None:
         See also: skill ``task-standard``; cod_doc/services/task_status_machine.py.
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import activity_service, checkout_service
+        from cod_doc.services import checkout_service
         from cod_doc.services.checkout_service import (
             CheckoutConflictError,
             CheckoutStatusError,
         )
 
         sf, _ = session_factory(project)
+        # Событие `task.checked_out` пишет сам сервис; второй emit здесь давал
+        # два события на одно действие, с разными payload.
         try:
             with transactional(sf) as session:
-                project_id = require_project_id(session, project)
                 result = checkout_service.checkout(
                     session,
                     task_id,
                     agent=agent,
                     expected_statuses=expected_statuses,
                 )
-                if not result.idempotent:
-                    activity_service.emit(
-                        session,
-                        project_id,
-                        "task.checked_out",
-                        actor_kind=actor_kind_for_author(agent),
-                        actor_id=agent,
-                        scope_kind="task",
-                        scope_id=task_id,
-                        payload={
-                            "from_status": result.expected_status_at_checkout,
-                            "to_status": result.new_status,
-                        },
-                        summary=f"Task {task_id} checked out by {agent}",
-                    )
         except LookupError as exc:
             raise ValueError(str(exc)) from exc
         except (CheckoutConflictError, CheckoutStatusError) as exc:
@@ -102,31 +87,19 @@ def register(mcp: FastMCP) -> None:
         Status is unchanged — call task_complete or task_update_status separately.
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import activity_service, checkout_service
+        from cod_doc.services import checkout_service
         from cod_doc.services.checkout_service import CheckoutConflictError
 
         sf, _ = session_factory(project)
+        # `task.released` тоже пишет сервис.
         try:
             with transactional(sf) as session:
-                project_id = require_project_id(session, project)
                 result = checkout_service.release(
                     session,
                     task_id,
                     agent=agent,
                     force=force,
                 )
-                if not result.idempotent:
-                    activity_service.emit(
-                        session,
-                        project_id,
-                        "task.released",
-                        actor_kind=actor_kind_for_author(agent),
-                        actor_id=agent,
-                        scope_kind="task",
-                        scope_id=task_id,
-                        payload={"force": force},
-                        summary=f"Task {task_id} released by {agent}",
-                    )
         except LookupError as exc:
             raise ValueError(str(exc)) from exc
         except CheckoutConflictError as exc:
