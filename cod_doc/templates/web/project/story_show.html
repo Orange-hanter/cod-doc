@@ -50,7 +50,10 @@
   {% if acceptance %}
     <ul>
       {% for a in acceptance %}
-        <li>
+        {# Якорь по `a.position`, а не по индексу цикла: позиции нумеруются с
+           нуля и могут иметь дыры (story_service/acceptance.py). На него
+           ссылаются сценарии связью `criterion` — `<STORY-ID>#<position>`. #}
+        <li id="crit-{{ a.position }}">
           {% if a.met %}<span class="badge badge-done">met</span>{% endif %}
           {{ a.criterion }}
         </li>

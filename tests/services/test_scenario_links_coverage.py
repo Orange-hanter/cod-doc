@@ -182,3 +182,43 @@ def test_project_coverage_lists_every_group(engine_with_schema) -> None:  # type
         _create(session, pid, group_key="doc-evolution")
         report = scenario_service.project_coverage(session, pid)
     assert [c.group_key for c in report] == ["doc-evolution", "plan-management"]
+
+
+# --------------------------------------------------------------------------- #
+# §5: один запрос на страницу — project_coverage не делает N+1                 #
+# --------------------------------------------------------------------------- #
+
+
+def test_project_coverage_issues_a_single_query(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Раньше: 1 запрос за ключами групп + по одному на группу."""
+    from sqlalchemy import event
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        for group in ("alpha", "beta", "gamma"):
+            _create(session, pid, group_key=group)
+            _create(session, pid, group_key=group, kind=ScenarioKind.ERROR_PATH)
+
+        statements: list[str] = []
+
+        def _record(conn, cursor, statement, parameters, context, executemany):  # type: ignore[no-untyped-def]
+            if statement.lstrip().upper().startswith("SELECT"):
+                statements.append(statement)
+
+        event.listen(engine_with_schema, "before_cursor_execute", _record)
+        try:
+            report = scenario_service.project_coverage(session, pid)
+        finally:
+            event.remove(engine_with_schema, "before_cursor_execute", _record)
+
+    assert [c.group_key for c in report] == ["alpha", "beta", "gamma"]
+    assert len(statements) <= 2, f"ожидали ≤2 SELECT, получили {len(statements)}"
+
+
+def test_coverage_for_rows_is_pure() -> None:
+    """Чистая функция: та же арифметика без сессии."""
+    from cod_doc.services.scenario_service.coverage import coverage_for_rows
+
+    assert coverage_for_rows("empty", []).total == 0
+    assert coverage_for_rows("empty", []).missing_kinds == ["happy_path", "error_path"]

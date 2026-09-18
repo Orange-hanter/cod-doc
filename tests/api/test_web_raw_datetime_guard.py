@@ -158,6 +158,7 @@ def _pages(slug: str, task_id: str) -> list[str]:
         f"/p/{slug}/metrics",
         f"/p/{slug}/costs",
         f"/p/{slug}/code-refs",
+        f"/p/{slug}/scenarios",
     ]
 
 

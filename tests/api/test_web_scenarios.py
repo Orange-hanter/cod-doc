@@ -128,7 +128,7 @@ def test_list_hides_retired_by_default(scn_client) -> None:  # type: ignore[no-u
     r = client.get(f"/p/{entry.name}/scenarios")
     assert "Obsolete behaviour" not in r.text
 
-    r = client.get(f"/p/{entry.name}/scenarios?include_retired=true")
+    r = client.get(f"/p/{entry.name}/scenarios?status=all")
     assert "Obsolete behaviour" in r.text
 
 
@@ -231,3 +231,188 @@ def test_retired_scenario_is_still_reachable_by_id(scn_client) -> None:  # type:
     r = client.get(f"/p/{entry.name}/scenarios/SCN-003")
     assert r.status_code == 200
     assert ScenarioStatus.RETIRED.value in r.text
+
+
+# --------------------------------------------------------------------------- #
+# ADO-133/136: общий словарь вёрстки                                           #
+# --------------------------------------------------------------------------- #
+
+
+def test_list_uses_shared_component_vocabulary(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios").text
+    for cls in ('class="page-header"', 'class="filter-bar"', 'class="table-scroll"'):
+        assert cls in body, cls
+    assert 'class="grid scn-table"' in body
+
+
+def test_list_status_is_a_badge_not_bare_text(scn_client) -> None:  # type: ignore[no-untyped-def]
+    """Иконку нельзя терять при переходе на бейджи."""
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios").text
+    assert "badge badge-scn-draft" in body
+    assert "✏️" in body
+
+
+def test_list_filter_works_without_js(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios").text
+    assert f'action="/p/{entry.name}/scenarios"' in body
+    assert "<noscript>" in body
+    assert 'type="submit"' in body
+
+
+def test_list_offers_clear_only_when_filtered(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    assert ">clear<" not in client.get(f"/p/{entry.name}/scenarios").text
+    assert ">clear<" in client.get(f"/p/{entry.name}/scenarios?kind=error_path").text
+
+
+def test_list_row_and_title_are_clickable(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios").text
+    assert 'class="scn-row-link"' in body
+
+
+def test_list_empty_state_when_filter_matches_nothing(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios?kind=integration").text
+    assert 'class="tasks-empty"' in body
+    assert "Показать все" in body
+
+
+def test_show_uses_hero_and_cards(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios/SCN-001").text
+    assert 'class="task-hero"' in body
+    assert 'class="task-card-header"' in body
+    assert "badge badge-lg badge-scn-draft" in body
+
+
+def test_show_back_link_is_sticky(scn_client) -> None:  # type: ignore[no-untyped-def]
+    from pathlib import Path
+
+    client, entry = scn_client
+    assert 'class="scn-back"' in client.get(f"/p/{entry.name}/scenarios/SCN-001").text
+
+    css = (Path(__file__).resolve().parents[2] / "cod_doc/static/css/_components.css").read_text(
+        encoding="utf-8"
+    )
+    block = css.split(".adr-back, .scn-back {", 1)[1].split("}", 1)[0]
+    assert "position: sticky" in block
+
+
+def test_show_anchor_links_to_section(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios/SCN-001").text
+    assert f"/p/{entry.name}/docs/docs/system/capabilities/plan-management" in body
+
+
+def test_show_links_to_revisions(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios/SCN-001").text
+    assert "entity_kind=scenario" in body
+
+
+def test_no_dead_scenario_selectors() -> None:
+    """Приёмка ADO-133, перенесённая на сценарии: мёртвых селекторов нет."""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2] / "cod_doc"
+    class_re = re.compile(r"\bscn-[a-z0-9-]+")
+
+    in_templates: set[str] = set()
+    for tpl in (root / "templates" / "web").rglob("*.html"):
+        for m in class_re.finditer(tpl.read_text(encoding="utf-8")):
+            in_templates.add(m.group(0))
+
+    css = "".join(p.read_text(encoding="utf-8") for p in (root / "static").rglob("*.css"))
+    styled = {m.group(0) for m in class_re.finditer(css)}
+
+    # Классы статусов собираются интерполяцией `badge-scn-{{ status }}`, поэтому
+    # литерала в шаблоне нет. Выводим их из перечисления, а не списком, — тогда
+    # новый статус не протухнет молча. Тот же приём, что `adr-ref` в ADR-тесте.
+    in_templates.update(f"scn-{s.value}" for s in ScenarioStatus)
+
+    assert not sorted(in_templates - styled), f"без правил: {sorted(in_templates - styled)}"
+    assert not sorted(styled - in_templates), f"без употребления: {sorted(styled - in_templates)}"
+
+
+def test_old_unstyled_class_names_are_gone() -> None:
+    """Пиннует конкретный регресс: одиннадцать классов без правил."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2] / "cod_doc/templates/web/project"
+    body = (root / "scenarios_list.html").read_text(encoding="utf-8")
+    body += (root / "scenario_show.html").read_text(encoding="utf-8")
+
+    for dead in (
+        "scenarios-page",
+        "scenarios-header",
+        "scenarios-filter",
+        "scenario-group",
+        "scenario-group-links",
+        "scenario-page",
+        "scenario-header",
+        "scenario-body",
+        "scenario-steps",
+        "scenario-links",
+        "scenario-footer",
+    ):
+        assert dead not in body, f"класс без правила вернулся: {dead}"
+
+
+# --------------------------------------------------------------------------- #
+# §5/§7: инварианты                                                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_list_renders_without_db(tmp_path: Path) -> None:
+    """§7: список открывает БД мягко и объясняет, что её нет."""
+    repo = tmp_path / "nodb-demo"
+    repo.mkdir()
+    entry = ProjectEntry(name="nodb-demo", path=str(repo))
+    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg.add_project(entry)
+
+    import cod_doc.api.deps as deps
+
+    deps.set_config(cfg)
+
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get(f"/p/{entry.name}/scenarios")
+    assert r.status_code == 200
+    assert 'class="warn"' in r.text
+
+
+def test_list_survives_a_group_with_only_retired_scenarios(scn_client) -> None:  # type: ignore[no-untyped-def]
+    """Группа, где всё снято, не исчезает: блоки строятся из покрытия."""
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios").text
+    # SCN-003 снят, но его группа plan-management жива за счёт SCN-001.
+    assert "plan-management" in body
+    body_all = client.get(f"/p/{entry.name}/scenarios?status=retired").text
+    assert "Obsolete behaviour" in body_all
+
+
+def test_kpi_matches_service(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios").text
+    assert "Подтверждено" in body
+    assert "Сценариев" in body
+    assert "Возможностей" in body
+
+
+def test_group_shows_kind_chips(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios").text
+    assert "happy_path 1" in body
+
+
+def test_drift_card_is_rendered(scn_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = scn_client
+    body = client.get(f"/p/{entry.name}/scenarios").text
+    assert "Проекция" in body
