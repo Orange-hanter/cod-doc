@@ -196,7 +196,7 @@ graph TD
 ### ROADMAP (милстоуны и приоритеты) ⭐
 - **Описание:** Милстоуны M1–M6, статусы фаз, декомпозиция планов. M1–M5 закрыты,
   M6 (hub + кросс-проектность) в подготовке.
-- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:f740ab98fffd`
+- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:9f8d2402d1d4`
 - **Статус:** `🟢 VERIFIED`
 
 ### RFC 22: Symbiosis (ZAIrgRush + Orakul)
@@ -275,7 +275,7 @@ graph TD
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
 | 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `4f4e4e3f2004` | 2026-09-16 | 🟢 VERIFIED |
-| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `f740ab98fffd` | 2026-09-15 | 🟢 VERIFIED |
+| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `9f8d2402d1d4` | 2026-09-15 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
 | 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
