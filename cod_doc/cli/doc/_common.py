@@ -54,6 +54,29 @@ def _require_project_id(session: Session, project_name: str) -> int:
     return proj.row_id
 
 
+def _read_body(body_file: str | None, *, body: str | None = None) -> str:
+    """Resolve a section body from `--body-file <path>`, `--body-file -` or `--body`.
+
+    A section body is multi-line markdown; typing it as a shell argument is
+    unusable, so the file/stdin form is the primary one (STO-011). Exactly one
+    source may be given.
+    """
+    if body_file is not None and body is not None:
+        console.print("[red]Use either --body-file or --body, not both.[/red]")
+        sys.exit(1)
+    if body is not None:
+        return body
+    if body_file is None:
+        return ""
+    if body_file == "-":
+        return sys.stdin.read()
+    path = Path(body_file).expanduser()
+    if not path.is_file():
+        console.print(f"[red]Body file not found: {body_file}[/red]")
+        sys.exit(1)
+    return path.read_text(encoding="utf-8")
+
+
 def _get_root_path(project_name: str, cfg: Config) -> Path:
     entry = cfg.get_project(project_name)
     if not entry:

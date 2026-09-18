@@ -196,6 +196,182 @@ def register(mcp: FastMCP) -> None:
             body = doc_service.render_body(session, d.row_id)
         return body or ""
 
+    @mcp.tool(name="doc_patch_section")
+    def doc_patch_section(
+        project: str,
+        doc_key: str,
+        anchor: str,
+        body: str,
+        expected_parent_revision_id: str | None = None,
+        author: str = "mcp",
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Replace a section's body in the DB — no markdown file required.
+
+        Mirrors the web inline editor's optimistic-concurrency contract
+        (``cod_doc/api/web/fragments/sections.py::section_patch``): pass the
+        `revision_id` you last observed (e.g. from `doc_get`/`revision_list`) as
+        `expected_parent_revision_id` and a concurrent writer landing first
+        raises a conflict instead of silently overwriting. Omit it to write
+        unconditionally (matches `task_doc_put`'s `base_revision_id=None`).
+        No-op (`changed=false`, no revision written) when `body` already
+        equals the current content. `dry_run=True` validates and returns the
+        would-be unified diff + result without persisting anything.
+        """
+        from cod_doc.domain.entities import EntityKind
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_service
+        from cod_doc.services import revision_service as revisions
+        from cod_doc.services.revision_service import NO_PARENT_CHECK, RevisionConflictError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf, commit=not dry_run) as session:
+                project_id = require_project_id(session, project)
+                d = doc_service.get(session, project_id, doc_key)
+                if d is None or d.row_id is None:
+                    raise ValueError(f"Document '{doc_key}' not found.")
+
+                section = next(
+                    (s for s in doc_service.get_sections(session, d.row_id) if s.anchor == anchor),
+                    None,
+                )
+                if section is None:
+                    raise ValueError(f"Section '{anchor}' not found in document '{doc_key}'.")
+                old_body = section.body
+
+                expected: str | object = (
+                    NO_PARENT_CHECK
+                    if expected_parent_revision_id is None
+                    else expected_parent_revision_id
+                )
+                updated = doc_service.patch_section(
+                    session,
+                    document_id=d.row_id,
+                    anchor=anchor,
+                    new_body=body,
+                    author=author,
+                    reason=reason,
+                    expected_parent_revision_id=expected,
+                )
+                assert updated.row_id is not None
+                revision_id = revisions.head_for_entity(session, EntityKind.SECTION, updated.row_id)
+                changed = old_body != body
+        except RevisionConflictError as exc:
+            raise ValueError(str(exc)) from exc
+
+        out: dict[str, Any] = {
+            "doc_key": doc_key,
+            "anchor": anchor,
+            "revision_id": revision_id,
+            "changed": changed,
+            "content_hash": updated.content_hash,
+        }
+        if dry_run:
+            out["diff"] = (
+                doc_service.section_diff(old_body, body, doc_key=doc_key, anchor=anchor)
+                if changed
+                else ""
+            )
+            out["dry_run"] = True
+        return out
+
+    @mcp.tool(name="doc_add_section")
+    def doc_add_section(
+        project: str,
+        doc_key: str,
+        anchor: str,
+        heading: str,
+        body: str = "",
+        level: int = 2,
+        position: int | None = None,
+        author: str = "mcp",
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Append a new section to a document in the DB — no markdown file required.
+
+        Completes the file-free authoring cycle `doc_create` → `doc_add_section`
+        → `doc_patch_section`: `doc_create` stores only the preamble, so without
+        this tool a DB-authored document can never gain a body.
+
+        `position` defaults to the end of the document; pass an explicit index to
+        insert elsewhere (existing sections are not renumbered, mirroring
+        `doc_service.add_section`). A duplicate `anchor` raises instead of
+        overwriting — use `doc_patch_section` to change an existing section.
+        `dry_run=True` resolves the document, rejects a taken anchor and returns
+        the would-be position and diff without opening a write at all;
+        `created=false` and `revision_id=null` say nothing was stored.
+        """
+        from cod_doc.domain.entities import EntityKind
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_service
+        from cod_doc.services import revision_service as revisions
+        from cod_doc.services.doc_service import SectionAlreadyExistsError
+
+        sf, _ = session_factory(project)
+        revision_id: str | None = None
+        try:
+            with transactional(sf, commit=not dry_run) as session:
+                project_id = require_project_id(session, project)
+                d = doc_service.get(session, project_id, doc_key)
+                if d is None or d.row_id is None:
+                    raise ValueError(f"Document '{doc_key}' not found.")
+
+                existing = doc_service.get_sections(session, d.row_id)
+                at = (
+                    max((s.position for s in existing), default=-1) + 1
+                    if position is None
+                    else position
+                )
+
+                if dry_run:
+                    # Deliberately never call add_section here: it writes through
+                    # `session.begin_nested()`, and a SAVEPOINT on pysqlite is not
+                    # undone by the enclosing rollback (STO-022) — a "preview"
+                    # built on that rollback would silently create the section.
+                    if any(s.anchor == anchor for s in existing):
+                        raise SectionAlreadyExistsError(anchor)
+                    hash_ = doc_service.content_hash(body)
+                else:
+                    created = doc_service.add_section(
+                        session,
+                        document_id=d.row_id,
+                        anchor=anchor,
+                        heading=heading,
+                        level=level,
+                        position=at,
+                        body=body,
+                        author=author,
+                        reason=reason,
+                    )
+                    assert created.row_id is not None
+                    revision_id = revisions.head_for_entity(
+                        session, EntityKind.SECTION, created.row_id
+                    )
+                    hash_ = created.content_hash
+        except SectionAlreadyExistsError as exc:
+            raise ValueError(
+                f"Section '{anchor}' already exists in document '{doc_key}' — "
+                f"use doc_patch_section to change it."
+            ) from exc
+
+        out: dict[str, Any] = {
+            "doc_key": doc_key,
+            "anchor": anchor,
+            "heading": heading,
+            "level": level,
+            "position": at,
+            "revision_id": revision_id,
+            "content_hash": hash_,
+            "created": not dry_run,
+        }
+        if dry_run:
+            out["diff"] = doc_service.section_create_diff(body, doc_key=doc_key, anchor=anchor)
+            out["dry_run"] = True
+        return out
+
     @mcp.tool(name="doc_accept")
     def doc_accept(
         project: str,

@@ -20,9 +20,14 @@ related_docs:
 
 SoT — строка `document` в SQLite; markdown — проекция. Живые тулы:
 `doc_create` / `doc_export` / `doc_drift` / `doc_import` / `doc_body` /
-`doc_accept` / `doc_rename`. `doc_service.patch_section` есть, MCP
-`doc_patch_*` нет. Ручная правка проекции → `edited_in_place` /
-`ExportGuardError`. Ниже ещё встречаются dotted `doc.patch_section`.
+`doc_accept` / `doc_rename` / `doc_add_section` / `doc_patch_section`
+(MCP-обёртки над `doc_service.add_section` и `doc_service.patch_section`,
+optimistic concurrency у патча — через `expected_parent_revision_id`,
+добавлены 2026-09-18; CLI-зеркала — `cod-doc doc add-section` и
+`cod-doc doc patch`). Цикл `doc_create` → `doc_add_section` →
+`doc_patch_section` проходится целиком без файла на диске. Ручная правка
+проекции → `edited_in_place` / `ExportGuardError`. Ниже ещё встречаются dotted
+`doc.patch_section` — читай их как `doc_patch_section`.
 
 ## 1. Проблема ручного подхода
 

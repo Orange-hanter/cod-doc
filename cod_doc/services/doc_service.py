@@ -98,6 +98,32 @@ def _create_diff(body: str, *, label: str) -> str:
     )
 
 
+def content_hash(body: str) -> str:
+    """Hash a section body the way the stored `content_hash` column is built."""
+    return _content_hash(body)
+
+
+def section_label(doc_key: str, anchor: str) -> str:
+    """Label the SECTION revisions of this document carry in their diffs."""
+    return f"section:{doc_key}#{anchor}"
+
+
+def section_diff(old_body: str, new_body: str, *, doc_key: str, anchor: str) -> str:
+    """Unified diff of a section-body change — byte-identical to what
+    `patch_section` stores in the revision.
+
+    Public so that the `--dry-run` previews of the MCP and CLI surfaces show
+    exactly the text the revision would record, instead of each surface
+    re-deriving the format and drifting from it (STO-010 / STO-011).
+    """
+    return _unified_diff(old_body, new_body, label=section_label(doc_key, anchor))
+
+
+def section_create_diff(body: str, *, doc_key: str, anchor: str) -> str:
+    """Unified diff `add_section` stores for a brand-new section."""
+    return _create_diff(body, label=section_label(doc_key, anchor))
+
+
 def _require_doc(session: Session, document_id: int) -> DocumentModel:
     model = session.get(DocumentModel, document_id)
     if model is None:
@@ -294,7 +320,7 @@ def add_section(
         entity_kind=EntityKind.SECTION,
         entity_id=section.row_id,
         author=author,
-        diff=_create_diff(body, label=f"section:{doc.doc_key}#{anchor}"),
+        diff=section_create_diff(body, doc_key=doc.doc_key, anchor=anchor),
         reason=reason or "add_section",
     )
     activity_service.emit_for_write(
@@ -377,7 +403,7 @@ def patch_section(
         assert no_change is not None
         return no_change
 
-    diff = _unified_diff(sec_model.body, new_body, label=f"section:{doc.doc_key}#{anchor}")
+    diff = section_diff(sec_model.body, new_body, doc_key=doc.doc_key, anchor=anchor)
     sec_model.body = new_body
     sec_model.content_hash = _content_hash(new_body)
     doc.last_updated = datetime.now(UTC)
