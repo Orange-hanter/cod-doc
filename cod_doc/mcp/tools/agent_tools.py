@@ -1,7 +1,7 @@
 """Cycle-5 agent-centric MCP tools (AGT-001..AGT-007).
 
-The 6-tool agent surface. Each tool composes internal CRUD operations
-so the AI agent doesn't have to chain 5-10 calls to collect context:
+Each tool composes internal CRUD operations so the AI agent doesn't have
+to chain 5-10 calls to collect context:
 
 - ``agent_capabilities()`` — L0 entry-point (AGT-002).
 - ``agent_pick(project, agent_id)`` — atomic task + context + navigation card (AGT-003).
@@ -10,9 +10,11 @@ so the AI agent doesn't have to chain 5-10 calls to collect context:
 - ``agent_complete(task_id, ...)`` — guarded done + release (AGT-006).
 - ``agent_release(task_id, reason?)`` — give up without done (AGT-007).
 
-Not-yet-implemented tools register as stubs that raise NotImplementedError
-with a pointer to the tracking task. This keeps the AGENT_TOOLS frozenset
-contract honest (profile filter expects all 6 names present).
+Since RFC 25 §3.2 (CUR-008) only ``agent_capabilities`` and
+``agent_report`` are part of the default ``agent`` (doc-curator)
+allowlist; ``agent_pick`` / ``agent_get`` / ``agent_complete`` /
+``agent_release`` stay registered here but are exposed only under
+standard/full — see ``cod_doc/mcp/profiles.py::AGENT_TOOLS``.
 """
 
 from __future__ import annotations
@@ -40,11 +42,18 @@ def register(mcp: FastMCP) -> None:
         or profile-info noise that ``capabilities()`` (admin surface)
         carries. Stays under 4KB for tight context budgets.
 
+        Since RFC 25 §3.2 (CUR-008) the payload also declares the agent's
+        role: the default agent is a documentation curator, so ``role`` /
+        ``forbidden`` / ``next_action_hint`` steer it towards drift and
+        search instead of ``agent_pick``.
+
         Shape::
 
             {
               "server_version": "1.1.0",
               "profile": "agent",
+              "role": "doc-curator",
+              "forbidden": ["agent_pick", "task_checkout", "task_complete"],
               "skills": [
                 {"name": "orchestrator", "description": "..."}, ...
               ],
@@ -55,7 +64,9 @@ def register(mcp: FastMCP) -> None:
               "task_status_legacy_aliases": {"pending": "todo", ...},
               "default_project": "<slug>" | null,
               "orchestrator_skill": "cod_doc/skills/orchestrator/SKILL.md",
-              "next_action_hint": "Call agent_pick(project=..., agent_id=...) to start."
+              "next_action_hint": "Call ctx_drift(project=...) then
+                                   ctx_search(project=..., query=...) —
+                                   do not pick implementation tasks."
             }
         """
         from cod_doc import __version__ as version
@@ -109,18 +120,28 @@ def register(mcp: FastMCP) -> None:
         return {
             "server_version": version,
             "profile": _active_profile(),
+            # RFC 25 §3.2: the default agent curates documentation. The
+            # role and the forbidden list are part of the payload so a
+            # client that never reads the orchestrator skill still knows
+            # it must not take implementation tasks.
+            "role": "doc-curator",
+            "forbidden": ["agent_pick", "task_checkout", "task_complete"],
             "skills": skills,
             "task_status_canonical": canonical,
             "task_status_legacy_aliases": dict(_LEGACY_ALIASES),
             "default_project": default,
             "orchestrator_skill": "cod_doc/skills/orchestrator/SKILL.md",
             "next_action_hint": (
-                "Call agent_pick(project=..., agent_id=...) to atomically "
-                "acquire the next ready task with full context. "
-                "Set workspace default first via set_default_project(name=...) "
-                "if you want to omit `project` on later calls."
+                "Call ctx_drift(project=<slug>) then "
+                "ctx_search(project=<slug>, query=...) — do not pick "
+                "implementation tasks. No workspace default is set, so pass "
+                "`project` explicitly on every call."
                 if default is None
-                else f"Call agent_pick(project='{default}', agent_id=...) to start."
+                else (
+                    f"Call ctx_drift(project='{default}') then "
+                    f"ctx_search(project='{default}', query=...) — "
+                    "do not pick implementation tasks."
+                )
             ),
         }
 

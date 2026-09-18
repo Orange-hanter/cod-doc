@@ -1,14 +1,18 @@
-"""PCA-951 / AGT-001: MCP server profiles — control which tools are exposed.
+"""PCA-951 / AGT-001 / RFC 25: MCP server profiles — control which tools are exposed.
 
 Four profiles (counts validated by tests/test_server_profiles.py::
 test_profile_counts_match_documented_values — keep them in sync with
 AGENTS.md §5.9, server.py --profile help, docs/mcp-integration.md):
 
-- ``agent`` (cycle-5, **default**) — 6-tool task-centric surface for AI
-  agents. Each call returns a self-sufficient payload (task card with
-  inlined skills, related docs, navigation) so the agent doesn't need
-  5-10 round-trips to collect context. The recommended profile for
-  AI-driven workflows.
+- ``agent`` (RFC 25 §3.2, **default**) — 6 curator tools (RFC 25) for the
+  default AI agent, whose role is documentation availability and search,
+  not task execution: ``agent_capabilities`` announces the role,
+  ``ctx_search`` / ``ctx_docs`` / ``ctx_drift`` cover corpus search and
+  drift, ``context_get`` assembles Snowball packages, ``agent_report``
+  escalates to a human. The cycle-5 task tools (``agent_pick``,
+  ``agent_get``, ``agent_complete``, ``agent_release``) stay registered
+  but are visible only under standard/full — implementation work belongs
+  to a human or a coding agent on those profiles.
 - ``minimal`` — 21-tool cold-start surface for non-agent integrations
   that still want a curated subset of CRUD tools.
 - ``standard`` — 129-tool DB-backed surface; drops only the remaining
@@ -25,25 +29,28 @@ Active profile is chosen at server start via CLI ``--profile`` or env
 from __future__ import annotations
 
 # --------------------------------------------------------------------------- #
-# Agent — 6 task-centric tools for AI workflows (AGT-001).                    #
-# Each tool returns a self-sufficient payload so the agent doesn't need to    #
-# chain calls for context. Internal CRUD lives under standard/full.           #
+# Agent — 6 curator tools for the default AI agent (RFC 25 §3.2, CUR-008).    #
+# The role is documentation availability and search, not task execution:     #
+# read drift, search the corpus, assemble Snowball context, escalate.        #
+# agent_pick / agent_get / agent_complete / agent_release stay registered    #
+# but are visible only under standard/full, where a human or a coding agent  #
+# does implementation work. Internal CRUD lives under standard/full too.     #
 # --------------------------------------------------------------------------- #
 
 AGENT_TOOLS: frozenset[str] = frozenset(
     {
-        # L0 entry-point: what server / skills / enums / session state.
+        # L0 entry-point: role, forbidden calls, skills, enums, session state.
         "agent_capabilities",
-        # Atomic: ready-set → checkout → assemble task card.
-        "agent_pick",
-        # Opt-in deep fetch when card didn't include something.
-        "agent_get",
+        # FTS search over docs/ADR/stories/tasks; lazy reindex of empty index.
+        "ctx_search",
+        # Doc listing: what the corpus already holds.
+        "ctx_docs",
+        # Drift: markdown ↔ DB divergence the curator has to close.
+        "ctx_drift",
+        # Snowball context (L0/L1/L2) under a token budget.
+        "context_get",
         # Unified dispatcher: progress | blocker | approval_request.
         "agent_report",
-        # Guarded done: validates blockers, releases lock.
-        "agent_complete",
-        # Give up without done; releases lock, status → todo.
-        "agent_release",
     }
 )
 
