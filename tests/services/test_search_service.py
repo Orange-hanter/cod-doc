@@ -371,6 +371,75 @@ def test_search_snippet_marks_match(engine_with_schema) -> None:  # type: ignore
 # ----------------------------------------------------------------- #
 
 
+# ----------------------------------------------------------------- #
+# CUR-011: per-kind limit + title-weighted bm25                      #
+# ----------------------------------------------------------------- #
+
+_MANY_DOCS = 30
+_MANY_TASKS = 3
+_PER_KIND_LIMIT = 5
+
+
+def test_search_limit_applies_per_kind_not_globally(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """30 doc hits must not crowd out the 3 task hits under a shared LIMIT."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        for i in range(_MANY_DOCS):
+            _make_doc(session, pid, f"guide/{i:02d}", f"Doc {i}", "widget appears in every doc")
+        for i in range(_MANY_TASKS):
+            _make_task(session, pid, plid, sid, f"WDG-{i:03d}", f"widget task {i}")
+    with transactional(factory) as session:
+        search_service.reindex_all(session, project_id=1)
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="widget", limit=_PER_KIND_LIMIT)
+    assert len(result["by_kind"]["task"]) == _MANY_TASKS
+    assert len(result["by_kind"]["doc"]) == _PER_KIND_LIMIT
+    assert result["total"] == _MANY_TASKS + _PER_KIND_LIMIT
+
+
+_FILLER_DOC_COUNT = 50  # raises idf enough that rounded bm25 scores don't tie at -0.0
+
+
+def test_search_title_hit_ranks_above_body_hit(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """A term in a doc's title must score better (lower) than a body-only hit."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, _, _ = _seed(session)
+        _make_doc(session, pid, "guide/title-hit", "gadget overview", "unrelated content here")
+        _make_doc(session, pid, "guide/body-hit", "unrelated title", "discusses gadget at length")
+        # Filler corpus: without it the two matching docs dominate the index
+        # and bm25's magnitude is small enough to round to -0.0 for both,
+        # hiding the title-weight effect this test exists to catch.
+        for i in range(_FILLER_DOC_COUNT):
+            _make_doc(
+                session, pid, f"guide/filler-{i}", f"filler {i}", "nothing to see here at all"
+            )
+    with transactional(factory) as session:
+        search_service.reindex_all(session, project_id=1)
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="gadget")
+    hits = result["by_kind"]["doc"]
+    refs = [h["ref"] for h in hits]
+    assert refs == ["guide/title-hit", "guide/body-hit"]
+    scores = {h["ref"]: h["score"] for h in hits}
+    assert scores["guide/title-hit"] < scores["guide/body-hit"]
+
+
+def test_search_scope_finding_is_valid(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, _, _ = _seed(session)
+        _make_finding(session, pid, "F-010", "Timeout bug", "Request times out under load.")
+    with transactional(factory) as session:
+        search_service.reindex_all(session, project_id=1)
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="timeout", scope="finding")
+    refs = [h["ref"] for h in result["by_kind"]["finding"]]
+    assert "F-010" in refs
+    assert result["by_kind"]["task"] == []
+
+
 def test_search_under_200ms_with_moderate_corpus(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Acceptance: search ≤ 200ms. Seed 200 tasks + 50 docs."""
     factory = make_session_factory(engine_with_schema)
