@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 from click.testing import CliRunner
 
@@ -15,9 +15,6 @@ from cod_doc.cli import main
 from cod_doc.config import Config
 from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.services import story_service
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 PROJECT = "sp"
 NARRATIVE = "Как управляющий, я хочу алёрты, чтобы не ловить стоп-листы"
@@ -157,3 +154,24 @@ def test_set_criterion_unknown_position_fails(tmp_path: Path) -> None:
     r = runner.invoke(main, ["story", "set-criterion", "US-001", "7", "-p", PROJECT])
     assert r.exit_code == 1
     assert "position 7" in r.output
+
+
+def test_story_show_resolves_section_pointwise() -> None:
+    """ADO-159: `story show` берёт секцию точечно, а не выгрузкой всего проекта.
+
+    Анти-дрейф по исходнику, а не по поведению: обе формы — и пачечная, и
+    точечная — выводят на экран одно и то же, поэтому поведенческим тестом
+    подмену не поймать. Первая попытка закрыть этот пункт как раз и заменила
+    линейный перебор с ``break`` на словарь ``sections_by_id``: строк
+    читается столько же, а по выводу разницы нет.
+    """
+    source = (
+        Path(__file__).resolve().parents[2] / "cod_doc" / "cli" / "story" / "cmd_show.py"
+    ).read_text(encoding="utf-8")
+
+    assert "get_section_by_id" in source, "story show больше не читает секцию точечно"
+    assert "sections_by_id" not in source, (
+        "story show снова выгружает все секции проекта ради одной — "
+        "зови story_service.get_section_by_id"
+    )
+    assert "list_sections" not in source, "story show снова перебирает список секций"

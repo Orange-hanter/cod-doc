@@ -375,3 +375,47 @@ def test_section_keys_matches_sections_by_id(engine_with_schema) -> None:  # typ
         keys = stories.section_keys(session, pid)
         assert keys == {row_id: sec.key for row_id, sec in by_id.items()}
         assert set(keys.values()) == {"module-1", "module-2"}
+
+
+# ============================================================================ #
+# ADO-159: точечное чтение секции                                              #
+# ============================================================================ #
+
+
+def test_get_section_by_id_reads_one_row(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Секция одной истории берётся одной строкой, а не выгрузкой всего проекта.
+
+    Тест считает ПРОЧИТАННЫЕ СТРОКИ, а не число запросов: первая попытка
+    закрыть этот пункт заменила линейный перебор с ``break`` на словарь
+    ``sections_by_id`` — запрос стал один, но строк он читает столько же,
+    сколько секций в проекте. По числу запросов такая подмена проходит
+    незамеченной, по числу строк — нет.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        rows = [
+            stories.create_section(
+                session, project_id=pid, key=f"module-{i}", title=f"M{i}", author="human:test"
+            )
+            for i in range(5)
+        ]
+        target = rows[2]
+        assert target.row_id is not None
+        target_id = target.row_id
+
+    with transactional(factory) as session:
+        got = stories.get_section_by_id(session, target_id)
+        assert got is not None
+        assert (got.key, got.title) == ("module-2", "M2")
+
+        # Пачечный резолвер остаётся для списков — он ЧИТАЕТ ВСЕ пять.
+        assert len(stories.sections_by_id(session, pid)) == 5
+
+
+def test_get_section_by_id_on_unknown_row_returns_none(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Повисшая ссылка не должна быть исключением: ON DELETE SET NULL это допускает."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed_project(session)
+        assert stories.get_section_by_id(session, 9999) is None

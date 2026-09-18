@@ -38,7 +38,9 @@ def story_show(ctx: click.Context, story_id: str, project: str, as_json: bool) -
             acceptance = story_service.list_acceptance(session, story_id)
             links = story_service.list_links(session, story_id)
             if s.section_id is not None:
-                sec = story_service.sections_by_id(session, s.project_id).get(s.section_id)
+                # Одна история — одна секция: точечное чтение, а не выгрузка
+                # всех секций проекта (ADO-159).
+                sec = story_service.get_section_by_id(session, s.section_id)
                 if sec is not None:
                     section_key, section_title = sec.key, sec.title
 
