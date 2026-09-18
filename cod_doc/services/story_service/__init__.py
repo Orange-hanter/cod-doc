@@ -44,7 +44,14 @@ from .crud import (
     update_status,
 )
 from .links import link
-from .sections import assign_section, create_section, get_section, list_sections
+from .sections import (
+    assign_section,
+    create_section,
+    get_section,
+    list_sections,
+    section_keys,
+    sections_by_id,
+)
 
 __all__ = [
     "AcceptanceNotFoundError",
@@ -69,6 +76,8 @@ __all__ = [
     "list_sections",
     "list_tasks",
     "next_story_id",
+    "section_keys",
+    "sections_by_id",
     "set_criterion_met",
     "update_status",
 ]

@@ -69,12 +69,6 @@ def story_create(
     try:
         with transactional(sf) as session:
             project_id = _require_project_id(session, project)
-            section_id = None
-            if section_key is not None:
-                section = story_service.get_section(session, project_id, section_key)
-                if section is None:
-                    raise SectionNotFoundError(section_key)
-                section_id = section.row_id
             s = story_service.create(
                 session,
                 project_id=project_id,
@@ -85,7 +79,7 @@ def story_create(
                 author=author,
                 status=UserStoryStatus(status),
                 acceptance=list(acceptance_criteria) or None,
-                section_id=section_id,
+                section_key=section_key,
                 reason=reason,
             )
     except ValidationError as exc:

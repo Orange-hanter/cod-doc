@@ -225,14 +225,84 @@ def test_sections_are_scoped_per_project(engine_with_schema) -> None:  # type: i
         assert [s.title for s in stories.list_sections(session, p2)] == ["Второй"]
 
 
-def test_create_story_with_section_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_create_story_with_section_key(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid = _seed_project(session)
         sec = stories.create_section(
             session, project_id=pid, key="module-1", title="Запасы", author="human:test"
         )
-        _make_story(session, pid, section_id=sec.row_id)
+        _make_story(session, pid, section_key="module-1")
 
     with transactional(factory) as session:
         assert stories.get(session, "US-001").section_id == sec.row_id
+
+
+def test_create_story_with_unknown_section_key_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Несуществующий ключ — ошибка, а не молча несортированная история."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        with pytest.raises(stories.SectionNotFoundError, match="no-such"):
+            _make_story(session, pid, section_key="no-such")
+
+
+def test_create_writes_section_key_not_row_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-159: журнал append-only обязан быть читаемым без БД.
+
+    ``row_id`` теряет смысл при переименовании секции, а ``ON DELETE SET
+    NULL`` гарантирует, что ссылка однажды повиснет — при том что
+    ``revision_revert`` эти diff'ы проигрывает. Проверяется и ревизия, и
+    событие: раньше целое число уезжало в оба.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        stories.create_section(
+            session, project_id=pid, key="module-1", title="Запасы", author="human:test"
+        )
+        _make_story(session, pid, section_key="module-1")
+
+    with transactional(factory) as session:
+        story = stories.get(session, "US-001")
+        history = rev.list_for_entity(session, EntityKind.STORY, story.row_id)
+        diff = next(json.loads(r.diff) for r in history if json.loads(r.diff)["op"] == "create")
+        assert diff["section"] == "module-1"
+        assert "section_id" not in diff
+
+        event = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "story.created")
+        ).scalar_one()
+        assert event.payload["section"] == "module-1"
+        assert "section_id" not in event.payload
+
+
+def test_create_without_section_records_null(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Без секции в журнале ключ есть, но пустой — не отсутствует."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        _make_story(session, pid)
+
+    with transactional(factory) as session:
+        story = stories.get(session, "US-001")
+        history = rev.list_for_entity(session, EntityKind.STORY, story.row_id)
+        diff = next(json.loads(r.diff) for r in history if json.loads(r.diff)["op"] == "create")
+        assert diff["section"] is None
+
+
+def test_section_keys_matches_sections_by_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Единственная точка резолва: обе формы обязаны отвечать одинаково."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        for i, key in enumerate(("module-1", "module-2")):
+            stories.create_section(
+                session, project_id=pid, key=key, title=f"T{i}", author="human:test"
+            )
+
+    with transactional(factory) as session:
+        by_id = stories.sections_by_id(session, pid)
+        keys = stories.section_keys(session, pid)
+        assert keys == {row_id: sec.key for row_id, sec in by_id.items()}
+        assert set(keys.values()) == {"module-1", "module-2"}

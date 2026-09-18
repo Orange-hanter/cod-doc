@@ -23,8 +23,11 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             stories = story_service.list_for_project(session, project_id)
-            keys = {sec.row_id: sec.key for sec in story_service.list_sections(session, project_id)}
-        return [story_to_dict(s, keys.get(s.section_id)) for s in stories]
+            keys = story_service.section_keys(session, project_id)
+        return [
+            story_to_dict(s, keys.get(s.section_id) if s.section_id is not None else None)
+            for s in stories
+        ]
 
     @mcp.tool(name="story_get")
     def story_get(project: str, story_id: str) -> dict[str, Any] | None:
@@ -41,11 +44,7 @@ def register(mcp: FastMCP) -> None:
             links = story_service.list_links(session, story_id)
             section_key = None
             if s.section_id is not None:
-                keys = {
-                    sec.row_id: sec.key
-                    for sec in story_service.list_sections(session, s.project_id)
-                }
-                section_key = keys.get(s.section_id)
+                section_key = story_service.section_keys(session, s.project_id).get(s.section_id)
 
         result = story_to_dict(s, section_key)
         result["acceptance"] = [
@@ -66,6 +65,7 @@ def register(mcp: FastMCP) -> None:
         priority: str,
         status: str = "draft",
         acceptance: list[str] | None = None,
+        section: str | None = None,
         author: str = "mcp",
         reason: str | None = None,
         dry_run: bool = False,
@@ -73,11 +73,13 @@ def register(mcp: FastMCP) -> None:
         """Create a user story. story_id format: US-NNN (e.g. US-001).
         priority: critical|high|medium|low. status: draft|accepted|delivered|deferred.
         acceptance: optional list of acceptance criteria strings.
+        section: optional story-section key (see story_section_list); unknown
+            key is an error, not a silently unsorted story.
         """
         from cod_doc.domain.entities import Priority, UserStoryStatus
         from cod_doc.infra.db import transactional
         from cod_doc.services import story_service
-        from cod_doc.services.story_service import StoryAlreadyExistsError
+        from cod_doc.services.story_service import SectionNotFoundError, StoryAlreadyExistsError
         from cod_doc.services.validation import ValidationError
 
         sf, _ = session_factory(project)
@@ -94,13 +96,16 @@ def register(mcp: FastMCP) -> None:
                     author=author,
                     status=UserStoryStatus(status),
                     acceptance=acceptance or None,
+                    section_key=section,
                     reason=reason,
                 )
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
         except StoryAlreadyExistsError:
             raise ValueError(f"Story '{story_id}' already exists.") from None
-        out = story_to_dict(s)
+        except SectionNotFoundError:
+            raise ValueError(f"Section '{section}' not found in {project}.") from None
+        out = story_to_dict(s, section)
         if dry_run:
             out["dry_run"] = True
         return out

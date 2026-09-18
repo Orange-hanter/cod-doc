@@ -786,11 +786,7 @@ def stories_section_analyze(
     # Раньше эти два места расходились: список писал сентинел "?", а здесь
     # сравнивалась сырая "" — из-за чего анализ никогда не совпадал.
     rows = stories.list_for_project(session, project_db_id)
-    section_keys = {
-        sec.row_id: sec.key
-        for sec in stories.list_sections(session, project_db_id)
-        if sec.row_id is not None
-    }
+    section_keys = stories.section_keys(session, project_db_id)
     section_stories: dict[str, str] = {}
     for s in rows:
         stored = section_keys.get(s.section_id) if s.section_id else None

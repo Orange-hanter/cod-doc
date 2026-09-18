@@ -84,6 +84,32 @@ def get_section(session: Session, project_id: int, key: str) -> StorySection | N
     return StorySectionRepository(session).get_by_key(project_id, key)
 
 
+def sections_by_id(session: Session, project_id: int) -> dict[int, StorySection]:
+    """``row_id → секция`` для проекта.
+
+    ADO-159. Этот резолв разъехался по пяти местам — дважды в
+    ``story_tools``, в ``cli/story/cmd_show``, в веб-странице историй и в
+    ``crud.create``. Каждая копия писала свой вариант: где-то ``if row_id is
+    not None``, где-то без; где-то словарь, где-то линейный поиск с ``break``.
+    Один вход дешевле, чем следить за пятью.
+    """
+    return {
+        sec.row_id: sec
+        for sec in StorySectionRepository(session).list_for_project(project_id)
+        if sec.row_id is not None
+    }
+
+
+def section_keys(session: Session, project_id: int) -> dict[int, str]:
+    """``row_id → ключ секции``: то, что нужно всем поверхностям.
+
+    Ключ, а не ``row_id``, — единственная форма секции, пригодная для
+    журнала: ``row_id`` ничего не значит для читателя, а
+    ``ON DELETE SET NULL`` гарантирует, что ссылка однажды повиснет.
+    """
+    return {row_id: sec.key for row_id, sec in sections_by_id(session, project_id).items()}
+
+
 def assign_section(
     session: Session,
     *,
