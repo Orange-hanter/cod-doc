@@ -306,3 +306,42 @@ def test_complete_post_unknown_task_404(overview_client) -> None:
     )
     assert r.status_code == 404
     assert "alert-error" in r.text  # via WebError handler
+
+
+# ── ADO-112: MASTER-превью не показывает YAML-frontmatter ────────────────
+
+
+def test_master_preview_hides_yaml_frontmatter(tmp_path: Path, migrate_db) -> None:
+    """MASTER.md читается с диска сырым — frontmatter обязан срезаться.
+
+    Тела документов из БД сюда не попадают: их frontmatter разбирает
+    import_service, и ведущий `---` там — законная горизонтальная черта.
+    """
+    repo = tmp_path / "fm-demo"
+    (repo / ".cod-doc").mkdir(parents=True)
+    migrate_db(repo / ".cod-doc" / "state.db")
+
+    entry = ProjectEntry(name="fmdemo", path=str(repo))
+    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg.add_project(entry)
+
+    import cod_doc.api.deps as deps
+
+    deps.set_config(cfg)
+    Project(entry).init()
+
+    (repo / "MASTER.md").write_text(
+        "---\ntype: master\nstatus: active\n---\n\n# Заголовок\n\nТело документа.\n",
+        encoding="utf-8",
+    )
+
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get("/p/fmdemo")
+
+    assert r.status_code == 200
+    assert "type: master" not in r.text, "YAML уехал в превью как проза"
+    assert "status: active" not in r.text
+    assert "Тело документа." in r.text
+    assert "Заголовок" in r.text

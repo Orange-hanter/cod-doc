@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
 from cod_doc.api.web.errors import truncate_for_cookie
-from cod_doc.api.web.markdown import render_markdown
+from cod_doc.api.web.markdown import render_markdown, strip_frontmatter
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import EntityKind, Priority, TaskType
 from cod_doc.services import ai_generate, trace_service
@@ -35,7 +35,11 @@ OVERVIEW_REVISIONS_LIMIT = 5
 def project_show(request: Request, slug: str) -> HTMLResponse:
     proj = get_project(slug)
     master = proj.read_master()
-    master_preview, master_truncated = _preview(master, MASTER_PREVIEW_LINES)
+    # ADO-112: MASTER.md читается с диска сырым, вместе с YAML-frontmatter.
+    # Срезать его надо ДО нарезки на строки, иначе длинный блок метаданных
+    # съест бюджет превью, а рендерер покажет `---` и YAML как прозу.
+    master_body = strip_frontmatter(master) if master else master
+    master_preview, master_truncated = _preview(master_body, MASTER_PREVIEW_LINES)
     master_html = render_markdown(master_preview or "") or None
 
     # WEB-014 — overview aggregator: ready-to-start tasks, plan-progress

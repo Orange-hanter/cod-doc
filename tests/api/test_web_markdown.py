@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from cod_doc.api.web.markdown import render_markdown
+from cod_doc.api.web.markdown import render_markdown, strip_frontmatter
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import (
@@ -436,3 +436,169 @@ def test_doc_show_does_not_smuggle_raw_html(md_doc_client) -> None:
     body_lower = r.text.lower()
     # Allow defer src= existing for htmx; just check there's no inline alert
     assert "alert(1)" not in body_lower or "&lt;script&gt;alert(1)" in body_lower
+
+
+# ── ADO-112: горизонтальная черта ────────────────────────────────────────
+
+
+def test_thematic_break_dashes_renders_hr() -> None:
+    assert render_markdown("до\n\n---\n\nпосле") == "<p>до</p>\n<hr />\n<p>после</p>"
+
+
+def test_thematic_break_asterisks_and_underscores_render_hr() -> None:
+    for src in ("***", "___", "*****", "-----"):
+        assert render_markdown(src) == "<hr />", src
+
+
+def test_thematic_break_with_spaces_between_markers() -> None:
+    """`- - -` и `* * *` — тоже черта; из-за этого ветка стоит выше буллита."""
+    for src in ("- - -", "* * *", "_ _ _"):
+        assert render_markdown(src) == "<hr />", src
+
+
+def test_two_dashes_is_not_a_thematic_break() -> None:
+    assert render_markdown("--") == "<p>--</p>"
+
+
+def test_dash_space_item_is_still_a_bullet() -> None:
+    """Регресс порядка веток: буллит не должен съедаться чертой и наоборот."""
+    assert render_markdown("- item") == "<ul><li>item</li></ul>"
+
+
+def test_thematic_break_flushes_open_paragraph() -> None:
+    out = render_markdown("абзац\n---\nдальше")
+    assert out == "<p>абзац</p>\n<hr />\n<p>дальше</p>"
+
+
+def test_dashes_under_text_is_hr_not_setext_heading() -> None:
+    """Setext намеренно не поддержан — см. docstring модуля."""
+    out = render_markdown("Заголовок\n---")
+    assert "<h2" not in out
+    assert "<hr />" in out
+
+
+def test_thematic_break_inside_code_fence_is_literal() -> None:
+    out = render_markdown("```\n---\n```")
+    assert "<hr />" not in out
+    assert "---" in out
+
+
+def test_table_delimiter_row_is_not_a_thematic_break() -> None:
+    out = render_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |")
+    assert "<hr />" not in out
+    assert '<table class="md-table">' in out
+
+
+# ── ADO-111: HTML-комментарии ────────────────────────────────────────────
+
+
+def test_html_comment_single_line_is_removed() -> None:
+    out = render_markdown("<!-- служебная заметка -->\n\nтекст")
+    assert out == "<p>текст</p>"
+    assert "заметка" not in out
+
+
+def test_inline_html_comment_keeps_surrounding_text() -> None:
+    out = render_markdown("до <!-- скрыто --> после")
+    assert "до" in out
+    assert "после" in out
+    assert "скрыто" not in out
+
+
+def test_two_comments_on_one_line_both_removed() -> None:
+    out = render_markdown("a <!-- x --> b <!-- y --> c")
+    assert "x" not in out
+    assert "y" not in out
+    assert "a" in out and "b" in out and "c" in out
+
+
+def test_multiline_html_comment_is_removed_entirely() -> None:
+    out = render_markdown("текст\n\n<!--\nмного\nстрок\n-->\n\nещё")
+    assert "много" not in out
+    assert "строк" not in out
+    assert "<p>текст</p>" in out
+    assert "<p>ещё</p>" in out
+
+
+def test_multiline_comment_does_not_split_paragraph() -> None:
+    """Пустой остаток строки выбрасывается, иначе blank-flush рвёт абзац."""
+    out = render_markdown("первая\n<!-- заметка -->\nвторая")
+    assert out.count("<p>") == 1, out
+
+
+def test_comment_containing_markdown_is_not_reinterpreted() -> None:
+    out = render_markdown("<!--\n# не заголовок\n- не список\n-->\n\nтело")
+    assert "<h1" not in out
+    assert "<ul>" not in out
+    assert out == "<p>тело</p>"
+
+
+def test_unterminated_comment_does_not_lose_content() -> None:
+    """Тот же принцип, что у незакрытой ограды: контент не теряем."""
+    out = render_markdown("видимое\n<!-- открыт и не закрыт\nхвост документа")
+    assert "видимое" in out
+    assert "хвост документа" in out
+    assert "&lt;!--" in out
+
+
+def test_comment_inside_code_fence_is_preserved() -> None:
+    out = render_markdown("```html\n<!-- пример -->\n```")
+    assert "пример" in out
+    assert "&lt;!--" in out
+
+
+# ── ADO-111: @REVIEW остаётся видимой ────────────────────────────────────
+
+
+def test_review_comment_becomes_a_callout() -> None:
+    out = render_markdown("<!-- @REVIEW: подтвердить формулировку -->\n\nтело")
+    assert '<aside class="md-review">' in out
+    assert "подтвердить формулировку" in out
+    assert "&lt;!--" not in out, "литерал комментария не должен попадать в прозу"
+
+
+def test_review_comment_is_not_paragraph_prose() -> None:
+    out = render_markdown("<!-- @REVIEW: заметка -->")
+    assert "<p>" not in out
+
+
+def test_review_render_is_idempotent() -> None:
+    """Повторный GET не плодит дубликатов: рендер чистая функция от тела."""
+    src = "<!-- @REVIEW: один раз -->\n\nтело"
+    assert render_markdown(src) == render_markdown(src)
+    assert render_markdown(src).count("md-review") == 1
+
+
+def test_multiline_review_comment_is_collapsed_into_one_callout() -> None:
+    out = render_markdown("<!--\n@REVIEW: первая строка\nвторая строка\n-->")
+    assert out.count('class="md-review"') == 1
+    assert "первая строка вторая строка" in out
+
+
+def test_plain_comment_next_to_review_is_still_swallowed() -> None:
+    out = render_markdown("<!-- тихо -->\n<!-- @REVIEW: громко -->")
+    assert "тихо" not in out
+    assert "громко" in out
+
+
+# ── ADO-112: frontmatter у вызывающего, не в рендерере ───────────────────
+
+
+def test_strip_frontmatter_removes_leading_block() -> None:
+    assert strip_frontmatter("---\ntype: capability\n---\n# T\n") == "# T\n"
+
+
+def test_strip_frontmatter_leaves_body_without_frontmatter_alone() -> None:
+    src = "# T\n\nтело\n"
+    assert strip_frontmatter(src) == src
+
+
+def test_strip_frontmatter_ignores_hr_mid_document() -> None:
+    src = "# T\n\n---\n\nтело\n"
+    assert strip_frontmatter(src) == src
+
+
+def test_renderer_itself_does_not_touch_frontmatter() -> None:
+    """В теле документа из БД ведущий `---` — законная черта, не метаданные."""
+    out = render_markdown("---\n\nтело")
+    assert "<hr />" in out
