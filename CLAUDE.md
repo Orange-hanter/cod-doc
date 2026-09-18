@@ -104,13 +104,14 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - **Четыре равные поверхности.** Новая функциональность в `services/` обязана
   появиться и в CLI, и в MCP — агент и человек должны иметь тождественный
-  интерфейс. Прямых SQL-запросов из presentation нет. Для мутаций задач и
-  историй это правило машинно проверяется (ADO-067, ADO-159):
-  `tests/services/test_task_mutation_surface_parity.py` находит write-функции
-  `task_service` и пакета `story_service/` по AST и требует вызова из
-  `cod_doc/mcp/` и `cod_doc/cli/`. Ловится отсутствие функции на поверхности,
-  но **не** расхождение сигнатур: одноимённый тул с другим набором
-  параметров тест пройдёт.
+  интерфейс. Прямых SQL-запросов из presentation нет. Для мутаций задач,
+  историй и документов это правило машинно проверяется (ADO-067, ADO-159,
+  STO-017): сканер `tests/services/_surface_parity.py` находит write-функции
+  по AST и требует вызова из `cod_doc/mcp/` и `cod_doc/cli/`; его зовут
+  `test_task_mutation_surface_parity.py` (`task_service`, `story_service/`) и
+  `test_doc_mutation_surface_parity.py` (`doc_service`). Ловится отсутствие
+  функции на поверхности, но **не** расхождение сигнатур: одноимённый тул с
+  другим набором параметров тест пройдёт.
 - **Резолв БД** (`infra/db.py::resolve_db_url`): explicit override → env
   `COD_DOC_DB_URL` → embedded `<project_root>/.cod-doc/state.db`. Реестр
   проектов — `~/.cod-doc/config.yaml` (переопределяется `COD_DOC_HOME`),
@@ -188,6 +189,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
+| `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017); незакрытый долг — `update_status` и `delete`, каждый с обоснованием |
 | `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
 | `cli/test_zsh_completion_queries.py` | SQL дополнения выполняется на свежей схеме (ловит переименование колонки) |
 | `cli/test_zsh_completion_runtime.py` | prelude в настоящем zsh: WAL-БД без `-shm`, Postgres-проект, нет файла — молчат, а не шумят |
