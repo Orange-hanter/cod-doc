@@ -119,6 +119,22 @@ def sections_by_id(session: Session, project_id: int) -> dict[int, StorySection]
     }
 
 
+def get_section_by_id(session: Session, row_id: int) -> StorySection | None:
+    """Одна секция по ``row_id`` — одной строкой, без чтения всего проекта.
+
+    ADO-159. ``story show`` показывает секцию ровно одной истории, а до этого
+    ради неё выгружались все секции проекта: сперва линейным перебором с
+    ``break``, потом — словарём ``sections_by_id``. Число прочитанных строк
+    от замены перебора на словарь не изменилось, и второй пункт acceptance
+    так и остался невыполненным.
+
+    ``sections_by_id`` остаётся для тех, кому секции нужны пачкой (список
+    историй, MCP-выдача): там один запрос на всю страницу дешевле, чем
+    точечный на каждую строку.
+    """
+    return StorySectionRepository(session).get(row_id)
+
+
 def section_keys(session: Session, project_id: int) -> dict[int, str]:
     """``row_id → ключ секции``: то, что нужно всем поверхностям.
 
