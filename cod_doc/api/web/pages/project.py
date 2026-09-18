@@ -16,6 +16,7 @@ from cod_doc.api.web.markdown import render_markdown, strip_frontmatter
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import EntityKind, Priority, TaskType
 from cod_doc.services import ai_generate, trace_service
+from cod_doc.services import doc_service as docs
 from cod_doc.services import plan_service as plans
 from cod_doc.services import project_health_service as health_svc
 from cod_doc.services import project_service as projects
@@ -45,6 +46,10 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
     # WEB-014 — overview aggregator: ready-to-start tasks, plan-progress
     # mini-bars, recent revisions. Each block is independent and is left
     # empty (not crashed) if the DB project isn't initialised yet.
+    # ADO-109: ключ документа MASTER в БД, если он импортирован. Ссылки
+    # «Открыть целиком» / «View raw» строятся по нему; None — ссылок нет,
+    # вместо 404 показываем честное «не импортирован».
+    master_doc_key: str | None = None
     ready_tasks: list[dict[str, Any]] = []
     plan_rows: list[dict[str, Any]] = []
     recent_revs: list[dict[str, Any]] = []
@@ -67,6 +72,10 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
     with try_open_project_db(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
             db_available = True
+            # ADO-109: ссылка на MASTER строится по doc_key из БД, а не по
+            # имени файла на диске — страница документа ищет именно doc_key.
+            master_doc = docs.get_by_path(session, project_db_id, proj.entry.master_md)
+            master_doc_key = master_doc.doc_key if master_doc else None
             project_plans = plans.list_for_project(session, project_db_id)
             # COD-075: aggregate progress for every plan in one SQL — was N+1.
             progress_by_plan = plans.recalc_for_project(session, project_db_id)
@@ -170,6 +179,7 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
             "master_truncated": master_truncated,
             "db_available": db_available,
             "ready_tasks": ready_tasks,
+            "master_doc_key": master_doc_key,
             "plan_rows": plan_rows,
             "recent_revs": recent_revs,
             "drift_health": drift_health,
