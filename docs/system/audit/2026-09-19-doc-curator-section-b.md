@@ -43,7 +43,7 @@ after-merge (см. §4).
 |---|--------|----|-------------|------------|
 | 1 | CUR-007 | [#50](https://github.com/Orange-hanter/cod-doc/pull/50) | `in_progress` | MCP-тул `ctx_search(project, query, scope?, limit?)` — тонкая обёртка `search_service.search`, lazy reindex пустого FTS-индекса (`ensure_index`) |
 | 2 | CUR-008 | [#62](https://github.com/Orange-hanter/cod-doc/pull/62) | `in_progress` | Своп `AGENT_TOOLS` на curator-набор; `agent_capabilities()` отдаёт `role: "doc-curator"`, `forbidden`, `next_action_hint` → `ctx_drift`/`ctx_search`; инверсия SYM-006D тестов |
-| 3 | CUR-009 | этот PR (`worktree-cur-009-docs-b` → `worktree-cur-008-agent-swap`) | `in_progress` | Документация/скилл/RFC догоняют CUR-007/008: AGENTS.md, CLAUDE.md, `docs/mcp-integration.md`, `deploy/launchd/README.md`, `MASTER.md` (×2), `cod_doc/skills/orchestrator/SKILL.md`, `proposals/25-doc-curator-agent.md`, `proposals/README.md`, этот аудит-отчёт |
+| 3 | CUR-009 | [#64](https://github.com/Orange-hanter/cod-doc/pull/64) (`worktree-cur-009-docs-b` → `worktree-cur-008-agent-swap`) | `in_progress` | Документация/скилл/RFC догоняют CUR-007/008: AGENTS.md, CLAUDE.md, `docs/mcp-integration.md`, `deploy/launchd/README.md`, `MASTER.md` (×2), `cod_doc/skills/orchestrator/SKILL.md`, `proposals/25-doc-curator-agent.md`, `proposals/README.md`, этот аудит-отчёт |
 
 ## 3. Findings
 
