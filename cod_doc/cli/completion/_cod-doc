@@ -2179,6 +2179,9 @@ _cod-doc() {
         (create)        _cod_doc_story_create && ret=0 ;;
         (link)          _cod_doc_story_link && ret=0 ;;
         (list)          _cod_doc_story_list && ret=0 ;;
+        (section)       _cod_doc_story_section && ret=0 ;;
+        (set-criterion) _cod_doc_story_set_criterion && ret=0 ;;
+        (set-section)   _cod_doc_story_set_section && ret=0 ;;
         (show)          _cod_doc_story_show && ret=0 ;;
         (status)        _cod_doc_story_status && ret=0 ;;
         (*)             _default && ret=0 ;;
@@ -2196,6 +2199,9 @@ _cod-doc() {
     'create:Create a new user story.'
     'link:Link a story to a task, document, or module.'
     'list:List all user stories for a project.'
+    'section:Manage story sections (product modules).'
+    'set-criterion:Mark acceptance criterion POSITION of STORY_ID as met (or --not-met…'
+    'set-section:Assign STORY_ID to section KEY (or --clear to detach).'
     'show:Show details of a single story, including acceptance criteria and l…'
     'status:Update a story'\''s status.'
   )
@@ -2239,6 +2245,7 @@ _cod-doc() {
     '(--priority)--priority=:priority:(critical high medium low)' \
     '(--status)--status=:status:(draft accepted delivered deferred)' \
     '*'{-a+,--acceptance=}'[Acceptance criterion (repeatable; -a '\''crit 1'\'' -a '\''crit 2'\'')]:acceptance-criteria' \
+    '(--section)--section=[Story section key (slug)]:section-key' \
     '(--author)--author=:author' \
     '(--reason)--reason=:reason' \
     '(- *)--help[Show this message and exit.]' && ret=0
@@ -2268,6 +2275,91 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story_section] )) || _cod_doc_story_section() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_story_section_commands' \
+    '*:: :->cod_doc_story_section_cmd' && ret=0
+
+  case $state in
+    (cod_doc_story_section_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-story-section-$words[1]:"
+      case $words[1] in
+        (add)  _cod_doc_story_section_add && ret=0 ;;
+        (list) _cod_doc_story_section_list && ret=0 ;;
+        (*)    _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_story_section_commands] )) || _cod_doc_story_section_commands() {
+  local -a cmds
+  cmds=(
+    'add:Create a story section. KEY is a slug; lowercase, digits, dashes.'
+    'list:List story sections with their story counts.'
+  )
+  _describe -t cod-doc-story-section-commands 'cod-doc story section command' cmds
+}
+
+(( $+functions[_cod_doc_story_section_add] )) || _cod_doc_story_section_add() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--position)--position=[Order; defaults to end of list]:position' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:key' \
+    '2:title' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story_section_list] )) || _cod_doc_story_section_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story_set_criterion] )) || _cod_doc_story_set_criterion() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--met --not-met)'{--met,--not-met}'[Mark met or unmet]' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:story-id:_cod_doc_stories' \
+    '2:position' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story_set_section] )) || _cod_doc_story_set_section() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--clear)--clear[Detach the story from its section]' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:story-id:_cod_doc_stories' \
+    '2::key' && ret=0
   return ret
 }
 
