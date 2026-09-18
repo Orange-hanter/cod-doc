@@ -788,6 +788,8 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--scope)--scope=[Ограничить поиск одним kind'\''ом]:scope:(task doc story adr finding)' \
+    '(--limit)--limit=[Лимит хитов на kind]:limit' \
     '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' \
     '1:query' && ret=0
@@ -2186,7 +2188,7 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
-    '(--scope)--scope=[Restrict search to one kind]:scope:(task doc story adr)' \
+    '(--scope)--scope=[Restrict search to one kind]:scope:(task doc story adr finding)' \
     '(--limit)--limit=:limit' \
     '(--reindex)--reindex[Rebuild the FTS index before searching.]' \
     '(- *)--help[Show this message and exit.]' \

@@ -116,6 +116,69 @@ def test_ctx_search_json_valid(tmp_path: Path, isolated_cod_doc_home: Path) -> N
     assert any(data["by_kind"][kind] for kind in data["by_kind"])
 
 
+def test_ctx_search_scope_and_limit(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    """CUR-011: ``ctx search --scope --limit`` reach ``search_service.search``.
+
+    Four tasks match the term, one doc does not; ``--scope task`` excludes
+    the doc kind entirely and ``--limit 2`` caps the task hits at 2.
+    """
+    from datetime import UTC, datetime
+
+    from cod_doc.config import Config
+    from cod_doc.domain.entities import Priority, TaskType
+    from cod_doc.infra.db import db_for_entry, transactional
+    from cod_doc.infra.models import PlanModel, PlanSectionModel
+    from cod_doc.infra.repositories import ProjectRepository
+    from cod_doc.services import search_service, task_service
+
+    _init_project(tmp_path, "sc")
+
+    entry = Config.load().get_project("sc")
+    assert entry is not None
+    factory, engine = db_for_entry(entry)
+    try:
+        with transactional(factory) as session:
+            project = ProjectRepository(session).get_by_slug("sc")
+            assert project is not None and project.row_id is not None
+            pid = project.row_id
+            now = datetime.now(UTC)
+            plan = PlanModel(project_id=pid, scope="sc-plan", created=now, last_updated=now)
+            session.add(plan)
+            session.flush()
+            section = PlanSectionModel(
+                plan_id=plan.row_id, letter="A", title="A", slug="A", position=0
+            )
+            session.add(section)
+            session.flush()
+            for i in range(4):
+                task_service.create(
+                    session,
+                    project_id=pid,
+                    plan_id=plan.row_id,
+                    section_id=section.row_id,
+                    title=f"widget task {i}",
+                    type=TaskType.FEATURE,
+                    priority=Priority.LOW,
+                    id_prefix="SCP",
+                    author="test",
+                )
+        with transactional(factory) as session:
+            search_service.reindex_all(session, project_id=pid)
+    finally:
+        engine.dispose()
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["ctx", "search", "-p", "sc", "widget", "--scope", "task", "--limit", "2", "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert len(data["by_kind"]["task"]) == 2
+    assert data["total"] == 2
+    assert data["by_kind"]["doc"] == []
+
+
 def test_ctx_dry_read_writes_nothing(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
     root = _init_project(tmp_path)
     _import_corpus(root)

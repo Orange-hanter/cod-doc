@@ -5,7 +5,9 @@ Public API:
 - ``ensure_index(session, project_id)`` — RFC 25 §3.2 (CUR-007): reindex
   only if the index is still empty (used by ``ctx_search`` for lazy bootstrap).
 - ``search(session, project_id, query, *, scope=None, limit=20)`` —
-  ranked hits (bm25) grouped by kind.
+  ranked hits (bm25) grouped by kind. ``limit`` is applied **per kind**
+  (CUR-011), so a doc-heavy corpus cannot crowd task/adr/... hits out of
+  the result entirely.
 
 Index entries:
 - ``kind='task'``     ref=task_id (e.g. ADR-001)  title=task.title         body=description+acceptance
@@ -39,6 +41,21 @@ if TYPE_CHECKING:
 
 
 _VALID_SCOPES = frozenset({"task", "doc", "story", "adr", "finding"})
+
+# bm25() weight positions are 1:1 with the columns declared in
+# ``db_search_idx`` (migration 20260515_0023_fts5_index.py): kind, ref,
+# project_id UNINDEXED, title, body. SQLite still assigns UNINDEXED columns a
+# slot in the bm25() argument list even though they hold no tokens — passing
+# fewer than 5 weights silently shifts title/body onto the wrong columns
+# (e.g. ``bm25(db_search_idx, 10.0, 1.0)`` would weight *kind* and *ref*, not
+# title/body). CUR-011: title matches rank above body matches.
+_BM25_WEIGHT_KIND = 1.0
+_BM25_WEIGHT_REF = 1.0
+_BM25_WEIGHT_PROJECT_ID = 1.0  # UNINDEXED — no tokens, weight is a no-op
+_BM25_WEIGHT_TITLE = 10.0
+_BM25_WEIGHT_BODY = 1.0
+
+_SNIPPET_COL_BUDGET = 12
 
 
 def _wipe(session: Session, project_id: int) -> None:
@@ -268,6 +285,19 @@ def search(
 ) -> dict[str, Any]:
     """Return ranked hits grouped by ``kind``.
 
+    Ranking is ``bm25(db_search_idx)`` — SQLite's convention is that a
+    *smaller* (more negative) score means a *better* match, so hits are
+    ordered ascending by score within each kind. Title matches are weighted
+    ``_BM25_WEIGHT_TITLE`` (10x) over body matches, so a title hit outranks
+    a body-only hit on the same query.
+
+    ``limit`` caps hits **per kind** (CUR-011), not globally: a doc-heavy
+    corpus can no longer crowd every task/adr/... hit out of the result —
+    each kind gets its own top-``limit`` window via
+    ``ROW_NUMBER() OVER (PARTITION BY kind ORDER BY score)``. ``total`` is
+    the sum of hits actually returned across kinds (i.e. after the per-kind
+    cap), not the count of all underlying matches.
+
     Shape::
 
         {
@@ -277,7 +307,8 @@ def search(
             "task": [{ref, title, snippet, score}, ...],
             "doc":  [...],
             "story": [...],
-            "adr":  [...]
+            "adr":  [...],
+            "finding": [...]
           }
         }
     """
@@ -291,18 +322,40 @@ def search(
     # Column index -1 lets FTS5 pick the column with the strongest match
     # — so a title-only hit still shows a useful snippet, and body matches
     # surface naturally too.
-    sql = """
+    scored_sql = """
         SELECT kind, ref, title,
-               snippet(db_search_idx, -1, '<mark>', '</mark>', '…', 12) AS snippet,
-               bm25(db_search_idx) AS score
+               snippet(db_search_idx, -1, '<mark>', '</mark>', '…', :snip_budget) AS snippet,
+               bm25(db_search_idx, :w_kind, :w_ref, :w_project, :w_title, :w_body) AS score
         FROM db_search_idx
         WHERE project_id = :pid AND db_search_idx MATCH :q
     """
-    params: dict[str, Any] = {"pid": project_id, "q": fts_query, "lim": limit}
+    params: dict[str, Any] = {
+        "pid": project_id,
+        "q": fts_query,
+        "lim": limit,
+        "snip_budget": _SNIPPET_COL_BUDGET,
+        "w_kind": _BM25_WEIGHT_KIND,
+        "w_ref": _BM25_WEIGHT_REF,
+        "w_project": _BM25_WEIGHT_PROJECT_ID,
+        "w_title": _BM25_WEIGHT_TITLE,
+        "w_body": _BM25_WEIGHT_BODY,
+    }
     if scope is not None:
-        sql += " AND kind = :scope"
+        scored_sql += " AND kind = :scope"
         params["scope"] = scope
-    sql += " ORDER BY score LIMIT :lim"
+
+    # Per-kind LIMIT: rank within each kind via ROW_NUMBER() before capping,
+    # so e.g. limit=5 yields up to 5 task hits *and* up to 5 doc hits rather
+    # than one shared LIMIT that a doc-heavy match set exhausts alone.
+    sql = f"""
+        WITH scored AS ({scored_sql}),
+        ranked AS (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY kind ORDER BY score) AS rn
+            FROM scored
+        )
+        SELECT kind, ref, title, snippet, score FROM ranked WHERE rn <= :lim
+        ORDER BY kind, score
+    """
 
     rows = session.execute(text(sql), params).all()
     by_kind: dict[str, list[dict[str, Any]]] = {k: [] for k in sorted(_VALID_SCOPES)}
@@ -315,4 +368,5 @@ def search(
                 "score": round(float(r.score), 4),
             }
         )
-    return {"query": query, "total": len(rows), "by_kind": by_kind}
+    total = sum(len(hits) for hits in by_kind.values())
+    return {"query": query, "total": total, "by_kind": by_kind}
