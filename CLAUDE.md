@@ -119,10 +119,15 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - **MCP: один файл = одна семья тулов.** `mcp/tools/*_tools.py` экспортируют
   `register(mcp)`; `mcp/server.py` вызывает их в цикле, затем `apply_profile()`
   **фильтрует уже зарегистрированный** каталог (`mcp/profiles.py`). Профиль
-  `agent` — **дефолтный**, 6 тулов. Исторически task-centric (`agent_pick`…).
-  RFC 25: роль оркестратора — куратор документации и поиска; `agent_pick`
-  не использовать. Своп allowlist — план `doc-curator-2026-09`. Дальше
-  `minimal` 21 / `standard` 129 / `full` 133.
+  `agent` — **дефолтный**, 6 curator-тулов (RFC 25 §3.2, CUR-007/008):
+  `agent_capabilities`, `ctx_search`, `ctx_docs`, `ctx_drift`, `context_get`,
+  `agent_report`. Роль оркестратора — куратор документации и поиска, не
+  исполнитель задач; `agent_capabilities()` отдаёт `role: "doc-curator"` и
+  `forbidden: [agent_pick, task_checkout, task_complete]`. Старые
+  task-centric тулы (`agent_pick`, `agent_get`, `agent_complete`,
+  `agent_release`) остались зарегистрированы, но видны только на
+  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 129
+  / `full` 133.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   ПЯТИ местах: `mcp/profiles.py` (docstring), `server.py --profile`,
   `AGENTS.md` §5.9, этот файл и `docs/mcp-integration.md` (строка семейства
@@ -223,7 +228,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
   субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
   (профиль `standard`, 129 тулов `task_*`/`doc_*`/`plan_*`/…) и
-  `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6). Управление —
+  `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6 curator-тулов —
+  `ctx_*`/`context_get`/`agent_capabilities`/`agent_report`). Управление —
   `deploy/launchd/cod-doc-mcp-daemon.sh`. Предпочитай тулы ad-hoc
   Python-скриптам.
   **`project` обязателен в каждом DB-туле:** демон общий для всех харнессов,

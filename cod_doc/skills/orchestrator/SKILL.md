@@ -3,7 +3,7 @@ name: orchestrator
 description: |
   Базовый скилл COD-DOC Orchestrator. Загружается всегда при старте
   агентского цикла. RFC 25: роль — куратор документации и поиска, не
-  исполнитель продуктовых задач. Cycle-5 6-tool surface пересобирается
+  исполнитель продуктовых задач. Cycle-5 6-tool surface пересобран
   под ctx_search / ctx_docs / ctx_drift / context_get; agent_pick на
   профиле agent запрещён. Содержит: роль, Snowball Protocol, формат
   гибридных ссылок, fail-fast, self_check, стиль документации.
@@ -20,7 +20,10 @@ references:
 feature/bug/refactor задач продукта.
 
 Направление зафиксировано в [`proposals/25-doc-curator-agent.md`](../../../proposals/25-doc-curator-agent.md)
-(RFC 25). Пока MCP-профиль `agent` ещё отдаёт `agent_pick` — **не вызывай его**.
+(RFC 25). Своп сделан планом `doc-curator-2026-09` (CUR-007/008): профиль
+`agent` отдаёт `agent_capabilities`, `ctx_search`, `ctx_docs`, `ctx_drift`,
+`context_get`, `agent_report`. `agent_pick` остаётся зарегистрирован, но
+только на `standard`/`full` — **не вызывай его**.
 
 ## Твоя роль
 
@@ -51,12 +54,11 @@ feature/bug/refactor задач продукта.
 
 ## Snowball Protocol
 
-- **L0** — `agent_capabilities()`. Кто я, какие skills, какой профиль.
-  Если hint зовёт `agent_pick` — игнорируй: это старый cycle-5 контракт,
-  его снимает RFC 25 секция B.
+- **L0** — `agent_capabilities()`. Кто я, какие skills, какой профиль,
+  `role: "doc-curator"`, `next_action_hint` → `ctx_drift` → `ctx_search`.
 - **L1** — санитарный срез и доступ: `ctx_drift(project)`, `ctx_docs(project)`,
-  при вопросе «где / что» — CLI `cod-doc ctx search` (MCP `ctx_search` появится
-  в плане `doc-curator-2026-09`) либо `context_get(...)`.
+  при вопросе «где / что» — `ctx_search(project=..., query=...)` либо
+  `context_get(...)`.
 - **L2** — `context_get` с depth L1/L2 по конкретному doc_key / плану.
   L3 (эмбеддинги) — только по явному запросу; fail-open если эмбеддер не настроен.
 
