@@ -70,14 +70,22 @@
           <span class="mono">{{ t.task_id }}</span> · {{ t.title }}
         </a>
         <span class="prio prio-{{ t.priority }}">{{ t.priority }}</span>
+        {# ADO-152: у кнопки был только `title="Mark done"` — по пиктограмме
+           невозможно понять, что произойдёт, а скринридер читал «галочка».
+           Подпись видна без наведения; действие названо честно: это закрытие
+           задачи, а не старт работы. Взять задачу в работу можно только через
+           checkout (ADO-039 / SCN-069), и отдельной кнопки для этого на
+           overview нет — см. описание задачи. #}
         <form class="ready-complete"
               method="post"
               action="/p/{{ project.name }}/tasks/{{ t.task_id }}/complete">
           <button type="submit"
+                  class="btn btn-xs"
                   hx-post="/p/{{ project.name }}/tasks/{{ t.task_id }}/complete"
                   hx-target="#task-{{ t.task_id }}"
                   hx-swap="outerHTML"
-                  title="Mark done">✓</button>
+                  aria-label="Закрыть задачу {{ t.task_id }}"
+                  title="Отметить {{ t.task_id }} выполненной">✓ Закрыть</button>
         </form>
       </li>
       {% endfor %}
@@ -100,7 +108,7 @@
           <td class="mono">{{ p.scope }}</td>
           <td class="num">{{ p.done }}</td>
           <td class="num">{{ p.total }}</td>
-          <td>{{ p.status }}</td>
+          <td><span class="badge badge-{{ p.status }}">{{ p.status }}</span></td>
           <td>
             <div class="progress-bar" title="{{ p.percent }}%">
               <span class="progress-fill" style="width: {{ p.percent }}%"></span>
@@ -181,9 +189,16 @@
 {% endif %}
 
 <section class="master-preview">
+  {# ADO-109: раньше href строился из `project.master_md` — это имя файла на
+     диске, а страница документа ищет по doc_key, и обе ссылки давали 404.
+     Нет документа в БД — ссылок нет вовсе, вместо битых. #}
   <header class="master-header">
     <h2>{{ project.master_md }}</h2>
-    <a class="master-raw-link muted" href="/p/{{ project.name }}/docs/{{ project.master_md }}?raw=1">View raw</a>
+    {% if master_doc_key %}
+      <a class="master-raw-link muted" href="/p/{{ project.name }}/docs/{{ master_doc_key }}?raw=1">View raw</a>
+    {% else %}
+      <span class="master-raw-link muted-tiny" title="Файл есть на диске, но в БД его нет — выполните doc import">не импортирован</span>
+    {% endif %}
   </header>
   {% if not project.master_exists %}
     <p class="warn">{{ project.master_md }} ещё не создан.</p>
@@ -194,7 +209,13 @@
       {{ master_html | safe }}
     </article>
     {% if master_truncated %}
-      <p class="muted">Показаны первые строки. <a href="/p/{{ project.name }}/docs/{{ project.master_md }}">Открыть целиком</a>.</p>
+      <p class="muted">Показаны первые строки.
+        {% if master_doc_key %}
+          <a href="/p/{{ project.name }}/docs/{{ master_doc_key }}">Открыть целиком</a>.
+        {% else %}
+          Полный текст — в файле <code>{{ project.master_md }}</code>; в БД документа нет.
+        {% endif %}
+      </p>
     {% endif %}
   {% endif %}
 </section>

@@ -1105,6 +1105,9 @@
 .badge-blocked     { background: var(--purple-soft-bg); color: var(--purple); border-color: var(--purple); }
 .badge-warning     { background: var(--warning-soft-bg); color: var(--warning-soft-fg); border-color: var(--warning-border); }
 .badge-muted       { background: var(--bg-alt); color: var(--muted); }
+/* ADO-107: у плана без задач статус `empty` (DerivedStatus.EMPTY) — единственное
+   значение прогресса, которому не было бейджа. Новой палитры не заводим. */
+.badge-empty       { background: var(--bg-alt); color: var(--muted); border-color: var(--border-soft); }
 
 .prio { font-size: 12px; font-weight: 600; }
 .prio-critical { color: var(--danger); }

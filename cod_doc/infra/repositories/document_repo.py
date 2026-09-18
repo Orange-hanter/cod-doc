@@ -79,6 +79,20 @@ class DocumentRepository(BaseRepository[Document, DocumentModel]):
         model = self.session.execute(stmt).scalar_one_or_none()
         return self._to_domain(model) if model else None
 
+    def get_by_path(self, project_id: int, path: str) -> Document | None:
+        """Найти документ по пути проекции (`path`), а не по `doc_key`.
+
+        ADO-109: overview знает про MASTER только имя файла на диске
+        (`project.master_md`), а страница документа ищет по `doc_key` —
+        ссылка «Открыть целиком» вела в 404.
+        """
+        stmt = select(DocumentModel).where(
+            DocumentModel.project_id == project_id,
+            DocumentModel.path == path,
+        )
+        model = self.session.execute(stmt).scalars().first()
+        return self._to_domain(model) if model else None
+
     def list_for_project(self, project_id: int) -> list[Document]:
         stmt = (
             select(DocumentModel)
