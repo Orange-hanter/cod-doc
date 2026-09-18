@@ -35,7 +35,7 @@
   </div>
   <div class="card">
     <div class="card-label">Last run</div>
-    <div class="card-value muted">{{ stats.last_run or "—" }}</div>
+    <div class="card-value muted" title="{{ stats.last_run | ts_tooltip }}">{{ stats.last_run | relative_time }}</div>
   </div>
   <div class="card card-health card-health-{{ drift_health.level }}">
     <div class="card-label">Doc drift</div>
@@ -124,7 +124,7 @@
         <span class="mono">{{ r.entity_kind }}#{{ r.entity_id }}</span>
         <span class="muted">— {{ r.author }}</span>
         {% if r.reason %}<span class="muted">: {{ r.reason }}</span>{% endif %}
-        <span class="muted ts">{{ r.at }}</span>
+        <span class="muted ts" title="{{ r.at | ts_tooltip }}">{{ r.at | relative_time }}</span>
       </li>
       {% endfor %}
     </ul>

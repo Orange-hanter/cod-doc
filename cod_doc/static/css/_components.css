@@ -1669,6 +1669,26 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.7; }
 /* ── Misc ─────────────────────────────────────────────────────────────── */
 hr { border: none; border-top: 1px solid var(--border); margin: var(--space-4) 0; }
 
+/* ADO-111: заметка ревьюера из `<!-- @REVIEW: … -->`. Видна как выноска,
+   а не как абзац прозы, и не теряется при рендере. */
+.md-review {
+  display: block;
+  margin: var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft-bg);
+  color: var(--warning-soft-fg);
+  font-size: 13px;
+}
+.md-review strong {
+  margin-right: var(--space-2);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
 details > summary { cursor: pointer; }
 
 /* AI scan form */

@@ -182,7 +182,7 @@ def stories_list(
                 "doc_key": d.doc_key,
                 "type": d.type.value,
                 "status": d.status.value,
-                "updated_at": d.last_updated.isoformat() if d.last_updated else "",
+                "updated_at": d.last_updated,
                 "is_fresh": is_fresh,
             }
         )
@@ -387,7 +387,7 @@ def stories_list(
             "context_docs_fresh": context_docs_fresh,
             "context_types": context_types,
             "coverage": coverage,
-            "last_gen_at": last_gen.isoformat() if last_gen else "",
+            "last_gen_at": last_gen,
         },
     )
 

@@ -2555,6 +2555,7 @@ _cod-doc() {
         (complete)   _cod_doc_task_complete && ret=0 ;;
         (create)     _cod_doc_task_create && ret=0 ;;
         (list)       _cod_doc_task_list && ret=0 ;;
+        (move)       _cod_doc_task_move && ret=0 ;;
         (remove-dep) _cod_doc_task_remove_dep && ret=0 ;;
         (show)       _cod_doc_task_show && ret=0 ;;
         (status)     _cod_doc_task_status && ret=0 ;;
@@ -2572,6 +2573,7 @@ _cod-doc() {
     'complete:Complete a task (validates blocking deps are done first).'
     'create:Create a new task in a plan section.'
     'list:List tasks for a project.'
+    'move:Переложить задачи в другую секцию того же плана (группировка бэклог…'
     'remove-dep:Remove a dependency edge (TASK_ID is no longer blocked by BLOCKER_I…'
     'show:Show details of a single task.'
     'status:Update task status (does not validate deps; use '\''complete'\'' for done…'
@@ -2624,6 +2626,23 @@ _cod-doc() {
     '(-s --status)'{-s+,--status=}'[Filter by status. Легаси-написание и каноническое — один бакет; `-s…]:filter-status:(backlog todo in_progress in_review blocked cancelled pending in-progress done)' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_move] )) || _cod_doc_task_move() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--plan)--plan=[Scope плана (напр. adoption-2026-08)]:plan-scope:_cod_doc_plans' \
+    '(--section)--section=[Буква целевой секции]:section-letter:_cod_doc_plan_sections' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--dry-run)--dry-run[Показать, что будет перенесено, и откатить]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '*:task-ids' && ret=0
   return ret
 }
 

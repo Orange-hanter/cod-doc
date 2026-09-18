@@ -153,7 +153,7 @@
         {% endif %}
         <span class="last-run">
           {% if s.last_run %}
-            {{ s.last_run | replace("T", " ") | truncate(16, True, "") }}
+            {{ s.last_run | short_datetime }}
           {% else %}
             never run
           {% endif %}

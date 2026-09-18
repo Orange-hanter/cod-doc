@@ -34,7 +34,7 @@ def commits_index(
             "short_sha": r.short_sha,
             "message": r.message,
             "author": r.author,
-            "ts": r.ts.isoformat() if r.ts else None,
+            "ts": r.ts,
         }
         for r in rows
     ]
