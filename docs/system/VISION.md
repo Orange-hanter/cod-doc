@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-15
 ---
 
 # COD-DOC — Vision
@@ -31,7 +31,9 @@ last_updated: 2026-04-19
 - Нормализованная БД (Documents, Tasks, Links, Revisions, Stories, Dependencies, Tags).
 - Markdown — только проекция: генерируется из БД при `export`, парсится обратно при `import`.
 - Единый язык запросов к состоянию проекта: через CLI, REST-API, MCP-тулы.
-- Агент на LLM, который использует MCP для развития документации, создания задач, поддержания графа знаний.
+- Агент на LLM, который использует MCP для развития документации,
+  поддержания графа знаний и оптимизации поиска/доступности контекста.
+  Он **не** исполнитель продуктовых задач (RFC 25).
 
 ## 3. Базовые обещания системы
 
@@ -70,18 +72,26 @@ cod-doc plan next --count 5
 # возвращает readyTasks без terminal-подтверждения; формат идентичен Restate
 ```
 
-### 4.3 Агент (LLM через MCP)
+### 4.3 Агент-куратор (LLM через MCP)
+
+Дефолтный агент не берёт feature-задачи. Цикл — санитарный срез, поиск,
+пакет контекста, правка документации (RFC 25):
 
 ```text
-→ cod_doc.context.get(module="M1-auth", depth="L1")
-← { master, spec, task_plan_progress, open_questions, related_stories }
+→ ctx_drift(project="my-app")
+← { edited_in_place: [...], missing: [], stale_export: [...] }
 
-→ cod_doc.task.update_status(id="AUTH-025", status="in-progress")
-← ok, revision=01HQX5Z9F0K8RNG6CB7VHQK4XX
+→ ctx_search(project="my-app", query="почему SQLite, а не Postgres")
+← { total, by_kind: { adr: [ADR-010], doc: [DATA_MODEL.md], ... } }
 
-→ cod_doc.doc.propose_edit(doc="M1-auth/overview.md", patch=...)
-← pending_approval=01HQX60E1A2P7K3MMSV0NRD9YA
+→ context_get(project="my-app", target_kind="document", target_id="docs/system/DATA_MODEL.md", depth="L1")
+← { core, related, meta.tokens_used }
+
+→ doc import / hash update  (проекция → БД)
+← in_sync
 ```
+
+Исполнение кода продукта — человек или coding-агент на профиле `standard`.
 
 ### 4.4 Мигратор с Restate
 

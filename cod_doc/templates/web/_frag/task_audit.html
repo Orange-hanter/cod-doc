@@ -75,7 +75,7 @@
 
     {% if audit.generated_at %}
       <footer class="audit-foot">
-        <span class="muted-tiny" title="{{ audit.generated_at[:19] | replace('T', ' ') }} UTC">
+        <span class="muted-tiny" title="{{ audit.generated_at | ts_tooltip }}">
           Audited {{ audit.generated_at | relative_time }}
         </span>
       </footer>

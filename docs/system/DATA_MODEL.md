@@ -483,6 +483,80 @@ Lifecycle:
 
 Auto-approve для агентов с `auto_approve: true` ([agents-and-skills.md §1.1](capabilities/agents-and-skills.md)) — пропускает создание proposal-row, идёт прямо в revision.
 
+### 3.16 `Scenario`, `ScenarioStep`, `ScenarioLink`
+
+Сценарии тестирования — **авторская половина** [RFC 24 §9](../../proposals/24-structure-contracts-scenarios.md).
+Хранят намерение: что должно быть верно. Не хранят доказательства: вердикты
+покрытия (`covered | partial | missing | unverifiable`) выводит producer в
+ai-reviewer, и они лягут в отдельную append-only `scenario_assessment`
+(STR-002) с join по `scenario.row_id`. Эти три таблицы занимают слот
+«нормализованного scenario index», отложенный в RFC 24 §12.
+
+```sql
+CREATE TABLE scenario (
+  row_id           INTEGER PRIMARY KEY,
+  project_id       INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
+  scenario_id      TEXT    NOT NULL,           -- 'SCN-001'
+  title            TEXT    NOT NULL,
+  kind             TEXT    NOT NULL,           -- RFC 24 §9: happy_path|error_path|
+                                               --   boundary_value|invariant|integration
+  group_key        TEXT    NOT NULL,           -- имя файла проекции
+  document_id      INTEGER REFERENCES document(row_id) ON DELETE SET NULL,
+  doc_key          TEXT,                       -- RFC 24 §8 текстовый якорь
+  section_anchor   TEXT,
+  doc_content_hash TEXT,                       -- section.content_hash на момент авторства
+  module_id        INTEGER REFERENCES module(row_id) ON DELETE SET NULL,  -- зарезервировано
+  subject_ref      TEXT,                       -- RFC 24 §8; заполнит link-suggest (STR-002)
+  status           TEXT    NOT NULL,           -- claim-статус §8: draft|confirmed|retired
+  provenance       TEXT    NOT NULL,           -- manual|agent|import
+  preconditions    TEXT    NOT NULL,
+  expected         TEXT    NOT NULL,
+  notes            TEXT,
+  position         INTEGER NOT NULL,           -- порядок внутри group_key
+  author           TEXT    NOT NULL,
+  created          TEXT    NOT NULL,
+  last_updated     TEXT    NOT NULL,
+  UNIQUE (project_id, scenario_id)
+);
+CREATE INDEX ix_scenario_project_group ON scenario(project_id, group_key, position);
+CREATE INDEX ix_scenario_document_id   ON scenario(document_id);
+CREATE INDEX ix_scenario_project_kind  ON scenario(project_id, kind);
+
+CREATE TABLE scenario_step (
+  row_id          INTEGER PRIMARY KEY,
+  scenario_row_id INTEGER NOT NULL REFERENCES scenario(row_id) ON DELETE CASCADE,
+  position        INTEGER NOT NULL,
+  text            TEXT    NOT NULL,
+  UNIQUE (scenario_row_id, position)
+);
+
+CREATE TABLE scenario_link (
+  row_id          INTEGER PRIMARY KEY,
+  scenario_row_id INTEGER NOT NULL REFERENCES scenario(row_id) ON DELETE CASCADE,
+  to_kind         TEXT    NOT NULL,            -- task|story|document|criterion
+  to_ref          TEXT    NOT NULL,            -- id задачи / стори / doc_key / 'US-013#2'
+  relation        TEXT    NOT NULL,            -- verifies|specified_in|exercised_by
+  UNIQUE (scenario_row_id, to_kind, to_ref, relation)
+);
+```
+
+Замечания, которые не видны из DDL:
+
+- **Якорь — capability-документ, не модуль.** Таблица `module` в живых
+  проектах пуста, поэтому `module_id` остаётся nullable и никогда не
+  обязателен; группировка идёт по `group_key`, выведенному из `doc_key`.
+- **Отсутствующий документ — не ошибка.** Сценарий можно написать до импорта
+  capability-документа: `document_id` останется NULL, а совещательная проверка
+  сообщит о висящем якоре.
+- **`retired` — расширение RFC 24 §8** (`draft`/`confirmed`): id сценариев не
+  переиспользуются, снятию нужен собственный статус.
+- **Проекция.** `scenario_service.export_group` собирает `Document`
+  (`type = scenario-set`) + `Section` на сценарий и отдаёт их
+  `projection_service` → `docs/system/scenarios/<group_key>.md`. Ручная правка
+  файла ловится теми же гвардами, что и у любой другой проекции.
+- **Шаги и связи ревизируются под родительским `entity_kind = 'scenario'`** —
+  как критерии под стори.
+
 ## 4. Вычисляемые представления
 
 ### 4.1 `section_totals`
@@ -508,31 +582,32 @@ GROUP BY s.row_id;
 ```sql
 CREATE VIEW document_body AS
 SELECT
-  d.row_id AS document_id,
-  d.preamble
-    || CASE
-         WHEN d.preamble <> '' AND COALESCE(s.body, '') <> ''
-         THEN E'\n\n'
-         ELSE ''
-       END
-    || COALESCE(s.body, '') AS body
-FROM document d
-LEFT JOIN (
+  document_id,
+  preamble
+    || CASE WHEN preamble <> '' AND sec <> '' THEN E'\n\n' ELSE '' END
+    || sec AS body
+FROM (
   SELECT
-    document_id,
-    string_agg(
-      repeat('#', level) || ' ' || heading || E'\n\n' || body,
-      E'\n\n'
-      ORDER BY position
-    ) AS body
-  FROM section
-  GROUP BY document_id
-) s ON s.document_id = d.row_id;
+    d.row_id AS document_id,
+    d.preamble AS preamble,
+    COALESCE((
+      SELECT string_agg(
+        repeat('#', s.level) || ' ' || s.heading || E'\n\n' || s.body,
+        E'\n\n'
+        ORDER BY s.position
+      )
+      FROM section s
+      WHERE s.document_id = d.row_id
+    ), '') AS sec
+  FROM document d
+) AS t;
 ```
 
-> Реализовано в `cod_doc/infra/migrations/versions/20260825_0025_projection_fidelity.py`: SQLite-вариант использует `group_concat(... , char(10) || char(10))` поверх упорядоченного подзапроса (`SELECT ... ORDER BY position`); Postgres — `string_agg(... , E'\n\n' ORDER BY position)`. Оба варианта возвращают идентичный текст.
+> Реализовано в `cod_doc/infra/migrations/versions/20260908_0030_document_body_pushdown.py`: SQLite-вариант использует `group_concat(... , char(10) || char(10))` поверх упорядоченного подзапроса (`SELECT ... WHERE document_id = d.row_id ORDER BY position`); Postgres — `string_agg(... , E'\n\n' ORDER BY position)`. Оба варианта возвращают идентичный текст.
 
-> **ADO-010 (находка F7).** До миграции 0025 view склеивал `preamble` с первым заголовком без разделителя — `preamble` хранится без хвостового перевода строки, поэтому на выходе получалось `> …заранее.## 1. Зачем`. Это была порча контента, а не форматирование: любой `doc export` ломал документ. Разделитель `\n\n` вставляется только когда обе части непусты; агрегат секций вынесен в производную таблицу, чтобы условие могло его проверить, не повторяя `group_concat`.
+> **ADO-010 (находка F7).** До миграции 0025 view склеивал `preamble` с первым заголовком без разделителя — `preamble` хранится без хвостового перевода строки, поэтому на выходе получалось `> …заранее.## 1. Зачем`. Это была порча контента, а не форматирование: любой `doc export` ломал документ. Разделитель `\n\n` вставляется только когда обе части непусты; агрегат секций вычисляется один раз во внутреннем `SELECT`, чтобы условие могло его проверить, не повторяя `string_agg`.
+
+> **Производительность (миграция 0030).** Форма 0025 собирала секции в производной таблице с `GROUP BY document_id` и джойнила её к `document`. SQLite не проталкивает внешний `WHERE document_id = ?` внутрь такой группировки: он материализует агрегат по **всей** таблице `section` и лишь потом берёт одну строку, поэтому чтение одного документа стоило O(все секции проекта), а обход всех документов — O(документы × секции). На корпусе cod-doc (150 документов, 1200 секций) 150 одиночных чтений занимали 250–450 мс; на этом стояла страница `GET /p/{slug}`, которая гоняет `detect_project_drift` по всем документам. Коррелированный подзапрос даёт `SEARCH section USING INDEX ix_section_position (document_id=?)` — те же 150 чтений занимают 6 мс, чтение всех строк разом не пострадало (8.4 → 5.1 мс). Текст на выходе побайтово тот же — это обязательное условие, от него считается `document.projection_hash`.
 
 ### 4.3 `ready_tasks`
 
@@ -566,6 +641,7 @@ WHERE t.status='pending'
 | Story    | `US-<NNN>` | globally unique |
 | Plan     | `<MODULE-ID>-<kebab>` | `M1-auth-module` |
 | Document | `<path-without-ext>` | `modules/M1-auth/overview` |
+| Scenario | `SCN-<NNN>` | `SCN-001`; уникален в пределах проекта, не переиспользуется |
 
 Все правила валидируются сервисами — см. [standards/task-plan.md](standards/task-plan.md).
 

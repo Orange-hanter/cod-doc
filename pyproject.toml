@@ -44,6 +44,12 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-timeout>=2.3",  # PR#5: гейт из CLAUDE.md зовёт --timeout=120
+    # Гейт зовётся с `-n auto --dist loadfile`: прогон распараллелен по файлам.
+    # `loadfile`, а не дефолтный `load`, — тесты делят внутрипроцессные глобалы
+    # (каталог тулов `mcp._tool_manager._tools`, состояние API в autouse-фикстуре),
+    # и файл целиком на одном воркере сохраняет ту же последовательность, что и
+    # обычный прогон. Подробности и замеры — CLAUDE.md §«Команды».
+    "pytest-xdist>=3.5",
     "hypothesis>=6.100",
     # ADO-070: верхняя граница на minor — линтер без пина это «движущийся гейт»:
     # CI ставил ruff заново на каждый прогон и приносил новые правила (так
@@ -82,6 +88,8 @@ include = ["cod_doc*"]
     "static/*.js",
     "static/css/*.css",
     "skills/**/*.md",
+    "cli/completion/_cod-doc",
+    "cli/completion/*.zsh",
     "py.typed",
 ]
 
@@ -147,6 +155,7 @@ runtime-evaluated-decorators = [
 # API surface uses Pydantic schemas as parameter types — those need to stay
 # at runtime regardless of TYPE_CHECKING heuristics.
 "cod_doc/api/routes.py" = ["TC001", "TC002", "TC003"]
+"cod_doc/api/structure.py" = ["TC001", "TC002", "TC003"]
 "cod_doc/api/webhooks.py" = ["TC001", "TC002", "TC003"]
 "cod_doc/api/deps.py" = ["TC001", "TC002", "TC003"]
 "cod_doc/api/web/*.py" = ["TC001", "TC002", "TC003"]

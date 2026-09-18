@@ -70,7 +70,7 @@
       </svg>{{ doc.owner }}</span>
   {% endif %}
   {% if doc.last_updated %}
-    <span class="ds-meta-updated muted-tiny">Updated {{ doc.last_updated }}</span>
+    <span class="ds-meta-updated muted-tiny" title="{{ doc.last_updated | ts_tooltip }}">Updated {{ doc.last_updated | short_datetime }}</span>
   {% endif %}
 </div>
 
@@ -256,7 +256,7 @@
           <div class="comment-bubble-head">
             <span class="comment-author">{{ c.author }}</span>
             <span class="comment-status status-{{ c.status }}">{{ c.status }}</span>
-            <span class="muted-tiny" style="margin-left:auto;">{{ c.created.strftime('%Y-%m-%d %H:%M') if c.created else '' }}</span>
+            <span class="muted-tiny" style="margin-left:auto;">{{ c.created | short_datetime(empty='') }}</span>
           </div>
           <div class="comment-body">{{ c.body }}</div>
           <div class="comment-actions">

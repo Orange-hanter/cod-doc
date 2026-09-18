@@ -289,3 +289,130 @@ def test_project_tabs_include_adr_link(adr_client) -> None:  # type: ignore[no-u
     r = client.get(f"/p/{entry.name}")
     assert r.status_code == 200
     assert f'href="/p/{entry.name}/adr"' in r.text
+
+
+# ── ADO-133 / ADO-136 / ADO-135: вёрстка вкладки ────────────────────────
+
+
+def test_adr_list_uses_shared_component_vocabulary(adr_client) -> None:
+    """Список должен выглядеть как остальные таблицы, а не как голый HTML."""
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr")
+    assert 'class="page-header"' in r.text
+    assert 'class="filter-bar"' in r.text
+    assert 'class="grid adr-table"' in r.text
+
+
+def test_adr_list_status_is_a_badge_not_bare_text(adr_client) -> None:
+    """Статус — бейдж; иконка живёт ВНУТРИ него, а не вместо него."""
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr")
+    assert 'class="badge badge-accepted"' in r.text
+    assert 'class="badge badge-proposed"' in r.text
+    assert "✅" in r.text, "иконку нельзя терять при переходе на бейджи"
+
+
+def test_adr_list_filter_works_without_js(adr_client) -> None:
+    """Инвариант капабилити §5: формы работают без JS.
+
+    До ADO-133 у формы был единственный `<select onchange>` — без submit-кнопки
+    и без noscript, так что с выключенным JS фильтр выбирался, но не применялся.
+    """
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr")
+    assert "<noscript>" in r.text
+    assert 'type="submit"' in r.text
+    assert f'action="/p/{entry.name}/adr"' in r.text, "у формы должен быть явный action"
+
+
+def test_adr_list_offers_clear_only_when_filtered(adr_client) -> None:
+    client, entry = adr_client
+    assert ">clear<" not in client.get(f"/p/{entry.name}/adr").text
+    assert ">clear<" in client.get(f"/p/{entry.name}/adr?status=accepted").text
+
+
+def test_adr_list_row_and_title_are_clickable(adr_client) -> None:
+    """ADO-133: клик по строке, а не только по ID.
+
+    Растянутая ссылка вместо `onclick` — работает без JS.
+    """
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr")
+    assert 'class="adr-row-link"' in r.text
+    # Заголовок — тоже ссылка, а не голый текст.
+    assert f'href="/p/{entry.name}/adr/ADR-001">Layered architecture with DIP</a>' in r.text
+
+
+def test_adr_list_empty_state_when_filter_matches_nothing(adr_client) -> None:
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr?status=rejected")
+    assert r.status_code == 200
+    assert 'class="tasks-empty"' in r.text
+    assert "ADR-001" not in r.text
+
+
+def test_adr_show_uses_hero_and_cards(adr_client) -> None:
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-001")
+    assert 'class="task-hero"' in r.text
+    assert 'class="task-card-header"' in r.text
+    assert 'class="badge badge-lg badge-accepted"' in r.text
+
+
+def test_adr_show_form_fields_are_styleable(adr_client) -> None:
+    """`.field` и `.form-actions` имеют правила ТОЛЬКО под `.settings-form`.
+
+    Без этого предка классы снова оказались бы мёртвыми — ровно та ошибка,
+    из-за которой вкладка и выглядела как голый HTML.
+    """
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-002")  # proposed → форма Edit
+    assert 'class="settings-form"' in r.text
+    assert 'class="field"' in r.text
+    assert 'class="form-actions"' in r.text
+
+
+def test_adr_show_back_link_is_sticky(adr_client) -> None:
+    """ADO-135: возврат к списку виден с любой глубины прокрутки."""
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-001")
+    assert 'class="adr-back"' in r.text
+
+
+def test_adr_new_form_uses_settings_form(adr_client) -> None:
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/new")
+    assert 'class="settings-form"' in r.text
+    assert 'class="field"' in r.text
+    assert 'class="form-actions"' in r.text
+
+
+def test_no_dead_adr_selectors() -> None:
+    """Acceptance ADO-133: мёртвых селекторов не осталось.
+
+    Каждый класс `adr-*`, встречающийся в шаблонах, обязан иметь правило в CSS,
+    и наоборот. До этой задачи все 18 классов были без правил — страница
+    рисовалась браузерным дефолтом.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2] / "cod_doc"
+    class_re = re.compile(r"\badr-[a-z0-9-]+")
+
+    in_templates: set[str] = set()
+    for tpl in (root / "templates" / "web").rglob("*.html"):
+        for m in class_re.finditer(tpl.read_text(encoding="utf-8")):
+            in_templates.add(m.group(0))
+
+    css = "".join(p.read_text(encoding="utf-8") for p in (root / "static").rglob("*.css"))
+    styled = {m.group(0) for m in class_re.finditer(css)}
+
+    # `adr-ref` рождается в рендерере, а не в шаблоне — учитываем отдельно.
+    in_templates.add("adr-ref")
+
+    unstyled = sorted(in_templates - styled)
+    assert not unstyled, f"классы без единого CSS-правила: {unstyled}"
+
+    unused = sorted(styled - in_templates)
+    assert not unused, f"правила без употребления в шаблонах: {unused}"

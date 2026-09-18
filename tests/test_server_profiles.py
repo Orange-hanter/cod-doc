@@ -113,9 +113,9 @@ def test_keep_tool_pure_logic() -> None:
 # docstring, cod_doc/mcp/server.py --profile help, docs/mcp-integration.md.
 EXPECTED_PROFILE_COUNTS = {
     "agent": 6,
-    "minimal": 20,
-    "standard": 110,
-    "full": 114,
+    "minimal": 21,
+    "standard": 126,
+    "full": 130,
 }
 
 
@@ -167,3 +167,47 @@ def test_sym006d_agent_profile_excludes_new_tools() -> None:
 def test_sym006d_standard_profile_keeps_new_tools() -> None:
     mcp_server.apply_profile("standard")
     assert _registered_names() >= SYM_006D_TOOLS
+
+
+def test_cod_doc_mcp_cli_help_defaults_to_agent() -> None:
+    """ADO-079: `cod-doc mcp --profile` shares the cod-doc-mcp default."""
+    from click.testing import CliRunner
+
+    from cod_doc.cli import main
+
+    result = CliRunner().invoke(main, ["mcp", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "default: agent" in result.output
+
+
+def test_cod_doc_mcp_cli_applies_agent_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADO-079: `cod-doc mcp --profile agent` filters to the 6-tool surface."""
+    from click.testing import CliRunner
+
+    from cod_doc.cli import main
+
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *args, **kwargs: None)
+    result = CliRunner().invoke(main, ["mcp", "--profile", "agent"])
+    assert result.exit_code == 0, result.output
+    assert mcp_server.get_active_profile() == "agent"
+    assert len(_registered_names()) == EXPECTED_PROFILE_COUNTS["agent"]
+
+
+def test_cod_doc_mcp_cli_applies_standard_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    from click.testing import CliRunner
+
+    from cod_doc.cli import main
+
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *args, **kwargs: None)
+    result = CliRunner().invoke(main, ["mcp", "--profile", "standard"])
+    assert result.exit_code == 0, result.output
+    assert mcp_server.get_active_profile() == "standard"
+    assert len(_registered_names()) == EXPECTED_PROFILE_COUNTS["standard"]
+
+
+def test_run_mcp_server_applies_profile_before_serve(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shared entry used by both `cod-doc-mcp` and `cod-doc mcp`."""
+    monkeypatch.setattr(mcp_server.mcp, "run", lambda *args, **kwargs: None)
+    mcp_server.run_mcp_server(transport="stdio", host="127.0.0.1", port=8001, profile="agent")
+    assert mcp_server.get_active_profile() == "agent"
+    assert len(_registered_names()) == EXPECTED_PROFILE_COUNTS["agent"]

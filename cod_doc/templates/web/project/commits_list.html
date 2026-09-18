@@ -42,7 +42,7 @@
       <tbody>
         {% for c in items %}
           <tr>
-            <td class="muted-tiny">{{ c.ts[:10] if c.ts else "—" }}</td>
+            <td class="muted-tiny">{{ c.ts | short_date }}</td>
             <td><a href="/p/{{ project.name }}/tasks/{{ c.task_id }}">{{ c.task_id }}</a></td>
             <td><code>{{ c.short_sha }}</code></td>
             <td class="muted">{{ c.author }}</td>
@@ -70,7 +70,7 @@
   border-bottom: 1px solid var(--border);
 }
 .commits-table code {
-  background: var(--bg-subtle);
+  background: var(--bg-alt);
   padding: 1px 6px;
   border-radius: 4px;
 }

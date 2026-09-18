@@ -22,11 +22,22 @@ pattern, audit cadence). Этот файл их не дублирует.
 pip install -e '.[dev]'
 alembic upgrade head                     # схема локальной SQLite
 
-.venv/bin/pytest tests/ -q --tb=short                       # весь прогон (~1639 тестов)
+.venv/bin/pytest tests/ -n auto --dist loadfile -q --tb=short   # весь прогон (~2090 тестов)
 .venv/bin/pytest tests/services/test_task_create.py -q      # один модуль
 .venv/bin/pytest tests/services/test_task_create.py::test_create_auto_generates_task_id -v   # один тест
 .venv/bin/pytest tests/ -k "checkout" -q                    # по подстроке
 ```
+
+`-n auto --dist loadfile` — только для полного прогона, ровно как в CI.
+Распараллеливание по файлам, а не дефолтное `load` по отдельным тестам: тесты
+делят внутрипроцессные глобалы (каталог тулов `mcp._tool_manager._tools`,
+process-wide состояние API в autouse-фикстуре), и файл целиком на одном
+воркере сохраняет ту же последовательность, что и обычный прогон; разница по
+времени с `load` — в пределах 8%.
+
+Флаги нарочно **не** в `addopts`: под воркерами не работают `-s` и `--pdb`, а
+на одном модуле накладные расходы на их старт больше выигрыша. Отлаживаешь
+конкретный тест — зови pytest без `-n`.
 
 Gate перед hand-off — ровно то, что гоняет CI (`.github/workflows/ci.yml`),
 всё блокирующее:
@@ -35,7 +46,7 @@ Gate перед hand-off — ровно то, что гоняет CI (`.github/w
 .venv/bin/ruff check cod_doc/ tests/
 .venv/bin/ruff format --check cod_doc/ tests/
 .venv/bin/mypy cod_doc/                  # strict
-.venv/bin/pytest tests/ --tb=short --timeout=120
+.venv/bin/pytest tests/ -n auto --dist loadfile --tb=short --timeout=120
 ```
 
 **«Гейт зелёный» = зелёный CI, а не локальный прогон** (ADO-070). Гейты
@@ -61,7 +72,17 @@ cod-doc doc drift --project cod-doc --all # дрейф БД ↔ markdown без 
 cod-doc ctx docs|drift|search --json     # контекст для промпта в JSON (ctx docs --include-body — с телом)
 cod-doc ingest ai_review -p cod-doc --from-pr 123   # findings из артефакта PR через gh; далее finding_promote
 cod-doc ctx drift -p orakul --pr 562 --comment      # drift-гейт PR: находки → идемпотентный комментарий (--dry-run для проверки)
+cod-doc completion zsh                   # печатает готовый _cod-doc; установка — scripts/install-zsh-completion.sh
 ```
+
+Zsh-дополнение (`docs/zsh-completion.md`): артефакт
+`cod_doc/cli/completion/_cod-doc` **генерируется** из click-дерева
+(`python -m cod_doc.cli.completion --write`) и коммитится. Правил CLI —
+регенерируй, иначе падает `tests/cli/test_zsh_completion_drift.py`.
+Значения (слаги проектов, task_id, doc_key, plan.scope…) берутся напрямую из
+`~/.cod-doc/config.yaml` и read-only SQLite: звать из дополнения сам `cod-doc`
+нельзя: даже после ADO-179 `--help` стоит ~180 мс против ~20 мс у прямого
+чтения SQLite, а на нажатие TAB это разница между «мгновенно» и «заметно».
 
 Миграции: `alembic revision -m "<name>"` → заполнить симметричные
 `upgrade()`/`downgrade()` → `alembic upgrade head` + `alembic downgrade -1`
@@ -94,8 +115,10 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - **MCP: один файл = одна семья тулов.** `mcp/tools/*_tools.py` экспортируют
   `register(mcp)`; `mcp/server.py` вызывает их в цикле, затем `apply_profile()`
   **фильтрует уже зарегистрированный** каталог (`mcp/profiles.py`). Профиль
-  `agent` — **дефолтный**, 6 task-centric тулов, каждый возвращает
-  самодостаточный payload; дальше `minimal` 20 / `standard` 110 / `full` 114.
+  `agent` — **дефолтный**, 6 тулов. Исторически task-centric (`agent_pick`…).
+  RFC 25: роль оркестратора — куратор документации и поиска; `agent_pick`
+  не использовать. Своп allowlist — план `doc-curator-2026-09`. Дальше
+  `minimal` 21 / `standard` 126 / `full` 130.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   ПЯТИ местах: `mcp/profiles.py` (docstring), `server.py --profile`,
   `AGENTS.md` §5.9, этот файл и `docs/mcp-integration.md` (строка семейства
@@ -157,11 +180,16 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/20/110/114) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/21/126/130) в коде и доках совпадают |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 | `services/test_task_mutation_surface_parity.py` | мутация задачи в `task_service` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
+| `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
+| `cli/test_zsh_completion_queries.py` | SQL дополнения выполняется на свежей схеме (ловит переименование колонки) |
+| `cli/test_zsh_completion_runtime.py` | prelude в настоящем zsh: WAL-БД без `-shm`, Postgres-проект, нет файла — молчат, а не шумят |
+| `cli/test_cli_startup_is_light.py` | `import cod_doc.cli` не тянет SQLAlchemy/Alembic; импорты `infra`/`services` живут в телах команд (ADO-179) |
+| `cli/test_json_output_is_parseable.py` | `--json` печатается через `click.echo`, а не rich: иначе перенос и разметка молча портят значения (ADO-176) |
 
 ## Тестовые фикстуры
 
@@ -170,13 +198,35 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - `tests/services/conftest.py::engine_with_schema` — прогоняет
   `alembic upgrade head` в tmp SQLite, поэтому новая миграция подхватывается
   автоматически, без правки фикстур.
+- `tests/_alembic.py::run_alembic` — единственная точка запуска alembic из
+  тестов. `upgrade head` по ещё не существующему файлу SQLite обслуживается
+  **копией шаблона**: настоящий alembic гоняется один раз за процесс, дальше
+  `shutil.copyfile` (~1 мс вместо ~0.5 с). Один этот кэш срезал
+  последовательный прогон с 644 с до 78 с; вместе с `-n auto --dist loadfile`
+  (см. §«Команды») — ~60 с локально и 124 с на джобе `Test py3.13` против
+  934 с до обеих правок.
+  Кэш инвалидируется по размеру/mtime файлов
+  `cod_doc/infra/migrations/versions/*.py`. Всё остальное — конкретная ревизия,
+  `downgrade`, non-SQLite URL, уже существующий файл (миграционные тесты
+  наливают данные на старой ревизии, потом гонят upgrade) — идёт в подпроцесс,
+  как раньше. Пишешь фикстуру со схемой — зови `run_alembic`, а не
+  `subprocess.run` напрямую.
 - `asyncio_mode = "auto"` — async-тесты не требуют маркера.
 
 ## Инструментарий сессии
 
-- MCP-сервер `cod-doc` (native stdio, `.mcp.json` явно ставит профиль
-  `standard`, не дефолтный `agent`) — 110 тулов `task_*`/`doc_*`/`plan_*`/…;
-  предпочитай их ad-hoc Python-скриптам.
+- MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
+  субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
+  (профиль `standard`, 126 тулов `task_*`/`doc_*`/`plan_*`/…) и
+  `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6). Управление —
+  `deploy/launchd/cod-doc-mcp-daemon.sh`. Предпочитай тулы ad-hoc
+  Python-скриптам.
+  **`project` обязателен в каждом DB-туле:** демон общий для всех харнессов,
+  поэтому дефолтного проекта у него нет вовсе, а `set_default_project`
+  отказывает (`mcp/tools/_workspace.py`). Под stdio поведение прежнее.
+  Профиль задаётся портом, не флагом клиента; бинарь — пиннованная
+  non-editable сборка в `~/.cod-doc/runtime`, чтобы грязное рабочее дерево
+  не роняло все харнессы разом.
 - `/gate` — полный CI-гейт одной командой.
 - Проектные скиллы `.claude/skills/`: `task-flow` (checkout → complete c sha,
   создание задач/секций, service-fallback), `doc-sync` (markdown ↔ БД,

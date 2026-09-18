@@ -78,8 +78,8 @@ def register(mcp: FastMCP) -> None:
               execution-log | standard | architecture | vision | guide |
               user-story | decision | open-question | redirect |
               design | audit | audit-report | journal | plan | analysis |
-              research | capability.
-        status: draft | review | active | deprecated.
+              research | capability | scenario-set.
+        status: draft | review | active | authoritative | deprecated.
         sensitivity: public | internal | confidential | restricted.
         """
         from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity

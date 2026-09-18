@@ -38,7 +38,7 @@ def adr_list(ctx: click.Context, project: str, status: str | None, as_json: bool
         rows = adr_service.list_for_project(session, project_id, status=status)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 [
                     {

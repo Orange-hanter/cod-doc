@@ -162,6 +162,57 @@ def register(mcp: FastMCP) -> None:
         except ADRNotFoundError as exc:
             raise ValueError(str(exc)) from exc
 
+    @mcp.tool(name="adr_sync_body")
+    def adr_sync_body(
+        project: str,
+        adr_id: str,
+        title: str | None = None,
+        decided_at: str | None = None,
+        context: str | None = None,
+        decision: str | None = None,
+        alternatives: str | None = None,
+        consequences: str | None = None,
+    ) -> dict[str, Any]:
+        """Re-sync an ADR body from its markdown projection (ADO-168).
+
+        Use when the markdown is the source and the DB row fell behind it —
+        a corrected citation, a section the parser missed. Unlike
+        ``adr_update`` this works on ACCEPTED and on terminal
+        (SUPERSEDED/DEPRECATED/REJECTED) ADRs: the decision is not being
+        amended, only its record catches up.
+
+        ``status`` is deliberately absent. Changing status stays a
+        decision-level act — ``adr_update`` (from PROPOSED),
+        ``adr_deprecate`` or ``adr_supersede``.
+
+        The audit trail distinguishes the two: revision ``op=sync_body`` and
+        activity event ``adr.body_synced``. Supplying nothing that differs
+        from the stored row is a no-op — no revision, no event.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_service
+        from cod_doc.services.adr_service import ADRNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                row = adr_service.sync_body(
+                    session,
+                    project_id=project_id,
+                    adr_id=adr_id,
+                    title=title,
+                    decided_at=_parse_date(decided_at),
+                    context=context,
+                    decision=decision,
+                    alternatives=alternatives,
+                    consequences=consequences,
+                    author="agent",
+                )
+                return adr_service.adr_to_dict(session, row)
+        except ADRNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+
     @mcp.tool(name="adr_add_diagram")
     def adr_add_diagram(
         project: str,

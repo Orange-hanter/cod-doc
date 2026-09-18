@@ -48,7 +48,7 @@ def story_show(ctx: click.Context, story_id: str, project: str, as_json: bool) -
         sys.exit(1)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "story_id": s.story_id,

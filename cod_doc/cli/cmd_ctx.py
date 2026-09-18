@@ -473,3 +473,47 @@ def ctx_search(ctx: click.Context, query: str, project: str, as_json: bool) -> N
             snippet = h["snippet"].replace("<mark>", "[bold yellow]").replace("</mark>", "[/]")
             table.add_row(h["ref"], h["title"], snippet)
         console.print(table)
+
+
+@ctx.command("structure")
+@click.option("--project", "-p", required=True)
+@click.option("--head-sha", default=None)
+@click.option("--fingerprint", "snapshot_fingerprint", default=None)
+@click.option("--scope", "scope_refs", multiple=True)
+@click.option("--budget-tokens", default=4000, type=int)
+@click.option("--depth", "dependency_depth", default=1, type=int)
+@click.pass_context
+def ctx_structure(
+    ctx: click.Context,
+    project: str,
+    head_sha: str | None,
+    snapshot_fingerprint: str | None,
+    scope_refs: tuple[str, ...],
+    budget_tokens: int,
+    dependency_depth: int,
+) -> None:
+    """Pinned BFS structure slice. Requires head SHA or snapshot fingerprint."""
+    from cod_doc.infra.db import transactional
+    from cod_doc.services.structure_context import build_structure_context
+    from cod_doc.services.structure_protocol import StructureProtocolError
+
+    cfg: Config = ctx.obj["config"]
+    factory, engine, _root = _project_session(cfg, project)
+    try:
+        with transactional(factory, commit=False) as session:
+            project_id = _require_project_id(session, project)
+            payload = build_structure_context(
+                session,
+                project_id,
+                project_slug=project,
+                head_sha=head_sha,
+                snapshot_fingerprint=snapshot_fingerprint,
+                scope_refs=list(scope_refs),
+                dependency_depth=dependency_depth,
+                budget_tokens=budget_tokens,
+            )
+    except StructureProtocolError as exc:
+        raise click.ClickException(str(exc)) from exc
+    finally:
+        engine.dispose()
+    print(_json.dumps(payload, ensure_ascii=False, indent=2, default=str))

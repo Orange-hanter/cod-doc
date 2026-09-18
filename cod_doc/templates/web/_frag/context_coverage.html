@@ -44,7 +44,7 @@
     </div>
 
     <div class="coverage-footer">
-      <span class="muted-tiny" title="{{ coverage.generated_at[:19] | replace('T', ' ') }} UTC">
+      <span class="muted-tiny" title="{{ coverage.generated_at | ts_tooltip }}">
         Analysed {{ coverage.generated_at | relative_time }}
       </span>
       <form hx-post="/p/{{ project.name }}/stories/coverage/analyze"

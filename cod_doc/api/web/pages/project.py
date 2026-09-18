@@ -12,10 +12,11 @@ from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
 from cod_doc.api.web.errors import truncate_for_cookie
-from cod_doc.api.web.markdown import render_markdown
+from cod_doc.api.web.markdown import render_markdown, strip_frontmatter
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import EntityKind, Priority, TaskType
 from cod_doc.services import ai_generate, trace_service
+from cod_doc.services import doc_service as docs
 from cod_doc.services import plan_service as plans
 from cod_doc.services import project_health_service as health_svc
 from cod_doc.services import project_service as projects
@@ -35,12 +36,20 @@ OVERVIEW_REVISIONS_LIMIT = 5
 def project_show(request: Request, slug: str) -> HTMLResponse:
     proj = get_project(slug)
     master = proj.read_master()
-    master_preview, master_truncated = _preview(master, MASTER_PREVIEW_LINES)
+    # ADO-112: MASTER.md читается с диска сырым, вместе с YAML-frontmatter.
+    # Срезать его надо ДО нарезки на строки, иначе длинный блок метаданных
+    # съест бюджет превью, а рендерер покажет `---` и YAML как прозу.
+    master_body = strip_frontmatter(master) if master else master
+    master_preview, master_truncated = _preview(master_body, MASTER_PREVIEW_LINES)
     master_html = render_markdown(master_preview or "") or None
 
     # WEB-014 — overview aggregator: ready-to-start tasks, plan-progress
     # mini-bars, recent revisions. Each block is independent and is left
     # empty (not crashed) if the DB project isn't initialised yet.
+    # ADO-109: ключ документа MASTER в БД, если он импортирован. Ссылки
+    # «Открыть целиком» / «View raw» строятся по нему; None — ссылок нет,
+    # вместо 404 показываем честное «не импортирован».
+    master_doc_key: str | None = None
     ready_tasks: list[dict[str, Any]] = []
     plan_rows: list[dict[str, Any]] = []
     recent_revs: list[dict[str, Any]] = []
@@ -56,13 +65,17 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
     # Header KPI cards: prefer DB-aggregated totals (single source of truth
     # with the Plan-progress block below). Fall back to legacy YAML stats
     # when the DB isn't initialised — same shape so the template doesn't
-    # need to branch.
-    yaml_stats: dict[str, Any] = proj.stats()
-    db_total = db_done = db_in_progress = 0
+    # need to branch. `proj.stats()` разбирает весь legacy-`tasks.yaml`, поэтому
+    # зовётся ниже и только если БД не дала чисел.
+    db_total = db_done = db_in_progress = db_failed = 0
 
     with try_open_project_db(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
             db_available = True
+            # ADO-109: ссылка на MASTER строится по doc_key из БД, а не по
+            # имени файла на диске — страница документа ищет именно doc_key.
+            master_doc = docs.get_by_path(session, project_db_id, proj.entry.master_md)
+            master_doc_key = master_doc.doc_key if master_doc else None
             project_plans = plans.list_for_project(session, project_db_id)
             # COD-075: aggregate progress for every plan in one SQL — was N+1.
             progress_by_plan = plans.recalc_for_project(session, project_db_id)
@@ -120,6 +133,10 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                     }
                 )
 
+            db_failed = int(
+                task_svc.summarize_for_project(session, project_db_id)["by_status"].get("failed", 0)
+            )
+
             project_health = health_svc.build_project_health(
                 session,
                 project_db_id,
@@ -134,15 +151,16 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
             )
 
     if db_available and any((db_total, db_done, db_in_progress)):
-        kpi = {
-            **yaml_stats,
+        kpi: dict[str, Any] = {
+            **proj.run_state(),
             "total": db_total,
             "done": db_done,
             "in_progress": db_in_progress,
             "pending": db_total - db_done - db_in_progress,
+            "failed": db_failed,
         }
     else:
-        kpi = yaml_stats
+        kpi = proj.stats()
 
     return templates.TemplateResponse(
         request,
@@ -161,6 +179,7 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
             "master_truncated": master_truncated,
             "db_available": db_available,
             "ready_tasks": ready_tasks,
+            "master_doc_key": master_doc_key,
             "plan_rows": plan_rows,
             "recent_revs": recent_revs,
             "drift_health": drift_health,

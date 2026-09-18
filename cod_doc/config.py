@@ -309,6 +309,19 @@ class Config(BaseSettings):
             return True
         return False
 
+    def set_project_daemon_enabled(self, name: str, enabled: bool) -> ProjectEntry:
+        """Persist ``daemon_enabled`` for a registry project (ADO-110).
+
+        Discovered-only workspace projects are not in ``config.yaml`` and
+        cannot be paused this way — the caller should 404/400.
+        """
+        for project in self.projects:
+            if project.get("name") == name:
+                project["daemon_enabled"] = enabled
+                self.save()
+                return ProjectEntry(**project)
+        raise KeyError(name)
+
     def list_projects(self) -> list[ProjectEntry]:
         projects = [ProjectEntry(**p) for p in self.projects]
         seen = {p.name for p in projects}

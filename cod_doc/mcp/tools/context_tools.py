@@ -65,6 +65,7 @@ def _tool_family(name: str) -> str:
         "run_",
         "skill_",
         "ctx_",
+        "structure_",
         "doc_",
         "task_",
     ):
@@ -110,6 +111,11 @@ def register(mcp: FastMCP) -> None:
         ``agent_pick`` — they don't need a workspace state for project.
         These tools remain available under ``--profile standard|full``
         for CLI / web / multi-step admin sessions.
+
+        **Unavailable on a shared server.** Under ``--transport
+        streamable-http`` one process serves every local harness, so a
+        process-wide default would silently retarget other clients' calls.
+        This raises ``ValueError`` there; pass ``project=<slug>`` instead.
         """
         from cod_doc.mcp.tools import _workspace
 
@@ -526,6 +532,7 @@ def register(mcp: FastMCP) -> None:
 
         all_tools = await mcp.list_tools()
         family_counts = Counter(_tool_family(t.name) for t in all_tools)
+        shared_server = _workspace.is_shared()
 
         canonical_statuses = sorted(
             set(ALLOWED_TRANSITIONS.keys())
@@ -560,8 +567,13 @@ def register(mcp: FastMCP) -> None:
             },
             "session": {
                 "default_project": _workspace.get(),
+                "shared_server": shared_server,
                 "default_project_usage": (
-                    "set via set_default_project(name=...). Then pass "
+                    "unavailable: this server is shared by every local harness "
+                    "over HTTP, so `project` is required on every DB-backed "
+                    "tool call."
+                    if shared_server
+                    else "set via set_default_project(name=...). Then pass "
                     "project='' on subsequent DB-tool calls to auto-fall-back "
                     "to this default (cycle-4)."
                 ),

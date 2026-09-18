@@ -37,7 +37,7 @@
           <span class="progress-fill" style="width: {{ p.percent }}%"></span>
         </div>
       </td>
-      <td class="muted">{{ p.last_updated or "—" }}</td>
+      <td class="muted">{{ p.last_updated | short_datetime }}</td>
     </tr>
     {% endfor %}
   </tbody>

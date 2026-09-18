@@ -152,7 +152,7 @@
       <tbody>
         {% for t in trace %}
           <tr {% if t.error %}class="trace-err"{% endif %}>
-            <td class="muted mono">{{ t.ts }}</td>
+            <td class="muted mono" title="{{ t.ts | ts_tooltip }}">{{ t.ts | short_datetime }}</td>
             <td class="mono">{{ t.model }}</td>
             <td>{{ t.kind }}</td>
             <td class="num">{{ t.input_tokens }}</td>
@@ -209,9 +209,9 @@
           <tr>
             <td class="mono">{{ r.revision_id }}</td>
             <td>{{ r.author }}</td>
-            <td class="muted">{{ r.at }}</td>
+            <td class="muted" title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</td>
             <td>{{ r.reason }}</td>
-            <td class="mono diff-preview">{{ r.diff_first_line }}</td>
+            <td class="mono diff-preview"><span class="cell-clamp" title="{{ r.diff_first_line }}">{{ r.diff_first_line }}</span></td>
           </tr>
         {% endfor %}
       </tbody>

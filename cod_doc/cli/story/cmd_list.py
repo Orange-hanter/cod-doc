@@ -32,7 +32,7 @@ def story_list(ctx: click.Context, project: str, as_json: bool) -> None:
         stories = story_service.list_for_project(session, project_id)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 [
                     {

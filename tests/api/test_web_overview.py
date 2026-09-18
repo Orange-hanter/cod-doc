@@ -306,3 +306,145 @@ def test_complete_post_unknown_task_404(overview_client) -> None:
     )
     assert r.status_code == 404
     assert "alert-error" in r.text  # via WebError handler
+
+
+# ── ADO-112: MASTER-превью не показывает YAML-frontmatter ────────────────
+
+
+def test_master_preview_hides_yaml_frontmatter(tmp_path: Path, migrate_db) -> None:
+    """MASTER.md читается с диска сырым — frontmatter обязан срезаться.
+
+    Тела документов из БД сюда не попадают: их frontmatter разбирает
+    import_service, и ведущий `---` там — законная горизонтальная черта.
+    """
+    repo = tmp_path / "fm-demo"
+    (repo / ".cod-doc").mkdir(parents=True)
+    migrate_db(repo / ".cod-doc" / "state.db")
+
+    entry = ProjectEntry(name="fmdemo", path=str(repo))
+    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg.add_project(entry)
+
+    import cod_doc.api.deps as deps
+
+    deps.set_config(cfg)
+    Project(entry).init()
+
+    (repo / "MASTER.md").write_text(
+        "---\ntype: master\nstatus: active\n---\n\n# Заголовок\n\nТело документа.\n",
+        encoding="utf-8",
+    )
+
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get("/p/fmdemo")
+
+    assert r.status_code == 200
+    assert "type: master" not in r.text, "YAML уехал в превью как проза"
+    assert "status: active" not in r.text
+    assert "Тело документа." in r.text
+    assert "Заголовок" in r.text
+
+
+# ── ADO-109 / ADO-107 / ADO-152: ссылки, бейджи и подписи ────────────────
+
+
+def test_master_links_use_doc_key_not_filename(tmp_path: Path, migrate_db) -> None:  # type: ignore[no-untyped-def]
+    """ADO-109: href строился из имени файла, а страница ищет по doc_key → 404."""
+    repo = tmp_path / "mk-demo"
+    (repo / ".cod-doc").mkdir(parents=True)
+    db_path = repo / ".cod-doc" / "state.db"
+    migrate_db(db_path)
+
+    entry = ProjectEntry(name="mkdemo", path=str(repo))
+    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg.add_project(entry)
+
+    import cod_doc.api.deps as deps
+
+    deps.set_config(cfg)
+    Project(entry).init()
+
+    long_body = "# MASTER\n\n" + "\n\n".join(f"строка {i}" for i in range(200))
+    (repo / "MASTER.md").write_text(long_body, encoding="utf-8")
+
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        now = datetime.now(UTC)
+        proj = ProjectRepository(session).add(
+            ProjectEntity(slug="mkdemo", title="Demo", root_path=str(repo), config={})
+        )
+        proj.created = now
+        proj.updated = now
+        session.flush()
+        from cod_doc.domain.entities import DocumentStatus, DocumentType
+        from cod_doc.services import doc_service
+
+        doc_service.create(
+            session,
+            project_id=proj.row_id,
+            doc_key="docs/system/MASTER",
+            type=DocumentType.CAPABILITY,
+            status=DocumentStatus.ACTIVE,
+            title="MASTER",
+            path="MASTER.md",
+            author="human:test",
+            owner="cod-doc core",
+        )
+    engine.dispose()
+
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get("/p/mkdemo")
+        assert r.status_code == 200
+        assert "/docs/docs/system/MASTER" in r.text, "ссылка не использует doc_key"
+        assert "/docs/MASTER.md" not in r.text, "остался href по имени файла"
+
+        # И ссылка действительно ведёт на живую страницу, а не в 404.
+        follow = client.get("/p/mkdemo/docs/docs/system/MASTER")
+        assert follow.status_code == 200
+
+
+def test_master_links_hidden_when_document_not_imported(tmp_path: Path, migrate_db) -> None:  # type: ignore[no-untyped-def]
+    """Файл на диске есть, в БД нет — вместо битой ссылки честный текст."""
+    repo = tmp_path / "nomk-demo"
+    (repo / ".cod-doc").mkdir(parents=True)
+    migrate_db(repo / ".cod-doc" / "state.db")
+
+    entry = ProjectEntry(name="nomkdemo", path=str(repo))
+    cfg = Config(api_key="sk-test", model="test/model", base_url="https://x")
+    cfg.add_project(entry)
+
+    import cod_doc.api.deps as deps
+
+    deps.set_config(cfg)
+    Project(entry).init()
+    (repo / "MASTER.md").write_text("# MASTER\n\nтело\n", encoding="utf-8")
+
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        r = client.get("/p/nomkdemo")
+
+    assert r.status_code == 200
+    assert "/docs/MASTER.md" not in r.text
+    assert "не импортирован" in r.text
+
+
+def test_plan_progress_status_is_a_badge(overview_client) -> None:
+    """ADO-107: статус плана — цветной бейдж, не голый текст."""
+    client, entry = overview_client
+    r = client.get(f"/p/{entry.name}")
+    assert 'class="badge badge-in-progress"' in r.text or 'class="badge badge-pending"' in r.text
+
+
+def test_ready_row_button_says_what_it_does(overview_client) -> None:
+    """ADO-152: по пиктограмме было не понять действие, а скринридер читал «галочка»."""
+    client, entry = overview_client
+    r = client.get(f"/p/{entry.name}")
+    assert "✓ Закрыть" in r.text, "у кнопки нет видимой подписи"
+    assert "aria-label=" in r.text, "у кнопки нет доступного имени"
+    assert 'title="Mark done"' not in r.text, "остался прежний невидимый title"

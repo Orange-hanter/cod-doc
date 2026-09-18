@@ -35,7 +35,7 @@ _DOC_TYPE_CHOICES = [t.value for t in DocumentType]
 @click.option(
     "--status",
     required=True,
-    type=click.Choice(["draft", "review", "active", "deprecated"]),
+    type=click.Choice(["draft", "review", "active", "authoritative", "deprecated"]),
 )
 @click.option("--title", required=True)
 @click.option("--owner", default=None)

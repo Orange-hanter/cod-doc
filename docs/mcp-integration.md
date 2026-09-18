@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **114 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **130 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -25,9 +25,17 @@ MCP (Model Context Protocol) — стандартный протокол для 
 
 ## Agent profile — 6-tool surface (cycle-5, по умолчанию)
 
-> AI-агент работает task-centric, не CRUD-centric. Agent profile —
-> 6 тулов, где каждый возвращает self-sufficient payload. Один вызов
-> заменяет 5-10 round-trips.
+> **RFC 25 (2026-09-15).** Целевая роль дефолтного агента — куратор
+> документации и поиска, не исполнитель задач. Скилл `orchestrator` уже
+> запрещает `agent_pick`. Таблица ниже — **текущий** allowlist до свопа
+> в плане `doc-curator-2026-09` (`ctx_search` / `ctx_docs` / `ctx_drift` /
+> `context_get`). Coding-агент ходит на демон профиля `standard`
+> (`:8801`), а не на `:8802` — профиль выбирается портом, не флагом
+> клиента.
+
+> Пока своп не влит: AI-агент на профиле `agent` технически видит
+> task-centric 6 тулов. Не вызывай `agent_pick`. Один вызов по-прежнему
+> самодостаточный payload — это останется после свопа.
 
 | Тул | Что делает |
 |-----|------------|
@@ -53,11 +61,28 @@ MCP (Model Context Protocol) — стандартный протокол для 
 
 ```bash
 cod-doc-mcp                              # agent (default cycle-5)
-cod-doc-mcp --profile minimal            # 20 cold-start tools
-cod-doc-mcp --profile standard           # 110 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 114 (включая legacy)
+cod-doc-mcp --profile minimal            # 21 cold-start tools
+cod-doc-mcp --profile standard           # 126 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 130 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
+# CLI equivalent (ADO-079): same catalog filter
+cod-doc mcp --profile standard
 ```
+
+Всё перечисленное — запуск stdio. У постоянного демона профиль задаётся не
+флагом клиента, а портом: `:8801` отдаёт `standard`, `:8802` — `agent`
+(см. «Как cod-doc подаётся клиентам»). `cod-doc mcp` применяет
+`--profile` / `COD_DOC_PROFILE` (по умолчанию `agent`) так же, как
+`cod-doc-mcp` — это давно не нефильтрованный каталог.
+
+Не подключайте клиентов через `docker exec … cod-doc mcp`: том контейнера —
+другая БД, не та, что лежит в чекауте.
+
+Про абсолютный путь к бинарю: это требование stdio-эпохи, когда процесс
+резолвил проект от своего cwd. Демон так не делает — проект приходит
+аргументом `project`, а его разрешение идёт только через реестр
+`~/.cod-doc/config.yaml`. Проект, которого нет в реестре, демону недоступен,
+даже если `.cod-doc/state.db` лежит рядом с чекаутом: `cod-doc project add`.
 
 ### Migration guide (cycle-3/4 → cycle-5)
 
@@ -76,41 +101,75 @@ COD_DOC_PROFILE=full cod-doc-mcp         # через env
 
 ---
 
-## Вариант 1. VS Code Copilot Chat
+## Как cod-doc подаётся клиентам
 
-**Самый удобный способ** — Copilot получает полный доступ к cod-doc прямо в IDE.
+Сервер — **один постоянный HTTP-демон на машину**, а не субпроцесс на сессию
+(ADO-171). Раньше каждый клиент порождал свой stdio-процесс: на одной машине
+их набиралось восемь, из двух разных сборок, а плагин и проектный `.mcp.json`
+подключались одновременно и удваивали каталог.
 
-### Настройка
+| Демон | Адрес | Профиль | Тулов |
+|---|---|---|---|
+| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 126 |
+| `com.cod-doc.mcp-agent` | `http://127.0.0.1:8802/mcp` | `agent` | 6 |
 
-Создайте `.vscode/mcp.json` в корне проекта:
+Установка и управление — `deploy/launchd/cod-doc-mcp-daemon.sh`
+(`install | restart | status | uninstall | render`), подробности —
+[`deploy/launchd/README.md`](../deploy/launchd/README.md). Демон работает
+поверх пиннованной non-editable сборки в `~/.cod-doc/runtime`: editable-инстал
+рабочего дерева означал, что любая правка или незавершённый ребейз мгновенно
+уезжают во все харнессы машины сразу.
+
+Два следствия, ломающих привычки stdio-эпохи:
+
+- **Профиль выбирается портом, а не флагом клиента.** `apply_profile`
+  удаляет записи из уже зарегистрированного каталога, поэтому один процесс
+  отдаёт ровно один профиль. `--profile` в клиентский конфиг больше не пишется.
+- **`project` обязателен в каждом DB-туле.** Под stdio процесс был равен
+  сессии, и `set_default_project` хранил дефолт в памяти процесса. У общего
+  демона этого равенства нет — `stateless_http` создаёт транспорт на запрос,
+  но состояние модуля общее. Поэтому дефолта нет вовсе: `set_default_project`
+  отказывает, а вызов без `project` возвращает внятную ошибку вместо тихой
+  работы не с той БД. `capabilities()` показывает это в
+  `session.shared_server`. См. `cod_doc/mcp/tools/_workspace.py`.
+
+---
+
+## Регистрация: одна на харнесс, не на проект
+
+Блок одинаковый везде:
 
 ```json
-{
-  "servers": {
-    "cod-doc": {
-      "command": "cod-doc-mcp",
-      "args": ["--transport", "stdio"]
-    }
-  }
-}
+{ "type": "http", "url": "http://127.0.0.1:8801/mcp" }
 ```
 
-> Если cod-doc установлен в venv, укажите полный путь:
-> `"command": "/path/to/cod-doc/.venv/bin/cod-doc-mcp"`
+| Харнесс | Область | Как |
+|---|---|---|
+| Claude Code | user scope | `claude mcp add --transport http cod-doc http://127.0.0.1:8801/mcp -s user` |
+| Cursor | глобально | блок выше в `~/.cursor/mcp.json` |
+| Claude Desktop | глобально | Settings → Developer → Edit Config |
+| VS Code Copilot | по проекту | `.vscode/mcp.json`, корневой ключ `servers`, а не `mcpServers` |
 
-### Что можно делать
+Проектный `.mcp.json` **в дополнение** к глобальному конфигу — это дубль:
+клиент подключится дважды и каталог удвоится. Ровно так и возникли 224 тула
+вместо 112 до ADO-171. Проверка, что регистрация одна:
 
-После подключения в Copilot Chat доступна вся MCP-поверхность (114 тулов на текущий релиз). Примеры запросов:
+```bash
+claude mcp list        # ожидается ровно одна строка cod-doc, транспорт HTTP
+```
 
-- "Покажи статус проекта weather-cli"
-- "Какие задачи не закрыты?"
-- "Есть ли устаревшие ссылки в MASTER.md?"
-- "Добавь задачу: написать документацию для модуля auth"
-- "Обнови хэши"
-- "Найди в документации всё про обработку ошибок"
-- "Запусти агента на одну итерацию"
+### Что можно спрашивать
 
-Copilot сам выбирает нужные инструменты и вызывает их.
+После подключения доступна вся MCP-поверхность. Примеры:
+
+- «Покажи статус проекта weather-cli»
+- «Какие задачи не закрыты?»
+- «Есть ли устаревшие ссылки в MASTER.md?»
+- «Добавь задачу: написать документацию для модуля auth»
+- «Найди в документации всё про обработку ошибок»
+
+Клиент сам выбирает инструменты и вызывает их — но слаг проекта нужно
+называть явно, иначе тул вернёт ошибку о том, что `project` обязателен.
 
 ### Дополнение: copilot-instructions.md
 
@@ -121,110 +180,53 @@ Copilot сам выбирает нужные инструменты и вызы�
 
 Этот проект документирован через cod-doc.
 - Навигатор документации: MASTER.md (читай его первым)
-- Структура: specs/ (требования), arch/ (архитектура), models/ (данные), docs/ (прочее)
-- Если нужно найти что-то в доках — используй MCP tool `search_docs`
-- Перед изменением доков — проверь хэши через `check_stale_refs`
+- Структура: specs/ (требования), arch/ (архитектура), docs/ (прочее)
+- Поиск по докам — MCP-тул `ctx_search`; слаг проекта передавай явно
+- Перед изменением доков — проверь дрейф через `doc_drift`
 ```
 
-Это даёт Copilot контекст о том, как организована документация, даже без MCP.
+Это даёт Copilot контекст об организации документации даже без MCP.
 
 ---
 
-## Вариант 2. Claude Desktop
+## stdio — когда он всё-таки нужен
 
-### Настройка
-
-Откройте `Settings → Developer → Edit Config` и добавьте:
+Демон покрывает обычную работу, но stdio остался и не изменился: процесс на
+сессию, дефолтный проект через `set_default_project` работает как раньше.
+Он нужен, когда демона нет — в контейнере, на чужой машине, в одноразовом
+окружении CI:
 
 ```json
 {
   "mcpServers": {
     "cod-doc": {
+      "type": "stdio",
       "command": "cod-doc-mcp",
-      "args": ["--transport", "stdio"]
+      "args": ["--profile", "standard"]
     }
   }
 }
 ```
 
-Перезапустите Claude Desktop. В интерфейсе появится иконка 🔧 с доступными инструментами.
-
-### Что можно делать
-
-Та же MCP-поверхность: docs, tasks, plans, stories, links, revisions, runs, approvals, routines, activity, skills. Claude Desktop хорошо работает с инструментами — можно вести диалог о документации:
-
-```
-Ты: Покажи список проектов
-Claude: [вызывает list_projects] → У тебя 2 проекта: weather-cli и proinstall...
-
-Ты: Какой статус у proinstall?
-Claude: [вызывает get_project_status] → 9 документов, все хэши валидны, 6 открытых задач...
-
-Ты: Покажи содержимое MASTER.md
-Claude: [вызывает get_master] → ...
-```
-
----
-
-## Вариант 3. Claude Code (CLI)
-
-### Настройка
-
-```bash
-claude mcp add cod-doc cod-doc-mcp -- --transport stdio
-```
-
-### Или через конфиг `.claude/settings.json`:
+Через контейнер:
 
 ```json
-{
-  "mcpServers": {
-    "cod-doc": {
-      "command": "cod-doc-mcp",
-      "args": ["--transport", "stdio"]
-    }
-  }
-}
+{ "type": "stdio", "command": "docker", "args": ["exec", "-i", "cod-doc", "cod-doc", "mcp"] }
 ```
 
-### Использование
+Профиль сервера по умолчанию — `agent` (6 тулов), а не `standard`, поэтому под
+stdio его указывают явно. Поднять HTTP-эндпоинт вручную, без launchd:
 
 ```bash
-claude "Покажи статус документации проекта proinstall"
-claude "Найди в документации всё про CSS-переменные"
-claude "Добавь задачу: обновить docs/overview.md после рефакторинга"
+cod-doc mcp --transport streamable-http --host 127.0.0.1 --port 8801
 ```
+
+Наружу порт не выставлять: аутентификации у MCP-эндпоинта нет, единственный
+контроль — bind на loopback.
 
 ---
 
-## Вариант 4. Streamable HTTP (для удалённых клиентов)
-
-Если MCP-клиент не поддерживает stdio или нужен удалённый доступ:
-
-```bash
-cod-doc mcp --transport streamable-http --host 127.0.0.1 --port 8001
-# endpoint: http://127.0.0.1:8001/mcp
-```
-
-Подключение в любом MCP-клиенте:
-```json
-{
-  "mcpServers": {
-    "cod-doc": {
-      "url": "http://127.0.0.1:8001/mcp"
-    }
-  }
-}
-```
-
-Когда использовать:
-- Сервер на одной машине, клиент на другой
-- Docker / remote development
-- Несколько клиентов к одному серверу
-
----
-
-## Вариант 5. REST API (без MCP)
+## REST API (без MCP)
 
 Для систем, не поддерживающих MCP:
 
@@ -259,7 +261,7 @@ WS   /ws/projects/{name}/run     # запуск агента через WebSocke
 
 ---
 
-## Вариант 6. Только MASTER.md (без сервера)
+## Только MASTER.md (без сервера)
 
 Даже без запущенного MCP-сервера, MASTER.md полезен для LLM:
 
@@ -285,7 +287,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | Семейство | Кол-во | Назначение | Ключевые тулы |
 |-----------|-------:|------------|---------------|
 | **doc.\*** | 10 | DB-backed документы | `doc_list`, `doc_body`, `doc_create`, `doc_rename`, `doc_export`, `doc_drift`, `doc_drift_all`, `doc_get`, `doc_accept`, `doc_backfill_projection` |
-| **task.\*** | 17 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_update`, `task_complete`, `task_set_blocker`, `task_find_duplicate`, `task_log_progress`, … |
+| **task.\*** | 18 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_update`, `task_move_to_section`, `task_complete`, `task_set_blocker`, `task_find_duplicate`, `task_log_progress`, … |
 | **task_doc.\*** | 5 | Артефакты, связанные с задачей | `task_doc_put`, `task_doc_get`, `task_doc_list`, `task_doc_revisions`, `task_doc_revert` |
 | **task_checkout / task_release** | 2 | Атомарный захват задачи (PCA-200) | `task_checkout`, `task_release` |
 | **plan.\*** | 11 | Планы исполнения и графы зависимостей | `plan_create`, `plan_freeze`, `plan_section_create`, `plan_sections_list`, `plan_ready`, `plan_progress`, `plan_critical_path`, `plan_forward_chain`, `plan_reverse_chain`, `plan_audit`, `plan_export` |
@@ -298,13 +300,15 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **routine.\*** | 7 | Cron-style health checks | `routine_create`, `routine_list`, `routine_get`, `routine_update_status`, `routine_delete`, `routine_run_now`, `routine_history` |
 | **skill.\*** | 2 | Каталог skill-инструкций для агента | `skill_list`, `skill_get` |
 | **agent.\* (cycle-5)** | 6 | Task-centric surface для AI-агентов: pick → work → complete за 3 вызова | `agent_capabilities`, `agent_pick`, `agent_get`, `agent_report`, `agent_complete`, `agent_release` |
-| **adr.\* (ADR-002)** | 9 | Architecture Decision Records: CRUD + supersede DAG + task links + Mermaid diagrams + deprecate | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_add_diagram`, `adr_supersede`, `adr_deprecate`, `adr_link_task`, `adr_graph` |
+| **adr.\* (ADR-002)** | 10 | Architecture Decision Records: CRUD + supersede DAG + task links + Mermaid diagrams + deprecate + projection sync | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_sync_body`, `adr_add_diagram`, `adr_supersede`, `adr_deprecate`, `adr_link_task`, `adr_graph` |
 | **context / capabilities / session** | 9 | Admin: snowball-сборка контекста, L0 bootstrap, tool discovery + per-tool describe, change-log, safe-call envelope, workspace defaults | `context_get`, `capabilities`, `tool_search`, `tool_describe`, `tools_diff`, `tool_call_safe`, `set_default_project`, `get_default_project`, `clear_default_project` |
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
 | **Legacy (YAML агент)** | 3 | Остаток legacy-surface после STB-002 (2026-06-08): resume-вход + context-хелперы. YAML CRUD (проекты/задачи/MASTER/поиск + hash/verify) удалён — БД источник истины. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
 | **finding.\* (RFC 22)** | 4 | Внешние находки (ai-review / ZAIrgRush / routines): triage и промоушен в задачи. Только профили standard/full | `finding_list`, `finding_get`, `finding_promote`, `finding_dismiss` |
 | **ctx.\* (RFC 22)** | 3 | Контекст для внешних потребителей: `ctx_docs` = `doc_list`, `ctx_drift` = `doc_drift_all` (SYM-006D), `ctx_drift_gate` — детерминированный гейт документации по файлам PR с идемпотентным PR-комментарием (SYM-010). Только профили standard/full | `ctx_docs`, `ctx_drift`, `ctx_drift_gate` |
-| **ИТОГО** | **114** | | |
+| **scenario.\* (RFC 24 §9)** | 9 | Сценарии тестирования: авторская половина RFC 24 — что должно быть верно (вид, предусловия, шаги, ожидаемый результат, якорь в capability-документе) и проекция в `docs/system/scenarios/`. Вердикты покрытия сюда не попадают: это доказательства producer'а (STR-002). Только профили standard/full | `scenario_create`, `scenario_get`, `scenario_list`, `scenario_update`, `scenario_retire`, `scenario_set_steps`, `scenario_link`, `scenario_export`, `scenario_coverage` |
+| **structure.\*** | 5 | Pinned code-structure snapshots, drift, scenarios and BFS context (not projection drift; not ai_review findings) | `structure_get`, `structure_context`, `structure_drift`, `structure_scenarios`, `structure_diff` |
+| **ИТОГО** | **130** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
@@ -333,27 +337,34 @@ docstring соответствующих тулов. Для новых инте�
 
 ## Сравнение вариантов
 
-| Критерий | MCP (stdio) | MCP (HTTP) | REST API | Только MASTER.md |
-|----------|-------------|-----------|----------|-------------------|
-| Настройка | Простая | Средняя | Простая | Никакой |
+| Критерий | MCP (HTTP-демон) | MCP (stdio) | REST API | Только MASTER.md |
+|----------|------------------|-------------|----------|-------------------|
+| Процессов на машине | 1 на профиль | 1 на клиентскую сессию | 1 | 0 |
+| Настройка | Один раз, глобально | В каждом клиенте | Простая | Никакой |
 | Copilot Chat | ✅ | ✅ | ❌ | Частично |
 | Claude Desktop | ✅ | ✅ | ❌ | Через copy-paste |
-| CI/CD | ❌ | ✅ | ✅ | ❌ |
-| Кол-во инструментов | 114 | 114 | ~8 | 0 |
+| CI/CD | ✅ | ❌ | ✅ | ❌ |
+| Кол-во инструментов | 130 | 130 | ~8 | 0 |
 | Семантический поиск | ✅ | ✅ | ❌ | ❌ |
-| Запуск агента | ✅ | ✅ | ✅ (WS) | ❌ |
+| `project` в вызове | обязателен | можно через дефолт | — | — |
+| Дефолтный проект | нет (общий процесс) | есть (процесс = сессия) | — | — |
 
 ---
 
 ## Рекомендации
 
-**Для одного разработчика:** MCP (stdio) + VS Code Copilot Chat. Минимум настройки, максимум возможностей.
+**По умолчанию:** HTTP-демон, одна регистрация на харнесс. Это единственный
+вариант, при котором число процессов не растёт с числом открытых окон, а
+каталог тулов не удваивается от случайного второго конфига.
 
-**Для команды:** MCP (HTTP) + copilot-instructions.md. Сервер на общей машине, каждый подключается из своего IDE.
+**stdio:** когда демона нет и поднимать его некуда — контейнер, чужая машина,
+одноразовое окружение CI.
 
-**Для CI/CD:** REST API. Проверка свежести документации, автоматическое создание задач при обнаружении stale refs.
+**REST API:** для систем без поддержки MCP. Проверка свежести документации,
+автосоздание задач при обнаружении stale refs.
 
-**Для быстрого старта:** Только MASTER.md + copilot-instructions.md. Нулевая настройка, Copilot находит MASTER.md через @workspace.
+**Только MASTER.md:** нулевая настройка, Copilot находит файл через
+@workspace. Годится для быстрого старта и чужих репозиториев.
 
 ## Как я предлагаю учиться дальше
 

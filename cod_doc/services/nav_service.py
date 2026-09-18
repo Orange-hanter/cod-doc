@@ -121,33 +121,6 @@ class NavAnalysis:
     error: str = ""
 
 
-def fmt_relative(iso_ts: str) -> str:
-    """Render an ISO-8601 UTC timestamp as a short relative phrase.
-
-    Examples: ``just now``, ``5 min ago``, ``2 hours ago``, ``3 days ago``.
-    Falls back to the raw date when the value cannot be parsed.
-    """
-    if not iso_ts:
-        return ""
-    try:
-        ts = datetime.fromisoformat(iso_ts).astimezone(UTC)
-    except (ValueError, TypeError):
-        return iso_ts
-    delta = (datetime.now(UTC) - ts).total_seconds()
-    if delta < 60:
-        return "just now"
-    if delta < 3600:
-        m = int(delta // 60)
-        return f"{m} min ago"
-    if delta < 86400:
-        h = int(delta // 3600)
-        return f"{h} hour{'s' if h > 1 else ''} ago"
-    d = int(delta // 86400)
-    if d < 30:
-        return f"{d} day{'s' if d > 1 else ''} ago"
-    return ts.strftime("%Y-%m-%d")
-
-
 def _fingerprint(doc_list: list[Any]) -> str:
     keys = sorted(d.doc_key for d in doc_list)
     return hashlib.sha256("\n".join(keys).encode()).hexdigest()[:16]

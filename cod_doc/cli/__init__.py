@@ -9,6 +9,7 @@ cod-doc project init     — инициализировать .cod-doc/ в пр�
 cod-doc hub init         — создать/мигрировать глобальную hub-БД
 cod-doc agent run        — запустить агент для проекта
 cod-doc serve            — запустить REST API сервер
+cod-doc mcp              — MCP stdio/HTTP; --profile same as cod-doc-mcp
 cod-doc hash calc        — вычислить хэш файла
 cod-doc hash update      — обновить хэши в MASTER.md
 cod-doc task list        — список задач
@@ -18,6 +19,7 @@ cod-doc task status      — обновить статус задачи
 cod-doc task complete    — завершить задачу
 cod-doc plan show        — прогресс плана
 cod-doc plan ready       — готовые задачи
+cod-doc audit            — проверка frontmatter + дрейфа (FM-*/DR-*)
 cod-doc plan audit       — аудит плана
 cod-doc plan export      — экспорт markdown
 cod-doc plan critical-path — критический путь
@@ -50,7 +52,12 @@ cod-doc link verify      — проверить ссылки секции
 cod-doc revision list    — история ревизий сущности
 cod-doc revision show    — детали ревизии
 cod-doc revision revert  — откатить ревизию
-cod-doc audit            — проверка frontmatter + дрейфа (FM-*/DR-*)
+cod-doc ingest structure — принять structure facts/assessment snapshot
+cod-doc obligation export — экспортировать obligations_export.v1
+cod-doc structure latest|get|drift|triage|entities|contracts|scenarios
+cod-doc ctx structure     — pinned SHA structure_context
+cod-doc scenario new|list|show|update|retire|steps|link|unlink|export|coverage
+
 cod-doc import docs      — импорт .md/.rst/.txt из репо как Documents
 cod-doc import legacy-tasks — миграция .cod-doc/tasks.yaml в DB
 cod-doc import all       — оба пайплайна подряд
@@ -66,6 +73,7 @@ cod-doc embed status       — провайдер эмбеддингов: рез
 cod-doc embed probe        — живой вызов эмбеддера (размерность, цена, задержка)
 cod-doc embed models       — каталог моделей эмбеддингов провайдера
 cod-doc embed reset        — удалить векторную коллекцию (смена модели)
+cod-doc completion zsh     — напечатать zsh-completion (установка — scripts/)
 """
 
 from __future__ import annotations
@@ -88,12 +96,16 @@ from cod_doc.cli.cmd_reindex import reindex
 from cod_doc.cli.cmd_search import search as search_cmd
 from cod_doc.cli.cmd_serve import mcp_server, serve
 from cod_doc.cli.cmd_tui import tui, wizard
+from cod_doc.cli.completion.cmd import completion
 from cod_doc.cli.doc import doc
 from cod_doc.cli.link import link
+from cod_doc.cli.obligation import obligation
 from cod_doc.cli.plan import plan
 from cod_doc.cli.revision import revision
 from cod_doc.cli.routine import routine
+from cod_doc.cli.scenario import scenario
 from cod_doc.cli.story import story
+from cod_doc.cli.structure import structure
 from cod_doc.cli.task import task
 from cod_doc.config import Config
 from cod_doc.logging_config import setup_logging
@@ -122,6 +134,7 @@ main.add_command(mcp_server)
 main.add_command(task)
 main.add_command(plan)
 main.add_command(story)
+main.add_command(scenario)
 main.add_command(doc)
 main.add_command(link)
 main.add_command(revision)
@@ -131,11 +144,14 @@ main.add_command(import_cmd)
 main.add_command(ingest)
 main.add_command(ctx)
 main.add_command(finding)
+main.add_command(obligation)
+main.add_command(structure)
 main.add_command(adapter)
 main.add_command(adr)
 main.add_command(embed)
 main.add_command(reindex)
 main.add_command(search_cmd)
+main.add_command(completion)
 
 
 if __name__ == "__main__":

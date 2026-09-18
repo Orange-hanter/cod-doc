@@ -7,12 +7,12 @@ from click.testing import CliRunner
 from cod_doc.cli import main
 
 
-def test_adr_help_lists_five_subcommands() -> None:
+def test_adr_help_lists_core_subcommands() -> None:
     runner = CliRunner()
     result = runner.invoke(main, ["adr", "--help"])
     assert result.exit_code == 0
     out = result.output
-    for cmd in ("new", "list", "show", "supersede", "graph"):
+    for cmd in ("new", "list", "show", "supersede", "graph", "sync"):
         assert cmd in out, f"adr {cmd} missing from --help: {out}"
 
 
@@ -47,3 +47,29 @@ def test_adr_graph_help_supports_format_choice() -> None:
     assert result.exit_code == 0
     assert "mermaid" in result.output
     assert "json" in result.output
+
+
+def test_adr_sync_help_lists_body_fields_and_no_status() -> None:
+    """`adr sync` carries the body fields — and deliberately not --status."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["adr", "sync", "--help"])
+    assert result.exit_code == 0
+    for opt in (
+        "--project",
+        "--title",
+        "--decided-at",
+        "--context",
+        "--decision",
+        "--alternatives",
+        "--consequences",
+    ):
+        assert opt in result.output, f"{opt} missing"
+    assert "--status" not in result.output
+
+
+def test_adr_sync_without_any_field_is_an_error() -> None:
+    """A bare `adr sync ADR-001 -p x` is a typo, not a no-op."""
+    runner = CliRunner()
+    result = runner.invoke(main, ["adr", "sync", "ADR-001", "-p", "nope"])
+    assert result.exit_code == 2
+    assert "Nothing to sync" in result.output

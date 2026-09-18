@@ -323,6 +323,102 @@ def update(
     return row
 
 
+_SYNCABLE_FIELDS = ("title", "decided_at", "context", "decision", "alternatives", "consequences")
+
+
+def sync_body(
+    session: Session,
+    *,
+    project_id: int,
+    adr_id: str,
+    title: str | None = None,
+    decided_at: date | None = None,
+    context: str | None = None,
+    decision: str | None = None,
+    alternatives: str | None = None,
+    consequences: str | None = None,
+    author: str = "human",
+    reason: str | None = None,
+) -> ADRModel:
+    """Re-sync an ADR's body from its markdown projection, ignoring the status gate.
+
+    :func:`update` refuses body edits on ACCEPTED and on terminal statuses,
+    and that refusal is right: an accepted decision is not amended in place,
+    it is superseded. That rule protects the **decision**.
+
+    This function serves the other direction. The DB row is a projection of a
+    markdown file which some projects treat as the source of truth; when the
+    file is corrected — a broken citation, a missing section, a heading the
+    parser could not map — the row has to follow. The decision does not
+    change; its record does. Blocking that leaves the registry knowingly
+    stale, with no legal way to repair it (ADO-168).
+
+    Two things keep the guarantee intact:
+
+    - ``status`` is not a parameter. Moving between statuses stays a
+      decision-level act and still goes through :func:`update` (from
+      PROPOSED), :func:`deprecate` or :func:`supersede`.
+    - The audit trail is distinguishable. The revision carries
+      ``op=sync_body`` and the activity event is ``adr.body_synced``, so a
+      projection sync never reads as a hand edit of a decision.
+
+    A call that changes nothing is a no-op: no revision, no event.
+    """
+    row = _require(session, project_id, adr_id)
+
+    incoming: dict[str, Any] = {
+        "title": title,
+        "decided_at": decided_at,
+        "context": context,
+        "decision": decision,
+        "alternatives": alternatives,
+        "consequences": consequences,
+    }
+    changed: dict[str, Any] = {}
+    for field in _SYNCABLE_FIELDS:
+        value = incoming[field]
+        if value is None or value == getattr(row, field):
+            continue
+        if field == "decided_at":
+            changed[field] = {
+                "old": row.decided_at.isoformat() if row.decided_at else None,
+                "new": decided_at.isoformat() if decided_at else None,
+            }
+        elif field == "title":
+            changed[field] = {"old": row.title, "new": value}
+        else:
+            changed[field] = {"changed": True}
+
+    if not changed:
+        return row
+
+    for field in changed:
+        setattr(row, field, incoming[field])
+    row.last_updated = datetime.now(UTC)
+    session.flush()
+
+    rev.write(
+        session,
+        project_id=project_id,
+        entity_kind=EntityKind.ADR,
+        entity_id=row.row_id,
+        author=author,
+        diff=_diff("sync_body", adr_id=adr_id, status=row.status, **changed),
+        reason=reason or "sync_body",
+    )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "adr.body_synced",
+        author,
+        scope_kind="adr",
+        scope_id=adr_id,
+        payload={"changed": list(changed.keys()), "status": row.status},
+        summary=f"ADR {adr_id} body synced from projection",
+    )
+    return row
+
+
 def deprecate(
     session: Session,
     *,

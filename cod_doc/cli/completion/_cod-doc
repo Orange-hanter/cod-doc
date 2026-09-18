@@ -1,0 +1,2756 @@
+#compdef cod-doc
+# ╔═══════════════════════════════════════════════════════════════════════════╗
+# ║  СГЕНЕРИРОВАНО — не редактировать руками.                                 ║
+# ║                                                                           ║
+# ║    генератор  : cod_doc/cli/completion/zsh.py                             ║
+# ║    источники  : cod_doc/cli/completion/sources.py                         ║
+# ║    runtime    : cod_doc/cli/completion/prelude.zsh                        ║
+# ║    регенерация: python -m cod_doc.cli.completion --write                  ║
+# ║    сторож     : tests/cli/test_zsh_completion_drift.py                    ║
+# ╚═══════════════════════════════════════════════════════════════════════════╝
+
+# ─────────────────────── cod-doc: динамические значения ──────────────────────
+# Рукописный runtime. Генератор вшивает этот файл в `_cod-doc` дословно,
+# подставляя только SQL по плейсхолдерам @@SQL:<ключ>@@ (см. sources.py).
+#
+# Три правила, из которых всё остальное следует:
+#
+#  1. НИКОГДА не звать `cod-doc`. Замеры: `--help` 470 мс, `task list --json`
+#     710 мс, `project list` 870 мс — CLI жадно импортирует 26 групп, а
+#     cmd_hub тянет alembic + SQLAlchemy. Реестр читаем awk'ом (<10 мс),
+#     всё остальное — одним `sqlite3 -readonly` (~20 мс со стартом процесса).
+#  2. Любая осечка — `return 1` и НОЛЬ вывода. Тогда zsh молча уходит в
+#     `_default`, а не сыплет ошибками поверх промпта.
+#  3. Кэша нет намеренно. 20 мс ниже порога восприятия, а протухший кэш
+#     («создал ADO-500, жму TAB — её нет») дороже любой экономии.
+
+# ── реестр проектов ──────────────────────────────────────────────────────────
+
+(( $+functions[_cod_doc_registry] )) || _cod_doc_registry() {
+  # name<TAB>path<TAB>db_url для каждой записи ~/.cod-doc/config.yaml.
+  # db_url == null|~ отдаём пустым — значит embedded <path>/.cod-doc/state.db.
+  local cfg="${COD_DOC_HOME:-$HOME/.cod-doc}/config.yaml"
+  [[ -r $cfg ]] || return 1
+  (( $+commands[awk] )) || return 1
+  # \047 — одинарная кавычка: держим awk-программу свободной от них, иначе
+  # её не завернуть в одинарные кавычки zsh.
+  awk '
+    function flush() {
+      if (name != "" && path != "") print name "\t" path "\t" url
+      name = ""; path = ""; url = ""
+    }
+    function val(s,   v) {
+      v = s
+      sub(/^[^:]+:[ \t]*/, "", v)
+      gsub(/^["\047]|["\047]$/, "", v)
+      return v
+    }
+    /^projects:[ \t]*$/ { inp = 1; next }
+    {
+      if (!inp) next
+      line = $0
+      if (line ~ /^[^ \t#-]/) { flush(); inp = 0; next }
+      sub(/^[ \t]*/, "", line)
+      if (line ~ /^-[ \t]/) { flush(); sub(/^-[ \t]+/, "", line) }
+      else if (line == "-") { flush(); next }
+      if (line ~ /^name:[ \t]/)         { name = val(line) }
+      else if (line ~ /^path:[ \t]/)    { path = val(line) }
+      else if (line ~ /^db_url:[ \t]/)  { url = val(line); if (url == "null" || url == "~") url = "" }
+    }
+    END { flush() }
+  ' "$cfg" 2>/dev/null
+}
+
+# ── какой проект имеет в виду пользователь ───────────────────────────────────
+
+(( $+functions[_cod_doc_safe_slug] )) || _cod_doc_safe_slug() {
+  # Слаг пойдёт в SQL-литерал. Пропускаем только [A-Za-z0-9._-]; проверка без
+  # EXTENDED_GLOB, потому что в completion-контексте он не гарантирован.
+  [[ -n $1 && -z ${1//[A-Za-z0-9._-]/} ]]
+}
+
+(( $+functions[_cod_doc_slug] )) || _cod_doc_slug() {
+  # 1) уже разобранный -p/--project: _arguments кладёт opt_args в динамическую
+  #    область видимости вызывающего, поэтому action-функции он виден даром;
+  # 2) ручной скан $words — когда дополняем позиционный ДО -p, и для слитной
+  #    формы -pcod-doc;
+  # 3) подъём от $PWD к .cod-doc/state.db — тот же приём, что у
+  #    workspace-discovery в cod_doc/config.py.
+  local slug="" i
+  slug="${(Q)opt_args[--project]:-${(Q)opt_args[-p]}}"
+  if [[ -z $slug ]]; then
+    for (( i = 1; i <= $#words; i++ )); do
+      case ${words[i]} in
+        (--project=*) slug=${words[i]#--project=} ;;
+        (-p|--project) slug=${words[i+1]} ;;
+        (-p?*) slug=${words[i]#-p} ;;
+      esac
+    done
+  fi
+  _cod_doc_safe_slug "$slug" || return 1
+  print -r -- "$slug"
+}
+
+(( $+functions[_cod_doc_db] )) || _cod_doc_db() {
+  # Путь к sqlite-файлу проекта. Пусто + return 1, если проект на Postgres.
+  # ВНИМАНИЕ: не заводить локальную переменную `path` — в zsh она специальная
+  # и привязана к $PATH; локальное объявление тихо ломает и поиск команд, и
+  # сам цикл. Отсюда суффикс entry_*.
+  local slug entry entry_name entry_root url dir
+  slug=$(_cod_doc_slug)
+
+  if [[ -n $slug ]]; then
+    for entry in ${(f)"$(_cod_doc_registry)"}; do
+      entry_name=${entry%%$'\t'*}
+      [[ $entry_name == $slug ]] || continue
+      entry_root=${${entry#*$'\t'}%%$'\t'*}
+      url=${entry##*$'\t'}
+      if [[ -n $url ]]; then
+        # db_url_for_entry (cod_doc/infra/db.py): непустой db_url бьёт
+        # embedded. Правило по СХЕМЕ, а не по «null/не-null»: запись orakul
+        # это sqlite:////Users/... — вполне читаемый файл. Hub на Postgres —
+        # пас, дополнять нечем.
+        [[ $url == sqlite*://* ]] || return 1
+        print -r -- "${url#sqlite*:///}"
+        return 0
+      fi
+      print -r -- "$entry_root/.cod-doc/state.db"
+      return 0
+    done
+    return 1
+  fi
+
+  # Проект не назван — берём ближайшую БД вверх по дереву от $PWD.
+  dir=$PWD
+  while [[ -n $dir && $dir != / ]]; do
+    if [[ -f $dir/.cod-doc/state.db ]]; then
+      print -r -- "$dir/.cod-doc/state.db"
+      return 0
+    fi
+    dir=${dir:h}
+  done
+  return 1
+}
+
+(( $+functions[_cod_doc_sql] )) || _cod_doc_sql() {
+  # Один вызов sqlite3. Плоский путь, а НЕ file:-URI: URI требует
+  # percent-encoding, а пути проектов могут содержать пробелы.
+  local sql=$1 db out
+  (( $+commands[sqlite3] )) || return 1
+  db=$(_cod_doc_db) || return 1
+  [[ -n $db && -r $db ]] || return 1
+
+  if ! out=$(sqlite3 -readonly -batch -noheader -cmd '.timeout 300' "$db" "$sql" 2>/dev/null); then
+    # WAL-базу БЕЗ файла -shm рядом нельзя открыть только на чтение: SQLite
+    # обязана создать разделяемый индекс, а -readonly ей это запрещает —
+    # SQLITE_CANTOPEN(14). Состояние штатное, а не аварийное: -wal и -shm
+    # удаляются при чистом закрытии ПОСЛЕДНЕГО соединения, так что у
+    # спокойного проекта их обычно и нет.
+    #
+    # Второй заход — обычное открытие с query_only=1: изменить данные
+    # по-прежнему нельзя, а служебный -shm создать можно. Побочный эффект —
+    # появление -wal/-shm рядом с БД; ровно это делает и любой вызов
+    # самого `cod-doc`.
+    out=$(sqlite3 -batch -noheader -cmd '.timeout 300' -cmd 'pragma query_only=1' \
+          "$db" "$sql" 2>/dev/null) || return 1
+  fi
+
+  [[ -n $out ]] || return 1
+  print -r -- "$out"
+}
+
+(( $+functions[_cod_doc_where_project] )) || _cod_doc_where_project() {
+  # Hub-БД держит много проектов, embedded — один. Фильтруем, когда слаг
+  # известен; иначе показываем всё, что лежит в найденном файле.
+  local slug
+  slug=$(_cod_doc_slug) || return 0
+  [[ -n $slug ]] || return 0
+  print -rn -- "and p.slug = '${slug//\'/\'\'}'"
+}
+
+# ── источники значений ───────────────────────────────────────────────────────
+
+(( $+functions[_cod_doc_projects] )) || _cod_doc_projects() {
+  local entry
+  local -a slugs
+  for entry in ${(f)"$(_cod_doc_registry)"}; do
+    slugs+=( "${entry%%$'\t'*}:${${entry#*$'\t'}%%$'\t'*}" )
+  done
+  (( $#slugs )) || return 1
+  _describe -t cod-doc-projects 'project' slugs
+}
+
+(( $+functions[_cod_doc_tasks] )) || _cod_doc_tasks() {
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "select t.task_id || ':' || t.status || ' · ' || replace(replace(replace(t.title, ':', ' -'), char(10), ' '), char(9), ' ') from task t join project p on p.row_id = t.project_id where 1=1 $(_cod_doc_where_project) order by t.task_id limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-tasks 'task' rows
+}
+
+(( $+functions[_cod_doc_docs] )) || _cod_doc_docs() {
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "select d.doc_key || ':' || d.type || ' · ' || replace(replace(replace(d.title, ':', ' -'), char(10), ' '), char(9), ' ') from document d join project p on p.row_id = d.project_id where 1=1 $(_cod_doc_where_project) order by d.doc_key limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-docs 'document' rows
+}
+
+(( $+functions[_cod_doc_plans] )) || _cod_doc_plans() {
+  # plan.scope И ЕСТЬ идентификатор плана (UNIQUE), отдельного id нет.
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "select pl.scope || ':' || replace(replace(coalesce(pl.principle, 'plan'), ':', ' -'), char(10), ' ') from plan pl join project p on p.row_id = pl.project_id where 1=1 $(_cod_doc_where_project) order by pl.scope limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-plans 'plan scope' rows
+}
+
+(( $+functions[_cod_doc_plan_sections] )) || _cod_doc_plan_sections() {
+  # `task create --section A` — буква секции; сужаем по уже набранному --plan.
+  local scope filter=""
+  local -a rows
+  scope="${(Q)opt_args[--plan]}"
+  _cod_doc_safe_slug "$scope" && filter="and pl.scope = '${scope//\'/\'\'}'"
+  rows=( ${(f)"$(_cod_doc_sql "select ps.letter || ':' || pl.scope || ' · ' || replace(replace(ps.title, ':', ' -'), char(10), ' ') from plan_section ps join plan pl on pl.row_id = ps.plan_id join project p on p.row_id = pl.project_id where 1=1 $(_cod_doc_where_project) $filter order by pl.scope, ps.position limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-plan-sections 'plan section' rows
+}
+
+(( $+functions[_cod_doc_doc_sections] )) || _cod_doc_doc_sections() {
+  # `link sync DOC_KEY --section ANCHOR`: doc_key приходит ПОЗИЦИОННЫМ, его
+  # кладёт в $line сам _arguments. У scenario new|update он в --doc-key.
+  local key filter=""
+  local -a rows
+  key="${(Q)opt_args[--doc-key]:-${line[1]}}"
+  if [[ -n $key && -z ${key//[A-Za-z0-9._\/-]/} ]]; then
+    filter="and d.doc_key = '${key//\'/\'\'}'"
+  fi
+  rows=( ${(f)"$(_cod_doc_sql "select distinct s.anchor || ':' || replace(replace(s.heading, ':', ' -'), char(10), ' ') from section s join document d on d.row_id = s.document_id join project p on p.row_id = d.project_id where 1=1 $(_cod_doc_where_project) $filter order by s.anchor limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-doc-sections 'section anchor' rows
+}
+
+(( $+functions[_cod_doc_adrs] )) || _cod_doc_adrs() {
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "select a.adr_id || ':' || a.status || ' · ' || replace(replace(a.title, ':', ' -'), char(10), ' ') from adr a join project p on p.row_id = a.project_id where 1=1 $(_cod_doc_where_project) order by a.adr_id limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-adrs 'ADR' rows
+}
+
+(( $+functions[_cod_doc_adrs_other] )) || _cod_doc_adrs_other() {
+  # `adr supersede НОВЫЙ СТАРЫЙ` берёт два РАЗНЫХ идентификатора. Повтор
+  # первого CLI отвергнет, так что предлагать его — вредный совет.
+  local row
+  local -a rows kept
+  rows=( ${(f)"$(_cod_doc_sql "select a.adr_id || ':' || a.status || ' · ' || replace(replace(a.title, ':', ' -'), char(10), ' ') from adr a join project p on p.row_id = a.project_id where 1=1 $(_cod_doc_where_project) order by a.adr_id limit 2000;")"} )
+  for row in $rows; do
+    # ${line[(re)…]} — обратный индекс: непусто, если такой элемент уже набран.
+    # Флаг `e` обязателен: без него значение трактуется как ПАТТЕРН, и
+    # идентификатор со спецсимволом сопоставлялся бы не с собой.
+    [[ -n ${line[(re)${row%%:*}]} ]] && continue
+    kept+=( $row )
+  done
+  (( $#kept )) || return 1
+  _describe -t cod-doc-adrs 'ADR' kept
+}
+
+(( $+functions[_cod_doc_task_blockers] )) || _cod_doc_task_blockers() {
+  # `task remove-dep TASK_ID BLOCKER_ID` снимает СУЩЕСТВУЮЩЕЕ ребро, поэтому
+  # второй аргумент — не «любая из 400 задач», а только блокеры первой.
+  # Нет блокеров — молча пусто: это честнее, чем предложить заведомо
+  # несуществующее ребро.
+  local owner filter=""
+  local -a rows
+  owner="${line[1]}"
+  _cod_doc_safe_slug "$owner" || return 1
+  filter="and t.task_id = '${owner//\'/\'\'}'"
+  rows=( ${(f)"$(_cod_doc_sql "select b.task_id || ':' || b.status || ' · ' || replace(replace(b.title, ':', ' -'), char(10), ' ') from dependency d join task t on t.row_id = d.from_task_id join task b on b.row_id = d.to_task_id join project p on p.row_id = t.project_id where d.kind = 'blocks' $(_cod_doc_where_project) $filter order by b.task_id limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-task-blockers 'blocker' rows
+}
+
+(( $+functions[_cod_doc_stories] )) || _cod_doc_stories() {
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "select s.story_id || ':' || s.status || ' · ' || substr(replace(replace(s.narrative, ':', ' -'), char(10), ' '), 1, 60) from user_story s join project p on p.row_id = s.project_id where 1=1 $(_cod_doc_where_project) order by s.story_id limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-stories 'user story' rows
+}
+
+(( $+functions[_cod_doc_scenarios] )) || _cod_doc_scenarios() {
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "select sc.scenario_id || ':' || sc.status || ' · ' || replace(replace(sc.title, ':', ' -'), char(10), ' ') from scenario sc join project p on p.row_id = sc.project_id where 1=1 $(_cod_doc_where_project) order by sc.scenario_id limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-scenarios 'scenario' rows
+}
+
+(( $+functions[_cod_doc_scenario_groups] )) || _cod_doc_scenario_groups() {
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "select distinct sc.group_key || ':' || count(*) || ' сценариев' from scenario sc join project p on p.row_id = sc.project_id where sc.group_key is not null $(_cod_doc_where_project) group by sc.group_key order by sc.group_key limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-scenario-groups 'scenario group' rows
+}
+
+(( $+functions[_cod_doc_revisions] )) || _cod_doc_revisions() {
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "select r.revision_id || ':' || r.entity_kind || ' · ' || replace(replace(coalesce(r.reason, ''), ':', ' -'), char(10), ' ') from revision r join project p on p.row_id = r.project_id where 1=1 $(_cod_doc_where_project) order by r.row_id desc limit 200;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-revisions 'revision' rows
+}
+
+(( $+functions[_cod_doc_routines] )) || _cod_doc_routines() {
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "select rt.name || ':' || (case rt.enabled when 1 then 'enabled' else 'disabled' end) || ' · ' || coalesce(rt.trigger, '') from routine rt join project p on p.row_id = rt.project_id where 1=1 $(_cod_doc_where_project) order by rt.name limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-routines 'routine' rows
+}
+
+(( $+functions[_cod_doc_adapters] )) || _cod_doc_adapters() {
+  # Адаптеры живут не в БД, а в ~/.cod-doc/adapters.json (cmd_adapter.py).
+  local file="${COD_DOC_HOME:-$HOME/.cod-doc}/adapters.json"
+  local -a names
+  [[ -r $file ]] || return 1
+  names=( ${(f)"$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" 2>/dev/null)"} )
+  (( $#names )) || return 1
+  _describe -t cod-doc-adapters 'adapter' names
+}
+
+
+# ─────────────────── дерево команд (сгенерировано) ────────────────────
+
+_cod-doc() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(--log-level)--log-level=[DEBUG|INFO|WARNING|ERROR]:log-level:(DEBUG INFO WARNING ERROR)' \
+    '(--log-format)--log-format=[text|json]:log-format:(text json)' \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_commands' \
+    '*:: :->cod_doc_cmd' && ret=0
+
+  case $state in
+    (cod_doc_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-$words[1]:"
+      case $words[1] in
+        (adapter)    _cod_doc_adapter && ret=0 ;;
+        (adr)        _cod_doc_adr && ret=0 ;;
+        (agent)      _cod_doc_agent && ret=0 ;;
+        (audit)      _cod_doc_audit && ret=0 ;;
+        (completion) _cod_doc_completion && ret=0 ;;
+        (ctx)        _cod_doc_ctx && ret=0 ;;
+        (doc)        _cod_doc_doc && ret=0 ;;
+        (embed)      _cod_doc_embed && ret=0 ;;
+        (finding)    _cod_doc_finding && ret=0 ;;
+        (hash)       _cod_doc_hash && ret=0 ;;
+        (hub)        _cod_doc_hub && ret=0 ;;
+        (import)     _cod_doc_import && ret=0 ;;
+        (ingest)     _cod_doc_ingest && ret=0 ;;
+        (link)       _cod_doc_link && ret=0 ;;
+        (mcp)        _cod_doc_mcp && ret=0 ;;
+        (obligation) _cod_doc_obligation && ret=0 ;;
+        (plan)       _cod_doc_plan && ret=0 ;;
+        (project)    _cod_doc_project && ret=0 ;;
+        (reindex)    _cod_doc_reindex && ret=0 ;;
+        (revision)   _cod_doc_revision && ret=0 ;;
+        (routine)    _cod_doc_routine && ret=0 ;;
+        (scenario)   _cod_doc_scenario && ret=0 ;;
+        (search)     _cod_doc_search && ret=0 ;;
+        (serve)      _cod_doc_serve && ret=0 ;;
+        (story)      _cod_doc_story && ret=0 ;;
+        (structure)  _cod_doc_structure && ret=0 ;;
+        (task)       _cod_doc_task && ret=0 ;;
+        (tui)        _cod_doc_tui && ret=0 ;;
+        (wizard)     _cod_doc_wizard && ret=0 ;;
+        (*)          _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_commands] )) || _cod_doc_commands() {
+  local -a cmds
+  cmds=(
+    'adapter:Manage LLM adapters (built-in + external plugins).'
+    'adr:Manage Architecture Decision Records (new / list / show / supersede…'
+    'agent:Управление агентом.'
+    'audit:Audit document frontmatter (FM-* rules) and optionally drift (DR-00…'
+    'completion:Shell-completion для cod-doc.'
+    'ctx:Контекст проекта для внешних потребителей (docs / drift / search).'
+    'doc:Manage documents (create, rename, export, drift, import).'
+    'embed:Провайдер эмбеддингов; статус, живая проверка, каталог, сброс индек…'
+    'finding:Inspect and manage external findings.'
+    'hash:Утилиты хэширования.'
+    'hub:Управление глобальной hub-БД (мультипроектный реестр).'
+    'import:Импорт документации/задач из репозитория проекта.'
+    'ingest:Ingest external findings (ai-review, ZAIrgRush, routines).'
+    'link:Manage document links (list, sync, verify).'
+    'mcp:Запустить MCP-сервер поверх COD-DOC.'
+    'obligation:Documented obligations for the structure protocol.'
+    'plan:Inspect and query plans (progress, ready tasks, audit, export).'
+    'project:Управление проектами.'
+    'reindex:Rebuild repo-level indexes (files / symbols / imports).'
+    'revision:Inspect and revert revision history.'
+    'routine:Inspect and run routines (scheduled health checks).'
+    'scenario:Author test scenarios and project them into docs/system/scenarios/.'
+    'search:Search tasks / docs / stories / ADRs for QUERY (FTS5).'
+    'serve:Запустить REST API сервер (production).'
+    'story:Manage user stories (create, status, link, coverage).'
+    'structure:Code structure snapshots, drift, triage and waivers (not projection…'
+    'task:Manage tasks (create, status, complete, list).'
+    'tui:(DEPRECATED) Запустить TUI. Используйте `cod-doc web` вместо.'
+    'wizard:Запустить мастер настройки.'
+  )
+  _describe -t cod-doc-commands 'cod-doc command' cmds
+}
+
+(( $+functions[_cod_doc_adapter] )) || _cod_doc_adapter() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_adapter_commands' \
+    '*:: :->cod_doc_adapter_cmd' && ret=0
+
+  case $state in
+    (cod_doc_adapter_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-adapter-$words[1]:"
+      case $words[1] in
+        (add)    _cod_doc_adapter_add && ret=0 ;;
+        (list)   _cod_doc_adapter_list && ret=0 ;;
+        (remove) _cod_doc_adapter_remove && ret=0 ;;
+        (show)   _cod_doc_adapter_show && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_adapter_commands] )) || _cod_doc_adapter_commands() {
+  local -a cmds
+  cmds=(
+    'add:Register an external adapter into ~/.cod-doc/adapters.json.'
+    'list:List all registered adapters (built-in + external).'
+    'remove:Remove an external adapter from ~/.cod-doc/adapters.json.'
+    'show:Show details of an adapter (built-in or external).'
+  )
+  _describe -t cod-doc-adapter-commands 'cod-doc adapter command' cmds
+}
+
+(( $+functions[_cod_doc_adapter_add] )) || _cod_doc_adapter_add() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--module)--module=[Python module path (e.g. my_pkg.adapter)]:module' \
+    '(--class)--class=[Adapter class name with `from_config` classmethod]:class' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adapter_list] )) || _cod_doc_adapter_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adapter_remove] )) || _cod_doc_adapter_remove() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name:_cod_doc_adapters' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adapter_show] )) || _cod_doc_adapter_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name:_cod_doc_adapters' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr] )) || _cod_doc_adr() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_adr_commands' \
+    '*:: :->cod_doc_adr_cmd' && ret=0
+
+  case $state in
+    (cod_doc_adr_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-adr-$words[1]:"
+      case $words[1] in
+        (deprecate) _cod_doc_adr_deprecate && ret=0 ;;
+        (export)    _cod_doc_adr_export && ret=0 ;;
+        (graph)     _cod_doc_adr_graph && ret=0 ;;
+        (list)      _cod_doc_adr_list && ret=0 ;;
+        (new)       _cod_doc_adr_new && ret=0 ;;
+        (show)      _cod_doc_adr_show && ret=0 ;;
+        (supersede) _cod_doc_adr_supersede && ret=0 ;;
+        (sync)      _cod_doc_adr_sync && ret=0 ;;
+        (*)         _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_commands] )) || _cod_doc_adr_commands() {
+  local -a cmds
+  cmds=(
+    'deprecate:Transition ADR_ID to DEPRECATED status.'
+    'export:Project every ADR of the project into ``ADR-NNN.md`` files.'
+    'graph:Emit the full ADR supersede DAG (Mermaid markdown or JSON).'
+    'list:List ADRs in a project.'
+    'new:Create a new ADR (auto-allocates ADR-NNN if --adr-id omitted).'
+    'show:Show full details of one ADR (with diagrams + task links).'
+    'supersede:Mark SUPERSEDED_ADR_ID as replaced by SUPERSEDING_ADR_ID.'
+    'sync:Re-sync ADR_ID'\''s body from markdown, ignoring the status gate.'
+  )
+  _describe -t cod-doc-adr-commands 'cod-doc adr command' cmds
+}
+
+(( $+functions[_cod_doc_adr_deprecate] )) || _cod_doc_adr_deprecate() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--reason)--reason=[Why deprecated]:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:adr-id:_cod_doc_adrs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_export] )) || _cod_doc_adr_export() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--out)--out=[Override output directory (default; <project>/docs/adr).]:out-dir:_files -/' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_graph] )) || _cod_doc_adr_graph() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--format)--format=:fmt:(mermaid json)' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_list] )) || _cod_doc_adr_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--status)--status=[Filter by status]:status:(proposed accepted superseded deprecated rejected)' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_new] )) || _cod_doc_adr_new() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(-t --title)'{-t+,--title=}'[ADR title]:title' \
+    '(--status)--status=:status:(proposed accepted superseded deprecated rejected)' \
+    '(--decided-at)--decided-at=[ISO date (YYYY-MM-DD)]:decided-at' \
+    '(--context)--context=[Context paragraph]:context' \
+    '(--decision)--decision=[The decision itself]:decision' \
+    '(--alternatives)--alternatives=[Alternatives considered]:alternatives' \
+    '(--consequences)--consequences=[Consequences (+ pros / − cons)]:consequences' \
+    '(--adr-id)--adr-id=[Explicit ADR-NNN id (auto if omitted)]:adr-id' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_show] )) || _cod_doc_adr_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:adr-id:_cod_doc_adrs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_supersede] )) || _cod_doc_adr_supersede() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--reason)--reason=[Why the replacement]:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:superseding-adr-id:_cod_doc_adrs' \
+    '2:superseded-adr-id:_cod_doc_adrs_other' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_sync] )) || _cod_doc_adr_sync() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--title)--title=[Title as written in the projection]:title' \
+    '(--decided-at)--decided-at=[ISO date (YYYY-MM-DD)]:decided-at' \
+    '(--context)--context=[Context section]:context' \
+    '(--decision)--decision=[Decision section]:decision' \
+    '(--alternatives)--alternatives=[Alternatives section]:alternatives' \
+    '(--consequences)--consequences=[Consequences section]:consequences' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:adr-id:_cod_doc_adrs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_agent] )) || _cod_doc_agent() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_agent_commands' \
+    '*:: :->cod_doc_agent_cmd' && ret=0
+
+  case $state in
+    (cod_doc_agent_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-agent-$words[1]:"
+      case $words[1] in
+        (run) _cod_doc_agent_run && ret=0 ;;
+        (*)   _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_agent_commands] )) || _cod_doc_agent_commands() {
+  local -a cmds
+  cmds=(
+    'run:Запустить агент для проекта.'
+  )
+  _describe -t cod-doc-agent-commands 'cod-doc agent command' cmds
+}
+
+(( $+functions[_cod_doc_agent_run] )) || _cod_doc_agent_run() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-t --task)'{-t+,--task=}'[Заголовок новой задачи для выполнения]:task' \
+    '(--autonomous --no-autonomous)'{--autonomous,--no-autonomous}'[Авто-генерация задач из MASTER.md]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:project-name:_cod_doc_projects' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_audit] )) || _cod_doc_audit() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--strict)--strict[Exit 1 if any error-severity issues are found (CI mode)]' \
+    '(--staged)--staged[Check only git-staged .md files (pre-commit mode; implies --strict)]' \
+    '(--drift)--drift[Also run DR-003 projection drift checks]' \
+    '(--web-routes)--web-routes[WEB-042; diff live web routes against the capability §3 route table…]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_completion] )) || _cod_doc_completion() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_completion_commands' \
+    '*:: :->cod_doc_completion_cmd' && ret=0
+
+  case $state in
+    (cod_doc_completion_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-completion-$words[1]:"
+      case $words[1] in
+        (zsh) _cod_doc_completion_zsh && ret=0 ;;
+        (*)   _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_completion_commands] )) || _cod_doc_completion_commands() {
+  local -a cmds
+  cmds=(
+    'zsh:Напечатать zsh-completion (ставится симлинком, см. scripts/).'
+  )
+  _describe -t cod-doc-completion-commands 'cod-doc completion command' cmds
+}
+
+(( $+functions[_cod_doc_completion_zsh] )) || _cod_doc_completion_zsh() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ctx] )) || _cod_doc_ctx() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_ctx_commands' \
+    '*:: :->cod_doc_ctx_cmd' && ret=0
+
+  case $state in
+    (cod_doc_ctx_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-ctx-$words[1]:"
+      case $words[1] in
+        (docs)      _cod_doc_ctx_docs && ret=0 ;;
+        (drift)     _cod_doc_ctx_drift && ret=0 ;;
+        (search)    _cod_doc_ctx_search && ret=0 ;;
+        (structure) _cod_doc_ctx_structure && ret=0 ;;
+        (*)         _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_ctx_commands] )) || _cod_doc_ctx_commands() {
+  local -a cmds
+  cmds=(
+    'docs:Список документов проекта с оценкой токенов и рискованными ссылками.'
+    'drift:DB↔markdown дрейф проекта (тот же shape, что и MCP ``ctx_drift``).'
+    'search:Поиск по проекту (FTS5) — тот же движок, что и ``cod-doc search``.'
+    'structure:Pinned BFS structure slice. Requires head SHA or snapshot fingerpri…'
+  )
+  _describe -t cod-doc-ctx-commands 'cod-doc ctx command' cmds
+}
+
+(( $+functions[_cod_doc_ctx_docs] )) || _cod_doc_ctx_docs() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '*--paths=[Glob-паттерн для фильтрации по path или doc_key; повторяемый]:paths' \
+    '(--budget-tokens)--budget-tokens=[Ограничить выборку документами, укладывающимися в бюджет токенов]:budget-tokens' \
+    '(--include-body)--include-body[Включить отрендеренное тело документа в JSON (для prompt-контекста)]' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ctx_drift] )) || _cod_doc_ctx_drift() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '*--changed-files=[Сузить выборку до этих repo-относительных путей; повторяемый, допус…]:changed-files' \
+    '(--pr)--pr=[Номер PR; без --changed-files берёт список файлов из него (`gh pr v…]:pr' \
+    '(--repo)--repo=[OWNER/NAME для `gh` (по умолчанию — репозиторий по пути проекта)]:repo' \
+    '(--comment)--comment[Оставить/обновить комментарий гейта в --pr (идемпотентно, по маркер…]' \
+    '(--dry-run)--dry-run[С --comment; показать тело комментария, ничего не отправляя]' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ctx_search] )) || _cod_doc_ctx_search() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:query' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ctx_structure] )) || _cod_doc_ctx_structure() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--head-sha)--head-sha=:head-sha' \
+    '(--fingerprint)--fingerprint=:snapshot-fingerprint' \
+    '*--scope=:scope-refs' \
+    '(--budget-tokens)--budget-tokens=:budget-tokens' \
+    '(--depth)--depth=:dependency-depth' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc] )) || _cod_doc_doc() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_doc_commands' \
+    '*:: :->cod_doc_doc_cmd' && ret=0
+
+  case $state in
+    (cod_doc_doc_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-doc-$words[1]:"
+      case $words[1] in
+        (accept)              _cod_doc_doc_accept && ret=0 ;;
+        (backfill-projection) _cod_doc_doc_backfill_projection && ret=0 ;;
+        (body)                _cod_doc_doc_body && ret=0 ;;
+        (create)              _cod_doc_doc_create && ret=0 ;;
+        (delete)              _cod_doc_doc_delete && ret=0 ;;
+        (drift)               _cod_doc_doc_drift && ret=0 ;;
+        (export)              _cod_doc_doc_export && ret=0 ;;
+        (import)              _cod_doc_doc_import && ret=0 ;;
+        (list)                _cod_doc_doc_list && ret=0 ;;
+        (rename)              _cod_doc_doc_rename && ret=0 ;;
+        (show)                _cod_doc_doc_show && ret=0 ;;
+        (*)                   _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_commands] )) || _cod_doc_doc_commands() {
+  local -a cmds
+  cmds=(
+    'accept:Promote a DRAFT/REVIEW document to ACTIVE (writes a revision).'
+    'backfill-projection:Recover projection-fidelity columns from the files on disk (ADO-022…'
+    'body:Print the full rendered body of a document.'
+    'create:Create a new document record.'
+    'delete:Delete a single document by key, or bulk-delete by path glob (+ typ…'
+    'drift:Detect drift between DB content, projection hash, and on-disk file.'
+    'export:Export a document projection to disk (writes <project-root>/<doc.pa…'
+    'import:Import frontmatter changes from a projection file back into the DB.'
+    'list:List all documents for a project.'
+    'rename:Rename a document key (and optionally its path); cascades incoming…'
+    'show:Show document metadata (and optionally sections).'
+  )
+  _describe -t cod-doc-doc-commands 'cod-doc doc command' cmds
+}
+
+(( $+functions[_cod_doc_doc_accept] )) || _cod_doc_doc_accept() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=[Author recorded on the transition]:author' \
+    '(--reason)--reason=[Optional reason for the acceptance]:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_backfill_projection] )) || _cod_doc_doc_backfill_projection() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--dry-run)--dry-run[Classify the rows without writing anything]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_body] )) || _cod_doc_doc_body() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_create] )) || _cod_doc_doc_create() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--key)--key=[Unique document key (e.g. '\''arch/data-model'\'')]:doc-key' \
+    '(--type)--type=:doc-type:(module-spec module-subdoc execution-plan task-section execution-log standard architecture vision guide user-story decision open-question redirect design audit audit-report journal plan analysis research capability scenario-set)' \
+    '(--status)--status=:status:(draft review active authoritative deprecated)' \
+    '(--title)--title=:title' \
+    '(--owner)--owner=:owner' \
+    '(--sensitivity)--sensitivity=:sensitivity:(public internal confidential restricted)' \
+    '(--path)--path=[Relative file path (default; <doc-key>.md)]:path:_files' \
+    '(--preamble)--preamble=[Document preamble text]:preamble' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_delete] )) || _cod_doc_doc_delete() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--path-glob)--path-glob=[Bulk; delete documents whose path matches this glob (supports **)]:path-glob' \
+    '(--type)--type=[Bulk; filter by document type]:doc-type' \
+    '(--dry-run)--dry-run[Show candidates and section counts; write nothing]' \
+    '(--yes)--yes[Confirm bulk deletion (required without --dry-run)]' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1::doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_drift] )) || _cod_doc_doc_drift() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--all)--all[Check every document]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1::doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_export] )) || _cod_doc_doc_export() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--force)--force[Re-export even if hash matches]' \
+    '(--dry-run)--dry-run[Show the unified diff the export would apply; write nothing]' \
+    '(--force-write)--force-write[Overwrite an edited/foreign/unshaped/unmigrated file (lifts all fou…]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_import] )) || _cod_doc_doc_import() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:file-path:_files' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_list] )) || _cod_doc_doc_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_rename] )) || _cod_doc_doc_rename() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--path)--path=[New file path (optional)]:new-path:_files' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--no-cascade)--no-cascade[Skip link cascade update]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' \
+    '2:new-key' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_show] )) || _cod_doc_doc_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--sections)--sections[Include section list]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_embed] )) || _cod_doc_embed() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_embed_commands' \
+    '*:: :->cod_doc_embed_cmd' && ret=0
+
+  case $state in
+    (cod_doc_embed_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-embed-$words[1]:"
+      case $words[1] in
+        (models) _cod_doc_embed_models && ret=0 ;;
+        (probe)  _cod_doc_embed_probe && ret=0 ;;
+        (reset)  _cod_doc_embed_reset && ret=0 ;;
+        (status) _cod_doc_embed_status && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_embed_commands] )) || _cod_doc_embed_commands() {
+  local -a cmds
+  cmds=(
+    'models:Каталог моделей эмбеддингов провайдера (у OpenRouter он отдельный).'
+    'probe:Один живой вызов эмбеддера; размерность, задержка, стоимость.'
+    'reset:Удалить векторную коллекцию — единственный корректный ответ на смен…'
+    'status:Показать разрешённые настройки эмбеддера и состояние индекса (без с…'
+  )
+  _describe -t cod-doc-embed-commands 'cod-doc embed command' cmds
+}
+
+(( $+functions[_cod_doc_embed_models] )) || _cod_doc_embed_models() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--json)--json[Машинный вывод]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_embed_probe] )) || _cod_doc_embed_probe() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--text)--text=:text' \
+    '(--json)--json[Машинный вывод]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_embed_reset] )) || _cod_doc_embed_reset() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--yes)--yes[Подтвердить удаление коллекции]' \
+    '(--force)--force[Удалить даже непустую коллекцию]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_embed_status] )) || _cod_doc_embed_status() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--json)--json[Машинный вывод]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_finding] )) || _cod_doc_finding() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_finding_commands' \
+    '*:: :->cod_doc_finding_cmd' && ret=0
+
+  case $state in
+    (cod_doc_finding_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-finding-$words[1]:"
+      case $words[1] in
+        (stability) _cod_doc_finding_stability && ret=0 ;;
+        (*)         _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_finding_commands] )) || _cod_doc_finding_commands() {
+  local -a cmds
+  cmds=(
+    'stability:Compute pairwise Jaccard stability of finding sets for a SHA.'
+  )
+  _describe -t cod-doc-finding-commands 'cod-doc finding command' cmds
+}
+
+(( $+functions[_cod_doc_finding_stability] )) || _cod_doc_finding_stability() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--sha)--sha=[Commit SHA to analyse]:sha' \
+    '(--json)--json[Machine-readable JSON output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_hash] )) || _cod_doc_hash() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_hash_commands' \
+    '*:: :->cod_doc_hash_cmd' && ret=0
+
+  case $state in
+    (cod_doc_hash_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-hash-$words[1]:"
+      case $words[1] in
+        (calc)   _cod_doc_hash_calc && ret=0 ;;
+        (update) _cod_doc_hash_update && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_hash_commands] )) || _cod_doc_hash_commands() {
+  local -a cmds
+  cmds=(
+    'calc:Вычислить SHA-256 хэш файла.'
+    'update:Обновить все хэши в MASTER.md.'
+  )
+  _describe -t cod-doc-hash-commands 'cod-doc hash command' cmds
+}
+
+(( $+functions[_cod_doc_hash_calc] )) || _cod_doc_hash_calc() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1:file-path:_files' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_hash_update] )) || _cod_doc_hash_update() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1::master-path:_files' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_hub] )) || _cod_doc_hub() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_hub_commands' \
+    '*:: :->cod_doc_hub_cmd' && ret=0
+
+  case $state in
+    (cod_doc_hub_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-hub-$words[1]:"
+      case $words[1] in
+        (init) _cod_doc_hub_init && ret=0 ;;
+        (*)    _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_hub_commands] )) || _cod_doc_hub_commands() {
+  local -a cmds
+  cmds=(
+    'init:Создать/мигрировать ~/.cod-doc/hub.db (идемпотентно).'
+  )
+  _describe -t cod-doc-hub-commands 'cod-doc hub command' cmds
+}
+
+(( $+functions[_cod_doc_hub_init] )) || _cod_doc_hub_init() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_import] )) || _cod_doc_import() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_import_commands' \
+    '*:: :->cod_doc_import_cmd' && ret=0
+
+  case $state in
+    (cod_doc_import_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-import-$words[1]:"
+      case $words[1] in
+        (all)          _cod_doc_import_all && ret=0 ;;
+        (docs)         _cod_doc_import_docs && ret=0 ;;
+        (legacy-tasks) _cod_doc_import_legacy_tasks && ret=0 ;;
+        (*)            _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_import_commands] )) || _cod_doc_import_commands() {
+  local -a cmds
+  cmds=(
+    'all:Запустить все доступные пайплайны импорта подряд.'
+    'docs:Импортировать .md/.rst/.txt файлы как Documents.'
+    'legacy-tasks:Перенести записи из .cod-doc/tasks.yaml в DB-таблицу task.'
+  )
+  _describe -t cod-doc-import-commands 'cod-doc import command' cmds
+}
+
+(( $+functions[_cod_doc_import_all] )) || _cod_doc_import_all() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта (алиас).]:project-opt:_cod_doc_projects' \
+    '(--dry-run)--dry-run' \
+    '*--exclude=[Glob-паттерн исключения относительно корня репозитория; повторяемый…]:exclude' \
+    '(- *)--help[Show this message and exit.]' \
+    '1::project-name:_cod_doc_projects' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_import_docs] )) || _cod_doc_import_docs() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта (алиас).]:project-opt:_cod_doc_projects' \
+    '(--dry-run)--dry-run[Показать план без записи.]' \
+    '(--max-files)--max-files=[Cap на количество файлов в одном прогоне.]:max-files' \
+    '*--exclude=[Glob-паттерн исключения относительно корня репозитория; повторяемый…]:exclude' \
+    '(--limit)--limit=[Сколько путей печатать в --dry-run; 0 — весь список.]:limit' \
+    '(- *)--help[Show this message and exit.]' \
+    '1::project-name:_cod_doc_projects' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_import_legacy_tasks] )) || _cod_doc_import_legacy_tasks() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта (алиас).]:project-opt:_cod_doc_projects' \
+    '(--dry-run)--dry-run[Показать план без записи.]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1::project-name:_cod_doc_projects' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ingest] )) || _cod_doc_ingest() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_ingest_commands' \
+    '*:: :->cod_doc_ingest_cmd' && ret=0
+
+  case $state in
+    (cod_doc_ingest_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-ingest-$words[1]:"
+      case $words[1] in
+        (ai_review)          _cod_doc_ingest_ai_review && ret=0 ;;
+        (structure)          _cod_doc_ingest_structure && ret=0 ;;
+        (zairgrush_findings) _cod_doc_ingest_zairgrush_findings && ret=0 ;;
+        (zairgrush_tasks)    _cod_doc_ingest_zairgrush_tasks && ret=0 ;;
+        (*)                  _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_ingest_commands] )) || _cod_doc_ingest_commands() {
+  local -a cmds
+  cmds=(
+    'ai_review:Ingest an ai-review JSON export (file, stdin, or PR artifact).'
+    'structure:Store structure_facts payloads (and optional assessments) blob-firs…'
+    'zairgrush_findings:Ingest findings from an external export.'
+    'zairgrush_tasks:Ingest findings from an external export.'
+  )
+  _describe -t cod-doc-ingest-commands 'cod-doc ingest command' cmds
+}
+
+(( $+functions[_cod_doc_ingest_ai_review] )) || _cod_doc_ingest_ai_review() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--input)--input=[Input file (default; stdin).]:input-stream:_files' \
+    '(--from-pr)--from-pr=[Download `pr-review-export-<PR>` artifact via `gh run download`.]:from-pr' \
+    '(--repo)--repo=[Local Git repository to run `gh` in (default; current directory).]:repo:_files -/' \
+    '(--dry-run)--dry-run[Preview without writing to the DB.]' \
+    '(--json)--json[Machine-readable JSON output.]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ingest_structure] )) || _cod_doc_ingest_structure() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '*--facts=[structure_facts payload; repeat once per партиции (--scope у продюс…]:facts-paths:_files' \
+    '*--assessment=[Оценка к соответствующему --facts; либо ни одной, либо столько же.]:assessment-paths:_files' \
+    '(--trust-tier)--trust-tier=:trust-tier:(signed_ci trusted_local untrusted)' \
+    '(--json)--json[Machine-readable JSON output.]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ingest_zairgrush_findings] )) || _cod_doc_ingest_zairgrush_findings() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--input)--input=[Input file (default; stdin).]:input-stream:_files' \
+    '(--dry-run)--dry-run[Preview without writing to the DB.]' \
+    '(--json)--json[Machine-readable JSON output.]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ingest_zairgrush_tasks] )) || _cod_doc_ingest_zairgrush_tasks() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--input)--input=[Input file (default; stdin).]:input-stream:_files' \
+    '(--dry-run)--dry-run[Preview without writing to the DB.]' \
+    '(--json)--json[Machine-readable JSON output.]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_link] )) || _cod_doc_link() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_link_commands' \
+    '*:: :->cod_doc_link_cmd' && ret=0
+
+  case $state in
+    (cod_doc_link_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-link-$words[1]:"
+      case $words[1] in
+        (backfill) _cod_doc_link_backfill && ret=0 ;;
+        (list)     _cod_doc_link_list && ret=0 ;;
+        (suggest)  _cod_doc_link_suggest && ret=0 ;;
+        (sync)     _cod_doc_link_sync && ret=0 ;;
+        (verify)   _cod_doc_link_verify && ret=0 ;;
+        (*)        _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_link_commands] )) || _cod_doc_link_commands() {
+  local -a cmds
+  cmds=(
+    'backfill:COD-079; re-parse links for every section in the project.'
+    'list:List links in a document (or a single section with --section).'
+    'suggest:PCA-422; Generate semantic link suggestions for a project.'
+    'sync:Re-parse and sync link rows for a section from its body.'
+    'verify:Verify link resolution for a section; exit 1 if any are broken.'
+  )
+  _describe -t cod-doc-link-commands 'cod-doc link command' cmds
+}
+
+(( $+functions[_cod_doc_link_backfill] )) || _cod_doc_link_backfill() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--dry-run)--dry-run[Show what would be synced without persisting.]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_link_list] )) || _cod_doc_link_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--section)--section=[Restrict to one section anchor]:anchor:_cod_doc_doc_sections' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_link_suggest] )) || _cod_doc_link_suggest() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--threshold)--threshold=[Minimum similarity score for a suggestion to be stored.]:threshold' \
+    '(--apply-above)--apply-above=[Auto-accept suggestions scoring above this value.]:apply-above' \
+    '(--dry-run)--dry-run[Preview only — do not write to the database.]' \
+    '(--doc-key)--doc-key=[Limit to one document'\''s sections instead of whole project.]:doc-key:_cod_doc_docs' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:project:_cod_doc_projects' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_link_sync] )) || _cod_doc_link_sync() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--section)--section=[Section anchor]:anchor:_cod_doc_doc_sections' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_link_verify] )) || _cod_doc_link_verify() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--section)--section=[Section anchor]:anchor:_cod_doc_doc_sections' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_mcp] )) || _cod_doc_mcp() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--transport)--transport=:transport:(stdio streamable-http)' \
+    '(--host)--host=:host' \
+    '(--port)--port=:port' \
+    '(--profile)--profile=[Same catalog filter as `cod-doc-mcp --profile` (ADO-079).]:profile:(agent full minimal standard)' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_obligation] )) || _cod_doc_obligation() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_obligation_commands' \
+    '*:: :->cod_doc_obligation_cmd' && ret=0
+
+  case $state in
+    (cod_doc_obligation_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-obligation-$words[1]:"
+      case $words[1] in
+        (export) _cod_doc_obligation_export && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_obligation_commands] )) || _cod_doc_obligation_commands() {
+  local -a cmds
+  cmds=(
+    'export:Export versioned obligations_export.v1 from specs, stories and clai…'
+  )
+  _describe -t cod-doc-obligation-commands 'cod-doc obligation command' cmds
+}
+
+(( $+functions[_cod_doc_obligation_export] )) || _cod_doc_obligation_export() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--head-sha)--head-sha=:head-sha' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(--with-property-drafts)--with-property-drafts' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan] )) || _cod_doc_plan() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_plan_commands' \
+    '*:: :->cod_doc_plan_cmd' && ret=0
+
+  case $state in
+    (cod_doc_plan_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-plan-$words[1]:"
+      case $words[1] in
+        (audit)         _cod_doc_plan_audit && ret=0 ;;
+        (critical-path) _cod_doc_plan_critical_path && ret=0 ;;
+        (export)        _cod_doc_plan_export && ret=0 ;;
+        (forward)       _cod_doc_plan_forward && ret=0 ;;
+        (freeze)        _cod_doc_plan_freeze && ret=0 ;;
+        (ready)         _cod_doc_plan_ready && ret=0 ;;
+        (reverse)       _cod_doc_plan_reverse && ret=0 ;;
+        (show)          _cod_doc_plan_show && ret=0 ;;
+        (*)             _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_commands] )) || _cod_doc_plan_commands() {
+  local -a cmds
+  cmds=(
+    'audit:Run integrity audit; cycle detection + done-drift check.'
+    'critical-path:Show the critical path (longest sequential chain) for a plan.'
+    'export:Export markdown projections for a plan.'
+    'forward:Forward chain; prerequisites of TASK_ID (must complete BEFORE it).'
+    'freeze:Snapshot a plan'\''s current projection into an immutable frozen docum…'
+    'ready:List tasks ready to work on (all blocking deps done).'
+    'reverse:Reverse chain; tasks unblocked when TASK_ID completes.'
+    'show:Show progress overview for a plan.'
+  )
+  _describe -t cod-doc-plan-commands 'cod-doc plan command' cmds
+}
+
+(( $+functions[_cod_doc_plan_audit] )) || _cod_doc_plan_audit() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_critical_path] )) || _cod_doc_plan_critical_path() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_export] )) || _cod_doc_plan_export() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--section)--section=:section:(progress_overview next_batch dependency_graph all)' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_forward] )) || _cod_doc_plan_forward() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_freeze] )) || _cod_doc_plan_freeze() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=[Author recorded on the snapshot]:author' \
+    '(--reason)--reason=[Optional reason for the freeze]:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_ready] )) || _cod_doc_plan_ready() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--limit)--limit=:limit' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_reverse] )) || _cod_doc_plan_reverse() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_show] )) || _cod_doc_plan_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_project] )) || _cod_doc_project() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_project_commands' \
+    '*:: :->cod_doc_project_cmd' && ret=0
+
+  case $state in
+    (cod_doc_project_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-project-$words[1]:"
+      case $words[1] in
+        (add)     _cod_doc_project_add && ret=0 ;;
+        (init)    _cod_doc_project_init && ret=0 ;;
+        (list)    _cod_doc_project_list && ret=0 ;;
+        (migrate) _cod_doc_project_migrate && ret=0 ;;
+        (remove)  _cod_doc_project_remove && ret=0 ;;
+        (status)  _cod_doc_project_status && ret=0 ;;
+        (*)       _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_project_commands] )) || _cod_doc_project_commands() {
+  local -a cmds
+  cmds=(
+    'add:Добавить проект в реестр COD-DOC.'
+    'init:(Пере)инициализировать проект; .cod-doc/, state.db со схемой, запис…'
+    'list:Список всех зарегистрированных проектов.'
+    'migrate:Накатить голову миграций на БД проекта (hub из db_url или embedded).'
+    'remove:Удалить проект из реестра (файлы не удаляются).'
+    'status:Подробный статус проекта; задачи, ссылки, последний запуск.'
+  )
+  _describe -t cod-doc-project-commands 'cod-doc project command' cmds
+}
+
+(( $+functions[_cod_doc_project_add] )) || _cod_doc_project_add() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-n --name)'{-n+,--name=}'[Имя проекта]:name' \
+    '(-m --master)'{-m+,--master=}'[Путь к MASTER.md]:master' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:path:_files -/' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_project_init] )) || _cod_doc_project_init() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name:_cod_doc_projects' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_project_list] )) || _cod_doc_project_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_project_migrate] )) || _cod_doc_project_migrate() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--all)--all[Все проекты реестра]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1::name:_cod_doc_projects' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_project_remove] )) || _cod_doc_project_remove() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name:_cod_doc_projects' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_project_status] )) || _cod_doc_project_status() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name:_cod_doc_projects' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_reindex] )) || _cod_doc_reindex() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_reindex_commands' \
+    '*:: :->cod_doc_reindex_cmd' && ret=0
+
+  case $state in
+    (cod_doc_reindex_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-reindex-$words[1]:"
+      case $words[1] in
+        (files) _cod_doc_reindex_files && ret=0 ;;
+        (*)     _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_reindex_commands] )) || _cod_doc_reindex_commands() {
+  local -a cmds
+  cmds=(
+    'files:Scan the project root + populate ``repo_file`` / ``_symbol`` / ``_i…'
+  )
+  _describe -t cod-doc-reindex-commands 'cod-doc reindex command' cmds
+}
+
+(( $+functions[_cod_doc_reindex_files] )) || _cod_doc_reindex_files() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--max-files)--max-files=:max-files' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_revision] )) || _cod_doc_revision() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_revision_commands' \
+    '*:: :->cod_doc_revision_cmd' && ret=0
+
+  case $state in
+    (cod_doc_revision_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-revision-$words[1]:"
+      case $words[1] in
+        (list)   _cod_doc_revision_list && ret=0 ;;
+        (revert) _cod_doc_revision_revert && ret=0 ;;
+        (show)   _cod_doc_revision_show && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_revision_commands] )) || _cod_doc_revision_commands() {
+  local -a cmds
+  cmds=(
+    'list:List revision history for an entity.'
+    'revert:Revert a revision (creates an inverse revision; history is append-o…'
+    'show:Show a single revision (including its diff).'
+  )
+  _describe -t cod-doc-revision-commands 'cod-doc revision command' cmds
+}
+
+(( $+functions[_cod_doc_revision_list] )) || _cod_doc_revision_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--kind)--kind=[Entity kind]:kind:(document section task plan story link module)' \
+    '(--ref)--ref=[Entity ref; task_id / doc_key / story_id / doc_key#anchor / row_id]:ref' \
+    '(--limit)--limit=[Max revisions to show]:limit' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_revision_revert] )) || _cod_doc_revision_revert() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:revision-id:_cod_doc_revisions' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_revision_show] )) || _cod_doc_revision_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:revision-id:_cod_doc_revisions' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_routine] )) || _cod_doc_routine() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_routine_commands' \
+    '*:: :->cod_doc_routine_cmd' && ret=0
+
+  case $state in
+    (cod_doc_routine_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-routine-$words[1]:"
+      case $words[1] in
+        (list) _cod_doc_routine_list && ret=0 ;;
+        (run)  _cod_doc_routine_run && ret=0 ;;
+        (tick) _cod_doc_routine_tick && ret=0 ;;
+        (*)    _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_routine_commands] )) || _cod_doc_routine_commands() {
+  local -a cmds
+  cmds=(
+    'list:List routines with last-run status and time.'
+    'run:Manually run one routine by name.'
+    'tick:Fire all due cron routines (one scheduler tick, for OS cron/launchd…'
+  )
+  _describe -t cod-doc-routine-commands 'cod-doc routine command' cmds
+}
+
+(( $+functions[_cod_doc_routine_list] )) || _cod_doc_routine_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_routine_run] )) || _cod_doc_routine_run() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name:_cod_doc_routines' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_routine_tick] )) || _cod_doc_routine_tick() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario] )) || _cod_doc_scenario() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_scenario_commands' \
+    '*:: :->cod_doc_scenario_cmd' && ret=0
+
+  case $state in
+    (cod_doc_scenario_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-scenario-$words[1]:"
+      case $words[1] in
+        (coverage) _cod_doc_scenario_coverage && ret=0 ;;
+        (export)   _cod_doc_scenario_export && ret=0 ;;
+        (link)     _cod_doc_scenario_link && ret=0 ;;
+        (list)     _cod_doc_scenario_list && ret=0 ;;
+        (new)      _cod_doc_scenario_new && ret=0 ;;
+        (retire)   _cod_doc_scenario_retire && ret=0 ;;
+        (show)     _cod_doc_scenario_show && ret=0 ;;
+        (steps)    _cod_doc_scenario_steps && ret=0 ;;
+        (unlink)   _cod_doc_scenario_unlink && ret=0 ;;
+        (update)   _cod_doc_scenario_update && ret=0 ;;
+        (*)        _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario_commands] )) || _cod_doc_scenario_commands() {
+  local -a cmds
+  cmds=(
+    'coverage:Authoring coverage; how much has been written down, per group.'
+    'export:Write docs/system/scenarios/<group>.md from the scenarios in the DB.'
+    'link:Attach an edge. Targets are checked for shape, not existence.'
+    'list:List scenarios in the project.'
+    'new:Author one test scenario.'
+    'retire:Retire a scenario. The row and its id are kept; the id is never reu…'
+    'show:Show one scenario with its steps and links.'
+    'steps:Replace every step of the scenario, renumbering from one.'
+    'unlink:Detach an edge.'
+    'update:Patch the given fields; everything else is left alone.'
+  )
+  _describe -t cod-doc-scenario-commands 'cod-doc scenario command' cmds
+}
+
+(( $+functions[_cod_doc_scenario_coverage] )) || _cod_doc_scenario_coverage() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--group)--group=[Only this group]:group-key:_cod_doc_scenario_groups' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario_export] )) || _cod_doc_scenario_export() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--group)--group=[One group (default; every group)]:group-key:_cod_doc_scenario_groups' \
+    '(--force)--force[Re-render even when the projection hash matches]' \
+    '(--dry-run)--dry-run[Show what would change, write nothing]' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario_link] )) || _cod_doc_scenario_link() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--to-kind)--to-kind=:to-kind:(task story document criterion)' \
+    '(--to-ref)--to-ref=[task id, story id, doc key, or STORY-ID#position]:to-ref' \
+    '(--relation)--relation=:relation:(verifies specified_in exercised_by)' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:scenario-id:_cod_doc_scenarios' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario_list] )) || _cod_doc_scenario_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--group)--group=[Only this group]:group-key:_cod_doc_scenario_groups' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario_new] )) || _cod_doc_scenario_new() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--title)--title=[What the scenario demonstrates]:title' \
+    '(--kind)--kind=[RFC 24 §9 shape]:kind:(happy_path error_path boundary_value invariant integration)' \
+    '(--group)--group=[Group key (defaults to the doc basename)]:group-key:_cod_doc_scenario_groups' \
+    '(--doc-key)--doc-key=[Capability document this scenario is anchored to]:doc-key:_cod_doc_docs' \
+    '(--section-anchor)--section-anchor=[Anchor of the section stating the obligation]:section-anchor:_cod_doc_doc_sections' \
+    '(--precondition)--precondition=[State before the steps run]:preconditions' \
+    '*--step=[One action per step (repeatable, in order)]:steps' \
+    '(--expected)--expected=[The single observable outcome]:expected' \
+    '(--notes)--notes=:notes' \
+    '(--id)--id=[Explicit SCN-NNN (default; next free)]:scenario-id' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario_retire] )) || _cod_doc_scenario_retire() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:scenario-id:_cod_doc_scenarios' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario_show] )) || _cod_doc_scenario_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:scenario-id:_cod_doc_scenarios' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario_steps] )) || _cod_doc_scenario_steps() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '*--step=[One action per step (repeatable, in order). Replaces all existing s…]:steps' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:scenario-id:_cod_doc_scenarios' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario_unlink] )) || _cod_doc_scenario_unlink() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--to-kind)--to-kind=:to-kind:(task story document criterion)' \
+    '(--to-ref)--to-ref=:to-ref' \
+    '(--relation)--relation=:relation:(verifies specified_in exercised_by)' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:scenario-id:_cod_doc_scenarios' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_scenario_update] )) || _cod_doc_scenario_update() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--title)--title=:title' \
+    '(--kind)--kind=:kind:(happy_path error_path boundary_value invariant integration)' \
+    '(--precondition)--precondition=:preconditions' \
+    '(--expected)--expected=:expected' \
+    '(--notes)--notes=:notes' \
+    '(--status)--status=:status:(draft confirmed)' \
+    '(--section-anchor)--section-anchor=:section-anchor:_cod_doc_doc_sections' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:scenario-id:_cod_doc_scenarios' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_search] )) || _cod_doc_search() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--scope)--scope=[Restrict search to one kind]:scope:(task doc story adr)' \
+    '(--limit)--limit=:limit' \
+    '(--reindex)--reindex[Rebuild the FTS index before searching.]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:query' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_serve] )) || _cod_doc_serve() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--host)--host=:host' \
+    '(--port)--port=:port' \
+    '(--reload)--reload' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story] )) || _cod_doc_story() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_story_commands' \
+    '*:: :->cod_doc_story_cmd' && ret=0
+
+  case $state in
+    (cod_doc_story_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-story-$words[1]:"
+      case $words[1] in
+        (add-criterion) _cod_doc_story_add_criterion && ret=0 ;;
+        (coverage)      _cod_doc_story_coverage && ret=0 ;;
+        (create)        _cod_doc_story_create && ret=0 ;;
+        (link)          _cod_doc_story_link && ret=0 ;;
+        (list)          _cod_doc_story_list && ret=0 ;;
+        (show)          _cod_doc_story_show && ret=0 ;;
+        (status)        _cod_doc_story_status && ret=0 ;;
+        (*)             _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_story_commands] )) || _cod_doc_story_commands() {
+  local -a cmds
+  cmds=(
+    'add-criterion:Append an acceptance criterion to a story.'
+    'coverage:Show derived coverage status for a story.'
+    'create:Create a new user story.'
+    'link:Link a story to a task, document, or module.'
+    'list:List all user stories for a project.'
+    'show:Show details of a single story, including acceptance criteria and l…'
+    'status:Update a story'\''s status.'
+  )
+  _describe -t cod-doc-story-commands 'cod-doc story command' cmds
+}
+
+(( $+functions[_cod_doc_story_add_criterion] )) || _cod_doc_story_add_criterion() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:story-id:_cod_doc_stories' \
+    '2:criterion' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story_coverage] )) || _cod_doc_story_coverage() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:story-id:_cod_doc_stories' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story_create] )) || _cod_doc_story_create() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--id)--id=[Story ID (e.g. US-001)]:story-id' \
+    '(--persona)--persona=[User persona]:persona' \
+    '(--narrative)--narrative=[Story narrative (as a ... I want ... so that ...)]:narrative' \
+    '(--priority)--priority=:priority:(critical high medium low)' \
+    '(--status)--status=:status:(draft accepted delivered deferred)' \
+    '*'{-a+,--acceptance=}'[Acceptance criterion (repeatable; -a '\''crit 1'\'' -a '\''crit 2'\'')]:acceptance-criteria' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story_link] )) || _cod_doc_story_link() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--kind)--kind=[Target entity kind]:to-kind:(task document module)' \
+    '(--ref)--ref=[Target entity ID/key]:to-ref' \
+    '(--relation)--relation=:relation:(implemented_by specified_in owned_by)' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:story-id:_cod_doc_stories' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story_list] )) || _cod_doc_story_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story_show] )) || _cod_doc_story_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:story-id:_cod_doc_stories' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_story_status] )) || _cod_doc_story_status() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:story-id:_cod_doc_stories' \
+    '2:status:(draft accepted delivered deferred)' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure] )) || _cod_doc_structure() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_structure_commands' \
+    '*:: :->cod_doc_structure_cmd' && ret=0
+
+  case $state in
+    (cod_doc_structure_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-structure-$words[1]:"
+      case $words[1] in
+        (contracts)    _cod_doc_structure_contracts && ret=0 ;;
+        (diff)         _cod_doc_structure_diff && ret=0 ;;
+        (drift)        _cod_doc_structure_drift && ret=0 ;;
+        (entities)     _cod_doc_structure_entities && ret=0 ;;
+        (get)          _cod_doc_structure_get && ret=0 ;;
+        (latest)       _cod_doc_structure_latest && ret=0 ;;
+        (link-confirm) _cod_doc_structure_link_confirm && ret=0 ;;
+        (link-suggest) _cod_doc_structure_link_suggest && ret=0 ;;
+        (promote)      _cod_doc_structure_promote && ret=0 ;;
+        (replay)       _cod_doc_structure_replay && ret=0 ;;
+        (scenarios)    _cod_doc_structure_scenarios && ret=0 ;;
+        (triage)       _cod_doc_structure_triage && ret=0 ;;
+        (waive)        _cod_doc_structure_waive && ret=0 ;;
+        (waivers)      _cod_doc_structure_waivers && ret=0 ;;
+        (*)            _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_commands] )) || _cod_doc_structure_commands() {
+  local -a cmds
+  cmds=(
+    'contracts:'
+    'diff:'
+    'drift:Structure/docs/scenario drift. Distinct from ``doc drift`` projecti…'
+    'entities:'
+    'get:Return a stored facts payload by fingerprint.'
+    'latest:Show current snapshot for main, a PR, or an explicit SHA.'
+    'link-confirm:'
+    'link-suggest:'
+    'promote:Promote a structure finding into a task. Does not ingest ai_review…'
+    'replay:'
+    'scenarios:'
+    'triage:'
+    'waive:'
+    'waivers:'
+  )
+  _describe -t cod-doc-structure-commands 'cod-doc structure command' cmds
+}
+
+(( $+functions[_cod_doc_structure_contracts] )) || _cod_doc_structure_contracts() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--head-sha)--head-sha=:head-sha' \
+    '(--fingerprint)--fingerprint=:snapshot-fingerprint' \
+    '(--cursor)--cursor=:cursor' \
+    '(--limit)--limit=:limit' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_diff] )) || _cod_doc_structure_diff() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--left)--left=:left-id' \
+    '(--right)--right=:right-id' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_drift] )) || _cod_doc_structure_drift() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--head-sha)--head-sha=:head-sha' \
+    '(--fingerprint)--fingerprint=:snapshot-fingerprint' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_entities] )) || _cod_doc_structure_entities() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--head-sha)--head-sha=:head-sha' \
+    '(--fingerprint)--fingerprint=:snapshot-fingerprint' \
+    '(--cursor)--cursor=:cursor' \
+    '(--limit)--limit=:limit' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_get] )) || _cod_doc_structure_get() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--fingerprint)--fingerprint=:fingerprint' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_latest] )) || _cod_doc_structure_latest() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--branch)--branch=:branch-ref' \
+    '(--pr)--pr=:pr-number' \
+    '(--head-sha)--head-sha=:head-sha' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_link_confirm] )) || _cod_doc_structure_link_confirm() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--obligation)--obligation=:obligation' \
+    '(--contract)--contract=:contract' \
+    '(--author)--author=:author' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_link_suggest] )) || _cod_doc_structure_link_suggest() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--head-sha)--head-sha=:head-sha' \
+    '(--fingerprint)--fingerprint=:snapshot-fingerprint' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_promote] )) || _cod_doc_structure_promote() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--fingerprint)--fingerprint=:fingerprint' \
+    '(--scope)--scope=[Партиция находки. Нужна, когда один fingerprint есть в нескольких.]:scope' \
+    '(--plan-id)--plan-id=:plan-id' \
+    '(--section-id)--section-id=:section-id' \
+    '(--author)--author=:author' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_replay] )) || _cod_doc_structure_replay() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--snapshot-id)--snapshot-id=:snapshot-id' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_scenarios] )) || _cod_doc_structure_scenarios() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--head-sha)--head-sha=:head-sha' \
+    '(--fingerprint)--fingerprint=:snapshot-fingerprint' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_triage] )) || _cod_doc_structure_triage() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--limit)--limit=:limit' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_waive] )) || _cod_doc_structure_waive() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--fingerprint)--fingerprint=:fingerprint' \
+    '(--owner)--owner=:owner' \
+    '(--reason)--reason=:reason' \
+    '(--expires-at)--expires-at=[ISO-8601 expiry]:expires-at' \
+    '(--scope)--scope=:scope' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_structure_waivers] )) || _cod_doc_structure_waivers() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}':project:_cod_doc_projects' \
+    '(--json --no-json)'{--json,--no-json} \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task] )) || _cod_doc_task() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_task_commands' \
+    '*:: :->cod_doc_task_cmd' && ret=0
+
+  case $state in
+    (cod_doc_task_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-task-$words[1]:"
+      case $words[1] in
+        (checkout)   _cod_doc_task_checkout && ret=0 ;;
+        (complete)   _cod_doc_task_complete && ret=0 ;;
+        (create)     _cod_doc_task_create && ret=0 ;;
+        (list)       _cod_doc_task_list && ret=0 ;;
+        (move)       _cod_doc_task_move && ret=0 ;;
+        (release)    _cod_doc_task_release && ret=0 ;;
+        (remove-dep) _cod_doc_task_remove_dep && ret=0 ;;
+        (show)       _cod_doc_task_show && ret=0 ;;
+        (status)     _cod_doc_task_status && ret=0 ;;
+        (update)     _cod_doc_task_update && ret=0 ;;
+        (*)          _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_task_commands] )) || _cod_doc_task_commands() {
+  local -a cmds
+  cmds=(
+    'checkout:Atomically lock TASK_ID and move it to in-progress.'
+    'complete:Complete a task (validates blocking deps are done first).'
+    'create:Create a new task in a plan section.'
+    'list:List tasks for a project.'
+    'move:Переложить задачи в другую секцию того же плана (группировка бэклог…'
+    'release:Release the checkout lock on TASK_ID. Status is left unchanged.'
+    'remove-dep:Remove a dependency edge (TASK_ID is no longer blocked by BLOCKER_I…'
+    'show:Show details of a single task.'
+    'status:Update task status (does not validate deps; use '\''complete'\'' for done…'
+    'update:Grooming уже созданной задачи; description / acceptance / priority.'
+  )
+  _describe -t cod-doc-task-commands 'cod-doc task command' cmds
+}
+
+(( $+functions[_cod_doc_task_checkout] )) || _cod_doc_task_checkout() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--agent)--agent=[Lock holder]:agent' \
+    '*--expect=[Allowed pre-checkout statuses (repeatable; default; todo, pending)]:expected-statuses' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_complete] )) || _cod_doc_task_complete() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--commit)--commit=[Git commit SHA]:commit' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_create] )) || _cod_doc_task_create() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--plan)--plan=[Plan scope (e.g. '\''cod-doc'\'')]:plan-scope:_cod_doc_plans' \
+    '(--section)--section=[Section letter (e.g. '\''A'\'')]:section-letter:_cod_doc_plan_sections' \
+    '(--title)--title=[Task title]:title' \
+    '(--type)--type=:task-type:(feature test bug refactor migration docs chore)' \
+    '(--priority)--priority=:priority:(critical high medium low)' \
+    '(--id)--id=[Explicit task ID (e.g. COD-042)]:task-id' \
+    '(--prefix)--prefix=[ID prefix for auto-numbering (e.g. COD)]:prefix' \
+    '(--description)--description=:description' \
+    '(--acceptance)--acceptance=:acceptance' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_list] )) || _cod_doc_task_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(-s --status)'{-s+,--status=}'[Filter by status. Легаси-написание и каноническое — один бакет; `-s…]:filter-status:(backlog todo in_progress in_review blocked cancelled pending in-progress done)' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_move] )) || _cod_doc_task_move() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--plan)--plan=[Scope плана (напр. adoption-2026-08)]:plan-scope:_cod_doc_plans' \
+    '(--section)--section=[Буква целевой секции]:section-letter:_cod_doc_plan_sections' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--dry-run)--dry-run[Показать, что будет перенесено, и откатить]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '*:task-ids' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_release] )) || _cod_doc_task_release() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--agent)--agent=[Lock holder]:agent' \
+    '(--force)--force[Release regardless of who holds the lock]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_remove_dep] )) || _cod_doc_task_remove_dep() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' \
+    '2:blocker-id:_cod_doc_task_blockers' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_show] )) || _cod_doc_task_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_status] )) || _cod_doc_task_status() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' \
+    '2:status:(backlog todo in_progress in_review blocked cancelled pending in-progress done)' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_update] )) || _cod_doc_task_update() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--description)--description=[Новый текст description (пустая строка очищает)]:description' \
+    '(--acceptance)--acceptance=[Новый текст acceptance (пустая строка очищает)]:acceptance' \
+    '(--priority)--priority=[Новый приоритет]:priority:(critical high medium low)' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_tui] )) || _cod_doc_tui() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--debug-log-file)--debug-log-file=[Путь к файлу debug-лога TUI]:debug-log-file:_files' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_wizard] )) || _cod_doc_wizard() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--debug-log-file)--debug-log-file=[Путь к файлу debug-лога wizard]:debug-log-file:_files' \
+    '(--text)--text[Запустить текстовый wizard без TUI]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+_cod-doc "$@"

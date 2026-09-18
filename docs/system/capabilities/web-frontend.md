@@ -5,7 +5,7 @@ status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-28
-last_updated: 2026-08-28
+last_updated: 2026-09-15
 related_docs:
   - ../ARCHITECTURE.md
   - ../VISION.md
@@ -25,6 +25,13 @@ related_code:
 
 > Чисто функциональный веб-интерфейс к COD-DOC: список проектов, документы, задачи, планы, ревизии, лог запусков агента. Без визуальной полировки и без отдельного фронтенд-стека: server-rendered Jinja + точечные HTMX-фрагменты, отдаваемые тем же FastAPI.
 
+## 0. As implemented (2026-09-15)
+
+Страницы в `cod_doc/api/web/pages/` + REST `/api/*`. HTML — не JSON API.
+Ключи URL — slug / doc_key / task_id. Checkout `todo→in_progress` тот же
+протокол, что MCP. Неизвестный slug — ошибка страницы, не 200 с пустым
+проектом.
+
 ## 1. Цель и не-цели
 
 ### Цель
@@ -34,7 +41,7 @@ related_code:
 ### Не-цели
 
 - Не SPA. Никакого React/Vue/Svelte, никакого build-pipeline, никакого client-side router-а.
-- Не визуальный продукт. Нет дизайн-системы, нет тёмной темы, нет анимаций. Минимальный CSS (один файл, ~200 строк, `pico.css`-подобный baseline или собственный).
+- Не визуальный продукт: нет отдельного дизайн-отдела и нет анимаций сверх `--motion-fast`/`--motion-mid`. Но **дизайн-токены и тёмная тема есть** и обязательны к использованию: `:root` в `css/_base.css:13-89` + переопределение под `[data-theme="dark"]`. Компонент, захардкодивший цвет мимо токена, — регресс.
 - Не публичный. Аутентификация — отложена; интерфейс рассчитан на запуск локально либо за reverse-proxy с basic-auth.
 - Не replacement для TUI. TUI остаётся для оффлайн-/быстрых сценариев. Web — для ситуаций «проще навести курсор».
 
@@ -45,7 +52,7 @@ related_code:
 | Сервер | FastAPI (тот же `cod_doc.api.server:app`) | Уже есть, общий lifespan и DI |
 | Шаблоны | Jinja2 (`jinja2` уже в deps) | Server-rendered HTML; одна модель, никакой генерации схем |
 | Интерактивность | HTMX (через `<script src="/static/htmx.min.js">`) | `hx-get`/`hx-post`/`hx-swap` для inline-редактирования и фрагментов; SSE для live-логов |
-| Стили | Один `static/app.css` (~150-300 строк, raw CSS) | Без сборщика, без PostCSS, без Tailwind |
+| Стили | `static/app.css` — точка входа с тремя `@import`: `css/_base.css` (токены + каркас), `css/_components.css`, `css/_task_detail.css`; ~3500 строк суммарно, raw CSS | Без сборщика, без PostCSS, без Tailwind. Порядок импортов load-bearing: токены → компоненты → страничные переопределения |
 | Граф зависимостей | Mermaid через `<script type="module">` (CDN или локально) | Уже используется в task-plan markdown — переиспользуем |
 
 Никаких новых зависимостей в `pyproject.toml` сверх уже имеющихся (`fastapi`, `jinja2`).
@@ -154,7 +161,7 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/routines/{name}/toggle` | Включение/выключение routine | `routine_service.update_status` | ✅ | PCA-920 |
 | `POST /p/{slug}/routines/{name}/run` | Ручной запуск routine | `routine_service.run_now` | ✅ | PCA-920 |
 | `POST /p/{slug}/routines/{name}/delete` | Удаление routine | `routine_service.delete` | ✅ | PCA-920 |
-| `GET /p/{slug}/run` | Live agent console + история запусков | `run_service.list_recent` + `activity_service` | ✅ | WEB-030 |
+| `GET /p/{slug}/run` | Live agent console + история запусков; Stop/Resume ставит `daemon_enabled` только этого проекта (глобальный daemon и in-flight run не abort'ятся) | `run_service.list_recent` + `activity_service`; HTMX POST project daemon stop/start | ✅ | WEB-030 / ADO-110 |
 | `GET /p/{slug}/run/{run_id}` | Деталь одного запуска агента | `run_service.get_one` + `activity_service.events_for_run` | ✅ | WEB-030 |
 | **Поиск, коммиты, code-refs, метрики, затраты**  | | | |
 | `GET /p/{slug}/search` | FTS5-поиск по tasks/docs/stories/ADRs | `search_service.search` | ✅ | OBI-040 |
@@ -176,47 +183,46 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 
 ## 4. HTML-структура
 
-> **Целевая структура.** Реальное состояние и матрица «есть/нет» — в
-> [roadmap/web-frontend-task-plan.md](../roadmap/web-frontend-task-plan.md)
-> Progress Overview. Добавлять файлы под TBD-эндпоинты заранее **не нужно** —
-> создавайте только то, что закрывает живая задача.
+Снимок на 2026-09-17. `pages.py` и `fragments.py` давно стали пакетами, а
+`db_resolver.py` удалён (WEB-040) — прежняя версия этого раздела помечала ❌
+семь уже отгруженных шаблонов и ссылалась на удалённый файл.
 
 ```text
 cod_doc/api/web/
-├── __init__.py            # router = APIRouter()         ← ✅
-├── pages.py               # GET-страницы                  ← ✅
-├── fragments.py           # HTMX-фрагменты                ← ✅
-├── templates_env.py       # Jinja2Templates + STATIC_DIR  ← ✅
-└── db_resolver.py         # bridge slug → DB session      ← ⚠ удалить в WEB-040
-                           #   (заменить на get_project_db в cod_doc.api.deps)
+├── __init__.py            # re-export pages_router / fragments_router
+├── pages/                 # одна страница = один модуль (19 шт.)
+├── fragments/             # HTMX swap-цели (tasks_status, tasks_fields, sections)
+├── dates.py               # фильтры времени — единственная точка (ADO-154)
+├── markdown.py            # свой рендерер, без библиотеки
+├── errors.py              # WebError → alert-баннер + flash-cookie
+└── templates_env.py       # Jinja2Templates, фильтры, globals, cache-bust
 
-cod_doc/templates/web/
-├── base.html              # <html>, htmx, app.css; #alerts ← ✅
-├── _layout/               # макросы — общие фрагменты         ❌ (WEB-041)
-│   ├── project_tabs.html  # tabs nav (active=…)               ❌ (WEB-041)
-│   ├── header.html                                           ❌
-│   └── nav.html                                              ❌
-├── index.html             # список проектов               ← ✅
-├── settings.html                                            ❌ (WEB-020)
-├── project/
-│   ├── show.html          # дашборд                       ← ✅
-│   ├── docs_list.html     # список документов             ← ✅
-│   ├── doc_show.html      # просмотр документа            ← ✅ (raw markdown — WEB-006)
-│   ├── tasks_list.html    # таблица задач + фильтр        ← ✅
-│   ├── plan_show.html     # Plan + Mermaid                ❌ (WEB-004)
-│   ├── revisions.html     # лог ревизий                   ❌ (WEB-021)
-│   └── run.html           # SSE-консоль                   ❌ (WEB-030)
-└── _frag/
-    ├── task_row.html      # строка таблицы задач          ← ✅
-    ├── section_view.html  # секция документа              ❌ (WEB-012)
-    ├── section_edit.html  # textarea + concurrency token  ❌ (WEB-012)
-    └── alert.html         # ошибка/уведомление в #alerts  ❌ (WEB-022)
+cod_doc/templates/web/     # 50 файлов
+├── base.html              # <html>, htmx, mermaid, hljs, тема, #alerts
+├── _layout/project_tabs.html   # единственный источник таб-бара
+├── index.html, settings.html, standards/
+├── project/               # 26 страниц проекта
+└── _frag/                 # 19 HTMX-фрагментов
 
 cod_doc/static/
-├── app.css                # ~210 LOC, raw CSS             ← ✅
-├── htmx.min.js            # v2.0.4 vendored                ← ✅
-└── mermaid.min.js                                          ❌ (WEB-004)
+├── app.css                # только @import трёх партиалов
+├── css/_base.css          # дизайн-токены, каркас, .grid, .crumbs, .tabs
+├── css/_components.css    # ~55 секций компонентов
+├── css/_task_detail.css   # композиция детальной страницы
+├── cod_doc_app.js, cod_doc_ws.js, htmx.min.js
 ```
+
+Правило переиспользования (ADO-133): новая страница берёт разметку из общего
+словаря — `.page-header`, `.filter-bar`, `.grid`, `.task-card`,
+`.settings-form` + `.field` + `.form-actions`, `.badge`, `.task-hero`. Свой
+класс заводится только под то, чему аналога нет, и **сразу с правилом**:
+вкладка ADR полгода рисовалась браузерным дефолтом именно потому, что её 18
+классов `adr-*` не имели ни одного правила. Стережёт
+`tests/api/test_web_adr.py::test_no_dead_adr_selectors`.
+
+Важная деталь словаря: у `.field` и `.form-actions` **нет собственных правил** —
+существуют только `.settings-form .field`, `.docs-import-form .field` и т.п.
+Без класса-предка на самой форме эти классы снова окажутся мёртвыми.
 
 ## 5. UX-инварианты
 
@@ -225,6 +231,7 @@ cod_doc/static/
 - Любая ошибка сервиса (NotFound, Conflict, Validation) выводится в виде alert-баннера сверху страницы (HTMX target `#alerts`) либо красным текстом рядом с полем. Нет молчаливых редиректов.
 - Все формы — обычные `<form method="post">`, работают и без JS. HTMX — прогрессивный enhancement.
 - В URL-ах используется `slug` проекта и `doc_key` / `task_id` — те же ключи, что в БД и MCP. Это даёт совпадение URL ↔ ссылка в markdown.
+- **Время форматирует шаблон, а не хендлер (ADO-154).** Страница отдаёт доменное значение как есть (`datetime` или ISO-строку из сервиса), шаблон выбирает форму фильтром из [`cod_doc/api/web/dates.py`](../../../cod_doc/api/web/dates.py): `relative_time` (свежесть), `short_datetime` (`2026-09-17 14:03`), `short_date`, `ts_tooltip` (полный ISO в `title=`, не в ячейке). `.isoformat()` в `cod_doc/api/web/pages/` законен **только** при сериализации — `JSONResponse` или JSON-файл на диске, — но никогда для контекста шаблона. `strftime`, `replace("T", " ")` и срезы `[:10]`/`[:19]` в шаблонах запрещены: до ADO-154 их было восемь штук, и каждый ломался по-своему. Стерегут `tests/api/test_web_template_dates.py` (линт по исходникам) и `tests/api/test_web_raw_datetime_guard.py` (инвариант на отрендеренной странице).
 
 ## 6. Live-операции (агент, импорт)
 
@@ -333,7 +340,7 @@ endpoints — service-helper типа `plan_service.get_for_project(...)`.
 ## 8. Тестирование
 
 - **Smoke**: `fastapi.testclient.TestClient`, каждая страница 200 на seed-проекте.
-  Текущий suite — `tests/api/test_web_*.py`, **137 тестов, все зелёные**.
+  Текущий suite — `tests/api/`, **464 теста, все зелёные**.
 - **Error-branch coverage** (часть DoD каждой write-path задачи):
   - валидация формы (400 на garbage),
   - конфликт ревизий (`RevisionConflictError`),
@@ -343,6 +350,15 @@ endpoints — service-helper типа `plan_service.get_for_project(...)`.
 - **Snapshot-тесты HTML-фрагментов** — нет, и не планируем. Фрагменты тестируются
   через service-тесты + smoke-структурные ассерты (`'badge-pending' in r.text`).
   HTML-snapshot шумит на каждой косметической правке.
+- **Инварианты отрендеренной страницы** — можно и нужно, это не снапшот: они слепы
+  к косметике и ловят класс ошибки, а не конкретную разметку. Действующий —
+  `tests/api/test_web_raw_datetime_guard.py`: ни одна страница не отдаёт
+  `str(datetime)` с микросекундами, `repr` datetime и ISO-`T` в видимом тексте.
+  Такой тест обязан содержать проверку собственной не-вакуумности (сид реально
+  наполняет страницу датами), иначе он зеленеет на пустом месте.
+- **Линт по исходникам шаблонов** — `tests/api/test_web_template_dates.py`, по образцу
+  `tests/test_tool_naming_style.py`: дата печатается только через одобренный фильтр,
+  allowlist-ратчет внутри теста может только уменьшаться.
 - **E2E (Playwright)** — отложено до закрытия §3. Триггер: появление ≥3 многошаговых
   сценариев (например, «создать → редактировать секцию → откатить ревизию»).
 

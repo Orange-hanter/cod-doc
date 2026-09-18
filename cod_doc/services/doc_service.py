@@ -209,6 +209,11 @@ def get(session: Session, project_id: int, doc_key: str) -> Document | None:
     return DocumentRepository(session).get_by_key(project_id, doc_key)
 
 
+def get_by_path(session: Session, project_id: int, path: str) -> Document | None:
+    """Документ по пути его markdown-проекции. См. ADO-109."""
+    return DocumentRepository(session).get_by_path(project_id, path)
+
+
 def list_for_project(session: Session, project_id: int) -> list[Document]:
     return DocumentRepository(session).list_for_project(project_id)
 

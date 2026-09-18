@@ -20,6 +20,7 @@ from mcp.server.fastmcp import FastMCP
 from cod_doc.logging_config import get_logger, setup_logging
 from cod_doc.mcp.profiles import VALID_PROFILES, keep_tool
 from cod_doc.mcp.tools import (
+    _workspace,
     activity_tools,
     adr_tools,
     agent_tools,
@@ -34,8 +35,10 @@ from cod_doc.mcp.tools import (
     revision_tools,
     routine_tools,
     run_tools,
+    scenario_tools,
     skill_tools,
     story_tools,
+    structure_tools,
     task_doc_tools,
     task_tools,
 )
@@ -79,6 +82,9 @@ for _module in (
     adr_tools,
     # RFC 22 / SYM-006D finding.* (external findings; ctx_* aliases live in doc_tools)
     finding_tools,
+    # RFC 24 §9 scenario.* (authoring half; the evidence half is STR-004)
+    scenario_tools,
+    structure_tools,
 ):
     _module.register(mcp)
 
@@ -112,6 +118,29 @@ def get_active_profile() -> str:
     return _ACTIVE_PROFILE
 
 
+def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> None:
+    """Apply ``profile`` and serve. Shared by ``cod-doc-mcp`` and ``cod-doc mcp``.
+
+    ``streamable-http`` means one process fronts every local harness, so the
+    per-session default project is disabled for the lifetime of the process
+    (see ``cod_doc/mcp/tools/_workspace.py``) and ``project`` becomes required
+    on every DB-backed tool.
+    """
+    _workspace.set_shared(transport == "streamable-http")
+    stats = apply_profile(profile)
+    _log.info(
+        "mcp_profile_applied",
+        extra={"event_type": "mcp_profile_applied", **stats},
+    )
+    if transport == "streamable-http":
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.settings.stateless_http = True
+        mcp.run(transport="streamable-http")
+        return
+    mcp.run(transport="stdio")
+
+
 @click.command()
 @click.option("--transport", type=click.Choice(["stdio", "streamable-http"]), default="stdio")
 @click.option("--host", default="127.0.0.1", show_default=True)
@@ -122,8 +151,8 @@ def get_active_profile() -> str:
     default=os.environ.get("COD_DOC_PROFILE", "agent"),
     show_default=True,
     help="Tool-surface profile (default: agent — cycle-5). agent=6 task-centric "
-    "tools for AI workflows; minimal=20 cold-start curated CRUD; "
-    "standard=110 DB-backed tools without legacy; full=114 including legacy "
+    "tools for AI workflows; minimal=21 cold-start curated CRUD; "
+    "standard=126 DB-backed tools without legacy; full=130 including legacy "
     "agent tools. Counts enforced by tests/test_server_profiles.py.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")
@@ -138,18 +167,7 @@ def main(
 ) -> None:
     """Run the COD-DOC MCP server."""
     setup_logging(level=log_level, fmt=log_format)
-    stats = apply_profile(profile)
-    _log.info(
-        "mcp_profile_applied",
-        extra={"event_type": "mcp_profile_applied", **stats},
-    )
-    if transport == "streamable-http":
-        mcp.settings.host = host
-        mcp.settings.port = port
-        mcp.settings.stateless_http = True
-        mcp.run(transport="streamable-http")
-        return
-    mcp.run(transport="stdio")
+    run_mcp_server(transport=transport, host=host, port=port, profile=profile)
 
 
 if __name__ == "__main__":

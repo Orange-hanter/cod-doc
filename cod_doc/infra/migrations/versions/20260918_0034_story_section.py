@@ -15,9 +15,9 @@
 обязано осиротить историю, но не удалить её вместе с критериями и связями.
 История без секции остаётся валидной и показывается отдельной группой.
 
-Revision ID: 0030_story_section
-Revises: 0029_drop_audit_log
-Create Date: 2026-09-08
+Revision ID: 0034_story_section
+Revises: 0033_document_status_recoercion
+Create Date: 2026-09-18
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ from alembic import op
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-revision: str = "0030_story_section"
-down_revision: str | None = "0029_drop_audit_log"
+revision: str = "0034_story_section"
+down_revision: str | None = "0033_document_status_recoercion"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

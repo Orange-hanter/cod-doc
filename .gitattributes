@@ -1,0 +1,5 @@
+# zsh-completion собирается из click-дерева (см. cod_doc/cli/completion/zsh.py).
+# Правка одной short_help двигает десяток строк в 2700-строчном файле — в
+# ревью это шум, а не изменение. Схлопываем его в diff'ах и не даём linguist
+# считать его написанным руками.
+cod_doc/cli/completion/_cod-doc -diff linguist-generated

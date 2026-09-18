@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     from datetime import date, datetime
@@ -51,12 +51,26 @@ class DocumentType(StrEnum):
     ANALYSIS = "analysis"
     RESEARCH = "research"
     CAPABILITY = "capability"
+    # Projection of the ``scenario`` tables — one file per capability. Generated
+    # by ``scenario_service.export``; never authored by hand.
+    SCENARIO_SET = "scenario-set"
 
 
 class DocumentStatus(StrEnum):
     DRAFT = "draft"
     REVIEW = "review"
     ACTIVE = "active"
+    # A document the project treats as the source of truth on its subject, not
+    # merely one that is current. Added by ADO-092 for the same reason ADO-015
+    # added eight document types: real corpora were authoring it, and every
+    # import turned it into `draft` — in one pilot, 36 documents including all
+    # 24 ADRs and the canonical architecture document.
+    #
+    # `active` was not a sufficient home for it. The distinction the projects
+    # draw is between "in force" and "settles disagreements", and collapsing
+    # the second into the first loses the only thing the status was written to
+    # say.
+    AUTHORITATIVE = "authoritative"
     DEPRECATED = "deprecated"
 
 
@@ -101,6 +115,40 @@ class TaskStatus(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in-progress"
     DONE = "done"
+
+
+#: Легаси-написание → канонический бакет.
+#:
+#: Карта живёт здесь, а не в `services/task_status_machine.py`, потому что это
+#: свойство самого перечисления, и читать её нужно в том числе из `infra`:
+#: репозиторий фильтрует по статусу, а импортировать `services` из `infra`
+#: запрещено слоями (ADO-182). `task_status_machine` её ре-экспортирует, так
+#: что прежние читатели (`mcp/tools/agent_tools.py`,
+#: `mcp/tools/context_tools.py`) ничего не замечают.
+TASK_STATUS_ALIASES: Final[dict[str, str]] = {
+    "pending": "todo",
+    "in-progress": "in_progress",
+    # Остальные новые имена уже канонические.
+}
+
+
+def canonical_task_status(status: str | TaskStatus) -> str:
+    """Свести легаси- или каноническое написание к каноническому бакету."""
+    raw = status.value if isinstance(status, TaskStatus) else str(status)
+    return TASK_STATUS_ALIASES.get(raw, raw)
+
+
+def equivalent_task_statuses(status: str | TaskStatus) -> frozenset[str]:
+    """Все ХРАНИМЫЕ написания, означающие тот же бакет, что и ``status``.
+
+    Нужна фильтрам: в базе одновременно лежат и `pending`, и `todo`, и это
+    один бакет по смыслу. Сравнение точной строкой резало класс
+    эквивалентности — запрос «что готово к работе» возвращал либо 123 задачи,
+    либо 6, но никогда 129 (ADO-182).
+    """
+    bucket = canonical_task_status(status)
+    values = {bucket} | {raw for raw, canon in TASK_STATUS_ALIASES.items() if canon == bucket}
+    return frozenset(values)
 
 
 class TaskType(StrEnum):
@@ -175,6 +223,73 @@ class ADRTaskRelation(StrEnum):
     RELATES = "relates"
 
 
+class ScenarioKind(StrEnum):
+    """Test-scenario shapes, taken verbatim from [RFC 24 §9].
+
+    The vocabulary is owned by RFC 24 and must not be extended locally: the
+    structure producer in ai-reviewer emits assessments keyed by these very
+    names, so a divergent value here would silently fail to join.
+    """
+
+    HAPPY_PATH = "happy_path"
+    ERROR_PATH = "error_path"
+    BOUNDARY_VALUE = "boundary_value"
+    INVARIANT = "invariant"
+    INTEGRATION = "integration"
+
+
+class ScenarioStatus(StrEnum):
+    """Claim status of a scenario — [RFC 24 §8], not §9 coverage.
+
+    RFC 24 draws a hard line between two halves:
+
+    - **intention** (this enum) — a claim authored by a human or an agent:
+      ``draft`` while it is being written, ``confirmed`` once someone stands
+      behind it, ``retired`` when it no longer applies. ``retired`` is a
+      deliberate cod-doc extension of the RFC's ``draft | confirmed`` pair:
+      scenario ids are never reused, so retirement needs its own value.
+    - **evidence** (NOT this enum) — whether a test actually proves the claim.
+      RFC 24 §9's ``covered | partial | missing | unverifiable`` are *derived*
+      from producer evidence under hard rules (an aggregate-LCOV ceiling, a
+      ``statusReason`` on every verdict, ``unresolved`` never decaying into
+      ``missing``). Those rules are unenforceable if a human can type the
+      verdict, so coverage never becomes a column here: STR-002 stores it in a
+      separate append-only ``scenario_assessment`` keyed on ``scenario.row_id``.
+    """
+
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    RETIRED = "retired"
+
+
+class ScenarioProvenance(StrEnum):
+    """Who authored the claim — [RFC 24 §8]."""
+
+    MANUAL = "manual"
+    AGENT = "agent"
+    IMPORT = "import"
+
+
+class ScenarioLinkKind(StrEnum):
+    """What a scenario can point at.
+
+    ``CRITERION`` references one ``story_acceptance`` row as
+    ``<story_id>#<position>`` — the seam that lets a later change give
+    ``story_coverage`` a test dimension without touching that table.
+    """
+
+    TASK = "task"
+    STORY = "story"
+    DOCUMENT = "document"
+    CRITERION = "criterion"
+
+
+class ScenarioRelation(StrEnum):
+    VERIFIES = "verifies"
+    SPECIFIED_IN = "specified_in"
+    EXERCISED_BY = "exercised_by"
+
+
 class ModuleStatus(StrEnum):
     PROPOSED = "proposed"
     ACTIVE = "active"
@@ -203,6 +318,7 @@ class EntityKind(StrEnum):
     LINK = "link"
     MODULE = "module"
     ADR = "adr"
+    SCENARIO = "scenario"
 
 
 class ActorKind(StrEnum):
@@ -443,6 +559,56 @@ class StoryLink:
     to_kind: StoryLinkKind
     to_ref: str
     relation: StoryRelation
+    row_id: int | None = None
+
+
+@dataclass(slots=True)
+class Scenario:
+    """One authored test scenario — the intention half of [RFC 24 §9].
+
+    Anchored on a document (``doc_key`` + ``section_anchor``) rather than on a
+    module: the ``module`` table is empty in practice, while capability
+    documents are the real grouping. ``module_id`` stays reserved for the day
+    modules are registered.
+    """
+
+    project_id: int
+    scenario_id: str
+    title: str
+    kind: ScenarioKind
+    group_key: str
+    preconditions: str
+    expected: str
+    author: str
+    status: ScenarioStatus = ScenarioStatus.DRAFT
+    provenance: ScenarioProvenance = ScenarioProvenance.MANUAL
+    position: int = 0
+    document_id: int | None = None
+    doc_key: str | None = None
+    section_anchor: str | None = None
+    doc_content_hash: str | None = None
+    module_id: int | None = None
+    subject_ref: str | None = None
+    notes: str | None = None
+    row_id: int | None = None
+    created: datetime | None = None
+    last_updated: datetime | None = None
+
+
+@dataclass(slots=True)
+class ScenarioStep:
+    scenario_row_id: int
+    position: int
+    text: str
+    row_id: int | None = None
+
+
+@dataclass(slots=True)
+class ScenarioLink:
+    scenario_row_id: int
+    to_kind: ScenarioLinkKind
+    to_ref: str
+    relation: ScenarioRelation
     row_id: int | None = None
 
 

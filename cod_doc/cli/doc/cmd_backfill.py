@@ -61,7 +61,7 @@ def doc_backfill_projection(
         )
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "project": project,

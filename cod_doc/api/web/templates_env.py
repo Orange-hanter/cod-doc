@@ -8,8 +8,8 @@ from urllib.parse import unquote
 
 from fastapi.templating import Jinja2Templates
 
+from cod_doc.api.web.dates import fmt_date, fmt_datetime, fmt_relative, fmt_tooltip
 from cod_doc.domain.entities import DocumentType, TaskStatus
-from cod_doc.services.nav_service import fmt_relative as _fmt_relative
 
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates" / "web"
 STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
@@ -50,7 +50,14 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # encode at write time because cookie headers are latin-1).
 templates.env.filters["urldecode"] = unquote
 
-templates.env.filters["relative_time"] = _fmt_relative
+# ADO-154: единственная точка форматирования времени — cod_doc/api/web/dates.py.
+# Правило: хендлер отдаёт доменное значение как есть, шаблон выбирает форму.
+# `.isoformat()` в pages/ законен только при сериализации (JSONResponse или
+# JSON-файл), но не для контекста шаблона.
+templates.env.filters["relative_time"] = fmt_relative
+templates.env.filters["short_datetime"] = fmt_datetime
+templates.env.filters["short_date"] = fmt_date
+templates.env.filters["ts_tooltip"] = fmt_tooltip
 # Avoid passing the same enum dump from every handler — make it a Jinja global.
 templates.env.globals["task_status_options"] = TASK_STATUS_OPTIONS
 templates.env.globals["document_types"] = DOCUMENT_TYPES

@@ -804,6 +804,112 @@ def register(mcp: FastMCP) -> None:
             out["dry_run"] = True
         return out
 
+    @mcp.tool(name="task_move_to_section")
+    def task_move_to_section(
+        project: str,
+        task_ids: list[str],
+        plan_scope: str,
+        section_letter: str,
+        author: str = "mcp",
+        reason: str | None = None,
+        continue_on_error: bool = False,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Move tasks into another section of the SAME plan — backlog grooming.
+
+        Секции плана — единственная группировка бэклога, но перекладывать
+        между ними было нечем ни из MCP, ни из CLI: единственным путём
+        оставался прямой SQL, который не пишет ни ревизии, ни события.
+
+        Целевая секция задаётся буквой (`section_letter`) в плане
+        `plan_scope` — как в ``task_create`` / ``task_create_many``.
+        Смена плана не поддерживается: задача и секция обязаны принадлежать
+        одному плану.
+
+        Батч идёт одной транзакцией: по умолчанию любая ошибка откатывает
+        весь перенос. С ``continue_on_error=True`` ошибки собираются
+        по-задачно, успешные переносы коммитятся. Каждая задача получает
+        свою ревизию и своё событие ``task.section_changed`` — одно событие
+        на весь батч уничтожило бы по-задачную историю.
+
+        Задача, уже лежащая в целевой секции, попадает в ``skipped``, а не в
+        ``errors``, и ревизии не пишет.
+
+        ``dry_run=True`` проверяет и возвращает результат, откатывая транзакцию.
+
+        Returns ``{"moved": [...], "skipped": [...], "errors": [{"task_id",
+        "message"}, ...], "section": {...}, "committed": bool}``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
+        from cod_doc.services import task_service
+        from cod_doc.services.task_service import (
+            CrossPlanMoveError,
+            SectionNotFoundError,
+            TaskNotFoundError,
+        )
+
+        if not task_ids:
+            raise ValueError("task_move_to_section: task_ids is empty.")
+
+        sf, _ = session_factory(project)
+
+        moved: list[dict[str, Any]] = []
+        skipped: list[str] = []
+        errors: list[dict[str, Any]] = []
+        committed = False
+
+        with transactional(sf, commit=not dry_run) as session:
+            require_project_id(session, project)
+            plan = PlanRepository(session).get_by_scope(plan_scope)
+            if plan is None or plan.row_id is None:
+                raise ValueError(f"Plan '{plan_scope}' not found.")
+            sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
+            section = next(
+                (s for s in sections if s.letter.upper() == section_letter.upper()),
+                None,
+            )
+            if section is None or section.row_id is None:
+                raise ValueError(f"Section '{section_letter}' not found in plan {plan_scope!r}")
+            section_id = section.row_id
+
+            for task_id in task_ids:
+                try:
+                    current = task_service.get(session, task_id)
+                    if current is None:
+                        raise TaskNotFoundError(task_id)
+                    if current.section_id == section_id:
+                        skipped.append(task_id)
+                        continue
+                    t = task_service.move_to_section(
+                        session,
+                        task_id=task_id,
+                        new_section_id=section_id,
+                        author=author,
+                        reason=reason,
+                    )
+                    moved.append(task_to_dict(t))
+                except (TaskNotFoundError, SectionNotFoundError, CrossPlanMoveError) as exc:
+                    errors.append({"task_id": task_id, "message": str(exc)})
+                    if not continue_on_error:
+                        raise ValueError(f"{task_id}: {exc}") from None
+            committed = not dry_run
+
+        result: dict[str, Any] = {
+            "moved": moved,
+            "skipped": skipped,
+            "errors": errors,
+            "section": {
+                "letter": section_letter.upper(),
+                "title": section.title,
+                "plan_scope": plan_scope,
+            },
+            "committed": committed,
+        }
+        if dry_run:
+            result["dry_run"] = True
+        return result
+
     @mcp.tool(name="task_complete")
     def task_complete(
         project: str,

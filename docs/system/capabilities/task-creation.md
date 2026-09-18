@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-15
 related_docs:
   - ../standards/task-plan.md
   - plan-management.md
@@ -14,6 +14,15 @@ related_docs:
 # Capability — Task Creation
 
 > Стандартизированное и автоматическое создание задач без ручного заполнения YAML и ручной проверки формата.
+
+## 0. As implemented (2026-09-15)
+
+Живая поверхность — MCP `task_create` / `task_checkout` / `task_complete`
+(snake_case) и CLI `cod-doc task create|status|complete`. Checkout в CLI нет.
+Новая задача стартует в `todo` (legacy-алиас `pending`). Переход
+`todo→in_progress` только через `task_checkout` (ADO-039). MCP `task_create`
+по умолчанию отклоняет дубликат title (`allow_duplicate=False`). Ниже —
+Restate-era YAML, это не контракт.
 
 ## 1. Что нужно автоматизировать
 

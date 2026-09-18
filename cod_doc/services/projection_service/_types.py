@@ -17,6 +17,12 @@ class DriftStatus(StrEnum):
     MISSING = "missing"  # file not on disk
 
 
+# ADO-092: the counts key for documents whose frontmatter disagrees with the
+# DB. Not a DriftStatus member — those four are a partition of the content
+# states, and a metadata mismatch is independent of which one a document is in.
+METADATA_MISMATCH_COUNT_KEY = "metadata_mismatch"
+
+
 @dataclass(slots=True)
 class ExportResult:
     document_id: int
@@ -35,6 +41,12 @@ class DriftReport:
     projection_hash: str | None  # stored in DB
     db_content_hash: str  # SHA-256 of current DB content
     file_hash: str | None  # SHA-256 of on-disk file; None if MISSING
+    # ADO-092: frontmatter keys where the file disagrees with the DB row.
+    # Orthogonal to `status` on purpose — content and metadata drift are
+    # independent, and a document can have either, both or neither. Folding
+    # this into DriftStatus would have forced a choice between reporting the
+    # two, which is how the status loss stayed invisible behind `in_sync`.
+    metadata_mismatch: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

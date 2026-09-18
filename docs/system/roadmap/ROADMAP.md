@@ -5,7 +5,7 @@ status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-06-05
-last_updated: 2026-09-03
+last_updated: 2026-09-15
 audience: [contributors, agents]
 related_docs:
   - ../MASTER.md
@@ -69,7 +69,7 @@ related_docs:
 | [audit-followups](audit-followups-task-plan.md) | ✅ done | закрыт STB-021 |
 | [agent-tools-completion](agent-tools-completion-task-plan.md) | ✅ done | закрыт STB-001 |
 | [stabilization-2026-06](../audit/2026-07-29-state-of-the-project.md) | 🔄 11 done / 1 cancelled | STB-012 → cancelled (re-scoped как ADO-013); открыт STB-023 |
-| **adoption-2026-08** | 🔄 66/82 *(2026-09-02)* | Треки C+D+E; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)). Секции: C 23/26, D 26/37, E 17/19 |
+| **adoption-2026-08** | 🔄 100/229 *(2026-09-17)* | Треки C+D+E+W; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)). Секции: C 24/27, D 50/96, E 18/20, F 1/1, G 5/28, H 2/2, **I Web UI 0/55** (заведена 2026-09-17) |
 | RFC 16–21 (hackathon-track) | ❌ отбракованы 2026-08-29 | ADO-056: ни одна не закрывает спрос M2; пометки в [proposals/README.md](../../../proposals/README.md) |
 
 ## Смена приоритета: почему Adoption вперёд фич
@@ -119,9 +119,27 @@ byte-identical round-trip — перед первым `doc export` наружу)
 
 ## Треки
 
-Все задачи заведены в БД как план **`adoption-2026-08`** (на 2026-09-02 — 82
-задачи: C — 26, D — 37, E — 19; таблицы ниже перечисляют не весь состав, а
-опорные пункты треков):
+### Трек RFC 25 — Doc-curator (приоритет агентского направления, 2026-09-15)
+
+Дефолтный ИИ-агент больше не исполняет продуктовые задачи. Роль: корпус,
+доступность, поиск. Контракт — [RFC 25](../../../proposals/25-doc-curator-agent.md);
+план в БД — **`doc-curator-2026-09`** (`cod-doc plan ready doc-curator-2026-09 -p cod-doc`).
+Очередь ADO-/SYM- на профиле `standard` не отменяется — её берёт человек
+или coding-агент, не оркестратор.
+
+| Секция | Содержание |
+|---|---|
+| A | Политика: скилл `orchestrator`, VISION, AGENTS.md, MASTER |
+| B | Своп `AGENT_TOOLS` + MCP `ctx_search` (обёртка `search_service.search`) |
+| C | Качество поиска: пустой индекс, бюджет, кросс-проект (SYM-011) |
+| D | `curator_next` / daemon `cod-doc agent run` как doc-health, не task loop |
+
+Adoption (ниже) остаётся программой пилотов. Агент в пилотах — источник
+контекста и санитар, не воркер, который закрывает чужой бэклог.
+
+Все прочие задачи adoption заведены в БД как план **`adoption-2026-08`**
+(на 2026-09-02 — 82 задачи: C — 26, D — 37, E — 19; таблицы ниже — опорные
+пункты, не полный состав):
 `cod-doc plan ready adoption-2026-08 -p cod-doc`.
 
 ### Трек C — Adoption (приоритет)
@@ -168,6 +186,28 @@ byte-identical round-trip — перед первым `doc export` наружу)
 | ~~ADO-043~~ | ~~audit_log мёртвая~~ — `cancelled` 2026-09-02, свёрнута в ADO-044 | — | — |
 | ~~ADO-051~~ | ~~actor_kind startswith-эвристика~~ — `cancelled` 2026-09-02, свёрнута в ADO-044 | — | — |
 
+### Трек W — Долг web-UI (секция I плана `adoption-2026-08`)
+
+Сплошной UX-прогон 7–8 сентября 2026 завёл 58 задач ADO-098…ADO-155 и сложил их
+в «Residual debt» вперемешку с миграциями и docs-долгом. Блок не двигался,
+потому что у него не было ни собственной секции, ни очереди: ROADMAP о нём не
+знал, рёбер зависимости нет ни у одной задачи. 2026-09-17 заведена секция **I
+Web UI**, в неё перенесены 55 задач (ADO-116 и ADO-146 остались в «Residual
+debt» — к вёрстке отношения не имеют).
+
+Очередь — три волны; полная раскладка по PR с границами контрактов и
+определением готовности живёт в плане сессии, здесь только порядок.
+
+| Волна | Что | Задачи |
+|---|---|---|
+| 1 — сломанное и видимое | даты по всему UI; `---`/HTML-комментарии в рендерере; вёрстка вкладки ADR; переполнение kanban/revisions; рабочие ссылки Overview | ADO-154+106, ADO-111+112, ADO-133+136+135, ADO-121+122+153+126, ADO-109+107+152 |
+| 2 — данные есть, UI не показывает | оживить брошенную ветку `worktree-story-sections` (готовая реализация, PR не открывался); replay консоли агента | ADO-143/144/145/140, ADO-146, ADO-157; ADO-115 |
+| 3 — структурное | зоны навигации вместо 15 табов (поглощает 138/149/135/127/119), AI-потоки, Settings, крупные фичи | ADO-150 первой, далее 117/114/118/147/155, 101→103→104→102→105, 120/137/134/108/100 |
+
+Предусловие волн (закрыто 2026-09-17): переносить задачу между секциями было
+нечем ни на одной поверхности — добавлены `task_service.move_to_section`,
+MCP `task_move_to_section` и CLI `cod-doc task move`.
+
 ### Трек E — Symbiosis ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md))
 
 Фаза 0 (самопочинка, блокирует пилоты) → Фазы 1–5 (hub, findings, петля,
@@ -187,7 +227,10 @@ ai-review, кросс-проектность). Полный план:
 | **SYM-009** | Фаза 3: ingest ai_review pull-моделью + upstream-PR slimFinding + finding stability | medium | SYM-006 |
 | **SYM-010** | Фаза 4a: ctx drift → PR-комментарий (гейт ссылок/frontmatter Orakul) | medium | SYM-009, ADO-017 |
 | **SYM-011** | Фаза 5: кросс-проектный поиск + `[[doc:slug:key]]` + фикс Chroma L3 + `agent_pick --projects` | low | SYM-005 |
-| **STR-001..004** | [RFC 24](../../../proposals/24-structure-contracts-scenarios.md): контур structure/contracts/scenarios — фазы 3–6 (сторона cod-doc); producer смержен в ai-reviewer 2026-09-03 | medium | — (SYM-005..009 done) |
+| **TSC-001..014** (PR #27, commit-ids) | [RFC 24](../../../proposals/24-structure-contracts-scenarios.md) §9, авторская половина: таблицы `scenario`/`scenario_step`/`scenario_link` (миграция 0032), сервис + валидаторы `SCV-*`, проекция в `docs/system/scenarios/`, CLI + MCP `scenario_*`, skill `scenario-author`. Эти ID жили в коммитах PR, не в живой БД. | **✅ done 2026-09-08** | — |
+| **TSC-001** (DB, corpus) | Первый корпус: пять RFC 24 §9 kinds для `plan-management`, claims против кода | **✅ done 2026-09-13** | — |
+| **TSC-002** (DB, corpus) | Остальные capability-группы: пять kinds каждая, code-true; cleanup коллизии ID | high | TSC-001 (DB) |
+| **STR-001..004** | [RFC 24](../../../proposals/24-structure-contracts-scenarios.md): контур structure/contracts/scenarios — фазы 3–6 (сторона cod-doc), **доказательная половина**: снапшоты, `scenario_assessment` поверх готового scenario index, structure drift, triage; producer смержен в ai-reviewer 2026-09-03 | medium | — (SYM-005..009 done) |
 
 ### Трек B — Feature-трек (hackathon RFC, после C)
 

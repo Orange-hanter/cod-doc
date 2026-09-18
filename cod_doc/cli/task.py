@@ -10,6 +10,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from cod_doc.domain.entities import TaskStatus
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -25,6 +26,23 @@ _STATUS_ICON = {
     "in-progress": "🔵",
     "done": "🟢",
 }
+
+#: Единственный источник статусов для CLI (ADO-178).
+#:
+#: Раньше здесь стоял литерал из трёх значений, продублированный в двух
+#: командах, и CLI не знал про `backlog`, `in_review`, `blocked`, `cancelled`
+#: и канонический `todo` — при том что `cancelled` и `todo` в базе уже есть.
+#:
+#: Список берётся из `TaskStatus`, так что новое состояние появляется в CLI
+#: само. Легаси-алиасы (`pending`, `in-progress`) входят в перечисление и
+#: остаются принимаемыми — старые скрипты не ломаются.
+#:
+#: Допустимость самого ПЕРЕХОДА проверяет не Choice, а
+#: `task_status_machine.validate_transition`: протокольное правило ADO-039
+#: (`todo → in_progress` только через `task_checkout`) обходить через
+#: расширение списка нельзя, и ошибка от машины состояний объясняет причину
+#: лучше, чем «нет такого статуса».
+_STATUS_VALUES = [s.value for s in TaskStatus]
 
 
 def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
@@ -65,14 +83,16 @@ def task() -> None:
     "-s",
     "filter_status",
     default=None,
-    type=click.Choice(["pending", "in-progress", "done"]),
-    help="Filter by status",
+    type=click.Choice(_STATUS_VALUES),
+    help=(
+        "Filter by status. Легаси-написание и каноническое — один бакет: "
+        "`-s pending` и `-s todo` дают одинаковый результат."
+    ),
 )
 @click.option("--json", "as_json", is_flag=True, default=False)
 @click.pass_context
 def task_list(ctx: click.Context, project: str, filter_status: str | None, as_json: bool) -> None:
     """List tasks for a project."""
-    from cod_doc.domain.entities import TaskStatus
     from cod_doc.infra.db import transactional
     from cod_doc.services import task_service
 
@@ -95,7 +115,7 @@ def task_list(ctx: click.Context, project: str, filter_status: str | None, as_js
             }
             for t in tasks
         ]
-        console.print(_json.dumps(data, ensure_ascii=False, indent=2))
+        click.echo(_json.dumps(data, ensure_ascii=False, indent=2))
         return
 
     if not tasks:
@@ -146,7 +166,7 @@ def task_show(ctx: click.Context, task_id: str, project: str, as_json: bool) -> 
         sys.exit(1)
 
     if as_json:
-        console.print(
+        click.echo(
             _json.dumps(
                 {
                     "task_id": t.task_id,
@@ -287,9 +307,7 @@ def task_create(
 
 @task.command("status")
 @click.argument("task_id")
-@click.argument(
-    "new_status", metavar="STATUS", type=click.Choice(["pending", "in-progress", "done"])
-)
+@click.argument("new_status", metavar="STATUS", type=click.Choice(_STATUS_VALUES))
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None)
@@ -303,7 +321,6 @@ def task_status(
     reason: str | None,
 ) -> None:
     """Update task status (does not validate deps; use 'complete' for done)."""
-    from cod_doc.domain.entities import TaskStatus
     from cod_doc.infra.db import transactional
     from cod_doc.services import task_service
     from cod_doc.services.task_service import TaskNotFoundError
@@ -420,6 +437,119 @@ def task_update(
         sys.exit(1)
 
     console.print(f"[green]✅ {task_id}: обновлено — {', '.join(changed)}[/green]")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# task move
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@task.command("move")
+@click.argument("task_ids", nargs=-1, required=True)
+@click.option("--project", "-p", required=True, help="Project slug")
+@click.option("--plan", "plan_scope", required=True, help="Scope плана (напр. adoption-2026-08)")
+@click.option("--section", "section_letter", required=True, help="Буква целевой секции")
+@click.option("--author", default="cli", show_default=True)
+@click.option("--reason", default=None)
+@click.option("--dry-run", is_flag=True, help="Показать, что будет перенесено, и откатить")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def task_move(
+    ctx: click.Context,
+    task_ids: tuple[str, ...],
+    project: str,
+    plan_scope: str,
+    section_letter: str,
+    author: str,
+    reason: str | None,
+    dry_run: bool,
+    as_json: bool,
+) -> None:
+    """Переложить задачи в другую секцию того же плана (группировка бэклога).
+
+    Секция задаётся буквой в пределах плана. Смена плана не поддерживается:
+    задача и секция обязаны принадлежать одному плану.
+
+    Одна транзакция на весь батч: ошибка на любой задаче откатывает перенос.
+    Каждая задача получает свою ревизию и своё событие.
+    """
+    from cod_doc.infra.db import transactional
+    from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
+    from cod_doc.services import task_service
+    from cod_doc.services.task_service import (
+        CrossPlanMoveError,
+        SectionNotFoundError,
+        TaskNotFoundError,
+    )
+
+    cfg: Config = ctx.obj["config"]
+    sf = _make_session(project, cfg)
+
+    moved: list[str] = []
+    skipped: list[str] = []
+
+    try:
+        with transactional(sf, commit=not dry_run) as session:
+            _require_project_id(session, project)
+            plan = PlanRepository(session).get_by_scope(plan_scope)
+            if plan is None or plan.row_id is None:
+                console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
+                sys.exit(1)
+            sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
+            section = next(
+                (s for s in sections if s.letter.upper() == section_letter.upper()),
+                None,
+            )
+            if section is None or section.row_id is None:
+                console.print(
+                    f"[red]Section '{section_letter}' not found in plan {plan_scope!r}.[/red]"
+                )
+                sys.exit(1)
+
+            for task_id in task_ids:
+                current = task_service.get(session, task_id)
+                if current is None:
+                    raise TaskNotFoundError(task_id)
+                if current.section_id == section.row_id:
+                    skipped.append(task_id)
+                    continue
+                task_service.move_to_section(
+                    session,
+                    task_id=task_id,
+                    new_section_id=section.row_id,
+                    author=author,
+                    reason=reason,
+                )
+                moved.append(task_id)
+    except TaskNotFoundError as exc:
+        console.print(f"[red]Task '{exc}' not found.[/red]")
+        sys.exit(1)
+    except (SectionNotFoundError, CrossPlanMoveError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if as_json:
+        # ADO-176: машинный вывод — через click.echo, не rich.
+        click.echo(
+            _json.dumps(
+                {
+                    "moved": moved,
+                    "skipped": skipped,
+                    "section": section_letter.upper(),
+                    "plan_scope": plan_scope,
+                    "committed": not dry_run,
+                    "dry_run": dry_run,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+
+    prefix = "[yellow]dry-run:[/yellow] " if dry_run else "[green]✅[/green] "
+    console.print(
+        f"{prefix}перенесено {len(moved)} → секция {section_letter.upper()} "
+        f"({plan_scope}); пропущено (уже там): {len(skipped)}"
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────

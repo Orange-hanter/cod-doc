@@ -12,7 +12,7 @@
 
 | Часть | Что даёт |
 |---|---|
-| MCP-сервер `cod-doc` | тулы `task_*` / `doc_*` / `plan_*` / `adr_*` / `link_*`; профиль `standard` (108 тулов), меняется `COD_DOC_PROFILE` |
+| — | **MCP-сервер плагин не поднимает.** Тулы `task_*` / `doc_*` / `plan_*` / `adr_*` / `link_*` приходят от общего HTTP-демона, см. ниже |
 | `/cod-doc:status` | снимок проекта: прогресс, очередь, зависшие checkout'ы, дрейф |
 | `/cod-doc:task` | протокол задачи: checkout → работа → complete со sha |
 | `/cod-doc:drift` | проверка и (по `--fix`) починка `edited_in_place` |
@@ -33,10 +33,27 @@ claude plugin install cod-doc@cod-doc
 Проверка: `claude plugin list`, затем `/cod-doc:status` в подключённом
 проекте.
 
+### MCP-сервер ставится отдельно
+
+Плагин намеренно несёт пустой `mcpServers`. Раньше он поднимал собственный
+stdio-субпроцесс на каждую сессию — вместе с проектными `.mcp.json` это давало
+по два подключения и вдвое раздутый каталог тулов.
+
+Сервер теперь один на машину: постоянный HTTP-демон, который обслуживает все
+харнессы сразу. Установка — `deploy/launchd/cod-doc-mcp-daemon.sh install`
+в репозитории cod-doc, подробности и семантика общего сервера —
+[`deploy/launchd/README.md`](../../deploy/launchd/README.md). Регистрация в
+клиенте после этого сводится к одной строке:
+
+```json
+{ "type": "http", "url": "http://127.0.0.1:8801/mcp" }
+```
+
 ## Требования
 
 - `cod-doc` установлен: бинарь ищется как `$COD_DOC_BIN` → `<project>/.venv/bin/cod-doc`
-  → `cod-doc` в PATH; MCP-сервер — `$COD_DOC_MCP_BIN` → `<то же>-mcp` → PATH.
+  → `cod-doc` в PATH. Хукам и командам нужен только CLI; MCP-сервер живёт
+  отдельным демоном.
 - В проекте есть `.cod-doc/state.db` (иначе хуки молчат, а команды предложат
   `/cod-doc:setup`).
 - `sqlite3` в PATH — им хуки резолвят слаг, не поднимая питон.
@@ -46,8 +63,7 @@ claude plugin install cod-doc@cod-doc
 | Переменная | Значение |
 |---|---|
 | `COD_DOC_PROJECT` | принудительный слаг проекта (иначе — по `root_path` в БД) |
-| `COD_DOC_BIN`, `COD_DOC_MCP_BIN` | явные пути к бинарям |
-| `COD_DOC_PROFILE` | профиль MCP: `agent` (6) / `minimal` (20) / `standard` (108) / `full` (112) |
+| `COD_DOC_BIN` | явный путь к CLI-бинарю |
 | `COD_DOC_SESSION_BRIEF=1` | включает сводку при старте сессии (по умолчанию выключена) |
 
 ## Отношение к `.claude/` самого репозитория cod-doc

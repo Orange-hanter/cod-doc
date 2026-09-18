@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-15
 related_docs:
   - ../standards/revision-history.md
   - ../standards/document-link.md
@@ -15,6 +15,14 @@ related_docs:
 # Capability — Documentation Evolution
 
 > Управляемая эволюция документов: создание, патчинг, переименование, слияние, декомпозиция — без рассинхронизации с кодом и ссылками.
+
+## 0. As implemented (2026-09-15)
+
+SoT — строка `document` в SQLite; markdown — проекция. Живые тулы:
+`doc_create` / `doc_export` / `doc_drift` / `doc_import` / `doc_body` /
+`doc_accept` / `doc_rename`. `doc_service.patch_section` есть, MCP
+`doc_patch_*` нет. Ручная правка проекции → `edited_in_place` /
+`ExportGuardError`. Ниже ещё встречаются dotted `doc.patch_section`.
 
 ## 1. Проблема ручного подхода
 

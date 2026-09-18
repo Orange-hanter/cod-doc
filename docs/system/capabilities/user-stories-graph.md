@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-15
 related_docs:
   - ../DATA_MODEL.md
   - ../standards/task-plan.md
@@ -15,6 +15,12 @@ related_docs:
 # Capability — User Stories & Dependency Graph
 
 > User stories как first-class сущности; граф зависимостей — между задачами, историями и модулями.
+
+## 0. As implemented (2026-09-15)
+
+MCP `story_create` / `story_add_criterion` / `story_link` / `story_coverage`
+и CLI `cod-doc story …`. Coverage — derived (`CoverageStatus`), не
+хранимый вердикт. Дубликат `story_id` → `StoryAlreadyExistsError`.
 
 ## 1. Проблема ручного подхода
 
