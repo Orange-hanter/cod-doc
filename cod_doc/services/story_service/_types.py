@@ -18,6 +18,14 @@ class AcceptanceNotFoundError(LookupError):
     pass
 
 
+class SectionNotFoundError(LookupError):
+    """Секция с таким ключом не заведена в этом проекте."""
+
+
+class SectionAlreadyExistsError(ValueError):
+    """Ключ секции занят — он уникален в пределах проекта."""
+
+
 class BrokenLinkError(ValueError):
     """Raised when `link()` target doesn't resolve in the current project."""
 

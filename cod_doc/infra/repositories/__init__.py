@@ -13,6 +13,7 @@ from cod_doc.infra.repositories.scenario_repo import (
 from cod_doc.infra.repositories.story_repo import (
     StoryAcceptanceRepository,
     StoryLinkRepository,
+    StorySectionRepository,
     UserStoryRepository,
 )
 from cod_doc.infra.repositories.task_repo import TaskRepository
@@ -31,6 +32,7 @@ __all__ = [
     "SectionRepository",
     "StoryAcceptanceRepository",
     "StoryLinkRepository",
+    "StorySectionRepository",
     "TaskRepository",
     "TraceCallRepository",
     "UserStoryRepository",

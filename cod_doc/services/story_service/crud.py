@@ -28,6 +28,7 @@ from cod_doc.infra.models import (
 from cod_doc.infra.repositories import (
     StoryAcceptanceRepository,
     StoryLinkRepository,
+    StorySectionRepository,
     TaskRepository,
     UserStoryRepository,
 )
@@ -35,7 +36,7 @@ from cod_doc.services import activity_service, validation
 from cod_doc.services import revision_service as rev
 
 from ._internals import _diff, _require_story
-from ._types import StoryAlreadyExistsError
+from ._types import SectionNotFoundError, StoryAlreadyExistsError
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -52,9 +53,18 @@ def create(
     author: str,
     status: UserStoryStatus = UserStoryStatus.DRAFT,
     acceptance: list[str] | None = None,
+    section_key: str | None = None,
     reason: str | None = None,
 ) -> UserStory:
-    """Persist a story (+ optional acceptance criteria) and write its initial revision."""
+    """Persist a story (+ optional acceptance criteria) and write its initial revision.
+
+    ADO-159: секция принимается КЛЮЧОМ, а не ``row_id``. Резолв был у
+    каждого вызывающего свой, а в журнал уезжало целое число — при
+    том что всё остальное в том же diff человекочитаемо. ``row_id``
+    теряет смысл при переименовании секции, а ``ON DELETE SET NULL``
+    гарантирует, что ссылка однажды повиснет; `revision_revert` эти
+    diff'ы проигрывает.
+    """
     validation.validate_story_id(story_id)
     if (
         session.execute(
@@ -63,6 +73,13 @@ def create(
         is not None
     ):
         raise StoryAlreadyExistsError(story_id)
+
+    section_id: int | None = None
+    if section_key is not None:
+        section = StorySectionRepository(session).get_by_key(project_id, section_key)
+        if section is None:
+            raise SectionNotFoundError(section_key)
+        section_id = section.row_id
 
     now = datetime.now(UTC)
     story = UserStoryRepository(session).add(
@@ -75,6 +92,7 @@ def create(
             priority=priority,
             created=now,
             last_updated=now,
+            section_id=section_id,
         )
     )
     assert story.row_id is not None
@@ -102,6 +120,7 @@ def create(
             story_id=story_id,
             status=status.value,
             acceptance_count=len(acceptance or []),
+            section=section_key,
         ),
         reason=reason or "create",
     )
@@ -116,6 +135,7 @@ def create(
             "status": status.value,
             "acceptance_count": len(acceptance or []),
             "priority": priority.value,
+            "section": section_key,
         },
         summary=f"Story {story_id} created",
     )

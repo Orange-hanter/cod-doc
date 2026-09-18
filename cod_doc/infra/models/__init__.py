@@ -39,7 +39,12 @@ from .repo_index import RepoFileModel, RepoImportModel, RepoSymbolModel
 from .revisions import AgentRunModel, RevisionModel
 from .routines import RoutineModel, RoutineRunModel
 from .scenarios import ScenarioLinkModel, ScenarioModel, ScenarioStepModel
-from .stories import StoryAcceptanceModel, StoryLinkModel, UserStoryModel
+from .stories import (
+    StoryAcceptanceModel,
+    StoryLinkModel,
+    StorySectionModel,
+    UserStoryModel,
+)
 from .structure import (
     CodeBoundaryModel,
     CodeContractModel,
@@ -102,6 +107,7 @@ __all__ = [
     "SectionModel",
     "StoryAcceptanceModel",
     "StoryLinkModel",
+    "StorySectionModel",
     "StoryTagModel",
     "StructureAssessmentModel",
     "StructureCurrentModel",

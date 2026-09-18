@@ -1,4 +1,4 @@
-"""ADO-067: анти-drift — мутация задачи в services обязана быть на MCP и CLI.
+"""ADO-067: анти-drift — мутация в services обязана быть на MCP и CLI.
 
 Закон репозитория (CLAUDE.md, «Четыре равные поверхности»): новая
 функциональность в ``services/`` обязана появиться и в CLI, и в MCP —
@@ -12,45 +12,59 @@
 ни неподключённых старых.
 
 Отсюда конструкция этого теста: **обнаружение вместо ручного списка**.
-Множество «мутаций задачи» вычисляется из AST ``task_service.py`` — публичная
-функция считается мутацией, если её call-graph (с раскрытием module-local
-хелперов вроде ``_update_text_field``) содержит запись в audit-trail:
-``rev.write`` / ``activity_service.emit*`` /
+Множество «мутаций» вычисляется из AST сервиса — публичная функция
+считается мутацией, если её call-graph (с раскрытием module-local хелперов
+вроде ``_update_text_field``) содержит запись в audit-trail: ``rev.write`` /
+``activity_service.emit*`` /
 ``activity_service.write_revision_and_emit_event``. По правилу ADO-040
 мутирующий сервис обязан писать revision и activity event, поэтому
 «пишет audit-trail» ≡ «мутация» — новая функция попадает под проверку сама,
 без правки теста.
 
+ADO-159: проверка распространена со ``task_service.py`` на пакет
+``story_service/`` — семь мутаций вместо только задачных. До этого
+«story-мутации есть и в MCP, и в CLI» держалось на примерах.
+
+Границу проверки надо назвать честно: тест ловит **отсутствие функции** на
+поверхности, а не расхождение сигнатур. Найденный в том же ADO-159 пробел
+— у CLI ``story create`` был флаг ``--section``, а у MCP ``story_create``
+параметра секции не было вовсе — этим тестом НЕ ловится: ``create``
+вызывается с обеих поверхностей, просто с разным набором аргументов.
+Сверка параметров — отдельная работа с другой ценой ложных срабатываний.
+
+Имя файла осталось прежним: на него ссылаются CLAUDE.md и отчёт аудита
+``2026-09-06-sprint-m5-trustworthy-gate``, а переписывать исторический
+отчёт ради имени файла — хуже, чем потерпеть узкое имя.
+
 Границы проверки:
 
-* Модуль — только ``cod_doc/services/task_service.py``. Мутации задач в
-  соседних сервисах (checkout/agent/story) имеют свои протоколы и свои
-  тесты; расширять сюда — отдельная задача, не ADO-067.
+* Сервисы — ``task_service.py`` и пакет ``story_service/``. Мутации в
+  соседних сервисах (checkout/agent) имеют свои протоколы и свои тесты.
 * Поверхности — ``cod_doc/mcp/`` и ``cod_doc/cli/``, машинно-читаемые
   поверхности из контракта ADO-067. Web (``api/``) и TUI не проверяются:
   человеческие поверхности рендерят подмножество осознанно.
 
-Разрешённые исключения живут в двух явных списках ниже; на каждую запись —
-обоснование. ``SURFACE_DEBT`` — ratchet: тест сам падает, когда запись
-устарела (функция выставлена, а из списка не убрана), поэтому список может
-только сокращаться.
+Разрешённые исключения живут в явных списках на каждый сервис; на каждую
+запись — обоснование. ``surface_debt`` — ratchet: тест сам падает, когда
+запись устарела (функция выставлена, а из списка не убрана), поэтому список
+может только сокращаться.
 """
 
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-TASK_SERVICE = REPO_ROOT / "cod_doc" / "services" / "task_service.py"
+SERVICES_DIR = REPO_ROOT / "cod_doc" / "services"
+SERVICES_PACKAGE = "cod_doc.services"
 SURFACE_DIRS = {
     "mcp": REPO_ROOT / "cod_doc" / "mcp",
     "cli": REPO_ROOT / "cod_doc" / "cli",
 }
-
-TASK_SERVICE_MODULE = "cod_doc.services.task_service"
-TASK_SERVICE_PACKAGE = "cod_doc.services"
-TASK_SERVICE_NAME = "task_service"
 
 # Вызовы, по которым функция опознаётся как мутация (ADO-040: write-path
 # обязан оставить след). Хранятся как хвост dotted-имени вызова.
@@ -64,43 +78,99 @@ AUDIT_WRITE_CALLS = frozenset(
     }
 )
 
-# --------------------------------------------------------------------------- #
-# Разрешённые исключения                                                       #
-# --------------------------------------------------------------------------- #
 
-#: Функции, которые пишут audit-trail, но выставлять их наружу неправильно —
-#: это внутренние шаги чужого протокола, а не операции пользователя.
-#: Пусто на 2026-09-05; запись сюда — архитектурное решение, а не «пока не
-#: успели».
-INTERNAL_ONLY: dict[str, str] = {}
+@dataclass(frozen=True)
+class ServiceSpec:
+    """Сервис под проверкой: где его код и как он выглядит на поверхностях."""
 
-#: Ratchet: мутации, выставленные не на все поверхности ДО ADO-067. Значение —
-#: (поверхности, где функции нет; причина). Список может только сокращаться:
-#: ``test_surface_debt_ratchet_is_current`` падает, если функция уже
-#: выставлена, а запись осталась.
-SURFACE_DEBT: dict[str, tuple[frozenset[str], str]] = {
-    "log_progress": (
-        frozenset({"cli"}),
-        "Лог прогресса — часть heartbeat-протокола агента (MCP task_log_progress). "
-        "Человеку из терминала он не нужен, поэтому CLI-команды нет; "
-        "выставлять — отдельным решением, не в ADO-067.",
+    #: Имя модуля/пакета внутри ``cod_doc/services``; оно же — имя, под
+    #: которым сервис импортируют поверхности (``from ... import story_service``).
+    name: str
+    #: Функции, известные детектору: смоук против «зелени на пустом множестве».
+    known_mutations: frozenset[str]
+    #: Read-функции, которые детектор НЕ должен считать мутацией.
+    known_reads: frozenset[str]
+    #: Пишут audit-trail, но выставлять наружу неправильно — внутренние шаги
+    #: чужого протокола, а не операции пользователя.
+    internal_only: dict[str, str] = field(default_factory=dict)
+    #: Ratchet: мутации, выставленные не на все поверхности. Значение —
+    #: (поверхности, где функции нет; причина). Может только сокращаться.
+    surface_debt: dict[str, tuple[frozenset[str], str]] = field(default_factory=dict)
+
+    @property
+    def module(self) -> str:
+        return f"{SERVICES_PACKAGE}.{self.name}"
+
+    @property
+    def sources(self) -> list[Path]:
+        """Файлы с кодом сервиса: один модуль либо все модули пакета.
+
+        ``__init__.py`` пакета исключён намеренно — там только ре-экспорт,
+        а разбор call-graph работает по module-local хелперам и обязан
+        оставаться внутри одного файла.
+        """
+        single = SERVICES_DIR / f"{self.name}.py"
+        if single.is_file():
+            return [single]
+        pkg = SERVICES_DIR / self.name
+        return sorted(f for f in pkg.glob("*.py") if f.name != "__init__.py")
+
+
+SPECS = (
+    ServiceSpec(
+        name="task_service",
+        known_mutations=frozenset(
+            {
+                "create",
+                "update_status",
+                "update_description",
+                "update_acceptance",
+                "update_priority",
+                "complete",
+            }
+        ),
+        known_reads=frozenset({"get", "list_for_project"}),
+        surface_debt={
+            "log_progress": (
+                frozenset({"cli"}),
+                "Лог прогресса — часть heartbeat-протокола агента (MCP task_log_progress). "
+                "Человеку из терминала он не нужен, поэтому CLI-команды нет; "
+                "выставлять — отдельным решением, не в ADO-067.",
+            ),
+            "set_blocker": (
+                frozenset({"cli"}),
+                "Внешний блокер ставится агентом по ходу работы (MCP task_set_blocker). "
+                "Пробел в CLI существует с PCA-эпохи и не входит в скоуп ADO-067 "
+                "(description/acceptance/priority).",
+            ),
+            "clear_blocker": (
+                frozenset({"cli"}),
+                "Парная к set_blocker; снимается там же, где ставилась. Тот же пробел "
+                "в CLI, то же обоснование.",
+            ),
+        },
     ),
-    "set_blocker": (
-        frozenset({"cli"}),
-        "Внешний блокер ставится агентом по ходу работы (MCP task_set_blocker). "
-        "Пробел в CLI существует с PCA-эпохи и не входит в скоуп ADO-067 "
-        "(description/acceptance/priority).",
+    ServiceSpec(
+        name="story_service",
+        known_mutations=frozenset(
+            {
+                "create",
+                "update_status",
+                "create_section",
+                "assign_section",
+                "add_criterion",
+                "set_criterion_met",
+            }
+        ),
+        known_reads=frozenset({"get", "list_sections", "list_acceptance", "coverage"}),
     ),
-    "clear_blocker": (
-        frozenset({"cli"}),
-        "Парная к set_blocker; снимается там же, где ставилась. Тот же пробел "
-        "в CLI, то же обоснование.",
-    ),
-}
+)
+
+SPEC_BY_NAME = {spec.name: spec for spec in SPECS}
 
 
 # --------------------------------------------------------------------------- #
-# Обнаружение мутаций в task_service                                           #
+# Обнаружение мутаций                                                          #
 # --------------------------------------------------------------------------- #
 
 
@@ -128,8 +198,8 @@ def _called_names(fn: ast.FunctionDef) -> set[str]:
     return out
 
 
-def _task_service_functions() -> dict[str, ast.FunctionDef]:
-    tree = ast.parse(TASK_SERVICE.read_text(encoding="utf-8"), filename=str(TASK_SERVICE))
+def _module_functions(path: Path) -> dict[str, ast.FunctionDef]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     return {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
 
 
@@ -148,14 +218,27 @@ def _writes_audit_trail(name: str, funcs: dict[str, ast.FunctionDef], seen: set[
     )
 
 
-def discovered_mutations() -> dict[str, ast.FunctionDef]:
-    """Публичные функции task_service, которые пишут audit-trail."""
-    funcs = _task_service_functions()
-    return {
-        name: fn
-        for name, fn in funcs.items()
-        if not name.startswith("_") and _writes_audit_trail(name, funcs, set())
-    }
+def service_functions(spec: ServiceSpec) -> set[str]:
+    """Все top-level функции сервиса — по всем его файлам."""
+    return {name for path in spec.sources for name in _module_functions(path)}
+
+
+def discovered_mutations(spec: ServiceSpec) -> set[str]:
+    """Публичные функции сервиса, которые пишут audit-trail.
+
+    Разбор идёт пофайлово: раскрытие module-local хелперов обязано
+    оставаться внутри своего файла, иначе одноимённый приватный хелпер из
+    соседнего модуля пакета даст ложное срабатывание.
+    """
+    found: set[str] = set()
+    for path in spec.sources:
+        funcs = _module_functions(path)
+        found |= {
+            name
+            for name in funcs
+            if not name.startswith("_") and _writes_audit_trail(name, funcs, set())
+        }
+    return found
 
 
 # --------------------------------------------------------------------------- #
@@ -163,12 +246,12 @@ def discovered_mutations() -> dict[str, ast.FunctionDef]:
 # --------------------------------------------------------------------------- #
 
 
-def _task_service_members_used(py_file: Path) -> set[str]:
-    """Имена членов task_service, к которым обращается файл поверхности.
+def _members_used(py_file: Path, spec: ServiceSpec) -> set[str]:
+    """Имена членов сервиса, к которым обращается файл поверхности.
 
-    Учитывает три формы: ``from ...task_service import complete``,
-    ``from cod_doc.services import task_service`` + ``task_service.create``
-    и алиас (``... import task_service as tasks`` + ``tasks.update_priority``).
+    Учитывает три формы: ``from ...story_service import create``,
+    ``from cod_doc.services import story_service`` + ``story_service.create``
+    и алиас (``... import story_service as stories`` + ``stories.create``).
     """
     tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
     used: set[str] = set()
@@ -176,14 +259,14 @@ def _task_service_members_used(py_file: Path) -> set[str]:
 
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
-            if node.module == TASK_SERVICE_MODULE:
+            # Пакет сервиса импортируют и целиком, и по подмодулям
+            # (``...story_service.sections``) — считаем обе формы.
+            if node.module == spec.module or node.module.startswith(f"{spec.module}."):
                 used.update(a.name for a in node.names)
-            elif node.module == TASK_SERVICE_PACKAGE:
-                aliases.update(
-                    a.asname or a.name for a in node.names if a.name == TASK_SERVICE_NAME
-                )
+            elif node.module == SERVICES_PACKAGE:
+                aliases.update(a.asname or a.name for a in node.names if a.name == spec.name)
         elif isinstance(node, ast.Import):
-            aliases.update(a.asname or a.name for a in node.names if a.name == TASK_SERVICE_MODULE)
+            aliases.update(a.asname or a.name for a in node.names if a.name == spec.module)
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Attribute):
@@ -196,12 +279,12 @@ def _task_service_members_used(py_file: Path) -> set[str]:
     return used
 
 
-def _surface_members(surface: str) -> set[str]:
+def _surface_members(surface: str, spec: ServiceSpec) -> set[str]:
     used: set[str] = set()
     for py_file in SURFACE_DIRS[surface].rglob("*.py"):
         if "__pycache__" in py_file.parts:
             continue
-        used |= _task_service_members_used(py_file)
+        used |= _members_used(py_file, spec)
     return used
 
 
@@ -210,70 +293,73 @@ def _surface_members(surface: str) -> set[str]:
 # --------------------------------------------------------------------------- #
 
 
-def test_discovery_finds_the_known_mutations() -> None:
+@pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)
+def test_discovery_finds_the_known_mutations(spec: ServiceSpec) -> None:
     """Смоук на сам детектор: без него тест мог бы «зеленеть» на пустом множестве."""
-    found = set(discovered_mutations())
-    expected_subset = {
-        "create",
-        "update_status",
-        "update_description",
-        "update_acceptance",
-        "update_priority",
-        "complete",
-    }
-    assert expected_subset <= found, (
-        "детектор мутаций сломан: не видит известные write-функции "
-        f"{sorted(expected_subset - found)}. Проверь AUDIT_WRITE_CALLS."
+    found = discovered_mutations(spec)
+    assert spec.known_mutations <= found, (
+        f"детектор мутаций сломан на {spec.name}: не видит известные write-функции "
+        f"{sorted(spec.known_mutations - found)}. Проверь AUDIT_WRITE_CALLS."
     )
-    assert "get" not in found, "детектор считает мутацией read-функцию get()"
-    assert "list_for_project" not in found, "детектор считает мутацией list_for_project()"
+    misread = sorted(spec.known_reads & found)
+    assert not misread, f"детектор считает мутацией read-функции {spec.name}: {misread}"
 
 
-def test_every_task_mutation_is_exposed_on_mcp_and_cli() -> None:
-    """Мутация задачи обязана быть вызвана из cod_doc/mcp/ и из cod_doc/cli/."""
-    mutations = set(discovered_mutations()) - set(INTERNAL_ONLY)
-    surfaces = {name: _surface_members(name) for name in SURFACE_DIRS}
+@pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)
+def test_every_mutation_is_exposed_on_mcp_and_cli(spec: ServiceSpec) -> None:
+    """Мутация обязана быть вызвана из cod_doc/mcp/ и из cod_doc/cli/."""
+    mutations = discovered_mutations(spec) - set(spec.internal_only)
+    surfaces = {name: _surface_members(name, spec) for name in SURFACE_DIRS}
 
     missing: dict[str, list[str]] = {}
     for fn in sorted(mutations):
         gaps = sorted(s for s, members in surfaces.items() if fn not in members)
-        allowed = SURFACE_DEBT.get(fn, (frozenset(), ""))[0]
+        allowed = spec.surface_debt.get(fn, (frozenset(), ""))[0]
         unexplained = [s for s in gaps if s not in allowed]
         if unexplained:
             missing[fn] = unexplained
 
     assert not missing, (
-        "мутации task_service не выставлены на все поверхности: "
+        f"мутации {spec.name} не выставлены на все поверхности: "
         f"{missing}. Закон CLAUDE.md «Четыре равные поверхности»: добавь тул в "
-        "cod_doc/mcp/tools/task_tools.py и команду в cod_doc/cli/task.py. "
-        "Если функция принципиально внутренняя — внеси её в INTERNAL_ONLY "
+        "cod_doc/mcp/tools/ и команду в cod_doc/cli/. "
+        "Если функция принципиально внутренняя — внеси её в internal_only "
         "с обоснованием (одна строка на запись)."
     )
 
 
-def test_surface_debt_ratchet_is_current() -> None:
-    """SURFACE_DEBT может только сокращаться: закрытый пробел обязан уйти из списка."""
-    surfaces = {name: _surface_members(name) for name in SURFACE_DIRS}
+@pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)
+def test_surface_debt_ratchet_is_current(spec: ServiceSpec) -> None:
+    """surface_debt может только сокращаться: закрытый пробел обязан уйти из списка."""
+    surfaces = {name: _surface_members(name, spec) for name in SURFACE_DIRS}
     stale: dict[str, list[str]] = {}
-    for fn, (gaps, _reason) in SURFACE_DEBT.items():
+    for fn, (gaps, _reason) in spec.surface_debt.items():
         fixed = sorted(s for s in gaps if fn in surfaces[s])
         if fixed:
             stale[fn] = fixed
     assert not stale, (
-        f"SURFACE_DEBT протух — эти функции уже выставлены: {stale}. "
+        f"surface_debt протух у {spec.name} — эти функции уже выставлены: {stale}. "
         "Убери запись (или поверхность из неё): список ratchet, он только сокращается."
     )
 
 
-def test_allowlists_carry_a_justification() -> None:
+@pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)
+def test_allowlists_carry_a_justification(spec: ServiceSpec) -> None:
     """Пустое обоснование превращает allowlist в шум — запрещено (риск из контракта ADO-067)."""
-    blank = [name for name, reason in INTERNAL_ONLY.items() if len(reason.strip()) < 20]
-    blank += [name for name, (_g, reason) in SURFACE_DEBT.items() if len(reason.strip()) < 20]
+    blank = [name for name, reason in spec.internal_only.items() if len(reason.strip()) < 20]
+    blank += [name for name, (_g, reason) in spec.surface_debt.items() if len(reason.strip()) < 20]
     assert not blank, f"записи allowlist без внятного обоснования: {blank}"
 
-    known = set(_task_service_functions())
-    unknown = sorted((set(INTERNAL_ONLY) | set(SURFACE_DEBT)) - known)
+    known = service_functions(spec)
+    unknown = sorted((set(spec.internal_only) | set(spec.surface_debt)) - known)
     assert not unknown, (
-        f"allowlist ссылается на несуществующие функции task_service: {unknown} — "
+        f"allowlist ссылается на несуществующие функции {spec.name}: {unknown} — "
         "функция переименована или удалена, запись пора убрать."
     )
+
+
+def test_every_spec_resolves_to_real_sources() -> None:
+    """Опечатка в имени сервиса дала бы пустой список файлов и зелёный тест ни о чём."""
+    for spec in SPECS:
+        assert spec.sources, f"{spec.name}: не найдено ни одного файла с кодом сервиса"
+        assert service_functions(spec), f"{spec.name}: в файлах нет top-level функций"

@@ -267,6 +267,20 @@ CREATE INDEX ix_affected_path ON affected_file(path);
 ### 3.10 `UserStory`
 
 ```sql
+-- ADO-143: реестр продуктовых модулей. Аналог plan_section для планов.
+-- `key` — слаг [a-z0-9-]: он уходит в путь роута анализа секции (один сегмент
+-- URL) и в id/hx-target htmx-фрагмента, который читает querySelector.
+CREATE TABLE story_section (
+  row_id     INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
+  key        TEXT    NOT NULL,             -- 'module-1', 'annex'
+  title      TEXT    NOT NULL,             -- «Управление запасами»
+  position   INTEGER NOT NULL,
+  UNIQUE (project_id, key)
+);
+
+CREATE INDEX ix_story_section_project ON story_section(project_id, position);
+
 CREATE TABLE user_story (
   row_id       INTEGER PRIMARY KEY,
   project_id   INTEGER NOT NULL REFERENCES project(row_id),
@@ -276,7 +290,9 @@ CREATE TABLE user_story (
   status       TEXT    NOT NULL,           -- draft|accepted|delivered|deferred
   priority     TEXT    NOT NULL,
   created      TEXT NOT NULL,
-  last_updated TEXT NOT NULL
+  last_updated TEXT NOT NULL,
+  -- SET NULL, не CASCADE: удаление секции осиротит историю, но не удалит её.
+  section_id   INTEGER REFERENCES story_section(row_id) ON DELETE SET NULL
 );
 
 CREATE TABLE story_acceptance (

@@ -23,7 +23,11 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             stories = story_service.list_for_project(session, project_id)
-        return [story_to_dict(s) for s in stories]
+            keys = story_service.section_keys(session, project_id)
+        return [
+            story_to_dict(s, keys.get(s.section_id) if s.section_id is not None else None)
+            for s in stories
+        ]
 
     @mcp.tool(name="story_get")
     def story_get(project: str, story_id: str) -> dict[str, Any] | None:
@@ -38,8 +42,11 @@ def register(mcp: FastMCP) -> None:
                 return None
             acceptance = story_service.list_acceptance(session, story_id)
             links = story_service.list_links(session, story_id)
+            section_key = None
+            if s.section_id is not None:
+                section_key = story_service.section_keys(session, s.project_id).get(s.section_id)
 
-        result = story_to_dict(s)
+        result = story_to_dict(s, section_key)
         result["acceptance"] = [
             {"position": a.position, "criterion": a.criterion, "met": a.met} for a in acceptance
         ]
@@ -58,6 +65,7 @@ def register(mcp: FastMCP) -> None:
         priority: str,
         status: str = "draft",
         acceptance: list[str] | None = None,
+        section: str | None = None,
         author: str = "mcp",
         reason: str | None = None,
         dry_run: bool = False,
@@ -65,11 +73,13 @@ def register(mcp: FastMCP) -> None:
         """Create a user story. story_id format: US-NNN (e.g. US-001).
         priority: critical|high|medium|low. status: draft|accepted|delivered|deferred.
         acceptance: optional list of acceptance criteria strings.
+        section: optional story-section key (see story_section_list); unknown
+            key is an error, not a silently unsorted story.
         """
         from cod_doc.domain.entities import Priority, UserStoryStatus
         from cod_doc.infra.db import transactional
         from cod_doc.services import story_service
-        from cod_doc.services.story_service import StoryAlreadyExistsError
+        from cod_doc.services.story_service import SectionNotFoundError, StoryAlreadyExistsError
         from cod_doc.services.validation import ValidationError
 
         sf, _ = session_factory(project)
@@ -86,13 +96,16 @@ def register(mcp: FastMCP) -> None:
                     author=author,
                     status=UserStoryStatus(status),
                     acceptance=acceptance or None,
+                    section_key=section,
                     reason=reason,
                 )
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
         except StoryAlreadyExistsError:
             raise ValueError(f"Story '{story_id}' already exists.") from None
-        out = story_to_dict(s)
+        except SectionNotFoundError:
+            raise ValueError(f"Section '{section}' not found in {project}.") from None
+        out = story_to_dict(s, section)
         if dry_run:
             out["dry_run"] = True
         return out
@@ -217,3 +230,129 @@ def register(mcp: FastMCP) -> None:
             "acceptance_total": cov.acceptance_total,
             "acceptance_met": cov.acceptance_met,
         }
+
+    @mcp.tool(name="story_set_criterion_met")
+    def story_set_criterion_met(
+        project: str,
+        story_id: str,
+        position: int,
+        met: bool = True,
+        author: str = "mcp",
+    ) -> dict[str, Any]:
+        """Mark an acceptance criterion met (or unmet) by its position.
+
+        Coverage only reports `delivered` once every criterion is met and every
+        linked task is done, so this is what closes a story out.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import story_service
+        from cod_doc.services.story_service import AcceptanceNotFoundError, StoryNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                ac = story_service.set_criterion_met(
+                    session, story_id=story_id, position=position, met=met, author=author
+                )
+        except StoryNotFoundError:
+            raise ValueError(f"Story '{story_id}' not found.") from None
+        except AcceptanceNotFoundError:
+            raise ValueError(
+                f"Story '{story_id}' has no acceptance criterion at position {position}."
+            ) from None
+        return {
+            "story_id": story_id,
+            "position": ac.position,
+            "criterion": ac.criterion,
+            "met": ac.met,
+        }
+
+    @mcp.tool(name="story_section_list")
+    def story_section_list(project: str) -> list[dict[str, Any]]:
+        """List story sections (product modules) with how many stories each holds."""
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import story_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            sections = story_service.list_sections(session, project_id)
+            all_stories = story_service.list_for_project(session, project_id)
+
+        counts: dict[int | None, int] = {}
+        for st in all_stories:
+            counts[st.section_id] = counts.get(st.section_id, 0) + 1
+        return [
+            {
+                "key": sec.key,
+                "title": sec.title,
+                "position": sec.position,
+                "stories": counts.get(sec.row_id, 0),
+            }
+            for sec in sections
+        ]
+
+    @mcp.tool(name="story_section_create")
+    def story_section_create(
+        project: str,
+        key: str,
+        title: str,
+        position: int | None = None,
+        author: str = "mcp",
+    ) -> dict[str, Any]:
+        """Create a story section (product module).
+
+        key: slug of lowercase letters, digits and dashes (e.g. 'module-1').
+        position: display order; defaults to the end of the list.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import story_service
+        from cod_doc.services.story_service import SectionAlreadyExistsError
+        from cod_doc.services.validation import ValidationError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                sec = story_service.create_section(
+                    session,
+                    project_id=project_id,
+                    key=key,
+                    title=title,
+                    position=position,
+                    author=author,
+                )
+        except ValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        except SectionAlreadyExistsError:
+            raise ValueError(f"Section '{key}' already exists in {project}.") from None
+        return {"key": sec.key, "title": sec.title, "position": sec.position}
+
+    @mcp.tool(name="story_set_section")
+    def story_set_section(
+        project: str,
+        story_id: str,
+        key: str | None = None,
+        author: str = "mcp",
+    ) -> dict[str, Any]:
+        """Assign a story to a section. Pass key=null to detach it."""
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import story_service
+        from cod_doc.services.story_service import SectionNotFoundError, StoryNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                sec = story_service.assign_section(
+                    session, story_id=story_id, key=key, author=author
+                )
+                result = (
+                    {"key": sec.key, "title": sec.title, "position": sec.position}
+                    if sec is not None
+                    else None
+                )
+        except StoryNotFoundError:
+            raise ValueError(f"Story '{story_id}' not found.") from None
+        except SectionNotFoundError:
+            raise ValueError(f"Section '{key}' not found in {project}.") from None
+        return {"story_id": story_id, "section": result}
