@@ -25,7 +25,7 @@
     </span>
   </div>
   <div class="task-hero-row muted">
-    <span class="meta-chip">Decided: {{ adr.decided_at or "—" }}</span>
+    <span class="meta-chip">Decided: {{ adr.decided_at | short_date }}</span>
     <span class="meta-chip">Author: {{ adr.author }}</span>
   </div>
 </header>

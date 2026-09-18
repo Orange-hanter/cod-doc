@@ -74,10 +74,7 @@
              мыши и для скринридера. #}
           <td class="mono"><a class="adr-row-link" href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.adr_id }}</a></td>
           <td><span class="badge badge-{{ it.status }}">{{ it.status_icon }} {{ it.status }}</span></td>
-          {# decided_at приходит из adr.py как date.isoformat() — «2026-09-17»,
-             без времени. После мержа #45 строка обязана получить `| short_date`,
-             иначе упадёт tests/api/test_web_template_dates.py. #}
-          <td class="muted">{{ it.decided_at or "—" }}</td>
+          <td class="muted">{{ it.decided_at | short_date }}</td>
           <td><a href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.title }}</a></td>
           <td class="muted">{{ it.author }}</td>
         </tr>

@@ -340,7 +340,7 @@ endpoints — service-helper типа `plan_service.get_for_project(...)`.
 ## 8. Тестирование
 
 - **Smoke**: `fastapi.testclient.TestClient`, каждая страница 200 на seed-проекте.
-  Текущий suite — `tests/api/`, **375 тестов, все зелёные**.
+  Текущий suite — `tests/api/`, **464 теста, все зелёные**.
 - **Error-branch coverage** (часть DoD каждой write-path задачи):
   - валидация формы (400 на garbage),
   - конфликт ревизий (`RevisionConflictError`),
