@@ -9,6 +9,9 @@ Public API:
   правки уже созданной задачи (ADO-067); каждая пишет TASK revision +
   activity event и выставлена в CLI (`cod-doc task update`) и MCP
   (`task_update`).
+- `move_to_section` — переложить задачу в другую секцию того же плана
+  (группировка бэклога); пишет TASK revision (op=section) + activity event,
+  выставлена в CLI (`cod-doc task move`) и MCP (`task_move_to_section`).
 - `complete` — validate all blocking deps are DONE, then set `status=done` +
   `completed_at` + optional `completed_commit`; writes TASK revision.
 - `remove_dependency` — delete a task→task `dependency` edge (kind='blocks');
@@ -48,7 +51,7 @@ from cod_doc.infra.models import (
     TaskModel,
     UserStoryModel,
 )
-from cod_doc.infra.repositories import TaskRepository
+from cod_doc.infra.repositories import PlanSectionRepository, TaskRepository
 from cod_doc.infra.sql_helpers import priority_sql_order
 from cod_doc.services import activity_service, event_bus, validation
 from cod_doc.services import revision_service as rev
@@ -63,6 +66,14 @@ class TaskNotFoundError(LookupError):
 
 class DependencyNotFoundError(LookupError):
     """Raised by `remove_dependency()` when the requested edge does not exist."""
+
+
+class SectionNotFoundError(LookupError):
+    """Raised by `move_to_section()` when the target section does not exist."""
+
+
+class CrossPlanMoveError(ValueError):
+    """Raised by `move_to_section()` when the target section is in another plan."""
 
 
 class TaskBlockedError(RuntimeError):
@@ -604,6 +615,90 @@ def update_priority(
             "reason": reason,
         },
         activity_summary=f"Task {task_id}: priority {old_priority} → {new_priority.value}",
+    )
+
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return t
+
+
+def move_to_section(
+    session: Session,
+    *,
+    task_id: str,
+    new_section_id: int,
+    author: str,
+    reason: str | None = None,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
+) -> Task:
+    """Move a task to another section of the SAME plan (op=section).
+
+    Бэклог группируется секциями плана, но перекладывать задачу между ними
+    было нечем: `create` принимает `section_id`, а ни одна мутация его не
+    меняет. Единственным способом оставался прямой SQL в обход сервисов —
+    без ревизии и без события, после чего `revision_revert` и `plan audit`
+    начинают врать.
+
+    Смена плана намеренно запрещена: `plan_id` и `section_id` — два
+    независимых NOT NULL FK, и рассинхрон пары ломает и экспорт плана, и
+    автонумерацию `task_id` (её скоуп — проект, а префикс берётся из scope
+    плана). Перенос между планами — другая операция с другой семантикой.
+
+    No-op, когда задача уже в целевой секции. Revision и activity event
+    пишутся одним атомарным вызовом (правило ADO-040).
+    """
+    model = _require_task(session, task_id)
+    old_section_id = model.section_id
+    if old_section_id == new_section_id:
+        t = TaskRepository(session).get_by_task_id(task_id)
+        assert t is not None
+        return t
+
+    sections = PlanSectionRepository(session)
+    new_section = sections.get(new_section_id)
+    if new_section is None:
+        raise SectionNotFoundError(f"Unknown section_id: {new_section_id}")
+    if new_section.plan_id != model.plan_id:
+        raise CrossPlanMoveError(
+            f"Section {new_section_id} belongs to plan {new_section.plan_id}, "
+            f"task {task_id} — to plan {model.plan_id}; "
+            "перенос между планами не поддерживается"
+        )
+
+    old_section = sections.get(old_section_id)
+    old_letter = old_section.letter if old_section else "?"
+    new_letter = new_section.letter
+
+    model.section_id = new_section_id
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+
+    activity_service.write_revision_and_emit_event(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff(
+            "section",
+            old=old_section_id,
+            new=new_section_id,
+            old_letter=old_letter,
+            new_letter=new_letter,
+        ),
+        reason=reason,
+        expected_parent_revision_id=expected_parent_revision_id,
+        activity_kind="task.section_changed",
+        activity_scope_kind="task",
+        activity_scope_id=task_id,
+        activity_payload={
+            "old_section_id": old_section_id,
+            "new_section_id": new_section_id,
+            "old_letter": old_letter,
+            "new_letter": new_letter,
+            "reason": reason,
+        },
+        activity_summary=f"Task {task_id}: section {old_letter} → {new_letter}",
     )
 
     t = TaskRepository(session).get(model.row_id)
