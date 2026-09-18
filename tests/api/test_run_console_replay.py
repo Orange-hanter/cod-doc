@@ -248,3 +248,48 @@ def test_step_route_rejects_path_traversal(run_client, evil: str) -> None:  # ty
     client, _ = run_client
     r = client.get(f"/p/{SLUG}/run/{evil}/step/0")
     assert r.status_code in (404, 400), r.status_code
+
+
+# ── вёрстка строки шага ───────────────────────────────────────────────
+
+
+def test_step_body_has_no_leading_template_whitespace(run_client) -> None:  # type: ignore[no-untyped-def]
+    """У `.body` стоит `white-space: pre-wrap` — отступ шаблона попадает В ТЕКСТ.
+
+    Без управления пробелами (`{%- ... -%}`) каждый шаг начинался с 19
+    пробелов, и первая строка уезжала вправо примерно на 130px относительно
+    переноса. Поймано показом страницы в браузере: до ADO-115 лента всегда
+    была пуста, и увидеть это было негде.
+    """
+    client, repo = run_client
+    run_id = "01JREPLAY000000000000000I"
+    _add_run(repo, run_id)
+    _record(repo, run_id, [("agent.thinking", {"data": "без отступа"})])
+
+    html = client.get(f"/p/{SLUG}/run/{run_id}").text
+    assert '<span class="body">без отступа</span>' in html, (
+        "в тело шага просочился отступ шаблона — при `pre-wrap` это видно на экране"
+    )
+
+
+def test_started_and_stopped_rows_are_not_blank(run_client) -> None:  # type: ignore[no-untyped-def]
+    """У started/stopped нет поля `data`, но им есть что показать.
+
+    Без веток на `title` и `reason` самая информативная строка ленты — какая
+    задача началась — показывала прочерк.
+    """
+    client, repo = run_client
+    run_id = "01JREPLAY000000000000000J"
+    _add_run(repo, run_id)
+    _record(
+        repo,
+        run_id,
+        [
+            ("agent.started", {"task_id": "ADO-115", "title": "Реплей консоли"}),
+            ("agent.stopped", {"task_id": "ADO-115", "reason": "completed"}),
+        ],
+    )
+
+    html = client.get(f"/p/{SLUG}/run/{run_id}").text
+    assert '<span class="body">Реплей консоли</span>' in html
+    assert '<span class="body">completed</span>' in html

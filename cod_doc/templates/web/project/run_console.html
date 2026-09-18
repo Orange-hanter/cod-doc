@@ -112,8 +112,22 @@
               <div class="agent-event kind-{{ ev.kind|replace('agent.', '') }}" data-kind="{{ ev.kind|replace('agent.', '') }}">
                 <span class="ts">{{ ev.ts_short or "" }}</span>
                 <span class="kind">{{ ev.kind|replace('agent.', '')|replace('_', ' ') }}</span>
+                {#- ADO-115: `-` по обе стороны обязательны. У `.body` стоит
+                    `white-space: pre-wrap`, поэтому отступ самого шаблона
+                    попадает В ТЕКСТ: каждый шаг начинался с 19 пробелов, и
+                    первая строка уезжала вправо на ~130px относительно
+                    переноса. До ADO-115 лента всегда была пуста, и увидеть
+                    это было негде. -#}
                 <span class="body">
-                  {% if ev.summary %}{{ ev.summary }}{% elif ev.payload and ev.payload.data %}{{ ev.payload.data|string|truncate(800) }}{% else %}<span class="muted">—</span>{% endif %}
+                  {%- if ev.summary %}{{ ev.summary }}
+                  {%- elif ev.payload and ev.payload.data %}{{ ev.payload.data|string|truncate(800) }}
+                  {#- У started/stopped нет поля `data`: у них осмысленны
+                      заголовок задачи и причина остановки. Без этих двух
+                      веток самая информативная строка ленты — какая задача
+                      началась — показывала прочерк. -#}
+                  {%- elif ev.payload and ev.payload.title %}{{ ev.payload.title }}
+                  {%- elif ev.payload and ev.payload.reason %}{{ ev.payload.reason }}
+                  {%- else %}<span class="muted">—</span>{% endif -%}
                 </span>
               </div>
             {% endfor %}
