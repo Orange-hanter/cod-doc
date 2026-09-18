@@ -53,7 +53,7 @@
       <td class="mono">{{ r.revision_id }}</td>
       <td class="mono">{{ r.entity_kind }}#{{ r.entity_id }}</td>
       <td>{{ r.author }}</td>
-      <td class="muted">{{ r.at }}</td>
+      <td class="muted" title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</td>
       <td>{{ r.reason }}</td>
       <td class="mono diff-preview">{{ r.diff_preview }}</td>
     </tr>

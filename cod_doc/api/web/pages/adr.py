@@ -74,7 +74,7 @@ def adr_list(
                 "title": r.title,
                 "status": r.status,
                 "status_icon": _STATUS_ICON.get(r.status, "•"),
-                "decided_at": r.decided_at.isoformat() if r.decided_at else None,
+                "decided_at": r.decided_at,
                 "author": r.author,
             }
         )

@@ -124,7 +124,7 @@
         <td>{{ t.title }}</td>
         <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
         <td class="num"><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span></td>
-        <td class="mono">{{ t.updated }}</td>
+        <td class="mono" title="{{ t.updated | ts_tooltip }}">{{ t.updated | short_datetime }}</td>
       </tr>
     {% endfor %}
   </tbody>

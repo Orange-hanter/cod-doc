@@ -19,7 +19,7 @@
         {% if summary.stale %}
           <span class="ds-chip ds-chip-warning">⚡ stale — stories changed</span>
         {% endif %}
-        <span class="muted-tiny" title="{{ summary.generated_at[:19] | replace('T', ' ') }} UTC">
+        <span class="muted-tiny" title="{{ summary.generated_at | ts_tooltip }}">
           🤖 {{ summary.generated_at | relative_time }}
         </span>
         <form hx-post="/p/{{ project.name }}/stories/section/{{ section }}/analyze"

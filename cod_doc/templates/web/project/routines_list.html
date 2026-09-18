@@ -32,7 +32,7 @@
         <div class="timeline-track">
           <span class="timeline-marker is-now" style="left: 0;" title="now"></span>
           {% if r.next_fire_pct > 0 and r.next_fire_pct < 100 %}
-            <span class="timeline-marker is-next" style="left: {{ r.next_fire_pct }}%;" title="{{ r.next_fire_fmt }}"></span>
+            <span class="timeline-marker is-next" style="left: {{ r.next_fire_pct }}%;" title="{{ r.next_fire_at | ts_tooltip }}"></span>
           {% elif r.next_fire_pct == 0 %}
             <span class="timeline-marker is-fired" style="left: 0;" title="overdue — will fire next tick"></span>
           {% endif %}
@@ -82,13 +82,13 @@
           <span class="last-run-meta">
             <strong>last:</strong>
             {% if r.last_run_at %}
-              {{ r.last_run_at_fmt }}
+              {{ r.last_run_at | relative_time }}
               {% if r.last_run_status %}<span class="badge badge-{{ r.last_run_status }}">{{ r.last_run_status }}</span>{% endif %}
             {% else %}<span class="muted">never</span>{% endif %}
           </span>
           {% if r.enabled %}
             <span class="last-run-meta">
-              <strong>next:</strong> {{ r.next_fire_fmt or "—" }}
+              <strong>next:</strong> {{ r.next_fire_at | relative_time }}
             </span>
           {% endif %}
         </div>

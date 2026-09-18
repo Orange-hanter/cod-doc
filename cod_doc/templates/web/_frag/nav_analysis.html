@@ -95,7 +95,7 @@
       {% else %}
         <span class="nav-cache-badge nav-cache-fresh">⚡ fresh analysis</span>
       {% endif %}
-      <span class="muted-tiny" title="{{ analysis.analyzed_at[:19] | replace('T', ' ') }} UTC">
+      <span class="muted-tiny" title="{{ analysis.analyzed_at | ts_tooltip }}">
         {{ analysis.analyzed_at | relative_time }}
       </span>
     </div>

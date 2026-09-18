@@ -26,25 +26,6 @@ def _next_fire(last_run_at: datetime | None, cron: str | None) -> datetime | Non
     return routine_service._cron_next_fire(cron, base) or base + timedelta(minutes=60)
 
 
-def _fmt_age(ts: datetime | None) -> str:
-    if ts is None:
-        return "—"
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=UTC)
-    now = datetime.now(UTC)
-    delta = ts - now if ts > now else now - ts
-    secs = int(delta.total_seconds())
-    suffix = "" if ts > now else " ago"
-    prefix = "in " if ts > now else ""
-    if secs < 60:
-        return f"{prefix}{secs}s{suffix}"
-    if secs < 3600:
-        return f"{prefix}{secs // 60}m{suffix}"
-    if secs < 86_400:
-        return f"{prefix}{secs // 3600}h{suffix}"
-    return f"{prefix}{secs // 86_400}d{suffix}"
-
-
 @router.get("/p/{slug}/routines", response_class=HTMLResponse)
 def routines_list(
     request: Request,
@@ -84,11 +65,9 @@ def routines_list(
                 "on_finding": r.on_finding,
                 "enabled": r.enabled,
                 "last_run_at": last_run.started_at if last_run else None,
-                "last_run_at_fmt": _fmt_age(last_run.started_at if last_run else None),
                 "last_run_status": last_run.status if last_run else None,
                 "last_findings": last_run.findings_count if last_run else None,
                 "next_fire_at": next_fire,
-                "next_fire_fmt": _fmt_age(next_fire) if next_fire else "—",
                 "history": [
                     {
                         "started_at": h.started_at,
@@ -179,7 +158,7 @@ def routine_run(
             "name": name,
             "status": run.status,
             "findings_count": run.findings_count,
-            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "started_at": run.started_at,
         }
     )
 

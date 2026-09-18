@@ -15,7 +15,7 @@
     <h1>{{ adr.status_icon }} {{ adr.adr_id }} — {{ adr.title }}</h1>
     <p class="muted">
       <strong>Status:</strong> {{ adr.status }} ·
-      <strong>Decided:</strong> {{ adr.decided_at or "—" }} ·
+      <strong>Decided:</strong> {{ adr.decided_at | short_date }} ·
       <strong>Author:</strong> {{ adr.author }}
     </p>
   </header>
