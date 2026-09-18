@@ -7,6 +7,7 @@ the architecture's `<area>-NNN` scheme ([ARCHITECTURE.md §10]).
 
 from __future__ import annotations
 
+import unicodedata
 from pathlib import PurePosixPath, PureWindowsPath
 
 from cod_doc.domain.entities import ScenarioKind, ScenarioStatus
@@ -86,6 +87,64 @@ def validate_story_section_key(key: str) -> None:
             "lowercase letters, digits and dashes, not starting or ending "
             "with a dash, e.g. 'module-1'",
             key=key,
+        )
+
+
+#: Потолок заголовка секции. Не безопасность, а вёрстка: заголовок —
+#: подпись группы в списке историй и чип фильтра, в одну строку.
+MAX_STORY_SECTION_TITLE = 256
+
+
+def validate_story_section_title(title: str) -> None:
+    """Непустой, не длиннее 256, без управляющих символов.
+
+    Экранирование делает Jinja, поэтому речь не про XSS, а про инвариант
+    данных. Пустой заголовок рисует безымянную группу, неотличимую от
+    «No section»; перевод строки посреди названия разъезжает подпись
+    группы и чип фильтра; многокилобайтная строка ложится в БД молча.
+    """
+    if not isinstance(title, str) or not title.strip():
+        raise ValidationError(
+            "US-003",
+            "story section title must not be empty",
+            title=title,
+        )
+    if len(title) > MAX_STORY_SECTION_TITLE:
+        raise ValidationError(
+            "US-003",
+            f"story section title must be at most {MAX_STORY_SECTION_TITLE} "
+            f"characters, got {len(title)}",
+            title=title,
+        )
+    bad = sorted({c for c in title if c != " " and unicodedata.category(c).startswith("C")})
+    if bad:
+        raise ValidationError(
+            "US-003",
+            f"story section title must not contain control characters: {bad!r}",
+            title=title,
+        )
+
+
+def validate_story_section_position(position: int) -> None:
+    """``position >= 0``; ноль допустим сознательно.
+
+    ``next_position`` раздаёт номера с единицы, поэтому 0 не может быть
+    выдан автоматически — он остаётся ручным способом закрепить секцию
+    выше всех прочих. Отрицательные запрещены: порядок между ними тот же
+    самый, а в БД они попадают по недосмотру (минус вместо цифры), а не
+    по замыслу.
+    """
+    if isinstance(position, bool) or not isinstance(position, int):
+        raise ValidationError(
+            "US-004",
+            f"story section position must be an integer, got {type(position).__name__}",
+            position=position,
+        )
+    if position < 0:
+        raise ValidationError(
+            "US-004",
+            f"story section position must not be negative, got {position}",
+            position=position,
         )
 
 

@@ -17,8 +17,21 @@ from .test_web_stories import stories_client  # noqa: F401 — переиспо�
 
 
 def _seed(entry, project_db_id, rows, sections=()):  # type: ignore[no-untyped-def]
-    """rows: (story_id, persona, narrative, priority, status, section_key|None)."""
+    """rows: (story_id, persona, narrative, priority, status, section_key|None).
+
+    ADO-162: ``dispose`` в ``finally``. Падение внутри сидинга (а сидинг
+    зовёт валидацию и может законно упасть) оставляло открытый хэндл
+    SQLite на весь прогон — и следующий кейс спотыкался уже не о свою
+    причину.
+    """
     engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
+    try:
+        _seed_rows(engine, project_db_id, rows, sections)
+    finally:
+        engine.dispose()
+
+
+def _seed_rows(engine, project_db_id, rows, sections):  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine)
     with transactional(factory) as session:
         for key, title in sections:
@@ -40,7 +53,6 @@ def _seed(entry, project_db_id, rows, sections=()):  # type: ignore[no-untyped-d
                 story_service.assign_section(
                     session, story_id=sid, key=section_key, author="human:test"
                 )
-    engine.dispose()
 
 
 RU = "Как управляющий, я хочу X, чтобы Y"

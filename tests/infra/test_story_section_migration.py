@@ -100,15 +100,17 @@ def test_section_key_unique_per_project(engine_with_schema) -> None:  # type: ig
         session.add(StorySectionModel(project_id=p2, key="module-1", title="Другое", position=1))
         session.flush()
 
-    with (
-        pytest.raises(IntegrityError, match="story_section"),
-        transactional(factory) as session,
-    ):
+    # ADO-162: `raises` окружает ровно ту вставку, ради которой написан.
+    # Пока он обнимал весь блок `transactional`, тест зеленел и от
+    # IntegrityError, прилетевшего из чтения проекта выше по блоку.
+    with transactional(factory) as session:
         proj = session.execute(select(ProjectModel).where(ProjectModel.slug == "one")).scalar_one()
         session.add(
             StorySectionModel(project_id=proj.row_id, key="module-1", title="Дубль", position=2)
         )
-        session.flush()
+        with pytest.raises(IntegrityError, match="story_section"):
+            session.flush()
+        session.rollback()
 
 
 def test_deleting_section_orphans_story_but_keeps_it(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

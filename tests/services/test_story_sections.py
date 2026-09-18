@@ -1,4 +1,18 @@
-"""ADO-143: реестр секций историй + привязка истории к секции."""
+"""ADO-143: реестр секций историй + привязка истории к секции.
+
+ADO-162, независимость от порядка. Плагина `pytest-reverse` в проекте нет,
+поэтому обратный порядок проверяется сбором node id и прогоном их пачкой:
+
+    pytest tests/services/test_story_sections.py \
+           tests/cli/test_story_sections_cli.py \
+           tests/api/test_web_stories_sections.py \
+           tests/infra/test_story_section_migration.py \
+           --collect-only -q | grep '::' | tail -r | xargs pytest -q
+
+На 2026-09-18 — 55 кейсов, зелено в обе стороны. Держится это не удачей, а
+autouse-фикстурой `isolated_cod_doc_home`: каждый кейс получает свой
+`COD_DOC_HOME` и свою БД в `tmp_path`, так что состояния между кейсами нет.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +29,7 @@ from cod_doc.infra.models import ActivityEventModel, ProjectModel
 from cod_doc.services import revision_service as rev
 from cod_doc.services import story_service as stories
 from cod_doc.services.validation import ValidationError
+from cod_doc.services.validation.structural import MAX_STORY_SECTION_TITLE
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -108,16 +123,18 @@ def test_section_revision_does_not_land_in_story_history(engine_with_schema) -> 
         assert [json.loads(r.diff)["op"] for r in section_hist] == ["create_section"]
 
 
-def test_create_section_rejects_blank_title(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize("bad", ["", "   ", "\t\n"], ids=["empty", "spaces", "whitespace"])
+def test_create_section_rejects_blank_title(engine_with_schema, bad: str) -> None:  # type: ignore[no-untyped-def]
     """ADO-160: пустой title рисует безымянную группу, неотличимую от «No section»."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid = _seed_project(session)
-        for bad in ("", "   ", "\t\n"):
-            with pytest.raises(ValueError, match="must not be empty"):
-                stories.create_section(
-                    session, project_id=pid, key="module-1", title=bad, author="human:test"
-                )
+        with pytest.raises(ValidationError) as exc:
+            stories.create_section(
+                session, project_id=pid, key="module-1", title=bad, author="human:test"
+            )
+        # Контракт — код, а не проза: по нему поверхности маршрутизируют отказ.
+        assert exc.value.code == "US-003"
 
 
 def test_create_section_rejects_oversized_title(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -125,21 +142,74 @@ def test_create_section_rejects_oversized_title(engine_with_schema) -> None:  # 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid = _seed_project(session)
-        with pytest.raises(ValueError, match="at most 256"):
+        with pytest.raises(ValidationError) as exc:
             stories.create_section(
-                session, project_id=pid, key="module-1", title="x" * 257, author="human:test"
+                session,
+                project_id=pid,
+                key="module-1",
+                title="x" * (MAX_STORY_SECTION_TITLE + 1),
+                author="human:test",
             )
-        # Граница включительно — 256 проходит.
+        assert exc.value.code == "US-003"
+        # Граница включительно — ровно 256 проходит.
         stories.create_section(
-            session, project_id=pid, key="module-2", title="x" * 256, author="human:test"
+            session,
+            project_id=pid,
+            key="module-2",
+            title="x" * MAX_STORY_SECTION_TITLE,
+            author="human:test",
         )
+
+
+@pytest.mark.parametrize(
+    ("bad", "label"),
+    [
+        ("Запасы\nи закупки", "newline"),
+        ("Запасы\tи закупки", "tab"),
+        ("Запасы\r\nи закупки", "crlf"),
+        ("Запасы\x00", "nul"),
+        ("Запасы\x1b[31m", "escape"),
+    ],
+    ids=lambda v: v if isinstance(v, str) and len(v) < 12 else "",
+)
+def test_create_section_rejects_control_characters(
+    engine_with_schema, bad: str, label: str
+) -> None:  # type: ignore[no-untyped-def]
+    """Перевод строки посреди названия разъезжает подпись группы и чип фильтра.
+
+    Экранирование делает Jinja, так что речь не про XSS, а про инвариант
+    данных: в БД такое попадает молча и вылезает только на вёрстке.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        with pytest.raises(ValidationError) as exc:
+            stories.create_section(
+                session, project_id=pid, key="module-1", title=bad, author="human:test"
+            )
+        assert exc.value.code == "US-003", label
+
+
+def test_create_section_keeps_internal_spaces(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Обычный пробел — не управляющий символ: многословные названия законны."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        sec = stories.create_section(
+            session,
+            project_id=pid,
+            key="module-1",
+            title="Управление запасами и закупки",
+            author="human:test",
+        )
+        assert sec.title == "Управление запасами и закупки"
 
 
 def test_create_section_rejects_negative_position(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid = _seed_project(session)
-        with pytest.raises(ValueError, match="must not be negative"):
+        with pytest.raises(ValidationError) as exc:
             stories.create_section(
                 session,
                 project_id=pid,
@@ -148,6 +218,34 @@ def test_create_section_rejects_negative_position(engine_with_schema) -> None:  
                 position=-1,
                 author="human:test",
             )
+        assert exc.value.code == "US-004"
+
+
+def test_create_section_accepts_position_zero(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Ноль допустим СОЗНАТЕЛЬНО — это и есть зафиксированное правило.
+
+    ``next_position`` раздаёт номера с единицы, поэтому 0 не может быть
+    выдан автоматически: он остаётся ручным способом закрепить секцию выше
+    всех прочих. Тест держит это решение, чтобы «заодно» его не ужесточили
+    до ``>= 1``.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        pinned = stories.create_section(
+            session,
+            project_id=pid,
+            key="pinned",
+            title="Наверху",
+            position=0,
+            author="human:test",
+        )
+        auto = stories.create_section(
+            session, project_id=pid, key="module-1", title="Запасы", author="human:test"
+        )
+        assert pinned.position == 0
+        assert auto.position >= 1
+        assert [s.key for s in stories.list_sections(session, pid)] == ["pinned", "module-1"]
 
 
 def test_next_position_ignores_other_projects(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
