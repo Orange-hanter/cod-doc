@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
@@ -324,3 +325,34 @@ def test_search_empty_query_returns_zero(v1_client) -> None:
 def test_search_unknown_project(v1_client) -> None:
     r = v1_client.get("/api/v1/projects/ghost/search", params={"q": "auth"})
     assert r.status_code == 404
+
+
+def test_search_missing_index_table_returns_503(v1_client) -> None:
+    """CUR-010: a DB that predates migration 0023 has no ``db_search_idx``."""
+    import cod_doc.api.deps as deps
+
+    engine = deps.get_engine_for_slug("demo")
+    assert engine is not None
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        session.execute(text("DROP TABLE db_search_idx"))
+
+    r = v1_client.get("/api/v1/projects/demo/search", params={"q": "auth"})
+    assert r.status_code == 503
+    assert "db_search_idx" in r.json()["detail"]
+
+
+def test_web_search_page_missing_index_table_shows_message(v1_client) -> None:
+    """CUR-010: web ``/p/<slug>/search`` shows a plain message, not a 500."""
+    import cod_doc.api.deps as deps
+
+    engine = deps.get_engine_for_slug("demo")
+    assert engine is not None
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        session.execute(text("DROP TABLE db_search_idx"))
+
+    r = v1_client.get("/p/demo/search", params={"q": "auth"})
+    assert r.status_code == 200
+    assert "db_search_idx" in r.text
+    assert "Traceback" not in r.text
