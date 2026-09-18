@@ -18,6 +18,12 @@ Index entries:
 
 FTS5 BM25 ranking by default; we surface the relevance score with each
 hit so the UI can show a confidence bar.
+
+CUR-010: ``search``/``ensure_index``/``reindex_all`` raise
+``SearchIndexMissing`` (instead of a raw ``sqlalchemy.exc.OperationalError``)
+when ``db_search_idx`` doesn't exist yet — a DB that predates migration
+0023. Presentation surfaces (CLI/REST/web) turn it into a clean error;
+MCP's ``ctx_search`` lets it propagate as-is.
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 
 from cod_doc.infra.models import (
     ADRModel,
@@ -41,6 +48,32 @@ if TYPE_CHECKING:
 
 
 _VALID_SCOPES = frozenset({"task", "doc", "story", "adr", "finding"})
+
+_MISSING_INDEX_MESSAGE = "FTS index table db_search_idx is missing — run `alembic upgrade head`"
+
+
+class SearchIndexMissing(RuntimeError):
+    """``db_search_idx`` (FTS5 virtual table, migration 0023) doesn't exist.
+
+    CUR-010: every DB touched before migration 0023 was applied raises a raw
+    ``sqlalchemy.exc.OperationalError`` on the first search/reindex — this
+    maps that specific failure to a typed exception presentation surfaces
+    can turn into a clean error instead of a stack trace.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(_MISSING_INDEX_MESSAGE)
+
+
+def _is_missing_index_error(exc: OperationalError) -> bool:
+    """True if ``exc`` is sqlite's 'no such table: db_search_idx'.
+
+    Any other ``OperationalError`` (locked DB, disk I/O, ...) is a different
+    failure mode and must not be swallowed into ``SearchIndexMissing``.
+    """
+    msg = str(exc)
+    return "no such table" in msg and "db_search_idx" in msg
+
 
 # bm25() weight positions are 1:1 with the columns declared in
 # ``db_search_idx`` (migration 20260515_0023_fts5_index.py): kind, ref,
@@ -141,8 +174,18 @@ def delete_doc(session: Session, *, project_id: int, doc_key: str) -> None:
 
 
 def reindex_all(session: Session, project_id: int) -> dict[str, int]:
-    """Drop project rows from index, then rebuild from canonical tables."""
-    _wipe(session, project_id)
+    """Drop project rows from index, then rebuild from canonical tables.
+
+    Raises ``SearchIndexMissing`` if ``db_search_idx`` doesn't exist yet
+    (DB predates migration 0023) — the ``_wipe`` DELETE is the first
+    statement to touch the table, so it's the only guard needed here.
+    """
+    try:
+        _wipe(session, project_id)
+    except OperationalError as exc:
+        if _is_missing_index_error(exc):
+            raise SearchIndexMissing() from exc
+        raise
 
     counts: dict[str, int] = {"task": 0, "doc": 0, "story": 0, "adr": 0, "finding": 0}
 
@@ -242,11 +285,20 @@ def ensure_index(session: Session, project_id: int) -> dict[str, Any]:
     counts and, only when the index is completely empty, runs a full
     ``reindex_all`` to populate it. A non-empty index is left untouched —
     this is a one-shot bootstrap, not a periodic refresh.
+
+    Raises ``SearchIndexMissing`` if ``db_search_idx`` doesn't exist yet.
     """
-    rows = session.execute(
-        text("SELECT kind, count(*) AS n FROM db_search_idx WHERE project_id = :pid GROUP BY kind"),
-        {"pid": project_id},
-    ).all()
+    try:
+        rows = session.execute(
+            text(
+                "SELECT kind, count(*) AS n FROM db_search_idx WHERE project_id = :pid GROUP BY kind"
+            ),
+            {"pid": project_id},
+        ).all()
+    except OperationalError as exc:
+        if _is_missing_index_error(exc):
+            raise SearchIndexMissing() from exc
+        raise
     by_kind: dict[str, int] = {r.kind: int(r.n) for r in rows}
     total = sum(by_kind.values())
     if total == 0:
@@ -311,6 +363,10 @@ def search(
             "finding": [...]
           }
         }
+
+    Raises ``SearchIndexMissing`` if ``db_search_idx`` doesn't exist yet
+    (empty/whitespace ``query`` short-circuits before touching the table,
+    so that case never triggers the guard).
     """
     if scope is not None and scope not in _VALID_SCOPES:
         raise ValueError(f"invalid scope {scope!r}; expected one of {sorted(_VALID_SCOPES)}")
@@ -357,7 +413,12 @@ def search(
         ORDER BY kind, score
     """
 
-    rows = session.execute(text(sql), params).all()
+    try:
+        rows = session.execute(text(sql), params).all()
+    except OperationalError as exc:
+        if _is_missing_index_error(exc):
+            raise SearchIndexMissing() from exc
+        raise
     by_kind: dict[str, list[dict[str, Any]]] = {k: [] for k in sorted(_VALID_SCOPES)}
     for r in rows:
         by_kind.setdefault(r.kind, []).append(

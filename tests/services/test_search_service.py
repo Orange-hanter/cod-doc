@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
@@ -475,3 +476,68 @@ def test_search_under_200ms_with_moderate_corpus(engine_with_schema) -> None:  #
     elapsed = time.monotonic() - start
     assert result["total"] > 0
     assert elapsed < 0.2, f"search took {elapsed:.3f}s, must be <0.2s"
+
+
+# ----------------------------------------------------------------- #
+# CUR-010: SearchIndexMissing when db_search_idx doesn't exist yet   #
+# ----------------------------------------------------------------- #
+
+
+def _drop_search_index(factory) -> None:  # type: ignore[no-untyped-def]
+    """Simulate a DB that predates migration 0023 (no ``db_search_idx``)."""
+    with transactional(factory) as session:
+        session.execute(text("DROP TABLE db_search_idx"))
+
+
+def test_search_raises_search_index_missing_without_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+    _drop_search_index(factory)
+
+    with (
+        pytest.raises(search_service.SearchIndexMissing, match="db_search_idx"),
+        transactional(factory) as session,
+    ):
+        search_service.search(session, project_id=1, query="anything")
+
+
+def test_ensure_index_raises_search_index_missing_without_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+    _drop_search_index(factory)
+
+    with (
+        pytest.raises(search_service.SearchIndexMissing, match="db_search_idx"),
+        transactional(factory) as session,
+    ):
+        search_service.ensure_index(session, project_id=1)
+
+
+def test_reindex_all_raises_search_index_missing_without_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+    _drop_search_index(factory)
+
+    with (
+        pytest.raises(search_service.SearchIndexMissing, match="db_search_idx"),
+        transactional(factory) as session,
+    ):
+        search_service.reindex_all(session, project_id=1)
+
+
+def test_other_operational_errors_are_not_swallowed(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """A different table-missing error must propagate untouched (not our guard)."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+        session.execute(text("DROP TABLE task"))
+
+    with (
+        pytest.raises(OperationalError, match="task") as excinfo,
+        transactional(factory) as session,
+    ):
+        search_service.reindex_all(session, project_id=1)
+    assert not isinstance(excinfo.value, search_service.SearchIndexMissing)

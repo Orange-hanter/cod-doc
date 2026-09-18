@@ -58,16 +58,19 @@ def search(
         if proj is None or proj.row_id is None:
             console.print(f"[red]Project '{project}' not in DB.[/red]")
             sys.exit(1)
-        if reindex:
-            counts = search_service.reindex_all(session, proj.row_id)
-            console.print(f"📚 reindexed: {counts}")
-        result = search_service.search(
-            session,
-            project_id=proj.row_id,
-            query=query,
-            scope=scope,
-            limit=limit,
-        )
+        try:
+            if reindex:
+                counts = search_service.reindex_all(session, proj.row_id)
+                console.print(f"📚 reindexed: {counts}")
+            result = search_service.search(
+                session,
+                project_id=proj.row_id,
+                query=query,
+                scope=scope,
+                limit=limit,
+            )
+        except search_service.SearchIndexMissing as exc:
+            raise click.ClickException(str(exc)) from exc
 
     if result["total"] == 0:
         console.print(f"[dim]No hits for {query!r}.[/dim]")
