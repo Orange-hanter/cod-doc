@@ -557,16 +557,15 @@ def register(mcp: FastMCP) -> None:
             ],
         }
 
-    # ------------------------------------------------------------------ #
-    # RFC 22 §3.3 / SYM-006D + RFC 25 §3.2 (CUR-007): ctx.* family — thin  #
-    # aliases over doc_list / doc_drift_all / search_service.search,      #
+    # ------------------------------------------------------------------- #
+    # RFC 22 §3.3 / SYM-006D + RFC 25 §3.2 (CUR-008): ctx.* family —      #
+    # thin aliases over doc_list / doc_drift_all / search_service.search, #
     # named per the symbiosis contract (`cod-doc ctx docs|drift|search`). #
-    # Read-only; standard/full profiles only for now (minimal and agent   #
-    # are explicit allowlists in cod_doc/mcp/profiles.py) — RFC 25 plans  #
-    # to move the ctx_* family into the agent allowlist in a follow-up    #
-    # task (CUR-008), so "standard/full only" is a transitional state,    #
-    # not a permanent restriction.                                        #
-    # ------------------------------------------------------------------ #
+    # Read-only. Since CUR-008 ctx_search / ctx_docs / ctx_drift are part #
+    # of the default `agent` (doc-curator) allowlist; the CI-gate wrapper #
+    # ctx_drift_gate is not — it stays standard/full, like `minimal`,     #
+    # which keeps its own explicit allowlist (cod_doc/mcp/profiles.py).   #
+    # ------------------------------------------------------------------- #
 
     @mcp.tool(name="ctx_docs")
     def ctx_docs(project: str) -> list[dict[str, Any]]:

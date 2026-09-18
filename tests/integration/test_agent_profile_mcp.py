@@ -1,8 +1,14 @@
 """Cycle-5 integration tests: agent-profile MCP tools via subprocess (AGN-010..013).
 
-Each test starts a real MCP subprocess with ``--profile agent``, seeds the
-embedded SQLite DB with project/plan/section/task rows, and calls the 6-tool
-agent surface through ``ClientSession.call_tool``.
+Each test starts a real MCP subprocess, seeds the embedded SQLite DB with
+project/plan/section/task rows, and calls the cycle-5 agent tools through
+``ClientSession.call_tool``.
+
+Since RFC 25 §3.2 (CUR-008) the default ``agent`` profile is the 6-tool
+doc-curator surface, so only ``agent_capabilities`` and ``agent_report``
+are reachable there. The task tools (``agent_pick`` / ``agent_get`` /
+``agent_complete`` / ``agent_release``) stay registered and are exercised
+here over ``--profile standard``, the surface a coding agent runs on.
 
 AGN-010: Skeleton + fixture + smoke test for agent_capabilities.
 AGN-011: agent_pick end-to-end (seed ready task, call agent_pick, assert task card).
@@ -138,8 +144,13 @@ def mcp_agent_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[
     return entry, config_dir
 
 
-def _open_stdio_client(config_dir: Path):
-    """Open a stdio MCP client subprocess with ``--profile agent``."""
+def _open_stdio_client(config_dir: Path, profile: str = "agent"):
+    """Open a stdio MCP client subprocess with ``--profile <profile>``.
+
+    Defaults to ``agent`` (the doc-curator surface). Tests that drive the
+    cycle-5 task tools pass ``profile="standard"``: RFC 25 §3.2 dropped
+    those names from the agent allowlist, they remain registered there.
+    """
     params = StdioServerParameters(
         command=sys.executable,  # ADO-070: не хардкодить .venv — в CI его нет
         args=[
@@ -148,11 +159,11 @@ def _open_stdio_client(config_dir: Path):
             "--transport",
             "stdio",
             "--profile",
-            "agent",
+            profile,
         ],
         # Explicitly set COD_DOC_PROFILE so the click default in the subprocess
-        # evaluates to 'agent' at module import time.
-        env={**os.environ, "COD_DOC_HOME": str(config_dir), "COD_DOC_PROFILE": "agent"},
+        # evaluates to the same profile at module import time.
+        env={**os.environ, "COD_DOC_HOME": str(config_dir), "COD_DOC_PROFILE": profile},
         cwd=str(REPO_ROOT),
     )
     return stdio_client(params)
@@ -189,6 +200,8 @@ async def test_agn010_agent_capabilities_smoke(
     for key in (
         "server_version",
         "profile",
+        "role",
+        "forbidden",
         "skills",
         "task_status_canonical",
         "task_status_legacy_aliases",
@@ -198,6 +211,7 @@ async def test_agn010_agent_capabilities_smoke(
     ):
         assert key in caps, f"agent_capabilities missing key: {key}"
     assert '"profile": "agent"' in caps
+    assert '"role": "doc-curator"' in caps
     assert '"skills"' in caps
     assert '"todo"' in caps
     assert '"in_progress"' in caps
@@ -235,7 +249,7 @@ async def test_agn011_agent_pick_end_to_end(
     engine.dispose()
 
     async with (
-        _open_stdio_client(config_dir) as (read, write),
+        _open_stdio_client(config_dir, profile="standard") as (read, write),
         ClientSession(read, write) as session,
     ):
         await session.initialize()
@@ -292,7 +306,7 @@ async def test_agn012_agent_complete_flow(
     engine.dispose()
 
     async with (
-        _open_stdio_client(config_dir) as (read, write),
+        _open_stdio_client(config_dir, profile="standard") as (read, write),
         ClientSession(read, write) as session,
     ):
         await session.initialize()
@@ -358,7 +372,7 @@ async def test_agn012_agent_release_flow(
     engine.dispose()
 
     async with (
-        _open_stdio_client(config_dir) as (read, write),
+        _open_stdio_client(config_dir, profile="standard") as (read, write),
         ClientSession(read, write) as session,
     ):
         await session.initialize()
@@ -421,7 +435,7 @@ async def test_agn013_agent_get_unknown_what(
     engine.dispose()
 
     async with (
-        _open_stdio_client(config_dir) as (read, write),
+        _open_stdio_client(config_dir, profile="standard") as (read, write),
         ClientSession(read, write) as session,
     ):
         await session.initialize()
