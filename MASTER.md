@@ -28,7 +28,9 @@
 - **Подготовка к M6 «Hub + кросс-проектность»:** M1–M5 закрыты, ведётся
   подготовка к M6. **Цели M6:** (1) кросс-проектный поиск через hub-БД
   (`[[doc:slug:key]]`), (2) фикс ChromaDB L3-режима для мульти-проектности,
-  (3) расширение `agent_pick --projects` для работы с несколькими проектами,
+  (3) кросс-проектный поиск куратора через `ctx_search(projects=...)` (CUR-013,
+  не `agent_pick --projects` — pick остаётся task-centric инструментом
+  coding-агента на `standard`/`full`, кросс-проектность туда не заводим),
   (4) запуск RFC 23 (Cloud decentralized agent plane) и RFC 24 (единый контур
   structure/contracts/scenarios). **Прогресс:** SYM-011 (кросс-проектный
   поиск, low priority) открыт; RFC 23 и RFC 24 спроектированы (статус 🟡 DRAFT),
@@ -84,7 +86,7 @@ graph TD
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
   capabilities/*, standards/*, audit/*, roadmap/*, migration/. Это source of
   truth для поведения системы и единая точка входа для контрибьютора.
-- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:52a9035cec7a`
+- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:ab9678fe267c`
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
@@ -105,11 +107,14 @@ graph TD
   - **24 (structure-track):** 🟡 Черновик — Единый контур structure/contracts/scenarios
     (docs↔code граница, obligations_export, structure_facts, scenario assessment).
     Поглощает внешнюю часть RFC 17, зависит от RFC 22.
-  - **25 (doc-curator-track):** 🟢 Принят к декомпозиции 2026-09-15 — дефолтный
-    агент = куратор документации и поиска, не исполнитель ADO-/SYM-задач.
-    План `doc-curator-2026-09`. Частично реанимирует поисковый контракт RFC 19.
-    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:298b46c240c6`
-- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:0597cc787589`
+  - **25 (doc-curator-track):** 🟢 Секция B закрыта 2026-09-19 (CUR-007/008) —
+    дефолтный агент = куратор документации и поиска, не исполнитель
+    ADO-/SYM-задач; профиль `agent` отдаёт `agent_capabilities`/`ctx_search`/
+    `ctx_docs`/`ctx_drift`/`context_get`/`agent_report`. План
+    `doc-curator-2026-09`, секции C/D в очереди. Частично реанимирует
+    поисковый контракт RFC 19.
+    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:b184f6fdd177`
+- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:5e3825c966fd`
 - **Статус:** `🟢 VERIFIED`
 
 ### CI Pipeline (GitHub Actions)
@@ -182,7 +187,7 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:d91fd6b26003`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:7459b588ca1a`
 - **Статус:** `🟢 VERIFIED`
 
 ### Zsh-дополнение
@@ -263,8 +268,8 @@ graph TD
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
-| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `52a9035cec7a` | 2026-09-15 | 🟢 VERIFIED |
-| 3 | proposals/README.md | `doc:proposals_README_md` | `0597cc787589` | 2026-09-11 | 🟢 VERIFIED |
+| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `ab9678fe267c` | 2026-09-19 | 🟢 VERIFIED |
+| 3 | proposals/README.md | `doc:proposals_README_md` | `5e3825c966fd` | 2026-09-19 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `fe11e3504b18` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
@@ -274,12 +279,12 @@ graph TD
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `d91fd6b26003` | 2026-09-16 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `7459b588ca1a` | 2026-09-19 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `f740ab98fffd` | 2026-09-15 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
 | 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
-| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `298b46c240c6` | 2026-09-16 | 🟢 VERIFIED |
+| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `b184f6fdd177` | 2026-09-19 | 🟢 VERIFIED |
 | 19 | Zsh-дополнение | `doc:docs_zsh-completion_md` | `f177c8373beb` | 2026-09-17 | 🟢 VERIFIED |
 
 > **Всего:** 19 документов | 🟢 VERIFIED: 14 | 🟡 LEGACY: 3 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
