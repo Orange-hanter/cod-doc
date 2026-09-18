@@ -120,10 +120,12 @@
     {% if recent_revs %}
     <ul class="rev-list">
       {% for r in recent_revs %}
+      {# ADO-153: ровно три ячейки сетки, независимо от наличия reason —
+         иначе колонки разъезжаются на строках без причины. #}
       <li>
-        <span class="mono">{{ r.entity_kind }}#{{ r.entity_id }}</span>
-        <span class="muted">— {{ r.author }}</span>
-        {% if r.reason %}<span class="muted">: {{ r.reason }}</span>{% endif %}
+        <span class="rev-who"><span class="mono">{{ r.entity_kind }}#{{ r.entity_id }}</span>
+          <span class="muted">{{ r.author }}</span></span>
+        <span class="muted rev-reason" {% if r.reason %}title="{{ r.reason }}"{% endif %}>{{ r.reason or "" }}</span>
         <span class="muted ts" title="{{ r.at | ts_tooltip }}">{{ r.at | relative_time }}</span>
       </li>
       {% endfor %}

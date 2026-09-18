@@ -36,6 +36,9 @@
 {% elif not revisions %}
   <p class="muted">Ревизий пока нет{% if entity_kind %} для <code>{{ entity_kind }}</code>{% endif %}.</p>
 {% else %}
+{# ADO-122: широкая таблица скроллится внутри обёртки, а не растягивает
+   страницу; Reason и Diff обрезаются блочной обёрткой в ячейке. #}
+<div class="table-scroll">
 <table class="grid">
   <thead>
     <tr>
@@ -54,12 +57,13 @@
       <td class="mono">{{ r.entity_kind }}#{{ r.entity_id }}</td>
       <td>{{ r.author }}</td>
       <td class="muted" title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</td>
-      <td>{{ r.reason }}</td>
-      <td class="mono diff-preview">{{ r.diff_preview }}</td>
+      <td><span class="cell-clamp-prose" title="{{ r.reason }}">{{ r.reason }}</span></td>
+      <td class="mono diff-preview"><span class="cell-clamp" title="{{ r.diff_preview }}">{{ r.diff_preview }}</span></td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
 <p class="muted">{{ revisions | length }} revision{% if revisions | length != 1 %}s{% endif %} (newest first, latest {{ limit }}).</p>
 {% endif %}
 {% endblock %}

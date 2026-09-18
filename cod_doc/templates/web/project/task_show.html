@@ -211,7 +211,7 @@
             <td>{{ r.author }}</td>
             <td class="muted" title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</td>
             <td>{{ r.reason }}</td>
-            <td class="mono diff-preview">{{ r.diff_first_line }}</td>
+            <td class="mono diff-preview"><span class="cell-clamp" title="{{ r.diff_first_line }}">{{ r.diff_first_line }}</span></td>
           </tr>
         {% endfor %}
       </tbody>

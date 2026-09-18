@@ -48,7 +48,7 @@
         <ul style="margin:.5rem 0 0">
           <li>Would import / imported: <strong>${data.imported}</strong></li>
           <li>Skipped: ${data.skipped}</li>
-          ${data.errors.length ? `<li style="color:var(--color-error)">Errors: ${data.errors.join('; ')}</li>` : ''}
+          ${data.errors.length ? `<li style="color:var(--danger)">Errors: ${data.errors.join('; ')}</li>` : ''}
           ${data.plan_scope ? `<li>Plan scope: <code>${data.plan_scope}</code></li>` : ''}
         </ul>
         ${!dryRun && data.imported > 0 ? `<p><a href="/p/${slug}/tasks">→ View imported tasks</a></p>` : ''}`;
