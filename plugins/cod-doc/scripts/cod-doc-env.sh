@@ -32,7 +32,14 @@ if [ -z "$COD_DOC_ROOT" ]; then
 	COD_DOC_ROOT="$(_cd_find_root "${CLAUDE_PROJECT_DIR:-$PWD}" || true)"
 fi
 if [ -z "$COD_DOC_ROOT" ] && command -v git >/dev/null 2>&1; then
-	_cd_main="$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" worktree list 2>/dev/null | head -1 | awk '{print $1}')"
+	# `|| true` обязателен, как и строкой выше у _cd_find_root. Вне
+	# git-репозитория `git worktree list` выходит с 128; `2>/dev/null`
+	# прячет только текст, а не код возврата. У вызывающего стоит
+	# `set -euo pipefail`, поэтому pipefail протаскивает 128 в
+	# присваивание, а set -e убивает скрипт — молча, ещё до exec.
+	# Клиент видел «Connection closed» без единой строки в логе:
+	# Python не успевал запуститься. См. ADO-146.
+	_cd_main="$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" worktree list 2>/dev/null | head -1 | awk '{print $1}' || true)"
 	if [ -n "$_cd_main" ] && [ -f "$_cd_main/.cod-doc/state.db" ]; then
 		COD_DOC_ROOT="$_cd_main"
 	fi
@@ -60,11 +67,16 @@ COD_DOC_SLUG="${COD_DOC_PROJECT:-}"
 if [ -z "$COD_DOC_SLUG" ] && [ -n "$COD_DOC_ROOT" ] && command -v sqlite3 >/dev/null 2>&1; then
 	_cd_db="$COD_DOC_ROOT/.cod-doc/state.db"
 	_cd_esc="${COD_DOC_ROOT//\'/\'\'}"
+	# `|| true` по той же причине, что и выше: sqlite3 выходит ненулём на
+	# отсутствующем файле, на заблокированной БД и на WAL-базе без прав
+	# создать `-shm`. `2>/dev/null` прячет текст, но не код возврата, а у
+	# вызывающего `set -e` — и скрипт умирает молча ещё до exec. Слаг
+	# необязателен: пустой COD_DOC_SLUG штатно обрабатывается ниже.
 	COD_DOC_SLUG="$(sqlite3 -readonly "$_cd_db" \
-		"select slug from project where root_path = '$_cd_esc' limit 1" 2>/dev/null)"
+		"select slug from project where root_path = '$_cd_esc' limit 1" 2>/dev/null || true)"
 	if [ -z "$COD_DOC_SLUG" ]; then
 		COD_DOC_SLUG="$(sqlite3 -readonly "$_cd_db" \
-			"select slug from project order by row_id limit 1" 2>/dev/null)"
+			"select slug from project order by row_id limit 1" 2>/dev/null || true)"
 	fi
 	unset _cd_db _cd_esc
 fi
