@@ -10,69 +10,103 @@
 
 {% with slug=project.name, active="scenarios" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<div class="scenario-page">
-  <header class="scenario-header">
-    <h1>{{ scenario.kind_icon }} {{ scenario.scenario_id }} — {{ scenario.title }}</h1>
-    <p class="muted">
-      <code>{{ scenario.kind }}</code> ·
-      {{ scenario.status_icon }} <code>{{ scenario.status }}</code> ·
-      группа <a href="/p/{{ project.name }}/scenarios">{{ scenario.group_key }}</a> ·
-      provenance <code>{{ provenance }}</code> ·
-      автор <code>{{ author }}</code>
-    </p>
+{# ADO-135: возврат к списку виден с любой глубины прокрутки. #}
+<p class="scn-back"><a href="/p/{{ project.name }}/scenarios">← Back to scenarios</a></p>
+
+{# ADO-136: герой и карточки, не h1 с одной muted-строкой.
+   `.status-tone-*` намеренно не используется — это словарь статусов задач,
+   а draft/confirmed/retired к нему не относятся. #}
+<header class="task-hero">
+  <div class="task-hero-row">
+    <span class="task-hero-id mono">{{ scenario.scenario_id }}</span>
+    <span class="task-hero-title">{{ scenario.title }}</span>
+    <span class="task-hero-meta">
+      <span class="badge badge-lg badge-scn-{{ scenario.status }}">{{ scenario.status_icon }} {{ scenario.status }}</span>
+    </span>
+  </div>
+  <div class="task-hero-row muted">
+    <span class="meta-chip">{{ scenario.kind_icon }} {{ scenario.kind }}</span>
+    <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/scenarios?group={{ scenario.group_key }}">{{ scenario.group_key }}</a>
     {% if scenario.doc_key %}
-      <p class="muted">
-        Якорь:
-        <a href="/p/{{ project.name }}/docs/{{ scenario.doc_key }}">{{ scenario.doc_key }}</a>{% if section_anchor %}<code>#{{ section_anchor }}</code>{% endif %}
-      </p>
-    {% else %}
-      <p class="warn">
-        Якорь не разрешён: документа <code>{{ scenario.doc_key or "—" }}</code> нет в БД.
-        Сценарий можно писать до импорта capability-документа.
-      </p>
+      <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/docs/{{ scenario.doc_key }}{% if section_anchor %}#{{ section_anchor }}{% endif %}">⚓ {{ section_anchor or scenario.doc_key }}</a>
     {% endif %}
-  </header>
+    <span class="meta-chip">Автор: {{ author }}</span>
+    <span class="meta-chip" title="{{ created | ts_tooltip }}">Создан: {{ created | short_date }}</span>
+    <span class="meta-chip" title="{{ last_updated | ts_tooltip }}">Изменён: {{ last_updated | short_date }}</span>
+    <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/revisions?entity_kind=scenario&amp;entity_id={{ row_id }}">🕘 Revision history</a>
+  </div>
+</header>
 
-  <section class="scenario-body">
-    <h2>Предусловия</h2>
-    <p>{{ preconditions }}</p>
+{% if not scenario.doc_key %}
+  <p class="warn">
+    Якорь не задан: сценарий не привязан к capability-документу. Это допустимо,
+    пока документ не импортирован, но связь стоит проставить.
+  </p>
+{% endif %}
 
+<section class="task-card">
+  <div class="task-card-header"><h2>Предусловия</h2></div>
+  <p>{{ preconditions }}</p>
+</section>
+
+<section class="task-card">
+  <div class="task-card-header">
     <h2>Шаги</h2>
-    {% if steps %}
-      <ol class="scenario-steps">
-        {% for s in steps %}<li>{{ s }}</li>{% endfor %}
-      </ol>
-    {% else %}
-      <p class="muted">Шагов нет.</p>
-    {% endif %}
+    <span class="count-chip">{{ steps | length }}</span>
+  </div>
+  {% if steps %}
+    <ol>
+      {% for s in steps %}<li>{{ s }}</li>{% endfor %}
+    </ol>
+  {% else %}
+    <p class="muted">Шагов нет.</p>
+  {% endif %}
+</section>
 
-    <h2>Ожидаемый результат</h2>
-    <p>{{ expected }}</p>
+<section class="task-card">
+  <div class="task-card-header"><h2>Ожидаемый результат</h2></div>
+  <p>{{ expected }}</p>
+</section>
 
-    {% if notes %}
-      <h2>Заметки</h2>
-      <p>{{ notes }}</p>
-    {% endif %}
-
-    {% if links %}
-      <h2>Связи</h2>
-      <ul class="scenario-links">
-        {% for l in links %}
-          <li><code>{{ l.relation }}</code> → <code>{{ l.to_kind }}:{{ l.to_ref }}</code></li>
-        {% endfor %}
-      </ul>
-    {% endif %}
+{% if notes %}
+  <section class="task-card">
+    <div class="task-card-header"><h2>Заметки</h2></div>
+    <p>{{ notes }}</p>
   </section>
+{% endif %}
 
-  <footer class="scenario-footer muted">
-    <p>
-      Проекция: <a href="/p/{{ project.name }}/docs/{{ projection_doc_key }}">{{ projection_doc_key }}</a>
-      — генерируется, править файл руками нельзя.
-    </p>
-    <p>
-      Правится через <code>cod-doc scenario update {{ scenario.scenario_id }} -p {{ project.name }}</code>
-      или тул <code>scenario_update</code>.
-    </p>
-  </footer>
-</div>
+<section class="task-card">
+  <div class="task-card-header">
+    <h2>Связи</h2>
+    <span class="count-chip">{{ links | length }}</span>
+  </div>
+  {% if links %}
+    <ul>
+      {% for l in links %}
+        <li>
+          <code>{{ l.relation }}</code> →
+          {% if l.href %}
+            <a href="{{ l.href }}"><code>{{ l.to_kind }}:{{ l.to_ref }}</code></a>
+          {% else %}
+            <code>{{ l.to_kind }}:{{ l.to_ref }}</code>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">Связей нет.</p>
+  {% endif %}
+</section>
+
+<section class="task-card">
+  <div class="task-card-header"><h2>Проекция</h2></div>
+  <p>
+    <a href="/p/{{ project.name }}/docs/{{ projection_doc_key }}">{{ projection_doc_key }}</a>
+    — генерируется, править файл руками нельзя.
+  </p>
+  <p class="empty-hint">
+    Правится через <code>cod-doc scenario update {{ scenario.scenario_id }} -p {{ project.name }}</code>
+    или тул <code>scenario_update</code>, затем <code>cod-doc scenario export</code>.
+  </p>
+</section>
 {% endblock %}
