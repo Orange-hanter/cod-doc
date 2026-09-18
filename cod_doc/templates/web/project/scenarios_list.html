@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Scenarios · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Scenarios</span>
+</nav>
+
+{% with slug=project.name, active="scenarios" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="scenarios-page">
+  <header class="scenarios-header">
+    <h1>🧪 Test scenarios</h1>
+    <p class="muted">
+      Что должно быть верно и как это проверить: предусловия, шаги, ожидаемый
+      результат — сгруппировано по возможности, к документу которой сценарий
+      привязан. Авторская половина RFC&nbsp;§9.
+    </p>
+    <p class="muted">
+      Здесь не видно, доказан ли сценарий тестом: вердикты покрытия выводит
+      producer, они живут отдельно. Список читается только на просмотр —
+      сценарии пишут через <code>cod-doc scenario</code> или тулы
+      <code>scenario_*</code>, а markdown под <code>docs/system/scenarios/</code>
+      — проекция этих же строк.
+    </p>
+  </header>
+
+  <form method="get" class="scenarios-filter">
+    <label>
+      Kind:
+      <select name="kind" onchange="this.form.submit()">
+        <option value="" {% if not kind_filter %}selected{% endif %}>any</option>
+        {% for k in kind_options %}
+          <option value="{{ k }}" {% if kind_filter == k %}selected{% endif %}>{{ k }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      <input type="checkbox" name="include_retired" value="true"
+             {% if include_retired %}checked{% endif %}
+             onchange="this.form.submit()">
+      показать снятые
+    </label>
+  </form>
+
+  {% if not blocks %}
+    <p class="muted">
+      Сценариев пока нет. Первый добавляется так:
+      <code>cod-doc scenario new -p {{ project.name }} --kind happy_path
+      --doc-key docs/system/capabilities/&lt;возможность&gt; …</code>
+    </p>
+  {% else %}
+    <p class="muted">Сценариев: {{ total }} · групп: {{ blocks | length }}</p>
+
+    {% for b in blocks %}
+      <section class="scenario-group">
+        <h2>
+          {{ b.group_key }}
+          <span class="muted">— {{ b.rows | length }}</span>
+        </h2>
+        <p class="muted scenario-group-links">
+          <a href="/p/{{ project.name }}/docs/{{ b.capability_doc_key }}">capability</a> ·
+          <a href="/p/{{ project.name }}/docs/{{ b.doc_key }}">проекция</a>
+        </p>
+        {% if b.missing_kinds %}
+          <p class="warn">
+            Не описано: {% for k in b.missing_kinds %}<code>{{ k }}</code>{% if not loop.last %}, {% endif %}{% endfor %}
+          </p>
+        {% endif %}
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Kind</th>
+              <th>Status</th>
+              <th>Title</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for it in b.rows %}
+              <tr{% if it.status == "retired" %} class="muted"{% endif %}>
+                <td><a href="/p/{{ project.name }}/scenarios/{{ it.scenario_id }}">{{ it.scenario_id }}</a></td>
+                <td>{{ it.kind_icon }} {{ it.kind }}</td>
+                <td>{{ it.status_icon }} {{ it.status }}</td>
+                <td>{{ it.title }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+    {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}

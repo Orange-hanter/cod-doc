@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ scenario.scenario_id }} · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/scenarios">Scenarios</a> /
+  <span>{{ scenario.scenario_id }}</span>
+</nav>
+
+{% with slug=project.name, active="scenarios" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<div class="scenario-page">
+  <header class="scenario-header">
+    <h1>{{ scenario.kind_icon }} {{ scenario.scenario_id }} — {{ scenario.title }}</h1>
+    <p class="muted">
+      <code>{{ scenario.kind }}</code> ·
+      {{ scenario.status_icon }} <code>{{ scenario.status }}</code> ·
+      группа <a href="/p/{{ project.name }}/scenarios">{{ scenario.group_key }}</a> ·
+      provenance <code>{{ provenance }}</code> ·
+      автор <code>{{ author }}</code>
+    </p>
+    {% if scenario.doc_key %}
+      <p class="muted">
+        Якорь:
+        <a href="/p/{{ project.name }}/docs/{{ scenario.doc_key }}">{{ scenario.doc_key }}</a>{% if section_anchor %}<code>#{{ section_anchor }}</code>{% endif %}
+      </p>
+    {% else %}
+      <p class="warn">
+        Якорь не разрешён: документа <code>{{ scenario.doc_key or "—" }}</code> нет в БД.
+        Сценарий можно писать до импорта capability-документа.
+      </p>
+    {% endif %}
+  </header>
+
+  <section class="scenario-body">
+    <h2>Предусловия</h2>
+    <p>{{ preconditions }}</p>
+
+    <h2>Шаги</h2>
+    {% if steps %}
+      <ol class="scenario-steps">
+        {% for s in steps %}<li>{{ s }}</li>{% endfor %}
+      </ol>
+    {% else %}
+      <p class="muted">Шагов нет.</p>
+    {% endif %}
+
+    <h2>Ожидаемый результат</h2>
+    <p>{{ expected }}</p>
+
+    {% if notes %}
+      <h2>Заметки</h2>
+      <p>{{ notes }}</p>
+    {% endif %}
+
+    {% if links %}
+      <h2>Связи</h2>
+      <ul class="scenario-links">
+        {% for l in links %}
+          <li><code>{{ l.relation }}</code> → <code>{{ l.to_kind }}:{{ l.to_ref }}</code></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </section>
+
+  <footer class="scenario-footer muted">
+    <p>
+      Проекция: <a href="/p/{{ project.name }}/docs/{{ projection_doc_key }}">{{ projection_doc_key }}</a>
+      — генерируется, править файл руками нельзя.
+    </p>
+    <p>
+      Правится через <code>cod-doc scenario update {{ scenario.scenario_id }} -p {{ project.name }}</code>
+      или тул <code>scenario_update</code>.
+    </p>
+  </footer>
+</div>
+{% endblock %}
