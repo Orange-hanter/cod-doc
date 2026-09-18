@@ -25,6 +25,7 @@ from . import (
     revisions,
     routines,
     run,
+    scenarios,
     search,
     settings,
     standards,
@@ -45,6 +46,8 @@ router.include_router(costs.router)
 router.include_router(run.router)
 router.include_router(navigator.router)
 router.include_router(standards.router)
+# RFC 24 §9 scenarios — read-only list + detail (authoring half).
+router.include_router(scenarios.router)
 # ADRs — list/show/new/graph + supersede form (ADR-004/005/006).
 # Registered BEFORE docs.router because docs has a `/p/{slug}/docs/...`
 # greedy match that wouldn't shadow `/adr` anyway, but keep next to its
