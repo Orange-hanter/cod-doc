@@ -48,6 +48,14 @@ vibecoder'а». Полезный контракт RFC 19 (агрегатор п�
 | T9 | Snowball `context_get` (L0/L1) живёт в `standard`, не в `agent` | `cod_doc/mcp/tools/context_tools.py`; `MINIMAL_TOOLS` содержит `context_get`, `AGENT_TOOLS` — нет |
 | T10 | Routines уже пишут санитарные задачи (`ADO-081` drift, `ADO-082` links) без LLM | `routine` rows `doc_drift_daily` / `link_integrity_daily` |
 | T11 | Счётчики 6/21/121/125 зафиксированы в пяти местах + тест | `profiles.py` docstring, `server.py --profile`, `AGENTS.md` §5.9, `CLAUDE.md`, `docs/mcp-integration.md` |
+
+> **Закрыто 2026-09-19 (CUR-009).** T1, T2, T8 описывали состояние **до**
+> свопа и больше не актуальны: T1/T2 сняты CUR-008 (`AGENT_TOOLS` — набор
+> куратора, `next_action_hint` зовёт `ctx_drift` → `ctx_search`, не
+> `agent_pick`); T8 инвертирован CUR-008 (`ctx_docs`/`ctx_drift`/`ctx_search`
+> теперь **в** `agent`, а не запрещены в нём — запрещён остаётся только
+> `ctx_drift_gate`). T3–T7, T9–T13 остаются верными как исторический снимок
+> кода на 2026-09-15. Актуальные счётчики (T11) — 6/21/129/133.
 | T12 | Живая очередь `todo` — Stories-UI / MCP crash / CLI checkout, не документация | `ADO-140`, `ADO-143`…`ADO-146`, `ADO-157` |
 | T13 | Read-only сабагент `cod-doc-scout` отвечает на вопросы из БД, ничего не меняя; это ближе к целевой роли, чем `agent_pick` | описан вне репозитория, в машинно-локальном конфиге агентов |
 
@@ -78,6 +86,11 @@ vibecoder'а». Полезный контракт RFC 19 (агрегатор п�
 coding-агент в IDE). Задачи, планы, checkout **не удаляются**.
 
 ### 3.2. Новый состав `AGENT_TOOLS` (count остаётся 6)
+
+> **Реализовано: CUR-007 (`ctx_search` с lazy reindex пустого FTS-индекса),
+> CUR-008 (своп `AGENT_TOOLS` на набор ниже).** Живой allowlist —
+> `cod_doc/mcp/profiles.py::AGENT_TOOLS`; проверка —
+> `tests/test_server_profiles.py::test_sym006d_agent_profile_excludes_new_tools`.
 
 ```python
 AGENT_TOOLS: frozenset[str] = frozenset(
