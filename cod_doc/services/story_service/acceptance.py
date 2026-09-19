@@ -10,7 +10,7 @@ from sqlalchemy import select
 from cod_doc.domain.entities import EntityKind, StoryAcceptance
 from cod_doc.infra.models import StoryAcceptanceModel
 from cod_doc.infra.repositories import StoryAcceptanceRepository
-from cod_doc.services import activity_service
+from cod_doc.services import activity_service, search_service
 from cod_doc.services import revision_service as rev
 
 from ._internals import _diff, _require_story
@@ -58,6 +58,8 @@ def add_criterion(
         payload={"position": next_pos, "criterion": criterion},
         summary=f"Story {story_id}: criterion added at position {next_pos}",
     )
+    # CUR-012: acceptance criteria are part of the story's indexed body.
+    search_service.index_story(session, model)
     return ac
 
 
@@ -107,4 +109,5 @@ def set_criterion_met(
         payload={"position": position, "met": met, "old_met": old_met},
         summary=f"Story {story_id}: criterion {position} met={met}",
     )
+    search_service.index_story(session, model)
     return StoryAcceptanceRepository(session)._to_domain(ac_model)

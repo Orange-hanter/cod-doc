@@ -53,7 +53,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.infra.repositories import PlanSectionRepository, TaskRepository
 from cod_doc.infra.sql_helpers import priority_sql_order
-from cod_doc.services import activity_service, event_bus, validation
+from cod_doc.services import activity_service, event_bus, search_service, validation
 from cod_doc.services import revision_service as rev
 
 if TYPE_CHECKING:
@@ -351,6 +351,9 @@ def create(
             priority=task.priority.value,
             type=task.type.value,
         )
+    # CUR-012: keep the FTS index current without a manual reindex.
+    if inserted_model is not None:
+        search_service.index_task(session, inserted_model)
     return task
 
 
@@ -462,6 +465,7 @@ def update_status(
         payload={"old_status": old_status, "new_status": new_status.value, "reason": reason},
         summary=f"Task {task_id}: {old_status} → {new_status.value}",
     )
+    search_service.index_task(session, model)
 
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
@@ -520,6 +524,7 @@ def _update_text_field(
         payload={"field": field, "old_len": len(old_value), "new_len": len(new_value)},
         summary=f"Task {model.task_id}: {field} updated",
     )
+    search_service.index_task(session, model)
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t
@@ -799,6 +804,7 @@ def complete(
         payload={"commit_sha": commit_sha, "reason": reason},
         summary=f"Task {task_id} completed by {author}",
     )
+    search_service.index_task(session, model)
 
     # COD-022: signal plan staleness so callers know projection may be outdated.
     plan_model = session.get(PlanModel, model.plan_id)
@@ -926,6 +932,7 @@ def set_blocker(
         payload={"reason": reason},
         summary=f"Task {task_id}: blocker added",
     )
+    search_service.index_task(session, model)
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t
@@ -968,6 +975,7 @@ def clear_blocker(
         payload={"old_reason": old_reason},
         summary=f"Task {task_id}: blocker cleared",
     )
+    search_service.index_task(session, model)
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t

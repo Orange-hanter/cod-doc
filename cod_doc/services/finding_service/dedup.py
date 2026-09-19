@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from cod_doc.infra.models import FindingModel, FindingSourceRunModel
+from cod_doc.services import search_service
 from cod_doc.services.activity_service import _uuid7
 
 if TYPE_CHECKING:
@@ -115,5 +116,11 @@ def ingest_findings(
             )
         )
         session.flush()
+
+        # CUR-012: an ingested finding is searchable at once, without a
+        # manual `search --reindex`.
+        finding = session.get(FindingModel, finding_id)
+        if finding is not None:
+            search_service.index_finding(session, finding)
 
     return result
