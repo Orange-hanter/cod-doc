@@ -23,33 +23,54 @@ MCP (Model Context Protocol) — стандартный протокол для 
 
 ---
 
-## Agent profile — 6-tool surface (cycle-5, по умолчанию)
+## Agent profile — 6-tool curator surface (RFC 25 §3.2, по умолчанию)
 
-> **RFC 25 (2026-09-15).** Целевая роль дефолтного агента — куратор
-> документации и поиска, не исполнитель задач. Скилл `orchestrator` уже
-> запрещает `agent_pick`. Таблица ниже — **текущий** allowlist до свопа
-> в плане `doc-curator-2026-09` (`ctx_search` / `ctx_docs` / `ctx_drift` /
-> `context_get`). Coding-агент ходит на демон профиля `standard`
-> (`:8801`), а не на `:8802` — профиль выбирается портом, не флагом
-> клиента.
-
-> Пока своп не влит: AI-агент на профиле `agent` технически видит
-> task-centric 6 тулов. Не вызывай `agent_pick`. Один вызов по-прежнему
-> самодостаточный payload — это останется после свопа.
+> **RFC 25 (2026-09-15), своп выполнен планом `doc-curator-2026-09`**
+> (CUR-007 — `ctx_search` с lazy reindex, CUR-008 — перекрой allowlist).
+> Дефолтный AI-агент — куратор документации и поиска, не исполнитель
+> задач. `agent_capabilities()` отдаёт `role: "doc-curator"` и
+> `forbidden: ["agent_pick", "task_checkout", "task_complete"]`.
+> Coding-агент ходит на демон профиля `standard` (`:8801`), а не на
+> `:8802` — профиль выбирается портом, не флагом клиента.
 
 | Тул | Что делает |
 |-----|------------|
-| `agent_capabilities()` | L0 entry-point: server version, доступные skills, валидные TaskStatus, default_project, рекомендованный next-action. <4KB. |
+| `agent_capabilities()` | L0 entry-point: server version, `role: "doc-curator"`, `forbidden`, доступные skills, валидные TaskStatus, default_project, `next_action_hint` → `ctx_drift` → `ctx_search`. <4KB. |
+| `ctx_search(project, query, scope?, limit?)` | FTS-поиск по doc/adr/story/task: `{query, total, by_kind: {doc, adr, story, task: [...]}}`. Lazy reindex пустого индекса (CUR-007). |
+| `ctx_docs(project)` | Каталог документов — что уже задокументировано (`= doc_list`). |
+| `ctx_drift(project)` | Дрейф markdown ↔ БД по всему проекту: `edited_in_place` / `stale_export` / `missing` (`= doc_drift_all`). |
+| `context_get(project, target_kind, target_id, depth?)` | Snowball-пакет (L0/L1/L2) под token budget. |
+| `agent_report(project, task_id, kind, message, agent_id?, payload?)` | Dispatcher. `kind ∈ {progress, blocker, approval_request, needs_context}` — эскалация человеку. |
+
+### Жизненный цикл куратора (canonical)
+
+```text
+1. agent_capabilities()                    # роль, forbidden, skills, hint
+2. ctx_drift(project)                      # санитарный срез: что протухло
+3. ctx_search(project, query) | ctx_docs(project) | context_get(...)
+   ↓ (починить документацию: import, hashes, links, body)
+4a. self_check, зафиксировать в БД (doc import / hash update)   # готово
+4b. agent_report(kind='approval_request', ...)                  # нужна политика человека
+```
+
+`agent_pick` / `agent_get` / `agent_complete` / `agent_release` (cycle-5
+task-centric surface, таблица ниже) остаются зарегистрированы, но не входят
+в allowlist профиля `agent` — видны только на `standard`/`full`, для
+coding-агента.
+
+### Task-centric тулы (standard/full — не agent)
+
+| Тул | Что делает |
+|-----|------------|
 | `agent_pick(project, agent_id, plan_scope?)` | Атомарно: ready-set → checkout → assemble **task card** = `{task, context{plan, story, related_docs, siblings, affected_files, recent_history}, navigation{applicable_skills (с ТЕЛАМИ), next_actions, success_criteria, legal_status_transitions}}`. Идемпотентен. |
 | `agent_get(project, task_id, what, ref?)` | Opt-in deep fetch. `what ∈ {full_doc_body, related_task, story_full, plan_export}`. |
-| `agent_report(project, task_id, kind, message, agent_id?, payload?)` | Dispatcher. `kind ∈ {progress, blocker, approval_request, needs_context}`. |
 | `agent_complete(project, task_id, agent_id, commit_sha?, summary?)` | Guarded done + release lock в одной транзакции. |
 | `agent_release(project, task_id, agent_id, reason?)` | Drop lock без done; status → todo. |
 
-### Жизненный цикл задачи (canonical 3-step)
+Их жизненный цикл (coding-агент на `standard`/`full`) не изменился:
 
 ```text
-1. agent_capabilities()              # кто я / какие skills / какой профиль
+1. agent_capabilities()              # кто я / какой профиль
 2. agent_pick(project, agent_id)     # task + context + navigation card
    ↓ (выполнить работу)
 3a. agent_complete(...)              # успех
@@ -60,7 +81,7 @@ MCP (Model Context Protocol) — стандартный протокол для 
 ### Запуск под agent-профилем
 
 ```bash
-cod-doc-mcp                              # agent (default cycle-5)
+cod-doc-mcp                              # agent (default) — 6 curator tools
 cod-doc-mcp --profile minimal            # 21 cold-start tools
 cod-doc-mcp --profile standard           # 129 CRUD tools (без legacy)
 cod-doc-mcp --profile full               # все 133 (включая legacy)
@@ -84,20 +105,28 @@ cod-doc mcp --profile standard
 `~/.cod-doc/config.yaml`. Проект, которого нет в реестре, демону недоступен,
 даже если `.cod-doc/state.db` лежит рядом с чекаутом: `cod-doc project add`.
 
-### Migration guide (cycle-3/4 → cycle-5)
+### Migration guide (cycle-3/4 → cycle-5 curator, RFC 25 §3.2)
 
 Если ваша интеграция уже зовёт `task_checkout` / `context_get` /
 `task_complete` напрямую — она продолжит работать под `--profile standard`
 или `--profile full`. Никаких deprecation на самих CRUD-тулах нет.
 
-Для **новых** агентских интеграций рекомендуется agent profile:
+Для **curator-интеграций** (документация/поиск, дефолтный профиль `agent`):
+
+| Cycle-3/4 паттерн (6 calls) | Curator-эквивалент |
+|---|---|
+| `capabilities()` → `skill_list()` → `skill_get('orchestrator')` → `list_projects()` → ... | `agent_capabilities()` |
+| `cod-doc ctx drift` / прямой `doc_drift_all` | `ctx_drift(project)` |
+| `cod-doc ctx search` / прямой `search_service.search` | `ctx_search(project, query)` |
+| `task_set_blocker()` + `task_update_status(blocked)` + `activity_emit()` | `agent_report(kind='blocker', message=...)` |
+
+Для **coding-агента** (исполнение задач; профиль `standard`/`full`, не
+`agent`) паттерн не изменился:
 
 | Cycle-3/4 паттерн (6 calls) | Cycle-5 эквивалент (3 calls) |
 |---|---|
-| `capabilities()` → `skill_list()` → `skill_get('orchestrator')` → `list_projects()` → ... | `agent_capabilities()` |
-| `task_next_ready()` → `task_checkout()` → `context_get('task',id)` → `skill_get('task-standard')` | `agent_pick(project, agent_id)` |
-| `task_complete()` → `task_release()` → `activity_emit()` | `agent_complete(project, task_id, agent_id)` |
-| `task_set_blocker()` + `task_update_status(blocked)` + `activity_emit()` | `agent_report(kind='blocker', message=...)` |
+| `task_next_ready()` → `task_checkout()` → `context_get('task',id)` → `skill_get('task-standard')` | `agent_pick(project, agent_id)` — только `standard`/`full` |
+| `task_complete()` → `task_release()` → `activity_emit()` | `agent_complete(project, task_id, agent_id)` — только `standard`/`full` |
 
 ---
 
@@ -215,8 +244,10 @@ claude mcp list        # ожидается ровно одна строка cod
 { "type": "stdio", "command": "docker", "args": ["exec", "-i", "cod-doc", "cod-doc", "mcp"] }
 ```
 
-Профиль сервера по умолчанию — `agent` (6 тулов), а не `standard`, поэтому под
-stdio его указывают явно. Поднять HTTP-эндпоинт вручную, без launchd:
+Профиль сервера по умолчанию — `agent` (6 curator-тулов: `agent_capabilities`,
+`ctx_search`, `ctx_docs`, `ctx_drift`, `context_get`, `agent_report`), а не
+`standard`, поэтому coding-агенту под stdio его указывают явно
+(`--profile standard`). Поднять HTTP-эндпоинт вручную, без launchd:
 
 ```bash
 cod-doc mcp --transport streamable-http --host 127.0.0.1 --port 8801
@@ -300,13 +331,13 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **activity.\*** | 1 | Единый audit-таймлайн | `activity_list` |
 | **routine.\*** | 7 | Cron-style health checks | `routine_create`, `routine_list`, `routine_get`, `routine_update_status`, `routine_delete`, `routine_run_now`, `routine_history` |
 | **skill.\*** | 2 | Каталог skill-инструкций для агента | `skill_list`, `skill_get` |
-| **agent.\* (cycle-5)** | 6 | Task-centric surface для AI-агентов: pick → work → complete за 3 вызова | `agent_capabilities`, `agent_pick`, `agent_get`, `agent_report`, `agent_complete`, `agent_release` |
+| **agent.\* (cycle-5)** | 6 | Cycle-5 task-flow surface. На профиле `agent` (RFC 25 §3.2) в allowlist остались только `agent_capabilities`/`agent_report`, курс задают `ctx_*`/`context_get` из семейства ниже; task-centric `agent_pick`/`agent_get`/`agent_complete`/`agent_release` видны на `standard`/`full` | `agent_capabilities`, `agent_pick`, `agent_get`, `agent_report`, `agent_complete`, `agent_release` |
 | **adr.\* (ADR-002)** | 10 | Architecture Decision Records: CRUD + supersede DAG + task links + Mermaid diagrams + deprecate + projection sync | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_sync_body`, `adr_add_diagram`, `adr_supersede`, `adr_deprecate`, `adr_link_task`, `adr_graph` |
 | **context / capabilities / session** | 9 | Admin: snowball-сборка контекста, L0 bootstrap, tool discovery + per-tool describe, change-log, safe-call envelope, workspace defaults | `context_get`, `capabilities`, `tool_search`, `tool_describe`, `tools_diff`, `tool_call_safe`, `set_default_project`, `get_default_project`, `clear_default_project` |
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
 | **Legacy (YAML агент)** | 3 | Остаток legacy-surface после STB-002 (2026-06-08): resume-вход + context-хелперы. YAML CRUD (проекты/задачи/MASTER/поиск + hash/verify) удалён — БД источник истины. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
 | **finding.\* (RFC 22)** | 4 | Внешние находки (ai-review / ZAIrgRush / routines): triage и промоушен в задачи. Только профили standard/full | `finding_list`, `finding_get`, `finding_promote`, `finding_dismiss` |
-| **ctx.\* (RFC 22 / RFC 25 §3.2)** | 4 | Контекст для внешних потребителей: `ctx_docs` = `doc_list`, `ctx_search` = `search_service.search` с lazy reindex пустого FTS-индекса (CUR-007), `ctx_drift` = `doc_drift_all` (SYM-006D), `ctx_drift_gate` — детерминированный гейт документации по файлам PR с идемпотентным PR-комментарием (SYM-010). Только профили standard/full | `ctx_docs`, `ctx_search`, `ctx_drift`, `ctx_drift_gate` |
+| **ctx.\* (RFC 22 / RFC 25 §3.2)** | 4 | Контекст для внешних потребителей: `ctx_docs` = `doc_list`, `ctx_search` = `search_service.search` с lazy reindex пустого FTS-индекса (CUR-007), `ctx_drift` = `doc_drift_all` (SYM-006D) — эти три с CUR-008 входят в дефолтный профиль `agent`; `ctx_drift_gate` — детерминированный гейт документации по файлам PR с идемпотентным PR-комментарием (SYM-010), остаётся только standard/full | `ctx_docs`, `ctx_search`, `ctx_drift`, `ctx_drift_gate` |
 | **scenario.\* (RFC 24 §9)** | 9 | Сценарии тестирования: авторская половина RFC 24 — что должно быть верно (вид, предусловия, шаги, ожидаемый результат, якорь в capability-документе) и проекция в `docs/system/scenarios/`. Вердикты покрытия сюда не попадают: это доказательства producer'а (STR-002). Только профили standard/full | `scenario_create`, `scenario_get`, `scenario_list`, `scenario_update`, `scenario_retire`, `scenario_set_steps`, `scenario_link`, `scenario_export`, `scenario_coverage` |
 | **structure.\*** | 5 | Pinned code-structure snapshots, drift, scenarios and BFS context (not projection drift; not ai_review findings) | `structure_get`, `structure_context`, `structure_drift`, `structure_scenarios`, `structure_diff` |
 | **ИТОГО** | **133** | | |

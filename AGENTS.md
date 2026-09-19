@@ -6,14 +6,18 @@
 
 > ⚠️ **RFC 25 (2026-09-15): дефолтный агент — куратор документации, не
 > исполнитель задач.** Скилл `orchestrator` запрещает `agent_pick` /
-> `task_checkout` по feature/bug/refactor. Поверхность `agent` ещё 6
-> cycle-5 тулов (`agent_capabilities`, `agent_pick`, `agent_get`,
-> `agent_report`, `agent_complete`, `agent_release`) — своп на
-> `ctx_search`/`ctx_docs`/`ctx_drift`/`context_get` идёт планом
-> `doc-curator-2026-09`. До свопа: не вызывай `agent_pick`. Coding-агент
-> (человек поручил написать код) — `--profile standard|full`.
+> `task_checkout` по feature/bug/refactor. Поверхность `agent` — 6
+> curator-тулов (`agent_capabilities`, `ctx_search`, `ctx_docs`,
+> `ctx_drift`, `context_get`, `agent_report`); `agent_capabilities()`
+> отдаёт `role: "doc-curator"` и `forbidden: ["agent_pick",
+> "task_checkout", "task_complete"]`. Своп сделан планом
+> `doc-curator-2026-09` (CUR-007 — `ctx_search` с lazy reindex, CUR-008 —
+> перекрой `AGENT_TOOLS`). Старые task-centric тулы (`agent_pick`,
+> `agent_get`, `agent_complete`, `agent_release`) остались
+> зарегистрированы, но видны только на `--profile standard|full` — их
+> зовёт человек или coding-агент.
 > Cycle-5 bodies: `cod_doc/services/agent_service.py`, обёртки
-> `cod_doc/mcp/tools/agent_tools.py`. Счётчики 6/21/129/133 пока те же.
+> `cod_doc/mcp/tools/agent_tools.py`. Счётчики 6/21/129/133.
 
 ## 1. Цель проекта
 
@@ -113,10 +117,13 @@ pytest tests/ -n auto --dist loadfile -v --tb=short   # run the suite
    cod-doc-mcp --profile full                 # все 133, включая legacy
    COD_DOC_PROFILE=full cod-doc-mcp           # через env
    ```
-   - ``agent`` — **default**: 6 тулов. Исторически task-centric
-     (`agent_pick`…`agent_release`). RFC 25 перепрофилирует набор на
-     документацию/поиск; до свопа оркестратор **не** берёт продуктовые
-     задачи. Актуальный allowlist — `cod_doc/mcp/profiles.py::AGENT_TOOLS`.
+   - ``agent`` — **default**: 6 curator-тулов (RFC 25 §3.2, CUR-008):
+     `agent_capabilities`, `ctx_search`, `ctx_docs`, `ctx_drift`,
+     `context_get`, `agent_report`. Роль — доступность документации и
+     поиск, не исполнение продуктовых задач. Старые task-centric тулы
+     (`agent_pick`…`agent_release`) остались зарегистрированы, но видны
+     только на `standard`/`full` — их зовёт человек или coding-агент.
+     Актуальный allowlist — `cod_doc/mcp/profiles.py::AGENT_TOOLS`.
    - ``minimal`` — 21-tool cold-start surface для свежих интеграций.
    - ``standard`` — 129 DB-backed тулов без legacy YAML.
    - ``full`` — все 133 тулов, включая legacy. Только для админ-сценариев
