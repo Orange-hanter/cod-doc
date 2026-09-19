@@ -32,7 +32,7 @@ from cod_doc.infra.repositories import (
     TaskRepository,
     UserStoryRepository,
 )
-from cod_doc.services import activity_service, validation
+from cod_doc.services import activity_service, search_service, validation
 from cod_doc.services import revision_service as rev
 
 from ._internals import _diff, _require_story
@@ -139,6 +139,10 @@ def create(
         },
         summary=f"Story {story_id} created",
     )
+    # CUR-012: keep the FTS index current without a manual reindex.
+    story_model = session.get(UserStoryModel, story.row_id)
+    if story_model is not None:
+        search_service.index_story(session, story_model)
     return story
 
 
@@ -239,6 +243,7 @@ def update_status(
         payload={"old_status": old_status, "new_status": new_status.value, "reason": reason},
         summary=f"Story {story_id}: {old_status} → {new_status.value}",
     )
+    search_service.index_story(session, model)
     s = UserStoryRepository(session).get(model.row_id)
     assert s is not None
     return s

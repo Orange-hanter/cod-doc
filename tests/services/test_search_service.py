@@ -19,9 +19,12 @@ from cod_doc.infra.models import (
     PlanSectionModel,
     ProjectModel,
     SectionModel,
+    TaskModel,
     UserStoryModel,
 )
-from cod_doc.services import search_service, task_service
+from cod_doc.services import adr_service, finding_service, search_service, task_service
+from cod_doc.services.story_service import acceptance as story_acceptance
+from cod_doc.services.story_service import crud as story_crud
 
 
 def _seed_project(session, slug: str) -> tuple[int, int, int]:  # type: ignore[no-untyped-def]
@@ -58,6 +61,32 @@ def _make_task(session, pid, plid, sid, tid, title, **fields):
         author="t",
         **fields,
     )
+
+
+def _make_task_raw(session, pid, plid, sid, tid, title):
+    """Insert a task straight into the table, bypassing ``task_service``.
+
+    CUR-012 made every ``task_service`` mutation refresh the FTS row, so a
+    task created through the service is *already* indexed. The tests that
+    need an unindexed task — a row that predates incremental indexing, or
+    one written around the service — build it here instead.
+    """
+    now = datetime.now(UTC)
+    t = TaskModel(
+        project_id=pid,
+        task_id=tid,
+        plan_id=plid,
+        section_id=sid,
+        title=title,
+        status="todo",
+        type="feature",
+        priority="medium",
+        created=now,
+        last_updated=now,
+    )
+    session.add(t)
+    session.flush()
+    return t
 
 
 def _make_doc(session, pid, key, title, body):
@@ -189,7 +218,7 @@ def test_ensure_index_reindexes_when_empty(engine_with_schema) -> None:  # type:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid, plid, sid = _seed(session)
-        _make_task(session, pid, plid, sid, "SRP-030", "Implement lazy reindex")
+        _make_task_raw(session, pid, plid, sid, "SRP-030", "Implement lazy reindex")
 
     with transactional(factory) as session:
         n = session.execute(
@@ -213,14 +242,15 @@ def test_ensure_index_is_noop_when_populated(engine_with_schema) -> None:  # typ
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid, plid, sid = _seed(session)
-        _make_task(session, pid, plid, sid, "SRP-031", "Already indexed task")
+        _make_task_raw(session, pid, plid, sid, "SRP-031", "Already indexed task")
     with transactional(factory) as session:
         search_service.reindex_all(session, project_id=1)
 
     # A task added *after* the reindex is deliberately left unindexed — it
     # is the marker that proves ensure_index did not touch the index below.
+    # It has to bypass task_service, which would index it (CUR-012).
     with transactional(factory) as session:
-        _make_task(session, pid, plid, sid, "SRP-032", "Added after reindex")
+        _make_task_raw(session, pid, plid, sid, "SRP-032", "Added after reindex")
 
     with transactional(factory) as session:
         meta = search_service.ensure_index(session, project_id=1)
@@ -665,3 +695,307 @@ def test_resolve_cross_project_ids_maps_slugs_in_shared_db(engine_with_schema, t
         )
 
     assert resolved == {"beta": pid_b}
+
+
+# ----------------------------------------------------------------- #
+# CUR-012: incremental index maintenance from the write path         #
+# ----------------------------------------------------------------- #
+
+
+def _index_rows(factory):  # type: ignore[no-untyped-def]
+    with transactional(factory) as session:
+        return [
+            tuple(r)
+            for r in session.execute(
+                text(
+                    "SELECT kind, ref, title, body FROM db_search_idx "
+                    "WHERE project_id = 1 ORDER BY kind, ref"
+                )
+            ).all()
+        ]
+
+
+def _ingest_finding(session, pid, title, body):  # type: ignore[no-untyped-def]
+    return finding_service.ingest_findings(
+        session,
+        project_id=pid,
+        source_run_id="run-1",
+        seeds=[
+            finding_service.FindingSeed(
+                fingerprint=f"fp-{title}",
+                source="ai_review",
+                title=title,
+                severity="major",
+                body=body,
+            )
+        ],
+    )
+
+
+def test_task_create_is_indexed_without_reindex(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make_task(session, pid, plid, sid, "INC-001", "Incremental upsert of the index")
+
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="incremental", scope="task")
+    assert [h["ref"] for h in result["by_kind"]["task"]] == ["INC-001"]
+
+
+def test_task_description_update_is_indexed(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make_task(session, pid, plid, sid, "INC-002", "Placeholder title")
+
+    with transactional(factory) as session:
+        task_service.update_description(
+            session,
+            task_id="INC-002",
+            new_description="Now mentions rendezvous in the body.",
+            author="t",
+        )
+
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="rendezvous")
+    assert [h["ref"] for h in result["by_kind"]["task"]] == ["INC-002"]
+
+
+def test_task_acceptance_and_blocker_are_indexed(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make_task(session, pid, plid, sid, "INC-003", "Placeholder title")
+
+    with transactional(factory) as session:
+        task_service.update_acceptance(
+            session, task_id="INC-003", new_acceptance="zeppelin lands", author="t"
+        )
+        task_service.set_blocker(
+            session, task_id="INC-003", reason="waiting on kryptonite", author="t"
+        )
+
+    with transactional(factory) as session:
+        assert search_service.search(session, project_id=1, query="zeppelin")["total"] == 1
+        assert search_service.search(session, project_id=1, query="kryptonite")["total"] == 1
+
+    # Clearing the blocker drops that text from the indexed body again.
+    with transactional(factory) as session:
+        task_service.clear_blocker(session, task_id="INC-003", author="t")
+    with transactional(factory) as session:
+        assert search_service.search(session, project_id=1, query="kryptonite")["total"] == 0
+
+
+def test_task_complete_keeps_the_row_indexed(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make_task(session, pid, plid, sid, "INC-004", "Finish the telemetry export")
+
+    with transactional(factory) as session:
+        task_service.complete(session, task_id="INC-004", author="t")
+
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="telemetry")
+    assert [h["ref"] for h in result["by_kind"]["task"]] == ["INC-004"]
+
+
+def test_story_create_and_criterion_are_indexed(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, _, _ = _seed(session)
+        story_crud.create(
+            session,
+            project_id=pid,
+            story_id="US-100",
+            persona="curator",
+            narrative="As a curator I want to find a decision by phrase.",
+            priority=Priority.MEDIUM,
+            author="t",
+        )
+
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="curator", scope="story")
+    assert [h["ref"] for h in result["by_kind"]["story"]] == ["US-100"]
+
+    with transactional(factory) as session:
+        story_acceptance.add_criterion(
+            session, story_id="US-100", criterion="search returns the marmalade", author="t"
+        )
+
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="marmalade")
+    assert [h["ref"] for h in result["by_kind"]["story"]] == ["US-100"]
+
+
+def test_adr_create_and_title_update_are_indexed(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, _, _ = _seed(session)
+        adr_service.create(
+            session,
+            project_id=pid,
+            title="Choose the quicksilver transport",
+            decision="Tungsten was rejected here.",
+            author="t",
+        )
+
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="quicksilver", scope="adr")
+    assert [h["ref"] for h in result["by_kind"]["adr"]] == ["ADR-001"]
+
+    # Retitling replaces the row rather than adding a second one.
+    with transactional(factory) as session:
+        adr_service.update(
+            session, project_id=pid, adr_id="ADR-001", title="Choose the obsidian transport"
+        )
+
+    with transactional(factory) as session:
+        assert search_service.search(session, project_id=1, query="quicksilver")["total"] == 0
+        result = search_service.search(session, project_id=1, query="obsidian")
+    assert [h["ref"] for h in result["by_kind"]["adr"]] == ["ADR-001"]
+
+
+def test_adr_deprecate_keeps_one_row(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, _, _ = _seed(session)
+        adr_service.create(session, project_id=pid, title="Retire the obsidian cache", author="t")
+    with transactional(factory) as session:
+        adr_service.deprecate(session, project_id=pid, adr_id="ADR-001", author="t")
+
+    with transactional(factory) as session:
+        n = session.execute(
+            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=1 AND kind='adr'")
+        ).scalar_one()
+    assert int(n) == 1
+
+
+def test_finding_ingest_is_indexed_and_dismiss_removes_it(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, _, _ = _seed(session)
+        _ingest_finding(session, pid, "Pomegranate leak", "The pomegranate handle is never closed.")
+
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=1, query="pomegranate", scope="finding")
+    hits = result["by_kind"]["finding"]
+    assert len(hits) == 1
+    uid = hits[0]["ref"]
+
+    with transactional(factory) as session:
+        finding_service.dismiss_finding(session, project_id=pid, finding_uid=uid, author="human:t")
+
+    with transactional(factory) as session:
+        assert search_service.search(session, project_id=1, query="pomegranate")["total"] == 0
+
+
+def test_reindex_skips_dismissed_findings(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """A full rebuild agrees with the incremental hook about dismissed rows."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, _, _ = _seed(session)
+        _ingest_finding(session, pid, "Tangerine leak", "Tangerine handle left open.")
+
+    with transactional(factory) as session:
+        hits = search_service.search(session, project_id=1, query="tangerine")["by_kind"]["finding"]
+        uid = hits[0]["ref"]
+    with transactional(factory) as session:
+        finding_service.dismiss_finding(session, project_id=pid, finding_uid=uid, author="human:t")
+
+    with transactional(factory) as session:
+        counts = search_service.reindex_all(session, project_id=1)
+    assert counts["finding"] == 0
+    with transactional(factory) as session:
+        assert search_service.search(session, project_id=1, query="tangerine")["total"] == 0
+
+
+def test_incremental_rows_match_a_full_reindex(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """The anti-drift guarantee: both paths share the same payload builders."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make_task(
+            session,
+            pid,
+            plid,
+            sid,
+            "INC-010",
+            "Task with everything",
+            description="desc body",
+            acceptance="acc body",
+        )
+        story_crud.create(
+            session,
+            project_id=pid,
+            story_id="US-200",
+            persona="dev",
+            narrative="As a dev I want parity.",
+            priority=Priority.MEDIUM,
+            author="t",
+            acceptance=["first criterion"],
+        )
+        adr_service.create(
+            session,
+            project_id=pid,
+            title="Parity decision",
+            context="ctx",
+            decision="dec",
+            author="t",
+        )
+        _ingest_finding(session, pid, "Parity finding", "finding body")
+
+    incremental = _index_rows(factory)
+    assert {row[0] for row in incremental} == {"task", "story", "adr", "finding"}
+
+    with transactional(factory) as session:
+        search_service.reindex_all(session, project_id=1)
+    assert _index_rows(factory) == incremental
+
+
+def test_write_path_survives_a_missing_index_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """A DB predating migration 0023 must still accept writes (CUR-012).
+
+    The FTS index is a derived artefact: losing it degrades search until
+    the next ``--reindex``; it must not make ``task_create`` fail.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+    _drop_search_index(factory)
+
+    with transactional(factory) as session:
+        _make_task(session, pid, plid, sid, "INC-020", "Survives a missing index")
+
+    with transactional(factory) as session:
+        t = task_service.get(session, "INC-020")
+    assert t is not None
+
+
+def test_upsert_entity_raises_search_index_missing_without_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+    _drop_search_index(factory)
+
+    with (
+        pytest.raises(search_service.SearchIndexMissing, match="db_search_idx"),
+        transactional(factory) as session,
+    ):
+        search_service.upsert_entity(
+            session, kind="task", ref="X-1", project_id=1, title="t", body="b"
+        )
+
+
+def test_delete_entity_raises_search_index_missing_without_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+    _drop_search_index(factory)
+
+    with (
+        pytest.raises(search_service.SearchIndexMissing, match="db_search_idx"),
+        transactional(factory) as session,
+    ):
+        search_service.delete_entity(session, kind="task", ref="X-1", project_id=1)

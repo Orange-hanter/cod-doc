@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from cod_doc.domain.entities import actor_kind_for_author
 from cod_doc.infra.models import FindingModel
-from cod_doc.services import activity_service
+from cod_doc.services import activity_service, search_service
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -118,4 +118,7 @@ def dismiss_finding(
         payload={"finding_id": f.row_id, "source": f.source, "reason": reason},
         summary=f"Finding {f.finding_uid} dismissed by {author}",
     )
+    # CUR-012: a dismissed finding leaves the FTS index — the operator
+    # already rejected it, so it must stop showing up in ctx_search.
+    search_service.index_finding(session, f)
     return finding_to_dict(f)

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.models import FindingModel
-from cod_doc.services import activity_service, task_service
+from cod_doc.services import activity_service, search_service, task_service
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -92,6 +92,7 @@ def promote_finding(
             },
             summary=f"Finding {finding.finding_uid} promoted to task {task.task_id}",
         )
+        search_service.index_finding(session, finding)
         return {
             "promoted": True,
             "finding_id": finding_id,
@@ -130,6 +131,7 @@ def promote_finding(
                 f"Finding {finding.finding_uid} updated existing task {finding.promoted_task_id}"
             ),
         )
+        search_service.index_finding(session, finding)
         return {
             "promoted": True,
             "finding_id": finding_id,

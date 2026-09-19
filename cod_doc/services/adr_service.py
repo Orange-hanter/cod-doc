@@ -39,7 +39,7 @@ from cod_doc.infra.models import (
     ADRTaskModel,
     ProjectModel,
 )
-from cod_doc.services import activity_service
+from cod_doc.services import activity_service, search_service
 from cod_doc.services import revision_service as rev
 
 if TYPE_CHECKING:
@@ -182,6 +182,8 @@ def create(
         payload={"title": title, "status": status},
         summary=f"ADR {adr_id} created",
     )
+    # CUR-012: keep the FTS index current without a manual reindex.
+    search_service.index_adr(session, row)
     return row
 
 
@@ -320,6 +322,7 @@ def update(
         payload={"changed": list(changed.keys())},
         summary=f"ADR {adr_id} updated",
     )
+    search_service.index_adr(session, row)
     return row
 
 
@@ -416,6 +419,7 @@ def sync_body(
         payload={"changed": list(changed.keys()), "status": row.status},
         summary=f"ADR {adr_id} body synced from projection",
     )
+    search_service.index_adr(session, row)
     return row
 
 
@@ -463,6 +467,7 @@ def deprecate(
         payload={"old_status": old_status, "reason": reason},
         summary=f"ADR {adr_id} deprecated",
     )
+    search_service.index_adr(session, row)
     return row
 
 
@@ -613,6 +618,7 @@ def supersede(
             },
             summary=f"ADR {superseded_adr_id} superseded by {superseding_adr_id}",
         )
+        search_service.index_adr(session, old)
     return edge
 
 
