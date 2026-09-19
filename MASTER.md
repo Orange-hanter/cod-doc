@@ -32,12 +32,18 @@
   не `agent_pick --projects` — pick остаётся task-centric инструментом
   coding-агента на `standard`/`full`, кросс-проектность туда не заводим),
   (4) запуск RFC 23 (Cloud decentralized agent plane) и RFC 24 (единый контур
-  structure/contracts/scenarios). **Прогресс:** SYM-011 (кросс-проектный
-  поиск, low priority) открыт; RFC 23 и RFC 24 спроектированы (статус 🟡 DRAFT),
-  не начаты; треки D/E (STO-* Postgres parity, ADO-071..095 friction) идут
-  фоном. Полная дорожная карта — [ROADMAP](docs/system/roadmap/ROADMAP.md).
+  structure/contracts/scenarios). **Прогресс:** `ctx_search(projects=...)` +
+  CLI `--projects` сделаны (CUR-013, 2026-09-20, секция C `doc-curator-2026-09`
+  закрыта — [аудит](docs/system/audit/2026-09-20-doc-curator-section-c.md));
+  остаток кросс-проектности (`[[doc:slug:key]]`, Chroma-фильтр B12,
+  `GET /api/v1/search` с `projects`) — STO-015/SYM-011, план
+  `adoption-2026-08`, low priority, не начат. RFC 23 и RFC 24 спроектированы
+  (статус 🟡 DRAFT), не начаты; треки D/E (STO-* Postgres parity,
+  ADO-071..095 friction) идут фоном. Полная дорожная карта —
+  [ROADMAP](docs/system/roadmap/ROADMAP.md).
 - **Открыто:** план `adoption-2026-08` — M1–M5 закрыты.
-  **Остаток Фазы 5:** SYM-011 (кросс-проектный поиск, `[[doc:slug:key]]`, low).
+  **Остаток Фазы 5:** STO-015/SYM-011 (остаток кросс-проектного поиска сверх
+  `ctx_search(projects=...)`: `[[doc:slug:key]]`, `GET /api/v1/search`, low).
   **Треки D/E:** STO-* (Postgres parity, 25 задач), ADO-071..095 (friction из живой работы).
   STB-023 (SSE, low) — держится закрытым до event-driven сценария.
   STB-012 закрыт `cancelled` (re-scoped в ADO-013).
@@ -86,7 +92,7 @@ graph TD
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
   capabilities/*, standards/*, audit/*, roadmap/*, migration/. Это source of
   truth для поведения системы и единая точка входа для контрибьютора.
-- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:ab9678fe267c`
+- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:4ac9dc5769ad`
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
@@ -107,14 +113,16 @@ graph TD
   - **24 (structure-track):** 🟡 Черновик — Единый контур structure/contracts/scenarios
     (docs↔code граница, obligations_export, structure_facts, scenario assessment).
     Поглощает внешнюю часть RFC 17, зависит от RFC 22.
-  - **25 (doc-curator-track):** 🟢 Секция B закрыта 2026-09-19 (CUR-007/008) —
-    дефолтный агент = куратор документации и поиска, не исполнитель
-    ADO-/SYM-задач; профиль `agent` отдаёт `agent_capabilities`/`curator_next`/
-    `ctx_search`/`ctx_drift`/`context_get`/`agent_report` (CUR-016 заменил
-    `ctx_docs` на doc card `curator_next`, §3.5). План
-    `doc-curator-2026-09`, секции C/D в работе. Частично реанимирует
-    поисковый контракт RFC 19.
-    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:dc629ea60ec3`
+  - **25 (doc-curator-track):** 🟢 Секции B и C закрыты (B — 2026-09-19,
+    CUR-007/008; C — 2026-09-20, CUR-010…014) — дефолтный агент = куратор
+    документации и поиска, не исполнитель ADO-/SYM-задач; профиль `agent`
+    отдаёт `agent_capabilities`/`curator_next`/`ctx_search`/`ctx_drift`/
+    `context_get`/`agent_report` (CUR-016 заменил `ctx_docs` на doc card
+    `curator_next`, §3.5); индекс поиска поддерживается инкрементально из
+    write-path, кросс-проектный `ctx_search(projects=...)` работает в
+    hub-режиме (CUR-013). План `doc-curator-2026-09`, секция D в работе.
+    Частично реанимирует поисковый контракт RFC 19.
+    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:d85973085d9f`
 - **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:5e3825c966fd`
 - **Статус:** `🟢 VERIFIED`
 
@@ -202,14 +210,14 @@ graph TD
 ### ROADMAP (милстоуны и приоритеты) ⭐
 - **Описание:** Милстоуны M1–M6, статусы фаз, декомпозиция планов. M1–M5 закрыты,
   M6 (hub + кросс-проектность) в подготовке.
-- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:9f8d2402d1d4`
+- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:f58b0871cbda`
 - **Статус:** `🟢 VERIFIED`
 
 ### RFC 22: Symbiosis (ZAIrgRush + Orakul)
 - **Описание:** Proposal программы симбиоза: cod-doc отдаёт спеки/ADR/контекст,
   пилоты возвращают findings и измерения. Решение 2026-08-25 о переназначении
   пилотов.
-- **Ссылка:** `📁 /proposals/22-symbiosis-zairgrush-orakul.md | 🗃️ doc:proposals_22-symbiosis-zairgrush-orakul_md | 🔑 sha:f949443ce8b5`
+- **Ссылка:** `📁 /proposals/22-symbiosis-zairgrush-orakul.md | 🗃️ doc:proposals_22-symbiosis-zairgrush-orakul_md | 🔑 sha:66518d72d119`
 - **Статус:** `🟢 VERIFIED`
 
 ## 4. ⚡ Quick Actions & Handoffs
@@ -269,7 +277,7 @@ graph TD
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
-| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `ab9678fe267c` | 2026-09-19 | 🟢 VERIFIED |
+| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `4ac9dc5769ad` | 2026-09-20 | 🟢 VERIFIED |
 | 3 | proposals/README.md | `doc:proposals_README_md` | `5e3825c966fd` | 2026-09-19 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `fe11e3504b18` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-09-11 | 🟢 VERIFIED |
@@ -281,11 +289,11 @@ graph TD
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
 | 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `f6bd9cca5e9d` | 2026-09-20 | 🟢 VERIFIED |
-| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `9f8d2402d1d4` | 2026-09-15 | 🟢 VERIFIED |
-| 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
+| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `f58b0871cbda` | 2026-09-20 | 🟢 VERIFIED |
+| 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `66518d72d119` | 2026-09-20 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
 | 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
-| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `dc629ea60ec3` | 2026-09-19 | 🟢 VERIFIED |
+| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `d85973085d9f` | 2026-09-20 | 🟢 VERIFIED |
 | 19 | Zsh-дополнение | `doc:docs_zsh-completion_md` | `f177c8373beb` | 2026-09-17 | 🟢 VERIFIED |
 
 > **Всего:** 19 документов | 🟢 VERIFIED: 14 | 🟡 LEGACY: 3 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
