@@ -531,7 +531,7 @@ cod-doc embed reset --yes [--force]          # удалить коллекцию
 ```bash
 cod-doc serve [--host 127.0.0.1] [--port 8765] [--reload]   # loopback по умолчанию (SYM-003); 0.0.0.0 — через --host или COD_DOC_BIND
 cod-doc mcp                                  # MCP server (stdio)
-cod-doc agent run my-app                     # interactive agent loop
+cod-doc agent run my-app                     # legacy daemon loop, см. §9 — не путь исполнения продуктовых задач
 cod-doc tui                                  # textual-based TUI
 cod-doc hash calc my-app modules/foo         # content hash
 cod-doc hash update my-app modules/foo
@@ -628,10 +628,19 @@ Web UI `/settings` работает с тем же `Config.save()` — изме�
 
 ## 9. ИИ-агент (автономный режим)
 
+> ⚠️ **Legacy.** RFC 25: дефолтный агент — куратор документации;
+> `cod-doc agent run` не является путём исполнения продуктовых задач.
+> Актуальный контур куратора — MCP профиль `agent` (`curator_next` →
+> `ctx_search`/`context_get` → починка) и routines. Раздел ниже описывает
+> встроенный `Orchestrator`-daemon как он есть в коде (историческая
+> подсистема, не выключена), а не рекомендуемый путь исполнения.
+
 `cod_doc.agent.orchestrator.Orchestrator` — встроенный LLM-агент, который
-читает MASTER.md, составляет очередь задач и выполняет их через цикл
-«LLM → инструмент → результат». Использует любой OpenAI-совместимый эндпоинт
-(OpenRouter по умолчанию).
+выполняет через цикл «LLM → инструмент → результат» задачи, уже стоящие в
+очереди проекта. Использует любой OpenAI-совместимый эндпоинт (OpenRouter по
+умолчанию). Автогенерация задач из MASTER.md (`_generate_tasks_from_master`)
+удалена в CUR-017: при пустой очереди агент сразу уходит в idle, не
+придумывая себе работу.
 
 ### 9.1. Snowball Protocol — уровни контекста
 
@@ -691,13 +700,16 @@ MASTER.md должен содержать гибридные ссылки в ф�
 ### 9.3. CLI — запуск агента
 
 ```bash
-# Автономный режим: агент генерирует задачи из MASTER.md и выполняет их
+# Legacy (RFC 25): выполняет следующую задачу из очереди, если она там уже
+# есть; при пустой очереди сразу выходит в idle — автогенерация задач из
+# MASTER.md удалена (CUR-017)
 cod-doc agent run my-app
 
-# Принудительная задача: выполнить конкретный тайтл, затем обработать очередь
+# Принудительная задача: создать её и сразу выполнить
 cod-doc agent run my-app --task "Обновить раздел Data Model в payments/spec"
 
-# Только следующая задача из очереди без автогенерации
+# --no-autonomous: то же поведение для одной задачи из очереди, без
+# автогенерации (которой в любом случае больше нет)
 cod-doc agent run my-app --no-autonomous
 ```
 
@@ -719,7 +731,12 @@ cod-doc agent run my-app --no-autonomous
 ### 9.4. Daemon-режим
 
 Daemon следит за всеми enabled-проектами в бесконечном цикле. В production
-запускается автоматически при старте API-сервера (`cod-doc serve`).
+запускается автоматически при старте API-сервера (`cod-doc serve`). На каждом
+тике по проекту — сначала рутины (`tick_project_routines`: `doc_drift_daily`,
+`link_integrity_daily`, …), затем `run_autonomous()`: если очередь задач
+пуста, эта нога тика сразу уходит в idle — MASTER.md не читается ради
+автогенерации (убрана в CUR-017). Санитарный контур несут routines, не
+agent-цикл.
 
 ```bash
 # Запустить сервер — daemon стартует автоматически в фоне
@@ -786,7 +803,7 @@ project  — абсолютный путь к корню проекта
 ### 10.2. Как запустить индексирование
 
 ```bash
-# Через CLI — явный запрос агенту переиндексировать
+# Через CLI — явный запрос агенту переиндексировать (legacy-путь, см. §9)
 cod-doc agent run my-app --task "reindex project docs"
 
 # Через MCP

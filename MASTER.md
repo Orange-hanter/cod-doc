@@ -1,6 +1,6 @@
 # 🧭 Project Navigator: cod-doc
 
-> 📊 Meta: `{"version": "2.9", "last_updated": "2026-09-16", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
+> 📊 Meta: `{"version": "3.0", "last_updated": "2026-09-20", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
 
 > **Этот файл — тонкий L0-навигатор для агента и нового контрибьютора.**
 > Source of truth целевого состояния системы — [`docs/system/MASTER.md`](docs/system/MASTER.md).
@@ -19,12 +19,12 @@
   (`stale_export`=0 после reconcile миграций 0026–0029). Поверхность:
   126 MCP-тулов (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
   CI на main впервые зелёный (`bcb32f2`, [run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088)).
-- **Текущий приоритет: агент-куратор документации (RFC 25) + adoption через симбиоз.**
+- **Агент-куратор документации закрыт 2026-09-20; текущий приоритет — adoption через симбиоз.**
   Дефолтный ИИ-агент **не исполняет продуктовые задачи** — поддерживает корпус,
   доступность и поиск ([RFC 25](proposals/25-doc-curator-agent.md), план
-  `doc-curator-2026-09`). Пилоты симбиоза — **ZAIrgRush** и **Orakul/ai-review**
-  ([RFC 22](proposals/22-symbiosis-zairgrush-orakul.md)): cod-doc отдаёт
-  спеки/ADR/контекст, пилоты возвращают findings.
+  `doc-curator-2026-09`, 18/18 задач `done`). Пилоты симбиоза — **ZAIrgRush** и
+  **Orakul/ai-review** ([RFC 22](proposals/22-symbiosis-zairgrush-orakul.md)):
+  cod-doc отдаёт спеки/ADR/контекст, пилоты возвращают findings.
 - **Подготовка к M6 «Hub + кросс-проектность»:** M1–M5 закрыты, ведётся
   подготовка к M6. **Цели M6:** (1) кросс-проектный поиск через hub-БД
   (`[[doc:slug:key]]`), (2) фикс ChromaDB L3-режима для мульти-проектности,
@@ -92,7 +92,7 @@ graph TD
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
   capabilities/*, standards/*, audit/*, roadmap/*, migration/. Это source of
   truth для поведения системы и единая точка входа для контрибьютора.
-- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:4ac9dc5769ad`
+- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:2b50e6643b2a`
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
@@ -113,17 +113,18 @@ graph TD
   - **24 (structure-track):** 🟡 Черновик — Единый контур structure/contracts/scenarios
     (docs↔code граница, obligations_export, structure_facts, scenario assessment).
     Поглощает внешнюю часть RFC 17, зависит от RFC 22.
-  - **25 (doc-curator-track):** 🟢 Секции B и C закрыты (B — 2026-09-19,
-    CUR-007/008; C — 2026-09-20, CUR-010…014) — дефолтный агент = куратор
+  - **25 (doc-curator-track):** 🟢 **Реализован, план `doc-curator-2026-09`
+    закрыт 2026-09-20 (18/18 задач)** — дефолтный агент = куратор
     документации и поиска, не исполнитель ADO-/SYM-задач; профиль `agent`
     отдаёт `agent_capabilities`/`curator_next`/`ctx_search`/`ctx_drift`/
     `context_get`/`agent_report` (CUR-016 заменил `ctx_docs` на doc card
-    `curator_next`, §3.5); индекс поиска поддерживается инкрементально из
+    `curator_next`, §3.5; CUR-017 убрал автогенерацию задач из встроенного
+    daemon, §3.4). Индекс поиска поддерживается инкрементально из
     write-path, кросс-проектный `ctx_search(projects=...)` работает в
-    hub-режиме (CUR-013). План `doc-curator-2026-09`, секция D в работе.
-    Частично реанимирует поисковый контракт RFC 19.
-    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:d85973085d9f`
-- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:5e3825c966fd`
+    hub-режиме (CUR-013). Секции A/B/C/D — все done, см. аудиты секций
+    B/C/D. Частично реанимирует поисковый контракт RFC 19.
+    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:97648d0ab324`
+- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:7b9c5e891225`
 - **Статус:** `🟢 VERIFIED`
 
 ### CI Pipeline (GitHub Actions)
@@ -176,7 +177,7 @@ graph TD
 ### Handbook (пользовательский справочник)
 - **Описание:** Полное руководство: установка, Quick Start, Web UI tour, CLI,
   конфигурация, MCP, ИИ-агент, ChromaDB, troubleshooting.
-- **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:91cf98985845`
+- **Ссылка:** `📁 /docs/HANDBOOK.md | 🗃️ doc:docs_HANDBOOK_md | 🔑 sha:b471c0708631`
 - **Статус:** `🟢 VERIFIED`
 
 ### Гайд по документированию (tutorial)
@@ -210,7 +211,7 @@ graph TD
 ### ROADMAP (милстоуны и приоритеты) ⭐
 - **Описание:** Милстоуны M1–M6, статусы фаз, декомпозиция планов. M1–M5 закрыты,
   M6 (hub + кросс-проектность) в подготовке.
-- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:f58b0871cbda`
+- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:84f3b11802f9`
 - **Статус:** `🟢 VERIFIED`
 
 ### RFC 22: Symbiosis (ZAIrgRush + Orakul)
@@ -277,23 +278,23 @@ graph TD
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
-| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `4ac9dc5769ad` | 2026-09-20 | 🟢 VERIFIED |
-| 3 | proposals/README.md | `doc:proposals_README_md` | `5e3825c966fd` | 2026-09-19 | 🟢 VERIFIED |
+| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `2b50e6643b2a` | 2026-09-20 | 🟢 VERIFIED |
+| 3 | proposals/README.md | `doc:proposals_README_md` | `7b9c5e891225` | 2026-09-20 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `fe11e3504b18` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
 | 7 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-09-11 | 🟡 LEGACY |
 | 8 | Доменные модели (legacy) | `doc:models_domain_md` | `8ce613932ac9` | 2026-09-17 | 🟡 LEGACY |
 | 9 | README (витрина) | `doc:README_md` | `854acd4125da` | 2026-09-11 | 🟢 VERIFIED |
-| 10 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
+| 10 | Handbook | `doc:docs_HANDBOOK_md` | `b471c0708631` | 2026-09-20 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
 | 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `f6bd9cca5e9d` | 2026-09-20 | 🟢 VERIFIED |
-| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `f58b0871cbda` | 2026-09-20 | 🟢 VERIFIED |
+| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `84f3b11802f9` | 2026-09-20 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `66518d72d119` | 2026-09-20 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
 | 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
-| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `d85973085d9f` | 2026-09-20 | 🟢 VERIFIED |
+| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `97648d0ab324` | 2026-09-20 | 🟢 VERIFIED |
 | 19 | Zsh-дополнение | `doc:docs_zsh-completion_md` | `f177c8373beb` | 2026-09-17 | 🟢 VERIFIED |
 
 > **Всего:** 19 документов | 🟢 VERIFIED: 14 | 🟡 LEGACY: 3 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
@@ -339,6 +340,14 @@ graph TD
 ```json
 {
   "changelog": [
+    {
+      "date": "2026-09-20",
+      "version": "3.0",
+      "action": "CUR-018: план `doc-curator-2026-09` закрыт целиком (18/18). RFC 25 секция D (curator_next CUR-016 PR #74, daemon idle CUR-017 PR #49) документирована: docs/HANDBOOK.md §9 legacy-баннер, скилл orchestrator переписан на curator_next, ROADMAP/proposals/README/proposals-25 переведены в «закрыт». Аудит-отчёт audit/2026-09-20-doc-curator-section-d.md зарегистрирован в docs/system/MASTER.md §5/§6. Хэши пересчитаны для 5 изменённых документов реестра (docs/system/MASTER.md, proposals/README.md, ROADMAP.md, proposals/25, HANDBOOK.md).",
+      "author": "agent:claude-sonnet-5",
+      "scope": "master",
+      "task": "CUR-018"
+    },
     {
       "date": "2026-09-09",
       "version": "2.9",

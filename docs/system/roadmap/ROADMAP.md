@@ -119,20 +119,20 @@ byte-identical round-trip — перед первым `doc export` наружу)
 
 ## Треки
 
-### Трек RFC 25 — Doc-curator (приоритет агентского направления, 2026-09-15)
+### Трек RFC 25 — Doc-curator — **закрыт 2026-09-20**
 
 Дефолтный ИИ-агент больше не исполняет продуктовые задачи. Роль: корпус,
 доступность, поиск. Контракт — [RFC 25](../../../proposals/25-doc-curator-agent.md);
-план в БД — **`doc-curator-2026-09`** (`cod-doc plan ready doc-curator-2026-09 -p cod-doc`).
-Очередь ADO-/SYM- на профиле `standard` не отменяется — её берёт человек
-или coding-агент, не оркестратор.
+план в БД — **`doc-curator-2026-09`** (`cod-doc plan ready doc-curator-2026-09 -p cod-doc`),
+18/18 задач `done`. Очередь ADO-/SYM- на профиле `standard` не отменяется —
+её берёт человек или coding-агент, не оркестратор.
 
 | Секция | Содержание | Статус |
 |---|---|---|
 | A | Политика: скилл `orchestrator`, VISION, AGENTS.md, MASTER | ✅ done (3/3) |
 | B | Своп `AGENT_TOOLS` + MCP `ctx_search` (обёртка `search_service.search`) | ✅ done (6/6), аудит [2026-09-19-doc-curator-section-b.md](../audit/2026-09-19-doc-curator-section-b.md) |
-| C | Качество поиска: пустой индекс, бюджет, кросс-проект (SYM-011) | ✅ закрыта (5/6 в БД — CUR-010…014; CUR-015 — закрытие после мержа), аудит [2026-09-20-doc-curator-section-c.md](../audit/2026-09-20-doc-curator-section-c.md); полный кросс-проектный скоуп RFC 22 §3.6 (`[[doc:slug:key]]`, Chroma-фильтр, `GET /api/v1/search`) остаётся STO-015/SYM-011 в `adoption-2026-08` |
-| D | `curator_next` / daemon `cod-doc agent run` как doc-health, не task loop | 🟡 в работе (2/3) — `curator_next` сделан ([PR #74](https://github.com/Orange-hanter/cod-doc/pull/74)), остаётся аудит закрытия секции D |
+| C | Качество поиска: пустой индекс, бюджет, кросс-проект (SYM-011) | ✅ done (6/6), аудит [2026-09-20-doc-curator-section-c.md](../audit/2026-09-20-doc-curator-section-c.md); полный кросс-проектный скоуп RFC 22 §3.6 (`[[doc:slug:key]]`, Chroma-фильтр, `GET /api/v1/search`) остаётся STO-015/SYM-011 в `adoption-2026-08` |
+| D | `curator_next` (CUR-016) + ревизия daemon `cod-doc agent run` (CUR-017, legacy) | ✅ done (3/3), аудит [2026-09-20-doc-curator-section-d.md](../audit/2026-09-20-doc-curator-section-d.md) |
 
 Adoption (ниже) остаётся программой пилотов. Агент в пилотах — источник
 контекста и санитар, не воркер, который закрывает чужой бэклог.

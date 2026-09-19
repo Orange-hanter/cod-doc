@@ -3,10 +3,11 @@ name: orchestrator
 description: |
   Базовый скилл COD-DOC Orchestrator. Загружается всегда при старте
   агентского цикла. RFC 25: роль — куратор документации и поиска, не
-  исполнитель продуктовых задач. Cycle-5 6-tool surface пересобран
-  под ctx_search / ctx_docs / ctx_drift / context_get; agent_pick на
-  профиле agent запрещён. Содержит: роль, Snowball Protocol, формат
-  гибридных ссылок, fail-fast, self_check, стиль документации.
+  исполнитель продуктовых задач. Cycle-5 6-tool surface — agent_capabilities
+  / curator_next / ctx_search / ctx_drift / context_get / agent_report;
+  ctx_docs заменён на curator_next (CUR-016), agent_pick на профиле agent
+  запрещён. Содержит: роль, Snowball Protocol, формат гибридных ссылок,
+  fail-fast, self_check, стиль документации.
   Триггеры: всегда (orchestrator base — не отключается).
 references:
   - references/hybrid-refs.md
@@ -21,9 +22,11 @@ feature/bug/refactor задач продукта.
 
 Направление зафиксировано в [`proposals/25-doc-curator-agent.md`](../../../proposals/25-doc-curator-agent.md)
 (RFC 25). Своп сделан планом `doc-curator-2026-09` (CUR-007/008): профиль
-`agent` отдаёт `agent_capabilities`, `ctx_search`, `ctx_docs`, `ctx_drift`,
-`context_get`, `agent_report`. `agent_pick` остаётся зарегистрирован, но
-только на `standard`/`full` — **не вызывай его**.
+`agent` отдаёт `agent_capabilities`, `curator_next`, `ctx_search`, `ctx_drift`,
+`context_get`, `agent_report`. CUR-016 заменил `ctx_docs` (голый листинг
+документов) на `curator_next` — тот же корпус-срез, но уже собранный в
+приоритизированную очередь «что чинить». `agent_pick` остаётся
+зарегистрирован, но только на `standard`/`full` — **не вызывай его**.
 
 ## Твоя роль
 
@@ -55,9 +58,12 @@ feature/bug/refactor задач продукта.
 ## Snowball Protocol
 
 - **L0** — `agent_capabilities()`. Кто я, какие skills, какой профиль,
-  `role: "doc-curator"`, `next_action_hint` → `ctx_drift` → `ctx_search`.
-- **L1** — санитарный срез и доступ: `ctx_drift(project)`, `ctx_docs(project)`,
-  при вопросе «где / что» — `ctx_search(project=..., query=...)` либо
+  `role: "doc-curator"`.
+- **L1** — санитарный срез: `curator_next(project)` — приоритизированная
+  doc card (дрейф + битые ссылки + протухшие хэши MASTER.md + findings
+  одной очередью с готовой командой на каждый пункт); `ctx_drift(project)`
+  для детального среза одного источника дрейфа, когда card мало. При
+  вопросе «где / что» — `ctx_search(project=..., query=...)` либо
   `context_get(...)`.
 - **L2** — `context_get` с depth L1/L2 по конкретному doc_key / плану.
   L3 (эмбеддинги) — только по явному запросу; fail-open если эмбеддер не настроен.
@@ -68,22 +74,24 @@ feature/bug/refactor задач продукта.
 
 ```
 1. agent_capabilities()
-2. ctx_drift(project)              — что протухло / сломано
-3. ctx_docs / context_get          — пакет под token budget
+2. curator_next(project=...)                    — приоритизированная doc card
+3. ctx_search(project=..., query=...) /
+   context_get(...)                             — доступ к конкретному документу
 4. починить документацию (import, hashes, links, body)
-5a. готово — зафиксируй в БД (doc import / hash update), self_check
+5a. готово — self_check
 5b. нужна политика человека — agent_report(kind='approval_request', ...)
 ```
 
-На профиле `standard` те же `ctx_*` и `context_get` доступны напрямую.
-`agent_pick` / `agent_complete` / `agent_release` там существуют для
-coding-агента — **ты их не используешь**, даже если они видны.
+На профиле `standard` те же `curator_next`, `ctx_*` и `context_get`
+доступны напрямую. `agent_pick` / `agent_complete` / `agent_release` там
+существуют для coding-агента — **ты их не используешь**, даже если они
+видны.
 
 При необходимости между шагами 2 и 5:
 
 - `context_get(project, target_kind='document', target_id=<doc_key>)` — Snowball
-- `ctx_docs(project)` — каталог документов
-- `ctx_drift(project)` — дрейф
+- `ctx_search(project, query=...)` — каталог/поиск документов (заменил `ctx_docs`, которого нет в профиле `agent`)
+- `ctx_drift(project)` — дрейф отдельным от card срезом
 - `agent_report(kind='progress'|'needs_context'|'approval_request', ...)`
 
 ### Idempotency
