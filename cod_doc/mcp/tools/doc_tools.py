@@ -590,6 +590,7 @@ def register(mcp: FastMCP) -> None:
         query: str,
         scope: str | None = None,
         limit: int = 20,
+        projects: list[str] | None = None,
     ) -> dict[str, Any]:
         """RFC 25 §3.2 (CUR-007): FTS5 search for external context consumers.
 
@@ -599,6 +600,15 @@ def register(mcp: FastMCP) -> None:
         ``search_service.ensure_index`` so a curator/orchestrator never sees
         a permanently empty result set just because nobody ran a reindex.
         A non-empty index is left untouched — this is not a periodic refresh.
+
+        ``projects`` (CUR-013 / RFC 22 §3.6) adds neighbouring project slugs
+        to the same query. It only works in hub mode: every slug must resolve
+        to the same ``db_url`` as ``project``, otherwise the call fails with
+        ``cross-project search requires a shared db_url (hub mode): …``
+        instead of silently searching one index. Ranking stays on a single
+        bm25 scale (one index, one corpus — RFC 22 §2.2), the per-kind
+        ``limit`` applies to the merged result, and every hit carries the
+        owning project's slug in ``project``.
 
         ``task`` entries in the result are search hits into the task index,
         not an invitation to pick up or check out a task — this tool is a
@@ -611,15 +621,30 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
+            extra = (
+                search_service.resolve_cross_project_ids(
+                    session, project=project, projects=projects
+                )
+                if projects
+                else {}
+            )
             meta_index = search_service.ensure_index(session, project_id)
+            index_by_project = {
+                slug: search_service.ensure_index(session, pid) for slug, pid in extra.items()
+            }
             result = search_service.search(
                 session,
                 project_id=project_id,
                 query=query,
                 scope=scope,
                 limit=limit,
+                project_ids=list(extra.values()),
             )
-        return result | {"meta": {"index": meta_index}}
+        meta: dict[str, Any] = {"index": meta_index}
+        if extra:
+            meta["projects"] = [project, *extra]
+            meta["index_by_project"] = index_by_project
+        return result | {"meta": meta}
 
     @mcp.tool(name="ctx_drift")
     def ctx_drift(project: str, limit: int | None = None) -> dict[str, Any]:

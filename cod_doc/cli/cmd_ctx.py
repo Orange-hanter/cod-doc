@@ -57,6 +57,28 @@ def _require_project_id(session: Session, project: str) -> int:
     return proj.row_id
 
 
+def _resolve_extra_projects(
+    session: Session, cfg: Config, project: str, slugs: list[str]
+) -> dict[str, int]:
+    """CUR-013: слаги из ``--projects`` → ``{slug: project_id}``.
+
+    Резолв идёт сервисным слоем (``search_service``), а не через MCP: у CLI и
+    у тула обязана быть одна и та же проверка «все проекты в одной БД».
+    ``ValueError`` сервиса переводится в ``ClickException`` — пользователь
+    видит сообщение, а не traceback.
+    """
+    from cod_doc.services import search_service
+
+    if not slugs:
+        return {}
+    try:
+        return search_service.resolve_cross_project_ids(
+            session, project=project, projects=slugs, config=cfg
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
 def _normalise_path_patterns(raw: tuple[str, ...]) -> list[str]:
     """Развернуть повторяемые --paths и внутренние запятые в единый список."""
     out: list[str] = []
@@ -451,6 +473,11 @@ _CTX_SEARCH_DEFAULT_LIMIT = 20
     show_default=True,
     help="Лимит хитов на kind",
 )
+@click.option(
+    "--projects",
+    default=None,
+    help="Ещё слаги через запятую: искать по ним вместе с --project (общая hub-БД)",
+)
 @click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
 @click.pass_context
 def ctx_search(
@@ -459,24 +486,34 @@ def ctx_search(
     project: str,
     scope: str | None,
     limit: int,
+    projects: str | None,
     as_json: bool,
 ) -> None:
-    """Поиск по проекту (FTS5) — тот же движок, что и ``cod-doc search``."""
+    """Поиск по проекту (FTS5) — тот же движок, что и ``cod-doc search``.
+
+    ``--projects a,b`` (CUR-013) расширяет запрос на соседние проекты той же
+    БД: один FTS5-индекс, одна шкала bm25, ``--limit`` на kind применяется к
+    объединённой выдаче. Проект с другим ``db_url`` — ошибка, а не молчаливо
+    урезанный результат.
+    """
     from cod_doc.infra.db import transactional
     from cod_doc.services import search_service
 
     cfg: Config = ctx.obj["config"]
     factory, engine, _root = _project_session(cfg, project)
+    slugs = search_service.split_project_slugs(projects)
 
     try:
         with transactional(factory, commit=False) as session:
             project_id = _require_project_id(session, project)
+            extra = _resolve_extra_projects(session, cfg, project, slugs)
             result = search_service.search(
                 session,
                 project_id=project_id,
                 query=query,
                 scope=scope,
                 limit=limit,
+                project_ids=list(extra.values()),
             )
     except search_service.SearchIndexMissing as exc:
         raise click.ClickException(str(exc)) from exc
@@ -484,10 +521,11 @@ def ctx_search(
         engine.dispose()
 
     if as_json:
-        print(_json.dumps(result, ensure_ascii=False, indent=2))
+        click.echo(_json.dumps(result, ensure_ascii=False, indent=2))
         return
 
-    console.rule(f"[bold]Контекст: поиск — {project}[/bold]")
+    scope_label = ", ".join([project, *extra])
+    console.rule(f"[bold]Контекст: поиск — {scope_label}[/bold]")
     if result["total"] == 0:
         console.print(f"[dim]Ничего не найдено по запросу {query!r}.[/dim]")
         return
@@ -498,11 +536,16 @@ def ctx_search(
             continue
         table = Table(title=f"{kind.upper()} ({len(hits)})", show_header=True)
         table.add_column("Ref", style="cyan", no_wrap=True)
+        if extra:
+            table.add_column("Проект", style="magenta", no_wrap=True)
         table.add_column("Title")
         table.add_column("Snippet")
         for h in hits:
             snippet = h["snippet"].replace("<mark>", "[bold yellow]").replace("</mark>", "[/]")
-            table.add_row(h["ref"], h["title"], snippet)
+            row = [h["ref"], h["title"], snippet]
+            if extra:
+                row.insert(1, h.get("project") or "—")
+            table.add_row(*row)
         console.print(table)
 
 

@@ -4,10 +4,14 @@ Public API:
 - ``reindex_all(session, project_id)`` — wipe + repopulate index.
 - ``ensure_index(session, project_id)`` — RFC 25 §3.2 (CUR-007): reindex
   only if the index is still empty (used by ``ctx_search`` for lazy bootstrap).
-- ``search(session, project_id, query, *, scope=None, limit=20)`` —
-  ranked hits (bm25) grouped by kind. ``limit`` is applied **per kind**
-  (CUR-011), so a doc-heavy corpus cannot crowd task/adr/... hits out of
-  the result entirely.
+- ``search(session, project_id, query, *, scope=None, limit=20,
+  project_ids=None)`` — ranked hits (bm25) grouped by kind. ``limit`` is
+  applied **per kind** (CUR-011), so a doc-heavy corpus cannot crowd
+  task/adr/... hits out of the result entirely. ``project_ids`` widens the
+  query to several projects of the **same** DB (CUR-013 / RFC 22 §3.6).
+- ``resolve_cross_project_ids(session, project=..., projects=[...])`` —
+  slug → row_id for the extra projects of a cross-project search, with the
+  shared-``db_url`` (hub) precondition enforced.
 
 Index entries:
 - ``kind='task'``     ref=task_id (e.g. ADR-001)  title=task.title         body=description+acceptance
@@ -37,6 +41,7 @@ from cod_doc.infra.models import (
     ADRModel,
     DocumentModel,
     FindingModel,
+    ProjectModel,
     SectionModel,
     StoryAcceptanceModel,
     TaskModel,
@@ -44,7 +49,11 @@ from cod_doc.infra.models import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session
+
+    from cod_doc.config import Config
 
 
 _VALID_SCOPES = frozenset({"task", "doc", "story", "adr", "finding"})
@@ -308,6 +317,76 @@ def ensure_index(session: Session, project_id: int) -> dict[str, Any]:
     return {"total": total, "by_kind": by_kind, "reindexed": False}
 
 
+def split_project_slugs(raw: str | None) -> list[str]:
+    """``--projects a,b`` → ``['a', 'b']``; пустое/пробельное отбрасывается.
+
+    Живёт в сервисе, а не в CLI: обе поверхности (``cod-doc search`` и
+    ``cod-doc ctx search``) обязаны разбирать список одинаково.
+    """
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def resolve_cross_project_ids(
+    session: Session,
+    *,
+    project: str,
+    projects: Sequence[str],
+    config: Config | None = None,
+) -> dict[str, int]:
+    """CUR-013 / RFC 22 §3.6: слаги соседних проектов → ``project.row_id``.
+
+    Кросс-проектный поиск — это ``WHERE project_id IN (...)`` по одному
+    FTS5-индексу, а не слияние выдач нескольких БД: bm25 относителен корпусу,
+    и склейка независимых шкал даёт фальшивый рейтинг (RFC 22 §2.2, факт 1).
+    Поэтому precondition жёсткий: каждый слаг обязан резолвиться в тот же
+    ``db_url``, что и базовый проект (hub-режим). Иначе — ``ValueError``,
+    а не тихо пустая выдача по чужому индексу.
+
+    Возвращает только **дополнительные** проекты (базовый ``project``
+    исключён — его ``project_id`` вызывающий уже знает), сохраняя порядок
+    аргумента; дубликаты схлопываются.
+    """
+    from cod_doc.config import Config as _Config
+    from cod_doc.infra.db import db_url_for_entry
+    from cod_doc.infra.repositories import ProjectRepository
+
+    cfg = config if config is not None else _Config.load()
+    base_entry = cfg.get_project(project)
+    if base_entry is None:
+        raise ValueError(f"Project not found: {project!r}")
+    base_url = db_url_for_entry(base_entry)
+
+    repo = ProjectRepository(session)
+    resolved: dict[str, int] = {}
+    for slug in projects:
+        if not slug or slug == project or slug in resolved:
+            continue
+        entry = cfg.get_project(slug)
+        if entry is None:
+            raise ValueError(f"Project not found: {slug!r}")
+        url = db_url_for_entry(entry)
+        if url != base_url:
+            raise ValueError(
+                "cross-project search requires a shared db_url (hub mode): "
+                f"{slug} resolves to {url}"
+            )
+        proj = repo.get_by_slug(slug)
+        if proj is None or proj.row_id is None:
+            raise ValueError(f"Project '{slug}' not in DB — run 'cod-doc project add' first.")
+        resolved[slug] = proj.row_id
+    return resolved
+
+
+def _slug_by_id(session: Session, project_ids: Sequence[int]) -> dict[int, str]:
+    """Один запрос ``row_id → slug`` на всю выдачу (CUR-013)."""
+    rows = session.execute(
+        select(ProjectModel.row_id, ProjectModel.slug).where(ProjectModel.row_id.in_(project_ids))
+    ).all()
+    return {int(r.row_id): str(r.slug) for r in rows}
+
+
 def _escape_fts(query: str) -> str:
     """Make user query safe for FTS5 MATCH.
 
@@ -334,6 +413,7 @@ def search(
     query: str,
     scope: str | None = None,
     limit: int = 20,
+    project_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     """Return ranked hits grouped by ``kind``.
 
@@ -350,19 +430,30 @@ def search(
     the sum of hits actually returned across kinds (i.e. after the per-kind
     cap), not the count of all underlying matches.
 
+    ``project_ids`` (CUR-013 / RFC 22 §3.6) widens the query to several
+    projects that live in the **same** database: ``WHERE project_id IN (...)``
+    over the one FTS5 index, so bm25 keeps a single scale and the per-kind
+    window is applied to the **merged** result — not per project. Проверку
+    «все проекты в одной БД» делает :func:`resolve_cross_project_ids`.
+    ``project_id`` остаётся обязательным и всегда входит в набор, поэтому
+    старые вызовы ведут себя ровно как раньше.
+
     Shape::
 
         {
           "query": "...",
           "total": N,
           "by_kind": {
-            "task": [{ref, title, snippet, score}, ...],
+            "task": [{ref, title, snippet, score, project}, ...],
             "doc":  [...],
             "story": [...],
             "adr":  [...],
             "finding": [...]
           }
         }
+
+    ``project`` в каждом хите — слаг проекта-владельца (``None``, если строка
+    ``project`` исчезла из БД, а индекс ещё помнит её id).
 
     Raises ``SearchIndexMissing`` if ``db_search_idx`` doesn't exist yet
     (empty/whitespace ``query`` short-circuits before touching the table,
@@ -375,18 +466,23 @@ def search(
     if not fts_query:
         return {"query": query, "total": 0, "by_kind": {k: [] for k in sorted(_VALID_SCOPES)}}
 
+    # Набор проектов: базовый всегда внутри (обратная совместимость), лишние
+    # дубликаты схлопнуты. Плейсхолдеры именованные — `IN (...)` через text().
+    ids = sorted({project_id, *(project_ids or [])})
+    id_placeholders = ", ".join(f":pid_{i}" for i in range(len(ids)))
+
     # Column index -1 lets FTS5 pick the column with the strongest match
     # — so a title-only hit still shows a useful snippet, and body matches
     # surface naturally too.
-    scored_sql = """
-        SELECT kind, ref, title,
+    scored_sql = f"""
+        SELECT kind, ref, title, project_id,
                snippet(db_search_idx, -1, '<mark>', '</mark>', '…', :snip_budget) AS snippet,
                bm25(db_search_idx, :w_kind, :w_ref, :w_project, :w_title, :w_body) AS score
         FROM db_search_idx
-        WHERE project_id = :pid AND db_search_idx MATCH :q
+        WHERE project_id IN ({id_placeholders}) AND db_search_idx MATCH :q
     """
     params: dict[str, Any] = {
-        "pid": project_id,
+        **{f"pid_{i}": pid for i, pid in enumerate(ids)},
         "q": fts_query,
         "lim": limit,
         "snip_budget": _SNIPPET_COL_BUDGET,
@@ -409,7 +505,7 @@ def search(
             SELECT *, ROW_NUMBER() OVER (PARTITION BY kind ORDER BY score) AS rn
             FROM scored
         )
-        SELECT kind, ref, title, snippet, score FROM ranked WHERE rn <= :lim
+        SELECT kind, ref, title, project_id, snippet, score FROM ranked WHERE rn <= :lim
         ORDER BY kind, score
     """
 
@@ -419,6 +515,9 @@ def search(
         if _is_missing_index_error(exc):
             raise SearchIndexMissing() from exc
         raise
+    # Запрос к таблице `project`, не к FTS — своего SearchIndexMissing-гарда
+    # он не требует.
+    slugs = _slug_by_id(session, ids)
     by_kind: dict[str, list[dict[str, Any]]] = {k: [] for k in sorted(_VALID_SCOPES)}
     for r in rows:
         by_kind.setdefault(r.kind, []).append(
@@ -427,6 +526,7 @@ def search(
                 "title": r.title,
                 "snippet": r.snippet,
                 "score": round(float(r.score), 4),
+                "project": slugs.get(int(r.project_id)),
             }
         )
     total = sum(len(hits) for hits in by_kind.values())
