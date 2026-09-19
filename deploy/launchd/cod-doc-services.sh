@@ -131,13 +131,30 @@ cmd_render() {
 # ── install / uninstall / restart ───────────────────────────────────────────
 drop_legacy_web() {
 	if launchctl print "gui/$(id -u)/${LEGACY_WEB_LABEL}" >/dev/null 2>&1; then
-		launchctl bootout "gui/$(id -u)/${LEGACY_WEB_LABEL}" 2>/dev/null || true
+		bootout_and_wait "$LEGACY_WEB_LABEL"
 		note "выгружен прежний веб-сервис ${LEGACY_WEB_LABEL} (работал из editable-venv)"
 	fi
 	if [ -f "${AGENTS}/${LEGACY_WEB_LABEL}.plist" ]; then
 		mv "${AGENTS}/${LEGACY_WEB_LABEL}.plist" "${AGENTS}/${LEGACY_WEB_LABEL}.plist.replaced"
 		note "plist ${LEGACY_WEB_LABEL} сохранён как .replaced"
 	fi
+}
+
+# Выгрузить сервис и дождаться, пока launchd действительно его отпустит.
+#
+# `bootout` асинхронен: он возвращает управление раньше, чем домен забывает
+# лейбл, и немедленный `bootstrap` падает с «Bootstrap failed: 5:
+# Input/output error». Под `set -e` это обрывало install на первом же сервисе,
+# оставляя машину без части демонов — поймано на живой машине.
+bootout_and_wait() {
+	local label="$1" i
+	launchctl bootout "gui/$(id -u)/${label}" 2>/dev/null || true
+	for i in $(seq 1 50); do
+		launchctl print "gui/$(id -u)/${label}" >/dev/null 2>&1 || return 0
+		sleep 0.2
+	done
+	note "предупреждение: ${label} не выгрузился за 10 с"
+	return 0
 }
 
 cmd_install() {
@@ -147,8 +164,9 @@ cmd_install() {
 	for s in "${SERVICES[@]}"; do
 		IFS=: read -r label kind port profile <<<"$s"
 		render "$label" "$kind" "$port" "$profile" >"${AGENTS}/${label}.plist"
-		launchctl bootout "gui/$(id -u)/${label}" 2>/dev/null || true
-		launchctl bootstrap "gui/$(id -u)" "${AGENTS}/${label}.plist"
+		bootout_and_wait "$label"
+		launchctl bootstrap "gui/$(id -u)" "${AGENTS}/${label}.plist" ||
+			die "не удалось загрузить ${label}; остальные сервисы не тронуты — см. ${LOGS}/${label}.log"
 		note "loaded ${label}"
 	done
 	cmd_status
@@ -209,18 +227,29 @@ cmd_status() {
 
 # ── version ─────────────────────────────────────────────────────────────────
 report_version() {
-	local name="$1" bin="$2" py="${2%/*}/python"
-	printf '%-28s ' "$name"
+	local name="$1" bin="$2" py
+	# Без выравнивания по колонкам: `printf %-Ns` считает байты, а не символы,
+	# и кириллические подписи разъезжаются.
+	printf '  %s: ' "$name"
 	if [ ! -x "$bin" ]; then
 		echo "не установлен ($bin)"
 		return
 	fi
+	"$bin" --version 2>/dev/null && return
 	# `--version` появился в ADO-189; на установке старше него спрашиваем
 	# версию импортом, иначе строка про старую сборку — самая важная в выводе —
-	# была бы пустой ровно тогда, когда она и нужна.
-	"$bin" --version 2>/dev/null ||
-		"$py" -P -c 'import cod_doc; print("cod-doc, version", cod_doc.__version__)' 2>/dev/null ||
-		echo "версия не определяется"
+	# была бы пустой ровно тогда, когда она и нужна. Интерпретатор берём из
+	# shebang'а самого console-script'а: у venv он лежит рядом с бинарём, а у
+	# uv-tool бинарь — симлинк в другое дерево, и `рядом` не работает.
+	#
+	# `-P` обязателен: иначе cwd попадает в sys.path и `import cod_doc` берёт
+	# локальное рабочее дерево вместо установленного пакета.
+	py="$(head -1 "$bin" | sed -n 's|^#!\(.*\)$|\1|p')"
+	if [ -x "$py" ] &&
+		"$py" -P -c 'import cod_doc; print("cod-doc, version", cod_doc.__version__)' 2>/dev/null; then
+		return
+	fi
+	echo "версия не определяется"
 }
 
 cmd_version() {
@@ -275,7 +304,12 @@ build_staged() {
 
 	note "сборка рантайма в ${staged}"
 	rm -rf "$staged"
-	uv venv --python "$PYTHON_VERSION" "$staged" --quiet
+	# `--relocatable` обязателен: venv собирается в `.staged` и только потом
+	# встаёт на место, а обычный venv запекает путь сборки в shebang каждого
+	# console-script'а. После свапа они указывали бы на несуществующий
+	# `.staged`, и launchd ронял бы демоны с `bad interpreter` (код 78) —
+	# поймано на живой машине, потому что smoke-тест до свапа проходит.
+	uv venv --python "$PYTHON_VERSION" --relocatable "$staged" --quiet
 	# Свежий венв, а не установка поверх: апгрейд «поверх» не удаляет файлы,
 	# исчезнувшие из пакета. Так в рантайме годами жили модули, которых нет в
 	# репозитории (services/story_service.py рядом с пакетом story_service/).
@@ -319,6 +353,20 @@ cmd_upgrade() {
 	rm -rf "${RUNTIME}.previous"
 	[ -d "$RUNTIME" ] && mv "$RUNTIME" "${RUNTIME}.previous"
 	mv "${RUNTIME}.staged" "$RUNTIME"
+
+	# Проверка ПОСЛЕ свапа, а не только до него. Smoke-тест в `build_staged`
+	# гоняется по пути сборки и не видит поломок, которые создаёт сам переезд:
+	# так прошёл venv с абсолютными shebang'ами на `.staged`, и launchd ронял
+	# демоны с `bad interpreter` уже после того, как апгрейд отрапортовал успех.
+	# Здесь же — откат без участия человека: живые сервисы важнее новой версии.
+	if ! "$RUNTIME/bin/cod-doc-mcp" --help >/dev/null 2>&1; then
+		note "рантайм не работает по конечному пути — откатываюсь"
+		rm -rf "${RUNTIME}.broken"
+		mv "$RUNTIME" "${RUNTIME}.broken"
+		mv "${RUNTIME}.previous" "$RUNTIME"
+		cmd_restart
+		die "апгрейд отменён, вернулся прежний рантайм; сломанная сборка — ${RUNTIME}.broken"
+	fi
 
 	note "перезапуск сервисов"
 	cmd_restart
