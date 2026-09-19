@@ -186,6 +186,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
 | `test_server_profiles.py` | counts профилей (6/21/129/133) в коде и доках совпадают |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
+| `infra/test_totals_status_aliases.py` | `section_totals`/`plan_totals`/`ready_tasks` перечисляют все написания статуса из `TASK_STATUS_ALIASES` (миграция 0035) |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
