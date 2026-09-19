@@ -113,8 +113,9 @@ cod-doc mcp --profile standard
 | `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 129 |
 | `com.cod-doc.mcp-agent` | `http://127.0.0.1:8802/mcp` | `agent` | 6 |
 
-Установка и управление — `deploy/launchd/cod-doc-mcp-daemon.sh`
-(`install | restart | status | uninstall | render`), подробности —
+Установка, апгрейд и управление — `deploy/launchd/cod-doc-services.sh`
+(`upgrade | install | restart | status | version | rollback | uninstall | render`;
+тем же скриптом живёт и веб-сервис `com.cod-doc.web`), подробности —
 [`deploy/launchd/README.md`](../deploy/launchd/README.md). Демон работает
 поверх пиннованной non-editable сборки в `~/.cod-doc/runtime`: editable-инстал
 рабочего дерева означал, что любая правка или незавершённый ребейз мгновенно

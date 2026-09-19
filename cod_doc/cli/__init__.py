@@ -112,6 +112,11 @@ from cod_doc.logging_config import setup_logging
 
 
 @click.group()
+# Версия выводится из git (setuptools-scm) и живёт в метаданных дистрибутива.
+# На машине одновременно стоят несколько сборок cod-doc — репозиторный venv,
+# пиннованный рантайм демонов, uv-tool в PATH; без этого флага ответить
+# «какая из них у меня сейчас в руках» было нечем.
+@click.version_option(package_name="cod-doc", prog_name="cod-doc")
 @click.option("--log-level", default=None, envvar="LOG_LEVEL", help="DEBUG|INFO|WARNING|ERROR")
 @click.option("--log-format", default=None, envvar="LOG_FORMAT", help="text|json")
 @click.pass_context

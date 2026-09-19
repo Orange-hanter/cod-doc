@@ -223,9 +223,11 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
   субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
   (профиль `standard`, 129 тулов `task_*`/`doc_*`/`plan_*`/…) и
-  `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6). Управление —
-  `deploy/launchd/cod-doc-mcp-daemon.sh`. Предпочитай тулы ad-hoc
-  Python-скриптам.
+  `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6). Тем же launchd
+  и тем же рантаймом живёт веб-UI — `com.cod-doc.web`. Управление и
+  доставка ревизий — `deploy/launchd/cod-doc-services.sh upgrade`
+  (собирает `origin/main` свежим venv, свапает, перезапускает; откат —
+  `rollback`). Предпочитай тулы ad-hoc Python-скриптам.
   **`project` обязателен в каждом DB-туле:** демон общий для всех харнессов,
   поэтому дефолтного проекта у него нет вовсе, а `set_default_project`
   отказывает (`mcp/tools/_workspace.py`). Под stdio поведение прежнее.

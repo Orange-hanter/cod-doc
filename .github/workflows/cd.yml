@@ -19,6 +19,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
 
       - name: Metadata
         id: meta
@@ -43,6 +45,11 @@ jobs:
         with:
           context: .
           push: true
+          # `.git/` в контексте сборки нет, поэтому setuptools-scm внутри
+          # образа версию не выведет — передаём её тегом, который и запустил
+          # этот workflow. Без аргумента образ назвался бы `0.0.0+nogit`.
+          build-args: |
+            COD_DOC_VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
