@@ -114,8 +114,8 @@ def test_keep_tool_pure_logic() -> None:
 EXPECTED_PROFILE_COUNTS = {
     "agent": 6,
     "minimal": 21,
-    "standard": 129,
-    "full": 133,
+    "standard": 130,
+    "full": 134,
 }
 
 
@@ -140,14 +140,21 @@ SYM_006D_ADMIN_TOOLS = {
     "ctx_drift_gate",
 }
 
-# RFC 25 §3.2 (CUR-008): the curator ctx tools moved INTO the default
-# `agent` allowlist — the doc-curator searches and reads drift instead of
-# picking tasks. `minimal` keeps its own allowlist and still excludes them.
+# RFC 25 §3.2/§3.5 (CUR-008 + CUR-016): the curator tools that live in the
+# default `agent` allowlist — the doc-curator reads its card, searches and
+# reads drift instead of picking tasks. `minimal` keeps its own allowlist
+# and still excludes them.
 RFC25_CURATOR_CTX_TOOLS = {
     "ctx_search",
-    "ctx_docs",
     "ctx_drift",
+    "curator_next",
 }
+
+# CUR-016: `ctx_docs` left the agent allowlist to make room for
+# `curator_next` (the count stays 6). It is still registered and still
+# reachable on standard/full — a raw document listing is a weaker answer to
+# "what do I do now" than the card, not a removed capability.
+CUR016_DEMOTED_TOOLS = {"ctx_docs"}
 
 
 def test_sym006d_keep_tool_logic() -> None:
@@ -170,28 +177,40 @@ def test_sym006d_keep_tool_logic() -> None:
         assert keep_tool(name, "minimal") is False
         assert keep_tool(name, "agent") is True
 
+    for name in CUR016_DEMOTED_TOOLS:
+        assert keep_tool(name, "full") is True
+        assert keep_tool(name, "standard") is True
+        assert keep_tool(name, "minimal") is False
+        assert keep_tool(name, "agent") is False
+
 
 def test_sym006d_minimal_profile_excludes_new_tools() -> None:
     mcp_server.apply_profile("minimal")
     names = _registered_names()
     assert not (SYM_006D_ADMIN_TOOLS & names)
     assert not (RFC25_CURATOR_CTX_TOOLS & names)
+    assert not (CUR016_DEMOTED_TOOLS & names)
 
 
 def test_sym006d_agent_profile_excludes_new_tools() -> None:
-    """RFC 25 §3.2: inverted for the curator set — ctx_* must be present."""
+    """RFC 25 §3.2/§3.5: inverted for the curator set — it must be present."""
     mcp_server.apply_profile("agent")
     names = _registered_names()
     assert not (SYM_006D_ADMIN_TOOLS & names)
     assert names >= RFC25_CURATOR_CTX_TOOLS, (
-        f"agent profile must expose the curator ctx tools (RFC 25 §3.2), "
+        f"agent profile must expose the curator tools (RFC 25 §3.2/§3.5), "
         f"missing: {sorted(RFC25_CURATOR_CTX_TOOLS - names)}"
+    )
+    assert not (CUR016_DEMOTED_TOOLS & names), (
+        "CUR-016: ctx_docs gave up its agent slot to curator_next — the allowlist stays at 6 names"
     )
 
 
 def test_sym006d_standard_profile_keeps_new_tools() -> None:
     mcp_server.apply_profile("standard")
-    assert _registered_names() >= SYM_006D_ADMIN_TOOLS | RFC25_CURATOR_CTX_TOOLS
+    assert (
+        _registered_names() >= SYM_006D_ADMIN_TOOLS | RFC25_CURATOR_CTX_TOOLS | CUR016_DEMOTED_TOOLS
+    )
 
 
 def test_cod_doc_mcp_cli_help_defaults_to_agent() -> None:

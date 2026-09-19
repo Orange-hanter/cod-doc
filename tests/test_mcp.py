@@ -106,6 +106,8 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "ctx_search" in tool_names
     assert "ctx_drift" in tool_names
     assert "ctx_drift_gate" in tool_names
+    # RFC 25 §3.5 / CUR-016: doc card куратора (профиль agent + standard/full)
+    assert "curator_next" in tool_names
 
 
 # STB-002 (2026-06-08): removed test_mcp_add_task_and_get_master — it exercised

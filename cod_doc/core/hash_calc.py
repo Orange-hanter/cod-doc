@@ -41,6 +41,43 @@ def check_hash(file_path: str | Path, expected: str) -> bool:
     return calc_hash(file_path) == expected.removeprefix("sha:")
 
 
+def check_stale_refs(
+    master_path: str | Path, *, repo_root: Path | None = None
+) -> list[dict[str, str]]:
+    """Пройти реестр гибридных ссылок MASTER.md и вернуть находки.
+
+    ``BROKEN`` — файла по пути из ссылки нет на диске. ``STALE`` — файл есть,
+    но его sha256[:12] разошёлся с записанным в реестре; ``actual`` несёт
+    фактический хэш. Записи, где хэш совпал, не возвращаются.
+
+    CUR-016: логика жила приватной ``routine_service._check_stale_refs`` и у
+    второго потребителя (doc card куратора) не было способа её позвать, кроме
+    импорта приватного имени через слой. Теперь это публичная точка входа, а
+    routine — её первый вызывающий.
+    """
+    master = Path(master_path)
+    root = repo_root if repo_root is not None else master.parent
+    content = master.read_text(encoding="utf-8") if master.exists() else ""
+
+    findings: list[dict[str, str]] = []
+    for m in LINK_PATTERN.finditer(content):
+        rel = m.group("path").lstrip("/")
+        expected = m.group("hash")
+        target = root / rel
+        if not target.exists():
+            findings.append({"path": rel, "status": "BROKEN", "expected": expected})
+        elif not check_hash(target, expected):
+            findings.append(
+                {
+                    "path": rel,
+                    "status": "STALE",
+                    "expected": expected,
+                    "actual": calc_hash(target),
+                }
+            )
+    return findings
+
+
 def make_ref(file_path: Path, repo_root: Path) -> str:
     """Сгенерировать гибридную ссылку для файла."""
     rel = file_path.relative_to(repo_root)

@@ -373,7 +373,7 @@ _cod-doc() {
     'agent:Управление агентом.'
     'audit:Audit document frontmatter (FM-* rules) and optionally drift (DR-00…'
     'completion:Shell-completion для cod-doc.'
-    'ctx:Контекст проекта для внешних потребителей (docs / drift / search).'
+    'ctx:Контекст проекта для внешних потребителей (docs / drift / search /…'
     'doc:Manage documents (create, rename, export, drift, import).'
     'embed:Провайдер эмбеддингов; статус, живая проверка, каталог, сброс индек…'
     'finding:Inspect and manage external findings.'
@@ -733,6 +733,7 @@ _cod-doc() {
       case $words[1] in
         (docs)      _cod_doc_ctx_docs && ret=0 ;;
         (drift)     _cod_doc_ctx_drift && ret=0 ;;
+        (next)      _cod_doc_ctx_next && ret=0 ;;
         (search)    _cod_doc_ctx_search && ret=0 ;;
         (structure) _cod_doc_ctx_structure && ret=0 ;;
         (*)         _default && ret=0 ;;
@@ -747,6 +748,7 @@ _cod-doc() {
   cmds=(
     'docs:Список документов проекта с оценкой токенов и рискованными ссылками.'
     'drift:DB↔markdown дрейф проекта (тот же shape, что и MCP ``ctx_drift``).'
+    'next:Doc card куратора; что протухло и за что браться первым (CUR-016).'
     'search:Поиск по проекту (FTS5) — тот же движок, что и ``cod-doc search``.'
     'structure:Pinned BFS structure slice. Requires head SHA or snapshot fingerpri…'
   )
@@ -778,6 +780,18 @@ _cod-doc() {
     '(--repo)--repo=[OWNER/NAME для `gh` (по умолчанию — репозиторий по пути проекта)]:repo' \
     '(--comment)--comment[Оставить/обновить комментарий гейта в --pr (идемпотентно, по маркер…]' \
     '(--dry-run)--dry-run[С --comment; показать тело комментария, ничего не отправляя]' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ctx_next] )) || _cod_doc_ctx_next() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--limit)--limit=[Сколько пунктов очереди показать]:limit' \
     '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret

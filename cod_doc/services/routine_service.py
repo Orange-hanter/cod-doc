@@ -172,30 +172,18 @@ def _get_project_root(session: Session, project_id: int) -> Path | None:
 def _check_stale_refs(session: Session, project_id: int, **_: Any) -> dict[str, Any]:
     """PCA-920: Scan MASTER.md hybrid references; report stale/missing files.
 
-    Delegates to the same logic as the ``check_stale_refs`` MCP tool.
+    CUR-016: сама проверка переехала в публичную
+    :func:`cod_doc.core.hash_calc.check_stale_refs` — её же зовёт doc card
+    куратора (``curator_service.next``). Здесь остались резолв корня проекта
+    и форма ответа routine.
     """
-    from cod_doc.core.hash_calc import LINK_PATTERN, calc_hash, check_hash
+    from cod_doc.core.hash_calc import check_stale_refs
 
     root = _get_project_root(session, project_id)
     if root is None:
         return {"findings": [], "note": "project not found"}
 
-    master_path = root / "MASTER.md"
-    content = master_path.read_text(encoding="utf-8") if master_path.exists() else ""
-    findings: list[dict[str, Any]] = []
-
-    for m in LINK_PATTERN.finditer(content):
-        rel = m.group("path").lstrip("/")
-        expected = m.group("hash")
-        target = root / rel
-        if not target.exists():
-            findings.append({"path": rel, "status": "BROKEN", "expected": expected})
-        elif not check_hash(target, expected):
-            actual = calc_hash(target)
-            findings.append(
-                {"path": rel, "status": "STALE", "expected": expected, "actual": actual}
-            )
-
+    findings = check_stale_refs(root / "MASTER.md", repo_root=root)
     return {"findings": findings, "findings_count": len(findings)}
 
 

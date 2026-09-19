@@ -70,6 +70,7 @@ cod-doc-mcp                              # MCP stdio; профиль по умо
 docker compose up -d                     # контейнер cod-doc, healthcheck /api/health
 cod-doc doc drift --project cod-doc --all # дрейф БД ↔ markdown без перезаписи
 cod-doc ctx docs|drift|search --json     # контекст для промпта в JSON (ctx docs --include-body — с телом)
+cod-doc ctx next -p cod-doc --json       # doc card куратора: очередь «что чинить» (зеркало MCP curator_next)
 cod-doc ingest ai_review -p cod-doc --from-pr 123   # findings из артефакта PR через gh; далее finding_promote
 cod-doc ctx drift -p orakul --pr 562 --comment      # drift-гейт PR: находки → идемпотентный комментарий (--dry-run для проверки)
 cod-doc completion zsh                   # печатает готовый _cod-doc; установка — scripts/install-zsh-completion.sh
@@ -119,15 +120,19 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - **MCP: один файл = одна семья тулов.** `mcp/tools/*_tools.py` экспортируют
   `register(mcp)`; `mcp/server.py` вызывает их в цикле, затем `apply_profile()`
   **фильтрует уже зарегистрированный** каталог (`mcp/profiles.py`). Профиль
-  `agent` — **дефолтный**, 6 curator-тулов (RFC 25 §3.2, CUR-007/008):
-  `agent_capabilities`, `ctx_search`, `ctx_docs`, `ctx_drift`, `context_get`,
-  `agent_report`. Роль оркестратора — куратор документации и поиска, не
-  исполнитель задач; `agent_capabilities()` отдаёт `role: "doc-curator"` и
+  `agent` — **дефолтный**, 6 curator-тулов (RFC 25 §3.2/§3.5,
+  CUR-007/008/016): `agent_capabilities`, `curator_next`, `ctx_search`,
+  `ctx_drift`, `context_get`, `agent_report`. Роль оркестратора — куратор
+  документации и поиска, не исполнитель задач; вход в работу —
+  `curator_next(project=...)`: дрейф, битые ссылки, протухшие хэши MASTER.md
+  и открытые findings одной очередью с готовой командой на каждый пункт
+  (`services/curator_service.py`, зеркало CLI — `cod-doc ctx next`).
+  `agent_capabilities()` отдаёт `role: "doc-curator"` и
   `forbidden: [agent_pick, task_checkout, task_complete]`. Старые
   task-centric тулы (`agent_pick`, `agent_get`, `agent_complete`,
   `agent_release`) остались зарегистрированы, но видны только на
-  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 129
-  / `full` 133.
+  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 130
+  / `full` 134.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   ПЯТИ местах: `mcp/profiles.py` (docstring), `server.py --profile`,
   `AGENTS.md` §5.9, этот файл и `docs/mcp-integration.md` (строка семейства
@@ -189,7 +194,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/21/129/133) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/21/130/134) в коде и доках совпадают |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
@@ -227,10 +232,10 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
   субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
-  (профиль `standard`, 129 тулов `task_*`/`doc_*`/`plan_*`/…) и
+  (профиль `standard`, 130 тулов `task_*`/`doc_*`/`plan_*`/…) и
   `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6 curator-тулов —
-  `ctx_*`/`context_get`/`agent_capabilities`/`agent_report`). Тем же launchd
-  и тем же рантаймом живёт веб-UI — `com.cod-doc.web`. Управление и
+  `curator_next`/`ctx_*`/`context_get`/`agent_capabilities`/`agent_report`).
+  Тем же launchd и тем же рантаймом живёт веб-UI — `com.cod-doc.web`. Управление и
   доставка ревизий — `deploy/launchd/cod-doc-services.sh upgrade`
   (собирает `origin/main` свежим venv, свапает, перезапускает; откат —
   `rollback`). Предпочитай тулы ad-hoc Python-скриптам.

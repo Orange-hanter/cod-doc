@@ -1,9 +1,12 @@
-"""RFC 22 §3.3/3.4 (SYM-008 / ADO-057): `cod-doc ctx docs|drift|search`.
+"""RFC 22 §3.3/3.4 (SYM-008 / ADO-057): `cod-doc ctx docs|drift|search|next`.
 
-Три read-only подкоманды, которые отдают контекст проекта для внешних
+Read-only подкоманды, которые отдают контекст проекта для внешних
 потребителей (ZAIrgRush, Orakul) поверх тех же сервисов, что и MCP-алиасы
-`ctx_docs` / `ctx_drift`. Все три работают в ``commit=False``-транзакции,
-т.е. гарантированно ничего не пишут в БД.
+`ctx_docs` / `ctx_drift` / `curator_next`. Все работают в
+``commit=False``-транзакции, т.е. гарантированно ничего не пишут в БД.
+
+`next` (RFC 25 §3.5, CUR-016) — зеркало MCP-тула `curator_next`: doc card
+куратора, где четыре источника санитарии сведены в одну очередь действий.
 """
 
 from __future__ import annotations
@@ -161,7 +164,7 @@ def _collect_links_at_risk(
 
 @click.group()
 def ctx() -> None:
-    """Контекст проекта для внешних потребителей (docs / drift / search)."""
+    """Контекст проекта для внешних потребителей (docs / drift / search / next)."""
 
 
 @ctx.command("docs")
@@ -547,6 +550,101 @@ def ctx_search(
                 row.insert(1, h.get("project") or "—")
             table.add_row(*row)
         console.print(table)
+
+
+#: Столько пунктов очереди показывает `ctx next` без `--limit`.
+_CTX_NEXT_DEFAULT_LIMIT = 10
+
+
+@ctx.command("next")
+@click.option("--project", "-p", required=True, help="Слаг проекта")
+@click.option(
+    "--limit",
+    default=_CTX_NEXT_DEFAULT_LIMIT,
+    type=int,
+    show_default=True,
+    help="Сколько пунктов очереди показать",
+)
+@click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
+@click.pass_context
+def ctx_next(
+    ctx: click.Context,
+    project: str,
+    limit: int,
+    as_json: bool,
+) -> None:
+    """Doc card куратора: что протухло и за что браться первым (CUR-016).
+
+    Тот же shape, что и MCP ``curator_next``: дрейф проекции, нерезолвящиеся
+    ссылки, протухшие записи реестра хэшей ``MASTER.md`` и открытые findings
+    — одной очередью с готовой командой на каждый пункт. Read-only.
+    """
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import curator_service
+
+    cfg: Config = ctx.obj["config"]
+    factory, engine, root = _project_session(cfg, project)
+
+    try:
+        # commit=False: сборщик ссылок синхронизирует derived-таблицу `link`
+        # в памяти, и финальный rollback обязан её сбросить.
+        with transactional(factory, commit=False) as session:
+            project_id = _require_project_id(session, project)
+            payload = curator_service.next(
+                session,
+                project_id=project_id,
+                root_path=root,
+                master_path=root / "MASTER.md",
+                limit=limit,
+                project_slug=project,
+            )
+    finally:
+        engine.dispose()
+
+    payload["card"]["drift"]["project"] = project
+    payload = {"project": project, **payload}
+
+    if as_json:
+        click.echo(_json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    counts = payload["meta"]["counts"]
+    priority = payload["priority"]
+
+    console.rule(f"[bold]Контекст: очередь куратора — {project}[/bold]")
+    console.print(
+        "  "
+        + "  ".join(
+            f"{name}: {counts[name]}" for name in ("drift_issues", "links", "master", "findings")
+        )
+    )
+    console.print(f"Пунктов очереди: [cyan]{counts['priority_total']}[/cyan]")
+
+    if not priority:
+        console.print("[green]✅ Очередь пуста — корпус в синхроне.[/green]")
+        return
+
+    table = Table(show_header=True, box=None, padding=(0, 1))
+    table.add_column("#", width=3, justify="right")
+    table.add_column("Вид", width=8)
+    table.add_column("Ref", style="cyan", no_wrap=True)
+    table.add_column("Почему", style="dim")
+    table.add_column("Команда")
+    for i, item in enumerate(priority, start=1):
+        table.add_row(
+            str(i),
+            item["kind"],
+            item["ref"],
+            item["reason"],
+            item["suggested_action"],
+        )
+    console.print(table)
+
+    if payload["meta"]["truncated"]:
+        console.print(
+            f"[yellow]Показаны первые {len(priority)} из {counts['priority_total']} — "
+            f"увеличь --limit.[/yellow]"
+        )
 
 
 @ctx.command("structure")
