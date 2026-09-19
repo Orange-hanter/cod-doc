@@ -21,6 +21,7 @@ from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.infra.db import (
     SchemaMismatchError,
+    assert_schema_head,
     db_for_entry,
     db_url_for_entry,
     dispose_cached_engines,
@@ -225,6 +226,13 @@ def _create_engine_for_target(
 
     Hub-режим делегируется ``db_for_entry``, чтобы резолв и сверка
     alembic-головы жили в одном месте (``infra.db``).
+
+    Embedded-БД сверяется с головой здесь же. Раньше эта ветка отдавала
+    движок без единой проверки, и БД, отставшая на миграцию (штатное
+    состояние сразу после ``git pull``), роняла страницу голым 500 из
+    SQLAlchemy — «no such column». Теперь это тот же 503 с подсказкой
+    ``alembic upgrade head``, что и у hub: диагноз одинаковый, лечение
+    одинаковое, значит и ответ обязан быть одинаковым (STO-026).
     """
     mtime: float | None = None
     if target.path is not None:
@@ -233,7 +241,14 @@ def _create_engine_for_target(
         except OSError:
             return EngineResolution(engine=None)
     if not target.hub:
-        return _CreatedEngine(make_engine(f"sqlite:///{target.path}"), mtime)
+        engine = make_engine(f"sqlite:///{target.path}")
+        try:
+            assert_schema_head(engine, entry.name)
+        except SchemaMismatchError as exc:
+            engine.dispose()
+            logger.warning("Проект %s: схема БД разъехалась с головой — %s", entry.name, exc)
+            return EngineResolution(engine=None, schema_error=str(exc))
+        return _CreatedEngine(engine, mtime)
     try:
         _factory, engine = db_for_entry(entry)
     except SchemaMismatchError as exc:

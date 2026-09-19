@@ -178,6 +178,42 @@ def test_hub_schema_mismatch_returns_none(tmp_path: Path, caplog) -> None:
     assert any("схема" in rec.message for rec in caplog.records)
 
 
+def _stale_embedded_entry(tmp_path: Path, slug: str = "stale-embedded") -> ProjectEntry:
+    """Проект на embedded-БД, отставшей от головы миграций.
+
+    Пустой файл — валидная sqlite без ``alembic_version``; ровно та же
+    ситуация, что у БД, которую забыли накатить после ``git pull``.
+    """
+    root = tmp_path / slug
+    (root / ".cod-doc").mkdir(parents=True)
+    (root / ".cod-doc" / "state.db").touch()
+    return ProjectEntry(name=slug, path=str(root))
+
+
+def test_embedded_schema_mismatch_is_503_not_raw_500(tmp_path: Path) -> None:
+    """Embedded-БД сверяется с головой так же, как hub.
+
+    Пока сверки не было, отставшая embedded-БД отдавала движок как ни в чём
+    не бывало, и первый же запрос к отсутствующей колонке ронял страницу
+    голым 500 из SQLAlchemy — пользователь видел «Internal Server Error» и
+    не узнавал, что лечится это одной командой.
+    """
+    _register(_stale_embedded_entry(tmp_path))
+
+    resolution = deps.resolve_engine("stale-embedded")
+    assert resolution.engine is None
+    assert resolution.schema_error is not None
+
+    gen = get_project_db("stale-embedded")
+    with pytest.raises(HTTPException) as exc_info:
+        next(gen)
+    assert exc_info.value.status_code == 503
+    detail = exc_info.value.detail
+    assert isinstance(detail, dict)
+    assert detail["code"] == "schema_mismatch"
+    assert "migrate" in detail["hint"]
+
+
 def test_schema_mismatch_is_distinguishable(tmp_path: Path) -> None:
     """STO-026: `resolve_engine` отличает рассинхрон схемы от «БД нет»."""
     _register(_stale_hub_entry(tmp_path), _absent_db_entry(tmp_path))

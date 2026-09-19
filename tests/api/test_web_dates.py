@@ -11,7 +11,7 @@ tests/api/test_web_template_dates.py; рантайм-инвариант «ни �
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
@@ -63,6 +63,31 @@ def test_coerce_accepts_trailing_z() -> None:
 @pytest.mark.parametrize("value", [None, "", "   ", "не дата", "2026-13-45"])
 def test_coerce_returns_none_on_unusable(value: str | None) -> None:
     assert coerce(value) is None
+
+
+def test_coerce_accepts_bare_date() -> None:
+    """Колонка ``sa.Date`` отдаёт `date`, а не `datetime` (``adr.decided_at``).
+
+    Пока ветки не было, `date` проваливалась в строковый разбор и роняла
+    страницу списка ADR на ``.strip()``.
+    """
+    got = coerce(date(2026, 9, 17))
+    assert got is not None
+    assert got.tzinfo is UTC
+    assert (got.year, got.month, got.day) == (2026, 9, 17)
+    assert (got.hour, got.minute, got.second) == (0, 0, 0)
+
+
+def test_coerce_checks_datetime_before_date() -> None:
+    """`datetime` — подкласс `date`; обратный порядок срезал бы время."""
+    got = coerce(datetime(2026, 9, 17, 14, 3, 22))
+    assert got is not None
+    assert (got.hour, got.minute) == (14, 3)
+
+
+def test_date_filter_renders_bare_date() -> None:
+    """Регресс 500 на ``/p/<slug>/adr``: ``{{ it.decided_at | short_date }}``."""
+    assert fmt_date(date(2026, 9, 17)) == "2026-09-17"
 
 
 # --------------------------------------------------------------------------- #
