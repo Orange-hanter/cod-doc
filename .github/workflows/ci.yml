@@ -10,6 +10,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# `fetch-depth: 0` во всех checkout-шагах — не перестраховка. Версия пакета
+# выводится из git через setuptools-scm, а `actions/checkout` по умолчанию
+# клонирует глубиной 1 и без тегов: сборка называла бы себя `0.1.dev<N>`
+# вместо ревизии, и `cod-doc --version` в образе врал бы.
+
 jobs:
 
   # ── Lint & Format ──────────────────────────────────────────────────────────
@@ -18,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -35,6 +42,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -54,6 +63,8 @@ jobs:
         python: ["3.13"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -83,6 +94,8 @@ jobs:
     continue-on-error: true # advisory — дрейф роутов не блокирует CI (ADO-011/012)
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -98,6 +111,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -122,6 +137,8 @@ jobs:
     needs: [lint, typecheck, test]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:

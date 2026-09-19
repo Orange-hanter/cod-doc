@@ -318,6 +318,7 @@ _cod-doc() {
   local curcontext="$curcontext" state line ret=1
   typeset -A opt_args
   _arguments -C -s -S \
+    '(--version)--version[Show the version and exit.]' \
     '(--log-level)--log-level=[DEBUG|INFO|WARNING|ERROR]:log-level:(DEBUG INFO WARNING ERROR)' \
     '(--log-format)--log-format=[text|json]:log-format:(text json)' \
     '(- *)--help[Show this message and exit.]' \

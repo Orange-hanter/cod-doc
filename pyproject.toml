@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=75", "wheel"]
+requires = ["setuptools>=75", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cod-doc"
-version = "1.1.0"
+dynamic = ["version"]
 description = "Context Orchestrator for Documentation — autonomous multi-project documentation agent"
 readme = "README.md"
 license = "MIT"
@@ -71,6 +71,24 @@ embeddings-local = [
 cod-doc = "cod_doc.cli:main"
 cod-doc-mcp = "cod_doc.mcp.server:main"
 
+[tool.setuptools_scm]
+# Версия = ближайший тег `v*` + расстояние до него + sha. Без этого все
+# установки на машине назывались одинаково («1.1.0» из литерала), и ни человек,
+# ни `uv` не могли отличить свежую сборку от полугодовой.
+#
+# `no-guess-dev` вместо дефолтного `guess-next-dev`: угаданный «следующий»
+# патч (1.1.1.devN на теге v1.1.0) читается как «уже есть 1.1.1», которого нет.
+# Форма `1.1.0.post1.devN+g<sha>` честнее — она про «после v1.1.0».
+version_scheme = "no-guess-dev"
+local_scheme = "node-and-date"
+# Сборка без git — это Docker (`.git/` в .dockerignore) и распакованный sdist.
+# Ронять их нельзя, но и выдавать за релиз тоже: `0.0.0` сразу читается как
+# «ревизию этой установки не опознать». Локальную метку сюда класть нельзя —
+# при отсутствии тегов setuptools-scm берёт fallback за базу и приклеивает к
+# нему расстояние, и метка уезжает в нормальную версию
+# (`0.0.0.post1.dev468+nogit.g0ea5de4b2` — проверено сборкой).
+fallback_version = "0.0.0"
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["cod_doc*"]
@@ -86,7 +104,11 @@ include = ["cod_doc*"]
     "templates/web/standards/*.html",
     "static/*.css",
     "static/*.js",
+    "static/*.svg",
     "static/css/*.css",
+    # Шаблон `alembic revision`. Без него non-editable установка умеет
+    # `upgrade`, но не умеет создать новую миграцию.
+    "infra/migrations/*.mako",
     "skills/**/*.md",
     "cli/completion/_cod-doc",
     "cli/completion/*.zsh",

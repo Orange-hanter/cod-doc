@@ -26,7 +26,16 @@ RUN python -c "import tomllib; deps=tomllib.load(open('pyproject.toml','rb'))['p
 COPY cod_doc/ ./cod_doc/
 COPY alembic.ini ./
 COPY entrypoint.sh ./
+# Версия пакета выводится из git (setuptools-scm), но `.git/` исключён из
+# контекста сборки (.dockerignore) — внутри образа истории нет и быть не
+# должно. Поэтому ревизию передаём аргументом: CD подставляет тег, локальная
+# сборка может не подставлять ничего и получит `0.0.0+nogit` из
+# `fallback_version` — честный признак «эту установку не опознать».
+ARG COD_DOC_VERSION=""
 RUN chmod +x ./entrypoint.sh \
+    && if [ -n "$COD_DOC_VERSION" ]; then \
+         export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_COD_DOC="$COD_DOC_VERSION"; \
+       fi \
     && pip install --no-cache-dir --no-deps .
 
 # ── 5. Runtime directories & env defaults ────────────────────────────────────

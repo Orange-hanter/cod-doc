@@ -15,6 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from cod_doc import __version__
 from cod_doc.api.deps import (
     dispose_all_engines,
     set_config,
@@ -61,7 +62,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 app = FastAPI(
     title="COD-DOC API",
     description="Context Orchestrator for Documentation — REST API",
-    version="1.1.0",
+    # Один источник версии на весь проект — `cod_doc.__version__` из метаданных
+    # дистрибутива. Литерал здесь жил своей жизнью: его забывали двигать, и
+    # `/docs` обещал версию, к коду отношения не имеющую.
+    version=__version__,
     lifespan=lifespan,
 )
 
