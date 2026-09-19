@@ -315,6 +315,9 @@ class EntityKind(StrEnum):
     # ревизии под STORY нельзя: пара (kind, entity_id) — единственный адрес
     # ревизии, и секция row_id=1 села бы в историю истории row_id=1.
     STORY_SECTION = "story_section"
+    # ADO-116: то же, что STORY_SECTION, но для разделов дерева документации —
+    # своя нумерация row_id требует своего kind.
+    DOC_NODE = "doc_node"
     LINK = "link"
     MODULE = "module"
     ADR = "adr"
@@ -419,9 +422,35 @@ class Document:
     title_in_body: bool | None = None
     content_sha256_head: str | None = None
     projection_hash: str | None = None
+    # ADO-116: раздел дерева документации. None — документ не разложен и живёт
+    # в Инбоксе; это валидное состояние, а не ошибка.
+    node_id: int | None = None
+    node_position: int | None = None
     created: datetime | None = None
     last_updated: datetime | None = None
     last_reviewed: datetime | None = None
+
+
+@dataclass(slots=True)
+class DocNode:
+    """Раздел дерева документации (ADO-116).
+
+    ``intent`` — проза о том, что в разделе должно лежать: её читают и человек,
+    и агент-куратор, когда предлагает раскладку. ``expected_types`` —
+    подсказка классификатору, а не ограничение: раздел не отвергает документ
+    другого типа.
+    """
+
+    project_id: int
+    node_key: str
+    title: str
+    position: int
+    row_id: int | None = None
+    parent_id: int | None = None
+    intent: str = ""
+    expected_types: list[str] = field(default_factory=list)
+    min_docs: int = 0
+    is_inbox: bool = False
 
 
 @dataclass(slots=True)

@@ -16,6 +16,10 @@ _SECTION_SLUG_RE = re.compile(r"^[A-Z]-[A-Za-z0-9][A-Za-z0-9-]*$")
 # ADO-143: ключ секции историй уходит в путь роута и в CSS-селектор htmx,
 # поэтому строго [a-z0-9-] — ни точек, ни слэшей, ни пробелов.
 _STORY_SECTION_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$|^[a-z0-9]$")
+# ADO-116: ключ раздела дерева документации. Ограничения те же, что у
+# ключа секции историй, и по той же причине: он идёт в query-параметр
+# `?node=` и в `id`/`hx-target` фрагмента рельса.
+_DOC_NODE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$|^[a-z0-9]$")
 
 # Verb-patterns from [task-plan.md §7]. Maps a regex prefix to the type it
 # implies. Order matters: the more-specific pattern (`Test + Implement`)

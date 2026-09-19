@@ -29,6 +29,7 @@ from cod_doc.mcp.tools import (
     context_tools,
     curator_tools,
     doc_tools,
+    doc_tree_tools,
     finding_tools,
     legacy_agent_tools,
     link_tools,
@@ -56,6 +57,8 @@ for _module in (
     legacy_agent_tools,
     # COD-032 DB-backed tools (doc.*, task.*, plan.*, story.*, link.*, revision.*).
     doc_tools,
+    # ADO-116 doc_tree_* / doc_node_* (documentation tree as data).
+    doc_tree_tools,
     task_tools,
     plan_tools,
     story_tools,
@@ -156,7 +159,7 @@ def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> Non
     help="Tool-surface profile (default: agent). agent=6 curator tools (RFC 25: "
     "curator_next/ctx_search/ctx_drift/context_get + capabilities/report); "
     "minimal=21 cold-start curated CRUD; "
-    "standard=130 DB-backed tools without legacy; full=134 including legacy "
+    "standard=138 DB-backed tools without legacy; full=142 including legacy "
     "agent tools. Counts enforced by tests/test_server_profiles.py.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")

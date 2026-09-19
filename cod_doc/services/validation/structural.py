@@ -14,6 +14,7 @@ from cod_doc.domain.entities import ScenarioKind, ScenarioStatus
 
 from ._errors import ValidationError
 from ._patterns import (
+    _DOC_NODE_KEY_RE,
     _FORBIDDEN_TYPE_ALIASES,
     _ID_PREFIX_RE,
     _SCENARIO_COVERAGE_VERDICTS,
@@ -256,3 +257,66 @@ def validate_scenario_body(*, preconditions: str, expected: str, steps: list[str
         raise ValidationError("SCV-005", "scenario expected result must not be empty")
     if not steps or not any(step.strip() for step in steps):
         raise ValidationError("SCV-005", "scenario must have at least one step")
+
+
+#: Потолок заголовка раздела дерева документации — та же вёрстка, что у
+#: секций историй: подпись в рельсе и шапка списка, в одну строку.
+MAX_DOC_NODE_TITLE = 256
+
+
+def validate_doc_node_key(key: str) -> None:
+    """1–64 символа `[a-z0-9-]`, без дефиса по краям — `audit`, `data-model`.
+
+    Ограничения те же, что у ключа секции историй, и по той же причине: ключ
+    уходит в query-параметр ``?node=`` и в ``id``/``hx-target`` фрагмента
+    рельса, где точка и пробел — синтаксис селектора, а слэш ломает разбор
+    адреса.
+    """
+    if not isinstance(key, str) or not _DOC_NODE_KEY_RE.fullmatch(key):
+        raise ValidationError(
+            "DN-001",
+            f"invalid doc node key {key!r}: expected 1-64 chars of lowercase "
+            "letters, digits and dashes, not starting or ending with a dash, "
+            "e.g. 'data-model'",
+            key=key,
+        )
+
+
+def validate_doc_node_title(title: str) -> None:
+    """Непустой, не длиннее 256, без управляющих символов.
+
+    Не про XSS — экранирование делает Jinja, — а про инвариант данных: пустой
+    заголовок рисует безымянный раздел, неотличимый от Инбокса, а перевод
+    строки посреди названия разъезжает подпись в рельсе.
+    """
+    if not isinstance(title, str) or not title.strip():
+        raise ValidationError("DN-002", "doc node title must not be empty", title=title)
+    if len(title) > MAX_DOC_NODE_TITLE:
+        raise ValidationError(
+            "DN-002",
+            f"doc node title must be at most {MAX_DOC_NODE_TITLE} characters, got {len(title)}",
+            title=title,
+        )
+    bad = sorted({c for c in title if c != " " and unicodedata.category(c).startswith("C")})
+    if bad:
+        raise ValidationError(
+            "DN-002",
+            f"doc node title must not contain control characters: {bad!r}",
+            title=title,
+        )
+
+
+def validate_doc_node_position(position: int) -> None:
+    """``position >= 0``; ноль допустим — им закрепляют раздел выше прочих."""
+    if isinstance(position, bool) or not isinstance(position, int):
+        raise ValidationError(
+            "DN-003",
+            f"doc node position must be an integer, got {type(position).__name__}",
+            position=position,
+        )
+    if position < 0:
+        raise ValidationError(
+            "DN-003",
+            f"doc node position must be >= 0, got {position}",
+            position=position,
+        )

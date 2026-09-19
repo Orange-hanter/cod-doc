@@ -95,6 +95,19 @@ def migrate_registered_projects(cfg: Config) -> list[MigrateResult]:
     return [migrate_entry(entry) for entry in cfg.list_projects()]
 
 
+def _bootstrap_doc_tree(session: Session, project_id: int) -> None:
+    """ADO-116: засеять дерево разделов документации при инициализации проекта.
+
+    Идемпотентно (``init_tree`` пропускает существующие ключи), поэтому
+    повторный ``project init`` дерево не перестраивает и ручные правки не
+    затирает. Документы сюда не раскладываются: раскладка — отдельное
+    решение, у неё своя команда с ``--dry-run``.
+    """
+    from cod_doc.services import doc_tree_service
+
+    doc_tree_service.init_tree(session, project_id=project_id, author="system:init")
+
+
 def _bootstrap_default_routines(session: Session, project_id: int) -> None:
     """PCA-914: Idempotently create default routines for a project.
 
@@ -183,6 +196,7 @@ def init_project(entry: ProjectEntry) -> InitResult:
         # Idempotent — uses unique (project_id, name) constraint.
         if project_id is not None:
             _bootstrap_default_routines(session, project_id)
+            _bootstrap_doc_tree(session, project_id)
     engine.dispose()
 
     return InitResult(

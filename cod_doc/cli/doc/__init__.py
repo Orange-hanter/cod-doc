@@ -22,6 +22,7 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_patch,
     cmd_rename,
     cmd_show,
+    cmd_tree,
 )
 from ._group import doc
 

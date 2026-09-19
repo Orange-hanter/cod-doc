@@ -47,6 +47,9 @@ from .advisory import (
     is_import_fallback,
 )
 from .structural import (
+    validate_doc_node_key,
+    validate_doc_node_position,
+    validate_doc_node_title,
     validate_doc_path,
     validate_id_prefix,
     validate_scenario_body,
@@ -71,6 +74,9 @@ __all__ = [
     "audit_sensitivity",
     "audit_task_title",
     "is_import_fallback",
+    "validate_doc_node_key",
+    "validate_doc_node_position",
+    "validate_doc_node_title",
     "validate_doc_path",
     "validate_id_prefix",
     "validate_scenario_body",

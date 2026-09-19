@@ -23,7 +23,13 @@ from .approvals import ApprovalDocRevisionLinkModel, ApprovalModel, ApprovalTask
 from .base import Base, _utcnow
 from .comments import DocCommentModel
 from .commits import CommitLinkModel
-from .documents import DocumentModel, LinkModel, SectionModel
+from .documents import (
+    DocNodeModel,
+    DocNodeSuggestionModel,
+    DocumentModel,
+    LinkModel,
+    SectionModel,
+)
 from .findings import ExternalRefModel, FindingModel, FindingSourceRunModel
 from .metrics import TaskMetricsModel
 from .modules import ModuleCodeModel, ModuleDependencyModel, ModuleModel
@@ -83,6 +89,8 @@ __all__ = [
     "DependencyModel",
     "DocCodeClaimModel",
     "DocCommentModel",
+    "DocNodeModel",
+    "DocNodeSuggestionModel",
     "DocumentModel",
     "DocumentTagModel",
     "ExternalRefModel",
