@@ -242,6 +242,71 @@ def test_doc_drift_routine_payload_contains_project_summary(engine_with_schema, 
         assert result["findings"][0]["doc_key"] == "missing"
 
 
+def test_doc_unplaced_routine_reports_the_inbox(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """ADO-116: хаотичный импорт не должен копиться молча.
+
+    Документ вне разделов находим поиском, но в навигации его нет. Рутина
+    делает Инбокс находкой, а не только числом на экране.
+    """
+    from cod_doc.services import doc_tree_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session, slug="unpl", root_path=str(tmp_path))
+        doc_tree_service.init_tree(session, project_id=proj_id, author="human:test")
+        doc_service.create(
+            session,
+            project_id=proj_id,
+            doc_key="loose",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.ACTIVE,
+            title="Loose",
+            owner="docs",
+            author="human:test",
+        )
+        routines.create(
+            session, proj_id, name="unplaced", check_name="doc_unplaced", trigger="manual"
+        )
+
+        run = routines.run_now(session, proj_id, "unplaced")
+
+        # Один неразложенный документ плюс разделы ниже своего min_docs:
+        # обе формы — пробел в навигации, только с разных сторон.
+        assert run.findings_count >= 1
+
+    with transactional(factory) as session:
+        event = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "routine.found_issue")
+        ).scalar_one()
+        result = event.payload["result"]
+        assert result["unplaced"] == 1
+        assert {"kind": "unplaced", "doc_key": "loose"} in result["findings"]
+
+
+def test_doc_unplaced_routine_is_silent_without_a_tree(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Разделов нет — раскладывать не по чему; это не находка."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session, slug="notree", root_path=str(tmp_path))
+        doc_service.create(
+            session,
+            project_id=proj_id,
+            doc_key="loose",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.ACTIVE,
+            title="Loose",
+            owner="docs",
+            author="human:test",
+        )
+        routines.create(
+            session, proj_id, name="unplaced", check_name="doc_unplaced", trigger="manual"
+        )
+
+        run = routines.run_now(session, proj_id, "unplaced")
+
+        assert run.findings_count == 0
+
+
 def test_history_returns_recent_runs_newest_first(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:

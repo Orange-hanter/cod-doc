@@ -288,3 +288,63 @@ def test_next_writes_nothing(tmp_path: Path, isolated_cod_doc_home: Path) -> Non
         assert _counts() == before
     finally:
         engine.dispose()
+
+
+# ------------------------------------------------------------------ #
+# ADO-116: неразложенные документы в очереди куратора                  #
+# ------------------------------------------------------------------ #
+
+
+def test_project_init_seeds_the_tree(curator_session) -> None:
+    """ADO-116: новый проект получает разделы сразу, без отдельной команды."""
+    session, root = curator_session
+    _import_docs(root)
+
+    assert _call(session, root)["card"]["unplaced"]["tree_seeded"] is True
+
+
+def test_unseeded_tree_asks_for_init_not_for_classify(curator_session) -> None:
+    """Раскладывать не по чему — значит и предлагать надо сев, а не раскладку.
+
+    Состояние достижимо на проекте, заведённом до ADO-116: колонки миграция
+    добавляет, а разделы сеет только ``project init``.
+    """
+    from cod_doc.infra.models import DocNodeModel
+
+    session, root = curator_session
+    _import_docs(root)
+    session.query(DocNodeModel).delete()
+    session.flush()
+
+    payload = _call(session, root)
+    assert payload["card"]["unplaced"]["tree_seeded"] is False
+    unplaced = [item for item in payload["priority"] if item["kind"] == "unplaced"]
+    assert len(unplaced) == 1
+    assert "doc_tree_init" in unplaced[0]["suggested_action"]
+
+
+def test_unplaced_enters_the_queue_once_the_tree_exists(curator_session) -> None:
+    """Один пункт на весь Инбокс: действие на всех неразложенных — одно."""
+    session, root = curator_session
+    _import_docs(root)
+
+    payload = _call(session, root)
+    unplaced = [item for item in payload["priority"] if item["kind"] == "unplaced"]
+    assert len(unplaced) == 1, "очередь не должна раздуваться по документу на строку"
+    assert "doc_tree_classify" in unplaced[0]["suggested_action"]
+    assert payload["meta"]["counts"]["unplaced"] == payload["card"]["unplaced"]["count"]
+
+
+def test_unplaced_ranks_below_integrity_problems(curator_session) -> None:
+    """Порядок очереди: сломанная ссылка выше, чем неразобранный Инбокс.
+
+    Нерезолвящаяся ссылка уже ломает навигацию, а неразложенный документ
+    всё ещё находим поиском.
+    """
+    session, root = curator_session
+    _import_docs(root)
+
+    kinds = [item["kind"] for item in _call(session, root, limit=50)["priority"]]
+    assert "unplaced" in kinds
+    assert "link" in kinds
+    assert kinds.index("link") < kinds.index("unplaced")

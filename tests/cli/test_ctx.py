@@ -253,7 +253,9 @@ def test_ctx_next_json_valid(tmp_path: Path, isolated_cod_doc_home: Path) -> Non
 
     data = json.loads(result.output)
     assert data["project"] == "p"
-    assert set(data["card"]) == {"drift", "links", "master", "findings"}
+    # ADO-116 добавил пятый источник: неразложенные документы. Набор ключей
+    # здесь — контракт карточки, поэтому проверяется точным равенством.
+    assert set(data["card"]) == {"drift", "links", "master", "findings", "unplaced"}
     assert data["card"]["drift"]["project"] == "p"
     assert set(data["meta"]) == {"generated_at", "truncated", "counts"}
     assert data["navigation"]["applicable_skills"][0]["name"] == "orchestrator"
