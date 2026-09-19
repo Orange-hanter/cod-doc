@@ -301,7 +301,11 @@ def delete_node(
         target = DocNodeRepository(session).get_by_key(project_id, reassign_to)
         if target is None:
             raise NodeNotFoundError(reassign_to)
-        target_id = target.row_id
+        # Инбокс — это NULL, а не ссылка на его строку; та же нормализация,
+        # что в ``assign``. Без неё документы уезжали на строку Инбокса и
+        # пропадали из всех счётчиков разом: рельс считает Инбокс по
+        # ``node_id IS NULL`` и таких строк не видит.
+        target_id = None if target.is_inbox else target.row_id
 
     moved = len(docs)
     for doc in docs:

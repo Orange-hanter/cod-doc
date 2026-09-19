@@ -377,3 +377,57 @@ def test_assign_does_not_touch_content_freshness(session_factory) -> None:  # ty
         )
         assert refreshed.node_id is not None, "документ должен быть разложен"
         assert refreshed.last_updated == stamp
+
+
+def test_delete_node_reassigning_to_inbox_lands_in_null(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """``--reassign-to inbox`` обязан нормализоваться в ``node_id IS NULL``.
+
+    Иначе документы уезжают на строку Инбокса и пропадают из всех счётчиков
+    сразу: рельс считает Инбокс по NULL и таких строк не видит. Поймано на
+    живом корпусе — 42 документа стали невидимы после одного вызова.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        _doc(session, pid, "docs/system/VISION", DocumentType.VISION)
+        tree.assign(
+            session,
+            project_id=pid,
+            doc_key="docs/system/VISION",
+            node_key="vision",
+            author="human:test",
+        )
+
+        moved = tree.delete_node(
+            session,
+            project_id=pid,
+            node_key="vision",
+            reassign_to="inbox",
+            author="human:test",
+        )
+        assert moved == 1
+
+        doc = (
+            session.query(DocumentModel).filter(DocumentModel.doc_key == "docs/system/VISION").one()
+        )
+        assert doc.node_id is None
+        assert tree.unplaced(session, pid) == ["docs/system/VISION"]
+        stats = {s.node.node_key: s.doc_count for s in tree.node_stats(session, pid)}
+        assert stats["inbox"] == 1
+
+
+def test_every_document_is_counted_exactly_once(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Сумма по рельсу равна корпусу: документ не может выпасть из счёта."""
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        for key, kind in (
+            ("docs/system/VISION", DocumentType.VISION),
+            ("docs/system/audit/2026-01-01-x", DocumentType.AUDIT_REPORT),
+            ("session-log", DocumentType.MODULE_SPEC),
+        ):
+            _doc(session, pid, key, kind)
+        tree.classify_project(session, project_id=pid, author="human:test", dry_run=False)
+
+        total = sum(stat.doc_count for stat in tree.node_stats(session, pid))
+        assert total == 3

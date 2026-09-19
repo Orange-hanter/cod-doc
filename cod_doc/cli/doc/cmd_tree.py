@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import json as _json
+import sys
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 import click
@@ -20,7 +22,52 @@ from ._common import _make_session, _require_project_id, console
 from ._group import doc
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from contextlib import AbstractContextManager
+
     from cod_doc.config import Config
+
+
+def _fail(message: str) -> None:
+    """Печать ошибки и выход — как в остальных doc-командах."""
+    console.print(f"[red]{message}[/red]")
+    sys.exit(1)
+
+
+def _guard() -> AbstractContextManager[None]:
+    """Перевести типизированные ошибки сервиса в человеческое сообщение.
+
+    Сервис бросает ``NodeNotFoundError`` / ``NodeAlreadyExistsError`` /
+    ``NodeHasDocumentsError`` и ``ValidationError`` — их текст уже написан для
+    человека. Без этой обёртки пользователь получал бы трейсбек (проверено на
+    `doc tree node-rm --key audit`: 42 документа, отказ приходил стеком).
+    """
+    from cod_doc.services.doc_tree_service import (
+        NodeAlreadyExistsError,
+        NodeHasDocumentsError,
+        NodeNotFoundError,
+    )
+    from cod_doc.services.validation import ValidationError
+
+    @contextmanager
+    def _cm() -> Iterator[None]:
+        try:
+            yield
+        except ValidationError as exc:
+            _fail(f"Validation error: {exc}")
+        except NodeHasDocumentsError as exc:
+            _fail(
+                f"В разделе «{exc.node_key}» лежит документов: {exc.count}. "
+                "Передай --reassign-to <ключ> или --force (документы уйдут в Инбокс)."
+            )
+        except NodeAlreadyExistsError as exc:
+            _fail(f"Раздел «{exc.node_key}» уже существует.")
+        except NodeNotFoundError as exc:
+            _fail(f"Раздел «{exc.node_key}» не найден.")
+        except LookupError as exc:
+            _fail(str(exc))
+
+    return _cm()
 
 
 @doc.group("tree")
@@ -135,7 +182,7 @@ def tree_init(ctx: click.Context, project: str, author: str, as_json: bool) -> N
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
-    with transactional(sf) as session:
+    with _guard(), transactional(sf) as session:
         project_id = _require_project_id(session, project)
         created = svc.init_tree(session, project_id=project_id, author=author)
         keys = [n.node_key for n in created]
@@ -193,7 +240,7 @@ def tree_classify(
     sf = _make_session(project, cfg)
     dry_run = not apply_changes
 
-    with transactional(sf, commit=apply_changes) as session:
+    with _guard(), transactional(sf, commit=apply_changes) as session:
         project_id = _require_project_id(session, project)
         report = svc.classify_project(
             session,
@@ -266,7 +313,7 @@ def tree_move(
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
-    with transactional(sf) as session:
+    with _guard(), transactional(sf) as session:
         project_id = _require_project_id(session, project)
         node = svc.assign(
             session,
@@ -315,7 +362,7 @@ def tree_node_add(
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
-    with transactional(sf) as session:
+    with _guard(), transactional(sf) as session:
         project_id = _require_project_id(session, project)
         node = svc.create_node(
             session,
@@ -364,7 +411,7 @@ def tree_node_edit(
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
-    with transactional(sf) as session:
+    with _guard(), transactional(sf) as session:
         project_id = _require_project_id(session, project)
         node = svc.update_node(
             session,
@@ -417,7 +464,7 @@ def tree_node_rm(
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
-    with transactional(sf) as session:
+    with _guard(), transactional(sf) as session:
         project_id = _require_project_id(session, project)
         moved = svc.delete_node(
             session,
