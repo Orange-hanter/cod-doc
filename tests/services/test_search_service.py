@@ -24,20 +24,25 @@ from cod_doc.infra.models import (
 from cod_doc.services import search_service, task_service
 
 
-def _seed(session) -> tuple[int, int, int]:  # type: ignore[no-untyped-def]
+def _seed_project(session, slug: str) -> tuple[int, int, int]:  # type: ignore[no-untyped-def]
+    """Проект + план + секция; возвращает (project_id, plan_id, section_id)."""
     now = datetime.now(UTC)
-    proj = ProjectModel(slug="srp", title="P", root_path="/tmp", config_json={})
+    proj = ProjectModel(slug=slug, title=slug, root_path=f"/tmp/{slug}", config_json={})
     proj.created = now
     proj.updated = now
     session.add(proj)
     session.flush()
-    plan = PlanModel(project_id=proj.row_id, scope="srp-plan", created=now, last_updated=now)
+    plan = PlanModel(project_id=proj.row_id, scope=f"{slug}-plan", created=now, last_updated=now)
     session.add(plan)
     session.flush()
     sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="A", slug="A", position=0)
     session.add(sec)
     session.flush()
     return proj.row_id, plan.row_id, sec.row_id
+
+
+def _seed(session) -> tuple[int, int, int]:  # type: ignore[no-untyped-def]
+    return _seed_project(session, "srp")
 
 
 def _make_task(session, pid, plid, sid, tid, title, **fields):
@@ -541,3 +546,122 @@ def test_other_operational_errors_are_not_swallowed(engine_with_schema) -> None:
     ):
         search_service.reindex_all(session, project_id=1)
     assert not isinstance(excinfo.value, search_service.SearchIndexMissing)
+
+
+# ----------------------------------------------------------------- #
+# CUR-013: кросс-проектный поиск в одной hub-БД (RFC 22 §3.6)        #
+# ----------------------------------------------------------------- #
+
+_CROSS_DOCS_PER_PROJECT = 4
+_CROSS_LIMIT = 5
+_HUB_URL = "sqlite:////tmp/hub.db"
+
+
+def _seed_two_projects(factory) -> tuple[int, int]:  # type: ignore[no-untyped-def]
+    """Два проекта в одной БД, у каждого — задача со словом ``widget``."""
+    with transactional(factory) as session:
+        pid_a, plan_a, sec_a = _seed_project(session, "alpha")
+        pid_b, plan_b, sec_b = _seed_project(session, "beta")
+        _make_task(session, pid_a, plan_a, sec_a, "ALP-001", "widget wiring in alpha")
+        _make_task(session, pid_b, plan_b, sec_b, "BET-001", "widget wiring in beta")
+    with transactional(factory) as session:
+        search_service.reindex_all(session, pid_a)
+        search_service.reindex_all(session, pid_b)
+    return pid_a, pid_b
+
+
+def test_search_without_project_ids_stays_single_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Без ``project_ids`` соседний проект той же БД не виден — как и раньше."""
+    factory = make_session_factory(engine_with_schema)
+    pid_a, _pid_b = _seed_two_projects(factory)
+
+    with transactional(factory) as session:
+        result = search_service.search(session, project_id=pid_a, query="widget")
+
+    assert [h["ref"] for h in result["by_kind"]["task"]] == ["ALP-001"]
+    assert result["by_kind"]["task"][0]["project"] == "alpha"
+
+
+def test_search_with_project_ids_returns_hits_of_both(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """``project_ids`` расширяет выдачу и помечает каждый хит слагом владельца."""
+    factory = make_session_factory(engine_with_schema)
+    pid_a, pid_b = _seed_two_projects(factory)
+
+    with transactional(factory) as session:
+        result = search_service.search(
+            session, project_id=pid_a, query="widget", project_ids=[pid_b]
+        )
+
+    assert {h["ref"]: h["project"] for h in result["by_kind"]["task"]} == {
+        "ALP-001": "alpha",
+        "BET-001": "beta",
+    }
+    assert result["total"] == 2
+
+
+def test_search_per_kind_limit_applies_to_merged_result(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Лимит на kind режет ОБЪЕДИНЁННУЮ выдачу, а не каждый проект отдельно."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid_a, _, _ = _seed_project(session, "alpha")
+        pid_b, _, _ = _seed_project(session, "beta")
+        for pid, prefix in ((pid_a, "a"), (pid_b, "b")):
+            for i in range(_CROSS_DOCS_PER_PROJECT):
+                _make_doc(session, pid, f"guide/{prefix}{i}", f"Doc {prefix}{i}", "widget corpus")
+    with transactional(factory) as session:
+        search_service.reindex_all(session, pid_a)
+        search_service.reindex_all(session, pid_b)
+
+    with transactional(factory) as session:
+        result = search_service.search(
+            session,
+            project_id=pid_a,
+            query="widget",
+            limit=_CROSS_LIMIT,
+            project_ids=[pid_b],
+        )
+
+    # 4 + 4 совпадения при потолке 5 — значит окно одно на оба проекта.
+    assert len(result["by_kind"]["doc"]) == _CROSS_LIMIT
+    assert result["total"] == _CROSS_LIMIT
+    assert {h["project"] for h in result["by_kind"]["doc"]} <= {"alpha", "beta"}
+
+
+def test_resolve_cross_project_ids_requires_shared_db_url(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Проект с другим ``db_url`` — ошибка, а не молчаливо пустая выдача."""
+    from cod_doc.config import Config, ProjectEntry
+
+    factory = make_session_factory(engine_with_schema)
+    _seed_two_projects(factory)
+    cfg = Config(
+        projects=[
+            ProjectEntry(name="alpha", path=str(tmp_path / "alpha"), db_url=_HUB_URL).model_dump(),
+            ProjectEntry(name="beta", path=str(tmp_path / "beta")).model_dump(),
+        ]
+    )
+
+    with transactional(factory) as session, pytest.raises(ValueError, match="shared db_url"):
+        search_service.resolve_cross_project_ids(
+            session, project="alpha", projects=["beta"], config=cfg
+        )
+
+
+def test_resolve_cross_project_ids_maps_slugs_in_shared_db(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Общий ``db_url`` → слаг превращается в ``project.row_id``; базовый исключён."""
+    from cod_doc.config import Config, ProjectEntry
+
+    factory = make_session_factory(engine_with_schema)
+    _pid_a, pid_b = _seed_two_projects(factory)
+    cfg = Config(
+        projects=[
+            ProjectEntry(name=name, path=str(tmp_path / name), db_url=_HUB_URL).model_dump()
+            for name in ("alpha", "beta")
+        ]
+    )
+
+    with transactional(factory) as session:
+        resolved = search_service.resolve_cross_project_ids(
+            session, project="alpha", projects=["beta", "alpha", "beta"], config=cfg
+        )
+
+    assert resolved == {"beta": pid_b}

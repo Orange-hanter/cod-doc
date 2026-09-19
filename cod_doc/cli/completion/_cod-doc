@@ -791,6 +791,7 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
     '(--scope)--scope=[Ограничить поиск одним kind'\''ом]:scope:(task doc story adr finding)' \
     '(--limit)--limit=[Лимит хитов на kind]:limit' \
+    '(--projects)--projects=[Ещё слаги через запятую; искать по ним вместе с --project (общая hu…]:projects' \
     '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' \
     '1:query' && ret=0
@@ -2191,6 +2192,7 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--scope)--scope=[Restrict search to one kind]:scope:(task doc story adr finding)' \
     '(--limit)--limit=:limit' \
+    '(--projects)--projects=[Comma-separated extra slugs to search together with --project (shar…]:projects' \
     '(--reindex)--reindex[Rebuild the FTS index before searching.]' \
     '(- *)--help[Show this message and exit.]' \
     '1:query' && ret=0
