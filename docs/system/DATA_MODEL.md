@@ -567,7 +567,7 @@ SELECT
   s.row_id           AS section_id,
   COUNT(t.row_id)    AS tasks_total,
   SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) AS tasks_done,
-  SUM(CASE WHEN t.status='in-progress' THEN 1 ELSE 0 END) AS tasks_in_progress
+  SUM(CASE WHEN t.status IN ('in_progress','in-progress') THEN 1 ELSE 0 END) AS tasks_in_progress
 FROM plan_section s
 LEFT JOIN task t ON t.section_id = s.row_id
 GROUP BY s.row_id;
@@ -576,6 +576,19 @@ GROUP BY s.row_id;
 ### 4.2 `plan_totals`
 
 Аналогично — агрегат по плану. Используется при генерации Progress Overview.
+
+> **Статус сравнивается с классом эквивалентности, а не со строкой (миграция 0035).**
+> `pending` ≡ `todo` и `in-progress` ≡ `in_progress` — один бакет
+> (`domain.entities.TASK_STATUS_ALIASES`), и в живой БД лежат оба написания сразу:
+> `checkout_service` пишет каноническое `in_progress`, когда задача пришла из `todo`,
+> и легаси `in-progress`, когда из `pending`. До 0035 все три view'а сравнивали
+> `task.status` точной строкой по легаси-варианту, поэтому задача, взятая в работу
+> из `todo`, не попадала в `tasks_in_progress` (Progress Overview показывал её как
+> не начатую), а задача в статусе `todo` — в `ready_tasks`. Тот же класс бага ADO-182
+> закрыл на уровне репозитория (`equivalent_task_statuses`); до view'ов он тогда не
+> дошёл. Литералы в миграции зафиксированы намеренно — миграция не должна меняться
+> вместе с картой алиасов; синхронность стережёт
+> `tests/infra/test_totals_status_aliases.py`.
 
 ### 4.3a `document_body`
 
@@ -615,7 +628,7 @@ FROM (
 CREATE VIEW ready_tasks AS
 SELECT t.*
 FROM task t
-WHERE t.status='pending'
+WHERE t.status IN ('todo','pending')
   AND NOT EXISTS (
     SELECT 1 FROM dependency d
     JOIN task dep ON dep.row_id = d.to_task_id
