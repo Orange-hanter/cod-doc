@@ -17,7 +17,7 @@
 - **Текущий статус:** 🟢 ACTIVE — **M5 «Гейт, которому можно верить + симбиоз в бою» закрыт 2026-09-06**.
   Прогон 2026-09-07: 1639 тестов зелёные, ruff/mypy чистые, ~137 документов
   (`stale_export`=0 после reconcile миграций 0026–0029). Поверхность:
-  125 MCP-тулов (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
+  126 MCP-тулов (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
   CI на main впервые зелёный (`bcb32f2`, [run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088)).
 - **Текущий приоритет: агент-куратор документации (RFC 25) + adoption через симбиоз.**
   Дефолтный ИИ-агент **не исполняет продуктовые задачи** — поддерживает корпус,
@@ -182,7 +182,7 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:4f4e4e3f2004`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:d91fd6b26003`
 - **Статус:** `🟢 VERIFIED`
 
 ### Zsh-дополнение
@@ -274,7 +274,7 @@ graph TD
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `4f4e4e3f2004` | 2026-09-16 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `d91fd6b26003` | 2026-09-16 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `9f8d2402d1d4` | 2026-09-15 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |

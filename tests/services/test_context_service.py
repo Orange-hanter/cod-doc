@@ -498,3 +498,257 @@ def test_l3_semantic_returns_empty_when_no_api_key(
         # graceful: empty list, no exception
         assert result["related"]["semantic"] == []
         assert result["meta"]["depth"] == "L3"
+
+
+# ===========================================================================
+# CUR-014: token_budget соблюдается, деградация видна в meta
+# ===========================================================================
+
+
+def _seed_second_section(session: Session, plan_id: int) -> int:
+    """Вторая секция плана — чтобы у цели L2-теста не было siblings."""
+    sec = PlanSectionModel(plan_id=plan_id, letter="B", title="Deps", slug="B-Deps", position=1)
+    session.add(sec)
+    session.flush()
+    return sec.row_id  # type: ignore[return-value]
+
+
+def _seed_task(
+    session: Session,
+    project_id: int,
+    plan_id: int,
+    section_id: int,
+    task_id: str,
+    *,
+    title: str | None = None,
+    description: str | None = None,
+    acceptance: str | None = None,
+) -> None:
+    task_service.create(
+        session,
+        project_id=project_id,
+        plan_id=plan_id,
+        section_id=section_id,
+        task_id=task_id,
+        title=title or f"Implement: {task_id}",
+        type=TaskType.FEATURE,
+        priority=Priority.HIGH,
+        author="human:test",
+        description=description,
+        acceptance=acceptance,
+    )
+
+
+def test_small_budget_trims_task_description(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Тело задачи считается в бюджет, а не едет поверх него."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        plan_id, sec_id = _seed_plan(session, proj_id)
+        _seed_task(
+            session,
+            proj_id,
+            plan_id,
+            sec_id,
+            "PR-001",
+            description="D" * 4000,
+            acceptance="A" * 4000,
+        )
+
+        result = context_service.context_get(
+            session, proj_id, "task", "PR-001", depth="L1", token_budget=50
+        )
+
+        meta = result["meta"]
+        assert meta["truncated"] is True
+        assert meta["tokens_used"] <= 50
+        assert len(result["core"]["description"]) < 4000
+        assert result["core"]["description"].endswith("…")
+
+
+def test_small_budget_leaves_room_for_acceptance(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """description не съедает бюджет целиком: короткое тело идёт первым."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        plan_id, sec_id = _seed_plan(session, proj_id)
+        _seed_task(
+            session,
+            proj_id,
+            plan_id,
+            sec_id,
+            "PR-001",
+            description="D" * 4000,
+            acceptance="A" * 40,
+        )
+
+        result = context_service.context_get(
+            session, proj_id, "task", "PR-001", depth="L1", token_budget=60
+        )
+
+        core = result["core"]
+        assert core["acceptance"] == "A" * 40
+        assert core["description"].endswith("…")
+        # порядок ключей — объявленный, а не по длине тел
+        assert list(core) == ["description", "acceptance"]
+        assert result["meta"]["tokens_used"] <= 60
+
+
+def test_small_budget_stops_document_sections(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        doc_id = _seed_doc(session, proj_id, "modules/M1/overview")
+        for i in range(5):
+            doc_service.add_section(
+                session,
+                document_id=doc_id,
+                anchor=f"s{i}",
+                heading=f"Section {i}",
+                level=2,
+                position=i,
+                body="x" * context_service._SECTION_EXCERPT_CHARS,
+                author="human:test",
+            )
+
+        result = context_service.context_get(
+            session, proj_id, "document", "modules/M1/overview", depth="L1", token_budget=200
+        )
+
+        sections = result["core"]["sections"]
+        assert 0 < len(sections) < 5
+        assert result["meta"]["truncated"] is True
+        assert result["meta"]["tokens_used"] <= 200
+
+
+def test_small_budget_stops_plan_open_tasks(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        plan_id, sec_id = _seed_plan(session, proj_id, scope="my-plan")
+        for i in range(5):
+            _seed_task(
+                session,
+                proj_id,
+                plan_id,
+                sec_id,
+                f"PR-{i:03d}",
+                title=f"Implement: {'t' * 200} {i}",
+            )
+
+        result = context_service.context_get(
+            session, proj_id, "plan", "my-plan", depth="L1", token_budget=60
+        )
+
+        assert len(result["related"]["tasks"]) < 5
+        assert result["meta"]["truncated"] is True
+        assert result["meta"]["tokens_used"] <= 60
+
+
+def _seed_chain_for_l2(session: Session, proj_id: int) -> None:
+    """PR-002 в своей секции; блокирующие задачи — длиннотитульные, в секции A."""
+    plan_id, sec_a = _seed_plan(session, proj_id)
+    sec_b = _seed_second_section(session, plan_id)
+    long_title = f"Implement: {'q' * 1000}"
+    _seed_task(session, proj_id, plan_id, sec_a, "PR-001", title=f"{long_title} 1")
+    _seed_task(session, proj_id, plan_id, sec_b, "PR-002")
+    _seed_task(session, proj_id, plan_id, sec_a, "PR-003", title=f"{long_title} 3")
+
+    rows = {t.task_id: t.row_id for t in task_service.list_for_project(session, proj_id)}
+    session.add(
+        DependencyModel(from_task_id=rows["PR-002"], to_task_id=rows["PR-001"], kind="blocks")
+    )
+    session.add(
+        DependencyModel(from_task_id=rows["PR-003"], to_task_id=rows["PR-002"], kind="blocks")
+    )
+    session.flush()
+
+
+def test_l2_chains_dropped_when_over_budget(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Не влезли цепочки — пакет деградирует до L1, а не переливается через край."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        _seed_chain_for_l2(session, proj_id)
+
+        result = context_service.context_get(
+            session, proj_id, "task", "PR-002", depth="L2", token_budget=100
+        )
+
+        assert result["related"]["dependencies"] == []
+        assert result["meta"]["depth"] == "L2"
+        assert result["meta"]["effective_depth"] == "L1"
+        assert result["meta"]["truncated"] is True
+        assert result["meta"]["tokens_used"] <= 100
+
+
+def test_l3_degrades_to_l1_when_chains_do_not_fit(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        _seed_chain_for_l2(session, proj_id)
+
+        result = context_service.context_get(
+            session, proj_id, "task", "PR-002", depth="L3", token_budget=100
+        )
+
+        assert result["meta"]["effective_depth"] == "L1"
+        assert result["related"]["semantic"] == []
+        assert result["meta"]["tokens_used"] <= 100
+
+
+def test_l2_chains_kept_under_normal_budget(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Штатный бюджет — поведение прежнее: цепочки на месте, деградации нет."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        _seed_chain_for_l2(session, proj_id)
+
+        result = context_service.context_get(
+            session, proj_id, "task", "PR-002", depth="L2", token_budget=8000
+        )
+
+        assert {d["task_id"] for d in result["related"]["dependencies"]} == {"PR-001", "PR-003"}
+        assert result["meta"]["effective_depth"] == "L2"
+        assert result["meta"]["truncated"] is False
+        assert result["meta"]["tokens_used"] <= 8000
+
+
+def test_normal_budget_is_not_reported_as_truncated(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        plan_id, sec_id = _seed_plan(session, proj_id)
+        _seed_task(
+            session,
+            proj_id,
+            plan_id,
+            sec_id,
+            "PR-001",
+            description="some long description here",
+            acceptance="acceptance text",
+        )
+
+        result = context_service.context_get(session, proj_id, "task", "PR-001", depth="L1")
+
+        assert result["core"]["description"] == "some long description here"
+        assert result["core"]["acceptance"] == "acceptance text"
+        assert result["meta"]["truncated"] is False
+        assert result["meta"]["effective_depth"] == "L1"
+
+
+def test_target_summary_survives_budget_smaller_than_itself(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Задокументированное исключение: минимальное ядро едет всегда, но truncated=True."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session)
+        plan_id, sec_id = _seed_plan(session, proj_id)
+        _seed_task(session, proj_id, plan_id, sec_id, "PR-001", description="D" * 4000)
+
+        result = context_service.context_get(
+            session, proj_id, "task", "PR-001", depth="L1", token_budget=1
+        )
+
+        assert result["target_summary"]["task_id"] == "PR-001"
+        assert "description" not in result["core"]
+        assert result["meta"]["truncated"] is True

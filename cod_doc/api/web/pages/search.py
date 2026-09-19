@@ -59,7 +59,7 @@ def search_page(
             "q": q,
             "scope": scope,
             "result": result,
-            "scopes": ["task", "doc", "story", "adr"],
+            "scopes": ["task", "doc", "story", "adr", "finding"],
         },
     )
 

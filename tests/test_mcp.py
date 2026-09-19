@@ -103,6 +103,7 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "finding_promote" in tool_names
     assert "finding_dismiss" in tool_names
     assert "ctx_docs" in tool_names
+    assert "ctx_search" in tool_names
     assert "ctx_drift" in tool_names
     assert "ctx_drift_gate" in tool_names
 

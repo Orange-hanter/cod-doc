@@ -557,12 +557,15 @@ def register(mcp: FastMCP) -> None:
             ],
         }
 
-    # ------------------------------------------------------------------ #
-    # RFC 22 §3.3 / SYM-006D: ctx.* family — thin aliases over doc_list  #
-    # and doc_drift_all, named per the symbiosis contract (`cod-doc ctx  #
-    # docs|drift`). Read-only; standard/full profiles only (minimal and  #
-    # agent are explicit allowlists in cod_doc/mcp/profiles.py).         #
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------- #
+    # RFC 22 §3.3 / SYM-006D + RFC 25 §3.2 (CUR-008): ctx.* family —      #
+    # thin aliases over doc_list / doc_drift_all / search_service.search, #
+    # named per the symbiosis contract (`cod-doc ctx docs|drift|search`). #
+    # Read-only. Since CUR-008 ctx_search / ctx_docs / ctx_drift are part #
+    # of the default `agent` (doc-curator) allowlist; the CI-gate wrapper #
+    # ctx_drift_gate is not — it stays standard/full, like `minimal`,     #
+    # which keeps its own explicit allowlist (cod_doc/mcp/profiles.py).   #
+    # ------------------------------------------------------------------- #
 
     @mcp.tool(name="ctx_docs")
     def ctx_docs(project: str) -> list[dict[str, Any]]:
@@ -580,6 +583,43 @@ def register(mcp: FastMCP) -> None:
             project_id = require_project_id(session, project)
             docs = doc_service.list_for_project(session, project_id)
         return [doc_to_dict(d) for d in docs]
+
+    @mcp.tool(name="ctx_search")
+    def ctx_search(
+        project: str,
+        query: str,
+        scope: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """RFC 25 §3.2 (CUR-007): FTS5 search for external context consumers.
+
+        Thin wrapper over ``search_service.search`` — same shape, same data.
+        Before searching, lazily reindexes an empty project index (fresh DB,
+        or one whose ``db_search_idx`` rows were wiped) via
+        ``search_service.ensure_index`` so a curator/orchestrator never sees
+        a permanently empty result set just because nobody ran a reindex.
+        A non-empty index is left untouched — this is not a periodic refresh.
+
+        ``task`` entries in the result are search hits into the task index,
+        not an invitation to pick up or check out a task — this tool is a
+        documentation/search surface, not the agent task-flow (``agent_pick``
+        et al. own that).
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import search_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            meta_index = search_service.ensure_index(session, project_id)
+            result = search_service.search(
+                session,
+                project_id=project_id,
+                query=query,
+                scope=scope,
+                limit=limit,
+            )
+        return result | {"meta": {"index": meta_index}}
 
     @mcp.tool(name="ctx_drift")
     def ctx_drift(project: str, limit: int | None = None) -> dict[str, Any]:

@@ -432,12 +432,35 @@ def _render_gate(gate: GateReport, comment_info: dict[str, Any] | None) -> None:
     )
 
 
+_CTX_SEARCH_DEFAULT_LIMIT = 20
+
+
 @ctx.command("search")
 @click.argument("query")
 @click.option("--project", "-p", required=True, help="Слаг проекта")
+@click.option(
+    "--scope",
+    type=click.Choice(["task", "doc", "story", "adr", "finding"]),
+    default=None,
+    help="Ограничить поиск одним kind'ом",
+)
+@click.option(
+    "--limit",
+    default=_CTX_SEARCH_DEFAULT_LIMIT,
+    type=int,
+    show_default=True,
+    help="Лимит хитов на kind",
+)
 @click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
 @click.pass_context
-def ctx_search(ctx: click.Context, query: str, project: str, as_json: bool) -> None:
+def ctx_search(
+    ctx: click.Context,
+    query: str,
+    project: str,
+    scope: str | None,
+    limit: int,
+    as_json: bool,
+) -> None:
     """Поиск по проекту (FTS5) — тот же движок, что и ``cod-doc search``."""
     from cod_doc.infra.db import transactional
     from cod_doc.services import search_service
@@ -448,7 +471,13 @@ def ctx_search(ctx: click.Context, query: str, project: str, as_json: bool) -> N
     try:
         with transactional(factory, commit=False) as session:
             project_id = _require_project_id(session, project)
-            result = search_service.search(session, project_id=project_id, query=query)
+            result = search_service.search(
+                session,
+                project_id=project_id,
+                query=query,
+                scope=scope,
+                limit=limit,
+            )
     finally:
         engine.dispose()
 

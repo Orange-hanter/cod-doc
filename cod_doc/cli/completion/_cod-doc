@@ -649,7 +649,7 @@ _cod-doc() {
 (( $+functions[_cod_doc_agent_commands] )) || _cod_doc_agent_commands() {
   local -a cmds
   cmds=(
-    'run:Запустить агент для проекта.'
+    'run:Запустить legacy-агент для проекта (RFC 25).'
   )
   _describe -t cod-doc-agent-commands 'cod-doc agent command' cmds
 }
@@ -660,7 +660,7 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-t --task)'{-t+,--task=}'[Заголовок новой задачи для выполнения]:task' \
-    '(--autonomous --no-autonomous)'{--autonomous,--no-autonomous}'[Авто-генерация задач из MASTER.md]' \
+    '(--autonomous --no-autonomous)'{--autonomous,--no-autonomous}'[legacy (RFC 25); не исполняет продуктовые ADO-*; без --task выполня…]' \
     '(- *)--help[Show this message and exit.]' \
     '1:project-name:_cod_doc_projects' && ret=0
   return ret
@@ -788,6 +788,8 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--scope)--scope=[Ограничить поиск одним kind'\''ом]:scope:(task doc story adr finding)' \
+    '(--limit)--limit=[Лимит хитов на kind]:limit' \
     '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' \
     '1:query' && ret=0
@@ -2186,7 +2188,7 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
-    '(--scope)--scope=[Restrict search to one kind]:scope:(task doc story adr)' \
+    '(--scope)--scope=[Restrict search to one kind]:scope:(task doc story adr finding)' \
     '(--limit)--limit=:limit' \
     '(--reindex)--reindex[Rebuild the FTS index before searching.]' \
     '(- *)--help[Show this message and exit.]' \

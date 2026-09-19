@@ -114,8 +114,8 @@ def test_keep_tool_pure_logic() -> None:
 EXPECTED_PROFILE_COUNTS = {
     "agent": 6,
     "minimal": 21,
-    "standard": 128,
-    "full": 132,
+    "standard": 129,
+    "full": 133,
 }
 
 
@@ -130,43 +130,68 @@ def test_profile_counts_match_documented_values() -> None:
     )
 
 
-SYM_006D_TOOLS = {
+# Admin-tier SYM-006D names: PR-gate and finding triage. These stay out of
+# both explicit allowlists (agent, minimal).
+SYM_006D_ADMIN_TOOLS = {
     "finding_list",
     "finding_get",
     "finding_promote",
     "finding_dismiss",
+    "ctx_drift_gate",
+}
+
+# RFC 25 §3.2 (CUR-008): the curator ctx tools moved INTO the default
+# `agent` allowlist — the doc-curator searches and reads drift instead of
+# picking tasks. `minimal` keeps its own allowlist and still excludes them.
+RFC25_CURATOR_CTX_TOOLS = {
+    "ctx_search",
     "ctx_docs",
     "ctx_drift",
-    "ctx_drift_gate",
 }
 
 
 def test_sym006d_keep_tool_logic() -> None:
-    """SYM-006D / RFC 22: finding_*/ctx_* appear in standard+full only.
+    """SYM-006D / RFC 22 + RFC 25 §3.2: where the new names are exposed.
 
-    minimal and agent profiles are explicit allowlists, so the new names
-    must not leak into them; standard inherits everything non-legacy.
+    Admin-tier names (finding_*, ctx_drift_gate) appear in standard+full
+    only — minimal and agent are explicit allowlists, so they must not
+    leak into them. The curator ctx tools are in agent since CUR-008 but
+    still not in minimal; standard inherits everything non-legacy.
     """
-    for name in SYM_006D_TOOLS:
+    for name in SYM_006D_ADMIN_TOOLS:
         assert keep_tool(name, "full") is True
         assert keep_tool(name, "standard") is True
         assert keep_tool(name, "minimal") is False
         assert keep_tool(name, "agent") is False
 
+    for name in RFC25_CURATOR_CTX_TOOLS:
+        assert keep_tool(name, "full") is True
+        assert keep_tool(name, "standard") is True
+        assert keep_tool(name, "minimal") is False
+        assert keep_tool(name, "agent") is True
+
 
 def test_sym006d_minimal_profile_excludes_new_tools() -> None:
     mcp_server.apply_profile("minimal")
-    assert not (SYM_006D_TOOLS & _registered_names())
+    names = _registered_names()
+    assert not (SYM_006D_ADMIN_TOOLS & names)
+    assert not (RFC25_CURATOR_CTX_TOOLS & names)
 
 
 def test_sym006d_agent_profile_excludes_new_tools() -> None:
+    """RFC 25 §3.2: inverted for the curator set — ctx_* must be present."""
     mcp_server.apply_profile("agent")
-    assert not (SYM_006D_TOOLS & _registered_names())
+    names = _registered_names()
+    assert not (SYM_006D_ADMIN_TOOLS & names)
+    assert names >= RFC25_CURATOR_CTX_TOOLS, (
+        f"agent profile must expose the curator ctx tools (RFC 25 §3.2), "
+        f"missing: {sorted(RFC25_CURATOR_CTX_TOOLS - names)}"
+    )
 
 
 def test_sym006d_standard_profile_keeps_new_tools() -> None:
     mcp_server.apply_profile("standard")
-    assert _registered_names() >= SYM_006D_TOOLS
+    assert _registered_names() >= SYM_006D_ADMIN_TOOLS | RFC25_CURATOR_CTX_TOOLS
 
 
 def test_cod_doc_mcp_cli_help_defaults_to_agent() -> None:

@@ -24,7 +24,7 @@ log = get_logger("cli.search")
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option(
     "--scope",
-    type=click.Choice(["task", "doc", "story", "adr"]),
+    type=click.Choice(["task", "doc", "story", "adr", "finding"]),
     default=None,
     help="Restrict search to one kind",
 )

@@ -39,14 +39,15 @@ def test_agent_profile_in_valid_set() -> None:
 
 
 def test_agent_tools_frozenset_has_six_names() -> None:
+    """RFC 25 §3.2 (CUR-008): still 6 names, but curator ones."""
     assert len(AGENT_TOOLS) == 6
     expected = {
         "agent_capabilities",
-        "agent_pick",
-        "agent_get",
+        "ctx_search",
+        "ctx_docs",
+        "ctx_drift",
+        "context_get",
         "agent_report",
-        "agent_complete",
-        "agent_release",
     }
     assert expected == AGENT_TOOLS
 
@@ -58,6 +59,10 @@ def test_keep_tool_agent_profile() -> None:
     assert keep_tool("task_create", "agent") is False
     assert keep_tool("doc_create", "agent") is False
     assert keep_tool("capabilities", "agent") is False  # admin-surface
+    # RFC 25 §3.2: the cycle-5 task tools stay registered but leave the
+    # default surface — the curator does not pick implementation tasks.
+    assert keep_tool("agent_pick", "agent") is False
+    assert keep_tool("ctx_search", "agent") is True
 
 
 def test_agent_profile_exposes_exactly_six_tools() -> None:
@@ -72,7 +77,12 @@ def test_agent_profile_tools_all_registered_at_startup() -> None:
     for name in AGENT_TOOLS:
         assert name in pre, (
             f"agent tool {name!r} must be registered at server startup. "
-            f"Check cod_doc/mcp/tools/agent_tools.py::register."
+            f"Since RFC 25 §3.2 the curator surface spans three modules: "
+            f"agent_capabilities/agent_report live in "
+            f"cod_doc/mcp/tools/agent_tools.py, ctx_search/ctx_docs/ctx_drift "
+            f"in cod_doc/mcp/tools/doc_tools.py, context_get in "
+            f"cod_doc/mcp/tools/context_tools.py — check the matching "
+            f"register()."
         )
 
 
@@ -85,10 +95,12 @@ def test_agent_capabilities_returns_slim_l0_payload() -> None:
     capabilities = live_mcp._tool_manager._tools["agent_capabilities"].fn
     result = capabilities()
 
-    # Required keys for L0 bootstrap.
+    # Required keys for L0 bootstrap (role/forbidden added by RFC 25 §3.2).
     for key in (
         "server_version",
         "profile",
+        "role",
+        "forbidden",
         "skills",
         "task_status_canonical",
         "task_status_legacy_aliases",
@@ -97,6 +109,11 @@ def test_agent_capabilities_returns_slim_l0_payload() -> None:
         "next_action_hint",
     ):
         assert key in result, f"agent_capabilities missing key: {key}"
+
+    # RFC 25 §3.2: the payload itself declares the curator role, so a
+    # client that never reads the orchestrator skill still knows the rules.
+    assert result["role"] == "doc-curator"
+    assert set(result["forbidden"]) == {"agent_pick", "task_checkout", "task_complete"}
 
     # Skills carry name + description only (no body — keep payload small).
     assert isinstance(result["skills"], list)
@@ -114,9 +131,13 @@ def test_agent_capabilities_returns_slim_l0_payload() -> None:
     # Legacy aliases present.
     assert result["task_status_legacy_aliases"]["pending"] == "todo"
 
-    # Orchestrator ref + next action hint guide the agent forward.
+    # Orchestrator ref + next action hint guide the agent forward — towards
+    # drift and search, away from picking implementation tasks (RFC 25 §3.2).
     assert "SKILL.md" in result["orchestrator_skill"]
-    assert "agent_pick" in result["next_action_hint"]
+    hint = result["next_action_hint"]
+    assert "ctx_search" in hint and "agent_pick" not in hint, (
+        f"next_action_hint must route the curator to ctx_* tools, got: {hint!r}"
+    )
 
 
 def test_agent_capabilities_payload_under_4kb() -> None:
