@@ -220,6 +220,7 @@ def test_ctx_dry_read_writes_nothing(tmp_path: Path, isolated_cod_doc_home: Path
         ["ctx", "docs", "-p", "p", "--json"],
         ["ctx", "drift", "-p", "p", "--json"],
         ["ctx", "search", "-p", "p", "beta", "--json"],
+        ["ctx", "next", "-p", "p", "--json"],
     ]:
         result = runner.invoke(main, args)
         assert result.exit_code == 0, result.output
@@ -238,6 +239,58 @@ def test_ctx_help_in_russian(tmp_path: Path, isolated_cod_doc_home: Path) -> Non
     assert "docs" in result.output
     assert "drift" in result.output
     assert "search" in result.output
+    assert "next" in result.output
+
+
+def test_ctx_next_json_valid(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    """CUR-016: `ctx next --json` — зеркало MCP `curator_next`."""
+    root = _init_project(tmp_path)
+    _import_corpus(root)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ctx", "next", "-p", "p", "--json"])
+    assert result.exit_code == 0, result.output
+
+    data = json.loads(result.output)
+    assert data["project"] == "p"
+    assert set(data["card"]) == {"drift", "links", "master", "findings"}
+    assert data["card"]["drift"]["project"] == "p"
+    assert set(data["meta"]) == {"generated_at", "truncated", "counts"}
+    assert data["navigation"]["applicable_skills"][0]["name"] == "orchestrator"
+
+    # alpha.md содержит [[doc:missing]] — битая ссылка обязана попасть в очередь.
+    links = [item for item in data["priority"] if item["kind"] == "link"]
+    assert links, "нерезолвящаяся ссылка обязана быть в очереди"
+    assert "link_verify(" in links[0]["suggested_action"]
+
+
+def test_ctx_next_limit_truncates(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    root = _init_project(tmp_path)
+    _import_corpus(root)
+    # Правка мимо БД: даёт edited_in_place вдобавок к битой ссылке, чтобы в
+    # очереди гарантированно было больше одного пункта.
+    with (root / "alpha.md").open("a", encoding="utf-8") as fh:
+        fh.write("\nПравка на диске.\n")
+
+    runner = CliRunner()
+    full = json.loads(runner.invoke(main, ["ctx", "next", "-p", "p", "--json"]).output)
+    assert full["meta"]["counts"]["priority_total"] >= 2
+    assert full["meta"]["truncated"] is False
+
+    result = runner.invoke(main, ["ctx", "next", "-p", "p", "--limit", "1", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert len(data["priority"]) == 1
+    assert data["meta"]["truncated"] is True
+
+
+def test_ctx_next_human_output_lists_the_queue(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    root = _init_project(tmp_path)
+    _import_corpus(root)
+
+    result = CliRunner().invoke(main, ["ctx", "next", "-p", "p"])
+    assert result.exit_code == 0, result.output
+    assert "очередь куратора" in result.output
 
 
 def test_ctx_docs_include_body(tmp_path: Path, isolated_cod_doc_home: Path) -> None:

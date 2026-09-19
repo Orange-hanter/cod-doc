@@ -206,8 +206,15 @@ def _drift_body(status: str, doc_key: str) -> str:
     return f"`{doc_key}`: {explanation}."
 
 
-def _link_findings(session: Session, docs: Sequence[Document]) -> list[GateFinding]:
-    """Находки класса ``link``: ссылки и якоря, которые не резолвятся."""
+def link_findings(session: Session, docs: Sequence[Document]) -> list[GateFinding]:
+    """Находки класса ``link``: ссылки и якоря, которые не резолвятся.
+
+    Публичная с CUR-016: тот же сборщик нужен doc card куратора
+    (``curator_service.next``), а тянуть приватное имя из другого модуля —
+    не контракт. Требования прежние: вызывать внутри
+    ``transactional(..., commit=False)``, потому что ``resolve_section``
+    синхронизирует derived-таблицу ``link`` в памяти.
+    """
     from cod_doc.services import doc_service, link_service
 
     findings: list[GateFinding] = []
@@ -301,7 +308,7 @@ def collect(
     """
     docs = _select_docs(session, project_id, changed_files)
     drift, drift_counts = _drift_findings(session, docs, root_path)
-    findings = [*drift, *_link_findings(session, docs), *_frontmatter_findings(docs)]
+    findings = [*drift, *link_findings(session, docs), *_frontmatter_findings(docs)]
     findings.sort(key=lambda f: (f.path, _SEVERITY_ORDER.get(f.severity, 9), f.code, f.fp))
     return GateReport(
         project=project,

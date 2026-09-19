@@ -13,12 +13,14 @@ non-editable сборку в `~/.cod-doc/runtime`:
 `mcp._tool_manager._tools`), поэтому один процесс = ровно один профиль. Клиент
 выбирает профиль портом, а не флагом.
 
-`:8802` — не task-centric surface. С RFC 25 §3.2 (CUR-007/008) 6 тулов
-профиля `agent` — куратор документации: `agent_capabilities`, `ctx_search`,
-`ctx_docs`, `ctx_drift`, `context_get`, `agent_report`. `agent_capabilities()`
+`:8802` — не task-centric surface. С RFC 25 §3.2/§3.5 (CUR-007/008/016) 6 тулов
+профиля `agent` — куратор документации: `agent_capabilities`, `curator_next`,
+`ctx_search`, `ctx_drift`, `context_get`, `agent_report`. `agent_capabilities()`
 отдаёт `role: "doc-curator"` и `forbidden: [agent_pick, task_checkout,
-task_complete]`. Coding-агенту, которому нужен `agent_pick`/`task_checkout`,
-идти на `:8801` (`standard`), а не на `:8802`.
+task_complete]`. Точка входа в работу — `curator_next(project=...)`: doc card с
+очередью «что протухло и за что браться первым». Coding-агенту, которому нужен
+`agent_pick`/`task_checkout`, идти на `:8801` (`standard`, 130 тулов), а не на
+`:8802`.
 
 ## Команды
 

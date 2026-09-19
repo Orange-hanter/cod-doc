@@ -159,11 +159,42 @@ MVP **не** переписывает `Orchestrator`. Политика: кома
 «не запускать для ADO-*». Follow-up (секция D плана): idle по doc-health
 или удаление автогенерации задач из MASTER.md.
 
-### 3.5. Опционально позже: `curator_next`
+### 3.5. `curator_next` — **реализовано (CUR-016)**
 
 Аналог task card для санитарии: один вызов собирает top drift + broken
-links + stale MASTER hashes в «doc card» с применимыми скиллами. Не входит
-в MVP 6-тул свопа; отдельная задача после стабилизации `ctx_search`.
+links + stale MASTER hashes в «doc card» с применимыми скиллами. Не входил
+в MVP 6-тул свопа; сделан секцией D после стабилизации `ctx_search`.
+
+Как получилось:
+
+```
+curator_next(project: str, limit: int = 10) -> dict
+# {"card": {"drift": {...ctx_drift-shape...}, "links": [...],
+#           "master": [...], "findings": [...]},
+#  "priority": [{"kind": "drift|link|master|finding", "ref", "reason",
+#                "suggested_action"}],
+#  "navigation": {"applicable_skills" (с телами), "next_actions",
+#                 "success_criteria"},
+#  "meta": {"generated_at", "truncated", "counts"}}
+```
+
+- Тело — `cod_doc/services/curator_service.py::next` (read-only,
+  `transactional(..., commit=False)`); обёртка —
+  `cod_doc/mcp/tools/curator_tools.py`; зеркало в CLI — `cod-doc ctx next`.
+- Четыре источника: `projection_service.detect_project_drift`,
+  `drift_gate_service.link_findings`, `core.hash_calc.check_stale_refs`
+  (обе — публичные точки входа, вынесенные из приватных функций этой же
+  задачей), `finding_service.list_findings(status="open")`.
+- Порядок очереди фиксирован: `missing` → `edited_in_place` →
+  `LINK-BROKEN` → hash `BROKEN` → hash `STALE` → `stale_export` →
+  finding. Сначала то, что делает документ недоступным, потом то, что
+  делает его неточным.
+- Скиллы в карточке — `orchestrator`, `drift-handling`,
+  `ground-truth-reconcile`, `doc-style` (cap 4, тела инлайном).
+- Место в профиле `agent` уступил `ctx_docs`: голый листинг документов —
+  строго более слабый ответ на «что мне делать», а тот же срез корпуса
+  лежит внутри drift-половины карточки. Count остался 6; `standard`
+  129 → 130, `full` 133 → 134.
 
 ## 4. Миграция / обратная совместимость
 

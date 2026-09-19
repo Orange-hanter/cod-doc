@@ -39,12 +39,17 @@ def test_agent_profile_in_valid_set() -> None:
 
 
 def test_agent_tools_frozenset_has_six_names() -> None:
-    """RFC 25 §3.2 (CUR-008): still 6 names, but curator ones."""
+    """RFC 25 §3.2/§3.5 (CUR-008 + CUR-016): still 6 names, curator ones.
+
+    CUR-016 swapped ``ctx_docs`` for ``curator_next``: the doc card carries
+    the same corpus slice in its drift half and adds the work queue, so the
+    raw listing no longer earns one of the six slots.
+    """
     assert len(AGENT_TOOLS) == 6
     expected = {
         "agent_capabilities",
+        "curator_next",
         "ctx_search",
-        "ctx_docs",
         "ctx_drift",
         "context_get",
         "agent_report",
@@ -63,6 +68,10 @@ def test_keep_tool_agent_profile() -> None:
     # default surface — the curator does not pick implementation tasks.
     assert keep_tool("agent_pick", "agent") is False
     assert keep_tool("ctx_search", "agent") is True
+    assert keep_tool("curator_next", "agent") is True
+    # CUR-016: registered, but no longer part of the default six.
+    assert keep_tool("ctx_docs", "agent") is False
+    assert keep_tool("ctx_docs", "standard") is True
 
 
 def test_agent_profile_exposes_exactly_six_tools() -> None:
@@ -77,11 +86,12 @@ def test_agent_profile_tools_all_registered_at_startup() -> None:
     for name in AGENT_TOOLS:
         assert name in pre, (
             f"agent tool {name!r} must be registered at server startup. "
-            f"Since RFC 25 §3.2 the curator surface spans three modules: "
+            f"Since RFC 25 §3.2/§3.5 the curator surface spans four modules: "
             f"agent_capabilities/agent_report live in "
-            f"cod_doc/mcp/tools/agent_tools.py, ctx_search/ctx_docs/ctx_drift "
+            f"cod_doc/mcp/tools/agent_tools.py, ctx_search/ctx_drift "
             f"in cod_doc/mcp/tools/doc_tools.py, context_get in "
-            f"cod_doc/mcp/tools/context_tools.py — check the matching "
+            f"cod_doc/mcp/tools/context_tools.py, curator_next in "
+            f"cod_doc/mcp/tools/curator_tools.py — check the matching "
             f"register()."
         )
 

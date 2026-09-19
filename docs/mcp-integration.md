@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **133 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **134 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -26,7 +26,8 @@ MCP (Model Context Protocol) — стандартный протокол для 
 ## Agent profile — 6-tool curator surface (RFC 25 §3.2, по умолчанию)
 
 > **RFC 25 (2026-09-15), своп выполнен планом `doc-curator-2026-09`**
-> (CUR-007 — `ctx_search` с lazy reindex, CUR-008 — перекрой allowlist).
+> (CUR-007 — `ctx_search` с lazy reindex, CUR-008 — перекрой allowlist,
+> CUR-016 — `ctx_docs` → `curator_next`: doc card вместо голого листинга).
 > Дефолтный AI-агент — куратор документации и поиска, не исполнитель
 > задач. `agent_capabilities()` отдаёт `role: "doc-curator"` и
 > `forbidden: ["agent_pick", "task_checkout", "task_complete"]`.
@@ -36,8 +37,8 @@ MCP (Model Context Protocol) — стандартный протокол для 
 | Тул | Что делает |
 |-----|------------|
 | `agent_capabilities()` | L0 entry-point: server version, `role: "doc-curator"`, `forbidden`, доступные skills, валидные TaskStatus, default_project, `next_action_hint` → `ctx_drift` → `ctx_search`. <4KB. |
+| `curator_next(project, limit?)` | **Doc card** (CUR-016): `{card{drift, links, master, findings}, priority[{kind, ref, reason, suggested_action}], navigation{applicable_skills (с ТЕЛАМИ), next_actions, success_criteria}, meta{generated_at, truncated, counts}}`. Порядок очереди: `missing` → `edited_in_place` → `LINK-BROKEN` → hash `BROKEN` → hash `STALE` → `stale_export` → finding. Read-only, идемпотентен. |
 | `ctx_search(project, query, scope?, limit?)` | FTS-поиск по doc/adr/story/task: `{query, total, by_kind: {doc, adr, story, task: [...]}}`. Lazy reindex пустого индекса (CUR-007). |
-| `ctx_docs(project)` | Каталог документов — что уже задокументировано (`= doc_list`). |
 | `ctx_drift(project)` | Дрейф markdown ↔ БД по всему проекту: `edited_in_place` / `stale_export` / `missing` (`= doc_drift_all`). |
 | `context_get(project, target_kind, target_id, depth?)` | Snowball-пакет (L0/L1/L2) под token budget. |
 | `agent_report(project, task_id, kind, message, agent_id?, payload?)` | Dispatcher. `kind ∈ {progress, blocker, approval_request, needs_context}` — эскалация человеку. |
@@ -46,8 +47,8 @@ MCP (Model Context Protocol) — стандартный протокол для 
 
 ```text
 1. agent_capabilities()                    # роль, forbidden, skills, hint
-2. ctx_drift(project)                      # санитарный срез: что протухло
-3. ctx_search(project, query) | ctx_docs(project) | context_get(...)
+2. curator_next(project)                   # doc card: очередь «за что браться»
+3. ctx_drift(project) | ctx_search(project, query) | context_get(...)
    ↓ (починить документацию: import, hashes, links, body)
 4a. self_check, зафиксировать в БД (doc import / hash update)   # готово
 4b. agent_report(kind='approval_request', ...)                  # нужна политика человека
@@ -83,8 +84,8 @@ coding-агента.
 ```bash
 cod-doc-mcp                              # agent (default) — 6 curator tools
 cod-doc-mcp --profile minimal            # 21 cold-start tools
-cod-doc-mcp --profile standard           # 129 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 133 (включая legacy)
+cod-doc-mcp --profile standard           # 130 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 134 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 # CLI equivalent (ADO-079): same catalog filter
 cod-doc mcp --profile standard
@@ -139,7 +140,7 @@ cod-doc mcp --profile standard
 
 | Демон | Адрес | Профиль | Тулов |
 |---|---|---|---|
-| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 129 |
+| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 130 |
 | `com.cod-doc.mcp-agent` | `http://127.0.0.1:8802/mcp` | `agent` | 6 |
 
 Установка, апгрейд и управление — `deploy/launchd/cod-doc-services.sh`
@@ -245,7 +246,7 @@ claude mcp list        # ожидается ровно одна строка cod
 ```
 
 Профиль сервера по умолчанию — `agent` (6 curator-тулов: `agent_capabilities`,
-`ctx_search`, `ctx_docs`, `ctx_drift`, `context_get`, `agent_report`), а не
+`curator_next`, `ctx_search`, `ctx_drift`, `context_get`, `agent_report`), а не
 `standard`, поэтому coding-агенту под stdio его указывают явно
 (`--profile standard`). Поднять HTTP-эндпоинт вручную, без launchd:
 
@@ -337,10 +338,11 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
 | **Legacy (YAML агент)** | 3 | Остаток legacy-surface после STB-002 (2026-06-08): resume-вход + context-хелперы. YAML CRUD (проекты/задачи/MASTER/поиск + hash/verify) удалён — БД источник истины. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
 | **finding.\* (RFC 22)** | 4 | Внешние находки (ai-review / ZAIrgRush / routines): triage и промоушен в задачи. Только профили standard/full | `finding_list`, `finding_get`, `finding_promote`, `finding_dismiss` |
-| **ctx.\* (RFC 22 / RFC 25 §3.2)** | 4 | Контекст для внешних потребителей: `ctx_docs` = `doc_list`, `ctx_search` = `search_service.search` с lazy reindex пустого FTS-индекса (CUR-007) и необязательным `projects=[слаг, …]` — кросс-проектный поиск в пределах одной (hub) БД, чужой `db_url` = ошибка (CUR-013), `ctx_drift` = `doc_drift_all` (SYM-006D) — эти три с CUR-008 входят в дефолтный профиль `agent`; `ctx_drift_gate` — детерминированный гейт документации по файлам PR с идемпотентным PR-комментарием (SYM-010), остаётся только standard/full | `ctx_docs`, `ctx_search`, `ctx_drift`, `ctx_drift_gate` |
+| **ctx.\* (RFC 22 / RFC 25 §3.2)** | 4 | Контекст для внешних потребителей: `ctx_docs` = `doc_list`, `ctx_search` = `search_service.search` с lazy reindex пустого FTS-индекса (CUR-007) и необязательным `projects=[слаг, …]` — кросс-проектный поиск в пределах одной (hub) БД, чужой `db_url` = ошибка (CUR-013), `ctx_drift` = `doc_drift_all` (SYM-006D); `ctx_search` и `ctx_drift` входят в дефолтный профиль `agent`, а `ctx_docs` с CUR-016 уступил там место `curator_next`. `ctx_drift_gate` — детерминированный гейт документации по файлам PR с идемпотентным PR-комментарием (SYM-010), только standard/full | `ctx_docs`, `ctx_search`, `ctx_drift`, `ctx_drift_gate` |
+| **curator.\* (RFC 25 §3.5)** | 1 | Doc card куратора (CUR-016): дрейф проекции, нерезолвящиеся ссылки, протухшие записи реестра хэшей MASTER.md и открытые findings — одной очередью с готовой командой на каждый пункт. Входит в дефолтный профиль `agent`; зеркало в CLI — `cod-doc ctx next` | `curator_next` |
 | **scenario.\* (RFC 24 §9)** | 9 | Сценарии тестирования: авторская половина RFC 24 — что должно быть верно (вид, предусловия, шаги, ожидаемый результат, якорь в capability-документе) и проекция в `docs/system/scenarios/`. Вердикты покрытия сюда не попадают: это доказательства producer'а (STR-002). Только профили standard/full | `scenario_create`, `scenario_get`, `scenario_list`, `scenario_update`, `scenario_retire`, `scenario_set_steps`, `scenario_link`, `scenario_export`, `scenario_coverage` |
 | **structure.\*** | 5 | Pinned code-structure snapshots, drift, scenarios and BFS context (not projection drift; not ai_review findings) | `structure_get`, `structure_context`, `structure_drift`, `structure_scenarios`, `structure_diff` |
-| **ИТОГО** | **133** | | |
+| **ИТОГО** | **134** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
@@ -376,7 +378,7 @@ docstring соответствующих тулов. Для новых инте�
 | Copilot Chat | ✅ | ✅ | ❌ | Частично |
 | Claude Desktop | ✅ | ✅ | ❌ | Через copy-paste |
 | CI/CD | ✅ | ❌ | ✅ | ❌ |
-| Кол-во инструментов | 133 | 133 | ~8 | 0 |
+| Кол-во инструментов | 134 | 134 | ~8 | 0 |
 | Семантический поиск | ✅ | ✅ | ❌ | ❌ |
 | `project` в вызове | обязателен | можно через дефолт | — | — |
 | Дефолтный проект | нет (общий процесс) | есть (процесс = сессия) | — | — |

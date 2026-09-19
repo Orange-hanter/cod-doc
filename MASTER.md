@@ -109,11 +109,12 @@ graph TD
     Поглощает внешнюю часть RFC 17, зависит от RFC 22.
   - **25 (doc-curator-track):** 🟢 Секция B закрыта 2026-09-19 (CUR-007/008) —
     дефолтный агент = куратор документации и поиска, не исполнитель
-    ADO-/SYM-задач; профиль `agent` отдаёт `agent_capabilities`/`ctx_search`/
-    `ctx_docs`/`ctx_drift`/`context_get`/`agent_report`. План
-    `doc-curator-2026-09`, секции C/D в очереди. Частично реанимирует
+    ADO-/SYM-задач; профиль `agent` отдаёт `agent_capabilities`/`curator_next`/
+    `ctx_search`/`ctx_drift`/`context_get`/`agent_report` (CUR-016 заменил
+    `ctx_docs` на doc card `curator_next`, §3.5). План
+    `doc-curator-2026-09`, секции C/D в работе. Частично реанимирует
     поисковый контракт RFC 19.
-    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:b184f6fdd177`
+    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:dc629ea60ec3`
 - **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:5e3825c966fd`
 - **Статус:** `🟢 VERIFIED`
 
@@ -187,7 +188,7 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:0440fb55f08f`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:f6bd9cca5e9d`
 - **Статус:** `🟢 VERIFIED`
 
 ### Zsh-дополнение
@@ -279,12 +280,12 @@ graph TD
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `91cf98985845` | 2026-09-11 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `0440fb55f08f` | 2026-09-20 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `f6bd9cca5e9d` | 2026-09-20 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `9f8d2402d1d4` | 2026-09-15 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `f949443ce8b5` | 2026-09-11 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
 | 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
-| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `b184f6fdd177` | 2026-09-19 | 🟢 VERIFIED |
+| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `dc629ea60ec3` | 2026-09-19 | 🟢 VERIFIED |
 | 19 | Zsh-дополнение | `doc:docs_zsh-completion_md` | `f177c8373beb` | 2026-09-17 | 🟢 VERIFIED |
 
 > **Всего:** 19 документов | 🟢 VERIFIED: 14 | 🟡 LEGACY: 3 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
