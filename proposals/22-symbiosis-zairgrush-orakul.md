@@ -267,6 +267,17 @@ cod-doc finding stability --project SLUG --sha SHA
 - `agent_pick`/`agent_capabilities` получают необязательный `projects`;
   блокировки `task_checkout` перепроверяются под hub.
 
+> **Частично реализовано 2026-09-20 (CUR-013, план `doc-curator-2026-09`,
+> секция C — [аудит](../docs/system/audit/2026-09-20-doc-curator-section-c.md)).**
+> `search_service.search(..., project_ids=[...])` → `WHERE project_id IN
+> (...)` готов; поверхности — MCP `ctx_search(projects=[...])` и CLI
+> `cod-doc search --projects a,b` / `cod-doc ctx search --projects a,b`, не
+> `GET /api/v1/search` — REST-эндпоинт `projects` не принимает, и
+> `SearchHit` не несёт `project`. Остаток этого пункта и трёх остальных
+> (`[[doc:slug:key]]`, B12, `GET /api/v1/search`, `agent_pick --projects`)
+> — задача **STO-015** (план `adoption-2026-08`); `agent_pick --projects`
+> снят RFC 25 (куратор на профиле `agent` задачи не берёт).
+
 ## 4. Миграция / обратная совместимость
 
 - **`0026_shared_hub`**: batch-rebuild `task` — `UNIQUE(task_id)` →

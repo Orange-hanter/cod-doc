@@ -250,3 +250,16 @@ curator_next(project: str, limit: int = 10) -> dict
 Критерий «RFC готов к декомпозиции»: контракт `AGENT_TOOLS` и
 `ctx_search(...)` заданы; non-goals выписаны; зависимость от живого
 `search_service.search` указана с `file:line`.
+
+> **Секция C закрыта 2026-09-20 (CUR-010…014).** Кросс-проектный поиск
+> куратора (последний пункт секции C) реализован частично: MCP
+> `ctx_search(projects=[...])` и CLI `search --projects`/`ctx search
+> --projects` работают через `search_service.search(project_ids=...)` +
+> `resolve_cross_project_ids` (hub-режим, общий `db_url`). REST `GET
+> /api/v1/search` в кросс-проектность не заведён — `SearchHit`
+> (`cod_doc/api/v1/schemas.py`) не несёт `project`, эндпоинт не принимает
+> `projects`. Остаток — `[[doc:slug:key]]`, Chroma-фильтр B12,
+> `GET /api/v1/search` с `projects` — задача **STO-015** (план
+> `adoption-2026-08`, не этот план); `agent_pick --projects` сознательно не
+> делается — `agent_pick` остаётся task-centric инструментом coding-агента
+> на `standard`/`full`. Аудит: [audit/2026-09-20-doc-curator-section-c.md](../docs/system/audit/2026-09-20-doc-curator-section-c.md).
