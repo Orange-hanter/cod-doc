@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -31,25 +32,39 @@ def search_page(
     q: str = "",
     scope: str | None = None,
     limit: int = 20,
+    index_error: str | None = None,
 ) -> HTMLResponse:
-    """Search form + result groups."""
+    """Search form + result groups.
+
+    CUR-010: a project DB that predates migration 0023 has no
+    ``db_search_idx`` table — ``search_service.search`` raises
+    ``SearchIndexMissing`` instead of the raw ``OperationalError`` that used
+    to bubble up as an unhandled 500. Caught here and rendered as a plain
+    message on the page (``index_error`` also arrives via the query string
+    when ``search_reindex`` below hits the same guard and redirects back).
+    """
     proj = get_project(slug)
     session, project_id = db
 
     result: dict[str, Any] | None = None
+    error_message = index_error
     if q.strip():
-        result = search_service.search(
-            session,
-            project_id=project_id,
-            query=q,
-            scope=(scope or None),
-            limit=limit,
-        )
-        # Decorate each hit with a deep link.
-        for kind, hits in result["by_kind"].items():
-            mk = _DEEPLINK_BY_KIND.get(kind)
-            for h in hits:
-                h["url"] = mk(slug, h["ref"]) if mk else None
+        try:
+            result = search_service.search(
+                session,
+                project_id=project_id,
+                query=q,
+                scope=(scope or None),
+                limit=limit,
+            )
+        except search_service.SearchIndexMissing as exc:
+            error_message = str(exc)
+        else:
+            # Decorate each hit with a deep link.
+            for kind, hits in result["by_kind"].items():
+                mk = _DEEPLINK_BY_KIND.get(kind)
+                for h in hits:
+                    h["url"] = mk(slug, h["ref"]) if mk else None
 
     return templates.TemplateResponse(
         request,
@@ -59,6 +74,7 @@ def search_page(
             "q": q,
             "scope": scope,
             "result": result,
+            "index_error": error_message,
             "scopes": ["task", "doc", "story", "adr", "finding"],
         },
     )
@@ -71,7 +87,14 @@ def search_reindex(
 ) -> RedirectResponse:
     """Rebuild FTS index for this project."""
     session, project_id = db
-    counts = search_service.reindex_all(session, project_id)
+    try:
+        counts = search_service.reindex_all(session, project_id)
+    except search_service.SearchIndexMissing as exc:
+        session.rollback()
+        return RedirectResponse(
+            url=f"/p/{slug}/search?q=&index_error={quote(str(exc))}",
+            status_code=303,
+        )
     session.commit()
     # Pass counts as a flash via query string — kept simple for now.
     total = counts.get("total", 0)

@@ -478,6 +478,8 @@ def ctx_search(
                 scope=scope,
                 limit=limit,
             )
+    except search_service.SearchIndexMissing as exc:
+        raise click.ClickException(str(exc)) from exc
     finally:
         engine.dispose()
 

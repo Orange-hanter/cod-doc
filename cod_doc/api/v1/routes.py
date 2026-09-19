@@ -28,7 +28,7 @@ from cod_doc.services.activity_service import _uuid7, emit
 from cod_doc.services.context_service import context_get
 from cod_doc.services.finding_service import ingest_findings
 from cod_doc.services.ingest_service import INGEST_ADAPTERS, lookup_adapter
-from cod_doc.services.search_service import search
+from cod_doc.services.search_service import SearchIndexMissing, search
 
 logger = logging.getLogger("cod_doc.api")
 
@@ -158,5 +158,8 @@ def search_v1(
     """FTS5-поиск по проекту (обёртка ``search_service.search``)."""
     del slug  # slug уже провалидирован dependency get_project_db
     session, project_id = db
-    result = search(session, project_id=project_id, query=q, scope=scope, limit=limit)
+    try:
+        result = search(session, project_id=project_id, query=q, scope=scope, limit=limit)
+    except SearchIndexMissing as exc:
+        raise HTTPException(503, str(exc)) from exc
     return SearchResponse(**result)

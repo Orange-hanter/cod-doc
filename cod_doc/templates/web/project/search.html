@@ -35,7 +35,9 @@
     <span class="muted-tiny">Run after bulk changes if hits look stale.</span>
   </form>
 
-  {% if result is none %}
+  {% if index_error %}
+    <p class="warn">{{ index_error }}</p>
+  {% elif result is none %}
     <p class="muted">Enter a query above to start.</p>
   {% elif result.total == 0 %}
     <p class="muted">No hits for <code>{{ q }}</code>.</p>

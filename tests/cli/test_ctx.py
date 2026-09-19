@@ -179,6 +179,38 @@ def test_ctx_search_scope_and_limit(tmp_path: Path, isolated_cod_doc_home: Path)
     assert data["by_kind"]["doc"] == []
 
 
+def test_ctx_search_missing_index_table_exits_clean(
+    tmp_path: Path, isolated_cod_doc_home: Path
+) -> None:
+    """CUR-010: a DB that predates migration 0023 has no ``db_search_idx``.
+
+    ``ctx search`` must fail with a clean ``click.ClickException`` (exit 1,
+    no traceback) instead of a raw ``sqlalchemy.exc.OperationalError``.
+    """
+    from sqlalchemy import text
+
+    from cod_doc.config import Config
+    from cod_doc.infra.db import db_for_entry, transactional
+
+    root = _init_project(tmp_path)
+    _import_corpus(root)
+
+    entry = Config.load().get_project("p")
+    assert entry is not None
+    factory, engine = db_for_entry(entry)
+    try:
+        with transactional(factory) as session:
+            session.execute(text("DROP TABLE db_search_idx"))
+    finally:
+        engine.dispose()
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["ctx", "search", "-p", "p", "alpha"])
+    assert result.exit_code == 1
+    assert "db_search_idx" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_ctx_dry_read_writes_nothing(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
     root = _init_project(tmp_path)
     _import_corpus(root)
