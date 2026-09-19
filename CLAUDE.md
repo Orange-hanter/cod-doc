@@ -69,6 +69,8 @@ cod-doc serve                            # REST API + web UI на :8765
 cod-doc-mcp                              # MCP stdio; профиль по умолчанию agent (--profile / COD_DOC_PROFILE)
 docker compose up -d                     # контейнер cod-doc, healthcheck /api/health
 cod-doc doc drift --project cod-doc --all # дрейф БД ↔ markdown без перезаписи
+cod-doc doc tree show -p cod-doc          # разделы дерева документации + Инбокс
+cod-doc doc tree classify -p cod-doc      # сухая раскладка по правилам; --apply записывает
 cod-doc ctx docs|drift|search --json     # контекст для промпта в JSON (ctx docs --include-body — с телом)
 cod-doc ctx next -p cod-doc --json       # doc card куратора: очередь «что чинить» (зеркало MCP curator_next)
 cod-doc ingest ai_review -p cod-doc --from-pr 123   # findings из артефакта PR через gh; далее finding_promote
@@ -176,6 +178,21 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - **Скиллы** — `cod_doc/skills/<name>/SKILL.md` (YAML-frontmatter + Markdown),
   подбираются `agent/skill_matcher.py`. Новое поведение агента → новый/правленый
   скилл, **не** правка системного промпта.
+- **Дерево документации — данные, не вёрстка** (ADO-116). Разделы живут в
+  `doc_node` (паттерн `plan_section`/`story_section` плюс `parent_id` и
+  `intent`), документ ссылается на раздел через `document.node_id`. Правила
+  раскладки — `services/doc_taxonomy.py`: конъюнкция условий внутри правила,
+  побеждает первое совпадение. Это граница с `nav_service._JOURNEY`, где
+  `type_ok or pat_ok` загоняет все `module-spec` в шаг «Data Model». Что
+  правилам не подошло, лежит в Инбоксе — `node_id IS NULL`, единственное
+  представление состояния «не разложен»; привязка к разделу-инбоксу
+  нормализуется в NULL. Раскладка не двигает `document.last_updated`: это
+  отметка о свежести содержимого, и `classify --apply` обнулил бы её всему
+  корпусу разом.
+- **Миграции, трогающие `document`, — без `batch_alter_table`.** На SQLite
+  batch пересоздаёт таблицу, а DROP старой уносит по CASCADE все `section` и
+  висящие на них `link`. Проверено: 1379 секций и 841 ссылка. На пустой
+  тестовой БД такая миграция зеленеет.
 - **Проекция markdown** — артефакт, не исходник: `Document.projection_hash`
   ловит edit-in-place (`cod-doc doc drift`), а `MASTER.md` держит отдельный
   реестр хэшей файлов — пересчёт через `cod-doc hash update`
@@ -199,7 +216,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
-| `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017); незакрытый долг — `update_status` и `delete`, каждый с обоснованием |
+| `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017) и `doc_tree_service` (ADO-116); незакрытый долг — `update_status` и `delete`, каждый с обоснованием |
+| `services/test_migration_0035_preserves_data.py` | миграция не теряет секции и ссылки: наливает данные на предыдущей ревизии, потом гонит upgrade. На пустой БД такая потеря не видна |
 | `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
 | `cli/test_zsh_completion_queries.py` | SQL дополнения выполняется на свежей схеме (ловит переименование колонки) |
 | `cli/test_zsh_completion_runtime.py` | prelude в настоящем zsh: WAL-БД без `-shm`, Postgres-проект, нет файла — молчат, а не шумят |

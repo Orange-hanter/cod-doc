@@ -17,6 +17,20 @@
 
 {% set _active_status = filters.status or "live" %}
 
+{#- Сборка адреса: фильтры и режим группировки обязаны пережить любой клик.
+    До ADO-116 форма фильтра не несла `view`, и «Apply» в плоском режиме молча
+    выбрасывал обратно в дерево. -#}
+{% macro docs_url(group=None, node=None, status=None) -%}
+  {%- set g = group if group is not none else group_by -%}
+  {%- set n = node if node is not none else selected -%}
+  {%- set s = status if status is not none else filters.status -%}
+  /p/{{ project.name }}/docs?group={{ g }}
+  {%- if n %}&amp;node={{ n }}{% endif -%}
+  {%- if filters.q %}&amp;q={{ filters.q | urlencode }}{% endif -%}
+  {%- if filters.type %}&amp;type={{ filters.type }}{% endif -%}
+  {%- if s %}&amp;status={{ s }}{% endif -%}
+{%- endmacro %}
+
 <nav class="docs-action-bar">
   <a class="btn btn-primary" href="/p/{{ project.name }}/docs/new">➕ New blank</a>
   <a class="btn btn-secondary" href="/p/{{ project.name }}/docs/generate">✨ Generate via AI</a>
@@ -24,37 +38,49 @@
   <a class="btn docs-nav-btn" href="/p/{{ project.name }}/docs/navigator">🗺 Navigator</a>
 </nav>
 
+{# Здоровье корпуса одной строкой: сколько всего, сколько не разложено,
+   сколько разошлось с файлами. Инбокс — кликабельный: это очередь работы. #}
+<nav class="docs-stats" aria-label="Состояние корпуса">
+  <a class="docs-stat" href="{{ docs_url(node='') }}">
+    <span class="docs-stat-label">Документов</span>
+    <span class="docs-stat-value">{{ stats.total }}</span>
+  </a>
+  <a class="docs-stat{% if stats.unplaced %} docs-stat-warn{% endif %}"
+     href="{{ docs_url(group='node', node=inbox_key or '_none') }}">
+    <span class="docs-stat-label">Не разложено</span>
+    <span class="docs-stat-value">{{ stats.unplaced }}</span>
+  </a>
+  {# Дрейф приезжает out-of-band вместе с метками в таблице: его обход стоит
+     185 мс из 190, и шапка не должна его ждать. #}
+  <span id="docs-drift-stat" class="docs-stat">
+    <span class="docs-stat-label">Дрейф</span>
+    <span class="docs-stat-value docs-stat-pending">…</span>
+  </span>
+</nav>
+
 {# Status filter button bar — default 'Live' hides deprecated docs from the listing. #}
 <nav class="view-toggle" aria-label="Filter documents by status">
-  {% set _q = "&q=" ~ filters.q if filters.q else "" %}
-  {% set _t = "&type=" ~ filters.type if filters.type else "" %}
-  <a class="view-btn{% if _active_status == 'live' %} view-btn-active{% endif %}"
-     href="/p/{{ project.name }}/docs?status=live{{ _q }}{{ _t }}">
+  <a class="view-btn{% if _active_status == 'live' %} view-btn-active{% endif %}" href="{{ docs_url(status='live') }}">
     <span class="view-btn-label">Live</span>
     <span class="view-btn-count">{{ counts.live }}</span>
   </a>
-  <a class="view-btn view-btn-in_progress{% if _active_status == 'active' %} view-btn-active{% endif %}"
-     href="/p/{{ project.name }}/docs?status=active{{ _q }}{{ _t }}">
+  <a class="view-btn view-btn-in_progress{% if _active_status == 'active' %} view-btn-active{% endif %}" href="{{ docs_url(status='active') }}">
     <span class="view-btn-label">Active</span>
     <span class="view-btn-count">{{ counts.active }}</span>
   </a>
-  <a class="view-btn{% if _active_status == 'draft' %} view-btn-active{% endif %}"
-     href="/p/{{ project.name }}/docs?status=draft{{ _q }}{{ _t }}">
+  <a class="view-btn{% if _active_status == 'draft' %} view-btn-active{% endif %}" href="{{ docs_url(status='draft') }}">
     <span class="view-btn-label">Draft</span>
     <span class="view-btn-count">{{ counts.draft }}</span>
   </a>
-  <a class="view-btn{% if _active_status == 'review' %} view-btn-active{% endif %}"
-     href="/p/{{ project.name }}/docs?status=review{{ _q }}{{ _t }}">
+  <a class="view-btn{% if _active_status == 'review' %} view-btn-active{% endif %}" href="{{ docs_url(status='review') }}">
     <span class="view-btn-label">Review</span>
     <span class="view-btn-count">{{ counts.review }}</span>
   </a>
-  <a class="view-btn view-btn-deprecated{% if _active_status == 'deprecated' %} view-btn-active{% endif %}"
-     href="/p/{{ project.name }}/docs?status=deprecated{{ _q }}{{ _t }}">
+  <a class="view-btn view-btn-deprecated{% if _active_status == 'deprecated' %} view-btn-active{% endif %}" href="{{ docs_url(status='deprecated') }}">
     <span class="view-btn-label">Deprecated</span>
     <span class="view-btn-count">{{ counts.deprecated }}</span>
   </a>
-  <a class="view-btn{% if _active_status == 'all' %} view-btn-active{% endif %}"
-     href="/p/{{ project.name }}/docs?status=all{{ _q }}{{ _t }}">
+  <a class="view-btn{% if _active_status == 'all' %} view-btn-active{% endif %}" href="{{ docs_url(status='all') }}">
     <span class="view-btn-label">All</span>
     <span class="view-btn-count">{{ counts.total }}</span>
   </a>
@@ -62,95 +88,68 @@
 
 <form method="get" action="/p/{{ project.name }}/docs" class="docs-filterbar">
   <input type="search" name="q" value="{{ filters.q }}"
-         placeholder="Search by title or doc key…" class="docs-search">
+         placeholder="Поиск по заголовку или ключу…" class="docs-search">
   <select name="type">
-    <option value="">— Type —</option>
+    <option value="">— Тип —</option>
     {% for t in document_types %}
       <option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>
     {% endfor %}
   </select>
+  {#- ADO-116: режим группировки и выбранный раздел едут вместе с фильтром.
+      Без этих трёх полей «Apply» сбрасывал вид на дефолтный. -#}
   <input type="hidden" name="status" value="{{ filters.status }}">
-  <button type="submit">Apply</button>
+  <input type="hidden" name="group" value="{{ group_by }}">
+  <input type="hidden" name="node" value="{{ selected }}">
+  <button type="submit">Применить</button>
   {% if filters.q or filters.type or filters.status %}
-    <a class="muted" href="/p/{{ project.name }}/docs?view={{ view }}">clear</a>
+    <a class="muted" href="/p/{{ project.name }}/docs?group={{ group_by }}">сбросить</a>
   {% endif %}
-  <span class="muted-tiny" style="margin-left:auto">View:</span>
-  <a class="{{ 'active' if view == 'tree' else '' }}"
-     href="/p/{{ project.name }}/docs?view=tree{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.type %}&type={{ filters.type }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}">tree</a>
-  ·
-  <a class="{{ 'active' if view == 'flat' else '' }}"
-     href="/p/{{ project.name }}/docs?view=flat{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.type %}&type={{ filters.type }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}">flat</a>
+
+  {# Одна ручка вместо пары мелких ссылок «tree · flat» (ADO-119): она
+     выбирает, чем рельс делит корпус, а не какая из двух вёрсток включена. #}
+  <span class="docs-groupby" role="group" aria-label="Группировка">
+    <span class="docs-groupby-label">Группировка</span>
+    {% set _labels = {'node': 'Раздел', 'path': 'Путь', 'type': 'Тип', 'status': 'Статус'} %}
+    {% for mode in group_modes %}
+      <a class="docs-groupby-btn{% if group_by == mode %} docs-groupby-btn-active{% endif %}"
+         href="{{ docs_url(group=mode, node='') }}">{{ _labels[mode] }}</a>
+    {% endfor %}
+  </span>
 </form>
 
-{% if not documents %}
-  <p class="muted">
-    {% if filters.q or filters.type or filters.status %}
-      Под фильтр ничего не попало.
-    {% else %}
-      В этом проекте пока нет документов. Создай первый через <strong>➕ New blank</strong>.
-    {% endif %}
-  </p>
-{% elif view == 'tree' %}
-  {% macro render_node(node) %}
-    {# Recursive folder/file rendering. #}
-    <details class="docs-tree-node" open>
-      <summary>
-        <span class="docs-folder">{{ node.name }}</span>
-        <span class="muted-tiny">{{ node.total }}</span>
-      </summary>
-      {% for sub in node.subfolders %}
-        {{ render_node(sub) }}
-      {% endfor %}
-      {% if node.files %}
-        <table class="grid docs-tree-files">
-          <tbody>
-            {% for d in node.files %}
-              <tr>
-                <td class="mono"><a href="/p/{{ project.name }}/docs/{{ d.doc_key }}">{{ d.doc_key.split('/')[-1] }}</a></td>
-                <td>{{ d.title }}</td>
-                <td><span class="badge badge-{{ d.status }}">{{ d.status }}</span></td>
-                <td class="muted-tiny">{{ d.type }}</td>
-                <td class="muted">{{ d.owner or "—" }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% endif %}
-    </details>
-  {% endmacro %}
-  <section class="docs-tree">
-    {% for node in tree %}
-      {{ render_node(node) }}
-    {% endfor %}
-  </section>
-{% else %}
-  <table class="grid">
-    <thead>
-      <tr>
-        <th>Doc&nbsp;key</th>
-        <th>Title</th>
-        <th>Type</th>
-        <th>Status</th>
-        <th>Owner</th>
-        <th>Last&nbsp;updated</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for d in documents %}
-      <tr>
-        <td class="mono"><a href="/p/{{ project.name }}/docs/{{ d.doc_key }}">{{ d.doc_key }}</a></td>
-        <td>{{ d.title }}</td>
-        <td>{{ d.type }}</td>
-        <td><span class="badge badge-{{ d.status }}">{{ d.status }}</span></td>
-        <td class="muted">{{ d.owner or "—" }}</td>
-        <td class="muted">{{ d.last_updated | short_datetime }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-{% endif %}
+<div class="docs-layout">
+  {% macro rail_url(key) %}{{ docs_url(node=key) }}{% endmacro %}
+  {% include "_frag/docs_rail.html" %}
 
-<details id="import-section" class="docs-toolbar-old">
+  <section class="docs-content">
+    {% if selected %}
+      <header class="docs-content-head">
+        <h2>{{ selected_title }} <span class="muted-tiny">· {{ documents | length }}</span></h2>
+        {% for item in rail %}
+          {% if item.key == selected and item.intent %}
+            <p class="docs-intent">{{ item.intent }}</p>
+          {% endif %}
+        {% endfor %}
+      </header>
+    {% endif %}
+
+    {% if not documents %}
+      <p class="muted">
+        {% if filters.q or filters.type or filters.status %}
+          Под фильтр ничего не попало.
+        {% elif selected %}
+          Раздел пуст.
+        {% else %}
+          В этом проекте пока нет документов. Создай первый через <strong>➕ New blank</strong>.
+        {% endif %}
+      </p>
+    {% else %}
+      {% include "_frag/docs_table.html" %}
+    {% endif %}
+  </section>
+</div>
+
+<details id="import-section" class="docs-toolbar">
   <summary>📥 Import markdown</summary>
   <form method="post"
         action="/p/{{ project.name }}/docs/import"

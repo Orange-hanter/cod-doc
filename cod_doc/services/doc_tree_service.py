@@ -22,7 +22,6 @@ Caller owns the transaction.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, NamedTuple
 
 from cod_doc.domain.entities import DocNode, DocumentType, EntityKind
@@ -306,8 +305,9 @@ def delete_node(
 
     moved = len(docs)
     for doc in docs:
+        # ``last_updated`` не трогаем по той же причине, что в ``assign``:
+        # перенос между разделами не правит содержимое документа.
         doc.node_id = target_id
-        doc.last_updated = datetime.now(UTC)
 
     session.delete(model)
     session.flush()
@@ -426,7 +426,12 @@ def assign(
     doc.node_id = new_id
     if position is not None:
         doc.node_position = position
-    doc.last_updated = datetime.now(UTC)
+    # ``last_updated`` намеренно не трогаем. Это отметка о свежести содержимого:
+    # по ней человек читает колонку «обновлён», а правила FM-004/FM-005 —
+    # протухание документа. Раскладка по разделам содержимого не меняет, а
+    # ``classify --apply`` проходит разом по всему корпусу: один такой вызов
+    # обнулил бы признак протухания у всех документов сразу. Когда именно
+    # документ переложили, хранят ревизия и activity event.
     session.flush()
 
     rev.write(

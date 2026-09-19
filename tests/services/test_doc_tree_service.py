@@ -353,3 +353,27 @@ def test_inbox_is_one_state_not_two(session_factory) -> None:  # type: ignore[no
         stats = {s.node.node_key: s.doc_count for s in tree.node_stats(session, pid)}
         assert stats["inbox"] == 1, "узел Инбокса показывает неразложенные"
         assert stats["vision"] == 0
+
+
+def test_assign_does_not_touch_content_freshness(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """``last_updated`` — отметка о свежести содержимого, не о раскладке.
+
+    По ней человек читает колонку «обновлён», а правила FM-004/FM-005 — когда
+    документ протух. ``classify --apply`` проходит разом по всему корпусу:
+    если бы раскладка её двигала, один вызов обнулил бы признак протухания у
+    всех документов сразу.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        doc = _doc(session, pid, "docs/system/VISION", DocumentType.VISION)
+        stamp = doc.last_updated
+
+        tree.classify_project(session, project_id=pid, author="human:test", dry_run=False)
+        session.flush()
+
+        refreshed = (
+            session.query(DocumentModel).filter(DocumentModel.doc_key == "docs/system/VISION").one()
+        )
+        assert refreshed.node_id is not None, "документ должен быть разложен"
+        assert refreshed.last_updated == stamp

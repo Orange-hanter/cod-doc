@@ -42,6 +42,8 @@ from ._types import (
 from .parser import parse
 from .rename_cascade import rename_cascade
 from .resolver import (
+    LinkCounts,
+    counts_for_project,
     list_code_refs,
     list_for_section,
     list_incoming_for_doc,
@@ -54,10 +56,12 @@ from .resolver import (
 __all__ = [
     "EntityKind",
     "IncomingLink",
+    "LinkCounts",
     "LinkNotFoundError",
     "ParsedLink",
     "RenameCascadeReport",
     "VerifyReport",
+    "counts_for_project",
     "list_code_refs",
     "list_for_section",
     "list_incoming_for_doc",

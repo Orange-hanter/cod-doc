@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from cod_doc.domain.entities import Link, LinkKind
-from cod_doc.infra.models import LinkModel
+from cod_doc.infra.models import LinkModel, SectionModel
 from cod_doc.infra.repositories.base import BaseRepository
 
 
@@ -68,3 +68,34 @@ class LinkRepository(BaseRepository[Link, LinkModel]):
         for model in self.session.execute(stmt).scalars():
             self.session.delete(model)
         self.session.flush()
+
+    def incoming_counts(self, project_id: int) -> dict[str, int]:
+        """``doc_key → сколько документов на него ссылается``.
+
+        Один агрегат на весь список. Документ без входящих ссылок — сигнал, что
+        он выпал из навигации: на живом корпусе cod-doc таких 55 из 170, и
+        увидеть это можно было только отдельным запросом к БД.
+        """
+        stmt = (
+            select(LinkModel.to_doc_key, func.count(LinkModel.row_id))
+            .where(
+                LinkModel.project_id == project_id,
+                LinkModel.to_doc_key.is_not(None),
+            )
+            .group_by(LinkModel.to_doc_key)
+        )
+        return {row[0]: int(row[1]) for row in self.session.execute(stmt) if row[0]}
+
+    def outgoing_counts(self, project_id: int) -> dict[int, int]:
+        """``document_id → сколько ссылок уходит из его секций``.
+
+        Источник ссылки — секция, а не документ, поэтому счёт идёт через join
+        и сворачивается до документа здесь, а не в вызывающем.
+        """
+        stmt = (
+            select(SectionModel.document_id, func.count(LinkModel.row_id))
+            .join(LinkModel, LinkModel.from_section_id == SectionModel.row_id)
+            .where(LinkModel.project_id == project_id)
+            .group_by(SectionModel.document_id)
+        )
+        return {int(row[0]): int(row[1]) for row in self.session.execute(stmt)}

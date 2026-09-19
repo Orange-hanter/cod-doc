@@ -1,0 +1,27 @@
+{# Рельс измерения: разделы дерева (ADO-116) либо производное измерение.
+   Ширина фиксирована, список скроллится — спина навигации остаётся на экране
+   при любом числе документов. #}
+<nav class="docs-rail" aria-label="Разделы документации">
+  <a class="docs-rail-item{% if not selected %} docs-rail-item-active{% endif %}"
+     href="{{ rail_url('') }}">
+    <span class="docs-rail-title">Все документы</span>
+    <span class="docs-rail-count">{{ stats.total }}</span>
+  </a>
+  {% for item in rail %}
+    <a class="docs-rail-item{% if selected == item.key %} docs-rail-item-active{% endif %}{% if item.is_inbox %} docs-rail-item-inbox{% endif %}"
+       href="{{ rail_url(item.key) }}"
+       {% if item.intent %}title="{{ item.intent }}"{% endif %}>
+      <span class="docs-rail-title">
+        {%- if item.under_filled %}<span class="docs-rail-warn" title="Раздел объявлен обязательным и не наполнен">⚠</span> {% endif -%}
+        {{ item.title }}
+      </span>
+      <span class="docs-rail-count{% if item.is_inbox and item.count %} docs-rail-count-warn{% endif %}">{{ item.count }}</span>
+    </a>
+  {% endfor %}
+  {% if group_by == 'node' and not tree_seeded %}
+    <p class="docs-rail-empty">
+      Дерево разделов не заведено.<br>
+      <code>cod-doc doc tree init -p {{ project.name }}</code>
+    </p>
+  {% endif %}
+</nav>

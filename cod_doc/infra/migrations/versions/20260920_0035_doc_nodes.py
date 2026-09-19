@@ -48,72 +48,23 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-# ``batch_alter_table`` на SQLite пересоздаёт таблицу через
-# ``_alembic_tmp_document`` и RENAME. На ``document`` висит view
-# ``document_body``, и RENAME падает с «error in view document_body: no such
-# table: main.document». Поэтому view снимается на время перестройки и
-# восстанавливается следом.
+# Колонки добавляются обычным ``ALTER TABLE ADD COLUMN``, **не**
+# ``batch_alter_table``, и это не стилистический выбор.
 #
-# Текст продублирован из 0030, а не импортирован оттуда, по той же причине, по
-# которой 0030 дословно повторяет форму 0025: миграция — снимок схемы на свой
-# момент, и она обязана пережить любую последующую правку соседнего файла.
-# От текста этого view считается ``document.projection_hash``, так что
-# расхождение здесь молча испортило бы хэши всего корпуса.
-DOCUMENT_BODY_VIEW_SQLITE = """
-CREATE VIEW document_body AS
-SELECT
-  document_id,
-  preamble
-    || CASE WHEN preamble <> '' AND sec <> '' THEN char(10) || char(10) ELSE '' END
-    || sec AS body
-FROM (
-  SELECT
-    d.row_id AS document_id,
-    d.preamble AS preamble,
-    COALESCE((
-      SELECT group_concat(
-        substr('######', 1, s.level) || ' ' || s.heading || char(10) || char(10) || s.body,
-        char(10) || char(10)
-      )
-      FROM (
-        SELECT level, heading, body
-        FROM section
-        WHERE document_id = d.row_id
-        ORDER BY position
-      ) s
-    ), '') AS sec
-  FROM document d
-) AS t
-"""
-
-DOCUMENT_BODY_VIEW_POSTGRES = """
-CREATE VIEW document_body AS
-SELECT
-  document_id,
-  preamble
-    || CASE WHEN preamble <> '' AND sec <> '' THEN E'\\n\\n' ELSE '' END
-    || sec AS body
-FROM (
-  SELECT
-    d.row_id AS document_id,
-    d.preamble AS preamble,
-    COALESCE((
-      SELECT string_agg(
-        repeat('#', s.level) || ' ' || s.heading || E'\\n\\n' || s.body,
-        E'\\n\\n'
-        ORDER BY s.position
-      )
-      FROM section s
-      WHERE s.document_id = d.row_id
-    ), '') AS sec
-  FROM document d
-) AS t
-"""
-
-
-def _document_body_view() -> str:
-    is_sqlite = op.get_bind().dialect.name == "sqlite"
-    return DOCUMENT_BODY_VIEW_SQLITE if is_sqlite else DOCUMENT_BODY_VIEW_POSTGRES
+# На SQLite batch-режим пересоздаёт таблицу: копия в ``_alembic_tmp_document``,
+# DROP старой, RENAME. При включённом ``PRAGMA foreign_keys`` DROP таблицы
+# ``document`` уносит по ``ON DELETE CASCADE`` все её ``section``, а следом —
+# все ``link``, которые висят на секциях. Проверено на копии живой БД: 170
+# документов пережили перестройку, а 1379 секций и 841 ссылка исчезли. На
+# пустой тестовой БД такая миграция зеленеет: терять там нечего.
+#
+# Заодно отпадает и возня с view ``document_body``: он ссылается на
+# ``document``, и RENAME ронял его с «no such table: main.document».
+#
+# ``ALTER TABLE ADD COLUMN`` c ``REFERENCES`` SQLite поддерживает, если у
+# колонки дефолт NULL — ровно наш случай. Ничего не перестраивается, данные не
+# трогаются.
+_NODE_FK = "fk_document_node"
 
 
 def upgrade() -> None:
@@ -148,20 +99,22 @@ def upgrade() -> None:
     op.create_index("ix_doc_node_project", "doc_node", ["project_id", "position"])
     op.create_index("ix_doc_node_parent", "doc_node", ["parent_id"])
 
-    # batch_alter_table: SQLite не умеет ADD COLUMN с FK нативно. Имя
-    # constraint'а задаём явно — иначе downgrade не сможет его снять.
-    op.execute("DROP VIEW IF EXISTS document_body")
-    with op.batch_alter_table("document") as batch:
-        batch.add_column(sa.Column("node_id", sa.Integer(), nullable=True))
-        batch.add_column(sa.Column("node_position", sa.Integer(), nullable=True))
-        batch.create_foreign_key(
-            "fk_document_node",
-            "doc_node",
-            ["node_id"],
-            ["row_id"],
-            ondelete="SET NULL",
+    if op.get_bind().dialect.name == "sqlite":
+        # Alembic не умеет отдать FK внутри ``add_column``: он всегда выносит
+        # его в отдельный ALTER TABLE ADD CONSTRAINT, которого у SQLite нет, и
+        # предлагает batch-режим — тот самый, что уносит секции и ссылки.
+        # Inline-``REFERENCES`` в ADD COLUMN SQLite поддерживает сам, поэтому
+        # здесь DDL пишется руками.
+        op.execute(
+            "ALTER TABLE document ADD COLUMN node_id INTEGER "
+            "REFERENCES doc_node (row_id) ON DELETE SET NULL"
         )
-    op.execute(_document_body_view())
+    else:
+        op.add_column("document", sa.Column("node_id", sa.Integer(), nullable=True))
+        op.create_foreign_key(
+            _NODE_FK, "document", "doc_node", ["node_id"], ["row_id"], ondelete="SET NULL"
+        )
+    op.add_column("document", sa.Column("node_position", sa.Integer(), nullable=True))
     op.create_index("ix_document_node", "document", ["node_id", "node_position"])
 
     op.create_table(
@@ -193,13 +146,15 @@ def downgrade() -> None:
     op.drop_index("ix_doc_node_suggestion_state", table_name="doc_node_suggestion")
     op.drop_table("doc_node_suggestion")
 
+    # Симметрично upgrade'у: обычный DROP COLUMN, без перестройки таблицы.
+    # SQLite ≥ 3.35 умеет его нативно; индекс снимаем первым, иначе колонка
+    # считается занятой. FK уходит вместе с колонкой — отдельного DROP
+    # CONSTRAINT тут не нужно и на SQLite не существует.
     op.drop_index("ix_document_node", table_name="document")
-    op.execute("DROP VIEW IF EXISTS document_body")
-    with op.batch_alter_table("document") as batch:
-        batch.drop_constraint("fk_document_node", type_="foreignkey")
-        batch.drop_column("node_position")
-        batch.drop_column("node_id")
-    op.execute(_document_body_view())
+    if op.get_bind().dialect.name != "sqlite":
+        op.drop_constraint(_NODE_FK, "document", type_="foreignkey")
+    op.execute("ALTER TABLE document DROP COLUMN node_position")
+    op.execute("ALTER TABLE document DROP COLUMN node_id")
 
     op.drop_index("ix_doc_node_parent", table_name="doc_node")
     op.drop_index("ix_doc_node_project", table_name="doc_node")
