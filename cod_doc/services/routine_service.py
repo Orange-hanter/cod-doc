@@ -341,9 +341,11 @@ def _check_doc_unplaced(
     напоминает: документ находим поиском, но в навигации его нет. Проверка
     делает Инбокс видимым как находку, а не только как число на экране.
 
-    Раздел ниже своего ``min_docs`` попадает сюда же: «раздел объявлен
-    обязательным и пуст» — это тот же пробел в навигации, только с другой
-    стороны.
+    Только раскладка. Наполненность раздела (``min_docs``) отсюда уехала в
+    ``doc_node_health``: один и тот же ``under_filled`` считали сразу двое —
+    эта проверка и рельс экрана документации, — а третье представление одного
+    факта и есть то, от чего уходили в ADO-116. Здесь «где лежит», там «чего
+    не написано».
     """
     from cod_doc.services import doc_tree_service
 
@@ -362,17 +364,54 @@ def _check_doc_unplaced(
     findings: list[dict[str, Any]] = [
         {"kind": "unplaced", "doc_key": key} for key in unplaced[:limit]
     ]
-    findings.extend(
-        {"kind": "under_filled", "node_key": stat.node.node_key, "docs": stat.doc_count}
-        for stat in doc_tree_service.node_stats(session, project_id)
-        if stat.under_filled
-    )
     return {
         "findings": findings,
         "findings_count": len(findings),
         "unplaced": len(unplaced),
         "truncated": len(unplaced) > limit,
     }
+
+
+def _check_doc_node_health(
+    session: Session,
+    project_id: int,
+    **_: Any,
+) -> dict[str, Any]:
+    """Пробелы в наполненности разделов: пусто, тонко, без намерения.
+
+    Единственная проверка каталога, которая **пишет** — в таблицу ``finding``,
+    чтобы пробел видел `curator_next` и можно было продвинуть его в задачу
+    через `finding_promote`. Прецедент мутирующего чека в каталоге —
+    ``_check_approval_stale``.
+
+    LLM здесь не зовётся: рутина обязана быть детерминированной и работать без
+    сети. Вердикт «покрывают ли документы раздела его intent» — отдельный
+    проход по кнопке.
+    """
+    from cod_doc.services import doc_node_health
+
+    slug = _project_slug(session, project_id)
+    result = doc_node_health.sync(session, project_id=project_id, project_slug=slug)
+    if not result.seeded:
+        return {
+            "findings": [],
+            "findings_count": 0,
+            "note": "doc tree is not seeded",
+        }
+    # Находка в отчёте прогона одна и сводная: детали лежат в таблице
+    # `finding`, а дублировать их сюда значит завести второе представление.
+    return {
+        "findings": [result.as_dict()] if result.issues else [],
+        "findings_count": result.issues,
+        **result.as_dict(),
+    }
+
+
+def _project_slug(session: Session, project_id: int) -> str:
+    from cod_doc.infra.repositories import ProjectRepository
+
+    project = ProjectRepository(session).get(project_id)
+    return project.slug if project is not None else str(project_id)
 
 
 CheckFn = Callable[..., dict[str, Any]]
@@ -383,6 +422,7 @@ CHECK_CATALOG: dict[str, CheckFn] = {
     "link_integrity": _check_link_integrity,
     "doc_drift": _check_doc_drift,
     "doc_unplaced": _check_doc_unplaced,
+    "doc_node_health": _check_doc_node_health,
     "task_stale": _check_task_stale,
     "alembic_head": _check_alembic_head,
 }

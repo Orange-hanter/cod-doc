@@ -237,12 +237,18 @@ def _docs_screen_context(
         rail = _rail_items(filtered, group_by)
 
     inbox_key = next((n["key"] for n in nodes if n["is_inbox"]), None)
+    # «Все документы» — такой же пункт рельса, как остальные, и обязан жить по
+    # тому же правилу. Он брал `stats.total`, то есть весь корпус мимо фильтра:
+    # при активном Live рельс показывал 170 над суммой каталогов в 169.
+    # `stats.total` остаётся корпусным — он питает карточку «Документов».
+    rail_total = len(filtered)
     shown = _select_rail_bucket(filtered, group_by, selected, inbox_key) if selected else filtered
 
     return {
         "project": {"name": proj.entry.name},
         "documents": shown,
         "rail": rail,
+        "rail_total": rail_total,
         "group_by": group_by,
         "group_modes": _GROUP_MODES,
         "selected": selected,

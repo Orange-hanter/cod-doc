@@ -1,8 +1,0 @@
-/* COD-DOC web — entry point. Partials live in css/. Order matters: base
-   tokens / layout first, then components (page-shared widgets), then
-   page-specific overrides (task-detail). Browsers resolve @import via
-   additional GETs against /static/css/* — fine over HTTP/2. */
-
-@import url("css/_base.css");
-@import url("css/_components.css");
-@import url("css/_task_detail.css");

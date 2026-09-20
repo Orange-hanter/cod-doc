@@ -130,14 +130,14 @@ graph TD
 ### CI Pipeline (GitHub Actions)
 - **Описание:** Непрерывная интеграция: ruff-линтинг (blocking), mypy strict
   (blocking), pytest matrix Python 3.11/3.12/3.13, Docker build + smoke test.
-- **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:fe11e3504b18`
+- **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:7c133a394eb3`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
 
 ### CD Pipeline (GitHub Actions)
 - **Описание:** Доставка: сборка Docker-образа и публикация в GHCR при
   тегировании v* (семантическое версионирование: v1.2.3).
-- **Ссылка:** `📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:bec2cea789cd`
+- **Ссылка:** `📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:90c54859cba1`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
 
@@ -197,7 +197,7 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:f6bd9cca5e9d`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:b7eaa60aeb8a`
 - **Статус:** `🟢 VERIFIED`
 
 ### Zsh-дополнение
@@ -252,12 +252,12 @@ graph TD
   },
   "handoffs": {
     "ci": {
-      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:fe11e3504b18",
+      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:7c133a394eb3",
       "trigger": "push / pull_request в main и develop",
       "pipeline": "ruff → mypy → pytest (матрица 3.11/3.12/3.13) → docker build + smoke test"
     },
     "cd": {
-      "workflow": "📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:bec2cea789cd",
+      "workflow": "📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:90c54859cba1",
       "trigger": "push тега v* (семантическое версионирование: v1.2.3)",
       "pipeline": "docker build → push в GHCR (теги: version, major.minor, major, sha)"
     }
@@ -280,8 +280,8 @@ graph TD
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
 | 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `2b50e6643b2a` | 2026-09-20 | 🟢 VERIFIED |
 | 3 | proposals/README.md | `doc:proposals_README_md` | `7b9c5e891225` | 2026-09-20 | 🟢 VERIFIED |
-| 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `fe11e3504b18` | 2026-09-11 | 🟢 VERIFIED |
-| 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `bec2cea789cd` | 2026-09-11 | 🟢 VERIFIED |
+| 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `7c133a394eb3` | 2026-09-11 | 🟢 VERIFIED |
+| 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `90c54859cba1` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
 | 7 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-09-11 | 🟡 LEGACY |
 | 8 | Доменные модели (legacy) | `doc:models_domain_md` | `8ce613932ac9` | 2026-09-17 | 🟡 LEGACY |
@@ -289,7 +289,7 @@ graph TD
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `b471c0708631` | 2026-09-20 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `f6bd9cca5e9d` | 2026-09-20 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `b7eaa60aeb8a` | 2026-09-20 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `84f3b11802f9` | 2026-09-20 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `66518d72d119` | 2026-09-20 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |

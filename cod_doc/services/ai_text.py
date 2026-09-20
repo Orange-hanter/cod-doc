@@ -365,11 +365,32 @@ def _call_lite_raw(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> str:
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
             temperature=0.3,
+            # Рассуждения выключены намеренно. У reasoning-модели `max_tokens` —
+            # общий бюджет вывода, и рассуждения тратят его до того, как напечатан
+            # первый токен ответа: замер на `anthropic/claude-sonnet-5` через
+            # OpenRouter — 2740 токенов, все до единого reasoning,
+            # `finish_reason="length"`, пустой `content` и счёт на 4 цента за ничто.
+            # Все вызовы этой функции просят структурированный JSON или короткую
+            # выжимку с бюджетом 400…2048 токенов, то есть ломались бы все.
+            # Ключ нестандартный, но незнакомые поля тела OpenAI-совместимые
+            # серверы игнорируют.
+            extra_body={"reasoning": {"enabled": False}},
         )
     except Exception as exc:
         raise AIBackendError(f"LLM call failed: {exc}") from exc
 
-    raw = (completion.choices[0].message.content or "").strip()
+    choice = completion.choices[0]
+    raw = (choice.message.content or "").strip()
     if not raw:
-        raise AIBackendError("LLM returned empty response.")
+        # Почему пусто — иначе причину ищут в сети или ключе, а она в бюджете.
+        usage = completion.usage
+        details = usage.completion_tokens_details if usage else None
+        thought = (details.reasoning_tokens if details else 0) or 0
+        if choice.finish_reason == "length" and thought:
+            raise AIBackendError(
+                f"Модель {model} потратила весь бюджет ответа ({max_tokens} токенов) "
+                f"на рассуждения ({thought}) и не напечатала ни одного токена ответа. "
+                "Возьми модель без reasoning или подними бюджет."
+            )
+        raise AIBackendError(f"LLM returned empty response (finish_reason={choice.finish_reason}).")
     return raw

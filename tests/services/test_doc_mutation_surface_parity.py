@@ -108,7 +108,36 @@ TREE_SPEC = ServiceSpec(
     ),
 )
 
-SPECS = (SPEC, TREE_SPEC)
+# Здоровье разделов пишет находки, а значит это write-сервис — заводим в
+# паритет сразу, как и `doc_tree_service` в ADO-116.
+HEALTH_SPEC = ServiceSpec(
+    name="doc_node_health",
+    known_mutations=frozenset({"sync"}),
+    known_reads=frozenset(
+        {
+            "assess",
+            "assess_nodes",
+            "assess_corpus",
+            "tree_is_seeded",
+        }
+    ),
+)
+
+# Вердикт LLM — тоже write-путь: пишет находки в свою партицию.
+INTENT_SPEC = ServiceSpec(
+    name="doc_node_intent",
+    known_mutations=frozenset({"analyze"}),
+    known_reads=frozenset(
+        {
+            "build_prompt",
+            "collect_sections",
+            "parse_verdicts",
+            "verdicts_to_issues",
+        }
+    ),
+)
+
+SPECS = (SPEC, TREE_SPEC, HEALTH_SPEC, INTENT_SPEC)
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)

@@ -5,7 +5,8 @@
   <a class="docs-rail-item{% if not selected %} docs-rail-item-active{% endif %}"
      href="{{ rail_url('') }}">
     <span class="docs-rail-title">Все документы</span>
-    <span class="docs-rail-count">{{ stats.total }}</span>
+    {# Не `stats.total`: тот считает весь корпус, а рельс живёт по фильтру. #}
+    <span class="docs-rail-count">{{ rail_total }}</span>
   </a>
   {% for item in rail %}
     <a class="docs-rail-item{% if selected == item.key %} docs-rail-item-active{% endif %}{% if item.is_inbox %} docs-rail-item-inbox{% endif %}"

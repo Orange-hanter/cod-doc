@@ -39,13 +39,13 @@
 {# ADO-122: широкая таблица скроллится внутри обёртки, а не растягивает
    страницу; Reason и Diff обрезаются блочной обёрткой в ячейке. #}
 <div class="table-scroll">
-<table class="grid">
+<table class="grid revisions-table">
   <thead>
     <tr>
       <th>Revision</th>
       <th>Entity</th>
       <th>Author</th>
-      <th>At</th>
+      <th class="rev-col-when">At</th>
       <th>Reason</th>
       <th>Diff (first line)</th>
     </tr>
@@ -56,7 +56,7 @@
       <td class="mono">{{ r.revision_id }}</td>
       <td class="mono">{{ r.entity_kind }}#{{ r.entity_id }}</td>
       <td>{{ r.author }}</td>
-      <td class="muted" title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</td>
+      <td class="muted rev-col-when" title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</td>
       <td><span class="cell-clamp-prose" title="{{ r.reason }}">{{ r.reason }}</span></td>
       <td class="mono diff-preview"><span class="cell-clamp" title="{{ r.diff_preview }}">{{ r.diff_preview }}</span></td>
     </tr>

@@ -270,9 +270,9 @@ def test_doc_unplaced_routine_reports_the_inbox(engine_with_schema, tmp_path) ->
 
         run = routines.run_now(session, proj_id, "unplaced")
 
-        # Один неразложенный документ плюс разделы ниже своего min_docs:
-        # обе формы — пробел в навигации, только с разных сторон.
-        assert run.findings_count >= 1
+        # Ровно один неразложенный документ. Наполненность разделов уехала
+        # в doc_node_health: эта проверка отвечает только за раскладку.
+        assert run.findings_count == 1
 
     with transactional(factory) as session:
         event = session.execute(

@@ -119,3 +119,60 @@ def test_raises_when_completion_is_empty(monkeypatch) -> None:
 
     with pytest.raises(ai_text.AIBackendError, match="empty"):
         ai_text.improve_text("Some text.", "", cfg=_cfg())
+
+
+# ── _call_lite_raw: бюджет и reasoning ─────────────────────────────────────
+
+
+def _fake_openai(monkeypatch, completion: object, captured: dict) -> None:  # type: ignore[no-untyped-def]
+    """Подменить клиента OpenAI и запомнить аргументы вызова."""
+
+    class FakeChat:
+        def create(self, **kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+            return completion
+
+    class FakeClient:
+        def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+            self.chat = type("_C", (), {"completions": FakeChat()})()
+
+    monkeypatch.setattr("openai.OpenAI", FakeClient)
+
+
+def _completion(content: str, finish_reason: str, reasoning_tokens: int) -> object:
+    message = type("_M", (), {"content": content})()
+    choice = type("_Ch", (), {"message": message, "finish_reason": finish_reason})()
+    details = type("_D", (), {"reasoning_tokens": reasoning_tokens})()
+    usage = type("_U", (), {"completion_tokens_details": details})()
+    return type("_Cm", (), {"choices": [choice], "usage": usage})()
+
+
+def test_lite_call_turns_reasoning_off(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Иначе рассуждения съедят `max_tokens` до первого токена ответа."""
+    captured: dict = {}
+    _fake_openai(monkeypatch, _completion('{"ok": true}', "stop", 0), captured)
+
+    assert ai_text._call_lite_raw("prompt", _cfg(), max_tokens=400) == '{"ok": true}'
+    assert captured["extra_body"] == {"reasoning": {"enabled": False}}
+
+
+def test_budget_spent_on_reasoning_is_named_as_such(monkeypatch) -> None:
+    """Пустой ответ из-за рассуждений нельзя показывать как «пустой ответ».
+
+    Замер на живой модели: 2740 токенов, все до единого reasoning,
+    `finish_reason="length"`, `content` пуст. С прежним текстом ошибки причину
+    ищут в сети или в ключе, а она в бюджете.
+    """
+    captured: dict = {}
+    _fake_openai(monkeypatch, _completion("", "length", 2740), captured)
+
+    with pytest.raises(ai_text.AIBackendError, match="рассуждения"):
+        ai_text._call_lite_raw("prompt", _cfg(), max_tokens=1500)
+
+
+def test_other_empty_answers_carry_the_finish_reason(monkeypatch) -> None:
+    captured: dict = {}
+    _fake_openai(monkeypatch, _completion("", "content_filter", 0), captured)
+
+    with pytest.raises(ai_text.AIBackendError, match="content_filter"):
+        ai_text._call_lite_raw("prompt", _cfg(), max_tokens=400)

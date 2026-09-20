@@ -870,13 +870,27 @@ a.docs-stat:hover { border-color: var(--accent); text-decoration: none; }
 .docs-groupby-btn:hover { color: var(--fg); background: var(--bg-alt); text-decoration: none; }
 .docs-groupby-btn-active { background: var(--bg-alt); color: var(--fg-strong); border-color: var(--border); }
 
-.docs-table { width: 100%; table-layout: fixed; }
+/* `table-layout: fixed` раздаёт остаток ширины первой колонке, и при узком
+   окне остаток уходит в минус: на 900px «Документу» доставалось ~40px,
+   заголовок рвался по слову в строку, а шапки «Документ» и «Раздел» налезали
+   друг на друга. `min-width` + прокрутка обёртки (`.table-scroll` в
+   `docs_list.html`) держат колонку читаемой вместо того, чтобы прятать
+   колонки: на этом экране каждая из них — повод открыть документ. */
+.docs-table { width: 100%; min-width: 760px; table-layout: fixed; }
 .docs-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .docs-cell-title { min-width: 0; }
-.docs-cell-title > a { font-weight: 600; }
+.docs-cell-title > a { font-weight: 600; overflow-wrap: anywhere; }
 /* Ключ второй строкой: он нужен для адресации, но не должен соперничать за
-   внимание с человеческим заголовком. */
-.docs-key { display: block; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+   внимание с человеческим заголовком. `nowrap` обязателен — без него
+   `text-overflow` не срабатывает вовсе, и путь переносится вместо обрезки. */
+.docs-key {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Суммарная ширина фиксированных колонок держится с запасом: дата идёт
    `nowrap`, и при 120px «2026-09-18 18:03» обрезалась последним символом. */
 .docs-col-node { width: 120px; }
@@ -903,6 +917,81 @@ a.docs-stat:hover { border-color: var(--accent); text-decoration: none; }
 .docs-drift { color: var(--warning); cursor: help; }
 /* Ноль входящих ссылок — документ выпал из навигации. */
 .docs-orphan { color: var(--danger); }
+
+/* ── Навигатор: наполненность разделов ───────────────────────────────────
+   Стили жили инлайном в двух шаблонах (~255 строк) и при htmx-свопе попадали
+   в документ дважды. Переехали сюда по прецеденту экрана документации. */
+.nav-lead { max-width: 80ch; color: var(--muted); font-size: 13px; margin: 0 0 var(--space-3); }
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-4);
+}
+.nav-error {
+  padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
+  background: var(--warning-soft-bg);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  color: var(--warning-soft-fg);
+  font-size: 13px;
+}
+.nav-error .muted-tiny { display: block; margin-top: 2px; }
+
+.nav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-3);
+}
+.nav-card {
+  padding: var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+/* Раздел с пробелом помечен полосой слева, а не цветом карточки: цветной фон
+   на сетке из двенадцати карточек читается как тревога, а это рабочий список. */
+.nav-card-gap { border-left: 3px solid var(--warning); }
+.nav-card-project { border-left: 3px solid var(--accent); margin-bottom: var(--space-3); }
+.nav-card-head { display: flex; align-items: baseline; gap: var(--space-2); }
+.nav-card-title { font-weight: 600; font-size: 14px; color: var(--fg-strong); text-decoration: none; }
+a.nav-card-title:hover { color: var(--accent); }
+.nav-card-count {
+  margin-left: auto;
+  min-width: 22px;
+  padding: 0 6px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 9px;
+  background: var(--bg-alt);
+  color: var(--muted);
+}
+.nav-card-count-warn { background: var(--warning-soft-bg); color: var(--warning-soft-fg); }
+.nav-card-intent { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.nav-card-ok { margin: 0; font-size: 12px; color: var(--success); }
+
+.nav-gap { margin: 0; font-size: 12px; line-height: 1.45; color: var(--fg); }
+.nav-gap-major { color: var(--danger); }
+.nav-gap-code {
+  display: inline-block;
+  padding: 0 5px;
+  margin-right: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  color: var(--muted-strong);
+}
+/* Вердикт модели помечен: у него другая цена доверия, и читатель вправе
+   знать, кто это сказал. */
+.nav-gap-ai { color: var(--purple); cursor: help; }
+.nav-footnote { margin: var(--space-4) 0 0; font-size: 12px; color: var(--muted); }
 .doc-links-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
 .doc-links-grid h3 { margin: 0 0 var(--space-1); font-size: 14px; }
 .doc-links-grid ul { margin: 0; padding-left: var(--space-5); }
@@ -982,6 +1071,14 @@ a.docs-stat:hover { border-color: var(--accent); text-decoration: none; }
 .cod-ws-connected::before { animation: pulse 2s infinite; }
 .cod-ws-connecting, .cod-ws-reconnecting { color: var(--warning); border-color: var(--warning-border); background: var(--warning-soft-bg); }
 .cod-ws-disconnected { color: var(--muted); }
+/* На узкой шапке пилюля схлопывается до точки: подпись «idle/live» занимала
+   60px и выталкивала кнопку темы за край экрана, растягивая страницу целиком.
+   Сам статус не теряется — он остаётся цветом точки, в `title` и в
+   `aria-label`, который читает скринридер. `font-size: 0` гасит только текст:
+   у точки размеры заданы в пикселях. */
+@media (max-width: 860px) {
+  .cod-ws-dot { font-size: 0; gap: 0; padding: 3px 6px; }
+}
 
 @keyframes pulse {
   0% { box-shadow: 0 0 0 0 var(--success); }
@@ -1067,6 +1164,16 @@ a.docs-stat:hover { border-color: var(--accent); text-decoration: none; }
 }
 /* Широкая таблица скроллится сама, а не тянет за собой страницу. */
 .table-scroll { overflow-x: auto; }
+/* Обёртки мало: без нижней границы браузер ужимает колонки до нечитаемого
+   вместо того, чтобы дать прокрутку. Колонка «At» ломала «2026-09-20 09:40»
+   на четыре строки, а Reason и Diff сминались в труху — при том, что
+   прокрутка была на месте и не использовалась. Ширина посчитана по составу:
+   ULID 26 символов ≈ 200, entity ≈ 120, автор ≈ 100, дата 140, плюс обрезки
+   Reason и Diff по 160. */
+.revisions-table { min-width: 880px; }
+/* Дата — атомарное значение: перенос внутри неё не экономит место, а делает
+   её нечитаемой. Тот же приём, что у `.docs-col-when`. */
+.rev-col-when { white-space: nowrap; }
 
 /* ── Settings form ────────────────────────────────────────────────────── */
 .settings-form fieldset {

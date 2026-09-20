@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -21,62 +20,30 @@ DOCUMENT_TYPES: list[str] = [t.value for t in DocumentType]
 
 # WEB-051: static asset cache-bust.
 # Compute a short fingerprint from each file's mtime once at import; templates
-# call `static_url("app.css")` to get `/static/app.css?v=<hash>`. Browsers cache
-# until the file changes; on bump → new query string → fresh fetch.
+# call `static_url("css/_components.css")` to get `/static/…?v=<hash>`.
+# Browsers cache until the file changes; on bump → new query string → fresh fetch.
+#
+# Версионируется КАЖДЫЙ подключаемый файл, а не одна точка входа. Прежде
+# `base.html` подключал `app.css`, который тянул партиалы через `@import`, и
+# отпечаток точки входа считался с оглядкой на их mtime. Механика работала
+# ровно как написана и цели всё равно не достигала: импорты внутри CSS идут
+# без версии, поэтому браузер перекачивал `app.css` и брал `_components.css`
+# из кэша. Проверено живьём — `app.css?v=` был новый, а применялся старый
+# `_components.css`. Лечится только версией на самом файле.
 _STATIC_VERSION_CACHE: dict[str, str] = {}
 
 
-#: `@import url("css/_base.css")` внутри CSS-точки входа. Кавычки
-#: необязательны, пробелы вокруг — тоже.
-_CSS_IMPORT_RE = re.compile(r"""@import\s+url\(\s*['"]?([^'")]+)['"]?\s*\)""")
-
-
-def _imported_paths(path: Path) -> list[Path]:
-    """Локальные файлы, которые CSS тянет через ``@import`` (один уровень).
-
-    Один уровень — не упрощение, а факт: партиалы в ``static/css/`` ничего
-    не импортируют сами. Появится вложенный импорт — его mtime перестанет
-    учитываться, и это заметит `test_app_css_fingerprint_covers_partials`.
-    """
-    if path.suffix != ".css":
-        return []
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return []
-    out: list[Path] = []
-    for ref in _CSS_IMPORT_RE.findall(text):
-        if ref.startswith(("http://", "https://", "//", "data:")):
-            continue
-        out.append((path.parent / ref).resolve())
-    return out
-
-
 def _fingerprint(name: str) -> str:
-    """Hex-formatted mtime of the static file. Empty string if missing.
-
-    Для CSS учитывается и mtime партиалов, которые файл тянет через
-    ``@import``. Без этого правка `css/_components.css` не сбрасывала кэш
-    браузера ничем: в разметке версионируется только `app.css`, а его
-    собственный mtime при правке партиала не меняется, и у вернувшегося
-    посетителя оставался старый CSS до ручного hard-reload. Поймано
-    показом страницы в браузере после фикса вёрстки ADO-144: первая
-    навигация отдала старый стиль.
-    """
+    """Hex-formatted mtime of the static file. Empty string if missing."""
     if name not in _STATIC_VERSION_CACHE:
         path = STATIC_DIR / name
         try:
-            stamps = [path.stat().st_mtime]
+            mtime = path.stat().st_mtime
         except OSError:
             _STATIC_VERSION_CACHE[name] = ""
         else:
-            for dep in _imported_paths(path):
-                try:
-                    stamps.append(dep.stat().st_mtime)
-                except OSError:
-                    continue
             # 8 hex chars of mtime are enough to bust browser cache.
-            _STATIC_VERSION_CACHE[name] = f"{int(max(stamps)):x}"[-8:]
+            _STATIC_VERSION_CACHE[name] = f"{int(mtime):x}"[-8:]
     return _STATIC_VERSION_CACHE[name]
 
 

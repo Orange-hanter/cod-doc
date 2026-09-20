@@ -44,8 +44,13 @@ def test_index_renders_project_list(web_client) -> None:
     assert "Projects" in r.text
     # link to project page is present
     assert f'href="/p/{entry.name}"' in r.text
-    # base layout is wired (URL is versioned via WEB-051: /static/app.css?v=...)
-    assert '<link rel="stylesheet" href="/static/app.css?v=' in r.text
+    # base layout is wired; every CSS partial carries its own ?v= (WEB-051).
+    # Проверяется разметка, а не отпечаток: прежняя схема с точкой входа
+    # `app.css` считала отпечаток верно, но в браузер уходил `@import` без
+    # версии, и партиал приезжал из кэша — см. test_static_cache_bust.
+    for rel in ("css/_base.css", "css/_components.css", "css/_task_detail.css"):
+        assert f'<link rel="stylesheet" href="/static/{rel}?v=' in r.text, rel
+    assert "/static/app.css" not in r.text
 
 
 def test_index_warns_when_unconfigured(tmp_path: Path) -> None:
@@ -79,18 +84,21 @@ def test_index_empty_when_no_projects(tmp_path: Path) -> None:
     assert "Add your first project" in r.text
 
 
-def test_static_app_css_served(web_client) -> None:
+def test_static_css_partials_served(web_client) -> None:
+    """Каждый партиал отдаётся сам по себе — точки входа больше нет.
+
+    `app.css` с `@import` удалён: импорты внутри CSS шли без версии, поэтому
+    ?v= на точке входа не сбрасывал кэш партиалов (см. `test_static_cache_bust`).
+    """
     client, _ = web_client
-    r = client.get("/static/app.css")
-    assert r.status_code == 200
-    assert r.headers["content-type"].startswith("text/css")
-    # app.css is a thin entry point that @imports the partials in css/.
-    assert "@import" in r.text and "css/_base.css" in r.text
-    # The original .topbar rule lives in the base partial — ensure it's
-    # actually served (not just referenced).
-    base = client.get("/static/css/_base.css")
-    assert base.status_code == 200
-    assert ".topbar" in base.text
+    for name, marker in (
+        ("_base.css", ".topbar"),
+        ("_components.css", ".docs-table"),
+    ):
+        r = client.get(f"/static/css/{name}")
+        assert r.status_code == 200, name
+        assert r.headers["content-type"].startswith("text/css"), name
+        assert marker in r.text, name
 
 
 # ── WEB-002: project detail page ────────────────────────────────────────────
@@ -169,11 +177,11 @@ def test_project_show_master_truncated(tmp_path: Path) -> None:
 
 
 def test_static_url_appends_version_query() -> None:
-    """`static_url('app.css')` must return /static/app.css?v=<hash>."""
+    """`static_url('css/_components.css')` must return the path with ?v=<hash>."""
     from cod_doc.api.web.templates_env import static_url
 
-    url = static_url("app.css")
-    assert url.startswith("/static/app.css?v=")
+    url = static_url("css/_components.css")
+    assert url.startswith("/static/css/_components.css?v=")
     # Sanity: the fingerprint segment is non-empty.
     assert len(url.split("?v=")[1]) > 0
 

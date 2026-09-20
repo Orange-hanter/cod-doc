@@ -1086,6 +1086,7 @@ _cod-doc() {
       curcontext="${curcontext%:*:*}:cod-doc-doc-tree-$words[1]:"
       case $words[1] in
         (classify)  _cod_doc_doc_tree_classify && ret=0 ;;
+        (health)    _cod_doc_doc_tree_health && ret=0 ;;
         (init)      _cod_doc_doc_tree_init && ret=0 ;;
         (move)      _cod_doc_doc_tree_move && ret=0 ;;
         (node-add)  _cod_doc_doc_tree_node_add && ret=0 ;;
@@ -1104,6 +1105,7 @@ _cod-doc() {
   local -a cmds
   cmds=(
     'classify:Разложить документы по разделам детерминированными правилами.'
+    'health:Показать пробелы в наполненности разделов; ``--sync`` пишет их в fi…'
     'init:Засеять дефолтное дерево разделов. Существующие ключи не трогает.'
     'move:Положить документ в раздел; без ``--node`` — вернуть в Инбокс.'
     'node-add:Завести раздел.'
@@ -1123,6 +1125,20 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--apply)--apply[Записать раскладку в БД. Без флага — только показать.]' \
     '(--all)--all[Переразложить и то, что уже лежит в разделах (перебьёт ручную раскл…]' \
+    '(--author)--author=:author' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_tree_health] )) || _cod_doc_doc_tree_health() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--sync)--sync[Записать пробелы в findings и закрыть вылеченные. Без флага — тольк…]' \
+    '(--analyze)--analyze[Спросить модель, покрывают ли документы раздела его intent. Ходит в…]' \
     '(--author)--author=:author' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0

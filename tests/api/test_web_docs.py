@@ -501,3 +501,67 @@ def test_doc_accept_endpoint_404_on_unknown_doc(docs_client) -> None:
         follow_redirects=False,
     )
     assert r.status_code == 404
+
+
+def _add_doc(entry, doc_key: str, status: DocumentStatus) -> None:  # type: ignore[no-untyped-def]
+    """Дописать документ в БД проекта из фикстуры."""
+    from pathlib import Path as _Path
+
+    from cod_doc.infra.models import ProjectModel
+
+    db_path = _Path(entry.path) / ".cod-doc" / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        proj = session.query(ProjectModel).filter(ProjectModel.slug == entry.name).one()
+        docs.create(
+            session,
+            project_id=proj.row_id,
+            doc_key=doc_key,
+            type=DocumentType.GUIDE,
+            status=status,
+            title=doc_key,
+            author="human:test",
+            owner="human:test",
+            sensitivity=Sensitivity.INTERNAL,
+            preamble="x",
+        )
+    engine.dispose()
+
+
+def _rail_total(body: str) -> int:
+    """Счётчик у пункта «Все документы»."""
+    import re
+
+    m = re.search(r"Все документы</span>\s*<span class=\"docs-rail-count\">(\d+)</span>", body)
+    assert m, "пункт «Все документы» не найден в рельсе"
+    return int(m.group(1))
+
+
+def test_rail_total_counts_what_the_table_shows(docs_client) -> None:
+    """«Все документы» — такой же пункт рельса и живёт по тому же фильтру.
+
+    Он брал корпусный `stats.total`, а остальные пункты — отфильтрованный
+    корпус. На живом проекте это выглядело как «170» над суммой каталогов
+    в 169: один спрятанный deprecated-документ. Счётчик обещал строку,
+    которой в таблице нет.
+    """
+    client, entry = docs_client
+    _add_doc(entry, "legacy/old", DocumentStatus.DEPRECATED)
+
+    body = client.get(f"/p/{entry.name}/docs").text
+    rows = body.count('class="docs-cell-title"')
+
+    assert rows, "таблица пуста — тест ничего не проверяет"
+    assert _rail_total(body) == rows
+
+
+def test_rail_total_follows_the_status_tab(docs_client) -> None:
+    """Обратная сторона: на вкладке «All» скрытый документ возвращается в счёт."""
+    client, entry = docs_client
+    _add_doc(entry, "legacy/old", DocumentStatus.DEPRECATED)
+
+    live = client.get(f"/p/{entry.name}/docs").text
+    everything = client.get(f"/p/{entry.name}/docs?status=all").text
+
+    assert _rail_total(everything) == _rail_total(live) + 1

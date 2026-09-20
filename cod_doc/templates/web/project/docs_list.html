@@ -144,7 +144,12 @@
         {% endif %}
       </p>
     {% else %}
-      {% include "_frag/docs_table.html" %}
+      {# Обёртка живёт ЗДЕСЬ, а не во фрагменте: таблица подменяет себя по htmx
+         через `hx-swap="outerHTML"`, и обёртка внутри фрагмента после первого
+         же свопа вложилась бы сама в себя. #}
+      <div class="table-scroll">
+        {% include "_frag/docs_table.html" %}
+      </div>
     {% endif %}
   </section>
 </div>

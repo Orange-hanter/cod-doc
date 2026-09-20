@@ -76,7 +76,8 @@ def test_first_match_wins() -> None:
 
 
 def test_conditions_inside_a_rule_are_conjunctive() -> None:
-    """Здесь и проходит граница с ``nav_service``, где условия склеены через ``or``.
+    """Здесь и проходит граница с прежним навигатором, где условия склеивались
+    через ``or`` (``nav_service._JOURNEY``, удалён вместе с модулем).
 
     Из-за ``type_ok or pat_ok`` шаг «Data Model» собирает все ``module-spec``
     корпуса — 78 документов из 170 на cod-doc. Правило с двумя условиями
