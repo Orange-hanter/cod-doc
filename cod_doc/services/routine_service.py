@@ -341,9 +341,11 @@ def _check_doc_unplaced(
     напоминает: документ находим поиском, но в навигации его нет. Проверка
     делает Инбокс видимым как находку, а не только как число на экране.
 
-    Раздел ниже своего ``min_docs`` попадает сюда же: «раздел объявлен
-    обязательным и пуст» — это тот же пробел в навигации, только с другой
-    стороны.
+    Только раскладка. Наполненность раздела (``min_docs``) отсюда уехала в
+    ``doc_node_health``: один и тот же ``under_filled`` считали сразу двое —
+    эта проверка и рельс экрана документации, — а третье представление одного
+    факта и есть то, от чего уходили в ADO-116. Здесь «где лежит», там «чего
+    не написано».
     """
     from cod_doc.services import doc_tree_service
 
@@ -362,11 +364,6 @@ def _check_doc_unplaced(
     findings: list[dict[str, Any]] = [
         {"kind": "unplaced", "doc_key": key} for key in unplaced[:limit]
     ]
-    findings.extend(
-        {"kind": "under_filled", "node_key": stat.node.node_key, "docs": stat.doc_count}
-        for stat in doc_tree_service.node_stats(session, project_id)
-        if stat.under_filled
-    )
     return {
         "findings": findings,
         "findings_count": len(findings),
