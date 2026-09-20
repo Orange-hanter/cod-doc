@@ -1071,6 +1071,14 @@ a.nav-card-title:hover { color: var(--accent); }
 .cod-ws-connected::before { animation: pulse 2s infinite; }
 .cod-ws-connecting, .cod-ws-reconnecting { color: var(--warning); border-color: var(--warning-border); background: var(--warning-soft-bg); }
 .cod-ws-disconnected { color: var(--muted); }
+/* На узкой шапке пилюля схлопывается до точки: подпись «idle/live» занимала
+   60px и выталкивала кнопку темы за край экрана, растягивая страницу целиком.
+   Сам статус не теряется — он остаётся цветом точки, в `title` и в
+   `aria-label`, который читает скринридер. `font-size: 0` гасит только текст:
+   у точки размеры заданы в пикселях. */
+@media (max-width: 860px) {
+  .cod-ws-dot { font-size: 0; gap: 0; padding: 3px 6px; }
+}
 
 @keyframes pulse {
   0% { box-shadow: 0 0 0 0 var(--success); }
@@ -1156,6 +1164,16 @@ a.nav-card-title:hover { color: var(--accent); }
 }
 /* Широкая таблица скроллится сама, а не тянет за собой страницу. */
 .table-scroll { overflow-x: auto; }
+/* Обёртки мало: без нижней границы браузер ужимает колонки до нечитаемого
+   вместо того, чтобы дать прокрутку. Колонка «At» ломала «2026-09-20 09:40»
+   на четыре строки, а Reason и Diff сминались в труху — при том, что
+   прокрутка была на месте и не использовалась. Ширина посчитана по составу:
+   ULID 26 символов ≈ 200, entity ≈ 120, автор ≈ 100, дата 140, плюс обрезки
+   Reason и Diff по 160. */
+.revisions-table { min-width: 880px; }
+/* Дата — атомарное значение: перенос внутри неё не экономит место, а делает
+   её нечитаемой. Тот же приём, что у `.docs-col-when`. */
+.rev-col-when { white-space: nowrap; }
 
 /* ── Settings form ────────────────────────────────────────────────────── */
 .settings-form fieldset {
