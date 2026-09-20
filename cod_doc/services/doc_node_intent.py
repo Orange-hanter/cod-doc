@@ -44,6 +44,15 @@ if TYPE_CHECKING:
 FINDING_SOURCE_REF = "doc_node_health_ai"
 DEFAULT_AUTHOR = "agent:doc_node_intent"
 
+#: Закрывать вердикт модели только после двух промахов подряд. Вердикт
+#: субъективен и мигает: замер на живом корпусе (три прогона подряд, один и тот
+#: же промпт) дал наборы {architecture, data-model, scenarios},
+#: {architecture, data-model}, {architecture, data-model} — ядро стабильно,
+#: хвост плавает. С отсрочкой хвост перестаёт производить пару событий
+#: `resolved`/`reopened` на каждый прогон. Столько же у прецедента в
+#: `structure_drift`, где промежуточный статус даёт ровно N=2.
+CLOSE_AFTER_MISSES = 2
+
 #: Сколько документов раздела показывать модели. Раздел на 42 отчёта аудита
 #: целиком в промпт не влезет, а решение «покрывает ли intent» принимается по
 #: составу, а не по каждой строке.
@@ -241,6 +250,11 @@ def analyze(
     :class:`json.JSONDecodeError`, если ответ не разобрать. Оба исключения
     обязаны дойти до вызывающего: проглотить их — значит закрыть партицию
     как «вылеченную» по пустому списку.
+
+    Закрытие идёт с гистерезисом (:data:`CLOSE_AFTER_MISSES`): вердикт,
+    пропавший на одном прогоне, остаётся ``open`` и виден куратору, а
+    закрывается только вторым промахом подряд. В ответе это видно ключом
+    ``missed`` — сколько находок промахнулись, но закрытие отложено.
     """
     sections = collect_sections(session, project_id)
     if not sections:
@@ -253,6 +267,7 @@ def analyze(
             "updated": 0,
             "resolved": 0,
             "reopened": 0,
+            "missed": 0,
         }
 
     raw = _call_lite_raw(build_prompt(sections), cfg, max_tokens=_token_budget(len(sections)))
@@ -273,6 +288,7 @@ def analyze(
         source_ref=FINDING_SOURCE_REF,
         seen_fingerprints={seed.fingerprint for seed in seeds},
         author=author,
+        close_after_misses=CLOSE_AFTER_MISSES,
     )
     activity_service.emit_for_write(
         session,

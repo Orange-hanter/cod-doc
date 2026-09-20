@@ -58,6 +58,14 @@ class FindingModel(Base):
     times_seen: Mapped[int] = mapped_column(
         Integer, nullable=False, default=1, server_default=text("1")
     )
+    #: Прогонов подряд, в которых открытую находку не видели. Не симметричен
+    #: `times_seen`: тот кумулятивный, этот — серия, и возврат отпечатка
+    #: обнуляет её целиком. У всего, что не `open`, равен нулю — инвариант
+    #: держит `finding_service.queries._set_status`, единственная точка смены
+    #: статуса. Единственный писатель — `reconcile_partition`.
+    miss_streak: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     promoted_task_id: Mapped[str | None] = mapped_column(String(32))
     payload: Mapped[dict[str, Any]] = mapped_column(
         JSON, nullable=False, default=dict, server_default=text("'{}'")

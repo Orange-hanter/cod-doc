@@ -65,7 +65,14 @@ def _ingest(session: Session, project_id: int, fps: list[str], *, ref: str = _RE
     session.flush()
 
 
-def _reconcile(session: Session, project_id: int, fps: set[str], *, ref: str = _REF) -> dict:
+def _reconcile(
+    session: Session,
+    project_id: int,
+    fps: set[str],
+    *,
+    ref: str = _REF,
+    close_after_misses: int = 1,
+) -> dict:
     return finding_service.reconcile_partition(
         session,
         project_id=project_id,
@@ -73,6 +80,21 @@ def _reconcile(session: Session, project_id: int, fps: set[str], *, ref: str = _
         source_ref=ref,
         seen_fingerprints=fps,
         author="routine:doc_node_health",
+        close_after_misses=close_after_misses,
+    )
+
+
+def _streak(session: Session, fp: str) -> int:
+    f = session.execute(select(FindingModel).where(FindingModel.fingerprint == fp)).scalar_one()
+    return f.miss_streak
+
+
+def _events(session: Session, kind: str) -> int:
+    session.flush()
+    return len(
+        session.execute(select(ActivityEventModel).where(ActivityEventModel.kind == kind))
+        .scalars()
+        .all()
     )
 
 
@@ -88,7 +110,7 @@ def test_healed_finding_is_resolved(session_factory) -> None:  # type: ignore[no
 
         result = _reconcile(session, pid, {"a"})
 
-        assert result == {"resolved": 1, "reopened": 0}
+        assert result == {"resolved": 1, "reopened": 0, "missed": 0}
         assert _status(session, "a") == "open"
         assert _status(session, "b") == "resolved"
 
@@ -108,7 +130,7 @@ def test_recurrence_reopens_a_resolved_finding(session_factory) -> None:  # type
         _ingest(session, pid, ["a"])
         result = _reconcile(session, pid, {"a"})
 
-        assert result == {"resolved": 0, "reopened": 1}
+        assert result == {"resolved": 0, "reopened": 1, "missed": 0}
         assert _status(session, "a") == "open"
 
 
@@ -124,10 +146,10 @@ def test_dismissed_survives_both_directions(session_factory) -> None:  # type: i
             session, project_id=pid, finding_uid=uid, author="human:test"
         )
 
-        assert _reconcile(session, pid, set()) == {"resolved": 0, "reopened": 0}
+        assert _reconcile(session, pid, set()) == {"resolved": 0, "reopened": 0, "missed": 0}
         assert _status(session, "a") == "dismissed"
 
-        assert _reconcile(session, pid, {"a"}) == {"resolved": 0, "reopened": 0}
+        assert _reconcile(session, pid, {"a"}) == {"resolved": 0, "reopened": 0, "missed": 0}
         assert _status(session, "a") == "dismissed"
 
 
@@ -152,8 +174,10 @@ def test_reconcile_is_idempotent(session_factory) -> None:  # type: ignore[no-un
         first = _reconcile(session, pid, set())
         second = _reconcile(session, pid, set())
 
-        assert first == {"resolved": 1, "reopened": 0}
-        assert second == {"resolved": 0, "reopened": 0}, "второй прогон ничего не меняет"
+        assert first == {"resolved": 1, "reopened": 0, "missed": 0}
+        assert second == {"resolved": 0, "reopened": 0, "missed": 0}, (
+            "второй прогон ничего не меняет"
+        )
 
 
 def test_status_change_leaves_an_event(session_factory) -> None:  # type: ignore[no-untyped-def]
@@ -175,3 +199,95 @@ def test_status_change_leaves_an_event(session_factory) -> None:  # type: ignore
             if e.kind.startswith("finding.")
         }
         assert actors == {"routine"}, "actor_kind выводится из автора, а не проставляется руками"
+
+
+# ── Гистерезис: закрывать не с первого промаха ──────────────────────────
+#
+# Вердикт модели субъективен и мигает: замер на живом корпусе дал три прогона
+# подряд с наборами {a,b,c} / {a,b} / {a,b}. Без отсрочки каждый такой хвост
+# давал бы пару событий resolved/reopened на прогон.
+
+
+def test_one_miss_keeps_the_finding_open(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Первый промах при N=2 не закрывает и не шумит событием.
+
+    Негативная проверка встроена: поставь N=1 (или убери гистерезис) — упадут
+    оба ассерта сразу, и статус, и отсутствие события.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        _ingest(session, pid, ["a", "b"])
+
+        result = _reconcile(session, pid, {"a"}, close_after_misses=2)
+
+        assert result == {"resolved": 0, "reopened": 0, "missed": 1}
+        assert _status(session, "b") == "open", "находка обязана остаться видимой куратору"
+        assert _streak(session, "b") == 1
+        assert _events(session, "finding.resolved") == 0
+
+
+def test_second_consecutive_miss_closes(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Гистерезис — отсрочка, а не запрет: второй промах подряд закрывает."""
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        _ingest(session, pid, ["a", "b"])
+
+        _reconcile(session, pid, {"a"}, close_after_misses=2)
+        result = _reconcile(session, pid, {"a"}, close_after_misses=2)
+
+        assert result == {"resolved": 1, "reopened": 0, "missed": 0}
+        assert _status(session, "b") == "resolved"
+        assert _streak(session, "b") == 0, "у закрытой находки серия обнуляется"
+
+
+def test_return_between_misses_resets_the_streak(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Тот самый флап с живого корпуса, в юнит-масштабе.
+
+    Промах → возврат → промах: серия считается заново, поэтому находка не
+    закрывается и за всю последовательность нет ни одного события.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        _ingest(session, pid, ["a", "b"])
+
+        _reconcile(session, pid, {"a"}, close_after_misses=2)
+        assert _streak(session, "b") == 1
+
+        _ingest(session, pid, ["a", "b"])
+        _reconcile(session, pid, {"a", "b"}, close_after_misses=2)
+        assert _streak(session, "b") == 0, "возврат обнуляет серию, а не уменьшает её"
+
+        _reconcile(session, pid, {"a"}, close_after_misses=2)
+
+        assert _status(session, "b") == "open"
+        assert _events(session, "finding.resolved") == 0
+        assert _events(session, "finding.reopened") == 0
+
+
+def test_dismissed_does_not_accumulate_misses(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Решение человека автоматика не трогает — в том числе счётчиком."""
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        _ingest(session, pid, ["a", "b"])
+        uid = session.execute(
+            select(FindingModel.finding_uid).where(FindingModel.fingerprint == "b")
+        ).scalar_one()
+        finding_service.dismiss_finding(
+            session, project_id=pid, finding_uid=uid, author="human:test"
+        )
+
+        _reconcile(session, pid, {"a"}, close_after_misses=2)
+        _reconcile(session, pid, {"a"}, close_after_misses=2)
+
+        assert _status(session, "b") == "dismissed"
+        assert _streak(session, "b") == 0
+
+
+def test_close_after_misses_must_be_positive(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Ноль закрывал бы находку, которую производитель только что видел."""
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        _ingest(session, pid, ["a"])
+
+        with pytest.raises(ValueError, match="close_after_misses"):
+            _reconcile(session, pid, {"a"}, close_after_misses=0)

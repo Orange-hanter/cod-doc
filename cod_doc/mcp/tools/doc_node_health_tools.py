@@ -101,6 +101,13 @@ def register(mcp: FastMCP) -> None:
         deterministic findings. An LLM error propagates: swallowing it would
         leave an empty verdict list, and the reconcile would read that as
         "every gap is fixed".
+
+        Closing is hysteretic: a verdict that disappears for one run stays
+        `open` and visible to the curator, and is only closed by a second
+        consecutive miss. The model's verdict is subjective and flaps, so
+        without the delay every borderline section would churn
+        resolved/reopened on each run. The returned `missed` counts findings
+        that were absent this run but not closed yet.
         """
         from cod_doc.api.deps import get_config
         from cod_doc.infra.db import transactional

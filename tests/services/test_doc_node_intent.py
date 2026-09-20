@@ -223,7 +223,7 @@ def test_llm_failure_does_not_close_the_partition(session_factory, monkeypatch) 
         )
 
 
-def test_healed_section_closes_its_ai_finding(session_factory, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_healed_section_closes_on_the_second_clean_run(session_factory, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     with transactional(session_factory) as session:
         pid = _seed_project(session)
         tree.init_tree(session, project_id=pid, author="human:test")
@@ -247,6 +247,17 @@ def test_healed_section_closes_its_ai_finding(session_factory, monkeypatch) -> N
                 {"verdicts": [{"node_key": "vision", "covers_intent": True, "missing": []}]}
             ),
         )
+        result = intent.analyze(session, project_id=pid, cfg=object())  # type: ignore[arg-type]
+        session.flush()
+
+        # Первый чистый прогон не закрывает: вердикт модели субъективен, и
+        # пропажа на одном прогоне ещё не значит, что раздел наполнили.
+        assert result["resolved"] == 0
+        assert result["missed"] == 1
+        assert len(_open_ai_findings(session, pid)) == 1, (
+            "находка обязана оставаться видимой куратору, пока не подтверждена"
+        )
+
         result = intent.analyze(session, project_id=pid, cfg=object())  # type: ignore[arg-type]
         session.flush()
 
@@ -274,4 +285,42 @@ def test_nothing_to_ask_still_returns_the_full_shape(session_factory) -> None:  
             "updated",
             "resolved",
             "reopened",
+            "missed",
         }
+
+
+def test_flapping_verdict_does_not_churn_events(session_factory, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Хвостовой вердикт мигает — журнал обязан молчать.
+
+    Замер на живом корпусе: три прогона подряд одним промптом дали
+    {architecture, data-model, scenarios} / {architecture, data-model} /
+    {architecture, data-model}. Здесь то же чередование в миниатюре: без
+    гистерезиса каждая пропажа давала бы `finding.resolved`, а каждое
+    возвращение — `finding.reopened`.
+    """
+    from cod_doc.infra.models import ActivityEventModel
+
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        _doc(session, pid, "docs/VISION", "vision")
+
+        def _verdict(covers: bool) -> str:
+            return json.dumps(
+                {"verdicts": [{"node_key": "vision", "covers_intent": covers, "missing": ["X"]}]}
+            )
+
+        for covers in (False, True, False, True):
+            monkeypatch.setattr(intent, "_call_lite_raw", lambda *_a, _c=covers, **_k: _verdict(_c))
+            intent.analyze(session, project_id=pid, cfg=object())  # type: ignore[arg-type]
+            session.flush()
+
+        kinds = [
+            e.kind
+            for e in session.query(ActivityEventModel).filter(
+                ActivityEventModel.kind.like("finding.%")
+            )
+        ]
+        assert "finding.resolved" not in kinds, f"мигающий вердикт закрыл находку: {kinds}"
+        assert "finding.reopened" not in kinds, f"мигающий вердикт переоткрыл находку: {kinds}"
+        assert len(_open_ai_findings(session, pid)) == 1

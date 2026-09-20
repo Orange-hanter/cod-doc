@@ -20,6 +20,12 @@ FINDING_STATUS_RESOLVED = "resolved"
 FINDING_STATUS_DISMISSED = "dismissed"
 DEFAULT_LIST_LIMIT = 100
 
+#: Сколько прогонов подряд производитель должен не видеть находку, чтобы её
+#: закрыли. Единица — сегодняшнее поведение и правильный дефолт: правила
+#: детерминированы и не промахиваются, а лишний прогон отсрочки задержал бы
+#: закрытие вылеченного. Больше единицы просит тот, чей вердикт субъективен.
+DEFAULT_CLOSE_AFTER_MISSES = 1
+
 
 def finding_to_dict(f: FindingModel) -> dict[str, Any]:
     """Render a FindingModel row as a plain dict for MCP/JSON return."""
@@ -38,6 +44,7 @@ def finding_to_dict(f: FindingModel) -> dict[str, Any]:
         "status": f.status,
         "confidence": f.confidence,
         "times_seen": f.times_seen,
+        "miss_streak": f.miss_streak,
         "first_seen_at": f.first_seen_at.isoformat() if f.first_seen_at else None,
         "last_seen_at": f.last_seen_at.isoformat() if f.last_seen_at else None,
         "promoted_task_id": f.promoted_task_id,
@@ -140,6 +147,7 @@ def reconcile_partition(
     source_ref: str,
     seen_fingerprints: set[str],
     author: str,
+    close_after_misses: int = DEFAULT_CLOSE_AFTER_MISSES,
 ) -> dict[str, int]:
     """Свести находки одной партиции с тем, что производитель видит сейчас.
 
@@ -163,28 +171,71 @@ def reconcile_partition(
     Вызывающий обязан передать **полный** набор отпечатков своей партиции.
     Частичный прогон (обрезанный лимитом, упавший на середине) закрыл бы
     живые находки — такой прогон сверять не должен вовсе.
+
+    **Гистерезис.** ``close_after_misses`` — сколько прогонов подряд находку
+    должны не увидеть, прежде чем закрыть. Единица (дефолт) — прежнее
+    поведение. Больше единицы нужно там, где производитель субъективен: вердикт
+    модели мигает от прогона к прогону, и без отсрочки каждый хвостовой вердикт
+    давал бы пару событий ``resolved``/``reopened`` на прогон.
+
+    Три следствия, которые иначе читаются как баги:
+
+    * **возврат обнуляет серию, а не уменьшает её.** Чередование «видели / не
+      видели» при ``close_after_misses=2`` не закроет находку никогда — она
+      останется открытой и тихой. Это размен осознанный: гистерезис превращает
+      флап не в «закрываем медленнее», а в «не закрываем и не шумим». Человеку
+      остаётся ``finding_dismiss``;
+    * **промах не эмитит событие и не переиндексирует находку.** Ни статус, ни
+      содержимое не изменились, а событие на каждый промах вернуло бы ровно тот
+      шум, ради которого всё затевается. Правило «каждый write оставляет след»
+      (ADO-040) этим не нарушается: бумп счётчика — не переход состояния,
+      видимого наружу;
+    * **промах не трогает ``last_seen_at`` и ``times_seen``** — это отметки о
+      настоящем наблюдении, их единственный писатель ``ingest_findings``.
+
+    Счётчик пишет только эта функция (обнуляет — ``_set_status``). В
+    ``ingest_findings`` сбрасывать его не надо и нельзя: ``on_conflict_do_update``
+    идёт Core-DML мимо ORM, объект в identity map остался бы со старым
+    значением, и следующий ``select`` отдал бы протухший атрибут. Да и незачем:
+    оба вызывающих строят ``seen_fingerprints`` из того же списка seeds, поэтому
+    заинжестенный отпечаток попадает в ветку «видели» и обнуляется там.
     """
-    rows = session.execute(
-        select(FindingModel).where(
-            FindingModel.project_id == project_id,
-            FindingModel.source == source,
-            FindingModel.source_ref == source_ref,
-        )
-    ).scalars()
+    if close_after_misses < 1:
+        # Ноль закрывал бы находку, которую производитель только что видел.
+        raise ValueError("close_after_misses must be >= 1")
+
+    # Список, а не курсор: внутри цикла идёт flush и мутации строк.
+    rows = list(
+        session.execute(
+            select(FindingModel).where(
+                FindingModel.project_id == project_id,
+                FindingModel.source == source,
+                FindingModel.source_ref == source_ref,
+            )
+        ).scalars()
+    )
 
     resolved = 0
     reopened = 0
+    missed = 0
     for f in rows:
-        if f.status == FINDING_STATUS_OPEN and f.fingerprint not in seen_fingerprints:
-            _set_status(
-                session, f, FINDING_STATUS_RESOLVED, author=author, event="finding.resolved"
-            )
-            resolved += 1
-        elif f.status == FINDING_STATUS_RESOLVED and f.fingerprint in seen_fingerprints:
+        seen = f.fingerprint in seen_fingerprints
+        if f.status == FINDING_STATUS_OPEN and not seen:
+            if f.miss_streak + 1 >= close_after_misses:
+                _set_status(
+                    session, f, FINDING_STATUS_RESOLVED, author=author, event="finding.resolved"
+                )
+                resolved += 1
+            else:
+                f.miss_streak += 1
+                missed += 1
+        elif f.status == FINDING_STATUS_OPEN and seen:
+            f.miss_streak = 0
+        elif f.status == FINDING_STATUS_RESOLVED and seen:
             _set_status(session, f, FINDING_STATUS_OPEN, author=author, event="finding.reopened")
             reopened += 1
 
-    return {"resolved": resolved, "reopened": reopened}
+    return {"resolved": resolved, "reopened": reopened, "missed": missed}
 
 
 def _set_status(
@@ -197,6 +248,9 @@ def _set_status(
 ) -> None:
     """Сменить статус находки со следом: ревизий у находок нет, есть событие."""
     f.status = status
+    # Серия промахов живёт только у открытой находки. Обнуление здесь, а не у
+    # вызывающего, держит инвариант «не `open` → 0» без единого исключения.
+    f.miss_streak = 0
     session.flush()
     activity_service.emit(
         session,

@@ -67,10 +67,14 @@ def _print_counters(
         console.print("[dim]Записать в findings: добавь --sync[/dim]")
 
     if analyzed is not None:
+        # `не подтверждено` печатается всегда: без него прогон, на котором
+        # вердикт промахнулся впервые, выглядит как полный no-op, и гистерезис
+        # читается как поломка.
         console.print(
             f"[dim]Вердикт модели: разделов {analyzed['sections']}, "
             f"не покрывают назначение {analyzed['issues']}, "
-            f"закрыто {analyzed['resolved']}[/dim]"
+            f"закрыто {analyzed['resolved']}, "
+            f"не подтверждено {analyzed['missed']}[/dim]"
         )
 
 
