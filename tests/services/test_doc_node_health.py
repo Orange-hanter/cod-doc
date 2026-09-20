@@ -210,3 +210,105 @@ def test_unplaced_index_docs_are_not_blamed_on_a_section(session_factory) -> Non
         issues = health.assess(session, pid, project_slug="p")
 
         assert [i for i in issues if i.code == "TREE-README"] == []
+
+
+# ------------------------------------------------------------------ #
+# Сшивка с находками                                                  #
+# ------------------------------------------------------------------ #
+
+
+def _open_findings(session: Session, project_id: int) -> list[dict]:
+    from cod_doc.services import finding_service
+
+    return finding_service.list_findings(session, project_id, status="open")
+
+
+def test_sync_writes_findings(session_factory) -> None:  # type: ignore[no-untyped-def]
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+
+        result = health.sync(session, project_id=pid, project_slug="p")
+        session.flush()
+
+        assert result.seeded is True
+        assert result.issues > 0
+        assert result.created == result.issues
+        found = _open_findings(session, pid)
+        assert len(found) == result.issues
+        assert {f["source"] for f in found} == {"routine"}
+        assert {f["source_ref"] for f in found} == {"doc_node_health"}
+
+
+def test_sync_is_idempotent(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Повторный прогон поднимает times_seen, а не плодит строки."""
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+
+        first = health.sync(session, project_id=pid, project_slug="p")
+        second = health.sync(session, project_id=pid, project_slug="p")
+        session.flush()
+
+        assert second.created == 0
+        assert second.updated == first.issues
+        assert len(_open_findings(session, pid)) == first.issues
+
+
+def test_sync_closes_a_healed_section(session_factory) -> None:  # type: ignore[no-untyped-def]
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        health.sync(session, project_id=pid, project_slug="p")
+        session.flush()
+        before = len(_open_findings(session, pid))
+
+        # Наполнить vision — его находка обязана закрыться.
+        _doc(session, pid, "docs/system/VISION", DocumentType.VISION)
+        tree.assign(
+            session,
+            project_id=pid,
+            doc_key="docs/system/VISION",
+            node_key="vision",
+            author="human:test",
+        )
+        result = health.sync(session, project_id=pid, project_slug="p")
+        session.flush()
+
+        assert result.resolved == 1
+        assert len(_open_findings(session, pid)) == before - 1
+
+
+def test_sync_does_not_reconcile_without_a_tree(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Дерева нет — пустой набор отпечатков закрыл бы всё как «вылеченное»."""
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        health.sync(session, project_id=pid, project_slug="p")
+        session.flush()
+        before = len(_open_findings(session, pid))
+        assert before > 0
+
+        from cod_doc.infra.models import DocNodeModel
+
+        session.query(DocNodeModel).delete()
+        session.flush()
+
+        result = health.sync(session, project_id=pid, project_slug="p")
+        session.flush()
+
+        assert result == health.SyncResult(seeded=False)
+        assert len(_open_findings(session, pid)) == before, "чужие находки не тронуты"
+
+
+def test_sync_leaves_an_event(session_factory) -> None:  # type: ignore[no-untyped-def]
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        health.sync(session, project_id=pid, project_slug="p")
+        session.flush()
+
+        from cod_doc.infra.models import ActivityEventModel
+
+        kinds = {e.kind for e in session.query(ActivityEventModel).all()}
+        assert "doc.health_synced" in kinds

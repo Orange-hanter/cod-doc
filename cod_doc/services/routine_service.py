@@ -372,6 +372,48 @@ def _check_doc_unplaced(
     }
 
 
+def _check_doc_node_health(
+    session: Session,
+    project_id: int,
+    **_: Any,
+) -> dict[str, Any]:
+    """Пробелы в наполненности разделов: пусто, тонко, без намерения.
+
+    Единственная проверка каталога, которая **пишет** — в таблицу ``finding``,
+    чтобы пробел видел `curator_next` и можно было продвинуть его в задачу
+    через `finding_promote`. Прецедент мутирующего чека в каталоге —
+    ``_check_approval_stale``.
+
+    LLM здесь не зовётся: рутина обязана быть детерминированной и работать без
+    сети. Вердикт «покрывают ли документы раздела его intent» — отдельный
+    проход по кнопке.
+    """
+    from cod_doc.services import doc_node_health
+
+    slug = _project_slug(session, project_id)
+    result = doc_node_health.sync(session, project_id=project_id, project_slug=slug)
+    if not result.seeded:
+        return {
+            "findings": [],
+            "findings_count": 0,
+            "note": "doc tree is not seeded",
+        }
+    # Находка в отчёте прогона одна и сводная: детали лежат в таблице
+    # `finding`, а дублировать их сюда значит завести второе представление.
+    return {
+        "findings": [result.as_dict()] if result.issues else [],
+        "findings_count": result.issues,
+        **result.as_dict(),
+    }
+
+
+def _project_slug(session: Session, project_id: int) -> str:
+    from cod_doc.infra.repositories import ProjectRepository
+
+    project = ProjectRepository(session).get(project_id)
+    return project.slug if project is not None else str(project_id)
+
+
 CheckFn = Callable[..., dict[str, Any]]
 
 CHECK_CATALOG: dict[str, CheckFn] = {
@@ -380,6 +422,7 @@ CHECK_CATALOG: dict[str, CheckFn] = {
     "link_integrity": _check_link_integrity,
     "doc_drift": _check_doc_drift,
     "doc_unplaced": _check_doc_unplaced,
+    "doc_node_health": _check_doc_node_health,
     "task_stale": _check_task_stale,
     "alembic_head": _check_alembic_head,
 }

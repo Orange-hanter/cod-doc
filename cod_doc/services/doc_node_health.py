@@ -21,7 +21,11 @@ from __future__ import annotations
 
 import collections
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
+
+from cod_doc.services import activity_service, finding_service
+from cod_doc.services.activity_service import _uuid7
+from cod_doc.services.finding_service import FindingSeed
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -209,3 +213,110 @@ def tree_is_seeded(session: Session, project_id: int) -> bool:
     from cod_doc.services import doc_tree_service
 
     return bool(doc_tree_service.list_nodes(session, project_id))
+
+
+# --------------------------------------------------------------------------- #
+# Запись находок                                                               #
+# --------------------------------------------------------------------------- #
+
+#: Словарь ``source`` — контракт RFC 22 §3.2 (``ai_review | zairgrush |
+#: routine``), поэтому внутренний производитель приходит как ``routine``, а
+#: отличает его ``source_ref``. Он же служит партицией автозакрытия: под одним
+#: ``source`` живут разные проверки, и упавшая не вправе закрывать чужое.
+FINDING_SOURCE = "routine"
+FINDING_SOURCE_REF = "doc_node_health"
+
+DEFAULT_AUTHOR = "routine:doc_node_health"
+
+
+class SyncResult(NamedTuple):
+    """Итог прогона. ``seeded=False`` — дерева нет, сверка не выполнялась."""
+
+    seeded: bool
+    issues: int = 0
+    created: int = 0
+    updated: int = 0
+    resolved: int = 0
+    reopened: int = 0
+
+    def as_dict(self) -> dict[str, int | bool]:
+        return dict(self._asdict())
+
+
+def _seed_for(issue: HealthIssue) -> FindingSeed:
+    fingerprint, _basis = finding_service.fingerprint_routine(
+        source=FINDING_SOURCE,
+        check_name=issue.code,
+        scope_kind=issue.scope_kind,
+        scope_id=issue.scope_id,
+    )
+    return FindingSeed(
+        fingerprint=fingerprint,
+        source=FINDING_SOURCE,
+        source_ref=FINDING_SOURCE_REF,
+        kind=issue.code,
+        title=issue.title,
+        body=issue.body,
+        severity=issue.severity,
+        payload={"scope_kind": issue.scope_kind, "scope_id": issue.scope_id},
+    )
+
+
+def sync(
+    session: Session,
+    *,
+    project_id: int,
+    project_slug: str,
+    author: str = DEFAULT_AUTHOR,
+) -> SyncResult:
+    """Посчитать пробелы и свести их с находками в БД.
+
+    Идемпотентно: повторный прогон поднимает ``times_seen``, а не плодит
+    строки (``UNIQUE (project_id, source, fingerprint)``). Вылеченное
+    закрывается, вернувшееся переоткрывается — см.
+    ``finding_service.reconcile_partition``.
+
+    Дерева нет — ничего не делаем и **не сверяем**: раскладывать не по чему,
+    и пустой набор отпечатков закрыл бы все находки как «вылеченные», хотя их
+    просто не рассматривали.
+    """
+    if not tree_is_seeded(session, project_id):
+        return SyncResult(seeded=False)
+
+    issues = assess(session, project_id, project_slug=project_slug)
+    seeds = [_seed_for(issue) for issue in issues]
+
+    ingested = finding_service.ingest_findings(
+        session,
+        project_id=project_id,
+        source_run_id=f"{FINDING_SOURCE_REF}:{_uuid7()}",
+        seeds=seeds,
+    )
+    reconciled = finding_service.reconcile_partition(
+        session,
+        project_id=project_id,
+        source=FINDING_SOURCE,
+        source_ref=FINDING_SOURCE_REF,
+        seen_fingerprints={seed.fingerprint for seed in seeds},
+        author=author,
+    )
+
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "doc.health_synced",
+        author,
+        scope_kind="project",
+        scope_id=project_slug,
+        payload={"issues": len(issues), **ingested.as_dict(), **reconciled},
+        summary=f"Doc node health: {len(issues)} issue(s) for {project_slug}",
+    )
+
+    return SyncResult(
+        seeded=True,
+        issues=len(issues),
+        created=ingested.created,
+        updated=ingested.updated,
+        resolved=reconciled["resolved"],
+        reopened=reconciled["reopened"],
+    )
