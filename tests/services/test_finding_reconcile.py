@@ -72,6 +72,7 @@ def _reconcile(
     *,
     ref: str = _REF,
     close_after_misses: int = 1,
+    unjudged: set[str] | None = None,
 ) -> dict:
     return finding_service.reconcile_partition(
         session,
@@ -81,6 +82,7 @@ def _reconcile(
         seen_fingerprints=fps,
         author="routine:doc_node_health",
         close_after_misses=close_after_misses,
+        unjudged_fingerprints=unjudged,
     )
 
 
@@ -110,7 +112,7 @@ def test_healed_finding_is_resolved(session_factory) -> None:  # type: ignore[no
 
         result = _reconcile(session, pid, {"a"})
 
-        assert result == {"resolved": 1, "reopened": 0, "missed": 0}
+        assert result == {"resolved": 1, "reopened": 0, "missed": 0, "skipped": 0}
         assert _status(session, "a") == "open"
         assert _status(session, "b") == "resolved"
 
@@ -130,7 +132,7 @@ def test_recurrence_reopens_a_resolved_finding(session_factory) -> None:  # type
         _ingest(session, pid, ["a"])
         result = _reconcile(session, pid, {"a"})
 
-        assert result == {"resolved": 0, "reopened": 1, "missed": 0}
+        assert result == {"resolved": 0, "reopened": 1, "missed": 0, "skipped": 0}
         assert _status(session, "a") == "open"
 
 
@@ -146,10 +148,20 @@ def test_dismissed_survives_both_directions(session_factory) -> None:  # type: i
             session, project_id=pid, finding_uid=uid, author="human:test"
         )
 
-        assert _reconcile(session, pid, set()) == {"resolved": 0, "reopened": 0, "missed": 0}
+        assert _reconcile(session, pid, set()) == {
+            "resolved": 0,
+            "reopened": 0,
+            "missed": 0,
+            "skipped": 0,
+        }
         assert _status(session, "a") == "dismissed"
 
-        assert _reconcile(session, pid, {"a"}) == {"resolved": 0, "reopened": 0, "missed": 0}
+        assert _reconcile(session, pid, {"a"}) == {
+            "resolved": 0,
+            "reopened": 0,
+            "missed": 0,
+            "skipped": 0,
+        }
         assert _status(session, "a") == "dismissed"
 
 
@@ -174,8 +186,8 @@ def test_reconcile_is_idempotent(session_factory) -> None:  # type: ignore[no-un
         first = _reconcile(session, pid, set())
         second = _reconcile(session, pid, set())
 
-        assert first == {"resolved": 1, "reopened": 0, "missed": 0}
-        assert second == {"resolved": 0, "reopened": 0, "missed": 0}, (
+        assert first == {"resolved": 1, "reopened": 0, "missed": 0, "skipped": 0}
+        assert second == {"resolved": 0, "reopened": 0, "missed": 0, "skipped": 0}, (
             "второй прогон ничего не меняет"
         )
 
@@ -220,7 +232,7 @@ def test_one_miss_keeps_the_finding_open(session_factory) -> None:  # type: igno
 
         result = _reconcile(session, pid, {"a"}, close_after_misses=2)
 
-        assert result == {"resolved": 0, "reopened": 0, "missed": 1}
+        assert result == {"resolved": 0, "reopened": 0, "missed": 1, "skipped": 0}
         assert _status(session, "b") == "open", "находка обязана остаться видимой куратору"
         assert _streak(session, "b") == 1
         assert _events(session, "finding.resolved") == 0
@@ -235,7 +247,7 @@ def test_second_consecutive_miss_closes(session_factory) -> None:  # type: ignor
         _reconcile(session, pid, {"a"}, close_after_misses=2)
         result = _reconcile(session, pid, {"a"}, close_after_misses=2)
 
-        assert result == {"resolved": 1, "reopened": 0, "missed": 0}
+        assert result == {"resolved": 1, "reopened": 0, "missed": 0, "skipped": 0}
         assert _status(session, "b") == "resolved"
         assert _streak(session, "b") == 0, "у закрытой находки серия обнуляется"
 
@@ -291,3 +303,70 @@ def test_close_after_misses_must_be_positive(session_factory) -> None:  # type: 
 
         with pytest.raises(ValueError, match="close_after_misses"):
             _reconcile(session, pid, {"a"}, close_after_misses=0)
+
+
+# ── Частичная сверка: прогон рассмотрел не всю партицию ────────────────
+
+
+def test_unjudged_finding_is_left_alone(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Находка, о которой прогон не смог судить, не закрывается и не копит промахи.
+
+    Негативная проверка встроена: убери `unjudged_fingerprints` — и `b`
+    закроется как вылеченная, хотя судить о ней было нечем.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        _ingest(session, pid, ["a", "b"])
+
+        result = _reconcile(session, pid, {"a"}, unjudged={"b"})
+
+        assert result == {"resolved": 0, "reopened": 0, "missed": 0, "skipped": 1}
+        assert _status(session, "b") == "open"
+        assert _streak(session, "b") == 0, "нерассмотренное не производит улику"
+
+
+def test_the_judged_part_of_the_run_still_works(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Частично полезный прогон не пропадает целиком.
+
+    То, о чём судить удалось, сверяется как обычно — иначе неполный ответ
+    обесценивал бы и ту часть, которой можно верить.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        _ingest(session, pid, ["a", "b"])
+
+        result = _reconcile(session, pid, set(), unjudged={"b"})
+
+        assert result["resolved"] == 1, "рассмотренный и невиденный — вылечен"
+        assert _status(session, "a") == "resolved"
+        assert _status(session, "b") == "open", "нерассмотренный остался нетронутым"
+
+
+def test_unknown_finding_is_still_closed(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Находка вне поля зрения прогона закрывается как обычно.
+
+    Это и есть довод за запретный список вместо разрешительного: производитель
+    знает, о чём промолчал, но не знает, какие ещё находки лежат в партиции.
+    Разрешительный список подвесил бы `c` навсегда.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        _ingest(session, pid, ["a", "b", "c"])
+
+        result = _reconcile(session, pid, {"a"}, unjudged={"b"})
+
+        assert _status(session, "c") == "resolved", "предмет вердикта исчез — закрывать законно"
+        assert _status(session, "b") == "open"
+        assert result["skipped"] == 1
+
+
+def test_none_means_the_whole_partition(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Дефолт не изменился: производитель отвечает за всю партицию."""
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        _ingest(session, pid, ["a", "b"])
+
+        result = _reconcile(session, pid, {"a"})
+
+        assert result["skipped"] == 0
+        assert _status(session, "b") == "resolved"

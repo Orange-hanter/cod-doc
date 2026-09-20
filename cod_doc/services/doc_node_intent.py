@@ -44,6 +44,11 @@ if TYPE_CHECKING:
 FINDING_SOURCE_REF = "doc_node_health_ai"
 DEFAULT_AUTHOR = "agent:doc_node_intent"
 
+#: Код находки. Он же участвует в отпечатке, поэтому живёт константой:
+#: разъедься литералы — и сверка начнёт считать отпечатки, которых нет в БД,
+#: то есть тихо перестанет узнавать собственные находки.
+_ISSUE_CODE = "NODE-INTENT-AI"
+
 #: Закрывать вердикт модели только после двух промахов подряд. Вердикт
 #: субъективен и мигает: замер на живом корпусе (три прогона подряд, один и тот
 #: же промпт) дал наборы {architecture, data-model, scenarios},
@@ -207,7 +212,7 @@ def verdicts_to_issues(verdicts: list[Verdict], known_nodes: set[str]) -> list[H
         missing = "; ".join(verdict.missing) if verdict.missing else verdict.note
         issues.append(
             HealthIssue(
-                code="NODE-INTENT-AI",
+                code=_ISSUE_CODE,
                 scope_kind=SCOPE_NODE,
                 scope_id=verdict.node_key,
                 title=f"Раздел «{verdict.node_key}» не покрывает своё назначение",
@@ -216,6 +221,33 @@ def verdicts_to_issues(verdicts: list[Verdict], known_nodes: set[str]) -> list[H
             )
         )
     return issues
+
+
+def answered_nodes(verdicts: list[Verdict], known_nodes: set[str]) -> set[str]:
+    """Разделы, о которых модель действительно высказалась.
+
+    Не то же самое, что «разделы с находкой»: вердикт «покрыто» — это тоже
+    высказывание, и оно даёт право закрыть находку. А вот **молчание** о
+    разделе высказыванием не является, хотя выглядит в точности так же —
+    отпечатка нет ни там, ни там.
+
+    Промпт требует вердикт на каждый раздел, но это просьба, а не гарантия:
+    ответ может прийти валидным и неполным. Без этой функции такой ответ
+    закрывал бы находки наравне с полным — прямой аналог `truncated` из
+    ``structure_drift``, где обрезанный прогон лишают права закрывать.
+    """
+    return {v.node_key for v in verdicts} & known_nodes
+
+
+def _fingerprint_for_node(node_key: str) -> str:
+    """Отпечаток находки NODE-INTENT-AI по ключу раздела."""
+    fingerprint, _basis = finding_service.fingerprint_routine(
+        source=FINDING_SOURCE,
+        check_name=_ISSUE_CODE,
+        scope_kind=SCOPE_NODE,
+        scope_id=node_key,
+    )
+    return fingerprint
 
 
 def _seed_for(issue: HealthIssue) -> FindingSeed:
@@ -255,6 +287,14 @@ def analyze(
     пропавший на одном прогоне, остаётся ``open`` и виден куратору, а
     закрывается только вторым промахом подряд. В ответе это видно ключом
     ``missed`` — сколько находок промахнулись, но закрытие отложено.
+
+    Раздел, о котором модель промолчала, из сверки выводится. Промпт требует
+    вердикт на каждый, но это просьба, а не гарантия: ответ приходит валидным
+    и неполным, и молчание о разделе выглядит в точности как «вылечено» —
+    отпечатка нет ни там, ни там. Находки таких разделов не трогаются вовсе;
+    их число видно ключом ``unanswered``, пропущенные находки — ``skipped``.
+    Находки о разделах, выпавших из промпта совсем, при этом закрываются как
+    обычно: их предмет исчез, судить больше не о чем.
     """
     sections = collect_sections(session, project_id)
     if not sections:
@@ -263,17 +303,28 @@ def analyze(
         return {
             "sections": 0,
             "issues": 0,
+            "unanswered": 0,
             "created": 0,
             "updated": 0,
             "resolved": 0,
             "reopened": 0,
             "missed": 0,
+            "skipped": 0,
         }
 
     raw = _call_lite_raw(build_prompt(sections), cfg, max_tokens=_token_budget(len(sections)))
     verdicts = parse_verdicts(raw)
-    issues = verdicts_to_issues(verdicts, {s["node_key"] for s in sections})
+    asked = {s["node_key"] for s in sections}
+    issues = verdicts_to_issues(verdicts, asked)
     seeds = [_seed_for(issue) for issue in issues]
+
+    # Раздел, о котором модель промолчала, отсутствует в `seen_fingerprints`
+    # ровно так же, как вылеченный, — и без этой границы молчание закрывало бы
+    # находки. Выводим из строя именно промолчанные, а не «разрешаем
+    # рассмотренные»: находки о разделах, выпавших из промпта совсем (раздел
+    # опустел), закрывать законно — их предмет исчез.
+    answered = answered_nodes(verdicts, asked)
+    unjudged = {_fingerprint_for_node(key) for key in asked - answered}
 
     ingested = finding_service.ingest_findings(
         session,
@@ -289,6 +340,7 @@ def analyze(
         seen_fingerprints={seed.fingerprint for seed in seeds},
         author=author,
         close_after_misses=CLOSE_AFTER_MISSES,
+        unjudged_fingerprints=unjudged,
     )
     activity_service.emit_for_write(
         session,
@@ -297,12 +349,21 @@ def analyze(
         author,
         scope_kind="project",
         scope_id=str(project_id),
-        payload={"sections": len(sections), "issues": len(issues), **reconciled},
+        payload={
+            "sections": len(sections),
+            "issues": len(issues),
+            "unanswered": len(asked - answered),
+            **reconciled,
+        },
         summary=f"Intent coverage: {len(issues)} section(s) below intent",
     )
     return {
         "sections": len(sections),
         "issues": len(issues),
+        # Сколько разделов модель проигнорировала. Без этого числа неполный
+        # ответ невидим снаружи: находки просто не двигаются, и выглядит это
+        # как «ничего не изменилось», а не как «модель ответила не про всё».
+        "unanswered": len(asked - answered),
         "created": ingested.created,
         "updated": ingested.updated,
         **reconciled,
@@ -314,6 +375,7 @@ __all__ = [
     "AIBackendError",
     "Verdict",
     "analyze",
+    "answered_nodes",
     "build_prompt",
     "collect_sections",
     "parse_verdicts",
