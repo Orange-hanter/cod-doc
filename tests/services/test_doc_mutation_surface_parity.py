@@ -108,7 +108,22 @@ TREE_SPEC = ServiceSpec(
     ),
 )
 
-SPECS = (SPEC, TREE_SPEC)
+# Здоровье разделов пишет находки, а значит это write-сервис — заводим в
+# паритет сразу, как и `doc_tree_service` в ADO-116.
+HEALTH_SPEC = ServiceSpec(
+    name="doc_node_health",
+    known_mutations=frozenset({"sync"}),
+    known_reads=frozenset(
+        {
+            "assess",
+            "assess_nodes",
+            "assess_corpus",
+            "tree_is_seeded",
+        }
+    ),
+)
+
+SPECS = (SPEC, TREE_SPEC, HEALTH_SPEC)
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)
