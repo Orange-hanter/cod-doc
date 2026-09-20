@@ -870,13 +870,27 @@ a.docs-stat:hover { border-color: var(--accent); text-decoration: none; }
 .docs-groupby-btn:hover { color: var(--fg); background: var(--bg-alt); text-decoration: none; }
 .docs-groupby-btn-active { background: var(--bg-alt); color: var(--fg-strong); border-color: var(--border); }
 
-.docs-table { width: 100%; table-layout: fixed; }
+/* `table-layout: fixed` раздаёт остаток ширины первой колонке, и при узком
+   окне остаток уходит в минус: на 900px «Документу» доставалось ~40px,
+   заголовок рвался по слову в строку, а шапки «Документ» и «Раздел» налезали
+   друг на друга. `min-width` + прокрутка обёртки (`.table-scroll` в
+   `docs_list.html`) держат колонку читаемой вместо того, чтобы прятать
+   колонки: на этом экране каждая из них — повод открыть документ. */
+.docs-table { width: 100%; min-width: 760px; table-layout: fixed; }
 .docs-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .docs-cell-title { min-width: 0; }
-.docs-cell-title > a { font-weight: 600; }
+.docs-cell-title > a { font-weight: 600; overflow-wrap: anywhere; }
 /* Ключ второй строкой: он нужен для адресации, но не должен соперничать за
-   внимание с человеческим заголовком. */
-.docs-key { display: block; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+   внимание с человеческим заголовком. `nowrap` обязателен — без него
+   `text-overflow` не срабатывает вовсе, и путь переносится вместо обрезки. */
+.docs-key {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Суммарная ширина фиксированных колонок держится с запасом: дата идёт
    `nowrap`, и при 120px «2026-09-18 18:03» обрезалась последним символом. */
 .docs-col-node { width: 120px; }
