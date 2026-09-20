@@ -107,14 +107,15 @@
     {% endif %}
   </p>
 {% else %}
-<table class="grid">
+<div class="table-scroll">
+<table class="grid tasks-legacy-table">
   <thead>
     <tr>
       <th>ID</th>
       <th>Title</th>
       <th>Status</th>
       <th class="num">Priority</th>
-      <th>Updated</th>
+      <th class="tasks-legacy-col-when">Updated</th>
     </tr>
   </thead>
   <tbody>
@@ -124,11 +125,12 @@
         <td>{{ t.title }}</td>
         <td><span class="badge badge-{{ t.status }}">{{ t.status }}</span></td>
         <td class="num"><span class="prio prio-{{ t.priority }}">{{ t.priority }}</span></td>
-        <td class="mono" title="{{ t.updated | ts_tooltip }}">{{ t.updated | short_datetime }}</td>
+        <td class="mono tasks-legacy-col-when" title="{{ t.updated | ts_tooltip }}">{{ t.updated | short_datetime }}</td>
       </tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
 
 {% set start = offset + 1 %}
 {% set end = offset + (tasks | length) %}

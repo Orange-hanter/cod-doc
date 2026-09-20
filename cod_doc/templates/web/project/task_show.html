@@ -136,10 +136,11 @@
     {% endif %}
   </header>
   {% if trace %}
-    <table class="grid">
+    <div class="table-scroll">
+    <table class="grid task-trace-table">
       <thead>
         <tr>
-          <th>When</th>
+          <th class="task-col-when">When</th>
           <th>Model</th>
           <th>Kind</th>
           <th class="num">In tok</th>
@@ -152,7 +153,7 @@
       <tbody>
         {% for t in trace %}
           <tr {% if t.error %}class="trace-err"{% endif %}>
-            <td class="muted mono" title="{{ t.ts | ts_tooltip }}">{{ t.ts | short_datetime }}</td>
+            <td class="muted mono task-col-when" title="{{ t.ts | ts_tooltip }}">{{ t.ts | short_datetime }}</td>
             <td class="mono">{{ t.model }}</td>
             <td>{{ t.kind }}</td>
             <td class="num">{{ t.input_tokens }}</td>
@@ -177,6 +178,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   {% else %}
     <p class="empty-hint"><em>Ещё не было вызовов ИИ для этой задачи.</em></p>
   {% endif %}
@@ -194,12 +196,13 @@
     {% endif %}
   </header>
   {% if history %}
-    <table class="grid">
+    <div class="table-scroll">
+    <table class="grid task-history-table">
       <thead>
         <tr>
           <th>Revision</th>
           <th>Author</th>
-          <th>At</th>
+          <th class="task-col-when">At</th>
           <th>Reason</th>
           <th>Diff (first line)</th>
         </tr>
@@ -209,13 +212,14 @@
           <tr>
             <td class="mono">{{ r.revision_id }}</td>
             <td>{{ r.author }}</td>
-            <td class="muted" title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</td>
+            <td class="muted task-col-when" title="{{ r.at | ts_tooltip }}">{{ r.at | short_datetime }}</td>
             <td>{{ r.reason }}</td>
             <td class="mono diff-preview"><span class="cell-clamp" title="{{ r.diff_first_line }}">{{ r.diff_first_line }}</span></td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
+    </div>
   {% else %}
     <p class="empty-hint"><em>Ревизий по этой задаче пока нет.</em></p>
   {% endif %}

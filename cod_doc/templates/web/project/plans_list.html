@@ -12,7 +12,8 @@
 {% elif not plans %}
   <p class="muted">Планов в этом проекте пока нет.</p>
 {% else %}
-<table class="grid">
+<div class="table-scroll">
+<table class="grid plans-table">
   <thead>
     <tr>
       <th>Scope</th>
@@ -21,7 +22,7 @@
       <th class="num">Done</th>
       <th class="num">Total</th>
       <th>Progress</th>
-      <th>Last&nbsp;updated</th>
+      <th class="plans-col-when">Last&nbsp;updated</th>
     </tr>
   </thead>
   <tbody>
@@ -37,11 +38,12 @@
           <span class="progress-fill" style="width: {{ p.percent }}%"></span>
         </div>
       </td>
-      <td class="muted">{{ p.last_updated | short_datetime }}</td>
+      <td class="muted plans-col-when">{{ p.last_updated | short_datetime }}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
 <p class="muted">{{ plans | length }} plan{% if plans | length != 1 %}s{% endif %}.</p>
 {% endif %}
 {% endblock %}

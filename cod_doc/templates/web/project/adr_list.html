@@ -55,12 +55,13 @@
     </p>
   </div>
 {% else %}
+  <div class="table-scroll">
   <table class="grid adr-table">
     <thead>
       <tr>
         <th>ID</th>
         <th>Status</th>
-        <th>Decided</th>
+        <th class="adr-col-when">Decided</th>
         <th>Title</th>
         <th>Author</th>
       </tr>
@@ -74,12 +75,13 @@
              мыши и для скринридера. #}
           <td class="mono"><a class="adr-row-link" href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.adr_id }}</a></td>
           <td><span class="badge badge-{{ it.status }}">{{ it.status_icon }} {{ it.status }}</span></td>
-          <td class="muted">{{ it.decided_at | short_date }}</td>
+          <td class="muted adr-col-when">{{ it.decided_at | short_date }}</td>
           <td><a href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.title }}</a></td>
           <td class="muted">{{ it.author }}</td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 {% endif %}
 {% endblock %}

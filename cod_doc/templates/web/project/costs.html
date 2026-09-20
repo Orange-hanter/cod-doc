@@ -18,7 +18,8 @@
 </p>
 
 {% if rows %}
-<table class="grid">
+<div class="table-scroll">
+<table class="grid costs-table">
   <thead>
     <tr>
       <th>Model</th>
@@ -61,6 +62,7 @@
     </tr>
   </tfoot>
 </table>
+</div>
 {% else %}
 <p class="muted">No LLM calls recorded yet for this project. Trace rows are written by the agent during <code>chat()</code> calls.</p>
 {% endif %}
