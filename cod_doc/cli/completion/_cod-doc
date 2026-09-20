@@ -1138,6 +1138,7 @@ _cod-doc() {
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--sync)--sync[Записать пробелы в findings и закрыть вылеченные. Без флага — тольк…]' \
+    '(--analyze)--analyze[Спросить модель, покрывают ли документы раздела его intent. Ходит в…]' \
     '(--author)--author=:author' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0

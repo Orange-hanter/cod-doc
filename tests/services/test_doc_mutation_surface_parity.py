@@ -123,7 +123,21 @@ HEALTH_SPEC = ServiceSpec(
     ),
 )
 
-SPECS = (SPEC, TREE_SPEC, HEALTH_SPEC)
+# Вердикт LLM — тоже write-путь: пишет находки в свою партицию.
+INTENT_SPEC = ServiceSpec(
+    name="doc_node_intent",
+    known_mutations=frozenset({"analyze"}),
+    known_reads=frozenset(
+        {
+            "build_prompt",
+            "collect_sections",
+            "parse_verdicts",
+            "verdicts_to_issues",
+        }
+    ),
+)
+
+SPECS = (SPEC, TREE_SPEC, HEALTH_SPEC, INTENT_SPEC)
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)

@@ -84,3 +84,39 @@ def register(mcp: FastMCP) -> None:
         if dry_run:
             out["dry_run"] = True
         return out
+
+    @mcp.tool(name="doc_node_intent_analyze")
+    def doc_node_intent_analyze(
+        project: str,
+        author: str = "mcp",
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Ask the model whether each section's documents cover its `intent`.
+
+        The one question rules cannot answer. Everything countable — empty,
+        thin, no intent, degenerate typing — is `doc_node_health_get` and needs
+        no network.
+
+        Writes to its own finding partition, so a failed run never closes the
+        deterministic findings. An LLM error propagates: swallowing it would
+        leave an empty verdict list, and the reconcile would read that as
+        "every gap is fixed".
+        """
+        from cod_doc.api.deps import get_config
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_node_intent
+
+        sf, _ = session_factory(project)
+        with transactional(sf, commit=not dry_run) as session:
+            project_id = require_project_id(session, project)
+            out: dict[str, Any] = dict(
+                doc_node_intent.analyze(
+                    session,
+                    project_id=project_id,
+                    cfg=get_config(),
+                    author=author,
+                )
+            )
+        if dry_run:
+            out["dry_run"] = True
+        return out

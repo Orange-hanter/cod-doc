@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **144 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **145 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -84,8 +84,8 @@ coding-агента.
 ```bash
 cod-doc-mcp                              # agent (default) — 6 curator tools
 cod-doc-mcp --profile minimal            # 21 cold-start tools
-cod-doc-mcp --profile standard           # 140 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 144 (включая legacy)
+cod-doc-mcp --profile standard           # 141 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 145 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 # CLI equivalent (ADO-079): same catalog filter
 cod-doc mcp --profile standard
@@ -140,7 +140,7 @@ cod-doc mcp --profile standard
 
 | Демон | Адрес | Профиль | Тулов |
 |---|---|---|---|
-| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 140 |
+| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 141 |
 | `com.cod-doc.mcp-agent` | `http://127.0.0.1:8802/mcp` | `agent` | 6 |
 
 Установка, апгрейд и управление — `deploy/launchd/cod-doc-services.sh`
@@ -343,8 +343,8 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **scenario.\* (RFC 24 §9)** | 9 | Сценарии тестирования: авторская половина RFC 24 — что должно быть верно (вид, предусловия, шаги, ожидаемый результат, якорь в capability-документе) и проекция в `docs/system/scenarios/`. Вердикты покрытия сюда не попадают: это доказательства producer'а (STR-002). Только профили standard/full | `scenario_create`, `scenario_get`, `scenario_list`, `scenario_update`, `scenario_retire`, `scenario_set_steps`, `scenario_link`, `scenario_export`, `scenario_coverage` |
 | **structure.\*** | 5 | Pinned code-structure snapshots, drift, scenarios and BFS context (not projection drift; not ai_review findings) | `structure_get`, `structure_context`, `structure_drift`, `structure_scenarios`, `structure_diff` |
 | **doc_tree.\* / doc_node.\* (ADO-116)** | 8 | Дерево документации как данные: разделы с намерением и порядком, детерминированная раскладка по правилам и Инбокс для того, что правилам не подошло. `doc_tree_classify` по умолчанию `dry_run=true` и не трогает то, что человек разложил руками. Только профили standard/full | `doc_tree_get`, `doc_tree_unplaced`, `doc_tree_init`, `doc_tree_classify`, `doc_set_node`, `doc_node_create`, `doc_node_update`, `doc_node_delete` |
-| **doc_node_health.\*** | 2 | Пробелы в наполненности разделов: пусто, ниже `min_docs`, без `intent`, вырожденная типизация корпуса, пачка безымянных индексов. Дерево отвечает «где лежит», это — «чего не написано». `doc_node_health_sync` пишет находки в общую таблицу `finding`, поэтому пробел виден `curator_next` и промоутится в задачу. Детерминированно, без LLM. Только профили standard/full | `doc_node_health_get`, `doc_node_health_sync` |
-| **ИТОГО** | **144** | | |
+| **doc_node_health.\* / doc_node_intent.\*** | 3 | Пробелы в наполненности разделов: пусто, ниже `min_docs`, без `intent`, вырожденная типизация корпуса, пачка безымянных индексов. Дерево отвечает «где лежит», это — «чего не написано». `doc_node_health_sync` пишет находки в общую таблицу `finding`, поэтому пробел виден `curator_next` и промоутится в задачу. Детерминированная часть без LLM; `doc_node_intent_analyze` — вердикт модели «покрывают ли документы раздела его intent», в своей партиции находок, чтобы упавший проход не закрыл детерминированные. Только профили standard/full | `doc_node_health_get`, `doc_node_health_sync`, `doc_node_intent_analyze` |
+| **ИТОГО** | **145** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
@@ -380,7 +380,7 @@ docstring соответствующих тулов. Для новых инте�
 | Copilot Chat | ✅ | ✅ | ❌ | Частично |
 | Claude Desktop | ✅ | ✅ | ❌ | Через copy-paste |
 | CI/CD | ✅ | ❌ | ✅ | ❌ |
-| Кол-во инструментов | 144 | 144 | ~8 | 0 |
+| Кол-во инструментов | 145 | 145 | ~8 | 0 |
 | Семантический поиск | ✅ | ✅ | ❌ | ❌ |
 | `project` в вызове | обязателен | можно через дефолт | — | — |
 | Дефолтный проект | нет (общий процесс) | есть (процесс = сессия) | — | — |

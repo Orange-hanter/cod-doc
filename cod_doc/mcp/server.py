@@ -162,7 +162,7 @@ def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> Non
     help="Tool-surface profile (default: agent). agent=6 curator tools (RFC 25: "
     "curator_next/ctx_search/ctx_drift/context_get + capabilities/report); "
     "minimal=21 cold-start curated CRUD; "
-    "standard=140 DB-backed tools without legacy; full=144 including legacy "
+    "standard=141 DB-backed tools without legacy; full=145 including legacy "
     "agent tools. Counts enforced by tests/test_server_profiles.py.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")
