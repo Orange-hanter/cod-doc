@@ -376,3 +376,39 @@ def test_status_post_persists_change(tasks_client) -> None:
     assert r.status_code == 200
     assert "AUTH-001" in r.text  # now also done
     assert "AUTH-003" in r.text  # was already done
+
+
+# ── ADO-156: счётчики в шапке цепочек и словарь статусов в форме ─────────────
+
+
+def test_chains_header_counts_done_tasks(tasks_client) -> None:
+    """Шапка цепочки несёт счётчик `done`, а `Ready` подписан как «к старту».
+
+    Без счётчика закрытых единственным числом со смыслом статуса в строке был
+    `Ready: 0`, и на полностью закрытом плане он читался как «план не закрыт».
+    """
+    client, entry = tasks_client
+    body = client.get(f"/p/{entry.name}/tasks?view=chains").text
+    # Одна из трёх задач фикстуры закрыта.
+    assert "chain-count-done" in body
+    assert "<strong>1</strong> done" in body
+    # Готовы к старту — две незакрытые задачи без пререквизитов.
+    assert "Ready to start: <strong>2</strong>" in body
+    # Голого «Ready:» на странице не осталось — метка врала о смысле числа.
+    assert "Ready:" not in body
+
+
+def test_status_select_offers_no_legacy_spelling(tasks_client) -> None:
+    """HTMX-фрагмент строки предлагает канонические семь, без `pending`."""
+    client, entry = tasks_client
+    # Задача в каноническом статусе: легаси-пункту взяться в списке неоткуда.
+    r = client.post(
+        f"/p/{entry.name}/tasks/AUTH-001/status",
+        data={"status": "done"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert '<option value="done" selected>' in r.text
+    assert '<option value="todo"' in r.text
+    assert '<option value="pending"' not in r.text
+    assert '<option value="in-progress"' not in r.text

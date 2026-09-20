@@ -114,6 +114,12 @@ class TaskStatus(StrEnum):
     # Legacy values — still valid, mapped to new semantics.
     PENDING = "pending"
     IN_PROGRESS = "in-progress"
+
+    # Канонический статус, лежащий не в своей группе: `done` не алиас (его нет
+    # в `TASK_STATUS_ALIASES`), он седьмой бакет таксономии. Член оставлен на
+    # месте намеренно — порядок членов enum виден снаружи (`[s.value for s in
+    # TaskStatus]` в CLI-choices и в сгенерированном zsh-дополнении), а смысла
+    # в перестановке ровно на один комментарий.
     DONE = "done"
 
 

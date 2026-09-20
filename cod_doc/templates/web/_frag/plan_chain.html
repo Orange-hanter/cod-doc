@@ -1,5 +1,5 @@
 {# Dependency-chain view for one plan.
-   - Header strip:  plan scope · counts · critical path length · ready count
+   - Header strip:  plan scope · counts · done · critical path length · ready-to-start count
    - Critical path: clickable chip sequence (T-001 → T-003 → T-005)
    - Ready batch:   priority-sorted chips of tasks unblocked right now
    - Levels:        horizontal grid, one column per topological depth
@@ -11,9 +11,16 @@
     <div class="chain-head-title">
       <span class="chain-head-icon">⇄</span>
       <h3 class="chain-scope">{{ chain.scope }}</h3>
+      {# ADO-156: `Ready` считает готовые к старту, а не закрытые. Без соседнего
+         счётчика `done` строка «10 tasks · CP: 2 · Ready: 0» на полностью
+         закрытом плане читалась как «план не закрыт». #}
       <span class="chain-counts">
         <span class="chain-count" title="Tasks in this plan">
           <strong>{{ chain.task_count }}</strong> tasks
+        </span>
+        <span class="chain-count chain-count-done"
+              title="Tasks already closed (status: done)">
+          <strong>{{ chain | chain_done_count }}</strong> done
         </span>
         <span class="chain-count" title="Dependency edges (blocks-relations)">
           <strong>{{ chain.edge_count }}</strong> edges
@@ -23,8 +30,8 @@
           CP: <strong>{{ chain.critical_path | length }}</strong>
         </span>
         <span class="chain-count chain-count-ready"
-              title="Tasks ready to start now (all prerequisites done)">
-          Ready: <strong>{{ chain.ready_ids | length }}</strong>
+              title="Tasks that can be picked up right now (not done, every prerequisite done). Not a task status — a closed plan has 0 here.">
+          Ready to start: <strong>{{ chain.ready_ids | length }}</strong>
         </span>
       </span>
     </div>
@@ -45,8 +52,9 @@
 
   {# Ready batch strip: what can be picked up right now. #}
   {% if chain.ready_ids %}
-    <div class="chain-ready-strip" aria-label="Ready batch">
-      <span class="chain-ready-label">🟢 Ready now</span>
+    <div class="chain-ready-strip" aria-label="Tasks ready to start">
+      <span class="chain-ready-label"
+            title="Every prerequisite is done — these can be picked up right now">🟢 Ready to start</span>
       <div class="chain-ready-flow">
         {% for level in chain.levels %}
           {% for t in level.tasks %}
