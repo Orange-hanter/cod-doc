@@ -111,8 +111,8 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/docs/{doc_key:path}/comments/apply` | AI-rework preview по открытым комментариям | `comment_service.apply_open_with_ai` | ✅ | OBI-comments |
 | `POST /p/{slug}/docs/{doc_key:path}/comments/apply/commit` | Применение выбранных AI-правок | `doc_service.patch_section` + `comment_service.update_status` | ✅ | OBI-comments |
 | **Документы — навигатор и анализ**  | | | |
-| `GET /p/{slug}/docs/navigator` | Карта пути документации + кешированный gap-analysis | `nav_service.compute_journey` + `nav_service.peek_cached_analysis` | ✅ | OBI-navigator |
-| `POST /p/{slug}/docs/navigator/analyze` | HTMX: запуск/загрузка AI gap-analysis | `nav_service.analyze_gaps` | ✅ | OBI-navigator |
+| `GET /p/{slug}/docs/navigator` | Наполненность разделов: пробелы из уже сохранённых находок. LLM на GET не зовётся | `doc_node_health.tree_is_seeded` + `doc_tree_service.node_stats` + `finding_service.list_findings` | ✅ | ADO-116 |
+| `POST /p/{slug}/docs/navigator/analyze` | HTMX: пересчитать детерминированные пробелы и спросить модель о покрытии `intent`; ошибка модели показывается, а не глотается | `doc_node_health.sync` + `doc_node_intent.analyze` | ✅ | ADO-116 |
 | **Секции — HTMX-фрагменты**  | | | |
 | `GET /p/{slug}/docs/{doc_key:path}/sections/{anchor}/edit` | Edit form fragment | `doc_service.get_sections` + `revision_service.head_for_entity` | ✅ | WEB-012 |
 | `GET /p/{slug}/docs/{doc_key:path}/sections/{anchor}/view` | View fragment (cancel) | `doc_service.get_sections` | ✅ | WEB-012 |

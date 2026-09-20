@@ -41,6 +41,10 @@ def finding_to_dict(f: FindingModel) -> dict[str, Any]:
         "first_seen_at": f.first_seen_at.isoformat() if f.first_seen_at else None,
         "last_seen_at": f.last_seen_at.isoformat() if f.last_seen_at else None,
         "promoted_task_id": f.promoted_task_id,
+        # ADO-116: потребителю нужен адрес находки (раздел/проект), а он
+        # лежит только в payload. Без него сгруппировать находки по
+        # разделам можно лишь разбором заголовка.
+        "payload": dict(f.payload or {}),
     }
 
 
