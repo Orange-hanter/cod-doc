@@ -108,6 +108,14 @@ def register(mcp: FastMCP) -> None:
         without the delay every borderline section would churn
         resolved/reopened on each run. The returned `missed` counts findings
         that were absent this run but not closed yet.
+
+        Only sections the model actually ruled on are reconciled. The prompt
+        asks for a verdict per section, but that is a request, not a
+        guarantee: a valid answer can be incomplete, and silence about a
+        section looks exactly like "fixed" — the fingerprint is absent either
+        way. Findings of unanswered sections are left untouched; `unanswered`
+        reports how many sections the model skipped, `skipped` how many
+        findings were therefore not reconciled.
         """
         from cod_doc.api.deps import get_config
         from cod_doc.infra.db import transactional

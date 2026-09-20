@@ -76,6 +76,14 @@ def _print_counters(
             f"закрыто {analyzed['resolved']}, "
             f"не подтверждено {analyzed['missed']}[/dim]"
         )
+        # Неполный ответ — не ошибка прогона, но и не норма: находки таких
+        # разделов не сверялись вовсе. Молчать об этом значит прятать
+        # деградацию модели за словом «закрыто 0».
+        if analyzed["unanswered"]:
+            console.print(
+                f"[yellow]Модель промолчала о {analyzed['unanswered']} раздел(ах) — "
+                f"их находки не сверялись ({analyzed['skipped']} пропущено).[/yellow]"
+            )
 
 
 @tree.command("health")

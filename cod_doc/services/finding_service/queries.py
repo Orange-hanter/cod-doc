@@ -148,6 +148,7 @@ def reconcile_partition(
     seen_fingerprints: set[str],
     author: str,
     close_after_misses: int = DEFAULT_CLOSE_AFTER_MISSES,
+    unjudged_fingerprints: set[str] | None = None,
 ) -> dict[str, int]:
     """Свести находки одной партиции с тем, что производитель видит сейчас.
 
@@ -171,6 +172,29 @@ def reconcile_partition(
     Вызывающий обязан передать **полный** набор отпечатков своей партиции.
     Частичный прогон (обрезанный лимитом, упавший на середине) закрыл бы
     живые находки — такой прогон сверять не должен вовсе.
+
+    **``unjudged_fingerprints`` — то, о чём прогон не смог судить.**
+    По умолчанию ``None``: производитель отвечает за всю партицию, и
+    отсутствие отпечатка в ``seen_fingerprints`` означает «вылечено». Но
+    источник бывает частичным не по своей вине: модель обязана вернуть вердикт
+    на каждый раздел и иногда молчит о нескольких. Молчание — не вердикт
+    «покрыто», и считать его промахом нельзя: несколько таких прогонов подряд
+    закрыли бы живую находку, о которой никто ничего не сказал.
+
+    Перечисленные здесь находки не трогаются вовсе — ни закрытия, ни счётчика.
+    Всё остальное сверяется как обычно, поэтому частично полезный прогон не
+    пропадает.
+
+    Список именно **запретный**, а не разрешительный, и это не стилистика.
+    Производитель знает, о чём он промолчал, но не знает, какие ещё находки
+    лежат в партиции: там бывают находки о предмете, которого он больше не
+    рассматривает вовсе (раздел опустел и выпал из промпта). Их закрывать
+    как раз законно — предмет вердикта исчез. Разрешительный список подвесил
+    бы их навсегда.
+
+    Мягче, чем `can_close` из ``structure_drift`` (там недоверенный прогон
+    теряет право закрывать целиком), и точнее: там сигнал про весь прогон,
+    здесь — про каждую находку.
 
     **Гистерезис.** ``close_after_misses`` — сколько прогонов подряд находку
     должны не увидеть, прежде чем закрыть. Единица (дефолт) — прежнее
@@ -218,7 +242,14 @@ def reconcile_partition(
     resolved = 0
     reopened = 0
     missed = 0
+    skipped = 0
     for f in rows:
+        if unjudged_fingerprints and f.fingerprint in unjudged_fingerprints:
+            # Прогон об этой находке судить не смог — молчание не улика
+            # против неё. Отсутствие в `seen_fingerprints` тут не значит
+            # «вылечено».
+            skipped += 1
+            continue
         seen = f.fingerprint in seen_fingerprints
         if f.status == FINDING_STATUS_OPEN and not seen:
             if f.miss_streak + 1 >= close_after_misses:
@@ -235,7 +266,12 @@ def reconcile_partition(
             _set_status(session, f, FINDING_STATUS_OPEN, author=author, event="finding.reopened")
             reopened += 1
 
-    return {"resolved": resolved, "reopened": reopened, "missed": missed}
+    return {
+        "resolved": resolved,
+        "reopened": reopened,
+        "missed": missed,
+        "skipped": skipped,
+    }
 
 
 def _set_status(

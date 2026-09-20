@@ -286,6 +286,8 @@ def test_nothing_to_ask_still_returns_the_full_shape(session_factory) -> None:  
             "resolved",
             "reopened",
             "missed",
+            "skipped",
+            "unanswered",
         }
 
 
@@ -324,3 +326,110 @@ def test_flapping_verdict_does_not_churn_events(session_factory, monkeypatch) ->
         assert "finding.resolved" not in kinds, f"мигающий вердикт закрыл находку: {kinds}"
         assert "finding.reopened" not in kinds, f"мигающий вердикт переоткрыл находку: {kinds}"
         assert len(_open_ai_findings(session, pid)) == 1
+
+
+# ── Неполный ответ модели ──────────────────────────────────────────────
+#
+# Промпт требует вердикт на каждый раздел, но это просьба, а не гарантия.
+# Молчание о разделе выглядит в точности как «вылечено»: отпечатка нет ни
+# там, ни там. Прямой аналог `truncated` из `structure_drift`, где обрезанный
+# прогон лишают права закрывать.
+
+
+def test_answered_nodes_counts_verdicts_not_findings() -> None:
+    """Вердикт «покрыто» — тоже высказывание, а молчание — нет."""
+    verdicts = [
+        intent.Verdict("vision", True, [], ""),
+        intent.Verdict("architecture", False, ["X"], ""),
+        intent.Verdict("призрак", False, [], ""),
+    ]
+
+    answered = intent.answered_nodes(verdicts, {"vision", "architecture", "skills"})
+
+    assert answered == {"vision", "architecture"}, "придуманный ключ и молчание не считаются"
+
+
+def test_silence_about_a_section_does_not_close_its_finding(session_factory, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Раздел, о котором модель промолчала, не закрывается и не копит промахи.
+
+    Негативная проверка: убери `unjudged_fingerprints` из `analyze` — и
+    находка закроется на втором таком прогоне, хотя вердикта по ней не было
+    ни разу.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        _doc(session, pid, "docs/VISION", "vision")
+        _doc(session, pid, "docs/ARCH", "architecture")
+
+        # Прогон 1: модель видит проблему в обоих разделах.
+        monkeypatch.setattr(
+            intent,
+            "_call_lite_raw",
+            lambda *_a, **_k: json.dumps(
+                {
+                    "verdicts": [
+                        {"node_key": "vision", "covers_intent": False, "missing": ["X"]},
+                        {"node_key": "architecture", "covers_intent": False, "missing": ["Y"]},
+                    ]
+                }
+            ),
+        )
+        intent.analyze(session, project_id=pid, cfg=object())  # type: ignore[arg-type]
+        session.flush()
+        assert len(_open_ai_findings(session, pid)) == 2
+
+        # Прогоны 2 и 3: модель отвечает только про vision и молчит про
+        # architecture. Двух промахов подряд хватило бы на закрытие.
+        monkeypatch.setattr(
+            intent,
+            "_call_lite_raw",
+            lambda *_a, **_k: json.dumps(
+                {"verdicts": [{"node_key": "vision", "covers_intent": False, "missing": ["X"]}]}
+            ),
+        )
+        for _ in range(2):
+            result = intent.analyze(session, project_id=pid, cfg=object())  # type: ignore[arg-type]
+            session.flush()
+
+        assert result["unanswered"] == 1, "неполный ответ обязан быть виден снаружи"
+        assert result["skipped"] == 1
+        keys = {f["payload"]["scope_id"] for f in _open_ai_findings(session, pid)}
+        assert keys == {"vision", "architecture"}, (
+            "молчание о разделе закрыло его находку — прогон её не рассматривал"
+        )
+
+
+def test_verdict_covered_still_closes(session_factory, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Обратная сторона: явное «покрыто» закрывает, как и раньше.
+
+    Без этого кейса правка выродилась бы в «никогда ничего не закрываем».
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        _doc(session, pid, "docs/VISION", "vision")
+
+        monkeypatch.setattr(
+            intent,
+            "_call_lite_raw",
+            lambda *_a, **_k: json.dumps(
+                {"verdicts": [{"node_key": "vision", "covers_intent": False, "missing": ["X"]}]}
+            ),
+        )
+        intent.analyze(session, project_id=pid, cfg=object())  # type: ignore[arg-type]
+        session.flush()
+
+        monkeypatch.setattr(
+            intent,
+            "_call_lite_raw",
+            lambda *_a, **_k: json.dumps(
+                {"verdicts": [{"node_key": "vision", "covers_intent": True, "missing": []}]}
+            ),
+        )
+        for _ in range(2):
+            result = intent.analyze(session, project_id=pid, cfg=object())  # type: ignore[arg-type]
+            session.flush()
+
+        assert result["unanswered"] == 0
+        assert _open_ai_findings(session, pid) == []
