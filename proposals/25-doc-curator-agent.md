@@ -56,6 +56,13 @@ vibecoder'а». Полезный контракт RFC 19 (агрегатор п�
 > теперь **в** `agent`, а не запрещены в нём — запрещён остаётся только
 > `ctx_drift_gate`). T3–T7, T9–T13 остаются верными как исторический снимок
 > кода на 2026-09-15. Актуальные счётчики (T11) — 6/21/129/133.
+
+> **Закрыто 2026-09-20 (CUR-016/018, секция D).** `curator_next` заменил
+> `ctx_docs` в `AGENT_TOOLS` (профиль `agent` остаётся 6 тулов); `standard`
+> 129 → 130, `full` 133 → 134. Код `agent_capabilities().next_action_hint`
+> (`cod_doc/mcp/tools/agent_tools.py`) всё ещё зовёт `ctx_drift` →
+> `ctx_search`, а не `curator_next` — CUR-016 не тронул эту строку; см.
+> finding в `docs/system/audit/2026-09-20-doc-curator-section-d.md`.
 | T12 | Живая очередь `todo` — Stories-UI / MCP crash / CLI checkout, не документация | `ADO-140`, `ADO-143`…`ADO-146`, `ADO-157` |
 | T13 | Read-only сабагент `cod-doc-scout` отвечает на вопросы из БД, ничего не меняя; это ближе к целевой роли, чем `agent_pick` | описан вне репозитория, в машинно-локальном конфиге агентов |
 
@@ -152,12 +159,15 @@ ctx_search(project: str, query: str, scope: str | None = None, limit: int = 20) 
 Новый скилл `doc-curator` не плодим, пока не исчерпан `orchestrator` +
 существующие `drift-handling` / `doc-style` / `ground-truth-reconcile`.
 
-### 3.4. Встроенный daemon `cod-doc agent run`
+### 3.4. Встроенный daemon `cod-doc agent run` — **реализовано (CUR-017)**
 
-MVP **не** переписывает `Orchestrator`. Политика: команда не является
-путём исполнения продуктовых задач; в HANDBOOK §9 — пометка legacy /
-«не запускать для ADO-*». Follow-up (секция D плана): idle по doc-health
-или удаление автогенерации задач из MASTER.md.
+MVP не переписывает `Orchestrator`. Политика: команда не является путём
+исполнения продуктовых задач. Follow-up сделан секцией D: `_generate_tasks_from_master`
+удалён (CUR-017) — `run_autonomous()` на пустой очереди отдаёт idle-событие
+без побочных эффектов вместо автогенерации задач из MASTER.md; тик рутин
+(`tick_project_routines`) остаётся отдельным вызовом до `run_autonomous`, как
+и раньше. `docs/HANDBOOK.md` §9 получил legacy-баннер (CUR-018): контур
+куратора — MCP профиль `agent` + routines, не daemon.
 
 ### 3.5. `curator_next` — **реализовано (CUR-016)**
 
@@ -238,18 +248,26 @@ curator_next(project: str, limit: int = 10) -> dict
 - Новая таблица БД под «doc jobs» в MVP — достаточно drift findings +
   routines.
 
-## 6. Оценка
+## 6. Оценка — **план закрыт 2026-09-20**
 
-- **~10 задач**, prefix `CUR`, один план `doc-curator-2026-09`.
-- **Порядок:** A политика (скилл, VISION, AGENTS, ROADMAP) → B своп
-  профиля + `ctx_search` MCP → C качество поиска (бюджет, пустой индекс,
-  кросс-проект как SYM-011) → D `curator_next` / daemon.
-- A — часы. B — 1–2 дня с правкой пяти мест счётчиков. C/D — по мере
-  пилотов RFC 22.
+Итог вместо прогноза: **18 задач** `doc-curator-2026-09` (CUR-001…018),
+все `done`. Секция A (CUR-001…003) — политика, вне таблицы ниже. Секции
+B/C/D — 12 задач CUR-007…018:
 
-Критерий «RFC готов к декомпозиции»: контракт `AGENT_TOOLS` и
-`ctx_search(...)` заданы; non-goals выписаны; зависимость от живого
-`search_service.search` указана с `file:line`.
+| Задача | Секция | Содержание | PR |
+|---|---|---|---|
+| CUR-007 | B | `ctx_search` MCP-тул, lazy reindex пустого FTS-индекса | [#50](https://github.com/Orange-hanter/cod-doc/pull/50) |
+| CUR-008 | B | Своп `AGENT_TOOLS` на curator-набор (RFC 25 §3.2) | [#62](https://github.com/Orange-hanter/cod-doc/pull/62) |
+| CUR-009 | B | Документация/скилл догоняют CUR-007/008, аудит секции B | [#66](https://github.com/Orange-hanter/cod-doc/pull/66) |
+| CUR-010 | C | Понятная ошибка вместо трейса при отсутствии FTS-таблицы | [#71](https://github.com/Orange-hanter/cod-doc/pull/71) |
+| CUR-011 | C | per-kind limit, вес заголовка в bm25, `--scope`/`--limit` у `ctx search` | [#65](https://github.com/Orange-hanter/cod-doc/pull/65) |
+| CUR-012 | C | Инкрементальный FTS-upsert из write-path task/story/adr/finding | [#73](https://github.com/Orange-hanter/cod-doc/pull/73) |
+| CUR-013 | C | Кросс-проектный поиск `project_ids` в hub-БД (SYM-011) | [#72](https://github.com/Orange-hanter/cod-doc/pull/72) |
+| CUR-014 | C | `context_get` учитывает `description` в L2 token budget | [#61](https://github.com/Orange-hanter/cod-doc/pull/61) |
+| CUR-015 | C | Аудит закрытия секции C | [#75](https://github.com/Orange-hanter/cod-doc/pull/75) |
+| CUR-016 | D | `curator_next` — doc card куратора, MCP + CLI, заменил `ctx_docs` в профиле `agent` | [#74](https://github.com/Orange-hanter/cod-doc/pull/74) |
+| CUR-017 | D | Daemon без задач переходит в idle, автогенерация из MASTER.md удалена | [#49](https://github.com/Orange-hanter/cod-doc/pull/49) |
+| CUR-018 | D | `docs/HANDBOOK.md` §9 legacy, скилл `orchestrator` на `curator_next`, закрытие плана | [#77](https://github.com/Orange-hanter/cod-doc/pull/77) |
 
 > **Секция C закрыта 2026-09-20 (CUR-010…014).** Кросс-проектный поиск
 > куратора (последний пункт секции C) реализован частично: MCP
@@ -263,3 +281,8 @@ curator_next(project: str, limit: int = 10) -> dict
 > `adoption-2026-08`, не этот план); `agent_pick --projects` сознательно не
 > делается — `agent_pick` остаётся task-centric инструментом coding-агента
 > на `standard`/`full`. Аудит: [audit/2026-09-20-doc-curator-section-c.md](../docs/system/audit/2026-09-20-doc-curator-section-c.md).
+
+Критерий «RFC готов к декомпозиции» был выполнен на входе: контракт
+`AGENT_TOOLS` и `ctx_search(...)` заданы; non-goals выписаны; зависимость
+от живого `search_service.search` указана с `file:line`. Итог на выходе —
+`docs/system/audit/2026-09-20-doc-curator-section-d.md`.
