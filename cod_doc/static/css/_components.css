@@ -733,8 +733,23 @@
 .docs-toolbar[open] > summary::before { content: "−"; }
 .docs-toolbar[open] > summary { margin-bottom: var(--space-2); }
 .docs-import-form { display: flex; flex-direction: column; gap: var(--space-3); }
-.docs-import-form .form-row { display: grid; grid-template-columns: 1fr 220px; gap: var(--space-3); }
-.docs-import-form .field { display: flex; flex-direction: column; gap: var(--space-1); }
+/* `1fr 220px` требовал ~412px и вылезал за `details` уже на ~480px вьюпорта:
+   первый трек не уже min-content текстового поля (~180px), второй прибит
+   намертво. `auto-fit` схлопывает ряд в одну колонку сам, без порога — так же
+   решает соседняя `.adr-form-row`. `min-width: 0` обязателен: без него
+   grid-элемент не сжимается ниже min-content своего содержимого, и растянутый
+   `select` торчит за родителя. */
+.docs-import-form .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+.docs-import-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
 .docs-import-form .field .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
 .docs-import-form input[type="text"],
 .docs-import-form select,
@@ -1174,6 +1189,30 @@ a.nav-card-title:hover { color: var(--accent); }
 /* Дата — атомарное значение: перенос внутри неё не экономит место, а делает
    её нечитаемой. Тот же приём, что у `.docs-col-when`. */
 .rev-col-when { white-space: nowrap; }
+
+/* ── Нижняя граница ширины для остальных таблиц ───────────────────────────
+   Одна обёртка `.table-scroll` ничего не гарантирует: браузер предпочитает
+   сминать колонки, а не включать прокрутку, и колонка с прозой схлопывается
+   в столбик по слову. Ширины посчитаны по составу колонок — заголовки плюс
+   типичное значение, — а не подобраны на глаз. Кто добавит таблицу без
+   `min-width`, узнает об этом от `test_web_overflow_guards`. */
+.task-trace-table { min-width: 980px; }   /* 8 колонок: модель, токены, tools, ошибка */
+.task-history-table { min-width: 760px; } /* ULID 26 симв. + автор + дата + две обрезки */
+.costs-table { min-width: 860px; }        /* 7 колонок, из них пять числовых */
+.plans-table { min-width: 880px; }        /* scope + принцип прозой + прогресс-бар 100px */
+.tasks-legacy-table { min-width: 700px; }
+.adr-table { min-width: 700px; }
+.section-tasks { min-width: 680px; }
+/* Живёт в узком треке `.overview-block` (auto-fit от 340px), поэтому порог
+   ниже: здесь прокрутка внутри карточки — норма, а не сигнал о тесноте. */
+.plan-progress-table { min-width: 480px; }
+/* Пришла из ADO-185 с обёрткой, но без нижней границы — тот же недосмотр. */
+.scn-table { min-width: 600px; }
+
+.task-col-when,
+.plans-col-when,
+.tasks-legacy-col-when,
+.adr-col-when { white-space: nowrap; }
 
 /* ── Settings form ────────────────────────────────────────────────────── */
 .settings-form fieldset {

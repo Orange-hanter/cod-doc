@@ -98,7 +98,8 @@
   <div class="overview-block">
     <h2>Plan progress</h2>
     {% if plan_rows %}
-    <table class="grid">
+    <div class="table-scroll">
+    <table class="grid plan-progress-table">
       <thead>
         <tr><th>Plan</th><th class="num">Done</th><th class="num">Total</th><th>Status</th><th></th></tr>
       </thead>
@@ -118,6 +119,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     {% else %}
     <p class="muted">Планов в этом проекте пока нет.</p>
     {% endif %}
