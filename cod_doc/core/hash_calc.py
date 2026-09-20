@@ -4,7 +4,39 @@ from __future__ import annotations
 
 import hashlib
 import re
+import subprocess
 from pathlib import Path
+
+#: Сколько ждать `git check-ignore`. Он локальный и мгновенный; секунда — это
+#: защита от подвисшего git, а не рабочий бюджет.
+_GIT_TIMEOUT_S = 1.0
+
+
+def is_ignored_by_git(rel: str, repo_root: Path) -> bool:
+    """Игнорируется ли путь git-ом.
+
+    Отличает «документ удалили» от «файла нет в этом чекауте намеренно».
+    Второе — штатное состояние проекций: `/models/` стоит в `.gitignore`, а
+    git не переносит игнорируемые файлы в новый worktree, поэтому
+    `models/domain.md` есть в основном чекауте и отсутствует в любом
+    worktree. Реестр при этом верен — его хэш совпадает с файлом там, где
+    файл лежит.
+
+    Без git (Docker, распакованный sdist) отвечаем «не игнорируется»:
+    поведение остаётся прежним, а не притворяется знающим.
+    """
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(repo_root), "check-ignore", "-q", "--", rel],
+            capture_output=True,
+            timeout=_GIT_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    # 0 — игнорируется, 1 — нет, 128 — git не смог ответить (не репозиторий).
+    return done.returncode == 0
+
 
 LINK_PATTERN = re.compile(
     r"(📁\s+(?P<path>\S+)\s+\|\s+🗃️\s+(?P<vec_id>\S+)\s+\|\s+🔑\s+sha:)(?P<hash>[0-9a-f]{12})"
@@ -65,6 +97,12 @@ def check_stale_refs(
         expected = m.group("hash")
         target = root / rel
         if not target.exists():
+            if is_ignored_by_git(rel, root):
+                # Не находка: проекция под `.gitignore` отсутствует в этом
+                # чекауте намеренно. Иначе куратор, запущенный из worktree,
+                # видел бы BROKEN рангом выше настоящей работы, а из основного
+                # чекаута — ничего. Диагноз не должен зависеть от места запуска.
+                continue
             findings.append({"path": rel, "status": "BROKEN", "expected": expected})
         elif not check_hash(target, expected):
             findings.append(
@@ -114,10 +152,14 @@ def update_hashes(master_path: Path) -> tuple[int, list[str]]:
         target = repo_root / rel
         prefix = m.group(1)
         if not target.exists():
-            warnings.append(f"🔴 BROKEN: {rel}")
-            # Хэш отсутствующего файла сохраняем как есть: файл может быть под
-            # .gitignore (models/domain.md) и просто не выложен в воркtree.
+            # Хэш отсутствующего файла сохраняем как есть — пересчитать его не
+            # из чего, а обнулять запись нельзя.
             fresh[m.group("vec_id")] = m.group("hash")
+            if not is_ignored_by_git(rel, repo_root):
+                warnings.append(f"🔴 BROKEN: {rel}")
+            # Игнорируемый путь молчит: файла нет намеренно, реестр цел, и
+            # тревожить тут нечем. Иначе `cod-doc hash update` из worktree
+            # ругался бы вечно, а из основного чекаута — нет.
             return m.group(0)
         new_hash = calc_hash(target)
         if new_hash != m.group("hash"):
