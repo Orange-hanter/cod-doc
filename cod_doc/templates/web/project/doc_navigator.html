@@ -21,20 +21,7 @@
   видит агент-куратор и их можно превратить в задачу.
 </p>
 
-<nav class="docs-stats" aria-label="Состояние наполненности">
-  <span class="docs-stat">
-    <span class="docs-stat-label">Разделов</span>
-    <span class="docs-stat-value">{{ stats.sections }}</span>
-  </span>
-  <span class="docs-stat{% if stats.gaps %} docs-stat-warn{% endif %}">
-    <span class="docs-stat-label">Пробелов</span>
-    <span class="docs-stat-value">{{ stats.gaps }}</span>
-  </span>
-  <span class="docs-stat">
-    <span class="docs-stat-label">Из них от модели</span>
-    <span class="docs-stat-value">{{ stats.ai_gaps }}</span>
-  </span>
-</nav>
+{% include "_frag/nav_stats.html" %}
 
 {# Модель зовётся только по кнопке. На GET экран читает готовые находки —
    синхронный LLM-вызов на открытии страницы стоил бы двух порядков. #}

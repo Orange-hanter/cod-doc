@@ -136,4 +136,7 @@ async def doc_navigator_analyze(
 
     context = _build_context(session, project_db_id, proj.entry.name)
     context["analysis_error"] = error
+    # Счётчики живут выше точки свопа, поэтому едут в ответе out-of-band:
+    # иначе шапка осталась бы с числами до пересчёта.
+    context["oob_stats"] = True
     return templates.TemplateResponse(request, "_frag/nav_sections.html", context)

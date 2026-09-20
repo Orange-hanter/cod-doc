@@ -114,11 +114,29 @@ def test_inbox_is_not_offered_to_the_model(session_factory) -> None:  # type: ig
     with transactional(session_factory) as session:
         pid = _seed_project(session)
         tree.init_tree(session, project_id=pid, author="human:test")
+        _doc(session, pid, "docs/VISION", "vision")
 
         keys = {s["node_key"] for s in intent.collect_sections(session, pid)}
 
         assert "inbox" not in keys
         assert "vision" in keys
+
+
+def test_empty_section_is_not_offered_to_the_model(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Вердикт о пустом разделе — пересказ счётчика, а не наблюдение.
+
+    Пустоту уже видят детерминированные правила, и действие у находок одно:
+    наполнить раздел. На свежем проекте пусты все разделы разом — без этого
+    фильтра первый прогон удвоил бы очередь целиком.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+        _doc(session, pid, "docs/VISION", "vision")
+
+        keys = {s["node_key"] for s in intent.collect_sections(session, pid)}
+
+        assert keys == {"vision"}, "спрашивать имеет смысл только о наполненных разделах"
 
 
 def test_prompt_carries_intent_and_contents(session_factory) -> None:  # type: ignore[no-untyped-def]
@@ -131,7 +149,7 @@ def test_prompt_carries_intent_and_contents(session_factory) -> None:  # type: i
 
         assert "Назначение:" in prompt
         assert "docs/VISION" in prompt
-        assert "(пусто)" in prompt, "пустой раздел обязан быть виден модели"
+        assert "(пусто)" not in prompt
 
 
 # ------------------------------------------------------------------ #
@@ -153,6 +171,7 @@ def test_analyze_writes_findings(session_factory, monkeypatch) -> None:  # type:
     with transactional(session_factory) as session:
         pid = _seed_project(session)
         tree.init_tree(session, project_id=pid, author="human:test")
+        _doc(session, pid, "docs/VISION", "vision")
 
         monkeypatch.setattr(
             intent,
@@ -178,6 +197,7 @@ def test_llm_failure_does_not_close_the_partition(session_factory, monkeypatch) 
     with transactional(session_factory) as session:
         pid = _seed_project(session)
         tree.init_tree(session, project_id=pid, author="human:test")
+        _doc(session, pid, "docs/VISION", "vision")
 
         monkeypatch.setattr(
             intent,
@@ -207,6 +227,7 @@ def test_healed_section_closes_its_ai_finding(session_factory, monkeypatch) -> N
     with transactional(session_factory) as session:
         pid = _seed_project(session)
         tree.init_tree(session, project_id=pid, author="human:test")
+        _doc(session, pid, "docs/VISION", "vision")
 
         monkeypatch.setattr(
             intent,
@@ -231,3 +252,26 @@ def test_healed_section_closes_its_ai_finding(session_factory, monkeypatch) -> N
 
         assert result["resolved"] == 1
         assert _open_ai_findings(session, pid) == []
+
+
+def test_nothing_to_ask_still_returns_the_full_shape(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Спрашивать не о чем — но ключи те же: CLI и веб печатают `resolved`.
+
+    Партиция при этом НЕ сверяется: пустой набор отпечатков закрыл бы все
+    находки модели как «вылеченные», хотя их не рассматривали.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+
+        result = intent.analyze(session, project_id=pid, cfg=object())  # type: ignore[arg-type]
+
+        assert result["sections"] == 0
+        assert set(result) == {
+            "sections",
+            "issues",
+            "created",
+            "updated",
+            "resolved",
+            "reopened",
+        }

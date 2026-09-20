@@ -28,7 +28,12 @@ from typing import TYPE_CHECKING, Any
 from cod_doc.services import activity_service, finding_service
 from cod_doc.services.activity_service import _uuid7
 from cod_doc.services.ai_text import AIBackendError, _call_lite_raw
-from cod_doc.services.doc_node_health import FINDING_SOURCE, SCOPE_NODE, HealthIssue
+from cod_doc.services.doc_node_health import (
+    FINDING_SOURCE,
+    SCOPE_NODE,
+    HealthIssue,
+    assess_nodes,
+)
 from cod_doc.services.finding_service import FindingSeed
 
 if TYPE_CHECKING:
@@ -46,6 +51,20 @@ _DOCS_PER_NODE = 12
 
 #: Столько символов преамбулы — чтобы отличить документ-заглушку от живого.
 _PREAMBLE_CHARS = 200
+
+#: Бюджет ответа считается от числа разделов, а не константой. Фиксированные
+#: 1500 токенов обрывали ответ на середине уже на 11 разделах: вердикт с
+#: тремя пунктами `missing` и пояснением по-русски стоит ~200 токенов, и
+#: обрыв приходит не ошибкой модели, а невалидным JSON.
+_TOKENS_BASE = 400
+_TOKENS_PER_SECTION = 260
+#: Потолок — чтобы дерево из сотни разделов не выписало счёт на ровном месте.
+_TOKENS_CAP = 8000
+
+
+def _token_budget(section_count: int) -> int:
+    return min(_TOKENS_BASE + _TOKENS_PER_SECTION * section_count, _TOKENS_CAP)
+
 
 _PROMPT = """\
 Ты ревьюишь структуру проектной документации.
@@ -101,11 +120,20 @@ def build_prompt(sections: list[dict[str, Any]]) -> str:
 
 
 def collect_sections(session: Session, project_id: int) -> list[dict[str, Any]]:
-    """Состав разделов для промпта: назначение плюс что в них лежит."""
+    """Состав разделов для промпта: назначение плюс что в них лежит.
+
+    Модели показывают только наполненный раздел, на который нет
+    детерминированной находки. Её вопрос — «покрывают ли ЭТИ документы
+    назначение»; там, где документов нет, ответ арифметический, и его уже
+    дало правило. Действие у обеих находок одно и то же: наполнить раздел.
+    На свежем проекте пусты все разделы разом — без фильтра первый же прогон
+    удвоил бы очередь целиком и оплатил вопрос с заранее известным ответом.
+    """
     from cod_doc.infra.models import DocumentModel
     from cod_doc.services import doc_tree_service
 
     stats = doc_tree_service.node_stats(session, project_id)
+    already_flagged = {issue.scope_id for issue in assess_nodes(stats)}
     docs_by_node: dict[int, list[str]] = {}
     for doc in session.query(DocumentModel).filter(DocumentModel.project_id == project_id):
         if doc.node_id is None:
@@ -118,6 +146,8 @@ def collect_sections(session: Session, project_id: int) -> list[dict[str, Any]]:
     for stat in stats:
         if stat.node.is_inbox or stat.node.row_id is None:
             # Инбокс — очередь разбора, а не раздел с назначением.
+            continue
+        if stat.doc_count == 0 or stat.node.node_key in already_flagged:
             continue
         entries = docs_by_node.get(stat.node.row_id, [])
         sections.append(
@@ -214,9 +244,18 @@ def analyze(
     """
     sections = collect_sections(session, project_id)
     if not sections:
-        return {"sections": 0, "issues": 0, "created": 0, "updated": 0}
+        # Партицию не сверяем: спросить было не о чем, а пустой набор
+        # отпечатков закрыл бы все находки модели как «вылеченные».
+        return {
+            "sections": 0,
+            "issues": 0,
+            "created": 0,
+            "updated": 0,
+            "resolved": 0,
+            "reopened": 0,
+        }
 
-    raw = _call_lite_raw(build_prompt(sections), cfg, max_tokens=1500)
+    raw = _call_lite_raw(build_prompt(sections), cfg, max_tokens=_token_budget(len(sections)))
     verdicts = parse_verdicts(raw)
     issues = verdicts_to_issues(verdicts, {s["node_key"] for s in sections})
     seeds = [_seed_for(issue) for issue in issues]
