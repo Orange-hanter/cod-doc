@@ -155,6 +155,9 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/adr/{adr_id}/diagram` | Добавление Mermaid-диаграммы к ADR | `adr_service.add_diagram` | ✅ | ADR-005 |
 | `POST /p/{slug}/adr/{adr_id}/supersede` | Запись supersede-ребра | `adr_service.supersede` | ✅ | ADR-005 |
 | `POST /p/{slug}/adr/{adr_id}/deprecate` | Перевод ADR в DEPRECATED | `adr_service.deprecate` | ✅ | ADR-005 |
+| **Scenarios — сценарии тестирования (RFC 24 §9, авторская половина)** | | | |
+| `GET /p/{slug}/scenarios` | Список сценариев по возможностям: фильтры вид/возможность/статус, счётчики, дрейф проекции | `scenario_service.list_for_project` + `project_coverage` + `projection_service.detect_project_drift` | ✅ | ADO-185 |
+| `GET /p/{slug}/scenarios/{scenario_id}` | Карточка сценария: герой, предусловия, шаги, ожидаемый результат, связи, проекция | `scenario_service.get` + `list_steps` + `list_links` | ✅ | ADO-185 |
 | **Ревизии, рутины, запуски агента**  | | | |
 | `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `revision_service.list_for_project` | ✅ | WEB-021 |
 | `GET /p/{slug}/routines` | Список routines + история запусков | `routine_service.list_routines` + `history` | ✅ | PCA-919 |
