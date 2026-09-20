@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from sqlalchemy import select
 
@@ -730,3 +730,31 @@ def list_incoming_for_doc(session: Session, project_id: int, doc_key: str) -> li
             )
         )
     return out
+
+
+class LinkCounts(NamedTuple):
+    """Счётчики ссылок на весь проект: два агрегата вместо N+1 на список.
+
+    ``incoming`` — ``doc_key → сколько документов на него ссылается``;
+    ``outgoing`` — ``document_id → сколько ссылок уходит из его секций``.
+    Ключи разные потому, что разные и стороны связи: входящая адресуется по
+    ``doc_key`` (так её пишет автор), исходящая живёт на секции и сворачивается
+    до документа.
+    """
+
+    incoming: dict[str, int]
+    outgoing: dict[int, int]
+
+
+def counts_for_project(session: Session, project_id: int) -> LinkCounts:
+    """ADO-116: счётчики ссылок для списка документов.
+
+    Веб-слою запрещено трогать ``infra`` (``tests/api/test_web_layer_imports``),
+    а список документов показывает связность каждой строки — значит агрегаты
+    живут здесь, как и ``list_incoming_for_doc`` до них.
+    """
+    repo = LinkRepository(session)
+    return LinkCounts(
+        incoming=repo.incoming_counts(project_id),
+        outgoing=repo.outgoing_counts(project_id),
+    )

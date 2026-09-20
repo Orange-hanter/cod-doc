@@ -81,7 +81,8 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/import_master/scan` | AI-скан репо: preview MASTER.md + coverage tasks | `ai_generate.generate_master_from_folder` | ✅ | COD-060 |
 | `POST /p/{slug}/import_master/save` | Запись MASTER.md и создание coverage tasks | `ai_generate` + `task_service.create` | ✅ | COD-060 |
 | **Документы — список и CRUD**  | | | |
-| `GET /p/{slug}/docs` | Список документов (tree/flat, фильтр по type/status/q) | `doc_service.list_for_project` | ✅ | WEB-003 |
+| `GET /p/{slug}/docs` | Список документов: рельс разделов + таблица; `group=node\|path\|type\|status`, `node=<ключ>`, фильтр по type/status/q | `doc_service.list_for_project` + `doc_tree_service.node_stats` + `link_service.counts_for_project` | ✅ | ADO-116 |
+| `GET /p/{slug}/docs/drift-marks` | HTMX: та же таблица с метками дрейфа; вынесено отдельным запросом — обход файлов стоит 185 мс из 190 | `projection_service.detect_project_drift` | ✅ | ADO-116 |
 | `GET /p/{slug}/docs/new` | Форма создания пустого документа | `doc_service` (только форма) | ✅ | COD-078 |
 | `POST /p/{slug}/docs/new` | Создание пустого документа | `doc_service.create` | ✅ | COD-078 |
 | `POST /p/{slug}/docs/suggest` | AI-подбор title/doc_key/type/preamble по описанию | `ai_text.suggest_doc_meta` | ✅ | COD-078 |

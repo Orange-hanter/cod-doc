@@ -51,7 +51,12 @@ _RANK_LINK_BROKEN = 2
 _RANK_MASTER_BROKEN = 3
 _RANK_MASTER_STALE = 4
 _RANK_DRIFT_STALE_EXPORT = 5
-_RANK_FINDING = 6
+# ADO-116: неразложенные документы. Ниже всего, что рвёт целостность, — они
+# находимы поиском и не теряются, — но выше внешних находок: пока корпус не
+# разложен, навигация по нему не работает, а RFC 25 §3.1 прямо относит
+# «неклассифицированный import» к работе куратора.
+_RANK_UNPLACED = 6
+_RANK_FINDING = 7
 
 _DRIFT_RANK: dict[str, int] = {
     "missing": _RANK_DRIFT_MISSING,
@@ -81,6 +86,7 @@ _SUCCESS_CRITERIA: tuple[str, ...] = (
     "Ни одной нерезолвящейся ссылки (LINK-BROKEN) в затронутых документах.",
     "Реестр хэшей MASTER.md без BROKEN / STALE.",
     "Открытые findings либо промоутнуты в задачу, либо сняты с обоснованием.",
+    "Инбокс дерева документации пуст: каждый документ лежит в разделе.",
 )
 
 
@@ -165,6 +171,21 @@ def _master_card(master_path: Path, root_path: Path) -> list[dict[str, str]]:
     from cod_doc.core.hash_calc import check_stale_refs
 
     return check_stale_refs(master_path, repo_root=root_path)
+
+
+def _unplaced_card(session: Session, project_id: int) -> dict[str, Any]:
+    """Сколько документов не разложено по разделам дерева (ADO-116).
+
+    Ключи не перечисляем: их бывает сотня после хаотичного импорта, а
+    действие на всех одно — прогнать раскладку. Список смотрят
+    ``doc_tree_unplaced`` и Инбокс на экране документации.
+    """
+    from cod_doc.services import doc_tree_service
+
+    return {
+        "count": doc_tree_service.unplaced_count(session, project_id),
+        "tree_seeded": bool(doc_tree_service.list_nodes(session, project_id)),
+    }
 
 
 def _findings_card(session: Session, project_id: int) -> list[dict[str, Any]]:
@@ -259,6 +280,30 @@ def _finding_priority(finding: dict[str, Any], slug: str) -> tuple[int, dict[str
     }
 
 
+def _unplaced_priority(card: dict[str, Any], slug: str) -> tuple[int, dict[str, str]] | None:
+    """Один пункт на весь Инбокс: действие на всех неразложенных — одно.
+
+    Пока дерево не засеяно, «не разложено» означает лишь «разделов нет» —
+    тогда и предлагать надо сев, а не раскладку.
+    """
+    count = int(card["count"])
+    if not count:
+        return None
+    if not card["tree_seeded"]:
+        return _RANK_UNPLACED, {
+            "kind": "unplaced",
+            "ref": f"{count} docs",
+            "reason": "дерево разделов не заведено — весь корпус вне навигации",
+            "suggested_action": f'doc_tree_init(project="{slug}")',
+        }
+    return _RANK_UNPLACED, {
+        "kind": "unplaced",
+        "ref": f"{count} docs",
+        "reason": f"{count} документов не разложено по разделам — Инбокс не разобран",
+        "suggested_action": f'doc_tree_classify(project="{slug}", dry_run=true)',
+    }
+
+
 def _build_priority(
     card: dict[str, Any],
     *,
@@ -277,6 +322,9 @@ def _build_priority(
     ranked.extend(_link_priority(link, slug) for link in card["links"])
     ranked.extend(item for item in master_items if item is not None)
     ranked.extend(_finding_priority(f, slug) for f in card["findings"])
+    unplaced = _unplaced_priority(card["unplaced"], slug)
+    if unplaced is not None:
+        ranked.append(unplaced)
     ranked.sort(key=lambda pair: pair[0])
     return [item for _rank, item in ranked]
 
@@ -321,6 +369,7 @@ def next(
         "links": _link_card(session, project_id),
         "master": _master_card(master_path, root_path),
         "findings": _findings_card(session, project_id),
+        "unplaced": _unplaced_card(session, project_id),
     }
     priority = _build_priority(card, slug=slug, master_rel=master_rel)
 
@@ -340,6 +389,7 @@ def next(
                 "links": len(card["links"]),
                 "master": len(card["master"]),
                 "findings": len(card["findings"]),
+                "unplaced": card["unplaced"]["count"],
                 "priority_total": len(priority),
             },
         },

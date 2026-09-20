@@ -852,6 +852,7 @@ _cod-doc() {
         (patch)               _cod_doc_doc_patch && ret=0 ;;
         (rename)              _cod_doc_doc_rename && ret=0 ;;
         (show)                _cod_doc_doc_show && ret=0 ;;
+        (tree)                _cod_doc_doc_tree && ret=0 ;;
         (*)                   _default && ret=0 ;;
       esac
       ;;
@@ -875,6 +876,7 @@ _cod-doc() {
     'patch:Replace the body of section ANCHOR in DOC_KEY.'
     'rename:Rename a document key (and optionally its path); cascades incoming…'
     'show:Show document metadata (and optionally sections).'
+    'tree:Дерево документации; разделы, раскладка документов, Инбокс.'
   )
   _describe -t cod-doc-doc-commands 'cod-doc doc command' cmds
 }
@@ -1068,6 +1070,160 @@ _cod-doc() {
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' \
     '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_tree] )) || _cod_doc_doc_tree() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_doc_tree_commands' \
+    '*:: :->cod_doc_doc_tree_cmd' && ret=0
+
+  case $state in
+    (cod_doc_doc_tree_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-doc-tree-$words[1]:"
+      case $words[1] in
+        (classify)  _cod_doc_doc_tree_classify && ret=0 ;;
+        (init)      _cod_doc_doc_tree_init && ret=0 ;;
+        (move)      _cod_doc_doc_tree_move && ret=0 ;;
+        (node-add)  _cod_doc_doc_tree_node_add && ret=0 ;;
+        (node-edit) _cod_doc_doc_tree_node_edit && ret=0 ;;
+        (node-rm)   _cod_doc_doc_tree_node_rm && ret=0 ;;
+        (show)      _cod_doc_doc_tree_show && ret=0 ;;
+        (unplaced)  _cod_doc_doc_tree_unplaced && ret=0 ;;
+        (*)         _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_tree_commands] )) || _cod_doc_doc_tree_commands() {
+  local -a cmds
+  cmds=(
+    'classify:Разложить документы по разделам детерминированными правилами.'
+    'init:Засеять дефолтное дерево разделов. Существующие ключи не трогает.'
+    'move:Положить документ в раздел; без ``--node`` — вернуть в Инбокс.'
+    'node-add:Завести раздел.'
+    'node-edit:Поправить раздел. Не переданные поля остаются как есть.'
+    'node-rm:Удалить раздел.'
+    'show:Показать разделы со счётчиками и число неразложенных документов.'
+    'unplaced:Документы, которые ещё не разложены по разделам.'
+  )
+  _describe -t cod-doc-doc-tree-commands 'cod-doc doc tree command' cmds
+}
+
+(( $+functions[_cod_doc_doc_tree_classify] )) || _cod_doc_doc_tree_classify() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--apply)--apply[Записать раскладку в БД. Без флага — только показать.]' \
+    '(--all)--all[Переразложить и то, что уже лежит в разделах (перебьёт ручную раскл…]' \
+    '(--author)--author=:author' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_tree_init] )) || _cod_doc_doc_tree_init() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_tree_move] )) || _cod_doc_doc_tree_move() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--doc-key)--doc-key=[Документ, который перекладываем]:doc-key:_cod_doc_docs' \
+    '(--node)--node=[Целевой раздел. Не указан — документ возвращается в Инбокс.]:node-key' \
+    '(--author)--author=:author' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_tree_node_add] )) || _cod_doc_doc_tree_node_add() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--key)--key=[Ключ раздела, например data-model]:node-key' \
+    '(--title)--title=[Человеческое название]:title' \
+    '(--intent)--intent=[Что должно лежать в разделе]:intent' \
+    '(--parent)--parent=[Родительский раздел]:parent-key' \
+    '(--position)--position=[Порядок показа; по умолчанию в конец]:position' \
+    '(--min-docs)--min-docs=:min-docs' \
+    '(--author)--author=:author' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_tree_node_edit] )) || _cod_doc_doc_tree_node_edit() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--key)--key=:node-key' \
+    '(--title)--title=:title' \
+    '(--intent)--intent=:intent' \
+    '(--position)--position=:position' \
+    '(--min-docs)--min-docs=:min-docs' \
+    '(--author)--author=:author' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_tree_node_rm] )) || _cod_doc_doc_tree_node_rm() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--key)--key=:node-key' \
+    '(--reassign-to)--reassign-to=[Куда перенести документы раздела]:reassign-to' \
+    '(--force)--force[Удалить непустой раздел, вернув его документы в Инбокс.]' \
+    '(--author)--author=:author' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_tree_show] )) || _cod_doc_doc_tree_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_tree_unplaced] )) || _cod_doc_doc_tree_unplaced() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
   return ret
 }
 

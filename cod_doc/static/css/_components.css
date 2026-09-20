@@ -762,24 +762,147 @@
 }
 .docs-filterbar .docs-search { flex: 1 1 240px; min-width: 200px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); color: var(--fg); }
 .docs-filterbar a.active { font-weight: 600; color: var(--accent); }
-.docs-tree { display: flex; flex-direction: column; gap: var(--space-1); }
-.docs-tree-node { padding: var(--space-1) var(--space-2); border-left: 3px solid var(--border); margin-left: var(--space-1); }
-.docs-tree-node > summary {
-  cursor: pointer; padding: var(--space-1) 0; list-style: none;
-  display: flex; gap: var(--space-2); align-items: center;
+/* ── ADO-116: экран документации — рельс разделов + одна таблица ──────────
+   Вместо вложенных <details> по каталогам файловой системы. Прежнее дерево
+   на корпусе cod-doc давало 14 папок `cod_doc/skills/*` с одним файлом внутри
+   каждой, отступ ~5px на уровень и по отдельной невыровненной таблице в
+   каждой папке. */
+.docs-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
 }
-.docs-tree-node > summary::-webkit-details-marker { display: none; }
-.docs-tree-node > summary::before {
-  content: "▸";
-  display: inline-block;
-  width: 12px;
+@media (max-width: 860px) { .docs-layout { grid-template-columns: 1fr; } }
+
+/* Рельс липнет к верху: спина навигации остаётся на экране при любом числе
+   документов, а собственный скролл не даёт ей вытеснить таблицу. */
+.docs-rail {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--space-3));
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: calc(100vh - var(--topbar-h) - var(--space-6));
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+@media (max-width: 860px) { .docs-rail { position: static; max-height: none; } }
+.docs-rail-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent;
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 13px;
+  transition: background var(--motion-fast);
+}
+.docs-rail-item:hover { background: var(--bg-alt); text-decoration: none; }
+.docs-rail-item-active {
+  background: var(--accent-soft-bg);
+  border-left-color: var(--accent);
+  color: var(--accent-soft-fg);
+  font-weight: 600;
+}
+.docs-rail-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docs-rail-warn { color: var(--warning); }
+.docs-rail-count {
+  flex: none;
+  min-width: 20px;
+  padding: 0 5px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--muted);
-  transition: transform var(--motion-fast);
+  background: var(--bg-alt);
+  border-radius: 9px;
 }
-.docs-tree-node[open] > summary::before { transform: rotate(90deg); }
-.docs-folder { font-weight: 600; }
-.docs-tree-files { margin: var(--space-1) 0 var(--space-2) var(--space-6); width: calc(100% - var(--space-6)); }
-.docs-tree-files td { padding: var(--space-1) var(--space-2); }
+.docs-rail-item-active .docs-rail-count { background: var(--accent); color: var(--accent-fg); }
+/* Непустой инбокс — это очередь работы, а не украшение. */
+.docs-rail-count-warn { background: var(--warning-soft-bg); color: var(--warning-soft-fg); }
+.docs-rail-item-inbox { margin-top: var(--space-2); border-top: 1px solid var(--border-soft); padding-top: var(--space-2); }
+.docs-rail-empty { margin: var(--space-2); font-size: 11px; color: var(--muted); line-height: 1.5; }
+
+.docs-content { min-width: 0; }
+.docs-content-head { margin-bottom: var(--space-2); }
+.docs-content-head h2 { margin: 0; font-size: 16px; }
+.docs-intent { margin: var(--space-1) 0 0; font-size: 12px; color: var(--muted); max-width: 70ch; }
+
+/* Полоска здоровья корпуса: тот же словарь, что у карточек обзора проекта. */
+.docs-stats { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0 var(--space-3); }
+.docs-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 110px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  color: inherit;
+}
+a.docs-stat:hover { border-color: var(--accent); text-decoration: none; }
+.docs-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.docs-stat-value { font-size: 20px; font-weight: 700; color: var(--fg-strong); line-height: 1.1; }
+.docs-stat-warn { border-color: var(--warning-border); background: var(--warning-soft-bg); }
+.docs-stat-warn .docs-stat-value { color: var(--warning-soft-fg); }
+.docs-stat-pending { color: var(--muted); font-weight: 400; }
+
+/* ADO-119: группировка одной ручкой вместо пары ссылок «tree · flat» по 11px. */
+.docs-groupby { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; }
+.docs-groupby-label { font-size: 11px; color: var(--muted); margin-right: var(--space-1); }
+.docs-groupby-btn {
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+.docs-groupby-btn:hover { color: var(--fg); background: var(--bg-alt); text-decoration: none; }
+.docs-groupby-btn-active { background: var(--bg-alt); color: var(--fg-strong); border-color: var(--border); }
+
+.docs-table { width: 100%; table-layout: fixed; }
+.docs-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.docs-cell-title { min-width: 0; }
+.docs-cell-title > a { font-weight: 600; }
+/* Ключ второй строкой: он нужен для адресации, но не должен соперничать за
+   внимание с человеческим заголовком. */
+.docs-key { display: block; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+/* Суммарная ширина фиксированных колонок держится с запасом: дата идёт
+   `nowrap`, и при 120px «2026-09-18 18:03» обрезалась последним символом. */
+.docs-col-node { width: 120px; }
+.docs-col-type { width: 108px; }
+.docs-col-status { width: 96px; }
+.docs-col-num { width: 72px; text-align: right; }
+.docs-col-when { width: 142px; white-space: nowrap; }
+.docs-node-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-alt);
+  border: 1px solid var(--border-soft);
+  color: var(--muted-strong);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.docs-node-chip:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.docs-node-chip-inbox { background: var(--warning-soft-bg); color: var(--warning-soft-fg); border-color: var(--warning-border); }
+.docs-drift { color: var(--warning); cursor: help; }
+/* Ноль входящих ссылок — документ выпал из навигации. */
+.docs-orphan { color: var(--danger); }
 .doc-links-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
 .doc-links-grid h3 { margin: 0 0 var(--space-1); font-size: 14px; }
 .doc-links-grid ul { margin: 0; padding-left: var(--space-5); }
@@ -1120,6 +1243,18 @@
 /* ADO-107: у плана без задач статус `empty` (DerivedStatus.EMPTY) — единственное
    значение прогресса, которому не было бейджа. Новой палитры не заводим. */
 .badge-empty       { background: var(--bg-alt); color: var(--muted); border-color: var(--border-soft); }
+
+/* ADO-116: жизненный цикл документа. Классов `badge-draft`/`-review`/`-active`
+   не существовало вовсе — шаблон их рендерил, а CSS не знал, и все статусы
+   падали в нейтральный базовый `.badge`, то есть были неразличимы. Те же
+   смыслы на странице документа выражены семейством `.ds-chip-*`, живущим
+   инлайном в doc_show.html; здесь — та же палитра, доступная списку. */
+.badge-draft         { background: var(--bg-alt); color: var(--muted-strong); border-color: var(--border); }
+.badge-review        { background: var(--warning-soft-bg); color: var(--warning-soft-fg); border-color: var(--warning-border); }
+.badge-active        { background: var(--success-soft-bg); color: var(--success-soft-fg); border-color: var(--success-border); }
+.badge-authoritative { background: var(--accent-soft-bg); color: var(--accent-soft-fg); border-color: var(--accent); }
+/* `deprecated` уже описан ниже, в ADR-блоке (строка ~2936), и лежит позже —
+   второе правило здесь всё равно было бы мёртвым. Не дублируем. */
 
 .prio { font-size: 12px; font-weight: 600; }
 .prio-critical { color: var(--danger); }

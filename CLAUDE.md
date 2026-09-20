@@ -69,6 +69,8 @@ cod-doc serve                            # REST API + web UI на :8765
 cod-doc-mcp                              # MCP stdio; профиль по умолчанию agent (--profile / COD_DOC_PROFILE)
 docker compose up -d                     # контейнер cod-doc, healthcheck /api/health
 cod-doc doc drift --project cod-doc --all # дрейф БД ↔ markdown без перезаписи
+cod-doc doc tree show -p cod-doc          # разделы дерева документации + Инбокс
+cod-doc doc tree classify -p cod-doc      # сухая раскладка по правилам; --apply записывает
 cod-doc ctx docs|drift|search --json     # контекст для промпта в JSON (ctx docs --include-body — с телом)
 cod-doc ctx next -p cod-doc --json       # doc card куратора: очередь «что чинить» (зеркало MCP curator_next)
 cod-doc ingest ai_review -p cod-doc --from-pr 123   # findings из артефакта PR через gh; далее finding_promote
@@ -131,8 +133,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `forbidden: [agent_pick, task_checkout, task_complete]`. Старые
   task-centric тулы (`agent_pick`, `agent_get`, `agent_complete`,
   `agent_release`) остались зарегистрированы, но видны только на
-  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 130
-  / `full` 134.
+  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 138
+  / `full` 142.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   ПЯТИ местах: `mcp/profiles.py` (docstring), `server.py --profile`,
   `AGENTS.md` §5.9, этот файл и `docs/mcp-integration.md` (строка семейства
@@ -176,6 +178,28 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - **Скиллы** — `cod_doc/skills/<name>/SKILL.md` (YAML-frontmatter + Markdown),
   подбираются `agent/skill_matcher.py`. Новое поведение агента → новый/правленый
   скилл, **не** правка системного промпта.
+- **Куратор видит неразобранный Инбокс.** `curator_service.next` отдаёт один
+  пункт очереди на весь Инбокс (`doc_tree_classify`), а не по документу на
+  строку, и ранжирует его ниже любой проблемы целостности: неразложенный
+  документ находим поиском, сломанная ссылка — нет. Рутина `doc_unplaced` в
+  `CHECK_CATALOG` делает то же самое находкой; на проекте без дерева она
+  молчит. Роли разделов и grooming после хаотичного импорта — скилл
+  `doc-structure`.
+- **Дерево документации — данные, не вёрстка** (ADO-116). Разделы живут в
+  `doc_node` (паттерн `plan_section`/`story_section` плюс `parent_id` и
+  `intent`), документ ссылается на раздел через `document.node_id`. Правила
+  раскладки — `services/doc_taxonomy.py`: конъюнкция условий внутри правила,
+  побеждает первое совпадение. Это граница с `nav_service._JOURNEY`, где
+  `type_ok or pat_ok` загоняет все `module-spec` в шаг «Data Model». Что
+  правилам не подошло, лежит в Инбоксе — `node_id IS NULL`, единственное
+  представление состояния «не разложен»; привязка к разделу-инбоксу
+  нормализуется в NULL. Раскладка не двигает `document.last_updated`: это
+  отметка о свежести содержимого, и `classify --apply` обнулил бы её всему
+  корпусу разом.
+- **Миграции, трогающие `document`, — без `batch_alter_table`.** На SQLite
+  batch пересоздаёт таблицу, а DROP старой уносит по CASCADE все `section` и
+  висящие на них `link`. Проверено: 1379 секций и 841 ссылка. На пустой
+  тестовой БД такая миграция зеленеет.
 - **Проекция markdown** — артефакт, не исходник: `Document.projection_hash`
   ловит edit-in-place (`cod-doc doc drift`), а `MASTER.md` держит отдельный
   реестр хэшей файлов — пересчёт через `cod-doc hash update`
@@ -194,12 +218,13 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/21/130/134) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/21/138/142) в коде и доках совпадают |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
-| `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017); незакрытый долг — `update_status` и `delete`, каждый с обоснованием |
+| `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017) и `doc_tree_service` (ADO-116); незакрытый долг — `update_status` и `delete`, каждый с обоснованием |
+| `services/test_migration_0035_preserves_data.py` | миграция не теряет секции и ссылки: наливает данные на предыдущей ревизии, потом гонит upgrade. На пустой БД такая потеря не видна |
 | `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
 | `cli/test_zsh_completion_queries.py` | SQL дополнения выполняется на свежей схеме (ловит переименование колонки) |
 | `cli/test_zsh_completion_runtime.py` | prelude в настоящем zsh: WAL-БД без `-shm`, Postgres-проект, нет файла — молчат, а не шумят |
@@ -232,7 +257,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
   субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
-  (профиль `standard`, 130 тулов `task_*`/`doc_*`/`plan_*`/…) и
+  (профиль `standard`, 138 тулов `task_*`/`doc_*`/`plan_*`/…) и
   `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6 curator-тулов —
   `curator_next`/`ctx_*`/`context_get`/`agent_capabilities`/`agent_report`).
   Тем же launchd и тем же рантаймом живёт веб-UI — `com.cod-doc.web`. Управление и

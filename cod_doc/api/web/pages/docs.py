@@ -21,12 +21,15 @@ from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import DOCUMENT_TYPES, templates
 from cod_doc.domain.entities import DocumentStatus, DocumentType, EntityKind
 from cod_doc.services import doc_service as docs
+from cod_doc.services import doc_tree_service as doc_tree
 from cod_doc.services import import_service as imports
+from cod_doc.services import link_service
 from cod_doc.services import revision_service as revisions
 from cod_doc.services.import_service import import_or_update_markdown, scan_folder
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from cod_doc.services.import_service import CoercedField
 
@@ -70,76 +73,90 @@ async def doc_accept(
     return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}", status_code=303)
 
 
-def _group_by_folder(documents: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """COD-078: turn a flat doc list into a nested tree keyed by path components.
+#: Чем рельс группирует корпус. ``node`` — разделы дерева (ADO-116), остальные
+#: три — производные измерения самого документа. Одна ручка вместо прежней
+#: пары «tree | flat»: отсутствие выбранной группы и есть плоский список.
+_GROUP_MODES = ("node", "path", "type", "status")
 
-    Each output node is::
+#: Ключ рельса для документов, у которых измерения нет вовсе (нет каталога,
+#: нет раздела). Не пересекается с ключом раздела: те — `[a-z0-9-]`.
+_UNGROUPED = "_none"
 
-        {"name": <folder name or "(root)">,
-         "path": <absolute folder path>,
-         "subfolders": [<nodes...>],
-         "files": [<doc dict>, ...],
-         "total": <docs in this subtree>}
 
-    Folders are sorted alphabetically; files come last. The "(root)" node
-    holds top-level documents that have no folder prefix.
+def _rail_items(documents: list[dict[str, Any]], group: str) -> list[dict[str, Any]]:
+    """Пункты рельса для производных измерений (path / type / status).
+
+    Разделы дерева собираются отдельно — у них есть хранимые название, порядок
+    и намерение, которых у каталога или типа нет.
     """
-
-    def _new_node(name: str, path: str) -> dict[str, Any]:
-        return {"name": name, "path": path, "subfolders": [], "files": [], "total": 0}
-
-    root = _new_node("(root)", "")
+    buckets: dict[str, int] = {}
     for doc in documents:
-        parts = doc["doc_key"].split("/")
-        cursor = root
-        for folder in parts[:-1]:
-            cursor["total"] += 1
-            existing = next((s for s in cursor["subfolders"] if s["name"] == folder), None)
-            if existing is None:
-                child_path = f"{cursor['path']}/{folder}" if cursor["path"] else folder
-                existing = _new_node(folder, child_path)
-                cursor["subfolders"].append(existing)
-            cursor = existing
-        cursor["total"] += 1
-        cursor["files"].append(doc)
-
-    def _sort(node: dict[str, Any]) -> dict[str, Any]:
-        node["subfolders"].sort(key=lambda n: n["name"])
-        node["files"].sort(key=lambda d: d["doc_key"])
-        for sub in node["subfolders"]:
-            _sort(sub)
-        return node
-
-    _sort(root)
-    result: list[dict[str, Any]] = list(root["subfolders"])
-    if root["files"]:
-        result.append(
-            {
-                "name": "(root)",
-                "path": "",
-                "subfolders": [],
-                "files": root["files"],
-                "total": len(root["files"]),
-            }
-        )
-    return result
+        buckets[doc[group] or _UNGROUPED] = buckets.get(doc[group] or _UNGROUPED, 0) + 1
+    return [
+        {
+            "key": key,
+            "title": "(без каталога)" if key == _UNGROUPED and group == "path" else key,
+            "count": buckets[key],
+            "intent": "",
+            "is_inbox": False,
+            "under_filled": False,
+        }
+        for key in sorted(buckets, key=lambda k: (k == _UNGROUPED, k))
+    ]
 
 
-@router.get("/p/{slug}/docs", response_class=HTMLResponse)
-def docs_list(
-    request: Request,
+def _top_folder(doc_key: str) -> str:
+    """Верхний каталог ключа; для корневого документа — ``_UNGROUPED``.
+
+    Рельс по пути намеренно одноуровневый. Полная вложенность — то, что делал
+    прежний ``_group_by_folder``: на корпусе cod-doc она давала 14 папок
+    `cod_doc/skills/*` с одним файлом внутри каждой, то есть три уровня клика
+    ради одной строки.
+    """
+    head, sep, _ = doc_key.partition("/")
+    return head if sep else _UNGROUPED
+
+
+def _docs_screen_context(
     slug: str,
-    q: str = "",
-    type: str = "",
-    status: str = "",
-    view: str = "tree",
-) -> HTMLResponse:
+    *,
+    q: str,
+    type_filter: str,
+    status_filter: str,
+    node: str,
+    group: str,
+    with_drift: bool,
+) -> dict[str, Any]:
+    """Данные экрана документации. Общие для страницы и для htmx-фрагмента.
+
+    ``with_drift`` — единственное различие между двумя вызовами, и оно стоит
+    почти всего времени: замер на корпусе из 170 документов — список 2.4 мс,
+    счётчики ссылок 0.8 мс, разделы 0.4 мс, обход дрейфа 185 мс. Поэтому
+    страница рисуется без него, а метки приезжают вторым запросом.
+    """
     proj = get_project(slug)
+    group_by = group.strip() if group.strip() in _GROUP_MODES else "node"
+    selected = node.strip()
+
     documents: list[dict[str, Any]] = []
+    nodes: list[dict[str, Any]] = []
+    stats: dict[str, int | None] = {"total": 0, "unplaced": 0, "drift": None}
+    tree_seeded = False
     db_available = False
+
     with try_open_project_db(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
             db_available = True
+            node_keys = {
+                n.row_id: n.node_key
+                for n in doc_tree.list_nodes(session, project_db_id)
+                if n.row_id is not None
+            }
+            link_counts = link_service.counts_for_project(session, project_db_id)
+            drifting = (
+                _drifting_doc_keys(session, project_db_id, proj.entry.root) if with_drift else set()
+            )
+
             for d in docs.list_for_project(session, project_db_id):
                 documents.append(
                     {
@@ -149,19 +166,42 @@ def docs_list(
                         "status": d.status.value,
                         "owner": d.owner or "",
                         "last_updated": d.last_updated,
+                        "node": node_keys.get(d.node_id) if d.node_id is not None else None,
+                        "path": _top_folder(d.doc_key),
+                        "links_in": link_counts.incoming.get(d.doc_key, 0),
+                        "links_out": (
+                            link_counts.outgoing.get(d.row_id, 0) if d.row_id is not None else 0
+                        ),
+                        "drift": d.doc_key in drifting,
                     }
                 )
+
+            if with_drift:
+                stats["drift"] = len(drifting)
+            for stat in doc_tree.node_stats(session, project_db_id):
+                tree_seeded = True
+                nodes.append(
+                    {
+                        "key": stat.node.node_key,
+                        "title": stat.node.title,
+                        "intent": stat.node.intent,
+                        "count": stat.doc_count,
+                        "is_inbox": stat.node.is_inbox,
+                        "under_filled": stat.under_filled,
+                    }
+                )
+            stats["unplaced"] = doc_tree.unplaced_count(session, project_db_id)
+
+    stats["total"] = len(documents)
 
     # Filter (server-side) before grouping.
     # status="" (default) hides deprecated docs — most projects accumulate stale
     # deprecated entries that just create noise. Specific values isolate to a
     # single status; "all" disables the filter entirely.
     q_lower = q.strip().lower()
-    type_filter = type.strip()
-    status_filter = status.strip()
 
     def _status_visible(d_status: str) -> bool:
-        if status_filter == "" or status_filter == "live":
+        if status_filter in {"", "live"}:
             return d_status != "deprecated"
         if status_filter == "all":
             return True
@@ -177,29 +217,167 @@ def docs_list(
         )
     ]
 
-    counts = {
-        "total": len(documents),
-        "live": sum(1 for d in documents if d["status"] != "deprecated"),
-        "active": sum(1 for d in documents if d["status"] == "active"),
-        "draft": sum(1 for d in documents if d["status"] == "draft"),
-        "review": sum(1 for d in documents if d["status"] == "review"),
-        "deprecated": sum(1 for d in documents if d["status"] == "deprecated"),
+    # Рельс считается по отфильтрованному корпусу: иначе счётчик обещает
+    # документы, которых в таблице под текущим фильтром уже нет.
+    if group_by == "node":
+        visible = {d["node"] for d in filtered}
+        rail = [
+            dict(
+                n,
+                count=(
+                    sum(1 for d in filtered if d["node"] is None)
+                    if n["is_inbox"]
+                    else _count_in(filtered, "node", n["key"])
+                ),
+            )
+            for n in nodes
+            if n["is_inbox"] or n["key"] in visible or not q_lower
+        ]
+    else:
+        rail = _rail_items(filtered, group_by)
+
+    inbox_key = next((n["key"] for n in nodes if n["is_inbox"]), None)
+    shown = _select_rail_bucket(filtered, group_by, selected, inbox_key) if selected else filtered
+
+    return {
+        "project": {"name": proj.entry.name},
+        "documents": shown,
+        "rail": rail,
+        "group_by": group_by,
+        "group_modes": _GROUP_MODES,
+        "selected": selected,
+        "selected_title": _selected_title(rail, selected),
+        "nodes": nodes,
+        # Чип раздела в таблице показывает человеческое название, а не ключ:
+        # ключ — это адрес для `?node=`, а не подпись.
+        "node_titles": {n["key"]: n["title"] for n in nodes},
+        # Один адрес Инбокса на весь экран: и чип в строке, и карточка в
+        # шапке, и пункт рельса ведут по нему же.
+        "inbox_key": inbox_key,
+        "tree_seeded": tree_seeded,
+        "stats": stats,
+        "db_available": db_available,
+        "filters": {"q": q, "type": type_filter, "status": status_filter},
+        "counts": {
+            "total": len(documents),
+            "live": sum(1 for d in documents if d["status"] != "deprecated"),
+            "active": sum(1 for d in documents if d["status"] == "active"),
+            "draft": sum(1 for d in documents if d["status"] == "draft"),
+            "review": sum(1 for d in documents if d["status"] == "review"),
+            "deprecated": sum(1 for d in documents if d["status"] == "deprecated"),
+        },
+        "doc_status_options": ["draft", "review", "active", "authoritative", "deprecated"],
     }
 
-    return templates.TemplateResponse(
-        request,
-        "project/docs_list.html",
-        {
-            "project": {"name": proj.entry.name},
-            "documents": filtered,
-            "tree": _group_by_folder(filtered),
-            "db_available": db_available,
-            "view": "flat" if view == "flat" else "tree",
-            "filters": {"q": q, "type": type_filter, "status": status_filter},
-            "counts": counts,
-            "doc_status_options": ["draft", "review", "active", "authoritative", "deprecated"],
-        },
+
+@router.get("/p/{slug}/docs", response_class=HTMLResponse)
+def docs_list(
+    request: Request,
+    slug: str,
+    q: str = "",
+    type: str = "",
+    status: str = "",
+    node: str = "",
+    group: str = "",
+    view: str = "",
+) -> HTMLResponse:
+    """Список документов: рельс измерения слева, одна таблица справа.
+
+    ``group`` выбирает, чем рельс делит корпус; ``node`` — выбранный пункт
+    рельса. Прежняя пара ``?view=tree|flat`` осталась входом и не ломает старые
+    ссылки: плоский список — это рельс без выбранного пункта.
+
+    Дрейф здесь не считается: он стоит 185 мс из 190 (см.
+    ``_docs_screen_context``), и таблица не должна его ждать. Метки приезжают
+    htmx-запросом на ``…/docs/drift-marks``.
+    """
+    context = _docs_screen_context(
+        slug,
+        q=q,
+        type_filter=type.strip(),
+        status_filter=status.strip(),
+        node=node,
+        group=group,
+        with_drift=False,
     )
+    context["drift_ready"] = False
+    return templates.TemplateResponse(request, "project/docs_list.html", context)
+
+
+@router.get("/p/{slug}/docs/drift-marks", response_class=HTMLResponse)
+def docs_drift_marks(
+    request: Request,
+    slug: str,
+    q: str = "",
+    type: str = "",
+    status: str = "",
+    node: str = "",
+    group: str = "",
+) -> HTMLResponse:
+    """htmx: та же таблица, но уже с метками дрейфа.
+
+    Отдельный роут, а не ленивая колонка на каждую строку: одна пересборка
+    таблицы дешевле 170 запросов, а первый экран из-за неё не ждёт обхода
+    файлов.
+    """
+    context = _docs_screen_context(
+        slug,
+        q=q,
+        type_filter=type.strip(),
+        status_filter=status.strip(),
+        node=node,
+        group=group,
+        with_drift=True,
+    )
+    context["drift_ready"] = True
+    return templates.TemplateResponse(request, "_frag/docs_table.html", context)
+
+
+def _count_in(documents: list[dict[str, Any]], field: str, key: str) -> int:
+    return sum(1 for d in documents if d[field] == key)
+
+
+def _select_rail_bucket(
+    documents: list[dict[str, Any]], group: str, selected: str, inbox_key: str | None
+) -> list[dict[str, Any]]:
+    """Документы выбранного пункта рельса.
+
+    Инбокс адресуется своим ``node_key``, как любой другой раздел, но его
+    содержимое — это ``node is None``: «не разложен» остаётся одним состоянием
+    (см. ``doc_tree_service.node_stats``). Второй адрес для того же набора
+    развёл бы подсветку рельса и заголовок списка.
+    """
+    if group == "node":
+        if selected in {_UNGROUPED, inbox_key}:
+            return [d for d in documents if d["node"] is None]
+        return [d for d in documents if d["node"] == selected]
+    if selected == _UNGROUPED:
+        return [d for d in documents if not d[group]]
+    return [d for d in documents if d[group] == selected]
+
+
+def _selected_title(rail: list[dict[str, Any]], selected: str) -> str:
+    for item in rail:
+        if item["key"] == selected:
+            return str(item["title"])
+    return selected
+
+
+def _drifting_doc_keys(session: Session, project_id: int, root: Path) -> set[str]:
+    """Ключи документов, чья markdown-проекция разошлась с БД.
+
+    Считается тем же вызовом, что и карточка дрейфа на обзоре проекта, —
+    отдельная эвристика здесь разошлась бы с ней на первом же расхождении.
+    Ошибку обхода глушим: дрейф — это колонка-подсказка, а не причина уронить
+    весь список (репозиторий может быть недоступен, например в hub-режиме).
+    """
+    from cod_doc.services import projection_service
+
+    try:
+        report = projection_service.detect_project_drift(session, project_id, root_path=root)
+    except (OSError, ValueError):
+        return set()
+    return {item.doc_key for item in report.issues}
 
 
 # ── COD-078: New blank doc ─────────────────────────────────────────────

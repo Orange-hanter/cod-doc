@@ -249,12 +249,20 @@ def test_ingest_unknown_adapter_exits_with_error(
 
 
 def _activity_events(project_name: str) -> list[ActivityEventModel]:
+    """События ingest'а, а не все события проекта.
+
+    ADO-116: ``project init`` засевает дерево разделов документации и пишет по
+    событию на раздел. Считать здесь все строки журнала значит проверять
+    «сколько всего было скаффолдинга», а не «ingest оставил свой след» —
+    любой следующий bootstrap ронял бы этот тест, ничего не сломав.
+    """
     entry = Config.load().get_project(project_name)
     assert entry is not None
     engine = make_engine(f"sqlite:///{entry.cod_doc_dir / 'state.db'}")
     session = Session(engine)
     try:
-        return list(session.execute(select(ActivityEventModel)).scalars().all())
+        stmt = select(ActivityEventModel).where(ActivityEventModel.kind.like("finding.%"))
+        return list(session.execute(stmt).scalars().all())
     finally:
         session.close()
         engine.dispose()

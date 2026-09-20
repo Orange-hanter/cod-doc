@@ -81,7 +81,34 @@ SPEC = ServiceSpec(
     },
 )
 
-SPECS = (SPEC,)
+# ADO-116: дерево документации. Заведено сразу под машинную проверку — тест
+# ``doc_service`` существует именно потому, что ``add_section`` и
+# ``patch_section`` прожили в web-онли три месяца незамеченными.
+TREE_SPEC = ServiceSpec(
+    name="doc_tree_service",
+    known_mutations=frozenset(
+        {
+            "create_node",
+            "update_node",
+            "delete_node",
+            "init_tree",
+            "assign",
+            "classify_project",
+        }
+    ),
+    known_reads=frozenset(
+        {
+            "list_nodes",
+            "get_node",
+            "inbox_node",
+            "node_stats",
+            "unplaced_count",
+            "unplaced",
+        }
+    ),
+)
+
+SPECS = (SPEC, TREE_SPEC)
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)

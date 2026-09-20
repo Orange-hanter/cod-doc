@@ -328,6 +328,53 @@ def _check_alembic_head(session: Session, project_id: int, **_: Any) -> dict[str
     }
 
 
+def _check_doc_unplaced(
+    session: Session,
+    project_id: int,
+    *,
+    limit: int = 50,
+    **_: Any,
+) -> dict[str, Any]:
+    """ADO-116: документы, не разложенные по разделам дерева документации.
+
+    Хаотичный импорт растворяется в корпусе бесследно, если про него никто не
+    напоминает: документ находим поиском, но в навигации его нет. Проверка
+    делает Инбокс видимым как находку, а не только как число на экране.
+
+    Раздел ниже своего ``min_docs`` попадает сюда же: «раздел объявлен
+    обязательным и пуст» — это тот же пробел в навигации, только с другой
+    стороны.
+    """
+    from cod_doc.services import doc_tree_service
+
+    nodes = doc_tree_service.list_nodes(session, project_id)
+    if not nodes:
+        # Дерева нет — говорить «не разложено» бессмысленно: раскладывать не
+        # по чему. Это не находка, а состояние «фича не заведена».
+        return {
+            "findings": [],
+            "findings_count": 0,
+            "unplaced": 0,
+            "note": "doc tree is not seeded",
+        }
+
+    unplaced = doc_tree_service.unplaced(session, project_id)
+    findings: list[dict[str, Any]] = [
+        {"kind": "unplaced", "doc_key": key} for key in unplaced[:limit]
+    ]
+    findings.extend(
+        {"kind": "under_filled", "node_key": stat.node.node_key, "docs": stat.doc_count}
+        for stat in doc_tree_service.node_stats(session, project_id)
+        if stat.under_filled
+    )
+    return {
+        "findings": findings,
+        "findings_count": len(findings),
+        "unplaced": len(unplaced),
+        "truncated": len(unplaced) > limit,
+    }
+
+
 CheckFn = Callable[..., dict[str, Any]]
 
 CHECK_CATALOG: dict[str, CheckFn] = {
@@ -335,6 +382,7 @@ CHECK_CATALOG: dict[str, CheckFn] = {
     "stale_refs": _check_stale_refs,
     "link_integrity": _check_link_integrity,
     "doc_drift": _check_doc_drift,
+    "doc_unplaced": _check_doc_unplaced,
     "task_stale": _check_task_stale,
     "alembic_head": _check_alembic_head,
 }

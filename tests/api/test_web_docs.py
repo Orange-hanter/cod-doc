@@ -176,7 +176,13 @@ def test_doc_show_404_when_db_absent(tmp_path: Path) -> None:
 # ── COD-078: redesigned docs page ──────────────────────────────────────
 
 
-def test_docs_list_renders_tree_view_by_default(docs_client) -> None:
+def test_docs_list_renders_the_section_rail_by_default(docs_client) -> None:
+    """ADO-116: по умолчанию корпус делится разделами дерева, а не каталогами.
+
+    До этого экран показывал вложенные ``<details>`` по компонентам
+    ``doc_key``, то есть зеркало файловой кучи: на живом корпусе — 14 папок
+    `cod_doc/skills/*` с одним файлом внутри каждой.
+    """
     client, entry = docs_client
     r = client.get(f"/p/{entry.name}/docs")
     body = r.text
@@ -186,11 +192,43 @@ def test_docs_list_renders_tree_view_by_default(docs_client) -> None:
     assert "Import markdown" in body
     # Filter bar
     assert 'name="q"' in body
-    # Tree node for the seeded doc's first path component
-    assert 'class="docs-folder"' in body
-    assert "modules" in body
+    # Рельс на месте, и в нём есть вход «все документы».
+    assert 'class="docs-rail"' in body
+    assert "Все документы" in body
+    # Документ показан человеческим заголовком, ключ — второй строкой.
+    assert "Auth Module Overview" in body
+    assert "modules/M1-auth/overview" in body
     # Counts row
     assert "active" in body and "draft" in body
+
+
+def test_docs_list_group_by_path_still_offers_folders(docs_client) -> None:
+    """Группировка по каталогу осталась — как одно из измерений, не как режим."""
+    client, entry = docs_client
+    r = client.get(f"/p/{entry.name}/docs?group=path")
+    assert r.status_code == 200
+    assert 'class="docs-rail"' in r.text
+    assert "modules" in r.text
+
+
+def test_docs_list_filter_form_carries_group_and_node(docs_client) -> None:
+    """Регрессия: «Применить» не должен сбрасывать вид.
+
+    До ADO-116 форма фильтра не несла ``view``, поэтому применение фильтра в
+    плоском режиме молча возвращало в дерево.
+    """
+    client, entry = docs_client
+    r = client.get(f"/p/{entry.name}/docs?group=type&node=module-spec")
+    body = r.text
+    assert '<input type="hidden" name="group" value="type">' in body
+    assert '<input type="hidden" name="node" value="module-spec">' in body
+
+
+def test_docs_list_shows_unplaced_counter(docs_client) -> None:
+    """Инбокс виден числом: пока он не пуст, корпус не разложен."""
+    client, entry = docs_client
+    r = client.get(f"/p/{entry.name}/docs")
+    assert "Не разложено" in r.text
 
 
 def test_docs_list_search_filter_drops_non_matches(docs_client) -> None:
