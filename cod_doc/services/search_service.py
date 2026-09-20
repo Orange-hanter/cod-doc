@@ -84,7 +84,11 @@ _STORY_TITLE_BUDGET = 120
 # result. ``reindex_all`` and ``index_finding`` share this predicate, so
 # the full rebuild and the incremental hook agree on what belongs in the
 # index.
-_FINDING_UNINDEXED_STATUSES = frozenset({"dismissed"})
+# ``resolved`` добавлен вместе с автозакрытием находок: вылеченный пробел —
+# уже не работа, и в выдаче `ctx_search` на дефолтном профиле `agent` ему
+# делать нечего. Правка безопасна для существующих данных: до этого статус
+# `resolved` не проставлял никто.
+_FINDING_UNINDEXED_STATUSES = frozenset({"dismissed", "resolved"})
 
 _MISSING_INDEX_MESSAGE = "FTS index table db_search_idx is missing — run `alembic upgrade head`"
 

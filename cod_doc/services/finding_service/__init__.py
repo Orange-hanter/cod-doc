@@ -15,6 +15,7 @@ from cod_doc.services.finding_service.queries import (
     finding_to_dict,
     get_finding,
     list_findings,
+    reconcile_partition,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "ingest_findings",
     "list_findings",
     "promote_finding",
+    "reconcile_partition",
 ]
