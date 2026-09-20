@@ -47,6 +47,7 @@
           </span>
         </summary>
         {% if s.tasks %}
+          <div class="table-scroll">
           <table class="grid section-tasks">
             <thead>
               <tr>
@@ -69,6 +70,7 @@
               {% endfor %}
             </tbody>
           </table>
+          </div>
         {% else %}
           <p class="muted">В этой секции нет задач.</p>
         {% endif %}

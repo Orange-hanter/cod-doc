@@ -183,3 +183,97 @@ def test_story_line_text_can_shrink_and_break() -> None:
     body = _rule(".story-line-text")
     assert "min-width: 0" in body, "трек 1fr не сможет ужаться ниже длинного слова"
     assert "overflow-wrap: anywhere" in body, "длинное слово не получит точку переноса"
+
+
+# ── Гейт: широкая таблица прокручивается, а не сминается ────────────────
+#
+# Приём «обёртка + `min-width`» применялся трижды и трижды — заново руками.
+# На четвёртый раз (`.scn-table`, ADO-185) обёртку поставили, а границу
+# забыли, и таблица сминалась ровно так же, как до обёртки. Это и есть довод
+# за машинную проверку: половина приёма выглядит как весь приём.
+
+#: Таблицы, которым прокрутка не нужна, — с обоснованием. Пустое обоснование
+#: превращает список в свалку, поэтому длина проверяется (тот же приём, что у
+#: `tests/services/_surface_parity.py`).
+_NARROW_TABLES: dict[str, str] = {}
+
+_MIN_JUSTIFICATION = 30
+
+
+def _grid_tables() -> list[tuple[str, str]]:
+    """(относительный путь, класс семейства) для каждой таблицы `.grid`."""
+    found: list[tuple[str, str]] = []
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        for m in re.finditer(r'<table[^>]*class="grid([^"]*)"', path.read_text(encoding="utf-8")):
+            extra = m.group(1).split()
+            rel = str(path.relative_to(TEMPLATES))
+            found.append((rel, extra[0] if extra else ""))
+    return found
+
+
+def test_every_grid_table_has_a_family_class() -> None:
+    """Без своего класса ширину вешать не на что."""
+    nameless = sorted({rel for rel, family in _grid_tables() if not family})
+    assert not nameless, (
+        f"таблицы `.grid` без класса семейства: {nameless} — "
+        "добавь `<family>-table`, иначе `min-width` некуда написать"
+    )
+
+
+def test_every_grid_table_declares_a_min_width() -> None:
+    """`table-layout` раздаёт остаток первой колонке, и остаток уходит в минус.
+
+    Без нижней границы браузер сминает колонку с заголовком до нечитаемого
+    вместо того, чтобы дать прокрутку: замерено 40px на вьюпорте 900px.
+    """
+    missing = []
+    for rel, family in _grid_tables():
+        if not family or family in _NARROW_TABLES:
+            continue
+        if "min-width" not in _rule(f".{family}"):
+            missing.append(f"{rel} (.{family})")
+    assert not missing, (
+        f"таблицы без `min-width`: {sorted(set(missing))} — "
+        "обёртка `.table-scroll` без границы ширины ничего не гарантирует"
+    )
+
+
+def _wrapped_somewhere(rel: str) -> bool:
+    """Обёртка в самом файле — или у того, кто его включает.
+
+    У фрагмента она обязана лежать снаружи: `_frag/docs_table.html` подменяет
+    себя по htmx через `hx-swap="outerHTML"`, и обёртка внутри фрагмента после
+    первого же свопа вложилась бы сама в себя.
+    """
+    if 'class="table-scroll"' in (TEMPLATES / rel).read_text(encoding="utf-8"):
+        return True
+    needle = f'include "{rel}"'
+    return any(
+        needle in path.read_text(encoding="utf-8")
+        and 'class="table-scroll"' in path.read_text(encoding="utf-8")
+        for path in TEMPLATES.rglob("*.html")
+    )
+
+
+def test_every_grid_table_lives_in_a_scroll_container() -> None:
+    """Граница ширины без обёртки растянет страницу целиком."""
+    unwrapped = []
+    for rel, family in _grid_tables():
+        if family in _NARROW_TABLES:
+            continue
+        if not _wrapped_somewhere(rel):
+            unwrapped.append(rel)
+    assert not unwrapped, (
+        f"таблицы `.grid` вне `.table-scroll`: {sorted(set(unwrapped))} — "
+        "без обёртки `min-width` даёт горизонтальную полосу всей странице"
+    )
+
+
+def test_narrow_table_allowlist_carries_a_justification() -> None:
+    """Запись без внятного обоснования превращает список в свалку."""
+    blank = {k: v for k, v in _NARROW_TABLES.items() if len(v.strip()) < _MIN_JUSTIFICATION}
+    assert not blank, f"записи allowlist без обоснования: {sorted(blank)}"
+
+    known = {family for _rel, family in _grid_tables() if family}
+    unknown = sorted(set(_NARROW_TABLES) - known)
+    assert not unknown, f"allowlist ссылается на несуществующие таблицы: {unknown}"
