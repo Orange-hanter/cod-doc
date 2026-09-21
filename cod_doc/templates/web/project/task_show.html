@@ -46,8 +46,10 @@
     <select name="status"
             hx-post="/p/{{ project.name }}/tasks/{{ task.task_id }}/status"
             hx-trigger="change">
-      {% for s in task_status_options %}
-        <option value="{{ s }}" {% if task.status == s %}selected{% endif %}>{{ s }}</option>
+      {# ADO-156: канонические семь; легаси-написание видно, только если задача
+         уже в нём лежит — руками его не выбрать. #}
+      {% for value, label in task_status_choices(task.status) %}
+        <option value="{{ value }}"{% if task.status == value %} selected{% endif %}>{{ label }}</option>
       {% endfor %}
     </select>
     <noscript><button type="submit">set</button></noscript>

@@ -12,6 +12,7 @@ Verifies:
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -220,6 +221,41 @@ def test_task_detail_quick_actions_present(task_detail_client) -> None:
     assert 'hx-post="/p/demo/tasks/DET-001/status"' in body
     # Mark done button (hidden when status=done; here status=in-progress)
     assert "Mark done" in body
+
+
+def _force_raw_status(entry: ProjectEntry, task_id: str, status: str) -> None:
+    """Пишем колонку напрямую, минуя сервис.
+
+    Легаси-написание в БД — это не мигрированный проект или восстановленный из
+    `~/.cod-doc/backups` бэкап, а не результат вызова write-пути; и наоборот,
+    канонический статус здесь не должен зависеть от того, что именно write-путь
+    сейчас кладёт в колонку.
+    """
+    with sqlite3.connect(f"{entry.path}/.cod-doc/state.db") as conn:
+        conn.execute("UPDATE task SET status = ? WHERE task_id = ?", (status, task_id))
+
+
+def test_task_detail_status_select_offers_only_canonical(task_detail_client) -> None:
+    """ADO-156: форма не предлагает легаси-написание — им человек вернул бы дрейф."""
+    client, entry = task_detail_client
+    _force_raw_status(entry, "DET-002", "todo")
+
+    body = client.get(f"/p/{entry.name}/tasks/DET-002").text
+    for canonical in ("backlog", "todo", "in_progress", "in_review", "blocked", "done"):
+        assert f'<option value="{canonical}"' in body
+    assert '<option value="pending"' not in body
+    assert '<option value="in-progress"' not in body
+
+
+def test_task_detail_status_select_keeps_legacy_current_value(task_detail_client) -> None:
+    """Задача, уже лежащая в легаси-написании, не теряет выбранный пункт."""
+    client, entry = task_detail_client
+    _force_raw_status(entry, "DET-002", "pending")
+
+    body = client.get(f"/p/{entry.name}/tasks/DET-002").text
+    assert '<option value="pending" selected>pending (legacy)</option>' in body
+    # Канон при этом никуда не делся — переключиться есть на что.
+    assert '<option value="todo"' in body
 
 
 def test_task_detail_complete_button_hidden_when_done(task_detail_client) -> None:

@@ -15,8 +15,10 @@
         hx-swap="outerHTML"
         hx-trigger="change"
       >
-        {% for s in task_status_options %}
-          <option value="{{ s }}" {% if t.status == s %}selected{% endif %}>{{ s }}</option>
+        {# ADO-156: канонические семь; легаси-написание видно, только если задача
+           уже в нём лежит — руками его не выбрать. #}
+        {% for value, label in task_status_choices(t.status) %}
+          <option value="{{ value }}"{% if t.status == value %} selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
       <noscript><button type="submit">set</button></noscript>
