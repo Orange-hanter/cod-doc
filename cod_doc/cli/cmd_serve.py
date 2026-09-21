@@ -12,6 +12,11 @@ from cod_doc.mcp.profiles import VALID_PROFILES
 if TYPE_CHECKING:
     from cod_doc.config import Config
 
+#: Сколько uvicorn ждёт закрытия открытых соединений на остановке (ADO-194).
+#: Десять секунд — с запасом на отправку последних кадров живому клиенту и
+#: заведомо меньше, чем терпение человека, нажавшего Ctrl-C.
+GRACEFUL_SHUTDOWN_TIMEOUT_S = 10
+
 
 @click.command()
 @click.option("--host", default=None)
@@ -34,6 +39,16 @@ def serve(ctx: click.Context, host: str | None, port: int | None, reload: bool) 
         port=port or cfg.api_port,
         reload=reload,
         log_level="info",
+        # ADO-194: потолок ожидания при остановке. Без него uvicorn ждёт
+        # завершения открытых соединений неограниченно, и один обработчик,
+        # заснувший не на сокете, делает Ctrl-C бесполезным: сервер пишет
+        # «Waiting for background tasks to complete» и висит, пока его не
+        # добьют силой. Так на машине набралось 16 процессов-зомби.
+        # Конкретная причина той поломки вылечена в api/websocket.py; этот
+        # таймаут — страховка от следующего такого же обработчика, потому
+        # что цена ошибки (незавершаемый сервер) несоизмерима с ценой
+        # страховки (несколько секунд на остановке).
+        timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_TIMEOUT_S,
     )
 
 
