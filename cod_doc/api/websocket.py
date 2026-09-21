@@ -8,48 +8,39 @@ The connection stays open until the client closes it or the project goes
 silent — there's no server-initiated heartbeat (websockets keepalives at
 the protocol level are enough for our reverse proxy setup).
 
-ADO-194: событие и разрыв ждутся **гонкой**, а не последовательно
-=================================================================
+ADO-194: разрыв обязан сворачивать всю работу соединения
+========================================================
 
-Наивная форма — ``async for event in sub`` — выглядит естественно и
-содержит дедлок. Под ней ``Subscription.__anext__`` это
-``await self._queue.get()``: ожидание без таймаута, которое будит только
-новое событие шины. Разрыв соединения его не будит вообще — задача ждёт
-``asyncio.Queue``, а не сокет.
+Раньше цикл был просто ``async for event in sub``, а под ним — ожидание,
+которое будило только новое событие шины. Разрыв соединения его не будил,
+и обработчик спал вечно: ``cod-doc serve`` не завершался по Ctrl-C (16
+процессов-зомби за трое суток на живой машине), а подписка переживала
+закрытие вкладки.
 
-Отсюда два наблюдаемых дефекта, оба с одной причиной:
+Причину вылечили в самой шине: ``Subscription`` теперь завершаема, и
+``async for`` заканчивается сам, когда подписку закрывают. Здесь остаётся
+вторая половина — **узнать** о разрыве и закрыть подписку.
 
-* **``cod-doc serve`` не завершался.** uvicorn при остановке закрывает
-  слушающий сокет, просит соединения закрыться и ждёт их завершения —
-  это его строка ``Waiting for background tasks to complete``. Обработчик
-  её не слышит и стоит дальше. Разбудить его мог бы
-  ``event_bus.dispose()``, но он в lifespan **после** ``yield``, то есть
-  запускается только когда соединения закроются. Которые не закроются.
-  На живой машине это дало 16 зависших процессов за трое суток: ни один
-  не слушал порт и ни один не ушёл по SIGTERM.
-* **Подписка утекала после ухода клиента.** Закрытая вкладка браузера
-  обработчика не будила: он узнавал о разрыве только при следующем
-  событии, когда падал ``send_json``. До тех пор ``async with`` не
-  закрывался, и очередь висела в реестре подписчиков.
+Сторож разрыва живёт в task group и отменяет **scope**, а не выставляет
+флаг. Разница принципиальная: отправка клиенту тоже может залипнуть — если
+тот перестал читать (закрытая крышка ноутбука, TCP zero-window), ``send``
+паркуется на переполненном буфере. Флаг такую отправку не прервёт, и
+зависание вернулось бы ровно в самом частом реальном сценарии разрыва.
+Отмена scope прерывает и её.
 
-Лечение — :func:`_pump`: ``sub.__anext__()`` и ``websocket.receive()``
-крутятся одновременно через ``FIRST_COMPLETED``, и любой из двух исходов
-завершает цикл. Разрыв (клиентский или от graceful shutdown uvicorn)
-доезжает до приложения как сообщение ``websocket.disconnect``, поэтому
-одного ``receive()`` хватает на оба случая.
-
-Потолок ожидания на стороне сервера — ``timeout_graceful_shutdown`` в
-``cli/cmd_serve.py``: он страхует от того же класса ошибки в любом другом
-обработчике, которого здесь ещё нет.
+Отменой владеет anyio, а не ``try/except CancelledError`` руками. Это не
+стилистика: ``CancelledError`` — наследник ``BaseException``, и код,
+превращающий его в штатный возврат, обезоруживает и внешний
+``timeout_graceful_shutdown``, и любой объемлющий ``TaskGroup``.
 """
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+import anyio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from cod_doc.api.deps import get_config
@@ -65,67 +56,35 @@ logger = logging.getLogger("cod_doc.api.ws")
 #: доезжают до приложения одинаково.
 _DISCONNECT = "websocket.disconnect"
 
+#: Что starlette бросает на чтении/отправке в уже мёртвый сокет.
+#: ``WebSocketDisconnect`` — штатный путь send-side разрыва (starlette
+#: превращает в него ``ClientDisconnected`` от uvicorn); ``RuntimeError`` —
+#: обращение к сокету после закрытия.
+_GONE = (WebSocketDisconnect, RuntimeError)
 
-async def _cancel(*tasks: asyncio.Task[Any]) -> None:
-    """Снять незавершённые задачи гонки и дождаться их смерти.
 
-    Ожидание обязательно: без него ``asyncio`` ругается «Task was destroyed
-    but it is pending» ровно в тот момент, когда человек читает лог
-    остановки сервера.
+async def _watch_disconnect(websocket: WebSocket, scope: anyio.CancelScope) -> None:
+    """Дождаться разрыва и свернуть работу соединения.
 
-    ``shield`` — не перестраховка. Отмена прилетает и снаружи (uvicorn гасит
-    задачу соединения), и тогда голый ``gather`` перевозбуждает
-    ``CancelledError`` прямо из ``finally``, не дав задачам прибраться.
+    Читает входящие в цикле, а не один раз: клиент вправе что-то прислать,
+    и одно его сообщение не должно делать следующий разрыв незаметным.
     """
-    pending = [task for task in tasks if not task.done()]
-    for task in pending:
-        task.cancel()
-    if pending:
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.shield(asyncio.gather(*pending, return_exceptions=True))
-
-
-async def _pump(websocket: WebSocket, sub: Subscription) -> None:
-    """Слать события клиенту, пока соединение живо.
-
-    Возвращается при разрыве — не бросает. Вызывающий закрывает
-    подписку выходом из ``async with``, и именно поэтому возврат обязан
-    быть штатным, а не исключением: на исключении ``__aexit__`` тоже
-    отработает, но лог получит трассировку там, где ничего не сломалось.
-    """
-    next_event: asyncio.Task[Any] = asyncio.ensure_future(sub.__anext__())
-    incoming: asyncio.Task[Any] = asyncio.ensure_future(websocket.receive())
     try:
         while True:
-            done, _ = await asyncio.wait(
-                {next_event, incoming}, return_when=asyncio.FIRST_COMPLETED
-            )
-
-            if incoming in done:
-                try:
-                    message = incoming.result()
-                except (RuntimeError, WebSocketDisconnect):
-                    # starlette бросает RuntimeError на чтении из уже
-                    # закрытого сокета — для нас это тот же разрыв.
-                    return
-                if message.get("type") == _DISCONNECT:
-                    return
-                # Клиент что-то прислал. Протокол односторонний — читаем и
-                # забываем, но ожидание надо перевзвести, иначе следующий
-                # разрыв снова станет незаметным.
-                incoming = asyncio.ensure_future(websocket.receive())
-
-            if next_event in done:
-                event = next_event.result()
-                next_event = asyncio.ensure_future(sub.__anext__())
-                try:
-                    await websocket.send_json(event.to_wire())
-                except (RuntimeError, asyncio.CancelledError):
-                    # Как в исходной версии: отправка в закрытый сокет —
-                    # штатное завершение, а не крах потока.
-                    return
+            message = await websocket.receive()
+            if message.get("type") == _DISCONNECT:
+                return
+    except _GONE:
+        return
     finally:
-        await _cancel(next_event, incoming)
+        scope.cancel()
+
+
+async def _stream(websocket: WebSocket, sub: Subscription) -> None:
+    """Слать события, пока подписка жива и сокет принимает."""
+    with contextlib.suppress(*_GONE):
+        async for event in sub:
+            await websocket.send_json(event.to_wire())
 
 
 @router.websocket("/ws/projects/{slug}")
@@ -139,8 +98,12 @@ async def project_event_stream(websocket: WebSocket, slug: str) -> None:
     # Send a hello so the client knows the channel is live.
     await websocket.send_json({"project": slug, "kind": "hello", "payload": {}, "ts": 0})
     try:
-        async with event_bus.subscribe(slug) as sub:
-            await _pump(websocket, sub)
+        async with event_bus.subscribe(slug) as sub, anyio.create_task_group() as tg:
+            tg.start_soon(_watch_disconnect, websocket, tg.cancel_scope)
+            await _stream(websocket, sub)
+            # Поток кончился сам (шину закрыли) — сторожу больше нечего
+            # ждать, иначе task group висел бы на нём до разрыва.
+            tg.cancel_scope.cancel()
     except WebSocketDisconnect:
         return
     except Exception:  # defensive (covered by test_ws_stream_crash_closes_gracefully)

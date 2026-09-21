@@ -32,6 +32,10 @@ dependencies = [
     "pathspec>=0.12",  # OBI-030 repo_index_service .gitignore matching
     "jinja2>=3.1",
     "httpx>=0.27",
+    # ADO-194: anyio приходил транзитивно через starlette, но
+    # cod_doc/api/websocket.py опирается на его task group напрямую —
+    # неявная зависимость сломалась бы от смены зависимостей starlette.
+    "anyio>=4.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.5",
     "sqlalchemy>=2.0",

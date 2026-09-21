@@ -72,6 +72,10 @@ async def publish(project: str, kind: str, payload: dict[str, Any] | None = None
         for q in targets:
             try:
                 q.put_nowait(event)
+            except asyncio.QueueShutDown:
+                # ADO-194: подписка закрылась — публикация в неё не ошибка,
+                # а гонка с закрытием. Пропускаем, чистит её `__aexit__`.
+                continue
             except asyncio.QueueFull:
                 # Slow consumer — drop oldest to make room. Better than blocking
                 # the producer, since the producer holds DB locks elsewhere.
@@ -159,12 +163,34 @@ class Subscription:
                 # idle empty sets in the module-level dict for the process life.
                 if not subs:
                     _subscribers.pop(self.project, None)
+        # Снятия с учёта мало: ожидающий `get()` на уже забытой очереди
+        # продолжал бы спать. Будим его явно.
+        self.close()
 
     def __aiter__(self) -> Subscription:
         return self
 
     async def __anext__(self) -> Event:
-        return await self._queue.get()
+        """Следующее событие; закрытие подписки завершает итерацию.
+
+        ADO-194: голый ``await queue.get()`` был ожиданием, которое будило
+        только новое событие. Потребитель, у которого клиент ушёл, спал в
+        нём вечно — и uvicorn не мог остановиться, потому что ждал именно
+        такое соединение. ``Queue.shutdown`` (3.13) будит ожидающих, и
+        ``async for`` завершается сам у любого потребителя шины, а не
+        только у того, кто вручную собрал гонку.
+        """
+        try:
+            return await self._queue.get()
+        except asyncio.QueueShutDown:
+            raise StopAsyncIteration from None
+
+    def close(self) -> None:
+        """Разбудить ожидающего и завершить итерацию.
+
+        Идемпотентно: повторный ``shutdown`` — no-op.
+        """
+        self._queue.shutdown(immediate=True)
 
 
 def subscribe(project: str) -> Subscription:
@@ -178,9 +204,18 @@ def active_subscribers(project: str) -> int:
 
 
 def dispose() -> None:
-    """Drop all subscriber queues (STB-022).
+    """Закрыть все подписки и очистить реестр (STB-022, ADO-194).
 
-    Called on API shutdown (and useful on reload) so the module-level
-    ``_subscribers`` registry doesn't retain queues across an app lifecycle.
+    Зовётся на остановке API (и полезно при reload), чтобы модульный
+    ``_subscribers`` не тащил очереди через жизненный цикл приложения.
+
+    ADO-194: раньше здесь был только ``clear()``, и это была полуправда.
+    Очередь исчезала из реестра, но задача, уже стоявшая на ней в
+    ``get()``, ждала дальше — «сброшенная» подписка продолжала жить в
+    заснувшем потребителе. Теперь очереди закрываются, и ожидающие
+    просыпаются.
     """
+    for queues in _subscribers.values():
+        for queue in queues:
+            queue.shutdown(immediate=True)
     _subscribers.clear()
