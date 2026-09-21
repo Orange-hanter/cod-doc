@@ -10,15 +10,12 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from cod_doc.logging_config import get_logger
-
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
 
     from cod_doc.config import Config
 
 console = Console()
-log = get_logger("cli.link")
 
 
 def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
@@ -215,43 +212,24 @@ def link_backfill(ctx: click.Context, project: str, dry_run: bool) -> None:
     runs ``sync_section`` + ``resolve_section`` so the in-memory + UI link
     panels show resolved graph data rather than parse-cache rows only.
     """
-    from sqlalchemy import select
-
     from cod_doc.infra.db import transactional
-    from cod_doc.infra.models import DocumentModel, SectionModel
-    from cod_doc.services import link_service
+    from cod_doc.services import repair_service
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
-    sections_done = 0
-    links_total = 0
-    docs_seen: set[str] = set()
     with transactional(sf) as session:
         project_id = _require_project_id(session, project)
-        rows = session.execute(
-            select(SectionModel.row_id, DocumentModel.doc_key)
-            .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
-            .where(DocumentModel.project_id == project_id)
-            .order_by(DocumentModel.doc_key, SectionModel.position)
-        ).all()
-        for sec_id, doc_key in rows:
-            try:
-                link_service.sync_section(session, int(sec_id))
-                links = link_service.resolve_section(session, int(sec_id))
-            except Exception as exc:
-                log.warning("backfill skipped %s: %s", doc_key, exc)
-                continue
-            sections_done += 1
-            links_total += len(links)
-            docs_seen.add(doc_key)
+        sections_done, links_total, docs_seen = repair_service.backfill_project_links(
+            session, project_id
+        )
         if dry_run:
             session.rollback()
 
     note = "(dry-run, rolled back)" if dry_run else ""
     console.print(
         f"[green]✅[/green] backfilled {links_total} link(s) across "
-        f"{sections_done} section(s) in {len(docs_seen)} doc(s) {note}".strip()
+        f"{sections_done} section(s) in {docs_seen} doc(s) {note}".strip()
     )
 
 

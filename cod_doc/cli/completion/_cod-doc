@@ -350,6 +350,7 @@ _cod-doc() {
         (reindex)    _cod_doc_reindex && ret=0 ;;
         (revision)   _cod_doc_revision && ret=0 ;;
         (routine)    _cod_doc_routine && ret=0 ;;
+        (runtime)    _cod_doc_runtime && ret=0 ;;
         (scenario)   _cod_doc_scenario && ret=0 ;;
         (search)     _cod_doc_search && ret=0 ;;
         (serve)      _cod_doc_serve && ret=0 ;;
@@ -357,6 +358,8 @@ _cod-doc() {
         (structure)  _cod_doc_structure && ret=0 ;;
         (task)       _cod_doc_task && ret=0 ;;
         (tui)        _cod_doc_tui && ret=0 ;;
+        (update)     _cod_doc_update && ret=0 ;;
+        (upgrade)    _cod_doc_upgrade && ret=0 ;;
         (wizard)     _cod_doc_wizard && ret=0 ;;
         (*)          _default && ret=0 ;;
       esac
@@ -389,6 +392,7 @@ _cod-doc() {
     'reindex:Rebuild repo-level indexes (files / symbols / imports).'
     'revision:Inspect and revert revision history.'
     'routine:Inspect and run routines (scheduled health checks).'
+    'runtime:Рантайм сервисов и демоны launchd (замена cod-doc-services.sh).'
     'scenario:Author test scenarios and project them into docs/system/scenarios/.'
     'search:Search tasks / docs / stories / ADRs for QUERY (FTS5).'
     'serve:Запустить REST API сервер (production).'
@@ -396,6 +400,8 @@ _cod-doc() {
     'structure:Code structure snapshots, drift, triage and waivers (not projection…'
     'task:Manage tasks (create, status, complete, list).'
     'tui:(DEPRECATED) Запустить TUI. Используйте `cod-doc web` вместо.'
+    'update:Обновить установку cod-doc; рантайм, схему, сервисы и состояние про…'
+    'upgrade:Обновить установку cod-doc; рантайм, схему, сервисы и состояние про…'
     'wizard:Запустить мастер настройки.'
   )
   _describe -t cod-doc-commands 'cod-doc command' cmds
@@ -2173,6 +2179,133 @@ _cod-doc() {
   return ret
 }
 
+(( $+functions[_cod_doc_runtime] )) || _cod_doc_runtime() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_runtime_commands' \
+    '*:: :->cod_doc_runtime_cmd' && ret=0
+
+  case $state in
+    (cod_doc_runtime_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-runtime-$words[1]:"
+      case $words[1] in
+        (build)     _cod_doc_runtime_build && ret=0 ;;
+        (install)   _cod_doc_runtime_install && ret=0 ;;
+        (render)    _cod_doc_runtime_render && ret=0 ;;
+        (restart)   _cod_doc_runtime_restart && ret=0 ;;
+        (rollback)  _cod_doc_runtime_rollback && ret=0 ;;
+        (status)    _cod_doc_runtime_status && ret=0 ;;
+        (uninstall) _cod_doc_runtime_uninstall && ret=0 ;;
+        (version)   _cod_doc_runtime_version && ret=0 ;;
+        (*)         _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_runtime_commands] )) || _cod_doc_runtime_commands() {
+  local -a cmds
+  cmds=(
+    'build:Собрать ревизию в <runtime>.staged и проверить, ничего не подменяя.'
+    'install:Отрендерить plist'\''ы и загрузить все три сервиса (bootout → bootstra…'
+    'render:Показать plist'\''ы, ничего не записывая на диск.'
+    'restart:Перезапустить демоны (kickstart -k) без пересборки plist'\''ов.'
+    'rollback:Вернуть предыдущий рантайм. БД это НЕ откатывает.'
+    'status:Что загружено, отвечает ли порт и какая версия у каждой установки.'
+    'uninstall:Выгрузить сервисы и удалить их plist'\''ы.'
+    'version:Версии трёх установок; рантайм сервисов, PATH (uv tool), чекаут.'
+  )
+  _describe -t cod-doc-runtime-commands 'cod-doc runtime command' cmds
+}
+
+(( $+functions[_cod_doc_runtime_build] )) || _cod_doc_runtime_build() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--ref)--ref=[Ревизия или ветка; по умолчанию — ветка remote'\''а]:ref' \
+    '(--repo)--repo=[Чекаут репозитория (по умолчанию $COD_DOC_REPO → ~/Git/_my/cod-doc)]:repo:_files -/' \
+    '(--python)--python=[Версия Python ($COD_DOC_PYTHON)]:python-version' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_runtime_install] )) || _cod_doc_runtime_install() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_runtime_render] )) || _cod_doc_runtime_render() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_runtime_restart] )) || _cod_doc_runtime_restart() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_runtime_rollback] )) || _cod_doc_runtime_rollback() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_runtime_status] )) || _cod_doc_runtime_status() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--repo)--repo=[Чекаут репозитория (по умолчанию $COD_DOC_REPO → ~/Git/_my/cod-doc)]:repo:_files -/' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_runtime_uninstall] )) || _cod_doc_runtime_uninstall() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_runtime_version] )) || _cod_doc_runtime_version() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(--repo)--repo=[Чекаут репозитория (по умолчанию $COD_DOC_REPO → ~/Git/_my/cod-doc)]:repo:_files -/' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
 (( $+functions[_cod_doc_scenario] )) || _cod_doc_scenario() {
   local curcontext="$curcontext" state line ret=1
   typeset -A opt_args
@@ -3065,6 +3198,50 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(--debug-log-file)--debug-log-file=[Путь к файлу debug-лога TUI]:debug-log-file:_files' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_update] )) || _cod_doc_update() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '*'{-p+,--project=}'[Ограничить фазы B и D этим проектом; повторяемый (фаза A машинная)]:project:_cod_doc_projects' \
+    '(--ref)--ref=[Ревизия или ветка; по умолчанию — ветка remote'\''а]:ref' \
+    '(--python)--python=[Версия Python ($COD_DOC_PYTHON)]:python-version' \
+    '(--repo)--repo=[Чекаут репозитория ($COD_DOC_REPO → ~/Git/_my/cod-doc → клон в ~/.c…]:repo:_files -/' \
+    '(--skip-install)--skip-install[Не пересобирать рантайм (фаза A)]' \
+    '(--skip-migrate)--skip-migrate[Не догонять схему (фаза B)]' \
+    '(--skip-repair)--skip-repair[Не чинить проекты (фаза D)]' \
+    '(--skip-links)--skip-links[Без link backfill — он самый долгий]' \
+    '(--install-services)--install-services[После свапа не kickstart, а install; отрендерить plist'\''ы и загрузить]' \
+    '(--ttl-minutes)--ttl-minutes=[TTL протухшего замка для фазы D]:ttl-minutes' \
+    '(--dry-run)--dry-run[Показать план и выйти; не спрашивает]' \
+    '(-y --yes)'{-y,--yes}'[Не спрашивать подтверждения]' \
+    '(--json)--json[Вывод в JSON (нужен --yes)]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_upgrade] )) || _cod_doc_upgrade() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '*'{-p+,--project=}'[Ограничить фазы B и D этим проектом; повторяемый (фаза A машинная)]:project:_cod_doc_projects' \
+    '(--ref)--ref=[Ревизия или ветка; по умолчанию — ветка remote'\''а]:ref' \
+    '(--python)--python=[Версия Python ($COD_DOC_PYTHON)]:python-version' \
+    '(--repo)--repo=[Чекаут репозитория ($COD_DOC_REPO → ~/Git/_my/cod-doc → клон в ~/.c…]:repo:_files -/' \
+    '(--skip-install)--skip-install[Не пересобирать рантайм (фаза A)]' \
+    '(--skip-migrate)--skip-migrate[Не догонять схему (фаза B)]' \
+    '(--skip-repair)--skip-repair[Не чинить проекты (фаза D)]' \
+    '(--skip-links)--skip-links[Без link backfill — он самый долгий]' \
+    '(--install-services)--install-services[После свапа не kickstart, а install; отрендерить plist'\''ы и загрузить]' \
+    '(--ttl-minutes)--ttl-minutes=[TTL протухшего замка для фазы D]:ttl-minutes' \
+    '(--dry-run)--dry-run[Показать план и выйти; не спрашивает]' \
+    '(-y --yes)'{-y,--yes}'[Не спрашивать подтверждения]' \
+    '(--json)--json[Вывод в JSON (нужен --yes)]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
 }

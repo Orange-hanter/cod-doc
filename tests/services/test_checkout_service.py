@@ -184,6 +184,64 @@ def test_release_stale_skips_fresh_locks(engine_with_schema) -> None:  # type: i
         assert released == []
 
 
+def _seed_locked_task(session: Session, *, slug: str, task_id: str) -> int:
+    """Отдельный проект со своей задачей под замком двухчасовой давности.
+
+    Возвращает ``project_id`` — по нему тесты и режут чистку.
+    """
+    now = datetime.now(UTC)
+    proj = ProjectModel(slug=slug, title=slug.upper(), root_path=f"/tmp/{slug}", config_json={})
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
+    plan = PlanModel(project_id=proj.row_id, scope=f"{slug}-plan", created=now, last_updated=now)
+    session.add(plan)
+    session.flush()
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Sec", slug="A-Sec", position=0)
+    session.add(sec)
+    session.flush()
+    tasks.create(
+        session,
+        project_id=proj.row_id,
+        plan_id=plan.row_id,
+        section_id=sec.row_id,
+        task_id=task_id,
+        title="t",
+        type=TaskType.FEATURE,
+        priority=Priority.MEDIUM,
+        author="x",
+    )
+    checkout.checkout(session, task_id, agent="agent-A")
+    m = session.query(TaskModel).filter(TaskModel.task_id == task_id).one()
+    m.checked_out_at = now - timedelta(hours=2)
+    session.flush()
+    return int(proj.row_id)
+
+
+def test_release_stale_scoped_to_project_spares_the_neighbour(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-192: в hub-БД чистка одного проекта не смеет трогать чужие замки."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        alpha_id = _seed_locked_task(session, slug="alpha", task_id="AL-001")
+        _seed_locked_task(session, slug="beta", task_id="BE-001")
+
+        assert checkout.release_stale(session, ttl_minutes=30, project_id=alpha_id) == ["AL-001"]
+
+        neighbour = session.query(TaskModel).filter(TaskModel.task_id == "BE-001").one()
+        assert neighbour.checked_out_by == "agent-A"
+
+
+def test_release_stale_without_project_id_stays_db_wide(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Умолчание не изменилось: функция остаётся общей чисткой всей БД."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed_locked_task(session, slug="alpha", task_id="AL-001")
+        _seed_locked_task(session, slug="beta", task_id="BE-001")
+
+        assert sorted(checkout.release_stale(session, ttl_minutes=30)) == ["AL-001", "BE-001"]
+
+
 def test_checkout_unknown_task_raises_lookup(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session, pytest.raises(LookupError):

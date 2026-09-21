@@ -11,7 +11,7 @@ Public API
 - ``checkout(session, task_id, agent, expected_statuses)`` → CheckoutResult
 - ``release(session, task_id, agent)`` → CheckoutResult
 - ``has_active_checkout(session, task_id, agent)`` → bool
-- ``release_stale(session, ttl_minutes)`` → list[str] of released task_ids
+- ``release_stale(session, ttl_minutes, project_id)`` → list[str] of released task_ids
 """
 
 from __future__ import annotations
@@ -233,17 +233,33 @@ def warn_if_no_checkout(session: Session, task_id: str, agent: str) -> str | Non
     return msg
 
 
-def release_stale(session: Session, *, ttl_minutes: int = 30) -> list[str]:
-    """Force-release locks older than ``ttl_minutes``; return released task_ids."""
+def release_stale(
+    session: Session,
+    *,
+    ttl_minutes: int = 30,
+    project_id: int | None = None,
+) -> list[str]:
+    """Force-release locks older than ``ttl_minutes``; return released task_ids.
+
+    ``project_id`` (ADO-192) ограничивает чистку одним проектом. Во встроенной
+    ``<project>/.cod-doc/state.db`` разницы нет — проект там один. В
+    hub-режиме есть: без фильтра ``cod-doc update -p <slug>`` снимал бы замки
+    соседних проектов, живущих в той же БД. Молча снять чужой замок хуже, чем
+    не снять свой: владелец чужого замка узнает об этом, только потеряв
+    работу, а про несобранный мусор в своём проекте скажет следующий диагноз.
+
+    ``None`` оставлен и остаётся умолчанием: функция задумана и как общая
+    чистка всей БД, и её единственный такой вызывающий — оператор, а не
+    проектная команда.
+    """
     cutoff = datetime.now(UTC) - timedelta(minutes=ttl_minutes)
-    rows = list(
-        session.execute(
-            select(TaskModel).where(
-                TaskModel.checked_out_at.is_not(None),
-                TaskModel.checked_out_at < cutoff,
-            )
-        ).scalars()
+    stmt = select(TaskModel).where(
+        TaskModel.checked_out_at.is_not(None),
+        TaskModel.checked_out_at < cutoff,
     )
+    if project_id is not None:
+        stmt = stmt.where(TaskModel.project_id == project_id)
+    rows = list(session.execute(stmt).scalars())
     released: list[str] = []
     for m in rows:
         m.checked_out_by = None

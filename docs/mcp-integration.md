@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **145 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **146 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -84,8 +84,8 @@ coding-агента.
 ```bash
 cod-doc-mcp                              # agent (default) — 6 curator tools
 cod-doc-mcp --profile minimal            # 21 cold-start tools
-cod-doc-mcp --profile standard           # 141 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 145 (включая legacy)
+cod-doc-mcp --profile standard           # 142 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 146 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 # CLI equivalent (ADO-079): same catalog filter
 cod-doc mcp --profile standard
@@ -140,7 +140,7 @@ cod-doc mcp --profile standard
 
 | Демон | Адрес | Профиль | Тулов |
 |---|---|---|---|
-| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 141 |
+| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 142 |
 | `com.cod-doc.mcp-agent` | `http://127.0.0.1:8802/mcp` | `agent` | 6 |
 
 Установка, апгрейд и управление — `deploy/launchd/cod-doc-services.sh`
@@ -344,13 +344,45 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **structure.\*** | 5 | Pinned code-structure snapshots, drift, scenarios and BFS context (not projection drift; not ai_review findings) | `structure_get`, `structure_context`, `structure_drift`, `structure_scenarios`, `structure_diff` |
 | **doc_tree.\* / doc_node.\* (ADO-116)** | 8 | Дерево документации как данные: разделы с намерением и порядком, детерминированная раскладка по правилам и Инбокс для того, что правилам не подошло. `doc_tree_classify` по умолчанию `dry_run=true` и не трогает то, что человек разложил руками. Только профили standard/full | `doc_tree_get`, `doc_tree_unplaced`, `doc_tree_init`, `doc_tree_classify`, `doc_set_node`, `doc_node_create`, `doc_node_update`, `doc_node_delete` |
 | **doc_node_health.\* / doc_node_intent.\*** | 3 | Пробелы в наполненности разделов: пусто, ниже `min_docs`, без `intent`, вырожденная типизация корпуса, пачка безымянных индексов. Дерево отвечает «где лежит», это — «чего не написано». `doc_node_health_sync` пишет находки в общую таблицу `finding`, поэтому пробел виден `curator_next` и промоутится в задачу. Детерминированная часть без LLM; `doc_node_intent_analyze` — вердикт модели «покрывают ли документы раздела его intent», в своей партиции находок, чтобы упавший проход не закрыл детерминированные. Только профили standard/full | `doc_node_health_get`, `doc_node_health_sync`, `doc_node_intent_analyze` |
-| **ИТОГО** | **145** | | |
+| **repair.\* (ADO-192)** | 1 | Фаза D команды `cod-doc update`: починка состояния проекта по карточке `curator_next` — `edited_in_place` → `doc import`, протухший реестр хэшей `MASTER.md` → пересчёт, нерезолвящиеся derived-ссылки → resync секций, замки старше TTL → снятие. Остальное (`stale_export`, `missing`, hash `BROKEN`, `unplaced`, findings) уходит счётчиками в `reported_only`. `dry_run=true` по умолчанию: тул, молча переписывающий десяток документов на спекулятивном вызове, — мина. Фазы A–C на MCP не выставлены, см. абзац ниже. Только профили standard/full | `project_repair` |
+| **ИТОГО** | **146** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
 docstring соответствующих тулов. Для новых интеграций — игнорируй legacy
 и опирайся на DB-поверхность; будущий профиль `--profile standard` (PCA-951)
 скроет legacy полностью.
+
+### Почему на MCP выставлена только фаза D `cod-doc update`
+
+У команды `cod-doc update` четыре фазы: A — своп рантайма
+(`~/.cod-doc/runtime` + `launchctl kickstart -k`), B — миграции схемы,
+C — верификация, D — автопочинка состояния проекта. На MCP выставлена
+ровно D (`project_repair`). Остальные три — не «пока не сделали», а
+не могут там жить:
+
+1. **Тул не сможет вернуть собственный результат.** Своп рантайма плюс
+   `launchctl kickstart -k com.cod-doc.mcp` завершает ровно тот процесс,
+   который исполняет вызов. Клиент получит обрыв транспорта, а не ответ.
+   Инструмент, у которого нет обратного пути к вызвавшему, инструментом не
+   является.
+2. **Проверить исход нечем.** Поверхность, через которую проверяют, и есть
+   подменяемая: после свопа спрашивать «что получилось» не у кого, пока
+   демон не поднимется заново — а поднимется он уже вне вызова.
+3. **У фазы A нет проектного скоупа.** Она про рантайм машины, а не про
+   проект, тогда как контракт `cod_doc/mcp/tools/_db.py` — «`project`
+   обязателен в каждом DB-туле» (демон общий, дефолтного проекта у него
+   нет вовсе). Тул с обязательным и при этом бессмысленным аргументом врёт
+   о том, что делает.
+4. **Миграции из MCP-тула — ровно тот баг, ради которого построен
+   subprocess-relay.** Тул по построению исполняется старым кодом и накатит
+   старую alembic-голову: процесс держит в памяти модули той сборки, с
+   которой стартовал, и `alembic upgrade head` из него — это head до
+   обновления.
+
+Фаза D под эти ограничения не попадает: она работает с данными проекта,
+имеет осмысленный `project`, ничего не подменяет под собой и возвращает
+результат тому же клиенту.
 
 ## MCP Resources
 
@@ -380,7 +412,7 @@ docstring соответствующих тулов. Для новых инте�
 | Copilot Chat | ✅ | ✅ | ❌ | Частично |
 | Claude Desktop | ✅ | ✅ | ❌ | Через copy-paste |
 | CI/CD | ✅ | ❌ | ✅ | ❌ |
-| Кол-во инструментов | 145 | 145 | ~8 | 0 |
+| Кол-во инструментов | 146 | 146 | ~8 | 0 |
 | Семантический поиск | ✅ | ✅ | ❌ | ❌ |
 | `project` в вызове | обязателен | можно через дефолт | — | — |
 | Дефолтный проект | нет (общий процесс) | есть (процесс = сессия) | — | — |

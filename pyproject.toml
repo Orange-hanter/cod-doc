@@ -71,6 +71,14 @@ embeddings-local = [
 cod-doc = "cod_doc.cli:main"
 cod-doc-mcp = "cod_doc.mcp.server:main"
 
+# ADO-192: не декорация. `cod-doc update` собирает релиз из git-чекаута, а когда
+# его нет — клонирует репозиторий сам. Адрес для клона он ищет в метаданных
+# установленного дистрибутива (`importlib.metadata`), поэтому без этой секции
+# самообновление на машине без чекаута работало бы только через
+# $COD_DOC_REPO_URL.
+[project.urls]
+Repository = "https://github.com/Orange-hanter/cod-doc"
+
 [tool.setuptools_scm]
 # Версия = ближайший тег `v*` + расстояние до него + sha. Без этого все
 # установки на машине назывались одинаково («1.1.0» из литерала), и ни человек,

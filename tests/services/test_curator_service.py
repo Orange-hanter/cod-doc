@@ -291,6 +291,74 @@ def test_next_writes_nothing(tmp_path: Path, isolated_cod_doc_home: Path) -> Non
 
 
 # ------------------------------------------------------------------ #
+# ADO-192: skip_links — самый дорогой раздел карточки можно не собирать #
+# ------------------------------------------------------------------ #
+
+
+def test_skip_links_does_not_walk_the_sections(curator_session, monkeypatch) -> None:
+    """Сборщик ссылок обходит каждую секцию корпуса — при `skip_links` его нет."""
+    from cod_doc.services import drift_gate_service
+
+    session, root = curator_session
+    _seed_all_three(root)
+
+    def _must_not_collect(*_args: object, **_kwargs: object) -> list[object]:
+        raise AssertionError("skip_links=True — обходить секции нельзя")
+
+    monkeypatch.setattr(drift_gate_service, "link_findings", _must_not_collect)
+
+    payload = curator_service.next(
+        session,
+        project_id=_project_id(session),
+        root_path=root,
+        master_path=root / "MASTER.md",
+        project_slug=_PROJECT,
+        skip_links=True,
+    )
+
+    assert payload["card"]["links"] == []
+    assert not [item for item in payload["priority"] if item["kind"] == "link"]
+
+
+def test_skip_links_marks_the_section_as_not_collected(curator_session) -> None:
+    """Пустота от пропуска обязана быть отличима от пустоты «всё в порядке».
+
+    Без признака следующий читатель принял бы «ссылок не смотрели» за
+    «нерезолвящихся ссылок нет» — а в фикстуре их как раз одна.
+    """
+    session, root = curator_session
+    _seed_all_three(root)
+
+    skipped = curator_service.next(
+        session,
+        project_id=_project_id(session),
+        root_path=root,
+        master_path=root / "MASTER.md",
+        project_slug=_PROJECT,
+        skip_links=True,
+    )
+    collected = _call(session, root)
+
+    assert skipped["meta"]["not_collected"] == ["links"]
+    assert skipped["card"]["links"] == []
+    # У полной карточки ключа нет вовсе: её форма не меняется ни на байт.
+    assert "not_collected" not in collected["meta"]
+    assert collected["card"]["links"], "фикстура обязана давать битую ссылку"
+
+
+def test_default_still_collects_links(curator_session) -> None:
+    """Диагност общий: умолчание не меняет ни `curator_next`, ни drift-гейт PR."""
+    session, root = curator_session
+    _seed_all_three(root)
+
+    payload = _call(session, root)
+
+    assert "not_collected" not in payload["meta"]
+    assert payload["meta"]["counts"]["links"] == len(payload["card"]["links"])
+    assert [item["kind"] for item in payload["priority"]].count("link") >= 1
+
+
+# ------------------------------------------------------------------ #
 # ADO-116: неразложенные документы в очереди куратора                  #
 # ------------------------------------------------------------------ #
 

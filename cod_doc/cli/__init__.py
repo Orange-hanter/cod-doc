@@ -74,6 +74,10 @@ cod-doc embed probe        — живой вызов эмбеддера (раз�
 cod-doc embed models       — каталог моделей эмбеддингов провайдера
 cod-doc embed reset        — удалить векторную коллекцию (смена модели)
 cod-doc completion zsh     — напечатать zsh-completion (установка — scripts/)
+cod-doc update             — самообновление установки (алиас upgrade): рантайм,
+                             схема, сервисы, починка состояния проектов
+cod-doc runtime status|version|restart|rollback|build|install|uninstall|render
+                           — пиннованный рантайм и демоны launchd
 """
 
 from __future__ import annotations
@@ -93,9 +97,11 @@ from cod_doc.cli.cmd_import import import_cmd
 from cod_doc.cli.cmd_ingest import ingest
 from cod_doc.cli.cmd_project import project
 from cod_doc.cli.cmd_reindex import reindex
+from cod_doc.cli.cmd_runtime import runtime
 from cod_doc.cli.cmd_search import search as search_cmd
 from cod_doc.cli.cmd_serve import mcp_server, serve
 from cod_doc.cli.cmd_tui import tui, wizard
+from cod_doc.cli.cmd_update import update
 from cod_doc.cli.completion.cmd import completion
 from cod_doc.cli.doc import doc
 from cod_doc.cli.link import link
@@ -157,6 +163,12 @@ main.add_command(embed)
 main.add_command(reindex)
 main.add_command(search_cmd)
 main.add_command(completion)
+main.add_command(runtime)
+main.add_command(update)
+# Тот же объект под вторым именем: `upgrade` — привычка из
+# `cod-doc-services.sh upgrade`, и разводить две команды с одним поведением
+# значит обречь их разъехаться.
+main.add_command(update, name="upgrade")
 
 
 if __name__ == "__main__":
