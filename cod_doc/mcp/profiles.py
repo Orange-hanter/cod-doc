@@ -16,14 +16,20 @@ AGENTS.md §5.9, server.py --profile help, docs/mcp-integration.md):
   cycle-5 task tools (``agent_pick``, ``agent_get``, ``agent_complete``,
   ``agent_release``) stay registered but are visible only under
   standard/full — implementation work belongs to a human or a coding
-  agent on those profiles.
+  agent on those profiles. ADO-192 likewise kept ``project_repair``
+  (blanket auto-repair) out of the allowlist: the curator's value is that
+  it judges each ``curator_next.priority`` entry on its own merits, and it
+  already has the ready-made command for each in ``suggested_action``.
+  The allowlist is a frozen RFC 25 set of 6 names — growing it by a
+  carpet-bombing tool would trade that judgement for a single call that
+  rewrites whatever it happens to find.
 - ``minimal`` — 21-tool cold-start surface for non-agent integrations
   that still want a curated subset of CRUD tools.
-- ``standard`` — 141-tool DB-backed surface; drops only the remaining
+- ``standard`` — 142-tool DB-backed surface; drops only the remaining
   legacy YAML-backed agent tools (run_agent_once, get_agent_context, …).
   The legacy YAML CRUD tools were removed in STB-002 (2026-06-08) once
   the DB became the source of truth.
-- ``full`` — all 145 tools the server registers, including the remaining
+- ``full`` — all 146 tools the server registers, including the remaining
   legacy agent tools. For admin / migration / debugging sessions.
 
 Active profile is chosen at server start via CLI ``--profile`` or env
@@ -40,6 +46,9 @@ from __future__ import annotations
 # agent_pick / agent_get / agent_complete / agent_release stay registered    #
 # but are visible only under standard/full, where a human or a coding agent  #
 # does implementation work. Internal CRUD lives under standard/full too.     #
+# ADO-192: project_repair is standard/full for the same reason — the curator #
+# decides per priority entry and already holds the per-entry command in      #
+# suggested_action; blanket auto-repair is not its instrument.               #
 # --------------------------------------------------------------------------- #
 
 AGENT_TOOLS: frozenset[str] = frozenset(
