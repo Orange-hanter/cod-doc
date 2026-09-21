@@ -39,6 +39,7 @@ from cod_doc.services import (
     comment_service,
     commit_link_service,
     doc_service,
+    repair_service,
     repo_index_service,
     task_doc_service,
     task_service,
@@ -557,6 +558,35 @@ def test_link_resolver_sync_emits_event(engine_with_schema) -> None:  # type: ig
             ).scalars()
         )
         assert len(events) >= 1
+
+
+def test_repair_emits_event(engine_with_schema, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """ADO-192: одно сводное `project.repaired` на прогон — даже на пустом проекте.
+
+    Точечные `doc.imported` / `task.released` эмитят вызываемые сервисы сами,
+    поэтому чинить тут нечего: гейт смотрит на след самого write-пути.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session, slug="rep")
+        repair_service.apply(
+            session,
+            project_id=p,
+            root_path=root,
+            master_path=root / "MASTER.md",
+            slug="rep",
+            author="cli:update",
+        )
+
+    with transactional(factory) as session:
+        ev = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "project.repaired")
+        ).scalar_one()
+        assert ev.scope_id == "rep"
+        assert ev.payload["applied"] == 0
 
 
 def test_repo_index_scan_emits_event(engine_with_schema, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
