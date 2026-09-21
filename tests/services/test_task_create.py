@@ -63,7 +63,8 @@ def _task(
     )
 
 
-def test_create_persists_task_with_pending_status(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_create_persists_task_with_todo_status(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-156: задача рождается в каноническом `todo`, а не в легаси `pending`."""
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session:
@@ -72,7 +73,7 @@ def test_create_persists_task_with_pending_status(engine_with_schema) -> None:  
 
         assert task.row_id is not None
         assert task.task_id == "MY-001"
-        assert task.status == TaskStatus.PENDING
+        assert task.status == TaskStatus.TODO
 
     with transactional(factory) as session:
         loaded = tasks.get(session, "MY-001")

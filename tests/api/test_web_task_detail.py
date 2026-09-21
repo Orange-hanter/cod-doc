@@ -155,7 +155,7 @@ def test_task_detail_renders_header_and_badges(task_detail_client) -> None:
     assert "DET-001" in body
     assert "Set up DB schema" in body
     # Hero: status badge + priority chip + type chip
-    assert "badge-lg badge-in-progress" in body  # status badge prominent
+    assert "badge-lg badge-in_progress" in body  # status badge prominent
     assert "prio-chip prio-high" in body  # priority chip
     assert "type: feature" in body
     # Plan link rendered as a meta-chip

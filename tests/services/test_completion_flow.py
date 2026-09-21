@@ -86,7 +86,8 @@ def test_revert_task_status_change(engine_with_schema) -> None:  # type: ignore[
 
         t = tasks.get(session, "CF-001")
         assert t is not None
-        assert t.status is TaskStatus.PENDING
+        # ADO-156: реверт приземляется в канонический бакет, а не в легаси.
+        assert t.status is TaskStatus.TODO
 
 
 def test_revert_task_complete(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -106,7 +107,7 @@ def test_revert_task_complete(engine_with_schema) -> None:  # type: ignore[no-un
 
         t = tasks.get(session, "CF-001")
         assert t is not None
-        assert t.status is TaskStatus.PENDING
+        assert t.status is TaskStatus.TODO
 
 
 def test_revert_task_unsupported_op_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

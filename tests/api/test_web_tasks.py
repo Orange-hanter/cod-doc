@@ -143,8 +143,9 @@ def test_tasks_list_renders_all(tasks_client) -> None:
     assert "kanban-col-in_progress" in r.text
     assert "kanban-col-done" in r.text
     # Card carries status + priority classes used by CSS.
-    assert "status-pending" in r.text
-    assert "status-in-progress" in r.text
+    # ADO-156: класс собирается из хранимого статуса, а он канонический.
+    assert "status-todo" in r.text
+    assert "status-in_progress" in r.text
     assert "status-done" in r.text
     # tab strip: Tasks active
     assert 'class="active" href="/p/demo/tasks"' in r.text
@@ -279,9 +280,10 @@ def test_status_post_htmx_returns_row_fragment(tasks_client) -> None:
     assert r.headers["content-type"].startswith("text/html")
     # Row id present, swap-friendly
     assert 'id="task-AUTH-001"' in r.text
-    # New status reflected in badge + selected option
-    assert "badge-in-progress" in r.text
-    assert '<option value="in-progress" selected>' in r.text
+    # ADO-156: легаси-написание в форме принято (см. data= выше), но
+    # отрисовано канонически — записан в БД именно канон.
+    assert "badge-in_progress" in r.text
+    assert '<option value="in_progress" selected>' in r.text
     # No row-error span when success
     assert "row-error" not in r.text
 
@@ -306,7 +308,9 @@ def test_status_post_no_op_same_status(tasks_client) -> None:
         headers={"HX-Request": "true"},
     )
     assert r.status_code == 200
-    assert "badge-pending" in r.text
+    # `pending` на входе = тот же бакет, что уже стоит: сервис ничего не пишет,
+    # а бейдж показывает хранимое каноническое написание.
+    assert "badge-todo" in r.text
 
 
 def test_status_post_unknown_task_404(tasks_client) -> None:

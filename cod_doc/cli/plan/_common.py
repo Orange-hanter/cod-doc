@@ -21,8 +21,13 @@ if TYPE_CHECKING:
 console = Console()
 log = get_logger("cli.plan")
 
+#: Оба написания каждого бакета — ключи рядом, а не вместо (ADO-156):
+#: `DerivedStatus` печатает легаси, а `task.status` после бэкфилла —
+#: каноническое, и одна таблица обслуживает обе стороны.
 _STATUS_ICON = {
+    "todo": "🟡",
     "pending": "🟡",
+    "in_progress": "🔵",
     "in-progress": "🔵",
     "done": "🟢",
     "empty": "⬜",

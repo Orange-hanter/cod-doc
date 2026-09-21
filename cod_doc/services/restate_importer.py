@@ -32,6 +32,7 @@ from cod_doc.domain.entities import (
     Priority,
     TaskStatus,
     TaskType,
+    canonical_task_status,
 )
 from cod_doc.infra.repositories import (
     DocumentRepository,
@@ -440,7 +441,11 @@ def import_legacy_tasks(
                         allow_duplicate=True,
                         reason=f"restate-import:{legacy_id or '?'}",
                     )
-                    if status != TaskStatus.PENDING:
+                    # Сравнение по бакету, а не по константе: `create()`
+                    # теперь кладёт каноническое `todo`, и точное сравнение
+                    # с легаси `PENDING` дёргало бы лишний `update_status`
+                    # на каждой задаче импорта (ADO-156).
+                    if canonical_task_status(status) != canonical_task_status(TaskStatus.TODO):
                         task_service.update_status(
                             session,
                             task_id=task.task_id,

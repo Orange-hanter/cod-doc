@@ -41,6 +41,8 @@ from cod_doc.domain.entities import (
     Task,
     TaskStatus,
     TaskType,
+    canonical_task_status,
+    equivalent_task_statuses,
 )
 from cod_doc.infra.models import (
     AffectedFileModel,
@@ -256,7 +258,10 @@ def create(
             plan_id=plan_id,
             section_id=section_id,
             title=title,
-            status=TaskStatus.PENDING,
+            # ADO-156: новая задача рождается в каноническом написании.
+            # Легаси `pending` остаётся принимаемым на входе, но больше
+            # никогда не записывается.
+            status=TaskStatus.TODO,
             type=type,
             priority=priority,
             description=description,
@@ -327,7 +332,9 @@ def create(
         entity_kind=EntityKind.TASK,
         entity_id=task.row_id,
         author=author,
-        diff=_task_diff("create", task_id=task_id, status="pending"),
+        # Статус берётся из самой записи, а не из литерала: иначе ревизия
+        # рассказывает про строку, которой в `task.status` нет (ADO-156).
+        diff=_task_diff("create", task_id=task_id, status=task.status.value),
         reason=reason or "create",
     )
     activity_service.emit_for_write(
@@ -402,7 +409,11 @@ def update_status(
 
     model = _require_task(session, task_id)
     old_status = model.status
-    if old_status == new_status.value:
+    target_status = canonical_task_status(new_status)
+    # Сравнение по бакету, а не по строке: `todo → pending` — не переход, а
+    # смена написания, и до ADO-156 она проходила как настоящая смена статуса
+    # (ревизия, событие, перевод задачи обратно в легаси).
+    if canonical_task_status(old_status) == target_status:
         t = TaskRepository(session).get_by_task_id(task_id)
         assert t is not None
         return t
@@ -428,7 +439,11 @@ def update_status(
             # audit hint. The actual activity-event emission is wired up
             # by PCA-912; for now we just keep the path silent + permissive.
 
-    model.status = new_status.value
+    # ADO-156, точка схождения всех поверхностей: CLI, веб-форма, легаси-REST,
+    # MCP и авточекаут-нога `complete()` пишут статус только отсюда, поэтому
+    # канонизация здесь закрывает их разом. Легаси-написание принимается на
+    # входе (enum его знает), но в колонку не попадает.
+    model.status = target_status
     model.last_updated = datetime.now(UTC)
     session.flush()
 
@@ -438,7 +453,7 @@ def update_status(
         entity_kind=EntityKind.TASK,
         entity_id=model.row_id,
         author=author,
-        diff=_task_diff("status", old=old_status, new=new_status.value),
+        diff=_task_diff("status", old=old_status, new=target_status),
         reason=reason,
         expected_parent_revision_id=expected_parent_revision_id,
     )
@@ -449,7 +464,7 @@ def update_status(
             "task.status_changed",
             task_id=task_id,
             old=old_status,
-            new=new_status.value,
+            new=target_status,
         )
 
     # PCA-912 (extension): persist to activity_event so CLI/programmatic
@@ -462,8 +477,8 @@ def update_status(
         author,
         scope_kind="task",
         scope_id=task_id,
-        payload={"old_status": old_status, "new_status": new_status.value, "reason": reason},
-        summary=f"Task {task_id}: {old_status} → {new_status.value}",
+        payload={"old_status": old_status, "new_status": target_status, "reason": reason},
+        summary=f"Task {task_id}: {old_status} → {target_status}",
     )
     search_service.index_task(session, model)
 
@@ -761,7 +776,7 @@ def complete(
         update_status(
             session,
             task_id=task_id,
-            new_status=TaskStatus.IN_PROGRESS,
+            new_status=TaskStatus.IN_PROGRESS_NEW,
             author=author,
             reason="auto-checkout перед complete (ADO-038)",
             via_checkout=True,
@@ -885,7 +900,12 @@ def count_for_project(
 
     stmt = select(func.count(TaskModel.row_id)).where(TaskModel.project_id == project_id)
     if status is not None:
-        stmt = stmt.where(TaskModel.status == status.value)
+        # Парой к `list_for_project` (task_repo.py): тот с ADO-182 фильтрует по
+        # всему классу эквивалентности, а счётчик остался на точной строке.
+        # Расхождение видно снаружи: `task_list` отдавал бы items и total,
+        # посчитанные по разным множествам, и пагинирующий клиент,
+        # доверяющий total, останавливался бы на первой же странице.
+        stmt = stmt.where(TaskModel.status.in_(equivalent_task_statuses(status)))
     if priority is not None:
         stmt = stmt.where(TaskModel.priority == priority.value)
     return int(session.execute(stmt).scalar_one() or 0)
@@ -1082,7 +1102,10 @@ def list_stale_in_progress(
         select(TaskModel)
         .where(
             TaskModel.project_id == project_id,
-            TaskModel.status == TaskStatus.IN_PROGRESS.value,
+            # Бакет целиком: `in-progress` и `in_progress` — один статус, и
+            # после бэкфилла ADO-156 в колонке лежит только каноническое
+            # написание, а в ещё не мигрированной БД — только легаси.
+            TaskModel.status.in_(equivalent_task_statuses(TaskStatus.IN_PROGRESS_NEW)),
             TaskModel.last_updated < cutoff,
         )
         .order_by(TaskModel.last_updated)
@@ -1140,9 +1163,18 @@ def summarize_for_project(session: Session, project_id: int) -> dict:  # type: i
 
     Returns: {
       "total": int,
-      "by_status": {"pending": N, "in-progress": N, "done": N, ...},
+      "by_status": {"todo": N, "in_progress": N, "done": N, ...},
       "by_priority": {"critical": N, "high": N, "medium": N, "low": N},
     }
+
+    Ключи ``by_status`` — ХРАНИМЫЕ написания, как они лежат в колонке, без
+    нормализации: сумма обязана сходиться с ``total``, а свести бакеты здесь
+    значило бы решить за вызывающего, какой из них показывать. После
+    бэкфилла ADO-156 (миграция 0037) это канонические написания; БД, ещё не
+    поднятая на 0036, отдаст `pending` / `in-progress`. Кому нужен бакет, а
+    не строка, — складывает ключи через
+    ``domain.entities.equivalent_task_statuses`` (так делает
+    ``api/web/pages/index.py``).
     """
     from sqlalchemy import func
 

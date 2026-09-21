@@ -99,13 +99,14 @@ def test_update_status_pending_to_in_progress_requires_checkout(engine_with_sche
             author="human:dakh",
             via_checkout=True,
         )
-        assert updated.status == TaskStatus.IN_PROGRESS
+        # ADO-156: легаси-член enum на входе принят, но записан канон.
+        assert updated.status == TaskStatus.IN_PROGRESS_NEW
 
         history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
         assert len(history) == 2
         diff = json.loads(history[1].diff)
         assert diff["op"] == "status"
-        assert diff["new"] == "in-progress"
+        assert diff["new"] == "in_progress"
 
 
 def test_update_status_no_op_if_same(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
