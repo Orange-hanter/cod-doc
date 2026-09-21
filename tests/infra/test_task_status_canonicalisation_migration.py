@@ -39,13 +39,14 @@ _MIGRATION_PATH = (
 )
 
 
-def _migration_module() -> Any:  # noqa: ANN401
+def _migration_module() -> Any:
     """Импорт по пути: имя файла начинается с цифры, обычный import невозможен."""
     spec = importlib.util.spec_from_file_location("_m0037", _MIGRATION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
 
 #: Одна задача на каждое написание плюс контрольная в `done`.
 SEEDED: dict[str, str] = {
@@ -74,7 +75,9 @@ def _seed(db_url: str) -> None:
                 ),
                 {"now": now},
             )
-            project_id = conn.execute(text("SELECT row_id FROM project WHERE slug = 'p'")).scalar_one()
+            project_id = conn.execute(
+                text("SELECT row_id FROM project WHERE slug = 'p'")
+            ).scalar_one()
             conn.execute(
                 text(
                     "INSERT INTO plan (project_id, scope, created, last_updated) "
@@ -82,7 +85,9 @@ def _seed(db_url: str) -> None:
                 ),
                 {"pid": project_id, "now": now},
             )
-            plan_id = conn.execute(text("SELECT row_id FROM plan WHERE scope = 'p-plan'")).scalar_one()
+            plan_id = conn.execute(
+                text("SELECT row_id FROM plan WHERE scope = 'p-plan'")
+            ).scalar_one()
             conn.execute(
                 text(
                     "INSERT INTO plan_section (plan_id, letter, title, slug, position) "
@@ -202,4 +207,4 @@ def test_hardcoded_map_matches_the_alias_map_at_this_revision() -> None:
     алиас (тогда ему нужна СВОЯ миграция, а не правка этой) или кто-то
     подправил застывший снимок задним числом.
     """
-    assert _migration_module().LEGACY_TO_CANONICAL == dict(TASK_STATUS_ALIASES)
+    assert dict(TASK_STATUS_ALIASES) == _migration_module().LEGACY_TO_CANONICAL
