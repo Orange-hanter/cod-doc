@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json as _json
 import os
+import re
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -65,6 +66,13 @@ DB_NOT_ROLLED_BACK = (
 
 #: Ответ на «какая версия», когда установки нет вовсе.
 _NO_VERSION = "—"
+
+#: Форма, в которой click печатает ``--version``: ``<prog>, version <X>``.
+#: ``runtime_service`` отдаёт сырой вывод бинаря и правильно делает — он
+#: докладывает, что сказали. Но в колонке «Версия» слово «version» это
+#: тавтология, и стоит она семнадцать символов узкой колонки: ровно то
+#: значение, ради которого команду и зовут, уезжает переносом на три строки.
+_REPORTED_VERSION = re.compile(r"^\s*[\w.-]+,\s*version\s+(?P<version>\S+)\s*$")
 
 
 def runtime_dir() -> Path:
@@ -119,6 +127,18 @@ def installed_versions(repo: Path | None) -> list[InstallVersion]:
 # ── печать ──────────────────────────────────────────────────────────────────
 
 
+def short_version(reported: str) -> str:
+    """Срезать префикс ``cod-doc, version `` — но только если он там и есть.
+
+    Строка приходит из ``runtime_service`` как сырой вывод бинаря, и бинарь
+    бывает любой: старая сборка без ``--version``, чужой console-script,
+    ``версия не определяется``. Всё, что не подошло под формат, показываем как
+    есть: соврать «1.4.1» там, где сказано другое, хуже тавтологии.
+    """
+    match = _REPORTED_VERSION.match(reported)
+    return match.group("version") if match else reported
+
+
 def _service_state(status: ServiceStatus) -> str:
     """Одна колонка «Состояние» — в терминах bash-``cmd_status``."""
     if status.skipped_reason:
@@ -163,7 +183,8 @@ def render_versions(versions: Sequence[InstallVersion], out: Console) -> None:
     # ровно тогда, когда его и спрашивают — «а какая установка это была».
     table.add_column("Бинарь", style="dim", overflow="fold")
     for entry in versions:
-        table.add_row(entry.name, entry.version or (entry.error or _NO_VERSION), entry.binary)
+        shown = short_version(entry.version) if entry.version else (entry.error or _NO_VERSION)
+        table.add_row(entry.name, shown, entry.binary)
     out.print(table)
 
 

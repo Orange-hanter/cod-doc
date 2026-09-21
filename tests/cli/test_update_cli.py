@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from click.testing import CliRunner
 
-from cod_doc.cli import cmd_update, main
+from cod_doc.cli import cmd_runtime, cmd_update, main
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.services import launchd_service, repair_service, runtime_service, update_service
 
@@ -150,6 +150,59 @@ def test_yes_runs_without_asking(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.exit_code == update_service.EXIT_OK, result.output
     assert calls.names == ["run"]
+
+
+# ── прогресс ────────────────────────────────────────────────────────────────
+
+
+def test_skipped_phase_is_not_announced(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Заголовок фазы, которой не будет, гонит человека искать её в отчёте."""
+    _no_mutators(monkeypatch)
+    monkeypatch.setattr(update_service, "plan", _plan_stub([]))
+
+    result = CliRunner().invoke(main, ["update", "--yes", "--skip-install"])
+
+    assert result.exit_code == update_service.EXIT_OK, result.output
+    assert "фаза A" not in result.stderr
+    assert "фаза B" in result.stderr
+    assert "фаза D" in result.stderr
+
+
+def test_phase_a_is_announced_when_it_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_mutators(monkeypatch)
+    monkeypatch.setattr(update_service, "plan", _plan_stub([]))
+
+    result = CliRunner().invoke(main, ["update", "--yes"])
+
+    assert "фаза A" in result.stderr
+    # Фазы B–D за границей свапа: о них докладывает уже новый бинарь.
+    assert "фаза B" not in result.stderr
+
+
+def test_everything_skipped_announces_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_mutators(monkeypatch)
+    monkeypatch.setattr(update_service, "plan", _plan_stub([]))
+
+    result = CliRunner().invoke(
+        main, ["update", "--yes", "--skip-install", "--skip-migrate", "--skip-repair"]
+    )
+
+    assert result.exit_code == update_service.EXIT_OK, result.output
+    assert "→" not in result.stderr
+
+
+def test_phases_ahead_counts_the_restart_only_after_a_swap() -> None:
+    """Фаза C имеет смысл только за границей свапа — перезапускать иначе нечего."""
+    flags = update_service.SkipFlags()
+
+    assert cmd_update._phases_ahead(flags, swapped=False) == [
+        cmd_update._AHEAD_INSTALL,
+        cmd_update._AHEAD_RELAY,
+    ]
+    assert cmd_update._AHEAD_SERVICES in cmd_update._phases_ahead(flags, swapped=True)
+    assert cmd_update._AHEAD_SERVICES not in cmd_update._phases_ahead(
+        update_service.SkipFlags(install=True), swapped=False
+    )
 
 
 def test_dry_run_prints_the_plan_and_touches_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -349,6 +402,58 @@ def test_runtime_version_lists_three_installs(
     assert seen["repo"] == repo
     for name in ("рантайм", "PATH", "репозиторий"):
         assert name in result.stdout
+
+
+def test_reported_version_loses_the_program_prefix() -> None:
+    """``cod-doc --version`` печатает «cod-doc, version X» — в колонке нужен X."""
+    assert (
+        cmd_runtime.short_version("cod-doc, version 1.4.1.post1+g0ab1c2d") == "1.4.1.post1+g0ab1c2d"
+    )
+    assert cmd_runtime.short_version("  cod-doc-mcp, version 2.0\n") == "2.0"
+
+
+def test_unexpected_version_string_is_kept_as_is() -> None:
+    """Формат чужой — показываем как есть: соврать «1.4.1» хуже тавтологии."""
+    for reported in ("версия не определяется", "cod-doc version 1.4.1", "1.4.1", "собрано вчера"):
+        assert cmd_runtime.short_version(reported) == reported
+
+
+def test_runtime_version_table_shows_the_bare_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        runtime_service,
+        "installed_versions",
+        lambda **_kwargs: [
+            runtime_service.InstallVersion(
+                name="рантайм", binary="/bin/a", version="cod-doc, version 1.5.0"
+            ),
+            runtime_service.InstallVersion(name="чужой", binary="/bin/b", version="сборка из /tmp"),
+        ],
+    )
+
+    result = CliRunner().invoke(main, ["runtime", "version"])
+
+    assert result.exit_code == 0, result.output
+    assert "1.5.0" in result.stdout
+    assert "version" not in result.stdout
+    assert "сборка из /tmp" in result.stdout
+
+
+def test_runtime_version_json_keeps_the_raw_string(monkeypatch: pytest.MonkeyPatch) -> None:
+    """В JSON едет то, что сказал бинарь: срезание — дело отрисовки."""
+    monkeypatch.setattr(
+        runtime_service,
+        "installed_versions",
+        lambda **_kwargs: [
+            runtime_service.InstallVersion(
+                name="рантайм", binary="/bin/a", version="cod-doc, version 1.5.0"
+            )
+        ],
+    )
+
+    result = CliRunner().invoke(main, ["runtime", "version", "--json"])
+
+    payload = json.loads(result.stdout)
+    assert payload["versions"][0]["version"] == "cod-doc, version 1.5.0"
 
 
 def test_runtime_rollback_warns_that_the_db_stays(monkeypatch: pytest.MonkeyPatch) -> None:

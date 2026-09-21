@@ -4,16 +4,16 @@
 (`_run_launchctl`, `_http_ok`), тесты подменяют их — как это сделано для `gh`
 в `gh_service`.
 
-Главный тест здесь — сверка `render_plist` с выводом bash-`render()` из
-`deploy/launchd/cod-doc-services.sh`. Скрипт остаётся на машине и правится
-руками; молчаливый разъезд порта или профиля между ним и Python-портом стоил
-бы перезапуска всех харнессов машины.
+Главный тест здесь — сверка `render_plist` с golden-файлами в
+`fixtures/launchd/`. Раньше эталон давал bash-`render()`, но подкоманды
+`cod-doc-services.sh` переехали в группу `cod-doc runtime`, и второй
+реализации plist'а больше нет. Предмет теста от этого не изменился: порт,
+профиль или ключ plist не должны переехать молча — ошибка здесь стоит
+перезапуска всех харнессов машины.
 """
 
 from __future__ import annotations
 
-import os
-import shutil
 import subprocess
 import urllib.error
 import urllib.request
@@ -23,8 +23,11 @@ import pytest
 
 from cod_doc.services import launchd_service as launchd
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-BASH_SCRIPT = REPO_ROOT / "deploy" / "launchd" / "cod-doc-services.sh"
+GOLDEN_DIR = Path(__file__).parent / "fixtures" / "launchd"
+
+#: Фиксированный «дом» эталона: в golden-файлах не должно быть ни tmp_path, ни
+#: настоящего $HOME — иначе тест зелёный только на машине, где его записали.
+GOLDEN_HOME = Path("/Users/tester")
 
 SPECS = {spec.label: spec for spec in launchd.SERVICES}
 MCP_LABEL = "com.cod-doc.mcp"
@@ -137,36 +140,34 @@ def render(label: str, tmp_path: Path) -> str:
     )
 
 
-def bash_rendered(home: Path) -> dict[str, str]:
-    """Прогнать `cod-doc-services.sh render` и разобрать вывод по лейблам."""
-    if not BASH_SCRIPT.is_file():
-        pytest.skip(f"нет {BASH_SCRIPT} — рендер не с чем сверять")
-    bash = shutil.which("bash")
-    if bash is None:
-        pytest.skip("нет bash")
-    proc = subprocess.run(
-        [bash, str(BASH_SCRIPT), "render"],
-        capture_output=True,
-        text=True,
-        check=True,
-        env={"HOME": str(home), "PATH": os.environ.get("PATH", "")},
+def render_golden(label: str) -> str:
+    """`render_plist` по той же фиксированной раскладке, что записана в эталон."""
+    return launchd.render_plist(
+        SPECS[label],
+        runtime=GOLDEN_HOME / ".cod-doc" / "runtime",
+        workdir=GOLDEN_HOME / ".cod-doc",
+        logs=GOLDEN_HOME / "Library" / "Logs",
     )
-    out: dict[str, list[str]] = {}
-    current = ""
-    for line in proc.stdout.splitlines():
-        if line.startswith("=== "):
-            current = Path(line[4:]).name.removesuffix(".plist")
-            out[current] = []
-            continue
-        out[current].append(line)
-    return {label: "\n".join(lines) + "\n" for label, lines in out.items()}
 
 
 # ── рендер plist ────────────────────────────────────────────────────────────
 @pytest.mark.parametrize("label", [MCP_LABEL, AGENT_LABEL, WEB_LABEL])
-def test_render_plist_matches_bash_render(label, tmp_path):
-    """Снапшот: порт, профиль и аргументы не уезжают от bash-скрипта молча."""
-    assert render(label, tmp_path) == bash_rendered(tmp_path)[label]
+def test_render_plist_matches_golden(label):
+    """Побайтовый снапшот plist'а: порт, профиль и ключи не уезжают молча.
+
+    Откуда эталон: `fixtures/launchd/*.plist` сняты с версии `render_plist`,
+    которая была посимвольно сверена с bash-`render()` из
+    `deploy/launchd/cod-doc-services.sh` до того, как скрипт свели к bootstrap
+    (34b651f), и с живыми `~/Library/LaunchAgents/com.cod-doc.*.plist`. Второй
+    реализации plist'а больше нет, поэтому эталон — единственное, что стоит
+    между опечаткой в порту и тремя демонами в цикле перезапуска.
+
+    Тест покраснел — это не повод перегенерировать файл. Сначала ответь, какая
+    правка plist'а имелась в виду и что она делает с уже загруженными
+    сервисами; обновление эталона — отдельное осознанное действие, а не
+    побочный эффект правки кода.
+    """
+    assert render_golden(label) == (GOLDEN_DIR / f"{label}.plist").read_text(encoding="utf-8")
 
 
 def test_working_directory_is_cod_doc_home(tmp_path):

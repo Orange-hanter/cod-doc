@@ -64,10 +64,12 @@ uvx ruff@latest check cod_doc/ tests/   # CI ставит свежий ruff, л�
 Запуск поверхностей:
 
 ```bash
-cod-doc --help                           # CLI (click); группы: task/plan/story/doc/link/revision/adr/project
+cod-doc --help                           # CLI (click); группы: task/plan/story/doc/link/revision/adr/project/runtime
 cod-doc serve                            # REST API + web UI на :8765
 cod-doc-mcp                              # MCP stdio; профиль по умолчанию agent (--profile / COD_DOC_PROFILE)
 docker compose up -d                     # контейнер cod-doc, healthcheck /api/health
+cod-doc update [--dry-run] [--ref <sha>] # ADO-192: рантайм → миграции → рестарт демонов → починка (алиас upgrade)
+cod-doc runtime status|version|rollback  # пиннованная сборка ~/.cod-doc/runtime и три сервиса launchd
 cod-doc doc drift --project cod-doc --all # дрейф БД ↔ markdown без перезаписи
 cod-doc doc tree show -p cod-doc          # разделы дерева документации + Инбокс
 cod-doc doc tree classify -p cod-doc      # сухая раскладка по правилам; --apply записывает
@@ -116,6 +118,16 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `test_doc_mutation_surface_parity.py` (`doc_service`). Ловится отсутствие
   функции на поверхности, но **не** расхождение сигнатур: одноимённый тул с
   другим набором параметров тест пройдёт.
+- **Исключение из «четырёх поверхностей» — `cod-doc update` (ADO-192).** На MCP
+  выставлена только фаза D (`project_repair`); фаз A–C там нет и не будет, по
+  убыванию силы аргумента: (1) свап рантайма плюс `launchctl kickstart -k
+  com.cod-doc.mcp` завершает ровно тот процесс, который исполняет тул —
+  клиент получит обрыв транспорта, а не результат; (2) проверить исход нечем:
+  поверхность, через которую проверяют, и есть подменяемая; (3) у фазы A нет
+  проектного скоупа, которого требует контракт `mcp/tools/_db.py` («`project`
+  обязателен в каждом DB-туле»); (4) фаза B из тула накатила бы старую голову
+  миграций — тул по построению исполняется старым кодом, ради чего и построен
+  subprocess-relay.
 - **Резолв БД** (`infra/db.py::resolve_db_url`): explicit override → env
   `COD_DOC_DB_URL` → embedded `<project_root>/.cod-doc/state.db`. Реестр
   проектов — `~/.cod-doc/config.yaml` (переопределяется `COD_DOC_HOME`),
@@ -134,8 +146,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `forbidden: [agent_pick, task_checkout, task_complete]`. Старые
   task-centric тулы (`agent_pick`, `agent_get`, `agent_complete`,
   `agent_release`) остались зарегистрированы, но видны только на
-  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 141
-  / `full` 145.
+  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 142
+  / `full` 146.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   ПЯТИ местах: `mcp/profiles.py` (docstring), `server.py --profile`,
   `AGENTS.md` §5.9, этот файл и `docs/mcp-integration.md` (строка семейства
@@ -255,13 +267,14 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/21/141/145) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/21/142/146) в коде и доках совпадают |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `infra/test_totals_status_aliases.py` | `section_totals`/`plan_totals`/`ready_tasks` перечисляют все написания статуса из `TASK_STATUS_ALIASES` (миграция 0035) |
 | `infra/test_task_status_canonicalisation_migration.py` | бэкфилл 0037 сводит легаси-написания в канон, ready-множество при этом не гаснет |
 | `services/test_task_status_write_canonicalisation.py` | ни один write-путь не пишет легаси-написание статуса в `task.status` |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
+| `services/test_swap_boundary_imports.py` | границу свапа рантайма: `runtime_service`/`launchd_service` импортируют только stdlib, а у `update_service` нет ленивых импортов (инверсия правила ADO-179) |
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
 | `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017) и `doc_tree_service` (ADO-116); незакрытый долг — `update_status` и `delete`, каждый с обоснованием |
 | `services/test_migration_0035_preserves_data.py` | миграция не теряет секции и ссылки: наливает данные на предыдущей ревизии, потом гонит upgrade. На пустой БД такая потеря не видна |
@@ -297,13 +310,15 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
   субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
-  (профиль `standard`, 141 тулов `task_*`/`doc_*`/`plan_*`/…) и
+  (профиль `standard`, 142 тула `task_*`/`doc_*`/`plan_*`/…) и
   `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6 curator-тулов —
   `curator_next`/`ctx_*`/`context_get`/`agent_capabilities`/`agent_report`).
-  Тем же launchd и тем же рантаймом живёт веб-UI — `com.cod-doc.web`. Управление и
-  доставка ревизий — `deploy/launchd/cod-doc-services.sh upgrade`
-  (собирает `origin/main` свежим venv, свапает, перезапускает; откат —
-  `rollback`). Предпочитай тулы ad-hoc Python-скриптам.
+  Тем же launchd и тем же рантаймом живёт веб-UI — `com.cod-doc.web`. Доставка
+  ревизий — `cod-doc update` (ADO-192): собирает ветку remote'а свежим venv,
+  свапает рантайм, катит миграции уже новым бинарём, перезапускает демонов и
+  чинит состояние проектов; откат — `cod-doc runtime rollback`, остальное
+  управление сервисами — `cod-doc runtime status|version|restart|install|…`.
+  Предпочитай тулы ad-hoc Python-скриптам.
   **`project` обязателен в каждом DB-туле:** демон общий для всех харнессов,
   поэтому дефолтного проекта у него нет вовсе, а `set_default_project`
   отказывает (`mcp/tools/_workspace.py`). Под stdio поведение прежнее.

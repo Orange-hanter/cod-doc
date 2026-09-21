@@ -49,6 +49,7 @@ from cod_doc.cli.cmd_runtime import (
     logs_dir,
     render_services,
     runtime_dir,
+    short_version,
     workdir,
 )
 
@@ -102,6 +103,17 @@ _CONFIRM = "Продолжить?"
 
 #: Что печатаем вместо длительности у фазы, которой не было.
 _NO_DURATION = "—"
+
+#: Строки прогресса. Собираются по плану, а не по намерению: заголовок фазы,
+#: которой не будет, отправляет человека искать в отчёте следы работы, где
+#: стоит «пропущена».
+_AHEAD_INSTALL = "фаза A: сборка и свап рантайма"
+_AHEAD_RELAY = "фазы B–D исполнит новый бинарь"
+_AHEAD_MIGRATE = "фаза B: миграции"
+_AHEAD_SERVICES = "фаза C: рестарт сервисов"
+_AHEAD_REPAIR = "фаза D: починка проектов"
+_PLAN_REF = "разрешение ревизии"
+_PLAN_DIAGNOSE = "диагноз починки"
 
 
 @dataclass(slots=True)
@@ -233,8 +245,9 @@ def _render_version_rows(rows: Sequence[dict[str, Any]], out: Console) -> None:
     table.add_column("Версия", overflow="fold")
     table.add_column("Бинарь", style="dim", overflow="fold")
     for row in rows:
-        version = row.get("version") or row.get("error") or _NOT_APPLICABLE
-        table.add_row(str(row.get("name", "?")), str(version), str(row.get("binary", "")))
+        reported = row.get("version")
+        shown = short_version(str(reported)) if reported else (row.get("error") or _NOT_APPLICABLE)
+        table.add_row(str(row.get("name", "?")), str(shown), str(row.get("binary", "")))
     out.print(table)
 
 
@@ -301,6 +314,42 @@ def _render_report(report: UpdateReport, out: Console) -> None:
 def _echo_payload(payload: dict[str, object]) -> None:
     """Ровно один объект в stdout и только через ``click.echo`` (ADO-176)."""
     click.echo(_json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def _phases_ahead(skip: SkipFlags, *, swapped: bool) -> list[str]:
+    """Фазы, которые сейчас действительно исполнятся.
+
+    ``swapped`` отделяет родителя до свапа от процесса, который уже за
+    границей: родитель делает только фазу A и relay (фазы B–D исполнит и
+    доложит новый бинарь), а после свапа фазу C делать уже есть за чем.
+    """
+    if not swapped and not skip.install:
+        return [_AHEAD_INSTALL, _AHEAD_RELAY]
+    ahead: list[str] = []
+    if not skip.migrate:
+        ahead.append(_AHEAD_MIGRATE)
+    if swapped:
+        ahead.append(_AHEAD_SERVICES)
+    if not skip.repair:
+        ahead.append(_AHEAD_REPAIR)
+    return ahead
+
+
+def _announce(steps: Sequence[str]) -> None:
+    """Прогресс — в stderr: под ``--json`` в stdout ровно один объект."""
+    if steps:
+        click.echo("→ " + "; ".join(steps), err=True)
+
+
+def _plan_steps(skip: SkipFlags) -> list[str]:
+    """Что сделает ``plan()``: ревизию он трогает без ``--skip-install``,
+    диагноз собирает без ``--skip-repair``."""
+    steps: list[str] = []
+    if not skip.install:
+        steps.append(_PLAN_REF)
+    if not skip.repair:
+        steps.append(_PLAN_DIAGNOSE)
+    return [f"план: {', '.join(steps)}"] if steps else []
 
 
 def _require_known_projects(cfg: Config, slugs: Sequence[str]) -> None:
@@ -409,7 +458,7 @@ def _resume(cfg: Config, options: _Options, *, source: str) -> int:
     from cod_doc.services import update_service
 
     payload = _read_payload(source)
-    click.echo("→ resume: миграции, рестарт, починка", err=True)
+    _announce(_phases_ahead(options.skip, swapped=True))
     report = update_service.run_post_swap(
         cfg,
         resumed=payload,
@@ -431,7 +480,7 @@ def _full(cfg: Config, options: _Options) -> int:
     _require_known_projects(cfg, options.projects)
 
     out = err_console if options.as_json else console
-    click.echo("→ план: разрешение ревизии и диагноз починки", err=True)
+    _announce(_plan_steps(options.skip))
     try:
         plan = update_service.plan(
             cfg,
@@ -456,7 +505,7 @@ def _full(cfg: Config, options: _Options) -> int:
         out.print("[yellow]Отменено — ничего не менялось.[/yellow]")
         return update_service.EXIT_OK
 
-    click.echo("→ фаза A: сборка, свап рантайма и передача управления", err=True)
+    _announce(_phases_ahead(plan.skip, swapped=False))
     try:
         report = update_service.run(cfg, update_plan=plan, dry_run=False)
     except update_service.UpdateLocked as exc:
