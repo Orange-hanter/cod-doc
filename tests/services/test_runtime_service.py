@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -114,10 +115,18 @@ def dist_metadata(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture(autouse=True)
 def _isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`installed_versions` смотрит в ~/.local/bin — настоящий HOME сюда не пускаем."""
+    """`installed_versions` смотрит в ~/.local/bin — настоящий HOME сюда не пускаем.
+
+    Заодно уводим `mkdtemp` под `tmp_path`: временный worktree сборки переживает
+    удачный `install_runtime` намеренно, и в общем /tmp он бы копился от прогона
+    к прогону.
+    """
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    build_tmp = tmp_path / "build-tmp"
+    build_tmp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(build_tmp))
 
 
 def _tree(root: Path, marker: str) -> Path:
@@ -142,8 +151,14 @@ def _repo(tmp_path: Path) -> Path:
 
 
 def _build_succeeds(fake: _FakeRun, staged: Path, *, version: str = "1.5.0") -> None:
+    """Дублёр отрабатывает сборку: экспорт создаёт src, `uv venv` — дерево рантайма."""
+    fake.on("worktree add", lambda argv: Path(argv[-2]).mkdir(parents=True))
     fake.on("uv venv", lambda argv: _tree(staged, "new"))
     fake.stdout_for(runtime_service._VERSION_PROBE, version)
+    # Без этого снос временного worktree свёлся бы к вызову дублёра `git
+    # worktree remove`, и на ФС его было бы не видно. С провалом git настоящий
+    # `drop_build_src` уходит в rmtree, то есть каталог реально исчезает.
+    fake.fail("worktree remove", code=128)
 
 
 # ── _run: единственная точка запуска внешних бинарей ────────────────────────
@@ -287,12 +302,10 @@ def test_drop_build_src_removes_the_tree_when_git_refuses(tmp_path: Path, fake: 
     assert not parent.exists()
 
 
-def test_install_runtime_drops_build_src_even_when_build_fails(
-    tmp_path: Path, fake: _FakeRun, monkeypatch: pytest.MonkeyPatch
+def test_install_runtime_drops_build_src_when_the_build_fails(
+    tmp_path: Path, fake: _FakeRun
 ) -> None:
-    """Временный worktree снимается через `finally`, а не только на счастливом пути."""
-    dropped: list[Path] = []
-    monkeypatch.setattr(runtime_service, "drop_build_src", dropped.append)
+    """Дочернего процесса не будет — убирать за собой больше некому."""
     _build_succeeds(fake, tmp_path / "runtime.staged")
     fake.fail("uv pip install")
 
@@ -300,7 +313,31 @@ def test_install_runtime_drops_build_src_even_when_build_fails(
 
     assert report.ok is False
     assert report.build is not None
-    assert dropped == [Path(report.build.src)]
+    assert not Path(report.build.src).exists()
+
+
+def test_install_runtime_keeps_build_src_for_the_child_process(
+    tmp_path: Path, fake: _FakeRun
+) -> None:
+    """Успех: src переживает возврат, иначе `sync_path_tool` после relay не из чего ставить.
+
+    Безусловный `finally` здесь молча оставлял `~/.local/bin/cod-doc` на старой
+    версии при уже обновлённых сервисах — то есть ломал «версии совпадают».
+    """
+    runtime = _tree(tmp_path / "runtime", "old")
+    _build_succeeds(fake, tmp_path / "runtime.staged")
+
+    report = runtime_service.install_runtime(_repo(tmp_path), SHA, runtime=runtime)
+
+    assert report.ok is True
+    assert report.build is not None
+    src = Path(report.build.src)
+    assert src.exists(), "снесённый src — это недогнанная установка в PATH"
+
+    # Уборка на стороне вызывающего идемпотентна и работает после возврата.
+    runtime_service.drop_build_src(src)
+    assert not src.exists()
+    runtime_service.drop_build_src(src)
 
 
 # ── swap / rollback: без моков, настоящие переименования ────────────────────
@@ -380,6 +417,8 @@ def test_install_runtime_rolls_back_when_swapped_runtime_is_broken(
     assert _marker(tmp_path / "runtime.broken") == "new", "сломанная сборка сохраняется"
     assert report.swap.broken == str(tmp_path / "runtime.broken")
     assert not (tmp_path / "runtime.previous").exists()
+    assert report.build is not None
+    assert not Path(report.build.src).exists(), "после отката relay не будет — src снимаем"
 
 
 def test_install_runtime_keeps_the_new_tree_when_it_works(tmp_path: Path, fake: _FakeRun) -> None:

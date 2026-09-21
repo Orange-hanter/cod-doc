@@ -72,6 +72,10 @@ _MASTER_RANK: dict[str, int] = {
 #: Подставляется в команды, когда слаг проекта вызывающим не передан.
 _SLUG_PLACEHOLDER = "<project>"
 
+#: Имя самого дорогого раздела карточки: его сбор обходит каждую секцию
+#: корпуса, и только он умеет не собираться (``skip_links``).
+_SECTION_LINKS = "links"
+
 _NEXT_ACTIONS: tuple[str, ...] = (
     "Прочитай тела скиллов из navigation.applicable_skills — они задают протокол.",
     "Бери priority[0]: в нём уже лежит готовая команда (suggested_action).",
@@ -339,6 +343,7 @@ def next(
     master_path: Path,
     limit: int = 10,
     project_slug: str | None = None,
+    skip_links: bool = False,
 ) -> dict[str, Any]:
     """Собрать «doc card» куратора: что протухло и за что браться первым.
 
@@ -352,11 +357,26 @@ def next(
         project_slug: слаг для подстановки в ``suggested_action``. Без него
             в командах остаётся плейсхолдер ``<project>`` — карточка
             собирается, но копипастить её команды нельзя.
+        skip_links: не собирать раздел ``links``. Сборка обходит КАЖДУЮ
+            секцию корпуса и на каждой зовёт ``resolve_section`` — на
+            больших проектах она доминирует по времени во всём вызове,
+            а вызывающему, который ссылки чинить не собирается (``cod-doc
+            update --skip-links``), этот обход не нужен вовсе. Умолчание
+            ``False``: диагност общий, и ни ``curator_next``, ни drift-гейт
+            PR своего поведения не меняют.
 
     Returns:
-        ``{"card": {drift, links, master, findings}, "priority": [...],
-        "navigation": {...}, "meta": {...}}``. Карточка — полный срез,
-        ``priority`` — усечённая очередь действий по нему.
+        ``{"card": {drift, links, master, findings, unplaced},
+        "priority": [...], "navigation": {...}, "meta": {...}}``. Карточка —
+        полный срез, ``priority`` — усечённая очередь действий по нему.
+
+        ``meta["not_collected"]`` перечисляет разделы карточки, которые не
+        собирались, и появляется только когда такие есть. Пустой
+        ``card["links"]`` при ``"links"`` в этом списке означает «не
+        смотрели», а не «ссылки в порядке» — без такого признака следующий
+        читатель принял бы одно за другое. Читать через
+        ``meta.get("not_collected", [])``: у полной карточки ключа нет вовсе,
+        и это намеренно — её форма не меняется.
     """
     slug = project_slug or _SLUG_PLACEHOLDER
     try:
@@ -366,12 +386,31 @@ def next(
 
     card: dict[str, Any] = {
         "drift": _drift_card(session, project_id, root_path),
-        "links": _link_card(session, project_id),
+        "links": [] if skip_links else _link_card(session, project_id),
         "master": _master_card(master_path, root_path),
         "findings": _findings_card(session, project_id),
         "unplaced": _unplaced_card(session, project_id),
     }
     priority = _build_priority(card, slug=slug, master_rel=master_rel)
+
+    meta: dict[str, Any] = {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "truncated": len(priority) > limit,
+        "counts": {
+            "drift_issues": len(card["drift"]["issues"]),
+            "links": len(card["links"]),
+            "master": len(card["master"]),
+            "findings": len(card["findings"]),
+            "unplaced": card["unplaced"]["count"],
+            "priority_total": len(priority),
+        },
+    }
+    if skip_links:
+        # Ключ появляется ТОЛЬКО когда есть о чём сообщить: полная карточка
+        # обязана остаться байт в байт прежней (`tests/cli/test_ctx.py`
+        # пришпиливает набор ключей `meta`), да и в контекст агента лишние
+        # байты идут за токены. Читать — через `meta.get("not_collected", [])`.
+        meta["not_collected"] = [_SECTION_LINKS]
 
     return {
         "card": card,
@@ -381,16 +420,5 @@ def next(
             "next_actions": list(_NEXT_ACTIONS),
             "success_criteria": list(_SUCCESS_CRITERIA),
         },
-        "meta": {
-            "generated_at": datetime.now(UTC).isoformat(),
-            "truncated": len(priority) > limit,
-            "counts": {
-                "drift_issues": len(card["drift"]["issues"]),
-                "links": len(card["links"]),
-                "master": len(card["master"]),
-                "findings": len(card["findings"]),
-                "unplaced": card["unplaced"]["count"],
-                "priority_total": len(priority),
-            },
-        },
+        "meta": meta,
     }

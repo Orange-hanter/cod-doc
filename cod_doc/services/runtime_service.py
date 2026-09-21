@@ -452,9 +452,23 @@ def install_runtime(
     runtime: Path,
     python_version: str = DEFAULT_PYTHON_VERSION,
 ) -> InstallStepReport:
-    """Фаза A целиком: сборка → свап → проверка → при провале авто-откат."""
+    """Фаза A целиком: сборка → свап → проверка → при провале авто-откат.
+
+    **Владение временным worktree.** При успехе каталог ``BuildReport.src``
+    остаётся на диске, и снести его обязан вызывающий — после того, как
+    отработает relay. Иначе :func:`sync_path_tool` в дочернем процессе не из
+    чего ставить, и ``~/.local/bin/cod-doc`` молча остаётся на старой версии,
+    хотя сервисы уже на новой. Вернуть сюда безусловный ``finally`` — значит
+    заново сломать «версии совпадают»; :func:`drop_build_src` идемпотентен,
+    так что уборка на стороне вызывающего ничем не рискует.
+
+    При провале сборки, отказе свапа или откате src сносится здесь: дочернего
+    процесса не будет, а разбираться в исходниках нечего — для этого есть
+    ``<runtime>.broken``.
+    """
     build = build_staged(repo, sha, runtime=runtime, python_version=python_version)
     report = InstallStepReport(build=build)
+    keep_src = False
     try:
         if not build.ok:
             report.error = build.error
@@ -469,6 +483,7 @@ def install_runtime(
         ok, detail = verify_swapped(runtime)
         if ok:
             report.ok = True
+            keep_src = True
         else:
             # Живые сервисы важнее новой версии: откатываемся без участия
             # человека и оставляем сломанную сборку для разбирательства.
@@ -479,7 +494,11 @@ def install_runtime(
         report.versions = installed_versions(runtime=runtime, repo=repo)
         return report
     finally:
-        drop_build_src(Path(build.src))
+        # `finally`, а не ветка: неожиданное исключение (rename упал с OSError)
+        # — тоже случай, когда дочернего процесса не будет и убирать за собой
+        # некому.
+        if not keep_src:
+            drop_build_src(Path(build.src))
 
 
 def sync_path_tool(src: Path) -> str:

@@ -31,7 +31,13 @@ from cod_doc.infra.models import (
     TaskModel,
 )
 from cod_doc.infra.repositories import ProjectRepository
-from cod_doc.services import checkout_service, doc_service, projection_service, repair_service
+from cod_doc.services import (
+    checkout_service,
+    doc_service,
+    drift_gate_service,
+    projection_service,
+    repair_service,
+)
 from cod_doc.services.projection_service import DriftStatus
 
 if TYPE_CHECKING:
@@ -93,14 +99,21 @@ def _doc_row_id(session: Session, doc_key: str) -> int:
     return doc.row_id
 
 
-def _diagnose(session: Session, root: Path, **kwargs: int) -> repair_service.RepairPlan:
+def _diagnose(
+    session: Session,
+    root: Path,
+    *,
+    ttl_minutes: int = repair_service.DEFAULT_TTL_MINUTES,
+    skip_kinds: frozenset[str] = frozenset(),
+) -> repair_service.RepairPlan:
     return repair_service.diagnose(
         session,
         project_id=_project_id(session),
         root_path=root,
         master_path=root / "MASTER.md",
         slug=_PROJECT,
-        **kwargs,
+        ttl_minutes=ttl_minutes,
+        skip_kinds=skip_kinds,
     )
 
 
@@ -110,6 +123,7 @@ def _apply(
     *,
     dry_run: bool = False,
     ttl_minutes: int = repair_service.DEFAULT_TTL_MINUTES,
+    skip_kinds: frozenset[str] = frozenset(),
 ) -> repair_service.RepairResult:
     return repair_service.apply(
         session,
@@ -120,6 +134,7 @@ def _apply(
         ttl_minutes=ttl_minutes,
         dry_run=dry_run,
         author="cli:update",
+        skip_kinds=skip_kinds,
     )
 
 
@@ -258,6 +273,131 @@ def test_dry_run_leaves_no_link_rows_behind(project) -> None:
         _apply(session, root, dry_run=True)
 
     assert _resolved_links(factory) == 0
+
+
+# ------------------------------------------------------------------ #
+# skip_kinds: выключить один вид, не выключая починку                 #
+# ------------------------------------------------------------------ #
+
+
+def _seed_links_and_drift(root: Path) -> None:
+    """Ссылки (битая и живая) плюс правленый мимо БД beta.md."""
+    _seed_links(root)
+    with (root / "beta.md").open("a", encoding="utf-8") as fh:
+        fh.write("\nПравка мимо БД.\n")
+
+
+def test_skip_links_reaches_the_diagnostician_not_only_the_runner(
+    project, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Обход всех секций не должен случиться ни в чинилке, ни в диагнозе."""
+    factory, root = project
+    _seed_links_and_drift(root)
+
+    def _must_not_run(*_args: object, **_kwargs: object) -> tuple[int, int, int]:
+        raise AssertionError("link backfill выключен — звать его нельзя")
+
+    def _must_not_collect(*_args: object, **_kwargs: object) -> list[object]:
+        raise AssertionError("сбор link-карточки выключен — обходить секции нельзя")
+
+    monkeypatch.setattr(repair_service, "backfill_project_links", _must_not_run)
+    monkeypatch.setattr(drift_gate_service, "link_findings", _must_not_collect)
+
+    with transactional(factory) as session:
+        result = _apply(session, root, skip_kinds=frozenset({repair_service.KIND_LINK_BACKFILL}))
+
+    assert result.errors == []
+    # Действия нет вовсе: находки не собраны, обещать их починку нечем.
+    assert not [a for a in result.actions if a.kind == repair_service.KIND_LINK_BACKFILL]
+    # Но отказ смотреть виден — это не «ссылки в порядке».
+    assert result.not_collected == ["links"]
+    assert result.as_dict()["not_collected"] == ["links"]
+
+    # Выключен один вид, а не починка целиком.
+    imported = [a for a in result.actions if a.kind == repair_service.KIND_DOC_IMPORT]
+    assert imported and all(a.applied for a in imported)
+
+
+def test_skipped_action_stays_visible_in_the_plan(project) -> None:
+    """Для видов, чей диагноз всё равно собран, находка остаётся в отчёте."""
+    factory, root = project
+    task_id = _seed_stale_lock(factory)
+
+    with transactional(factory) as session:
+        result = _apply(
+            session,
+            root,
+            ttl_minutes=_TTL_BELOW_AGE,
+            skip_kinds=frozenset({repair_service.KIND_RELEASE_STALE}),
+        )
+
+    released = [a for a in result.actions if a.kind == repair_service.KIND_RELEASE_STALE]
+    assert [a.ref for a in released] == [task_id]
+    assert released[0].skipped is True
+    assert released[0].applied is False
+    assert "пропущено" in (released[0].detail or "")
+    assert result.skipped == 1
+    assert result.as_dict()["skipped"] == 1
+
+    with transactional(factory, commit=False) as session:
+        model = session.execute(select(TaskModel).where(TaskModel.task_id == task_id)).scalar_one()
+        assert model.checked_out_by == "agent-X", "замок не тронут — вид выключен"
+
+
+def test_skip_kinds_does_not_promise_what_it_will_not_do(project) -> None:
+    factory, root = project
+    _seed_stale_lock(factory)
+
+    with transactional(factory, commit=False) as session:
+        plan = _diagnose(
+            session,
+            root,
+            ttl_minutes=_TTL_BELOW_AGE,
+            skip_kinds=frozenset({repair_service.KIND_RELEASE_STALE}),
+        )
+
+    assert plan.curable[repair_service.KIND_RELEASE_STALE] == 0
+    assert plan.skipped == 1
+    assert any(a.kind == repair_service.KIND_RELEASE_STALE for a in plan.actions)
+
+
+def test_default_skip_kinds_keeps_the_old_behaviour(project) -> None:
+    factory, root = project
+    _seed_links_and_drift(root)
+
+    with transactional(factory) as session:
+        result = _apply(session, root)
+
+    assert result.skipped == 0
+    assert result.not_collected == []
+    assert any(a.kind == repair_service.KIND_LINK_BACKFILL and a.applied for a in result.actions)
+
+
+def test_skipping_hash_update_drops_the_import_that_served_it(project) -> None:
+    """Третий шаг протокола существует только ради результата второго."""
+    factory, root = project
+    _seed_stale_registry(root)
+
+    with transactional(factory, commit=False) as session:
+        plan = _diagnose(session, root, skip_kinds=frozenset({repair_service.KIND_HASH_UPDATE}))
+
+    hash_actions = [a for a in plan.actions if a.kind == repair_service.KIND_HASH_UPDATE]
+    assert len(hash_actions) == 1
+    assert hash_actions[0].skipped is True
+    assert not [
+        a for a in plan.actions if a.kind == repair_service.KIND_DOC_IMPORT and a.ref == "MASTER.md"
+    ]
+
+
+def test_unknown_skip_kind_is_a_programming_error(project) -> None:
+    """Молча проигнорированный skip — тот же дефект, что и инертный флаг."""
+    factory, root = project
+
+    with (
+        transactional(factory, commit=False) as session,
+        pytest.raises(ValueError, match="skip_kinds"),
+    ):
+        _diagnose(session, root, skip_kinds=frozenset({"links"}))
 
 
 # ------------------------------------------------------------------ #
