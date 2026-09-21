@@ -900,7 +900,12 @@ def count_for_project(
 
     stmt = select(func.count(TaskModel.row_id)).where(TaskModel.project_id == project_id)
     if status is not None:
-        stmt = stmt.where(TaskModel.status == status.value)
+        # Парой к `list_for_project` (task_repo.py): тот с ADO-182 фильтрует по
+        # всему классу эквивалентности, а счётчик остался на точной строке.
+        # Расхождение видно снаружи: `task_list` отдавал бы items и total,
+        # посчитанные по разным множествам, и пагинирующий клиент,
+        # доверяющий total, останавливался бы на первой же странице.
+        stmt = stmt.where(TaskModel.status.in_(equivalent_task_statuses(status)))
     if priority is not None:
         stmt = stmt.where(TaskModel.priority == priority.value)
     return int(session.execute(stmt).scalar_one() or 0)
@@ -1165,7 +1170,7 @@ def summarize_for_project(session: Session, project_id: int) -> dict:  # type: i
     Ключи ``by_status`` — ХРАНИМЫЕ написания, как они лежат в колонке, без
     нормализации: сумма обязана сходиться с ``total``, а свести бакеты здесь
     значило бы решить за вызывающего, какой из них показывать. После
-    бэкфилла ADO-156 (миграция 0036) это канонические написания; БД, ещё не
+    бэкфилла ADO-156 (миграция 0037) это канонические написания; БД, ещё не
     поднятая на 0036, отдаст `pending` / `in-progress`. Кому нужен бакет, а
     не строка, — складывает ключи через
     ``domain.entities.equivalent_task_statuses`` (так делает

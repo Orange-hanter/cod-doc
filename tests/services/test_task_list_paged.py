@@ -136,3 +136,26 @@ def test_legacy_signature_still_works(engine_with_schema) -> None:  # type: igno
 
         rows = task_service.list_for_project(session, p, status=TaskStatus.PENDING)
         assert len(rows) == 3
+
+
+def test_count_matches_list_for_an_aliased_bucket(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """`count_for_project` и `list_for_project` обязаны считать одно множество.
+
+    ADO-182 расширил фильтр списка до класса эквивалентности, а счётчик
+    остался на точной строке. Снаружи это видно как `task_list`, который
+    отдаёт items и total, посчитанные по разным множествам: клиент,
+    доверяющий total, останавливает пагинацию на первой же странице.
+    После бэкфилла в колонке лежит `todo`, а спрашивают чаще `pending` —
+    именно это написание у всех легаси-вызовов.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p_id, pl, sec = _seed(session)
+        for tid in ("AL-001", "AL-002", "AL-003"):
+            _make(session, p_id, pl, sec, tid)
+
+        for status in (TaskStatus.PENDING, TaskStatus.TODO):
+            listed = len(task_service.list_for_project(session, p_id, status=status))
+            counted = task_service.count_for_project(session, p_id, status=status)
+            assert counted == listed, f"{status.value}: total={counted}, в списке {listed}"
+            assert counted == 3

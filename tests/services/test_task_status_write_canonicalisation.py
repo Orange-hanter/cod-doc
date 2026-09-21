@@ -21,7 +21,7 @@
 2. инвариант по всей БД — пересечение `TASK_STATUS_ALIASES` с
    `SELECT DISTINCT status FROM task` пусто; новый алиас покрывается
    автоматически, потому что множество берётся из самой карты;
-3. AST — в `cod_doc/services/` не появилось нового присваивания `.status`
+3. AST — в `cod_doc/` не появилось нового присваивания `.status`
    легаси-константой (и нового `status=`/`new_status=` легаси-аргумента).
    Пункты 1–2 доказывают поведение сегодняшних путей; пункт 3 ловит путь,
    которого сегодня нет.
@@ -54,7 +54,9 @@ from cod_doc.services import task_service as tasks
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-SERVICES_DIR = Path(__file__).resolve().parents[2] / "cod_doc" / "services"
+#: Сканируем весь пакет, а не только `services/`: статус пишут и
+#: поверхности — `api/`, `cli/`, `mcp/` — и репозитории в `infra/`.
+COD_DOC_DIR = Path(__file__).resolve().parents[2] / "cod_doc"
 
 
 # --------------------------------------------------------------------------- #
@@ -304,11 +306,22 @@ _LEGACY_MEMBERS: frozenset[str] = frozenset(
 #: Аргументы, которые несут статус задачи в сервисах.
 _STATUS_KEYWORDS: frozenset[str] = frozenset({"status", "new_status"})
 
-#: Разрешённые записи: (файл относительно `cod_doc/services/`, функция) →
+#: Разрешённые записи: (файл относительно `cod_doc/`, функция) →
 #: обоснование. Ratchet: устаревшая запись роняет тест, поэтому список может
 #: только сокращаться.
 ALLOWED_LEGACY_WRITES: dict[tuple[str, str], str] = {
-    ("approval_service.py", "request"): (
+    ("core/project.py", "from_dict"): (
+        "Другой `TaskStatus` — пятизначный StrEnum из `core/project.py` "
+        "поверх `tasks.yaml` (pending | in_progress | done | failed | "
+        "blocked). Колонки `task.status` не касается вовсе, а `in_progress` "
+        "там уже каноническое написание. Страж сработал на совпадение имени "
+        "члена: AST не отличает два одноимённых enum'а."
+    ),
+    ("agent/orchestrator.py", "run_task"): (
+        "То же: оркестратор ходит в `core/project.py::Project.update_task`, "
+        "то есть в YAML, а не в БД. См. запись про `core/project.py`."
+    ),
+    ("services/approval_service.py", "request"): (
         "Это `approval.status`, а не статус задачи: свой словарь из пяти "
         "значений ('pending' | 'approved' | 'denied' | 'cancelled' | "
         "'expired', `approval_service.VALID_STATUSES`), где `pending` "
@@ -317,8 +330,8 @@ ALLOWED_LEGACY_WRITES: dict[tuple[str, str], str] = {
 }
 
 
-def _legacy_literal(node: ast.AST) -> str | None:
-    """Имя легаси-константы, если выражение — именно она."""
+def _bare_legacy(node: ast.AST) -> str | None:
+    """Имя легаси-константы, если узел — именно она, без обхода вглубь."""
     if isinstance(node, ast.Attribute) and node.attr == "value":
         node = node.value
     if isinstance(node, ast.Constant) and node.value in TASK_STATUS_ALIASES:
@@ -330,6 +343,35 @@ def _legacy_literal(node: ast.AST) -> str | None:
         and node.value.id == "TaskStatus"
     ):
         return f"TaskStatus.{node.attr}"
+    return None
+
+
+def _legacy_literal(node: ast.AST) -> str | None:
+    """Легаси-константа где угодно внутри выражения, а не только на верхнем уровне.
+
+    Проверка верхнего узла пропускала ровно тот код, ради которого страж и
+    писался: `checkout_service` месяцами нёс
+
+        m.status = "in-progress" if was_legacy_pending else "in_progress"
+
+    — это `ast.IfExp`, и точное сравнение по типу узла давало ноль попаданий.
+    Поэтому обходим всё поддерево значения.
+
+    Чего этот страж по-прежнему не видит — и это честнее записать, чем
+    делать вид, что видит: запись через промежуточное имя
+    (`m.status = spelling`) или через индекс (`m.status = MAP[k]`). Такую
+    подмену ловит не AST, а инвариант по всей БД в
+    :func:`test_no_legacy_spelling_survives_any_write_path`.
+    """
+    direct = _bare_legacy(node)
+    if direct is not None:
+        return direct
+    for child in ast.walk(node):
+        if child is node:
+            continue
+        nested = _bare_legacy(child)
+        if nested is not None:
+            return nested
     return None
 
 
@@ -375,8 +417,8 @@ class _LegacyStatusWriteFinder(ast.NodeVisitor):
 
 def _scan_services() -> list[tuple[tuple[str, str], str, int]]:
     hits: list[tuple[tuple[str, str], str, int]] = []
-    for path in sorted(SERVICES_DIR.rglob("*.py")):
-        relative = str(path.relative_to(SERVICES_DIR))
+    for path in sorted(COD_DOC_DIR.rglob("*.py")):
+        relative = str(path.relative_to(COD_DOC_DIR))
         finder = _LegacyStatusWriteFinder(relative)
         finder.visit(ast.parse(path.read_text(encoding="utf-8")))
         hits.extend(finder.hits)
@@ -387,8 +429,7 @@ def test_no_service_writes_a_legacy_status_constant() -> None:
     """Новый write-путь с `pending` / `in-progress` — регресс, а не стиль."""
     unexpected = [hit for hit in _scan_services() if hit[0] not in ALLOWED_LEGACY_WRITES]
     assert not unexpected, "легаси-константа статуса в write-пути:\n" + "\n".join(
-        f"  cod_doc/services/{key[0]}:{lineno} в {key[1]}(): {what}"
-        for key, what, lineno in unexpected
+        f"  cod_doc/{key[0]}:{lineno} в {key[1]}(): {what}" for key, what, lineno in unexpected
     )
 
 
