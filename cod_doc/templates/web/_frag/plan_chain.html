@@ -80,17 +80,23 @@
         </div>
         <div class="chain-lane-body">
           {% for t in level.tasks %}
-            <a id="card-{{ t.task_id }}"
-               class="chain-card prio-{{ t.priority }} status-{{ t.status }}{% if t.is_critical %} chain-card-critical{% endif %}{% if t.is_ready %} chain-card-ready{% endif %}"
-               href="/p/{{ project.name }}/tasks/{{ t.task_id }}"
-               title="{{ t.task_id }} — {{ t.title }}">
+            {# Карточка — <div>, а ссылка внутри неё — оверлей на всю площадь.
+               Обратное (<a> снаружи, чипы ↑/↓ внутри) — невалидная вложенность
+               ссылок: парсер по adoption agency закрывает внешний <a> на первом
+               вложенном, и тело карточки вываливается соседями в .chain-lane-body
+               без рамки и без клика. #}
+            <div id="card-{{ t.task_id }}"
+                 class="chain-card prio-{{ t.priority }} status-{{ t.status }}{% if t.is_critical %} chain-card-critical{% endif %}{% if t.is_ready %} chain-card-ready{% endif %}">
+              <a class="chain-card-hit"
+                 href="/p/{{ project.name }}/tasks/{{ t.task_id }}"
+                 title="{{ t.task_id }} — {{ t.title }}"
+                 aria-label="{{ t.task_id }} — {{ t.title }}"></a>
 
               {# Prereq references (incoming edges) #}
               {% if t.prereq_ids %}
                 <div class="chain-card-prereqs">
                   {% for pid in t.prereq_ids %}
-                    <a class="chain-ref chain-ref-up" href="#card-{{ pid }}"
-                       onclick="event.stopPropagation()">↑ {{ pid }}</a>
+                    <a class="chain-ref chain-ref-up" href="#card-{{ pid }}">↑ {{ pid }}</a>
                   {% endfor %}
                 </div>
               {% endif %}
@@ -115,12 +121,11 @@
               {% if t.dep_ids %}
                 <div class="chain-card-deps">
                   {% for did in t.dep_ids %}
-                    <a class="chain-ref chain-ref-down" href="#card-{{ did }}"
-                       onclick="event.stopPropagation()">↓ {{ did }}</a>
+                    <a class="chain-ref chain-ref-down" href="#card-{{ did }}">↓ {{ did }}</a>
                   {% endfor %}
                 </div>
               {% endif %}
-            </a>
+            </div>
           {% endfor %}
         </div>
       </div>

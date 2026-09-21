@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from html.parser import HTMLParser
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,9 +28,6 @@ from cod_doc.infra.repositories import (
     ProjectRepository,
 )
 from cod_doc.services import task_service as tasks
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @pytest.fixture
@@ -416,3 +414,72 @@ def test_status_select_offers_no_legacy_spelling(tasks_client) -> None:
     assert '<option value="todo"' in r.text
     assert '<option value="pending"' not in r.text
     assert '<option value="in-progress"' not in r.text
+
+
+# ── Вложенность ссылок в карточке цепочки ───────────────────────────────────
+
+
+class _AnchorNesting(HTMLParser):
+    """Ищет `<a>` внутри `<a>`: парсер браузера такую пару не сохраняет.
+
+    По adoption agency внешняя ссылка закрывается на первой внутренней, и всё,
+    что шло после чипа, становится соседом пустого огрызка. В тексте ответа
+    ошибка видна только как вложенность — DOM её уже «починил».
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.depth = 0
+        self.nested: list[dict[str, str | None]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        if self.depth:
+            self.nested.append(dict(attrs))
+        self.depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self.depth:
+            self.depth -= 1
+
+
+def test_chain_cards_have_no_nested_anchors(tasks_client) -> None:
+    """Карточка цепочки с чипами ↑/↓ не вкладывает одну ссылку в другую.
+
+    Карточка была `<a>`, а чипы пререквизитов и зависимостей внутри неё —
+    тоже `<a>`. Браузер закрывал внешнюю ссылку на первом чипе: в ленте
+    оставался пустой прямоугольник `chain-card`, а тело, мета и чипы
+    вываливались соседями в `.chain-lane-body` — без рамки, без приоритетной
+    полосы и без клика по карточке.
+    """
+    client, entry = tasks_client
+
+    # Фикстура идёт без рёбер; чипы появляются только у связанных задач.
+    db_path = Path(entry.path) / ".cod-doc" / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        anchor_task = tasks.get(session, task_id="AUTH-001")
+        tasks.create(
+            session,
+            project_id=anchor_task.project_id,
+            plan_id=anchor_task.plan_id,
+            section_id=anchor_task.section_id,
+            title="Implement: follow-up blocked by AUTH-001",
+            type=TaskType.FEATURE,
+            priority=Priority.MEDIUM,
+            author="human:dakh",
+            id_prefix="AUTH",
+            blocked_by=["AUTH-001"],
+        )
+    engine.dispose()
+
+    body = client.get(f"/p/{entry.name}/tasks?view=chains").text
+    # Ребро действительно доехало до разметки — иначе тест зеленел бы впустую.
+    assert "chain-card-prereqs" in body
+    assert "chain-card-deps" in body
+
+    parser = _AnchorNesting()
+    parser.feed(body)
+    assert parser.nested == [], f"вложенные <a>: {parser.nested}"
