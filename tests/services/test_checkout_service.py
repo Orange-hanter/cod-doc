@@ -51,23 +51,29 @@ def _seed_task(session: Session, task_id: str = "CO-001", status: str = "pending
         priority=Priority.MEDIUM,
         author="x",
     )
-    if status != "pending":
-        # Force any starting status (e.g. for testing checkout from "todo").
-        m = session.query(TaskModel).filter(TaskModel.task_id == task_id).one()
-        m.status = status
-        session.flush()
+    # Статус выставляется ВСЕГДА и мимо сервисов: после ADO-156 `create()`
+    # пишет канонический `todo`, и легаси-строку, какая лежит в ещё не
+    # мигрированной БД, иначе не получить.
+    m = session.query(TaskModel).filter(TaskModel.task_id == task_id).one()
+    m.status = status
+    session.flush()
     return t.row_id
 
 
-def test_checkout_legacy_pending_promotes_to_in_progress_hyphen(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_checkout_of_a_legacy_pending_row_lands_canonical(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Легаси-строка на входе принимается, но чекаут приземляется в канон (ADO-156).
+
+    До этого написание результата зависело от написания источника, и одно и
+    то же состояние лежало в базе двумя строками.
+    """
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
         result = checkout.checkout(session, "CO-001", agent="orchestrator-run-X")
         assert result.checked_out_by == "orchestrator-run-X"
+        # Снимок «что было до чекаута» — история, её не канонизируем.
         assert result.expected_status_at_checkout == "pending"
-        # Legacy hyphen preserved when source was "pending".
-        assert result.new_status == "in-progress"
+        assert result.new_status == "in_progress"
         assert result.idempotent is False
 
 

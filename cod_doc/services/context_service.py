@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from cod_doc.domain.entities import TaskStatus
+from cod_doc.domain.entities import TaskStatus, equivalent_task_statuses
 from cod_doc.infra.models import (
     DocumentModel,
     LinkModel,
@@ -49,6 +49,17 @@ _CHARS_PER_TOKEN = 4  # rough approximation
 _MASTER_EXCERPT_CHARS = 1200
 _SECTION_EXCERPT_CHARS = 600
 _MAX_RELATED_TASKS = 10
+
+#: «Открытая задача» — весь класс эквивалентности обоих бакетов.
+#:
+#: Раньше здесь стояли ровно две строки, `pending` и `in-progress`, то есть
+#: половина класса: задача в каноническом `todo` или `in_progress` не
+#: попадала в L1-пакет вовсе. После бэкфилла ADO-156 (миграция 0037) это
+#: была бы уже не половина, а весь ответ — `context_get` отдавал бы ноль
+#: связанных задач.
+_OPEN_TASK_STATUSES: frozenset[str] = equivalent_task_statuses(
+    TaskStatus.TODO
+) | equivalent_task_statuses(TaskStatus.IN_PROGRESS_NEW)
 _MAX_STORIES = 3
 _MAX_CHAIN_DEPTH_TASKS = 5
 _MAX_CROSS_DOC_LINKS = 5
@@ -236,7 +247,7 @@ def _open_tasks_for_plan(session: Session, plan_id: int, budget: _Budget) -> lis
         select(TaskModel)
         .where(
             TaskModel.plan_id == plan_id,
-            TaskModel.status.in_([TaskStatus.PENDING.value, TaskStatus.IN_PROGRESS.value]),
+            TaskModel.status.in_(_OPEN_TASK_STATUSES),
         )
         .order_by(priority_sql_order(TaskModel.priority), TaskModel.task_id)
         .limit(_MAX_RELATED_TASKS)
@@ -397,7 +408,7 @@ def _build_task_context(
                 TaskModel.plan_id == task.plan_id,
                 TaskModel.section_id == task.section_id,
                 TaskModel.task_id != task.task_id,
-                TaskModel.status.in_([TaskStatus.PENDING.value, TaskStatus.IN_PROGRESS.value]),
+                TaskModel.status.in_(_OPEN_TASK_STATUSES),
             )
             .limit(5)
         )

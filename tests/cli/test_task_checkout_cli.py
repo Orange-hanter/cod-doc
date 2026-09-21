@@ -1,9 +1,13 @@
 """ADO-157: протокол задачи целиком из CLI, без MCP.
 
-ADO-039 сделал `task_checkout` единственным легальным путём из `pending` в
-`in-progress`. До этой команды он существовал только как MCP-тул, поэтому
+ADO-039 сделал `task_checkout` единственным легальным путём из `todo` в
+`in_progress`. До этой команды он существовал только как MCP-тул, поэтому
 CLI-only сценарий не мог провести задачу по протоколу вообще: `task status`
 отказывал, а альтернативы в терминале не было.
+
+Написания статусов здесь канонические (ADO-156): легаси `in-progress` в
+аргументе `task status` ниже принимается по-прежнему — принимается, но не
+записывается.
 """
 
 from __future__ import annotations
@@ -96,16 +100,16 @@ def test_direct_transition_is_refused_and_suggests_the_cli_command(tmp_path: Pat
     assert r.exit_code == 1
     assert "task_checkout" in r.output
     assert f"cod-doc task checkout {TASK} -p {PROJECT}" in r.output
-    assert _status() == "pending"
+    assert _status() == "todo"
 
 
-def test_checkout_moves_pending_to_in_progress(tmp_path: Path) -> None:
+def test_checkout_moves_todo_to_in_progress(tmp_path: Path) -> None:
     runner = _init_project(tmp_path)
     _seed_task()
 
     r = runner.invoke(main, ["task", "checkout", TASK, "-p", PROJECT, "--agent", "human:a"])
     assert r.exit_code == 0, r.output
-    assert _status() == "in-progress"
+    assert _status() == "in_progress"
 
 
 def test_checkout_is_idempotent_for_the_same_agent(tmp_path: Path) -> None:
@@ -115,7 +119,7 @@ def test_checkout_is_idempotent_for_the_same_agent(tmp_path: Path) -> None:
     runner.invoke(main, ["task", "checkout", TASK, "-p", PROJECT, "--agent", "human:a"])
     r = runner.invoke(main, ["task", "checkout", TASK, "-p", PROJECT, "--agent", "human:a"])
     assert r.exit_code == 0, r.output
-    assert _status() == "in-progress"
+    assert _status() == "in_progress"
 
 
 def test_checkout_by_another_agent_conflicts(tmp_path: Path) -> None:
@@ -151,7 +155,7 @@ def test_release_leaves_status_untouched(tmp_path: Path) -> None:
     runner.invoke(main, ["task", "checkout", TASK, "-p", PROJECT, "--agent", "human:a"])
     r = runner.invoke(main, ["task", "release", TASK, "-p", PROJECT, "--agent", "human:a"])
     assert r.exit_code == 0, r.output
-    assert _status() == "in-progress", "release снимает замок, но не откатывает статус"
+    assert _status() == "in_progress", "release снимает замок, но не откатывает статус"
 
 
 def test_unknown_task_is_reported(tmp_path: Path) -> None:
@@ -191,18 +195,18 @@ def test_one_activity_event_per_action(tmp_path: Path) -> None:
 
 
 def test_full_protocol_without_mcp(tmp_path: Path) -> None:
-    """pending → checkout → in-progress → complete, ни одного MCP-вызова."""
+    """todo → checkout → in_progress → complete, ни одного MCP-вызова."""
     runner = _init_project(tmp_path)
     _seed_task()
 
-    assert _status() == "pending"
+    assert _status() == "todo"
     assert (
         runner.invoke(
             main, ["task", "checkout", TASK, "-p", PROJECT, "--agent", "human:a"]
         ).exit_code
         == 0
     )
-    assert _status() == "in-progress"
+    assert _status() == "in_progress"
     done = runner.invoke(main, ["task", "complete", TASK, "-p", PROJECT])
     assert done.exit_code == 0, done.output
     assert _status() == "done"

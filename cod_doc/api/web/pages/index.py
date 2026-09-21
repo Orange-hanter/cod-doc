@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 from cod_doc.api.deps import daemon_is_running, get_config, try_open_project_db
 from cod_doc.api.web.templates_env import templates
 from cod_doc.core.project import Project
+from cod_doc.domain.entities import TaskStatus, equivalent_task_statuses
 from cod_doc.services import task_service
 
 router = APIRouter()
@@ -18,11 +19,22 @@ INDEX_DEFAULT_LIMIT = 20
 INDEX_MAX_LIMIT = 200
 
 
+def _bucket(by_status: dict, status: TaskStatus) -> int:  # type: ignore[type-arg]
+    """Сумма по всему классу эквивалентности статуса.
+
+    ``summarize_for_project`` группирует по ХРАНИМОЙ строке, поэтому один
+    бакет приезжает сюда двумя ключами, пока в реестре есть БД до и после
+    бэкфилла ADO-156. Точное чтение одного ключа давало бы KPI «pending» = 0
+    на мигрированном проекте.
+    """
+    return sum(int(by_status.get(spelling, 0)) for spelling in equivalent_task_statuses(status))
+
+
 def _normalize_stats(raw: dict) -> dict:  # type: ignore[type-arg]
     """Convert task_service.summarize_for_project output to the flat shape used in templates."""
     by_status = raw.get("by_status", {})
-    pending = by_status.get("pending", 0)
-    in_progress = by_status.get("in-progress", by_status.get("in_progress", 0))
+    pending = _bucket(by_status, TaskStatus.TODO)
+    in_progress = _bucket(by_status, TaskStatus.IN_PROGRESS_NEW)
     done = by_status.get("done", 0)
     failed = by_status.get("failed", 0)
     total = raw.get("total", pending + in_progress + done + failed)

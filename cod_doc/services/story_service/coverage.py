@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cod_doc.domain.entities import UserStoryStatus
+from cod_doc.domain.entities import TaskStatus, UserStoryStatus, canonical_task_status
 from cod_doc.infra.repositories import StoryAcceptanceRepository
 
 from ._internals import _require_story
@@ -26,7 +26,12 @@ def coverage(session: Session, story_id: str) -> StoryCoverage:
     impl_tasks = list_tasks(session, story_id)
     tasks_total = len(impl_tasks)
     tasks_done = sum(1 for t in impl_tasks if t.status.value == "done")
-    tasks_in_progress = sum(1 for t in impl_tasks if t.status.value == "in-progress")
+    # По бакету: на легаси-написание `in-progress` было зашито и только оно,
+    # так что после бэкфилла ADO-156 стори прыгала бы `not_started → done`
+    # мимо `in_progress`.
+    tasks_in_progress = sum(
+        1 for t in impl_tasks if canonical_task_status(t.status) == TaskStatus.IN_PROGRESS_NEW.value
+    )
 
     pinned = {UserStoryStatus.DRAFT, UserStoryStatus.DEFERRED}
     if UserStoryStatus(model.status) in pinned:

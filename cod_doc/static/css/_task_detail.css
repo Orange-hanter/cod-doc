@@ -14,8 +14,14 @@
 .task-hero.prio-stripe-medium   { border-left-color: var(--accent); }
 .task-hero.prio-stripe-low      { border-left-color: var(--muted); }
 
-.task-hero.status-tone-pending     { background: linear-gradient(135deg, var(--warning-soft-bg) 0%, var(--bg) 80%); }
-.task-hero.status-tone-in-progress { background: linear-gradient(135deg, var(--info-soft-bg) 0%, var(--bg) 80%); }
+/* ADO-156: класс собирается из `task.status`, а тот после бэкфилла (миграция
+   0037) канонический. Оба написания перечислены рядом, а не вместо: в ещё не
+   мигрированной БД лежат легаси-строки, и подмена селектора сняла бы градиент
+   со старого проекта вместо нового. */
+.task-hero.status-tone-pending,
+.task-hero.status-tone-todo        { background: linear-gradient(135deg, var(--warning-soft-bg) 0%, var(--bg) 80%); }
+.task-hero.status-tone-in-progress,
+.task-hero.status-tone-in_progress { background: linear-gradient(135deg, var(--info-soft-bg) 0%, var(--bg) 80%); }
 .task-hero.status-tone-done        { background: linear-gradient(135deg, var(--success-soft-bg) 0%, var(--bg) 80%); }
 .task-hero.status-tone-failed      { background: linear-gradient(135deg, var(--danger-soft-bg) 0%, var(--bg) 80%); }
 .task-hero.status-tone-blocked     { background: linear-gradient(135deg, var(--purple-soft-bg) 0%, var(--bg) 80%); }
