@@ -2493,7 +2493,11 @@ details > summary { cursor: pointer; }
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   min-height: 120px;
-  max-height: 78vh;
+  /* Потолок высоты стоит на .kanban-col-body, а не здесь. У <details> тело
+     колонки лежит не прямым flex-элементом, а внутри UA-бокса
+     ::details-content, которому min-height:auto не даёт сжаться ниже
+     содержимого: max-height на самом <details> не обрезал ничего, и все
+     карточки сверх экрана вываливались ниже нижнего бордера колонки. */
 }
 .kanban-col[open] { background: var(--bg); }
 .kanban-col-highlighted {
@@ -2545,8 +2549,10 @@ details > summary { cursor: pointer; }
   display: flex; flex-direction: column;
   gap: 6px;
   padding: 8px;
+  /* Скроллер — этот бокс, поэтому и высоту ограничиваем на нём: до
+     ::details-content ни max-height колонки, ни flex:1 не дотягивались. */
+  max-height: 72vh;
   overflow-y: auto;
-  flex: 1;
 }
 .kanban-col-empty {
   text-align: center;
@@ -2558,6 +2564,9 @@ details > summary { cursor: pointer; }
 .kanban-card {
   display: flex; flex-direction: column;
   gap: 4px;
+  /* Карточка — flex-элемент колонки с ограниченной высотой: без этого
+     419 карточек TODO делят 72vh и сплющиваются до 18 px пустых рамок. */
+  flex-shrink: 0;
   /* ADO-121: то же правило уровнем ниже — flex-элемент тоже не сжимается сам
      по себе. Без overflow длинный неразрывный токен (scope плана, путь)
      вытягивает карточку за бордер колонки. */
