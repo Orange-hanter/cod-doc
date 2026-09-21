@@ -23,6 +23,13 @@
 `tests/infra/test_totals_status_aliases.py`.
 
 Данные не трогаются: пере-создаются только три view'а.
+
+Номер отстаёт от места в цепочке: ревизия писалась поверх `0034_story_section`,
+а пока PR #68 висел, main ушёл вперёд на `0035_doc_nodes` и
+`0036_finding_miss_streak`. `down_revision` перевешен на текущий head — два
+head'а у alembic роняют `upgrade head` целиком, — а идентификатор оставлен
+прежним: на него уже ссылаются `0037_task_status_canonicalisation`, CLAUDE.md
+и DATA_MODEL.md.
 """
 
 from __future__ import annotations
@@ -35,7 +42,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 revision: str = "0035_totals_status_aliases"
-down_revision: str | None = "0034_story_section"
+down_revision: str | None = "0036_finding_miss_streak"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -378,12 +378,13 @@ def test_import_legacy_tasks_creates_plan_and_tasks(
         all_tasks = task_service.list_for_project(session, project_id)
         titles = {t.title for t in all_tasks}
         assert {"Document API auth", "Fix flaky test", "Investigate spike"} == titles
-        # Status mapping: legacy 'in_progress' → DB 'in-progress'.
-        in_progress = [t for t in all_tasks if t.status.value == "in-progress"]
+        # Status mapping: legacy 'in_progress' → канонический 'in_progress'
+        # (ADO-156: импортёр принимает легаси-написание, но пишет канон).
+        in_progress = [t for t in all_tasks if t.status.value == "in_progress"]
         assert len(in_progress) == 1
-        # Legacy 'blocked' → PENDING + blocked_reason set.
+        # Legacy 'blocked' → бакет `todo` + blocked_reason set.
         blocked = next(t for t in all_tasks if t.title == "Investigate spike")
-        assert blocked.status.value == "pending"
+        assert blocked.status.value == "todo"
         assert blocked.blocked_reason and "blocked" in blocked.blocked_reason
         # Description carries the legacy id + result.
         flaky = next(t for t in all_tasks if t.title == "Fix flaky test")

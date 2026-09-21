@@ -110,14 +110,17 @@ def checkout(
         raise CheckoutStatusError(task_id=task_id, current=m.status, expected=expected)
 
     now = datetime.now(UTC)
-    # Preserve legacy "in-progress" hyphenation when checking out a
-    # legacy "pending" task — the existing test suite asserts against
-    # this exact value. New "todo" rows get the canonical "in_progress".
-    was_legacy_pending = m.status == "pending"
     m.checked_out_by = agent
     m.checked_out_at = now
     m.expected_status_at_checkout = m.status
-    m.status = "in-progress" if was_legacy_pending else "in_progress"
+    # ADO-156: чекаут всегда приземляется в каноническое написание. Раньше
+    # задача из легаси `pending` получала легаси `in-progress` — так словарь
+    # статусов и размножался: одно и то же состояние в двух написаниях,
+    # выбор между которыми зависел от того, когда задачу создали.
+    # Написание на ВХОДЕ по-прежнему любое: `expected` ниже сравнивается
+    # через `normalise`, а дефолт `["todo", "pending"]` защищает ещё не
+    # мигрированную БД.
+    m.status = "in_progress"
     m.last_updated = now
     session.flush()
 

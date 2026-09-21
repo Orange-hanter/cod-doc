@@ -119,8 +119,9 @@ def test_summarize_aggregates_by_status_and_priority(engine_with_schema) -> None
 
         summary = task_service.summarize_for_project(session, p)
         assert summary["total"] == 3
-        assert summary["by_status"]["pending"] == 2
-        assert summary["by_status"]["in-progress"] == 1
+        # Ключи — хранимые написания; после ADO-156 они канонические.
+        assert summary["by_status"]["todo"] == 2
+        assert summary["by_status"]["in_progress"] == 1
         assert summary["by_priority"]["high"] == 2
         assert summary["by_priority"]["low"] == 1
 

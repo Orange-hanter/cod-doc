@@ -158,7 +158,7 @@ def test_l0_task_metadata_only(engine_with_schema) -> None:  # type: ignore[no-u
         result = context_service.context_get(session, proj_id, "task", "PR-001", depth="L0")
 
         assert result["target_summary"]["task_id"] == "PR-001"
-        assert result["target_summary"]["status"] == "pending"
+        assert result["target_summary"]["status"] == "todo"
         # L0: no description body in core
         assert "description" not in result["core"]
         assert "acceptance" not in result["core"]

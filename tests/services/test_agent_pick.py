@@ -74,7 +74,7 @@ def test_agent_pick_returns_full_card(engine_with_schema) -> None:  # type: igno
 
     # Task: highest-priority ready (APK-001 high prio beats APK-002 medium).
     assert card["task"]["task_id"] == "APK-001"
-    assert card["task"]["status"] == "in-progress"  # post-checkout
+    assert card["task"]["status"] == "in_progress"  # post-checkout
 
     # Context block.
     ctx = card["context"]

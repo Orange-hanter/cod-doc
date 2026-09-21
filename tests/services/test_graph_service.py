@@ -291,7 +291,7 @@ def test_critical_path_includes_status_info(engine_with_schema) -> None:  # type
         result = plans.critical_path(session, pl)
         ids_to_status = {e.task_id: e.status for e in result.chain}
         assert ids_to_status["GR-001"] is TaskStatus.DONE
-        assert ids_to_status["GR-002"] is TaskStatus.PENDING
+        assert ids_to_status["GR-002"] is TaskStatus.TODO
 
 
 def test_critical_path_unknown_plan_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

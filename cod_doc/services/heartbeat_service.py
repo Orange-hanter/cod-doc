@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from cod_doc.domain.entities import EntityKind
+from cod_doc.domain.entities import EntityKind, TaskStatus, canonical_task_status
 from cod_doc.infra.models import (
     DependencyModel,
     PlanModel,
@@ -167,9 +167,12 @@ def _next_action_guess(task: TaskModel, blocked_by_ids: list[str]) -> str:
         return "investigate blocker_reason and either clear or escalate"
     if blocked_by_ids:
         return f"wait on blockers: {', '.join(blocked_by_ids)}"
-    if task.status == "pending":
+    # По бакету, а не по строке: до ADO-156 обе ветки были зашиты на
+    # легаси-написание и после бэкфилла подсказка пустела на каждой задаче.
+    canon = canonical_task_status(task.status)
+    if canon == TaskStatus.TODO.value:
         return "checkout + start work"
-    if task.status == "in-progress":
+    if canon == TaskStatus.IN_PROGRESS_NEW.value:
         return "continue: read context_refs, complete acceptance"
     return ""
 

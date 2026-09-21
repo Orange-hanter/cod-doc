@@ -24,10 +24,14 @@ _STATUS_ICON = {
     "deferred": "⏸️",
 }
 
+#: `CoverageStatus.IN_PROGRESS` печатается через дефис, задача после
+#: бэкфилла ADO-156 — через подчёркивание. Оба ключа рядом, чтобы таблица
+#: не зависела от того, чьё написание сюда придёт.
 _COVERAGE_ICON = {
     "draft": "✏️",
     "accepted": "✅",
     "in-progress": "🔵",
+    "in_progress": "🔵",
     "delivered": "🚀",
     "deferred": "⏸️",
 }

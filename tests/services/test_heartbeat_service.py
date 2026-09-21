@@ -77,7 +77,7 @@ def test_heartbeat_returns_full_shape_for_pending_task(engine_with_schema) -> No
         "next_action_guess",
     }
     assert ctx["task"]["id"] == "HB-001"
-    assert ctx["task"]["status"] == "pending"
+    assert ctx["task"]["status"] == "todo"
     assert ctx["task"]["blocked_by"] == []
     assert ctx["ancestry"]["project"]["slug"] == "hb-proj"
     assert ctx["ancestry"]["plan"]["scope"] == "hb-plan"
