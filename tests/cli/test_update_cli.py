@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 #: Узкий терминал — худший случай для переноса строк rich (ADO-176).
 _NARROW = "40"
 
+#: Широкий — чтобы имя установки в таблице считалось целиком, а не по кускам.
+_WIDE = "200"
+
 #: Длиннее 80 колонок: ровно на такой длине rich ставил перенос внутрь значения.
 _LONG_RUNTIME = (
     "/Users/somebody/Library/Application Support/cod-doc/runtime-с-очень-длинным-"
@@ -371,6 +374,40 @@ def test_runtime_error_from_plan_is_printed_as_a_hint(monkeypatch: pytest.Monkey
 def test_update_and_upgrade_are_the_same_command() -> None:
     """Две команды с одним поведением обречены разъехаться — объект один."""
     assert main.commands["upgrade"] is main.commands["update"]
+
+
+# ── отчёт: таблица установок ────────────────────────────────────────────────
+
+
+def test_installs_table_names_each_install_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ADO-197: `versions` и `path_tool` — одна установка, а не две строки.
+
+    `versions` снят в фазе A, до `uv tool install --force`; `path_tool` —
+    после него. Пока свежая строка дописывалась в конец, таблица называла
+    установку в PATH дважды, и первой стояла версия до обновления.
+    """
+    monkeypatch.setenv("COLUMNS", _WIDE)
+    monkeypatch.setattr(update_service, "plan", _plan_stub([]))
+    install = update_service.InstallReport(
+        versions=[
+            runtime_service.InstallVersion(
+                name="рантайм сервисов", binary="/runtime/bin/cod-doc", version="1.5.0"
+            ),
+            runtime_service.InstallVersion(
+                name=update_service.PATH_TOOL_NAME, binary="/path/cod-doc", version="1.4.0"
+            ),
+        ],
+        path_tool=runtime_service.InstallVersion(
+            name=update_service.PATH_TOOL_NAME, binary="/path/cod-doc", version="1.5.0"
+        ),
+    )
+    monkeypatch.setattr(update_service, "run", lambda *a, **k: _report(install))
+
+    result = CliRunner().invoke(main, ["update", "--yes"])
+
+    assert result.exit_code == update_service.EXIT_OK, result.output
+    assert result.output.count(update_service.PATH_TOOL_NAME) == 1
+    assert "1.4.0" not in result.output, "показана версия до обновления"
 
 
 # ── cod-doc runtime ─────────────────────────────────────────────────────────

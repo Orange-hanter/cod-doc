@@ -131,6 +131,21 @@ def _arrange(
         )
 
     monkeypatch.setattr(update_service, "plan", fake_plan)
+    # ADO-197: после relay родитель перечитывает версии установок, а это
+    # `<runtime>/bin/cod-doc --version` — тот же фейковый скрипт. Без подмены
+    # он перезаписал бы файлы с записью о вызове ребёнка, а заодно тест звал
+    # бы настоящий `~/.local/bin/cod-doc` с машины разработчика.
+    monkeypatch.setattr(
+        runtime_service,
+        "installed_versions",
+        lambda **_kw: [
+            runtime_service.InstallVersion(
+                name="рантайм сервисов",
+                binary=str(child.runtime / "bin" / "cod-doc"),
+                version="1.5.0",
+            )
+        ],
+    )
     return child
 
 

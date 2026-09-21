@@ -263,11 +263,34 @@ def _render_install(report: UpdateReport, out: Console) -> None:
         out.print(f"[yellow]Свап откачен; сломанная сборка — {swap.get('broken')}[/yellow]")
     elif swap.get("previous"):
         out.print(f"[dim]Прежний рантайм: {swap['previous']} (cod-doc runtime rollback)[/dim]")
+    _render_version_rows(_install_rows(install), out)
+
+
+def _install_rows(install: dict[str, Any]) -> list[dict[str, Any]]:
+    """Строки таблицы установок: свежая версия PATH заменяет снятую в фазе A.
+
+    `versions` уже содержит строку с этим именем — её кладёт
+    `runtime_service.installed_versions`, и на момент фазы A установка в PATH
+    ещё старая. `path_tool` — та же установка, измеренная ПОСЛЕ
+    `uv tool install --force`. Дописать вторую строку значит показать одну
+    установку дважды, причём протухшая стоит первой.
+    """
     rows = list(install.get("versions") or [])
-    path_tool = install.get("path_tool")
-    if path_tool:
-        rows.append(path_tool)
-    _render_version_rows(rows, out)
+    fresh = install.get("path_tool")
+    if not fresh:
+        return rows
+    merged: list[dict[str, Any]] = []
+    replaced = False
+    for row in rows:
+        if row.get("name") == fresh.get("name"):
+            merged.append(fresh)
+            replaced = True
+        else:
+            merged.append(row)
+    if not replaced:
+        # Имя не совпало ни с одной строкой: показать свежую всё равно надо.
+        merged.append(fresh)
+    return merged
 
 
 def _render_migrate(results: Sequence[MigrateResult], out: Console) -> None:

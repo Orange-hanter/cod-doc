@@ -556,12 +556,33 @@ def _install_and_relay(update_plan: UpdatePlan) -> UpdateReport:
             report.phases.extend(_skipped(name, reason) for name in _POST_SWAP_PHASES)
             return report
         _relay(report, update_plan, runtime=runtime, install=install, src=src)
+        _refresh_versions(install, runtime=runtime, repo=repo)
         return report
     finally:
         # Временный worktree обязан дожить до конца relay: `uv tool install`
         # ставит PATH-установку именно из него, и делает это ребёнок.
         if src is not None:
             runtime_service.drop_build_src(src)
+
+
+def _refresh_versions(install: InstallReport, *, runtime: Path, repo: Path) -> None:
+    """Перечитать версии установок: пока шёл relay, установка в PATH сменилась.
+
+    ``install.versions`` снят в фазе A — до того, как ребёнок выполнил
+    ``uv tool install --force`` (:func:`run_post_swap`), поэтому строка
+    ``PATH (uv tool)`` в нём заведомо протухшая. Ждать значение от ребёнка
+    нечего: свой отчёт он печатает текстом в терминал, а ``--json`` ему не
+    форвардится (см. :func:`_argv_tail`) — под ``--json`` отчёт родителя
+    вообще единственный, и без этого шага он называл бы версию до
+    обновления.
+
+    Своё состояние отчёт при этом не додумывает, а спрашивает: чужой код не
+    исполняется, ``installed_versions`` зовёт у бинарей ``--version``.
+    Исход relay не важен — после отката в PATH тоже надо смотреть, а не
+    угадывать.
+    """
+    with contextlib.suppress(OSError):
+        install.versions = runtime_service.installed_versions(runtime=runtime, repo=repo)
 
 
 def _phase_install(
