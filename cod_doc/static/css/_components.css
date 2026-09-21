@@ -2989,6 +2989,21 @@ details > summary { cursor: pointer; }
   box-shadow: inset 0 0 0 1px var(--success);
 }
 
+/* Ссылка на задачу — прозрачный оверлей во всю карточку.
+   Карточка не может быть <a>: внутри неё живут ссылки-чипы ↑/↓, а вложенный
+   <a> невалиден — парсер закрывает внешний и разбирает карточку на куски. */
+.chain-card-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  text-decoration: none;
+}
+.chain-card-hit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Anchor flash, same as kanban */
 .chain-card:target {
   border-color: var(--accent);
@@ -3062,6 +3077,8 @@ details > summary { cursor: pointer; }
 .chain-card-prereqs { padding-bottom: 4px; border-bottom: 1px dashed var(--border-soft); margin-bottom: 2px; }
 .chain-card-deps    { padding-top: 4px;    border-top:    1px dashed var(--border-soft); margin-top: 2px; }
 .chain-ref {
+  position: relative;  /* над .chain-card-hit, иначе оверлей перехватит клик */
+  z-index: 1;
   display: inline-flex; align-items: center;
   padding: 1px 6px;
   font-family: var(--font-mono);
