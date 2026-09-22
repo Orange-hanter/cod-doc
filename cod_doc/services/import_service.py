@@ -411,6 +411,7 @@ def import_markdown(
 
     doc = docs.create(
         session,
+        reindex=False,  # индекс строится один раз в конце функции
         project_id=project_id,
         doc_key=doc_key,
         type=doc_type,
@@ -441,6 +442,7 @@ def import_markdown(
             body=section.body,
             author=author,
             reason=reason or "import_markdown",
+            reindex=False,  # индекс строится один раз в конце функции
         )
 
     # Proposal 15 §2.2 two-pass resolve: run resolve_section for all imported
@@ -530,6 +532,7 @@ def import_or_update_markdown(
                 new_body=section.body,
                 author=author,
                 reason=reason or "bulk import (update)",
+                reindex=False,  # один upsert на документ в конце функции
             )
             continue
         except docs.SectionNotFoundError:
@@ -559,6 +562,7 @@ def import_or_update_markdown(
                 body=section.body,
                 author=author,
                 reason=reason or "bulk import (new section)",
+                reindex=False,
             )
         except Exception as exc:
             logger.warning("import %s#%s: add_section failed: %s", doc_key, section.anchor, exc)

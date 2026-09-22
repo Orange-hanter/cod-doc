@@ -174,8 +174,12 @@ def create(
     preamble: str = "",
     frontmatter: dict[str, Any] | None = None,
     reason: str | None = None,
+    reindex: bool = True,
 ) -> Document:
-    """Persist a new document and write its initial revision."""
+    """Persist a new document and write its initial revision.
+
+    ``reindex=False`` — see :func:`add_section`.
+    """
     _gate_frontmatter(
         type=type,
         status=status,
@@ -229,7 +233,8 @@ def create(
         summary=f"Document {doc_key} created",
     )
     # ADO-211: без этого документ из doc_create не находился поиском.
-    search_service.index_doc(session, project_id=project_id, doc_key=doc_key)
+    if reindex:
+        search_service.index_doc(session, project_id=project_id, doc_key=doc_key)
     return doc
 
 
@@ -286,8 +291,13 @@ def add_section(
     body: str,
     author: str,
     reason: str | None = None,
+    reindex: bool = True,
 ) -> Section:
     """Add a new section to a document; writes a SECTION revision.
+
+    ``reindex=False`` — for callers that add many sections and index the
+    document once at the end (``import_service``): the FTS row is built from
+    every section, so per-call reindexing is quadratic in section count.
 
     Raises `SectionAlreadyExistsError` if a section with the same anchor
     already exists in this document.
@@ -336,7 +346,8 @@ def add_section(
         summary=f"Document {doc.doc_key}: section {anchor} added",
     )
     _sync_section_links_safe(session, section.row_id)
-    search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
+    if reindex:
+        search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
     return section
 
 
@@ -387,8 +398,11 @@ def patch_section(
     author: str,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
+    reindex: bool = True,
 ) -> Section:
     """Replace a section's body; writes a SECTION revision with unified diff.
+
+    ``reindex=False`` — see :func:`add_section`.
 
     No-op if `new_body` equals the current body (no row update, no revision).
     """
@@ -433,7 +447,8 @@ def patch_section(
         summary=f"Document {doc.doc_key}: section {anchor} updated",
     )
     _sync_section_links_safe(session, sec_model.row_id)
-    search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
+    if reindex:
+        search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
     refreshed = SectionRepository(session).get(sec_model.row_id)
     assert refreshed is not None
     return refreshed

@@ -22,6 +22,7 @@ from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service, import_service, search_service
 
 if TYPE_CHECKING:
+    import pytest
     from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session
 
@@ -141,3 +142,26 @@ def test_import_markdown_makes_doc_searchable(engine_with_schema: Engine) -> Non
         )
 
         assert _refs(session, pid, "tessellate") == ["guides/tessellate"]
+
+
+def test_import_markdown_indexes_the_document_once(
+    engine_with_schema: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Индекс строится из всех секций, поэтому переиндексация на каждую секцию
+    квадратична по их числу (ai-review #100). Импорт индексирует один раз."""
+    calls: list[str] = []
+    real = search_service.index_doc
+
+    def counting(session: Session, *, project_id: int, doc_key: str) -> None:
+        calls.append(doc_key)
+        real(session, project_id=project_id, doc_key=doc_key)
+
+    monkeypatch.setattr(search_service, "index_doc", counting)
+    raw = "---\ntitle: Many\ntype: guide\n---\n# Many\n\n## A\n\na\n\n## B\n\nb\n\n## C\n\nc\n"
+    with transactional(make_session_factory(engine_with_schema)) as session:
+        pid = _seed_project(session)
+        import_service.import_markdown(
+            session, project_id=pid, doc_key="guides/many", raw_markdown=raw, author=AUTHOR
+        )
+
+    assert calls == ["guides/many"]
