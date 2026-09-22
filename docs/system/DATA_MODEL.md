@@ -638,7 +638,7 @@ WHERE t.status IN ('todo','pending')
     SELECT 1 FROM dependency d
     JOIN task dep ON dep.row_id = d.to_task_id
     WHERE d.from_task_id = t.row_id
-      AND dep.status <> 'done'
+      AND dep.status NOT IN ('done', 'cancelled')
   );
 ```
 

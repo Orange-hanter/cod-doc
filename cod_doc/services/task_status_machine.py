@@ -133,9 +133,23 @@ def validate_transition(
         )
 
 
+#: Канонические статусы, означающие «задача закрыта».
+#:
+#: ADO-078: до этого «закрыто» было определено в дереве дважды и по-разному —
+#: :func:`is_terminal` считал закрытыми ``done`` и ``cancelled``, а
+#: ``ready_tasks``, :func:`task_service.complete` и
+#: :func:`task_service.list_blocked` — только ``done``. Расхождение стоило
+#: дорого: зависимость, упирающаяся в отменённый блокер, не разблокировалась
+#: никогда, и закрыть такую задачу было нельзя вовсе. Здесь единственная точка
+#: вывода для Python-слоя; SQL-вьюхи повторяют тот же набор литералами
+#: (миграция — застывший снимок), синхронность стережёт
+#: ``tests/infra/test_ready_tasks_cancelled.py``.
+TERMINAL_STATUSES: frozenset[str] = frozenset({TaskStatus.DONE.value, TaskStatus.CANCELLED.value})
+
+
 def is_terminal(status: str | TaskStatus) -> bool:
     """``done`` and ``cancelled`` are terminal — the task is no longer active."""
-    return normalise(status) in ("done", "cancelled")
+    return normalise(status) in TERMINAL_STATUSES
 
 
 def is_active(status: str | TaskStatus) -> bool:

@@ -20,8 +20,9 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select, text
 
-from cod_doc.domain.entities import TaskStatus
+from cod_doc.domain.entities import TaskStatus, canonical_task_status
 from cod_doc.infra.models import DependencyModel, TaskModel
+from cod_doc.services.task_status_machine import is_terminal
 
 from ._internals import _require_plan
 from ._types import ChainEntry, CriticalPathResult, TaskNotFoundInPlanError
@@ -163,8 +164,16 @@ def chain_layout(session: Session, plan_id: int) -> dict[str, Any]:
       ``dep_ids`` (tasks this one unblocks), and the booleans ``is_critical``,
       ``is_ready``.
     * ``critical_path`` — ordered list of task_ids on the longest blocks-chain.
-    * ``ready_ids`` — set of task_ids unblocked right now (non-done tasks whose
-      every prerequisite is done).
+    * ``ready_ids`` — set of task_ids startable right now: status in the
+      ``todo`` equivalence class and every prerequisite closed (``done`` or
+      ``cancelled``) — тот же критерий, что у view ``ready_tasks``.
+
+      Одно расхождение с view остаётся, и оно здесь по построению: рёбра
+      ниже отбираются внутри одного плана, а view смотрит на все. Задача,
+      заблокированная задачей из другого плана, попадёт в ``ready_ids``,
+      но не в ``plan_ready`` / ``task_next_ready`` / ``agent_pick``.
+      Cross-plan рёбра создаются штатно — ``task_service.create``
+      резолвит ``blocked_by`` по ``task_id`` без проверки плана.
 
     Level 0 = sources (no prereqs in this plan).  Level N = tasks whose deepest
     prereq sits at level N-1.  Tasks involved in cycles get pushed past the
@@ -252,11 +261,16 @@ def chain_layout(session: Session, plan_id: int) -> dict[str, Any]:
     cp = critical_path(session, plan_id)
     critical_ids: set[str] = set(cp.task_ids)
 
+    # ADO-078: «готова к старту» = тот же критерий, что у view `ready_tasks`
+    # (статус в классе `todo` и все пререквизиты закрыты). Прежний предикат
+    # «не done» врал в обе стороны: задача в явном статусе `blocked` попадала
+    # в готовые, а пререквизит в `cancelled` не засчитывался закрытым и держал
+    # зависимых вечно. На боевой БД Restate это было 9 и 4 задачи.
     ready_ids: set[str] = set()
     for rid, info in by_rid.items():
-        if info["status"] == "done":
+        if canonical_task_status(info["status"]) != TaskStatus.TODO.value:
             continue
-        if all(by_rid[p]["status"] == "done" for p in prereqs[rid]):
+        if all(is_terminal(by_rid[p]["status"]) for p in prereqs[rid]):
             ready_ids.add(info["task_id"])
 
     by_level: dict[int, list[dict[str, Any]]] = {}
