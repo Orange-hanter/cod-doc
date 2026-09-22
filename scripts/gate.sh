@@ -27,6 +27,16 @@ cd "$REPO_ROOT" || exit 1
 # ANSI-кодах — см. CLAUDE.md §«Конвенции».
 unset FORCE_COLOR
 
+# ADO-212: при push из worktree git отдаёт хуку GIT_DIR=<repo>/.git/worktrees/<имя>.
+# Унаследовав его, git-фикстуры тестов (`git -C <tmp_path> init/add/commit`)
+# работают не со своим временным каталогом, а с этим репозиторием: `init` пишет
+# core.bare=true в общий конфиг, `commit` кладёт на ветку дерево из одних
+# файлов фикстуры. Сбрасываем после `git rev-parse` выше — ему GIT_DIR как раз
+# нужен, чтобы найти корень worktree. Тот же сброс стоит в tests/conftest.py:
+# раннер — не единственный способ запустить pytest из хука.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY \
+  GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_NAMESPACE
+
 LOG_DIR="${TMPDIR:-/tmp}"
 # X-ы обязаны быть в КОНЦЕ шаблона: BSD-mktemp (macOS) не умеет суффикс после
 # них и падает с обманчивым «File exists». Без проверки дальше весь прогон
