@@ -448,6 +448,10 @@ def import_markdown(
     # sections that were inserted later in the same batch get resolved.
     _resolve_all_sections(session, doc.row_id)
 
+    # ADO-211: прямой вызов (веб-загрузка одного файла, регистрация по скиллу
+    # doc-sync) раньше оставлял документ вне поиска — индексировал только
+    # import_or_update_markdown поверх этой функции.
+    search_service.index_doc(session, project_id=project_id, doc_key=doc_key)
     return ImportReport(document=doc, created=True, warnings=warnings)
 
 
@@ -493,6 +497,9 @@ def import_or_update_markdown(
             _set_projection_hash_to_rendered(session, doc_row_id)
         # ADO-030: keep FTS fresh in the same transaction — a doc you just
         # imported must be searchable without a manual --reindex.
+        # ADO-211: import_markdown now indexes best-effort itself; this strict
+        # call stays on purpose, matching the update path below — this entry
+        # point has always failed loudly without the FTS table.
         search_service.upsert_doc(session, project_id=project_id, doc_key=doc_key)
         return report
 

@@ -228,6 +228,8 @@ def create(
         payload={"type": type.value, "status": status.value, "path": effective_path},
         summary=f"Document {doc_key} created",
     )
+    # ADO-211: без этого документ из doc_create не находился поиском.
+    search_service.index_doc(session, project_id=project_id, doc_key=doc_key)
     return doc
 
 
@@ -334,6 +336,7 @@ def add_section(
         summary=f"Document {doc.doc_key}: section {anchor} added",
     )
     _sync_section_links_safe(session, section.row_id)
+    search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
     return section
 
 
@@ -430,6 +433,7 @@ def patch_section(
         summary=f"Document {doc.doc_key}: section {anchor} updated",
     )
     _sync_section_links_safe(session, sec_model.row_id)
+    search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
     refreshed = SectionRepository(session).get(sec_model.row_id)
     assert refreshed is not None
     return refreshed
@@ -581,6 +585,11 @@ def rename(
             path_map={old_path: target_path} if path_changed else None,
         )
 
+    # ADO-211: индекс ключуется по doc_key — без этого поиск отдавал бы старый
+    # ref, которого больше нет, а по новому ключу не находил ничего.
+    if old_key != new_doc_key:
+        search_service.unindex_doc(session, project_id=doc.project_id, doc_key=old_key)
+    search_service.index_doc(session, project_id=doc.project_id, doc_key=new_doc_key)
     refreshed = DocumentRepository(session).get(document_id)
     assert refreshed is not None
     return refreshed
