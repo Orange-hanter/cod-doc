@@ -25,11 +25,18 @@ git-фикстурой во вложенном pytest с ``GIT_DIR`` на worktr
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
+from tests.conftest import _GIT_REPO_LOCATORS
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
+GATE = REPO_ROOT / "scripts" / "gate.sh"
+
+#: `unset GIT_… \` с переносами строк — ровно одна такая инструкция в раннере.
+_UNSET_GIT = re.compile(r"^unset (GIT_[A-Z_]+(?:\s+(?:\\\n\s*)?GIT_[A-Z_]+)*)", re.MULTILINE)
 
 #: Настоящий тест с фикстурой ``git -C <tmp_path> init/add/commit``.
 _VICTIM = "tests/services/test_commit_link_service.py::test_import_idempotent"
@@ -92,3 +99,16 @@ def test_pytest_under_worktree_git_dir_leaves_the_repository_alone(tmp_path: Pat
     assert _git("config", "--local", "core.bare", cwd=repo) == "false"
     assert (worktree / "important.txt").exists()
     assert nested.returncode == 0, nested.stdout[-2000:] + nested.stderr[-2000:]
+
+
+def test_gate_runner_and_conftest_reset_the_same_git_variables() -> None:
+    """Набор продублирован в bash и Python — пусть расхождение роняет CI, а не молчит.
+
+    Раннер защищает прогон из хука, conftest — любой запуск pytest; если один
+    из списков пополнят, а другой нет, защита станет дырявой ровно с одной
+    стороны, и заметить это можно будет только новым инцидентом.
+    """
+    match = _UNSET_GIT.search(GATE.read_text(encoding="utf-8"))
+    assert match is not None, "в scripts/gate.sh нет `unset GIT_…`"
+    in_gate = set(re.findall(r"GIT_[A-Z_]+", match.group(1)))
+    assert in_gate == set(_GIT_REPO_LOCATORS)
