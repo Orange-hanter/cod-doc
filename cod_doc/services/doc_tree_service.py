@@ -32,6 +32,8 @@ from cod_doc.services import revision_service as rev
 from cod_doc.services.doc_taxonomy import DEFAULT_RULES, DEFAULT_TREE, ClassifyReport, Placement
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session
 
 
@@ -88,6 +90,43 @@ def list_nodes(session: Session, project_id: int) -> list[DocNode]:
 
 def get_node(session: Session, project_id: int, node_key: str) -> DocNode | None:
     return DocNodeRepository(session).get_by_key(project_id, node_key)
+
+
+#: Потолок обхода ``parent_id`` в ``node_ancestors``. Это страховка от циклов
+#: в данных, а не ограничение дерева: ``create_node`` глубину не ограничивает.
+#: При глубине сверх лимита цепочка молча обрезается со стороны корня.
+_ANCESTOR_DEPTH_LIMIT = 8
+
+
+def node_ancestors(nodes: Sequence[DocNode], node_key: str) -> list[DocNode]:
+    """Цепочка разделов от корня до ``node_key`` включительно.
+
+    Нужна крошкам экрана документации: рельс показывает разделы плоско, а
+    дерево вложенное, и без цепочки пользователь не видит, где он. Неизвестный
+    ключ (например, псевдопункт рельса) даёт пустой список. Обход по
+    ``parent_id`` страхуется от циклов и ограничен ``_ANCESTOR_DEPTH_LIMIT``.
+
+    Принимает уже загруженный список разделов: у вызывающих экранов он и так
+    есть, а повторный запрос был бы тем самым N+1, против которого написан
+    ``node_stats``.
+    """
+    by_id = {n.row_id: n for n in nodes if n.row_id is not None}
+    by_key = {n.node_key: n for n in by_id.values()}
+
+    chain: list[DocNode] = []
+    seen: set[int] = set()
+    current = by_key.get(node_key)
+    while (
+        current is not None
+        and current.row_id is not None
+        and current.row_id not in seen
+        and len(chain) < _ANCESTOR_DEPTH_LIMIT
+    ):
+        chain.append(current)
+        seen.add(current.row_id)
+        current = by_id.get(current.parent_id) if current.parent_id is not None else None
+    chain.reverse()
+    return chain
 
 
 def inbox_node(session: Session, project_id: int) -> DocNode | None:

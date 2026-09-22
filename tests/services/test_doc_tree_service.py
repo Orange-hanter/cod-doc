@@ -9,7 +9,13 @@ import pytest
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, EntityKind
 from cod_doc.infra.db import make_session_factory, transactional
-from cod_doc.infra.models import ActivityEventModel, DocumentModel, ProjectModel, RevisionModel
+from cod_doc.infra.models import (
+    ActivityEventModel,
+    DocNodeModel,
+    DocumentModel,
+    ProjectModel,
+    RevisionModel,
+)
 from cod_doc.services import doc_tree_service as tree
 
 if TYPE_CHECKING:
@@ -431,3 +437,56 @@ def test_every_document_is_counted_exactly_once(session_factory) -> None:  # typ
 
         total = sum(stat.doc_count for stat in tree.node_stats(session, pid))
         assert total == 3
+
+
+def test_node_ancestors_unknown_key_returns_empty(session_factory) -> None:  # type: ignore[no-untyped-def]
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.init_tree(session, project_id=pid, author="human:test")
+
+        assert tree.node_ancestors(tree.list_nodes(session, pid), "nope") == []
+
+
+def test_node_ancestors_breaks_parent_cycles(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Цикл в ``parent_id`` обрывается по ``seen``, а не зависает в обходе.
+
+    ``create_node`` цикл не соберёт (родитель обязан существовать), поэтому
+    петлю ставим прямой правкой модели — ровно то, от чего страхует ``seen``.
+    """
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        tree.create_node(session, project_id=pid, node_key="a", title="A", author="human:test")
+        tree.create_node(
+            session, project_id=pid, node_key="b", title="B", author="human:test", parent_key="a"
+        )
+        a = session.query(DocNodeModel).filter_by(project_id=pid, node_key="a").one()
+        b = session.query(DocNodeModel).filter_by(project_id=pid, node_key="b").one()
+        a.parent_id = b.row_id
+        session.flush()
+
+        chain = tree.node_ancestors(tree.list_nodes(session, pid), "a")
+
+        assert [n.node_key for n in chain] == ["b", "a"]
+
+
+def test_node_ancestors_depth_is_capped_from_root(session_factory) -> None:  # type: ignore[no-untyped-def]
+    """Глубина сверх лимита обрезается со стороны корня, хвост цепочки цел."""
+    with transactional(session_factory) as session:
+        pid = _seed_project(session)
+        parent: str | None = None
+        for i in range(12):
+            key = f"n{i}"
+            tree.create_node(
+                session,
+                project_id=pid,
+                node_key=key,
+                title=key,
+                author="human:test",
+                parent_key=parent,
+            )
+            parent = key
+
+        chain = tree.node_ancestors(tree.list_nodes(session, pid), "n11")
+
+        assert len(chain) == tree._ANCESTOR_DEPTH_LIMIT
+        assert [n.node_key for n in chain] == [f"n{i}" for i in range(4, 12)]

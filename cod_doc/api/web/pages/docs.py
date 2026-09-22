@@ -19,7 +19,7 @@ from cod_doc.api.deps import (
 from cod_doc.api.web.errors import ValidationWebError, truncate_for_cookie
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import DOCUMENT_TYPES, templates
-from cod_doc.domain.entities import DocumentStatus, DocumentType, EntityKind
+from cod_doc.domain.entities import DocNode, DocumentStatus, DocumentType, EntityKind
 from cod_doc.services import doc_service as docs
 from cod_doc.services import doc_tree_service as doc_tree
 from cod_doc.services import import_service as imports
@@ -126,6 +126,7 @@ def _docs_screen_context(
     node: str,
     group: str,
     with_drift: bool,
+    with_crumbs: bool,
 ) -> dict[str, Any]:
     """Данные экрана документации. Общие для страницы и для htmx-фрагмента.
 
@@ -133,6 +134,9 @@ def _docs_screen_context(
     почти всего времени: замер на корпусе из 170 документов — список 2.4 мс,
     счётчики ссылок 0.8 мс, разделы 0.4 мс, обход дрейфа 185 мс. Поэтому
     страница рисуется без него, а метки приезжают вторым запросом.
+
+    ``with_crumbs`` — считать ли крошку выбранного раздела: htmx-фрагмент
+    её не рендерит и не должен платить за обход дерева.
     """
     proj = get_project(slug)
     group_by = group.strip() if group.strip() in _GROUP_MODES else "node"
@@ -140,6 +144,7 @@ def _docs_screen_context(
 
     documents: list[dict[str, Any]] = []
     nodes: list[dict[str, Any]] = []
+    crumb_nodes: list[dict[str, str]] = []
     stats: dict[str, int | None] = {"total": 0, "unplaced": 0, "drift": None}
     tree_seeded = False
     db_available = False
@@ -147,11 +152,10 @@ def _docs_screen_context(
     with try_open_project_db(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
             db_available = True
-            node_keys = {
-                n.row_id: n.node_key
-                for n in doc_tree.list_nodes(session, project_db_id)
-                if n.row_id is not None
-            }
+            all_nodes = doc_tree.list_nodes(session, project_db_id)
+            node_keys = {n.row_id: n.node_key for n in all_nodes if n.row_id is not None}
+            if with_crumbs and group_by == "node" and selected and selected != _UNGROUPED:
+                crumb_nodes = _crumb_dicts(doc_tree.node_ancestors(all_nodes, selected))
             link_counts = link_service.counts_for_project(session, project_db_id)
             drifting = (
                 _drifting_doc_keys(session, project_db_id, proj.entry.root) if with_drift else set()
@@ -253,6 +257,9 @@ def _docs_screen_context(
         "group_modes": _GROUP_MODES,
         "selected": selected,
         "selected_title": _selected_title(rail, selected),
+        # Крошка выбранного раздела: цепочка от корня дерева до него. Без неё
+        # экран при `?group=node&node=…` не показывал, где в дереве ты стоишь.
+        "crumb_nodes": crumb_nodes,
         "nodes": nodes,
         # Чип раздела в таблице показывает человеческое название, а не ключ:
         # ключ — это адрес для `?node=`, а не подпись.
@@ -305,6 +312,7 @@ def docs_list(
         node=node,
         group=group,
         with_drift=False,
+        with_crumbs=True,
     )
     context["drift_ready"] = False
     return templates.TemplateResponse(request, "project/docs_list.html", context)
@@ -334,6 +342,8 @@ def docs_drift_marks(
         node=node,
         group=group,
         with_drift=True,
+        # Фрагмент таблицы крошек не рендерит — не считаем их зря.
+        with_crumbs=False,
     )
     context["drift_ready"] = True
     return templates.TemplateResponse(request, "_frag/docs_table.html", context)
@@ -341,6 +351,11 @@ def docs_drift_marks(
 
 def _count_in(documents: list[dict[str, Any]], field: str, key: str) -> int:
     return sum(1 for d in documents if d[field] == key)
+
+
+def _crumb_dicts(nodes: Sequence[DocNode]) -> list[dict[str, str]]:
+    """Разделы в форму крошки шаблона: ключ для адреса, название для подписи."""
+    return [{"key": n.node_key, "title": n.title} for n in nodes]
 
 
 def _select_rail_bucket(
@@ -1065,6 +1080,20 @@ def suggestion_reject(
     return JSONResponse({"rejected": True, "row_id": row_id})
 
 
+def _doc_node_chain(session: Session, project_id: int, node_id: int | None) -> list[dict[str, str]]:
+    """Крошка раздела документа: node_id → ключ → цепочка предков.
+
+    Документ без раздела (Инбокс) остаётся с прежними крошками.
+    """
+    if node_id is None:
+        return []
+    nodes = doc_tree.list_nodes(session, project_id)
+    node_key = next((n.node_key for n in nodes if n.row_id == node_id), None)
+    if node_key is None:
+        return []
+    return _crumb_dicts(doc_tree.node_ancestors(nodes, node_key))
+
+
 @router.get("/p/{slug}/docs/{doc_key:path}", response_class=HTMLResponse)
 def doc_show(
     request: Request,
@@ -1079,6 +1108,7 @@ def doc_show(
     if doc is None or doc.row_id is None:
         raise HTTPException(404, f"Документ не найден: {doc_key}")
     sections_db = docs.get_sections(session, doc.row_id)
+    doc_node_chain = _doc_node_chain(session, project_db_id, doc.node_id)
 
     # Sidebar nav uses the section anchors regardless of mode — they match
     # the `<section id>` we render below (or the in-page hash, harmless in
@@ -1235,6 +1265,7 @@ def doc_show(
                 "preamble": doc.preamble or "",
                 "last_updated": doc.last_updated,
             },
+            "doc_node_chain": doc_node_chain,
             "sections": sections_nav,
             "is_raw": is_raw,
             "raw_body": raw_body,
