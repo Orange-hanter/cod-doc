@@ -43,6 +43,10 @@ status=$?
 if [[ $status -ne 0 ]]; then
   echo
   echo "❌ Пуш отклонён: гейт красный. Почини или обойди — SKIP_GATE=1 git push"
+  # ADO-212: до фикса красный гейт из worktree означал, что тесты уже
+  # закоммитили в ветку дерево фикстуры, и обход выталкивал его наружу.
+  echo "   Перед обходом сверь, что ветку не тронули: git log --oneline -1"
+  echo "   и git config core.bare (должно быть false)."
   exit 1
 fi
 exit 0

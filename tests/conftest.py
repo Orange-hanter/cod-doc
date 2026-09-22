@@ -12,6 +12,20 @@ from pathlib import Path
 
 import pytest
 
+#: ADO-212: переменные, по которым git находит репозиторий, — тот же набор, что
+#: сбрасывает scripts/gate.sh. Пользовательский конфиг git (GIT_SSH, GIT_AUTHOR_*)
+#: сознательно не трогаем: он не меняет, какой репозиторий видит фикстура.
+_GIT_REPO_LOCATORS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_PREFIX",
+    "GIT_NAMESPACE",
+)
+
 
 @pytest.fixture(autouse=True)
 def isolated_cod_doc_home(
@@ -30,6 +44,16 @@ def isolated_cod_doc_home(
     # потому что переменной нет; а увидеть это раньше было нельзя — джоба
     # умирала на alembic до самих тестов.
     for key in [k for k in os.environ if k.startswith("COD_DOC_")]:
+        monkeypatch.delenv(key, raising=False)
+
+    # ADO-212: переменные, по которым git находит репозиторий. При push из
+    # worktree git экспортирует GIT_DIR в окружение pre-push, и pytest,
+    # запущенный из хука, наследует его. Git-фикстуры вида
+    # `git -C <tmp_path> init/add/commit` тогда работают с настоящим
+    # репозиторием, а не со своим: `init` ставит core.bare=true в общий конфиг,
+    # `commit` кладёт на ветку дерево из одних файлов фикстуры. Сбрасываем
+    # здесь, а не только в scripts/gate.sh: хук — не единственный путь.
+    for key in _GIT_REPO_LOCATORS:
         monkeypatch.delenv(key, raising=False)
 
     # ADO-068: достаточно переменной окружения. Раньше здесь дополнительно
