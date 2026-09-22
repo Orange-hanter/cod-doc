@@ -96,7 +96,7 @@ graph TD
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
-- **Описание:** 25 RFC в пяти треках:
+- **Описание:** 26 RFC в шести треках:
   - **01–15 (paperclip-track):** 🟢 Реализованы — адаптация паттернов paperclipai/paperclip
     (skills, heartbeat, wake-payload, run-id, issue docs, checkout, routines,
     status taxonomy, activity log, adapter pattern, AGENTS.md, approvals,
@@ -124,7 +124,16 @@ graph TD
     hub-режиме (CUR-013). Секции A/B/C/D — все done, см. аудиты секций
     B/C/D. Частично реанимирует поисковый контракт RFC 19.
     Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:97648d0ab324`
-- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:7b9c5e891225`
+  - **26 (graph-editing-track):** 🟡 Черновик — Правка графа плана: секции и
+    рёбра как первоклассные операции. Рождён из инцидента: пять правок на
+    `Restate` (заголовок и позиция секции плана, три ребра зависимости) внесены
+    SQL-ом мимо продукта, потому что штатного интерфейса для них нет ни на одной
+    поверхности. Причина системная — `plan_section_create` пишет через
+    репозиторий прямо из MCP-тула, минуя `services/`, и сканер паритета такой
+    путь не видит по построению. Декомпозиция — секция J плана
+    `adoption-2026-08` (ADO-199…ADO-210), доставка тремя PR.
+    Файл: `📁 /proposals/26-plan-graph-editing.md | 🗃️ doc:proposals_26-plan-graph-editing_md | 🔑 sha:cfa09957fac6`
+- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:28c44c0d4bc4`
 - **Статус:** `🟢 VERIFIED`
 
 ### CI Pipeline (GitHub Actions)
@@ -279,7 +288,7 @@ graph TD
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
 | 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `2b50e6643b2a` | 2026-09-20 | 🟢 VERIFIED |
-| 3 | proposals/README.md | `doc:proposals_README_md` | `7b9c5e891225` | 2026-09-20 | 🟢 VERIFIED |
+| 3 | proposals/README.md | `doc:proposals_README_md` | `28c44c0d4bc4` | 2026-09-20 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `7c133a394eb3` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `90c54859cba1` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
@@ -296,8 +305,9 @@ graph TD
 | 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
 | 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `97648d0ab324` | 2026-09-20 | 🟢 VERIFIED |
 | 19 | Zsh-дополнение | `doc:docs_zsh-completion_md` | `f177c8373beb` | 2026-09-17 | 🟢 VERIFIED |
+| 20 | RFC 26 Правка графа плана | `doc:proposals_26-plan-graph-editing_md` | `cfa09957fac6` | 2026-09-22 | 🟡 DRAFT |
 
-> **Всего:** 19 документов | 🟢 VERIFIED: 14 | 🟡 LEGACY: 3 | 🟡 DRAFT: 2 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+> **Всего:** 20 документов | 🟢 VERIFIED: 14 | 🟡 LEGACY: 3 | 🟡 DRAFT: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >
 > **Проверка 2026-09-17 (ADO-174):** строка `models/domain.md` возвращена.
 > В ADO-172 она была удалена по ошибке — как «файла нет на диске, документа
