@@ -565,3 +565,102 @@ def test_rail_total_follows_the_status_tab(docs_client) -> None:
     everything = client.get(f"/p/{entry.name}/docs?status=all").text
 
     assert _rail_total(everything) == _rail_total(live) + 1
+
+
+def _crumbs(body: str) -> str:
+    """Фрагмент навигационной цепочки — отдельно от ссылок рельса и таблицы."""
+    import re
+
+    m = re.search(r'<nav class="crumbs">(.*?)</nav>', body, re.S)
+    assert m, "крошки не найдены на странице"
+    return m.group(1)
+
+
+def _seed_doc_tree(entry, doc_key: str = "modules/M1-auth/overview") -> None:
+    """Раздел «modules» с ребёнком «modules-m1»; документ привязан к ребёнку."""
+    from cod_doc.services import doc_tree_service as doc_tree
+
+    db_path = entry.cod_doc_dir / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        proj = ProjectRepository(session).get_by_slug(entry.name)
+        doc_tree.create_node(
+            session,
+            project_id=proj.row_id,
+            node_key="modules",
+            title="Modules",
+            author="human:test",
+        )
+        doc_tree.create_node(
+            session,
+            project_id=proj.row_id,
+            node_key="modules-m1",
+            title="M1 Auth",
+            author="human:test",
+            parent_key="modules",
+        )
+        doc_tree.assign(
+            session,
+            project_id=proj.row_id,
+            doc_key=doc_key,
+            node_key="modules-m1",
+            author="human:test",
+        )
+    engine.dispose()
+
+
+def test_docs_list_crumbs_show_selected_node_chain(docs_client) -> None:
+    """При `?group=node&node=…` крошки показывают путь от корня дерева."""
+    client, entry = docs_client
+    _seed_doc_tree(entry)
+
+    crumbs = _crumbs(client.get(f"/p/{entry.name}/docs?group=node&node=modules-m1").text)
+
+    assert '/p/demo/docs?group=node&amp;node=modules">Modules</a>' in crumbs
+    assert "<span>M1 Auth</span>" in crumbs
+
+
+def test_docs_list_crumbs_without_selection_stay_flat(docs_client) -> None:
+    """Без выбранного пункта рельса крошки — прежние: «… / Docs»."""
+    client, entry = docs_client
+    _seed_doc_tree(entry)
+
+    crumbs = _crumbs(client.get(f"/p/{entry.name}/docs").text)
+
+    assert "<span>Docs</span>" in crumbs
+    assert "node=" not in crumbs
+
+
+def test_doc_show_crumbs_include_doc_node(docs_client) -> None:
+    """Страница документа показывает его раздел между Docs и doc_key."""
+    client, entry = docs_client
+    _seed_doc_tree(entry)
+
+    crumbs = _crumbs(client.get(f"/p/{entry.name}/docs/modules/M1-auth/overview").text)
+
+    assert '/p/demo/docs?group=node&amp;node=modules">Modules</a>' in crumbs
+    assert '/p/demo/docs?group=node&amp;node=modules-m1">M1 Auth</a>' in crumbs
+    assert "<span>modules/M1-auth/overview</span>" in crumbs
+
+
+def test_doc_show_crumbs_without_node_stay_flat(docs_client) -> None:
+    """Документ без раздела (Инбокс) — крошки как раньше, без лишнего сегмента."""
+    client, entry = docs_client
+
+    crumbs = _crumbs(client.get(f"/p/{entry.name}/docs/modules/M1-auth/overview").text)
+
+    assert "node=" not in crumbs
+    assert "<span>modules/M1-auth/overview</span>" in crumbs
+
+
+def test_docs_list_crumbs_unknown_node_stay_flat(docs_client) -> None:
+    """Устаревшая ссылка на несуществующий раздел — плоские крошки, не 500."""
+    client, entry = docs_client
+
+    r = client.get(f"/p/{entry.name}/docs?group=node&node=bogus")
+
+    assert r.status_code == 200
+    crumbs = _crumbs(r.text)
+    assert "<span>Docs</span>" in crumbs
+    assert "node=" not in crumbs

@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Docs · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
-<nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> / <span>Docs</span></nav>
+<nav class="crumbs"><a href="/">Projects</a> / <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+{%- if crumb_nodes %}
+<a href="/p/{{ project.name }}/docs">Docs</a>{% for n in crumb_nodes %} / {% if loop.last %}<span>{{ n.title }}</span>{% else %}<a href="/p/{{ project.name }}/docs?group=node&amp;node={{ n.key }}">{{ n.title }}</a>{% endif %}{% endfor %}
+{%- else %}
+<span>Docs</span>
+{%- endif %}
+</nav>
 
 <h1>{{ project.name }} · Docs</h1>
 
