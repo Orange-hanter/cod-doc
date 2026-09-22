@@ -50,6 +50,7 @@ class _Calls:
     rollback: list[str] = field(default_factory=list)
     dropped: list[str] = field(default_factory=list)
     path_tool: list[str] = field(default_factory=list)
+    versions: list[tuple[str, str | None]] = field(default_factory=list)
 
 
 class _FakeEngine:
@@ -153,9 +154,23 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> _Calls:
     monkeypatch.setattr(runtime_service, "rollback", rollback)
     monkeypatch.setattr(runtime_service, "rollback_failed_swap", rollback)
     monkeypatch.setattr(runtime_service, "drop_build_src", lambda src: log.dropped.append(str(src)))
+
+    def installed_versions(*, runtime, repo):
+        # В `order` не пишем: перечитывание — не фаза, а уточнение отчёта.
+        log.versions.append((str(runtime), str(repo) if repo is not None else None))
+        return [
+            runtime_service.InstallVersion(
+                name="рантайм сервисов", binary="/runtime/bin/cod-doc", version="1.4.2"
+            ),
+            runtime_service.InstallVersion(
+                name=update_service.PATH_TOOL_NAME, binary="/path/cod-doc", version="1.4.2"
+            ),
+        ]
+
     monkeypatch.setattr(
         runtime_service, "sync_path_tool", lambda src: (log.path_tool.append(str(src)), "1.4.2")[1]
     )
+    monkeypatch.setattr(runtime_service, "installed_versions", installed_versions)
     monkeypatch.setattr(update_service, "relay_to_new_runtime", relay)
     monkeypatch.setattr(project_service, "migrate_entry", migrate_entry)
     monkeypatch.setattr(project_service, "migrate_registered_projects", migrate_all)
@@ -458,6 +473,20 @@ def test_to_dict_survives_json_dumps(tmp_path, cfg, calls, db):
     assert child.to_dict()["install"]["services"][0]["label"] == "com.cod-doc.mcp"
     assert child.to_dict()["install"]["path_tool"]["version"] == "1.4.2"
     assert calls.path_tool == [str(tmp_path)]
+
+
+def test_versions_are_reread_after_the_relay(tmp_path, cfg, calls, db):
+    """ADO-197: установку в PATH обновляет ребёнок, снятые в фазе A версии протухли.
+
+    Родитель печатает свой отчёт последним, а под `--json` он единственный:
+    `--json` ребёнку не форвардится (`_argv_tail`). Не перечитав, отчёт
+    называл бы версию до обновления — ровно это и увидели на живом прогоне.
+    """
+    report = update_service.run(cfg, update_plan=_plan(tmp_path))
+
+    assert calls.versions, "родитель не перечитал версии после relay"
+    rows = {entry.name: entry.version for entry in report.install.versions}
+    assert rows[update_service.PATH_TOOL_NAME] == "1.4.2"
 
 
 def test_human_readable_ref_replaces_sha_in_the_build_report(tmp_path, cfg, calls, db):
