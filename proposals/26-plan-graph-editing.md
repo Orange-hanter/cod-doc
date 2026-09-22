@@ -43,7 +43,7 @@
 | T12 | Циклы считает `plan_audit`, но только по запросу и только в отчёт — ни в findings, ни в гейт записи | `cod_doc/services/plan_service/audit.py:20` |
 | T13 | `EntityKind` не знает `PLAN_SECTION`; `revision.entity_kind` — `String(16)` без CHECK, миграция для нового значения не нужна | `cod_doc/domain/entities.py:313-330`, `cod_doc/infra/models/revisions.py:37` |
 | T14 | Сканер паритета опознаёт мутацию по признаку «функция пишет audit-trail». Путь, который вообще не заходит в `services/`, для него невидим **по построению** | `tests/services/_surface_parity.py:1-36` |
-| T15 | Прямые ORM-записи из презентации есть ровно в одном файле — `plan_tools.py` (3 места). В `cli/` и `api/` их нет | grep `session.add(` / `Repository(...).add(` по `mcp/`, `cli/`, `api/` |
+| T15 | Прямые ORM-записи из презентации есть в двух файлах: `mcp/tools/plan_tools.py` (3 места) и `api/legacy_tasks.py` (`plan_repo.add(Plan(...))`, `PlanSectionRepository(session).add(...)`). В `cli/` их нет | `plan_tools.py:61,72,207`, `legacy_tasks.py:91,94,105` |
 | T16 | Живой граф `Restate`: 1006 рёбер, из них с `note` — 11 (четыре поставлены вручную сегодня). 153 секции; у одной `position = -1` | `.cod-doc/state.db` |
 | T17 | Слаги секций: в `Restate` конвенции `[A-Z]-…` соответствуют все 153; в БД самого `cod-doc` — 42 секции, из них 16 вне конвенции (`agent-`, `P0-`, `adr-`, `web-`, …) | там же |
 | T18 | Добавление ребра мгновенно меняет `ready_tasks` (view: `status='pending'` и нет незакрытых блокеров) — задача исчезает из очереди готовых без всякого уведомления | миграция `20260919_0035`, `plan_service/reads.py:119` |
@@ -80,7 +80,7 @@ update_section(session, *, project_id, plan_scope, letter, author, reason,
 move_section(session, *, project_id, plan_scope, letter, author, reason,
              before=None, after=None, position=None) -> list[PlanSection]
 delete_section(session, *, project_id, plan_scope, letter, author, reason,
-               reassign_to=None, force=False) -> int
+               reassign_to=None) -> int
 ```
 
 - `EntityKind.PLAN_SECTION` — новое значение (по логике ADO-143: у секции своя
@@ -93,8 +93,16 @@ delete_section(session, *, project_id, plan_scope, letter, author, reason,
 - `move_section` перенумеровывает секции плана плотно (`0..n-1`) в одной
   транзакции и возвращает новый порядок целиком. Это закрывает приём
   `position = -1`: позиция перестаёт быть полем, которое выставляют руками.
-- `delete_section` повторяет контракт `delete_node`: непустая секция удаляется
-  только с `reassign_to` или `force`.
+- `delete_section` контракт `delete_node` **не** повторяет, и это осознанно. У
+  `document.node_id` есть NULL (Инбокс), поэтому `delete_node --force` осиротляет
+  документы и они остаются. У `task.section_id` — `NOT NULL` плюс
+  `ondelete="CASCADE"` (`infra/models/plans.py:96-98`): тот же `force` снёс бы
+  задачи секции, их рёбра и `affected_file`, а `revision` и `activity_event` к
+  задаче внешним ключом не привязаны и остались бы сиротами на мёртвых
+  `entity_id` — история пережила бы сущность, к которой относится. Поэтому
+  `force` не заводится вовсе: непустая секция удаляется только через
+  `reassign_to`. Понадобится удаление вместе с задачами — это отдельная операция
+  с отдельным именем и отдельным разговором, а не флаг.
 
 ### 3.2 Рёбра графа — `task_service.add_dependency`
 
@@ -182,10 +190,12 @@ cod-doc 16 слагов вне конвенции (T17), и жёсткая пр�
 1. **AST-гейт «презентация не пишет ORM»** —
    `tests/services/test_presentation_no_orm_writes.py`: в `cod_doc/mcp/`,
    `cod_doc/cli/`, `cod_doc/api/` запрещены `session.add/delete/merge` и
-   `*Repository(...).add/update/delete`. После переезда `plan_tools`
-   allowlist пуст (T15). Это единственная проверка, которая поймала бы
-   исходную дыру: она стережёт не «есть ли функция на поверхности», а
-   «не течёт ли запись мимо слоя».
+   `*Repository(...).add/update/delete` — в том числе через локальную
+   переменную (`repo = XRepository(session)` и следом `repo.add(...)`), иначе
+   гейт зазеленел бы на живом нарушении в `api/legacy_tasks.py`. Allowlist
+   пуст после переезда обоих файлов (T15). Это единственная проверка, которая
+   поймала бы исходную дыру: она стережёт не «есть ли функция на поверхности»,
+   а «не течёт ли запись мимо слоя».
 2. **Расширить `_surface_parity` на `plan_service`** — после переезда
    write-функций в сервис они попадают под сканер сами, без правки теста.
 3. **Рутина `graph_health`** в `CHECK_CATALOG` (партиция
@@ -233,10 +243,31 @@ cod-doc 16 слагов вне конвенции (T17), и жёсткая пр�
 | 2 | `plan_section_create` переписан на сервис; прямые ORM-записи из `plan_tools` убраны | `plan_create` и `plan_section_create` не содержат `Repository(...).add`; поведение тула по полям ответа не изменилось |
 | 3 | `task_service.add_dependency` + upsert/`adopt`; `project_id` в `_require_task` и `remove_dependency` | добавление ребра, замыкающего цикл, отказывает и называет путь; повтор без изменений молчит; `adopt` пишет ревизию без изменения данных |
 | 4 | Валидаторы: заголовок/буква/позиция секции, подключение `validate_section_slug`, единый генератор слага, advisory `audit_html_escaped_text` | новый слаг по умолчанию `^[A-Z]-…`; существующие слаги не ломаются; `&amp;` в заголовке даёт предупреждение в ответе, а не отказ |
-| 5 | Поверхности: MCP `plan_section_update/move/delete`, `task_add_dependency`; CLI `plan section create/update/move/delete/list`, `task depend/undepend` | счётчики профилей обновлены **в пяти местах** (`mcp/profiles.py`, `server.py --profile`, `AGENTS.md §5.9`, `CLAUDE.md`, `docs/mcp-integration.md`): `standard` 142→146, `full` 146→150, `agent` без изменений |
+| 5 | Поверхности: MCP `plan_section_update/move/delete`, `task_add_dependency`; CLI `plan create`, `plan section create/update/move/rm/list`, `task add-dep` | `standard` 142→146, `full` 146→150, `agent` без изменений; счётчики обновлены по **полному** списку — см. §8.1 |
 | 6 | Гейты: `test_presentation_no_orm_writes.py`, `_surface_parity` над `plan_service` | оба падают на заведомо дырявом патче (проверено ручной регрессией), allowlist пустой |
 | 7 | Рутина `graph_health` + findings + `curator_next` | на живом `Restate` даёт находки по 995 рёбрам без `note` и по секции с `position=-1`; повторный прогон не плодит дубликаты; исчезнувшая находка закрывается |
 | 8 | Документация: `capabilities/plan-management.md`, `HANDBOOK`, `zsh`-дополнение | `_cod-doc` регенерирован (`python -m cod_doc.cli.completion --write`), `test_zsh_completion_drift` зелёный |
+
+### 8.1 Счётчики профилей — где они на самом деле лежат
+
+`CLAUDE.md` обещает «ПЯТЬ мест». Проверено 2026-09-22: около **сорока строк в
+двенадцати файлах** — `mcp/profiles.py`, `mcp/server.py` (`--profile` help),
+`tests/test_server_profiles.py`, `AGENTS.md` (§5.9 и баннер), `CLAUDE.md`
+(4 строки), `docs/mcp-integration.md` (введение, блок профилей, таблица демонов,
+строка семейства, ИТОГО, сводная таблица), `deploy/launchd/README.md`,
+`MASTER.md`, `README.md`, `skills/orchestrator/SKILL.md`.
+
+Машинно проверяются **два** из них: `tests/test_server_profiles.py`
+(`EXPECTED_PROFILE_COUNTS`) и три теста `tests/test_mcp_integration_doc.py`
+(общее заявление, сумма строк семейств, ИТОГО). Остальное разъезжается молча — и
+уже разъехалось: `MASTER.md` обещает 126 тулов при реальных 146, `README.md` —
+«~100 CRUD tools» и перечисляет в шеститульном профиле `agent` тулы
+`agent_pick`/`agent_complete`, которых там нет с CUR-008.
+
+Это тот же класс дефекта, что и весь RFC: правило держится на дисциплине, а не
+на проверке. Починка разъехавшегося и гейт на прозаические счётчики идут
+отдельной задачей — не потому, что они часть графа плана, а потому, что задача 5
+иначе добавит тринадцатое место к двенадцати.
 
 ## 9. Риски
 
@@ -245,5 +276,6 @@ cod-doc 16 слагов вне конвенции (T17), и жёсткая пр�
 | Обязательный `note`/`reason` раздражает при массовой правке графа | требование только на интерактивном пути; импортёры и `task_create(blocked_by=…)` проставляют `reason` сами |
 | Проверка цикла на каждой вставке | обход в глубину от блокера; на 1006 рёбрах `Restate` — единицы миллисекунд, и только на write-пути |
 | Подключение `validate_section_slug` ломает существующий корпус | валидация только на записи; 16 расхождений в БД cod-doc уходят в находки рутины, а не в ошибки |
-| Четыре новых тула снова разъезжают пять мест со счётчиками | это уже стережёт `test_server_profiles` + `test_mcp_integration_doc`; задача 5 без них не закрывается |
+| Четыре новых тула добавляют тринадцатое место к двенадцати разъезжающимся | §8.1: полный список в acceptance задачи 5, починка старого дрейфа и гейт — отдельной задачей |
+| `delete_section` каскадом уносит задачи вместе с их историей | `force` не заводится; непустая секция удаляется только через `reassign_to` (§3.1) |
 | `adopt` превращается в способ «записать что угодно» | `adopt` не меняет данные; он только фиксирует автора и причину для того, что уже лежит в БД |
