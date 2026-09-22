@@ -497,12 +497,8 @@ def import_or_update_markdown(
         if source_sha256 is not None and doc_row_id is not None:
             _set_content_sha(session, doc_row_id, source_sha256)
             _set_projection_hash_to_rendered(session, doc_row_id)
-        # ADO-030: keep FTS fresh in the same transaction — a doc you just
-        # imported must be searchable without a manual --reindex.
-        # ADO-211: import_markdown now indexes best-effort itself; this strict
-        # call stays on purpose, matching the update path below — this entry
-        # point has always failed loudly without the FTS table.
-        search_service.upsert_doc(session, project_id=project_id, doc_key=doc_key)
+        # ADO-030 / ADO-211: import_markdown above already refreshed the FTS
+        # row in this transaction — indexing again here would be a duplicate.
         return report
 
     # Doc exists — first sync its document-level metadata/frontmatter, then
@@ -579,8 +575,11 @@ def import_or_update_markdown(
     if source_sha256 is not None:
         _set_content_sha(session, existing.row_id, source_sha256)
         _set_projection_hash_to_rendered(session, existing.row_id)
-    # ADO-030: same-transaction FTS refresh on the update path too.
-    search_service.upsert_doc(session, project_id=project_id, doc_key=doc_key)
+    # ADO-030: same-transaction FTS refresh on the update path too — once per
+    # document (sections were patched with reindex=False). ADO-211: best-effort
+    # like every other write-path hook (search_service, CUR-012): the index is
+    # derived, and a DB without migration 0023 must still accept the import.
+    search_service.index_doc(session, project_id=project_id, doc_key=doc_key)
     refreshed = docs.get(session, project_id, doc_key) or existing
     return ImportReport(document=refreshed, created=False, warnings=warnings)
 

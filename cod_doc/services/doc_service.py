@@ -601,10 +601,11 @@ def rename(
         )
 
     # ADO-211: индекс ключуется по doc_key — без этого поиск отдавал бы старый
-    # ref, которого больше нет, а по новому ключу не находил ничего.
+    # ref, которого больше нет, а по новому ключу не находил ничего. Смена
+    # одного лишь пути индексируемое (заголовок, преамбула, секции) не трогает.
     if old_key != new_doc_key:
         search_service.unindex_doc(session, project_id=doc.project_id, doc_key=old_key)
-    search_service.index_doc(session, project_id=doc.project_id, doc_key=new_doc_key)
+        search_service.index_doc(session, project_id=doc.project_id, doc_key=new_doc_key)
     refreshed = DocumentRepository(session).get(document_id)
     assert refreshed is not None
     return refreshed

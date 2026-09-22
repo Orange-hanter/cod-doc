@@ -165,3 +165,35 @@ def test_import_markdown_indexes_the_document_once(
         )
 
     assert calls == ["guides/many"]
+
+
+def test_import_or_update_indexes_once_on_create_and_on_update(
+    engine_with_schema: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ai-review #100: путь создания индексировал дважды — внутри
+    import_markdown и следом строгим upsert. По одному разу на каждый путь."""
+    calls: list[str] = []
+    real = search_service.index_doc
+
+    def counting(session: Session, *, project_id: int, doc_key: str) -> None:
+        calls.append(doc_key)
+        real(session, project_id=project_id, doc_key=doc_key)
+
+    monkeypatch.setattr(search_service, "index_doc", counting)
+    raw = "---\ntitle: Twice\ntype: guide\n---\n# Twice\n\n## A\n\nfirst\n\n## B\n\nsecond\n"
+    with transactional(make_session_factory(engine_with_schema)) as session:
+        pid = _seed_project(session)
+        import_service.import_or_update_markdown(
+            session, project_id=pid, doc_key="guides/twice", raw_markdown=raw, author=AUTHOR
+        )
+        assert calls == ["guides/twice"]
+
+        import_service.import_or_update_markdown(
+            session,
+            project_id=pid,
+            doc_key="guides/twice",
+            raw_markdown=raw.replace("first", "rewritten").replace("second", "again"),
+            author=AUTHOR,
+        )
+        assert calls == ["guides/twice", "guides/twice"]
+        assert _refs(session, pid, "rewritten") == ["guides/twice"]
