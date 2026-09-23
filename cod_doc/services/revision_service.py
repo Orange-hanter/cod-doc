@@ -327,12 +327,16 @@ def _revert_section(session: Session, model: RevisionModel, *, author: str) -> N
     sec = session.get(SectionModel, model.entity_id)
     if sec is None:
         raise LookupError(f"section #{model.entity_id} not found")
+    # Без метки принадлежность не доказать — и такой ревизии на практике нет:
+    # оба писателя (`add_section`, `patch_section`) метят diff, без метки
+    # остаётся лишь пустой diff секции, созданной с пустым телом.
     labelled = _SECTION_LABEL_RE.search(model.diff)
-    if labelled is not None and labelled.group(1) != sec.anchor:
+    if labelled is None or labelled.group(1) != sec.anchor:
+        written_for = f"anchor {labelled.group(1)!r}" if labelled else "no section label"
         raise RevertNotSupportedError(
-            f"revision {model.revision_id} belongs to section #{labelled.group(1)}, "
-            f"but row #{model.entity_id} is now #{sec.anchor} — the id was reused "
-            "after a delete (ADO-213)"
+            f"revision {model.revision_id} was written for {written_for}, but section "
+            f"row {model.entity_id} now holds anchor {sec.anchor!r} — the row id was "
+            "reused after a delete, or the revision cannot be matched to it (ADO-213)"
         )
 
     from cod_doc.services import doc_service as _docs

@@ -10,15 +10,17 @@ completes the cycle `doc_create` → `doc_add_section` → `doc_patch_section`.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from mcp.server.fastmcp import FastMCP
+from sqlalchemy import select
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, EntityKind, Sensitivity
 from cod_doc.infra.db import make_session_factory, transactional
-from cod_doc.infra.models import ProjectModel
+from cod_doc.infra.models import ProjectModel, RevisionModel
 from cod_doc.mcp.tools import doc_tools
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
@@ -407,6 +409,14 @@ def test_doc_delete_section_removes_the_section(
 
     with transactional(factory) as session:
         assert docs.get_sections(session, doc_id) == []
+        # ai-review #85 (critical): тул искал ревизию по SECTION и возвращал
+        # прошлую правку уже удалённой секции — непустой id, но не тот.
+        # Ревизия удаления — на документе.
+        model = session.execute(
+            select(RevisionModel).where(RevisionModel.revision_id == result["revision_id"])
+        ).scalar_one()
+        assert (model.entity_kind, model.entity_id) == (EntityKind.DOCUMENT.value, doc_id)
+        assert json.loads(model.diff)["op"] == "delete_section"
 
 
 def test_doc_delete_section_dry_run_leaves_db_untouched(

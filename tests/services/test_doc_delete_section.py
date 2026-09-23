@@ -291,3 +291,33 @@ def test_delete_section_takes_its_links_with_it(engine_with_schema) -> None:  # 
 
     with transactional(factory) as session:
         assert session.execute(select(LinkModel)).scalars().all() == []
+
+
+def test_unlabelled_section_revision_is_not_reverted_blindly(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ai-review #85 (major): сторож пропускал ревизии без метки `section:…#…`.
+
+    Без метки принадлежность ревизии секции не доказать, а откат патчит строку
+    по одному `entity_id` — то есть ровно по тому, что переиспользуется.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        doc_id = _seed_three(session)
+        beta = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "beta")
+        assert beta.row_id is not None
+        doc = docs.get_doc_by_id(session, doc_id)
+        assert doc is not None
+        unlabelled = rev.write(
+            session,
+            project_id=doc.project_id,
+            entity_kind=EntityKind.SECTION,
+            entity_id=beta.row_id,
+            author="human:dakh",
+            diff="",
+            reason="legacy write without a label",
+        )
+
+        with pytest.raises(rev.RevertNotSupportedError):
+            rev.revert(session, unlabelled.revision_id, author="human:dakh")
+
+        body = next(s.body for s in docs.get_sections(session, doc_id) if s.anchor == "beta")
+    assert body == "Body of beta."

@@ -393,10 +393,12 @@ def register(mcp: FastMCP) -> None:
         CLI-only (`cod-doc doc delete`) on purpose. Remaining sections are
         renumbered so `position` stays a dense index.
 
-        The removed body is preserved in the SECTION revision this writes, but
-        `revision_revert` cannot replay it: the section row it points at is
-        gone. Read the body back out of `revision_get` and re-create it with
-        `doc_add_section`.
+        The removed body is preserved in the DOCUMENT revision this writes
+        (JSON diff, ``op="delete_section"``; the returned ``revision_id``) —
+        the history hangs on the living document, not on a dead section row
+        whose id SQLite may reuse. `revision_revert` refuses it explicitly
+        (`RevertNotSupportedError`). Read the body back out of `revision_get`
+        and re-create it with `doc_add_section`.
 
         `dry_run=True` resolves the section and returns the would-be diff
         without deleting anything.
@@ -424,15 +426,16 @@ def register(mcp: FastMCP) -> None:
             remaining = len(before) - 1
 
             if not dry_run:
-                removed = doc_service.delete_section(
+                doc_service.delete_section(
                     session,
                     document_id=d.row_id,
                     anchor=anchor,
                     author=author,
                     reason=reason,
                 )
-                assert removed.row_id is not None
-                revision_id = revisions.head_for_entity(session, EntityKind.SECTION, removed.row_id)
+                # ADO-213: ревизия удаления на документе. Поиск по SECTION
+                # вернул бы прошлую правку уже удалённой секции.
+                revision_id = revisions.head_for_entity(session, EntityKind.DOCUMENT, d.row_id)
 
         out: dict[str, Any] = {
             "doc_key": doc_key,

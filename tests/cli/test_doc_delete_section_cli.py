@@ -19,7 +19,7 @@ from cod_doc.cli import main
 from cod_doc.config import Config
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
 from cod_doc.infra.db import db_for_entry, transactional
-from cod_doc.infra.models import ActivityEventModel
+from cod_doc.infra.models import ActivityEventModel, RevisionModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
 
@@ -161,6 +161,24 @@ def test_delete_section_json_is_parseable(tmp_path: Path, isolated_cod_doc_home:
     assert payload["deleted"] is True
     assert payload["remaining_sections"] == 2
     assert payload["revision_id"]
+    # ai-review #85 (critical): команда искала ревизию по SECTION и отдавала
+    # прошлую правку уже удалённой секции. Ревизия удаления — на документе.
+    assert _revision_op(payload["revision_id"]) == ("document", "delete_section")
+
+
+def _revision_op(revision_id: str, project_name: str = "p") -> tuple[str, str]:
+    """(entity_kind, op) ревизии — op из JSON-diff документа."""
+    entry = Config.load().get_project(project_name)
+    assert entry is not None
+    factory, engine = db_for_entry(entry)
+    try:
+        with transactional(factory) as session:
+            model = session.execute(
+                select(RevisionModel).where(RevisionModel.revision_id == revision_id)
+            ).scalar_one()
+            return model.entity_kind, json.loads(model.diff)["op"]
+    finally:
+        engine.dispose()
 
 
 def test_delete_section_dry_run_shows_the_diff_and_writes_nothing(
