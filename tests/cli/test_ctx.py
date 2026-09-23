@@ -258,12 +258,33 @@ def test_ctx_next_json_valid(tmp_path: Path, isolated_cod_doc_home: Path) -> Non
     assert set(data["card"]) == {"drift", "links", "master", "findings", "unplaced"}
     assert data["card"]["drift"]["project"] == "p"
     assert set(data["meta"]) == {"generated_at", "truncated", "counts"}
-    assert data["navigation"]["applicable_skills"][0]["name"] == "orchestrator"
+    # AFT-002: advisory-строки дрейфа считаются отдельно от проблем.
+    assert "drift_issues" in data["meta"]["counts"]
+    assert "drift_advisory" in data["meta"]["counts"]
+    skills = data["navigation"]["applicable_skills"]
+    assert skills[0]["name"] == "orchestrator"
+    # AFT-002: без --include-skill-bodies тела скиллов в ответ не идут.
+    assert all("body" not in s for s in skills)
 
     # alpha.md содержит [[doc:missing]] — битая ссылка обязана попасть в очередь.
     links = [item for item in data["priority"] if item["kind"] == "link"]
     assert links, "нерезолвящаяся ссылка обязана быть в очереди"
     assert "link_verify(" in links[0]["suggested_action"]
+
+
+def test_ctx_next_json_include_skill_bodies(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    """AFT-002: `--include-skill-bodies` возвращает тела скиллов куратора."""
+    root = _init_project(tmp_path)
+    _import_corpus(root)
+
+    result = CliRunner().invoke(
+        main, ["ctx", "next", "-p", "p", "--json", "--include-skill-bodies"]
+    )
+    assert result.exit_code == 0, result.output
+
+    skills = json.loads(result.output)["navigation"]["applicable_skills"]
+    assert skills
+    assert all(s.get("body") for s in skills)
 
 
 def test_ctx_next_limit_truncates(tmp_path: Path, isolated_cod_doc_home: Path) -> None:

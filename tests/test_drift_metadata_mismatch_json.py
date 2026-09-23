@@ -163,5 +163,7 @@ def test_curator_drift_card_issue_names_the_field(tmp_path: Path) -> None:
     finally:
         engine.dispose()
 
-    (issue,) = card["issues"]
-    assert issue["metadata_mismatch"] == ["status"]
+    # AFT-002: `in_sync` с расхождением frontmatter в карточке — advisory, не issue.
+    assert card["issues"] == []
+    assert card["advisory"] == {"count": 1, "doc_keys": ["master"]}
+    assert card["counts"]["metadata_mismatch"] == 1

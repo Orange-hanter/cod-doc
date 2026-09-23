@@ -40,6 +40,11 @@ _CURATOR_SKILLS: tuple[str, ...] = (
 #: ``limit``, но карточка остаётся обозримой даже при большом хвосте.
 _FINDINGS_CAP = 50
 
+#: Сколько ключей advisory-документов перечислять в карточке. Остальные
+#: отражены только в ``advisory.count``: список нужен как образец, а не как
+#: реестр — полный даёт ``ctx_drift``.
+_ADVISORY_KEYS_CAP = 10
+
 # --------------------------------------------------------------------- #
 # Порядок очереди. Числа — ранги сортировки, не «важность в процентах».  #
 # Шкала одна на все виды находок, поэтому и живёт одной таблицей:        #
@@ -78,7 +83,8 @@ _SLUG_PLACEHOLDER = "<project>"
 _SECTION_LINKS = "links"
 
 _NEXT_ACTIONS: tuple[str, ...] = (
-    "Прочитай тела скиллов из navigation.applicable_skills — они задают протокол.",
+    "В navigation.applicable_skills — только имя и описание скиллов; их правила (тела) "
+    "отдаёт curator_next(project=..., include_skill_bodies=true) — прочитай их до работы.",
     "Бери priority[0]: в нём уже лежит готовая команда (suggested_action).",
     "Правку файла фиксируй в БД: `cod-doc doc import <path> -p <slug>`, не наоборот.",
     "После правки тела документа обнови реестр: `cod-doc hash update MASTER.md`.",
@@ -95,11 +101,14 @@ _SUCCESS_CRITERIA: tuple[str, ...] = (
 )
 
 
-def _skills_with_bodies() -> list[dict[str, Any]]:
-    """Скиллы куратора с ПОЛНЫМИ телами (не только описаниями).
+def _curator_skills(*, include_bodies: bool) -> list[dict[str, Any]]:
+    """Скиллы куратора: имя и описание, тела — только по запросу.
 
-    Инлайн тел — то же обоснование, что и в task card: агент не должен
-    звать ``skill_get`` отдельно, чтобы прочитать правила drift-handling.
+    Тела четырёх скиллов были основной массой ответа ``curator_next``
+    (RFC 27 F1), а нужны они один раз за сессию, не на каждый вызов.
+    Поэтому по умолчанию — ``{name, description}``; ``include_bodies=True``
+    добавляет ``body``: на профиле ``agent`` нет ``skill_get``, и другого
+    пути к правилам drift-handling у куратора нет.
     Неизвестное имя молча пропускается — каталог скиллов поставляется
     пакетом и может отстать от этого списка.
     """
@@ -111,13 +120,13 @@ def _skills_with_bodies() -> list[dict[str, Any]]:
         record = by_name.get(name)
         if record is None:
             continue
-        out.append(
-            {
-                "name": name,
-                "description": (record.get("description") or "").strip(),
-                "body": get_skill_body(name) or "",
-            }
-        )
+        skill: dict[str, Any] = {
+            "name": name,
+            "description": (record.get("description") or "").strip(),
+        }
+        if include_bodies:
+            skill["body"] = get_skill_body(name) or ""
+        out.append(skill)
     return out
 
 
@@ -126,19 +135,39 @@ def _drift_card(
     project_id: int,
     root_path: Path,
 ) -> dict[str, Any]:
-    """Дрейф проекта в форме MCP-тула ``ctx_drift`` (минус ключ ``project``).
+    """Дрейф проекта в форме MCP-тула ``ctx_drift`` (минус ``project``, плюс ``advisory``).
 
     Слаг сюда не приезжает — сервис знает только ``project_id``; поверхности
     (``curator_next`` / ``cod-doc ctx next``) дописывают его сами.
+
+    ``issues`` — только документы, чьё содержимое разошлось (не ``in_sync``).
+    ``in_sync``-строки попадают в ``issues`` проекции лишь из-за расхождения
+    frontmatter (ADO-092) или осиротевших секций (ADO-213); в очередь
+    действий их не пускает ``_drift_priority``, а в карточке они раздували
+    ответ до ≈25 КБ (RFC 27 F1). Поэтому они сведены в ``advisory``: число и
+    первые ``_ADVISORY_KEYS_CAP`` ключей — полный список отдаёт ``ctx_drift``.
+    ``counts`` — счётчики проекции без изменений (``metadata_mismatch`` и
+    ``orphan_sections`` в них остаются). Хэши в строках короткие.
     """
     from cod_doc.services import projection_service
 
     report = projection_service.detect_project_drift(session, project_id, root_path=root_path)
+    in_sync = projection_service.DriftStatus.IN_SYNC
+    issues = [
+        item.as_payload(hashes="short")
+        for item in report.issues
+        if item.report.status is not in_sync
+    ]
+    advisory_keys = [item.doc_key for item in report.issues if item.report.status is in_sync]
     return {
         "total_docs": report.total_docs,
-        "problem_count": report.problem_count,
+        "problem_count": len(issues),
         "counts": report.counts,
-        "issues": [item.as_payload() for item in report.issues],
+        "issues": issues,
+        "advisory": {
+            "count": len(advisory_keys),
+            "doc_keys": advisory_keys[:_ADVISORY_KEYS_CAP],
+        },
     }
 
 
@@ -335,6 +364,7 @@ def next(
     limit: int = 10,
     project_slug: str | None = None,
     skip_links: bool = False,
+    include_skill_bodies: bool = False,
 ) -> dict[str, Any]:
     """Собрать «doc card» куратора: что протухло и за что браться первым.
 
@@ -355,11 +385,21 @@ def next(
             update --skip-links``), этот обход не нужен вовсе. Умолчание
             ``False``: диагност общий, и ни ``curator_next``, ни drift-гейт
             PR своего поведения не меняют.
+        include_skill_bodies: инлайнить тела скиллов в
+            ``navigation.applicable_skills``. Тела четырёх скиллов — основная
+            масса ответа (RFC 27 F1), поэтому умолчание ``False``: только
+            ``{name, description}``. На профиле ``agent`` нет ``skill_get``,
+            так что этот флаг — единственный путь куратора к телам.
 
     Returns:
         ``{"card": {drift, links, master, findings, unplaced},
         "priority": [...], "navigation": {...}, "meta": {...}}``. Карточка —
         полный срез, ``priority`` — усечённая очередь действий по нему.
+
+        ``card.drift.advisory`` — ``{count, doc_keys}`` по ``in_sync``-документам
+        с расхождением frontmatter или осиротевшими секциями: в ``issues`` их
+        нет. ``meta.counts`` считает их отдельно — ``drift_advisory`` рядом
+        с ``drift_issues``.
 
         ``meta["not_collected"]`` перечисляет разделы карточки, которые не
         собирались, и появляется только когда такие есть. Пустой
@@ -389,6 +429,7 @@ def next(
         "truncated": len(priority) > limit,
         "counts": {
             "drift_issues": len(card["drift"]["issues"]),
+            "drift_advisory": card["drift"]["advisory"]["count"],
             "links": len(card["links"]),
             "master": len(card["master"]),
             "findings": len(card["findings"]),
@@ -407,7 +448,7 @@ def next(
         "card": card,
         "priority": priority[:limit],
         "navigation": {
-            "applicable_skills": _skills_with_bodies(),
+            "applicable_skills": _curator_skills(include_bodies=include_skill_bodies),
             "next_actions": list(_NEXT_ACTIONS),
             "success_criteria": list(_SUCCESS_CRITERIA),
         },
