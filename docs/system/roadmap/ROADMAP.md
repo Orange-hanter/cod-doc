@@ -78,7 +78,7 @@ related_docs:
 | [agent-tools-completion](agent-tools-completion-task-plan.md) | ✅ done | закрыт STB-001 |
 | [stabilization-2026-06](../audit/2026-07-29-state-of-the-project.md) | 🔄 11/12 · 1 cancelled *(2026-09-21)* | Остаток — один STB-023. STB-012 → cancelled (re-scoped как ADO-013); секция P1 закрылась 4/4, отменённая задача больше не держит её открытой |
 | **adoption-2026-08** | 🔄 137/233 · 4 cancelled *(2026-09-21)* | Треки C+D+E+W; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)). Секции: **C 25/25 ✅**, D 60/98, E 18/20, F 1/1, G 9/28, H 2/2, **I Web UI 22/59**. Отменены ADO-003, ADO-004, ADO-043, ADO-051 — до ADO-078 они третий месяц числились несделанными, и секция C висела «2 осталось», не имея ни одной задачи |
-| **agent-fit-2026-09** ([RFC 27](../../../proposals/27-agent-fit.md)) | 🆕 0/16 *(2026-09-23)* | Coding-агент закрывает вопросы тулами, а не SQL. Секции: A 0/3, B 0/2, C 0/5, D 0/1, E 0/1, F 0/4 |
+| **agent-fit-2026-09** ([RFC 27](../../../proposals/27-agent-fit.md)) | 🔄 2/16 *(2026-09-23)* | Coding-агент закрывает вопросы тулами, а не SQL. Секции: A 0/3, **B 2/2 ✅**, C 0/5, D 0/1, E 0/1, F 0/4 |
 | RFC 16–21 (hackathon-track) | ❌ отбракованы 2026-08-29 | ADO-056: ни одна не закрывает спрос M2; пометки в [proposals/README.md](../../../proposals/README.md) |
 
 ## Смена приоритета: почему Adoption вперёд фич
@@ -154,7 +154,7 @@ byte-identical round-trip — перед первым `doc export` наружу)
 | Секция | Содержание | Задачи |
 |---|---|---|
 | A | Выдача по бюджету: единая строка дрейфа, `curator_next` ≤ 8 КБ, компактный `plan_ready` | AFT-001…003 |
-| B | Роль по профилю: `coder` на `standard`/`full`, карточка `agent_pick` без `orchestrator` | AFT-004…005 |
+| B | Роль по профилю: `coder` на `standard`/`full`, карточка `agent_pick` без `orchestrator` | AFT-004…005 ✅ done (2/2), аудит [2026-09-23-agent-fit-section-b.md](../audit/2026-09-23-agent-fit-section-b.md) |
 | C | Чтение без SQL: фильтры `task_list`, `plan_list`/проектный прогресс, лента ревизий, `doc_section_get`, `context_get(task)` | AFT-006…010 |
 | D | Надёжный `task_create`: префикс из плана, коллизии без `IntegrityError` | AFT-011 |
 | E | `local_only` в ready-выборке | AFT-012 |
