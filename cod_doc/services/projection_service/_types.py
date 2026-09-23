@@ -118,14 +118,20 @@ class ProjectDriftItem:
 
 @dataclass(slots=True)
 class ProjectDriftReport:
+    """Project-wide drift summary.
+
+    AFT-003 (RFC 27 F4): `issues` may be cut to the caller's `limit`;
+    `problem_count`, `counts` and `total_docs` always describe the whole
+    scanned corpus. `truncated` is true when `issues` holds fewer rows than
+    `problem_count`.
+    """
+
     project_id: int
     total_docs: int
     counts: dict[str, int]
     issues: list[ProjectDriftItem]
-
-    @property
-    def problem_count(self) -> int:
-        return len(self.issues)
+    problem_count: int
+    truncated: bool
 
 
 class FidelityBackfillAction(StrEnum):

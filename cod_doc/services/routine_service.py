@@ -249,6 +249,7 @@ def _check_doc_drift(
             "findings_count": 0,
             "total_docs": 0,
             "counts": {},
+            "truncated": False,
             "note": "project root not found",
         }
 
@@ -265,6 +266,7 @@ def _check_doc_drift(
         "findings_count": report.problem_count,
         "total_docs": report.total_docs,
         "counts": report.counts,
+        "truncated": report.truncated,
     }
 
 
