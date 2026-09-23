@@ -258,17 +258,7 @@ def _check_doc_drift(
         root_path=root,
         limit=limit,
     )
-    findings = [
-        {
-            "doc_key": item.doc_key,
-            "path": item.path,
-            "status": item.report.status.value,
-            "projection_hash": item.report.projection_hash,
-            "db_content_hash": item.report.db_content_hash,
-            "file_hash": item.report.file_hash,
-        }
-        for item in report.issues
-    ]
+    findings = [item.as_payload() for item in report.issues]
 
     return {
         "findings": findings,
