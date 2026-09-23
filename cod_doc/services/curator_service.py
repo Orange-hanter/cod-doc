@@ -137,22 +137,7 @@ def _drift_card(
         "total_docs": report.total_docs,
         "problem_count": report.problem_count,
         "counts": report.counts,
-        "issues": [
-            {
-                "doc_key": item.doc_key,
-                "path": item.path,
-                "status": item.report.status.value,
-                "projection_hash": item.report.projection_hash,
-                "db_content_hash": item.report.db_content_hash,
-                "file_hash": item.report.file_hash,
-                # ADO-213: без этого ключа документ попадал в список проблем
-                # со статусом `in_sync` и без единой причины — сирота секции
-                # поднимает `problem_count`, но объяснить себя не могла.
-                # Остальные три места сериализации (`doc_tools`) его несут.
-                "orphan_sections": list(item.report.orphan_sections),
-            }
-            for item in report.issues
-        ],
+        "issues": [item.as_payload() for item in report.issues],
     }
 
 

@@ -60,12 +60,39 @@ class DriftReport:
     # sections in the DB against five in the file.
     orphan_sections: tuple[str, ...] = ()
 
+    def as_payload(self) -> dict[str, object]:
+        """The report as the JSON every surface returns (without doc_key/path).
+
+        ADO-216: this dict used to be spelled out by hand in six places — MCP
+        `doc_drift` / `doc_drift_all` / `ctx_drift`, CLI `doc drift --json`
+        (row and issue) and `curator_service`. ADO-213 threaded
+        `orphan_sections` through all six manually; `metadata_mismatch` never
+        made it into any, so a document sat in `issues` as `in_sync` with no
+        stated reason. One builder means a new field reaches every surface.
+        """
+        return {
+            "status": self.status.value,
+            "projection_hash": self.projection_hash,
+            "db_content_hash": self.db_content_hash,
+            "file_hash": self.file_hash,
+            # Both reported beside `status`, never folded into it: an accepted
+            # document reads `in_sync` while its frontmatter says what the enum
+            # cannot hold (ADO-092) or its DB body carries headings the file
+            # dropped (ADO-213). Cures: teach the value / `doc import --replace`.
+            "metadata_mismatch": list(self.metadata_mismatch),
+            "orphan_sections": list(self.orphan_sections),
+        }
+
 
 @dataclass(slots=True)
 class ProjectDriftItem:
     doc_key: str
     path: str
     report: DriftReport
+
+    def as_payload(self) -> dict[str, object]:
+        """One `issues` row: the document's identity plus its report."""
+        return {"doc_key": self.doc_key, "path": self.path, **self.report.as_payload()}
 
 
 @dataclass(slots=True)
