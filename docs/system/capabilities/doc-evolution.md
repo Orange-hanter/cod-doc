@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-15
+last_updated: 2026-09-21
 related_docs:
   - ../standards/revision-history.md
   - ../standards/document-link.md
@@ -16,18 +16,65 @@ related_docs:
 
 > Управляемая эволюция документов: создание, патчинг, переименование, слияние, декомпозиция — без рассинхронизации с кодом и ссылками.
 
-## 0. As implemented (2026-09-15)
+## 0. As implemented (2026-09-21)
 
 SoT — строка `document` в SQLite; markdown — проекция. Живые тулы:
-`doc_create` / `doc_export` / `doc_drift` / `doc_import` / `doc_body` /
-`doc_accept` / `doc_rename` / `doc_add_section` / `doc_patch_section`
-(MCP-обёртки над `doc_service.add_section` и `doc_service.patch_section`,
-optimistic concurrency у патча — через `expected_parent_revision_id`,
-добавлены 2026-09-18; CLI-зеркала — `cod-doc doc add-section` и
-`cod-doc doc patch`). Цикл `doc_create` → `doc_add_section` →
-`doc_patch_section` проходится целиком без файла на диске. Ручная правка
-проекции → `edited_in_place` / `ExportGuardError`. Ниже ещё встречаются dotted
+`doc_create` / `doc_export` / `doc_drift` / `doc_body` /
+`doc_accept` / `doc_rename` / `doc_add_section` / `doc_patch_section` /
+`doc_delete_section` (MCP-обёртки над `doc_service.add_section`,
+`doc_service.patch_section` и `doc_service.delete_section`, optimistic
+concurrency у патча — через `expected_parent_revision_id`, добавлены
+2026-09-18; CLI-зеркала — `cod-doc doc add-section`, `cod-doc doc patch` и
+`cod-doc doc delete-section`). Цикл `doc_create` → `doc_add_section` →
+`doc_patch_section` → `doc_delete_section` проходится целиком без файла на
+диске. Импорт файла обратно в БД — только CLI (`cod-doc doc import`) и кнопка
+в web-UI; MCP-тула с таким именем нет. Ручная правка проекции →
+`edited_in_place` / `ExportGuardError`. Ниже ещё встречаются dotted
 `doc.patch_section` — читай их как `doc_patch_section`.
+
+### 0.1 Секция, ушедшая из файла (ADO-213 / ADO-213)
+
+До ADO-213 у секции, **исчезнувшей** из markdown, пути не было вовсе:
+`import_or_update_markdown` умел только патчить и дописывать в конец. Дальше
+`content_sha256_head` пиннил хэш файла, и `detect_drift` рапортовал `in_sync`
+навсегда — расхождение копилось молча.
+
+Закрыто тремя частями:
+
+- **`doc_delete_section` / `cod-doc doc delete-section`** — точечное удаление
+  по закону ADO-040 (revision + activity event одним атомарным вызовом,
+  позиции уплотняются). Спрашивает подтверждение, `--yes` его снимает,
+  `--dry-run` печатает удаляемое тело. `--json` выбирает формат вывода, а не
+  согласие: вопрос уходит в stderr, stdout остаётся разбираемым (ADO-213).
+  Тело переживает удаление в ревизии, но `revision revert` его не отыграет —
+  строка, на которую указывает `entity_id`, уже не существует.
+- **`doc import <file> --replace`** — файл считается полным телом: сироты
+  удаляются, порядок секций в БД приводится к порядку в файле. Не по
+  умолчанию: обычный `doc import` — это «подтяни мои правки», и тихое
+  удаление секции по неполному файлу опаснее сироты. В обычном режиме сироты
+  уходят предупреждениями в `ImportReport.orphan_sections`.
+  Режим предъявляет счёт до, а не после: `--dry-run` прогоняет импорт и
+  откатывает, без `--yes` спрашивает по числу удаляемых секций, а файл,
+  который распарсился **в ноль секций** при непустой БД, отвергается
+  (`ReplaceWouldEmptyError`) — оборванная запись и пустой буфер редактора
+  выглядят ровно так; сознательное опустошение документа — `--force`
+  (ADO-213).
+- **Сигнал в `doc drift`** — `orphan_sections` рядом с `DriftStatus`, по
+  образцу `metadata_mismatch` (ADO-092) и по той же причине: четыре статуса
+  разбивают состояния **хэша содержимого**, а этот класс проходит сквозь все
+  четыре. Несут его все четыре места сериализации, включая карточку куратора
+  (`curator_service._drift_card` → `curator_next` / `ctx_drift`), иначе
+  документ приезжал в список проблем со статусом `in_sync` и без причины.
+
+Тождество секции — `import_service.match_file_sections`: сначала якорь,
+потом нормализованный текст заголовка. Только по якорю сравнивать нельзя:
+хранимый якорь не обязан быть выведенным из заголовка, `scenario_service`
+пишет `anchor="scn-001"` рядом с `## SCN-001 — …`, из которого `_slugify`
+даёт `scn-001--completing-a-task-…`. На живой БД cod-doc сравнение по одному
+якорю дало 29 документов / 146 секций, из них 16 / 80 — ложные, весь корпус
+`docs/system/scenarios/*`; в `--replace` каждая такая секция удалялась и
+пересоздавалась под выведенным якорем, теряя родословную ревизий, ломая
+ссылки `#scn-001` и унося каскадом строки `doc_comment`.
 
 ## 1. Проблема ручного подхода
 

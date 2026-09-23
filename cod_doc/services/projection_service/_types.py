@@ -22,6 +22,13 @@ class DriftStatus(StrEnum):
 # states, and a metadata mismatch is independent of which one a document is in.
 METADATA_MISMATCH_COUNT_KEY = "metadata_mismatch"
 
+# ADO-213: the counts key for documents carrying sections the file no longer
+# has. Not a DriftStatus member either, for the same reason and with a sharper
+# edge: this class is invisible to all four statuses. `doc accept` pins
+# `content_sha256_head`, the file then matches the pin, and the document reads
+# `in_sync` while its DB body holds headings the file dropped months ago.
+ORPHAN_SECTION_COUNT_KEY = "orphan_sections"
+
 
 @dataclass(slots=True)
 class ExportResult:
@@ -47,6 +54,11 @@ class DriftReport:
     # this into DriftStatus would have forced a choice between reporting the
     # two, which is how the status loss stayed invisible behind `in_sync`.
     metadata_mismatch: tuple[str, ...] = ()
+    # ADO-213: anchors of level-2 sections the DB holds and the file does not.
+    # Orthogonal to `status` for the same reason as `metadata_mismatch`, and
+    # the case that proves it: an accepted document reads `in_sync` with nine
+    # sections in the DB against five in the file.
+    orphan_sections: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

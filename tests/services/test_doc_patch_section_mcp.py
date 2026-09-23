@@ -368,3 +368,88 @@ def test_doc_authoring_cycle_needs_no_markdown_file(
     assert sections[0].body == "final"
     assert len(history) == 2
     assert body is not None and "final" in body
+
+
+# --------------------------------------------------------------------------- #
+# ADO-213: doc_delete_section — the third of the cycle                         #
+# --------------------------------------------------------------------------- #
+
+
+def _delete_tool(monkeypatch: pytest.MonkeyPatch, factory: Any) -> Any:
+    _stub(monkeypatch, factory)
+    mcp = FastMCP("test")
+    doc_tools.register(mcp)
+    return _get_tool(mcp, "doc_delete_section")
+
+
+def test_doc_delete_section_removes_the_section(
+    engine_with_schema, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    doc_id, _ = _seed_doc_with_section(factory, body="drop me")
+    doc_delete_section = _delete_tool(monkeypatch, factory)
+
+    result = doc_delete_section(
+        project="p",
+        doc_key="modules/M1-auth/overview",
+        anchor="x",
+        author="human:dakh",
+        reason="left the file",
+    )
+
+    assert result["deleted"] is True
+    assert result["anchor"] == "x"
+    assert result["heading"] == "X"
+    assert result["position"] == 0
+    assert result["remaining_sections"] == 0
+    assert result["revision_id"]
+    assert "dry_run" not in result
+
+    with transactional(factory) as session:
+        assert docs.get_sections(session, doc_id) == []
+
+
+def test_doc_delete_section_dry_run_leaves_db_untouched(
+    engine_with_schema, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    doc_id, _ = _seed_doc_with_section(factory, body="keep me")
+    doc_delete_section = _delete_tool(monkeypatch, factory)
+
+    result = doc_delete_section(
+        project="p",
+        doc_key="modules/M1-auth/overview",
+        anchor="x",
+        dry_run=True,
+    )
+
+    assert result["dry_run"] is True
+    assert result["deleted"] is False
+    assert result["revision_id"] is None
+    assert result["remaining_sections"] == 0
+    assert "-keep me" in result["diff"]
+
+    with transactional(factory) as session:
+        assert [s.anchor for s in docs.get_sections(session, doc_id)] == ["x"]
+
+
+def test_doc_delete_section_rejects_unknown_anchor(
+    engine_with_schema, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    _seed_doc_with_section(factory)
+    doc_delete_section = _delete_tool(monkeypatch, factory)
+
+    with pytest.raises(ValueError, match="Section 'nope' not found"):
+        doc_delete_section(project="p", doc_key="modules/M1-auth/overview", anchor="nope")
+
+
+def test_doc_delete_section_rejects_unknown_document(
+    engine_with_schema, monkeypatch: pytest.MonkeyPatch
+) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    _seed_doc_with_section(factory)
+    doc_delete_section = _delete_tool(monkeypatch, factory)
+
+    with pytest.raises(ValueError, match="Document 'nope' not found"):
+        doc_delete_section(project="p", doc_key="nope", anchor="x")

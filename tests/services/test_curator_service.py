@@ -251,6 +251,7 @@ def test_drift_half_keeps_the_ctx_drift_shape(curator_session) -> None:
             "projection_hash",
             "db_content_hash",
             "file_hash",
+            "orphan_sections",
         }
 
 
@@ -416,3 +417,36 @@ def test_unplaced_ranks_below_integrity_problems(curator_session) -> None:
     assert "unplaced" in kinds
     assert "link" in kinds
     assert kinds.index("link") < kinds.index("unplaced")
+
+
+def test_drift_issue_carries_the_reason_it_is_an_issue(curator_session) -> None:
+    """ADO-213: осиротевшая секция поднимает `problem_count` — и объясняет себя.
+
+    Карточка куратора — это дефолтный профиль `agent` (6 тулов), то есть
+    единственное, что видит оркестратор. Без этого ключа документ приезжал в
+    список проблем со статусом `in_sync` и без причины: на живой БД cod-doc
+    ровно так добавлялись 23 документа из 64.
+    """
+    session, root = curator_session
+    _import_docs(root)
+    project_id = _project_id(session)
+
+    from cod_doc.services import doc_service
+
+    beta = doc_service.get(session, project_id, "beta")
+    assert beta is not None and beta.row_id is not None
+    doc_service.add_section(
+        session,
+        document_id=beta.row_id,
+        anchor="dropped-from-the-file",
+        heading="Dropped from the file",
+        level=2,
+        position=len(doc_service.get_sections(session, beta.row_id)),
+        body="Nobody kept this heading.",
+        author="human:test",
+    )
+
+    issues = _call(session, root)["card"]["drift"]["issues"]
+    beta_issue = next(i for i in issues if i["doc_key"] == "beta")
+
+    assert beta_issue["orphan_sections"] == ["dropped-from-the-file"]

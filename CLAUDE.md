@@ -88,7 +88,12 @@ cod-doc-mcp                              # MCP stdio; профиль по умо
 docker compose up -d                     # контейнер cod-doc, healthcheck /api/health
 cod-doc update [--dry-run] [--ref <sha>] # ADO-192: рантайм → миграции → рестарт демонов → починка (алиас upgrade)
 cod-doc runtime status|version|rollback  # пиннованная сборка ~/.cod-doc/runtime и три сервиса launchd
-cod-doc doc drift --project cod-doc --all # дрейф БД ↔ markdown без перезаписи
+cod-doc doc drift --project cod-doc --all # дрейф БД ↔ markdown без перезаписи (+ осиротевшие секции)
+cod-doc doc import <file> -p cod-doc --replace --dry-run  # что бы сделал --replace, без записи
+cod-doc doc import <file> -p cod-doc --replace   # файл = всё тело: сироты удаляются, порядок = файлу
+                                                 # спрашивает по числу удаляемых (--yes снимает);
+                                                 # файл без секций отвергается (--force продавливает)
+cod-doc doc delete-section <doc_key> <anchor> -p cod-doc  # точечно; --dry-run печатает удаляемое тело
 cod-doc doc tree show -p cod-doc          # разделы дерева документации + Инбокс
 cod-doc doc tree classify -p cod-doc      # сухая раскладка по правилам; --apply записывает
 cod-doc doc tree health -p cod-doc        # пробелы в наполненности разделов; --sync пишет findings
@@ -167,8 +172,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `forbidden: [agent_pick, task_checkout, task_complete]`. Старые
   task-centric тулы (`agent_pick`, `agent_get`, `agent_complete`,
   `agent_release`) остались зарегистрированы, но видны только на
-  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 142
-  / `full` 146.
+  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 143
+  / `full` 147.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   ПЯТИ местах: `mcp/profiles.py` (docstring), `server.py --profile`,
   `AGENTS.md` §5.9, этот файл и `docs/mcp-integration.md` (строка семейства
@@ -288,7 +293,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/21/142/146) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/21/143/147) в коде и доках совпадают |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `infra/test_totals_status_aliases.py` | `section_totals`/`plan_totals`/`ready_tasks` перечисляют все написания статуса из `TASK_STATUS_ALIASES` (миграция 0035) |
 | `infra/test_task_status_canonicalisation_migration.py` | бэкфилл 0037 сводит легаси-написания в канон, ready-множество при этом не гаснет |
@@ -331,7 +336,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
   субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
-  (профиль `standard`, 142 тула `task_*`/`doc_*`/`plan_*`/…) и
+  (профиль `standard`, 143 тула `task_*`/`doc_*`/`plan_*`/…) и
   `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6 curator-тулов —
   `curator_next`/`ctx_*`/`context_get`/`agent_capabilities`/`agent_report`).
   Тем же launchd и тем же рантаймом живёт веб-UI — `com.cod-doc.web`. Доставка

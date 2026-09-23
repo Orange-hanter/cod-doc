@@ -29,6 +29,8 @@ def import_document(
     *,
     author: str,
     root_path: Path,
+    replace: bool = False,
+    force: bool = False,
 ) -> ImportReport | None:
     """Read a projection file and apply its markdown/frontmatter to the DB.
 
@@ -36,7 +38,19 @@ def import_document(
 
     Returns an :class:`~cod_doc.services.import_service.ImportReport`:
     `report.document` is the refreshed row, `report.warnings` lists every
-    frontmatter value the enums could not store as written (ADO-015).
+    frontmatter value the enums could not store as written (ADO-015), and
+    `report.orphan_sections` names the sections the DB carries that this file
+    no longer has (ADO-213).
+
+    `replace=True` makes the file the whole body: those orphans are deleted
+    and the DB order is brought to the file's. The default leaves them in
+    place and only reports them — a partial file must not silently cost a
+    section.
+
+    ADO-213: `replace=True` against a file that parses to no sections at all
+    (a truncated write, a zero-byte file) raises
+    `import_service.ReplaceWouldEmptyError` instead of emptying the document;
+    `force=True` goes through.
 
     The accepted file hash is stored as `content_sha256_head`, while
     `projection_hash` is updated to the DB-rendered markdown hash after import.
@@ -66,6 +80,8 @@ def import_document(
         author=author,
         reason="projection import",
         source_sha256=file_hash,
+        replace=replace,
+        force=force,
     )
     session.flush()
     assert report.document.row_id is not None

@@ -307,13 +307,33 @@ def _restore_original_from_unified(diff: str) -> str:
     return "".join(result)
 
 
+#: Метка SECTION-ревизии — ``section:<doc_key>#<anchor>`` в заголовках diff
+#: (`doc_service.section_label`). Якорь не содержит ``+``/``@``/пробелов.
+_SECTION_LABEL_RE = re.compile(r"section:[^#\s]*#([^\s@+]+)")
+
+
 def _revert_section(session: Session, model: RevisionModel, *, author: str) -> None:
-    """Restore section body by reversing the stored unified diff."""
+    """Restore section body by reversing the stored unified diff.
+
+    ADO-213: ``section.row_id`` без AUTOINCREMENT, и после удаления секции
+    SQLite может отдать её id следующей новой — старые ревизии удалённой
+    секции тогда числятся за новой. Откат такой ревизии записал бы старое тело
+    в чужую секцию. Сторож сверяет якорь из метки ревизии с якорем строки;
+    ``doc_key`` не сверяется намеренно — он меняется при переименовании
+    документа, и легитимные старые ревизии тогда отказывали бы.
+    """
     old_body = _restore_original_from_unified(model.diff)
 
     sec = session.get(SectionModel, model.entity_id)
     if sec is None:
         raise LookupError(f"section #{model.entity_id} not found")
+    labelled = _SECTION_LABEL_RE.search(model.diff)
+    if labelled is not None and labelled.group(1) != sec.anchor:
+        raise RevertNotSupportedError(
+            f"revision {model.revision_id} belongs to section #{labelled.group(1)}, "
+            f"but row #{model.entity_id} is now #{sec.anchor} — the id was reused "
+            "after a delete (ADO-213)"
+        )
 
     from cod_doc.services import doc_service as _docs
 

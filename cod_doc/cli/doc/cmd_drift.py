@@ -13,9 +13,23 @@ from ._common import _DRIFT_ICON, _get_root_path, _make_session, _require_projec
 from ._group import doc
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from cod_doc.config import Config
     from cod_doc.domain.entities import Document
     from cod_doc.services.projection_service import DriftReport, ProjectDriftItem
+
+#: How many orphan anchors fit in a table cell before it stops being readable.
+_ORPHAN_CELL_LIMIT = 3
+
+
+def _orphan_cell(anchors: Sequence[str]) -> str:
+    """One table cell naming the orphaned sections, or an empty one."""
+    if not anchors:
+        return ""
+    head = ", ".join(anchors[:_ORPHAN_CELL_LIMIT])
+    rest = len(anchors) - _ORPHAN_CELL_LIMIT
+    return f"{head} (+{rest})" if rest > 0 else head
 
 
 @doc.command("drift")
@@ -57,7 +71,7 @@ def doc_drift(
             assert d is not None
             report = projection_service.detect_drift(session, d.row_id, root_path=root)
 
-    def _json_row(d: Document, report: DriftReport) -> dict[str, str | None]:
+    def _json_row(d: Document, report: DriftReport) -> dict[str, object]:
         return {
             "doc_key": d.doc_key,
             "path": d.path,
@@ -65,9 +79,10 @@ def doc_drift(
             "projection_hash": report.projection_hash,
             "db_content_hash": report.db_content_hash,
             "file_hash": report.file_hash,
+            "orphan_sections": list(report.orphan_sections),
         }
 
-    def _json_issue(item: ProjectDriftItem) -> dict[str, str | None]:
+    def _json_issue(item: ProjectDriftItem) -> dict[str, object]:
         return {
             "doc_key": item.doc_key,
             "path": item.path,
@@ -75,6 +90,7 @@ def doc_drift(
             "projection_hash": item.report.projection_hash,
             "db_content_hash": item.report.db_content_hash,
             "file_hash": item.report.file_hash,
+            "orphan_sections": list(item.report.orphan_sections),
         }
 
     if all_docs:
@@ -112,11 +128,15 @@ def doc_drift(
         table.add_column("Status", width=18)
         table.add_column("Doc key", style="cyan")
         table.add_column("Path", style="dim")
+        # ADO-213: reported beside the status, not inside it — an orphaned
+        # section rides along with `in_sync` and would otherwise never show.
+        table.add_column("Orphan sections", style="yellow")
         for item in project_report.issues:
             table.add_row(
                 f"{_DRIFT_ICON.get(item.report.status.value, '⚪')} {item.report.status.value}",
                 item.doc_key,
                 item.path,
+                _orphan_cell(item.report.orphan_sections),
             )
         console.print(table)
         return
@@ -124,19 +144,7 @@ def doc_drift(
     assert doc_key is not None
     assert d is not None
     if as_json:
-        click.echo(
-            _json.dumps(
-                {
-                    "doc_key": doc_key,
-                    "path": d.path,
-                    "status": report.status.value,
-                    "projection_hash": report.projection_hash,
-                    "db_content_hash": report.db_content_hash,
-                    "file_hash": report.file_hash,
-                },
-                indent=2,
-            )
-        )
+        click.echo(_json.dumps(_json_row(d, report), indent=2, ensure_ascii=False))
         return
 
     icon = _DRIFT_ICON.get(report.status.value, "⚪")
@@ -149,3 +157,15 @@ def doc_drift(
     console.print(
         f"  File hash: {(report.file_hash or '(missing)')[:16]}{'…' if report.file_hash else ''}"
     )
+    # ADO-213: independent of `status` — the case that made this signal
+    # necessary is a document that reads `in_sync` with nine sections in the
+    # DB against five in the file.
+    if report.orphan_sections:
+        console.print(
+            f"  [yellow]Orphan sections ({len(report.orphan_sections)}): "
+            f"{', '.join(report.orphan_sections)}[/yellow]"
+        )
+        console.print(
+            "  [dim]in the DB, not in the file — `doc import <path> --replace --dry-run` "
+            "shows what dropping them would cost, then the same without --dry-run[/dim]"
+        )

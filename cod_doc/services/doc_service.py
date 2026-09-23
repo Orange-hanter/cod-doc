@@ -5,9 +5,10 @@ Public API:
   `entity_kind=DOCUMENT` revision.
 - `get` / `get_sections` / `render_body` — read-paths. `render_body` reads from
   the `document_body` view (DATA_MODEL §4.3a).
-- `add_section` / `patch_section` — section-level write-paths; each writes an
-  `entity_kind=SECTION` revision with a unified diff. `patch_section` raises if
-  the anchor is unknown — use `add_section` to create.
+- `add_section` / `patch_section` / `delete_section` — section-level
+  write-paths; each writes an `entity_kind=SECTION` revision with a unified
+  diff. `patch_section` raises if the anchor is unknown — use `add_section` to
+  create. `delete_section` removes one section and renumbers the rest.
 - `rename` — change `doc_key` / `path`; writes `entity_kind=DOCUMENT` revision.
   Cascade-update of incoming links is a stub here (real implementation:
   COD-013, LinkService.rename_cascade).
@@ -98,6 +99,18 @@ def _create_diff(body: str, *, label: str) -> str:
     )
 
 
+def _delete_diff(body: str, *, label: str) -> str:
+    return "".join(
+        difflib.unified_diff(
+            body.splitlines(keepends=True),
+            [],
+            fromfile=label,
+            tofile="/dev/null",
+            lineterm="",
+        )
+    )
+
+
 def content_hash(body: str) -> str:
     """Hash a section body the way the stored `content_hash` column is built."""
     return _content_hash(body)
@@ -122,6 +135,16 @@ def section_diff(old_body: str, new_body: str, *, doc_key: str, anchor: str) -> 
 def section_create_diff(body: str, *, doc_key: str, anchor: str) -> str:
     """Unified diff `add_section` stores for a brand-new section."""
     return _create_diff(body, label=section_label(doc_key, anchor))
+
+
+def section_delete_diff(body: str, *, doc_key: str, anchor: str) -> str:
+    """Unified diff `delete_section` stores when a section is removed.
+
+    The mirror image of `section_create_diff`: the whole body leaves as `-`
+    lines, so the revision carries the text that was dropped and a human can
+    read it back out of history.
+    """
+    return _delete_diff(body, label=section_label(doc_key, anchor))
 
 
 def _require_doc(session: Session, document_id: int) -> DocumentModel:
@@ -452,6 +475,131 @@ def patch_section(
     refreshed = SectionRepository(session).get(sec_model.row_id)
     assert refreshed is not None
     return refreshed
+
+
+def _renumber_positions(session: Session, document_id: int) -> None:
+    """Make `section.position` dense again — 0…n-1 in current display order.
+
+    `position` is an index in the document, not an opaque sort key:
+    `add_section` appends at `max(position) + 1` and the import path assigns
+    positions straight from the file's heading order. A hole left by a
+    deletion would keep rendering correctly (the `document_body` view only
+    sorts) while making every position number off by one against the file.
+
+    Ties on `position` are broken by `row_id` — insertion order — so an
+    existing document that already had duplicate positions comes out stable
+    instead of shuffling on each call.
+    """
+    rows = (
+        session.execute(
+            select(SectionModel)
+            .where(SectionModel.document_id == document_id)
+            .order_by(SectionModel.position, SectionModel.row_id)
+        )
+        .scalars()
+        .all()
+    )
+    changed = False
+    for index, row in enumerate(rows):
+        if row.position != index:
+            row.position = index
+            changed = True
+    if changed:
+        session.flush()
+
+
+def delete_section(
+    session: Session,
+    *,
+    document_id: int,
+    anchor: str,
+    author: str,
+    reason: str | None = None,
+    reindex: bool = True,
+) -> Section:
+    """Remove one section from a document; writes a DOCUMENT revision + event.
+
+    The missing counterpart of `add_section`. Until ADO-213 there was no
+    delete path at all — not in this service, not on the CLI, not on MCP —
+    and that is the whole mechanism behind the orphaned sections: a heading
+    dropped from a markdown file stayed in the DB forever, because
+    `import_or_update_markdown` could only patch or append. `doc accept` then
+    pinned the file hash into `content_sha256_head` and `detect_drift`
+    reported `in_sync` over the divergence.
+
+    Remaining sections are renumbered (`_renumber_positions`) so the index
+    stays dense.
+
+    Raises `SectionNotFoundError` when the anchor is unknown.
+
+    Returns the `Section` as it was immediately before deletion — by the time
+    the caller holds it the row is gone.
+
+    The revision hangs on the **document**, not on the deleted section, by the
+    precedent of `task_service.remove_dependency` (history on the living
+    owner). A SECTION revision would point at a row id that no longer exists,
+    and `SectionModel.row_id` has no AUTOINCREMENT: SQLite may hand the same id
+    to the next section, gluing two sections' histories together — and a
+    revert of this revision would then write the old body into someone else's
+    section. The diff is JSON with ``op="delete_section"`` and carries the
+    removed body (the unified ``section_delete_diff`` text, byte-identical to
+    the `--dry-run` preview), so the content stays recoverable by hand.
+    `revision_service._revert_document` reverts only ``op="rename"`` and
+    answers this one with `RevertNotSupportedError` — an explicit refusal.
+
+    ``reindex=False`` — see :func:`add_section`.
+    """
+    doc = _require_doc(session, document_id)
+
+    stmt = select(SectionModel).where(
+        SectionModel.document_id == document_id, SectionModel.anchor == anchor
+    )
+    sec_model = session.execute(stmt).scalar_one_or_none()
+    if sec_model is None:
+        raise SectionNotFoundError(f"section {doc.doc_key}#{anchor}")
+
+    removed = SectionRepository(session).get(sec_model.row_id)
+    assert removed is not None
+    diff = json.dumps(
+        {
+            "op": "delete_section",
+            "anchor": anchor,
+            "heading": removed.heading,
+            "position": removed.position,
+            "diff": section_delete_diff(sec_model.body, doc_key=doc.doc_key, anchor=anchor),
+        },
+        ensure_ascii=False,
+    )
+
+    # link rows cascade with the section (ORM `delete-orphan` on
+    # `outgoing_links`), doc_comment rows via the DB-level FK CASCADE.
+    session.delete(sec_model)
+    session.flush()
+    _renumber_positions(session, document_id)
+
+    doc.last_updated = datetime.now(UTC)
+    activity_service.write_revision_and_emit_event(
+        session,
+        project_id=doc.project_id,
+        entity_kind=EntityKind.DOCUMENT,
+        entity_id=document_id,
+        author=author,
+        diff=diff,
+        reason=reason or "delete_section",
+        activity_kind="doc.section_deleted",
+        activity_scope_kind="section",
+        activity_scope_id=f"{doc.doc_key}#{anchor}",
+        activity_payload={
+            "anchor": anchor,
+            "heading": removed.heading,
+            "position": removed.position,
+        },
+        activity_summary=f"Document {doc.doc_key}: section {anchor} deleted",
+    )
+    session.flush()
+    if reindex:
+        search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
+    return removed
 
 
 def update_status(

@@ -36,17 +36,32 @@ from sqlalchemy import select
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
 from cod_doc.infra.models import DocumentModel
+from cod_doc.services import activity_service, search_service
 from cod_doc.services import doc_service as docs
-from cod_doc.services import search_service
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from sqlalchemy.orm import Session
 
-    from cod_doc.domain.entities import Document
+    from cod_doc.domain.entities import Document, Section
 
 logger = logging.getLogger("cod_doc.import_service")
+
+
+class ReplaceWouldEmptyError(RuntimeError):
+    """`replace=True` on a file that parses to no sections while the DB has some.
+
+    ADO-213. `--replace` says "this file is the whole body", and a file with
+    no `## ` heading in it says the body has no sections — so the honest
+    reading of a truncated write, a half-saved editor buffer or a zero-byte
+    file is "delete everything". `_set_content_sha` then pins the file hash
+    and the emptied document reads `in_sync` forever after.
+
+    A file that legitimately has no sections is indistinguishable from a
+    damaged one, so the call is refused and the decision handed back to the
+    caller: `force=True` (`doc import --force`) goes through.
+    """
 
 
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", re.DOTALL)
@@ -193,6 +208,16 @@ class ImportReport:
     document: Document
     created: bool
     warnings: list[CoercedField] = field(default_factory=list)
+    # ADO-213: anchors the DB still carries that the file no longer has.
+    # Filled on every update-path import, whether or not `replace` acts on
+    # them — the whole reason orphans piled up unnoticed is that nothing ever
+    # said a word about them.
+    orphan_sections: list[str] = field(default_factory=list)
+    # Anchors actually removed. Empty unless the caller asked for
+    # `replace=True`; in replace mode it equals `orphan_sections`.
+    deleted_sections: list[str] = field(default_factory=list)
+    # True when replace mode had to move sections to match the file's order.
+    reordered: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -200,6 +225,9 @@ class ImportReport:
             "document_id": self.document.row_id,
             "created": self.created,
             "warnings": [w.to_dict() for w in self.warnings],
+            "orphan_sections": list(self.orphan_sections),
+            "deleted_sections": list(self.deleted_sections),
+            "reordered": self.reordered,
         }
 
 
@@ -468,6 +496,8 @@ def import_or_update_markdown(
     reason: str | None = None,
     source_sha256: str | None = None,
     path: str | None = None,
+    replace: bool = False,
+    force: bool = False,
 ) -> ImportReport:
     """PCA-929: Idempotent import — create new doc or update existing one.
 
@@ -480,6 +510,37 @@ def import_or_update_markdown(
 
     PCA-928: when ``source_sha256`` is provided, it is stored on the
     DocumentModel.content_sha256_head column for change detection later.
+
+    ADO-213 — ``replace``: the update path walks the file's sections and
+    patches or appends them, and until now had no path at all for a section
+    that *left* the file. Those piled up invisibly: the appended ones landed
+    at the end in an order the file disagrees with, and ``content_sha256_head``
+    then pinned the file hash so ``detect_drift`` answered ``in_sync`` forever
+    after.
+
+    ``replace=False`` (the default) keeps the old, additive behaviour, because
+    ``doc import`` is used as "pull my edits in" and dropping a DB section
+    because someone handed it a partial file is worse than carrying an orphan.
+    What changes in the default mode is that the orphans are now **named**:
+    ``report.orphan_sections``.
+
+    ``replace=True`` treats the file as the whole body: orphaned sections are
+    deleted (through ``doc_service.delete_section``, so each leaves a revision
+    and an activity event) and the DB order is brought to the file's order.
+
+    Both the orphan signal and replace-mode deletion are scoped to level-2
+    sections — the only kind ``parse_markdown`` can produce, so the only kind
+    whose absence from the file is evidence of anything. A deeper or shallower
+    section was authored in the DB and the file was never able to carry it.
+
+    ADO-213 — identity is `match_file_sections`, anchor first and heading text
+    second, not the re-derived anchor alone. A section whose stored anchor was
+    written by hand (``scn-001``) is patched in place instead of being called
+    an orphan and re-added under the anchor ``_slugify`` would have produced.
+
+    ADO-213 — ``force``: ``replace=True`` on a file that parses to *no*
+    sections while the DB holds some raises `ReplaceWouldEmptyError` rather
+    than emptying the document. ``force=True`` goes through.
     """
     existing = docs.get(session, project_id, doc_key)
     if existing is None:
@@ -505,6 +566,14 @@ def import_or_update_markdown(
     # patch each section body to create section revisions when needed.
     assert existing.row_id is not None
     parsed = parse_markdown(raw_markdown)
+    match = match_file_sections(docs.get_sections(session, existing.row_id), parsed.sections)
+    if replace and not parsed.sections and match.orphans and not force:
+        raise ReplaceWouldEmptyError(
+            f"{doc_key}: the file parses to no sections at all, while the DB holds "
+            f"{len(match.orphans)} — refusing to empty the document. A truncated write "
+            f"looks exactly like this. Pass force=True (`doc import --force`) if the "
+            f"file really is the whole body."
+        )
     warnings: list[CoercedField] = []
     _update_existing_document_metadata(
         session,
@@ -516,33 +585,36 @@ def import_or_update_markdown(
     )
 
     for section in parsed.sections:
-        # ADO-055: «секции нет» — единственный легальный повод для fallback на
-        # add_section. Любой другой провал patch/add логируется и попадает в
-        # ImportReport.warnings — импорт не падает на одной секции, но и не
-        # теряет её молча.
-        try:
-            docs.patch_section(
-                session,
-                document_id=existing.row_id,
-                anchor=section.anchor,
-                new_body=section.body,
-                author=author,
-                reason=reason or "bulk import (update)",
-                reindex=False,  # один upsert на документ в конце функции
-            )
-            continue
-        except docs.SectionNotFoundError:
-            pass  # секции ещё нет — добавим ниже
-        except Exception as exc:
-            logger.warning("import %s#%s: patch_section failed: %s", doc_key, section.anchor, exc)
-            warnings.append(
-                CoercedField(
-                    field=f"section:{section.anchor}",
-                    raw=type(exc).__name__,
-                    applied="skipped",
-                    reason="unknown",
+        # ADO-213: the anchor to patch is the *stored* one, which the match may
+        # have found by heading text — a hand-authored anchor is still the same
+        # section. Patching it in place is what keeps its row id, revision
+        # lineage and `#anchor` references alive; the pre-ADO-213 code re-derived
+        # the anchor, missed, and took the delete-and-re-add path instead.
+        target = match.db_anchor_by_file_anchor.get(section.anchor)
+        if target is not None:
+            # ADO-055: провал patch логируется и попадает в
+            # ImportReport.warnings — импорт не падает на одной секции, но и не
+            # теряет её молча.
+            try:
+                docs.patch_section(
+                    session,
+                    document_id=existing.row_id,
+                    anchor=target,
+                    new_body=section.body,
+                    author=author,
+                    reason=reason or "bulk import (update)",
+                    reindex=False,  # один index_doc на документ в конце функции
                 )
-            )
+            except Exception as exc:
+                logger.warning("import %s#%s: patch_section failed: %s", doc_key, target, exc)
+                warnings.append(
+                    CoercedField(
+                        field=f"section:{target}",
+                        raw=type(exc).__name__,
+                        applied="skipped",
+                        reason="unknown",
+                    )
+                )
             continue
 
         try:
@@ -571,6 +643,30 @@ def import_or_update_markdown(
                 )
             )
 
+    orphans = list(match.orphans)
+    deleted: list[str] = []
+    reordered = False
+    if replace:
+        for anchor in orphans:
+            docs.delete_section(
+                session,
+                document_id=existing.row_id,
+                anchor=anchor,
+                author=author,
+                reason=reason or "bulk import (section dropped from file)",
+                reindex=False,  # один index_doc на документ в конце функции
+            )
+            deleted.append(anchor)
+        reordered = _apply_file_section_order(
+            session,
+            document_id=existing.row_id,
+            project_id=project_id,
+            doc_key=doc_key,
+            parsed=parsed,
+            match=match,
+            author=author,
+        )
+
     _resolve_all_sections(session, existing.row_id)
     if source_sha256 is not None:
         _set_content_sha(session, existing.row_id, source_sha256)
@@ -581,7 +677,168 @@ def import_or_update_markdown(
     # derived, and a DB without migration 0023 must still accept the import.
     search_service.index_doc(session, project_id=project_id, doc_key=doc_key)
     refreshed = docs.get(session, project_id, doc_key) or existing
-    return ImportReport(document=refreshed, created=False, warnings=warnings)
+    return ImportReport(
+        document=refreshed,
+        created=False,
+        warnings=warnings,
+        orphan_sections=orphans,
+        deleted_sections=deleted,
+        reordered=reordered,
+    )
+
+
+#: Heading level `parse_markdown` assigns to every section it finds — `## `
+#: is the only heading that starts one. A DB section at another level was
+#: authored in the DB, so the file's silence about it says nothing.
+_FILE_SECTION_LEVEL = 2
+
+_WHITESPACE_RUN = re.compile(r"\s+")
+
+
+def _normalised_heading(text: str) -> str:
+    """Heading text reduced to what two spellings of the same heading share."""
+    return _WHITESPACE_RUN.sub(" ", text).strip().casefold()
+
+
+@dataclass(slots=True, frozen=True)
+class SectionMatch:
+    """Which stored section each of the file's sections is — and what is left over.
+
+    ADO-213. Identity used to be the anchor alone, compared against the anchor
+    `_slugify` re-derives from the file's heading. Nothing guarantees a stored
+    anchor was ever derived that way: `scenario_service.export` writes
+    `anchor="scn-001"` into the DB while the file carries
+    `## SCN-001 — …`, which re-derives to `scn-001--…`. Under anchor-only
+    identity that section is an orphan *and* a missing section at once —
+    reported as dropped from the file it is plainly in, then in `--replace`
+    deleted and re-added under the derived anchor, which detaches its revision
+    lineage, breaks `#scn-001` references and cascades its `doc_comment` rows
+    away.
+
+    So the match runs in two passes, in this order:
+
+    1. **anchor**, against every stored section regardless of level — the
+       importer's own notion of identity, unchanged and still winning;
+    2. **normalised heading text**, against level-2 sections only — the
+       fallback that recognises a hand-authored anchor.
+
+    Both passes walk the file's sections in file order, so duplicate headings
+    pair up first-to-first.
+    """
+
+    #: file anchor (as `parse_markdown` derived it) → anchor stored in the DB.
+    #: Missing key = the file section has no counterpart and must be added.
+    db_anchor_by_file_anchor: dict[str, str]
+    #: Stored level-2 anchors no file section claimed, in DB position order —
+    #: the order to delete them in for a readable log.
+    orphans: tuple[str, ...]
+
+    def db_anchor(self, file_anchor: str) -> str:
+        """The stored anchor for a file section — its own once it is added."""
+        return self.db_anchor_by_file_anchor.get(file_anchor, file_anchor)
+
+
+def match_file_sections(
+    db_sections: Sequence[Section], file_sections: Sequence[ParsedSection]
+) -> SectionMatch:
+    """Pair the sections parsed out of a markdown file with the ones in the DB."""
+    by_anchor = {section.anchor: section for section in db_sections}
+    # Only level-2 rows can be claimed by heading or reported as orphans: `## `
+    # is the only heading `parse_markdown` turns into a section, so a row at
+    # any other level was authored in the DB and the file's silence is no
+    # evidence. Insertion order is DB position order and `pop` preserves it.
+    unclaimed: dict[str, Section] = {
+        section.anchor: section for section in db_sections if section.level == _FILE_SECTION_LEVEL
+    }
+    mapping: dict[str, str] = {}
+
+    for parsed in file_sections:
+        stored = by_anchor.get(parsed.anchor)
+        if stored is None:
+            continue
+        mapping[parsed.anchor] = stored.anchor
+        unclaimed.pop(stored.anchor, None)
+
+    by_heading: dict[str, list[str]] = {}
+    for anchor, section in unclaimed.items():
+        by_heading.setdefault(_normalised_heading(section.heading), []).append(anchor)
+
+    for parsed in file_sections:
+        if parsed.anchor in mapping:
+            continue
+        bucket = by_heading.get(_normalised_heading(parsed.heading))
+        if not bucket:
+            continue
+        anchor = bucket.pop(0)
+        mapping[parsed.anchor] = anchor
+        unclaimed.pop(anchor, None)
+
+    return SectionMatch(db_anchor_by_file_anchor=mapping, orphans=tuple(unclaimed))
+
+
+def _apply_file_section_order(
+    session: Session,
+    *,
+    document_id: int,
+    project_id: int,
+    doc_key: str,
+    parsed: ParsedMarkdown,
+    match: SectionMatch,
+    author: str,
+) -> bool:
+    """Renumber sections so the DB body reads in the file's order (ADO-213).
+
+    Returns True when anything actually moved.
+
+    ADO-213 — only the level-2 rows take part, and they are shuffled between
+    the position slots they already occupy. A section the file cannot carry
+    (level != 2) was authored in the DB, and sorting it by "not in the file"
+    used to push it to the document tail: a content move, with an event but no
+    revision, that nobody asked for. Its position is now left alone and the
+    level-2 rows reorder around it.
+
+    The file's order is read through `match`, so a section matched by heading
+    lands where the file puts it under the anchor the DB actually stores.
+
+    A move changes what `document_body` renders, so it is a content mutation
+    and leaves a trace (ADO-040). It gets an activity event but no revision:
+    a revision carries a body diff, and nobody's body changed here. That is
+    the `emit_for_write` half of the rule, the same one `link_service` uses.
+    """
+    from cod_doc.infra.models import SectionModel
+
+    file_order = {match.db_anchor(s.anchor): i for i, s in enumerate(parsed.sections)}
+    rows = list(
+        session.execute(
+            select(SectionModel)
+            .where(SectionModel.document_id == document_id)
+            .order_by(SectionModel.position, SectionModel.row_id)
+        ).scalars()
+    )
+    movable = [(i, row) for i, row in enumerate(rows) if row.level == _FILE_SECTION_LEVEL]
+    slots = [row.position for _, row in movable]
+    tail = len(file_order)
+    ordered = sorted(movable, key=lambda pair: (file_order.get(pair[1].anchor, tail), pair[0]))
+    moved = [
+        row.anchor for slot, (_, row) in zip(slots, ordered, strict=True) if row.position != slot
+    ]
+    if not moved:
+        return False
+    for slot, (_, row) in zip(slots, ordered, strict=True):
+        row.position = slot
+    session.flush()
+    final = [row.anchor for row in sorted(rows, key=lambda row: row.position)]
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "doc.sections_reordered",
+        author,
+        scope_kind="doc",
+        scope_id=doc_key,
+        payload={"moved": moved, "order": final},
+        summary=f"Document {doc_key}: {len(moved)} section(s) reordered to match the file",
+    )
+    return True
 
 
 def _update_existing_document_metadata(

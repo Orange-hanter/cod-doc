@@ -372,6 +372,82 @@ def register(mcp: FastMCP) -> None:
             out["dry_run"] = True
         return out
 
+    @mcp.tool(name="doc_delete_section")
+    def doc_delete_section(
+        project: str,
+        doc_key: str,
+        anchor: str,
+        author: str = "mcp",
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Remove one section from a document in the DB.
+
+        The missing third of the section cycle (`doc_add_section` →
+        `doc_patch_section` → this). Without it a heading that left the
+        markdown file stayed in the DB forever: `doc import` could patch and
+        append, never drop, and once `doc_accept` pinned the file hash
+        `doc_drift` reported `in_sync` over the divergence (ADO-213).
+
+        Scope is one section, not the document — whole-document deletion stays
+        CLI-only (`cod-doc doc delete`) on purpose. Remaining sections are
+        renumbered so `position` stays a dense index.
+
+        The removed body is preserved in the SECTION revision this writes, but
+        `revision_revert` cannot replay it: the section row it points at is
+        gone. Read the body back out of `revision_get` and re-create it with
+        `doc_add_section`.
+
+        `dry_run=True` resolves the section and returns the would-be diff
+        without deleting anything.
+        """
+        from cod_doc.domain.entities import EntityKind
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_service
+        from cod_doc.services import revision_service as revisions
+
+        sf, _ = session_factory(project)
+        revision_id: str | None = None
+        with transactional(sf, commit=not dry_run) as session:
+            project_id = require_project_id(session, project)
+            d = doc_service.get(session, project_id, doc_key)
+            if d is None or d.row_id is None:
+                raise ValueError(f"Document '{doc_key}' not found.")
+
+            before = doc_service.get_sections(session, d.row_id)
+            section = next((s for s in before if s.anchor == anchor), None)
+            if section is None:
+                raise ValueError(f"Section '{anchor}' not found in document '{doc_key}'.")
+            heading, position, body = section.heading, section.position, section.body
+            # Same number either way: a dry run reports what the real call
+            # would leave behind, not what is there now.
+            remaining = len(before) - 1
+
+            if not dry_run:
+                removed = doc_service.delete_section(
+                    session,
+                    document_id=d.row_id,
+                    anchor=anchor,
+                    author=author,
+                    reason=reason,
+                )
+                assert removed.row_id is not None
+                revision_id = revisions.head_for_entity(session, EntityKind.SECTION, removed.row_id)
+
+        out: dict[str, Any] = {
+            "doc_key": doc_key,
+            "anchor": anchor,
+            "heading": heading,
+            "position": position,
+            "revision_id": revision_id,
+            "deleted": not dry_run,
+            "remaining_sections": remaining,
+        }
+        if dry_run:
+            out["diff"] = doc_service.section_delete_diff(body, doc_key=doc_key, anchor=anchor)
+            out["dry_run"] = True
+        return out
+
     @mcp.tool(name="doc_accept")
     def doc_accept(
         project: str,
@@ -516,6 +592,11 @@ def register(mcp: FastMCP) -> None:
             "projection_hash": report.projection_hash,
             "db_content_hash": report.db_content_hash,
             "file_hash": report.file_hash,
+            # ADO-213: reported beside `status`, never folded into it — an
+            # accepted document reads `in_sync` while its DB body carries
+            # headings the file dropped. Cure: `doc import <path> --replace`
+            # or doc_delete_section per anchor.
+            "orphan_sections": list(report.orphan_sections),
         }
 
     @mcp.tool(name="doc_drift_all")
@@ -552,6 +633,7 @@ def register(mcp: FastMCP) -> None:
                     "projection_hash": item.report.projection_hash,
                     "db_content_hash": item.report.db_content_hash,
                     "file_hash": item.report.file_hash,
+                    "orphan_sections": list(item.report.orphan_sections),
                 }
                 for item in report.issues
             ],
@@ -682,6 +764,7 @@ def register(mcp: FastMCP) -> None:
                     "projection_hash": item.report.projection_hash,
                     "db_content_hash": item.report.db_content_hash,
                     "file_hash": item.report.file_hash,
+                    "orphan_sections": list(item.report.orphan_sections),
                 }
                 for item in report.issues
             ],

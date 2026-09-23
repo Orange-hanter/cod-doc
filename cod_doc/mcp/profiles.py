@@ -25,11 +25,11 @@ AGENTS.md §5.9, server.py --profile help, docs/mcp-integration.md):
   rewrites whatever it happens to find.
 - ``minimal`` — 21-tool cold-start surface for non-agent integrations
   that still want a curated subset of CRUD tools.
-- ``standard`` — 142-tool DB-backed surface; drops only the remaining
+- ``standard`` — 143-tool DB-backed surface; drops only the remaining
   legacy YAML-backed agent tools (run_agent_once, get_agent_context, …).
   The legacy YAML CRUD tools were removed in STB-002 (2026-06-08) once
   the DB became the source of truth.
-- ``full`` — all 146 tools the server registers, including the remaining
+- ``full`` — all 147 tools the server registers, including the remaining
   legacy agent tools. For admin / migration / debugging sessions.
 
 Active profile is chosen at server start via CLI ``--profile`` or env
