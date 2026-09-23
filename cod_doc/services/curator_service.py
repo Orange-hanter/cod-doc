@@ -27,7 +27,8 @@ if TYPE_CHECKING:
 _SKILL_CAP = 4
 
 #: Скиллы куратора: база (``orchestrator``) плюс три профильных. Порядок
-#: значим — ``orchestrator`` всегда первый, как и в task card.
+#: значим — ``orchestrator`` всегда первый. В task card его нет: там база —
+#: ``task-standard``, а тело ``orchestrator`` запрещает ``agent_pick``.
 _CURATOR_SKILLS: tuple[str, ...] = (
     "orchestrator",
     "drift-handling",
