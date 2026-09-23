@@ -42,12 +42,17 @@ def register(mcp: FastMCP) -> None:
         or profile-info noise that ``capabilities()`` (admin surface)
         carries. Stays under 4KB for tight context budgets.
 
-        Since RFC 25 §3.2 (CUR-008) the payload also declares the agent's
-        role: the default agent is a documentation curator, so ``role`` /
-        ``forbidden`` / ``next_action_hint`` steer it towards drift and
-        search instead of ``agent_pick``.
+        The tool lives on every profile, and the payload declares the
+        agent's role derived from the active profile:
 
-        Shape::
+        - ``agent`` (and any unrecognised profile) → ``doc-curator``
+          (RFC 25 §3.2, CUR-008): ``forbidden`` lists the task protocol and
+          ``next_action_hint`` steers towards drift and search.
+        - ``minimal`` / ``standard`` / ``full`` → ``coder`` (RFC 27 F5):
+          nothing is forbidden and ``next_action_hint`` walks the
+          checkout → complete protocol.
+
+        Shape (agent)::
 
             {
               "server_version": "1.1.0",
@@ -67,6 +72,18 @@ def register(mcp: FastMCP) -> None:
               "next_action_hint": "Call ctx_drift(project=...) then
                                    ctx_search(project=..., query=...) —
                                    do not pick implementation tasks."
+            }
+
+        Shape (minimal/standard/full) — same keys, differing in::
+
+            {
+              "profile": "standard",
+              "role": "coder",
+              "forbidden": [],
+              "next_action_hint": "Call task_next_ready(project=...) or
+                                   plan_ready → task_checkout → work →
+                                   task_complete(commit_sha); questions
+                                   about docs — ctx_search/context_get."
             }
         """
         from cod_doc import __version__ as version
@@ -116,22 +133,27 @@ def register(mcp: FastMCP) -> None:
             for r in iter_skill_records()
         ]
         default = _workspace.get()
+        profile = _active_profile()
 
-        return {
-            "server_version": version,
-            "profile": _active_profile(),
-            # RFC 25 §3.2: the default agent curates documentation. The
-            # role and the forbidden list are part of the payload so a
-            # client that never reads the orchestrator skill still knows
-            # it must not take implementation tasks.
-            "role": "doc-curator",
-            "forbidden": ["agent_pick", "task_checkout", "task_complete"],
-            "skills": skills,
-            "task_status_canonical": canonical,
-            "task_status_legacy_aliases": dict(_LEGACY_ALIASES),
-            "default_project": default,
-            "orchestrator_skill": "cod_doc/skills/orchestrator/SKILL.md",
-            "next_action_hint": (
+        if profile in ("minimal", "standard", "full"):
+            # RFC 27 F5: these surfaces serve the coding agent, whose
+            # protocol (checkout → complete) CLAUDE.md and task-flow require.
+            role = "coder"
+            forbidden: list[str] = []
+            slug = "<slug>" if default is None else f"'{default}'"
+            hint = (
+                f"Call task_next_ready(project={slug}) or plan_ready → "
+                "task_checkout → work → task_complete(commit_sha); "
+                "questions about docs — ctx_search/context_get."
+            )
+            if default is None:
+                hint += " No workspace default is set, so pass `project` explicitly on every call."
+        else:
+            # RFC 25 §3.2: the agent profile (and any unknown one, as the
+            # safe default) curates documentation and takes no tasks.
+            role = "doc-curator"
+            forbidden = ["agent_pick", "task_checkout", "task_complete"]
+            hint = (
                 "Call ctx_drift(project=<slug>) then "
                 "ctx_search(project=<slug>, query=...) — do not pick "
                 "implementation tasks. No workspace default is set, so pass "
@@ -142,7 +164,22 @@ def register(mcp: FastMCP) -> None:
                     f"ctx_search(project='{default}', query=...) — "
                     "do not pick implementation tasks."
                 )
-            ),
+            )
+
+        return {
+            "server_version": version,
+            "profile": profile,
+            # Role and forbidden list follow the profile and ride in the
+            # payload, so a client that never reads the orchestrator skill
+            # still knows whether it may take implementation tasks.
+            "role": role,
+            "forbidden": forbidden,
+            "skills": skills,
+            "task_status_canonical": canonical,
+            "task_status_legacy_aliases": dict(_LEGACY_ALIASES),
+            "default_project": default,
+            "orchestrator_skill": "cod_doc/skills/orchestrator/SKILL.md",
+            "next_action_hint": hint,
         }
 
     # ----------------------------------------------------------------- #

@@ -10,7 +10,8 @@
 > curator-тулов (`agent_capabilities`, `curator_next`, `ctx_search`,
 > `ctx_drift`, `context_get`, `agent_report`); `agent_capabilities()`
 > отдаёт `role: "doc-curator"` и `forbidden: ["agent_pick",
-> "task_checkout", "task_complete"]`. Своп сделан планом
+> "task_checkout", "task_complete"]`; на `minimal`/`standard`/`full` тот
+> же тул отдаёт `role: "coder"` без запретов (RFC 27, AFT-004). Своп сделан планом
 > `doc-curator-2026-09` (CUR-007 — `ctx_search` с lazy reindex, CUR-008 —
 > перекрой `AGENT_TOOLS`, CUR-016 — `ctx_docs` → `curator_next`: doc card
 > вместо голого листинга документов). Старые task-centric тулы (`agent_pick`,
