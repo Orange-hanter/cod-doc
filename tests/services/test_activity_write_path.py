@@ -321,6 +321,37 @@ def test_doc_patch_section_emits_event(engine_with_schema) -> None:  # type: ign
         assert events[0].scope_id == "doc-1#intro"
 
 
+def test_doc_delete_section_emits_event(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ADO-213: the section delete-path is a write-path like any other."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _new_doc(session, p, "doc-1")
+        doc_service.add_section(
+            session,
+            document_id=doc_id,
+            anchor="intro",
+            heading="Intro",
+            level=2,
+            position=0,
+            body="hello",
+            author="human:test",
+        )
+        doc_service.delete_section(
+            session,
+            document_id=doc_id,
+            anchor="intro",
+            author="agent:run-X",
+        )
+
+    with transactional(factory) as session:
+        ev = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "doc.section_deleted")
+        ).scalar_one()
+        assert ev.scope_id == "doc-1#intro"
+        assert ev.actor_kind == "agent"
+
+
 def test_doc_delete_emits_event(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:

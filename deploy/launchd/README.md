@@ -19,7 +19,7 @@ non-editable сборку в `~/.cod-doc/runtime`:
 отдаёт `role: "doc-curator"` и `forbidden: [agent_pick, task_checkout,
 task_complete]`. Точка входа в работу — `curator_next(project=...)`: doc card с
 очередью «что протухло и за что браться первым». Coding-агенту, которому нужен
-`agent_pick`/`task_checkout`, идти на `:8801` (`standard`, 142 тула), а не на
+`agent_pick`/`task_checkout`, идти на `:8801` (`standard`, 143 тула), а не на
 `:8802`.
 
 ## Команды

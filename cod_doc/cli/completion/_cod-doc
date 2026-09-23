@@ -851,6 +851,7 @@ _cod-doc() {
         (body)                _cod_doc_doc_body && ret=0 ;;
         (create)              _cod_doc_doc_create && ret=0 ;;
         (delete)              _cod_doc_doc_delete && ret=0 ;;
+        (delete-section)      _cod_doc_doc_delete_section && ret=0 ;;
         (drift)               _cod_doc_doc_drift && ret=0 ;;
         (export)              _cod_doc_doc_export && ret=0 ;;
         (import)              _cod_doc_doc_import && ret=0 ;;
@@ -875,6 +876,7 @@ _cod-doc() {
     'body:Print the full rendered body of a document.'
     'create:Create a new document record.'
     'delete:Delete a single document by key, or bulk-delete by path glob (+ typ…'
+    'delete-section:Delete section ANCHOR from DOC_KEY.'
     'drift:Detect drift between DB content, projection hash, and on-disk file.'
     'export:Export a document projection to disk (writes <project-root>/<doc.pa…'
     'import:Import frontmatter changes from a projection file back into the DB.'
@@ -981,6 +983,23 @@ _cod-doc() {
   return ret
 }
 
+(( $+functions[_cod_doc_doc_delete_section] )) || _cod_doc_doc_delete_section() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--yes)--yes[Skip the confirmation prompt]' \
+    '(--dry-run)--dry-run[Show the diff that would be recorded without deleting anything]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' \
+    '2:anchor:_cod_doc_doc_sections' && ret=0
+  return ret
+}
+
 (( $+functions[_cod_doc_doc_drift] )) || _cod_doc_doc_drift() {
   local curcontext="$curcontext" ret=1
   local -a line
@@ -1015,6 +1034,10 @@ _cod-doc() {
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--author)--author=:author' \
+    '(--replace)--replace[Treat the file as the whole body; delete DB sections it no longer h…]' \
+    '(--dry-run)--dry-run[Run the import and report it, then roll back — nothing is written]' \
+    '(--yes)--yes[Skip the confirmation prompt --replace raises before deleting secti…]' \
+    '(--force)--force[Allow --replace to empty the document when the file parses to no se…]' \
     '(- *)--help[Show this message and exit.]' \
     '1:file-path:_files' && ret=0
   return ret

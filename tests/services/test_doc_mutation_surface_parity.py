@@ -36,6 +36,7 @@ SPEC = ServiceSpec(
             "create",
             "add_section",
             "patch_section",
+            "delete_section",
             "update_status",
             "accept",
             "rename",
@@ -58,6 +59,7 @@ SPEC = ServiceSpec(
             "content_hash",
             "section_diff",
             "section_create_diff",
+            "section_delete_diff",
             "section_label",
         }
     ),
@@ -176,9 +178,10 @@ def test_section_writes_are_on_both_surfaces() -> None:
 
     for surface in ("mcp", "cli"):
         members = surface_members(surface, SPEC)
-        missing = sorted({"add_section", "patch_section"} - members)
+        missing = sorted({"add_section", "patch_section", "delete_section"} - members)
         assert not missing, (
             f"правка секций пропала с поверхности {surface}: {missing}. "
-            "Цикл doc_create → add_section → patch_section обязан проходиться "
-            "и агентом, и человеком (STO-010 / STO-011)."
+            "Цикл doc_create → add_section → patch_section → delete_section "
+            "обязан проходиться и агентом, и человеком (STO-010 / STO-011, "
+            "ADO-213)."
         )
