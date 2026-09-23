@@ -52,12 +52,17 @@ queries. Create/section-create живут в MCP/CLI и пишут через р
 Формат совпадает с Restate §2.3:
 
 ```markdown
-| Section | File | Total | Done | Remaining | Status |
-|:--------|:-----|------:|-----:|----------:|:-------|
-| A: Test Coverage | [section-a](tasks/section-a.md) | 5 | 5 | 0 | ✅ done |
-| B: Profile       | [section-b](tasks/section-b.md) | 4 | 2 | 2 | 🔄 in-progress |
-| **TOTAL**        |                                  | **9** | **7** | **2** | |
+| Section | Total | Done | Cancelled | Remaining | Status |
+|:--------|------:|-----:|----------:|----------:|:-------|
+| A: Test Coverage | 5 | 5 | 0 | 0 | ✅ done |
+| B: Profile       | 4 | 2 | 1 | 1 | 🔄 in-progress |
+| **TOTAL**        | **9** | **7** | **1** | **1** | 🔄 in-progress |
 ```
+
+Колонка `Cancelled` — ADO-078. `Remaining` перестал считать отменённые
+задачи, и без неё строка «5 / 4 / 0» читается как арифметическая ошибка.
+Печатается всегда, а не только когда отменённые есть: иначе каждая отмена
+меняла бы форму проекции и давала дрейф на ровном месте.
 
 Иконки `✅`, `🔄`, `❌`, `⏳` — из `section_totals.status`-деривата:
 
@@ -90,15 +95,24 @@ Top-N из `ready_tasks`, упорядочено по `priority desc`, `created 
 
 ## 5. Статус плана (derived)
 
-Считается в `plan_service._derive_status(total, done, in_progress)` из
-view `plan_totals` / `section_totals`. Это **не** `TaskStatus`.
+Считается в `plan_service._derive_status(total, done, in_progress, cancelled)`
+из view `plan_totals` / `section_totals`. Это **не** `TaskStatus`.
 
 | Условие | `DerivedStatus` |
 |---------|--------|
 | `total == 0` | `empty` |
-| `done == total` | `done` |
+| `done + cancelled >= total` (то есть `remaining == 0`) | `done` |
 | `in_progress > 0` или `done > 0` | `in-progress` |
 | иначе (все задачи ещё не взяты) | `pending` |
+
+ADO-078: второе условие раньше было `done == total`, и план с восемью
+закрытыми и двумя отменёнными задачами из десяти висел в `in-progress`
+навсегда — взять было нечего, а закрыться он не мог. Отменённые при этом
+**не** прибавляются к `done`: в счётчиках остаётся 8, а число отменённых
+видно полем `cancelled`. Сходится только вывод «работы не осталось».
+Отдельного `DerivedStatus.CANCELLED` нет: план, все задачи которого
+отменены, доходит до `done` с `done=0` и `cancelled=total` — состав виден по
+числам.
 
 Capability раньше утверждала «все задачи pending → pending» и не знала
 `empty`. Код — источник истины.
@@ -145,7 +159,7 @@ Restate-правила «рисовать с ≥ 15 задач» и prefix modul
 | `plan_create` | Создать план, опционально с секциями |
 | `plan_section_create` | Добавить секцию |
 | `plan_sections_list` | Секции с task counts |
-| `plan_progress` | `recalc`: total/done/remaining + derived status |
+| `plan_progress` | `recalc`: total/done/cancelled/remaining + derived status |
 | `plan_ready` | Ready-set, priority-ordered |
 | `plan_audit` | Циклы + done-drift |
 | `plan_export` | Markdown-проекции |

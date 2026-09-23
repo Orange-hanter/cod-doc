@@ -26,6 +26,12 @@ def coverage(session: Session, story_id: str) -> StoryCoverage:
     impl_tasks = list_tasks(session, story_id)
     tasks_total = len(impl_tasks)
     tasks_done = sum(1 for t in impl_tasks if t.status.value == "done")
+    # ADO-078: тот же дефект, что в `plan_service`, — «закрыто» было сведено к
+    # `done`, и стори, чья последняя реализующая задача отменена, не доходила
+    # до DELIVERED никогда. `cancelled` тоже терминален
+    # (`task_status_machine.TERMINAL_STATUSES`), работы не требует и потому не
+    # держит стори открытой.
+    tasks_cancelled = sum(1 for t in impl_tasks if t.status.value == TaskStatus.CANCELLED.value)
     # По бакету: на легаси-написание `in-progress` было зашито и только оно,
     # так что после бэкфилла ADO-156 стори прыгала бы `not_started → done`
     # мимо `in_progress`.
@@ -36,7 +42,15 @@ def coverage(session: Session, story_id: str) -> StoryCoverage:
     pinned = {UserStoryStatus.DRAFT, UserStoryStatus.DEFERRED}
     if UserStoryStatus(model.status) in pinned:
         derived = CoverageStatus(model.status)
-    elif tasks_total > 0 and tasks_done == tasks_total and acceptance_met == acceptance_total:
+    elif (
+        # `tasks_done > 0` — намеренно строже, чем у плана. DELIVERED несёт
+        # утверждение «поставлено», а стори, все задачи которой отменены (и
+        # тем более без критериев приёмки, где `0 == 0`), не поставлена
+        # ничего. Такая стори остаётся ACCEPTED — работы нет, поставки тоже.
+        tasks_done > 0
+        and tasks_done + tasks_cancelled == tasks_total
+        and acceptance_met == acceptance_total
+    ):
         derived = CoverageStatus.DELIVERED
     elif tasks_done > 0 or tasks_in_progress > 0:
         derived = CoverageStatus.IN_PROGRESS
@@ -50,6 +64,7 @@ def coverage(session: Session, story_id: str) -> StoryCoverage:
         tasks_total=tasks_total,
         tasks_done=tasks_done,
         tasks_in_progress=tasks_in_progress,
+        tasks_cancelled=tasks_cancelled,
         acceptance_total=acceptance_total,
         acceptance_met=acceptance_met,
     )

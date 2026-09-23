@@ -67,7 +67,7 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
     # when the DB isn't initialised — same shape so the template doesn't
     # need to branch. `proj.stats()` разбирает весь legacy-`tasks.yaml`, поэтому
     # зовётся ниже и только если БД не дала чисел.
-    db_total = db_done = db_in_progress = db_failed = 0
+    db_total = db_done = db_in_progress = db_cancelled = db_failed = 0
 
     with try_open_project_db(slug) as (session, project_db_id):
         if session is not None and project_db_id is not None:
@@ -88,6 +88,7 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                 db_total += progress.total
                 db_done += progress.done
                 db_in_progress += progress.in_progress
+                db_cancelled += progress.cancelled
                 plan_rows.append(
                     {
                         "plan_id": plan.row_id,
@@ -95,11 +96,10 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
                         "total": progress.total,
                         "done": progress.done,
                         "in_progress": progress.in_progress,
+                        "cancelled": progress.cancelled,
                         "remaining": progress.remaining,
                         "status": progress.status.value,
-                        "percent": (
-                            round(100 * progress.done / progress.total) if progress.total else 0
-                        ),
+                        "percent": progress.pct_closed,
                     }
                 )
 
@@ -156,7 +156,9 @@ def project_show(request: Request, slug: str) -> HTMLResponse:
             "total": db_total,
             "done": db_done,
             "in_progress": db_in_progress,
-            "pending": db_total - db_done - db_in_progress,
+            # ADO-078: отменённая задача закрыта и работы не требует — в
+            # «Remaining» её нет, как нет в `PlanProgress.remaining`.
+            "pending": db_total - db_done - db_in_progress - db_cancelled,
             "failed": db_failed,
         }
     else:

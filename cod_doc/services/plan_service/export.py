@@ -20,21 +20,28 @@ if TYPE_CHECKING:
 
 
 def _render_progress_overview(progress: PlanProgress) -> str:
-    """Markdown table per [standards/task-plan.md §4.2]."""
+    """Markdown table per [standards/task-plan.md §4.2].
+
+    ADO-078: колонка `Cancelled` — не украшение. `Remaining` перестал
+    считать отменённые задачи, и без отдельного столбца строка «10 / 8 / 0»
+    читается как арифметическая ошибка. Колонка печатается всегда, а не
+    только когда отменённые есть: проекция должна иметь одну форму, иначе
+    каждая отмена задачи меняет ширину таблицы и даёт дрейф на ровном месте.
+    """
     lines = [
         "## Progress Overview",
         "",
-        "| Section | Total | Done | Remaining | Status |",
-        "|:--------|------:|-----:|----------:|:-------|",
+        "| Section | Total | Done | Cancelled | Remaining | Status |",
+        "|:--------|------:|-----:|----------:|----------:|:-------|",
     ]
     for sec in progress.sections:
         lines.append(
             f"| {sec.letter}: {sec.title} | {sec.total} | {sec.done} | "
-            f"{sec.remaining} | {sec.status.value} |"
+            f"{sec.cancelled} | {sec.remaining} | {sec.status.value} |"
         )
     lines.append(
         f"| **TOTAL** | **{progress.total}** | **{progress.done}** | "
-        f"**{progress.remaining}** | {progress.status.value} |"
+        f"**{progress.cancelled}** | **{progress.remaining}** | {progress.status.value} |"
     )
     return "\n".join(lines) + "\n"
 

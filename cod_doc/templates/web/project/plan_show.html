@@ -14,7 +14,14 @@
 <section class="doc-meta">
   <span><strong>Principle:</strong> {{ plan.principle }}</span>
   <span><strong>Status:</strong> {{ plan.status }}</span>
-  <span><strong>Done:</strong> {{ plan.done }} / {{ plan.total }} ({{ plan.percent }}%)</span>
+  {# ADO-078: процент — доля закрытого (done + cancelled), как у статуса. Рядом
+     с «Done: 38 / 75» число «56%» читалось бы как ошибка, поэтому разбивка
+     и процент подписаны отдельно. #}
+  <span><strong>Done:</strong> {{ plan.done }} / {{ plan.total }}</span>
+  {% if plan.cancelled %}
+    <span><strong>Cancelled:</strong> {{ plan.cancelled }}</span>
+  {% endif %}
+  <span><strong>Closed:</strong> {{ plan.percent }}%</span>
   {% if plan.in_progress %}
     <span><strong>In progress:</strong> {{ plan.in_progress }}</span>
   {% endif %}

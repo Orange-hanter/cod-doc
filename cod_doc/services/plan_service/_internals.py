@@ -28,10 +28,22 @@ def _require_plan(session: Session, plan_id: int) -> PlanModel:
     return model
 
 
-def _derive_status(total: int, done: int, in_progress: int) -> DerivedStatus:
+def _derive_status(total: int, done: int, in_progress: int, cancelled: int) -> DerivedStatus:
+    """Статус плана/секции по её счётчикам.
+
+    ADO-078: `done` наступает, когда не осталось задач, требующих работы, —
+    то есть когда `done + cancelled == total`, а не когда `done == total`.
+    Старое условие держало план с восемью закрытыми и двумя отменёнными
+    задачами из десяти в `in-progress` навсегда: взять было нечего, а
+    закрыться он не мог.
+
+    Это НЕ «считать отменённые сделанными»: `done` в счётчиках остаётся 8,
+    отменённые видны отдельным полем `cancelled` (см.
+    :class:`PlanProgress`). Сходится только вывод «работы не осталось».
+    """
     if total == 0:
         return DerivedStatus.EMPTY
-    if done == total:
+    if done + cancelled >= total:
         return DerivedStatus.DONE
     if in_progress > 0 or done > 0:
         return DerivedStatus.IN_PROGRESS

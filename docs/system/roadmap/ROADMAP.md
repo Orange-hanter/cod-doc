@@ -58,9 +58,17 @@ related_docs:
 
 ## Ground-truth состояние планов
 
+> **Как читать числа (ADO-078).** `done / остаток` — остаток НЕ включает
+> отменённые задачи: `cancelled` терминален наравне с `done`
+> (`task_status_machine.TERMINAL_STATUSES`), работы не требует и потому из
+> остатка выведен. Число отменённых печатается рядом, а не растворяется в
+> «сделано»: «96 done / 2 cancelled» и «98 done» — разные факты.
+> `backlog` в остатке ОСТАЁТСЯ: это припаркованная работа, а не отменённая.
+> Замеры ниже сняты 2026-09-21 на копиях боевых БД.
+
 | План | Статус | Примечание |
 |---|---|---|
-| [paperclip-adoption](paperclip-adoption-task-plan.md) (RFC 01–15) | ✅ done | 94 done / 2 cancelled |
+| [paperclip-adoption](paperclip-adoption-task-plan.md) (RFC 01–15) | ✅ done | 96 done / 2 cancelled; остаток 0 — деривация статуса сошлась с ручной пометкой только после ADO-078 |
 | [adr-system](adr-system-task-plan.md) | ✅ done | 8/8 |
 | [observability-and-indexing](observability-and-indexing-task-plan.md) | ✅ done | 8/8 |
 | [refactor-large-files](refactor-large-files-task-plan.md) | ✅ done | подтверждён STB-020 |
@@ -68,8 +76,8 @@ related_docs:
 | [web-frontend](web-frontend-task-plan.md) | ✅ done | WEB-031/042 закрыты (STB-003/004) |
 | [audit-followups](audit-followups-task-plan.md) | ✅ done | закрыт STB-021 |
 | [agent-tools-completion](agent-tools-completion-task-plan.md) | ✅ done | закрыт STB-001 |
-| [stabilization-2026-06](../audit/2026-07-29-state-of-the-project.md) | 🔄 11 done / 1 cancelled | STB-012 → cancelled (re-scoped как ADO-013); открыт STB-023 |
-| **adoption-2026-08** | 🔄 100/229 *(2026-09-17)* | Треки C+D+E+W; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)). Секции: C 24/27, D 50/96, E 18/20, F 1/1, G 5/28, H 2/2, **I Web UI 0/55** (заведена 2026-09-17) |
+| [stabilization-2026-06](../audit/2026-07-29-state-of-the-project.md) | 🔄 11/12 · 1 cancelled *(2026-09-21)* | Остаток — один STB-023. STB-012 → cancelled (re-scoped как ADO-013); секция P1 закрылась 4/4, отменённая задача больше не держит её открытой |
+| **adoption-2026-08** | 🔄 137/233 · 4 cancelled *(2026-09-21)* | Треки C+D+E+W; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)). Секции: **C 25/25 ✅**, D 60/98, E 18/20, F 1/1, G 9/28, H 2/2, **I Web UI 22/59**. Отменены ADO-003, ADO-004, ADO-043, ADO-051 — до ADO-078 они третий месяц числились несделанными, и секция C висела «2 осталось», не имея ни одной задачи |
 | RFC 16–21 (hackathon-track) | ❌ отбракованы 2026-08-29 | ADO-056: ни одна не закрывает спрос M2; пометки в [proposals/README.md](../../../proposals/README.md) |
 
 ## Смена приоритета: почему Adoption вперёд фич

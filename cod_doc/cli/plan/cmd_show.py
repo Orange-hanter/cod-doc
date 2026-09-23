@@ -41,6 +41,7 @@ def plan_show(ctx: click.Context, plan_scope: str, project: str, as_json: bool) 
                     "total": progress.total,
                     "done": progress.done,
                     "in_progress": progress.in_progress,
+                    "cancelled": progress.cancelled,
                     "remaining": progress.remaining,
                     "status": progress.status.value,
                     "sections": [
@@ -49,6 +50,7 @@ def plan_show(ctx: click.Context, plan_scope: str, project: str, as_json: bool) 
                             "title": s.title,
                             "total": s.total,
                             "done": s.done,
+                            "cancelled": s.cancelled,
                             "remaining": s.remaining,
                             "status": s.status.value,
                         }
@@ -64,6 +66,7 @@ def plan_show(ctx: click.Context, plan_scope: str, project: str, as_json: bool) 
     console.print(
         f"  Total: [bold]{progress.total}[/bold]  "
         f"Done: [green]{progress.done}[/green]  "
+        f"Cancelled: [dim]{progress.cancelled}[/dim]  "
         f"Remaining: [yellow]{progress.remaining}[/yellow]  "
         f"Status: {_STATUS_ICON.get(progress.status.value, '⚪')} {progress.status.value}"
     )
@@ -73,6 +76,7 @@ def plan_show(ctx: click.Context, plan_scope: str, project: str, as_json: bool) 
     table.add_column("Section", style="cyan")
     table.add_column("Total", justify="right")
     table.add_column("Done", justify="right")
+    table.add_column("Cancelled", justify="right")
     table.add_column("Remaining", justify="right")
     table.add_column("Status")
     for s in progress.sections:
@@ -81,6 +85,7 @@ def plan_show(ctx: click.Context, plan_scope: str, project: str, as_json: bool) 
             f"{s.letter}: {s.title}",
             str(s.total),
             str(s.done),
+            str(s.cancelled),
             str(s.remaining),
             f"{icon} {s.status.value}",
         )

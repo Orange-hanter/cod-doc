@@ -162,6 +162,41 @@ def test_plan_show_renders_progress_and_sections(plans_client) -> None:
     assert "1 / 3" in r.text or "1/3" in r.text
 
 
+def test_plan_show_percent_counts_cancelled_as_closed(plans_client) -> None:
+    """ai-review #87 (major): страница считала процент как `done / total`.
+
+    План, где одна задача сделана, а остальные отменены, по ADO-078 закрыт
+    целиком (статус DONE), но рисовал «1 / 3 (33%)» и полосу на треть. Процент
+    должен отвечать на тот же вопрос, что и статус, — «сколько закрыто».
+    """
+    from pathlib import Path
+
+    from sqlalchemy import select
+
+    from cod_doc.domain.entities import TaskStatus
+    from cod_doc.infra.models import TaskModel
+
+    client, entry, plan_id = plans_client
+    engine = make_engine(f"sqlite:///{Path(entry.path) / '.cod-doc' / 'state.db'}")
+    with transactional(make_session_factory(engine)) as session:
+        open_ids = session.execute(
+            select(TaskModel.task_id).where(
+                TaskModel.plan_id == plan_id, TaskModel.status != TaskStatus.DONE.value
+            )
+        ).scalars()
+        for task_id in list(open_ids):
+            tasks.update_status(
+                session, task_id=task_id, new_status=TaskStatus.CANCELLED, author="human:test"
+            )
+    engine.dispose()
+
+    r = client.get(f"/p/{entry.name}/plans/{plan_id}")
+    assert r.status_code == 200
+    assert "<strong>Closed:</strong> 100%" in r.text
+    assert "<strong>Cancelled:</strong> 2" in r.text
+    assert "width: 100%" in r.text
+
+
 def test_plan_show_renders_ready_block(plans_client) -> None:
     client, entry, plan_id = plans_client
     r = client.get(f"/p/{entry.name}/plans/{plan_id}")
