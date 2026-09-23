@@ -96,7 +96,7 @@ graph TD
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
-- **Описание:** 26 RFC в шести треках:
+- **Описание:** 27 RFC в семи треках:
   - **01–15 (paperclip-track):** 🟢 Реализованы — адаптация паттернов paperclipai/paperclip
     (skills, heartbeat, wake-payload, run-id, issue docs, checkout, routines,
     status taxonomy, activity log, adapter pattern, AGENTS.md, approvals,
@@ -133,7 +133,14 @@ graph TD
     путь не видит по построению. Декомпозиция — секция J плана
     `adoption-2026-08` (ADO-199…ADO-210), доставка тремя PR.
     Файл: `📁 /proposals/26-plan-graph-editing.md | 🗃️ doc:proposals_26-plan-graph-editing_md | 🔑 sha:cfa09957fac6`
-- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:28c44c0d4bc4`
+  - **27 (agent-fit-track):** 🟡 Черновик — Agent fit: coding-агент закрывает
+    вопросы тулами, а не SQL. Рождён из замера 2026-09-23: за 40 сессий 407
+    прямых чтений `state.db` против 398 MCP-вызовов, `curator_next` ≈25 КБ
+    при 8 пунктах очереди, `agent_capabilities` на `standard` запрещает
+    checkout, который требует `task-flow`. Декомпозиция — план
+    `agent-fit-2026-09` (AFT-001…AFT-016), шесть секций.
+    Файл: `📁 /proposals/27-agent-fit.md | 🗃️ doc:proposals_27-agent-fit_md | 🔑 sha:61ad67c3710f`
+- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:df79dabd2c5c`
 - **Статус:** `🟢 VERIFIED`
 
 ### CI Pipeline (GitHub Actions)
@@ -220,7 +227,7 @@ graph TD
 ### ROADMAP (милстоуны и приоритеты) ⭐
 - **Описание:** Милстоуны M1–M6, статусы фаз, декомпозиция планов. M1–M5 закрыты,
   M6 (hub + кросс-проектность) в подготовке.
-- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:e8d1c286fd07`
+- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:4e3e851ecef7`
 - **Статус:** `🟢 VERIFIED`
 
 ### RFC 22: Symbiosis (ZAIrgRush + Orakul)
@@ -288,7 +295,7 @@ graph TD
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
 | 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `2b50e6643b2a` | 2026-09-20 | 🟢 VERIFIED |
-| 3 | proposals/README.md | `doc:proposals_README_md` | `28c44c0d4bc4` | 2026-09-20 | 🟢 VERIFIED |
+| 3 | proposals/README.md | `doc:proposals_README_md` | `df79dabd2c5c` | 2026-09-20 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `7c133a394eb3` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `90c54859cba1` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
@@ -299,15 +306,16 @@ graph TD
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
 | 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `eea748c0aed0` | 2026-09-20 | 🟢 VERIFIED |
-| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `e8d1c286fd07` | 2026-09-20 | 🟢 VERIFIED |
+| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `4e3e851ecef7` | 2026-09-20 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `66518d72d119` | 2026-09-20 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
 | 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
 | 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `97648d0ab324` | 2026-09-20 | 🟢 VERIFIED |
 | 19 | Zsh-дополнение | `doc:docs_zsh-completion_md` | `f177c8373beb` | 2026-09-17 | 🟢 VERIFIED |
 | 20 | RFC 26 Правка графа плана | `doc:proposals_26-plan-graph-editing_md` | `cfa09957fac6` | 2026-09-22 | 🟡 DRAFT |
+| 21 | RFC 27 Agent fit | `doc:proposals_27-agent-fit_md` | `61ad67c3710f` | 2026-09-23 | 🟡 DRAFT |
 
-> **Всего:** 20 документов | 🟢 VERIFIED: 14 | 🟡 LEGACY: 3 | 🟡 DRAFT: 3 | 🔴 STALE: 0 | 🔴 BROKEN: 0
+> **Всего:** 21 документов | 🟢 VERIFIED: 14 | 🟡 LEGACY: 3 | 🟡 DRAFT: 4 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >
 > **Проверка 2026-09-17 (ADO-174):** строка `models/domain.md` возвращена.
 > В ADO-172 она была удалена по ошибке — как «файла нет на диске, документа
