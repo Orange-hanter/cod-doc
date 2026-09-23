@@ -72,26 +72,10 @@ def doc_drift(
             report = projection_service.detect_drift(session, d.row_id, root_path=root)
 
     def _json_row(d: Document, report: DriftReport) -> dict[str, object]:
-        return {
-            "doc_key": d.doc_key,
-            "path": d.path,
-            "status": report.status.value,
-            "projection_hash": report.projection_hash,
-            "db_content_hash": report.db_content_hash,
-            "file_hash": report.file_hash,
-            "orphan_sections": list(report.orphan_sections),
-        }
+        return {"doc_key": d.doc_key, "path": d.path, **report.as_payload()}
 
     def _json_issue(item: ProjectDriftItem) -> dict[str, object]:
-        return {
-            "doc_key": item.doc_key,
-            "path": item.path,
-            "status": item.report.status.value,
-            "projection_hash": item.report.projection_hash,
-            "db_content_hash": item.report.db_content_hash,
-            "file_hash": item.report.file_hash,
-            "orphan_sections": list(item.report.orphan_sections),
-        }
+        return item.as_payload()
 
     if all_docs:
         if as_json:

@@ -589,18 +589,7 @@ def register(mcp: FastMCP) -> None:
             if d is None or d.row_id is None:
                 raise ValueError(f"Document '{doc_key}' not found.")
             report = projection_service.detect_drift(session, d.row_id, root_path=root)
-        return {
-            "doc_key": doc_key,
-            "status": report.status.value,
-            "projection_hash": report.projection_hash,
-            "db_content_hash": report.db_content_hash,
-            "file_hash": report.file_hash,
-            # ADO-213: reported beside `status`, never folded into it — an
-            # accepted document reads `in_sync` while its DB body carries
-            # headings the file dropped. Cure: `doc import <path> --replace`
-            # or doc_delete_section per anchor.
-            "orphan_sections": list(report.orphan_sections),
-        }
+        return {"doc_key": doc_key, **report.as_payload()}
 
     @mcp.tool(name="doc_drift_all")
     def doc_drift_all(project: str, limit: int | None = None) -> dict[str, Any]:
@@ -628,18 +617,7 @@ def register(mcp: FastMCP) -> None:
             "total_docs": report.total_docs,
             "problem_count": report.problem_count,
             "counts": report.counts,
-            "issues": [
-                {
-                    "doc_key": item.doc_key,
-                    "path": item.path,
-                    "status": item.report.status.value,
-                    "projection_hash": item.report.projection_hash,
-                    "db_content_hash": item.report.db_content_hash,
-                    "file_hash": item.report.file_hash,
-                    "orphan_sections": list(item.report.orphan_sections),
-                }
-                for item in report.issues
-            ],
+            "issues": [item.as_payload() for item in report.issues],
         }
 
     # ------------------------------------------------------------------- #
@@ -759,18 +737,7 @@ def register(mcp: FastMCP) -> None:
             "total_docs": report.total_docs,
             "problem_count": report.problem_count,
             "counts": report.counts,
-            "issues": [
-                {
-                    "doc_key": item.doc_key,
-                    "path": item.path,
-                    "status": item.report.status.value,
-                    "projection_hash": item.report.projection_hash,
-                    "db_content_hash": item.report.db_content_hash,
-                    "file_hash": item.report.file_hash,
-                    "orphan_sections": list(item.report.orphan_sections),
-                }
-                for item in report.issues
-            ],
+            "issues": [item.as_payload() for item in report.issues],
         }
 
     @mcp.tool(name="ctx_drift_gate")

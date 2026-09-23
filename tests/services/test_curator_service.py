@@ -251,6 +251,7 @@ def test_drift_half_keeps_the_ctx_drift_shape(curator_session) -> None:
             "projection_hash",
             "db_content_hash",
             "file_hash",
+            "metadata_mismatch",  # ADO-216
             "orphan_sections",
         }
 
