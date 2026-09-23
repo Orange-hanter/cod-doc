@@ -279,3 +279,24 @@ def test_pct_closed_of_an_open_plan_counts_only_closed_work(engine_with_schema) 
 
     assert progress.pct_closed == 50
     assert progress.remaining == 2
+
+
+def test_pct_closed_never_shows_100_while_work_remains() -> None:
+    """ai-review #87 (major): `round` давал 100% при 199 закрытых из 200.
+
+    Статус такого плана не DONE, а процент уже «всё» — то самое расхождение,
+    которое `pct_closed` чинит, только в обратную сторону. Округление вниз.
+    """
+    from cod_doc.services.plan_service._types import DerivedStatus, PlanProgress
+
+    almost = PlanProgress(
+        plan_id=1,
+        scope="p",
+        total=200,
+        done=198,
+        in_progress=0,
+        cancelled=1,
+        status=DerivedStatus.IN_PROGRESS,
+    )
+    assert almost.pct_closed == 99
+    assert almost.remaining == 1
