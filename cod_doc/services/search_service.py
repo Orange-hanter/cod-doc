@@ -349,6 +349,26 @@ def _delete_best_effort(session: Session, *, kind: str, ref: str, project_id: in
         _warn_not_indexed(kind, ref)
 
 
+def index_doc(session: Session, *, project_id: int, doc_key: str) -> None:
+    """ADO-211: refresh the FTS row for one document after a write.
+
+    Called by ``doc_service`` mutations and ``import_service.import_markdown``.
+    Until ADO-211 only ``import_or_update_markdown`` indexed, so a document
+    made through ``doc_create`` stayed invisible to search while the index was
+    non-empty (``ensure_index`` only rebuilds an empty one). Best-effort like
+    the other hooks here: a DB without migration 0023 still accepts the write.
+    """
+    try:
+        upsert_doc(session, project_id=project_id, doc_key=doc_key)
+    except SearchIndexMissing:
+        _warn_not_indexed("doc", doc_key)
+
+
+def unindex_doc(session: Session, *, project_id: int, doc_key: str) -> None:
+    """ADO-211: drop a document's FTS row — the old key on ``rename``."""
+    _delete_best_effort(session, kind="doc", ref=doc_key, project_id=project_id)
+
+
 def index_task(session: Session, task: TaskModel) -> None:
     """Refresh the FTS row for one task after a ``task_service`` mutation."""
     title, body = _task_payload(task)

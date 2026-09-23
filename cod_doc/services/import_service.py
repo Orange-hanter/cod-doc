@@ -411,6 +411,7 @@ def import_markdown(
 
     doc = docs.create(
         session,
+        reindex=False,  # индекс строится один раз в конце функции
         project_id=project_id,
         doc_key=doc_key,
         type=doc_type,
@@ -441,6 +442,7 @@ def import_markdown(
             body=section.body,
             author=author,
             reason=reason or "import_markdown",
+            reindex=False,  # индекс строится один раз в конце функции
         )
 
     # Proposal 15 §2.2 two-pass resolve: run resolve_section for all imported
@@ -448,6 +450,10 @@ def import_markdown(
     # sections that were inserted later in the same batch get resolved.
     _resolve_all_sections(session, doc.row_id)
 
+    # ADO-211: прямой вызов (веб-загрузка одного файла, регистрация по скиллу
+    # doc-sync) раньше оставлял документ вне поиска — индексировал только
+    # import_or_update_markdown поверх этой функции.
+    search_service.index_doc(session, project_id=project_id, doc_key=doc_key)
     return ImportReport(document=doc, created=True, warnings=warnings)
 
 
@@ -491,9 +497,8 @@ def import_or_update_markdown(
         if source_sha256 is not None and doc_row_id is not None:
             _set_content_sha(session, doc_row_id, source_sha256)
             _set_projection_hash_to_rendered(session, doc_row_id)
-        # ADO-030: keep FTS fresh in the same transaction — a doc you just
-        # imported must be searchable without a manual --reindex.
-        search_service.upsert_doc(session, project_id=project_id, doc_key=doc_key)
+        # ADO-030 / ADO-211: import_markdown above already refreshed the FTS
+        # row in this transaction — indexing again here would be a duplicate.
         return report
 
     # Doc exists — first sync its document-level metadata/frontmatter, then
@@ -523,6 +528,7 @@ def import_or_update_markdown(
                 new_body=section.body,
                 author=author,
                 reason=reason or "bulk import (update)",
+                reindex=False,  # один upsert на документ в конце функции
             )
             continue
         except docs.SectionNotFoundError:
@@ -552,6 +558,7 @@ def import_or_update_markdown(
                 body=section.body,
                 author=author,
                 reason=reason or "bulk import (new section)",
+                reindex=False,
             )
         except Exception as exc:
             logger.warning("import %s#%s: add_section failed: %s", doc_key, section.anchor, exc)
@@ -568,8 +575,11 @@ def import_or_update_markdown(
     if source_sha256 is not None:
         _set_content_sha(session, existing.row_id, source_sha256)
         _set_projection_hash_to_rendered(session, existing.row_id)
-    # ADO-030: same-transaction FTS refresh on the update path too.
-    search_service.upsert_doc(session, project_id=project_id, doc_key=doc_key)
+    # ADO-030: same-transaction FTS refresh on the update path too — once per
+    # document (sections were patched with reindex=False). ADO-211: best-effort
+    # like every other write-path hook (search_service, CUR-012): the index is
+    # derived, and a DB without migration 0023 must still accept the import.
+    search_service.index_doc(session, project_id=project_id, doc_key=doc_key)
     refreshed = docs.get(session, project_id, doc_key) or existing
     return ImportReport(document=refreshed, created=False, warnings=warnings)
 
