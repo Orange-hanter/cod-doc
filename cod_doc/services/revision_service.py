@@ -307,9 +307,11 @@ def _restore_original_from_unified(diff: str) -> str:
     return "".join(result)
 
 
-#: Метка SECTION-ревизии — ``section:<doc_key>#<anchor>`` в заголовках diff
-#: (`doc_service.section_label`). Якорь не содержит ``+``/``@``/пробелов.
-_SECTION_LABEL_RE = re.compile(r"section:[^#\s]*#([^\s@+]+)")
+#: Заголовок SECTION-ревизии: ``--- <откуда>+++ section:<doc_key>#<anchor>@@``
+#: (`doc_service.section_label`; строки заголовка склеены — ``lineterm=""``).
+#: Сверяется только заголовок и только с начала diff: тело секции может само
+#: содержать текст вида ``section:x#y`` и подменило бы метку (ai-review #85).
+_SECTION_LABEL_RE = re.compile(r"--- (?:/dev/null|section:[^+]*)\+\+\+ section:[^#]*#([^@]+)@@")
 
 
 def _revert_section(session: Session, model: RevisionModel, *, author: str) -> None:
@@ -330,7 +332,7 @@ def _revert_section(session: Session, model: RevisionModel, *, author: str) -> N
     # Без метки принадлежность не доказать — и такой ревизии на практике нет:
     # оба писателя (`add_section`, `patch_section`) метят diff, без метки
     # остаётся лишь пустой diff секции, созданной с пустым телом.
-    labelled = _SECTION_LABEL_RE.search(model.diff)
+    labelled = _SECTION_LABEL_RE.match(model.diff)
     if labelled is None or labelled.group(1) != sec.anchor:
         written_for = f"anchor {labelled.group(1)!r}" if labelled else "no section label"
         raise RevertNotSupportedError(

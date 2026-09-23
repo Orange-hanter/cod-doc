@@ -321,3 +321,40 @@ def test_unlabelled_section_revision_is_not_reverted_blindly(engine_with_schema)
 
         body = next(s.body for s in docs.get_sections(session, doc_id) if s.anchor == "beta")
     assert body == "Body of beta."
+
+
+def test_label_in_the_section_body_does_not_pass_for_the_header(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """ai-review #85 (major): сторож искал метку по всему diff.
+
+    Правка gamma, в теле которой упомянута `section:handbook#delta`, после
+    удаления gamma и переиспользования её id секцией delta не должна
+    откатываться на delta: метка берётся только из заголовка diff.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        doc_id = _seed_three(session)
+        gamma = docs.patch_section(
+            session,
+            document_id=doc_id,
+            anchor="gamma",
+            new_body="See section:handbook#delta@@ for details.",
+            author="human:dakh",
+        )
+        assert gamma.row_id is not None
+        gamma_patch = rev.head_for_entity(session, EntityKind.SECTION, gamma.row_id)
+        assert gamma_patch is not None
+        docs.delete_section(session, document_id=doc_id, anchor="gamma", author="human:dakh")
+        delta = docs.add_section(
+            session,
+            document_id=doc_id,
+            anchor="delta",
+            heading="Delta",
+            level=2,
+            position=2,
+            body="Body of delta.",
+            author="human:dakh",
+        )
+        assert delta.row_id == gamma.row_id
+
+        with pytest.raises(rev.RevertNotSupportedError):
+            rev.revert(session, gamma_patch, author="human:dakh")
