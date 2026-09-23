@@ -95,7 +95,8 @@ def recalc_for_project(session: Session, project_id: int) -> dict[int, PlanProgr
             "SELECT p.row_id, p.scope, "
             "       COALESCE(pt.tasks_total, 0), "
             "       COALESCE(pt.tasks_done, 0), "
-            "       COALESCE(pt.tasks_in_progress, 0) "
+            "       COALESCE(pt.tasks_in_progress, 0), "
+            "       COALESCE(pt.tasks_cancelled, 0) "
             "FROM plan p "
             "LEFT JOIN plan_totals pt ON pt.plan_id = p.row_id "
             "WHERE p.project_id = :pid"
@@ -109,7 +110,8 @@ def recalc_for_project(session: Session, project_id: int) -> dict[int, PlanProgr
             total=int(r[2]),
             done=int(r[3]),
             in_progress=int(r[4]),
-            status=_derive_status(int(r[2]), int(r[3]), int(r[4])),
+            cancelled=int(r[5]),
+            status=_derive_status(int(r[2]), int(r[3]), int(r[4]), int(r[5])),
             sections=[],
         )
         for r in rows
@@ -155,7 +157,8 @@ def recalc(session: Session, plan_id: int) -> PlanProgress:
     sec_rows = session.execute(
         text(
             "SELECT s.row_id, s.letter, s.title, s.slug, s.position, "
-            "       st.tasks_total, st.tasks_done, st.tasks_in_progress "
+            "       st.tasks_total, st.tasks_done, st.tasks_in_progress, "
+            "       st.tasks_cancelled "
             "FROM plan_section s "
             "JOIN section_totals st ON st.section_id = s.row_id "
             "WHERE s.plan_id = :pid "
@@ -174,14 +177,17 @@ def recalc(session: Session, plan_id: int) -> PlanProgress:
             total=int(row[5] or 0),
             done=int(row[6] or 0),
             in_progress=int(row[7] or 0),
-            status=_derive_status(int(row[5] or 0), int(row[6] or 0), int(row[7] or 0)),
+            cancelled=int(row[8] or 0),
+            status=_derive_status(
+                int(row[5] or 0), int(row[6] or 0), int(row[7] or 0), int(row[8] or 0)
+            ),
         )
         for row in sec_rows
     ]
 
     plan_row = session.execute(
         text(
-            "SELECT tasks_total, tasks_done, tasks_in_progress "
+            "SELECT tasks_total, tasks_done, tasks_in_progress, tasks_cancelled "
             "FROM plan_totals WHERE plan_id = :pid"
         ),
         {"pid": plan_id},
@@ -189,6 +195,7 @@ def recalc(session: Session, plan_id: int) -> PlanProgress:
     total = int(plan_row[0] or 0) if plan_row else 0
     done = int(plan_row[1] or 0) if plan_row else 0
     in_progress = int(plan_row[2] or 0) if plan_row else 0
+    cancelled = int(plan_row[3] or 0) if plan_row else 0
 
     return PlanProgress(
         plan_id=plan_id,
@@ -196,7 +203,8 @@ def recalc(session: Session, plan_id: int) -> PlanProgress:
         total=total,
         done=done,
         in_progress=in_progress,
-        status=_derive_status(total, done, in_progress),
+        cancelled=cancelled,
+        status=_derive_status(total, done, in_progress, cancelled),
         sections=sections,
     )
 

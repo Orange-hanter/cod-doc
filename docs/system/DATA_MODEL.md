@@ -567,7 +567,8 @@ SELECT
   s.row_id           AS section_id,
   COUNT(t.row_id)    AS tasks_total,
   SUM(CASE WHEN t.status='done' THEN 1 ELSE 0 END) AS tasks_done,
-  SUM(CASE WHEN t.status IN ('in_progress','in-progress') THEN 1 ELSE 0 END) AS tasks_in_progress
+  SUM(CASE WHEN t.status IN ('in_progress','in-progress') THEN 1 ELSE 0 END) AS tasks_in_progress,
+  SUM(CASE WHEN t.status='cancelled' THEN 1 ELSE 0 END) AS tasks_cancelled
 FROM plan_section s
 LEFT JOIN task t ON t.section_id = s.row_id
 GROUP BY s.row_id;
@@ -594,6 +595,17 @@ GROUP BY s.row_id;
 > на записи (`task_service.update_status`), так что легаси больше не появляется.
 > Сравнение по классу эквивалентности при этом остаётся: его читают ещё не
 > мигрированные БД и восстановленные бэкапы.
+>
+> **`tasks_cancelled` — отдельная колонка (миграция 0039, ADO-078).** «Сколько
+> осталось» сервисный слой выводит как `total − done − cancelled`, а не
+> `total − done`: закрытых состояний два
+> (`task_status_machine.TERMINAL_STATUSES`), и отменённая задача работы не
+> требует. Считать её в остатке значило вечное «8 из 10» на плане, где взять
+> нечего. Колонка именно отдельная, а не слагаемое к `tasks_done`: число
+> отменённых должно быть видно, иначе «сделано 10» врёт про план, где сделано
+> 8. `backlog` в остатке остаётся — он припаркован, а не закрыт. Колонка
+> добавлена последней, порядок прежних полей не сдвинут. Синхронность
+> стережёт `tests/infra/test_totals_cancelled.py`.
 
 ### 4.3a `document_body`
 

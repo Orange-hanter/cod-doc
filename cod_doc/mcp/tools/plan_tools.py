@@ -227,7 +227,14 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="plan_progress")
     def plan_progress(project: str, plan_scope: str) -> dict[str, Any]:
-        """Return derived progress for a plan: total/done/remaining per section and overall."""
+        """Return derived progress for a plan: total/done/cancelled/remaining per section.
+
+        `remaining` excludes cancelled tasks — they are closed, not pending
+        (ADO-078). The count is reported separately as `cancelled`, so
+        `total = done + cancelled + remaining` at both levels. `in_progress`
+        is a subset of `remaining` (started, still needs work) — do not add it
+        on top.
+        """
         from cod_doc.infra.db import transactional
         from cod_doc.services import plan_service
 
@@ -241,6 +248,7 @@ def register(mcp: FastMCP) -> None:
             "total": progress.total,
             "done": progress.done,
             "in_progress": progress.in_progress,
+            "cancelled": progress.cancelled,
             "remaining": progress.remaining,
             "status": progress.status.value,
             "sections": [
@@ -249,6 +257,7 @@ def register(mcp: FastMCP) -> None:
                     "title": s.title,
                     "total": s.total,
                     "done": s.done,
+                    "cancelled": s.cancelled,
                     "remaining": s.remaining,
                     "status": s.status.value,
                 }

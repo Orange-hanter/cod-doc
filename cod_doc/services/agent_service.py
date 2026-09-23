@@ -352,9 +352,19 @@ def get(
                 "scope": progress.scope,
                 "total": progress.total,
                 "done": progress.done,
+                # ADO-078: отменённые вынесены из `remaining` — но не в `done`,
+                # а в собственное поле: агент видит, что число уехало, и знает
+                # почему.
+                "cancelled": progress.cancelled,
                 "remaining": progress.remaining,
                 "sections": [
-                    {"letter": s.letter, "title": s.title, "total": s.total, "done": s.done}
+                    {
+                        "letter": s.letter,
+                        "title": s.title,
+                        "total": s.total,
+                        "done": s.done,
+                        "cancelled": s.cancelled,
+                    }
                     for s in progress.sections
                 ],
             },

@@ -39,11 +39,10 @@ def plans_list(request: Request, slug: str) -> HTMLResponse:
                         "total": progress.total,
                         "done": progress.done,
                         "in_progress": progress.in_progress,
+                        "cancelled": progress.cancelled,
                         "remaining": progress.remaining,
                         "status": progress.status.value,
-                        "percent": (
-                            round(100 * progress.done / progress.total) if progress.total else 0
-                        ),
+                        "percent": progress.pct_closed,
                         "last_updated": plan.last_updated,
                     }
                 )
@@ -105,8 +104,9 @@ def plan_show(
                 "total": progress.total,
                 "done": progress.done,
                 "in_progress": progress.in_progress,
+                "cancelled": progress.cancelled,
                 "remaining": progress.remaining,
-                "percent": (round(100 * progress.done / progress.total) if progress.total else 0),
+                "percent": progress.pct_closed,
             },
             "sections": [
                 {
@@ -117,9 +117,10 @@ def plan_show(
                     "total": s.total,
                     "done": s.done,
                     "in_progress": s.in_progress,
+                    "cancelled": s.cancelled,
                     "remaining": s.remaining,
                     "status": s.status.value,
-                    "percent": (round(100 * s.done / s.total) if s.total else 0),
+                    "percent": s.pct_closed,
                     "tasks": tasks_by_section.get(s.section_id, []),
                 }
                 for s in progress.sections

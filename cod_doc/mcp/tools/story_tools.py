@@ -227,6 +227,7 @@ def register(mcp: FastMCP) -> None:
             "tasks_total": cov.tasks_total,
             "tasks_done": cov.tasks_done,
             "tasks_in_progress": cov.tasks_in_progress,
+            "tasks_cancelled": cov.tasks_cancelled,
             "acceptance_total": cov.acceptance_total,
             "acceptance_met": cov.acceptance_met,
         }

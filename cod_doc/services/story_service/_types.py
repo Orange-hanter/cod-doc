@@ -47,5 +47,8 @@ class StoryCoverage:
     tasks_total: int
     tasks_done: int
     tasks_in_progress: int
+    #: ADO-078: отменённые реализующие задачи не держат стори открытой, но и
+    #: не притворяются сделанными — число видно отдельно.
+    tasks_cancelled: int
     acceptance_total: int
     acceptance_met: int

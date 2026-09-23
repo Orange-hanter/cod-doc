@@ -45,6 +45,7 @@ def story_coverage(ctx: click.Context, story_id: str, project: str, as_json: boo
                     "tasks_total": cov.tasks_total,
                     "tasks_done": cov.tasks_done,
                     "tasks_in_progress": cov.tasks_in_progress,
+                    "tasks_cancelled": cov.tasks_cancelled,
                     "acceptance_total": cov.acceptance_total,
                     "acceptance_met": cov.acceptance_met,
                 },
@@ -59,5 +60,6 @@ def story_coverage(ctx: click.Context, story_id: str, project: str, as_json: boo
     console.print(
         f"  Tasks:       {cov.tasks_done}/{cov.tasks_total} done"
         + (f", {cov.tasks_in_progress} in-progress" if cov.tasks_in_progress else "")
+        + (f", {cov.tasks_cancelled} cancelled" if cov.tasks_cancelled else "")
     )
     console.print(f"  Acceptance:  {cov.acceptance_met}/{cov.acceptance_total} met")

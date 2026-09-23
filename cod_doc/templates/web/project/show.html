@@ -25,9 +25,10 @@
     <div class="card-label">In&nbsp;progress</div>
     <div class="card-value">{{ stats.in_progress }}</div>
   </div>
-  {# ADO-156: карточка считает `total − done − in_progress`, то есть и backlog, и
-     blocked, и cancelled. Подпись «Pending» совпадала с легаси-написанием статуса
-     и читалась как счётчик задач в `pending` — это не он. #}
+  {# ADO-156: карточка считает незакрытое и не начатое — backlog, todo, blocked,
+     review. Подпись «Pending» совпадала с легаси-написанием статуса и читалась как
+     счётчик задач в `pending` — это не он. ADO-078: `cancelled` сюда больше не
+     попадает — отменённая задача закрыта. #}
   <div class="card">
     <div class="card-label" title="Not done and not in progress — backlog, to-do, blocked, in review">Remaining</div>
     <div class="card-value">{{ stats.pending }}</div>
