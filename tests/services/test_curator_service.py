@@ -86,7 +86,7 @@ def _project_id(session: Session) -> int:
     return project.row_id
 
 
-def _call(session: Session, root: Path, *, limit: int = 10) -> dict:
+def _call(session: Session, root: Path, *, limit: int = 10, **kwargs: bool) -> dict:
     return curator_service.next(
         session,
         project_id=_project_id(session),
@@ -94,6 +94,7 @@ def _call(session: Session, root: Path, *, limit: int = 10) -> dict:
         master_path=root / "MASTER.md",
         limit=limit,
         project_slug=_PROJECT,
+        **kwargs,
     )
 
 
@@ -123,8 +124,19 @@ def test_empty_project_still_carries_navigation(curator_session) -> None:
     names = [s["name"] for s in nav["applicable_skills"]]
     assert names[0] == "orchestrator", "orchestrator обязан идти первым"
     assert names == ["orchestrator", "drift-handling", "ground-truth-reconcile", "doc-style"]
-    assert all(s["body"] for s in nav["applicable_skills"]), "тела скиллов инлайнятся"
+    # AFT-002: тела — основная масса ответа, по умолчанию их нет.
+    assert not [s for s in nav["applicable_skills"] if "body" in s]
     assert nav["next_actions"] and nav["success_criteria"]
+
+    with_bodies = _call(session, root, include_skill_bodies=True)["navigation"]
+    skills = with_bodies["applicable_skills"]
+    assert [s["name"] for s in skills] == [
+        "orchestrator",
+        "drift-handling",
+        "ground-truth-reconcile",
+        "doc-style",
+    ]
+    assert all(s.get("body") for s in skills), "по запросу тела скиллов инлайнятся"
 
 
 # ------------------------------------------------------------------ #
@@ -230,6 +242,7 @@ def test_card_counts_match_the_card_itself(curator_session) -> None:
     card = payload["card"]
 
     assert counts["drift_issues"] == len(card["drift"]["issues"])
+    assert counts["drift_advisory"] == card["drift"]["advisory"]["count"]
     assert counts["links"] == len(card["links"])
     assert counts["master"] == len(card["master"])
     assert counts["findings"] == len(card["findings"])
@@ -241,8 +254,9 @@ def test_drift_half_keeps_the_ctx_drift_shape(curator_session) -> None:
     _seed_all_three(root)
 
     drift = _call(session, root)["card"]["drift"]
-    assert set(drift) == {"total_docs", "problem_count", "counts", "issues"}
+    assert set(drift) == {"total_docs", "problem_count", "counts", "issues", "advisory"}
     assert drift["total_docs"] >= 2
+    assert drift["issues"], "фикстура обязана давать edited_in_place"
     for issue in drift["issues"]:
         assert set(issue) == {
             "doc_key",
@@ -254,6 +268,38 @@ def test_drift_half_keeps_the_ctx_drift_shape(curator_session) -> None:
             "metadata_mismatch",  # ADO-216
             "orphan_sections",
         }
+        # AFT-002: в карточке хэши короткие.
+        for key in ("projection_hash", "db_content_hash", "file_hash"):
+            assert issue[key] is None or len(issue[key]) <= 12
+
+
+_RESOLVED_STATUS_DOC = (
+    "---\ntype: standard\nstatus: resolved\nowner: dakh\n---\n# Gamma\n\nGamma body content.\n"
+)
+
+
+def test_in_sync_rows_go_to_advisory_not_issues(curator_session) -> None:
+    """AFT-002: `in_sync` с расхождением frontmatter — advisory, а не issue.
+
+    gamma.md несёт `status: resolved`, которого нет в enum (ADO-092): импорт
+    хранит fallback, файл — своё, хэши содержимого совпадают. alpha.md правится
+    на диске мимо БД — это настоящий дрейф.
+    """
+    session, root = curator_session
+    (root / "gamma.md").write_text(_RESOLVED_STATUS_DOC, encoding="utf-8")
+    _import_docs(root)
+    with (root / "alpha.md").open("a", encoding="utf-8") as fh:
+        fh.write("\nПравка мимо БД — ровно то, что ловит edited_in_place.\n")
+
+    payload = _call(session, root)
+    drift = payload["card"]["drift"]
+
+    assert [i for i in drift["issues"] if i["status"] == "in_sync"] == []
+    assert "gamma" in drift["advisory"]["doc_keys"]
+    drift_refs = [i["ref"] for i in payload["priority"] if i["kind"] == "drift"]
+    assert drift_refs == ["alpha"]
+    assert drift["advisory"]["count"] == drift["counts"]["metadata_mismatch"]
+    assert drift["advisory"]["count"] == 1
 
 
 def test_next_writes_nothing(tmp_path: Path, isolated_cod_doc_home: Path) -> None:

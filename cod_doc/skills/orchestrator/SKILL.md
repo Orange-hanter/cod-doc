@@ -75,6 +75,8 @@ feature/bug/refactor задач продукта.
 ```
 1. agent_capabilities()
 2. curator_next(project=...)                    — приоритизированная doc card
+   (первый вызов за сессию — с include_skill_bodies=true: тела
+   drift-handling и соседних скиллов приходят только по флагу)
 3. ctx_search(project=..., query=...) /
    context_get(...)                             — доступ к конкретному документу
 4. починить документацию (import, hashes, links, body)

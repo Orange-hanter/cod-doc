@@ -555,12 +555,19 @@ _CTX_NEXT_DEFAULT_LIMIT = 10
     show_default=True,
     help="Сколько пунктов очереди показать",
 )
+@click.option(
+    "--include-skill-bodies",
+    is_flag=True,
+    default=False,
+    help="Добавить тела скиллов в navigation.applicable_skills (по умолчанию — имя и описание)",
+)
 @click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
 @click.pass_context
 def ctx_next(
     ctx: click.Context,
     project: str,
     limit: int,
+    include_skill_bodies: bool,
     as_json: bool,
 ) -> None:
     """Doc card куратора: что протухло и за что браться первым (CUR-016).
@@ -587,6 +594,7 @@ def ctx_next(
                 master_path=root / "MASTER.md",
                 limit=limit,
                 project_slug=project,
+                include_skill_bodies=include_skill_bodies,
             )
     finally:
         engine.dispose()
@@ -605,7 +613,8 @@ def ctx_next(
     console.print(
         "  "
         + "  ".join(
-            f"{name}: {counts[name]}" for name in ("drift_issues", "links", "master", "findings")
+            f"{name}: {counts[name]}"
+            for name in ("drift_issues", "drift_advisory", "links", "master", "findings")
         )
     )
     console.print(f"Пунктов очереди: [cyan]{counts['priority_total']}[/cyan]")

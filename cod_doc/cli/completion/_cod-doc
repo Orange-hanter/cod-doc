@@ -798,6 +798,7 @@ _cod-doc() {
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
     '(--limit)--limit=[Сколько пунктов очереди показать]:limit' \
+    '(--include-skill-bodies)--include-skill-bodies[Добавить тела скиллов в navigation.applicable_skills (по умолчанию…]' \
     '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
