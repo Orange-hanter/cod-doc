@@ -394,8 +394,10 @@ def test_chains_header_counts_done_tasks(tasks_client) -> None:
     # Одна из трёх задач фикстуры закрыта.
     assert "chain-count-done" in body
     assert "<strong>1</strong> done" in body
-    # Готовы к старту — две незакрытые задачи без пререквизитов.
-    assert "Ready to start: <strong>2</strong>" in body
+    # Готова к старту одна — задача в `todo` без пререквизитов. ADO-078:
+    # критерий тот же, что у view `ready_tasks`; задача в `in_progress` уже
+    # начата и к старту не готова (прежний предикат «не done» считал обе).
+    assert "Ready to start: <strong>1</strong>" in body
     # Голого «Ready:» на странице не осталось — метка врала о смысле числа.
     assert "Ready:" not in body
 

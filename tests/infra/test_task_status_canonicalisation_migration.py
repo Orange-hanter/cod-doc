@@ -188,7 +188,10 @@ def test_downgrade_returns_the_whole_bucket_to_the_legacy_spelling(seeded_pre_00
     именно это поведение, чтобы «починка» симметрии не прошла молча.
     """
     run_alembic("upgrade", "head", db_url=seeded_pre_0037)
-    run_alembic("downgrade", "-1", db_url=seeded_pre_0037)
+    # Цель отката названа явно, а не через `-1`: как только поверх 0037 легла
+    # следующая ревизия (0038), относительный шаг стал снимать её, а не
+    # бэкфилл, и тест молча проверял не то.
+    run_alembic("downgrade", "0035_totals_status_aliases", db_url=seeded_pre_0037)
 
     statuses = _column(seeded_pre_0037, "status")
     assert statuses == {

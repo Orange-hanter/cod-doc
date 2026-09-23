@@ -748,7 +748,7 @@ def complete(
     Raises `TaskBlockedError` if any `blocks`-type dep is not yet done.
     Raises `StatusTransitionError` on a status the machine forbids → done.
     """
-    from cod_doc.services.task_status_machine import validate_transition
+    from cod_doc.services.task_status_machine import is_terminal, validate_transition
 
     model = _require_task(session, task_id)
 
@@ -763,7 +763,10 @@ def complete(
     )
     for dep in session.execute(dep_stmt).scalars():
         dep_task = session.get(TaskModel, dep.to_task_id)
-        if dep_task is not None and dep_task.status != TaskStatus.DONE.value:
+        # ADO-078: закрыто — это `done` И `cancelled`. Отменённая задача уже
+        # никогда не станет `done`, поэтому сравнение только с `done` держало
+        # зависимых вечно: закрыть их было нельзя в принципе.
+        if dep_task is not None and not is_terminal(dep_task.status):
             blocking.append(dep_task.task_id)
     if blocking:
         raise TaskBlockedError(f"{task_id} blocked by: {', '.join(blocking)}")
@@ -1067,15 +1070,17 @@ def list_blocked(
 ) -> list[Task]:
     """Return tasks that have an external blocker set (blocked_reason IS NOT NULL).
 
-    DONE tasks are excluded — once a task is finished its old blocker is
-    historical noise.
+    Закрытые задачи исключены — у завершённой или отменённой задачи прежний
+    блокер это исторический шум (ADO-078: `cancelled` закрыт наравне с `done`).
     """
+    from cod_doc.services.task_status_machine import TERMINAL_STATUSES
+
     stmt = (
         select(TaskModel)
         .where(
             TaskModel.project_id == project_id,
             TaskModel.blocked_reason.is_not(None),
-            TaskModel.status != TaskStatus.DONE.value,
+            TaskModel.status.notin_(TERMINAL_STATUSES),
         )
         .order_by(priority_sql_order(TaskModel.priority), TaskModel.task_id)
     )
