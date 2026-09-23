@@ -33,12 +33,22 @@ def _legal_post_checkout_transitions() -> list[str]:
     return sorted(ALLOWED_TRANSITIONS.get("in_progress", set()))
 
 
+#: Skills that never go into the agent_pick card, even when recommended.
+#: ``orchestrator`` is the doc-curator role: its body forbids agent_pick,
+#: task_checkout and task_complete — the very calls the card is issued for.
+_EXCLUDED_FROM_TASK_CARD = frozenset({"orchestrator"})
+
+
 def _matching_skills_with_bodies(task_title: str, task_type: str) -> list[dict[str, Any]]:
     """Return applicable skills WITH FULL BODIES (not just descriptions).
 
     Inlining skill bodies is core to the agent_pick value proposition —
     the agent shouldn't have to call skill_get separately just to read
-    the task-standard / orchestrator rules.
+    the task-standard rules.
+
+    ``orchestrator`` is excluded (RFC 27 F6): its body tells the agent not
+    to call agent_pick / task_checkout / task_complete, so a card issued to
+    execute a task would forbid executing it.
     """
     from cod_doc.services.skill_service import (
         get_skill_body,
@@ -46,8 +56,9 @@ def _matching_skills_with_bodies(task_title: str, task_type: str) -> list[dict[s
         recommend_for_tool,
     )
 
-    # Always include the base orchestrator skill (it's the L0 fallback).
-    matched_names: list[str] = ["orchestrator"]
+    # task-standard is the base of the coding card: agent_pick lives only
+    # on the standard/full profiles, where the agent is a coder (RFC 27 F5/F6).
+    matched_names: list[str] = ["task-standard"]
 
     # Match by tool-name semantics (e.g. task_create → task-standard).
     # We use a synthetic "tool_name" derived from task type to reuse the
@@ -55,11 +66,11 @@ def _matching_skills_with_bodies(task_title: str, task_type: str) -> list[dict[s
     synthetic = f"task_{task_type}"
     matched_names.extend(recommend_for_tool(synthetic))
 
-    # Deduplicate while preserving order.
+    # Deduplicate while preserving order; drop skills barred from the card.
     seen: set[str] = set()
     ordered: list[str] = []
     for name in matched_names:
-        if name not in seen:
+        if name not in seen and name not in _EXCLUDED_FROM_TASK_CARD:
             seen.add(name)
             ordered.append(name)
 

@@ -94,6 +94,10 @@ def test_agent_pick_returns_full_card(engine_with_schema) -> None:  # type: igno
     for s in skills:
         assert {"name", "description", "body"} <= set(s.keys()), f"skill missing body: {s}"
         assert isinstance(s["body"], str) and s["body"], f"skill {s['name']} has empty body"
+    # RFC 27 F6: coding card is based on task-standard; orchestrator forbids agent_pick.
+    names = [s["name"] for s in skills]
+    assert names[0] == "task-standard"
+    assert "orchestrator" not in names
 
     # Parsed acceptance into checklist (3 items from ✓).
     assert len(nav["success_criteria"]) == 3
@@ -103,6 +107,35 @@ def test_agent_pick_returns_full_card(engine_with_schema) -> None:  # type: igno
     legal = nav["legal_status_transitions"]
     assert "done" in legal
     assert "blocked" in legal
+
+
+def test_agent_pick_excludes_orchestrator_even_if_recommended(  # type: ignore[no-untyped-def]
+    engine_with_schema, monkeypatch
+) -> None:
+    """AFT-005: recommendation may surface orchestrator; the card must drop it."""
+    monkeypatch.setattr(
+        "cod_doc.services.skill_service.recommend_for_tool",
+        lambda _t: [
+            "plan-to-tasks",
+            "orchestrator",
+            "task-standard",
+            "module-audit",
+            "audit-cadence",
+        ],
+    )
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make(session, pid, plid, sid, "APK-001")
+
+    with transactional(factory) as session:
+        card = agent_service.pick(session, project_id=1, agent_id="agent-alpha")
+
+    names = [s["name"] for s in card["navigation"]["applicable_skills"]]
+    assert names[0] == "task-standard"
+    assert "orchestrator" not in names
+    assert len(names) <= 4
+    assert names == ["task-standard", "plan-to-tasks", "module-audit", "audit-cadence"]
 
 
 def test_agent_pick_skips_blocked(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

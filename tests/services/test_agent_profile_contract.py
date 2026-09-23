@@ -114,6 +114,9 @@ def test_navigation_skills_carry_body(engine_with_schema) -> None:  # type: igno
     assert skills, "card must inline at least one skill"
     for s in skills:
         assert s.get("body"), f"skill {s.get('name')!r} missing body"
+    # RFC 27 F6: base skill is task-standard; orchestrator forbids agent_pick.
+    assert skills[0]["name"] == "task-standard"
+    assert "orchestrator" not in [s["name"] for s in skills]
 
 
 def test_legal_status_transitions_includes_done(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
