@@ -381,17 +381,7 @@ def ctx_drift(
         "total_docs": report.total_docs,
         "problem_count": report.problem_count,
         "counts": report.counts,
-        "issues": [
-            {
-                "doc_key": item.doc_key,
-                "path": item.path,
-                "status": item.report.status.value,
-                "projection_hash": item.report.projection_hash,
-                "db_content_hash": item.report.db_content_hash,
-                "file_hash": item.report.file_hash,
-            }
-            for item in report.issues
-        ],
+        "issues": [item.as_payload() for item in report.issues],
     }
     if files is not None:
         payload["changed_files"] = files

@@ -242,6 +242,45 @@ def test_doc_drift_routine_payload_contains_project_summary(engine_with_schema, 
         assert result["findings"][0]["doc_key"] == "missing"
 
 
+def test_doc_drift_routine_findings_use_drift_payload_shape(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """AFT-001: findings рутины — та же строка дрейфа, что у MCP и CLI."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session, root_path=str(tmp_path))
+        doc_service.create(
+            session,
+            project_id=proj_id,
+            doc_key="missing",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.ACTIVE,
+            title="Missing",
+            owner="docs",
+            author="human:test",
+        )
+        routines.create(
+            session, proj_id, name="doc_drift", check_name="doc_drift", trigger="manual"
+        )
+        routines.run_now(session, proj_id, "doc_drift")
+
+    with transactional(factory) as session:
+        event = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "routine.found_issue")
+        ).scalar_one()
+        finding = event.payload["result"]["findings"][0]
+        assert set(finding) == {
+            "doc_key",
+            "path",
+            "status",
+            "projection_hash",
+            "db_content_hash",
+            "file_hash",
+            "metadata_mismatch",
+            "orphan_sections",
+        }
+        assert isinstance(finding["metadata_mismatch"], list)
+        assert isinstance(finding["orphan_sections"], list)
+
+
 def test_doc_unplaced_routine_reports_the_inbox(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
     """ADO-116: хаотичный импорт не должен копиться молча.
 

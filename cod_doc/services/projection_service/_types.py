@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -28,6 +28,10 @@ METADATA_MISMATCH_COUNT_KEY = "metadata_mismatch"
 # `content_sha256_head`, the file then matches the pin, and the document reads
 # `in_sync` while its DB body holds headings the file dropped months ago.
 ORPHAN_SECTION_COUNT_KEY = "orphan_sections"
+
+# AFT-002: hash prefix length in `as_payload(hashes="short")` — the curator's
+# budget card needs a recognisable prefix, not the 64-char SHA-256.
+SHORT_HASH_LEN = 12
 
 
 @dataclass(slots=True)
@@ -60,7 +64,7 @@ class DriftReport:
     # sections in the DB against five in the file.
     orphan_sections: tuple[str, ...] = ()
 
-    def as_payload(self) -> dict[str, object]:
+    def as_payload(self, *, hashes: Literal["full", "short"] = "full") -> dict[str, object]:
         """The report as the JSON every surface returns (without doc_key/path).
 
         ADO-216: this dict used to be spelled out by hand in six places — MCP
@@ -69,12 +73,25 @@ class DriftReport:
         `orphan_sections` through all six manually; `metadata_mismatch` never
         made it into any, so a document sat in `issues` as `in_sync` with no
         stated reason. One builder means a new field reaches every surface.
+
+        `hashes="full"` is the default because external gates compare the full
+        hashes (RFC 22). `hashes="short"` cuts the three hashes to
+        `SHORT_HASH_LEN` characters for the curator's budget card (AFT-002,
+        RFC 27 F2); `None` stays `None`, every other field is unchanged.
         """
+        if hashes not in ("full", "short"):
+            raise ValueError(f"hashes must be 'full' or 'short', got {hashes!r}")
+
+        def _hash(value: str | None) -> str | None:
+            if hashes == "short" and value is not None:
+                return value[:SHORT_HASH_LEN]
+            return value
+
         return {
             "status": self.status.value,
-            "projection_hash": self.projection_hash,
-            "db_content_hash": self.db_content_hash,
-            "file_hash": self.file_hash,
+            "projection_hash": _hash(self.projection_hash),
+            "db_content_hash": _hash(self.db_content_hash),
+            "file_hash": _hash(self.file_hash),
             # Both reported beside `status`, never folded into it: an accepted
             # document reads `in_sync` while its frontmatter says what the enum
             # cannot hold (ADO-092) or its DB body carries headings the file
@@ -90,9 +107,13 @@ class ProjectDriftItem:
     path: str
     report: DriftReport
 
-    def as_payload(self) -> dict[str, object]:
+    def as_payload(self, *, hashes: Literal["full", "short"] = "full") -> dict[str, object]:
         """One `issues` row: the document's identity plus its report."""
-        return {"doc_key": self.doc_key, "path": self.path, **self.report.as_payload()}
+        return {
+            "doc_key": self.doc_key,
+            "path": self.path,
+            **self.report.as_payload(hashes=hashes),
+        }
 
 
 @dataclass(slots=True)

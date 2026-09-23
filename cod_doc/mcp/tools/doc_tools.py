@@ -713,32 +713,12 @@ def register(mcp: FastMCP) -> None:
     def ctx_drift(project: str, limit: int | None = None) -> dict[str, Any]:
         """RFC 22 (SYM-006D): project-wide DB↔markdown drift for external consumers.
 
-        Thin alias of ``doc_drift_all`` — same shape, same data. Narrowing to
-        the files a PR touched and the engine-shaped output (``prescan: true``,
+        Calls ``doc_drift_all`` — same shape, same data. Narrowing to the
+        files a PR touched and the engine-shaped output (``prescan: true``,
         ``model: "cod-doc/drift"``) live in ``ctx_drift_gate`` (SYM-010).
         """
-        from pathlib import Path
-
-        from cod_doc.infra.db import transactional
-        from cod_doc.services import projection_service
-
-        sf, entry = session_factory(project)
-        root = Path(entry.path).expanduser().resolve()
-        with transactional(sf) as session:
-            project_id = require_project_id(session, project)
-            report = projection_service.detect_project_drift(
-                session,
-                project_id,
-                root_path=root,
-                limit=limit,
-            )
-        return {
-            "project": project,
-            "total_docs": report.total_docs,
-            "problem_count": report.problem_count,
-            "counts": report.counts,
-            "issues": [item.as_payload() for item in report.issues],
-        }
+        report: dict[str, Any] = doc_drift_all(project=project, limit=limit)
+        return report
 
     @mcp.tool(name="ctx_drift_gate")
     def ctx_drift_gate(
