@@ -101,7 +101,14 @@ def test_agent_profile_tools_all_registered_at_startup() -> None:
 # ----------------------------------------------------------------- #
 
 
-def test_agent_capabilities_returns_slim_l0_payload() -> None:
+PROFILES = ["agent", "minimal", "standard", "full"]
+
+
+@pytest.mark.parametrize("profile", PROFILES)
+def test_agent_capabilities_returns_slim_l0_payload(
+    profile: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("COD_DOC_ACTIVE_PROFILE", profile)
     capabilities = live_mcp._tool_manager._tools["agent_capabilities"].fn
     result = capabilities()
 
@@ -120,10 +127,17 @@ def test_agent_capabilities_returns_slim_l0_payload() -> None:
     ):
         assert key in result, f"agent_capabilities missing key: {key}"
 
-    # RFC 25 §3.2: the payload itself declares the curator role, so a
-    # client that never reads the orchestrator skill still knows the rules.
-    assert result["role"] == "doc-curator"
-    assert set(result["forbidden"]) == {"agent_pick", "task_checkout", "task_complete"}
+    assert result["profile"] == profile
+
+    # The payload itself declares the role, so a client that never reads
+    # the orchestrator skill still knows the rules: RFC 25 §3.2 for the
+    # curator on `agent`, RFC 27 F5 for the coder everywhere else.
+    if profile == "agent":
+        assert result["role"] == "doc-curator"
+        assert set(result["forbidden"]) == {"agent_pick", "task_checkout", "task_complete"}
+    else:
+        assert result["role"] == "coder"
+        assert result["forbidden"] == []
 
     # Skills carry name + description only (no body — keep payload small).
     assert isinstance(result["skills"], list)
@@ -141,18 +155,29 @@ def test_agent_capabilities_returns_slim_l0_payload() -> None:
     # Legacy aliases present.
     assert result["task_status_legacy_aliases"]["pending"] == "todo"
 
-    # Orchestrator ref + next action hint guide the agent forward — towards
-    # drift and search, away from picking implementation tasks (RFC 25 §3.2).
+    # Orchestrator ref + next action hint guide the agent forward: the
+    # curator towards drift and search, the coder through checkout → complete.
     assert "SKILL.md" in result["orchestrator_skill"]
     hint = result["next_action_hint"]
-    assert "ctx_search" in hint and "agent_pick" not in hint, (
-        f"next_action_hint must route the curator to ctx_* tools, got: {hint!r}"
-    )
+    if profile == "agent":
+        assert "ctx_search" in hint and "agent_pick" not in hint, (
+            f"next_action_hint must route the curator to ctx_* tools, got: {hint!r}"
+        )
+        assert "task_checkout" not in hint
+    else:
+        assert "task_checkout" in hint and "task_complete" in hint, (
+            f"next_action_hint must walk the coder through the task protocol, got: {hint!r}"
+        )
 
 
-def test_agent_capabilities_payload_under_4kb() -> None:
+@pytest.mark.parametrize("profile", PROFILES)
+def test_agent_capabilities_payload_under_4kb(
+    profile: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """L0 must stay small — tight context budgets are the whole point."""
     import json
+
+    monkeypatch.setenv("COD_DOC_ACTIVE_PROFILE", profile)
 
     capabilities = live_mcp._tool_manager._tools["agent_capabilities"].fn
     size = len(json.dumps(capabilities()).encode("utf-8"))

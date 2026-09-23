@@ -168,8 +168,10 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   `curator_next(project=...)`: дрейф, битые ссылки, протухшие хэши MASTER.md
   и открытые findings одной очередью с готовой командой на каждый пункт
   (`services/curator_service.py`, зеркало CLI — `cod-doc ctx next`).
-  `agent_capabilities()` отдаёт `role: "doc-curator"` и
-  `forbidden: [agent_pick, task_checkout, task_complete]`. Старые
+  `agent_capabilities()` на профиле `agent` отдаёт `role: "doc-curator"` и
+  `forbidden: [agent_pick, task_checkout, task_complete]`, на
+  `minimal`/`standard`/`full` — `role: "coder"` без запретов (RFC 27,
+  AFT-004): там работает coding-агент по протоколу checkout → complete. Старые
   task-centric тулы (`agent_pick`, `agent_get`, `agent_complete`,
   `agent_release`) остались зарегистрированы, но видны только на
   `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 143

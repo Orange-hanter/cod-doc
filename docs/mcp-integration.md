@@ -29,14 +29,16 @@ MCP (Model Context Protocol) — стандартный протокол для 
 > (CUR-007 — `ctx_search` с lazy reindex, CUR-008 — перекрой allowlist,
 > CUR-016 — `ctx_docs` → `curator_next`: doc card вместо голого листинга).
 > Дефолтный AI-агент — куратор документации и поиска, не исполнитель
-> задач. `agent_capabilities()` отдаёт `role: "doc-curator"` и
-> `forbidden: ["agent_pick", "task_checkout", "task_complete"]`.
+> задач. `agent_capabilities()` на профиле `agent` отдаёт
+> `role: "doc-curator"` и `forbidden: ["agent_pick", "task_checkout",
+> "task_complete"]`; на `minimal`/`standard`/`full` — `role: "coder"`,
+> пустой `forbidden` и подсказку checkout → complete (RFC 27, AFT-004).
 > Coding-агент ходит на демон профиля `standard` (`:8801`), а не на
 > `:8802` — профиль выбирается портом, не флагом клиента.
 
 | Тул | Что делает |
 |-----|------------|
-| `agent_capabilities()` | L0 entry-point: server version, `role: "doc-curator"`, `forbidden`, доступные skills, валидные TaskStatus, default_project, `next_action_hint` → `ctx_drift` → `ctx_search`. <4KB. |
+| `agent_capabilities()` | L0 entry-point: server version, `role: "doc-curator"` (на `agent`; на остальных профилях — `coder`), `forbidden`, доступные skills, валидные TaskStatus, default_project, `next_action_hint` → `ctx_drift` → `ctx_search`. <4KB. |
 | `curator_next(project, limit?)` | **Doc card** (CUR-016): `{card{drift, links, master, findings}, priority[{kind, ref, reason, suggested_action}], navigation{applicable_skills (с ТЕЛАМИ), next_actions, success_criteria}, meta{generated_at, truncated, counts}}`. Порядок очереди: `missing` → `edited_in_place` → `LINK-BROKEN` → hash `BROKEN` → hash `STALE` → `stale_export` → finding. Read-only, идемпотентен. |
 | `ctx_search(project, query, scope?, limit?)` | FTS-поиск по doc/adr/story/task: `{query, total, by_kind: {doc, adr, story, task: [...]}}`. Lazy reindex пустого индекса (CUR-007). |
 | `ctx_drift(project)` | Дрейф markdown ↔ БД по всему проекту: `edited_in_place` / `stale_export` / `missing` (`= doc_drift_all`). |
