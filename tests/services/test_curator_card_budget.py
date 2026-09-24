@@ -7,6 +7,12 @@
 которого нет в enum (ADO-092). Импорт хранит fallback, файл — своё, хэши
 содержимого совпадают, и только `metadata_mismatch` знает о расхождении.
 
+Вторая причина всплыла на живом корпусе уже после первой правки: карточка
+весила 9.5 КБ, а эта фикстура — меньше 8, потому что в ней не было битых
+ссылок, а ключи и якоря были короче живых (`doc-00`, `executive-summary`).
+Поэтому пять «чистых» документов ссылаются на несуществующие вики-цели, а
+ключи и кириллические заголовки — в масштабе `docs/system/audit/…`.
+
 Размер меряется так, как ответ печатает `ctx next --json` и сериализует
 FastMCP: UTF-8, `indent=2`, кириллица без экранирования.
 """
@@ -36,6 +42,7 @@ SLUG = "budget-proj"
 
 _ADVISORY_DOCS = 30
 _CLEAN_DOCS = 10
+_BROKEN_LINK_DOCS = 5
 
 _RESOLVED = """---
 title: Doc {n}
@@ -47,7 +54,7 @@ owner: human:dakh
 
 Preamble.
 
-## Executive Summary
+## 1. Итоги спринта и обратная связь пилотов
 
 Summary text.
 """
@@ -62,9 +69,9 @@ owner: human:dakh
 
 Preamble.
 
-## Executive Summary
+## 1. Итоги спринта и обратная связь пилотов
 
-Summary text.
+Summary text.{link}
 """
 
 
@@ -92,13 +99,20 @@ def budget_payload(tmp_path: Path) -> dict[str, Any]:
             session.flush()
 
             for n in range(_ADVISORY_DOCS + _CLEAN_DOCS):
-                template = _RESOLVED if n < _ADVISORY_DOCS else _CLEAN
-                raw = template.format(n=n)
-                path = f"doc-{n:02d}.md"
+                if n < _ADVISORY_DOCS:
+                    raw = _RESOLVED.format(n=n)
+                else:
+                    broken = n - _ADVISORY_DOCS < _BROKEN_LINK_DOCS
+                    link = f" См. [[missing-target-{n}]]." if broken else ""
+                    raw = _CLEAN.format(n=n, link=link)
+                # Ключи и кириллические якоря — в масштабе живого корпуса:
+                # на коротких `doc-00` карточка легче реальной и тест молчит.
+                key = f"docs/system/audit/2026-09-{n:02d}-sprint-feedback-loop"
+                path = f"{key}.md"
                 report = import_service.import_or_update_markdown(
                     session,
                     project_id=project.row_id,
-                    doc_key=f"doc-{n:02d}",
+                    doc_key=key,
                     raw_markdown=raw,
                     author="human:test",
                     source_sha256=_sha(raw),
@@ -107,6 +121,7 @@ def budget_payload(tmp_path: Path) -> dict[str, Any]:
                 model = session.get(DocumentModel, report.document.row_id)
                 assert model is not None
                 model.path = path
+                (repo / path).parent.mkdir(parents=True, exist_ok=True)
                 (repo / path).write_text(raw, encoding="utf-8")
             project_id = project.row_id
 
@@ -138,3 +153,27 @@ def test_curator_card_advisory_is_summarised(budget_payload: dict[str, Any]) -> 
     assert len(drift["advisory"]["doc_keys"]) == 10
     assert counts["drift_advisory"] == 30
     assert counts["drift_issues"] == 0
+
+
+def test_curator_card_budget_fixture_has_broken_links(budget_payload: dict[str, Any]) -> None:
+    """Без битых ссылок бюджет-тест не видит их веса — ровно так он и промахнулся."""
+    assert budget_payload["meta"]["counts"]["links"] == _BROKEN_LINK_DOCS
+
+
+def test_curator_card_link_rows_are_compact(budget_payload: dict[str, Any]) -> None:
+    """title — в priority[].reason, path — из doc_key, anchor — в body и priority[].ref."""
+    links = budget_payload["card"]["links"]
+    assert links
+    for row in links:
+        assert set(row) == {"doc_key", "code", "body"}
+        assert row["body"]
+    reasons = {p["reason"] for p in budget_payload["priority"] if p["kind"] == "link"}
+    assert len(reasons) == _BROKEN_LINK_DOCS, "очередь потеряла пункты по ссылкам"
+    assert all("missing-target" in r for r in reasons)
+
+
+def test_curator_card_skill_descriptions_are_one_liners(budget_payload: dict[str, Any]) -> None:
+    for skill in budget_payload["navigation"]["applicable_skills"]:
+        assert "body" not in skill
+        assert len(skill["description"]) <= 60
+        assert "Триггеры" not in skill["description"]

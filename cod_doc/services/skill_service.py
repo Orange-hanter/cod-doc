@@ -18,6 +18,41 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+#: Меню скиллов (``agent_capabilities``, карточка ``curator_next``) — строка
+#: на скилл: узнать имя, не больше. Правила живут в телах.
+ONE_LINER_LIMIT = 60
+
+#: Ключи для серверного матчера (``recommend_for_tool``), агенту в меню не нужны.
+_TRIGGER_MARKERS = ("Триггеры:", "Триггер-keywords:", "Triggers:")
+
+#: Граница первого предложения берётся, только если до неё хотя бы столько
+#: символов — иначе «См.» или «RFC 25.» съели бы описание целиком.
+_MIN_SENTENCE = 20
+
+
+def one_liner(description: str | None, limit: int = ONE_LINER_LIMIT) -> str:
+    """Описание скилла одной строкой для меню.
+
+    Frontmatter SKILL.md — блок-скаляр, который заканчивается списком
+    «Триггеры: …». Список срезается до обрезки: без этого строка на скилл
+    вдвое дороже, и 4 КБ-потолок ``agent_capabilities`` ломался на ~10
+    скиллах. Дальше — граница первого предложения, если она укладывается
+    в ``limit``, иначе жёсткая обрезка с «…».
+    """
+    if not description:
+        return ""
+    text = " ".join(description.strip().split())
+    for marker in _TRIGGER_MARKERS:
+        idx = text.find(marker)
+        if idx > 0:
+            text = text[:idx].rstrip(" .;—-")
+    for sep in (". ", "; ", " — "):
+        cut = text.find(sep)
+        if _MIN_SENTENCE <= cut < limit:
+            return text[:cut] + "."
+    return text[: limit - 1] + "…" if len(text) > limit else text
+
+
 def list_skills() -> list[dict[str, Any]]:
     """Return the catalog as a list of frontmatter records.
 
