@@ -18,6 +18,7 @@ def register(mcp: FastMCP) -> None:
     def task_next_ready(
         project: str,
         plan_scope: str | None = None,
+        local_only: bool = True,
     ) -> dict[str, Any] | None:
         """Cycle-4: return the highest-priority **ready** task, or ``None``.
 
@@ -31,6 +32,14 @@ def register(mcp: FastMCP) -> None:
         - it is not currently locked via ``task_checkout``.
 
         ``plan_scope`` (optional) restricts to a single plan.
+
+        ``local_only`` (default True, RFC 27 F13): a task whose
+        ``affects_files`` are ALL absolute paths outside the project's
+        ``root_path`` is *foreign* and is skipped. The returned dict
+        carries ``skipped_foreign`` — the count of foreign tasks filtered
+        project-wide (before the plan_scope/lock filters). With
+        ``local_only=True`` a ``None`` result may hide foreign tasks;
+        pass ``local_only=False`` to see them.
 
         Use this as the input to ``task_checkout``. Returns ``None`` when
         the ready-set is empty.
@@ -48,7 +57,8 @@ def register(mcp: FastMCP) -> None:
             except (LookupError, ValueError):
                 return None
 
-            ready = plan_reads.ready_for_project(session, project_id)
+            batch = plan_reads.ready_batch_for_project(session, project_id, local_only=local_only)
+            ready = batch.tasks
             if plan_scope is not None:
                 from cod_doc.infra.repositories import PlanRepository
 
@@ -69,7 +79,9 @@ def register(mcp: FastMCP) -> None:
             ready = [t for t in ready if t.row_id not in locked]
             if not ready:
                 return None
-            return task_to_dict(ready[0], session=session)
+            result = task_to_dict(ready[0], session=session)
+            result["skipped_foreign"] = batch.skipped_foreign
+            return result
 
     @mcp.tool(name="task_list")
     def task_list(
@@ -319,12 +331,20 @@ def register(mcp: FastMCP) -> None:
         rejects a new task whose normalized title matches an existing task
         in the same project; the response carries `duplicate_of`. Pass
         `allow_duplicate=True` to bypass.
+
+        AFT-012 (RFC 27 F13): when ``affects_files`` contains absolute paths
+        outside the project's ``root_path``, the response carries a
+        ``warnings`` list naming those paths (creation is NOT rejected).
         """
+        from pathlib import PurePath
+
         from cod_doc.domain.entities import Priority, TaskType
         from cod_doc.infra.db import transactional
+        from cod_doc.infra.models import ProjectModel
         from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
         from cod_doc.mcp.tools import _idempotency
         from cod_doc.services import task_service
+        from cod_doc.services.task_locality import foreign_paths
         from cod_doc.services.task_service import DuplicateTaskError
         from cod_doc.services.validation import ValidationError
 
@@ -375,6 +395,19 @@ def register(mcp: FastMCP) -> None:
                     allow_duplicate=allow_duplicate,
                 )
                 result = task_to_dict(t, session=session)
+                # Чужим может быть только абсолютный путь — без них lookup
+                # root_path не нужен (и не трогаем лишний раз БД).
+                if affects_files and any(PurePath(p).is_absolute() for p in affects_files):
+                    project_row = session.get(ProjectModel, project_id)
+                    root_path = project_row.root_path if project_row is not None else ""
+                    foreign = foreign_paths(affects_files, root_path)
+                    if foreign:
+                        result.setdefault("warnings", []).append(
+                            f"affects_files вне корня проекта {root_path}: "
+                            f"{', '.join(foreign)}; task_next_ready/plan_ready "
+                            "по умолчанию (local_only=true) такую задачу не выдадут, "
+                            "если все её файлы чужие"
+                        )
         except DuplicateTaskError as exc:
             raise ValueError(
                 f"duplicate_of={exc.existing_task_id} "

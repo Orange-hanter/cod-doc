@@ -22,7 +22,9 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-def _seed(session: Session, task_ids: list[str]) -> int:
+def _seed(
+    session: Session, task_ids: list[str], foreign_files: dict[str, list[str]] | None = None
+) -> int:
     now = datetime.now(UTC)
     proj = ProjectRepository(session).add(
         ProjectEntity(slug="pr", title="pr", root_path="/tmp/pr", config={})
@@ -53,16 +55,22 @@ def _seed(session: Session, task_ids: list[str]) -> int:
             author="human:test",
             description="DESC-LITERAL",
             acceptance="AC-1",
+            affected_files=(foreign_files or {}).get(task_id),
         )
     return proj.row_id
 
 
-def _plan_ready(monkeypatch, engine, task_ids: list[str]) -> Any:  # type: ignore[no-untyped-def]
+def _plan_ready(
+    monkeypatch,  # type: ignore[no-untyped-def]
+    engine,  # type: ignore[no-untyped-def]
+    task_ids: list[str],
+    foreign_files: dict[str, list[str]] | None = None,
+) -> Any:
     from cod_doc.mcp.tools import plan_tools
 
     factory = make_session_factory(engine)
     with transactional(factory) as s:
-        proj_id = _seed(s, task_ids)
+        proj_id = _seed(s, task_ids, foreign_files)
     monkeypatch.setattr(plan_tools, "session_factory", lambda project: (factory, None))
     monkeypatch.setattr(plan_tools, "require_project_id", lambda session, project: proj_id)
     mcp = FastMCP("test")
@@ -73,19 +81,22 @@ def _plan_ready(monkeypatch, engine, task_ids: list[str]) -> Any:  # type: ignor
 def test_plan_ready_default_is_compact(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     plan_ready = _plan_ready(monkeypatch, engine_with_schema, ["PR-001"])
 
-    rows = plan_ready(project="pr", plan_scope="pr-plan")
+    result = plan_ready(project="pr", plan_scope="pr-plan")
 
+    rows = result["tasks"]
     assert [(r["task_id"], r["title"]) for r in rows] == [("PR-001", "TITLE-PR-001")]
     for row in rows:
         assert "description" not in row
         assert "acceptance" not in row
+    assert result["skipped_foreign"] == 0
 
 
 def test_plan_ready_include_body_returns_bodies(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     plan_ready = _plan_ready(monkeypatch, engine_with_schema, ["PR-001"])
 
-    rows = plan_ready(project="pr", plan_scope="pr-plan", include_body=True)
+    result = plan_ready(project="pr", plan_scope="pr-plan", include_body=True)
 
+    rows = result["tasks"]
     assert len(rows) == 1
     assert rows[0]["task_id"] == "PR-001"
     assert rows[0]["description"] == "DESC-LITERAL"
@@ -96,6 +107,31 @@ def test_plan_ready_include_body_returns_bodies(engine_with_schema, monkeypatch)
 def test_plan_ready_limit_still_applies(engine_with_schema, monkeypatch, include_body) -> None:  # type: ignore[no-untyped-def]
     plan_ready = _plan_ready(monkeypatch, engine_with_schema, ["PR-001", "PR-002", "PR-003"])
 
-    rows = plan_ready(project="pr", plan_scope="pr-plan", limit=2, include_body=include_body)
+    result = plan_ready(project="pr", plan_scope="pr-plan", limit=2, include_body=include_body)
 
-    assert len(rows) == 2
+    assert len(result["tasks"]) == 2
+
+
+def test_plan_ready_skips_foreign(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """AFT-012 (RFC 27 F13): задача со всеми файлами вне root_path проекта — чужая.
+
+    root_path сида — '/tmp/pr'; у FRG-001 единственный affected_file
+    '/elsewhere/a.py'. При local_only=True (default) она отбрасывается и
+    считается в skipped_foreign; при local_only=False ready-множество полное.
+    """
+    plan_ready = _plan_ready(
+        monkeypatch,
+        engine_with_schema,
+        ["LOC-001", "FRG-001"],
+        foreign_files={"FRG-001": ["/elsewhere/a.py"]},
+    )
+
+    result = plan_ready(project="pr", plan_scope="pr-plan")
+
+    assert [r["task_id"] for r in result["tasks"]] == ["LOC-001"]
+    assert result["skipped_foreign"] == 1
+
+    result = plan_ready(project="pr", plan_scope="pr-plan", local_only=False)
+
+    assert [r["task_id"] for r in result["tasks"]] == ["FRG-001", "LOC-001"]
+    assert result["skipped_foreign"] == 0

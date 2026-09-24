@@ -1900,6 +1900,7 @@ _cod-doc() {
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--limit)--limit=:limit' \
+    '(--all-files --local-only)'{--local-only,--all-files}'[Показывать только задачи с файлами внутри корня проекта (чужая зада…]' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' \
     '1:plan-scope:_cod_doc_plans' && ret=0

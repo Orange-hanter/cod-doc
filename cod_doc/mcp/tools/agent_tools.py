@@ -178,16 +178,26 @@ def register(mcp: FastMCP) -> None:
         project: str,
         agent_id: str,
         plan_scope: str | None = None,
+        local_only: bool = True,
     ) -> dict[str, Any]:
         """Atomically acquire the next ready task with full context (AGT-003).
 
-        Composes ``ready_for_project`` (deps filter) + lock filter +
+        Composes ``ready_batch_for_project`` (deps filter) + lock filter +
         ``task_checkout`` + ``context_get`` + skill-body inlining into ONE
         call. Replaces the typical 5-call cold-start sequence.
 
         Idempotent on (project, agent_id): if the caller already holds a
         checkout in this project, returns that task's card with
-        ``idempotent_replay: true``.
+        ``idempotent_replay: true`` (this branch never scans the ready
+        set, so its card carries no ``skipped_foreign`` key).
+
+        ``local_only`` (default True, RFC 27 F13): a task whose
+        ``affects_files`` are ALL absolute paths outside the project's
+        ``root_path`` is *foreign* and is skipped. Every answer that
+        scanned the ready set carries ``skipped_foreign`` — the count of
+        foreign tasks filtered project-wide (before plan_scope/lock
+        filters). Pass ``local_only=False`` to make foreign tasks
+        pickable.
 
         Returns the *task card* (see acceptance of AGT-003)::
 
@@ -211,7 +221,8 @@ def register(mcp: FastMCP) -> None:
               }
             }
 
-        When the ready set is empty: ``{task: null, reason: "no_ready_tasks"}``.
+        When the ready set is empty:
+        ``{task: null, reason: "no_ready_tasks", skipped_foreign: N}``.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.mcp.tools._db import require_project_id, session_factory
@@ -225,6 +236,7 @@ def register(mcp: FastMCP) -> None:
                 project_id=project_id,
                 agent_id=agent_id,
                 plan_scope=plan_scope,
+                local_only=local_only,
             )
 
     @mcp.tool(name="agent_get")

@@ -40,7 +40,9 @@ def _seed(session) -> tuple[int, int, int]:
     return proj.row_id, plan.row_id, sec.row_id
 
 
-def _make(session, proj_id, plan_id, sec_id, task_id, *, priority=Priority.MEDIUM):
+def _make(
+    session, proj_id, plan_id, sec_id, task_id, *, priority=Priority.MEDIUM, affected_files=None
+):
     return task_service.create(
         session,
         project_id=proj_id,
@@ -51,6 +53,7 @@ def _make(session, proj_id, plan_id, sec_id, task_id, *, priority=Priority.MEDIU
         type=TaskType.FEATURE,
         priority=priority,
         author="t",
+        affected_files=affected_files,
     )
 
 
@@ -104,3 +107,67 @@ def test_task_next_ready_empty_returns_none(engine_with_schema, monkeypatch) -> 
     task_next_ready = _setup(monkeypatch, factory)
     result = task_next_ready(project="nr")
     assert result is None
+
+
+def test_next_ready_skips_foreign_by_default(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """AFT-012 / RFC 27 F13: foreign task (all files outside root_path) is
+    skipped even with a higher priority; skipped_foreign counts it."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id, plan_id, sec_id = _seed(session)
+        _make(
+            session,
+            proj_id,
+            plan_id,
+            sec_id,
+            "NRD-003",
+            priority=Priority.CRITICAL,
+            affected_files=["/elsewhere/a.py"],
+        )
+        _make(session, proj_id, plan_id, sec_id, "NRD-004", priority=Priority.LOW)
+
+    task_next_ready = _setup(monkeypatch, factory)
+    result = task_next_ready(project="nr")
+    assert result["task_id"] == "NRD-004"
+    assert result["skipped_foreign"] == 1
+
+
+def test_next_ready_local_only_false_returns_foreign(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id, plan_id, sec_id = _seed(session)
+        _make(
+            session,
+            proj_id,
+            plan_id,
+            sec_id,
+            "NRD-003",
+            priority=Priority.CRITICAL,
+            affected_files=["/elsewhere/a.py"],
+        )
+        _make(session, proj_id, plan_id, sec_id, "NRD-004", priority=Priority.LOW)
+
+    task_next_ready = _setup(monkeypatch, factory)
+    result = task_next_ready(project="nr", local_only=False)
+    assert result["task_id"] == "NRD-003"
+    assert result["skipped_foreign"] == 0
+
+
+def test_next_ready_none_when_only_foreign(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id, plan_id, sec_id = _seed(session)
+        _make(
+            session,
+            proj_id,
+            plan_id,
+            sec_id,
+            "NRD-003",
+            priority=Priority.CRITICAL,
+            affected_files=["/elsewhere/a.py"],
+        )
+
+    task_next_ready = _setup(monkeypatch, factory)
+    assert task_next_ready(project="nr") is None
+    result = task_next_ready(project="nr", local_only=False)
+    assert result["task_id"] == "NRD-003"

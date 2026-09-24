@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from cod_doc.domain.entities import TaskStatus
+    from cod_doc.domain.entities import Task, TaskStatus
 
 
 class PlanNotFoundError(LookupError):
@@ -46,6 +46,18 @@ def _pct_closed(total: int, done: int, cancelled: int) -> int:
     if total <= 0:
         return 0
     return (done + cancelled) * _PERCENT // total
+
+
+@dataclass(frozen=True, slots=True)
+class ReadyBatch:
+    """Ready-выборка с числом отфильтрованных «чужих» задач (RFC 27 F13).
+
+    ``skipped_foreign`` — сколько задач отброшено фильтром ``local_only``
+    (все ``affects_files`` — абсолютные пути вне ``root_path`` проекта).
+    """
+
+    tasks: list[Task]
+    skipped_foreign: int
 
 
 @dataclass(slots=True)
