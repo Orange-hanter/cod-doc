@@ -270,8 +270,15 @@ def register(mcp: FastMCP) -> None:
         project: str,
         plan_scope: str,
         limit: int = 10,
+        include_body: bool = False,
     ) -> list[dict[str, Any]]:
-        """List tasks ready to start: pending with all blocking deps done, priority-ordered."""
+        """List tasks ready to start: pending with all blocking deps done, priority-ordered.
+
+        Args:
+            include_body: if False (default), description/acceptance are omitted —
+                on a wide plan the bodies cost ~15 KB per call (RFC 27 F3).
+                Full body of a single task — task_get.
+        """
         from cod_doc.infra.db import transactional
         from cod_doc.services import plan_service
 
@@ -280,7 +287,14 @@ def register(mcp: FastMCP) -> None:
             require_project_id(session, project)
             plan_id = _require_plan_id(session, plan_scope)
             tasks = plan_service.ready(session, plan_id, limit=limit)
-        return [task_to_dict(t) for t in tasks]
+        items = []
+        for t in tasks:
+            row = task_to_dict(t)
+            if not include_body:
+                row.pop("description", None)
+                row.pop("acceptance", None)
+            items.append(row)
+        return items
 
     @mcp.tool(name="plan_audit")
     def plan_audit(project: str, plan_scope: str) -> dict[str, Any]:

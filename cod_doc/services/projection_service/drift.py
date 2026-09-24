@@ -138,6 +138,12 @@ def detect_project_drift(
     ``path`` is in the given set — the PR drift-gate feeds it the files a pull
     request touched. ``None`` scans the whole project; an empty sequence is a
     deliberate "nothing to scan" and yields an empty report.
+
+    ``limit`` caps the rows of ``issues``, not the scan (AFT-003, RFC 27 F4):
+    it used to cut the document list, so ``ctx_drift(limit=5)`` checked the
+    first five documents and reported "clean". Every document is scanned;
+    ``problem_count``/``counts``/``total_docs`` cover all of them, and
+    ``truncated`` says whether ``issues`` was cut.
     """
     from cod_doc.services import doc_service
 
@@ -145,8 +151,6 @@ def detect_project_drift(
     if paths is not None:
         wanted = {normalize_repo_path(p) for p in paths}
         docs = [d for d in docs if normalize_repo_path(d.path) in wanted]
-    if limit is not None:
-        docs = docs[:limit]
 
     counts = {status.value: 0 for status in DriftStatus}
     # ADO-092: counted separately from the four content states, because a
@@ -184,9 +188,16 @@ def detect_project_drift(
                 )
             )
 
+    problem_count = len(issues)
+    truncated = limit is not None and problem_count > limit
+    if truncated:
+        issues = issues[:limit]
+
     return ProjectDriftReport(
         project_id=project_id,
         total_docs=checked,
         counts=counts,
         issues=issues,
+        problem_count=problem_count,
+        truncated=truncated,
     )

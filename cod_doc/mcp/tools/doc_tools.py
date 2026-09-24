@@ -596,6 +596,9 @@ def register(mcp: FastMCP) -> None:
         """Project-wide DB↔markdown drift summary.
 
         Returns counts by status plus issue rows for non-in-sync documents.
+        `limit` caps the `issues` rows, not the scan: `problem_count` and
+        `counts` always cover the whole project, and `truncated=true` means
+        there are more issue rows than shown (AFT-003).
         """
         from pathlib import Path
 
@@ -618,6 +621,7 @@ def register(mcp: FastMCP) -> None:
             "problem_count": report.problem_count,
             "counts": report.counts,
             "issues": [item.as_payload() for item in report.issues],
+            "truncated": report.truncated,
         }
 
     # ------------------------------------------------------------------- #
@@ -716,6 +720,10 @@ def register(mcp: FastMCP) -> None:
         Calls ``doc_drift_all`` — same shape, same data. Narrowing to the
         files a PR touched and the engine-shaped output (``prescan: true``,
         ``model: "cod-doc/drift"``) live in ``ctx_drift_gate`` (SYM-010).
+
+        ``limit`` caps the ``issues`` rows, not the scan: ``problem_count`` and
+        ``counts`` always cover the whole project, and ``truncated=true`` means
+        there are more issue rows than shown (AFT-003).
         """
         report: dict[str, Any] = doc_drift_all(project=project, limit=limit)
         return report
