@@ -82,9 +82,17 @@ _SLUG_PLACEHOLDER = "<project>"
 #: корпуса, и только он умеет не собираться (``skip_links``).
 _SECTION_LINKS = "links"
 
+#: Поля находки-ссылки, которых нет в строке ``card.links``: ``title``
+#: дословно уходит в ``priority[].reason``, ``path`` выводится из ``doc_key``,
+#: ``severity`` у ``LINK-BROKEN`` всегда ``major`` (``drift_gate_service``),
+#: ``anchor`` стоит в начале ``body`` и в ``priority[].ref``. Остаются
+#: ``doc_key``/``code`` и ``body`` — единственное место, где сказано, ЧЕМ
+#: ссылка битая. На живом cod-doc пять битых ссылок стоили 2.1 КБ карточки
+#: (AFT-002); кириллический якорь — до 90 байт на строку.
+_LINK_ROW_DROPPED = frozenset({"title", "path", "severity", "anchor"})
+
 _NEXT_ACTIONS: tuple[str, ...] = (
-    "В navigation.applicable_skills — только имя и описание скиллов; их правила (тела) "
-    "отдаёт curator_next(project=..., include_skill_bodies=true) — прочитай их до работы.",
+    "Правила скиллов — curator_next(project=..., include_skill_bodies=true); прочти до работы.",
     "Бери priority[0]: в нём уже лежит готовая команда (suggested_action).",
     "Правку файла фиксируй в БД: `cod-doc doc import <path> -p <slug>`, не наоборот.",
     "После правки тела документа обнови реестр: `cod-doc hash update MASTER.md`.",
@@ -112,7 +120,7 @@ def _curator_skills(*, include_bodies: bool) -> list[dict[str, Any]]:
     Неизвестное имя молча пропускается — каталог скиллов поставляется
     пакетом и может отстать от этого списка.
     """
-    from cod_doc.services.skill_service import get_skill_body, list_skills
+    from cod_doc.services.skill_service import get_skill_body, list_skills, one_liner
 
     by_name = {s["name"]: s for s in list_skills()}
     out: list[dict[str, Any]] = []
@@ -120,9 +128,11 @@ def _curator_skills(*, include_bodies: bool) -> list[dict[str, Any]]:
         record = by_name.get(name)
         if record is None:
             continue
+        # Описание — строкой меню, как в agent_capabilities: полное с
+        # триггерами стоило ~0.5 КБ на скилл, а правила всё равно в теле.
         skill: dict[str, Any] = {
             "name": name,
-            "description": (record.get("description") or "").strip(),
+            "description": one_liner(record.get("description")),
         }
         if include_bodies:
             skill["body"] = get_skill_body(name) or ""
@@ -423,6 +433,11 @@ def next(
         "unplaced": _unplaced_card(session, project_id),
     }
     priority = _build_priority(card, slug=slug, master_rel=master_rel)
+    # Очередь собрана по полным находкам (reason берётся из title); в самой
+    # карточке title и path — повтор priority[].reason и doc_key.
+    card["links"] = [
+        {k: v for k, v in link.items() if k not in _LINK_ROW_DROPPED} for link in card["links"]
+    ]
 
     meta: dict[str, Any] = {
         "generated_at": datetime.now(UTC).isoformat(),

@@ -102,33 +102,14 @@ def register(mcp: FastMCP) -> None:
         # Skills are a *menu* at L0: enough to recognise a name, no more.
         # Full bodies arrive inline in agent_pick's task card (or via
         # agent_get) — so this payload must not grow with the catalog.
-        #
-        # SKILL.md frontmatters use block-scalar descriptions that parse as
-        # one long string ending in a "Триггеры: ..." keyword list. Those
-        # keywords exist for the server-side matcher (skill_service.match),
-        # not for the agent, so we drop them before truncating; without that
-        # the per-skill cost is ~2x and the 4KB ceiling breaks at ~10 skills.
-        _TRIGGER_MARKERS = ("Триггеры:", "Триггер-keywords:", "Triggers:")
-
-        def _one_liner(s: str | None, limit: int = 60) -> str:
-            if not s:
-                return ""
-            text = " ".join(s.strip().split())  # collapse whitespace
-            for marker in _TRIGGER_MARKERS:
-                idx = text.find(marker)
-                if idx > 0:
-                    text = text[:idx].rstrip(" .;—-")
-            # Prefer first-sentence boundary if it lands under `limit`.
-            for sep in (". ", "; ", " — "):
-                cut = text.find(sep)
-                if 20 <= cut < limit:
-                    return text[:cut] + "."
-            return text[: limit - 1] + "…" if len(text) > limit else text
+        # The one-liner (trigger list dropped, first sentence) is shared
+        # with the curator card: skill_service.one_liner.
+        from cod_doc.services.skill_service import one_liner
 
         skills = [
             {
                 "name": r.get("name"),
-                "description": _one_liner(r.get("description")),
+                "description": one_liner(r.get("description")),
             }
             for r in iter_skill_records()
         ]
