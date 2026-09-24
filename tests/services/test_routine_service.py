@@ -281,6 +281,42 @@ def test_doc_drift_routine_findings_use_drift_payload_shape(engine_with_schema, 
         assert isinstance(finding["orphan_sections"], list)
 
 
+def test_doc_drift_routine_limit_caps_findings_not_count(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """AFT-003: limit режет строки findings, findings_count — по всему корпусу."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id = _seed_project(session, root_path=str(tmp_path))
+        synced = doc_service.create(
+            session,
+            project_id=proj_id,
+            doc_key="synced",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.ACTIVE,
+            title="Synced",
+            owner="docs",
+            author="human:test",
+        )
+        for doc_key in ("missing-a", "missing-b"):
+            doc_service.create(
+                session,
+                project_id=proj_id,
+                doc_key=doc_key,
+                type=DocumentType.GUIDE,
+                status=DocumentStatus.ACTIVE,
+                title=doc_key,
+                owner="docs",
+                author="human:test",
+            )
+        projection_service.export_document(session, synced.row_id, root_path=tmp_path)
+
+        result = routines._check_doc_drift(session, proj_id, limit=1)
+
+    assert len(result["findings"]) == 1
+    assert result["findings_count"] == 2
+    assert result["truncated"] is True
+    assert result["total_docs"] == 3
+
+
 def test_doc_unplaced_routine_reports_the_inbox(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
     """ADO-116: хаотичный импорт не должен копиться молча.
 
