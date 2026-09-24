@@ -34,7 +34,9 @@ def _seed(session) -> tuple[int, int, int]:
     return proj.row_id, plan.row_id, sec.row_id
 
 
-def _make(session, pid, plid, sid, tid, *, prio=Priority.MEDIUM, acceptance=None):
+def _make(
+    session, pid, plid, sid, tid, *, prio=Priority.MEDIUM, acceptance=None, affected_files=None
+):
     return task_service.create(
         session,
         project_id=pid,
@@ -46,6 +48,7 @@ def _make(session, pid, plid, sid, tid, *, prio=Priority.MEDIUM, acceptance=None
         priority=prio,
         author="t",
         acceptance=acceptance,
+        affected_files=affected_files,
     )
 
 
@@ -185,7 +188,38 @@ def test_agent_pick_empty_returns_structured_reason(engine_with_schema) -> None:
         _seed(session)
     with transactional(factory) as session:
         card = agent_service.pick(session, project_id=1, agent_id="me")
-    assert card == {"task": None, "reason": "no_ready_tasks"}
+    assert card == {"task": None, "reason": "no_ready_tasks", "skipped_foreign": 0}
+
+
+def test_agent_pick_skips_foreign(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-012 / RFC 27 F13: default local_only=True skips the foreign
+    critical task and checks out the local low-priority one; with
+    local_only=False the foreign task becomes pickable."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make(
+            session,
+            pid,
+            plid,
+            sid,
+            "APK-201",
+            prio=Priority.CRITICAL,
+            affected_files=["/elsewhere/a.py"],
+        )
+        _make(session, pid, plid, sid, "APK-202", prio=Priority.LOW)
+
+    with transactional(factory) as session:
+        card = agent_service.pick(session, project_id=1, agent_id="agent-local")
+    assert card["task"]["task_id"] == "APK-202"
+    assert card["skipped_foreign"] == 1
+
+    # The local task is now checked out; the foreign one is still ready and
+    # becomes pickable for another agent with local_only=False.
+    with transactional(factory) as session:
+        card = agent_service.pick(session, project_id=1, agent_id="agent-foreign", local_only=False)
+    assert card["task"]["task_id"] == "APK-201"
+    assert card["skipped_foreign"] == 0
 
 
 def test_agent_pick_ignores_stale_lock_on_done_task(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

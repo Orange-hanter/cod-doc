@@ -19,10 +19,22 @@ if TYPE_CHECKING:
 @click.argument("plan_scope")
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option("--limit", default=10, show_default=True)
+@click.option(
+    "--local-only/--all-files",
+    default=True,
+    show_default=True,
+    help="Показывать только задачи с файлами внутри корня проекта "
+    "(чужая задача — все её файлы лежат вне root_path, RFC 27 F13).",
+)
 @click.option("--json", "as_json", is_flag=True, default=False)
 @click.pass_context
 def plan_ready(
-    ctx: click.Context, plan_scope: str, project: str, limit: int, as_json: bool
+    ctx: click.Context,
+    plan_scope: str,
+    project: str,
+    limit: int,
+    local_only: bool,
+    as_json: bool,
 ) -> None:
     """List tasks ready to work on (all blocking deps done)."""
     from cod_doc.infra.db import transactional
@@ -33,20 +45,25 @@ def plan_ready(
 
     with transactional(sf) as session:
         plan_id = _require_plan_id(session, plan_scope)
-        tasks = plan_service.ready(session, plan_id, limit=limit)
+        batch = plan_service.ready_batch(session, plan_id, limit=limit, local_only=local_only)
+    tasks = batch.tasks
+    skipped_foreign = batch.skipped_foreign
 
     if as_json:
         click.echo(
             _json.dumps(
-                [
-                    {
-                        "task_id": t.task_id,
-                        "title": t.title,
-                        "priority": t.priority.value,
-                        "type": t.type.value,
-                    }
-                    for t in tasks
-                ],
+                {
+                    "tasks": [
+                        {
+                            "task_id": t.task_id,
+                            "title": t.title,
+                            "priority": t.priority.value,
+                            "type": t.type.value,
+                        }
+                        for t in tasks
+                    ],
+                    "skipped_foreign": skipped_foreign,
+                },
                 indent=2,
             )
         )
@@ -54,6 +71,8 @@ def plan_ready(
 
     if not tasks:
         console.print("[dim]No ready tasks.[/dim]")
+        if skipped_foreign:
+            console.print(f"Пропущено чужих задач: {skipped_foreign} (--all-files — показать)")
         return
 
     table = Table(title=f"Ready tasks — {plan_scope}", show_header=True)
@@ -64,3 +83,5 @@ def plan_ready(
     for t in tasks:
         table.add_row(t.task_id, t.priority.value, t.type.value, t.title)
     console.print(table)
+    if skipped_foreign:
+        console.print(f"Пропущено чужих задач: {skipped_foreign} (--all-files — показать)")

@@ -648,16 +648,28 @@ def pick(
     project_id: int,
     agent_id: str,
     plan_scope: str | None = None,
+    local_only: bool = True,
 ) -> dict[str, Any]:
     """AGT-003: atomic pick + checkout + task-card assembly.
 
     Behaviours:
     - If ``agent_id`` already holds a checkout (any task in this project),
-      return that task's card (idempotent — safe under retries).
+      return that task's card (idempotent — safe under retries). This
+      branch never scans the ready set, so its card carries no
+      ``skipped_foreign`` key.
     - Else select highest-priority ready task (optionally filtered by
       ``plan_scope``), atomically checkout under ``agent_id``, assemble
       and return card.
-    - When the ready set is empty: ``{"task": None, "reason": "no_ready_tasks"}``.
+    - ``local_only`` (default True, RFC 27 F13): a task whose
+      ``affects_files`` are ALL absolute paths outside the project's
+      ``root_path`` is *foreign* and is skipped. Every answer that
+      scanned the ready set — ``no_ready_tasks``, ``checkout_failed``
+      and the success card — carries ``skipped_foreign``: the count of
+      foreign tasks filtered project-wide (before plan_scope/lock
+      filters). Pass ``local_only=False`` to make foreign tasks
+      pickable.
+    - When the ready set is empty:
+      ``{"task": None, "reason": "no_ready_tasks", "skipped_foreign": N}``.
     """
     from cod_doc.infra.models import TaskModel
     from cod_doc.infra.repositories import TaskRepository
@@ -688,7 +700,8 @@ def pick(
             return card
 
     # 2. Find ready set, filter by plan + locks.
-    ready = plan_reads.ready_for_project(session, project_id)
+    batch = plan_reads.ready_batch_for_project(session, project_id, local_only=local_only)
+    ready = batch.tasks
     if plan_scope is not None:
         from cod_doc.infra.repositories import PlanRepository
 
@@ -708,7 +721,11 @@ def pick(
         ready = [t for t in ready if t.row_id not in locked]
 
     if not ready:
-        return {"task": None, "reason": "no_ready_tasks"}
+        return {
+            "task": None,
+            "reason": "no_ready_tasks",
+            "skipped_foreign": batch.skipped_foreign,
+        }
 
     target = ready[0]
     assert target.task_id is not None
@@ -725,6 +742,7 @@ def pick(
             "task": None,
             "reason": "checkout_failed",
             "detail": str(exc),
+            "skipped_foreign": batch.skipped_foreign,
         }
 
     # Refresh task after checkout (status updated to in_progress).
@@ -739,4 +757,6 @@ def pick(
         }
 
     # 4. Assemble card.
-    return _build_task_card(session, project_id, refreshed)
+    card = _build_task_card(session, project_id, refreshed)
+    card["skipped_foreign"] = batch.skipped_foreign
+    return card

@@ -7,15 +7,16 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select, text
 
 from cod_doc.domain.entities import Plan, PlanSection, Task
-from cod_doc.infra.models import PlanModel
+from cod_doc.infra.models import AffectedFileModel, PlanModel, ProjectModel
 from cod_doc.infra.repositories import (
     PlanRepository,
     PlanSectionRepository,
     TaskRepository,
 )
+from cod_doc.services.task_locality import is_foreign
 
 from ._internals import _PRIORITY_ORDER, _derive_status, _require_plan
-from ._types import PlanProgress, SectionProgress
+from ._types import PlanProgress, ReadyBatch, SectionProgress
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -118,10 +119,44 @@ def recalc_for_project(session: Session, project_id: int) -> dict[int, PlanProgr
     }
 
 
-def ready_for_project(session: Session, project_id: int, *, limit: int | None = None) -> list[Task]:
-    """COD-075: ready batch across all plans of a project — single SQL.
+def _foreign_row_ids(session: Session, row_ids: list[int], root_path: str) -> set[int]:
+    """row_id задач, у которых есть ``affects_files`` и ВСЕ они вне ``root_path``.
 
-    Avoids the per-plan ``ready()`` loop on the overview page.
+    RFC 27 F13: задачи с файлами только в чужом репо coding-агенту в этом
+    репо бесполезны — ready-выборки отбрасывают их при ``local_only=True``.
+    Файлы грузятся одним запросом; задачи без файлов сюда не попадают и
+    остаются локальными.
+    """
+    if not row_ids:
+        return set()
+    stmt = select(AffectedFileModel.task_id, AffectedFileModel.path).where(
+        AffectedFileModel.task_id.in_(row_ids)
+    )
+    paths_by_task: dict[int, list[str]] = {}
+    for task_id, path in session.execute(stmt).all():
+        paths_by_task.setdefault(int(task_id), []).append(str(path))
+    return {tid for tid, paths in paths_by_task.items() if is_foreign(paths, root_path)}
+
+
+def _project_root_path(session: Session, project_id: int) -> str:
+    project = session.get(ProjectModel, project_id)
+    return project.root_path if project is not None else ""
+
+
+def ready_batch_for_project(
+    session: Session,
+    project_id: int,
+    *,
+    limit: int | None = None,
+    local_only: bool = True,
+) -> ReadyBatch:
+    """COD-075 ready batch across all plans of a project + фильтр local_only.
+
+    При ``local_only=True`` (default, RFC 27 F13) LIMIT в SQL не ставится:
+    выбирается всё ready-множество, чужие задачи (все ``affects_files`` —
+    абсолютные пути вне ``root_path``) отбрасываются, а ``limit`` применяется
+    срезом после фильтра. При ``local_only=False`` поведение ровно как до
+    F13 — LIMIT в SQL, ``skipped_foreign`` = 0.
     """
     repo = TaskRepository(session)
     sql = (
@@ -137,17 +172,43 @@ def ready_for_project(session: Session, project_id: int, *, limit: int | None = 
         "WHEN 'low' THEN 3 ELSE 99 END, "
         "t.task_id"
     )
-    if limit is not None and limit > 0:
+    if not local_only and limit is not None and limit > 0:
         sql += " LIMIT :lim"
         rows = session.execute(text(sql), {"pid": project_id, "lim": limit}).all()
     else:
         rows = session.execute(text(sql), {"pid": project_id}).all()
-    out: list[Task] = []
+    tasks: list[Task] = []
     for r in rows:
         task = repo.get(int(r[0]))
         if task is not None:
-            out.append(task)
-    return out
+            tasks.append(task)
+    if not local_only:
+        return ReadyBatch(tasks=tasks, skipped_foreign=0)
+    root_path = _project_root_path(session, project_id)
+    foreign = _foreign_row_ids(
+        session, [t.row_id for t in tasks if t.row_id is not None], root_path
+    )
+    kept = [t for t in tasks if t.row_id not in foreign]
+    skipped_foreign = len(tasks) - len(kept)
+    if limit is not None and limit > 0:
+        kept = kept[:limit]
+    return ReadyBatch(tasks=kept, skipped_foreign=skipped_foreign)
+
+
+def ready_for_project(
+    session: Session,
+    project_id: int,
+    *,
+    limit: int | None = None,
+    local_only: bool = True,
+) -> list[Task]:
+    """COD-075: ready batch across all plans of a project — single SQL.
+
+    Avoids the per-plan ``ready()`` loop on the overview page. Default
+    ``local_only=True`` отбрасывает задачи, чьи файлы целиком в чужом репо
+    (RFC 27 F13).
+    """
+    return ready_batch_for_project(session, project_id, limit=limit, local_only=local_only).tasks
 
 
 def recalc(session: Session, plan_id: int) -> PlanProgress:
@@ -209,26 +270,56 @@ def recalc(session: Session, plan_id: int) -> PlanProgress:
     )
 
 
-def ready(session: Session, plan_id: int, *, limit: int | None = None) -> list[Task]:
-    """Tasks ready to work on: pending + all blocking deps done.
+def ready_batch(
+    session: Session,
+    plan_id: int,
+    *,
+    limit: int | None = None,
+    local_only: bool = True,
+) -> ReadyBatch:
+    """Ready-выборка плана с фильтром ``local_only`` (RFC 27 F13).
 
-    Reads `ready_tasks` view, filters to the given plan, sorts by priority
-    (critical > high > medium > low) then by `task_id` for stability.
+    Фильтр идёт после сортировки и до среза ``limit``; ``root_path`` берётся
+    через ``plan.project_id``.
     """
-    _require_plan(session, plan_id)
+    plan = _require_plan(session, plan_id)
 
     rows = session.execute(
         text("SELECT row_id FROM ready_tasks WHERE plan_id = :pid"),
         {"pid": plan_id},
     ).all()
     if not rows:
-        return []
+        return ReadyBatch(tasks=[], skipped_foreign=0)
 
-    row_ids = [r[0] for r in rows]
+    row_ids = [int(r[0]) for r in rows]
     repo = TaskRepository(session)
     items = [t for t in (repo.get(rid) for rid in row_ids) if t is not None]
 
     items.sort(key=lambda t: (_PRIORITY_ORDER.get(t.priority.value, 99), t.task_id))
+    skipped_foreign = 0
+    if local_only:
+        root_path = _project_root_path(session, plan.project_id)
+        foreign = _foreign_row_ids(session, row_ids, root_path)
+        kept = [t for t in items if t.row_id not in foreign]
+        skipped_foreign = len(items) - len(kept)
+        items = kept
     if limit is not None:
         items = items[:limit]
-    return items
+    return ReadyBatch(tasks=items, skipped_foreign=skipped_foreign)
+
+
+def ready(
+    session: Session,
+    plan_id: int,
+    *,
+    limit: int | None = None,
+    local_only: bool = True,
+) -> list[Task]:
+    """Tasks ready to work on: pending + all blocking deps done.
+
+    Reads `ready_tasks` view, filters to the given plan, sorts by priority
+    (critical > high > medium > low) then by `task_id` for stability.
+    Default ``local_only=True`` отбрасывает задачи, чьи файлы целиком в
+    чужом репо (RFC 27 F13).
+    """
+    return ready_batch(session, plan_id, limit=limit, local_only=local_only).tasks
