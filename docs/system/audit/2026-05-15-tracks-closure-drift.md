@@ -1,12 +1,23 @@
 ---
-date: 2026-05-15
+type: audit-report
 scope: cycle-3 (G) + cycle-5 (H) + adr-system + observability-and-indexing
 kind: module-audit
+status: resolved
+source_of_truth: true
+owner: cod-doc core
 auditor: human:dakh + Claude
-status: open  # findings pending remediation
+created: 2026-05-15
+last_updated: 2026-09-26
 ---
 
 # Module audit — 4 tracks closed 2026-05-15
+
+> **Сверка ADO-219 (2026-09-26): блокирующие находки разобраны.** F1 — слой
+> стережёт `tests/api/test_web_layer_imports.py`; F2 — stale-lock ветка
+> `agent_pick` исправлена (см. agent-tools-completion, «F2 fix»); F4/F5 —
+> ruff и `ruff format --check` в CI-гейте чистые; F8 — per-track аудиты
+> написаны; F9 — `pathspec>=0.12` в `pyproject.toml`. Frontmatter приведён к
+> стандарту (было `status: open`, без `type`/`owner`).
 
 > 5-dimensional drift check per skill `module-audit`. CI зелёный ≠ модуль
 > готов. Audit applied to four section closures done today:
