@@ -27,15 +27,15 @@ related:
 
 ### 1.1. Симптомы
 
-[`tasks_list.html:10-15`](cod_doc/templates/web/project/tasks_list.html#L10-L15) и
-[`tasks_legacy_list.html:15-18`](cod_doc/templates/web/project/tasks_legacy_list.html#L15-L18):
+[`tasks_list.html:10-15`](../cod_doc/templates/web/project/tasks_list.html#L10-L15) и
+[`tasks_legacy_list.html:15-18`](../cod_doc/templates/web/project/tasks_legacy_list.html#L15-L18):
 
 | Симптом | Причина |
 | --- | --- |
 | На `/p/{slug}/tasks` стоит «В этом проекте пока нет задач», а сверху висит ссылка «Legacy YAML tasks (34)» | Страница читает только DB; legacy — параллельный мир в `tasks.yaml` |
 | Чтобы перенести 34 задачи в БД, нужно открыть терминал и запустить `cod-doc import legacy-tasks <slug>` | UI вообще не знает про эту команду — нет ни эндпоинта, ни кнопки |
 | Banner «not yet migrated» висит даже после того, как пользователь уже всё проверил и считает, что мигрировать не надо | Нет состояния «принято решение не мигрировать»; нет dry-run, нет diff |
-| `add_task` / `update_task` через legacy MCP писали в YAML (`legacy_project_tools.py`, removed in `c310503`) | Старые тулзы были зарегистрированы рядом с новыми ([`task_tools.py`](cod_doc/mcp/tools/task_tools.py)) и не помечены deprecated → агенты иногда выбирали legacy |
+| `add_task` / `update_task` через legacy MCP писали в YAML (`legacy_project_tools.py`, removed in `c310503`) | Старые тулзы были зарегистрированы рядом с новыми ([`task_tools.py`](../cod_doc/mcp/tools/task_tools.py)) и не помечены deprecated → агенты иногда выбирали legacy |
 | Legacy-страница показывает только id/title/status/priority/updated, без description/result | Read-only превью без полного содержимого — пользователь не видит, что именно мигрируется |
 
 ### 1.2. Почему получается
@@ -43,7 +43,7 @@ related:
 Хронология (по `git log` и архитектурным меткам):
 
 1. **До COD-032** — единственное хранилище задач было `tasks.yaml`.
-   Класс [`Project`](cod_doc/core/project.py#L120-L207) и legacy MCP-тулзы
+   Класс [`Project`](../cod_doc/core/project.py#L120-L207) и legacy MCP-тулзы
    (`add_task`, `update_task`, `next_pending_task`) работают с ним
    напрямую. Все 37 текущих записей в `.cod-doc/tasks.yaml` — наследие
    этого периода.
@@ -53,8 +53,8 @@ related:
    Старый код **не удалили** — он продолжил обслуживать существующие
    потоки, чтобы не ломать привычные сценарии.
 3. **COD-051** — добавили `cod-doc import legacy-tasks` для bulk-переноса
-   ([`cmd_import.py:84-117`](cod_doc/cli/cmd_import.py#L84-L117) +
-   [`restate_importer.py:242-335`](cod_doc/services/restate_importer.py#L242-L335)).
+   ([`cmd_import.py:84-117`](../cod_doc/cli/cmd_import.py#L84-L117) +
+   [`restate_importer.py:242-335`](../cod_doc/services/restate_importer.py#L242-L335)).
    Это сняло срочность миграции, но создало стабильное «болото»: импорт
    есть → нет повода удалять YAML, YAML есть → legacy-тулзы продолжают
    писать туда же. UI отразил болото в виде отдельной вкладки.
@@ -94,7 +94,7 @@ related:
 
 ### 2.2. HTTP-эндпоинты
 
-Добавить в [`api/web/pages/tasks.py`](cod_doc/api/web/pages/tasks.py):
+Добавить в [`api/web/pages/tasks.py`](../cod_doc/api/web/pages/tasks.py):
 
 | Method | Path | Назначение |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ related:
 (например, на `/p/{slug}/daemon/start`).
 
 Реализация ровно поверх уже существующего
-[`restate_importer.import_legacy_tasks`](cod_doc/services/restate_importer.py#L242-L335):
+[`restate_importer.import_legacy_tasks`](../cod_doc/services/restate_importer.py#L242-L335):
 для dry-run — `session.rollback()` и сериализация `summary`; для
 архива — `yaml_path.rename(yaml_path.with_suffix(".archived.yaml"))`.
 
@@ -131,7 +131,7 @@ related:
 1. В legacy `legacy_project_tools.py` (removed in `c310503`)
    у `add_task` / `update_task` менять docstring на
    `"DEPRECATED — use mcp__cod-doc__task_create instead"`.
-2. На уровне реализации `Project.add_task` ([`core/project.py:188-192`](cod_doc/core/project.py#L188-L192))
+2. На уровне реализации `Project.add_task` ([`core/project.py:188-192`](../cod_doc/core/project.py#L188-L192))
    при `tasks.yaml` уже архивированном → бросать `RuntimeError("legacy
    tasks.yaml archived; use DB-backed task_create")`. Не «молча писать
    в новый YAML» — это гарантирует, что архивирование = окончательное.
@@ -141,7 +141,7 @@ related:
 
 ### 2.5. Расширенное превью на legacy-странице
 
-Сейчас [`tasks_legacy_list.html:48-69`](cod_doc/templates/web/project/tasks_legacy_list.html#L48-L69)
+Сейчас [`tasks_legacy_list.html:48-69`](../cod_doc/templates/web/project/tasks_legacy_list.html#L48-L69)
 показывает 5 колонок. Перед «нажми import» пользователь должен видеть,
 что именно мигрируется. Минимум:
 

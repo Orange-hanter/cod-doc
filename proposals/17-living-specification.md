@@ -1,5 +1,7 @@
 # 17 — Living Specification: ADR ↔ Tasks ↔ Code ↔ Docs drift detector
 
+> ❌ ОТБРАКОВАНА 2026-08-29 (ADO-056) — см. [proposals/README.md](README.md) § «Отбраковка». Текст ниже — исходное предложение, не план работ.
+
 > Категория: 🟡 Адаптация · Риск: средний · Зависимости: 07-routines, ADR-система (a73dcbb), OBI code-ref
 > · **Примечание (2026-09-02):** внешняя часть (cross-repo structure/scenario
 > contour) переносится в [proposal 24](24-structure-contracts-scenarios.md);

@@ -1,5 +1,7 @@
 # 16 — AI-Pair-Hacker: cod-doc в петле vibecoder'а
 
+> ❌ ОТБРАКОВАНА 2026-08-29 (ADO-056) — см. [proposals/README.md](README.md) § «Отбраковка». Текст ниже — исходное предложение, не план работ.
+
 > Категория: 🔵 Архитектура · Риск: средний · Зависимости: 06 atomic-checkout, 09 activity-log, OBI (code-ref)
 
 ## Контекст: vibecoder-боль

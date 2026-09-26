@@ -37,7 +37,7 @@ related:
 
 Ожидалось — три отдельных `<li>`.
 
-Корень — [`cod_doc/api/web/markdown.py:243-248`](cod_doc/api/web/markdown.py#L243-L248):
+Корень — [`cod_doc/api/web/markdown.py:243-248`](../cod_doc/api/web/markdown.py#L243-L248):
 
 ```python
 # Bullet list?
@@ -51,38 +51,38 @@ if line.startswith(("- ", "* ")):
 
 Парсер ловит **только** `- ` / `* `. Префикс `1. `, `2. `, `10) ` не
 распознаётся как маркер списка → строка падает в
-`paragraph_lines.append(line)` ([markdown.py:251](cod_doc/api/web/markdown.py#L251)),
+`paragraph_lines.append(line)` ([markdown.py:251](../cod_doc/api/web/markdown.py#L251)),
 все пункты склеиваются в один `<p>` через перевод строки, который CSS
 схлопывает в пробел. Отсюда «список в строчку».
 
-Дополнительно в docstring [`markdown.py:17`](cod_doc/api/web/markdown.py#L17)
+Дополнительно в docstring [`markdown.py:17`](../cod_doc/api/web/markdown.py#L17)
 нумерованные списки даже не упомянуты как out-of-scope —
 по сути undocumented gap.
 
 ### 1.2. Система ссылок — что работает и где течёт
 
 Архитектура корректная, 5-стадийная (parse → sync → resolve → verify →
-cascade), см. [`link_service/__init__.py:1-68`](cod_doc/services/link_service/__init__.py#L1-L68).
-Парсер ([`parser.py`](cod_doc/services/link_service/parser.py)) ловит
+cascade), см. [`link_service/__init__.py:1-68`](../cod_doc/services/link_service/__init__.py#L1-L68).
+Парсер ([`parser.py`](../cod_doc/services/link_service/parser.py)) ловит
 `[[doc:KEY]]`, `[[doc:KEY#anchor]]`, `[[task:ID]]`, `[[story:ID]]`,
 `[[Wiki Title]]`, markdown `[txt](href)`, bare URL.
 
-Auto-sync включается из [`doc_service.py:256,342`](cod_doc/services/doc_service.py#L256)
+Auto-sync включается из [`doc_service.py:256,342`](../cod_doc/services/doc_service.py#L256)
 через `_sync_section_links_safe()` — best-effort, ошибки логируются.
 COD-079 исправил регресс «links always empty».
 
 | Проблема | Где | Влияние |
 |---|---|---|
-| **Импортированный документ может не иметь ссылок.** До COD-079 импорт шёл мимо `_sync_section_links_safe`. Юзеру нужно вручную помнить про `cod-doc link backfill`. | [`import_service.py:144-206`](cod_doc/services/import_service.py#L144-L206), [`cli/link.py:204-258`](cod_doc/cli/link.py#L204-L258) | После миграции/массового импорта документы выглядят «осиротевшими» — секции `Outgoing/Incoming` пустые, как на скриншоте. |
+| **Импортированный документ может не иметь ссылок.** До COD-079 импорт шёл мимо `_sync_section_links_safe`. Юзеру нужно вручную помнить про `cod-doc link backfill`. | [`import_service.py:144-206`](../cod_doc/services/import_service.py#L144-L206), [`cli/link.py:204-258`](../cod_doc/cli/link.py#L204-L258) | После миграции/массового импорта документы выглядят «осиротевшими» — секции `Outgoing/Incoming` пустые, как на скриншоте. |
 | **Plain markdown без `[label](key)`.** Если у автора нет привычки ставить canonical-ссылки, документ навсегда останется без рёбер графа — backfill ничего не вернёт, потому что синтаксиса нет. | весь `parser.py` | Граф связей деградирует до «островов». |
-| **URL-ссылки никогда не верифицируются.** `verify_section` пропускает kind=`URL` — нет HTTP-проверки. | [`resolver.py`](cod_doc/services/link_service/resolver.py) (verify-ветка) | Битые внешние ссылки молча лежат как `resolved=true`. |
-| **patch_section вне UI обходит auto-sync.** Если кто-то правит body через прямой SQL/мерж-операцию или MCP-инструмент в обход `doc_service.patch_section`, ссылки не пересчитываются. | [`doc_service.py:342`](cod_doc/services/doc_service.py#L342) | Дрейф между body и `link`-таблицей. |
-| **Нет cross-project ссылок.** Заявлено как deferred. | [`link_service/__init__.py:22-28`](cod_doc/services/link_service/__init__.py#L22-L28) | Документы из разных проектов не могут ссылаться друг на друга. |
+| **URL-ссылки никогда не верифицируются.** `verify_section` пропускает kind=`URL` — нет HTTP-проверки. | [`resolver.py`](../cod_doc/services/link_service/resolver.py) (verify-ветка) | Битые внешние ссылки молча лежат как `resolved=true`. |
+| **patch_section вне UI обходит auto-sync.** Если кто-то правит body через прямой SQL/мерж-операцию или MCP-инструмент в обход `doc_service.patch_section`, ссылки не пересчитываются. | [`doc_service.py:342`](../cod_doc/services/doc_service.py#L342) | Дрейф между body и `link`-таблицей. |
+| **Нет cross-project ссылок.** Заявлено как deferred. | [`link_service/__init__.py:22-28`](../cod_doc/services/link_service/__init__.py#L22-L28) | Документы из разных проектов не могут ссылаться друг на друга. |
 | **Нет fuzzy/семантического резолва.** `[[Some Title]]` ищется только по точному совпадению title в БД. | `resolver.py` | Опечатка в wiki-link → `broken_reason=not_found`. |
 
 ### 1.3. Семантический слой существует, но не используется для ссылок
 
-В [`cod_doc/core/reindex.py`](cod_doc/core/reindex.py) уже есть
+В [`cod_doc/core/reindex.py`](../cod_doc/core/reindex.py) уже есть
 ChromaDB-индекс и embedding-бэкенд (OpenAI или local
 sentence-transformers, см. `config.embedding_backend`,
 `config.embedding_model`). Он питает `search_docs()` для агента —
@@ -94,7 +94,7 @@ sentence-transformers, см. `config.embedding_backend`,
 
 ### 2.1. Починка ordered lists (P0, маленькая правка)
 
-В [`markdown.py`](cod_doc/api/web/markdown.py):
+В [`markdown.py`](../cod_doc/api/web/markdown.py):
 
 1. Добавить регэксп `_OL_ITEM = re.compile(r"^(\d+)[.)]\s+(.+)$")`.
 2. Завести `ol_items: list[str]` и `flush_ol_list()` по аналогии
@@ -105,7 +105,7 @@ sentence-transformers, см. `config.embedding_backend`,
    `if m := _OL_ITEM.match(line): …`.
 4. В `flush_all()` добавить `flush_ol_list()`.
 5. В docstring строки 14-19 явно перечислить supported/unsupported.
-6. Тесты в [`tests/api/web/test_markdown.py`](tests/api/web/test_markdown.py)
+6. Тесты в [`tests/api/web/test_markdown.py`](../tests/api/web/test_markdown.py)
    (создать, если нет): single-item, multi-item, mixed `1.`/`1)`,
    разрыв списка пустой строкой, продолжение нумерации, смешанный
    bullet+numbered.
@@ -121,7 +121,7 @@ indent-уровней — отдельная задача), GFM task-lists `- [ 
 1. Поднять его на уровень **репозитория** или единого
    `_apply_section_body_change()` хука — чтобы любой будущий вызов
    не мог обойти.
-2. В `import_service.import_markdown()` ([import_service.py:144-206](cod_doc/services/import_service.py#L144-L206))
+2. В `import_service.import_markdown()` ([import_service.py:144-206](../cod_doc/services/import_service.py#L144-L206))
    после цикла `add_section` добавить **финальный** проход
    `link_service.resolve_section()` для всех вставленных секций —
    сейчас resolve вызывается из sync, но между ними успевают вставиться
@@ -139,7 +139,7 @@ markdown-файлов из Obsidian. У них либо вики-стиль `[[N
 #### 2.3.1. Источник сигнала
 
 Использовать **уже работающий** ChromaDB-индекс из
-[`reindex.py`](cod_doc/core/reindex.py). Он индексирует тело каждой
+[`reindex.py`](../cod_doc/core/reindex.py). Он индексирует тело каждой
 секции с эмбеддингами `config.embedding_model`. Это даёт нам бесплатный
 поиск «семантически похожих секций» без нового стора.
 
@@ -222,14 +222,14 @@ def backfill_project(session, project_id, *, apply_above=None, dry_run=False) ->
 
 | Шаг | Содержание | Файлы | Размер |
 |---|---|---|---|
-| **15.1** | Ordered lists в renderer + тесты | [`markdown.py`](cod_doc/api/web/markdown.py), `tests/api/web/test_markdown.py` | S |
-| **15.2** | Двухпроходный импорт: после `import_markdown` — пакетный `resolve_section` для всех вставок | [`import_service.py`](cod_doc/services/import_service.py) | S |
-| **15.3** | Поднять auto-sync на уровень единого хука; задокументировать инвариант «любая правка body → sync» | [`doc_service.py`](cod_doc/services/doc_service.py) | M |
+| **15.1** | Ordered lists в renderer + тесты | [`markdown.py`](../cod_doc/api/web/markdown.py), `tests/api/web/test_markdown.py` | S |
+| **15.2** | Двухпроходный импорт: после `import_markdown` — пакетный `resolve_section` для всех вставок | [`import_service.py`](../cod_doc/services/import_service.py) | S |
+| **15.3** | Поднять auto-sync на уровень единого хука; задокументировать инвариант «любая правка body → sync» | [`doc_service.py`](../cod_doc/services/doc_service.py) | M |
 | **15.4** | Модель `LinkSuggestion` + миграция Alembic | `cod_doc/infra/models/`, `alembic/versions/` | M |
 | **15.5** | `link_service/semantic.py` — алгоритм 2.3.2, юнит-тесты на синтетическом эмбеддинг-сторе | `cod_doc/services/link_service/semantic.py` | L |
-| **15.6** | CLI `cod-doc link suggest` и `link suggest --apply-above` | [`cli/link.py`](cod_doc/cli/link.py) | M |
-| **15.7** | Web-UI «Suggested links» в подвале документа | [`templates/web/_frag/section_view.html`](cod_doc/templates/web/_frag/section_view.html), [`api/web/pages/docs.py`](cod_doc/api/web/pages/docs.py) | M |
-| **15.8** | MCP-инструмент `link_suggest_for_section` | [`mcp/tools/link_tools.py`](cod_doc/mcp/tools/link_tools.py) | S |
+| **15.6** | CLI `cod-doc link suggest` и `link suggest --apply-above` | [`cli/link.py`](../cod_doc/cli/link.py) | M |
+| **15.7** | Web-UI «Suggested links» в подвале документа | [`templates/web/_frag/section_view.html`](../cod_doc/templates/web/_frag/section_view.html), [`api/web/pages/docs.py`](../cod_doc/api/web/pages/docs.py) | M |
+| **15.8** | MCP-инструмент `link_suggest_for_section` | [`mcp/tools/link_tools.py`](../cod_doc/mcp/tools/link_tools.py) | S |
 
 P0 — шаг 15.1 (визуальный баг, фиксится за один коммит). Остальное —
 последовательно, semantic backfill (15.4–15.7) — отдельная фаза с

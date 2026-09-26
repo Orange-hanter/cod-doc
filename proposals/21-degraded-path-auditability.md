@@ -1,5 +1,7 @@
 # 21 — Degraded-Path Auditability + Error Audit Trail (гибрид)
 
+> ❌ ОТБРАКОВАНА 2026-08-29 (ADO-056) — см. [proposals/README.md](README.md) § «Отбраковка». Текст ниже — исходное предложение, не план работ.
+
 > Категория: 🟡 Адаптация · Риск: средний · Зависимости: proposal 04 (run-id), proposal 09 (activity log), proposal 17 (Living Specification)
 
 ## Контекст: что показало сравнение двух ревью

@@ -1,5 +1,7 @@
 # 18 — Vibecoder's Diary: activity_log → human-friendly daily doc
 
+> ❌ ОТБРАКОВАНА 2026-08-29 (ADO-056) — см. [proposals/README.md](README.md) § «Отбраковка». Текст ниже — исходное предложение, не план работ.
+
 > Категория: 🟡 Адаптация · Риск: низкий · Зависимости: 09-activity-log, model_catalog (COD-059)
 
 ## Контекст: «что я вчера накодил?»
