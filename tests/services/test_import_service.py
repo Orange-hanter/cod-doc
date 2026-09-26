@@ -592,4 +592,3 @@ def test_terminal_work_statuses_are_stored_as_authored(engine_with_schema, statu
             assert model is not None
             assert model.status == status
             assert report.warnings == []
-
