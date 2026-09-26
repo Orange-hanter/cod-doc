@@ -52,6 +52,7 @@ cod-doc link verify      — проверить ссылки секции
 cod-doc revision list    — история ревизий сущности
 cod-doc revision show    — детали ревизии
 cod-doc revision revert  — откатить ревизию
+cod-doc activity summary — агрегаты журнала событий
 cod-doc ingest structure — принять structure facts/assessment snapshot
 cod-doc obligation export — экспортировать obligations_export.v1
 cod-doc structure latest|get|drift|triage|entities|contracts|scenarios
@@ -84,6 +85,7 @@ from __future__ import annotations
 
 import click
 
+from cod_doc.cli.activity import activity
 from cod_doc.cli.adr import adr
 from cod_doc.cli.cmd_adapter import adapter
 from cod_doc.cli.cmd_agent import agent
@@ -149,6 +151,7 @@ main.add_command(scenario)
 main.add_command(doc)
 main.add_command(link)
 main.add_command(revision)
+main.add_command(activity)
 main.add_command(routine)
 main.add_command(audit)
 main.add_command(import_cmd)

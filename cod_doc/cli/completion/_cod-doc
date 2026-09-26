@@ -329,6 +329,7 @@ _cod-doc() {
     (cod_doc_cmd)
       curcontext="${curcontext%:*:*}:cod-doc-$words[1]:"
       case $words[1] in
+        (activity)   _cod_doc_activity && ret=0 ;;
         (adapter)    _cod_doc_adapter && ret=0 ;;
         (adr)        _cod_doc_adr && ret=0 ;;
         (agent)      _cod_doc_agent && ret=0 ;;
@@ -371,6 +372,7 @@ _cod-doc() {
 (( $+functions[_cod_doc_commands] )) || _cod_doc_commands() {
   local -a cmds
   cmds=(
+    'activity:Журнал activity_event проекта.'
     'adapter:Manage LLM adapters (built-in + external plugins).'
     'adr:Manage Architecture Decision Records (new / list / show / supersede…'
     'agent:Управление агентом.'
@@ -405,6 +407,48 @@ _cod-doc() {
     'wizard:Запустить мастер настройки.'
   )
   _describe -t cod-doc-commands 'cod-doc command' cmds
+}
+
+(( $+functions[_cod_doc_activity] )) || _cod_doc_activity() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_activity_commands' \
+    '*:: :->cod_doc_activity_cmd' && ret=0
+
+  case $state in
+    (cod_doc_activity_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-activity-$words[1]:"
+      case $words[1] in
+        (summary) _cod_doc_activity_summary && ret=0 ;;
+        (*)       _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_activity_commands] )) || _cod_doc_activity_commands() {
+  local -a cmds
+  cmds=(
+    'summary:Агрегаты журнала событий (GROUP BY) за период.'
+  )
+  _describe -t cod-doc-activity-commands 'cod-doc activity command' cmds
+}
+
+(( $+functions[_cod_doc_activity_summary] )) || _cod_doc_activity_summary() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--since)--since=[ISO-8601; события не раньше момента, напр. 2026-09-12]:since' \
+    '(--until)--until=[ISO-8601; события не позже момента (по умолчанию — без верхней гран…]:until' \
+    '*--group-by=[Ключи агрегации; повторяйте опцию для нескольких]:group-by:(day actor_kind kind scope_kind)' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
 }
 
 (( $+functions[_cod_doc_adapter] )) || _cod_doc_adapter() {
@@ -2097,7 +2141,7 @@ _cod-doc() {
 (( $+functions[_cod_doc_revision_commands] )) || _cod_doc_revision_commands() {
   local -a cmds
   cmds=(
-    'list:List revision history for an entity.'
+    'list:List revision history for an entity — or the project feed with --al…'
     'revert:Revert a revision (creates an inverse revision; history is append-o…'
     'show:Show a single revision (including its diff).'
   )
@@ -2110,8 +2154,12 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
-    '(--kind)--kind=[Entity kind]:kind:(document section task plan story link module)' \
+    '(--kind)--kind=[Entity kind (режим сущности, вместе с --ref)]:kind:(document section task plan story link module)' \
     '(--ref)--ref=[Entity ref; task_id / doc_key / story_id / doc_key#anchor / row_id]:ref' \
+    '(--all)--all[Лента ревизий всего проекта (newest-first), без привязки к сущности]' \
+    '(--since)--since=[ISO-8601; ревизии не раньше момента, напр. 2026-09-26 (только с --a…]:since' \
+    '(--author)--author=[Фильтр по автору (только с --all)]:author' \
+    '(--entity-kind)--entity-kind=[Фильтр по виду сущности (только с --all)]:entity-kind:(document section task plan story link module)' \
     '(--limit)--limit=[Max revisions to show]:limit' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0

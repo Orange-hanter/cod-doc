@@ -36,6 +36,7 @@ Public API
 - ``write_revision_and_emit_event(session, …)`` — append a revision and emit an
   activity event atomically in the current transaction.
 - ``list_events(session, project_id, …)`` → paginated event list
+- ``summarize(session, project_id, …)`` → GROUP BY aggregate over events
 - ``events_for_run(session, project_id, run_id)`` → list for one run
   (ADR-012: run_id несут только мутации встроенного оркестратора;
   единственный вызывающий — web-консоль ``/p/{slug}/run``)
@@ -56,7 +57,10 @@ from cod_doc.services import revision_service as rev
 from cod_doc.services.run_context import get_current_run_id
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+    from collections.abc import Sequence
+
+    from sqlalchemy import Label
+    from sqlalchemy.orm import InstrumentedAttribute, Session
 
     from cod_doc.domain.entities import EntityKind, Revision
 
@@ -222,6 +226,7 @@ def list_events(
     scope_id: str | None = None,
     kind: str | None = None,
     actor_kind: str | None = None,
+    actor_id: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
     limit: int = 50,
@@ -247,6 +252,9 @@ def list_events(
     if actor_kind is not None:
         base = base.where(ActivityEventModel.actor_kind == actor_kind)
         count_q = count_q.where(ActivityEventModel.actor_kind == actor_kind)
+    if actor_id is not None:
+        base = base.where(ActivityEventModel.actor_id == actor_id)
+        count_q = count_q.where(ActivityEventModel.actor_id == actor_id)
     if since is not None:
         base = base.where(ActivityEventModel.ts >= since)
         count_q = count_q.where(ActivityEventModel.ts >= since)
@@ -269,6 +277,65 @@ def list_events(
         "limit": limit,
         "offset": offset,
     }
+
+
+SUMMARY_GROUP_BY: tuple[str, ...] = ("day", "actor_kind", "kind", "scope_kind")
+
+_SIMPLE_GROUP_COLUMNS: dict[str, InstrumentedAttribute[str] | InstrumentedAttribute[str | None]] = {
+    "actor_kind": ActivityEventModel.actor_kind,
+    "kind": ActivityEventModel.kind,
+    "scope_kind": ActivityEventModel.scope_kind,
+}
+
+
+def summarize(
+    session: Session,
+    project_id: int,
+    *,
+    since: datetime,
+    until: datetime | None = None,
+    group_by: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Aggregate activity events with a single GROUP BY query (RFC 27 F9).
+
+    Заменяет прямой SQL «события за N дней по дням и actor_kind»: один
+    ``SELECT … GROUP BY`` вместо выгрузки событий и агрегации в Python.
+    Фильтры совпадают с :func:`list_events` (``since``/``until``
+    включительно), поэтому сумма ``n`` равна ``total`` за тот же период.
+    """
+    if (
+        not group_by
+        or len(set(group_by)) != len(group_by)
+        or any(key not in SUMMARY_GROUP_BY for key in group_by)
+    ):
+        allowed = ", ".join(SUMMARY_GROUP_BY)
+        raise ValueError(f"invalid group_by {list(group_by)!r}; допустимые ключи: {allowed}")
+
+    columns: list[Label[Any] | InstrumentedAttribute[str] | InstrumentedAttribute[str | None]] = []
+    for key in group_by:
+        if key == "day":
+            columns.append(func.date(ActivityEventModel.ts).label("day"))
+        else:
+            columns.append(_SIMPLE_GROUP_COLUMNS[key])
+
+    stmt = (
+        select(*columns, func.count().label("n"))
+        .where(ActivityEventModel.project_id == project_id)
+        .where(ActivityEventModel.ts >= since)
+    )
+    if until is not None:
+        stmt = stmt.where(ActivityEventModel.ts <= until)
+    stmt = stmt.group_by(*columns).order_by(*columns)
+
+    result: list[dict[str, Any]] = []
+    for row in session.execute(stmt).mappings():
+        item: dict[str, Any] = {}
+        for key in group_by:
+            value = row[key]
+            item[key] = str(value) if key == "day" else value
+        item["n"] = int(row["n"])
+        result.append(item)
+    return result
 
 
 def events_for_run(

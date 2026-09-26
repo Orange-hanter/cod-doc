@@ -97,6 +97,8 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "link_verify" in tool_names
     assert "revision_list" in tool_names
     assert "revision_revert" in tool_names
+    # AFT-008 (RFC 27 F9): activity feed aggregates + actor_id filter
+    assert "activity_summary" in tool_names
     # SYM-006D / RFC 22: findings + ctx aliases (standard/full profiles)
     assert "finding_list" in tool_names
     assert "finding_get" in tool_names
