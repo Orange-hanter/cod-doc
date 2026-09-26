@@ -39,6 +39,7 @@ from cod_doc.services import (
     comment_service,
     commit_link_service,
     doc_service,
+    doc_tree_service,
     repair_service,
     repo_index_service,
     task_doc_service,
@@ -603,6 +604,9 @@ def test_repair_emits_event(engine_with_schema, tmp_path: Path) -> None:  # type
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         p = _seed_project(session, slug="rep")
+        # `_seed_project` минует `project init`, а дерево без него не засеяно —
+        # его засеял бы сам repair (ADO-224), и чинить стало бы что.
+        doc_tree_service.init_tree(session, project_id=p, author="system:init")
         repair_service.apply(
             session,
             project_id=p,

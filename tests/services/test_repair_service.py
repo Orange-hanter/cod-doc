@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from click.testing import CliRunner
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from cod_doc.cli import main
 from cod_doc.config import Config
@@ -25,6 +25,8 @@ from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.models import (
     ActivityEventModel,
+    DocNodeModel,
+    DocumentModel,
     LinkModel,
     PlanModel,
     PlanSectionModel,
@@ -38,6 +40,7 @@ from cod_doc.services import (
     projection_service,
     repair_service,
 )
+from cod_doc.services.doc_taxonomy import DEFAULT_TREE
 from cod_doc.services.projection_service import DriftStatus
 
 if TYPE_CHECKING:
@@ -617,3 +620,92 @@ def test_as_dict_is_json_safe(project) -> None:
     assert json.loads(json.dumps(payload, ensure_ascii=False))["project"] == _PROJECT
     assert payload["ok"] is True
     assert payload["applied"] == len(payload["actions"])
+
+
+# ------------------------------------------------------------------ #
+# Дерево разделов у проекта старше ADO-116 (ADO-224)                  #
+# ------------------------------------------------------------------ #
+
+
+def _forget_tree(factory: sessionmaker) -> None:
+    """Проект в состоянии «зарегистрирован до ADO-116»: `doc_node` пуст.
+
+    `project add` засевает дерево сам, поэтому старый проект получается
+    только стиранием: миграция 0035 создала таблицу пустой и засевать её
+    было некому.
+    """
+    with transactional(factory) as session:
+        session.execute(delete(DocNodeModel).where(DocNodeModel.project_id == _project_id(session)))
+
+
+def _node_count(factory: sessionmaker) -> int:
+    with transactional(factory, commit=False) as session:
+        return int(
+            session.scalar(
+                select(func.count())
+                .select_from(DocNodeModel)
+                .where(DocNodeModel.project_id == _project_id(session))
+            )
+            or 0
+        )
+
+
+def test_missing_tree_is_seeded(project) -> None:
+    factory, root = project
+    (root / "alpha.md").write_text(_ALPHA, encoding="utf-8")
+    _import_docs()
+    _forget_tree(factory)
+
+    with transactional(factory, commit=False) as session:
+        plan = _diagnose(session, root)
+    assert plan.curable[repair_service.KIND_TREE_SEED] == 1
+    assert [a.kind for a in plan.actions] == [repair_service.KIND_TREE_SEED]
+
+    with transactional(factory) as session:
+        result = _apply(session, root)
+    assert result.ok, result.errors
+    assert result.applied == 1
+    assert _node_count(factory) == len(DEFAULT_TREE)
+
+    # Раскладка — решение человека: документ остаётся в Инбоксе.
+    with transactional(factory, commit=False) as session:
+        doc = session.get(DocumentModel, _doc_row_id(session, "alpha"))
+        assert doc is not None
+        assert doc.node_id is None
+
+    # Засеянное дерево повторно не планируется.
+    with transactional(factory, commit=False) as session:
+        again = _diagnose(session, root)
+    assert again.curable[repair_service.KIND_TREE_SEED] == 0
+
+
+def test_seeded_tree_plans_nothing(project) -> None:
+    """Свежий `project add` уже засеял дерево — чинить нечего."""
+    factory, root = project
+    with transactional(factory, commit=False) as session:
+        plan = _diagnose(session, root)
+    assert plan.curable[repair_service.KIND_TREE_SEED] == 0
+
+
+def test_tree_seed_dry_run_writes_nothing(project) -> None:
+    factory, root = project
+    _forget_tree(factory)
+
+    with transactional(factory, commit=False) as session:
+        result = _apply(session, root, dry_run=True)
+    assert any(a.kind == repair_service.KIND_TREE_SEED for a in result.actions)
+    assert result.applied == 0
+    assert _node_count(factory) == 0
+
+
+def test_tree_seed_can_be_skipped(project) -> None:
+    factory, root = project
+    _forget_tree(factory)
+
+    with transactional(factory) as session:
+        result = _apply(session, root, skip_kinds=frozenset({repair_service.KIND_TREE_SEED}))
+    seeds = [a for a in result.actions if a.kind == repair_service.KIND_TREE_SEED]
+    assert len(seeds) == 1
+    assert seeds[0].skipped
+    assert not seeds[0].applied
+    assert _node_count(factory) == 0
