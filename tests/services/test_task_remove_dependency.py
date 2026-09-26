@@ -83,7 +83,7 @@ def test_remove_dependency_deletes_edge_and_unblocks_ready(engine_with_schema) -
         assert "MY-002" not in ready_ids
 
         task_service.remove_dependency(
-            session, task_id="MY-002", blocker_task_id="MY-001", author="human:test"
+            session, project_id=p, task_id="MY-002", blocker_task_id="MY-001", author="human:test"
         )
 
         assert _edges(session) == []
@@ -100,7 +100,7 @@ def test_remove_dependency_only_removes_the_requested_edge(engine_with_schema) -
         _make(session, p, pl, s, "MY-003", blocked_by=["MY-001", "MY-002"])
 
         task_service.remove_dependency(
-            session, task_id="MY-003", blocker_task_id="MY-001", author="human:test"
+            session, project_id=p, task_id="MY-003", blocker_task_id="MY-001", author="human:test"
         )
 
         edges = _edges(session)
@@ -120,7 +120,11 @@ def test_remove_dependency_missing_edge_raises(engine_with_schema) -> None:  # t
 
         with pytest.raises(DependencyNotFoundError, match="MY-002"):
             task_service.remove_dependency(
-                session, task_id="MY-002", blocker_task_id="MY-001", author="human:test"
+                session,
+                project_id=p,
+                task_id="MY-002",
+                blocker_task_id="MY-001",
+                author="human:test",
             )
 
 
@@ -133,11 +137,19 @@ def test_remove_dependency_unknown_task_raises(engine_with_schema) -> None:  # t
 
         with pytest.raises(TaskNotFoundError):
             task_service.remove_dependency(
-                session, task_id="NOPE-1", blocker_task_id="MY-001", author="human:test"
+                session,
+                project_id=p,
+                task_id="NOPE-1",
+                blocker_task_id="MY-001",
+                author="human:test",
             )
         with pytest.raises(TaskNotFoundError):
             task_service.remove_dependency(
-                session, task_id="MY-002", blocker_task_id="NOPE-2", author="human:test"
+                session,
+                project_id=p,
+                task_id="MY-002",
+                blocker_task_id="NOPE-2",
+                author="human:test",
             )
 
 
@@ -153,6 +165,7 @@ def test_remove_dependency_writes_revision_and_activity(engine_with_schema) -> N
 
         task_service.remove_dependency(
             session,
+            project_id=p,
             task_id="MY-002",
             blocker_task_id="MY-001",
             author="human:test",

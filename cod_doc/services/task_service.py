@@ -128,8 +128,21 @@ def _project_slug(session: Session, project_id: int) -> str | None:
     ).scalar_one_or_none()
 
 
-def _require_task(session: Session, task_id: str) -> TaskModel:
+def _require_task(session: Session, task_id: str, *, project_id: int | None) -> TaskModel:
+    """Найти задачу по ``task_id`` в скоупе проекта.
+
+    ``project_id`` обязателен и без значения по умолчанию (ADO-200, RFC 26
+    §3.2, T9). Ограничение целостности — ``UNIQUE (project_id, task_id)``,
+    поэтому в общей hub-БД два проекта с одним ID роняют
+    ``scalar_one_or_none()`` через ``MultipleResultsFound``. Дефолт дал бы
+    call-site'у забыть скоуп молча.
+
+    ``None`` — явный легаси-долг вызывающих, у которых ``project_id`` нет
+    в сигнатуре: поиск идёт по всей БД, как раньше.
+    """
     stmt = select(TaskModel).where(TaskModel.task_id == task_id)
+    if project_id is not None:
+        stmt = stmt.where(TaskModel.project_id == project_id)
     model = session.execute(stmt).scalar_one_or_none()
     if model is None:
         raise TaskNotFoundError(task_id)
@@ -432,7 +445,10 @@ def create(
     if blocked_by:
         for blocker_task_id in blocked_by:
             blocker_model = session.execute(
-                select(TaskModel).where(TaskModel.task_id == blocker_task_id)
+                select(TaskModel).where(
+                    TaskModel.project_id == project_id,
+                    TaskModel.task_id == blocker_task_id,
+                )
             ).scalar_one_or_none()
             if blocker_model is None:
                 raise ValueError(f"blocked_by references unknown task_id: {blocker_task_id!r}")
@@ -545,7 +561,11 @@ def update_status(
         validate_transition,
     )
 
-    model = _require_task(session, task_id)
+    # ADO-200: project_id=None — легаси-долг. Публичные сигнатуры update_status,
+    # _update_text_field, update_priority, move_to_section, complete,
+    # set_blocker, clear_blocker и log_progress в этой задаче не меняются,
+    # скоупа проекта у них нет — поиск по всей БД, как раньше.
+    model = _require_task(session, task_id, project_id=None)
     old_status = model.status
     target_status = canonical_task_status(new_status)
     # Сравнение по бакету, а не по строке: `todo → pending` — не переход, а
@@ -640,7 +660,7 @@ def _update_text_field(
     No-ops when value is unchanged. Writes a TASK revision with
     op=`<field>` carrying old/new content (length-only when very long).
     """
-    model = _require_task(session, task_id)
+    model = _require_task(session, task_id, project_id=None)
     old_value = getattr(model, field) or ""
     if old_value == new_value:
         t = TaskRepository(session).get_by_task_id(task_id)
@@ -744,7 +764,7 @@ def update_priority(
     ``activity_service.write_revision_and_emit_event`` (правило ADO-040);
     ``actor_kind`` выводится из ``author``.
     """
-    model = _require_task(session, task_id)
+    model = _require_task(session, task_id, project_id=None)
     old_priority = model.priority
     if old_priority == new_priority.value:
         t = TaskRepository(session).get_by_task_id(task_id)
@@ -805,7 +825,7 @@ def move_to_section(
     No-op, когда задача уже в целевой секции. Revision и activity event
     пишутся одним атомарным вызовом (правило ADO-040).
     """
-    model = _require_task(session, task_id)
+    model = _require_task(session, task_id, project_id=None)
     old_section_id = model.section_id
     if old_section_id == new_section_id:
         t = TaskRepository(session).get_by_task_id(task_id)
@@ -888,7 +908,7 @@ def complete(
     """
     from cod_doc.services.task_status_machine import is_terminal, validate_transition
 
-    model = _require_task(session, task_id)
+    model = _require_task(session, task_id, project_id=None)
 
     if model.status == TaskStatus.DONE.value:
         raise TaskAlreadyDoneError(task_id)
@@ -1166,7 +1186,7 @@ def set_blocker(
     if not reason or not reason.strip():
         raise ValueError("reason must be non-empty")
 
-    model = _require_task(session, task_id)
+    model = _require_task(session, task_id, project_id=None)
     old_reason = model.blocked_reason
     model.blocked_reason = reason
     model.last_updated = datetime.now(UTC)
@@ -1204,7 +1224,7 @@ def clear_blocker(
     author: str,
 ) -> Task:
     """Clear the external blocker on a task (no-op if already clear)."""
-    model = _require_task(session, task_id)
+    model = _require_task(session, task_id, project_id=None)
     if model.blocked_reason is None:
         t = TaskRepository(session).get(model.row_id)
         assert t is not None
@@ -1243,6 +1263,7 @@ def clear_blocker(
 def remove_dependency(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     blocker_task_id: str,
     author: str,
@@ -1256,9 +1277,12 @@ def remove_dependency(
     ``task.dependency_removed`` activity event (proposal 09 / PCA-912
     extension — the service emits directly so CLI/programmatic callers
     participate in the audit timeline).
+
+    Обе задачи ищутся в проекте ``project_id`` (ADO-200): задача другого
+    проекта с тем же ID — :class:`TaskNotFoundError`, а не чужое ребро.
     """
-    model = _require_task(session, task_id)
-    blocker_model = _require_task(session, blocker_task_id)
+    model = _require_task(session, task_id, project_id=project_id)
+    blocker_model = _require_task(session, blocker_task_id, project_id=project_id)
 
     edge = session.execute(
         select(DependencyModel).where(
@@ -1371,7 +1395,7 @@ def log_progress(
     if not message or not message.strip():
         raise ValueError("message must be non-empty")
 
-    model = _require_task(session, task_id)
+    model = _require_task(session, task_id, project_id=None)
     model.last_updated = datetime.now(UTC)
     session.flush()
 

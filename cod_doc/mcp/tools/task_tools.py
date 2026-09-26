@@ -738,9 +738,10 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                require_project_id(session, project)
+                project_id = require_project_id(session, project)
                 t = task_service.remove_dependency(
                     session,
+                    project_id=project_id,
                     task_id=task_id,
                     blocker_task_id=blocker_id,
                     author=author,
