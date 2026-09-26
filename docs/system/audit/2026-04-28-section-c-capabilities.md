@@ -5,7 +5,7 @@ status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-28
-last_updated: 2026-05-02
+last_updated: 2026-09-26
 audit_target_revision: HEAD = 37c45b1 (post COD-013/014/020/022/023 + Section B/C done)
 related_docs:
   - ../MASTER.md
@@ -83,7 +83,7 @@ related_docs:
 
 ### SC-HI-4. ✅ → задача COD-014a. LinkService.rename не каскадит markdown-relative ссылки
 
-**Где:** [cod_doc/services/link_service.py:rename_cascade](../../../cod_doc/services/link_service.py).
+**Где:** [cod_doc/services/link_service.py:rename_cascade](../../../cod_doc/services/link_service/).
 
 **Симптом:** COD-013 в `rename_cascade` намеренно пропускает markdown-relative ссылки `[label](../path.md)` — слишком хрупко без mapping'a путей. Canonical refs `[[doc:KEY]]` обновляются. Это документированный gap, не баг, но он создаёт битые ссылки в проекциях после rename.
 

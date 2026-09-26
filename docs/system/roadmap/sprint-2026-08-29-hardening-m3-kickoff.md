@@ -1,12 +1,12 @@
 ---
 type: sprint-plan
 scope: adoption-2026-08
-status: active
+status: done
 source_of_truth: false
 canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
 created: 2026-08-29
-last_updated: 2026-08-29
+last_updated: 2026-09-26
 closed: 2026-08-29 (досрочно)
 audit: ../audit/2026-09-05-sprint-h1-hardening.md
 audience: [next-session-agent, contributors]

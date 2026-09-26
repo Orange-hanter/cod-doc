@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: sprint-m2-feedback-loop
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-08-28
-last_updated: 2026-08-29
+last_updated: 2026-09-26
 related_docs:
   - ../roadmap/ROADMAP.md
   - ../roadmap/sprint-2026-08-28-m2-feedback-loop.md
@@ -57,7 +57,7 @@ audience: [contributors, agents]
 ### Стретч — SYM-007 (ADR-мост ZAIrgRush)
 
 13/13 ADR проекта ZAIrgRush заведены в adr-систему проекта `zairgrush`;
-оформлены supersede-связи ADR-004→ADR-003 и ADR-008→ADR-007. Источник
+оформлены supersede-связи `ADR-004`→`ADR-003` и `ADR-008`→`ADR-007` (номера реестра проекта `zairgrush`, не cod-doc). Источник
 `decisions.jsonl` перенесён в репо владельца
 (`ZAIrgRush/experiments/decisions.jsonl`) — с одобрения владельца.
 

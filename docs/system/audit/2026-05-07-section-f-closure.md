@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: paperclip-adoption / Section F (Tooling fixes)
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-07
-last_updated: 2026-05-07
+last_updated: 2026-09-26
 audience: [contributors, next-session-agent]
 related_docs:
   - 2026-05-07-doc-consolidation-cycle-2.md

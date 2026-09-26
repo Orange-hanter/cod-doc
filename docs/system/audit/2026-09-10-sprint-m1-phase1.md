@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: sprint-m1-phase1
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-08-28
-last_updated: 2026-08-28
+last_updated: 2026-09-26
 related_docs:
   - ../roadmap/ROADMAP.md
   - 2026-07-29-state-of-the-project.md

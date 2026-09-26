@@ -4,7 +4,7 @@ status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-07-29
-last_updated: 2026-07-29
+last_updated: 2026-09-26
 audience: [contributors, agents]
 related_docs:
   - HANDBOOK.md
@@ -233,13 +233,16 @@ cod-doc search "<термин>" -p <slug>   # найти без grep по 50 ф�
 cod-doc doc drift -p <slug> --all     # доки не разъехались?
 ```
 
-Через MCP (Claude Code / Claude Desktop) — вместо ручного чейнинга:
+Через MCP (Claude Code / Claude Desktop) — curator-цикл профиля `agent`
+(RFC 25): агент по умолчанию курирует документацию, а не берёт задачи.
 
 ```
-agent_capabilities()                  # L0: кто я, какие скиллы
-agent_pick(project="<slug>", agent_id="claude")   # задача + контекст + скиллы одним вызовом
-… работа …
-agent_complete(task_id=..., agent_id="claude")
+agent_capabilities()                              # L0: роль doc-curator, скиллы, запреты
+curator_next(project="<slug>")                    # очередь «что чинить»: дрейф, битые ссылки,
+                                                  # протухшие хэши, findings — с командой на пункт
+ctx_search(project="<slug>", query="<термин>")    # найти документ по пункту очереди
+context_get(project="<slug>", target_kind="document", target_id="<doc_key>")
+… починка: правка → cod-doc doc import → cod-doc hash update …
 ```
 
 Подключение MCP — `.mcp.json` в корне рабочего проекта:
@@ -256,8 +259,13 @@ agent_complete(task_id=..., agent_id="claude")
 }
 ```
 
-Профиль `agent` даёт 6 тулов вместо 103 — именно то, что нужно в рабочей
-сессии. `standard` / `full` — для админских сценариев и отладки.
+Профиль `agent` даёт 6 тулов вместо 143 (`standard`) — именно то, что
+нужно в рабочей сессии. `standard` / `full` (147) — для админских сценариев
+и отладки.
+
+> **Task-centric цикл** (`agent_pick` → работа → `agent_complete`) — для
+> coding-агента, исполняющего задачи: эти тулы видны только на
+> `--profile standard|full`, дефолтный агент-куратор их не получает.
 
 ---
 

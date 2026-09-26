@@ -19,7 +19,7 @@
 
 
 ## 🔍 Validation Block
-- [ ] Хэши ссылок сверены (`python tools/hash_calc.py update MASTER.md`)
+- [ ] Хэши ссылок сверены (`cod-doc hash update` из корня репо) и изменённые .md импортированы (`cod-doc doc import <file> -p <slug>`)
 - [ ] Self-check JSON прикреплён (см. ниже)
 - [ ] Changelog в `MASTER.md` обновлён
 - [ ] Нет выдуманных артефактов — все ссылки указывают на реальные файлы

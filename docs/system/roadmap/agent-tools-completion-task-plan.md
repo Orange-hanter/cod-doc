@@ -1,24 +1,24 @@
 ---
 type: execution-plan
 scope: agent-tools-completion
-status: draft
+status: done
 source_of_truth: true
 owner: cod-doc core
 created: 2026-06-04
-last_updated: 2026-06-04
+last_updated: 2026-09-26
 audience: [contributors, agents]
 related_docs:
-  - ../../proposals/README.md
-  - ../../proposals/16-ai-pair-hacker.md
-  - ../../proposals/20-multi-agent-standup.md
-  - ../../audit/2026-06-04-self-improvement-compared.md
-  - ../../standards/task-plan.md
+  - ../../../proposals/README.md
+  - ../../../proposals/16-ai-pair-hacker.md
+  - ../../../proposals/20-multi-agent-standup.md
+  - ../audit/2026-06-04-self-improvement-compared.md
+  - ../standards/task-plan.md
 principle: fix-first
 ---
 
 # Agent Tools Completion — Execution Plan
 
-> Закрытие P0-1 из [self-improvement audit](../../audit/2026-06-04-self-improvement-compared.md):
+> Закрытие P0-1 из [self-improvement audit](../audit/2026-06-04-self-improvement-compared.md):
 > 5 из 6 cycle-5 agent-profile тулов помечены в `agent_tools.py` как «stubs»,
 > хотя их bodies **уже реализованы** в `services/agent_service.py`. Реальный
 > scope: убрать misleading docstring, дописать недостающие integration-тесты
@@ -27,8 +27,8 @@ principle: fix-first
 ## Navigation
 
 - [System MASTER](../MASTER.md)
-- [Self-improvement audit](../../audit/2026-06-04-self-improvement-compared.md) — P0-1
-- [Task-plan standard](../../standards/task-plan.md)
+- [Self-improvement audit](../audit/2026-06-04-self-improvement-compared.md) — P0-1
+- [Task-plan standard](../standards/task-plan.md)
 
 ## Gap Analysis Summary
 
@@ -52,10 +52,16 @@ principle: fix-first
 
 | Section | Tasks | Status |
 |:--------|------:|:-------|
-| A: Docstring + AGENTS.md accuracy | 3 | 🟡 pending |
-| B: Integration tests via mcp.call_tool | 4 | 🟡 pending |
-| C: Manual smoke-test + audit | 2 | 🟡 pending |
-| **TOTAL** | **9** | 🟡 pending |
+| A: Docstring + AGENTS.md accuracy | 3/3 | ✅ done |
+| B: Integration tests via mcp.call_tool | 4/4 | ✅ done |
+| C: Manual smoke-test + audit | 2/2 | ✅ done |
+| **TOTAL** | **9/9** | ✅ done |
+
+> **Закрыт (ADO-217 reconciliation, 2026-09-26).** План закрыт в рамках
+> STB-001; закрывающий аудит —
+> [2026-06-08-agent-tools-completion.md](../audit/2026-06-08-agent-tools-completion.md).
+> В БД плана с этим scope нет: markdown — единственная запись, статусы выше
+> приведены к факту. Секции ниже — исходная постановка.
 
 ## Dependency Graph
 
@@ -157,7 +163,7 @@ graph TD
 **Type:** docs · **Priority:** medium · **Depends on:** AGN-010..AGN-013
 
 **Acceptance:**
-- Создать `docs/system/audit/2026-06-04-agent-tools-completion.md` по формату [task-plan § Audit cadence](../../standards/task-plan.md).
+- Создать `docs/system/audit/2026-06-04-agent-tools-completion.md` по формату [task-plan § Audit cadence](../standards/task-plan.md).
 - TL;DR: «cycle-5 agent profile is fully functional, but had misleading docstring and no end-to-end MCP-level tests. Fixed: docstring (AGN-001), AGENTS.md (AGN-002), 4 integration tests (AGN-010..013). P0-1 closed».
 - Deliverables / Findings / Acceptance / Next step — по standard.
 

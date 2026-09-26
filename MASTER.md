@@ -1,6 +1,6 @@
 # 🧭 Project Navigator: cod-doc
 
-> 📊 Meta: `{"version": "3.0", "last_updated": "2026-09-20", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
+> 📊 Meta: `{"version": "3.1", "last_updated": "2026-09-26", "context_depth": "L0", "repo": "/Users/dakh/Git/_my/cod-doc"}`
 
 > **Этот файл — тонкий L0-навигатор для агента и нового контрибьютора.**
 > Source of truth целевого состояния системы — [`docs/system/MASTER.md`](docs/system/MASTER.md).
@@ -17,7 +17,8 @@
 - **Текущий статус:** 🟢 ACTIVE — **M5 «Гейт, которому можно верить + симбиоз в бою» закрыт 2026-09-06**.
   Прогон 2026-09-07: 1639 тестов зелёные, ruff/mypy чистые, ~137 документов
   (`stale_export`=0 после reconcile миграций 0026–0029). Поверхность:
-  126 MCP-тулов (профиль `agent` — 6), 12 скиллов, 6 ADR, 25 stories.
+  126 MCP-тулов на дату прогона (профиль `agent` — 6; на 2026-09-26 — 147,
+  профили 6/21/143/147), 12 скиллов, 6 ADR, 25 stories.
   CI на main впервые зелёный (`bcb32f2`, [run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088)).
 - **Агент-куратор документации закрыт 2026-09-20; текущий приоритет — adoption через симбиоз.**
   Дефолтный ИИ-агент **не исполняет продуктовые задачи** — поддерживает корпус,
@@ -92,7 +93,7 @@ graph TD
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
   capabilities/*, standards/*, audit/*, roadmap/*, migration/. Это source of
   truth для поведения системы и единая точка входа для контрибьютора.
-- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:2b50e6643b2a`
+- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:ac6b97ca42c5`
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
@@ -145,7 +146,8 @@ graph TD
 
 ### CI Pipeline (GitHub Actions)
 - **Описание:** Непрерывная интеграция: ruff-линтинг (blocking), mypy strict
-  (blocking), pytest matrix Python 3.11/3.12/3.13, Docker build + smoke test.
+  (blocking), pytest на Python 3.13 (единственная версия матрицы с ADO-097;
+  `requires-python >=3.13`), Docker build + smoke test.
 - **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:7c133a394eb3`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
@@ -187,7 +189,7 @@ graph TD
   БД вместо голого markdown, quick start на 5 строк, четыре поверхности,
   таблица ссылок на остальную документацию. Подставляется как
   `long_description` пакета (`pyproject.toml → readme`).
-- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:854acd4125da`
+- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:960fbd88d71a`
 - **Статус:** `🟢 VERIFIED`
 
 ### Handbook (пользовательский справочник)
@@ -207,13 +209,13 @@ graph TD
   накопленным markdown: починка конфига, выбор пилота, 4 архетипа проектов,
   ежедневный цикл, известные шероховатости. В отличие от tutorial — про
   живые репозитории, а не про пример с нуля.
-- **Ссылка:** `📁 /docs/adoption-playbook.md | 🗃️ doc:docs_adoption-playbook_md | 🔑 sha:9ba4d87dc9c2`
+- **Ссылка:** `📁 /docs/adoption-playbook.md | 🗃️ doc:docs_adoption-playbook_md | 🔑 sha:01e5d3bb945c`
 - **Статус:** `🟢 VERIFIED`
 
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:d8e5e5cd4c7d`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:0538afee2faa`
 - **Статус:** `🟢 VERIFIED`
 
 ### Zsh-дополнение
@@ -234,7 +236,7 @@ graph TD
 - **Описание:** Proposal программы симбиоза: cod-doc отдаёт спеки/ADR/контекст,
   пилоты возвращают findings и измерения. Решение 2026-08-25 о переназначении
   пилотов.
-- **Ссылка:** `📁 /proposals/22-symbiosis-zairgrush-orakul.md | 🗃️ doc:proposals_22-symbiosis-zairgrush-orakul_md | 🔑 sha:66518d72d119`
+- **Ссылка:** `📁 /proposals/22-symbiosis-zairgrush-orakul.md | 🗃️ doc:proposals_22-symbiosis-zairgrush-orakul_md | 🔑 sha:b1589ce06444`
 - **Статус:** `🟢 VERIFIED`
 
 ## 4. ⚡ Quick Actions & Handoffs
@@ -253,7 +255,7 @@ graph TD
       {"cmd": "pytest tests/ -v --tb=short --timeout=120", "desc": "Тесты с таймаутом 120s (как в CI)"}
     ],
     "docker": [
-      {"cmd": "docker build -t cod-doc .", "desc": "Локальная сборка образа (python:3.12-slim)"},
+      {"cmd": "docker build -t cod-doc .", "desc": "Локальная сборка образа (python:3.13-slim)"},
       {"cmd": "docker compose up -d", "desc": "Запуск сервиса (порт 8765, healthcheck через 15s)"},
       {"cmd": "docker compose down", "desc": "Остановка и удаление контейнера"}
     ],
@@ -270,7 +272,7 @@ graph TD
     "ci": {
       "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:7c133a394eb3",
       "trigger": "push / pull_request в main и develop",
-      "pipeline": "ruff → mypy → pytest (матрица 3.11/3.12/3.13) → docker build + smoke test"
+      "pipeline": "ruff → mypy → pytest (Python 3.13, ADO-097) → docker build + smoke test"
     },
     "cd": {
       "workflow": "📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:90c54859cba1",
@@ -294,20 +296,20 @@ graph TD
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
-| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `2b50e6643b2a` | 2026-09-20 | 🟢 VERIFIED |
+| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `ac6b97ca42c5` | 2026-09-20 | 🟢 VERIFIED |
 | 3 | proposals/README.md | `doc:proposals_README_md` | `df79dabd2c5c` | 2026-09-20 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `7c133a394eb3` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `90c54859cba1` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
 | 7 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-09-11 | 🟡 LEGACY |
 | 8 | Доменные модели (legacy) | `doc:models_domain_md` | `8ce613932ac9` | 2026-09-17 | 🟡 LEGACY |
-| 9 | README (витрина) | `doc:README_md` | `854acd4125da` | 2026-09-11 | 🟢 VERIFIED |
+| 9 | README (витрина) | `doc:README_md` | `960fbd88d71a` | 2026-09-11 | 🟢 VERIFIED |
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `b471c0708631` | 2026-09-20 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
-| 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `9ba4d87dc9c2` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `d8e5e5cd4c7d` | 2026-09-20 | 🟢 VERIFIED |
+| 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `01e5d3bb945c` | 2026-09-11 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `0538afee2faa` | 2026-09-20 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `a1b0f5ac5b01` | 2026-09-20 | 🟢 VERIFIED |
-| 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `66518d72d119` | 2026-09-20 | 🟢 VERIFIED |
+| 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `b1589ce06444` | 2026-09-20 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
 | 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
 | 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `97648d0ab324` | 2026-09-20 | 🟢 VERIFIED |
@@ -358,6 +360,14 @@ graph TD
 ```json
 {
   "changelog": [
+    {
+      "date": "2026-09-26",
+      "version": "3.1",
+      "action": "ADO-217: разбор находок демона doc-review. Meta догнала реестр: 2026-09-23 в Validation Table добавлена строка 21 — RFC 27 agent fit (план agent-fit-2026-09), changelog её не отражал. Счётчик MCP-тулов в «Текущем статусе» помечен датой прогона (сейчас 147, профили 6/21/143/147); CI-матрица §3/§4 — только Python 3.13 (ADO-097), образ Docker — python:3.13-slim.",
+      "author": "agent:claude-opus-5-5",
+      "scope": "master",
+      "task": "ADO-217"
+    },
     {
       "date": "2026-09-20",
       "version": "3.0",

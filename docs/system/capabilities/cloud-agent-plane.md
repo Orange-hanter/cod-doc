@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-07-29
-last_updated: 2026-09-15
+last_updated: 2026-09-26
 related_docs:
   - ../ARCHITECTURE.md
   - ../VISION.md
@@ -28,7 +28,15 @@ related_docs:
 Реализовано локально: MCP `--transport streamable-http` слушает
 `127.0.0.1` по умолчанию; `POST /settings` — loopback-only (403 иначе,
 SYM-003). Bearer/TLS, Postgres-SoT и cloud-профиль **не** реализованы.
-Agent profile — 6 тулов. SoT по-прежнему embedded SQLite.
+Agent profile — 6 curator-тулов (CUR-008, 2026-09-19): `agent_capabilities`,
+`curator_next`, `ctx_search`, `ctx_drift`, `context_get`, `agent_report`.
+SoT по-прежнему embedded SQLite.
+
+> **Контракт cycle-5 в §1/§3 заменён RFC 25 (ADO-217).** Дефолтный агент —
+> куратор документации, задач он не исполняет; `agent_pick` /
+> `agent_complete` видны только на `--profile standard|full`, `agent_apply`
+> не заведён. MCP `doc_patch_section` зарегистрирован (2026-09-18). Тела
+> §1/§3 ниже — исходная постановка RFC 23 (DRAFT), не текущий контракт.
 
 ## 1. Проблема
 
@@ -80,6 +88,10 @@ proposals/README «Что осталось за скобками»).
    не SaaS-тенанты). Федерация узлов — out of scope этой capability.
 
 ## 3. Контракт для ИИ («полностью через сервис»)
+
+> ⚠️ Исторический контракт cycle-5 (RFC 23 DRAFT). После RFC 25 / CUR-008
+> профиль `agent` — curator-набор, агент задач не берёт, `agent_apply` не
+> заведён; см. §0 и [agents-and-skills §0](agents-and-skills.md).
 
 Агент **не** редактирует markdown файлы проекта напрямую как SoT.
 Канонический цикл:

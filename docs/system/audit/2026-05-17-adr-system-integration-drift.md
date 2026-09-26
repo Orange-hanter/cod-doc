@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: adr-system-integration
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-17
-last_updated: 2026-05-17
+last_updated: 2026-09-26
 related_docs:
   - ../capabilities/adr-system.md
   - ../adr-vision.html

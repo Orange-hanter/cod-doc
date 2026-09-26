@@ -49,7 +49,7 @@ The payload contains the checked-out task and skill bodies from `cod_doc/skills/
 
 ### Notes
 
-TSC-002. Claims match code as of 2026-09-15.
+TSC-002. Claims match code as of 2026-09-15. ADO-217: tools live on `--profile standard|full` only; the default agent (doc curator, RFC 25 / CUR-008) does not take tasks.
 
 ## SCN-052 — agent_pick on an empty ready-set returns no_ready_tasks
 
@@ -71,7 +71,7 @@ The result is `{"task": null, "reason": "no_ready_tasks"}`.
 
 ### Notes
 
-TSC-002. Claims match code as of 2026-09-15.
+TSC-002. Claims match code as of 2026-09-15. ADO-217: tools live on `--profile standard|full` only; the default agent (doc curator, RFC 25 / CUR-008) does not take tasks.
 
 ## SCN-053 — The agent MCP profile exposes exactly six tools
 
@@ -89,11 +89,11 @@ The server is started with `--profile agent`.
 
 ### Expected result
 
-The catalog is `agent_pick`, `agent_report`, `agent_complete`, `agent_release`, `agent_get`, `agent_capabilities`.
+The catalog is `agent_capabilities`, `curator_next`, `ctx_search`, `ctx_drift`, `context_get`, `agent_report` (curator set, CUR-008; canon — tests/test_server_profiles.py).
 
 ### Notes
 
-TSC-002. Claims match code as of 2026-09-15.
+TSC-002. ADO-217: rewritten to the post-CUR-008 (2026-09-19) curator set; `agent_pick`/`agent_get`/`agent_complete`/`agent_release` moved to `standard`/`full`.
 
 ## SCN-054 — Agent behaviour is extended by SKILL.md, not the system prompt
 
@@ -137,4 +137,4 @@ The task is `done` via `task_service.complete` (revision + activity event).
 
 ### Notes
 
-TSC-002. Claims match code as of 2026-09-15.
+TSC-002. Claims match code as of 2026-09-15. ADO-217: tools live on `--profile standard|full` only; the default agent (doc curator, RFC 25 / CUR-008) does not take tasks.

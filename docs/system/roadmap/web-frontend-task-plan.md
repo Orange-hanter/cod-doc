@@ -1,10 +1,10 @@
 ---
 type: execution-plan
 scope: web-frontend
-status: in-progress
+status: done
 principle: test-first
 created: 2026-04-28
-last_updated: 2026-05-02
+last_updated: 2026-09-26
 source_of_truth:
   capability: docs/system/capabilities/web-frontend.md
   architecture: docs/system/ARCHITECTURE.md
@@ -33,11 +33,15 @@ related_audits:
 | A: Scaffold | inline | 3 | 3 | 0 | ✅ done |
 | B: Read views | inline | 6 | 6 | 0 | ✅ done (WEB-010, 006, 014, 021, 004, 060) |
 | C: Write paths | inline | 3 | 3 | 0 | ✅ done (WEB-011, WEB-022, WEB-012) |
-| D: Live ops | inline | 2 | 0 | 2 | ❌ pending |
-| E: Architecture Hygiene | inline | 3 | 2 | 1 | 🔄 in-progress (WEB-040, 041 ✅; 042 pending) |
+| D: Live ops | inline | 2 | 2 | 0 | ✅ done (WEB-030 — WebSocket вместо SSE, ADO-115; WEB-031 — STB-003) |
+| E: Architecture Hygiene | inline | 3 | 3 | 0 | ✅ done (WEB-040, 041; 042 — STB-004) |
 | F: Hardening (NEW 2026-05-02) | inline | 6 | 6 | 0 | ✅ done (WEB-005, 013, 050, 051, 052, 053) |
 | F-tail: Polish from checkpoints | inline | 5 | 5 | 0 | ✅ done (WEB-013b, 022b, 054, 053b, 014b) |
-| **TOTAL** |  | **28** | **25** | **3** | |
+| **TOTAL** |  | **28** | **28** | **0** | ✅ done |
+
+> **Закрыт (ADO-217 reconciliation, 2026-09-26).** WEB-031/042 закрыты STB-003/004
+> (см. [state-of-the-project](../audit/2026-07-29-state-of-the-project.md)); run-консоль
+> WEB-030 живёт на `/p/{slug}/run` поверх WebSocket, а не SSE. В БД плана с этим scope нет.
 
 > **Изменено 2026-05-02** на основе [audit-отчёта](../audit/2026-05-02-section-web-frontend.md):
 > добавлены 10 задач (WEB-005, 006, 013, 014, 041, 042, 050..053, 060), приоритет
@@ -501,7 +505,7 @@ HTMX `hx-swap-oob` либо cookie-flash + 303 на Referer для form-post к�
 id: WEB-030
 title: "Implement: SSE run console (Orchestrator stream)"
 section: D-Live-Ops
-status: pending
+status: done
 depends_on: [WEB-002]
 type: feature
 priority: medium
@@ -515,7 +519,7 @@ priority: medium
 id: WEB-031
 title: "Implement: import progress stream (Restate importer)"
 section: D-Live-Ops
-status: pending
+status: done
 depends_on: [WEB-030]
 type: feature
 priority: low
@@ -640,7 +644,7 @@ SW-ME-2 в аудите).
 id: WEB-042
 title: "Doc/code sync helper: capability §3 ↔ реальность"
 section: E-Architecture-Hygiene
-status: pending
+status: done
 depends_on: []
 type: feature
 priority: medium

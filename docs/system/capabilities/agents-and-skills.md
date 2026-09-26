@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-15
+last_updated: 2026-09-26
 related_docs:
   - ../audit/2026-04-19-initial-audit.md
 ---
@@ -17,9 +17,17 @@ related_docs:
 
 ## 0. As implemented (2026-09-15)
 
-MCP `agent_pick` / `agent_get` / `agent_report` / `agent_complete` /
-`agent_release` / `agent_capabilities` (профиль `agent` — ровно 6 тулов).
-Пустой ready-set → `{"task": null, "reason": "no_ready_tasks"}`. Скиллы —
+Профиль `agent` (дефолтный) — ровно 6 curator-тулов после CUR-008
+(2026-09-19, RFC 25): `agent_capabilities`, `curator_next`, `ctx_search`,
+`ctx_drift`, `context_get`, `agent_report`; `agent_capabilities()` отдаёт
+`role: "doc-curator"` и `forbidden: [agent_pick, task_checkout,
+task_complete]`. Канон счётчиков — `tests/test_server_profiles.py`
+(6/21/143/147).
+
+Task-centric тулы `agent_pick` / `agent_get` / `agent_complete` /
+`agent_release` остались зарегистрированы, но видны только на
+`--profile standard|full` — для coding-агента. Пустой ready-set у
+`agent_pick` → `{"task": null, "reason": "no_ready_tasks"}`. Скиллы —
 `cod_doc/skills/<name>/SKILL.md`, подбор `skill_matcher`. CLI `cod-doc agent`
 не дублирует каждый `agent_*` тул.
 

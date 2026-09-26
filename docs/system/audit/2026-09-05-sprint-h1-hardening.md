@@ -1,7 +1,7 @@
 ---
 type: audit-report
 scope: sprint-h1-2026-08-29
-status: active
+status: resolved
 owner: cod-doc core
 created: 2026-08-29
 audience: [next-session-agent, contributors]

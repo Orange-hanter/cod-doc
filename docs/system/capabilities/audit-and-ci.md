@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-15
+last_updated: 2026-09-26
 related_docs:
   - ../audit/2026-04-19-initial-audit.md
   - ../audit/2026-04-28-section-c-capabilities.md
@@ -35,7 +35,7 @@ related_docs:
 
 ### 2.1 Frontmatter (см. [standards/frontmatter.md](../standards/frontmatter.md))
 
-Коды и severity синхронизированы с [`cod_doc/services/validation.py`](../../../cod_doc/services/validation.py) (COD-020 + последующие).
+Коды и severity синхронизированы с [`cod_doc/services/validation/`](../../../cod_doc/services/validation/) (COD-020 + последующие).
 
 | ID | Severity | Описание | Где реализовано |
 |----|----------|----------|------------------|
