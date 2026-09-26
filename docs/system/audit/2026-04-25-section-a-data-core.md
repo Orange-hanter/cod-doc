@@ -5,7 +5,7 @@ status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-25
-last_updated: 2026-04-25
+last_updated: 2026-09-26
 audit_target_revision: section-a-closed (COD-001 … COD-005); фиксы — миграция 0006_views_and_defaults
 related_docs:
   - ../DATA_MODEL.md
@@ -38,7 +38,7 @@ Section A **закрыта окончательно**. Все functional-зам�
 | Артефакт | Файлы |
 |----------|-------|
 | Миграции | [0001_core](../../../cod_doc/infra/migrations/versions/20260419_0001_core.py), [0002_tasks](../../../cod_doc/infra/migrations/versions/20260425_0002_tasks.py), [0003_stories](../../../cod_doc/infra/migrations/versions/20260425_0003_stories.py), [0004_revisions](../../../cod_doc/infra/migrations/versions/20260425_0004_revisions.py), [0005_links_tags](../../../cod_doc/infra/migrations/versions/20260425_0005_links_tags.py) |
-| ORM-модели | [cod_doc/infra/models.py](../../../cod_doc/infra/models.py) (503 строки, 19 моделей) |
+| ORM-модели | [cod_doc/infra/models.py](../../../cod_doc/infra/models/) (503 строки, 19 моделей) |
 | Domain-сущности | [cod_doc/domain/entities.py](../../../cod_doc/domain/entities.py) (345 строк, 14 dataclass + 12 enum) |
 | Тесты | `tests/infra/` — 5 файлов, 29 кейсов |
 | Спека | [DATA_MODEL.md](../DATA_MODEL.md) §3.1-§3.13, §4.1-§4.3 |
