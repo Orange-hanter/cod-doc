@@ -6,6 +6,8 @@ import hashlib
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import pytest
+
 from cod_doc.domain.entities import Project as ProjectEntity
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import DocumentModel
@@ -256,16 +258,15 @@ def test_explicit_type_wins_over_diataxis(engine_with_schema) -> None:  # type: 
 
 
 def test_foreign_statuses_map_through_the_alias_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    """`final` / `living` / `done` / `resolved` are renames, not draft documents.
+    """`final` / `living` / `completed` / `stable` are renames, not draft documents.
 
-    `resolved` sits here and not in the `deprecated` bucket on purpose: nine
-    audit reports in this very repo carry it, and a closed audit is a finished
-    document, not one withdrawn from service (§2b of the frontmatter standard).
+    `done` and `resolved` used to be in this list; ADO-218 made them values of
+    their own (see the tests below), so they no longer bend.
     """
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         project_id = _seed_project(session)
-        for i, alien in enumerate(("final", "living", "done", "resolved")):
+        for i, alien in enumerate(("final", "living", "completed", "stable")):
             report = _import(
                 session, project_id, f"s{i}", f"---\nstatus: {alien}\n---\n\n# T\n\nBody.\n"
             )
@@ -571,3 +572,24 @@ def test_authoritative_survives_a_reimport(engine_with_schema) -> None:  # type:
         assert model is not None
         assert model.status == "authoritative"
         assert report.warnings == []
+
+
+@pytest.mark.parametrize("status", ["resolved", "done"])
+def test_terminal_work_statuses_are_stored_as_authored(engine_with_schema, status: str) -> None:  # type: ignore[no-untyped-def]
+    """ADO-218: a closed audit (`resolved`) and a closed plan (`done`) keep their status.
+
+    Before, the alias table stored both as `active`: the DB could not tell a
+    closed audit from a live one, and every such file was metadata drift.
+    Checked on the update path too — re-imports are where a coercion sticks.
+    """
+    raw = f"---\nstatus: {status}\n---\n\n# T\n\nBody.\n"
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        for _ in range(2):
+            report = _import(session, project_id, "closed", raw)
+            model = session.get(DocumentModel, report.document.row_id)
+            assert model is not None
+            assert model.status == status
+            assert report.warnings == []
+

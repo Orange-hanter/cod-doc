@@ -279,7 +279,7 @@ def _docs_screen_context(
             "review": sum(1 for d in documents if d["status"] == "review"),
             "deprecated": sum(1 for d in documents if d["status"] == "deprecated"),
         },
-        "doc_status_options": ["draft", "review", "active", "authoritative", "deprecated"],
+        "doc_status_options": ["draft", "review", "active", "authoritative", "resolved", "done", "deprecated"],
     }
 
 
@@ -438,7 +438,7 @@ def doc_new_form(
         {
             "project": {"name": proj.entry.name},
             "document_types": _DOCUMENT_TYPES,
-            "doc_status_options": ["draft", "review", "active", "authoritative", "deprecated"],
+            "doc_status_options": ["draft", "review", "active", "authoritative", "resolved", "done", "deprecated"],
             "sensitivity_options": ["public", "internal", "confidential", "restricted"],
             "prefill_description": description,
             "prefill_type": type,

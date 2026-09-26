@@ -3,7 +3,7 @@
 `curator_next(project="cod-doc")` весил ≈25 КБ при восьми пунктах очереди:
 `in_sync`-строки с расхождением frontmatter шли в `card.drift.issues` целиком,
 а тела четырёх скиллов инлайнились безусловно. Фикстура воспроизводит первую
-причину в масштабе: 40 документов, из них 30 — `in_sync` с `status: resolved`,
+причину в масштабе: 40 документов, из них 30 — `in_sync` с `status: implemented`,
 которого нет в enum (ADO-092). Импорт хранит fallback, файл — своё, хэши
 содержимого совпадают, и только `metadata_mismatch` знает о расхождении.
 
@@ -47,7 +47,7 @@ _BROKEN_LINK_DOCS = 5
 _RESOLVED = """---
 title: Doc {n}
 type: guide
-status: resolved
+status: implemented
 owner: human:dakh
 ---
 # Doc {n}
