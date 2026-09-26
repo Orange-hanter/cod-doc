@@ -5,22 +5,26 @@
 только исполнение: куратор кладёт на каждый пункт очереди готовую команду в
 ``suggested_action``, но сам ничего не делает.
 
-Чинятся ровно четыре класса находок:
+Чинятся ровно пять классов находок:
 
 ===================  =========================================================
 ``edited_in_place``  файл правлен на диске, БД отстала → ``import_document``
 hash ``STALE``       реестр ``MASTER.md`` разошёлся с файлом → ``update_hashes``
 битые ссылки         derived-таблица ``link`` протухла → sync + resolve секций
 протухшие замки      ``checked_out_at`` старше TTL → ``release_stale``
+дерева нет           проект старше ADO-116, ``doc_node`` пуст → ``init_tree``
 ===================  =========================================================
 
 Не чинятся никогда: ``stale_export`` (в files-are-source режиме это норма),
 ``missing`` (вслепую не пересоздаём), hash ``BROKEN`` (пересчёт только
-предупредит, файла всё равно нет), ``unplaced`` и внешние findings. Все они
+предупредит, файла всё равно нет), ``unplaced`` и внешние findings.
+Засев дерева (ADO-224) — не раскладка: разделы появляются, документы
+остаются в Инбоксе, потому что ``classify --apply`` — решение человека со
+своим dry-run. Все они
 уходят в ``RepairResult.reported_only`` счётчиками. ``doc export`` не зовётся
 вовсе — он под guard'ом до byte-identical round-trip.
 
-Любой из четырёх видов вызывающий может выключить через ``skip_kinds``
+Любой из пяти видов вызывающий может выключить через ``skip_kinds``
 (``--skip-links`` и родня). Выключенное действие остаётся в плане и в отчёте
 с ``skipped=True``: находка никуда не делась, её просто не чинят в этом
 прогоне.
@@ -58,7 +62,13 @@ from sqlalchemy import select
 
 from cod_doc.core.hash_calc import LINK_PATTERN, update_hashes
 from cod_doc.infra.models import DocumentModel, SectionModel, TaskModel
-from cod_doc.services import activity_service, checkout_service, curator_service, doc_service
+from cod_doc.services import (
+    activity_service,
+    checkout_service,
+    curator_service,
+    doc_service,
+    doc_tree_service,
+)
 from cod_doc.services import link_service as link_svc
 from cod_doc.services.projection_service import DriftStatus, import_document
 
@@ -88,14 +98,16 @@ KIND_DOC_IMPORT = "doc_import"
 KIND_HASH_UPDATE = "hash_update"
 KIND_LINK_BACKFILL = "link_backfill"
 KIND_RELEASE_STALE = "release_stale"
+KIND_TREE_SEED = "tree_seed"
 
-#: Все четыре вида присутствуют в ``curable`` всегда, даже нулями: форма
+#: Все пять видов присутствуют в ``curable`` всегда, даже нулями: форма
 #: отчёта не должна зависеть от того, что нашлось в конкретном прогоне.
 _KINDS: tuple[str, ...] = (
     KIND_DOC_IMPORT,
     KIND_HASH_UPDATE,
     KIND_LINK_BACKFILL,
     KIND_RELEASE_STALE,
+    KIND_TREE_SEED,
 )
 
 #: Статусы реестра хэшей из ``hash_calc.check_stale_refs``.
@@ -367,6 +379,18 @@ def _build_actions(
         )
         for task_id in _stale_locks(session, ctx.project_id, ctx.ttl_minutes)
     )
+
+    # ADO-224: дерево засевает только `project init`, а миграция 0035 создала
+    # `doc_node` пустой — у проекта старше ADO-116 без этой чинилки дерево
+    # не появится никогда.
+    if not card["unplaced"]["tree_seeded"]:
+        actions.append(
+            RepairAction(
+                kind=KIND_TREE_SEED,
+                ref=ctx.slug,
+                detail="дерево разделов не заведено — засеять дефолтное",
+            )
+        )
     return _mark_skipped(actions, ctx.skip_kinds)
 
 
@@ -549,11 +573,23 @@ def _run_release_stale(session: Session, action: RepairAction, ctx: _Context) ->
         action.detail = "замок снят до чистки — TTL уже не истёк"
 
 
+def _run_tree_seed(session: Session, action: RepairAction, ctx: _Context) -> None:
+    created = doc_tree_service.init_tree(
+        session,
+        project_id=ctx.project_id,
+        author=ctx.author,
+        reason="project_repair: дерево не заведено (ADO-224)",
+    )
+    action.applied = bool(created)
+    action.detail = f"разделов создано: {len(created)}"
+
+
 _RUNNERS: dict[str, Callable[[Session, RepairAction, _Context], None]] = {
     KIND_DOC_IMPORT: _run_doc_import,
     KIND_HASH_UPDATE: _run_hash_update,
     KIND_LINK_BACKFILL: _run_link_backfill,
     KIND_RELEASE_STALE: _run_release_stale,
+    KIND_TREE_SEED: _run_tree_seed,
 }
 
 
