@@ -26,6 +26,8 @@ from cod_doc.domain.entities import EntityKind, Revision, TaskStatus
 from cod_doc.infra.models import RevisionModel, SectionModel, TaskModel
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session
 
 
@@ -178,6 +180,36 @@ def head_for_entity(
     raises `RevisionConflictError`.
     """
     return _current_head(session, entity_kind, entity_id)
+
+
+def heads_for_entities(
+    session: Session,
+    entity_kind: EntityKind,
+    entity_ids: Sequence[int],
+) -> dict[int, str | None]:
+    """Batch-вариант :func:`head_for_entity`: head каждой сущности одним SELECT.
+
+    Порядок тот же, что у ``_current_head`` (at DESC, row_id DESC), head
+    сущности — первая строка её группы. Ключи — все переданные id; у сущности
+    без ревизий значение None. Пустой ``entity_ids`` — ``{}`` без запроса.
+    """
+    if not entity_ids:
+        return {}
+    heads: dict[int, str | None] = dict.fromkeys(entity_ids)
+    stmt = (
+        select(RevisionModel.revision_id, RevisionModel.entity_id)
+        .where(
+            RevisionModel.entity_kind == entity_kind.value,
+            RevisionModel.entity_id.in_(heads),
+        )
+        .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
+    )
+    seen: set[int] = set()
+    for revision_id, entity_id in session.execute(stmt):
+        if entity_id not in seen:
+            seen.add(entity_id)
+            heads[entity_id] = revision_id
+    return heads
 
 
 def list_recent_for_project(

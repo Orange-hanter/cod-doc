@@ -68,6 +68,7 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "task_remove_dependency" in tool_names
     assert "doc_list" in tool_names
     assert "doc_get" in tool_names
+    assert "doc_section_get" in tool_names
     assert "doc_export" in tool_names
     # ADO-022: the only way an agent can get past the fidelity guard
     assert "doc_backfill_projection" in tool_names

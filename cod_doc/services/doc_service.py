@@ -48,6 +48,8 @@ from cod_doc.services import activity_service, search_service, validation
 from cod_doc.services import revision_service as rev
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.orm import Session
 
 
@@ -289,6 +291,85 @@ def get_doc_by_id(session: Session, document_id: int) -> Document | None:
 
 def get_sections(session: Session, document_id: int) -> list[Section]:
     return SectionRepository(session).list_for_document(document_id)
+
+
+def read_sections(
+    session: Session, document_id: int, anchors: Sequence[str]
+) -> list[dict[str, Any]]:
+    """Тела секций документа по якорям — AFT-009 (RFC 27 F10).
+
+    Контракт: результат в порядке запроса, повторы якорей схлопнуты (первое
+    вхождение держит позицию). Найденная секция — ровно
+    ``{anchor, heading, level, body, content_hash, head_revision_id}``;
+    ненайденная — структурный miss по конвенции PCA-938 (как у ``task_get``):
+    ``{anchor, found: False, hint, available_anchors, related_tools}``, где
+    ``available_anchors`` — якоря документа в порядке ``position``.
+
+    Фильтр по якорю стоит в SQL, а не поверх ``get_sections`` или view
+    ``document_body``: чтение одной секции не должно тянуть тела остальных.
+    Якоря для miss читаются отдельным SELECT одной колонки и только когда miss
+    есть. Head всех найденных секций — одним запросом
+    (``revision_service.heads_for_entities``); ``head_revision_id`` годится
+    как ``expected_parent_revision_id`` для :func:`patch_section`.
+
+    Только чтение: ни ревизий, ни activity-событий.
+
+    Raises ValueError: пустой ``anchors`` или документа нет.
+    """
+    requested = list(dict.fromkeys(anchors))
+    if not requested:
+        raise ValueError("anchors must not be empty")
+    doc = session.get(DocumentModel, document_id)
+    if doc is None:
+        raise ValueError(f"document #{document_id} not found")
+
+    rows = session.execute(
+        select(SectionModel).where(
+            SectionModel.document_id == document_id, SectionModel.anchor.in_(requested)
+        )
+    ).scalars()
+    by_anchor = {row.anchor: row for row in rows}
+    heads = rev.heads_for_entities(
+        session, EntityKind.SECTION, [row.row_id for row in by_anchor.values()]
+    )
+
+    available: list[str] | None = None
+    result: list[dict[str, Any]] = []
+    for anchor in requested:
+        row = by_anchor.get(anchor)
+        if row is not None:
+            result.append(
+                {
+                    "anchor": row.anchor,
+                    "heading": row.heading,
+                    "level": row.level,
+                    "body": row.body,
+                    "content_hash": row.content_hash,
+                    "head_revision_id": heads[row.row_id],
+                }
+            )
+            continue
+        if available is None:
+            available = list(
+                session.execute(
+                    select(SectionModel.anchor)
+                    .where(SectionModel.document_id == document_id)
+                    .order_by(SectionModel.position)
+                ).scalars()
+            )
+        result.append(
+            {
+                "anchor": anchor,
+                "found": False,
+                "hint": (
+                    f"anchor '{anchor}' not found in document '{doc.doc_key}'; "
+                    "pick one of available_anchors"
+                ),
+                "available_anchors": available,
+                "related_tools": ["doc_get"],
+            }
+        )
+    return result
 
 
 def render_body(session: Session, document_id: int) -> str | None:

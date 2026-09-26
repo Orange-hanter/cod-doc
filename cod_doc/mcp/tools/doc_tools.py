@@ -32,9 +32,17 @@ def register(mcp: FastMCP) -> None:
         doc_key: str,
         include_sections: bool = False,
     ) -> dict[str, Any] | None:
-        """Get document metadata. Set include_sections=true to also return section list."""
+        """Get document metadata.
+
+        Set include_sections=true to also return the section list: each item is
+        ``{anchor, heading, level, position, content_hash, head_revision_id}``
+        without the body (read bodies with `doc_section_get`).
+        ``head_revision_id`` is the section's current head revision — pass it to
+        `doc_patch_section` as ``expected_parent_revision_id``.
+        """
+        from cod_doc.domain.entities import EntityKind
         from cod_doc.infra.db import transactional
-        from cod_doc.services import doc_service
+        from cod_doc.services import doc_service, revision_service
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
@@ -45,12 +53,19 @@ def register(mcp: FastMCP) -> None:
             result = doc_to_dict(d)
             if include_sections and d.row_id is not None:
                 sections = doc_service.get_sections(session, d.row_id)
+                heads = revision_service.heads_for_entities(
+                    session,
+                    EntityKind.SECTION,
+                    [s.row_id for s in sections if s.row_id is not None],
+                )
                 result["sections"] = [
                     {
                         "anchor": s.anchor,
                         "heading": s.heading,
                         "level": s.level,
                         "position": s.position,
+                        "content_hash": s.content_hash,
+                        "head_revision_id": heads.get(s.row_id) if s.row_id is not None else None,
                     }
                     for s in sections
                 ]
@@ -196,6 +211,33 @@ def register(mcp: FastMCP) -> None:
             body = doc_service.render_body(session, d.row_id)
         return body or ""
 
+    @mcp.tool(name="doc_section_get")
+    def doc_section_get(project: str, doc_key: str, anchors: list[str]) -> list[dict[str, Any]]:
+        """Return one or several sections by anchor in one call (RFC 27 F10, AFT-009).
+
+        Reads only the requested sections — never the body of the whole
+        document (that is `doc_body`). Items follow the order of `anchors`,
+        repeated anchors are collapsed.
+
+        Found section: ``{anchor, heading, level, body, content_hash,
+        head_revision_id}``. Unknown anchor — a structural miss (PCA-938):
+        ``{anchor, found: false, hint, available_anchors, related_tools}``,
+        where ``available_anchors`` lists the document's anchors in order.
+
+        ``head_revision_id`` is the section's current head revision — pass it
+        to `doc_patch_section` as ``expected_parent_revision_id``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            d = doc_service.get(session, project_id, doc_key)
+            if d is None or d.row_id is None:
+                raise ValueError(f"Document '{doc_key}' not found.")
+            return doc_service.read_sections(session, d.row_id, anchors)
+
     @mcp.tool(name="doc_patch_section")
     def doc_patch_section(
         project: str,
@@ -211,8 +253,10 @@ def register(mcp: FastMCP) -> None:
 
         Mirrors the web inline editor's optimistic-concurrency contract
         (``cod_doc/api/web/fragments/sections.py::section_patch``): pass the
-        `revision_id` you last observed (e.g. from `doc_get`/`revision_list`) as
-        `expected_parent_revision_id` and a concurrent writer landing first
+        `revision_id` you last observed as `expected_parent_revision_id` —
+        ``head_revision_id`` from `doc_get(include_sections=true)` or
+        `doc_section_get`, or ``revision_id`` of this tool's previous answer —
+        and a concurrent writer landing first
         raises a conflict instead of silently overwriting. Omit it to write
         unconditionally (matches `task_doc_put`'s `base_revision_id=None`).
         No-op (`changed=false`, no revision written) when `body` already
