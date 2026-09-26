@@ -903,6 +903,7 @@ _cod-doc() {
         (list)                _cod_doc_doc_list && ret=0 ;;
         (patch)               _cod_doc_doc_patch && ret=0 ;;
         (rename)              _cod_doc_doc_rename && ret=0 ;;
+        (section)             _cod_doc_doc_section && ret=0 ;;
         (show)                _cod_doc_doc_show && ret=0 ;;
         (tree)                _cod_doc_doc_tree && ret=0 ;;
         (*)                   _default && ret=0 ;;
@@ -928,6 +929,7 @@ _cod-doc() {
     'list:List all documents for a project.'
     'patch:Replace the body of section ANCHOR in DOC_KEY.'
     'rename:Rename a document key (and optionally its path); cascades incoming…'
+    'section:Тела секций документа по якорям — без чтения тела всего документа.'
     'show:Show document metadata (and optionally sections).'
     'tree:Дерево документации; разделы, раскладка документов, Инбокс.'
   )
@@ -1131,6 +1133,19 @@ _cod-doc() {
     '(- *)--help[Show this message and exit.]' \
     '1:doc-key:_cod_doc_docs' \
     '2:new-key' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_section] )) || _cod_doc_doc_section() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--json)--json[Вывод в JSON (как у MCP doc_section_get)]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' \
+    '*:anchors' && ret=0
   return ret
 }
 
