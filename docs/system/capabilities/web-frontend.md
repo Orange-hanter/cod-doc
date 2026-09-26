@@ -51,7 +51,7 @@ related_code:
 |------|---------|--------|
 | Сервер | FastAPI (тот же `cod_doc.api.server:app`) | Уже есть, общий lifespan и DI |
 | Шаблоны | Jinja2 (`jinja2` уже в deps) | Server-rendered HTML; одна модель, никакой генерации схем |
-| Интерактивность | HTMX (через `<script src="/static/htmx.min.js">`) | `hx-get`/`hx-post`/`hx-swap` для inline-редактирования и фрагментов; SSE для live-логов |
+| Интерактивность | HTMX (через `<script src="/static/htmx.min.js">`) | `hx-get`/`hx-post`/`hx-swap` для inline-редактирования и фрагментов; live-лента — WebSocket `/ws/projects/{slug}` (§6, ADO-115), не SSE |
 | Стили | `static/app.css` — точка входа с тремя `@import`: `css/_base.css` (токены + каркас), `css/_components.css`, `css/_task_detail.css`; ~3500 строк суммарно, raw CSS | Без сборщика, без PostCSS, без Tailwind. Порядок импортов load-bearing: токены → компоненты → страничные переопределения |
 | Граф зависимостей | Mermaid через `<script type="module">` (CDN или локально) | Уже используется в task-plan markdown — переиспользуем |
 
@@ -375,7 +375,7 @@ endpoints — service-helper типа `plan_service.get_for_project(...)`.
 ## 8. Тестирование
 
 - **Smoke**: `fastapi.testclient.TestClient`, каждая страница 200 на seed-проекте.
-  Текущий suite — `tests/api/`, **464 теста, все зелёные**.
+  Suite — `tests/api/`; на 2026-09-18 — 464 теста (снимок, число растёт).
 - **Error-branch coverage** (часть DoD каждой write-path задачи):
   - валидация формы (400 на garbage),
   - конфликт ревизий (`RevisionConflictError`),

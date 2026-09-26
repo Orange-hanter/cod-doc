@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-21
+last_updated: 2026-09-26
 related_docs:
   - ../standards/revision-history.md
   - ../standards/document-link.md
@@ -32,7 +32,7 @@ concurrency у патча — через `expected_parent_revision_id`, доба
 `edited_in_place` / `ExportGuardError`. Ниже ещё встречаются dotted
 `doc.patch_section` — читай их как `doc_patch_section`.
 
-### 0.1 Секция, ушедшая из файла (ADO-213 / ADO-213)
+### 0.1 Секция, ушедшая из файла (ADO-213)
 
 До ADO-213 у секции, **исчезнувшей** из markdown, пути не было вовсе:
 `import_or_update_markdown` умел только патчить и дописывать в конец. Дальше
@@ -97,14 +97,25 @@ COD-DOC берёт это на себя.
 |----------|--------|---------------------|
 | Создание документа | `DocService.create` | Skeleton по `type`, frontmatter, первая revision |
 | Патч секции | `DocService.patch_section` | Diff, revision, re-index links, re-embed |
-| Замена секции целиком | `DocService.replace_section` | Аналог, но diff = полный replace |
-| Вставка секции | `DocService.insert_section` | Позиционирование по anchor, автоматические anchors |
+| Замена секции целиком | *(planned)* `DocService.replace_section` | Аналог, но diff = полный replace |
+| Вставка секции | *(planned)* `DocService.insert_section`; сегодня — `add_section` (в конец) | Позиционирование по anchor, автоматические anchors |
 | Переименование | `DocService.rename` | Cascade update всех `link.to_doc_key` |
-| Декомпозиция | `DocService.split_into_folder` | Разбивает на subdocuments, создаёт entrypoint |
-| Слияние | `DocService.merge` | Обратная операция split |
-| Перевод в deprecated | `DocService.deprecate` | Обновляет frontmatter, проставляет `canonical_source` |
+| Декомпозиция | *(planned)* `DocService.split_into_folder` | Разбивает на subdocuments, создаёт entrypoint |
+| Слияние | *(planned)* `DocService.merge` | Обратная операция split |
+| Перевод в deprecated | *(planned)* `DocService.deprecate`; сегодня — `update_status` без `canonical_source` | Обновляет frontmatter, проставляет `canonical_source` |
+
+## 2a. Что есть сегодня
+
+Живые функции `cod_doc/services/doc_service.py` (ADO-221, 2026-09-26): `create`,
+`add_section`, `patch_section`, `delete_section` (ADO-213), `update_status`,
+`accept`, `rename`, `delete`, `list_delete_candidates`. Строки таблицы §2 с
+пометкой *(planned)* — целевые.
 
 ## 3. Skeleton-шаблоны
+
+> *(planned, не реализовано)* В `cod_doc/templates/` сегодня только `MASTER.md.j2` и
+> `web/`; шаблонов по типам нет. Документ создаётся `cod-doc doc create` / MCP
+> `doc_create`, команды `doc new` нет.
 
 Для каждого `type` — собственный шаблон. Шаблоны хранятся в `cod_doc/templates/` (как сейчас `MASTER.md.j2`), дополняются:
 
@@ -141,7 +152,11 @@ cod-doc doc patch modules/M1-auth/overview \
 
 ## 5. Inline-правки под patch-review
 
-Для крупных изменений (обычно агентом) доступен режим предложения:
+> *(planned, не реализовано)* `doc.propose_edit` / `approve` / `reject` в
+> `doc_service` нет. Ближайший живой механизм — approvals: MCP
+> `approval_request` / `approval_resolve` (`approval_doc_revision_link`).
+
+Для крупных изменений (обычно агентом) предусмотрен режим предложения:
 
 ```
 → doc.propose_edit({ doc_key, patch, reason })
@@ -183,13 +198,14 @@ cod-doc doc split modules/M1-auth-v2 --into \
 Сервис поддерживает автоматические поля:
 
 - `last_updated` — пишется при любом patch.
-- `last_reviewed` — пишется явной командой `cod-doc doc review <doc> --by <owner>`.
+- `last_reviewed` — *(planned)* явная команда `cod-doc doc review <doc> --by <owner>`; команды нет.
 - `implemented_in` — можно освежать из workspace-map (см. [capabilities/auto-linking.md](auto-linking.md)).
 - `affected_files` для связанных задач обновляются при rename файлов кода (если включена `code-tracking`).
 
 ## 8. Stale detection
 
-`cod-doc audit --stale`:
+*(planned)* `cod-doc audit --stale` — флага нет; возраст `active`-документов сегодня
+ловит FM-005 в обычном `cod-doc audit`. Цель:
 
 - Находит документы с `status=active` и `last_updated > 180d`.
 - Для модульных спек: если `implemented_in` указывает на несуществующий код — `code-drift` warning.
@@ -197,7 +213,11 @@ cod-doc doc split modules/M1-auth-v2 --into \
 
 ## 9. Работа с секциями
 
-Структурные изменения:
+> *(planned, не реализовано)* Группы `cod-doc section` нет. Сегодня: `cod-doc doc
+> add-section`, `doc patch`, `doc delete-section` (и MCP `doc_add_section` /
+> `doc_patch_section` / `doc_delete_section`).
+
+Структурные изменения (цель):
 
 - `cod-doc section move <doc> <anchor> --after <other-anchor>` — переставляет порядок.
 - `cod-doc section promote <doc> <anchor>` — поднимает заголовок на уровень выше.

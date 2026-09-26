@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-15
+last_updated: 2026-09-26
 related_docs:
   - ../DATA_MODEL.md
   - ../standards/task-plan.md
@@ -128,25 +128,27 @@ COD-DOC поддерживает **два вида рёбер**:
 
 ## 6. Запросы к графу
 
-Команды:
+Живые команды (ADO-221, 2026-09-26; группы `graph` в CLI нет):
 
 ```bash
-cod-doc graph forward AUTH-025
+cod-doc plan forward AUTH-025 -p <slug>
   # -> все задачи, которые нужно сделать ДО AUTH-025
 
-cod-doc graph reverse AUTH-020
+cod-doc plan reverse AUTH-020 -p <slug>
   # -> что разблокируется, когда AUTH-020 станет done
 
-cod-doc graph critical-path --plan M1-auth-module
+cod-doc plan critical-path M1-auth-module -p <slug>
   # -> самая длинная цепочка блокеров
 
-cod-doc graph story US-014
-  # -> история + её tasks + их цепочки blocks, всё дерево
-
-cod-doc graph module M10-agencies
-  # -> все истории, связанные с модулем; все задачи, связанные с историями;
-  #    все задачи, связанные с планом модуля напрямую
+cod-doc story coverage US-014 -p <slug>
+  # -> история + покрытие задачами и acceptance
 ```
+
+MCP-зеркала: `plan_forward_chain`, `plan_reverse_chain`, `plan_critical_path`,
+`story_coverage`.
+
+*(planned)* `cod-doc graph story US-014` (дерево истории с цепочками blocks) и
+`cod-doc graph module M10-agencies` (истории и задачи модуля).
 
 ## 7. SQL-основа
 
@@ -192,17 +194,19 @@ graph TD
 
 ## 9. Story-driven планирование
 
-Сервис `PlanService.propose_tasks_for_story(story_id)`:
+*(planned, не реализовано — ADO-221)* Сервис `PlanService.propose_tasks_for_story(story_id)`:
 
 - Смотрит acceptance criteria.
 - Предлагает LLM-сгенерированные draft-задачи (`type=feature|test`) с привязкой к модулю/плану.
-- Автор/агент принимает — задачи создаются через `TaskService.bulk_create`.
+- Автор/агент принимает — задачи создаются пакетно (сегодня это MCP
+  `task_create_many`; `TaskService.bulk_create` нет).
 
 Это не «магия» — это оркестратор, который использует уже существующие сервисы. Но это заменяет ручной процесс «прочитал US, придумал 5 задач, вписал в план».
 
 ## 10. Traceability-отчёт
 
-`cod-doc report traceability`:
+*(planned, группы `report` нет)* `cod-doc report traceability`; частично
+покрытие даёт `cod-doc story coverage` / MCP `story_coverage`:
 
 - Список stories со статусом покрытия.
 - Список модулей с количеством stories/tasks.
@@ -213,7 +217,7 @@ graph TD
 
 - **Task creation**: при создании задачи можно сразу указать `--story US-014`.
 - **Doc evolution**: при rename story — все input-ссылки обновляются.
-- **Context retrieval**: L1 ответа по модулю включает ≤ 3 stories; L2 — их acceptance critetria.
+- **Context retrieval**: L1 ответа по модулю включает ≤ 3 stories; L2 — их acceptance criteria.
 - **Plan management**: Next Batch внутри плана можно фильтровать по `--story US-014`.
 
 ## 12. Что не делаем

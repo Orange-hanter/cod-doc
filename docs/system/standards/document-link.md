@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-26
 related_docs:
   - ../capabilities/auto-linking.md
   - ../DATA_MODEL.md
@@ -79,17 +79,22 @@ related_docs:
 ## 7. Внешние URL
 
 - Не резолвятся автоматически (нет сетевых запросов на write-path).
-- По запросу `cod-doc link verify --external` — фоновая проверка HTTP-статуса. Результат пишется в `link.last_checked` / `link.broken_reason`.
+- *(planned, флага нет)* По запросу `cod-doc link verify --external` — фоновая проверка HTTP-статуса. Результат пишется в `link.last_checked` / `link.broken_reason`.
 
 ## 8. Cross-project ссылки
 
-Когда в проекте A нужна ссылка на документ проекта B (managed тот же COD-DOC):
+*(planned — M6, «Hub + кросс-проектность»)* Когда в проекте A нужна ссылка на
+документ проекта B (тот же COD-DOC, общая hub-БД):
 
 ```
-[[doc:project:restate/modules/M1-auth/overview]]
+[[doc:restate:modules/M1-auth/overview]]      # [[doc:<slug>:<doc_key>]]
 ```
 
-Резолв через запрос к таблице `document` с `project_id` по slug.
+Синтаксис — тот, что зафиксирован целью M6 в корневом `MASTER.md`
+(`[[doc:slug:key]]`); прежняя редакция писала `[[doc:project:<slug>/<key>]]`.
+Резолв — запрос к таблице `document` с `project_id` по slug. Сегодня парсер
+(`link_service/parser.py`) кросс-проектной формы не знает и прочитает
+`slug:key` как обычный `doc_key` — ссылка окажется битой.
 
 ## 9. Запрещённые практики
 
@@ -114,6 +119,10 @@ GitHub-friendly форма (генерируется для проекции):
 ```
 
 ## 12. Transclusion (`![[...]]`) и взаимодействие с индексом (DOC-ME-5)
+
+> *(planned, не реализовано — ADO-222)* Парсер `![[…]]` не распознаёт, флага
+> `transclude` в таблице `link` нет, код `LK-008` не эмитится (каталог
+> audit-and-ci §2.3 — тоже целевой). Раздел — спецификация.
 
 Transclusion — ссылка-вставка: `![[doc:<doc_key>]]` или `![[doc:<doc_key>#<anchor>]]`.
 Семантически это **ссылка**, а не копия: тело target'а не дублируется в источнике,

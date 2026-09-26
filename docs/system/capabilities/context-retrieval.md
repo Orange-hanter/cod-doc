@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-15
+last_updated: 2026-09-26
 related_docs:
   - ../ARCHITECTURE.md
   - ../DATA_MODEL.md
@@ -112,7 +112,9 @@ L3 semantic — fail-open: нет эмбеддера → `related.semantic=[]`.
 - Embeddings хранятся per-section (OpenAI/Anthropic-compatible или local-BGE, выбор — в конфиге).
 - Индекс обновляется асинхронно по событию `RevisionCommitted`.
 - Запрос возвращает top-k секций (default k=5) с distances и excerpts.
-- Не ходит в LLM-провайдер «на ходу» — всё локально через `sqlite-vss` / `pgvector`.
+- Векторный индекс — ChromaDB (`cfg.chroma_path`, `cod_doc/core/embeddings`);
+  `sqlite-vss` / `pgvector` не реализованы (ARCHITECTURE §4.3). Эмбеддинги
+  считает настроенный провайдер; без него L3 деградирует молча (§0).
 
 Идея скопирована у Restate `tools/lightrag`, но без внешнего сервиса — встроенный индекс сохраняет целостность.
 
@@ -120,13 +122,13 @@ L3 semantic — fail-open: нет эмбеддера → `related.semantic=[]`.
 
 | Поверхность | Команда |
 |-------------|---------|
-| CLI | `cod-doc context get --target module:M1-auth --depth L1 --budget 8000` |
-| MCP | `context.get(...)` — основной интерфейс для агентов |
-| REST | `GET /api/v1/context?target=...&depth=...` |
+| MCP | `context_get(project, target_kind, target_id, depth="L1", token_budget=8000)` — основной интерфейс для агентов |
+| REST | `GET /api/v1/projects/{slug}/context?target_kind=…&target_id=…&depth=…&token_budget=…` |
+| CLI | отдельной команды нет; ближайшие — `cod-doc ctx docs --include-body`, `ctx search`, `ctx next` (§0). *(planned)* `cod-doc context get` |
 
 ## 7. Результат, пригодный для LLM-prompt
 
-Отдельная команда `cod-doc context prompt --target module:M1-auth --depth L1`:
+*(planned, не реализовано — ADO-221)* Отдельная команда `cod-doc context prompt --target module:M1-auth --depth L1`:
 
 - Возвращает готовый markdown, где секции помечены заголовками `# Target`, `# Related Docs`, `# Task Progress`.
 - Формат стабильный → агент умеет парсить.
@@ -163,6 +165,6 @@ L3 semantic — fail-open: нет эмбеддера → `related.semantic=[]`.
 
 ## 11. Гарантии
 
-- Respuesta не включает контент других проектов, если target не cross-project.
-- Respuesta не включает ссылок на приватные секции (`audience: [internal]`) если вызов — `mcp:<external-client>`.
+- Ответ не включает контент других проектов, если target не cross-project.
+- Ответ не включает ссылок на приватные секции (`audience: [internal]`) если вызов — `mcp:<external-client>`.
 - Size bound: если `truncated: true`, `meta.missing_hints[]` подсказывает, какие слоты выкинуты; агент может запросить их явным follow-up.

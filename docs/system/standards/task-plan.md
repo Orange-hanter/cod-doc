@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-26
 related_docs:
   - ../capabilities/task-creation.md
   - ../capabilities/plan-management.md
@@ -25,7 +25,8 @@ related_docs:
 | **Split** | План ≥ 15 задач или модуль редактируется параллельно несколькими исполнителями. Parent plan + dedicated `tasks/section-*.md`. |
 | **Inline** | Короткий план (≤ 15 задач), один автор. Все секции — в одном файле. |
 
-Миграция между форматами идёт через `cod-doc plan convert --format split`.
+*(planned, команды нет — см. plan-management §9)* Миграция между форматами —
+`cod-doc plan convert --format split`; сегодня формат меняют руками.
 
 > **Терминология (DOC-LO-2).** Различаем: **section** — раздел плана (DB-сущность
 > `plan_section`, буква + slug, резервирует decade номеров, см. §8); **section-file** —
@@ -51,7 +52,7 @@ docs/plans/<module-slug>/
 ---
 type: execution-plan
 scope: <module-id>-<kebab>           # M1-auth-module
-status: pending | in-progress | done
+status: pending | in-progress | done    # документный статус; в БД pending→draft, in-progress→active, done хранится (frontmatter §2a)
 principle: test-first | fix-first
 created: YYYY-MM-DD
 last_updated: YYYY-MM-DD
@@ -78,7 +79,7 @@ completed_log: plans/<module>/<module>-completed-tasks   # если ≥ 20 за�
 | `id` | `<PREFIX>-<NNN>`; PREFIX ∈ `[A-Z]{2,5}`; globally unique по проекту |
 | `title` | начинается с verb pattern (§ 7) |
 | `section` | `<LETTER>-<KebabSlug>` |
-| `status` | `pending` / `in-progress` / `done` |
+| `status` | 7 канонических бакетов: `backlog` / `todo` / `in_progress` / `in_review` / `blocked` / `done` / `cancelled`; легаси `pending`≡`todo`, `in-progress`≡`in_progress` (`services/task_status_machine.py`) |
 | `type` | см. § 6 |
 | `priority` | `critical` / `high` / `medium` / `low` |
 | `depends_on` | массив task-id; проверяется на циклы и существование |
@@ -106,7 +107,9 @@ completed_log: plans/<module>/<module>-completed-tasks   # если ≥ 20 за�
 
 ## 6. Типы задач (closed enum)
 
-`test`, `e2e-test`, `feature`, `migration`, `refactor`, `bug`, `docs`, `frontend`, `api-docs`.
+`feature`, `test`, `bug`, `refactor`, `migration`, `docs`, `chore` — enum `TaskType`,
+он же `task create --type`. *(Прежняя редакция перечисляла `e2e-test`,
+`frontend`, `api-docs` — в коде их нет; `chore` в ней отсутствовал. ADO-222.)*
 
 Запрещено: `implementation` (use `feature`), compound `migration+feature` (split).
 
@@ -120,16 +123,15 @@ completed_log: plans/<module>/<module>-completed-tasks   # если ≥ 20 за�
 | `Migration: <subject>` | migration |
 | `Refactor: <subject>` | refactor |
 | `Fix: <subject>` | bug |
-| `E2E: <subject>` | e2e-test |
-| `Design + document: <subject>` | api-docs |
 | `Docs: <subject>` | docs |
 
-Нарушение — hard error `cod-doc audit`.
+Проверка — advisory `TP-004` (`validation/_patterns.py::_VERB_PATTERNS`,
+`audit_task_title`); задачу она не блокирует.
 
 ## 8. Нумерация внутри плана
 
 Каждая секция резервирует decade: A → 001-009, B → 010-019, C → 020-029, …
-`cod-doc task new --plan <plan> --section B` сам выберет ближайший свободный номер.
+`cod-doc task create -p <slug> --plan <plan> --section B --prefix <P>` сам выберет ближайший свободный номер.
 Подзадача: `<PARENT>A`, `<PARENT>B` (`AGN-021A`).
 
 ## 9. `affected_files` — diff-based status sync
@@ -141,9 +143,12 @@ completed_log: plans/<module>/<module>-completed-tasks   # если ≥ 20 за�
 | 0 match | Fallback: ищем `[<TASK-ID>]` в commit message |
 | task уже `done` | Skip |
 
-Алгоритм применяется:
-- через git pre-commit hook (`cod-doc hooks install --git`);
-- через MCP `task.sync_from_diff`.
+*(planned, не реализовано)* Алгоритм должен применяться:
+- через git pre-commit hook (`cod-doc hooks install --git`) — группы `hooks` нет,
+  хуки ставит `bash hooks/install.sh` (audit-and-ci §3);
+- через MCP `task_sync_from_diff` — тула нет.
+
+Сегодня статус задачи меняют `task_checkout` → `task_complete` (с `commit_sha`).
 
 Это прямой перенос механики из Restate `Docs/standards/task-plan.md §4.6`, но без логики Logical Commits — тут достаточно вызова сервиса.
 
