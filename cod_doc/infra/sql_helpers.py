@@ -8,6 +8,7 @@ intended semantic order (critical → high → medium → low).
 
 from __future__ import annotations
 
+import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import case
@@ -15,6 +16,7 @@ from sqlalchemy import case
 from cod_doc.domain.entities import Priority
 
 if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
     from sqlalchemy.sql import ColumnElement
 
 
@@ -43,3 +45,22 @@ def priority_sql_order(col: Any) -> ColumnElement[Any]:
         value=col,
         else_=99,
     )
+
+
+def ensure_outer_transaction(session: Session) -> None:
+    """Открыть на SQLite настоящую внешнюю транзакцию перед ``begin_nested()``.
+
+    STO-022: pysqlite в легаси-режиме шлёт ``BEGIN`` только перед первой DML.
+    ``SAVEPOINT`` до неё сам открывает транзакцию, и ``RELEASE`` её
+    коммитит — откат внешней транзакции записанное в savepoint уже не
+    отменит. Если у драйверного соединения транзакции нет, выполняем
+    ``BEGIN`` явно, и savepoint становится вложенным, как и задумано.
+    На прочих диалектах ``SAVEPOINT`` и так живёт внутри транзакции —
+    ничего не делаем.
+    """
+    conn = session.connection()
+    if conn.dialect.name != "sqlite":
+        return
+    driver = conn.connection.driver_connection
+    if isinstance(driver, sqlite3.Connection) and not driver.in_transaction:
+        conn.exec_driver_sql("BEGIN")

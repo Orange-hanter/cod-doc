@@ -358,8 +358,13 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Create a new DB task in a plan section.
 
-        Provide either task_id (explicit, e.g. 'COD-042') or id_prefix (e.g. 'COD')
-        for auto-numbering. type: feature|test|bug|refactor|migration|docs|chore.
+        task_id (explicit, e.g. 'COD-042') and id_prefix (e.g. 'COD', for
+        auto-numbering) are both optional. Without them the prefix is derived
+        from the plan: the most frequent prefix among the plan's existing tasks,
+        else from the plan scope ('adoption-2026-08' → 'ADO'). An explicit
+        task_id already taken in the project raises an error naming
+        ``next_free_id`` (the next free number with the same prefix); no SQL
+        text reaches the caller. type: feature|test|bug|refactor|migration|docs|chore.
         priority: critical|high|medium|low.
 
         To discover valid ``section_letter`` values for a plan, call
@@ -382,6 +387,8 @@ def register(mcp: FastMCP) -> None:
         """
         from pathlib import PurePath
 
+        from sqlalchemy.exc import IntegrityError
+
         from cod_doc.domain.entities import Priority, TaskType
         from cod_doc.infra.db import transactional
         from cod_doc.infra.models import ProjectModel
@@ -391,9 +398,6 @@ def register(mcp: FastMCP) -> None:
         from cod_doc.services.task_locality import foreign_paths
         from cod_doc.services.task_service import DuplicateTaskError
         from cod_doc.services.validation import ValidationError
-
-        if task_id is None and id_prefix is None:
-            raise ValueError("Provide task_id or id_prefix.")
 
         # Idempotency short-circuit: if we've already seen this key for
         # task_create in this process, return the cached result.
@@ -459,6 +463,11 @@ def register(mcp: FastMCP) -> None:
             ) from exc
         except ValidationError as exc:
             raise ValueError(str(exc)) from exc
+        except IntegrityError:
+            # Текст драйвера несёт SQL и параметры — агенту он не уходит.
+            raise ValueError(
+                "conflict: task violates a unique constraint; retry with another task_id"
+            ) from None
 
         if dry_run:
             result["dry_run"] = True
@@ -494,18 +503,28 @@ def register(mcp: FastMCP) -> None:
              "id_prefix": "FOO", "description": "...",
              "blocked_by": [...], "story_id": "US-1"}
 
-        Default behaviour: one transaction — any item error rolls back
-        the whole batch. With ``continue_on_error=True`` errors are
-        collected per-item; successful items still commit.
+        Default behaviour: one transaction — the first item error rolls back
+        the whole batch (``committed=False``, ``created=[]``). With
+        ``continue_on_error=True`` each item runs in its own savepoint: a
+        failed item rolls back only itself, successful items commit.
 
-        Returns ``{"created": [task_dict, ...], "errors": [{"index", "title",
-        "message"}, ...], "committed": bool}``.
+        Returns ``{"created": [task_dict, ...], "errors": [...], "committed":
+        bool}``. Guarantee: ``created`` lists only tasks that are in the DB.
+        Each ``errors`` element is ``{"index", "title", "message", "code"}``;
+        ``code`` is ``conflict`` (task_id taken or unique constraint),
+        ``duplicate`` (same normalized title), ``validation`` (bad input) or
+        ``internal`` (batch-level failure, ``index``/``title`` are None).
+        A ``conflict`` for a taken task_id also carries ``next_free_id``.
+        ``message`` never contains SQL text.
         """
+        from sqlalchemy.exc import IntegrityError
+
         from cod_doc.domain.entities import Priority, TaskType
         from cod_doc.infra.db import transactional
         from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
+        from cod_doc.infra.sql_helpers import ensure_outer_transaction
         from cod_doc.services import task_service
-        from cod_doc.services.task_service import DuplicateTaskError
+        from cod_doc.services.task_service import DuplicateTaskError, DuplicateTaskIdError
         from cod_doc.services.validation import ValidationError
 
         sf, _ = session_factory(project)
@@ -529,51 +548,98 @@ def register(mcp: FastMCP) -> None:
         errors: list[dict[str, Any]] = []
         committed = False
 
+        def _item_error(i: int, title: str, exc: Exception) -> dict[str, Any]:
+            if isinstance(exc, DuplicateTaskIdError):
+                return {
+                    "index": i,
+                    "title": title,
+                    "message": str(exc),
+                    "code": "conflict",
+                    "next_free_id": exc.next_free_id,
+                }
+            if isinstance(exc, IntegrityError):
+                # str(exc) несёт SQL и параметры — отдаём только текст драйвера.
+                return {"index": i, "title": title, "message": str(exc.orig), "code": "conflict"}
+            code = "duplicate" if isinstance(exc, DuplicateTaskError) else "validation"
+            return {"index": i, "title": title, "message": str(exc), "code": code}
+
         def _run_in_session(session: Any) -> None:
             nonlocal created, errors
+            # STO-022: без внешней транзакции RELEASE savepoint'а на SQLite
+            # коммитит элемент, и откат батча его уже не отменит.
+            ensure_outer_transaction(session)
             for i, spec in enumerate(items):
                 title = spec.get("title")
                 if not title:
-                    errors.append({"index": i, "title": None, "message": "missing 'title'"})
+                    errors.append(
+                        {
+                            "index": i,
+                            "title": None,
+                            "message": "missing 'title'",
+                            "code": "validation",
+                        }
+                    )
                     if not continue_on_error:
                         raise ValueError(f"items[{i}]: missing 'title'")
                     continue
                 try:
-                    t = task_service.create(
-                        session,
-                        project_id=project_id,
-                        plan_id=plan_id,
-                        section_id=section_id,
-                        title=title,
-                        type=TaskType(spec.get("type", "feature")),
-                        priority=Priority(spec.get("priority", "medium")),
-                        author=author,
-                        task_id=spec.get("task_id"),
-                        id_prefix=spec.get("id_prefix"),
-                        description=spec.get("description"),
-                        acceptance=spec.get("acceptance"),
-                        affected_files=spec.get("affects_files"),
-                        blocked_by=spec.get("blocked_by"),
-                        story_id=spec.get("story_id"),
-                        reason=spec.get("reason"),
-                        allow_duplicate=spec.get("allow_duplicate", False),
-                    )
-                    created.append(task_to_dict(t, session=session))
+                    with session.begin_nested():
+                        t = task_service.create(
+                            session,
+                            project_id=project_id,
+                            plan_id=plan_id,
+                            section_id=section_id,
+                            title=title,
+                            type=TaskType(spec.get("type", "feature")),
+                            priority=Priority(spec.get("priority", "medium")),
+                            author=author,
+                            task_id=spec.get("task_id"),
+                            id_prefix=spec.get("id_prefix"),
+                            description=spec.get("description"),
+                            acceptance=spec.get("acceptance"),
+                            affected_files=spec.get("affects_files"),
+                            blocked_by=spec.get("blocked_by"),
+                            story_id=spec.get("story_id"),
+                            reason=spec.get("reason"),
+                            allow_duplicate=spec.get("allow_duplicate", False),
+                        )
+                        task_dict = task_to_dict(t, session=session)
+                    created.append(task_dict)
                 except (
+                    DuplicateTaskIdError,
                     DuplicateTaskError,
                     ValidationError,
                     ValueError,
+                    IntegrityError,
                 ) as exc:
-                    errors.append({"index": i, "title": title, "message": str(exc)})
+                    errors.append(_item_error(i, title, exc))
                     if not continue_on_error:
                         raise
+            # Номер, свободный в момент конфликта, мог занять следующий
+            # элемент батча — next_free_id пересчитывается по итогу батча.
+            for err in errors:
+                if "next_free_id" in err:
+                    prefix = err["next_free_id"].split("-", 1)[0]
+                    err["next_free_id"] = task_service._next_task_id(session, project_id, prefix)
 
         try:
             with transactional(sf) as session:
                 _run_in_session(session)
             committed = True
-        except Exception:
+        except Exception as exc:
             committed = False
+            # Батч откатан целиком: в created не должно остаться задач,
+            # которых нет в БД.
+            created = []
+            if not errors:
+                errors.append(
+                    {
+                        "index": None,
+                        "title": None,
+                        "message": f"{type(exc).__name__}: {exc}",
+                        "code": "internal",
+                    }
+                )
 
         return {"created": created, "errors": errors, "committed": committed}
 

@@ -3158,8 +3158,8 @@ _cod-doc() {
     '(--title)--title=[Task title]:title' \
     '(--type)--type=:task-type:(feature test bug refactor migration docs chore)' \
     '(--priority)--priority=:priority:(critical high medium low)' \
-    '(--id)--id=[Explicit task ID (e.g. COD-042)]:task-id' \
-    '(--prefix)--prefix=[ID prefix for auto-numbering (e.g. COD)]:prefix' \
+    '(--id)--id=[Explicit task ID (e.g. COD-042). Without --id and --prefix the pref…]:task-id' \
+    '(--prefix)--prefix=[ID prefix for auto-numbering (e.g. COD). Without --id and --prefix…]:prefix' \
     '(--description)--description=:description' \
     '(--acceptance)--acceptance=:acceptance' \
     '(--author)--author=:author' \

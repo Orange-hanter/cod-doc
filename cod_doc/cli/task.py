@@ -328,8 +328,19 @@ def task_show(ctx: click.Context, task_id: str, project: str, as_json: bool) -> 
     required=True,
     type=click.Choice(["critical", "high", "medium", "low"]),
 )
-@click.option("--id", "task_id", default=None, help="Explicit task ID (e.g. COD-042)")
-@click.option("--prefix", default=None, help="ID prefix for auto-numbering (e.g. COD)")
+@click.option(
+    "--id",
+    "task_id",
+    default=None,
+    help="Explicit task ID (e.g. COD-042). Without --id and --prefix the prefix "
+    "comes from the plan's tasks, else from the plan scope",
+)
+@click.option(
+    "--prefix",
+    default=None,
+    help="ID prefix for auto-numbering (e.g. COD). Without --id and --prefix the "
+    "prefix comes from the plan's tasks, else from the plan scope",
+)
 @click.option("--description", default=None)
 @click.option("--acceptance", default=None)
 @click.option("--author", default="cli", show_default=True)
@@ -351,15 +362,14 @@ def task_create(
     reason: str | None,
 ) -> None:
     """Create a new task in a plan section."""
+    from sqlalchemy.exc import IntegrityError
+
     from cod_doc.domain.entities import Priority, TaskType
     from cod_doc.infra.db import transactional
     from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
     from cod_doc.services import task_service
+    from cod_doc.services.task_service import DuplicateTaskIdError
     from cod_doc.services.validation import ValidationError
-
-    if task_id is None and prefix is None:
-        console.print("[red]Provide --id or --prefix.[/red]")
-        sys.exit(1)
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
@@ -398,6 +408,15 @@ def task_create(
                 acceptance=acceptance,
                 reason=reason,
             )
+    except DuplicateTaskIdError as exc:
+        console.print(
+            f"[red]task_id {exc.task_id} уже занят; следующий свободный: {exc.next_free_id}[/red]"
+        )
+        sys.exit(1)
+    except IntegrityError:
+        # Текст исключения несёт SQL-выражение и параметры — наружу не отдаём.
+        console.print("[red]Конфликт уникальности: задача не создана, повторите попытку.[/red]")
+        sys.exit(1)
     except ValidationError as exc:
         console.print(f"[red]Validation error: {exc}[/red]")
         sys.exit(1)

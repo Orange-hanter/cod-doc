@@ -29,6 +29,7 @@ from cod_doc.services import plan_service as plans
 from cod_doc.services import story_service as stories
 from cod_doc.services import task_service as task_svc
 from cod_doc.services.ai_text import AIBackendError
+from cod_doc.services.task_service import id_prefix_from_scope
 
 router = APIRouter()
 
@@ -71,12 +72,6 @@ def _write_last_gen(slug: str) -> None:
     path = _last_gen_path(slug)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"last_at": datetime.now(UTC).isoformat()}))
-
-
-def _id_prefix_from_plan_scope(scope: str) -> str:
-    """Derive a 2-5 caps prefix from a plan scope like 'cod-doc' → 'COD'."""
-    letters = [c for c in scope.upper() if c.isalpha()]
-    return "".join(letters[:3]) or "TSK"
 
 
 # Splits a narrative back into its semantic parts so the UI can render them with
@@ -1022,7 +1017,7 @@ async def story_tasks_save(
                     priority=Priority(str(priority)),
                     author="human:web",
                     description=description.strip() or None,
-                    id_prefix=_id_prefix_from_plan_scope(plan_scope),
+                    id_prefix=id_prefix_from_scope(plan_scope),
                     allow_duplicate=True,
                     reason=f"story:{story_id}",
                 )

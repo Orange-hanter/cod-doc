@@ -233,7 +233,8 @@ def register(mcp: FastMCP) -> None:
               "result": <whatever the tool returned> | null,
               "error": {
                 "code": "not_found" | "validation" | "duplicate" |
-                        "locked" | "transition_invalid" | "internal",
+                        "conflict" | "locked" | "transition_invalid" |
+                        "internal",
                 "message": str,
                 "hint": str | null,
                 "related_tools": list[str],
@@ -246,10 +247,17 @@ def register(mcp: FastMCP) -> None:
         is "agent doesn't have to write 4–5 handlers" — this proxy gives
         them one without touching the wire contract of 97 other tools).
 
+        ``conflict`` — a unique constraint was hit: an explicit ``task_id``
+        already taken (hint names ``next_free_id``) or a raw DB
+        ``IntegrityError``. Not retry-safe: the same args collide again.
+
         ``args`` is the kwargs dict you'd pass directly to ``tool_name``.
         """
+        from sqlalchemy.exc import IntegrityError
+
         from cod_doc.services.task_service import (
             DuplicateTaskError,
+            DuplicateTaskIdError,
             TaskAlreadyDoneError,
             TaskBlockedError,
             TaskNotFoundError,
@@ -329,6 +337,23 @@ def register(mcp: FastMCP) -> None:
                 str(exc),
                 hint="Inspect the failing field and retry with corrected args.",
                 related_tools=["capabilities"],
+                retry_safe=False,
+            )
+        except DuplicateTaskIdError as exc:
+            return _envelope_error(
+                "conflict",
+                str(exc),
+                hint=f"Retry with task_id={exc.next_free_id!r}, or omit task_id to auto-number.",
+                related_tools=["task_list"],
+                retry_safe=False,
+            )
+        except IntegrityError as exc:
+            # str(exc) несёт SQL-выражение и параметры; orig — только текст драйвера.
+            return _envelope_error(
+                "conflict",
+                str(exc.orig),
+                hint="A unique constraint was violated — change the conflicting key and retry.",
+                related_tools=[],
                 retry_safe=False,
             )
         except (LookupError, ValueError) as exc:
