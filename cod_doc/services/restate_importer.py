@@ -41,6 +41,7 @@ from cod_doc.infra.repositories import (
 )
 from cod_doc.services import import_service, task_service
 from cod_doc.services.projection_service._safety import _sha256
+from cod_doc.services.validation import plan_section_slug
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -306,7 +307,7 @@ _LEGACY_STATUS_MAP = {
 _IMPORT_PLAN_SCOPE = "imported-legacy"
 _IMPORT_PLAN_PRINCIPLE = "from-yaml"
 _IMPORT_SECTION_LETTER = "A"
-_IMPORT_SECTION_SLUG = "A-Imported"
+_IMPORT_SECTION_TITLE = "Imported (legacy)"
 _IMPORT_TASK_PREFIX = "LEG"
 
 
@@ -340,8 +341,8 @@ def _ensure_import_plan(session: Session, project_id: int) -> tuple[int, int]:
         PlanSection(
             plan_id=plan_id,
             letter=_IMPORT_SECTION_LETTER,
-            title="Imported (legacy)",
-            slug=_IMPORT_SECTION_SLUG,
+            title=_IMPORT_SECTION_TITLE,
+            slug=plan_section_slug(_IMPORT_SECTION_LETTER, _IMPORT_SECTION_TITLE),
             position=0,
         )
     )

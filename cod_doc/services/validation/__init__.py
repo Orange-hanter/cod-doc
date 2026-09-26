@@ -17,9 +17,13 @@ Two flavours of validators:
 Codes:
 - `TP-001` — task_id format (`^[A-Z]{2,5}-\\d{3}[A-Z]?$`)
 - `TP-002` — id_prefix format (`^[A-Z]{2,5}$`)
-- `TP-003` — section slug format (`^[A-Z]-[A-Za-z0-9-]+$`)
+- `TP-003` — section slug format (`^[A-Z]{1,2}-[A-Za-z0-9][A-Za-z0-9-]*$`)
 - `TP-004` — title verb-pattern mismatch (advisory)
 - `TP-005` — forbidden task type alias
+- `PS-001` — plan section title: empty, longer than 256 or with control characters
+- `PS-002` — plan section letter format (`^[A-Z]{1,2}$`)
+- `PS-003` — plan section position: not an integer or negative
+- `PS-004` — text contains HTML entities (`&amp;`, `&lt;`, `&#NNN;`, …) (advisory)
 - `US-001` — story_id format (`^[A-Z]{2,4}-\\d{3}$`)
 - `SCV-001` — scenario_id format (`^SCN-\\d{3}$`)
 - `SCV-002` — scenario kind outside the RFC 24 §9 vocabulary
@@ -41,17 +45,22 @@ from __future__ import annotations
 from ._errors import ValidationError, ValidationIssue
 from .advisory import (
     audit_frontmatter,
+    audit_html_escaped_text,
     audit_import_fallback,
     audit_sensitivity,
     audit_task_title,
     is_import_fallback,
 )
 from .structural import (
+    plan_section_slug,
     validate_doc_node_key,
     validate_doc_node_position,
     validate_doc_node_title,
     validate_doc_path,
     validate_id_prefix,
+    validate_plan_section_letter,
+    validate_plan_section_position,
+    validate_plan_section_title,
     validate_scenario_body,
     validate_scenario_group_key,
     validate_scenario_id,
@@ -70,15 +79,20 @@ __all__ = [
     "ValidationError",
     "ValidationIssue",
     "audit_frontmatter",
+    "audit_html_escaped_text",
     "audit_import_fallback",
     "audit_sensitivity",
     "audit_task_title",
     "is_import_fallback",
+    "plan_section_slug",
     "validate_doc_node_key",
     "validate_doc_node_position",
     "validate_doc_node_title",
     "validate_doc_path",
     "validate_id_prefix",
+    "validate_plan_section_letter",
+    "validate_plan_section_position",
+    "validate_plan_section_title",
     "validate_scenario_body",
     "validate_scenario_group_key",
     "validate_scenario_id",

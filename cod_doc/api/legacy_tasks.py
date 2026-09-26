@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from cod_doc.domain.entities import Plan, PlanSection, Priority, Task, TaskStatus
 from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
 from cod_doc.services import plan_service
+from cod_doc.services.validation import plan_section_slug
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 # Legacy-задачи не знают про планы — складываем их в служебный план проекта.
 LEGACY_PLAN_SCOPE = "legacy-rest-api"
 LEGACY_SECTION_LETTER = "A"
+LEGACY_SECTION_TITLE = "Legacy REST"
 LEGACY_ID_PREFIX = "LEG"
 AUTHOR = "api-legacy"
 
@@ -106,8 +108,8 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
         PlanSection(
             plan_id=plan.row_id,
             letter=LEGACY_SECTION_LETTER,
-            title="Legacy REST",
-            slug="legacy-rest",
+            title=LEGACY_SECTION_TITLE,
+            slug=plan_section_slug(LEGACY_SECTION_LETTER, LEGACY_SECTION_TITLE),
             position=0,
         )
     )
