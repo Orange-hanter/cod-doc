@@ -765,13 +765,14 @@ def task_remove_dep(
 
     # Phase 1: validate project (read-only — sys.exit here is safe)
     with transactional(sf) as session:
-        _require_project_id(session, project)
+        pid = _require_project_id(session, project)
 
     # Phase 2: write (separate transaction — no sys.exit inside this block)
     try:
         with transactional(sf) as session:
             t = remove_dependency(
                 session,
+                project_id=pid,
                 task_id=task_id,
                 blocker_task_id=blocker_id,
                 author=author,
