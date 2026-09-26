@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: e5c-openrouter-run
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-09-05
-last_updated: 2026-09-05
+last_updated: 2026-09-26
 audience: [contributors, agents]
 related_docs:
   - ../releases/2026-08-30-sprint-m4.md

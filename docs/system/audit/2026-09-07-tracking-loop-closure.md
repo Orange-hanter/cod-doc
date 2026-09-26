@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: tracking-loop-closure
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-09-07
-last_updated: 2026-09-07
+last_updated: 2026-09-26
 audience: [contributors, agents]
 related_docs:
   - 2026-09-06-sprint-m5-trustworthy-gate.md

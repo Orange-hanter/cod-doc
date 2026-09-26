@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-07-29
+last_updated: 2026-09-26
 audience: [contributors, agents]
 related_code:
   - cod_doc/core/project.py
@@ -47,6 +47,7 @@ docs/system/
 ├── VISION.md                       ← какие задачи COD-DOC закрывает
 ├── ARCHITECTURE.md                 ← слои и границы сервисов
 ├── DATA_MODEL.md                   ← сущности БД и связи
+├── structure.md                    ← structure snapshots, obligations, structure drift (RFC 24)
 │
 ├── standards/                      ← форматы файлов и полей
 │   ├── frontmatter.md
@@ -76,7 +77,7 @@ docs/system/
 ├── scenarios/                      ← ГЕНЕРИРУЕТСЯ scenario_service, по файлу
 │   └── <capability>.md             ←   на capability; правь сценарии, не файл
 │
-├── audit/
+├── audit/                          ← 43 отчёта; статусы — §5
 │   ├── 2026-04-19-initial-audit.md         ← первый формальный аудит пакета
 │   ├── 2026-04-25-section-a-data-core.md   ← аудит ядра (Section A)
 │   ├── 2026-04-25-section-b-services.md    ← аудит сервисов (Section B)
@@ -86,28 +87,55 @@ docs/system/
 │   ├── 2026-05-02-checkpoint-web-batch-1..4.md ← mid-section checkpoints
 │   ├── 2026-05-06-ai-usage-audit.md        ← аудит usage AI в системе
 │   ├── 2026-05-06-cli-vs-web-parity.md     ← сравнение CLI и Web UI surface'ов
-│   ├── 2026-05-07-doc-consolidation-cycle-{1..5}.md ← цикловые аудиты консолидации
+│   ├── 2026-05-07-doc-consolidation-cycle-{1..4}.md, -cycle-5-final.md ← цикловые аудиты консолидации
+│   ├── 2026-05-07-section-f-closure.md     ← закрытие Section F paperclip (tooling G1–G3)
+│   ├── 2026-05-08-section-{b-phase-2,c-phase-3,d-phase-4,e-phase-5}.md ← фазы paperclip-adoption
+│   ├── 2026-05-08-section-f-consolidation.md, -section-f-final.md ← backlog-находки Section F и её финальное закрытие
+│   ├── 2026-05-15-tracks-closure-drift.md  ← module-audit четырёх закрытых треков
+│   ├── 2026-05-17-adr-system-integration-drift.md ← интеграционный drift-чек ADR-системы
 │   ├── 2026-06-04-self-improvement-compared.md ← двойное LLM-ревью, P0/P1/P2 backlog
 │   ├── 2026-06-05-doc-drift-source-of-truth.md ← первая трёхсторонняя сверка БД↔md↔код
 │   ├── 2026-06-08-agent-tools-completion.md    ← закрытие Section H (STB-001)
-│   └── 2026-07-29-state-of-the-project.md      ← 🧭 актуальное состояние; основание для ROADMAP
+│   ├── 2026-07-29-state-of-the-project.md      ← 🧭 актуальное состояние; основание для ROADMAP
+│   ├── 2026-08-29-contract-audit.md            ← контракты кодовой базы (ADO-034)
+│   ├── 2026-09-02-sprint-m4-proof-of-value.md  ← закрытие спринта M4
+│   ├── 2026-09-05-e5c-run-analysis.md          ← разбор боевого прогона E5-C
+│   ├── 2026-09-05-sprint-h1-hardening.md       ← закрытие hardening H1
+│   ├── 2026-09-06-sprint-m3-friction.md        ← закрытие спринта M3
+│   ├── 2026-09-06-sprint-m5-trustworthy-gate.md ← закрытие спринта M5
+│   ├── 2026-09-07-tracking-loop-closure.md     ← петля ведения задач: cod-doc и Orakul
+│   ├── 2026-09-10-sprint-m1-phase1.md          ← закрытие спринта M1
+│   ├── 2026-09-11-sprint-m2-feedback-loop.md   ← закрытие спринта M2
+│   ├── 2026-09-19-doc-curator-section-b.md, 2026-09-20-doc-curator-section-{c,d}.md ← RFC 25
+│   └── 2026-09-23-agent-fit-section-b.md       ← RFC 27, секция B (AFT-004/005)
+│
+├── releases/
+│   └── 2026-08-30-sprint-m4.md     ← релиз-заметка спринта M4
 │
 ├── migration/
 │   └── from-restate.md             ← как перевезти реальное состояние Restate
 │
 └── roadmap/
     ├── ROADMAP.md                            ← 🧭 канонический индекс приоритетов (старт здесь; БД = source of truth)
+    ├── task-graph.md                         ← снимок графа задач на 2026-05-01
     ├── cod-doc-task-plan.md                  ← план внедрения (dogfood формата task-plan)
     ├── web-frontend-task-plan.md             ← план Web UI поверх FastAPI
     ├── web-frontend-kickoff-2026-05-02.md    ← brief на старт Section F (после аудита)
     ├── audit-followups-task-plan.md          ← фиксы пакета по аудиту
     ├── refactor-large-files-task-plan.md     ← план рефакторинга крупных файлов
+    ├── agent-tools-completion-task-plan.md   ← закрытие P0-1 self-improvement (STB-001)
     ├── paperclip-adoption-task-plan.md       ← план заимствований из paperclip (15 RFC → 44 задачи)
     ├── paperclip-adoption-kickoff-2026-05-07.md ← brief на Phase 1 paperclip
     ├── adr-system-task-plan.md               ← план ADR-системы (capability + visual UI, 8 задач)
     ├── observability-and-indexing-task-plan.md ← опциональный план: метрики/commits/code-refs/repo-index/DB-index (8 задач, 5 stories US-021..US-025)
     ├── cloud-agent-plane-task-plan.md        ← облачный control plane для ИИ-агентов (18 задач CAP-*)
-    └── cloud-agent-plane-kickoff-2026-07-29.md ← brief на старт cloud agent plane
+    ├── cloud-agent-plane-kickoff-2026-07-29.md ← brief на старт cloud agent plane
+    ├── sprint-2026-08-27-m1-phase1.md        ← спринт M1
+    ├── sprint-2026-08-28-m2-feedback-loop.md ← спринт M2
+    ├── sprint-2026-08-29-hardening-m3-kickoff.md ← hardening + старт M3
+    ├── sprint-2026-08-30-m3-friction-log.md  ← спринт M3
+    ├── sprint-m4-proof-of-value.md           ← спринт M4
+    └── sprint-m5-trustworthy-gate.md         ← спринт M5
 ```
 
 ---
@@ -150,37 +178,79 @@ docs/system/
 | VISION | draft | cod-doc core |
 | ARCHITECTURE | draft | cod-doc core |
 | DATA_MODEL | draft | cod-doc core |
+| structure | active | cod-doc core |
 | standards/* | draft | cod-doc core |
 | capabilities/* | draft | cod-doc core |
+| capabilities/web-frontend | active | cod-doc core |
+| capabilities/cloud-agent-plane | draft | cod-doc core |
 | scenarios/* (генерируется scenario_service) | draft | cod-doc core |
 | migration/from-restate | draft | cod-doc core |
+| releases/2026-08-30-sprint-m4 | active | cod-doc core |
 | roadmap/ROADMAP | active | cod-doc core |
-| roadmap/cod-doc-task-plan | active | cod-doc core |
-| roadmap/audit-followups-task-plan | active | cod-doc core |
-| roadmap/web-frontend-task-plan | active | cod-doc core |
-| audit/2026-04-19-initial-audit | active | cod-doc core |
+| roadmap/task-graph | maintained | cod-doc core |
+| roadmap/cod-doc-task-plan | done | cod-doc core |
+| roadmap/audit-followups-task-plan | done | cod-doc core |
+| roadmap/web-frontend-task-plan | done | cod-doc core |
+| roadmap/web-frontend-kickoff-2026-05-02 | active | cod-doc core |
+| roadmap/refactor-large-files-task-plan | done | cod-doc core |
+| roadmap/agent-tools-completion-task-plan | done | cod-doc core |
+| roadmap/paperclip-adoption-task-plan | done | cod-doc core |
+| roadmap/paperclip-adoption-kickoff-2026-05-07 | active | cod-doc core |
+| roadmap/adr-system-task-plan | done | cod-doc core |
+| roadmap/observability-and-indexing-task-plan | done | cod-doc core |
+| roadmap/cloud-agent-plane-task-plan | draft | cod-doc core |
+| roadmap/cloud-agent-plane-kickoff-2026-07-29 | active | cod-doc core |
+| roadmap/sprint-2026-08-27-m1-phase1 | done | cod-doc core |
+| roadmap/sprint-2026-08-28-m2-feedback-loop | done | cod-doc core |
+| roadmap/sprint-2026-08-29-hardening-m3-kickoff | done | cod-doc core |
+| roadmap/sprint-2026-08-30-m3-friction-log | done | cod-doc core |
+| roadmap/sprint-m4-proof-of-value | done | cod-doc core |
+| roadmap/sprint-m5-trustworthy-gate | done | cod-doc core |
+| audit/2026-04-19-initial-audit | resolved | cod-doc core |
 | audit/2026-04-25-section-a-data-core | resolved | cod-doc core |
 | audit/2026-04-25-section-b-services | resolved | cod-doc core |
 | audit/2026-04-28-section-c-capabilities | resolved | cod-doc core |
 | audit/2026-05-01-section-g-hardening | resolved | cod-doc core |
-| audit/2026-05-02-section-web-frontend | resolved | cod-doc core |
 | audit/2026-05-02-checkpoint-web-batch-1 | resolved | cod-doc core |
 | audit/2026-05-02-checkpoint-web-batch-2 | resolved | cod-doc core |
 | audit/2026-05-02-checkpoint-web-batch-3 | resolved | cod-doc core |
 | audit/2026-05-02-checkpoint-web-batch-4 | resolved | cod-doc core |
+| audit/2026-05-02-section-web-frontend | resolved | cod-doc core |
+| audit/2026-05-06-ai-usage-audit | resolved | cod-doc core |
+| audit/2026-05-06-cli-vs-web-parity | resolved | cod-doc core |
+| audit/2026-05-07-doc-consolidation-cycle-1 | resolved | cod-doc core |
+| audit/2026-05-07-doc-consolidation-cycle-2 | resolved | cod-doc core |
+| audit/2026-05-07-doc-consolidation-cycle-3 | resolved | cod-doc core |
+| audit/2026-05-07-doc-consolidation-cycle-4 | resolved | cod-doc core |
+| audit/2026-05-07-doc-consolidation-cycle-5-final | resolved | cod-doc core |
+| audit/2026-05-07-section-f-closure | resolved | cod-doc core |
+| audit/2026-05-08-section-b-phase-2 | resolved | cod-doc core |
+| audit/2026-05-08-section-c-phase-3 | resolved | cod-doc core |
+| audit/2026-05-08-section-d-phase-4 | resolved | cod-doc core |
+| audit/2026-05-08-section-e-phase-5 | resolved | cod-doc core |
+| audit/2026-05-08-section-f-consolidation | resolved | cod-doc core |
+| audit/2026-05-08-section-f-final | resolved | cod-doc core |
+| audit/2026-05-15-tracks-closure-drift | open (схема вне стандарта — ADO-217/C9) | cod-doc core |
+| audit/2026-05-17-adr-system-integration-drift | resolved | cod-doc core |
 | audit/2026-06-04-self-improvement-compared | resolved | cod-doc core |
 | audit/2026-06-05-doc-drift-source-of-truth | resolved | cod-doc core |
 | audit/2026-06-08-agent-tools-completion | resolved | cod-doc core |
 | audit/2026-07-29-state-of-the-project | active | cod-doc core |
-| audit/2026-09-19-doc-curator-section-b | active | cod-doc core |
-| audit/2026-09-20-doc-curator-section-c | active | cod-doc core |
-| audit/2026-09-20-doc-curator-section-d | active | cod-doc core |
-| capabilities/web-frontend | active | cod-doc core |
-| capabilities/cloud-agent-plane | draft | cod-doc core |
-| roadmap/cloud-agent-plane-task-plan | active | cod-doc core |
-| roadmap/cloud-agent-plane-kickoff-2026-07-29 | active | cod-doc core |
+| audit/2026-08-29-contract-audit | resolved | cod-doc core |
+| audit/2026-09-02-sprint-m4-proof-of-value | resolved | cod-doc core |
+| audit/2026-09-05-e5c-run-analysis | resolved | cod-doc core |
+| audit/2026-09-05-sprint-h1-hardening | resolved | cod-doc core |
+| audit/2026-09-06-sprint-m3-friction | resolved | cod-doc core |
+| audit/2026-09-06-sprint-m5-trustworthy-gate | resolved | cod-doc core |
+| audit/2026-09-07-tracking-loop-closure | resolved | cod-doc core |
+| audit/2026-09-10-sprint-m1-phase1 | resolved | cod-doc core |
+| audit/2026-09-11-sprint-m2-feedback-loop | resolved | cod-doc core |
+| audit/2026-09-19-doc-curator-section-b | resolved | cod-doc core |
+| audit/2026-09-20-doc-curator-section-c | resolved | cod-doc core |
+| audit/2026-09-20-doc-curator-section-d | resolved | cod-doc core |
+| audit/2026-09-23-agent-fit-section-b | resolved | cod-doc core |
 
-Пока пакет в статусе `draft` — изменения допустимы без revision-истории. После `active` любая правка обязана вести к revision-записи (см. [standards/revision-history.md](standards/revision-history.md)). Статус `resolved` — для audit-отчётов, чьи задачи закрыты (см. [standards/frontmatter.md §7](standards/frontmatter.md)).
+Пока пакет в статусе `draft` — изменения допустимы без revision-истории. После `active` любая правка обязана вести к revision-записи (см. [standards/revision-history.md](standards/revision-history.md)). Статус `resolved` — для audit-отчётов, чьи задачи закрыты (см. [standards/frontmatter.md §7](standards/frontmatter.md)); `active` из аудитов держит только живой ориентир `2026-07-29-state-of-the-project`. Статусы в таблице — те, что записаны во frontmatter файлов (сверено ADO-217, 2026-09-26).
 
 ---
 
@@ -213,12 +283,13 @@ docs/system/
 | 2026-05-07 | **Documentation Consolidation — Cycle 4 (Cross-links & Integrity).** `link_list` показал 39 broken markdown-refs на `docs/system/MASTER` — обнаружен gap **G4** (link_service не резолвит relative-paths против source-doc directory) → расширил scope PCA-421 в plan paperclip-adoption. Doc-record `arch/arch/architecture` идентифицирован как фикстурный реликт (commit e51e85f, 2026-04-05). `doc_drift` для root `MASTER` и `docs/system/MASTER` — `stale_export` после edit-in-place (известное состояние). Cycle-2/3 audit-доки зарегистрированы как doc-records (active). `check_stale_refs` остаётся 10/10 VALID. Аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-4.md](audit/2026-05-07-doc-consolidation-cycle-4.md). |
 | 2026-05-07 | **Documentation Consolidation — Cycle 5 (Final Close-out).** Сводка по 5 циклам: +44 pending tasks (44 задачи в paperclip-adoption-task-plan), +15 stories (US-005..US-019, всего 19), +5 audit-отчётов, +6 doc-records, +2 roadmap-файлов. Заведён PCA-911 (low) для уборки `arch/arch/architecture.md` фикстуры. Memory обогащена двумя feedback-патернами: `mcp_field_persistence_gap` (echo-but-no-persist) и `consolidation_cycle_pattern` (N циклов → N audit-отчётов). Реализация PCA-001..PCA-911 намеренно не запущена в этом сеансе — это отдельный длинный фронт работ. Финальный аудит-отчёт: [audit/2026-05-07-doc-consolidation-cycle-5-final.md](audit/2026-05-07-doc-consolidation-cycle-5-final.md). |
 | 2026-05-07 | **ADR System capability добавлена.** Заведена capability [adr-system](capabilities/adr-system.md) (Architecture Decision Records как first-class entity с автонумерацией, supersede-DAG, визуальным редактором и Mermaid-графом в Web UI). Story US-020 (`accepted`). Новый план [adr-system-task-plan](roadmap/adr-system-task-plan.md), 3 секции (Domain & MCP, Web UI, Templates & Migration), 8 задач `ADR-001`..`ADR-008`. Старт реализации после закрытия Section F paperclip-плана. |
-| 2026-07-29 | **State-of-the-project audit + пересборка роадмапа.** Прогон подтвердил инженерное здоровье: 1356 тестов, ruff/mypy clean, 106 документов `in_sync`, `plan audit` ×5 без issues, 0 `pragma: no cover`. Трек A (`stabilization-2026-06`) закрыт 12/13; закрыт STB-013 (ContextService L2/L3 реализованы — оставался только устаревший docstring). Находки: F2 repo-index не строился на собственном проекте (исправлено: 625 файлов / 3021 символ), F3 66 недокументированных web-роутов, F4 L0-payload `agent_capabilities` пробил потолок 4 КБ (исправлено: 4543 → 3586 байт), F5 глобальный конфиг из тестового прогона, F6 нет корневого README. Каталог скиллов 9 → 12 (`project-onboarding`, `ground-truth-reconcile`, `rfc-authoring`). Добавлен [../adoption-playbook.md](../adoption-playbook.md). [ROADMAP](roadmap/ROADMAP.md) пересобран: приоритет смещён с фич на adoption (M1 → M2 → M3). Отчёт: [audit/2026-07-29-state-of-the-project.md](audit/2026-07-29-state-of-the-project.md). |
 | 2026-05-07 | **Observability & Indexing capability добавлена (опциональная).** Capability [observability-and-indexing](capabilities/observability-and-indexing.md) — метрики выполнения задач, commit→task linkage для истории работ, code-refs `[label](src/path.py)` в markdown, RepoIndex (.gitignore-aware symbols/imports), DBObjectIndex (FTS5 unified search). 5 stories US-021..US-025 (`accepted`), новый план [observability-and-indexing-task-plan](roadmap/observability-and-indexing-task-plan.md): 5 секций (Metrics/Commits/Code-Refs/Repo-Index/DB-Object-Index), 8 задач OBI-001..OBI-040. Помечено опциональным — не блокирует Phase 1 paperclip-adoption. |
+| 2026-07-29 | **State-of-the-project audit + пересборка роадмапа.** Прогон подтвердил инженерное здоровье: 1356 тестов, ruff/mypy clean, 106 документов `in_sync`, `plan audit` ×5 без issues, 0 `pragma: no cover`. Трек A (`stabilization-2026-06`) закрыт 12/13; закрыт STB-013 (ContextService L2/L3 реализованы — оставался только устаревший docstring). Находки: F2 repo-index не строился на собственном проекте (исправлено: 625 файлов / 3021 символ), F3 66 недокументированных web-роутов, F4 L0-payload `agent_capabilities` пробил потолок 4 КБ (исправлено: 4543 → 3586 байт), F5 глобальный конфиг из тестового прогона, F6 нет корневого README. Каталог скиллов 9 → 12 (`project-onboarding`, `ground-truth-reconcile`, `rfc-authoring`). Добавлен [../adoption-playbook.md](../adoption-playbook.md). [ROADMAP](roadmap/ROADMAP.md) пересобран: приоритет смещён с фич на adoption (M1 → M2 → M3). Отчёт: [audit/2026-07-29-state-of-the-project.md](audit/2026-07-29-state-of-the-project.md). |
 | 2026-07-29 | **Cloud Agent Plane спроектирован.** Capability [cloud-agent-plane](capabilities/cloud-agent-plane.md): COD-DOC как облачный documentation control plane; ИИ ведёт docs полностью через MCP; агенты — децентрализованные remote-воркеры; SoT = Postgres; markdown projection optional. RFC [proposals/23](../../proposals/23-cloud-decentralized-agent-plane.md), kickoff + execution plan (18 задач CAP-001..CAP-033). ARCHITECTURE §8 расширен профилем `cloud`. Non-goals: SaaS multi-tenant, P2P-федерация. |
 | 2026-09-19 | **RFC 25 §3.2 Section B closure — doc-curator profile swap.** Документация и скилл `orchestrator` догнали код CUR-007 (`ctx_search` MCP-тул, PR #50) и CUR-008 (своп `AGENT_TOOLS` на curator-набор, PR #62): AGENTS.md, CLAUDE.md, `docs/mcp-integration.md`, `deploy/launchd/README.md`, корневой `MASTER.md` (×2), `cod_doc/skills/orchestrator/SKILL.md`, `proposals/25-doc-curator-agent.md`, `proposals/README.md` больше не обещают `agent_pick` на профиле `agent` и не пишут «своп идёт планом» — своп сделан. Найдена и исправлена попутная неточность в каталоге MCP-инструментов (`ctx.*` строка занижала видимость трёх тулов после CUR-008). Аудит-отчёт: [audit/2026-09-19-doc-curator-section-b.md](audit/2026-09-19-doc-curator-section-b.md). |
 | 2026-09-20 | **RFC 25 §6 Section C closure — search quality.** CUR-010…014 смержены (`SearchIndexMissing` типизированная ошибка, per-kind bm25 лимит + вес заголовка, инкрементальный FTS-upsert из write-path task/story/adr/finding, кросс-проектный `search_service.search(project_ids=...)` + `ctx_search(projects=...)`/CLI `--projects`, честный `token_budget` в `context_get`). F2 аудита секции B (частичный FTS-индекс — 63/442 задачи) закрыт: прямая проверка живой БД даёт doc 170 / task 442 / story 31 / adr 12. Найдено F4: `SearchHit` в `api/v1` молча отбрасывает `project`, `GET /api/v1/search` не принимает `projects` — REST не участвует в кросс-проектном поиске, задача STO-015. `docs/system/roadmap/ROADMAP.md` — таблица секций трека RFC 25 получила колонку статуса, секция C помечена закрытой. Аудит-отчёт: [audit/2026-09-20-doc-curator-section-c.md](audit/2026-09-20-doc-curator-section-c.md). |
 | 2026-09-20 | **RFC 25 §3.4/§3.5 Section D closure — план `doc-curator-2026-09` закрыт целиком (18/18).** Документация догнала код CUR-016 (`curator_next` doc card, PR #74) и CUR-017 (daemon idle без автогенерации, PR #49): `docs/HANDBOOK.md` §9 получил legacy-баннер и правки §9.1/§9.3/§9.4, скилл `orchestrator` переписан на алгоритм `agent_capabilities → curator_next → ctx_search/context_get`, `ctx_docs` убран из прозы цикла (тул вне профиля `agent` с CUR-016). `docs/system/roadmap/ROADMAP.md`, `proposals/README.md`, `proposals/25-doc-curator-agent.md` переведены в «закрыт» с итоговой таблицей 12 задач CUR-007…018 и PR-номерами. Находки: F3 `ci.yml`/`cd.yml` хэш-реестр устарел независимо от этого плана, F4 `pytest-xdist` (отсутствовал по аудиту секции B) уже установлен — resolved, F5 `agent_capabilities().next_action_hint` не упоминает `curator_next` (код не трогали, кандидат в backlog), F6 `curator_next` — три прохода по корпусу без `paths`. Аудит-отчёт: [audit/2026-09-20-doc-curator-section-d.md](audit/2026-09-20-doc-curator-section-d.md). |
+| 2026-09-26 | **Разбор находок демона doc-review (ADO-217).** Статусы 31 audit-отчёта закрытых циклов переведены в `resolved` (`active` остался только у `2026-07-29-state-of-the-project`), `2026-06-04-self-improvement-compared` получил frontmatter; реестр §5 и дерево §2 покрывают все 43 audit-файла, все 20 roadmap-файлов, `releases/` и `structure.md`. Спринт-файлы M1–M5 переведены в `done`, DoD M1/M5 дотянут по аудитам, у M4 открыт один пункт (sha ADO-040 = `REPLACE_SHA`). Планы-зомби agent-tools-completion, cod-doc-task-plan, web-frontend-task-plan закрыты. Строка Observability (2026-05-07) перенесена по хронологии. |
 
 ## 7. Соглашения об оформлении
 

@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: AI/LLM-использование в COD-DOC (orchestrator + ai_generate + ai_text + MCP)
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-06
-last_updated: 2026-05-06
+last_updated: 2026-09-26
 audit_target_revision: HEAD = b07a97e (post WEB-013..014/COD-070..079, daemon UI)
 related_docs:
   - ../MASTER.md

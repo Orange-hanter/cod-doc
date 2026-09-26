@@ -1,3 +1,12 @@
+---
+type: audit-report
+status: resolved
+source_of_truth: true
+owner: cod-doc core
+created: 2026-06-04
+last_updated: 2026-09-26
+---
+
 # 2026-06-04 — Self-Improvement Compared (miniMax-m3 vs deepseek-v4-pro)
 
 > 📊 Meta: `{"scope": "self-audit", "models": ["miniMax-m3 (Hermes)", "deepseek-v4-pro (openrouter)"], "method": "independent parallel review", "result": "hybrid RFC #21 proposed"}`

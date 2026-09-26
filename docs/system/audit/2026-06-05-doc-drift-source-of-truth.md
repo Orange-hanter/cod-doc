@@ -1,12 +1,12 @@
 ---
 title: Documentation Drift and Source-of-Truth Checkpoint
 type: execution-log
-status: active
+status: resolved
 source_of_truth: true
 sensitivity: internal
 owner: cod-doc core
 created: 2026-06-05
-last_updated: 2026-06-06
+last_updated: 2026-09-26
 scope: documentation-drift / db-source-of-truth
 audience: [contributors, next-session-agent]
 ---

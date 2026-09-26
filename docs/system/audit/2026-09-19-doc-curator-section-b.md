@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: doc-curator-section-b
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-09-19
-last_updated: 2026-09-19
+last_updated: 2026-09-26
 related_docs:
   - ../../../proposals/25-doc-curator-agent.md
   - ../roadmap/ROADMAP.md
