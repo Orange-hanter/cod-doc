@@ -27,8 +27,11 @@
 COD-DOC — система управления документацией с MCP-интеграцией: docs, tasks,
 plans, stories, links, revisions — все живут в SQLite + Markdown проекций.
 
-Текущая итерация — Phase 3 paperclip-adoption (Section C — atomic checkout,
-routines, 7-state TaskStatus, AGENTS.md). См. `MASTER.md` → Project Status.
+Текущий приоритет — adoption через симбиоз с пилотами ZAIrgRush и
+Orakul/ai-review (RFC 22, план `adoption-2026-08`) и подготовка M6 «Hub +
+кросс-проектность»; M1–M5 и агент-куратор (RFC 25) закрыты. Phase 3
+paperclip-adoption (Section C) закрыта 2026-05-08. См. `MASTER.md` →
+«Текущий статус» и `docs/system/roadmap/ROADMAP.md`.
 
 ## 2. Прочесть в первую очередь
 
