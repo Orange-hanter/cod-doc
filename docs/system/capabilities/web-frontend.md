@@ -5,7 +5,7 @@ status: active
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-28
-last_updated: 2026-09-15
+last_updated: 2026-09-26
 related_docs:
   - ../ARCHITECTURE.md
   - ../VISION.md
@@ -146,15 +146,15 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/stories/coverage/analyze` | AI-анализ покрытия документов для story-generation | `ai_text._call_lite_raw` + `doc_service.list_for_project` | ✅ | COD-068 |
 | `POST /p/{slug}/stories/section/{section_key}/analyze` | AI-summary для одной секции stories | `section_summary_service.generate` | ✅ | COD-069 |
 | **ADR — Architecture Decision Records**  | | | |
-| `GET /p/{slug}/adr` | Список ADR с фильтром по статусу | `adr_service.list_for_project` | ✅ | ADR-004 |
-| `GET /p/{slug}/adr/new` | Форма создания ADR | `adr_service` (форма) | ✅ | ADR-005 |
-| `POST /p/{slug}/adr/new` | Создание ADR | `adr_service.create` | ✅ | ADR-005 |
-| `GET /p/{slug}/adr/graph` | Supersede DAG в виде Mermaid | `adr_service.graph` | ✅ | ADR-006 |
-| `GET /p/{slug}/adr/{adr_id}` | Деталь ADR + диаграммы + форма редактирования | `adr_service.get` + `adr_to_dict` | ✅ | ADR-005 |
-| `POST /p/{slug}/adr/{adr_id}/edit` | Редактирование полей ADR | `adr_service.update` | ✅ | ADR-005 |
-| `POST /p/{slug}/adr/{adr_id}/diagram` | Добавление Mermaid-диаграммы к ADR | `adr_service.add_diagram` | ✅ | ADR-005 |
-| `POST /p/{slug}/adr/{adr_id}/supersede` | Запись supersede-ребра | `adr_service.supersede` | ✅ | ADR-005 |
-| `POST /p/{slug}/adr/{adr_id}/deprecate` | Перевод ADR в DEPRECATED | `adr_service.deprecate` | ✅ | ADR-005 |
+| `GET /p/{slug}/adr` | Список ADR с фильтром по статусу | `adr_service.list_for_project` | ✅ | `ADR-004` |
+| `GET /p/{slug}/adr/new` | Форма создания ADR | `adr_service` (форма) | ✅ | `ADR-005` |
+| `POST /p/{slug}/adr/new` | Создание ADR | `adr_service.create` | ✅ | `ADR-005` |
+| `GET /p/{slug}/adr/graph` | Supersede DAG в виде Mermaid | `adr_service.graph` | ✅ | `ADR-006` |
+| `GET /p/{slug}/adr/{adr_id}` | Деталь ADR + диаграммы + форма редактирования | `adr_service.get` + `adr_to_dict` | ✅ | `ADR-005` |
+| `POST /p/{slug}/adr/{adr_id}/edit` | Редактирование полей ADR | `adr_service.update` | ✅ | `ADR-005` |
+| `POST /p/{slug}/adr/{adr_id}/diagram` | Добавление Mermaid-диаграммы к ADR | `adr_service.add_diagram` | ✅ | `ADR-005` |
+| `POST /p/{slug}/adr/{adr_id}/supersede` | Запись supersede-ребра | `adr_service.supersede` | ✅ | `ADR-005` |
+| `POST /p/{slug}/adr/{adr_id}/deprecate` | Перевод ADR в DEPRECATED | `adr_service.deprecate` | ✅ | `ADR-005` |
 | **Scenarios — сценарии тестирования (RFC 24 §9, авторская половина)** | | | |
 | `GET /p/{slug}/scenarios` | Список сценариев по возможностям: фильтры вид/возможность/статус, счётчики, дрейф проекции | `scenario_service.list_for_project` + `project_coverage` + `projection_service.detect_project_drift` | ✅ | ADO-185 |
 | `GET /p/{slug}/scenarios/{scenario_id}` | Карточка сценария: герой, предусловия, шаги, ожидаемый результат, связи, проекция | `scenario_service.get` + `list_steps` + `list_links` | ✅ | ADO-185 |

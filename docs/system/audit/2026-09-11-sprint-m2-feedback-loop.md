@@ -57,7 +57,7 @@ audience: [contributors, agents]
 ### Стретч — SYM-007 (ADR-мост ZAIrgRush)
 
 13/13 ADR проекта ZAIrgRush заведены в adr-систему проекта `zairgrush`;
-оформлены supersede-связи ADR-004→ADR-003 и ADR-008→ADR-007. Источник
+оформлены supersede-связи `ADR-004`→`ADR-003` и `ADR-008`→`ADR-007` (номера реестра проекта `zairgrush`, не cod-doc). Источник
 `decisions.jsonl` перенесён в репо владельца
 (`ZAIrgRush/experiments/decisions.jsonl`) — с одобрения владельца.
 
