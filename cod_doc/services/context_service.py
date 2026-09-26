@@ -16,6 +16,19 @@ Depth levels:  L0 (metadata only)
 Материал L2/L3, который не влезает целиком, не добавляется вовсе, а
 ``meta.effective_depth`` опускается до фактического уровня (``L1``/``L2``):
 деградация видна вызывающему, а не молчит.
+
+Связанные документы задачи (RFC 27 F11) — ``related.documents`` на L1+,
+у каждого элемента поле ``why``, откуда он взялся:
+
+- ``affects_file:<путь>`` — ``document.path`` совпал с затронутым файлом;
+- ``affects_dir:<путь>`` — документ лежит внутри затронутой директории;
+- ``module_spec:<module_id>`` — затронутый путь внутри кода модуля, берётся
+  его ``spec_doc_id``;
+- ``task_doc`` — документ, прикреплённый к задаче (``task_document``);
+- ``adr:<relation>`` — ADR, связанный с задачей через ``adr_task``.
+
+Соседи задачи по секции плана отсортированы по приоритету (critical
+первыми), затем по ``task_id``: повторный вызов даёт тот же список.
 """
 
 from __future__ import annotations
@@ -24,16 +37,22 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from cod_doc.domain.entities import TaskStatus, equivalent_task_statuses
 from cod_doc.infra.models import (
+    ADRModel,
+    ADRTaskModel,
+    AffectedFileModel,
     DocumentModel,
     LinkModel,
+    ModuleCodeModel,
     ModuleModel,
     PlanModel,
+    ProjectModel,
     SectionModel,
     StoryLinkModel,
+    TaskDocumentModel,
     TaskModel,
     UserStoryModel,
 )
@@ -49,6 +68,7 @@ _CHARS_PER_TOKEN = 4  # rough approximation
 _MASTER_EXCERPT_CHARS = 1200
 _SECTION_EXCERPT_CHARS = 600
 _MAX_RELATED_TASKS = 10
+_MAX_RELATED_DOCS = 10
 
 #: «Открытая задача» — весь класс эквивалентности обоих бакетов.
 #:
@@ -239,6 +259,174 @@ def _stories_for_target(
     return _affordable(entries, budget)
 
 
+def _normalize_repo_path(raw: str, root: str) -> str | None:
+    """Привести путь к относительному от корня проекта, без ``./`` и краевых ``/``.
+
+    Абсолютный путь внутри ``root`` становится относительным; абсолютный
+    путь вне корня — ``None``: он не может совпасть ни с одним документом.
+    Путь, равный корню целиком, тоже ``None`` — он «затрагивает» всё.
+    """
+    path = raw.strip()
+    root = root.rstrip("/")
+    if path.startswith("/"):
+        if not root or not (path == root or path.startswith(root + "/")):
+            return None
+        path = path[len(root) :]
+    while path.startswith("./"):
+        path = path[2:]
+    path = path.strip("/")
+    return path or None
+
+
+def _is_under(path: str, directory: str) -> bool:
+    """``path`` лежит внутри ``directory`` — по границе сегмента, не голым префиксом."""
+    return path.startswith(directory + "/")
+
+
+def _related_documents_for_task(
+    session: Session, project_id: int, task: TaskModel, budget: _Budget
+) -> list[dict[str, Any]]:
+    """Документы, связанные с задачей, для ``related["documents"]`` (RFC 27 F11).
+
+    Источники по убыванию силы связи; каждый — один запрос, без N+1:
+
+    1. ``affected_file`` задачи. Пути нормализуются (``_normalize_repo_path``).
+       Документ с ``document.path`` ровно по затронутому пути —
+       ``why="affects_file:<путь>"``; документ внутри затронутой директории
+       (граница сегмента: ``docs/api`` не захватывает ``docs/apix``) —
+       ``why="affects_dir:<путь>"``, при вложенных директориях — по самой
+       глубокой.
+    2. Модули проекта: путь из ``module_code`` равен затронутому или является
+       его директорией-предком — документ ``module.spec_doc_id``,
+       ``why="module_spec:<module_id>"``.
+    3. ``task_document`` задачи — ``why="task_doc"``.
+    4. ADR через ``adr_task`` (ADR того же проекта) — ``why="adr:<relation>"``.
+
+    Дубли снимаются по идентичности (``doc_key`` / ``key`` / ``adr_id``):
+    побеждает первый ``why`` в порядке источников. Внутри источника порядок
+    по ключу, поэтому результат детерминирован. Потолок — ``_MAX_RELATED_DOCS``,
+    дальше список режется под бюджет, как соседи. Только чтение.
+    """
+    entries: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _add(kind: str, ident: str, entry: dict[str, Any]) -> None:
+        if (kind, ident) in seen:
+            return
+        seen.add((kind, ident))
+        entries.append(entry)
+
+    root = session.execute(
+        select(ProjectModel.root_path).where(ProjectModel.row_id == project_id)
+    ).scalar_one_or_none()
+    raw_paths = (
+        session.execute(
+            select(AffectedFileModel.path).where(AffectedFileModel.task_id == task.row_id)
+        )
+        .scalars()
+        .all()
+    )
+    affected = sorted(
+        {p for raw in raw_paths if (p := _normalize_repo_path(raw, root or "")) is not None}
+    )
+
+    if affected:
+        # 1. affects_file / affects_dir
+        doc_rows = (
+            session.execute(
+                select(DocumentModel)
+                .where(
+                    DocumentModel.project_id == project_id,
+                    or_(
+                        DocumentModel.path.in_(affected),
+                        *(
+                            DocumentModel.path.startswith(p + "/", autoescape=True)
+                            for p in affected
+                        ),
+                    ),
+                )
+                .order_by(DocumentModel.doc_key)
+            )
+            .scalars()
+            .all()
+        )
+        file_hits = [(d, d.path) for d in doc_rows if d.path in affected]
+        dir_hits = [
+            (d, max((p for p in affected if _is_under(d.path, p)), key=len))
+            for d in doc_rows
+            if any(_is_under(d.path, p) for p in affected)
+        ]
+        for why_kind, hits in (("affects_file", file_hits), ("affects_dir", dir_hits)):
+            for doc, path in hits:
+                _add(
+                    "document",
+                    doc.doc_key,
+                    {
+                        "kind": "document",
+                        "doc_key": doc.doc_key,
+                        "path": doc.path,
+                        "title": doc.title,
+                        "why": f"{why_kind}:{path}",
+                    },
+                )
+
+        # 2. module_spec
+        module_rows = session.execute(
+            select(ModuleCodeModel.path, ModuleModel.module_id, DocumentModel)
+            .join(ModuleModel, ModuleModel.row_id == ModuleCodeModel.module_id)
+            .join(DocumentModel, DocumentModel.row_id == ModuleModel.spec_doc_id)
+            .where(ModuleModel.project_id == project_id)
+            .order_by(DocumentModel.doc_key, ModuleModel.module_id)
+        ).all()
+        for code_path, module_id, doc in module_rows:
+            module_path = _normalize_repo_path(code_path, root or "")
+            if module_path is None:
+                continue
+            if any(p == module_path or _is_under(p, module_path) for p in affected):
+                _add(
+                    "document",
+                    doc.doc_key,
+                    {
+                        "kind": "document",
+                        "doc_key": doc.doc_key,
+                        "path": doc.path,
+                        "title": doc.title,
+                        "why": f"module_spec:{module_id}",
+                    },
+                )
+
+    # 3. task_doc
+    task_docs = session.execute(
+        select(TaskDocumentModel.key, TaskDocumentModel.title)
+        .where(TaskDocumentModel.task_id == task.row_id)
+        .order_by(TaskDocumentModel.key)
+    ).all()
+    for key, title in task_docs:
+        _add("task_doc", key, {"kind": "task_doc", "key": key, "title": title, "why": "task_doc"})
+
+    # 4. adr
+    adr_rows = session.execute(
+        select(ADRModel, ADRTaskModel.relation)
+        .join(ADRTaskModel, ADRTaskModel.adr_row_id == ADRModel.row_id)
+        .where(ADRTaskModel.task_id == task.task_id, ADRModel.project_id == project_id)
+        .order_by(ADRModel.adr_id, ADRTaskModel.relation)
+    ).all()
+    for adr, relation in adr_rows:
+        _add(
+            "adr",
+            adr.adr_id,
+            {
+                "kind": "adr",
+                "adr_id": adr.adr_id,
+                "title": adr.title,
+                "status": adr.status,
+                "why": f"adr:{relation}",
+            },
+        )
+
+    return _affordable(entries[:_MAX_RELATED_DOCS], budget)
+
+
 def _open_tasks_for_plan(session: Session, plan_id: int, budget: _Budget) -> list[dict[str, Any]]:
     """Return pending + in_progress tasks for a plan (priority-ordered, capped)."""
     from cod_doc.infra.sql_helpers import priority_sql_order
@@ -390,7 +578,11 @@ def _build_task_context(
     )
 
     if depth == "L0":
+        # RFC 27 F11: связанные документы задачи — материал L1+, на L0 ключа нет.
+        del packet.related["documents"]
         return packet
+
+    from cod_doc.infra.sql_helpers import priority_sql_order
 
     # L1: task description + acceptance — под бюджет, а не поверх него.
     packet.core.update(
@@ -410,6 +602,7 @@ def _build_task_context(
                 TaskModel.task_id != task.task_id,
                 TaskModel.status.in_(_OPEN_TASK_STATUSES),
             )
+            .order_by(priority_sql_order(TaskModel.priority), TaskModel.task_id)
             .limit(5)
         )
         siblings = session.execute(sibling_stmt).scalars().all()
@@ -420,6 +613,9 @@ def _build_task_context(
             ],
             budget,
         )
+
+    # L1: документы, связанные с задачей (RFC 27 F11)
+    packet.related["documents"] = _related_documents_for_task(session, project_id, task, budget)
 
     # L1: stories linked to this task
     packet.related["stories"] = _stories_for_target(
@@ -672,6 +868,47 @@ def _assemble(
     )
 
 
+def _master_stale(session: Session, project_id: int) -> bool:
+    """MASTER проекта в ``stale_export``/``edited_in_place`` (RFC 27 F11).
+
+    ``master_excerpt`` читается с диска, а не из БД: при дрейфе выдержка
+    расходится с БД, и вызывающий должен об этом знать. Нет документа
+    ``MASTER.md`` или путь небезопасен/файл нечитаем — судить не о чем, ``False``.
+    """
+    from pathlib import Path
+
+    from cod_doc.services import projection_service
+
+    project = session.get(ProjectModel, project_id)
+    if project is None:
+        return False
+    rows = session.execute(
+        select(DocumentModel.row_id, DocumentModel.path).where(
+            DocumentModel.project_id == project_id
+        )
+    ).all()
+    master_id = next(
+        (
+            row_id
+            for row_id, path in rows
+            if projection_service.normalize_repo_path(path) == "MASTER.md"
+        ),
+        None,
+    )
+    if master_id is None:
+        return False
+    try:
+        report = projection_service.detect_drift(
+            session, master_id, root_path=Path(project.root_path)
+        )
+    except (ValueError, OSError):
+        return False
+    return report.status in {
+        projection_service.DriftStatus.STALE_EXPORT,
+        projection_service.DriftStatus.EDITED_IN_PLACE,
+    }
+
+
 def context_get(
     session: Session,
     project_id: int,
@@ -699,14 +936,30 @@ def context_get(
                     добавляется; тогда ``meta.effective_depth`` ниже
                     ``depth``, а ``meta.truncated`` — ``True``.
     master_content: Optional pre-loaded MASTER.md text for master_excerpt.
+                    Выдержка читается с диска, не из БД, поэтому рядом с ней
+                    в ``core`` едет ``master_stale: bool`` (RFC 27 F11):
+                    ``True`` — документ ``MASTER.md`` в ``stale_export`` или
+                    ``edited_in_place``, содержимое выдержки расходится с БД
+                    и доверять ему нельзя. Флаг учитывается в бюджете; не
+                    влезла выдержка — нет и флага.
     """
     if depth not in _VALID_DEPTHS:
         raise ValueError(f"Invalid depth {depth!r}. Expected one of {sorted(_VALID_DEPTHS)}")
 
     budget = _Budget(token_budget * _CHARS_PER_TOKEN)
 
-    # Master excerpt
-    master_excerpt = budget.take(master_content, _MASTER_EXCERPT_CHARS) if master_content else None
+    # Master excerpt. Место под ``master_stale`` резервируется до выдержки:
+    # флаг едет только вместе с ней, и выдержка без флага недопустима.
+    master_excerpt: str | None = None
+    master_stale = False
+    if master_content:
+        master_stale = _master_stale(session, project_id)
+        stale_cost = _entries_cost(({"master_stale": master_stale},))
+        master_excerpt = budget.take(
+            master_content, min(_MASTER_EXCERPT_CHARS, budget.remaining - stale_cost)
+        )
+        if master_excerpt:
+            budget.charge(stale_cost)
 
     packet = _assemble(session, project_id, target_kind, target_id, depth, budget)
 
@@ -731,6 +984,7 @@ def context_get(
 
     if master_excerpt:
         packet.core["master_excerpt"] = master_excerpt
+        packet.core["master_stale"] = master_stale
 
     return {
         "target_summary": packet.target_summary,

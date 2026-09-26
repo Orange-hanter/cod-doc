@@ -629,6 +629,9 @@ def register(mcp: FastMCP) -> None:
         depth:       ``L0`` (metadata only) | ``L1`` (body + direct relations).
                      L2/L3 reserved for future semantic expansion.
         token_budget: Approximate token ceiling (default 8000).
+
+        ``core.master_stale`` (рядом с ``core.master_excerpt``, читаемым с диска):
+        ``true`` — MASTER.md дрейфует от БД, выдержке доверять нельзя.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import context_service
