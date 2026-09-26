@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **147 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **148 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -86,8 +86,8 @@ coding-агента.
 ```bash
 cod-doc-mcp                              # agent (default) — 6 curator tools
 cod-doc-mcp --profile minimal            # 21 cold-start tools
-cod-doc-mcp --profile standard           # 143 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 147 (включая legacy)
+cod-doc-mcp --profile standard           # 144 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 148 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 # CLI equivalent (ADO-079): same catalog filter
 cod-doc mcp --profile standard
@@ -142,7 +142,7 @@ cod-doc mcp --profile standard
 
 | Демон | Адрес | Профиль | Тулов |
 |---|---|---|---|
-| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 143 |
+| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 144 |
 | `com.cod-doc.mcp-agent` | `http://127.0.0.1:8802/mcp` | `agent` | 6 |
 
 Установка, апгрейд и управление — `deploy/launchd/cod-doc-services.sh`
@@ -328,10 +328,10 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **plan.\*** | 11 | Планы исполнения и графы зависимостей | `plan_create`, `plan_freeze`, `plan_section_create`, `plan_sections_list`, `plan_ready`, `plan_progress`, `plan_critical_path`, `plan_forward_chain`, `plan_reverse_chain`, `plan_audit`, `plan_export` |
 | **story.\*** | 11 | User stories + acceptance criteria + секции | `story_create`, `story_list`, `story_get`, `story_link`, `story_add_criterion`, `story_set_criterion_met`, `story_update_status`, `story_coverage`, `story_section_create`, `story_section_list`, `story_set_section` |
 | **link.\*** | 4 | Гибридные ссылки между документами | `link_list`, `link_sync`, `link_verify`, `link_suggest_for_section` |
-| **revision.\*** | 3 | История изменений сущностей | `revision_list`, `revision_get`, `revision_revert` |
+| **revision.\*** | 3 | История изменений сущностей. `revision_list` без `kind`/`ref` отдаёт проектную ленту (фильтры `since`/`author`/`entity_kind`) | `revision_list`, `revision_get`, `revision_revert` |
 | **run.\*** | 1 | Инспекция прогонов встроенного оркестратора (ADR-012) | `run_get` |
 | **approval.\*** | 5 | Human-in-the-loop одобрения | `approval_request`, `approval_list`, `approval_get`, `approval_resolve`, `approval_cancel` |
-| **activity.\*** | 1 | Единый audit-таймлайн | `activity_list` |
+| **activity.\*** | 2 | Единый audit-таймлайн + GROUP BY агрегаты (RFC 27 F9) | `activity_list`, `activity_summary` |
 | **routine.\*** | 7 | Cron-style health checks | `routine_create`, `routine_list`, `routine_get`, `routine_update_status`, `routine_delete`, `routine_run_now`, `routine_history` |
 | **skill.\*** | 2 | Каталог skill-инструкций для агента | `skill_list`, `skill_get` |
 | **agent.\* (cycle-5)** | 6 | Cycle-5 task-flow surface. На профиле `agent` (RFC 25 §3.2) в allowlist остались только `agent_capabilities`/`agent_report`, курс задают `ctx_*`/`context_get` из семейства ниже; task-centric `agent_pick`/`agent_get`/`agent_complete`/`agent_release` видны на `standard`/`full` | `agent_capabilities`, `agent_pick`, `agent_get`, `agent_report`, `agent_complete`, `agent_release` |
@@ -347,7 +347,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **doc_tree.\* / doc_node.\* (ADO-116)** | 8 | Дерево документации как данные: разделы с намерением и порядком, детерминированная раскладка по правилам и Инбокс для того, что правилам не подошло. `doc_tree_classify` по умолчанию `dry_run=true` и не трогает то, что человек разложил руками. Только профили standard/full | `doc_tree_get`, `doc_tree_unplaced`, `doc_tree_init`, `doc_tree_classify`, `doc_set_node`, `doc_node_create`, `doc_node_update`, `doc_node_delete` |
 | **doc_node_health.\* / doc_node_intent.\*** | 3 | Пробелы в наполненности разделов: пусто, ниже `min_docs`, без `intent`, вырожденная типизация корпуса, пачка безымянных индексов. Дерево отвечает «где лежит», это — «чего не написано». `doc_node_health_sync` пишет находки в общую таблицу `finding`, поэтому пробел виден `curator_next` и промоутится в задачу. Детерминированная часть без LLM; `doc_node_intent_analyze` — вердикт модели «покрывают ли документы раздела его intent», в своей партиции находок, чтобы упавший проход не закрыл детерминированные. Только профили standard/full | `doc_node_health_get`, `doc_node_health_sync`, `doc_node_intent_analyze` |
 | **repair.\* (ADO-192)** | 1 | Фаза D команды `cod-doc update`: починка состояния проекта по карточке `curator_next` — `edited_in_place` → `doc import`, протухший реестр хэшей `MASTER.md` → пересчёт, нерезолвящиеся derived-ссылки → resync секций, замки старше TTL → снятие, незаведённое дерево разделов (проект старше ADO-116) → засев дефолтного без раскладки. Остальное (`stale_export`, `missing`, hash `BROKEN`, `unplaced`, findings) уходит счётчиками в `reported_only`. `dry_run=true` по умолчанию: тул, молча переписывающий десяток документов на спекулятивном вызове, — мина. Фазы A–C на MCP не выставлены, см. абзац ниже. Только профили standard/full | `project_repair` |
-| **ИТОГО** | **147** | | |
+| **ИТОГО** | **148** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
@@ -414,7 +414,7 @@ C — верификация, D — автопочинка состояния п
 | Copilot Chat | ✅ | ✅ | ❌ | Частично |
 | Claude Desktop | ✅ | ✅ | ❌ | Через copy-paste |
 | CI/CD | ✅ | ❌ | ✅ | ❌ |
-| Кол-во инструментов | 147 | 147 | ~8 | 0 |
+| Кол-во инструментов | 148 | 148 | ~8 | 0 |
 | Семантический поиск | ✅ | ✅ | ❌ | ❌ |
 | `project` в вызове | обязателен | можно через дефолт | — | — |
 | Дефолтный проект | нет (общий процесс) | есть (процесс = сессия) | — | — |

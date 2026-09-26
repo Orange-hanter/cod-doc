@@ -88,37 +88,85 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(name="revision_list")
     def revision_list(
         project: str,
-        kind: str,
-        ref: str,
+        kind: str | None = None,
+        ref: str | None = None,
         limit: int = 20,
+        since: str | None = None,
+        author: str | None = None,
+        entity_kind: str | None = None,
     ) -> list[dict[str, Any]]:
-        """List revision history for an entity (newest last, up to limit).
+        """List revisions: entity history (kind+ref) or project feed (neither).
 
+        Entity mode — kind and ref both given: history of one entity, newest
+        last, up to limit; rows carry revision_id, author, at, reason,
+        parent_revision_id, diff.
         kind: task | document | section | story | plan | link | module.
         ref: task_id / doc_key / story_id / doc_key#anchor / integer row_id.
+
+        Feed mode — kind and ref both omitted: newest-first project feed with
+        optional filters since (ISO date), author, entity_kind. Rows carry
+        revision_id, entity_kind, entity_id, author, at, reason — no diff
+        (fetch it via revision_get). RFC 27 F9: «ревизии за сегодня» —
+        revision_list(project, since='2026-09-26', limit=200), группировка
+        по entity_kind на стороне клиента.
         """
         from cod_doc.domain.entities import EntityKind
         from cod_doc.infra.db import transactional
         from cod_doc.services import revision_service
+        from cod_doc.services.task_service import parse_since
 
-        if kind not in _KIND_MAP:
-            raise ValueError(f"Invalid kind '{kind}'. Choose from: {', '.join(_KIND_MAP)}")
+        if (kind is None) != (ref is None):
+            raise ValueError("kind and ref must be given together: either both or neither.")
 
         sf, _ = session_factory(project)
+        if kind is not None and ref is not None:
+            if since is not None or author is not None or entity_kind is not None:
+                raise ValueError(
+                    "Feed filters (since/author/entity_kind) cannot be combined "
+                    "with kind+ref entity mode."
+                )
+            if kind not in _KIND_MAP:
+                raise ValueError(f"Invalid kind '{kind}'. Choose from: {', '.join(_KIND_MAP)}")
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                entity_id = _resolve_entity_id(session, kind, ref, project_id)
+                revisions = revision_service.list_for_entity(
+                    session, EntityKind(kind), entity_id, limit=limit
+                )
+            return [
+                {
+                    "revision_id": r.revision_id,
+                    "author": r.author,
+                    "at": r.at.isoformat() if r.at else None,
+                    "reason": r.reason,
+                    "parent_revision_id": r.parent_revision_id,
+                    "diff": r.diff,
+                }
+                for r in revisions
+            ]
+
+        if entity_kind is not None and entity_kind not in _KIND_MAP:
+            raise ValueError(
+                f"Invalid entity_kind '{entity_kind}'. Choose from: {', '.join(_KIND_MAP)}"
+            )
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
-            entity_id = _resolve_entity_id(session, kind, ref, project_id)
-            revisions = revision_service.list_for_entity(session, EntityKind(kind), entity_id)
-
-        revisions = revisions[-limit:]
+            revisions = revision_service.list_for_project(
+                session,
+                project_id,
+                limit=limit,
+                entity_kind=EntityKind(entity_kind) if entity_kind else None,
+                since=parse_since(since) if since else None,
+                author=author,
+            )
         return [
             {
                 "revision_id": r.revision_id,
+                "entity_kind": r.entity_kind.value,
+                "entity_id": r.entity_id,
                 "author": r.author,
                 "at": r.at.isoformat() if r.at else None,
                 "reason": r.reason,
-                "parent_revision_id": r.parent_revision_id,
-                "diff": r.diff,
             }
             for r in revisions
         ]

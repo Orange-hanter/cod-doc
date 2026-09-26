@@ -143,14 +143,31 @@ def revision() -> None:
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option(
     "--kind",
-    required=True,
     type=click.Choice(_KIND_CHOICES),
-    help="Entity kind",
+    help="Entity kind (режим сущности, вместе с --ref)",
 )
 @click.option(
     "--ref",
-    required=True,
     help="Entity ref: task_id / doc_key / story_id / doc_key#anchor / row_id",
+)
+@click.option(
+    "--all",
+    "all_feed",
+    is_flag=True,
+    default=False,
+    help="Лента ревизий всего проекта (newest-first), без привязки к сущности",
+)
+@click.option(
+    "--since",
+    default=None,
+    help="ISO-8601: ревизии не раньше момента, напр. 2026-09-26 (только с --all)",
+)
+@click.option("--author", default=None, help="Фильтр по автору (только с --all)")
+@click.option(
+    "--entity-kind",
+    type=click.Choice(_KIND_CHOICES),
+    default=None,
+    help="Фильтр по виду сущности (только с --all)",
 )
 @click.option("--limit", default=20, show_default=True, help="Max revisions to show")
 @click.option("--json", "as_json", is_flag=True, default=False)
@@ -158,25 +175,109 @@ def revision() -> None:
 def revision_list(
     ctx: click.Context,
     project: str,
-    kind: str,
-    ref: str,
+    kind: str | None,
+    ref: str | None,
+    all_feed: bool,
+    since: str | None,
+    author: str | None,
+    entity_kind: str | None,
     limit: int,
     as_json: bool,
 ) -> None:
-    """List revision history for an entity."""
+    """List revision history for an entity — or the project feed with --all.
+
+    \b
+    Ревизии за сегодня по проекту:
+      cod-doc revision list -p X --all --since 2026-09-26 --json
+    """
     from cod_doc.domain.entities import EntityKind
     from cod_doc.infra.db import transactional
-    from cod_doc.services import revision_service
+    from cod_doc.services import revision_service, task_service
+
+    if all_feed:
+        if kind or ref:
+            raise click.UsageError(
+                "--all нельзя сочетать с --kind/--ref: лента проекта не режется по сущности."
+            )
+    else:
+        if since or author or entity_kind:
+            raise click.UsageError("--since/--author/--entity-kind работают только вместе с --all.")
+        if not (kind and ref):
+            raise click.UsageError(
+                "Нужны оба --kind и --ref (режим сущности) — или --all для ленты проекта."
+            )
+
+    try:
+        since_dt = task_service.parse_since(since) if since else None
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from None
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
+    if all_feed:
+        with transactional(sf) as session:
+            project_id = _require_project_id(session, project)
+            feed = revision_service.list_for_project(
+                session,
+                project_id,
+                limit=limit,
+                since=since_dt,
+                author=author,
+                entity_kind=EntityKind(entity_kind) if entity_kind else None,
+            )
+
+        if as_json:
+            click.echo(
+                _json.dumps(
+                    [
+                        {
+                            "revision_id": r.revision_id,
+                            "entity_kind": r.entity_kind.value,
+                            "entity_id": r.entity_id,
+                            "author": r.author,
+                            "at": r.at.isoformat() if r.at else None,
+                            "reason": r.reason,
+                        }
+                        for r in feed
+                    ],
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            )
+            return
+
+        if not feed:
+            console.print("[dim]No revisions found.[/dim]")
+            return
+
+        table = Table(title=f"Revisions — project {project}", show_header=True)
+        table.add_column("Revision ID", style="cyan", no_wrap=True, width=28)
+        table.add_column("Kind", width=10)
+        table.add_column("Entity", width=8)
+        table.add_column("Author", width=20)
+        table.add_column("At", width=20)
+        table.add_column("Reason")
+        for r in feed:
+            at_str = r.at.isoformat()[:19] if r.at else "—"
+            table.add_row(
+                r.revision_id,
+                r.entity_kind.value,
+                str(r.entity_id),
+                r.author,
+                at_str,
+                r.reason or "",
+            )
+        console.print(table)
+        return
+
+    assert kind is not None and ref is not None  # проверено выше (UsageError)
     with transactional(sf) as session:
         project_id = _require_project_id(session, project)
         entity_id = _resolve_entity_id(session, kind, ref, project_id)
-        revisions = revision_service.list_for_entity(session, EntityKind(kind), entity_id)
-
-    revisions = revisions[-limit:]  # newest last; show last N
+        revisions = revision_service.list_for_entity(
+            session, EntityKind(kind), entity_id, limit=limit
+        )
 
     if as_json:
         click.echo(

@@ -125,17 +125,44 @@ def write(
     return _to_domain(model)
 
 
-def list_for_entity(session: Session, entity_kind: EntityKind, entity_id: int) -> list[Revision]:
-    """Full history for the entity, oldest → newest."""
+def list_for_entity(
+    session: Session,
+    entity_kind: EntityKind,
+    entity_id: int,
+    *,
+    limit: int | None = None,
+) -> list[Revision]:
+    """History for the entity, oldest → newest.
+
+    With `limit=None` (default) the full history is returned, exactly as
+    before. With `limit` set, SQL fetches only the last `limit` revisions
+    (ORDER BY at DESC, row_id DESC LIMIT limit) and the result is reversed
+    back to oldest → newest — the caller gets the same tail that
+    `[-limit:]` used to give, but without loading the whole history.
+    """
+    if limit is None:
+        stmt = (
+            select(RevisionModel)
+            .where(
+                RevisionModel.entity_kind == entity_kind.value,
+                RevisionModel.entity_id == entity_id,
+            )
+            .order_by(RevisionModel.at.asc(), RevisionModel.row_id.asc())
+        )
+        return [_to_domain(m) for m in session.execute(stmt).scalars()]
+
     stmt = (
         select(RevisionModel)
         .where(
             RevisionModel.entity_kind == entity_kind.value,
             RevisionModel.entity_id == entity_id,
         )
-        .order_by(RevisionModel.at.asc(), RevisionModel.row_id.asc())
+        .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
+        .limit(limit)
     )
-    return [_to_domain(m) for m in session.execute(stmt).scalars()]
+    models = list(session.execute(stmt).scalars())
+    models.reverse()
+    return [_to_domain(m) for m in models]
 
 
 def head_for_entity(
@@ -175,18 +202,28 @@ def list_for_project(
     limit: int = 50,
     entity_kind: EntityKind | None = None,
     entity_id: int | None = None,
+    since: datetime | None = None,
+    author: str | None = None,
 ) -> list[Revision]:
-    """Newest-first revisions of a project, optionally narrowed to one entity.
+    """Newest-first revisions of a project, optionally narrowed by filters.
 
-    Used by the revisions log page (WEB-021). When both `entity_kind` and
-    `entity_id` are passed, behaves like `list_for_entity` but order is
-    flipped to newest-first to match the timeline UX.
+    This is the project-wide revision feed for MCP and CLI (RFC 27 F9), not
+    only for the web revisions log page (WEB-021). When both `entity_kind`
+    and `entity_id` are passed, behaves like `list_for_entity` but order is
+    flipped to newest-first to match the timeline UX. `since` filters to
+    revisions with `at >= since`; datetimes are compared in UTC — callers
+    pass values normalized by `task_service.parse_since`. `author` filters
+    by exact equality.
     """
     stmt = select(RevisionModel).where(RevisionModel.project_id == project_id)
     if entity_kind is not None:
         stmt = stmt.where(RevisionModel.entity_kind == entity_kind.value)
     if entity_id is not None:
         stmt = stmt.where(RevisionModel.entity_id == entity_id)
+    if since is not None:
+        stmt = stmt.where(RevisionModel.at >= since)
+    if author is not None:
+        stmt = stmt.where(RevisionModel.author == author)
     stmt = stmt.order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc()).limit(limit)
     return [_to_domain(m) for m in session.execute(stmt).scalars()]
 
