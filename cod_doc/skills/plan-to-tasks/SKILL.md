@@ -67,7 +67,7 @@ description: "<контекст и hint'ы>"
    - Заполнить `blocked_by` от существующих prereq-задач.
    - Перечислить `affects_files`.
    - Сформулировать `acceptance` в одном абзаце.
-5. Записать в БД через `task.create` (MCP) **и** в markdown
+5. Записать в БД через `task_create` (MCP) **и** в markdown
    execution-plan (mirror).
 
 ## Что НЕ делать

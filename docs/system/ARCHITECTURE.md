@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-26
 related_code:
   - cod_doc/core/
   - cod_doc/agent/
@@ -59,6 +59,9 @@ related_code:
 
 ## 2. Application layer (сервисы)
 
+Основные сервисы; полный список — [`cod_doc/services/`](../../cod_doc/services/)
+(на 2026-09-26 — больше полусотни модулей и пакетов).
+
 | Сервис | Ответственность |
 |--------|----------------|
 | `DocService` | CRUD документов, генерация skeleton, импорт/экспорт markdown |
@@ -91,7 +94,8 @@ related_code:
 
 ### 4.2 Markdown projection
 
-`.cod-doc/mirror/` — дерево markdown-файлов, зеркалирующее БД. Не исходники, а **артефакт**. Правила:
+Проекция пишется прямо в рабочее дерево проекта (`<root_path>/<doc path>.md`),
+отдельного каталога `.cod-doc/mirror/` нет. Markdown — не исходники, а **артефакт**. Правила:
 
 - `export` регенерирует все файлы детерминированно.
 - `import` парсит файлы и пытается применить изменения через сервисы (не через прямую запись в БД).
@@ -170,6 +174,12 @@ ContextService.build(target, depth)
 
 ## 7. Inversion of dependencies
 
+> **Миграция выполнена (ADO-217, 2026-09-26):** шаги 1–5 сделаны — `cod_doc/domain/`,
+> `cod_doc/services/`, `cod_doc/infra/repositories/` на месте, presentation ходит
+> через сервисы (гейт `tests/services/test_services_layering.py`). Шаг 6 не
+> буквален: `cod_doc/core/` жив как набор утилит (`hash_calc`, `embeddings`,
+> `reindex`, `project`). Список ниже — исходный план.
+
 `cod_doc/core/project.py` уже реализует часть домена (Task, TaskStatus). Миграция к целевой архитектуре:
 
 1. Выделить `cod_doc/domain/` с чистыми сущностями.
@@ -185,7 +195,7 @@ ContextService.build(target, depth)
 
 | Профиль | Когда | БД | MCP | Auth | Projection |
 |---------|-------|-----|-----|------|------------|
-| **embedded** | один разработчик | SQLite `.cod-doc/state.db` | stdio | implicit OS user | FS mirror обязателен |
+| **embedded** | один разработчик | SQLite `.cod-doc/state.db` | stdio | implicit OS user | проекция в рабочем дереве |
 | **server** | команда, один хост | Postgres | stdio и/или localhost HTTP | token (спека §12) | FS volume |
 | **cloud** | ИИ-агенты remote | Postgres | streamable-http + TLS | Bearer enforced | optional export |
 
@@ -263,7 +273,7 @@ class CodDocError(Exception):
 
 ### 11.4 Идемпотентность
 
-- `task.create` принимает `idempotency_key` (опционально); повторный вызов с тем же ключом возвращает оригинальный результат.
+- *(planned, не реализовано)* `task.create` принимает `idempotency_key` (опционально); повторный вызов с тем же ключом возвращает оригинальный результат. Сегодня `idempotency_key` есть только у `link_sync` (`cod_doc/mcp/tools/link_tools.py`).
 - `doc.patch_section` идемпотентен по `parent_revision_id` — повторный apply того же патча с тем же parent даёт тот же revision_id (детерминированный ULID при флаге `--deterministic`).
 
 ## 11. Concurrency & Identity
@@ -273,6 +283,10 @@ class CodDocError(Exception):
 Запись revision требует `parent_revision_id` — последнюю известную revision сущности. Если за это время появилась новая — `OptimisticLockError`. Клиент перечитывает state и повторяет.
 
 ### 12.2 Identity
+
+> **Целевое, гейт неактивен (ADO-217).** Таблицы `actor` в схеме нет
+> (`cod_doc/infra/models/`); провенанс сегодня несёт `author`/`actor_id`, роль
+> выводится через `domain.entities.actor_kind_for_author` (ADR-012). DDL ниже — спека.
 
 Каждый actor имеет запись в таблице `actor` (отдельно от `agent_definition`):
 

@@ -1,3 +1,12 @@
+---
+type: architecture
+status: active
+source_of_truth: true
+owner: cod-doc core
+created: 2026-09-02
+last_updated: 2026-09-26
+---
+
 # Structure snapshots, obligations and scenario drift
 
 cod-doc is the **consumer** of the shared structure protocol. ai-reviewer
