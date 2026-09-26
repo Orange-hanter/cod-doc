@@ -42,13 +42,31 @@ def project() -> None:
 
 
 @project.command("list")
+@click.option(
+    "--json", "as_json", is_flag=True, help="Машинный вывод: JSON-список {slug, root_path, db_url}"
+)
 @click.pass_context
-def project_list(ctx: click.Context) -> None:
-    """Список всех зарегистрированных проектов."""
+def project_list(ctx: click.Context, as_json: bool) -> None:
+    """Список всех зарегистрированных проектов.
+
+    С `--json` печатает машинный список [{slug, root_path, db_url}] — для
+    скриптов плагина вместо sqlite3 по state.db (RFC 27 F15).
+    """
     from cod_doc.services import project_stats
 
     cfg: Config = ctx.obj["config"]
     projects = cfg.list_projects()
+
+    if as_json:
+        from cod_doc.infra.db import db_url_for_entry
+
+        rows = [
+            {"slug": entry.name, "root_path": entry.path, "db_url": db_url_for_entry(entry)}
+            for entry in projects
+        ]
+        click.echo(_json.dumps(rows, ensure_ascii=False))
+        return
+
     if not projects:
         console.print("[yellow]Проектов нет. Добавьте: cod-doc project add[/yellow]")
         return

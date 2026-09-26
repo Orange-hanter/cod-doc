@@ -1996,6 +1996,7 @@ _cod-doc() {
   local -a line
   typeset -A opt_args
   _arguments -s -S \
+    '(--json)--json[Машинный вывод; JSON-список {slug, root_path, db_url}]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
 }
