@@ -72,7 +72,7 @@ TaskDocument:
 ## План внедрения
 
 1. **Схема БД + миграция.** Новая таблица `task_documents` + `task_document_revisions`.
-2. **MCP-тулы** в [cod_doc/mcp/tools/task_tools.py](cod_doc/mcp/tools/task_tools.py) (или отдельный `task_doc_tools.py`).
+2. **MCP-тулы** в [cod_doc/mcp/tools/task_tools.py](../cod_doc/mcp/tools/task_tools.py) (или отдельный `task_doc_tools.py`).
 3. **Скилл `plan-to-tasks`** (из [01](01-skills-layer.md)) — обновить: «план задачи кладётся в `task_doc_put(task, 'plan', ...)`, не в task.description».
 4. **UI:** на странице задачи — табы по ключам доков; markdown-редактор с показом diff между ревизиями.
 5. **Heartbeat-context** (из [02](02-heartbeat-context.md)) — добавить срез `task_documents: [{key, current_revision_id, summary}]`.

@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: sprint-m3-friction-log
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-08-30
-last_updated: 2026-08-30
+last_updated: 2026-09-26
 related_docs:
   - ../roadmap/ROADMAP.md
   - ../roadmap/sprint-2026-08-30-m3-friction-log.md

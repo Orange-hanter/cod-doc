@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-25
+last_updated: 2026-09-26
 ---
 
 # COD-DOC — Data Model
@@ -44,7 +44,11 @@ Project ─┬─< Document ─┬─< Section ─┬─< Block
 - Все ID внешних сущностей (таск, модуль) — человекочитаемые (`AUTH-025`, `M1-auth`). БД хранит ещё и суррогатный `row_id` BIGINT PK.
 - `Revision` — иммутабельная история; никогда не апдейтится, только append.
 - `Link` — direct reference `(from_doc, to_ref)`; резолв в `to_doc_id` кэшируется, но всегда перепроверяется при чтении.
-- `Task.status` — enum из 3 значений; `Plan.status` — вычисляем, не хранится.
+- `Task.status` — 7 канонических бакетов (`backlog`, `todo`, `in_progress`,
+  `in_review`, `blocked`, `done`, `cancelled`) плюс легаси-алиасы
+  (`pending`≡`todo`, `in-progress`≡`in_progress`); нормализация и переходы —
+  `cod_doc/services/task_status_machine.py`, бэкфилл в канон — миграция 0037.
+  `Plan.status` — вычисляем, не хранится.
 - `tasks_done` / `tasks_total` секции — хранятся в `SectionTotals` как материализованное представление с триггером на изменение задач.
 
 ## 3. Таблицы
@@ -221,7 +225,7 @@ CREATE TABLE task (
   plan_id       INTEGER NOT NULL REFERENCES plan(row_id),
   section_id    INTEGER NOT NULL REFERENCES plan_section(row_id),
   title         TEXT    NOT NULL,
-  status        TEXT    NOT NULL,   -- pending|in-progress|done
+  status        TEXT    NOT NULL,   -- backlog|todo|in_progress|in_review|blocked|done|cancelled (+ легаси pending|in-progress)
   type          TEXT    NOT NULL,   -- feature|test|bug|refactor|...
   priority      TEXT    NOT NULL,   -- critical|high|medium|low
   description   TEXT,
@@ -557,6 +561,26 @@ CREATE TABLE scenario_link (
 - **Шаги и связи ревизируются под родительским `entity_kind = 'scenario'`** —
   как критерии под стори.
 
+### 3.17 Таблицы, появившиеся после апреля 2026
+
+> **Сноска ADO-217 (2026-09-26).** Разделы §3 описывают ядро схемы на апрель.
+> Подсистемы, добавленные позже, живут в своих моделях
+> [`cod_doc/infra/models/`](../../cod_doc/infra/models/) и миграциях — здесь
+> только карта, DDL — в миграции:
+
+| Подсистема | Таблицы | Миграция |
+|---|---|---|
+| Документы задач | `task_document` | `0011_task_documents` |
+| Approvals | `approval`, `approval_task_link`, `approval_doc_revision_link` | `0013_approvals` |
+| Routines, checkout | `routine`, `routine_run` | `0014_task_checkout_and_routine` |
+| ADR | `adr`, `adr_supersedes`, `adr_task`, `adr_diagram` | `0018_adr_tables` |
+| Findings | `finding`, `finding_source_run` (+ `miss_streak`, 0036) | `0028_findings` |
+| Structure platform | `code_structure_snapshot`, `code_entity`, `code_edge`, `code_boundary`, `code_contract`, `doc_code_claim`, `structure_*` | `0031_structure_platform` |
+| Дерево документации | `doc_node`, `doc_node_suggestion`, `document.node_id` | `0035_doc_nodes` |
+
+Таблицы `agent_definition` и `actor` из capability-доков в схеме **нет** — это
+целевые спеки (ARCHITECTURE §12.2, agents-and-skills §1.1).
+
 ## 4. Вычисляемые представления
 
 ### 4.1 `section_totals`
@@ -607,6 +631,21 @@ GROUP BY s.row_id;
 > добавлена последней, порядок прежних полей не сдвинут. Синхронность
 > стережёт `tests/infra/test_totals_cancelled.py`.
 
+### 4.3 `ready_tasks`
+
+```sql
+CREATE VIEW ready_tasks AS
+SELECT t.*
+FROM task t
+WHERE t.status IN ('todo','pending')
+  AND NOT EXISTS (
+    SELECT 1 FROM dependency d
+    JOIN task dep ON dep.row_id = d.to_task_id
+    WHERE d.from_task_id = t.row_id
+      AND dep.status NOT IN ('done', 'cancelled')
+  );
+```
+
 ### 4.3a `document_body`
 
 ```sql
@@ -638,21 +677,6 @@ FROM (
 > **ADO-010 (находка F7).** До миграции 0025 view склеивал `preamble` с первым заголовком без разделителя — `preamble` хранится без хвостового перевода строки, поэтому на выходе получалось `> …заранее.## 1. Зачем`. Это была порча контента, а не форматирование: любой `doc export` ломал документ. Разделитель `\n\n` вставляется только когда обе части непусты; агрегат секций вычисляется один раз во внутреннем `SELECT`, чтобы условие могло его проверить, не повторяя `string_agg`.
 
 > **Производительность (миграция 0030).** Форма 0025 собирала секции в производной таблице с `GROUP BY document_id` и джойнила её к `document`. SQLite не проталкивает внешний `WHERE document_id = ?` внутрь такой группировки: он материализует агрегат по **всей** таблице `section` и лишь потом берёт одну строку, поэтому чтение одного документа стоило O(все секции проекта), а обход всех документов — O(документы × секции). На корпусе cod-doc (150 документов, 1200 секций) 150 одиночных чтений занимали 250–450 мс; на этом стояла страница `GET /p/{slug}`, которая гоняет `detect_project_drift` по всем документам. Коррелированный подзапрос даёт `SEARCH section USING INDEX ix_section_position (document_id=?)` — те же 150 чтений занимают 6 мс, чтение всех строк разом не пострадало (8.4 → 5.1 мс). Текст на выходе побайтово тот же — это обязательное условие, от него считается `document.projection_hash`.
-
-### 4.3 `ready_tasks`
-
-```sql
-CREATE VIEW ready_tasks AS
-SELECT t.*
-FROM task t
-WHERE t.status IN ('todo','pending')
-  AND NOT EXISTS (
-    SELECT 1 FROM dependency d
-    JOIN task dep ON dep.row_id = d.to_task_id
-    WHERE d.from_task_id = t.row_id
-      AND dep.status NOT IN ('done', 'cancelled')
-  );
-```
 
 ## 5. Миграции и seed
 

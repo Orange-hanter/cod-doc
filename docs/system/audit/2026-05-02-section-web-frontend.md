@@ -5,7 +5,7 @@ status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-02
-last_updated: 2026-05-02
+last_updated: 2026-09-26
 audit_target_revision: HEAD = ff7f92c (post Section G hardening, WEB-001..003, WEB-010, WEB-011)
 related_docs:
   - ../MASTER.md
@@ -117,7 +117,7 @@ finally:
 
 ### SW-HI-3. N+1 на index page (`Project.stats()` per project)
 
-**Где:** [cod_doc/api/web/pages.py:27-35](../../../cod_doc/api/web/pages.py)
+**Где:** [cod_doc/api/web/pages.py:27-35](../../../cod_doc/api/web/pages/)
 
 ```python
 for entry in cfg.list_projects():
@@ -136,7 +136,7 @@ for entry in cfg.list_projects():
 
 ### SW-HI-4. WEB-022 (alert/error model) висит → ошибки молча теряются
 
-**Где:** [cod_doc/templates/web/base.html:18](../../../cod_doc/templates/web/base.html), [cod_doc/api/web/fragments.py:80-97](../../../cod_doc/api/web/fragments.py)
+**Где:** [cod_doc/templates/web/base.html:18](../../../cod_doc/templates/web/base.html), [cod_doc/api/web/fragments.py:80-97](../../../cod_doc/api/web/fragments/)
 
 **Симптом:** `<div id="alerts">` в `base.html` существует, но никто туда не пишет.
 HTMX-фрагмент при ошибке (`RevisionConflictError`, `IntegrityError`, `ValueError`)
@@ -183,7 +183,7 @@ WEB-022 должна закрываться сразу после `WEB-040 + WEB
 
 ### SW-ME-3. doc_show body — raw markdown в `<pre>`, anchor'ы битые
 
-**Где:** [doc_show.html:36-40](../../../cod_doc/templates/web/project/doc_show.html), [pages.py:162](../../../cod_doc/api/web/pages.py)
+**Где:** [doc_show.html:36-40](../../../cod_doc/templates/web/project/doc_show.html), [pages.py:162](../../../cod_doc/api/web/pages/)
 
 **Симптом:** в боковой нав-панели — ссылки `<a href="#data-model">`, но в `<pre>`
 тегах нет HTML id'ов — клик ничего не делает. Вторая проблема: markdown показывается
@@ -233,7 +233,7 @@ templates/web/
 
 ### SW-ME-6. `status_options` дублируется в pages и fragments
 
-**Где:** [pages.py:147](../../../cod_doc/api/web/pages.py), [fragments.py:52](../../../cod_doc/api/web/fragments.py)
+**Где:** [pages.py:147](../../../cod_doc/api/web/pages/), [fragments.py:52](../../../cod_doc/api/web/fragments/)
 
 ```python
 "status_options": [s.value for s in TaskStatus],
@@ -281,7 +281,7 @@ templates/web/
 
 ### SW-LO-2. Тесты не покрывают error-ветки fragment-handler'а
 
-**Где:** [test_web_tasks.py:222-332](../../../tests/api/test_web_tasks.py), [fragments.py:80-97](../../../cod_doc/api/web/fragments.py)
+**Где:** [test_web_tasks.py:222-332](../../../tests/api/test_web_tasks.py), [fragments.py:80-97](../../../cod_doc/api/web/fragments/)
 
 **Симптом:** тестируется success path + 400/404, но НЕ:
 - `RevisionConflictError` ветка (rollback + `error: str | None`),
@@ -297,7 +297,7 @@ templates/web/
 
 ### SW-LO-3. Нет тестов на index без projects + master_path missing
 
-**Где:** [pages.py:46-47](../../../cod_doc/api/web/pages.py)
+**Где:** [pages.py:46-47](../../../cod_doc/api/web/pages/)
 
 **Симптом:** `proj.read_master()` может вернуть None, ветка `master_preview is none`
 в шаблоне есть, но теста на «MASTER.md удалён вручную после init» — нет.

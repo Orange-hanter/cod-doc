@@ -274,14 +274,14 @@ def test_drift_half_keeps_the_ctx_drift_shape(curator_session) -> None:
 
 
 _RESOLVED_STATUS_DOC = (
-    "---\ntype: standard\nstatus: resolved\nowner: dakh\n---\n# Gamma\n\nGamma body content.\n"
+    "---\ntype: standard\nstatus: implemented\nowner: dakh\n---\n# Gamma\n\nGamma body content.\n"
 )
 
 
 def test_in_sync_rows_go_to_advisory_not_issues(curator_session) -> None:
     """AFT-002: `in_sync` с расхождением frontmatter — advisory, а не issue.
 
-    gamma.md несёт `status: resolved`, которого нет в enum (ADO-092): импорт
+    gamma.md несёт `status: implemented`, которого нет в enum (ADO-092): импорт
     хранит fallback, файл — своё, хэши содержимого совпадают. alpha.md правится
     на диске мимо БД — это настоящий дрейф.
     """

@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: agent-tools-completion
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-06-08
-last_updated: 2026-06-08
+last_updated: 2026-09-26
 related_docs:
   - ../roadmap/agent-tools-completion-task-plan.md
   - ../roadmap/ROADMAP.md

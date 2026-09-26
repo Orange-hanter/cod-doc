@@ -22,9 +22,9 @@ Capability document: `docs/system/capabilities/doc-evolution.md`
 
 | Kind | Count |
 |---|---|
-| `happy_path` | 1 |
+| `happy_path` | 2 |
 | `error_path` | 1 |
-| `boundary_value` | 1 |
+| `boundary_value` | 0 |
 | `invariant` | 1 |
 | `integration` | 1 |
 | **total** | **5** |
@@ -73,9 +73,9 @@ A projection file was edited after the last export (`edited_in_place`).
 
 TSC-002. Claims match code as of 2026-09-15.
 
-## SCN-013 — There is no MCP doc_patch_* tool
+## SCN-013 — doc_patch_section is registered as an MCP tool
 
-**Kind:** `boundary_value`
+**Kind:** `happy_path`
 **Status:** `draft`
 **Anchor:** `docs/system/capabilities/doc-evolution#0-as-implemented-2026-09-15`
 
@@ -89,11 +89,11 @@ The standard MCP catalog is loaded.
 
 ### Expected result
 
-No tool named `doc_patch_section` or `doc_patch_*` is registered; section patches stay on `doc_service`.
+`doc_patch_section` is registered (cod_doc/mcp/tools/doc_tools.py) and patches one section through `doc_service`.
 
 ### Notes
 
-TSC-002. Claims match code as of 2026-09-15.
+TSC-002. ADO-217: inverted — the 2026-09-15 claim «no doc_patch_* tool» stopped holding when doc_patch_section was registered (2026-09-18).
 
 ## SCN-014 — SQLite document row is SoT; markdown is a projection
 

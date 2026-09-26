@@ -102,7 +102,7 @@ class Approval:
 ## План внедрения
 
 1. **Схема + миграция.** Таблицы `approvals`, `approval_history`.
-2. **Доменная модель.** В [cod_doc/core/](cod_doc/core/).
+2. **Доменная модель.** В [cod_doc/core/](../cod_doc/core/).
 3. **MCP-тулы.**
 4. **Status-machine integration** ([08](08-status-taxonomy.md)) — `linked_task_ids` авто `in_review` ↔ approval status.
 5. **Wake integration** ([03](03-wake-payload.md)) — resolve триггерит wake с правильным payload.

@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: contract-audit
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-08-29
-last_updated: 2026-08-29
+last_updated: 2026-09-26
 related_docs:
   - ../ARCHITECTURE.md
   - ../DATA_MODEL.md

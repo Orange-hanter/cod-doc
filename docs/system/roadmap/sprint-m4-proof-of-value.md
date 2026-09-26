@@ -1,12 +1,12 @@
 ---
 type: sprint-plan
 scope: adoption-2026-08
-status: active
+status: done
 source_of_truth: false
 canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
 created: 2026-08-30
-last_updated: 2026-09-02
+last_updated: 2026-09-26
 audience: [next-session-agent, contributors]
 related_docs:
   - ROADMAP.md
@@ -123,11 +123,15 @@ ADO-045 (DATA_MODEL sync). Одна задача = один закрытый к�
 
 ## 5. Definition of Done
 
-- [ ] Каждая задача очереди прошла `task_checkout` → `task_complete` с
-      `commit_sha`.
-- [ ] Решение по E5-C — артефакт в ZAIrgRush (не «в голове»).
-- [ ] Правки трекаемых `.md` импортированы в тех же коммитах;
+- [x] Каждая задача очереди прошла `task_checkout` → `task_complete` с
+      `commit_sha`. *(ADO-040 был закрыт с плейсхолдером `REPLACE_SHA`;
+      ADO-220 записал реальный коммит `3b2662b`)*
+- [x] Решение по E5-C — артефакт в ZAIrgRush (не «в голове»). *(вердикт «масштабируем», $0.98 — аудит M4 §5, разбор [2026-09-05-e5c-run-analysis](../audit/2026-09-05-e5c-run-analysis.md))*
+- [x] Правки трекаемых `.md` импортированы в тех же коммитах;
       финальный `doc drift --all` — 100% in_sync.
-- [ ] `ruff` + `mypy` + `pytest` зелёные на последнем коммите;
-      ratchet ≤ 6.
-- [ ] Audit-отчёт M4 — status active, в БД, со ссылками на коммиты.
+- [x] `ruff` + `mypy` + `pytest` зелёные на последнем коммите;
+      ratchet ≤ 6. *(с оговоркой аудита M4 §5: локально 1629/1630, CI
+      красный — закрыто в M5, ADO-070)*
+- [x] Audit-отчёт M4 — status active, в БД, со ссылками на коммиты. *(ныне `resolved`)*
+
+> Сверка ADO-217/ADO-220 (2026-09-26): спринт закрыт 2026-09-02, DoD выполнен целиком.

@@ -1,12 +1,12 @@
 ---
 type: sprint-plan
 scope: adoption-2026-08
-status: active
+status: done
 source_of_truth: false
 canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
 created: 2026-09-02
-last_updated: 2026-09-06
+last_updated: 2026-09-26
 audience: [next-session-agent, contributors]
 related_docs:
   - ROADMAP.md
@@ -171,10 +171,12 @@ M4 закрылся на утверждении «гейты зелёные». �
 
 ## 6. Definition of Done
 
-- [ ] Каждая задача очереди прошла `task_checkout` → `task_complete` с `commit_sha`.
+- [x] Каждая задача очереди прошла `task_checkout` → `task_complete` с `commit_sha`.
 - [x] **Зелёный прогон CI на main** — не локальный прогон, а run id. *(run 33765619088, `conclusion: success`, 2026-09-03; все 7 джоб)*
-- [ ] Каждый баг закрыт с приложенным красным прогоном ДО фикса.
-- [ ] Правки трекаемых `.md` импортированы в тех же коммитах; финальный
+- [x] Каждый баг закрыт с приложенным красным прогоном ДО фикса. *(с оговоркой аудита M5 §7 по ADO-075/077)*
+- [x] Правки трекаемых `.md` импортированы в тех же коммитах; финальный
       `doc drift --all` — 100% in_sync.
-- [ ] `ruff` + `mypy` + `pytest` зелёные локально; ratchet не вырос.
-- [ ] Audit-отчёт M5 — status active, в БД, со ссылками на коммиты.
+- [x] `ruff` + `mypy` + `pytest` зелёные локально; ratchet не вырос.
+- [x] Audit-отчёт M5 — status active, в БД, со ссылками на коммиты. *(ныне `resolved`)*
+
+> Чекбоксы дотянуты сверкой ADO-217 (2026-09-26) по DoD аудита M5 §7.

@@ -1,12 +1,12 @@
 ---
 type: sprint-plan
 scope: adoption-2026-08
-status: active
+status: done
 source_of_truth: false
 canonical_source: docs/system/roadmap/ROADMAP.md
 owner: cod-doc core
 created: 2026-08-27
-last_updated: 2026-08-27
+last_updated: 2026-09-26
 audience: [next-session-agent, contributors]
 related_docs:
   - ROADMAP.md
@@ -195,11 +195,13 @@ head` по hub — при остановленных петлях; собств�
 
 - [x] G1: SYM-003, ADO-016, ADO-017 → `done` в БД через `task_complete` с `commit_sha` (2026-08-28: ae5911e / 1a66aaa / 1a66aaa).
 - [x] G2: SYM-005A–D → `done`; SYM-006A/B → `done` (2026-08-28: aca5028, 7e532d0, d3f3255, db627a3, 78c9678, d363169).
-- [ ] G3: ADO-005 ≥5 наблюдений в journal; ADO-007 routine работает на пилоте.
-- [ ] `ruff check`, `ruff format --check`, `mypy cod_doc/`, `pytest --timeout=120` — зелёные.
-- [ ] Activity events на всех новых write-тулах (proposal 09).
-- [ ] ROADMAP.md + MASTER.md обновлены (чекбоксы M1, changelog).
-- [ ] Audit-отчёт `docs/system/audit/2026-09-10-sprint-m1-phase1.md` (skill `audit-cadence`).
+- [x] G3: ADO-005 ≥5 наблюдений в journal; ADO-007 routine работает на пилоте. *(аудит M1 §4: friction-лог 14 записей, cron-fire подтверждён, ADO-024)*
+- [x] `ruff check`, `ruff format --check`, `mypy cod_doc/`, `pytest --timeout=120` — зелёные. *(CI на main зелёный с 2026-09-03, run 33765619088 — до закрытия спринта 2026-09-10)*
+- [x] Activity events на всех новых write-тулах (proposal 09). *(ADO-040; стережёт `tests/services/test_activity_write_path.py`)*
+- [x] ROADMAP.md + MASTER.md обновлены (чекбоксы M1, changelog).
+- [x] Audit-отчёт `docs/system/audit/2026-09-10-sprint-m1-phase1.md` (skill `audit-cadence`).
+
+> Чекбоксы дотянуты сверкой ADO-217 (2026-09-26) по аудиту M1 и CI; спринт закрыт.
 
 ## 6. Риски
 

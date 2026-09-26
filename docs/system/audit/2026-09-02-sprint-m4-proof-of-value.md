@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: sprint-m4-proof-of-value
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-09-02
-last_updated: 2026-09-02
+last_updated: 2026-09-26
 related_docs:
   - ../roadmap/sprint-m4-proof-of-value.md
   - ../roadmap/sprint-m5-trustworthy-gate.md

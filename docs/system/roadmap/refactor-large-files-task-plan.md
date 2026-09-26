@@ -269,7 +269,7 @@ cod_doc/services/validation/
 Все импорты вида `from cod_doc.services import validation` и `from cod_doc.services.validation import ValidationError` продолжают работать.
 
 **Acceptance.**
-- [ ] Все вызовы `validation.validate_*` / `validation.audit_*` в [doc_service](../../../cod_doc/services/doc_service.py), [story_service](../../../cod_doc/services/story_service.py), [task_service](../../../cod_doc/services/task_service.py) работают без правок импортов.
+- [ ] Все вызовы `validation.validate_*` / `validation.audit_*` в [doc_service](../../../cod_doc/services/doc_service.py), [story_service](../../../cod_doc/services/story_service/), [task_service](../../../cod_doc/services/task_service.py) работают без правок импортов.
 - [ ] Тесты на validation (если есть отдельные) и интеграционные тесты сервисов — зелёные.
 
 ---

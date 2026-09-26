@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: docs/system
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-26
 audit_target_revision: initial-package-2026-04-19
 related_docs:
   - ../MASTER.md

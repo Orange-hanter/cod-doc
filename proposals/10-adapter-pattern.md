@@ -18,7 +18,7 @@ requireServerAdapter(type)
 
 ## Текущее состояние cod-doc
 
-[cod_doc/agent/orchestrator.py:70-77](cod_doc/agent/orchestrator.py#L70-L77):
+[cod_doc/agent/orchestrator.py:70-77](../cod_doc/agent/orchestrator.py#L70-L77):
 ```python
 self.client = AsyncOpenAI(
     api_key=config.api_key,
@@ -85,7 +85,7 @@ def list_adapters() -> list[str]: ...
 
 ### 4. Конфигурация
 
-В [cod_doc/config.py](cod_doc/config.py):
+В [cod_doc/config.py](../cod_doc/config.py):
 ```toml
 [llm]
 adapter = "anthropic"
@@ -103,7 +103,7 @@ model = "claude-opus-4-7"
 - OpenAI: `tools=[{type:"function", function:{name, parameters}}]`, `tool_calls` в response.
 - Anthropic: `tools=[{name, description, input_schema}]`, `content=[{type:"tool_use", ...}]`.
 
-Решение: **внутренний нейтральный формат** в [tool_defs.py](cod_doc/agent/tool_defs.py), каждый адаптер маппит в свой SDK-специфичный.
+Решение: **внутренний нейтральный формат** в [tool_defs.py](../cod_doc/agent/tool_defs.py), каждый адаптер маппит в свой SDK-специфичный.
 
 ### 6. Внешние адаптеры (Phase 2)
 
@@ -127,7 +127,7 @@ model = "claude-opus-4-7"
 
 ## Метрики успеха
 
-- Смена LLM-бэкенда — изменение в config, ноль изменений в [orchestrator.py](cod_doc/agent/orchestrator.py).
+- Смена LLM-бэкенда — изменение в config, ноль изменений в [orchestrator.py](../cod_doc/agent/orchestrator.py).
 - Юнит-тесты оркестратора используют `mock`-адаптер, не делают сетевых вызовов.
 - Минимум 2 working backend'а (`openai-compat` + `anthropic`) на момент закрытия фазы.
 
@@ -144,7 +144,7 @@ model = "claude-opus-4-7"
 
 ## Замечания (контекст cod-doc)
 
-- **`mock` адаптер как side-task.** Полный registry — большой scope, но `mock` адаптер для тестов оркестратора можно вытащить отдельно: создать минимальный интерфейс под две реализации (real OpenAI-compat + mock). Это уже даёт детерминированные тесты [orchestrator.py](cod_doc/agent/orchestrator.py), не открывая всю абстракцию.
+- **`mock` адаптер как side-task.** Полный registry — большой scope, но `mock` адаптер для тестов оркестратора можно вытащить отдельно: создать минимальный интерфейс под две реализации (real OpenAI-compat + mock). Это уже даёт детерминированные тесты [orchestrator.py](../cod_doc/agent/orchestrator.py), не открывая всю абстракцию.
 - **Tool-use semantic drift — реальная боль.** OpenAI делает tool calls последовательно, Anthropic — параллельно в одном response. Это не «мелкая разница SDK», это семантика. Адаптер обязан скрывать, и это требует тестового покрытия по обоим бэкендам.
 - **Cost-tracking нормализация.** `claude-opus` и `gpt-4o` стоят разных денег за токен; единая метрика `cost_event` должна содержать абсолютное значение в одной валюте, а не «токены». Источник pricing — статический справочник в коде или внешний API?
 - **Когда НЕ делать — RFC сам говорит.** Пока единственный реальный сценарий — OpenRouter с разными моделями, текущий `openai-compat` это покрывает. Не браться, пока не появится явный запрос на Claude-native или локальную модель.

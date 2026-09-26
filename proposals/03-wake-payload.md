@@ -17,13 +17,13 @@
 
 ## Текущее состояние cod-doc
 
-- В [cod_doc/agent/orchestrator.py](cod_doc/agent/orchestrator.py) запуск агента выглядит как «получи проект, читай очередь». Нет различия «холодный старт vs возобновление по конкретному триггеру».
+- В [cod_doc/agent/orchestrator.py](../cod_doc/agent/orchestrator.py) запуск агента выглядит как «получи проект, читай очередь». Нет различия «холодный старт vs возобновление по конкретному триггеру».
 - Системный промпт диктует: «1. Прочитай MASTER.md (L0)» — агент рефлекторно делает это всегда, даже когда поднят на конкретный таск.
 - `run_agent_once` в MCP принимает контекст, но не использует его как «scoped wake».
 
 ## Предложение
 
-Ввести понятие **WakeContext** в [cod_doc/agent/](cod_doc/agent/), который собирается **до** первого LLM-вызова и инжектится в систему как первое сообщение «WAKE PAYLOAD: ...».
+Ввести понятие **WakeContext** в [cod_doc/agent/](../cod_doc/agent/), который собирается **до** первого LLM-вызова и инжектится в систему как первое сообщение «WAKE PAYLOAD: ...».
 
 ```python
 @dataclass
@@ -62,7 +62,7 @@ class WakeContext:
 2. **Сборщик** `build_wake_context(task_id?, doc_ref?, ...) -> WakeContext` — переиспользует [02](02-heartbeat-context.md).
 3. **Адаптация `Orchestrator.run`** — принимает `WakeContext`, инжектит в conversation как первое user-message блоком (или поверх system).
 4. **Обновление `run_agent_once` MCP-tool** — принимает явные триггер-параметры.
-5. **Обновление daemon** ([cod_doc/services/](cod_doc/services/)) — при пробуждении из drift/cron/UI собирает корректный `WakeContext`.
+5. **Обновление daemon** ([cod_doc/services/](../cod_doc/services/)) — при пробуждении из drift/cron/UI собирает корректный `WakeContext`.
 6. **Скилл-правило** в `orchestrator/SKILL.md`: «если есть WAKE PAYLOAD — действуй по нему, MASTER.md не читать».
 
 ## Риски
@@ -83,7 +83,7 @@ class WakeContext:
 
 ## Замечания (контекст cod-doc)
 
-- **Daemon уже триггерится по drift.** После COD-070..077 в [cod_doc/services/](cod_doc/services/) есть пробуждение по drift'у/UI-событиям, но без структурированного wake-context'а — каждый источник лепит свой набор аргументов. Единый `build_wake_context()` устраняет хаос.
+- **Daemon уже триггерится по drift.** После COD-070..077 в [cod_doc/services/](../cod_doc/services/) есть пробуждение по drift'у/UI-событиям, но без структурированного wake-context'а — каждый источник лепит свой набор аргументов. Единый `build_wake_context()` устраняет хаос.
 - **Рефлекторное чтение MASTER.md.** Системный промпт сейчас прямо требует «1. Read MASTER.md (L0)» — это правильно для cold-start, но дорого для wake'а на конкретный таск. Скилл-инструкция должна явно различать два режима.
 - **Race payload vs реальное состояние.** Между сборкой payload и стартом агента возможны внешние мутации. `assembled_at` + `since_revision_id` дают агенту способ проверить актуальность одним дешёвым вызовом, но это надо явно прописать в скилле, иначе агент будет доверять stale-payload'у.
 - **Multiple reasons.** Если за 5 секунд произошли drift + approval_resolved + comment — собирать один wake с массивом reasons или N отдельных? Реальный сценарий для single-user — редкий, но семантика должна быть зафиксирована.

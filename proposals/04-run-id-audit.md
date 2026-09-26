@@ -20,15 +20,15 @@ X-Paperclip-Run-Id: <run-uuid>
 
 ## Текущее состояние cod-doc
 
-- Есть [revision_list / revision_get / revision_revert](cod_doc/mcp/tools/revision_tools.py) — но **по доку**, не по операции.
+- Есть [revision_list / revision_get / revision_revert](../cod_doc/mcp/tools/revision_tools.py) — но **по доку**, не по операции.
 - Если на одном прогоне агент сделал `doc_create` + `update_master_hashes` + `task_update_status`, нет способа узнать, что эти мутации связаны.
 - Нельзя ответить «откати всё, что агент сделал в прогоне Х».
 
 ## Предложение
 
 1. **Завести `run_id`** при каждом запуске оркестратора (`uuid7` для сортируемости).
-2. **Прокинуть через `ToolExecutor`** в [cod_doc/agent/tools.py](cod_doc/agent/tools.py) — все вызовы мутирующих MCP-тулов получают этот run_id неявно.
-3. **Расширить схему ревизий.** В таблицу с ревизиями (или эквивалент в [cod_doc/mcp/tools/_db.py](cod_doc/mcp/tools/_db.py)) добавить колонку `run_id`. Аналогично — для статус-ченджей задач, изменений MASTER.md.
+2. **Прокинуть через `ToolExecutor`** в [cod_doc/agent/tools.py](../cod_doc/agent/tools.py) — все вызовы мутирующих MCP-тулов получают этот run_id неявно.
+3. **Расширить схему ревизий.** В таблицу с ревизиями (или эквивалент в [cod_doc/mcp/tools/_db.py](../cod_doc/mcp/tools/_db.py)) добавить колонку `run_id`. Аналогично — для статус-ченджей задач, изменений MASTER.md.
 4. **Новая сущность `Run`:**
    ```sql
    CREATE TABLE agent_runs (
@@ -55,17 +55,17 @@ X-Paperclip-Run-Id: <run-uuid>
 
 | Операция                            | Источник                                  |
 | ----------------------------------- | ----------------------------------------- |
-| `doc_create`, `doc_body` (write)    | [doc_tools.py](cod_doc/mcp/tools/doc_tools.py) |
+| `doc_create`, `doc_body` (write)    | [doc_tools.py](../cod_doc/mcp/tools/doc_tools.py) |
 | `update_master_hashes`              | legacy `legacy_master_tools.py` (removed in `c310503`; historical mutation source) |
-| `task_update_status`, `task_complete` | [task_tools.py](cod_doc/mcp/tools/task_tools.py) |
-| `task_create`, `task_set_blocker`   | [task_tools.py](cod_doc/mcp/tools/task_tools.py) |
-| `link_sync`                         | [link_tools.py](cod_doc/mcp/tools/link_tools.py) |
-| `story_*` мутации                   | [story_tools.py](cod_doc/mcp/tools/story_tools.py) |
+| `task_update_status`, `task_complete` | [task_tools.py](../cod_doc/mcp/tools/task_tools.py) |
+| `task_create`, `task_set_blocker`   | [task_tools.py](../cod_doc/mcp/tools/task_tools.py) |
+| `link_sync`                         | [link_tools.py](../cod_doc/mcp/tools/link_tools.py) |
+| `story_*` мутации                   | [story_tools.py](../cod_doc/mcp/tools/story_tools.py) |
 
 ## План внедрения
 
 1. **Схема БД + миграция.** Колонка `run_id NULL`, таблица `agent_runs`.
-2. **Контекст-проброс.** В [orchestrator.py](cod_doc/agent/orchestrator.py) генерация run_id; через `ToolExecutor` — в каждый MCP-вызов как неявный аргумент (в payload или contextvar).
+2. **Контекст-проброс.** В [orchestrator.py](../cod_doc/agent/orchestrator.py) генерация run_id; через `ToolExecutor` — в каждый MCP-вызов как неявный аргумент (в payload или contextvar).
 3. **Запись.** Каждая мутирующая функция пишет run_id вместе с ревизией.
 4. **MCP-тулы `run_*`.**
 5. **UI.** Минимально — таблица + детальная страница.

@@ -18,8 +18,8 @@ related:
 
 ## 1. Что не так сейчас
 
-[`docs_list.html:128-162`](cod_doc/templates/web/project/docs_list.html#L128-L162) и
-[`docs.py:439-496`](cod_doc/api/web/pages/docs.py#L439-L496):
+[`docs_list.html:128-162`](../cod_doc/templates/web/project/docs_list.html#L128-L162) и
+[`docs.py:439-496`](../cod_doc/api/web/pages/docs.py#L439-L496):
 
 | Симптом                                                                   | Причина                                                                         |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -45,7 +45,7 @@ diff: «новые / изменённые / удалённые / без изме
 
 Никаких AI-проходов. Достаточно того, что parser уже умеет:
 
-- `parse_markdown()` из [`import_service.py`](cod_doc/services/import_service.py)
+- `parse_markdown()` из [`import_service.py`](../cod_doc/services/import_service.py)
   → frontmatter + H1 + sections.
 - Чтение всех `*.md` в папке (`os.walk` + `.gitignore`-aware фильтр).
 - Содержимое грузим **только при импорте**; для индекса достаточно

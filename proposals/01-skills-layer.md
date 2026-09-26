@@ -18,7 +18,7 @@
 
 ## Текущее состояние cod-doc
 
-- Весь системный промпт — в [cod_doc/agent/prompts.py:3](cod_doc/agent/prompts.py#L3) одной константой.
+- Весь системный промпт — в [cod_doc/agent/prompts.py:3](../cod_doc/agent/prompts.py#L3) одной константой.
 - Правила, которые сейчас живут в памяти агента (валидация FM-002/003/004/005, audit-cadence) — НЕ попадают в промпт; держатся в `MEMORY.md`.
 - Snowball Protocol заявлен (L0/L1/L2 для документов), но **сам агент** грузит свои инструкции одним блоком — это противоречит его же принципу.
 - Тулы агента уже умеют возвращать markdown — но нет «активируемых по триггеру» инструкций.
@@ -66,9 +66,9 @@ description: >
 
 ## План внедрения
 
-1. **Извлечь и поделить.** Разрезать [prompts.py](cod_doc/agent/prompts.py) на 3-4 базовых скилла. SYSTEM_PROMPT в коде остаётся, но становится тонким — собирает orchestrator/SKILL.md + триггерные.
+1. **Извлечь и поделить.** Разрезать [prompts.py](../cod_doc/agent/prompts.py) на 3-4 базовых скилла. SYSTEM_PROMPT в коде остаётся, но становится тонким — собирает orchestrator/SKILL.md + триггерные.
 2. **Перенести memory-правила.** FM-валидацию, audit-cadence из `MEMORY.md` в соответствующие скиллы (это shared-знание, не личная память пользователя).
-3. **Триггер-матчер.** Простая функция `select_skills(task: Task) -> list[Path]` в [cod_doc/agent/](cod_doc/agent/). Можно начать с keyword-matching по `task.title + task.description + task.kind`.
+3. **Триггер-матчер.** Простая функция `select_skills(task: Task) -> list[Path]` в [cod_doc/agent/](../cod_doc/agent/). Можно начать с keyword-matching по `task.title + task.description + task.kind`.
 4. **MCP-tool `skill_list` / `skill_get`.** Чтобы агент сам мог запросить: «дай мне `audit-cadence`».
 5. **Тесты.** Каждому скиллу — тест-кейс задачи, на которой он должен/не должен активироваться.
 

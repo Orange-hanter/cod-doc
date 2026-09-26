@@ -7,7 +7,7 @@ into JSON carried the field. On the live cod-doc DB that left 35 documents in
 ADO-092 was built to remove, reintroduced one layer up.
 
 The fixture is the shape the live corpus has: a frontmatter value the enum
-cannot hold (`status: resolved`). Import stores the fallback, the file keeps
+cannot hold (`status: implemented`; `resolved` was the example until ADO-218 made it a value). Import stores the fallback, the file keeps
 what it said, the content hashes agree — and only `metadata_mismatch` knows.
 """
 
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 UNREPRESENTABLE_STATUS = """---
 title: Master
 type: guide
-status: resolved
+status: implemented
 owner: human:dakh
 ---
 # Master

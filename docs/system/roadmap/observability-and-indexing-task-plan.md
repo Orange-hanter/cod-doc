@@ -5,7 +5,7 @@ status: done
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-07
-last_updated: 2026-06-05
+last_updated: 2026-09-26
 audience: [contributors, agents]
 related_docs:
   - ../capabilities/observability-and-indexing.md
@@ -35,6 +35,10 @@ related_docs:
 | D | US-024 | Индексирование файловой базы репозитория | 1 | ✅ done |
 | E | US-025 | Индексирование объектной базы проекта | 1 | ✅ done |
 | **TOTAL** | | | **8** | ✅ done |
+
+> **Статусы задач каноничны в БД** (план `observability-and-indexing-task-plan`; ADO-217, 2026-09-26).
+> YAML-блоки задач ниже — исходная постановка: их `status: pending` не
+> обновлялся при закрытии. Факт — `cod-doc plan show observability-and-indexing-task-plan -p cod-doc`.
 
 > **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): код подтверждает 8/8 done — `metrics_service.py` + web `/metrics`, `commit_link_service.py` + web `/commits`, code-refs (`api/web/pages/code_refs.py`), `repo_index_service.py` (repo_file/repo_symbol), `search_service.py` FTS5 (`db_search_idx*`). БД: OBI-001..008 = done.
 

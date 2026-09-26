@@ -15,7 +15,7 @@
 ## Текущее состояние cod-doc
 
 Аудит — фрагментарный:
-- Ревизии — только по docs ([revision_tools.py](cod_doc/mcp/tools/revision_tools.py)).
+- Ревизии — только по docs ([revision_tools.py](../cod_doc/mcp/tools/revision_tools.py)).
 - Изменения статусов задач — нет отдельного лога (только финальное состояние в БД).
 - Запуски агента — нигде не сохраняются как сущность ([04](04-run-id-audit.md) это исправляет).
 - Findings от drift-чеков — теряются после консольного вывода.
@@ -68,7 +68,7 @@ CREATE INDEX idx_activity_run ON activity_events(run_id);
 
 ### Источники событий
 
-Каждый MCP-write-tool **дополнительно** к своему write-у пишет событие. Реализация — через декоратор/middleware в [cod_doc/mcp/tools/_db.py](cod_doc/mcp/tools/_db.py) или явные вызовы `record_event(...)`.
+Каждый MCP-write-tool **дополнительно** к своему write-у пишет событие. Реализация — через декоратор/middleware в [cod_doc/mcp/tools/_db.py](../cod_doc/mcp/tools/_db.py) или явные вызовы `record_event(...)`.
 
 ### MCP-тулы для чтения
 
@@ -86,7 +86,7 @@ CREATE INDEX idx_activity_run ON activity_events(run_id);
 ## План внедрения
 
 1. **Схема + миграция.** Таблица + индексы.
-2. **Модель `Event`** в [cod_doc/core/](cod_doc/core/) + canonical kinds enum.
+2. **Модель `Event`** в [cod_doc/core/](../cod_doc/core/) + canonical kinds enum.
 3. **Запись.** Поэтапно подключить write-тулы:
    - Phase 1: задачи (создание, статус, блокеры, комменты).
    - Phase 2: docs (включая task_docs из [05](05-issue-documents.md)).

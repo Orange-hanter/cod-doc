@@ -25,7 +25,7 @@ POST /api/issues/:id/checkout
 
 ## Текущее состояние cod-doc
 
-- В [task_tools.py](cod_doc/mcp/tools/task_tools.py) `task_update_status` принимает любой переход без оптимистичной проверки.
+- В [task_tools.py](../cod_doc/mcp/tools/task_tools.py) `task_update_status` принимает любой переход без оптимистичной проверки.
 - Возможные сценарии гонки:
   - UI-вкладка показывает задачу `todo`, оператор нажимает «start» → агент уже её взял и она `in_progress`. UI перепишет неконсистентно.
   - Daemon триггерит wake по drift'у, в это время человек правит ту же задачу через CLI.
@@ -33,7 +33,7 @@ POST /api/issues/:id/checkout
 
 ## Предложение
 
-1. **Добавить поля** в Task ([cod_doc/core/project.py](cod_doc/core/project.py)):
+1. **Добавить поля** в Task ([cod_doc/core/project.py](../cod_doc/core/project.py)):
    - `checked_out_by: str | None` (run_id или 'human:<user>')
    - `checked_out_at: datetime | None`
    - `expected_status_at_checkout: TaskStatus | None`
@@ -63,7 +63,7 @@ POST /api/issues/:id/checkout
 3. **MCP-тулы** `task_checkout`, `task_release`.
 4. **Refactor `task_update_status`:** запретить прямой переход `todo → in_progress` (только через checkout); остальные переходы — через update, но с проверкой ownership.
 5. **UI:** показ «in use by: orchestrator-run-X» на карточке; кнопка «force release» для админа.
-6. **Watchdog** в [cod_doc/services/](cod_doc/services/).
+6. **Watchdog** в [cod_doc/services/](../cod_doc/services/).
 
 ## Риски
 

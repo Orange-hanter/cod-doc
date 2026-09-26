@@ -21,7 +21,7 @@
   2. Читает `next_pending_task` или `task_get`.
   3. Часто следом — `read_context` для связанных доков.
 - Это 3-4 MCP-вызова, каждый раз тянущий куда больше, чем нужно для одной итерации.
-- В [cod_doc/mcp/tools/task_tools.py](cod_doc/mcp/tools/task_tools.py) уже есть `task_get`, но он отдаёт «полную» задачу — без срезов и cursor'ов.
+- В [cod_doc/mcp/tools/task_tools.py](../cod_doc/mcp/tools/task_tools.py) уже есть `task_get`, но он отдаёт «полную» задачу — без срезов и cursor'ов.
 
 ## Предложение
 
@@ -62,9 +62,9 @@
 
 ## План внедрения
 
-1. **Реализовать tool.** В [cod_doc/mcp/tools/task_tools.py](cod_doc/mcp/tools/task_tools.py) — функция `task_heartbeat_context`. Внутри — переиспользует существующие `task_get` + новый `_revisions_since(revision_id)` поверх `revision_list`.
+1. **Реализовать tool.** В [cod_doc/mcp/tools/task_tools.py](../cod_doc/mcp/tools/task_tools.py) — функция `task_heartbeat_context`. Внутри — переиспользует существующие `task_get` + новый `_revisions_since(revision_id)` поверх `revision_list`.
 2. **Прописать в `tool_defs.py`.** Зарегистрировать как первый-класс MCP-tool.
-3. **Обновить orchestrator-loop.** В [cod_doc/agent/orchestrator.py](cod_doc/agent/orchestrator.py) — если есть текущая задача, вызывать `task_heartbeat_context` ДО `get_master`. `get_master` тогда нужен только при «холодном» старте (нет конкретной задачи).
+3. **Обновить orchestrator-loop.** В [cod_doc/agent/orchestrator.py](../cod_doc/agent/orchestrator.py) — если есть текущая задача, вызывать `task_heartbeat_context` ДО `get_master`. `get_master` тогда нужен только при «холодном» старте (нет конкретной задачи).
 4. **Документировать в скилле `orchestrator`** (см. [01](01-skills-layer.md)) — «всегда heartbeat-context первым, get_master — fallback для cold start».
 
 ## Риски
