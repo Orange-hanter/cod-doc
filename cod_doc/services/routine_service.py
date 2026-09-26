@@ -306,7 +306,9 @@ def _check_alembic_head(session: Session, project_id: int, **_: Any) -> dict[str
     cfg = Config()
     cfg.set_main_option("script_location", str(files("cod_doc.infra") / "migrations"))
     heads = set(ScriptDirectory.from_config(cfg).get_heads())
-    current = set(session.execute(_text("SELECT version_num FROM alembic_version")).scalars().all())
+    current: set[str] = set(
+        session.execute(_text("SELECT version_num FROM alembic_version")).scalars().all()
+    )
 
     behind = sorted(heads - current)
     findings = []
