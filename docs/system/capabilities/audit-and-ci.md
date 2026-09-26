@@ -29,7 +29,10 @@ related_docs:
 | **soft** | `cod-doc audit` | Возвращает warning + error, exit 0 |
 | **strict** | `cod-doc audit --strict` | Любая ошибка → exit 1 (CI) |
 | **staged** | `cod-doc audit --strict --staged` | Только изменённые в git stage файлы (pre-commit) |
-| **deep** | `cod-doc audit --deep` | + verify external URLs, code-drift, embeddings freshness |
+| **deep** *(planned, флага нет)* | `cod-doc audit --deep` | + verify external URLs, code-drift, embeddings freshness |
+
+Живые флаги `cod-doc audit` (`cod_doc/cli/cmd_audit.py`): `--strict`, `--staged`,
+`--drift` (DR-003), `--web-routes` (WR-*), `--json`.
 
 ## 2. Каталог проверок
 
@@ -45,7 +48,7 @@ related_docs:
 | FM-004 | warning | `last_updated` в будущем | `audit_frontmatter` |
 | FM-005 | warning | `last_updated` старше 180 дней при `status=active` | `audit_frontmatter` |
 | FM-006 | error | Несовместимая пара `type`/`status` (см. [frontmatter.md §2a](../standards/frontmatter.md)) | reserved (COD-031) |
-| FM-007 | warning | Отсутствует `sensitivity` для `module-spec`/`architecture`/`standard` | reserved (COD-025) |
+| FM-007 | warning | Отсутствует `sensitivity` для `module-spec`/`architecture`/`standard` | `audit_frontmatter` (COD-025) |
 | TY-001 | error | Документы всё ещё на дефолте импорта (`module-spec`+`draft` без авторского `type:`) | `audit_import_fallback` |
 
 ### 2.2 Task plan (см. [standards/task-plan.md](../standards/task-plan.md))
@@ -74,6 +77,11 @@ related_docs:
 | LK-004 | warning | Plaintext-упоминание ID без ссылки |
 | LK-005 | info  | Внешний URL не отвечает 200 (только `--deep`) |
 
+> **Целевой каталог (ADO-221).** Коды `LK-*` сегодня не эмитятся: резолвер пишет
+> в `link.broken_reason` свободный текст (`link_service/resolver.py`), битые
+> ссылки видны в `cod-doc link list` (поле `broken_reason`), через MCP `link_verify` и в очереди
+> `curator_next`. `LK-005` зависит от несуществующего `--deep`.
+
 ### 2.4 Sensitivity (см. [standards/sensitive-data.md](../standards/sensitive-data.md))
 
 | ID | Severity | Описание |
@@ -91,19 +99,23 @@ related_docs:
 | DR-003 | warning | `projection_hash` не совпадает с диском |
 | DR-004 | warning | `revision` для документа отсутствует > 180 дней при `status=active` |
 
+> Из таблиц §2.4–§2.5 в коде есть `SD-001` (`audit_sensitivity`) и `DR-003`
+> (`cod-doc audit --drift`); остальные коды — целевые (ADO-221).
+
 ## 3. Интеграция с git
 
-```bash
-cod-doc hooks install
-```
+Фактические хуки ставит `bash hooks/install.sh` (снять — `bash hooks/install.sh
+--remove`); CLI-группы `cod-doc hooks` нет:
 
-Устанавливает:
+- `pre-commit` — формат гибридных ссылок `📁 … | 🗃️ … | 🔑 sha:…` в staged
+  `.md` и строки 🔴 STALE/BROKEN в `MASTER.md`;
+- `post-merge` — `cod-doc hash update MASTER.md` и авто-коммит реестра;
+- `pre-push` — `scripts/gate.sh` (обойти — `SKIP_GATE=1`).
 
-- `pre-commit`: `cod-doc audit --strict --staged`
-- `post-commit`: `cod-doc task sync_from_diff && cod-doc projection freeze`
-- `prepare-commit-msg`: добавляет `[<TASK-ID>]` если staged-файлы матчат единственную ready-задачу
-
-Удаление: `cod-doc hooks uninstall`.
+*(planned, не реализовано)* `cod-doc hooks install` с `pre-commit: cod-doc audit
+--strict --staged`, `post-commit: task sync_from_diff` и `prepare-commit-msg` —
+команд `hooks`, `task sync_from_diff` и `projection freeze` в CLI нет
+(ближайшие живые: `cod-doc plan freeze`, `cod-doc doc accept`).
 
 ## 4. Интеграция с CI
 
@@ -111,13 +123,16 @@ cod-doc hooks install
 
 Активный workflow: [`.github/workflows/ci.yml`](../../../.github/workflows/ci.yml) (COD-024).
 
-Три job'а:
+Джобы (на 2026-09-26):
 
-| Job | Trigger | Status |
-|-----|---------|--------|
-| **pytest** | `pull_request`, `push: main`, matrix `python-version: ['3.11', '3.12']` | ✅ blocking |
-| **ruff** | то же | ⚠️ advisory (`continue-on-error`) — снимется после COD-024a |
-| **mypy** | то же | ⚠️ advisory (`continue-on-error`) — снимется после COD-024a |
+| Job | Status |
+|-----|--------|
+| **Lint (ruff)** — `ruff check` + `ruff format --check` | ✅ blocking |
+| **Typecheck (mypy)** — `mypy cod_doc/` strict | ✅ blocking |
+| **Test py3.13** — `pytest -n auto --dist loadfile`; матрица только 3.13 (ADO-097) | ✅ blocking |
+| **Zsh completion** — дрейф артефакта + синтаксис | ✅ blocking |
+| **Docker build** — сборка образа + smoke test | ✅ blocking |
+| **Web routes drift** — `cod-doc audit --web-routes` | ⚠️ advisory (`continue-on-error`, ADO-011/012) |
 
 Concurrency-group отменяет суперседнутые runs, кэш pip — через `cache-dependency-path: pyproject.toml`.
 
@@ -134,7 +149,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
+        with: { python-version: '3.13' }  # requires-python >=3.13
       - run: pip install cod-doc
       - run: cod-doc audit --strict --json > audit.json
       - if: failure()
@@ -145,7 +160,7 @@ jobs:
 
 ```yaml
 audit:
-  image: python:3.11
+  image: python:3.13
   script:
     - pip install cod-doc
     - cod-doc audit --strict --json | tee audit.json

@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-15
+last_updated: 2026-09-26
 related_docs:
   - ../standards/document-link.md
   - ../DATA_MODEL.md
@@ -105,7 +105,12 @@ Gotcha: если входящая ссылка была написана как 
 
 ## 5. Graph queries
 
-На базе `link` доступны готовые запросы:
+> *(planned, не реализовано — ADO-221)* Запросы ниже — целевые: CLI `link`
+> сегодня умеет только `list|sync|verify|suggest|backfill`, группы `graph` нет,
+> у `cod-doc audit` нет `--orphans`. Живой граф — ADR (`cod-doc adr graph`) и
+> граф задач (`cod-doc plan critical-path|forward|reverse`).
+
+На базе `link` планируются запросы:
 
 - **Обратные ссылки** (`cod-doc link incoming <doc>`) — кто на меня ссылается.
 - **Исходящие** (`cod-doc link outgoing <doc>`) — куда я ссылаюсь.
@@ -131,19 +136,27 @@ read-only и не пишет в БД.
 
 ## 6. MCP поверхность
 
+Зарегистрированные тулы (`cod_doc/mcp/tools/link_tools.py`):
+
 | Tool | Операция |
 |------|----------|
-| `link.list_broken` | Список битых ссылок с причинами |
-| `link.incoming` | Обратные ссылки |
-| `link.outgoing` | Прямые |
-| `link.suggest` | Для куска текста вернуть потенциальные автоссылки |
+| `link_list` | Ссылки документа/секции с `resolved` и `broken_reason` |
+| `link_sync` | Перепарсить секцию и синхронизировать её ссылки |
+| `link_verify` | Перепроверить резолв; битые — с причиной |
+| `link_suggest_for_section` | Потенциальные автоссылки для секции |
+
+*(planned)* отдельные `link_incoming` / `link_outgoing` — сегодня обратные
+ссылки читаются из `link_list` по `to_doc_key`.
 
 ## 7. Запрет тихой автозамены
 
 COD-DOC **не перекладывает фразы в ссылки без согласования**. Аргумент: ложное срабатывание (упомянули «auth» в общем смысле) создаёт мусорные ссылки. Автозамена делается только:
 
-- При явной команде `cod-doc link autofix <doc>`.
-- Через MCP `link.apply_suggestions(ids=[...])`.
+- При явной команде `cod-doc link suggest --apply-above <порог>` (применяет
+  только подсказки выше порога; `--dry-run` показывает их без записи).
+- Через web: принятие подсказки `POST /p/{slug}/suggestions/{row_id}/accept`.
+
+Команды `link autofix` и тула `link_apply_suggestions` нет (§0).
 
 ## 8. Валидация при записи
 

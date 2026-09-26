@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-15
+last_updated: 2026-09-26
 related_docs:
   - ../standards/task-plan.md
   - plan-management.md
@@ -42,10 +42,14 @@ Restate-era YAML, это не контракт.
 
 | Поверхность | Команда |
 |-------------|---------|
-| CLI | `cod-doc task new --plan <plan> [--section <letter>] --title "<text>" --type <type> [--priority <p>] [--depends <ID,...>] [--affected <path,...>]` |
-| TUI | `cod-doc wizard task new` — пошаговая форма |
-| MCP | `task.create({...})` |
-| REST | `POST /api/v1/tasks` |
+| CLI | `cod-doc task create -p <slug> --plan <plan> --section <letter> --title "<text>" --type <type> [--priority <p>] [--id <ID> \| --prefix <P>] [--description …] [--acceptance …]` |
+| MCP | `task_create(...)`, пакетно — `task_create_many(...)`; `blocked_by` / `affects_files` / `story_id` — только здесь |
+| TUI | *(planned)* пошаговая форма задачи; `cod-doc wizard` сегодня — мастер конфига и первого проекта |
+| REST | *(planned)* `POST /api/v1/tasks`; в `/api/v1` сегодня только findings, context, search |
+
+> ADO-221: команды `task new` нет, у `task create` нет `--depends` / `--affected` —
+> зависимости и затронутые файлы задаются через MCP `task_create` (или потом
+> `task_set_blocker`).
 
 ## 3. Контракт `task.create`
 
@@ -116,6 +120,10 @@ Restate-era YAML, это не контракт.
 
 Полезно при импорте user stories:
 
+Сегодня — MCP `task_create_many(...)`: массив объектов формата `task_create`.
+
+*(planned, CLI нет)*:
+
 ```bash
 cod-doc task bulk --plan M1-auth-module --from-yaml tasks.yaml
 ```
@@ -138,14 +146,15 @@ cod-doc task bulk --plan M1-auth-module --from-yaml tasks.yaml
 ### 9.1 Через CLI
 
 ```bash
-cod-doc task new \
+cod-doc task create -p restate \
   --plan M1-auth-module \
+  --section C \
   --title "Implement: account deactivation flow" \
   --type feature \
   --priority high \
-  --depends AUTH-020,AUTH-021 \
-  --affected restate-api/src/auth/services/auth.service.ts
+  --prefix AUTH
 # → AUTH-025 created in C-AccountLifecycle
+# зависимости и affected-файлы — через MCP task_create(blocked_by=…, affects_files=…)
 ```
 
 ### 9.2 Через MCP (агент)
@@ -164,4 +173,6 @@ cod-doc task new \
 
 ## 10. Миграция от Restate
 
-При импорте существующих планов (см. [migration/from-restate.md](../migration/from-restate.md)) сервис `TaskService.import_bulk` принимает parsed markdown и прогоняет те же валидации, что и `task.create`. Нарушения формата Restate (встречающиеся, напр. `section: A MR Blockers` с пробелами) фиксятся автоматически + пишется revision `reason: "import-normalize"`.
+При импорте существующих планов (см. [migration/from-restate.md](../migration/from-restate.md)) *(planned)* сервис `TaskService.import_bulk` принимает parsed markdown и прогоняет те же валидации, что и `task.create`. Нарушения формата Restate (встречающиеся, напр. `section: A MR Blockers` с пробелами) фиксятся автоматически + пишется revision `reason: "import-normalize"`. Сегодня документы Restate
+переносит `services/restate_importer.py`, задачи из `.cod-doc/tasks.yaml` —
+`cod-doc import legacy-tasks`; `import_bulk` в `task_service` нет.

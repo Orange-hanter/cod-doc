@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-15
+last_updated: 2026-09-26
 related_docs:
   - ../audit/2026-04-19-initial-audit.md
   - ../migration/from-restate.md
@@ -51,7 +51,9 @@ cod-doc project new \
 | `standards/task-plan` | `standard` (clone from system) | internal |
 | `standards/document-link` | `standard` (clone from system) | internal |
 
-Шаблоны живут в `cod_doc/templates/projects/<template>/`. Это аналог Restate-стека «из коробки».
+*(planned, не реализовано)* Шаблоны должны жить в `cod_doc/templates/projects/<template>/` —
+аналог Restate-стека «из коробки». Каталога нет: в `cod_doc/templates/` сегодня
+только `MASTER.md.j2` и `web/`.
 
 ### 2.3 Дефолтные агенты
 
@@ -73,7 +75,7 @@ CLI спрашивает: `Register MCP for Claude Code? [Y/n]`. Если да �
 |----------|----------|--------|
 | БД | `.cod-doc/state.db` (SQLite) | `COD_DOC_DB_URL` (Postgres) |
 | REST API | off | on |
-| Embeddings | sqlite-vss | pgvector |
+| Embeddings | ChromaDB (`chroma_path`) | ChromaDB; `pgvector` — planned (`sqlite-vss` не реализован, ARCHITECTURE §4.3) |
 | Auth | local user | token-based |
 
 ## 4. Идемпотентность

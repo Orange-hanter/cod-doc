@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-07
-last_updated: 2026-09-15
+last_updated: 2026-09-26
 audience: [contributors, agents]
 related_code:
   - cod_doc/services/task_service.py
@@ -110,8 +110,8 @@ class CodeRef:
 - `imports` (для python — `from X import Y`)
 - `last_modified`
 
-`.gitignore`-aware. Перестраивается на git-hooks (pre-commit) или manual
-`cod-doc reindex --files`.
+`.gitignore`-aware. Перестраивается вручную: `cod-doc reindex files -p <slug>`
+(подкоманда, не флаг; git-хука перестройки нет).
 
 ### 2.5 DBObjectIndex (US-025)
 
@@ -147,13 +147,17 @@ chunks. Цель — `cod-doc search "phrase"` возвращает unified rank
 
 ## 5. CLI
 
+Живые команды (ADO-221, 2026-09-26):
+
 ```
-cod-doc metrics --since=7d --by=priority
-cod-doc commits link --task PCA-001
-cod-doc reindex --files
-cod-doc reindex --db
-cod-doc search "validation pattern"
+cod-doc reindex files -p <slug>        # RepoIndex: repo_file / repo_symbol / repo_import
+cod-doc search "validation pattern" -p <slug>
 ```
+
+*(planned, CLI нет)* `cod-doc metrics --since=7d --by=priority` и
+`cod-doc commits link --task PCA-001`, `cod-doc reindex --db`. Сервисы есть:
+`services/metrics_service.py` (`record_on_complete`, `summary`) и
+`services/commit_link_service.py` (`import_from_git_log`); метрики видны в web.
 
 ## 6. Acceptance (capability-level)
 
