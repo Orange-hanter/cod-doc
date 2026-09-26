@@ -531,6 +531,27 @@ def test_drift_reports_a_status_no_version_of_the_db_can_hold(  # type: ignore[n
         assert report.metadata_mismatch == ("status",)
 
 
+@pytest.mark.parametrize("status", [DocumentStatus.RESOLVED, DocumentStatus.DONE])
+def test_terminal_work_status_round_trips_without_metadata_drift(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path, status: DocumentStatus
+) -> None:
+    """ADO-218: a closed audit / closed plan is no longer metadata drift.
+
+    Until the enum held `resolved` and `done`, every file carrying them was
+    reported by `metadata_mismatch` — 45 of them in the cod-doc corpus.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session)
+        doc_id = _make_doc(session, project_id, status=status)
+        target = proj.export_document(session, doc_id, root_path=root_path).path
+        assert f"status: {status.value}" in target.read_text(encoding="utf-8")
+
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.status is proj.DriftStatus.IN_SYNC
+        assert report.metadata_mismatch == ()
+
+
 def test_project_drift_lists_a_metadata_mismatch_even_when_content_is_in_sync(  # type: ignore[no-untyped-def]
     engine_with_schema, root_path: Path
 ) -> None:

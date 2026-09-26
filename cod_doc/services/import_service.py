@@ -239,13 +239,10 @@ _ALIEN_STATUS_ALIASES: dict[str, DocumentStatus] = {
     # «живой» / завершённый документ чужого стандарта — работающий, не черновик
     "living": DocumentStatus.ACTIVE,
     "final": DocumentStatus.ACTIVE,
-    "done": DocumentStatus.ACTIVE,
     "complete": DocumentStatus.ACTIVE,
     "completed": DocumentStatus.ACTIVE,
-    # закрытый аудит: все задачи разобраны, но отчёт остаётся действительным
-    # документом. Не `deprecated` — иначе 9 наших собственных audit-report'ов
-    # уезжают в «снят с эксплуатации» на первом же импорте.
-    "resolved": DocumentStatus.ACTIVE,
+    # `resolved` и `done` здесь больше нет: с ADO-218 это собственные значения
+    # DocumentStatus, а не написания `active`.
     "accepted": DocumentStatus.ACTIVE,
     "delivered": DocumentStatus.ACTIVE,
     "published": DocumentStatus.ACTIVE,
