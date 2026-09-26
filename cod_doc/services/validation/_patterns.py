@@ -12,7 +12,13 @@ from cod_doc.domain.entities import DocumentType, TaskType
 _TASK_ID_RE = re.compile(r"^[A-Z]{2,5}-\d{3}[A-Z]?$")
 _ID_PREFIX_RE = re.compile(r"^[A-Z]{2,5}$")
 _STORY_ID_RE = re.compile(r"^[A-Z]{2,4}-\d{3}$")
-_SECTION_SLUG_RE = re.compile(r"^[A-Z]-[A-Za-z0-9][A-Za-z0-9-]*$")
+# ADO-199: буква секции плана — одна или две заглавные (после `Z` идёт `AA`),
+# поэтому и префикс слага `{1,2}`: иначе слаг двухбуквенной секции не проходит
+# собственный валидатор.
+_SECTION_SLUG_RE = re.compile(r"^[A-Z]{1,2}-[A-Za-z0-9][A-Za-z0-9-]*$")
+_PLAN_SECTION_LETTER_RE = re.compile(r"^[A-Z]{1,2}$")
+# Серия символов вне ASCII-алфанумерики — один дефис в слаге секции плана.
+_SLUG_SEPARATOR_RE = re.compile(r"[^A-Za-z0-9]+")
 # ADO-143: ключ секции историй уходит в путь роута и в CSS-селектор htmx,
 # поэтому строго [a-z0-9-] — ни точек, ни слэшей, ни пробелов.
 _STORY_SECTION_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$|^[a-z0-9]$")
@@ -20,6 +26,10 @@ _STORY_SECTION_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$|^[a-z0-9]
 # ключа секции историй, и по той же причине: он идёт в query-параметр
 # `?node=` и в `id`/`hx-target` фрагмента рельса.
 _DOC_NODE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$|^[a-z0-9]$")
+# ADO-199: HTML-сущности в тексте, пришедшем уже экранированным извне
+# (`&amp;` в заголовке секции на Restate). Именованные — только пять
+# XML-базовых, числовые — десятичные и шестнадцатеричные с `x` любого регистра.
+_HTML_ENTITY_RE = re.compile(r"&(?:amp|lt|gt|quot|apos|#[0-9]+|#[xX][0-9a-fA-F]+);")
 
 # Verb-patterns from [task-plan.md §7]. Maps a regex prefix to the type it
 # implies. Order matters: the more-specific pattern (`Test + Implement`)

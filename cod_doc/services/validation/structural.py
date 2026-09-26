@@ -17,10 +17,12 @@ from ._patterns import (
     _DOC_NODE_KEY_RE,
     _FORBIDDEN_TYPE_ALIASES,
     _ID_PREFIX_RE,
+    _PLAN_SECTION_LETTER_RE,
     _SCENARIO_COVERAGE_VERDICTS,
     _SCENARIO_GROUP_KEY_RE,
     _SCENARIO_ID_RE,
     _SECTION_SLUG_RE,
+    _SLUG_SEPARATOR_RE,
     _STORY_ID_RE,
     _STORY_SECTION_KEY_RE,
     _TASK_ID_RE,
@@ -64,11 +66,15 @@ def validate_story_id(story_id: str) -> None:
 
 
 def validate_section_slug(slug: str) -> None:
-    """`^[A-Z]-<KebabSlug>$` — e.g. `A-Data-Core`, `B-Services`."""
+    """`^[A-Z]{1,2}-<KebabSlug>$` — e.g. `A-Data-Core`, `B-Services`, `AA-Data`.
+
+    Буква — одна или две заглавные: после секции `Z` идёт `AA`.
+    """
     if not isinstance(slug, str) or not _SECTION_SLUG_RE.fullmatch(slug):
         raise ValidationError(
             "TP-003",
-            f"invalid section slug {slug!r}: expected '<LETTER>-<KebabSlug>'",
+            f"invalid section slug {slug!r}: expected '<LETTER>-<KebabSlug>' "
+            "with LETTER of 1-2 capital letters",
             slug=slug,
         )
 
@@ -320,3 +326,85 @@ def validate_doc_node_position(position: int) -> None:
             f"doc node position must be >= 0, got {position}",
             position=position,
         )
+
+
+#: Потолок заголовка секции плана — тот же, что у раздела дерева и секции историй.
+MAX_PLAN_SECTION_TITLE = 256
+#: Потолок тела слага после буквы: слаг идёт в URL и в подпись секции.
+MAX_SECTION_SLUG_BODY = 60
+
+
+def validate_plan_section_title(title: str) -> None:
+    """Непустой, не длиннее 256, без управляющих символов.
+
+    Не про XSS — экранирование делает рендер, — а про инвариант данных. У
+    секции плана валидации заголовка не было вовсе, отсюда в живых БД
+    ``position = -1`` и заголовки с ``&amp;`` на Restate: на запись ложилось
+    что угодно.
+    """
+    if not isinstance(title, str) or not title.strip():
+        raise ValidationError("PS-001", "plan section title must not be empty", title=title)
+    if len(title) > MAX_PLAN_SECTION_TITLE:
+        raise ValidationError(
+            "PS-001",
+            f"plan section title must be at most {MAX_PLAN_SECTION_TITLE} characters, "
+            f"got {len(title)}",
+            title=title,
+        )
+    bad = sorted({c for c in title if c != " " and unicodedata.category(c).startswith("C")})
+    if bad:
+        raise ValidationError(
+            "PS-001",
+            f"plan section title must not contain control characters: {bad!r}",
+            title=title,
+        )
+
+
+def validate_plan_section_letter(letter: str) -> None:
+    """``^[A-Z]{1,2}$`` — ``A``…``Z``, затем ``AA``.
+
+    Строчные не нормализуются: приведение регистра — дело вызывающего,
+    валидатор только отвечает «да/нет».
+    """
+    if not isinstance(letter, str) or not _PLAN_SECTION_LETTER_RE.fullmatch(letter):
+        raise ValidationError(
+            "PS-002",
+            f"invalid plan section letter {letter!r}: expected 1-2 capital letters",
+            letter=letter,
+        )
+
+
+def validate_plan_section_position(position: int) -> None:
+    """``position >= 0``; ноль допустим — им закрепляют секцию выше прочих."""
+    if isinstance(position, bool) or not isinstance(position, int):
+        raise ValidationError(
+            "PS-003",
+            f"plan section position must be an integer, got {type(position).__name__}",
+            position=position,
+        )
+    if position < 0:
+        raise ValidationError(
+            "PS-003",
+            f"plan section position must be >= 0, got {position}",
+            position=position,
+        )
+
+
+def plan_section_slug(letter: str, title: str) -> str:
+    """``<LETTER>-<Kebab-Title>`` — единственный генератор слага секции в кодовой базе.
+
+    Результат всегда проходит :func:`validate_section_slug`. Прежний дефолт
+    ``slug or title.strip()`` клал в слаг заголовок целиком — в живой БД
+    лежит слаг ``Structure protocol (RFC 24)``.
+
+    Заголовок сводится к ASCII (NFKD, диакритика отбрасывается), каждая серия
+    символов вне ``[A-Za-z0-9]`` становится одним дефисом, регистр слов
+    сохраняется, тело режется до 60 символов. Если от заголовка ничего не
+    осталось (кириллица, одни знаки), тело — ``Section``. Функция чистая и
+    детерминированная.
+    """
+    validate_plan_section_letter(letter)
+    ascii_title = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("ascii")
+    body = _SLUG_SEPARATOR_RE.sub("-", ascii_title).strip("-")
+    body = body[:MAX_SECTION_SLUG_BODY].rstrip("-")
+    return f"{letter}-{body or 'Section'}"

@@ -25,7 +25,8 @@ from cod_doc.services.projection_service._frontmatter import (
 _TASK_ID_RE = re.compile(r"^[A-Z]{2,5}-\d{3}[A-Z]?$")
 _ID_PREFIX_RE = re.compile(r"^[A-Z]{2,5}$")
 _STORY_ID_RE = re.compile(r"^[A-Z]{2,4}-\d{3}$")
-_SECTION_SLUG_RE = re.compile(r"^[A-Z]-[A-Za-z0-9][A-Za-z0-9-]*$")
+_SECTION_SLUG_RE = re.compile(r"^[A-Z]{1,2}-[A-Za-z0-9][A-Za-z0-9-]*$")
+_PLAN_SECTION_LETTER_RE = re.compile(r"^[A-Z]{1,2}$")
 
 # ---------------------------------------------------------------------------
 # Frontmatter parser properties
@@ -160,7 +161,7 @@ def test_validate_story_id_rejects_all_invalid(s: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@given(st.from_regex(r"^[A-Z]-[A-Za-z0-9][A-Za-z0-9-]*$", fullmatch=True))
+@given(st.from_regex(r"^[A-Z]{1,2}-[A-Za-z0-9][A-Za-z0-9-]*$", fullmatch=True))
 @settings(max_examples=200)
 def test_validate_section_slug_accepts_all_valid(slug: str) -> None:
     v.validate_section_slug(slug)  # no raise
@@ -172,6 +173,48 @@ def test_validate_section_slug_rejects_all_invalid(s: str) -> None:
     with pytest.raises(v.ValidationError) as exc:
         v.validate_section_slug(s)
     assert exc.value.code == "TP-003"
+
+
+# ---------------------------------------------------------------------------
+# ADO-199: validate_plan_section_letter / _position, plan_section_slug
+# ---------------------------------------------------------------------------
+
+
+@given(st.from_regex(r"^[A-Z]{1,2}$", fullmatch=True))
+@settings(max_examples=200)
+def test_validate_plan_section_letter_accepts_all_valid(letter: str) -> None:
+    v.validate_plan_section_letter(letter)  # no raise
+
+
+@given(st.text().filter(lambda s: not _PLAN_SECTION_LETTER_RE.fullmatch(s)))
+@settings(max_examples=200)
+def test_validate_plan_section_letter_rejects_all_invalid(s: str) -> None:
+    with pytest.raises(v.ValidationError) as exc:
+        v.validate_plan_section_letter(s)
+    assert exc.value.code == "PS-002"
+
+
+@given(st.integers(min_value=0))
+@settings(max_examples=200)
+def test_validate_plan_section_position_accepts_non_negative(position: int) -> None:
+    v.validate_plan_section_position(position)  # no raise
+
+
+@given(st.integers(max_value=-1))
+@settings(max_examples=200)
+def test_validate_plan_section_position_rejects_negative(position: int) -> None:
+    with pytest.raises(v.ValidationError) as exc:
+        v.validate_plan_section_position(position)
+    assert exc.value.code == "PS-003"
+
+
+@given(st.from_regex(r"^[A-Z]{1,2}$", fullmatch=True), st.text())
+@settings(max_examples=300)
+def test_plan_section_slug_always_valid_and_deterministic(letter: str, title: str) -> None:
+    slug = v.plan_section_slug(letter, title)
+    v.validate_section_slug(slug)  # no raise
+    assert slug.startswith(f"{letter}-")
+    assert v.plan_section_slug(letter, title) == slug
 
 
 # ---------------------------------------------------------------------------

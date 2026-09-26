@@ -21,6 +21,7 @@ Caller owns the transaction.
 
 from __future__ import annotations
 
+from ._internals import build_section
 from ._types import (
     ChainEntry,
     CriticalPathResult,
@@ -59,6 +60,7 @@ __all__ = [
     "SectionProgress",
     "TaskNotFoundInPlanError",
     "audit",
+    "build_section",
     "chain_layout",
     "critical_path",
     "export",

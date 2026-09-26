@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from cod_doc.domain.entities import DocumentStatus, DocumentType, TaskType
 
 from ._errors import ValidationIssue
-from ._patterns import _FM007_REQUIRED_TYPES, _VERB_PATTERNS
+from ._patterns import _FM007_REQUIRED_TYPES, _HTML_ENTITY_RE, _VERB_PATTERNS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -65,6 +65,33 @@ def audit_task_title(title: str, task_type: TaskType) -> list[ValidationIssue]:
                 "Refactor:, Fix:, Docs:)"
             ),
             details={"title": title},
+        )
+    ]
+
+
+def audit_html_escaped_text(text: str, *, field: str = "text") -> list[ValidationIssue]:
+    """PS-004: текст содержит HTML-сущности (`&amp;`, `&lt;`, `&#38;`, …).
+
+    Источник искажения — вне cod-doc: на write-пути продукт не экранирует
+    ничего, единственный `html_escape` живёт в рендере (`api/web/markdown.py`).
+    Поэтому автозамена запрещена: `&amp;` может быть авторским текстом
+    (например, заголовок про HTML). Функция только предупреждает — ничего не
+    заменяет и никогда не бросает; не-строка или чистый текст дают `[]`.
+    """
+    if not isinstance(text, str) or "&" not in text:
+        return []
+    entities = list(dict.fromkeys(m.group(0) for m in _HTML_ENTITY_RE.finditer(text)))
+    if not entities:
+        return []
+    return [
+        ValidationIssue(
+            code="PS-004",
+            severity="warning",
+            message=(
+                f"{field} contains HTML entities {', '.join(entities)}: "
+                "probably escaped outside cod-doc; not replaced automatically"
+            ),
+            details={"field": field, "entities": entities, "text": text},
         )
     ]
 

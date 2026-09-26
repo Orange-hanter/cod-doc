@@ -4,8 +4,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from cod_doc.domain.entities import Priority
+from cod_doc.domain.entities import PlanSection, Priority
 from cod_doc.infra.models import PlanModel
+from cod_doc.services.validation import (
+    ValidationIssue,
+    audit_html_escaped_text,
+    plan_section_slug,
+    validate_plan_section_letter,
+    validate_plan_section_position,
+    validate_plan_section_title,
+    validate_section_slug,
+)
 
 from ._types import DerivedStatus, PlanNotFoundError
 
@@ -48,3 +57,37 @@ def _derive_status(total: int, done: int, in_progress: int, cancelled: int) -> D
     if in_progress > 0 or done > 0:
         return DerivedStatus.IN_PROGRESS
     return DerivedStatus.PENDING
+
+
+def build_section(
+    *,
+    plan_id: int,
+    letter: str,
+    title: str,
+    slug: str | None,
+    position: int,
+) -> tuple[PlanSection, list[ValidationIssue]]:
+    """Собрать проверенную секцию плана для записи; в БД ничего не пишет.
+
+    Буква приводится к верхнему регистру и проверяется вместе с заголовком и
+    позицией; явный ``slug`` обязан пройти :func:`validate_section_slug`, без
+    него слаг даёт :func:`plan_section_slug`. Нарушение — ``ValidationError``.
+
+    Вторым элементом — advisory PS-004 на HTML-сущности в заголовке: заголовок
+    не заменяется, вызывающий только показывает предупреждение.
+
+    Валидация — только на записи. 16 слагов вне конвенции, уже лежащих в
+    живой БД cod-doc (вроде ``Structure protocol (RFC 24)``), читаются как
+    есть: чтение секций ничего не проверяет.
+    """
+    letter = letter.strip().upper()
+    validate_plan_section_letter(letter)
+    validate_plan_section_title(title)
+    validate_plan_section_position(position)
+    if slug is not None:
+        slug = slug.strip()
+        validate_section_slug(slug)
+    else:
+        slug = plan_section_slug(letter, title)
+    section = PlanSection(plan_id=plan_id, letter=letter, title=title, slug=slug, position=position)
+    return section, audit_html_escaped_text(title, field="title")

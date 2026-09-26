@@ -78,12 +78,12 @@ def test_validate_story_id_rejects(bad: str) -> None:
 # ============================================================================ #
 
 
-@pytest.mark.parametrize("good", ["A-Data-Core", "B-Services", "C-Write-Paths", "Z-X9"])
+@pytest.mark.parametrize("good", ["A-Data-Core", "B-Services", "C-Write-Paths", "Z-X9", "AA-Data"])
 def test_validate_section_slug_accepts(good: str) -> None:
     v.validate_section_slug(good)
 
 
-@pytest.mark.parametrize("bad", ["a-data", "AA-Data", "1-Data", "A-", "A_data", ""])
+@pytest.mark.parametrize("bad", ["a-data", "AAA-Data", "Aa-Data", "1-Data", "A-", "A_data", ""])
 def test_validate_section_slug_rejects(bad: str) -> None:
     with pytest.raises(v.ValidationError) as exc:
         v.validate_section_slug(bad)
