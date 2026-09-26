@@ -23,6 +23,7 @@ from cod_doc.services import project_service as projects
 from cod_doc.services import revision_service as revisions
 from cod_doc.services import task_service as task_svc
 from cod_doc.services.ai_text import AIBackendError
+from cod_doc.services.task_service import id_prefix_from_scope
 
 from ._helpers import MASTER_PREVIEW_LINES, _preview
 
@@ -390,7 +391,7 @@ async def import_master_save(
                         priority=Priority(str(priority)),
                         author="human:web",
                         description=description.strip() or None,
-                        id_prefix=_id_prefix_from_scope(plan_scope),
+                        id_prefix=id_prefix_from_scope(plan_scope),
                         allow_duplicate=True,
                         reason="ai-import-master",
                     )
@@ -403,8 +404,3 @@ async def import_master_save(
         url=f"/p/{slug}?master_written={'1' if write_master else '0'}&tasks_saved={saved_tasks}",
         status_code=303,
     )
-
-
-def _id_prefix_from_scope(scope: str) -> str:
-    letters = [c for c in scope.upper() if c.isalpha()]
-    return "".join(letters[:3]) or "TSK"

@@ -17,8 +17,8 @@ Public API:
 - `remove_dependency` — delete a task→task `dependency` edge (kind='blocks');
   raises on unknown task or missing edge; writes TASK revision + activity.
 
-ID format:  `<PREFIX>-<NNN>` (e.g. `COD-011`, `AUTH-025`). Caller passes
-`id_prefix` when `task_id=None`; the service finds the current max sequence
+ID format:  `<PREFIX>-<NNN>` (e.g. `COD-011`, `AUTH-025`). Caller may pass
+`id_prefix` when `task_id=None` (иначе он выводится из плана); the service finds the current max sequence
 within the PROJECT and increments — тот же скоуп, что у ограничения
 `UNIQUE (project_id, task_id)`. Format validation is COD-020's job.
 
@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import (
     AffectedFileKind,
@@ -55,11 +56,13 @@ from cod_doc.infra.models import (
     UserStoryModel,
 )
 from cod_doc.infra.repositories import PlanSectionRepository, TaskRepository
-from cod_doc.infra.sql_helpers import priority_sql_order
+from cod_doc.infra.sql_helpers import ensure_outer_transaction, priority_sql_order
 from cod_doc.services import activity_service, event_bus, search_service, validation
 from cod_doc.services import revision_service as rev
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sqlalchemy.orm import Session
 
 
@@ -85,6 +88,32 @@ class TaskBlockedError(RuntimeError):
 
 class TaskAlreadyDoneError(RuntimeError):
     """Raised by `complete()` when the task is already done (idempotency guard)."""
+
+
+class DuplicateTaskIdError(ValueError):
+    """Raised by `create()` when the `task_id` is already taken in the project.
+
+    Несёт свободный номер с тем же префиксом, чтобы вызывающий мог повторить
+    без угадывания. Текст — без SQL: агенту уходит он, а не сырой
+    ``IntegrityError`` драйвера.
+    """
+
+    def __init__(self, task_id: str, next_free_id: str) -> None:
+        super().__init__(
+            f"task_id {task_id!r} already exists in project; next free: {next_free_id}"
+        )
+        self.task_id = task_id
+        self.next_free_id = next_free_id
+
+
+# Авто-ID считается как max+1 без замка: параллельный create с тем же
+# префиксом может занять номер между расчётом и insert. Столько раз
+# пересчитываем номер, прежде чем сдаться.
+_AUTO_ID_ATTEMPTS = 3
+_MIN_PREFIX_LEN = 2
+_SCOPE_PREFIX_LEN = 3
+_FALLBACK_PREFIX = "TSK"
+_PREFIXED_TASK_ID_RE = re.compile(r"^([A-Z]{2,5})-\d+$")
 
 
 # --------------------------------------------------------------------------- #
@@ -127,6 +156,107 @@ def _next_task_id(session: Session, project_id: int, prefix: str) -> str:
         if m:
             max_n = max(max_n, int(m.group(1)))
     return f"{prefix}-{max_n + 1:03d}"
+
+
+def id_prefix_from_scope(scope: str) -> str:
+    """Префикс ID из scope плана: первые три латинские буквы в верхнем регистре.
+
+    ``adoption-2026-08`` → ``ADO``, ``cod-doc`` → ``COD``. Меньше двух букв —
+    ``TSK``: результат обязан проходить ``validate_id_prefix`` (2-5 заглавных).
+    """
+    letters = [c for c in scope.upper() if c.isascii() and c.isalpha()]
+    if len(letters) < _MIN_PREFIX_LEN:
+        return _FALLBACK_PREFIX
+    return "".join(letters[:_SCOPE_PREFIX_LEN])
+
+
+def id_prefix_for_plan(session: Session, plan_id: int) -> str:
+    """Префикс ID для новой задачи плана, когда вызывающий его не дал.
+
+    Уже существующие задачи плана выигрывают у scope: план ``agent-fit``
+    нумерует ``AFT-*``, а не ``AGE-*``. Берётся самый частый префикс, при
+    равенстве — префикс самой поздней задачи (наибольший ``row_id``). Задач
+    с разбираемым ID нет — префикс из scope.
+    """
+    counts: dict[str, int] = {}
+    latest: dict[str, int] = {}
+    rows = session.execute(
+        select(TaskModel.row_id, TaskModel.task_id).where(TaskModel.plan_id == plan_id)
+    )
+    for row_id, tid in rows:
+        m = _PREFIXED_TASK_ID_RE.match(tid)
+        if m is None:
+            continue
+        prefix = m.group(1)
+        counts[prefix] = counts.get(prefix, 0) + 1
+        latest[prefix] = max(latest.get(prefix, row_id), row_id)
+    if counts:
+        return max(counts, key=lambda p: (counts[p], latest[p]))
+    scope = session.execute(
+        select(PlanModel.scope).where(PlanModel.row_id == plan_id)
+    ).scalar_one_or_none()
+    return id_prefix_from_scope(scope or "")
+
+
+def _require_free_task_id(session: Session, project_id: int, task_id: str) -> None:
+    """Явный `task_id` занят в проекте → `DuplicateTaskIdError` до insert."""
+    taken = session.execute(
+        select(TaskModel.row_id).where(
+            TaskModel.project_id == project_id, TaskModel.task_id == task_id
+        )
+    ).first()
+    if taken is not None:
+        prefix = task_id.split("-", 1)[0]
+        raise DuplicateTaskIdError(task_id, _next_task_id(session, project_id, prefix))
+
+
+def _add_with_auto_id(
+    session: Session,
+    repo: TaskRepository,
+    project_id: int,
+    prefix: str,
+    build: Callable[[str], Task],
+) -> Task:
+    """Вставить задачу с авто-ID, пересчитывая номер на конфликте.
+
+    Номер считается max+1 без замка: между расчётом и insert его может
+    занять параллельный create. Каждая попытка — в своём savepoint, конфликт
+    откатывает только её. Внешняя транзакция открывается явно до savepoint,
+    иначе на pysqlite RELEASE закоммитил бы insert мимо отката вызывающего
+    (STO-022).
+    """
+    ensure_outer_transaction(session)
+    attempted = ""
+    for _ in range(_AUTO_ID_ATTEMPTS):
+        attempted = _next_task_id(session, project_id, prefix)
+        try:
+            with session.begin_nested():
+                return repo.add(build(attempted))
+        except IntegrityError:
+            continue
+    raise DuplicateTaskIdError(attempted, _next_task_id(session, project_id, prefix))
+
+
+def _add_task(
+    session: Session,
+    repo: TaskRepository,
+    project_id: int,
+    plan_id: int,
+    task_id: str | None,
+    id_prefix: str | None,
+    build: Callable[[str], Task],
+) -> Task:
+    """Вставить задачу: явный ID — после проверки формата и занятости, иначе авто-ID.
+
+    Без `id_prefix` префикс выводится из плана (`id_prefix_for_plan`).
+    """
+    if task_id is not None:
+        validation.validate_task_id(task_id)
+        _require_free_task_id(session, project_id, task_id)
+        return repo.add(build(task_id))
+    prefix = id_prefix or id_prefix_for_plan(session, plan_id)
+    validation.validate_id_prefix(prefix)
+    return _add_with_auto_id(session, repo, project_id, prefix, build)
 
 
 def _task_diff(op: str, **fields: object) -> str:
@@ -217,8 +347,17 @@ def create(
 ) -> Task:
     """Persist a task and write its initial revision.
 
-    If `task_id` is None, `id_prefix` must be provided; the service assigns
-    `{prefix}-NNN` where NNN is the next sequence within the plan.
+    If `task_id` is None, the service assigns `{prefix}-NNN` where NNN is the
+    next sequence within the PROJECT — scope of ``UNIQUE (project_id,
+    task_id)`` (ADO-177). Without `id_prefix` the prefix is derived from the
+    plan (`id_prefix_for_plan`): the most frequent prefix among the plan's
+    tasks, else from the plan scope (`adoption-2026-08` → ``ADO``). A number
+    taken concurrently between computing and insert is retried up to
+    ``_AUTO_ID_ATTEMPTS`` times, each attempt in its own savepoint.
+
+    An explicit `task_id` already present in the project raises
+    `DuplicateTaskIdError` with the next free id of the same prefix, before
+    any insert — no raw ``IntegrityError`` reaches the caller.
 
     Structured links (PCA-902/903 — close cycle-2 G2/G3 gaps):
     - ``blocked_by``: list of task_id strings; each becomes a `dependency`
@@ -242,20 +381,15 @@ def create(
                 normalized_title=_normalize_title(title),
             )
 
-    if task_id is None:
-        if not id_prefix:
-            raise ValueError("provide task_id or id_prefix")
-        validation.validate_id_prefix(id_prefix)
-        task_id = _next_task_id(session, project_id, id_prefix)
-    else:
-        validation.validate_task_id(task_id)
     validation.validate_task_type(type.value)
 
     now = datetime.now(UTC)
-    task = TaskRepository(session).add(
-        Task(
+    repo = TaskRepository(session)
+
+    def _build(tid: str) -> Task:
+        return Task(
             project_id=project_id,
-            task_id=task_id,
+            task_id=tid,
             plan_id=plan_id,
             section_id=section_id,
             title=title,
@@ -271,7 +405,10 @@ def create(
             created=now,
             last_updated=now,
         )
-    )
+
+    task = _add_task(session, repo, project_id, plan_id, task_id, id_prefix, _build)
+    assert task.task_id is not None
+    task_id = task.task_id
     assert task.row_id is not None
 
     # COD-076: backfill the indexed dedupe column. Title is immutable after

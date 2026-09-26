@@ -126,22 +126,26 @@ def test_create_auto_generates_task_id(engine_with_schema) -> None:  # type: ign
         assert t2.task_id == "PLN-002"
 
 
-def test_create_without_task_id_and_prefix_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_create_without_task_id_and_prefix_derives_prefix_from_scope(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-011: без task_id и id_prefix префикс выводится из scope плана.
+
+    Сид — план `p-plan` без задач: первые три буквы scope → `PPL`.
+    """
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
-        with pytest.raises(ValueError):
-            tasks.create(
-                session,
-                project_id=p,
-                plan_id=pl,
-                section_id=s,
-                title="X",
-                type=TaskType.FEATURE,
-                priority=Priority.LOW,
-                author="x",
-            )
+        task = tasks.create(
+            session,
+            project_id=p,
+            plan_id=pl,
+            section_id=s,
+            title="X",
+            type=TaskType.FEATURE,
+            priority=Priority.LOW,
+            author="x",
+        )
+        assert task.task_id == "PPL-001"
 
 
 def test_create_rejects_invalid_task_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

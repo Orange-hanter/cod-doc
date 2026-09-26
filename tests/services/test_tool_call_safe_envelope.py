@@ -73,3 +73,80 @@ async def test_envelope_validation_error_for_unknown_task(
     # Unknown task → wrapped as not_found OR validation (ValueError path).
     assert result["error"]["code"] in {"not_found", "validation"}
     assert "NOPE-999" in result["error"]["message"]
+
+
+async def test_duplicate_task_id_maps_to_conflict(
+    engine_with_schema,
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """AFT-011: занятый task_id → conflict с next_free_id, без SQL в конверте."""
+    from cod_doc.domain.entities import Priority, TaskType
+    from cod_doc.services import task_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+        task_service.create(
+            session,
+            project_id=1,
+            plan_id=1,
+            section_id=1,
+            title="seeded",
+            type=TaskType.FEATURE,
+            priority=Priority.MEDIUM,
+            author="test",
+            task_id="SP-001",
+        )
+
+    from cod_doc.mcp.tools import task_tools
+
+    monkeypatch.setattr(task_tools, "session_factory", lambda project: (factory, None))
+    monkeypatch.setattr(task_tools, "require_project_id", lambda session, project: 1)
+
+    safe = _get_tool("tool_call_safe")
+    result = await safe(
+        tool_name="task_create",
+        args={
+            "project": "sp",
+            "plan_scope": "sp-plan",
+            "section_letter": "A",
+            "title": "another",
+            "type": "feature",
+            "priority": "medium",
+            "task_id": "SP-001",
+        },
+    )
+    assert result["ok"] is False
+    error = result["error"]
+    assert error["code"] == "conflict"
+    assert error["retry_safe"] is False
+    assert "SP-002" in error["message"]
+    assert "SP-002" in error["hint"]
+    assert "INSERT" not in error["message"]
+
+
+async def test_integrity_error_maps_to_conflict(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """AFT-011: сырой IntegrityError → conflict, текст SQL-выражения не утекает."""
+    import sqlite3
+
+    from sqlalchemy.exc import IntegrityError
+
+    statement = "INSERT INTO task (project_id, task_id) VALUES (?, ?)"
+
+    def _raise(**_: Any) -> None:
+        raise IntegrityError(
+            statement,
+            (1, "SP-001"),
+            sqlite3.IntegrityError("UNIQUE constraint failed: task.project_id, task.task_id"),
+        )
+
+    monkeypatch.setattr(live_mcp._tool_manager._tools["task_summary"], "fn", _raise)
+
+    safe = _get_tool("tool_call_safe")
+    result = await safe(tool_name="task_summary", args={"project": "sp"})
+    assert result["ok"] is False
+    error = result["error"]
+    assert error["code"] == "conflict"
+    assert error["retry_safe"] is False
+    assert statement not in error["message"]
+    assert "INSERT" not in error["message"]
