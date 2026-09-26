@@ -48,6 +48,7 @@ from cod_doc.infra.models import (
     AffectedFileModel,
     DependencyModel,
     PlanModel,
+    PlanSectionModel,
     ProjectModel,
     StoryLinkModel,
     TaskModel,
@@ -868,6 +869,69 @@ def list_for_plan(session: Session, plan_id: int) -> list[Task]:
     return TaskRepository(session).list_for_plan(plan_id)
 
 
+def parse_since(value: str) -> datetime:
+    """Parse an ISO-8601 ``--since`` value into an aware UTC datetime.
+
+    A bare date (``2026-09-16``) is treated as midnight UTC; a naive
+    datetime is assumed to be UTC; an aware one is converted to UTC.
+    Нормализация обязательна, потому что SQLite хранит ``DateTime`` строкой,
+    и строковое сравнение корректно, только когда обе стороны записаны в
+    одной зоне, — зоной проекта выбрана UTC. Мусор на входе даёт
+    ``ValueError`` с исходной строкой и подсказкой формата.
+    """
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        raise ValueError(
+            f"cannot parse datetime {value!r}; expected ISO-8601, "
+            "e.g. '2026-09-16' or '2026-09-16T12:00:00Z'"
+        ) from None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def _resolve_scope_filters(
+    session: Session,
+    project_id: int,
+    *,
+    plan_scope: str | None,
+    section_letter: str | None,
+) -> tuple[int | None, int | None]:
+    """Resolve ``plan_scope`` / ``section_letter`` to row ids (RFC 27 F7).
+
+    Общий для ``list_for_project`` и ``count_for_project``, чтобы total и
+    items считались по одному множеству. ``section_letter`` осмысленна
+    только внутри плана (буква уникальна в рамках plan_id), поэтому без
+    ``plan_scope`` это ошибка.
+    """
+    if section_letter is not None and plan_scope is None:
+        raise ValueError(
+            "section_letter requires plan_scope: буква секции уникальна только внутри плана"
+        )
+    plan_id: int | None = None
+    section_id: int | None = None
+    if plan_scope is not None:
+        plan_id = session.execute(
+            select(PlanModel.row_id).where(
+                PlanModel.project_id == project_id,
+                PlanModel.scope == plan_scope,
+            )
+        ).scalar_one_or_none()
+        if plan_id is None:
+            raise ValueError(f"Plan '{plan_scope}' not found in project")
+        if section_letter is not None:
+            section_id = session.execute(
+                select(PlanSectionModel.row_id).where(
+                    PlanSectionModel.plan_id == plan_id,
+                    PlanSectionModel.letter == section_letter,
+                )
+            ).scalar_one_or_none()
+            if section_id is None:
+                raise ValueError(f"Section '{section_letter}' not found in plan '{plan_scope}'")
+    return plan_id, section_id
+
+
 def list_for_project(
     session: Session,
     project_id: int,
@@ -876,16 +940,40 @@ def list_for_project(
     priority: Priority | None = None,
     limit: int | None = None,
     offset: int = 0,
+    plan_scope: str | None = None,
+    section_letter: str | None = None,
+    type: TaskType | None = None,
+    completed_since: datetime | None = None,
+    updated_since: datetime | None = None,
+    has_commit: bool | None = None,
 ) -> list[Task]:
-    """List tasks for a project with optional status/priority filters and pagination.
+    """List tasks for a project with filters and pagination (RFC 27 F7).
+
+    Filters: ``status`` (бакет эквивалентности), ``priority``, ``type``,
+    ``plan_scope`` (scope плана внутри проекта; неизвестный scope —
+    ``ValueError``), ``section_letter`` (буква секции; требует
+    ``plan_scope``, неизвестная буква — ``ValueError``),
+    ``completed_since`` (``completed_at >= значения``, NULL не проходит),
+    ``updated_since`` (``last_updated >= значения``) и ``has_commit``
+    (True — непустой ``completed_commit``, False — NULL или пустая строка).
+    Даты нормализуются к UTC заранее — см. :func:`parse_since`.
 
     A `limit=None` returns all matching tasks (legacy behaviour). Callers
     fronted by MCP/REST should pass a finite limit to bound payload size.
     """
+    plan_id, section_id = _resolve_scope_filters(
+        session, project_id, plan_scope=plan_scope, section_letter=section_letter
+    )
     return TaskRepository(session).list_for_project(
         project_id,
         status=status,
         priority=priority,
+        type=type,
+        plan_id=plan_id,
+        section_id=section_id,
+        completed_since=completed_since,
+        updated_since=updated_since,
+        has_commit=has_commit,
         limit=limit,
         offset=offset,
     )
@@ -897,21 +985,32 @@ def count_for_project(
     *,
     status: TaskStatus | None = None,
     priority: Priority | None = None,
+    plan_scope: str | None = None,
+    section_letter: str | None = None,
+    type: TaskType | None = None,
+    completed_since: datetime | None = None,
+    updated_since: datetime | None = None,
+    has_commit: bool | None = None,
 ) -> int:
-    """Return the count of matching tasks (paired with list_for_project)."""
-    from sqlalchemy import func
+    """Return the count of matching tasks (paired with list_for_project).
 
-    stmt = select(func.count(TaskModel.row_id)).where(TaskModel.project_id == project_id)
-    if status is not None:
-        # Парой к `list_for_project` (task_repo.py): тот с ADO-182 фильтрует по
-        # всему классу эквивалентности, а счётчик остался на точной строке.
-        # Расхождение видно снаружи: `task_list` отдавал бы items и total,
-        # посчитанные по разным множествам, и пагинирующий клиент,
-        # доверяющий total, останавливался бы на первой же странице.
-        stmt = stmt.where(TaskModel.status.in_(equivalent_task_statuses(status)))
-    if priority is not None:
-        stmt = stmt.where(TaskModel.priority == priority.value)
-    return int(session.execute(stmt).scalar_one() or 0)
+    Принимает те же фильтры (RFC 27 F7), что и :func:`list_for_project`, и
+    делегирует в репозиторий — total и items считаются по одному множеству.
+    """
+    plan_id, section_id = _resolve_scope_filters(
+        session, project_id, plan_scope=plan_scope, section_letter=section_letter
+    )
+    return TaskRepository(session).count_for_project(
+        project_id,
+        status=status,
+        priority=priority,
+        type=type,
+        plan_id=plan_id,
+        section_id=section_id,
+        completed_since=completed_since,
+        updated_since=updated_since,
+        has_commit=has_commit,
+    )
 
 
 def set_blocker(

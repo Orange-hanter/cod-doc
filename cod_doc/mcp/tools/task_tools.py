@@ -88,47 +88,91 @@ def register(mcp: FastMCP) -> None:
         project: str,
         status: str | None = None,
         priority: str | None = None,
+        plan_scope: str | None = None,
+        section_letter: str | None = None,
+        type: str | None = None,
+        completed_since: str | None = None,
+        updated_since: str | None = None,
+        has_commit: bool | None = None,
         limit: int = 50,
         offset: int = 0,
         include_body: bool = False,
     ) -> dict[str, Any]:
-        """List DB tasks for a project — paginated, with filters.
+        """List DB tasks for a project — paginated, with filters (RFC 27 F7).
 
         Parameters
         ----------
-        status:        Any canonical TaskStatus or legacy alias. Canonical:
-                       backlog | todo | in_progress | in_review | blocked |
-                       done | cancelled. Legacy aliases: pending ≡ todo,
-                       in-progress ≡ in_progress. Single source of truth:
-                       cod_doc/services/task_status_machine.py +
-                       skill `task-standard`.
-        priority:      critical | high | medium | low
-        limit:         max rows to return (default 50; cap large projects)
-        offset:        rows to skip (for pagination)
-        include_body:  if False (default), description/acceptance are omitted —
-                       returns compact rows safe for context windows.
+        status:          Any canonical TaskStatus or legacy alias. Canonical:
+                         backlog | todo | in_progress | in_review | blocked |
+                         done | cancelled. Legacy aliases: pending ≡ todo,
+                         in-progress ≡ in_progress. Single source of truth:
+                         cod_doc/services/task_status_machine.py +
+                         skill `task-standard`.
+        priority:        critical | high | medium | low
+        plan_scope:      restrict to one plan by its scope; unknown scope → error
+        section_letter:  section letter within the plan; requires plan_scope
+                         (without it → error); unknown letter → error
+        type:            feature | test | bug | refactor | migration | docs | chore
+        completed_since: ISO-8601 date/datetime (UTC-normalized) — only tasks
+                         with completed_at >= value; unparseable string → error
+        updated_since:   ISO-8601 date/datetime — only tasks with
+                         last_updated >= value
+        has_commit:      True — only tasks with a non-empty completed_commit;
+                         False — only without one; None — no filter
+        limit:           max rows to return (default 50; cap large projects)
+        offset:          rows to skip (for pagination)
+        include_body:    if False (default), description/acceptance are omitted —
+                         returns compact rows safe for context windows.
+
+        Examples
+        --------
+        Tasks closed in the last 10 days with a commit sha:
+        ``task_list(project, status='done', completed_since='2026-09-16', has_commit=True)``
+
+        Open tasks of section C of plan X:
+        ``task_list(project, plan_scope='X', section_letter='C', status='todo')``
 
         Returns
         -------
         {"items": [...], "total": <matching count>, "limit": ..., "offset": ...}
+        Each item row carries ``plan_scope`` / ``section_letter`` resolved
+        from plan / plan_section.
         """
-        from cod_doc.domain.entities import Priority, TaskStatus
+        from cod_doc.domain.entities import Priority, TaskStatus, TaskType
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
 
         sf, _ = session_factory(project)
         status_enum = TaskStatus(status) if status else None
         priority_enum = Priority(priority) if priority else None
+        type_enum = TaskType(type) if type else None
+        completed_dt = task_service.parse_since(completed_since) if completed_since else None
+        updated_dt = task_service.parse_since(updated_since) if updated_since else None
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             total = task_service.count_for_project(
-                session, project_id, status=status_enum, priority=priority_enum
+                session,
+                project_id,
+                status=status_enum,
+                priority=priority_enum,
+                plan_scope=plan_scope,
+                section_letter=section_letter,
+                type=type_enum,
+                completed_since=completed_dt,
+                updated_since=updated_dt,
+                has_commit=has_commit,
             )
             tasks = task_service.list_for_project(
                 session,
                 project_id,
                 status=status_enum,
                 priority=priority_enum,
+                plan_scope=plan_scope,
+                section_letter=section_letter,
+                type=type_enum,
+                completed_since=completed_dt,
+                updated_since=updated_dt,
+                has_commit=has_commit,
                 limit=limit,
                 offset=offset,
             )

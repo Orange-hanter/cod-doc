@@ -3126,6 +3126,14 @@ _cod-doc() {
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(-s --status)'{-s+,--status=}'[Filter by status. Легаси-написание и каноническое — один бакет; `-s…]:filter-status:(backlog todo in_progress in_review blocked cancelled pending in-progress done)' \
+    '(--plan)--plan=[Scope плана (напр. '\''cod-doc'\'')]:plan-scope:_cod_doc_plans' \
+    '(--section)--section=[Буква секции внутри плана (требует --plan)]:section-letter:_cod_doc_plan_sections' \
+    '(--type)--type=[Тип задачи]:task-type:(feature test bug refactor migration docs chore)' \
+    '(--completed-since)--completed-since=[Только закрытые не раньше даты, ISO-8601 (напр. 2026-09-16)]:completed-since' \
+    '(--updated-since)--updated-since=[Только обновлённые не раньше даты, ISO-8601 (напр. 2026-09-16)]:updated-since' \
+    '(--no-commit --has-commit)'{--has-commit,--no-commit}'[Только задачи с/без completed_commit (без флага фильтра нет)]' \
+    '(--limit)--limit=[Максимум строк (по умолчанию — все)]:limit' \
+    '(--offset)--offset=[Пропустить первые N строк]:offset' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret

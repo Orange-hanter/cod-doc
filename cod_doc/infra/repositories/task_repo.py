@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import Select, func, or_, select
 
 from cod_doc.domain.entities import (
     Priority,
@@ -15,6 +15,9 @@ from cod_doc.domain.entities import (
 )
 from cod_doc.infra.models import TaskModel
 from cod_doc.infra.repositories.base import BaseRepository
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class TaskRepository(BaseRepository[Task, TaskModel]):
@@ -78,15 +81,20 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
 
-    def list_for_project(
+    def _filtered(
         self,
         project_id: int,
         *,
         status: TaskStatus | None = None,
         priority: Priority | None = None,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> list[Task]:
+        type: TaskType | None = None,
+        plan_id: int | None = None,
+        section_id: int | None = None,
+        completed_since: datetime | None = None,
+        updated_since: datetime | None = None,
+        has_commit: bool | None = None,
+    ) -> Select[tuple[TaskModel]]:
+        """Build the shared WHERE for list_for_project / count_for_project (RFC 27 F7)."""
         stmt = select(TaskModel).where(TaskModel.project_id == project_id)
         if status is not None:
             # ADO-182: сравнение точной строкой резало класс эквивалентности.
@@ -98,9 +106,88 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
             stmt = stmt.where(TaskModel.status.in_(equivalent_task_statuses(status)))
         if priority is not None:
             stmt = stmt.where(TaskModel.priority == priority.value)
+        if type is not None:
+            stmt = stmt.where(TaskModel.type == type.value)
+        if plan_id is not None:
+            stmt = stmt.where(TaskModel.plan_id == plan_id)
+        if section_id is not None:
+            stmt = stmt.where(TaskModel.section_id == section_id)
+        if completed_since is not None:
+            # NULL не проходит: задача без completed_at не «закрыта после …».
+            stmt = stmt.where(TaskModel.completed_at >= completed_since)
+        if updated_since is not None:
+            stmt = stmt.where(TaskModel.last_updated >= updated_since)
+        if has_commit is True:
+            stmt = stmt.where(
+                TaskModel.completed_commit.is_not(None),
+                TaskModel.completed_commit != "",
+            )
+        elif has_commit is False:
+            stmt = stmt.where(
+                or_(
+                    TaskModel.completed_commit.is_(None),
+                    TaskModel.completed_commit == "",
+                )
+            )
+        return stmt
+
+    def list_for_project(
+        self,
+        project_id: int,
+        *,
+        status: TaskStatus | None = None,
+        priority: Priority | None = None,
+        type: TaskType | None = None,
+        plan_id: int | None = None,
+        section_id: int | None = None,
+        completed_since: datetime | None = None,
+        updated_since: datetime | None = None,
+        has_commit: bool | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[Task]:
+        stmt = self._filtered(
+            project_id,
+            status=status,
+            priority=priority,
+            type=type,
+            plan_id=plan_id,
+            section_id=section_id,
+            completed_since=completed_since,
+            updated_since=updated_since,
+            has_commit=has_commit,
+        )
         stmt = stmt.order_by(TaskModel.plan_id, TaskModel.section_id, TaskModel.task_id)
         if offset:
             stmt = stmt.offset(offset)
         if limit is not None:
             stmt = stmt.limit(limit)
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
+
+    def count_for_project(
+        self,
+        project_id: int,
+        *,
+        status: TaskStatus | None = None,
+        priority: Priority | None = None,
+        type: TaskType | None = None,
+        plan_id: int | None = None,
+        section_id: int | None = None,
+        completed_since: datetime | None = None,
+        updated_since: datetime | None = None,
+        has_commit: bool | None = None,
+    ) -> int:
+        """Count over the same filtered set as list_for_project (total == items)."""
+        stmt = self._filtered(
+            project_id,
+            status=status,
+            priority=priority,
+            type=type,
+            plan_id=plan_id,
+            section_id=section_id,
+            completed_since=completed_since,
+            updated_since=updated_since,
+            has_commit=has_commit,
+        )
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        return int(self.session.execute(count_stmt).scalar_one() or 0)

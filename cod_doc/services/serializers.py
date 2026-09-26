@@ -21,8 +21,10 @@ def task_to_dict(t: Task, session: Session | None = None) -> dict[str, Any]:
 
     When ``session`` is provided, blocked_by/affects_files/story_id are
     populated from related tables (`dependency`, `affected_file`,
-    `story_link`). Without session, they default to empty (legacy behaviour
-    for callers that don't care about graph relations).
+    `story_link`), and ``plan_scope`` / ``section_letter`` are resolved
+    from `plan` / `plan_section` (RFC 27 F7 — один запрос на строку).
+    Without session, they default to empty/None (legacy behaviour for
+    callers that don't care about graph relations).
     """
     result: dict[str, Any] = {
         "task_id": t.task_id,
@@ -32,6 +34,8 @@ def task_to_dict(t: Task, session: Session | None = None) -> dict[str, Any]:
         "priority": t.priority.value,
         "plan_id": t.plan_id,
         "section_id": t.section_id,
+        "plan_scope": None,
+        "section_letter": None,
         "description": t.description,
         "acceptance": t.acceptance,
         "blocked_reason": t.blocked_reason,
@@ -49,11 +53,22 @@ def task_to_dict(t: Task, session: Session | None = None) -> dict[str, Any]:
         from cod_doc.infra.models import (
             AffectedFileModel,
             DependencyModel,
+            PlanModel,
+            PlanSectionModel,
             StoryLinkModel,
             TaskModel,
             UserStoryModel,
         )
 
+        plan_row = session.execute(
+            select(PlanModel.scope, PlanSectionModel.letter)
+            .select_from(PlanModel)
+            .outerjoin(PlanSectionModel, PlanSectionModel.row_id == t.section_id)
+            .where(PlanModel.row_id == t.plan_id)
+        ).one_or_none()
+        if plan_row is not None:
+            result["plan_scope"] = plan_row[0]
+            result["section_letter"] = plan_row[1]
         result["blocked_by"] = list(
             session.execute(
                 select(TaskModel.task_id)

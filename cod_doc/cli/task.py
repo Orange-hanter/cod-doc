@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json as _json
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 from rich.console import Console
 from rich.table import Table
 
-from cod_doc.domain.entities import TaskStatus
+from cod_doc.domain.entities import TaskStatus, TaskType
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -95,31 +95,130 @@ def task() -> None:
         "`-s pending` и `-s todo` дают одинаковый результат."
     ),
 )
+@click.option("--plan", "plan_scope", default=None, help="Scope плана (напр. 'cod-doc')")
+@click.option(
+    "--section",
+    "section_letter",
+    default=None,
+    help="Буква секции внутри плана (требует --plan)",
+)
+@click.option(
+    "--type",
+    "task_type",
+    default=None,
+    type=click.Choice([t.value for t in TaskType]),
+    help="Тип задачи",
+)
+@click.option(
+    "--completed-since",
+    default=None,
+    help="Только закрытые не раньше даты, ISO-8601 (напр. 2026-09-16)",
+)
+@click.option(
+    "--updated-since",
+    default=None,
+    help="Только обновлённые не раньше даты, ISO-8601 (напр. 2026-09-16)",
+)
+@click.option(
+    "--has-commit/--no-commit",
+    "has_commit",
+    default=None,
+    help="Только задачи с/без completed_commit (без флага фильтра нет)",
+)
+@click.option(
+    "--limit",
+    default=None,
+    type=int,
+    help="Максимум строк (по умолчанию — все)",
+)
+@click.option(
+    "--offset",
+    default=0,
+    type=int,
+    show_default=True,
+    help="Пропустить первые N строк",
+)
 @click.option("--json", "as_json", is_flag=True, default=False)
 @click.pass_context
-def task_list(ctx: click.Context, project: str, filter_status: str | None, as_json: bool) -> None:
-    """List tasks for a project."""
+def task_list(
+    ctx: click.Context,
+    project: str,
+    filter_status: str | None,
+    plan_scope: str | None,
+    section_letter: str | None,
+    task_type: str | None,
+    completed_since: str | None,
+    updated_since: str | None,
+    has_commit: bool | None,
+    limit: int | None,
+    offset: int,
+    as_json: bool,
+) -> None:
+    """List tasks for a project.
+
+    RFC 27 F7 — два сценария, ради которых раньше шли в прямой SQL:
+
+    \b
+    # закрытые за 10 дней задачи с commit sha
+    cod-doc task list -p cod-doc -s done --completed-since 2026-09-16 --has-commit --json
+
+    \b
+    # открытые задачи секции C плана plan-x
+    cod-doc task list -p cod-doc --plan plan-x --section C -s todo
+    """
     from cod_doc.infra.db import transactional
     from cod_doc.services import task_service
+    from cod_doc.services.serializers import task_to_dict
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
     status_enum = TaskStatus(filter_status) if filter_status else None
+    type_enum = TaskType(task_type) if task_type else None
 
-    with transactional(sf) as session:
-        project_id = _require_project_id(session, project)
-        tasks = task_service.list_for_project(session, project_id, status=status_enum)
+    try:
+        completed_dt = task_service.parse_since(completed_since) if completed_since else None
+        updated_dt = task_service.parse_since(updated_since) if updated_since else None
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from None
+
+    rows: list[dict[str, Any]] = []
+    try:
+        with transactional(sf) as session:
+            project_id = _require_project_id(session, project)
+            tasks = task_service.list_for_project(
+                session,
+                project_id,
+                status=status_enum,
+                type=type_enum,
+                plan_scope=plan_scope,
+                section_letter=section_letter,
+                completed_since=completed_dt,
+                updated_since=updated_dt,
+                has_commit=has_commit,
+                limit=limit,
+                offset=offset,
+            )
+            if as_json:
+                rows = [task_to_dict(t, session=session) for t in tasks]
+    except ValueError as exc:
+        # Неизвестный plan/section или --section без --plan: текст сервиса
+        # объясняет причину лучше любого CLI-перевода.
+        raise click.UsageError(str(exc)) from None
 
     if as_json:
         data = [
             {
-                "task_id": t.task_id,
-                "title": t.title,
-                "status": t.status.value,
-                "type": t.type.value,
-                "priority": t.priority.value,
+                "task_id": r["task_id"],
+                "title": r["title"],
+                "status": r["status"],
+                "type": r["type"],
+                "priority": r["priority"],
+                "plan_scope": r["plan_scope"],
+                "section_letter": r["section_letter"],
+                "completed_at": r["completed_at"],
+                "completed_commit": r["completed_commit"],
             }
-            for t in tasks
+            for r in rows
         ]
         click.echo(_json.dumps(data, ensure_ascii=False, indent=2))
         return
