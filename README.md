@@ -32,9 +32,11 @@ changed it.
   reference each other as rows. Renames cascade instead of rotting.
 - **Task engine with atomic checkout.** 7-state task lifecycle, dependency
   graph, plan sections, ready-queue — agents lock work instead of racing it.
-- **Built for LLM agents.** A dedicated 6-tool MCP profile (`agent_pick`,
-  `agent_report`, `agent_complete`, …) gives an agent everything it needs in
-  one call — no 100-tool cold start.
+- **Built for LLM agents.** The default `agent` MCP profile is a 6-tool
+  documentation curator (`agent_capabilities`, `curator_next`, `ctx_search`,
+  `ctx_drift`, `context_get`, `agent_report`): one queue of what to fix, with a
+  ready command per item — no 143-tool cold start. Coding agents that execute
+  tasks (`agent_pick`, `agent_complete`, …) use `--profile standard`.
 - **Zero infrastructure.** Python 3.13+ and the SQLite that ships with it. No
   daemon, no indexer, no external database — the project DB is a single file.
 
@@ -64,7 +66,7 @@ cod-doc-mcp --profile agent           # MCP over stdio for Claude Code / Desktop
 | Surface | Entry point | For |
 |---|---|---|
 | CLI | `cod-doc` | day-to-day human work; `task`, `doc`, `plan`, `story`, `link`, `adr` groups |
-| MCP | `cod-doc-mcp` | LLM agents; profiles `agent` (6 task-centric tools), `standard`, `full` (~100 CRUD tools) |
+| MCP | `cod-doc-mcp` | LLM agents; profiles `agent` (6 curator tools, default), `minimal` (21), `standard` (143), `full` (147) |
 | REST + Web | `cod-doc serve` | dashboards, review, editing in the browser |
 | TUI | `cod-doc tui` | legacy terminal UI |
 

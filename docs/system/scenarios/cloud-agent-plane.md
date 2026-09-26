@@ -117,7 +117,7 @@ The URL is embedded `<root>/.cod-doc/state.db` (or hub sqlite), not a cloud Post
 
 TSC-002. Claims match code as of 2026-09-15.
 
-## SCN-065 — The six agent tools work over local MCP
+## SCN-065 — The agent-profile tools work over local MCP
 
 **Kind:** `integration`
 **Status:** `draft`
@@ -129,12 +129,12 @@ MCP is reachable via stdio or localhost streamable-http.
 
 ### Steps
 
-1. Call `agent_capabilities` then `agent_pick`
+1. Call `agent_capabilities` then `curator_next`
 
 ### Expected result
 
-The agent profile tools function without a remote cloud plane.
+The agent profile tools (curator set) function without a remote cloud plane.
 
 ### Notes
 
-TSC-002. Claims match code as of 2026-09-15.
+TSC-002. Claims match code as of 2026-09-15. ADO-217: tools live on `--profile standard|full` only; the default agent (doc curator, RFC 25 / CUR-008) does not take tasks. Steps rewritten to the curator entry point: `agent_capabilities` then `curator_next`.
