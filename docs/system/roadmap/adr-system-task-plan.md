@@ -5,7 +5,7 @@ status: done
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-07
-last_updated: 2026-06-05
+last_updated: 2026-09-26
 audience: [contributors, agents]
 related_docs:
   - ../capabilities/adr-system.md
@@ -31,6 +31,10 @@ related_docs:
 | B | Web UI (visual) | 3 | ✅ done |
 | C | Templates & Migration | 2 | ✅ done |
 | **TOTAL** | | **8** | ✅ done |
+
+> **Статусы задач каноничны в БД** (план `adr-system-task-plan`; ADO-217, 2026-09-26).
+> YAML-блоки задач ниже — исходная постановка: их `status: pending` не
+> обновлялся при закрытии. Факт — `cod-doc plan show adr-system-task-plan -p cod-doc`.
 
 > **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): код подтверждает 8/8 done — миграция `20260515_0018_adr_tables.py`, `services/adr_service.py` (+ immutability/deprecate), 9 MCP-тулов `adr_*`, CLI `cod_doc/cli/adr/`, web-страницы `api/web/pages/adr.py` (list/new/show/graph). БД: ADR-001..008 = done.
 

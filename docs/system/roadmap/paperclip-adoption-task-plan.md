@@ -5,7 +5,7 @@ status: done
 source_of_truth: true
 owner: cod-doc core
 created: 2026-05-07
-last_updated: 2026-06-05
+last_updated: 2026-09-26
 audience: [contributors, agents]
 related_docs:
   - ../../../proposals/README.md
@@ -39,6 +39,10 @@ related_docs:
 | F | Tooling fixes (cycle-2 gaps) | — | — (internal) | 3 | 🟡 pending |
 | H | Agent tools completion (cycle-5 cleanup) | 16, 20 | — (AGN-001..003, 010..013, 020..021) | 9 | 🟡 pending |
 | **TOTAL** | | 15 | 15 | **52** | ✅ done |
+
+> **Статусы задач каноничны в БД** (план `paperclip-adoption-task-plan`; ADO-217, 2026-09-26).
+> YAML-блоки задач ниже — исходная постановка: их `status: pending` не
+> обновлялся при закрытии. Факт — `cod-doc plan show paperclip-adoption-task-plan -p cod-doc`.
 
 > **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): «🟡 pending» — устаревший черновик. БД: PCA = 82 done, 2 cancelled (PCA-935 hide-legacy, PCA-947 activity_subscribe). Сверка с кодом подтвердила, что все 15 RFC-паттернов (01–15) реализованы и подключены. **Исключение — Section H** (agent-tools docstring + integration-тесты): код AGT done, но остаточная работа трекается отдельно в [agent-tools-completion-task-plan.md](agent-tools-completion-task-plan.md) и в плане `stabilization-2026-06` (ROADMAP, A0-1).
 

@@ -1,10 +1,10 @@
 ---
 type: execution-plan
 scope: cod-doc-bootstrap
-status: in-progress
+status: done
 principle: test-first
 created: 2026-04-19
-last_updated: 2026-06-05
+last_updated: 2026-09-26
 source_of_truth:
   vision: docs/system/VISION.md
   architecture: docs/system/ARCHITECTURE.md
@@ -31,10 +31,13 @@ source_of_truth:
 | B: Services | inline | 6 | 6 | 0 | ✅ done |
 | C: Write Paths | inline | 4 | 4 | 0 | ✅ done |
 | D: MCP & CLI | inline | 4 | 4 | 0 | ✅ done |
-| E: Retrieval | inline | 4 | 2 | 2 | 🔄 in-progress |
-| F: Migration | inline | 3 | 2 | 1 | 🔄 in-progress |
+| E: Retrieval | inline | 4 | 4 | 0 | ✅ done |
+| F: Migration | inline | 3 | 3 | 0 | ✅ done |
 | G: Hardening & DevX | inline | 5 | 5 | 0 | ✅ done |
-| **TOTAL**   |        | **31** | **28** | **3** | |
+| **TOTAL**   |        | **31** | **31** | **0** | ✅ done |
+
+> **Закрыт (ADO-217 reconciliation, 2026-09-26).** В БД план `cod-doc-bootstrap` —
+> 58/58 done; статусы задач каноничны в БД, per-task YAML ниже доведены до `done`.
 
 > **Status reconciliation 2026-06-05** (см. [ROADMAP](ROADMAP.md)): сверка с кодом исправила устаревший учёт. **Закрыты в коде, ранее висели pending:** COD-033 (`context_tools.py` + `context_service.py` L0/L1), COD-040 (FTS5 search), COD-041 (ContextService L0/L1). **Реально остаются открытыми** → трекаются в плане `stabilization-2026-06`: COD-042/043 (ContextService L2/L3 семантика — сейчас заглушки, A1-4). COD-051 (Restate importer) — код есть и работает (`services/restate_importer.py`), помечен done.
 >
@@ -360,13 +363,13 @@ depends_on: [COD-003, COD-011, COD-015]
 type: feature
 priority: medium
 affected_files:
-  - cod_doc/services/story_service.py
+  - cod_doc/services/story_service/
   - cod_doc/infra/repositories/story_repo.py
   - cod_doc/infra/repositories/__init__.py
   - tests/services/test_story_service.py
 ```
 
-> ✅ **Implemented 2026-04-28** (commit `pending`): функциональный API `create / get / list_for_project / list_acceptance / list_links / list_tasks / update_status / add_criterion / set_criterion_met / link / coverage` (см. [cod_doc/services/story_service.py](../../../cod_doc/services/story_service.py)). Все мутации пишут JSON-patch revision'ы с `entity_kind=STORY` ([standards/revision-history.md](../standards/revision-history.md): `op` ∈ `create / status / add_criterion / criterion_met / link`). `update_status` — optimistic concurrency через `expected_parent_revision_id` (как в TaskService.complete). `add_criterion` авто-вычисляет `position = max + 1`. `link(to_kind, to_ref, relation)` — hard-error на broken reference (target task/document/module отсутствует в проекте; per [document-link.md §4](../standards/document-link.md)) + idempotent dedup на edge `(story, kind, ref, relation)` — повторный вызов возвращает существующий row без новой revision. `list_tasks` фильтрует только `relation=implemented_by` (per [user-stories-graph.md §5.2](../capabilities/user-stories-graph.md)). `coverage(story_id)` возвращает `StoryCoverage` с derived `CoverageStatus` (`draft|accepted|in-progress|delivered|deferred`, отдельный enum от persisted `UserStoryStatus` — DELIVERED не в DB-enum'е): DRAFT/DEFERRED — pinned (берётся из `user_story.status`); DELIVERED требует `tasks_total>0 AND all done AND all acceptance met`; IN_PROGRESS — хоть одна in-progress/done; иначе ACCEPTED. Возвращает разбивку `tasks_total/done/in_progress` + `acceptance_total/met`. `StoryRepository` + `StoryAcceptanceRepository` + `StoryLinkRepository` под общий шаблон. Кастомные исключения: `StoryNotFoundError`, `StoryAlreadyExistsError`, `AcceptanceNotFoundError`, `BrokenLinkError`. Тесты — 22/22 (CRUD: 5, update_status: 3, criteria: 3, link: 4, list_tasks: 1, coverage: 6); общий suite — 208/208. **Section B (Services) closed.**
+> ✅ **Implemented 2026-04-28** (commit `pending`): функциональный API `create / get / list_for_project / list_acceptance / list_links / list_tasks / update_status / add_criterion / set_criterion_met / link / coverage` (см. [cod_doc/services/story_service/](../../../cod_doc/services/story_service/)). Все мутации пишут JSON-patch revision'ы с `entity_kind=STORY` ([standards/revision-history.md](../standards/revision-history.md): `op` ∈ `create / status / add_criterion / criterion_met / link`). `update_status` — optimistic concurrency через `expected_parent_revision_id` (как в TaskService.complete). `add_criterion` авто-вычисляет `position = max + 1`. `link(to_kind, to_ref, relation)` — hard-error на broken reference (target task/document/module отсутствует в проекте; per [document-link.md §4](../standards/document-link.md)) + idempotent dedup на edge `(story, kind, ref, relation)` — повторный вызов возвращает существующий row без новой revision. `list_tasks` фильтрует только `relation=implemented_by` (per [user-stories-graph.md §5.2](../capabilities/user-stories-graph.md)). `coverage(story_id)` возвращает `StoryCoverage` с derived `CoverageStatus` (`draft|accepted|in-progress|delivered|deferred`, отдельный enum от persisted `UserStoryStatus` — DELIVERED не в DB-enum'е): DRAFT/DEFERRED — pinned (берётся из `user_story.status`); DELIVERED требует `tasks_total>0 AND all done AND all acceptance met`; IN_PROGRESS — хоть одна in-progress/done; иначе ACCEPTED. Возвращает разбивку `tasks_total/done/in_progress` + `acceptance_total/met`. `StoryRepository` + `StoryAcceptanceRepository` + `StoryLinkRepository` под общий шаблон. Кастомные исключения: `StoryNotFoundError`, `StoryAlreadyExistsError`, `AcceptanceNotFoundError`, `BrokenLinkError`. Тесты — 22/22 (CRUD: 5, update_status: 3, criteria: 3, link: 4, list_tasks: 1, coverage: 6); общий suite — 208/208. **Section B (Services) closed.**
 
 > Зависимость дополнена `COD-015`: каждая мутация пишет revision через RevisionService (как DocService/TaskService). Формально не в исходной графе — добавляем для точности.
 
@@ -408,7 +411,7 @@ priority: critical
 affected_files:
   - cod_doc/services/validation.py
   - cod_doc/services/task_service.py
-  - cod_doc/services/story_service.py
+  - cod_doc/services/story_service/
   - cod_doc/services/doc_service.py
   - tests/services/test_validation.py
   - tests/services/test_doc_service.py
@@ -534,7 +537,7 @@ affected_files:
 id: COD-033
 title: "Implement: MCP tool context.get (+ ContextService)"
 section: D-MCP-CLI
-status: pending
+status: done
 depends_on: [COD-041]
 type: feature
 priority: critical
@@ -566,7 +569,7 @@ affected_files:
 id: COD-041
 title: "Implement: ContextService L0/L1"
 section: E-Retrieval
-status: pending
+status: done
 depends_on: [COD-040]
 type: feature
 priority: high
@@ -578,7 +581,7 @@ priority: high
 id: COD-042
 title: "Implement: ContextService L2/L3 + semantic search"
 section: E-Retrieval
-status: pending
+status: done
 depends_on: [COD-041]
 type: feature
 priority: medium
@@ -590,7 +593,7 @@ priority: medium
 id: COD-043
 title: "Switch embeddings to local torch (CPU-only) backend"
 section: E-Retrieval
-status: pending
+status: done
 depends_on: [COD-042]
 type: feature
 priority: low
@@ -620,7 +623,7 @@ priority: low
 id: COD-050
 title: "Test: frontmatter/task-plan parser (property-based)"
 section: F-Migration
-status: pending
+status: done
 depends_on: []
 type: test
 priority: critical
@@ -632,7 +635,7 @@ priority: critical
 id: COD-051
 title: "Implement: Restate importer (docs/plans/stories/links/git-history)"
 section: F-Migration
-status: pending
+status: done
 depends_on: [COD-032, COD-050]
 type: feature
 priority: high
