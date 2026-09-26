@@ -158,7 +158,7 @@ def routine_run(
             "name": name,
             "status": run.status,
             "findings_count": run.findings_count,
-            "started_at": run.started_at,
+            "started_at": run.started_at.isoformat(),
         }
     )
 
