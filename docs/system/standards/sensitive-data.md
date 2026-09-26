@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-19
+last_updated: 2026-09-26
 related_docs:
   - ../audit/2026-04-19-initial-audit.md
 ---
@@ -41,16 +41,22 @@ Detection — сервис `SensitivityScanner` (regex + entropy для секр
 ## 3. Поведение `context.get`
 
 - Если `actor=mcp:<external>` — секции с `sensitivity ≥ confidential` не возвращаются; маркер «redacted».
-- Если `actor=agent:<role>` — проверяется `agent_definition.sensitivity_clearance` (новое поле).
+- *(planned)* Если `actor=agent:<role>` — проверяется `agent_definition.sensitivity_clearance`.
+  Таблицы `agent_definition` в схеме нет (DATA_MODEL §3.17); сравнение уровней
+  уже есть — `sensitivity_scanner.clearance_meets`.
 
 ## 4. Поведение `export`
 
 - Markdown projection с `sensitivity ≥ confidential` помечается фронтматтером и **не** экспортируется в публичный CHANGELOG.
-- При `cod-doc projection freeze` confidential-секции рендерятся как заглушки `> [content redacted: confidential — see DB]` для public-копии (опционально).
+- *(planned; команды `projection freeze` нет — ближайшие `cod-doc plan freeze`, `doc accept`)* При freeze-экспорте confidential-секции рендерятся как заглушки `> [content redacted: confidential — see DB]` для public-копии (опционально).
 
 ## 5. Audit-checks
 
-`cod-doc audit --sensitivity`:
+*(planned, флага нет)* `cod-doc audit --sensitivity`. Сегодня: отсутствие
+`sensitivity` у `module-spec`/`architecture`/`standard` ловит FM-007 в обычном
+`cod-doc audit`; поиск секретов — `validation.audit_sensitivity` (SD-001,
+`SensitivityScanner`), он есть в сервисном слое, но ни одна поверхность его
+пока не зовёт. Цель:
 
 - Документ без `sensitivity` поля → warning (default `internal`).
 - Найдены секрет-паттерны в `public`/`internal` → error.

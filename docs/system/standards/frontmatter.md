@@ -112,11 +112,15 @@ last_updated: 2026-09-26
 
 ## 6. Валидация
 
-Служба `DocService.validate_frontmatter(doc)` выполняется:
+Проверка — `validation.audit_frontmatter` (`cod_doc/services/validation/advisory.py`);
+метода `DocService.validate_frontmatter` нет. Выполняется:
 
-1. На каждом write-path действии.
+1. При `doc_service.create` — write-path гейт (COD-020): error-находки (FM-002,
+   FM-003) эскалируются в `ValidationError`.
 2. На команде `cod-doc audit`.
-3. На git pre-commit hook (устанавливается через `cod-doc hooks install`).
+3. *(planned)* На git pre-commit hook через `cod-doc hooks install` — группы
+   `hooks` нет; установленный `bash hooks/install.sh` pre-commit проверяет
+   только формат гибридных ссылок (audit-and-ci §3).
 
 Правила:
 
