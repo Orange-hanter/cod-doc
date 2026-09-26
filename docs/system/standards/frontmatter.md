@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-04-28
+last_updated: 2026-09-26
 ---
 
 # Frontmatter Standard
@@ -40,18 +40,20 @@ last_updated: 2026-04-28
 | `type` | Допустимые `status` | Терминал |
 |--------|---------------------|----------|
 | `module-spec`, `module-subdoc`, `standard`, `architecture`, `vision`, `guide`, `redirect` | `draft` → `review` → `active` → `deprecated` | `deprecated` |
-| `execution-plan`, `task-section`, `execution-log` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`) | `done` / `cancelled` |
+| `execution-plan`, `task-section`, `execution-log` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`); в БД `pending`→`draft`, `in-progress`→`active` (§2b), `done` хранится как есть | `done` / `cancelled` |
 | `user-story` | `draft` → `accepted` → `delivered` → `archived` | `archived` |
-| `audit-report`, `audit` | `active` (живой аудит **и** закрытый — в frontmatter его пишут `resolved`, см. §2b) → `deprecated` (замещён; в frontmatter `superseded`) | `deprecated` |
+| `audit-report`, `audit` | `active` (живой аудит) → `resolved` (закрыт: находки разобраны, отчёт остаётся действительным) → `deprecated` (замещён; в frontmatter `superseded`) | `resolved` / `deprecated` |
 | `design`, `analysis`, `research`, `capability`, `decision`, `open-question`, `scenario-set` | `draft` → `review` → `active` → `deprecated` | `deprecated` |
-| `plan` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`) | `done` / `cancelled` |
+| `plan` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`); хранение — как у `execution-plan` | `done` / `cancelled` |
 | `journal` | `active` — журнал не «завершается», он либо ведётся, либо `deprecated` | `deprecated` |
 
 ## 2b. Чужие статусы при импорте
 
-В БД живут ровно четыре значения `status`: `draft`, `review`, `active`,
-`deprecated`. Чужие корпуса пишут иначе (`living`, `final`, `done`, `accepted`,
-`archived`, `superseded`, …). Импорт не выбрасывает их и не притворяется, что
+В БД живут семь значений `status` — enum `DocumentStatus`
+(`cod_doc/domain/entities.py`): `draft`, `review`, `active`, `authoritative`
+(источник истины по предмету, ADO-092), `resolved` (закрытый аудит), `done`
+(закрытый план или спринт; оба — ADO-218), `deprecated`. Чужие корпуса пишут
+иначе (`living`, `final`, `accepted`, `archived`, `superseded`, …). Импорт не выбрасывает их и не притворяется, что
 понял: таблица `_ALIEN_STATUS_ALIASES` (`cod_doc/services/import_service.py`)
 переводит известные написания, и **каждая такая замена попадает в
 `ImportReport.warnings`** с `reason: alias`. Написание, которого нет в таблице,
@@ -59,15 +61,17 @@ last_updated: 2026-04-28
 
 | Чужое написание | Канонический `status` |
 |---|---|
-| `living`, `final`, `done`, `complete`, `completed`, `resolved`, `accepted`, `delivered`, `published`, `current`, `stable`, `in-progress` | `active` |
+| `living`, `final`, `complete`, `completed`, `accepted`, `delivered`, `published`, `current`, `stable`, `in-progress` | `active` |
 | `proposed`, `pending`, `wip`, `todo` | `draft` |
 | `in-review`, `reviewing` | `review` |
-| `archived`, `resolved`, `superseded`, `obsolete`, `rejected`, `cancelled` | `deprecated` |
+| `archived`, `superseded`, `obsolete`, `rejected`, `cancelled` | `deprecated` |
 
-Побочный эффект, о котором стоит знать: `final`, `done` и `resolved` становятся `active`,
+Побочный эффект, о котором стоит знать: `final` и `completed` становятся `active`,
 поэтому FM-005 (`stale-doc`) начинает считать возраст исторических документов.
 Это осознанный выбор — «завершённый» документ не то же самое, что снятый с
-эксплуатации.
+эксплуатации. `resolved` и `done` до ADO-218 тоже сводились в `active`; теперь
+они хранятся как есть, и FM-002/FM-005 (правила про `active`) их не трогают.
+Миграция `0040` вернула авторский статус строкам, которые алиас успел свести.
 
 ## 3. Условно-обязательные
 

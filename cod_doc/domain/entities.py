@@ -71,6 +71,15 @@ class DocumentStatus(StrEnum):
     # the second into the first loses the only thing the status was written to
     # say.
     AUTHORITATIVE = "authoritative"
+    # Terminal statuses of documents that describe finite work, added by
+    # ADO-218. `resolved` closes an audit report (its findings are dealt with,
+    # the report stays valid), `done` closes a plan or a sprint. Both lived in
+    # the alias table as `active`, and that collapse is the loss ADO-092
+    # describes: the DB could not tell a closed audit from a live one, and the
+    # 45 files in this repo that said so on disk showed up as metadata drift.
+    # Neither is `deprecated` — a finished document is not a withdrawn one.
+    RESOLVED = "resolved"
+    DONE = "done"
     DEPRECATED = "deprecated"
 
 

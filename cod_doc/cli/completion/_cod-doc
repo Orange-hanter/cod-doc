@@ -955,7 +955,7 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--key)--key=[Unique document key (e.g. '\''arch/data-model'\'')]:doc-key' \
     '(--type)--type=:doc-type:(module-spec module-subdoc execution-plan task-section execution-log standard architecture vision guide user-story decision open-question redirect design audit audit-report journal plan analysis research capability scenario-set)' \
-    '(--status)--status=:status:(draft review active authoritative deprecated)' \
+    '(--status)--status=:status:(draft review active authoritative resolved done deprecated)' \
     '(--title)--title=:title' \
     '(--owner)--owner=:owner' \
     '(--sensitivity)--sensitivity=:sensitivity:(public internal confidential restricted)' \
