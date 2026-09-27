@@ -674,3 +674,21 @@ def test_adr_edit_form_has_preview(adr_client) -> None:  # type: ignore[no-untyp
     r = client.get(f"/p/{entry.name}/adr/ADR-002").text  # proposed → Edit
     assert 'class="adr-preview"' in r
     assert "SQLite via SQLAlchemy</textarea>" in r
+
+
+# ── ADO-236: автор в подсказке, сайдбар сворачивается ───────────────────
+
+
+def test_adr_list_author_moves_to_tooltip(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert "<th>Author</th>" not in r and ">Author<" not in r
+    assert 'title="by human"' in r
+
+
+def test_adr_show_sidebar_is_collapsible(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    # Без JS блок раскрыт: сворачивает его только скрипт на узком экране.
+    assert '<details class="adr-side-toggle" open>' in r
+    assert "matchMedia('(max-width: 960px)')" in r

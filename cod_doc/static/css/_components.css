@@ -1209,7 +1209,7 @@ a.nav-card-title:hover { color: var(--accent); }
 .costs-table { min-width: 860px; }        /* 7 колонок, из них пять числовых */
 .plans-table { min-width: 880px; }        /* scope + принцип прозой + прогресс-бар 100px */
 .tasks-legacy-table { min-width: 700px; }
-.adr-table { min-width: 700px; }
+.adr-table { min-width: 560px; } /* ID + заголовок + бейдж + дата; автор в подсказке (ADO-236) */
 .section-tasks { min-width: 680px; }
 /* Живёт в узком треке `.overview-block` (auto-fit от 340px), поэтому порог
    ниже: здесь прокрутка внутри карточки — норма, а не сигнал о тесноте. */
@@ -3312,10 +3312,6 @@ details > summary { cursor: pointer; }
 .adr-row-closed td { color: var(--muted); }
 .adr-row-closed td a:not(.adr-row-link) { color: var(--muted); }
 .adr-rel { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 2px; font-size: 12px; color: var(--muted); }
-/* Автор — служебная колонка; длинный `human:git-history-recovery` не должен
-   отжимать заголовок. */
-.adr-col-author { font-size: 12px; white-space: nowrap; }
-
 /* Баннер «решение не действует» над героем. */
 .adr-banner {
   margin: 0 0 var(--space-3);
@@ -3341,18 +3337,43 @@ details > summary { cursor: pointer; }
   margin-top: var(--space-4);
 }
 .adr-main { min-width: 0; }
+/* Пути и сигнатуры в `code` (ADR-012: `tests/…::test_…`) не имеют точек
+   переноса и на 390px выталкивали страницу на 277px вбок. */
+.adr-layout code { overflow-wrap: anywhere; }
+.adr-main .doc-body table { display: block; max-width: 100%; overflow-x: auto; }
 .adr-side {
   position: sticky;
   top: calc(var(--topbar-h) + 40px);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
   max-height: calc(100vh - var(--topbar-h) - 56px);
   overflow-y: auto;
 }
+.adr-side-body { display: flex; flex-direction: column; gap: var(--space-3); }
+/* ADO-236: на десктопе обёртка-details невидима — summary скрыт. */
+.adr-side-toggle > summary { display: none; }
 @media (max-width: 960px) {
   .adr-layout { grid-template-columns: minmax(0, 1fr); }
-  .adr-side { position: static; max-height: none; }
+  /* Над телом: четыре экрана текста до оглавления — не оглавление. */
+  .adr-side { position: static; max-height: none; order: -1; }
+  .adr-side-toggle {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg);
+  }
+  .adr-side-toggle > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    cursor: pointer;
+    list-style: none;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .adr-side-toggle > summary::marker { content: ""; }
+  .adr-side-toggle > summary::before { content: "+"; width: 16px; color: var(--muted); text-align: center; }
+  .adr-side-toggle[open] > summary::before { content: "−"; }
+  .adr-side-toggle[open] > summary { margin-bottom: var(--space-3); }
 }
 .adr-side-block {
   padding: var(--space-3);

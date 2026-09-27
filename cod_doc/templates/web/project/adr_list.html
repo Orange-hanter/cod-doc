@@ -62,7 +62,6 @@
         <th>Title</th>
         <th>Status</th>
         <th class="adr-col-when">Decided</th>
-        <th class="adr-col-author">Author</th>
       </tr>
     </thead>
     <tbody>
@@ -89,12 +88,13 @@
           <td><span class="badge badge-{{ it.status }}">{{ it.status_icon }} {{ it.status }}</span></td>
           {# ADO-232: у принятого решения дата обязана быть — пробел виден,
              а не прячется за прочерком. Рутина adr_health заводит находку. #}
-          <td class="muted adr-col-when">
+          {# ADO-236: автор — в подсказке даты, а не отдельной колонкой:
+             `human:git-history-recovery` отнимал ширину у заголовка. #}
+          <td class="muted adr-col-when" title="by {{ it.author }}">
             {%- if not it.decided_at and it.status == "accepted" -%}
-              <span class="adr-date-missing" title="Accepted without a decision date — see routine adr_health">not recorded</span>
+              <span class="adr-date-missing" title="Accepted without a decision date — see routine adr_health · by {{ it.author }}">not recorded</span>
             {%- else -%}{{ it.decided_at | short_date }}{%- endif -%}
           </td>
-          <td class="muted adr-col-author">{{ it.author }}</td>
         </tr>
       {% endfor %}
     </tbody>

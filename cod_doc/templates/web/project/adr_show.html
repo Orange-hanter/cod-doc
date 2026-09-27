@@ -208,7 +208,14 @@
     </section>
   </article>
 
+  {# ADO-236: на телефоне сайдбар стоит над телом свёрнутым блоком, а не
+     уезжает под четыре экрана текста. На десктопе summary скрыт, а details
+     всегда раскрыт; сворачивает его на узком экране скрипт ниже — без JS
+     блок просто остаётся раскрытым. #}
   <aside class="adr-side">
+  <details class="adr-side-toggle" open>
+    <summary>On this page · links · history</summary>
+    <div class="adr-side-body">
     {% if sections|length > 1 %}
     <nav class="adr-side-block">
       <div class="adr-side-label">On this page</div>
@@ -297,6 +304,13 @@
         <p class="muted adr-side-sub">Nothing mentions this ADR yet.</p>
       {% endif %}
     </div>
+    </div>
+  </details>
   </aside>
+  <script>
+    if (window.matchMedia('(max-width: 960px)').matches) {
+      document.querySelector('.adr-side-toggle')?.removeAttribute('open');
+    }
+  </script>
 </div>
 {% endblock %}
