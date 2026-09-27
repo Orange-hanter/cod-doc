@@ -302,6 +302,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `infra/test_task_status_canonicalisation_migration.py` | бэкфилл 0037 сводит легаси-написания в канон, ready-множество при этом не гаснет |
 | `services/test_task_status_write_canonicalisation.py` | ни один write-путь не пишет легаси-написание статуса в `task.status` |
 | `services/test_services_layering.py`, `api/test_web_layer_imports.py` | слои не импортируют вверх |
+| `services/test_presentation_no_orm_writes.py` | `cod_doc/{mcp,cli,api}` не пишут в ORM мимо сервисов: ни `session.add/delete/merge`, ни `*Repository(...).add/update/delete` (включая форму через локальную переменную); allowlist пуст (ADO-208, RFC 26 §5.1) |
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 | `services/test_swap_boundary_imports.py` | границу свапа рантайма: `runtime_service`/`launchd_service` импортируют только stdlib, а у `update_service` нет ленивых импортов (инверсия правила ADO-179) |
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |

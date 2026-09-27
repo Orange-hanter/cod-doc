@@ -11,6 +11,7 @@ Revision, activity event) — на main без фикса они падают, �
 
 from __future__ import annotations
 
+import sqlite3
 from typing import TYPE_CHECKING
 
 import pytest
@@ -95,6 +96,74 @@ def test_create_task_persists_to_db_with_revision(db_client) -> None:  # type: i
     assert rows[0].task_id == body["id"]
     assert rows[0].priority == "critical"
     assert _revisions_for_task(state_db, rows[0].row_id), "create должен писать Revision"
+
+
+def _query(state_db: Path, sql: str, *params: object) -> list[tuple[object, ...]]:
+    con = sqlite3.connect(state_db)
+    try:
+        return con.execute(sql, params).fetchall()
+    finally:
+        con.close()
+
+
+def test_legacy_plan_created_through_service(db_client) -> None:  # type: ignore[no-untyped-def]
+    """RFC 26 §5.1: служебный план/секция пишутся через plan_service — с ревизией и событием."""
+    client, entry, state_db = db_client
+    r = client.post(f"/api/projects/{entry.name}/tasks", json={"title": "Первая"})
+    assert r.status_code == 201, r.text
+
+    plans = _query(state_db, "SELECT row_id, scope FROM plan")
+    assert len(plans) == 1
+    plan_id, scope = plans[0]
+    assert scope == "legacy-rest-api"
+
+    sections = _query(state_db, "SELECT row_id, plan_id, letter, slug FROM plan_section")
+    assert len(sections) == 1
+    section_id, section_plan_id, letter, slug = sections[0]
+    assert (section_plan_id, letter, slug) == (plan_id, "A", "A-Legacy-REST")
+
+    plan_revs = _query(
+        state_db,
+        "SELECT author FROM revision WHERE entity_kind = 'plan' AND entity_id = ?",
+        plan_id,
+    )
+    assert plan_revs == [("api-legacy",)]
+    section_revs = _query(
+        state_db,
+        "SELECT author FROM revision WHERE entity_kind = 'plan_section' AND entity_id = ?",
+        section_id,
+    )
+    assert section_revs == [("api-legacy",)]
+
+    events = _query(
+        state_db,
+        "SELECT kind, actor_id FROM activity_event WHERE kind LIKE 'plan.%' ORDER BY row_id",
+    )
+    assert events == [("plan.created", "api-legacy"), ("plan.section_created", "api-legacy")]
+
+
+def test_legacy_plan_idempotent(db_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry, state_db = db_client
+    for title in ("Первая", "Вторая"):
+        r = client.post(f"/api/projects/{entry.name}/tasks", json={"title": title})
+        assert r.status_code == 201, r.text
+
+    assert _query(state_db, "SELECT COUNT(*) FROM plan") == [(1,)]
+    assert _query(state_db, "SELECT COUNT(*) FROM plan_section") == [(1,)]
+    assert _query(state_db, "SELECT COUNT(*) FROM revision WHERE entity_kind = 'plan'") == [(1,)]
+    assert _query(state_db, "SELECT COUNT(*) FROM revision WHERE entity_kind = 'plan_section'") == [
+        (1,)
+    ]
+    assert _query(state_db, "SELECT COUNT(*) FROM activity_event WHERE kind = 'plan.created'") == [
+        (1,)
+    ]
+    assert _query(
+        state_db, "SELECT COUNT(*) FROM activity_event WHERE kind = 'plan.section_created'"
+    ) == [(1,)]
+    assert _query(state_db, "SELECT COUNT(*) FROM activity_event WHERE kind LIKE 'plan.%'") == [
+        (2,)
+    ]
+    assert _query(state_db, "SELECT COUNT(*) FROM task") == [(2,)]
 
 
 def test_list_and_patch_via_status_machine(db_client) -> None:  # type: ignore[no-untyped-def]
