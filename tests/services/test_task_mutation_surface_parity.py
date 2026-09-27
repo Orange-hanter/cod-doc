@@ -45,6 +45,7 @@ from ._surface_parity import (
     check_every_mutation_is_exposed,
     check_spec_resolves_to_real_sources,
     check_surface_debt_ratchet_is_current,
+    discovered_mutations,
 )
 
 SPECS = (
@@ -123,3 +124,10 @@ def test_allowlists_carry_a_justification(spec: ServiceSpec) -> None:
 @pytest.mark.parametrize("spec", SPECS, ids=lambda s: s.name)
 def test_every_spec_resolves_to_real_sources(spec: ServiceSpec) -> None:
     check_spec_resolves_to_real_sources(spec)
+
+
+def test_add_dependency_not_in_surface_debt() -> None:
+    """ADO-209: временная запись add_dependency снята, а мутацией функция осталась."""
+    spec = SPEC_BY_NAME["task_service"]
+    assert "add_dependency" not in spec.surface_debt
+    assert "add_dependency" in discovered_mutations(spec)
