@@ -87,7 +87,13 @@
             {% endif %}
           </td>
           <td><span class="badge badge-{{ it.status }}">{{ it.status_icon }} {{ it.status }}</span></td>
-          <td class="muted adr-col-when">{{ it.decided_at | short_date }}</td>
+          {# ADO-232: у принятого решения дата обязана быть — пробел виден,
+             а не прячется за прочерком. Рутина adr_health заводит находку. #}
+          <td class="muted adr-col-when">
+            {%- if not it.decided_at and it.status == "accepted" -%}
+              <span class="adr-date-missing" title="Accepted without a decision date — see routine adr_health">not recorded</span>
+            {%- else -%}{{ it.decided_at | short_date }}{%- endif -%}
+          </td>
           <td class="muted adr-col-author">{{ it.author }}</td>
         </tr>
       {% endfor %}

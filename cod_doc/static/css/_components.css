@@ -3290,6 +3290,16 @@ details > summary { cursor: pointer; }
 /* Непринятые решения — то, что ждёт человека; счётчик подсвечен тоном бейджа. */
 .adr-chip-proposed .adr-chip-count { background: var(--warning-soft-bg); color: var(--warning-soft-fg); }
 
+/* ADO-232: пропущенная дата у accepted — пробел в данных, а не «нет даты». */
+.adr-date-missing {
+  padding: 1px 6px;
+  border: 1px dashed var(--warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft-bg);
+  color: var(--warning-soft-fg);
+  font-size: 12px;
+}
+
 /* Строка недействующего решения приглушена, но кликабельна. */
 .adr-row-closed td { color: var(--muted); }
 .adr-row-closed td a:not(.adr-row-link) { color: var(--muted); }

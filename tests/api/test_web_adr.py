@@ -601,3 +601,17 @@ def test_adr_show_links_revision_history(adr_client) -> None:  # type: ignore[no
     url = after.split('href="/p/adr-demo/revisions?', 1)[1].split('"', 1)[0].replace("&amp;", "&")
     page = client.get(f"/p/{entry.name}/revisions?{url}")
     assert page.status_code == 200
+
+
+# ── ADO-232: пропущенная дата у accepted ─────────────────────────────────
+
+
+def test_adr_list_flags_accepted_without_date(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Undated", "status": "accepted", "decision": "d"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert r.count('class="adr-date-missing"') == 1, "proposed без даты — норма, не пробел"
