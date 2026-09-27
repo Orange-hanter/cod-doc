@@ -92,7 +92,7 @@ graph TD
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
   capabilities/*, standards/*, audit/*, roadmap/*, migration/. Это source of
   truth для поведения системы и единая точка входа для контрибьютора.
-- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:ac6b97ca42c5`
+- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:7a19f766eee6`
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
@@ -117,7 +117,7 @@ graph TD
     `curator_next`; аренда блоков человеческих ID; роли reader/writer/admin на
     проект. Пересматривает premise RFC 23 («сервер — это реплика», без Postgres).
     Плана нет — оценка ~35 задач в секциях A–F.
-    Файл: `📁 /proposals/28-cloud-remote-sync.md | 🗃️ doc:proposals_28-cloud-remote-sync_md | 🔑 sha:4b18f544a521`
+    Файл: `📁 /proposals/28-cloud-remote-sync.md | 🗃️ doc:proposals_28-cloud-remote-sync_md | 🔑 sha:4b4d6053c8a3`
   - **24 (structure-track):** 🟡 Черновик — Единый контур structure/contracts/scenarios
     (docs↔code граница, obligations_export, structure_facts, scenario assessment).
     Поглощает внешнюю часть RFC 17, зависит от RFC 22.
@@ -304,7 +304,7 @@ graph TD
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
-| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `ac6b97ca42c5` | 2026-09-20 | 🟢 VERIFIED |
+| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `7a19f766eee6` | 2026-09-20 | 🟢 VERIFIED |
 | 3 | proposals/README.md | `doc:proposals_README_md` | `7b9449fbad8a` | 2026-09-20 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `7c133a394eb3` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `90c54859cba1` | 2026-09-11 | 🟢 VERIFIED |

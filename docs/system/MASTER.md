@@ -71,6 +71,7 @@ docs/system/
 │   ├── web-frontend.md             ← server-rendered Web UI (Jinja + HTMX)
 │   ├── cloud-agent-plane.md        ← облачный SoT + remote ИИ-воркеры
 │   ├── backup-and-export.md        ← backup/restore CLI ещё нет; export = проекции
+│   ├── remote-sync.md              ← реплики + clone/pull/push через remote (RFC 28, черновик)
 │   ├── test-scenarios.md           ← авторская половина RFC 24 §9
 │   └── audit-and-ci.md             ← каталог проверок + git/CI
 │
@@ -168,6 +169,7 @@ docs/system/
 | Пользовательские истории и граф зависимостей | [capabilities/user-stories-graph.md](capabilities/user-stories-graph.md) |
 | Сценарии тестирования (что должно быть верно) | `scenarios/<capability>.md` — проекция таблиц `scenario*`; авторская половина [RFC 24 §9](../../proposals/24-structure-contracts-scenarios.md), вердикты покрытия сюда не входят |
 | ИИ ведёт docs через облачный COD-DOC (remote агенты) | [capabilities/cloud-agent-plane.md](capabilities/cloud-agent-plane.md) + [roadmap/cloud-agent-plane-task-plan.md](roadmap/cloud-agent-plane-task-plan.md) |
+| Проект на нескольких машинах и у команды: clone/pull/push, бэкап через remote | [capabilities/remote-sync.md](capabilities/remote-sync.md) + [scenarios/remote-sync.md](scenarios/remote-sync.md) + [RFC 28](../../proposals/28-cloud-remote-sync.md) |
 
 ---
 
@@ -183,6 +185,7 @@ docs/system/
 | capabilities/* | draft | cod-doc core |
 | capabilities/web-frontend | active | cod-doc core |
 | capabilities/cloud-agent-plane | draft | cod-doc core |
+| capabilities/remote-sync | draft | cod-doc core |
 | scenarios/* (генерируется scenario_service) | draft | cod-doc core |
 | migration/from-restate | draft | cod-doc core |
 | releases/2026-08-30-sprint-m4 | active | cod-doc core |
@@ -291,6 +294,7 @@ docs/system/
 | 2026-09-20 | **RFC 25 §3.4/§3.5 Section D closure — план `doc-curator-2026-09` закрыт целиком (18/18).** Документация догнала код CUR-016 (`curator_next` doc card, PR #74) и CUR-017 (daemon idle без автогенерации, PR #49): `docs/HANDBOOK.md` §9 получил legacy-баннер и правки §9.1/§9.3/§9.4, скилл `orchestrator` переписан на алгоритм `agent_capabilities → curator_next → ctx_search/context_get`, `ctx_docs` убран из прозы цикла (тул вне профиля `agent` с CUR-016). `docs/system/roadmap/ROADMAP.md`, `proposals/README.md`, `proposals/25-doc-curator-agent.md` переведены в «закрыт» с итоговой таблицей 12 задач CUR-007…018 и PR-номерами. Находки: F3 `ci.yml`/`cd.yml` хэш-реестр устарел независимо от этого плана, F4 `pytest-xdist` (отсутствовал по аудиту секции B) уже установлен — resolved, F5 `agent_capabilities().next_action_hint` не упоминает `curator_next` (код не трогали, кандидат в backlog), F6 `curator_next` — три прохода по корпусу без `paths`. Аудит-отчёт: [audit/2026-09-20-doc-curator-section-d.md](audit/2026-09-20-doc-curator-section-d.md). |
 | 2026-09-26 | **Разбор находок демона doc-review (ADO-217).** Статусы 31 audit-отчёта закрытых циклов переведены в `resolved` (`active` остался только у `2026-07-29-state-of-the-project`), `2026-06-04-self-improvement-compared` получил frontmatter; реестр §5 и дерево §2 покрывают все 43 audit-файла, все 20 roadmap-файлов, `releases/` и `structure.md`. Спринт-файлы M1–M5 переведены в `done`, DoD M1/M5 дотянут по аудитам, у M4 открыт один пункт (sha ADO-040 = `REPLACE_SHA`). Планы-зомби agent-tools-completion, cod-doc-task-plan, web-frontend-task-plan закрыты. Строка Observability (2026-05-07) перенесена по хронологии. |
 | 2026-09-26 | **Гигиена корпуса (ADO-219).** Из БД удалены четыре строки-реликта `system/…` (дубли по `path` для release M4, e5c-run-analysis, sprint-m5, tracking-loop-closure — `doc import` падал на `MultipleResultsFound`) и фикстура `specs/specs/modules` (файл тоже, по образцу PCA-911); зарегистрированы аудиты doc-curator B/C/D и agent-fit B; `2026-05-15-tracks-closure-drift` приведён к стандарту frontmatter (`resolved` после сверки находок F1/F2/F4/F5/F8/F9). |
+| 2026-09-27 | **Remote Sync спроектирован (RFC 28, черновик).** Capability [remote-sync](capabilities/remote-sync.md): проект как набор равноправных реплик на SQLite, обмен журналом операций через remote по модели git (`clone`/`pull`/`push`), remote — `file://`, S3/MinIO или `cod-doc serve` с токенами и ролями reader/writer/admin. Решения — ADR-016 (команда через реплики, а не через общую PostgreSQL ADR-010) и ADR-017 (глобальный `uid`, захват операций в `before_flush`, аренда человеческих ID), оба `proposed`. Сценарии SCN-081…089 → [scenarios/remote-sync.md](scenarios/remote-sync.md). Плана и историй нет — заводятся после приёмки ADR. RFC: [proposals/28](../../proposals/28-cloud-remote-sync.md). |
 
 ## 7. Соглашения об оформлении
 
