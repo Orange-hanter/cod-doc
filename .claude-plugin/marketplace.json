@@ -9,7 +9,7 @@
     {
       "name": "cod-doc",
       "source": "./plugins/cod-doc",
-      "description": "MCP-сервер cod-doc, скиллы task-flow / doc-sync, команды /cod-doc:status | task | drift | setup и хук о рассинхроне markdown ↔ БД",
+      "description": "Скиллы task-flow / doc-sync, команды /cod-doc:status | task | drift | setup, агент-разведчик cod-doc-scout на MCP-тулах и хук о рассинхроне markdown ↔ БД. MCP-сервер ставится отдельно — общий HTTP-демон (deploy/launchd/)",
       "category": "productivity"
     }
   ]
