@@ -18,6 +18,9 @@ Canonical ``kind`` values (partial list — see proposal 09 / PCA-912):
     link.synced / link.resolved / link.verified
     scenario.created / scenario.updated / scenario.retired /
     scenario.steps_set / scenario.linked / scenario.unlinked / scenario.exported
+    question.created / question.updated / question.resolved / question.dropped /
+    question.reopened / question.option_added / question.option_updated /
+    question.option_removed / question.linked / question.unlinked
     approval.requested / approval.resolved / approval.cancelled
     commit_link.imported
     repo_index.scanned

@@ -19,6 +19,7 @@ Index entries:
 - ``kind='story'``    ref=story_id                 title=narrative (truncated)  body=narrative + acceptance criteria
 - ``kind='adr'``      ref=adr_id                   title=adr.title          body=context+decision+alternatives+consequences
 - ``kind='finding'``  ref=finding_uid              title=finding.title      body=source + kind + path + body
+- ``kind='question'`` ref=question_id (Q-NNN)      title=question.title     body=question + context + options
 
 FTS5 BM25 ranking by default; we surface the relevance score with each
 hit so the UI can show a confidence bar.
@@ -57,7 +58,9 @@ from cod_doc.infra.models import (
     ADRModel,
     DocumentModel,
     FindingModel,
+    OpenQuestionModel,
     ProjectModel,
+    QuestionOptionModel,
     SectionModel,
     StoryAcceptanceModel,
     TaskModel,
@@ -74,7 +77,7 @@ if TYPE_CHECKING:
 
 _LOG = logging.getLogger(__name__)
 
-_VALID_SCOPES = frozenset({"task", "doc", "story", "adr", "finding"})
+_VALID_SCOPES = frozenset({"task", "doc", "story", "adr", "finding", "question"})
 
 # A story has no title column — the narrative's opening is used instead.
 _STORY_TITLE_BUDGET = 120
@@ -89,6 +92,10 @@ _STORY_TITLE_BUDGET = 120
 # делать нечего. Правка безопасна для существующих данных: до этого статус
 # `resolved` не проставлял никто.
 _FINDING_UNINDEXED_STATUSES = frozenset({"dismissed", "resolved"})
+
+# OQM-005: в индексе только открытые вопросы — закрытый или снятый вопрос
+# уже не работа, как и resolved-находка.
+_QUESTION_INDEXED_STATUS = "open"
 
 _MISSING_INDEX_MESSAGE = "FTS index table db_search_idx is missing — run `alembic upgrade head`"
 
@@ -237,6 +244,22 @@ def _finding_payload(f: FindingModel) -> tuple[str, str]:
 
 def _finding_is_indexable(f: FindingModel) -> bool:
     return f.status not in _FINDING_UNINDEXED_STATUSES
+
+
+def _question_payload(session: Session, q: OpenQuestionModel) -> tuple[str, str]:
+    """(title, body) for an open question — question + context + option titles/bodies."""
+    options = session.execute(
+        select(QuestionOptionModel)
+        .where(QuestionOptionModel.question_row_id == q.row_id)
+        .order_by(QuestionOptionModel.position)
+    ).scalars()
+    parts = [q.question or "", q.context or ""]
+    parts += [o.title + "\n" + (o.body or "") for o in options]
+    return q.title or "", "\n\n".join(p for p in parts if p).strip()
+
+
+def _question_is_indexable(q: OpenQuestionModel) -> bool:
+    return q.status == _QUESTION_INDEXED_STATUS
 
 
 def _index_doc(session: Session, project_id: int, d: DocumentModel) -> None:
@@ -429,6 +452,27 @@ def index_finding(session: Session, finding: FindingModel) -> None:
     )
 
 
+def index_question(session: Session, question: OpenQuestionModel) -> None:
+    """Refresh the FTS row for one question; a resolved/dropped one is removed."""
+    if not _question_is_indexable(question):
+        _delete_best_effort(
+            session,
+            kind="question",
+            ref=question.question_id,
+            project_id=question.project_id,
+        )
+        return
+    title, body = _question_payload(session, question)
+    _upsert_best_effort(
+        session,
+        kind="question",
+        ref=question.question_id,
+        project_id=question.project_id,
+        title=title,
+        body=body,
+    )
+
+
 def reindex_all(session: Session, project_id: int) -> dict[str, int]:
     """Drop project rows from index, then rebuild from canonical tables.
 
@@ -443,7 +487,14 @@ def reindex_all(session: Session, project_id: int) -> dict[str, int]:
     """
     _wipe(session, project_id)
 
-    counts: dict[str, int] = {"task": 0, "doc": 0, "story": 0, "adr": 0, "finding": 0}
+    counts: dict[str, int] = {
+        "task": 0,
+        "doc": 0,
+        "story": 0,
+        "adr": 0,
+        "finding": 0,
+        "question": 0,
+    }
 
     # Tasks — description + acceptance + blocked_reason in body.
     for t in session.execute(select(TaskModel).where(TaskModel.project_id == project_id)).scalars():
@@ -492,8 +543,25 @@ def reindex_all(session: Session, project_id: int) -> dict[str, int]:
         )
         counts["finding"] += 1
 
+    # Open questions only (see ``_QUESTION_INDEXED_STATUS``).
+    for q in session.execute(
+        select(OpenQuestionModel).where(OpenQuestionModel.project_id == project_id)
+    ).scalars():
+        if not _question_is_indexable(q):
+            continue
+        title, body = _question_payload(session, q)
+        _insert(
+            session,
+            kind="question",
+            ref=q.question_id,
+            project_id=project_id,
+            title=title,
+            body=body,
+        )
+        counts["question"] += 1
+
     session.flush()
-    counts["total"] = sum(counts[k] for k in ("task", "doc", "story", "adr", "finding"))
+    counts["total"] = sum(counts[k] for k in ("task", "doc", "story", "adr", "finding", "question"))
     return counts
 
 
