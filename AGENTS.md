@@ -141,6 +141,18 @@ pytest tests/ -n auto --dist loadfile -v --tb=short   # run the suite
    `tests/test_server_profiles.py::test_profile_counts_match_documented_values` —
    при добавлении/удалении тула обнови числа там и здесь.
    См. `cod_doc/mcp/profiles.py`.
+10. **Презентация не пишет ORM** (RFC 26 §5.1, ADO-208). `cod_doc/mcp/`,
+    `cod_doc/cli/`, `cod_doc/api/` пишут только через `services/`: ни
+    `session.add/delete/merge`, ни `*Repository(...).add/update/delete`,
+    в том числе через локальную переменную (`repo = XRepository(s);
+    repo.add(...)`). Запись мимо слоя не оставляет ни ревизии, ни activity
+    event, и сканер паритета её не видит — для него это не мутация: так
+    `plan_create` и `plan_section_create` до RFC 26 писали через
+    репозиторий. Правило сформулировано по получателю вызова, а не по имени
+    метода: `routine_service.delete(session, …)` — законная запись через
+    сервис. Стережёт `tests/services/test_presentation_no_orm_writes.py`;
+    allowlist пуст и таким должен остаться — нужна запись, заведи
+    сервисную функцию.
 
 ## 6. DB schema change workflow
 

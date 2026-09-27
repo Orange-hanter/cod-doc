@@ -137,11 +137,11 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - **Четыре равные поверхности.** Новая функциональность в `services/` обязана
   появиться и в CLI, и в MCP — агент и человек должны иметь тождественный
   интерфейс. Прямых SQL-запросов из presentation нет. Для мутаций задач,
-  историй и документов это правило машинно проверяется (ADO-067, ADO-159,
+  историй, документов и планов это правило машинно проверяется (ADO-067, ADO-159,
   STO-017): сканер `tests/services/_surface_parity.py` находит write-функции
   по AST и требует вызова из `cod_doc/mcp/` и `cod_doc/cli/`; его зовут
   `test_task_mutation_surface_parity.py` (`task_service`, `story_service/`) и
-  `test_doc_mutation_surface_parity.py` (`doc_service`) и
+  `test_doc_mutation_surface_parity.py` (`doc_service`),
   `test_plan_mutation_surface_parity.py` (`plan_service`, ADO-209). Ловится отсутствие
   функции на поверхности, но **не** расхождение сигнатур: одноимённый тул с
   другим набором параметров тест пройдёт.

@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-15
+last_updated: 2026-09-27
 related_docs:
   - ../standards/task-plan.md
   - task-creation.md
@@ -18,7 +18,7 @@ related_docs:
 
 ## 1. Чем занимается `PlanService`
 
-- Создание и переименование планов.
+- Создание планов; создание, правка, перестановка и удаление секций.
 - Пересчёт секционных и плановых totals.
 - Генерация/обновление Progress Overview, Next Batch, Dependency Graph.
 - Ведение completed-tasks log.
@@ -27,16 +27,35 @@ related_docs:
 
 ## 2. Операции
 
-`PlanService` — **read-path**: progress, ready-set, audit, export, graph
-queries. Create/section-create живут в MCP/CLI и пишут через репозиторий, не
-через этот пакет.
+`plan_service` — единственный write-путь планов и секций (RFC 26 §3.1,
+ADO-201) и read-path progress / ready-set / audit / export / graph queries.
+До RFC 26 `plan_create` и `plan_section_create` писали прямо из MCP через
+`PlanRepository.add()` / `PlanSectionRepository.add()` — без ревизии,
+activity event и `author`. Теперь каждая реальная мутация пишет revision и
+activity event в транзакции самой мутации
+(`plan_service/sections.py`); адрес ревизии секции —
+`EntityKind.PLAN_SECTION`, у `plan_section` своя нумерация `row_id`.
 
-| Операция | Где |
-|----------|--------|
-| Создать план | MCP `plan_create` (CLI create нет) |
-| Добавить секцию | MCP `plan_section_create` (CLI section-create нет) |
-| Список секций | MCP `plan_sections_list` |
-| Пересчитать progress | `plan_service.recalc` ← MCP `plan_progress` / CLI `cod-doc plan show` |
+`reason` обязателен в `update_section`, `move_section`, `delete_section` и
+необязателен в `create_plan` / `create_section` — эти два тула уже зовут
+живые агенты, обязательный параметр сломал бы их вызовы.
+
+Позиции секций плана — плотный порядок `0..n-1`: `move_section` перенумеровывает
+весь план, приём `position=-1` закрыт. Явный `slug` обязан пройти
+`validate_section_slug` (`<LETTER>-<KebabSlug>`). Непустая секция удаляется
+только с `reassign_to=<letter>`, иначе `SectionHasTasksError`: флага `force`
+нет, потому что `task.section_id` — NOT NULL + CASCADE.
+
+| Операция | Сервис | MCP | CLI |
+|----------|--------|-----|-----|
+| Создать план | `create_plan` | `plan_create` | `cod-doc plan create` |
+| Добавить секцию | `create_section` | `plan_section_create` | `cod-doc plan section create` |
+| Поправить секцию | `update_section` | `plan_section_update` | `cod-doc plan section update` |
+| Переставить секцию | `move_section` | `plan_section_move` | `cod-doc plan section move` |
+| Удалить секцию | `delete_section` | `plan_section_delete` | `cod-doc plan section rm` |
+| Список планов | `list_plans_summary` | `plan_list` | `cod-doc plan list` |
+| Список секций | `list_sections` (CLI); MCP считает task counts своим запросом | `plan_sections_list` | `cod-doc plan section list` |
+| Пересчитать progress | `plan_service.recalc` ← MCP `plan_progress` / CLI `cod-doc plan progress`, `cod-doc plan show` |
 | Ready-tasks | `plan_service.ready` ← MCP `plan_ready` / CLI `cod-doc plan ready` |
 | Экспорт проекции | `plan_service.export` ← MCP `plan_export` / CLI `cod-doc plan export` |
 | Freeze | `plan_service.freeze_projection` ← MCP `plan_freeze` / CLI `cod-doc plan freeze` |
@@ -44,6 +63,12 @@ queries. Create/section-create живут в MCP/CLI и пишут через р
 | Граф | `forward_chain` / `reverse_chain` / `critical_path` — нет отдельной команды `plan graph` |
 
 `PlanService.close` и `split_inline_to_section_files` **не существуют**.
+
+Паритет поверхностей над write-функциями `plan_service` машинно проверяет
+`tests/services/test_plan_mutation_surface_parity.py` (ADO-209);
+`freeze_projection` вне спеки — пишет через `doc_service`. Что презентация
+не пишет в ORM мимо сервисов, стережёт
+`tests/services/test_presentation_no_orm_writes.py` (ADO-208).
 
 ## 3. Progress Overview — generated artifact
 
@@ -126,7 +151,15 @@ generated completed-log.
 
 ## 7. Dependency Graph
 
-Рёбра — таблица `dependency` (`kind='blocks'`). Живые запросы:
+Рёбра — таблица `dependency` (`kind='blocks'`) с мотивацией в `note`.
+Write-путь рёбер — `task_service.add_dependency` / `remove_dependency`
+(ADO-202): `note` обязателен, повтор с тем же `note` — no-op, с другим —
+правка `note`, `adopt=True` легализует внесистемное ребро ревизией; ребро,
+замыкающее цикл, отвергается `DependencyCycleError` с путём до записи.
+MCP `task_add_dependency` / `task_remove_dependency`, CLI
+`cod-doc task add-dep` / `remove-dep`.
+
+Живые запросы:
 
 - MCP/CLI `plan_critical_path` / `cod-doc plan critical-path`
 - `plan_forward_chain` / `plan_reverse_chain`
@@ -144,6 +177,17 @@ Restate-правила «рисовать с ≥ 15 задач» и prefix modul
 Не проверяет: Progressive Overview vs `plan_totals`, сиротские секции,
 `last_updated`, наличие completed-log. Флага `--strict` нет.
 
+Постоянный надзор за графом — рутина `graph_health`
+(`services/graph_health.py`, RFC 26 §5.3, ADO-205) в
+`routine_service.CHECK_CATALOG`. Правила детерминированные: циклы (тот же
+`_find_cycles`), немые рёбра (пустой `note` при незакрытой зависимой
+задаче), мёртвые рёбра (блокер `done` дольше 30 дней, зависимая `todo`),
+кросс-плановые рёбра, позиции секций вне `0..n-1`, слаги вне конвенции.
+Находки — в `finding` с `source_ref="graph_health"`, `close_after_misses=1`;
+видны в `curator_next`. Отдельной MCP/CLI-поверхности нет, и модуль нарочно
+лежит вне пакета `plan_service`: иначе сканер паритета потребовал бы тулов
+для `sync()`.
+
 ## 9. Поддержка inline ↔ split переходов
 
 `cod-doc plan convert` и `PlanService.split_inline_to_section_files`
@@ -157,9 +201,13 @@ Restate-правила «рисовать с ≥ 15 задач» и prefix modul
 | Tool | Операция |
 |------|----------|
 | `plan_create` | Создать план, опционально с секциями |
+| `plan_list` | Планы проекта: scope, статус, done/total |
 | `plan_section_create` | Добавить секцию |
+| `plan_section_update` | Заголовок / слаг / документ секции (`reason` обязателен) |
+| `plan_section_move` | Переставить секцию: `before` / `after` / `position` |
+| `plan_section_delete` | Удалить секцию; с задачами — только с `reassign_to` |
 | `plan_sections_list` | Секции с task counts |
-| `plan_progress` | `recalc`: total/done/cancelled/remaining + derived status |
+| `plan_progress` | `recalc`: total/done/cancelled/remaining + derived status; без scope — все планы |
 | `plan_ready` | Ready-set, priority-ordered |
 | `plan_audit` | Циклы + done-drift |
 | `plan_export` | Markdown-проекции |
@@ -168,8 +216,9 @@ Restate-правила «рисовать с ≥ 15 задач» и prefix modul
 | `plan_forward_chain` | Prerequisites задачи |
 | `plan_reverse_chain` | Dependents задачи |
 
-`plan.list` / `plan.graph` / `plan.next_batch` **не зарегистрированы**.
-CLI-зеркало: `cod-doc plan show|ready|audit|export|freeze|critical-path|forward|reverse`.
+Dotted `plan.list` / `plan.graph` / `plan.next_batch` **не зарегистрированы**.
+CLI-зеркало: `cod-doc plan create|list|progress|show|ready|audit|export|freeze|critical-path|forward|reverse`
+и `cod-doc plan section create|list|update|move|rm`.
 
 ## 11. UI (TUI/веб)
 
