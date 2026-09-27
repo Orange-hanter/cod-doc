@@ -305,6 +305,55 @@ class ScenarioRelation(StrEnum):
     EXERCISED_BY = "exercised_by"
 
 
+class QuestionStatus(StrEnum):
+    """Жизненный цикл открытого вопроса (decisions-and-questions §2).
+
+    ``resolved`` — на вопрос есть ответ (часто со ссылкой на ADR);
+    ``dropped`` — вопрос снят без ответа: потерял смысл или поглощён другим.
+    Оба терминальны только по умолчанию: ``reopen`` возвращает в ``open``.
+    """
+
+    OPEN = "open"
+    RESOLVED = "resolved"
+    DROPPED = "dropped"
+
+
+class QuestionLinkKind(StrEnum):
+    """На что может ссылаться вопрос.
+
+    ``code`` адресует файл проекта: ``to_ref`` = ``path`` или
+    ``path#symbol`` / ``path#L10-L20`` — тот же фрагмент, что у ``link`` вида
+    ``code``; ``section`` — ``<doc_key>#<anchor>``; ``url`` — внешний адрес,
+    существование которого не проверяется.
+    """
+
+    DOCUMENT = "document"
+    SECTION = "section"
+    TASK = "task"
+    ADR = "adr"
+    STORY = "story"
+    SCENARIO = "scenario"
+    FINDING = "finding"
+    CODE = "code"
+    URL = "url"
+
+
+class QuestionRelation(StrEnum):
+    """Роль цели по отношению к вопросу.
+
+    ``about`` — вопрос касается цели; ``blocks`` — вопрос блокирует цель
+    (задачу, историю); ``addressed_by`` — цель (обычно задача) работает над
+    ответом; ``resolved_by`` — цель (обычно ADR) и есть ответ; ``see_also`` —
+    просто связанное.
+    """
+
+    ABOUT = "about"
+    BLOCKS = "blocks"
+    ADDRESSED_BY = "addressed_by"
+    RESOLVED_BY = "resolved_by"
+    SEE_ALSO = "see_also"
+
+
 class ModuleStatus(StrEnum):
     PROPOSED = "proposed"
     ACTIVE = "active"
@@ -341,6 +390,7 @@ class EntityKind(StrEnum):
     MODULE = "module"
     ADR = "adr"
     SCENARIO = "scenario"
+    QUESTION = "question"
 
 
 class ActorKind(StrEnum):
@@ -657,6 +707,58 @@ class ScenarioLink:
     to_kind: ScenarioLinkKind
     to_ref: str
     relation: ScenarioRelation
+    row_id: int | None = None
+
+
+@dataclass(slots=True)
+class OpenQuestion:
+    """Нерешённый вопрос — сущность БД, в markdown не проецируется.
+
+    Вопрос живёт отдельно от документов намеренно: у него есть статус,
+    владелец и типизированные ссылки на документы, код и задачи, а проекция
+    в документ смешала бы нерешённое с описанием системы.
+    """
+
+    project_id: int
+    question_id: str
+    title: str
+    question: str
+    author: str
+    status: QuestionStatus = QuestionStatus.OPEN
+    priority: Priority = Priority.MEDIUM
+    context: str | None = None
+    owner: str | None = None
+    resolution: str | None = None
+    resolved_by_adr: str | None = None
+    resolved_at: datetime | None = None
+    source_doc_key: str | None = None
+    row_id: int | None = None
+    created: datetime | None = None
+    last_updated: datetime | None = None
+
+
+@dataclass(slots=True)
+class QuestionOption:
+    question_row_id: int
+    position: int
+    title: str
+    body: str | None = None
+    chosen: bool = False
+    row_id: int | None = None
+
+
+@dataclass(slots=True)
+class QuestionLink:
+    """Ссылка вопроса на цель; ``resolved``/``broken_reason`` пишет только verify."""
+
+    question_row_id: int
+    to_kind: QuestionLinkKind
+    to_ref: str
+    relation: QuestionRelation
+    note: str | None = None
+    resolved: bool | None = None
+    broken_reason: str | None = None
+    last_checked: datetime | None = None
     row_id: int | None = None
 
 
