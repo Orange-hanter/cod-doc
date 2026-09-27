@@ -33,6 +33,7 @@ from .import_doc import (
     plan_import,
 )
 from .links import (
+    answered_by_tasks,
     link,
     linked_questions,
     list_links,
@@ -63,6 +64,7 @@ __all__ = [
     "QuestionStateError",
     "VerifyReport",
     "add_option",
+    "answered_by_tasks",
     "broken_links",
     "check_edge",
     "code_excerpt",

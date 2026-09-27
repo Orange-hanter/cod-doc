@@ -18,8 +18,10 @@ from cod_doc.domain.entities import (
     QuestionLinkKind,
     QuestionRelation,
     QuestionStatus,
+    TaskStatus,
+    equivalent_task_statuses,
 )
-from cod_doc.infra.models import OpenQuestionModel, QuestionLinkModel
+from cod_doc.infra.models import OpenQuestionModel, QuestionLinkModel, TaskModel
 from cod_doc.infra.repositories import OpenQuestionRepository, QuestionLinkRepository
 from cod_doc.services import activity_service, search_service
 
@@ -280,3 +282,44 @@ def _hint_entry(model: OpenQuestionModel, relation: str | None) -> dict[str, obj
         "priority": model.priority,
         "relation": relation,
     }
+
+
+def answered_by_tasks(session: Session, project_id: int) -> list[dict[str, object]]:
+    """Открытые вопросы, все задачи ``addressed_by`` которых сделаны.
+
+    Задача, заведённая под вопрос (``task create --addresses``), закрыта —
+    значит, ответ, скорее всего, уже есть, а вопрос забыли закрыть. Вопрос
+    попадает сюда, только если у него есть хотя бы одна такая задача и **все**
+    они в статусе ``done``; отсутствующая в БД задача считается несделанной —
+    по висячей ссылке ответ не выведешь.
+    """
+    done = equivalent_task_statuses(TaskStatus.DONE)
+    stmt = (
+        select(OpenQuestionModel.question_id, OpenQuestionModel.title, QuestionLinkModel.to_ref)
+        .join(QuestionLinkModel, QuestionLinkModel.question_row_id == OpenQuestionModel.row_id)
+        .where(
+            OpenQuestionModel.project_id == project_id,
+            OpenQuestionModel.status == QuestionStatus.OPEN.value,
+            QuestionLinkModel.to_kind == QuestionLinkKind.TASK.value,
+            QuestionLinkModel.relation == QuestionRelation.ADDRESSED_BY.value,
+        )
+        .order_by(OpenQuestionModel.question_id, QuestionLinkModel.to_ref)
+    )
+    by_question: dict[str, tuple[str, list[str]]] = {}
+    for qid, title, task_id in session.execute(stmt).all():
+        by_question.setdefault(qid, (title, []))[1].append(task_id)
+    if not by_question:
+        return []
+    task_ids = {t for _title, tasks in by_question.values() for t in tasks}
+    status_of = dict(
+        session.execute(
+            select(TaskModel.task_id, TaskModel.status).where(
+                TaskModel.project_id == project_id, TaskModel.task_id.in_(task_ids)
+            )
+        ).all()
+    )
+    return [
+        {"question_id": qid, "title": title, "tasks": tasks}
+        for qid, (title, tasks) in by_question.items()
+        if all(status_of.get(t) in done for t in tasks)
+    ]

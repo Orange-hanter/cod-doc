@@ -52,6 +52,7 @@ SPEC = ServiceSpec(
             "list_options",
             "questions_for_targets",
             "linked_questions",
+            "answered_by_tasks",
             "open_questions_for_context",
             "code_excerpt",
             "plan_import",

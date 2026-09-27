@@ -72,7 +72,10 @@ _RANK_FINDING = 7
 # ссылка в документе, — тот же ранг. Застоявшийся вопрос — не поломка, а
 # напоминание: ниже всех внешних находок.
 _RANK_QUESTION_LINK_BROKEN = _RANK_LINK_BROKEN
-_RANK_QUESTION_STALE = 8
+# OQM-010: задачи под вопрос закрыты, а вопрос открыт — почти наверняка
+# забытый ответ. Важнее «давно не трогали»: здесь есть что сделать прямо сейчас.
+_RANK_QUESTION_ANSWERED = 8
+_RANK_QUESTION_STALE = 9
 
 _DRIFT_RANK: dict[str, int] = {
     "missing": _RANK_DRIFT_MISSING,
@@ -266,6 +269,7 @@ def _questions_card(session: Session, project_id: int) -> dict[str, Any]:
             for b in broken[:_QUESTION_LINKS_CAP]
         ],
         "stale": stale[:_STALE_QUESTIONS_CAP],
+        "answered": question_service.answered_by_tasks(session, project_id)[:_STALE_QUESTIONS_CAP],
     }
 
 
@@ -287,6 +291,22 @@ def _question_priorities(card: dict[str, Any], slug: str) -> list[tuple[int, dic
                     "ref": f"{qid} → {b['to_kind']}:{b['to_ref']}",
                     "reason": str(b["broken_reason"] or "ссылка вопроса не резолвится"),
                     "suggested_action": f"cod-doc question show {qid} -p {slug}",
+                },
+            )
+        )
+    for q in card["answered"]:
+        qid = q["question_id"]
+        tasks = ", ".join(q["tasks"])
+        items.append(
+            (
+                _RANK_QUESTION_ANSWERED,
+                {
+                    "kind": "question_answered",
+                    "ref": qid,
+                    "reason": f"все задачи под вопрос сделаны ({tasks}) — {q['title']}",
+                    "suggested_action": (
+                        f'cod-doc question resolve {qid} -p {slug} -r "ответ из {tasks}"'
+                    ),
                 },
             )
         )
@@ -533,6 +553,7 @@ def next(
             "unplaced": card["unplaced"]["count"],
             "question_links": len(card["questions"]["broken_links"]),
             "questions_stale": len(card["questions"]["stale"]),
+            "questions_answered": len(card["questions"]["answered"]),
             "priority_total": len(priority),
         },
     }

@@ -121,8 +121,13 @@ blocks | addressed_by | resolved_by | see_also`. Форма `to_ref`
   секциями, задача), затем добор `critical`/`high` по проекту
   (`relation: null`). См. [context-retrieval](context-retrieval.md).
 - `curator_next`: раздел `card.questions` — битые ссылки открытых вопросов
-  (ранг как у LINK-BROKEN) и вопросы, открытые > 30 дней без правок (ниже
-  находок).
+  (`broken_links`, ранг как у LINK-BROKEN); открытые вопросы, у которых все
+  задачи `addressed_by` уже `done` (`answered`, с готовой командой
+  `question resolve`), и вопросы, открытые > 30 дней без правок (`stale`) —
+  оба ниже находок.
+- Битость ссылок — по штампам последней проверки. Их обновляет рутина
+  `question_links` (по умолчанию `question_links_daily`, каждый день в
+  01:15; её заводит `project init`), вручную — `question verify`.
 - `ctx_search` находит открытые вопросы (`kind=question`).
 - При создании задачи `--addresses Q-021` пишет ссылку `addressed_by`.
 
