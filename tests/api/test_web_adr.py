@@ -309,6 +309,8 @@ def test_adr_graph_draws_only_chained_nodes(adr_client) -> None:  # type: ignore
     assert "ADR_003" not in mermaid
     assert "Standalone" in r.text
     assert f'href="/p/{entry.name}/adr/ADR-003"' in r.text
+    # Схема — под списками, а не над ними.
+    assert r.text.index("Standalone") < r.text.index('<div class="mermaid">')
 
 
 def test_adr_graph_empty_state(adr_client, tmp_path: Path, migrate_db) -> None:  # type: ignore[no-untyped-def]

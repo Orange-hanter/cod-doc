@@ -24,15 +24,9 @@
 </header>
 
   {% if has_nodes %}
+    {# Схема — внизу: сначала списки со ссылками, по которым переходят, потом
+       картинка, которая их иллюстрирует. #}
     {% if chained %}
-      <section class="task-card">
-        <div class="mermaid">{{ mermaid }}</div>
-        <details>
-          <summary>Mermaid source</summary>
-          <pre><code class="language-mermaid">{{ mermaid }}</code></pre>
-        </details>
-      </section>
-
       <section class="task-card">
         <div class="task-card-header"><h2>In a chain</h2><span class="count-chip">{{ chained|length }}</span></div>
         <ul class="adr-graph-nodes">
@@ -64,6 +58,17 @@
           </li>
         {% endfor %}
         </ul>
+      </section>
+    {% endif %}
+
+    {% if chained %}
+      <section class="task-card">
+        <div class="task-card-header"><h2>Graph</h2></div>
+        <div class="mermaid">{{ mermaid }}</div>
+        <details>
+          <summary>Mermaid source</summary>
+          <pre><code class="language-mermaid">{{ mermaid }}</code></pre>
+        </details>
       </section>
     {% endif %}
   {% else %}
