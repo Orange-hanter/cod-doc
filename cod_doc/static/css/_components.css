@@ -3414,6 +3414,12 @@ details > summary { cursor: pointer; }
   color: var(--muted);
 }
 
+/* ADO-234: узел графа — ссылка на карточку ADR. */
+.adr-graph-canvas .adr-graph-link { cursor: pointer; }
+.adr-graph-canvas .adr-graph-link:hover rect,
+.adr-graph-canvas .adr-graph-link:focus-visible rect { stroke-width: 3px; }
+.adr-graph-canvas .adr-graph-link:focus-visible { outline: none; }
+
 .adr-graph-nodes {
   margin: 0;
   padding-left: var(--space-4);

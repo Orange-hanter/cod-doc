@@ -304,13 +304,13 @@ def test_adr_graph_draws_only_chained_nodes(adr_client) -> None:  # type: ignore
         follow_redirects=False,
     )
     r = client.get(f"/p/{entry.name}/adr/graph")
-    mermaid = r.text.split('<div class="mermaid">', 1)[1].split("</div>", 1)[0]
+    mermaid = r.text.split('<div class="mermaid adr-graph-canvas">', 1)[1].split("</div>", 1)[0]
     assert "ADR_001" in mermaid
     assert "ADR_003" not in mermaid
     assert "Standalone" in r.text
     assert f'href="/p/{entry.name}/adr/ADR-003"' in r.text
     # Схема — под списками, а не над ними.
-    assert r.text.index("Standalone") < r.text.index('<div class="mermaid">')
+    assert r.text.index("Standalone") < r.text.index('<div class="mermaid adr-graph-canvas">')
 
 
 def test_adr_graph_empty_state(adr_client, tmp_path: Path, migrate_db) -> None:  # type: ignore[no-untyped-def]
@@ -630,6 +630,10 @@ def test_mermaid_loads_from_vendored_static(adr_client) -> None:  # type: ignore
     r = client.get(f"/p/{entry.name}/adr/graph").text
     assert '"/static/vendor/mermaid.min.js?v=' in r
     assert "cdn.jsdelivr.net/npm/mermaid" not in r
+    # ADO-234: узлы кликабельны нашим скриптом, а не ослабленным mermaid.
+    assert 'class="mermaid adr-graph-canvas"' in r
+    assert "mermaid:rendered" in r
+    assert "securityLevel: 'strict'" in r
     asset = client.get("/static/vendor/mermaid.min.js")
     assert asset.status_code == 200
     assert 'globalThis["mermaid"]' in asset.text
