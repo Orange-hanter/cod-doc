@@ -166,7 +166,8 @@ def chain_layout(session: Session, plan_id: int) -> dict[str, Any]:
     * ``critical_path`` — ordered list of task_ids on the longest blocks-chain.
     * ``ready_ids`` — set of task_ids startable right now: status in the
       ``todo`` equivalence class and every prerequisite closed (``done`` or
-      ``cancelled``) — тот же критерий, что у view ``ready_tasks``.
+      ``cancelled``), ``blocked_reason`` пуст (ADO-225) — тот же критерий,
+      что у view ``ready_tasks``.
 
       Одно расхождение с view остаётся, и оно здесь по построению: рёбра
       ниже отбираются внутри одного плана, а view смотрит на все. Задача,
@@ -269,6 +270,9 @@ def chain_layout(session: Session, plan_id: int) -> dict[str, Any]:
     ready_ids: set[str] = set()
     for rid, info in by_rid.items():
         if canonical_task_status(info["status"]) != TaskStatus.TODO.value:
+            continue
+        # ADO-225: внешний блокер держит задачу так же, как во view ready_tasks.
+        if info["blocked_reason"]:
             continue
         if all(is_terminal(by_rid[p]["status"]) for p in prereqs[rid]):
             ready_ids.add(info["task_id"])
