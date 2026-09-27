@@ -278,6 +278,22 @@ def _resolve_wiki(
     return True, doc_key, None
 
 
+def resolve_code_ref(
+    session: Session,
+    project_id: int,
+    file_path: str | None,
+    symbol: str | None,
+) -> tuple[bool, str | None, str | None]:
+    """Public entry to the code-ref check for refs that live outside sections.
+
+    OQM-002: ссылки открытых вопросов на код проверяются тем же правилом,
+    что и ``link`` вида ``code``: файл под корнем проекта, ``L10-L20`` в
+    пределах файла, символ — подстрокой. Документа-источника у них нет,
+    поэтому относительные к документу кандидаты не пробуются.
+    """
+    return _resolve_code_ref(session, project_id, file_path, symbol)
+
+
 def _resolve_code_ref(
     session: Session,
     project_id: int,

@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-15
+last_updated: 2026-09-27
 related_docs:
   - adr-system.md
   - ../audit/2026-04-19-initial-audit.md
@@ -18,11 +18,20 @@ related_docs:
 > теперь реализуется как [ADR System](adr-system.md); этот документ
 > сохраняется для «Open Questions» и истории.
 
-## 0. As implemented (2026-09-15)
+## 0. As implemented (2026-09-27)
 
 Decisions = `adr_*` / `cod-doc adr` / таблица ADR (`ADR-NNN`).
-`DocumentType.open-question` есть; сущности `OpenQuestion`, CRUD MCP и
-заполнения `context_get.hints.open_questions` нет.
+
+Open Questions = сущность БД `open_question` (`Q-NNN`, миграция 0042) с
+вариантами ответа (`open_question_option`) и ссылками
+(`open_question_link`). **В markdown не проецируется**: у вопроса нет
+документа, файла и секции — смотреть и править его через
+`cod-doc question`, MCP `question_*` (13 тулов, профили standard/full) и
+веб `/p/<slug>/questions`. Сервис — `cod_doc/services/question_service/`.
+
+`DocumentType.open-question` оставлен ради легаси-данных; такие документы
+переносятся в сущность `question_import` / `cod-doc question import` и
+удаляются. `context_get.hints.open_questions` заполнен (§4).
 
 ## 1. Decisions = ADR
 
@@ -43,29 +52,57 @@ Decisions = `adr_*` / `cod-doc adr` / таблица ADR (`ADR-NNN`).
 
 ## 2. Open Questions (отдельная сущность)
 
-`OpenQuestion` остаётся параллельной мелкой сущностью: «формулировка
-вопроса без решения». Когда вопрос закрывается — он ссылается на ADR-id.
+`OpenQuestion` — параллельная ADR мелкая сущность: «формулировка
+вопроса без решения». Когда вопрос закрывается, он ссылается на ADR-id.
 
-```yaml
-type: open-question
-question_id: Q-021
-status: open | resolved | dropped
-owner: <responsible>
-created: YYYY-MM-DD
-related: [modules/M1-auth, ADR-014]
-resolved_by: ADR-014   # появляется при status=resolved
-```
+| Поле | Смысл |
+|------|-------|
+| `question_id` | `Q-NNN`, max+1 в проекте |
+| `title`, `question` | заголовок и сама формулировка (markdown) |
+| `context` | предыстория, ограничения, матрица — markdown |
+| `status` | `open` → `resolved` / `dropped`; `reopen` возвращает в `open` и стирает ответ (он остаётся в ревизиях) |
+| `priority`, `owner` | срочность и кто отвечает за ответ |
+| `options[]` | варианты `{position, title, body, chosen}`; позиция — стабильный id, удаление оставляет дырку |
+| `resolution`, `resolved_by_adr` | ответ текстом и/или ADR; при `by_adr` пишется ссылка `resolved_by` |
+| `source_doc_key` | из какого документа импортирован |
 
-### 2.1 Операции (планируются)
+Ссылки (`open_question_link`): `to_kind` ∈ `document | section | task |
+adr | story | scenario | finding | code | url`, `relation` ∈ `about |
+blocks | addressed_by | resolved_by | see_also`. Форма `to_ref`
+проверяется при записи, существование цели — `question_verify`
+(результат `resolved` / `broken_reason` / `last_checked` на ребре; `url`
+не проверяется). Код адресуется `path`, `path#symbol` или `path#L10-L20`
+и проверяется тем же правилом, что `link` вида `code` в документах; веб
+показывает фрагмент кода рядом со ссылкой.
+
+Каждая мутация пишет ревизию (`EntityKind.QUESTION`) и событие
+`question.*`; в FTS индексируются только открытые вопросы.
+
+### 2.1 Операции
 
 | Операция | CLI | MCP |
 |----------|-----|-----|
-| Открытый вопрос | `cod-doc question new` | `question_create` |
-| Закрыть вопрос | `cod-doc question resolve Q-021 --by ADR-014` | `question_resolve` |
-| Список открытых | `cod-doc question list --status open` | `question_list` |
+| Открыть вопрос | `cod-doc question new -t … -q … [--option …] [--link kind:ref[:relation]]` | `question_create` |
+| Карточка / список | `cod-doc question show Q-021` / `list [--status all] [--linked-to kind:ref]` | `question_get` / `question_list` |
+| Правка | `cod-doc question edit` | `question_update` |
+| Варианты | `cod-doc question option add\|edit\|rm` | `question_option_add` / `_update` / `_remove` |
+| Ссылки | `cod-doc question link` / `unlink` | `question_link` (`detach=true`) |
+| Проверить ссылки | `cod-doc question verify [Q-021]` (exit 1 при битых) | `question_verify` |
+| Закрыть | `cod-doc question resolve Q-021 --by ADR-014 [--option N] [-r текст]` | `question_resolve` |
+| Снять / вернуть | `cod-doc question drop --why …` / `reopen` | `question_drop` / `question_reopen` |
+| Перенести документ | `cod-doc question import <doc_key> [--dry-run] [--keep-doc]` | `question_import` (`dry_run=true` по умолчанию) |
+| Задача под вопрос | `cod-doc task create … --addresses Q-021` | `task_create(addresses=[…])` |
 
-> **Статус реализации.** OpenQuestion-сущность ещё не выкачена; этот
-> раздел — спецификация. Приоритет — после стабилизации ADR System.
+### 2.2 Импорт легаси-документов
+
+`question_import` понимает две формы: документ-на-вопрос (секция
+*Question*, варианты `### Option …` / `### Вариант …`, ссылки из
+*Navigation* и преамбулы, задачи из `blocking` и строки «Блокирует»;
+остальные секции — в `context`) и реестр `### OQ-NNN` (вопрос на пункт,
+статус по разделу *Open Items* / *Resolved Archive* и колонке «Статус»
+сводной таблицы). Секция, похожая на решение, попадает в `warnings`: вопрос
+остаётся открытым, закрывает его человек. После импорта документ удаляется
+из БД, файл — с диска; повторный импорт того же документа отказывается.
 
 ## 3. Связи
 
@@ -73,14 +110,21 @@ resolved_by: ADR-014   # появляется при status=resolved
   (таблицы `adr_task`, `adr_supersedes`; будущая `adr_link` для doc/module).
 - Auto-link `[ADR-NNN]` в любом markdown — через [auto-linking](auto-linking.md)
   (`LinkKind.ADR`).
-- `OpenQuestion` будет иметь свой `question_link` по образцу `story_link`.
+- `OpenQuestion` → что угодно — через `open_question_link` (§2); обратно
+  вопросы видны на страницах задачи и документа и в `question list
+  --linked-to`.
 
 ## 4. Поверхность для агентов
 
-- `context.get(target=module:..., depth=L1)` включает ≤ 3 открытых
-  question + список ACCEPTED-ADR проекта (см. [context-retrieval](context-retrieval.md)).
-- При создании задачи можно указать `--addresses Q-021` или
-  `--implements ADR-014` — связи сохраняются.
+- `context_get` на глубине L1+ кладёт в `hints.open_questions` до 3
+  открытых вопросов: сначала связанные с целью (документ — вместе с его
+  секциями, задача), затем добор `critical`/`high` по проекту
+  (`relation: null`). См. [context-retrieval](context-retrieval.md).
+- `curator_next`: раздел `card.questions` — битые ссылки открытых вопросов
+  (ранг как у LINK-BROKEN) и вопросы, открытые > 30 дней без правок (ниже
+  находок).
+- `ctx_search` находит открытые вопросы (`kind=question`).
+- При создании задачи `--addresses Q-021` пишет ссылку `addressed_by`.
 
 ## 5. Когда писать ADR vs Open Question
 

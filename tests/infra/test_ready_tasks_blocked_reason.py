@@ -237,5 +237,7 @@ def test_migration_hides_preexisting_blocked_task(tmp_path: Path) -> None:
     run_alembic("upgrade", "head", db_url=db_url)
     assert _ready_raw(db_path) == {"TA-002"}
 
-    run_alembic("downgrade", "-1", db_url=db_url)
+    # Явная цель, а не "-1": над 0041 уже есть миграции, и шаг назад от head
+    # откатил бы не её.
+    run_alembic("downgrade", _PREVIOUS, db_url=db_url)
     assert _ready_raw(db_path) == {"TA-001", "TA-002"}

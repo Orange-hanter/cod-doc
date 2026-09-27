@@ -166,4 +166,4 @@ def test_every_pattern_still_matches(path: str, pattern: str, profile: str) -> N
 
 
 def test_live_counts_literal(live_counts: dict[str, int]) -> None:
-    assert live_counts == {"agent": 6, "minimal": 21, "standard": 151, "full": 155}
+    assert live_counts == {"agent": 6, "minimal": 21, "standard": 164, "full": 168}

@@ -9,6 +9,31 @@ from cod_doc.mcp.tools._db import require_project_id, session_factory, task_to_d
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
+    from sqlalchemy.orm import Session
+
+
+def _link_addressed_questions(
+    session: Session, project_id: int, task_id: str, question_ids: list[str], author: str
+) -> list[str]:
+    """OQM-005: ``addressed_by`` из вопросов на только что созданную задачу."""
+    from cod_doc.domain.entities import QuestionLinkKind, QuestionRelation
+    from cod_doc.services import question_service
+    from cod_doc.services.question_service import QuestionNotFoundError
+
+    for qid in question_ids:
+        try:
+            question_service.link(
+                session,
+                project_id=project_id,
+                question_id=qid,
+                to_kind=QuestionLinkKind.TASK,
+                to_ref=task_id,
+                relation=QuestionRelation.ADDRESSED_BY,
+                author=author,
+            )
+        except QuestionNotFoundError as exc:
+            raise ValueError(f"addresses: question {qid!r} not found") from exc
+    return list(question_ids)
 
 
 def register(mcp: FastMCP) -> None:
@@ -350,6 +375,7 @@ def register(mcp: FastMCP) -> None:
         blocked_by: list[str] | None = None,
         affects_files: list[str] | None = None,
         story_id: str | None = None,
+        addresses: list[str] | None = None,
         author: str = "mcp",
         reason: str | None = None,
         allow_duplicate: bool = False,
@@ -375,6 +401,9 @@ def register(mcp: FastMCP) -> None:
         - affects_files: list of paths this task touches
         - acceptance: acceptance criterion (free-text)
         - story_id: related user story ID (e.g. 'US-004')
+        - addresses: open questions this task works on (e.g. ['Q-021']);
+          each gets an ``addressed_by`` link to the new task, in the same
+          transaction. The response echoes them as ``addresses``.
 
         Duplicate guard: by default (allow_duplicate=False) the service
         rejects a new task whose normalized title matches an existing task
@@ -443,6 +472,10 @@ def register(mcp: FastMCP) -> None:
                     allow_duplicate=allow_duplicate,
                 )
                 result = task_to_dict(t, session=session)
+                if addresses:
+                    result["addresses"] = _link_addressed_questions(
+                        session, project_id, t.task_id, addresses, author
+                    )
                 # Чужим может быть только абсолютный путь — без них lookup
                 # root_path не нужен (и не трогаем лишний раз БД).
                 if affects_files and any(PurePath(p).is_absolute() for p in affects_files):

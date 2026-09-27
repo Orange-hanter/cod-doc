@@ -15,11 +15,14 @@ related_docs:
 
 > Получение «минимально достаточного» контекста проекта по запросу. Замена ручному «прочитай весь Docs/obsidian/Modules/…».
 
-## 0. As implemented (2026-09-15)
+## 0. As implemented (2026-09-27)
 
 MCP `context_get` с depth `L0|L1|L2|L3`. Невалидный depth → `ValueError`.
 L3 semantic — fail-open: нет эмбеддера → `related.semantic=[]`.
-`hints.open_questions` всегда пустой список. CLI — `cod-doc ctx docs|drift|search`,
+`hints.open_questions` (L1+) — до 3 открытых вопросов из сущности `open_question`
+(OQM-005): связанные с целью, затем `critical`/`high` по проекту; запись —
+`{question_id, title, status, priority, relation}`. На L0 — `[]`.
+CLI — `cod-doc ctx docs|drift|search`,
 не `context get`.
 
 ## 1. Зачем
@@ -78,7 +81,8 @@ L3 semantic — fail-open: нет эмбеддера → `related.semantic=[]`.
   },
   "hints": {
     "next_best_reads": ["..."],
-    "open_questions": ["..."]
+    "open_questions": [{ "question_id": "Q-021", "title": "...", "status": "open",
+                         "priority": "high", "relation": "about" }]
   },
   "meta": {
     "depth": "L1",
@@ -95,7 +99,8 @@ L3 semantic — fail-open: нет эмбеддера → `related.semantic=[]`.
 2. Pull target body + frontmatter.
 3. Если target — `module` или `document`:
    - включить plan-progress: Progress Overview (из `plan_totals`), Next Batch (из `ready_tasks`).
-   - включить open questions для модуля (документ с type=`guide`, tag=`open-questions`).
+   - включить открытые вопросы, связанные с документом или его секциями
+     (`open_question_link`), в `hints.open_questions`.
    - включить ≤ 3 user stories, linked через `story_link`.
 4. Если target — `task`:
    - include section body + верхние 2 задачи depends_on + 2 reverse-dependents.

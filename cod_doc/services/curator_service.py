@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -40,6 +40,11 @@ _CURATOR_SKILLS: tuple[str, ...] = (
 #: ``limit``, но карточка остаётся обозримой даже при большом хвосте.
 _FINDINGS_CAP = 50
 
+#: Потолки раздела вопросов в карточке и порог «застоявшегося» вопроса.
+_QUESTION_LINKS_CAP = 20
+_STALE_QUESTIONS_CAP = 10
+_QUESTION_STALE_DAYS = 30
+
 #: Сколько ключей advisory-документов перечислять в карточке. Остальные
 #: отражены только в ``advisory.count``: список нужен как образец, а не как
 #: реестр — полный даёт ``ctx_drift``.
@@ -63,6 +68,11 @@ _RANK_DRIFT_STALE_EXPORT = 5
 # «неклассифицированный import» к работе куратора.
 _RANK_UNPLACED = 6
 _RANK_FINDING = 7
+# OQM-005: битая ссылка открытого вопроса рвёт навигацию так же, как битая
+# ссылка в документе, — тот же ранг. Застоявшийся вопрос — не поломка, а
+# напоминание: ниже всех внешних находок.
+_RANK_QUESTION_LINK_BROKEN = _RANK_LINK_BROKEN
+_RANK_QUESTION_STALE = 8
 
 _DRIFT_RANK: dict[str, int] = {
     "missing": _RANK_DRIFT_MISSING,
@@ -229,6 +239,76 @@ def _findings_card(session: Session, project_id: int) -> list[dict[str, Any]]:
     return list_findings(session, project_id, status="open", limit=_FINDINGS_CAP)
 
 
+def _questions_card(session: Session, project_id: int) -> dict[str, Any]:
+    """Открытые вопросы, требующие внимания: битые ссылки и застоявшиеся.
+
+    Битость — по последнему ``question verify``: карточка только читает и сама
+    ссылки не перепроверяет.
+    """
+    from cod_doc.domain.entities import QuestionStatus
+    from cod_doc.services import question_service
+
+    broken = question_service.broken_links(session, project_id=project_id)
+    cutoff = datetime.now(UTC) - timedelta(days=_QUESTION_STALE_DAYS)
+    stale = [
+        {"question_id": q.question_id, "title": q.title, "priority": q.priority.value}
+        for q in question_service.list_for_project(session, project_id, status=QuestionStatus.OPEN)
+        if q.last_updated is not None and _as_utc(q.last_updated) < cutoff
+    ]
+    return {
+        "broken_links": [
+            {
+                "question_id": b.question_id,
+                "to_kind": b.to_kind,
+                "to_ref": b.to_ref,
+                "broken_reason": b.broken_reason,
+            }
+            for b in broken[:_QUESTION_LINKS_CAP]
+        ],
+        "stale": stale[:_STALE_QUESTIONS_CAP],
+    }
+
+
+def _as_utc(value: datetime) -> datetime:
+    """SQLite отдаёт время без таймзоны; в БД оно всегда UTC."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _question_priorities(card: dict[str, Any], slug: str) -> list[tuple[int, dict[str, str]]]:
+    """Пункты очереди по вопросам: по одному на битую ссылку и на застоявшийся вопрос."""
+    items: list[tuple[int, dict[str, str]]] = []
+    for b in card["broken_links"]:
+        qid = b["question_id"]
+        items.append(
+            (
+                _RANK_QUESTION_LINK_BROKEN,
+                {
+                    "kind": "question_link",
+                    "ref": f"{qid} → {b['to_kind']}:{b['to_ref']}",
+                    "reason": str(b["broken_reason"] or "ссылка вопроса не резолвится"),
+                    "suggested_action": f"cod-doc question show {qid} -p {slug}",
+                },
+            )
+        )
+    for q in card["stale"]:
+        qid = q["question_id"]
+        items.append(
+            (
+                _RANK_QUESTION_STALE,
+                {
+                    "kind": "question",
+                    "ref": qid,
+                    "reason": (
+                        f"{q['priority']}: открыт больше {_QUESTION_STALE_DAYS} дней "
+                        f"без правок — {q['title']}"
+                    ),
+                    "suggested_action": f"cod-doc question show {qid} -p {slug}",
+                },
+            )
+        )
+    return items
+
+
 def _drift_priority(issue: dict[str, Any], slug: str) -> tuple[int, dict[str, str]] | None:
     """Пункт очереди по одной drift-находке, или ``None`` для ``in_sync``.
 
@@ -356,6 +436,7 @@ def _build_priority(
     ranked.extend(_link_priority(link, slug) for link in card["links"])
     ranked.extend(item for item in master_items if item is not None)
     ranked.extend(_finding_priority(f, slug) for f in card["findings"])
+    ranked.extend(_question_priorities(card["questions"], slug))
     unplaced = _unplaced_priority(card["unplaced"], slug)
     if unplaced is not None:
         ranked.append(unplaced)
@@ -402,7 +483,7 @@ def next(
             так что этот флаг — единственный путь куратора к телам.
 
     Returns:
-        ``{"card": {drift, links, master, findings, unplaced},
+        ``{"card": {drift, links, master, findings, unplaced, questions},
         "priority": [...], "navigation": {...}, "meta": {...}}``. Карточка —
         полный срез, ``priority`` — усечённая очередь действий по нему.
 
@@ -431,6 +512,7 @@ def next(
         "master": _master_card(master_path, root_path),
         "findings": _findings_card(session, project_id),
         "unplaced": _unplaced_card(session, project_id),
+        "questions": _questions_card(session, project_id),
     }
     priority = _build_priority(card, slug=slug, master_rel=master_rel)
     # Очередь собрана по полным находкам (reason берётся из title); в самой
@@ -449,6 +531,8 @@ def next(
             "master": len(card["master"]),
             "findings": len(card["findings"]),
             "unplaced": card["unplaced"]["count"],
+            "question_links": len(card["questions"]["broken_links"]),
+            "questions_stale": len(card["questions"]["stale"]),
             "priority_total": len(priority),
         },
     }

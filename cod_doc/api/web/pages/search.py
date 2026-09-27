@@ -21,6 +21,7 @@ _DEEPLINK_BY_KIND = {
     "doc": lambda slug, ref: f"/p/{slug}/docs/{ref}",
     "story": lambda slug, ref: f"/p/{slug}/stories/{ref}",
     "adr": lambda slug, ref: f"/p/{slug}/adr/{ref}",
+    "question": lambda slug, ref: f"/p/{slug}/questions/{ref}",
 }
 
 
@@ -75,7 +76,7 @@ def search_page(
             "scope": scope,
             "result": result,
             "index_error": error_message,
-            "scopes": ["task", "doc", "story", "adr", "finding"],
+            "scopes": ["task", "doc", "story", "adr", "finding", "question"],
         },
     )
 

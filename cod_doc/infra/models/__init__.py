@@ -41,6 +41,7 @@ from .plans import (
     TaskModel,
 )
 from .project import ProjectModel
+from .questions import OpenQuestionModel, QuestionLinkModel, QuestionOptionModel
 from .repo_index import RepoFileModel, RepoImportModel, RepoSymbolModel
 from .revisions import AgentRunModel, RevisionModel
 from .routines import RoutineModel, RoutineRunModel
@@ -100,9 +101,12 @@ __all__ = [
     "ModuleCodeModel",
     "ModuleDependencyModel",
     "ModuleModel",
+    "OpenQuestionModel",
     "PlanModel",
     "PlanSectionModel",
     "ProjectModel",
+    "QuestionLinkModel",
+    "QuestionOptionModel",
     "RepoFileModel",
     "RepoImportModel",
     "RepoSymbolModel",

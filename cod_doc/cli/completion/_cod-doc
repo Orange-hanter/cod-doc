@@ -385,6 +385,7 @@ _cod-doc() {
         (obligation) _cod_doc_obligation && ret=0 ;;
         (plan)       _cod_doc_plan && ret=0 ;;
         (project)    _cod_doc_project && ret=0 ;;
+        (question)   _cod_doc_question && ret=0 ;;
         (reindex)    _cod_doc_reindex && ret=0 ;;
         (revision)   _cod_doc_revision && ret=0 ;;
         (routine)    _cod_doc_routine && ret=0 ;;
@@ -428,6 +429,7 @@ _cod-doc() {
     'obligation:Documented obligations for the structure protocol.'
     'plan:Inspect and query plans (progress, ready tasks, audit, export).'
     'project:Управление проектами.'
+    'question:Open questions — DB entity with options and links; never projected…'
     'reindex:Rebuild repo-level indexes (files / symbols / imports).'
     'revision:Inspect and revert revision history.'
     'routine:Inspect and run routines (scheduled health checks).'
@@ -891,7 +893,7 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
-    '(--scope)--scope=[Ограничить поиск одним kind'\''ом]:scope:(task doc story adr finding)' \
+    '(--scope)--scope=[Ограничить поиск одним kind'\''ом]:scope:(task doc story adr finding question)' \
     '(--limit)--limit=[Лимит хитов на kind]:limit' \
     '(--projects)--projects=[Ещё слаги через запятую; искать по ним вместе с --project (общая hu…]:projects' \
     '(--json)--json[Вывод в JSON]' \
@@ -2297,6 +2299,296 @@ _cod-doc() {
   return ret
 }
 
+(( $+functions[_cod_doc_question] )) || _cod_doc_question() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_question_commands' \
+    '*:: :->cod_doc_question_cmd' && ret=0
+
+  case $state in
+    (cod_doc_question_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-question-$words[1]:"
+      case $words[1] in
+        (drop)    _cod_doc_question_drop && ret=0 ;;
+        (edit)    _cod_doc_question_edit && ret=0 ;;
+        (import)  _cod_doc_question_import && ret=0 ;;
+        (link)    _cod_doc_question_link && ret=0 ;;
+        (list)    _cod_doc_question_list && ret=0 ;;
+        (new)     _cod_doc_question_new && ret=0 ;;
+        (option)  _cod_doc_question_option && ret=0 ;;
+        (reopen)  _cod_doc_question_reopen && ret=0 ;;
+        (resolve) _cod_doc_question_resolve && ret=0 ;;
+        (show)    _cod_doc_question_show && ret=0 ;;
+        (unlink)  _cod_doc_question_unlink && ret=0 ;;
+        (verify)  _cod_doc_question_verify && ret=0 ;;
+        (*)       _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_question_commands] )) || _cod_doc_question_commands() {
+  local -a cmds
+  cmds=(
+    'drop:Close without an answer.'
+    'edit:Patch fields of a question.'
+    'import:Turn an open-question document into questions, then delete the docu…'
+    'link:Attach an edge; warns (does not fail) when the target does not exis…'
+    'list:List questions; open first, then by priority.'
+    'new:Open a question. It lives in the DB only and is never exported to m…'
+    'option:Answer options of a question. Positions are stable; removal leaves…'
+    'reopen:Return a resolved/dropped question to open.'
+    'resolve:Close with an answer; --by ADR-NNN, --option N and/or --resolution…'
+    'show:Show one question with context, options and links.'
+    'unlink:Detach an edge.'
+    'verify:Re-check links of one question (or all); exit 1 if any link is brok…'
+  )
+  _describe -t cod-doc-question-commands 'cod-doc question command' cmds
+}
+
+(( $+functions[_cod_doc_question_drop] )) || _cod_doc_question_drop() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--why)--why=[Why the question is dropped]:resolution' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_edit] )) || _cod_doc_question_edit() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(-t --title)'{-t+,--title=}':title' \
+    '(-q --question)'{-q+,--question=}'[@file ok]:question-text' \
+    '(-c --context)'{-c+,--context=}'[markdown; empty string clears; @file ok]:context' \
+    '(--priority)--priority=:priority:(critical high medium low)' \
+    '(--owner)--owner=[empty string clears]:owner' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_import] )) || _cod_doc_question_import() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--dry-run)--dry-run[Show the plan, write nothing]' \
+    '(--keep-doc)--keep-doc[Keep the document and its file (trial run)]' \
+    '(-y --yes)'{--yes,-y}'[Do not ask before deleting the document]' \
+    '(--author)--author=:author' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_link] )) || _cod_doc_question_link() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--to-kind)--to-kind=:to-kind:(document section task adr story scenario finding code url)' \
+    '(--to-ref)--to-ref=[task id, ADR-NNN, doc_key, doc_key#anchor, path, path#symbol, path#…]:to-ref' \
+    '(--relation)--relation=:relation:(about blocks addressed_by resolved_by see_also)' \
+    '(--note)--note=:note' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_list] )) || _cod_doc_question_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--status)--status=:status:(open resolved dropped all)' \
+    '(--owner)--owner=:owner' \
+    '(--priority)--priority=:priority:(critical high medium low)' \
+    '(--linked-to)--linked-to=[kind;ref — only questions linked to it]:linked-to' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_new] )) || _cod_doc_question_new() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(-t --title)'{-t+,--title=}'[Short title]:title' \
+    '(-q --question)'{-q+,--question=}'[The question (@file ok)]:question-text' \
+    '(-c --context)'{-c+,--context=}'[Background, markdown (@file / @- ok)]:context' \
+    '(--priority)--priority=:priority:(critical high medium low)' \
+    '(--owner)--owner=[Who is responsible for the answer]:owner' \
+    '*--option=[Answer option title (repeatable)]:options' \
+    '*--link=[kind;ref(;relation), e.g. task;ADO-042;addressed_by or code;app.py#…]:links' \
+    '(--author)--author=:author' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_option] )) || _cod_doc_question_option() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_question_option_commands' \
+    '*:: :->cod_doc_question_option_cmd' && ret=0
+
+  case $state in
+    (cod_doc_question_option_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-question-option-$words[1]:"
+      case $words[1] in
+        (add)  _cod_doc_question_option_add && ret=0 ;;
+        (edit) _cod_doc_question_option_edit && ret=0 ;;
+        (rm)   _cod_doc_question_option_rm && ret=0 ;;
+        (*)    _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_question_option_commands] )) || _cod_doc_question_option_commands() {
+  local -a cmds
+  cmds=(
+    'add:Append an option.'
+    'edit:Patch an option'\''s title/body.'
+    'rm:Remove an option.'
+  )
+  _describe -t cod-doc-question-option-commands 'cod-doc question option command' cmds
+}
+
+(( $+functions[_cod_doc_question_option_add] )) || _cod_doc_question_option_add() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(-b --body)'{-b+,--body=}'[Pros/cons, markdown]:body' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' \
+    '2:title' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_option_edit] )) || _cod_doc_question_option_edit() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(-t --title)'{-t+,--title=}':title' \
+    '(-b --body)'{-b+,--body=}'[empty string clears]:body' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' \
+    '2:position' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_option_rm] )) || _cod_doc_question_option_rm() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' \
+    '2:position' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_reopen] )) || _cod_doc_question_reopen() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_resolve] )) || _cod_doc_question_resolve() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--by)--by=[ADR-NNN that answers the question]:by-adr' \
+    '(--option)--option=[Chosen option position]:chosen-option' \
+    '(-r --resolution)'{-r+,--resolution=}'[Answer text (markdown)]:resolution' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_show] )) || _cod_doc_question_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_unlink] )) || _cod_doc_question_unlink() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--to-kind)--to-kind=:to-kind:(document section task adr story scenario finding code url)' \
+    '(--to-ref)--to-ref=:to-ref' \
+    '(--relation)--relation=:relation:(about blocks addressed_by resolved_by see_also)' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:question-id' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_question_verify] )) || _cod_doc_question_verify() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json[Machine-readable output]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1::question-id' && ret=0
+  return ret
+}
+
 (( $+functions[_cod_doc_reindex] )) || _cod_doc_reindex() {
   local curcontext="$curcontext" state line ret=1
   typeset -A opt_args
@@ -2819,7 +3111,7 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
-    '(--scope)--scope=[Restrict search to one kind]:scope:(task doc story adr finding)' \
+    '(--scope)--scope=[Restrict search to one kind]:scope:(task doc story adr finding question)' \
     '(--limit)--limit=:limit' \
     '(--projects)--projects=[Comma-separated extra slugs to search together with --project (shar…]:projects' \
     '(--reindex)--reindex[Rebuild the FTS index before searching.]' \
@@ -3418,6 +3710,7 @@ _cod-doc() {
     '(--prefix)--prefix=[ID prefix for auto-numbering (e.g. COD). Without --id and --prefix…]:prefix' \
     '(--description)--description=:description' \
     '(--acceptance)--acceptance=:acceptance' \
+    '*--addresses=[Open question this task works on (Q-021); repeatable]:addresses' \
     '(--author)--author=:author' \
     '(--reason)--reason=:reason' \
     '(- *)--help[Show this message and exit.]' && ret=0

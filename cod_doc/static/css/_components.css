@@ -1208,11 +1208,13 @@ a.nav-card-title:hover { color: var(--accent); }
 .plan-progress-table { min-width: 480px; }
 /* Пришла из ADO-185 с обёрткой, но без нижней границы — тот же недосмотр. */
 .scn-table { min-width: 600px; }
+.question-table { min-width: 760px; }
 
 .task-col-when,
 .plans-col-when,
 .tasks-legacy-col-when,
-.adr-col-when { white-space: nowrap; }
+.adr-col-when,
+.question-col-when { white-space: nowrap; }
 
 /* ── Settings form ────────────────────────────────────────────────────── */
 .settings-form fieldset {
@@ -3238,18 +3240,19 @@ details > summary { cursor: pointer; }
 /* Клик по всей строке списка. Растянутая ссылка, а не `onclick`: работает
    без JS и сохраняет обычное поведение ссылки (средняя кнопка, копирование
    адреса). Готового row-link паттерна в приложении не было. */
-.adr-table tbody tr, .scn-table tbody tr { position: relative; }
+.adr-table tbody tr, .scn-table tbody tr, .question-table tbody tr { position: relative; }
 .adr-table .adr-row-link::after,
-.scn-table .scn-row-link::after {
+.scn-table .scn-row-link::after,
+.question-table .question-row-link::after {
   content: "";
   position: absolute;
   inset: 0;
 }
 /* Заголовок остаётся собственной ссылкой поверх оверлея. */
-.adr-table td a, .scn-table td a { position: relative; z-index: 1; }
+.adr-table td a, .scn-table td a, .question-table td a { position: relative; z-index: 1; }
 
 /* ADO-135: возврат к списку виден с любой глубины прокрутки. */
-.adr-back, .scn-back {
+.adr-back, .scn-back, .question-back {
   position: sticky;
   top: var(--topbar-h);
   z-index: 2;
@@ -3329,3 +3332,283 @@ details > summary { cursor: pointer; }
   border-color: var(--border);
   text-decoration: line-through;
 }
+
+/* OQM-004: открытые вопросы. Префикс `q-` по той же причине, что `scn-`:
+   `badge-{{ status }}` уже занят статусами документов и задач. */
+.badge-q-open {
+  background: var(--warning-soft-bg);
+  color: var(--warning-soft-fg);
+  border-color: var(--warning-border);
+}
+.badge-q-resolved {
+  background: var(--success-soft-bg);
+  color: var(--success-soft-fg);
+  border-color: var(--success-border);
+}
+.badge-q-dropped {
+  background: var(--bg-alt);
+  color: var(--muted);
+  border-color: var(--border);
+  text-decoration: line-through;
+}
+.question-links { padding-left: 0; list-style: none; margin: 0 0 var(--space-3); }
+.question-links > li { padding: var(--space-1) 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.question-excerpt-body { display: flex; align-items: stretch; margin: var(--space-1) 0 0; min-width: 0; }
+.question-excerpt-body pre { margin: 0; padding: 0; font-size: 12px; line-height: 1.5; }
+.question-excerpt-body pre code,
+.question-excerpt-body pre code.hljs { display: block; padding: var(--space-2) var(--space-3); font-size: 12px; line-height: 1.5; }
+.question-excerpt-body pre:last-child { flex: 1; min-width: 0; overflow-x: auto; }
+.question-excerpt-body .question-excerpt-gutter {
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+}
+
+/* ── OQM: редизайн экранов вопросов ──────────────────────────────────────
+   Каркас карточки — классы страницы задачи (`task-hero`, `task-actions`,
+   `task-layout`, `task-card`); ниже только то, чего у задачи нет. */
+
+/* Тон героя по статусу — как `status-tone-*` у задачи, но на словаре вопроса. */
+.task-hero.q-tone-open     { background: linear-gradient(135deg, var(--warning-soft-bg) 0%, var(--bg) 80%); }
+.task-hero.q-tone-resolved { background: linear-gradient(135deg, var(--success-soft-bg) 0%, var(--bg) 80%); }
+.task-hero.q-tone-dropped  { background: linear-gradient(135deg, var(--bg-alt) 0%, var(--bg) 80%); }
+
+/* Вопрос — лид героя: крупнее тела, но не заголовок. */
+.q-lead {
+  margin: var(--space-2) 0 0;
+  max-width: 80ch;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--fg);
+}
+.q-lead p { margin: 0 0 var(--space-1); }
+.q-lead p:last-child { margin-bottom: 0; }
+
+.q-actions { flex-wrap: wrap; gap: var(--space-2); }
+.q-actions-right { margin-left: auto; font-size: 12px; }
+.q-inline { display: inline; margin: 0; }
+
+.q-broken-chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--danger-border);
+  background: var(--danger-soft-bg);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.q-alert { margin: 0 0 var(--space-3); }
+
+/* ── Список ─────────────────────────────────────────────────────────── */
+.q-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+.q-status-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.q-status-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+.q-status-tab:hover { color: var(--fg); text-decoration: none; }
+.q-status-tab.active { background: var(--bg); color: var(--fg-strong); font-weight: 600; box-shadow: var(--shadow-sm); }
+.q-status-count {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+  color: var(--fg);
+}
+.q-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); font-size: 13px; color: var(--muted); }
+.q-filters label { display: inline-flex; align-items: center; gap: var(--space-1); }
+.q-filters select {
+  padding: 3px 8px;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.question-col-id { width: 64px; }
+.question-col-num { width: 72px; text-align: right; white-space: nowrap; }
+.question-table tbody tr.q-prio-critical { box-shadow: inset 3px 0 0 var(--danger); }
+.question-table tbody tr.q-prio-high     { box-shadow: inset 3px 0 0 var(--warning); }
+.q-cell-title { min-width: 280px; }
+.q-title-link { font-weight: 600; color: var(--fg-strong); }
+.q-excerpt {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60ch;
+}
+
+/* ── Варианты ───────────────────────────────────────────────────────── */
+.q-options { list-style: none; padding: 0; margin: 0 0 var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.q-option {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.q-option-chosen { border-color: var(--success-border); background: var(--success-soft-bg); }
+.q-option-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.q-option-chosen .q-option-no { background: var(--success); border-color: var(--success); color: #fff; }
+.q-option-main { min-width: 0; }
+.q-option-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-height: 26px; }
+.q-option-body { margin-top: 2px; font-size: 13px; }
+.q-option-body > :first-child { margin-top: 0; }
+.q-option-body p { margin: 0 0 var(--space-1); }
+.q-option-body ul { margin: var(--space-1) 0; padding-left: 20px; }
+
+/* Раскрывашки второго плана: мелкие и приглушённые, пока закрыты. */
+.q-mini { margin-top: var(--space-1); }
+.q-mini > summary,
+.q-add > summary { font-size: 12px; color: var(--muted); list-style: none; }
+.q-mini > summary::-webkit-details-marker,
+.q-add > summary::-webkit-details-marker { display: none; }
+.q-mini > summary:hover,
+.q-add > summary:hover { color: var(--accent); }
+.q-add > summary { display: inline-block; padding: 4px 10px; border: 1px dashed var(--border); border-radius: var(--radius-sm); }
+.q-add > summary::before { content: "+ "; }
+.q-add[open] > summary { margin-bottom: var(--space-2); }
+.q-danger-link { color: var(--danger); }
+
+/* ── Ссылки ─────────────────────────────────────────────────────────── */
+.q-links { list-style: none; padding: 0; margin: 0 0 var(--space-3); }
+.q-link {
+  display: grid;
+  grid-template-columns: 22px 56px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 13px;
+}
+.q-link:last-child { border-bottom: 0; }
+.q-link-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: var(--bg-alt);
+}
+.q-link-ok .q-link-state     { color: var(--success); border-color: var(--success-border); background: var(--success-soft-bg); }
+.q-link-broken .q-link-state { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft-bg); }
+.q-kind {
+  justify-self: start;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.q-link-body { min-width: 0; }
+.q-link-target { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); overflow-wrap: anywhere; }
+.q-link-target code { background: transparent; padding: 0; font-size: 12px; }
+.q-link-broken .q-link-target code { color: var(--danger); text-decoration: line-through; text-decoration-thickness: 1px; }
+.q-rel { font-size: 11px; color: var(--muted); }
+.q-link-note { font-size: 12px; margin: 2px 0 0; }
+.q-link .row-error { margin-left: 0; display: block; }
+.q-link-remove button { opacity: 0.5; }
+.q-link:hover .q-link-remove button { opacity: 1; }
+.question-excerpt { margin-top: var(--space-1); }
+.question-excerpt > summary { font-size: 12px; }
+
+/* ── Формы внутри карточек ──────────────────────────────────────────── */
+.q-form .field input,
+.q-form .field select,
+.q-form .field textarea { max-width: none; width: 100%; box-sizing: border-box; }
+.q-form .field input,
+.q-form .field select { min-height: 34px; }
+.q-form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+@media (max-width: 600px) { .q-form-row { grid-template-columns: 1fr; } }
+.q-wide { width: 100%; }
+.q-answer .form-actions { display: block; }
+.settings-form .q-choice { border: 0; padding: 0; margin: 0 0 var(--space-2); background: transparent; }
+.settings-form .q-choice legend { padding: 0; margin-bottom: var(--space-1); }
+.q-choice-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 4px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.q-choice-item input { margin-top: 3px; }
+.q-edit > summary { cursor: pointer; }
+
+/* ── Боковые карточки ───────────────────────────────────────────────── */
+.q-answer { border-top: 3px solid var(--success); }
+.q-resolution-resolved { border-top: 3px solid var(--success); }
+.q-resolution-dropped { border-top: 3px solid var(--muted); }
+.q-resolution-choice { margin: 0 0 var(--space-2); }
+.q-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px var(--space-3);
+  margin: 0;
+  font-size: 13px;
+}
+.q-meta dt { color: var(--muted); }
+.q-meta dd { margin: 0; }
+.q-meta-wrap { overflow-wrap: anywhere; }
+.q-guide-list { margin: 0; font-size: 13px; }
+.q-guide-list dt { font-weight: 600; margin-top: var(--space-2); }
+.q-guide-list dt:first-child { margin-top: 0; }
+.q-guide-list dd { margin: 2px 0 0; color: var(--muted); line-height: 1.5; }
+.q-guide-steps { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); line-height: 1.6; }
