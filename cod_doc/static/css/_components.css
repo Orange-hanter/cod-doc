@@ -1208,11 +1208,13 @@ a.nav-card-title:hover { color: var(--accent); }
 .plan-progress-table { min-width: 480px; }
 /* Пришла из ADO-185 с обёрткой, но без нижней границы — тот же недосмотр. */
 .scn-table { min-width: 600px; }
+.question-table { min-width: 720px; }
 
 .task-col-when,
 .plans-col-when,
 .tasks-legacy-col-when,
-.adr-col-when { white-space: nowrap; }
+.adr-col-when,
+.question-col-when { white-space: nowrap; }
 
 /* ── Settings form ────────────────────────────────────────────────────── */
 .settings-form fieldset {
@@ -3238,18 +3240,19 @@ details > summary { cursor: pointer; }
 /* Клик по всей строке списка. Растянутая ссылка, а не `onclick`: работает
    без JS и сохраняет обычное поведение ссылки (средняя кнопка, копирование
    адреса). Готового row-link паттерна в приложении не было. */
-.adr-table tbody tr, .scn-table tbody tr { position: relative; }
+.adr-table tbody tr, .scn-table tbody tr, .question-table tbody tr { position: relative; }
 .adr-table .adr-row-link::after,
-.scn-table .scn-row-link::after {
+.scn-table .scn-row-link::after,
+.question-table .question-row-link::after {
   content: "";
   position: absolute;
   inset: 0;
 }
 /* Заголовок остаётся собственной ссылкой поверх оверлея. */
-.adr-table td a, .scn-table td a { position: relative; z-index: 1; }
+.adr-table td a, .scn-table td a, .question-table td a { position: relative; z-index: 1; }
 
 /* ADO-135: возврат к списку виден с любой глубины прокрутки. */
-.adr-back, .scn-back {
+.adr-back, .scn-back, .question-back {
   position: sticky;
   top: var(--topbar-h);
   z-index: 2;
@@ -3328,4 +3331,46 @@ details > summary { cursor: pointer; }
   color: var(--muted);
   border-color: var(--border);
   text-decoration: line-through;
+}
+
+/* OQM-004: открытые вопросы. Префикс `q-` по той же причине, что `scn-`:
+   `badge-{{ status }}` уже занят статусами документов и задач. */
+.badge-q-open {
+  background: var(--warning-soft-bg);
+  color: var(--warning-soft-fg);
+  border-color: var(--warning-border);
+}
+.badge-q-resolved {
+  background: var(--success-soft-bg);
+  color: var(--success-soft-fg);
+  border-color: var(--success-border);
+}
+.badge-q-dropped {
+  background: var(--bg-alt);
+  color: var(--muted);
+  border-color: var(--border);
+  text-decoration: line-through;
+}
+.question-options { padding-left: 0; list-style: none; margin: 0 0 var(--space-3); }
+.question-option {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-2);
+}
+.question-option-chosen { border-color: var(--success-border); background: var(--success-soft-bg); }
+.question-option-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.question-links { padding-left: 0; list-style: none; margin: 0 0 var(--space-3); }
+.question-links > li { padding: var(--space-1) 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.question-inline-form { display: inline; margin-left: var(--space-2); }
+.question-excerpt-body { display: flex; align-items: stretch; margin: var(--space-1) 0 0; min-width: 0; }
+.question-excerpt-body pre { margin: 0; padding: 0; font-size: 12px; line-height: 1.5; }
+.question-excerpt-body pre code,
+.question-excerpt-body pre code.hljs { display: block; padding: var(--space-2) var(--space-3); font-size: 12px; line-height: 1.5; }
+.question-excerpt-body pre:last-child { flex: 1; min-width: 0; overflow-x: auto; }
+.question-excerpt-body .question-excerpt-gutter {
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
 }

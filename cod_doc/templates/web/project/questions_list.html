@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Questions · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Questions</span>
+</nav>
+
+{% with slug=project.name, active="questions" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<header class="page-header">
+  <div>
+    <h1>❓ Open questions</h1>
+    <p class="muted">
+      Нерешённые вопросы проекта. Живут только в БД и в документы не
+      попадают: у каждого — варианты ответа, владелец и ссылки на документы,
+      код, задачи и ADR. Ответ фиксируется как ADR, выбранный вариант или текст.
+    </p>
+  </div>
+  <div class="page-header-actions">
+    <a class="btn btn-primary" href="/p/{{ project.name }}/questions/new">➕ Новый вопрос</a>
+    <a class="btn" href="/p/{{ project.name }}/revisions?entity_kind=question">🕘 История</a>
+  </div>
+</header>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Открыто</div>
+    <div class="card-value">{{ counts.open }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Решено</div>
+    <div class="card-value">{{ counts.resolved }}</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Снято</div>
+    <div class="card-value">{{ counts.dropped }}</div>
+  </div>
+  <div class="card card-health-{% if broken_total %}error{% else %}success{% endif %}">
+    <div class="card-label">Битых ссылок</div>
+    <div class="card-value">{{ broken_total }}</div>
+    <div class="card-subvalue muted">у открытых, по последней проверке</div>
+  </div>
+</div>
+
+<form class="filter-bar" method="get" action="/p/{{ project.name }}/questions">
+  <label>Status:
+    <select name="status" onchange="this.form.submit()">
+      {% for s in status_options %}
+        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Priority:
+    <select name="priority" onchange="this.form.submit()">
+      <option value="" {% if not priority_filter %}selected{% endif %}>any</option>
+      {% for p in priority_options %}
+        <option value="{{ p }}" {% if priority_filter == p %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Owner:
+    <select name="owner" onchange="this.form.submit()">
+      <option value="" {% if not owner_filter %}selected{% endif %}>any</option>
+      {% for o in owners %}
+        <option value="{{ o }}" {% if owner_filter == o %}selected{% endif %}>{{ o }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <noscript><button type="submit">Apply</button></noscript>
+  {% if status_filter != "open" or priority_filter or owner_filter %}
+    <a class="muted" href="/p/{{ project.name }}/questions">clear</a>
+  {% endif %}
+</form>
+
+{% if not rows %}
+  <div class="tasks-empty">
+    <div class="tasks-empty-icon">❓</div>
+    <p>
+      {% if status_filter != "open" or priority_filter or owner_filter %}
+        Под фильтр ничего не попало. <a href="/p/{{ project.name }}/questions">Показать открытые</a>.
+      {% else %}
+        Открытых вопросов нет. <a href="/p/{{ project.name }}/questions/new">Задать вопрос</a>
+        или <code>cod-doc question new -p {{ project.name }} -t … -q …</code>
+      {% endif %}
+    </p>
+  </div>
+{% else %}
+  <div class="table-scroll">
+    <table class="grid question-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>
+          <th>Priority</th>
+          <th>Owner</th>
+          <th>Title</th>
+          <th>Links</th>
+          <th class="question-col-when">Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <td class="mono"><a class="question-row-link" href="/p/{{ project.name }}/questions/{{ r.question_id }}">{{ r.question_id }}</a></td>
+            <td><span class="badge badge-q-{{ r.status }}">{{ r.status_icon }} {{ r.status }}</span></td>
+            <td><span class="badge {{ r.priority_badge }}">{{ r.priority }}</span></td>
+            <td class="muted">{{ r.owner or "—" }}</td>
+            <td class="cell-clamp-prose"><a href="/p/{{ project.name }}/questions/{{ r.question_id }}">{{ r.title }}</a></td>
+            <td>{% if r.broken %}<span class="badge badge-error" title="битые ссылки по последней проверке">✗ {{ r.broken }}</span>{% endif %}</td>
+            <td class="muted question-col-when" title="{{ r.last_updated | ts_tooltip }}">{{ r.last_updated | short_date }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+{% endblock %}

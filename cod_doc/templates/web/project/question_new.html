@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}New question · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/questions">Questions</a> /
+  <span>New</span>
+</nav>
+
+{% with slug=project.name, active="questions" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<header class="page-header">
+  <div>
+    <h1>❓ New question</h1>
+    <p class="muted">
+      Вопрос без решения. Если решение уже принято или обсуждается с
+      вариантом-фаворитом — это ADR, а не вопрос. Ссылки на документы и код
+      добавляются на карточке после создания.
+    </p>
+  </div>
+</header>
+
+{% if error %}<div class="alert alert-error"><span class="alert-msg">{{ error }}</span></div>{% endif %}
+
+<form method="post" action="/p/{{ project.name }}/questions/new" class="settings-form">
+  <label class="field">
+    <span class="label">Title (required)</span>
+    <input name="title" required autofocus placeholder="e.g. Какой платёжный провайдер для RU?">
+  </label>
+
+  <label class="field">
+    <span class="label">Question (required) — что именно нужно решить</span>
+    <textarea name="question" rows="3" required></textarea>
+  </label>
+
+  <div class="adr-form-row">
+    <label class="field">
+      <span class="label">Priority</span>
+      <select name="priority">
+        {% for p in priority_options %}
+          <option value="{{ p }}" {% if p == "medium" %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span class="label">Owner (optional)</span>
+      <input name="owner" placeholder="кто отвечает за ответ">
+    </label>
+  </div>
+
+  <label class="field">
+    <span class="label">Context — markdown: предыстория, ограничения, что уже известно</span>
+    <textarea name="context" rows="6"></textarea>
+  </label>
+
+  <label class="field">
+    <span class="label">Options — по одному варианту в строке (подробности — на карточке)</span>
+    <textarea name="options" rows="4" placeholder="ЮKassa&#10;CloudPayments"></textarea>
+  </label>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">Создать</button>
+    <a class="btn btn-ghost" href="/p/{{ project.name }}/questions">Отмена</a>
+  </div>
+</form>
+{% endblock %}

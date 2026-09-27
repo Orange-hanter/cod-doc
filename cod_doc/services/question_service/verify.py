@@ -14,7 +14,9 @@ bury the question's real history under check-stamps.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -25,6 +27,7 @@ from cod_doc.infra.models import (
     DocumentModel,
     FindingModel,
     OpenQuestionModel,
+    ProjectModel,
     QuestionLinkModel,
     ScenarioModel,
     SectionModel,
@@ -35,6 +38,9 @@ from cod_doc.services import link_service
 
 from ._internals import _require_question, split_code_ref
 from ._types import LinkCheck, VerifyReport
+
+# Тот же фрагмент строк, что у ``link_service`` (``L10-L20`` / ``L10-20`` / ``L10``).
+_LINE_RANGE_RE = re.compile(r"^L(?P<start>\d+)(?:-L?(?P<end>\d+))?$")
 
 if TYPE_CHECKING:
     from sqlalchemy import Select
@@ -179,3 +185,43 @@ def broken_links(session: Session, *, project_id: int) -> list[LinkCheck]:
         )
         for edge, qid in session.execute(stmt).all()
     ]
+
+
+_EXCERPT_MAX_LINES = 30
+_SYMBOL_CONTEXT = 6
+_WHOLE_FILE_HEAD = 12
+
+
+def code_excerpt(session: Session, project_id: int, to_ref: str) -> dict[str, object] | None:
+    """Строки файла, на которые указывает code-ссылка: для показа рядом с вопросом.
+
+    ``path#L10-L20`` — этот диапазон (не длиннее ``_EXCERPT_MAX_LINES``),
+    ``path#symbol`` — окрестность первого вхождения, ``path`` — голова файла.
+    ``None``, если ссылка не резолвится: причину уже показывает бейдж verify.
+    """
+    path, fragment = split_code_ref(to_ref)
+    ok, matched, _ = link_service.resolve_code_ref(session, project_id, path, fragment)
+    root = session.execute(
+        select(ProjectModel.root_path).where(ProjectModel.row_id == project_id)
+    ).scalar_one_or_none()
+    if not ok or matched is None or not root:
+        return None
+    try:
+        lines = (Path(root) / matched).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+
+    start, end = 1, min(len(lines), _WHOLE_FILE_HEAD)
+    range_match = _LINE_RANGE_RE.fullmatch(fragment or "")
+    if range_match:
+        start = int(range_match.group("start"))
+        end = min(int(range_match.group("end") or start), start + _EXCERPT_MAX_LINES - 1)
+    elif fragment:
+        hit = next((i for i, line in enumerate(lines, 1) if fragment in line), 1)
+        start = max(1, hit - _SYMBOL_CONTEXT // 2)
+        end = min(len(lines), hit + _SYMBOL_CONTEXT)
+    return {
+        "path": matched,
+        "start": start,
+        "lines": [{"no": n, "text": lines[n - 1]} for n in range(start, end + 1)],
+    }
