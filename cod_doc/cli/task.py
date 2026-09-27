@@ -1,4 +1,4 @@
-"""CLI: task list/show/create/status/update/complete/remove-dep."""
+"""CLI: task list/show/create/status/update/complete/remove-dep/add-dep."""
 
 from __future__ import annotations
 
@@ -786,6 +786,108 @@ def task_remove_dep(
         sys.exit(1)
 
     console.print(f"[green]✅ {t.task_id}: dependency on {blocker_id} removed.[/green]")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# task add-dep
+# ──────────────────────────────────────────────────────────────────────────────
+
+#: Зелёная строка по op из `task_service.add_dependency` (None — ничего не записано).
+_ADD_DEP_MESSAGES: dict[str | None, str] = {
+    "add_dependency": "ребро добавлено",
+    "update_dependency_note": "note обновлён",
+    "adopt_dependency": "записана ревизия-легализация, данные не менялись",
+    None: "без изменений",
+}
+
+
+@task.command("add-dep")
+@click.argument("task_id")
+@click.argument("blocker_id")
+@click.option("--project", "-p", required=True, help="Слаг проекта")
+@click.option("--note", required=True, help="Мотивация связи — ложится в dependency.note")
+@click.option("--author", default="cli", show_default=True, help="Автор ревизии")
+@click.option("--reason", default=None, help="Причина правки для ревизии")
+@click.option(
+    "--adopt",
+    is_flag=True,
+    help="Легализовать уже стоящее ребро: ревизия без изменения данных",
+)
+@click.option("--json", "as_json", is_flag=True, help="Вывод в JSON")
+@click.pass_context
+def task_add_dep(
+    ctx: click.Context,
+    task_id: str,
+    blocker_id: str,
+    project: str,
+    note: str,
+    author: str,
+    reason: str | None,
+    adopt: bool,
+    as_json: bool,
+) -> None:
+    """Поставить ребро: TASK_ID блокируется BLOCKER_ID, с обязательным note.
+
+    Upsert (RFC 26 §3.2, ADO-202): ребра нет — создаётся; есть с другим note —
+    note обновляется; есть с тем же — ничего не пишется; --adopt при совпадении
+    пишет ревизию без изменения данных. Ребро, замыкающее цикл, и петля
+    отвергаются с путём цикла. Обратная операция — `task remove-dep`.
+    """
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import task_service
+    from cod_doc.services.task_service import TaskNotFoundError
+
+    cfg: Config = ctx.obj["config"]
+    sf = _make_session(project, cfg)
+
+    # Phase 1: validate project (read-only — sys.exit here is safe)
+    with transactional(sf) as session:
+        pid = _require_project_id(session, project)
+
+    # Phase 2: write (separate transaction — no sys.exit inside this block)
+    try:
+        with transactional(sf) as session:
+            change = task_service.add_dependency(
+                session,
+                project_id=pid,
+                task_id=task_id,
+                blocker_task_id=blocker_id,
+                note=note,
+                author=author,
+                reason=reason,
+                adopt=adopt,
+            )
+            warnings = task_service.dependency_warnings(
+                session,
+                project_id=pid,
+                task_id=task_id,
+                blocker_task_id=blocker_id,
+            )
+    except TaskNotFoundError as exc:
+        console.print(f"[red]Task '{exc}' not found.[/red]")
+        sys.exit(1)
+    except ValueError as exc:
+        # DependencyCycleError — подкласс ValueError; текст несёт путь цикла.
+        console.print(str(exc), style="red", markup=False)
+        sys.exit(1)
+
+    if as_json:
+        click.echo(
+            _json.dumps(
+                {
+                    "task_id": task_id,
+                    "blocker_id": blocker_id,
+                    "op": change.op,
+                    "warnings": warnings,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+
+    console.print(f"[green]✅ {task_id} ← {blocker_id}: {_ADD_DEP_MESSAGES[change.op]}.[/green]")
+    for w in warnings:
+        console.print(f"⚠ {w['code']}: {w['message']}", style="yellow", markup=False)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

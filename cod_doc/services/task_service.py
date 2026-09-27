@@ -16,6 +16,11 @@ Public API:
   `completed_at` + optional `completed_commit`; writes TASK revision.
 - `remove_dependency` — delete a task→task `dependency` edge (kind='blocks');
   raises on unknown task or missing edge; writes TASK revision + activity.
+- `add_dependency` — upsert a task→task `dependency` edge with a mandatory
+  `note` (ADO-202, RFC 26 §3.2): create / update note / adopt / no-op;
+  refuses self-loops, cross-project blockers and edges closing a cycle.
+- `dependency_warnings` — read-only предупреждения о ребре (блокер закрыт,
+  задача в работе, кросс-плановое, транзитивно выводимое).
 
 ID format:  `<PREFIX>-<NNN>` (e.g. `COD-011`, `AUTH-025`). Caller may pass
 `id_prefix` when `task_id=None` (иначе он выводится из плана); the service finds the current max sequence
@@ -29,6 +34,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -72,6 +78,31 @@ class TaskNotFoundError(LookupError):
 
 class DependencyNotFoundError(LookupError):
     """Raised by `remove_dependency()` when the requested edge does not exist."""
+
+
+class DependencyCycleError(ValueError):
+    """Raised by `add_dependency()` when the new edge would close a cycle.
+
+    ``path`` — task_id вершин от блокера до задачи по рёбрам from→to;
+    новое ребро задача→блокер замыкает его. Петля — ``[task_id]``.
+    """
+
+    def __init__(self, path: list[str]) -> None:
+        cycle = " → ".join([*path, path[0]])
+        super().__init__(f"dependency would close a cycle: {cycle}")
+        self.path = path
+
+
+@dataclass(frozen=True)
+class DependencyChange:
+    """Результат `add_dependency()`: задача и записанная операция.
+
+    ``op`` ∈ {'add_dependency', 'update_dependency_note', 'adopt_dependency'},
+    ``None`` — ничего не записано (ребро уже такое).
+    """
+
+    task: Task
+    op: str | None
 
 
 class SectionNotFoundError(LookupError):
@@ -1322,6 +1353,237 @@ def remove_dependency(
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t
+
+
+def _reaches(
+    session: Session, *, start_row_id: int, target_row_id: int, kind: str
+) -> list[int] | None:
+    """Путь row_id от ``start`` до ``target`` по рёбрам ``kind`` (from→to) или None.
+
+    Итеративный DFS с восстановлением пути через карту родителей; соседей
+    вершины читает одним SELECT при первом посещении.
+    """
+    parent: dict[int, int | None] = {start_row_id: None}
+    stack = [start_row_id]
+    while stack:
+        node = stack.pop()
+        if node == target_row_id:
+            path = [node]
+            while (prev := parent[path[-1]]) is not None:
+                path.append(prev)
+            return path[::-1]
+        neighbours = session.execute(
+            select(DependencyModel.to_task_id).where(
+                DependencyModel.from_task_id == node, DependencyModel.kind == kind
+            )
+        ).scalars()
+        for nxt in neighbours:
+            if nxt not in parent:
+                parent[nxt] = node
+                stack.append(nxt)
+    return None
+
+
+def _upsert_edge(
+    session: Session,
+    model: TaskModel,
+    blocker_model: TaskModel,
+    kind: str,
+    note: str,
+    adopt: bool,
+) -> str | None:
+    """Применить таблицу upsert из RFC 26 §3.2 и вернуть op (None — ничего)."""
+    edge = session.execute(
+        select(DependencyModel).where(
+            DependencyModel.from_task_id == model.row_id,
+            DependencyModel.to_task_id == blocker_model.row_id,
+            DependencyModel.kind == kind,
+        )
+    ).scalar_one_or_none()
+    if edge is None:
+        path = _reaches(
+            session,
+            start_row_id=blocker_model.row_id,
+            target_row_id=model.row_id,
+            kind=kind,
+        )
+        if path is not None:
+            rows = session.execute(
+                select(TaskModel.row_id, TaskModel.task_id).where(TaskModel.row_id.in_(path))
+            ).all()
+            ids = {row_id: tid for row_id, tid in rows}
+            raise DependencyCycleError([ids[row_id] for row_id in path])
+        session.add(
+            DependencyModel(
+                from_task_id=model.row_id, to_task_id=blocker_model.row_id, kind=kind, note=note
+            )
+        )
+        return "add_dependency"
+    if edge.note != note:
+        edge.note = note
+        return "update_dependency_note"
+    return "adopt_dependency" if adopt else None
+
+
+def add_dependency(
+    session: Session,
+    *,
+    project_id: int,
+    task_id: str,
+    blocker_task_id: str,
+    note: str,
+    author: str,
+    reason: str | None = None,
+    kind: str = "blocks",
+    adopt: bool = False,
+) -> DependencyChange:
+    """Поставить ребро ``task_id → blocker_task_id`` с мотивацией (ADO-202).
+
+    Upsert по таблице RFC 26 §3.2: ребра нет — создать (op=add_dependency);
+    есть и ``note`` отличается — обновить (op=update_dependency_note); есть и
+    совпадает — молчать (op=None: ни ревизии, ни события, ``last_updated``
+    не трогается); при ``adopt=True`` совпадение пишет ревизию без изменения
+    данных (op=adopt_dependency) — легализация внесистемной правки.
+
+    ``note`` обязателен и при ``adopt``: легализуется только ребро, у которого
+    мотивация уже есть. Выдумывать её задним числом для немых рёбер хуже, чем
+    оставить их пустыми — их предъявляет рутина ``graph_health``.
+
+    Отказы: петля — :class:`DependencyCycleError` до CHECK'а БД; блокер или
+    задача вне ``project_id`` — :class:`TaskNotFoundError`; ребро, замыкающее
+    цикл, — :class:`DependencyCycleError` с путём от блокера до задачи.
+
+    ``event_bus.queue_emit`` не вызывается — симметрично `remove_dependency`.
+    При этом ``ready_tasks`` — SQL-вьюха (миграция 20260919_0035): новое
+    ребро мгновенно вынимает задачу из plan_ready, task_next_ready,
+    agent_pick и очереди куратора, и события об этом нет.
+    """
+    if not isinstance(note, str) or not note.strip():
+        raise ValueError("note is required: a dependency edge must carry its motivation")
+    if not kind:
+        raise ValueError("kind must be a non-empty string")
+    if task_id == blocker_task_id:
+        raise DependencyCycleError([task_id])
+    note = note.strip()
+    model = _require_task(session, task_id, project_id=project_id)
+    blocker_model = _require_task(session, blocker_task_id, project_id=project_id)
+
+    previous_note = session.execute(
+        select(DependencyModel.note).where(
+            DependencyModel.from_task_id == model.row_id,
+            DependencyModel.to_task_id == blocker_model.row_id,
+            DependencyModel.kind == kind,
+        )
+    ).scalar_one_or_none()
+    op = _upsert_edge(session, model, blocker_model, kind, note, adopt)
+    if op is None:
+        t = TaskRepository(session).get(model.row_id)
+        assert t is not None
+        return DependencyChange(task=t, op=None)
+
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+
+    extra: dict[str, object] = (
+        {"previous_note": previous_note} if op == "update_dependency_note" else {}
+    )
+    rev.write(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff(op, blocker=blocker_task_id, kind=kind, note=note, **extra),
+        reason=reason or op,
+    )
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "task.dependency_added" if op == "add_dependency" else "task.dependency_updated",
+        author,
+        scope_kind="task",
+        scope_id=task_id,
+        payload={
+            "blocker_task_id": blocker_task_id,
+            "kind": kind,
+            "note": note,
+            "op": op,
+            "reason": reason,
+        },
+        summary=f"Task {task_id}: dependency on {blocker_task_id} ({op})",
+    )
+
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return DependencyChange(task=t, op=op)
+
+
+def dependency_warnings(
+    session: Session,
+    *,
+    project_id: int,
+    task_id: str,
+    blocker_task_id: str,
+    kind: str = "blocks",
+) -> list[dict[str, str]]:
+    """Предупреждения о ребре ``task_id → blocker_task_id``; только чтение.
+
+    Отдельная read-функция, а не поле результата `add_dependency`: иначе
+    сканер паритета поверхностей принял бы её за мутацию. Коды по порядку:
+    ``blocker_closed`` (блокер done/cancelled), ``task_in_progress`` (задача
+    in_progress или на checkout), ``cross_plan`` (разные планы),
+    ``transitive`` (блокер достижим от задачи путём длины ≥ 2; прямое ребро
+    из обхода исключено, так что ответ не зависит от того, вставлено ли оно).
+    """
+    model = _require_task(session, task_id, project_id=project_id)
+    blocker_model = _require_task(session, blocker_task_id, project_id=project_id)
+    warnings: list[dict[str, str]] = []
+    if canonical_task_status(blocker_model.status) in {TaskStatus.DONE, TaskStatus.CANCELLED}:
+        warnings.append(
+            {
+                "code": "blocker_closed",
+                "message": f"blocker {blocker_task_id} is already {blocker_model.status}",
+            }
+        )
+    if (
+        canonical_task_status(model.status) == TaskStatus.IN_PROGRESS_NEW
+        or model.checked_out_by is not None
+    ):
+        warnings.append(
+            {
+                "code": "task_in_progress",
+                "message": f"task {task_id} is already in progress",
+            }
+        )
+    if model.plan_id != blocker_model.plan_id:
+        warnings.append(
+            {
+                "code": "cross_plan",
+                "message": f"{task_id} and {blocker_task_id} belong to different plans",
+            }
+        )
+    first_hops = (
+        session.execute(
+            select(DependencyModel.to_task_id).where(
+                DependencyModel.from_task_id == model.row_id,
+                DependencyModel.kind == kind,
+                DependencyModel.to_task_id != blocker_model.row_id,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if any(
+        _reaches(session, start_row_id=hop, target_row_id=blocker_model.row_id, kind=kind)
+        for hop in first_hops
+    ):
+        warnings.append(
+            {
+                "code": "transitive",
+                "message": f"{blocker_task_id} is already reachable from {task_id} transitively",
+            }
+        )
+    return warnings
 
 
 def list_blocked(

@@ -3101,6 +3101,7 @@ _cod-doc() {
     (cod_doc_task_cmd)
       curcontext="${curcontext%:*:*}:cod-doc-task-$words[1]:"
       case $words[1] in
+        (add-dep)    _cod_doc_task_add_dep && ret=0 ;;
         (checkout)   _cod_doc_task_checkout && ret=0 ;;
         (complete)   _cod_doc_task_complete && ret=0 ;;
         (create)     _cod_doc_task_create && ret=0 ;;
@@ -3121,6 +3122,7 @@ _cod-doc() {
 (( $+functions[_cod_doc_task_commands] )) || _cod_doc_task_commands() {
   local -a cmds
   cmds=(
+    'add-dep:Поставить ребро; TASK_ID блокируется BLOCKER_ID, с обязательным not…'
     'checkout:Atomically lock TASK_ID and move it to in-progress.'
     'complete:Complete a task (validates blocking deps are done first).'
     'create:Create a new task in a plan section.'
@@ -3133,6 +3135,23 @@ _cod-doc() {
     'update:Grooming уже созданной задачи; description / acceptance / priority.'
   )
   _describe -t cod-doc-task-commands 'cod-doc task command' cmds
+}
+
+(( $+functions[_cod_doc_task_add_dep] )) || _cod_doc_task_add_dep() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--note)--note=[Мотивация связи — ложится в dependency.note]:note' \
+    '(--author)--author=[Автор ревизии]:author' \
+    '(--reason)--reason=[Причина правки для ревизии]:reason' \
+    '(--adopt)--adopt[Легализовать уже стоящее ребро; ревизия без изменения данных]' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:task-id:_cod_doc_tasks' \
+    '2:blocker-id:_cod_doc_tasks' && ret=0
+  return ret
 }
 
 (( $+functions[_cod_doc_task_checkout] )) || _cod_doc_task_checkout() {

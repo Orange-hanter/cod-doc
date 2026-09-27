@@ -66,6 +66,8 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "task_complete" in tool_names
     # ADO-025: dependency-edge removal surface
     assert "task_remove_dependency" in tool_names
+    # ADO-202: dependency-edge upsert surface
+    assert "task_add_dependency" in tool_names
     assert "doc_list" in tool_names
     assert "doc_get" in tool_names
     assert "doc_section_get" in tool_names
