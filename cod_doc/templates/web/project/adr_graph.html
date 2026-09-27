@@ -16,31 +16,56 @@
   <div>
     <h1>🔁 Supersede DAG</h1>
     <p class="muted">
-      Each arrow points from the <em>new</em> ADR to the <em>old</em> ADR it
-      replaces. Click a node title to open the detail page.
+      Each arrow points from the <em>new</em> ADR to the <em>old</em> one it
+      replaces. Only ADRs with a replacement edge are drawn; the rest are
+      listed below.
     </p>
   </div>
 </header>
 
   {% if has_nodes %}
-    <div class="mermaid">{{ mermaid }}</div>
+    {% if chained %}
+      <section class="task-card">
+        <div class="mermaid">{{ mermaid }}</div>
+        <details>
+          <summary>Mermaid source</summary>
+          <pre><code class="language-mermaid">{{ mermaid }}</code></pre>
+        </details>
+      </section>
 
-    <details>
-      <summary>Mermaid source</summary>
-      <pre><code class="language-mermaid">{{ mermaid }}</code></pre>
-    </details>
-
-    <section class="task-card">
-      <div class="task-card-header"><h2>Nodes</h2><span class="count-chip">{{ graph.nodes|length }}</span></div>
-      <ul class="adr-graph-nodes">
-      {% for n in graph.nodes %}
-        <li>
-          <a href="/p/{{ project.name }}/adr/{{ n.adr_id }}">{{ n.adr_id }}</a>
-          — {{ n.title }} ({{ n.status }})
-        </li>
+      <section class="task-card">
+        <div class="task-card-header"><h2>In a chain</h2><span class="count-chip">{{ chained|length }}</span></div>
+        <ul class="adr-graph-nodes">
+        {% for n in chained %}
+          <li>
+            <a class="mono" href="/p/{{ project.name }}/adr/{{ n.adr_id }}">{{ n.adr_id }}</a>
+            <span class="badge badge-{{ n.status }}">{{ status_icons.get(n.status, "•") }} {{ n.status }}</span>
+            {{ n.title }}
+          </li>
         {% endfor %}
-      </ul>
-    </section>
+        </ul>
+      </section>
+    {% else %}
+      <div class="tasks-empty">
+        <div class="tasks-empty-icon">🔁</div>
+        <p>Ни одно решение ещё не заменяло другое — рисовать нечего.</p>
+      </div>
+    {% endif %}
+
+    {% if standalone %}
+      <section class="task-card">
+        <div class="task-card-header"><h2>Standalone</h2><span class="count-chip">{{ standalone|length }}</span></div>
+        <ul class="adr-graph-nodes">
+        {% for n in standalone %}
+          <li>
+            <a class="mono" href="/p/{{ project.name }}/adr/{{ n.adr_id }}">{{ n.adr_id }}</a>
+            <span class="badge badge-{{ n.status }}">{{ status_icons.get(n.status, "•") }} {{ n.status }}</span>
+            {{ n.title }}
+          </li>
+        {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
   {% else %}
     <div class="tasks-empty">
       <div class="tasks-empty-icon">🔁</div>

@@ -96,6 +96,34 @@ def test_bullet_list() -> None:
     assert "<li>three</li>" in out
 
 
+def test_bullet_item_wrapped_by_width_stays_one_item() -> None:
+    """Перенос пункта по ширине — продолжение пункта, а не новый абзац.
+
+    Так записаны тела ADR (ADR-012): хвост пункта уезжал отдельным абзацем,
+    а следующий пункт открывал второй <ul>.
+    """
+    md = "- `run_id` есть в таблицах:\n  `approval`, `finding`.\n- второй пункт"
+    out = render_markdown(md)
+    assert out.count("<ul>") == 1
+    assert (
+        "<li><code>run_id</code> есть в таблицах:\n<code>approval</code>, <code>finding</code>.</li>"
+        in out
+    )
+    assert "<p>" not in out
+
+
+def test_lazy_continuation_and_ordered_list() -> None:
+    out = render_markdown("1. первый\nхвост первого\n2. второй")
+    assert out.count("<ol>") == 1
+    assert "<li>первый\nхвост первого</li>" in out
+
+
+def test_indented_marker_becomes_sibling_item() -> None:
+    """Вложенность не рендерим, но вложенный пункт — пункт, а не текст."""
+    out = render_markdown("- a\n  - b\n- c")
+    assert "<li>a</li><li>b</li><li>c</li>" in out
+
+
 def test_code_fence_renders_pre_code() -> None:
     md = "```python\ndef f(): pass\n```"
     out = render_markdown(md)

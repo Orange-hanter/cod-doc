@@ -422,6 +422,20 @@ def render_markdown(text: str) -> str:
             ol_items.append(m_ol.group(2))
             i += 1
             continue
+        # Продолжение пункта списка: строка с отступом или «ленивая» строка
+        # без маркера сразу под пунктом (CommonMark). Без этого перенесённый
+        # по ширине пункт рвался — хвост уезжал отдельным абзацем, а
+        # следующий пункт открывал новый <ul>.
+        # Маркер с отступом — вложенный список; вложенность не рендерим, он
+        # становится соседним пунктом, а не текстом предыдущего.
+        if list_items or ol_items:
+            stripped = line.lstrip()
+            if stripped.startswith(("- ", "* ")) or _OL_ITEM.match(stripped):
+                line = stripped
+            else:
+                (list_items or ol_items)[-1] += "\n" + stripped
+                i += 1
+                continue
         # Bullet list?
         if line.startswith(("- ", "* ")):
             flush_paragraph()

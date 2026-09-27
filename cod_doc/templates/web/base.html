@@ -36,11 +36,15 @@
     if (document.querySelector('.mermaid')) {
       const m = await import('{{ mermaid_src }}');
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      // startOnLoad вешается на событие load, а оно к этому моменту уже
+      // прошло: import() выше — await, модуль доисполняется после загрузки
+      // страницы. С ним диаграммы оставались сырым исходником; run() явно.
       m.default.initialize({
-        startOnLoad: true,
+        startOnLoad: false,
         theme: isDark ? 'dark' : 'default',
         securityLevel: 'strict',
       });
+      await m.default.run({ querySelector: '.mermaid' });
     }
   </script>
 

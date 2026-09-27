@@ -14,7 +14,7 @@ Routes:
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -24,7 +24,7 @@ from cod_doc.api.deps import get_project, get_project_db
 from cod_doc.api.web.markdown import autolink_adr_refs, render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import ADRStatus
-from cod_doc.services import adr_service
+from cod_doc.services import adr_service, task_service
 from cod_doc.services.adr_service import ADRAlreadyExistsError, ADRNotFoundError
 
 router = APIRouter()
@@ -42,6 +42,58 @@ _STATUS_ICON = {
     "superseded": "🔁",
     "deprecated": "⚠️",
     "rejected": "❌",
+}
+
+
+#: Статусы, после которых решение больше не действует. Строки таких ADR в
+#: списке приглушены, а карточка открывается баннером «не действует».
+_CLOSED_STATUSES = frozenset({"superseded", "deprecated", "rejected"})
+
+#: Тело ADR в порядке чтения: ключ поля, якорь, заголовок. Один источник и
+#: для секций статьи, и для оглавления в сайдбаре.
+_BODY_FIELDS: tuple[tuple[str, str, str], ...] = (
+    ("context", "context", "Context"),
+    ("decision", "decision", "Decision"),
+    ("alternatives", "alternatives", "Alternatives considered"),
+    ("consequences", "consequences", "Consequences"),
+)
+
+
+def _relations(graph: dict[str, Any]) -> dict[str, dict[str, list[dict[str, Any]]]]:
+    """Рёбра supersede-DAG, разложенные по узлу: кого заменяет и кем заменён.
+
+    Без этого связь видна только на странице графа или из прозы тела:
+    ADR-011 в списке выглядел действующим наравне с заменившим его ADR-012.
+    """
+    titles = {n["adr_id"]: n["title"] for n in graph["nodes"]}
+    out: dict[str, dict[str, list[dict[str, Any]]]] = {
+        n["adr_id"]: {"supersedes": [], "superseded_by": []} for n in graph["nodes"]
+    }
+    for e in graph["edges"]:
+        new, old = e["from"], e["to"]
+        if new in out:
+            out[new]["supersedes"].append(
+                {"adr_id": old, "title": titles.get(old, ""), "reason": e["reason"]}
+            )
+        if old in out:
+            out[old]["superseded_by"].append(
+                {"adr_id": new, "title": titles.get(new, ""), "reason": e["reason"]}
+            )
+    return out
+
+
+#: Длина подписи узла в графе: длиннее — mermaid растягивает прямоугольник
+#: на полэкрана.
+_GRAPH_TITLE_MAX = 40
+
+#: Заливка узлов графа по статусу ADR. Mermaid рисует SVG вне нашего CSS,
+#: поэтому цвета здесь литералами; тон — как у ``.badge-*``.
+_GRAPH_CLASSDEF = {
+    "proposed": "fill:#fef3c7,stroke:#d97706,color:#78350f",
+    "accepted": "fill:#dcfce7,stroke:#16a34a,color:#14532d",
+    "superseded": "fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-dasharray:4 3",
+    "deprecated": "fill:#f1f5f9,stroke:#94a3b8,color:#475569,stroke-dasharray:4 3",
+    "rejected": "fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-dasharray:4 3",
 }
 
 
@@ -71,10 +123,28 @@ def adr_list(
     """ADR-004: list page with status filter + badges."""
     proj = get_project(slug)
     session, project_id = db
-    rows = adr_service.list_for_project(session, project_id, status=status)
+    status = status or None
+    all_rows = adr_service.list_for_project(session, project_id)
+    relations = _relations(adr_service.graph(session, project_id))
+
+    # Фильтр — ссылки-чипы со счётчиками, а не <select>: без JS работает
+    # сам по себе, а число рядом со статусом отвечает «сколько решений ещё
+    # не принято» без перехода. Пустые статусы не показываем, кроме
+    # выбранного — иначе с него не уйти.
+    counts = {s: 0 for s in STATUS_OPTIONS}
+    for r in all_rows:
+        counts[r.status] = counts.get(r.status, 0) + 1
+    status_chips = [
+        {"status": s, "count": counts[s], "icon": _STATUS_ICON.get(s, "•")}
+        for s in STATUS_OPTIONS
+        if counts[s] or s == status
+    ]
 
     items = []
-    for r in rows:
+    for r in all_rows:
+        if status and r.status != status:
+            continue
+        rel = relations.get(r.adr_id, {"supersedes": [], "superseded_by": []})
         items.append(
             {
                 "adr_id": r.adr_id,
@@ -83,6 +153,9 @@ def adr_list(
                 "status_icon": _STATUS_ICON.get(r.status, "•"),
                 "decided_at": r.decided_at,
                 "author": r.author,
+                "closed": r.status in _CLOSED_STATUSES,
+                "supersedes": rel["supersedes"],
+                "superseded_by": rel["superseded_by"],
             }
         )
 
@@ -93,7 +166,8 @@ def adr_list(
             "project": proj.entry,
             "items": items,
             "status_filter": status,
-            "status_options": STATUS_OPTIONS,
+            "status_chips": status_chips,
+            "total": len(all_rows),
         },
     )
 
@@ -168,21 +242,27 @@ def adr_graph_page(
     session, project_id = db
     graph = adr_service.graph(session, project_id)
 
-    # Build mermaid source server-side so the template just renders.
+    # В mermaid идут только узлы с рёбрами. Весь реестр целиком давал граф
+    # из десятка несвязанных прямоугольников, среди которых единственная
+    # стрелка терялась; одиночные решения перечислены списком под графом.
+    linked = {e["from"] for e in graph["edges"]} | {e["to"] for e in graph["edges"]}
+    chained = [n for n in graph["nodes"] if n["adr_id"] in linked]
+    standalone = [n for n in graph["nodes"] if n["adr_id"] not in linked]
+
     lines = ["graph LR"]
-    for node in graph["nodes"]:
+    for node in chained:
         node_id = node["adr_id"].replace("-", "_")
-        icon = _STATUS_ICON.get(node["status"], "•")
-        # Mermaid label: id + status icon + title; keep it short.
+        # Mermaid label: id + title; keep it short.
         title = node["title"].replace('"', "'").replace("\n", " ")
-        if len(title) > 40:
-            title = title[:37] + "…"
-        label = f"{icon} {node['adr_id']}<br/>{title}"
-        lines.append(f'  {node_id}["{label}"]')
+        if len(title) > _GRAPH_TITLE_MAX:
+            title = title[: _GRAPH_TITLE_MAX - 3] + "…"
+        lines.append(f'  {node_id}["{node["adr_id"]}<br/>{title}"]:::{node["status"]}')
     for edge in graph["edges"]:
         from_id = edge["from"].replace("-", "_")
         to_id = edge["to"].replace("-", "_")
-        lines.append(f"  {from_id} --> {to_id}")
+        lines.append(f"  {from_id} -->|replaces| {to_id}")
+    # Цвет узла = статус; палитра повторяет бейджи списка.
+    lines.extend(f"  classDef {status} {style}" for status, style in _GRAPH_CLASSDEF.items())
     mermaid_src = "\n".join(lines)
 
     return templates.TemplateResponse(
@@ -193,6 +273,9 @@ def adr_graph_page(
             "graph": graph,
             "mermaid": mermaid_src,
             "has_nodes": bool(graph["nodes"]),
+            "chained": chained,
+            "standalone": standalone,
+            "status_icons": _STATUS_ICON,
         },
     )
 
@@ -212,16 +295,36 @@ def adr_show(
         raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
     payload = adr_service.adr_to_dict(session, row)
     payload["status_icon"] = _STATUS_ICON.get(payload["status"], "•")
-    payload["context_html"] = _render_prose(payload.get("context"), slug)
-    payload["decision_html"] = _render_prose(payload.get("decision"), slug)
-    payload["alternatives_html"] = _render_prose(payload.get("alternatives"), slug)
-    payload["consequences_html"] = _render_prose(payload.get("consequences"), slug)
+    payload["closed"] = payload["status"] in _CLOSED_STATUSES
+    sections = [
+        {"anchor": anchor, "title": title, "html": _render_prose(payload.get(key), slug)}
+        for key, anchor, title in _BODY_FIELDS
+        if payload.get(key)
+    ]
+    rel = _relations(adr_service.graph(session, project_id)).get(
+        adr_id, {"supersedes": [], "superseded_by": []}
+    )
 
-    # Candidate ADRs for the supersede dropdown (everything except self).
+    # Голый task_id ничего не говорит о связи: без названия и статуса
+    # приходилось открывать каждую задачу. Удалённая задача остаётся в
+    # списке — ссылка из ADR на неё сама по себе факт.
+    task_links = []
+    for link in payload["task_links"]:
+        task = task_service.get(session, link["task_id"])
+        task_links.append(
+            {
+                **link,
+                "title": task.title if task else None,
+                "status": str(task.status) if task else None,
+            }
+        )
+
+    # Кандидаты на замену — только действующие решения: заменить уже
+    # заменённый, отозванный или отклонённый ADR нечего.
     candidates = [
         {"adr_id": r.adr_id, "title": r.title, "status": r.status}
         for r in adr_service.list_for_project(session, project_id)
-        if r.adr_id != adr_id
+        if r.adr_id != adr_id and r.status not in _CLOSED_STATUSES
     ]
 
     return templates.TemplateResponse(
@@ -230,6 +333,10 @@ def adr_show(
         {
             "project": proj.entry,
             "adr": payload,
+            "sections": sections,
+            "supersedes": rel["supersedes"],
+            "superseded_by": rel["superseded_by"],
+            "task_links": task_links,
             "candidates": candidates,
             "status_options": STATUS_OPTIONS,
         },

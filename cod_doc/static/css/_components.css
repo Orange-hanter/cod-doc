@@ -3262,22 +3262,122 @@ details > summary { cursor: pointer; }
   font-size: 13px;
 }
 
-/* Формы: двухколоночный ряд и инлайн-форма деприкации. */
+/* Фильтр списка: чипы-ссылки со счётчиком вместо <select>. */
+.adr-filter { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.adr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 13px;
+  text-decoration: none;
+}
+.adr-chip:hover { border-color: var(--border-strong); text-decoration: none; }
+.adr-chip.is-active { border-color: var(--accent); background: var(--accent-soft-bg); color: var(--accent); }
+.adr-chip-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-alt);
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+/* Непринятые решения — то, что ждёт человека; счётчик подсвечен тоном бейджа. */
+.adr-chip-proposed .adr-chip-count { background: var(--warning-soft-bg); color: var(--warning-soft-fg); }
+
+/* Строка недействующего решения приглушена, но кликабельна. */
+.adr-row-closed td { color: var(--muted); }
+.adr-row-closed td a:not(.adr-row-link) { color: var(--muted); }
+.adr-rel { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 2px; font-size: 12px; color: var(--muted); }
+/* Автор — служебная колонка; длинный `human:git-history-recovery` не должен
+   отжимать заголовок. */
+.adr-col-author { font-size: 12px; white-space: nowrap; }
+
+/* Баннер «решение не действует» над героем. */
+.adr-banner {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--info-border);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--info-soft-bg);
+  color: var(--info-soft-fg);
+}
+.adr-banner-deprecated { border-color: var(--border-strong); background: var(--bg-alt); color: var(--fg); }
+.adr-banner-rejected { border-color: var(--danger-border); background: var(--danger-soft-bg); color: var(--danger-soft-fg); }
+.adr-jump { text-decoration: none; }
+
+/* Карточка: тело слева, липкий сайдбар справа; уже 960px — одна колонка,
+   сайдбар уходит под тело. min-width:0 держит широкие таблицы тела внутри
+   трека (ADO-121/122). */
+.adr-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: var(--space-4);
+  align-items: start;
+  margin-top: var(--space-4);
+}
+.adr-main { min-width: 0; }
+.adr-side {
+  position: sticky;
+  top: calc(var(--topbar-h) + 40px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: calc(100vh - var(--topbar-h) - 56px);
+  overflow-y: auto;
+}
+@media (max-width: 960px) {
+  .adr-layout { grid-template-columns: minmax(0, 1fr); }
+  .adr-side { position: static; max-height: none; }
+}
+.adr-side-block {
+  padding: var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.adr-side-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.adr-side-list { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.5; }
+.adr-side-list li + li { margin-top: var(--space-2); }
+.adr-side-sub { font-size: 12px; line-height: 1.4; }
+
+/* Секции тела — одна карточка с заголовками, а не четыре карточки подряд. */
+.adr-section-title {
+  margin: var(--space-5) 0 var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-soft);
+  font-size: 18px;
+  scroll-margin-top: calc(var(--topbar-h) + 48px);
+}
+.adr-section-title:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* Действия: свёрнутые формы внизу страницы. */
+.adr-action { margin-top: var(--space-3); }
+.adr-action > summary { cursor: pointer; font-weight: 600; }
+.adr-action[open] > summary { margin-bottom: var(--space-3); }
+
+/* Формы: двухколоночный ряд. */
 .adr-form-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: var(--space-3);
 }
-.adr-form-inline {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  margin-top: var(--space-3);
-}
-.adr-reason-inline { flex: 1; min-width: 0; }
-
-/* Заблокированный ADR: карточка-предупреждение, а не обычный блок. */
-.adr-locked { border-left: 3px solid var(--warning-border); }
 
 .adr-diagram { margin-bottom: var(--space-4); }
 .adr-diagram h3 {
@@ -3288,7 +3388,7 @@ details > summary { cursor: pointer; }
   color: var(--muted);
 }
 
-.adr-tasks, .adr-graph-nodes {
+.adr-graph-nodes {
   margin: 0;
   padding-left: var(--space-4);
   line-height: 1.7;

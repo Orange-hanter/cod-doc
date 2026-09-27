@@ -282,7 +282,33 @@ def test_adr_graph_renders_mermaid(adr_client) -> None:  # type: ignore[no-untyp
     assert "ADR_001" in r.text  # node id (dash → underscore)
     assert "ADR_002" in r.text
     # The mermaid edge: literal source has "-->" but Jinja escapes it to "--&gt;".
-    assert ("ADR_002 --> ADR_001" in r.text) or ("ADR_002 --&gt; ADR_001" in r.text)
+    assert "ADR_002 --&gt;|replaces| ADR_001" in r.text
+    # Узел окрашен по статусу через classDef, а не эмодзи в подписи.
+    assert "]:::superseded" in r.text
+    assert "classDef superseded" in r.text
+
+
+def test_adr_graph_draws_only_chained_nodes(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """Одиночные ADR в mermaid не идут — иначе стрелку не найти среди
+    несвязанных прямоугольников; они перечислены блоком «Standalone»."""
+    client, entry = adr_client
+    create = client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Unrelated", "status": "proposed"},
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    client.post(
+        f"/p/{entry.name}/adr/ADR-002/supersede",
+        data={"superseded_adr_id": "ADR-001"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/p/{entry.name}/adr/graph")
+    mermaid = r.text.split('<div class="mermaid">', 1)[1].split("</div>", 1)[0]
+    assert "ADR_001" in mermaid
+    assert "ADR_003" not in mermaid
+    assert "Standalone" in r.text
+    assert f'href="/p/{entry.name}/adr/ADR-003"' in r.text
 
 
 def test_adr_graph_empty_state(adr_client, tmp_path: Path, migrate_db) -> None:  # type: ignore[no-untyped-def]
@@ -317,7 +343,7 @@ def test_adr_list_uses_shared_component_vocabulary(adr_client) -> None:
     client, entry = adr_client
     r = client.get(f"/p/{entry.name}/adr")
     assert 'class="page-header"' in r.text
-    assert 'class="filter-bar"' in r.text
+    assert 'class="filter-bar adr-filter"' in r.text
     assert 'class="grid adr-table"' in r.text
 
 
@@ -335,18 +361,71 @@ def test_adr_list_filter_works_without_js(adr_client) -> None:
 
     До ADO-133 у формы был единственный `<select onchange>` — без submit-кнопки
     и без noscript, так что с выключенным JS фильтр выбирался, но не применялся.
+    Теперь фильтр — обычные ссылки: JS ему не нужен вовсе.
     """
     client, entry = adr_client
     r = client.get(f"/p/{entry.name}/adr")
-    assert "<noscript>" in r.text
-    assert 'type="submit"' in r.text
-    assert f'action="/p/{entry.name}/adr"' in r.text, "у формы должен быть явный action"
+    assert "onchange" not in r.text
+    assert f'href="/p/{entry.name}/adr?status=accepted"' in r.text
+    assert f'href="/p/{entry.name}/adr?status=proposed"' in r.text
 
 
-def test_adr_list_offers_clear_only_when_filtered(adr_client) -> None:
+def test_adr_list_filter_chips_carry_counts(adr_client) -> None:
+    """Счётчик у чипа — распределение по статусам без перехода; пустой
+    статус не показываем, пока он не выбран."""
     client, entry = adr_client
-    assert ">clear<" not in client.get(f"/p/{entry.name}/adr").text
-    assert ">clear<" in client.get(f"/p/{entry.name}/adr?status=accepted").text
+    r = client.get(f"/p/{entry.name}/adr")
+    assert 'all <span class="adr-chip-count">2</span>' in r.text
+    assert 'accepted <span class="adr-chip-count">1</span>' in r.text
+    assert "?status=rejected" not in r.text
+    filtered = client.get(f"/p/{entry.name}/adr?status=rejected").text
+    assert 'href="/p/adr-demo/adr?status=rejected" aria-current="page"' in filtered
+
+
+def test_adr_list_marks_active_chip(adr_client) -> None:
+    client, entry = adr_client
+    unfiltered = client.get(f"/p/{entry.name}/adr").text
+    assert f'href="/p/{entry.name}/adr" aria-current="page"' in unfiltered
+    filtered = client.get(f"/p/{entry.name}/adr?status=accepted").text
+    assert f'href="/p/{entry.name}/adr?status=accepted" aria-current="page"' in filtered
+    assert f'href="/p/{entry.name}/adr" aria-current="page"' not in filtered
+
+
+def test_adr_supersede_relation_visible_on_list_and_detail(adr_client) -> None:
+    """Связь «кем заменён» видна там, где читают, а не только на графе."""
+    client, entry = adr_client
+    client.post(
+        f"/p/{entry.name}/adr/ADR-002/supersede",
+        data={"superseded_adr_id": "ADR-001", "reason": "v2"},
+        follow_redirects=False,
+    )
+    listing = client.get(f"/p/{entry.name}/adr").text
+    assert 'class="adr-row-closed"' in listing
+    assert "replaced by" in listing
+    old = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert "No longer in force." in old
+    assert f'href="/p/{entry.name}/adr/ADR-002"' in old
+    new = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "Replaces ADR-001" in new
+    assert "No longer in force." not in new
+
+
+def test_adr_show_task_link_to_missing_task_is_kept(adr_client) -> None:
+    """Ссылка из ADR на задачу, которой нет в БД, не роняет страницу и не
+    пропадает: сама ссылка — факт, а название подставить неоткуда."""
+    client, entry = adr_client
+    engine = make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db")
+    with transactional(make_session_factory(engine)) as session:
+        proj = ProjectRepository(session).get_by_slug("adr-demo")
+        assert proj is not None
+        assert proj.row_id is not None
+        adr_service.link_task(session, project_id=proj.row_id, adr_id="ADR-001", task_id="ADO-999")
+    engine.dispose()
+
+    r = client.get(f"/p/{entry.name}/adr/ADR-001")
+    assert r.status_code == 200
+    assert f'href="/p/{entry.name}/tasks/ADO-999"' in r.text
+    assert "task not found" in r.text
 
 
 def test_adr_list_row_and_title_are_clickable(adr_client) -> None:
