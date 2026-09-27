@@ -315,6 +315,92 @@ def revision_list(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# revision summary
+# ──────────────────────────────────────────────────────────────────────────────
+
+_GROUP_BY_CHOICES = ["day", "entity_kind", "author"]
+
+
+@revision.command("summary")
+@click.option("--project", "-p", required=True, help="Project slug")
+@click.option(
+    "--since",
+    required=True,
+    help="ISO-8601: ревизии не раньше момента, напр. 2026-09-26",
+)
+@click.option(
+    "--until",
+    default=None,
+    help="ISO-8601: ревизии не позже момента (по умолчанию — без верхней границы)",
+)
+@click.option(
+    "--group-by",
+    "group_by",
+    multiple=True,
+    type=click.Choice(_GROUP_BY_CHOICES),
+    default=("entity_kind",),
+    show_default=True,
+    help="Ключи агрегации; повторяйте опцию для нескольких",
+)
+@click.option("--json", "as_json", is_flag=True, default=False)
+@click.pass_context
+def revision_summary(
+    ctx: click.Context,
+    project: str,
+    since: str,
+    until: str | None,
+    group_by: tuple[str, ...],
+    as_json: bool,
+) -> None:
+    """Агрегаты ревизий (GROUP BY) за период.
+
+    \b
+    Ревизии за сегодня по видам сущностей:
+      cod-doc revision summary -p X --since 2026-09-26 --json
+    Сумма n равна длине `revision list --all` за тот же период.
+    """
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import revision_service, task_service
+
+    try:
+        since_dt = task_service.parse_since(since)
+        until_dt = task_service.parse_since(until) if until else None
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from None
+
+    cfg: Config = ctx.obj["config"]
+    sf = _make_session(project, cfg)
+
+    with transactional(sf) as session:
+        project_id = _require_project_id(session, project)
+        try:
+            rows = revision_service.summarize(
+                session, project_id, since=since_dt, until=until_dt, group_by=group_by
+            )
+        except ValueError as exc:
+            raise click.UsageError(str(exc)) from None
+
+    if as_json:
+        click.echo(_json.dumps(rows, indent=2, ensure_ascii=False))
+        return
+
+    if not rows:
+        console.print("[dim]No revisions found.[/dim]")
+        return
+
+    table = Table(title=f"Revision summary — project {project}", show_header=True)
+    for key in group_by:
+        table.add_column(key)
+    table.add_column("n", justify="right")
+    total = 0
+    for row in rows:
+        total += int(row["n"])
+        table.add_row(*[str(row.get(key) or "—") for key in group_by], str(row["n"]))
+    table.add_row("итого", *[""] * (len(group_by) - 1), str(total), style="bold")
+    console.print(table)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # revision show
 # ──────────────────────────────────────────────────────────────────────────────
 

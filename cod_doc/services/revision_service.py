@@ -17,9 +17,9 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from ulid import ULID
 
 from cod_doc.domain.entities import EntityKind, Revision, TaskStatus
@@ -28,7 +28,7 @@ from cod_doc.infra.models import RevisionModel, SectionModel, TaskModel
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from sqlalchemy.orm import Session
+    from sqlalchemy.orm import InstrumentedAttribute, Session
 
 
 class RevisionConflictError(RuntimeError):
@@ -235,6 +235,7 @@ def list_for_project(
     entity_kind: EntityKind | None = None,
     entity_id: int | None = None,
     since: datetime | None = None,
+    until: datetime | None = None,
     author: str | None = None,
 ) -> list[Revision]:
     """Newest-first revisions of a project, optionally narrowed by filters.
@@ -244,8 +245,8 @@ def list_for_project(
     and `entity_id` are passed, behaves like `list_for_entity` but order is
     flipped to newest-first to match the timeline UX. `since` filters to
     revisions with `at >= since`; datetimes are compared in UTC — callers
-    pass values normalized by `task_service.parse_since`. `author` filters
-    by exact equality.
+    pass values normalized by `task_service.parse_since`. `until` filters to
+    revisions with `at <= until`. `author` filters by exact equality.
     """
     stmt = select(RevisionModel).where(RevisionModel.project_id == project_id)
     if entity_kind is not None:
@@ -254,10 +255,72 @@ def list_for_project(
         stmt = stmt.where(RevisionModel.entity_id == entity_id)
     if since is not None:
         stmt = stmt.where(RevisionModel.at >= since)
+    if until is not None:
+        stmt = stmt.where(RevisionModel.at <= until)
     if author is not None:
         stmt = stmt.where(RevisionModel.author == author)
     stmt = stmt.order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc()).limit(limit)
     return [_to_domain(m) for m in session.execute(stmt).scalars()]
+
+
+REVISION_SUMMARY_GROUP_BY: tuple[str, ...] = ("day", "entity_kind", "author")
+
+_SIMPLE_GROUP_COLUMNS: dict[str, InstrumentedAttribute[str]] = {
+    "entity_kind": RevisionModel.entity_kind,
+    "author": RevisionModel.author,
+}
+
+
+def summarize(
+    session: Session,
+    project_id: int,
+    *,
+    since: datetime,
+    until: datetime | None = None,
+    group_by: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Aggregate revisions with a single GROUP BY query (RFC 27 F9, N7).
+
+    Находка N7 аудита agent-fit (AFT-008): «ревизии за сегодня по видам
+    сущностей» — один вызов вместо выгрузки ленты и группировки на клиенте,
+    как ``activity_service.summarize`` для событий. Фильтры совпадают с
+    :func:`list_for_project` (``project_id``/``since``/``until``), поэтому
+    сумма ``n`` равна длине ленты за тот же период при достаточном limit.
+    Функция только читает: revision/activity не пишет.
+    """
+    if (
+        not group_by
+        or len(set(group_by)) != len(group_by)
+        or any(key not in REVISION_SUMMARY_GROUP_BY for key in group_by)
+    ):
+        allowed = ", ".join(REVISION_SUMMARY_GROUP_BY)
+        raise ValueError(f"invalid group_by {list(group_by)!r}; допустимые ключи: {allowed}")
+
+    columns: list[Any] = []
+    for key in group_by:
+        if key == "day":
+            columns.append(func.date(RevisionModel.at).label("day"))
+        else:
+            columns.append(_SIMPLE_GROUP_COLUMNS[key])
+
+    stmt = (
+        select(*columns, func.count().label("n"))
+        .where(RevisionModel.project_id == project_id)
+        .where(RevisionModel.at >= since)
+    )
+    if until is not None:
+        stmt = stmt.where(RevisionModel.at <= until)
+    stmt = stmt.group_by(*columns).order_by(*columns)
+
+    result: list[dict[str, Any]] = []
+    for row in session.execute(stmt).mappings():
+        item: dict[str, Any] = {}
+        for key in group_by:
+            value = row[key]
+            item[key] = str(value) if key == "day" else value
+        item["n"] = int(row["n"])
+        result.append(item)
+    return result
 
 
 class RevertNotSupportedError(NotImplementedError):
