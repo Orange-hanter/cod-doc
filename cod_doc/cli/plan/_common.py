@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json as _json
 import sys
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 import click
@@ -13,6 +14,9 @@ from rich.table import Table
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from contextlib import AbstractContextManager
+
     from sqlalchemy.orm import Session, sessionmaker
 
     from cod_doc.config import Config
@@ -43,6 +47,57 @@ def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
         sys.exit(1)
     factory, _engine = db_for_entry(entry)
     return factory
+
+
+def _project_id(session: Session, project: str) -> int:
+    """Слаг → ``project.row_id``; нет проекта в БД — сообщение и exit 1.
+
+    Тот же резолв, что фаза 1 ``task add-dep``. Импорт ленивый: модуль
+    ``cod_doc.cli.task`` тянет ``infra`` только в телах функций (ADO-179).
+    """
+    from cod_doc.cli.task import _require_project_id
+
+    return _require_project_id(session, project)
+
+
+def _fail(message: str) -> None:
+    """Печать ошибки красным и выход без трейсбека."""
+    console.print(message, style="red", markup=False)
+    sys.exit(1)
+
+
+def _guard() -> AbstractContextManager[None]:
+    """Перевести ошибки plan-сервиса и валидации в человеческое сообщение.
+
+    Образец — ``cli/doc/cmd_tree.py::_guard``. Ставится снаружи
+    ``transactional``: исключение сначала откатывает транзакцию, потом
+    превращается в сообщение и exit 1.
+    """
+    from cod_doc.services.plan_service import (
+        PlanAlreadyExistsError,
+        SectionAlreadyExistsError,
+        SectionHasTasksError,
+    )
+    from cod_doc.services.validation import ValidationError
+
+    @contextmanager
+    def _cm() -> Iterator[None]:
+        try:
+            yield
+        except ValidationError as exc:
+            _fail(f"Validation error: {exc}")
+        except (PlanAlreadyExistsError, SectionAlreadyExistsError) as exc:
+            _fail(str(exc))
+        except SectionHasTasksError as exc:
+            _fail(f"В секции {exc.letter} задач: {exc.task_count}. Передай --reassign-to <буква>.")
+        except LookupError as exc:
+            # PlanNotFoundError, SectionNotFoundError и прочие «не найдено».
+            _fail(str(exc))
+        except ValueError as exc:
+            # reason, аргументы move, цикл — текст сервиса уже для человека.
+            _fail(str(exc))
+
+    return _cm()
 
 
 def _require_plan_id(session: Session, plan_scope: str) -> int:

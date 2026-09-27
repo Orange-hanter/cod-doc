@@ -110,9 +110,39 @@ def test_cli_add_dep_json(tmp_path: Path) -> None:
         "task_id": "TA-002",
         "blocker_id": "TA-001",
         "op": "add_dependency",
+        "kind": "blocks",
         "warnings": [],
     }
     assert _edges() == [("TA-002", "TA-001", "blocks", "x")]
+
+
+def test_cli_add_dep_kind(tmp_path: Path) -> None:
+    """--kind доходит до dependency.kind и возвращается в JSON."""
+    _seed(tmp_path)
+    result = _add_dep(["TA-002", "TA-001", "--note", "x", "--kind", "relates", "--json"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert data["kind"] == "relates"
+    assert data["op"] == "add_dependency"
+    assert _edges() == [("TA-002", "TA-001", "relates", "x")]
+
+
+def test_cli_add_dep_kind_default(tmp_path: Path) -> None:
+    """Без --kind ребро получает kind 'blocks'."""
+    _seed(tmp_path)
+    result = _add_dep(["TA-002", "TA-001", "--note", "x", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["kind"] == "blocks"
+    assert _edges() == [("TA-002", "TA-001", "blocks", "x")]
+
+
+def test_cli_add_dep_empty_kind(tmp_path: Path) -> None:
+    """Пустой --kind — отказ сервиса сообщением: exit 1, без трейсбека, ребра нет."""
+    _seed(tmp_path)
+    result = _add_dep(["TA-002", "TA-001", "--note", "x", "--kind", ""])
+    assert result.exit_code == 1, result.output
+    assert "Traceback" not in result.output
+    assert len(_edges()) == 0
 
 
 def test_cli_add_dep_repeat_and_adopt(tmp_path: Path) -> None:

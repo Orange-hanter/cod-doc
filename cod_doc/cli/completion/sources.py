@@ -134,6 +134,27 @@ COMPLETION_QUERIES: Final[dict[str, str]] = {
          order by b.task_id
          limit {QUERY_LIMIT};
     """,
+    # `task add-dep TASK_ID BLOCKER_ID` ставит НОВОЕ ребро — множество обратное
+    # task_blockers: задачи, которые первой ещё НЕ блокируют. Направление то
+    # же: from = задача, to = блокер. EXTRA_FILTER стоит внутри подзапроса
+    # NOT EXISTS и несёт владельца (t.task_id) и kind (d.kind): без него
+    # подзапрос выбросил бы всех, кто блокирует хоть кого-нибудь.
+    "task_blocker_candidates": f"""
+        select b.task_id || ':' || b.status || ' · ' ||
+               replace(replace(replace(b.title, ':', ' -'), char(10), ' '), char(9), ' ')
+          from task b
+          join project p on p.row_id = b.project_id
+         where 1=1 {PROJECT_FILTER}
+           and not exists (
+               select 1
+                 from dependency d
+                 join task t on t.row_id = d.from_task_id
+                where d.to_task_id = b.row_id
+                  and t.project_id = b.project_id {EXTRA_FILTER}
+           )
+         order by b.task_id
+         limit {QUERY_LIMIT};
+    """,
     "revisions": f"""
         select r.revision_id || ':' || r.entity_kind || ' · ' ||
                replace(replace(coalesce(r.reason, ''), ':', ' -'), char(10), ' ')
@@ -190,7 +211,19 @@ PATH_SOURCES: Final[dict[tuple[str, str], str]] = {
     # предлагает тот же список вместе с уже набранным значением, а такой
     # вызов CLI гарантированно отвергнет.
     ("task remove-dep", "blocker_id"): f"{_P}_task_blockers",
+    # add-dep — противоположное множество: remove-dep снимает существующее
+    # ребро, add-dep ставит новое, так что источник remove-dep тут вреден.
+    ("task add-dep", "blocker_id"): f"{_P}_task_blocker_candidates",
     ("adr supersede", "superseded_adr_id"): f"{_P}_adrs_other",
+    # `plan section update|move|rm PLAN_SCOPE LETTER`: буква — существующая
+    # секция, сужаем по позиционному плану. Дест `letter` не в PARAM_SOURCES:
+    # у `plan section create` та же буква вводит новую секцию.
+    ("plan section update", "letter"): f"{_P}_plan_section_letters",
+    ("plan section move", "letter"): f"{_P}_plan_section_letters",
+    ("plan section rm", "letter"): f"{_P}_plan_section_letters",
+    ("plan section move", "before"): f"{_P}_plan_section_letters",
+    ("plan section move", "after"): f"{_P}_plan_section_letters",
+    ("plan section rm", "reassign_to"): f"{_P}_plan_section_letters",
     # Пути, объявленные как обычный str (click.Path разбирается сам).
     ("project add", "path"): "_files -/",
     ("hash calc", "file_path"): "_files",
@@ -217,6 +250,8 @@ NO_COMPLETE: Final[frozenset[tuple[str, str]]] = frozenset(
         ("scenario new", "scenario_id"),  # --id
         ("project add", "name"),  # --name/-n
         ("adapter add", "name"),  # позиционный NAME
+        ("plan create", "scope"),  # позиционный SCOPE
+        ("plan section create", "letter"),  # позиционный LETTER
     }
 )
 

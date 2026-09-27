@@ -80,6 +80,10 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     # PCA-901: plan-create surface
     assert "plan_create" in tool_names
     assert "plan_section_create" in tool_names
+    # ADO-203: section edit/move/delete surface
+    assert "plan_section_update" in tool_names
+    assert "plan_section_move" in tool_names
+    assert "plan_section_delete" in tool_names
     # PCA-010: heartbeat-context surface
     assert "task_heartbeat_context" in tool_names
     # PCA-032: run-id audit trail
