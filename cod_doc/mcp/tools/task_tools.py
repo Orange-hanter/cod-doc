@@ -730,6 +730,7 @@ def register(mcp: FastMCP) -> None:
         to=blocker_id). Raises if either task is unknown or no such edge
         exists (not idempotent). Writes a TASK revision
         (op=remove_dependency) and emits ``task.dependency_removed``.
+        Inverse operation — ``task_add_dependency``.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
@@ -752,6 +753,63 @@ def register(mcp: FastMCP) -> None:
         except DependencyNotFoundError as exc:
             raise ValueError(str(exc)) from None
         return task_to_dict(t)
+
+    @mcp.tool(name="task_add_dependency")
+    def task_add_dependency(
+        project: str,
+        task_id: str,
+        blocker_id: str,
+        note: str,
+        author: str = "mcp",
+        reason: str | None = None,
+        adopt: bool = False,
+    ) -> dict[str, Any]:
+        """Add a task→task ``dependency`` edge (task ← blocked by ← blocker) with a note.
+
+        Upsert (RFC 26 §3.2, ADO-202): no edge — create it (op=add_dependency);
+        edge exists with a different ``note`` — update it
+        (op=update_dependency_note); edge exists with the same note — no-op
+        (op=None, no revision, no event); ``adopt=True`` on a match writes a
+        revision without changing data (op=adopt_dependency) — legalises an
+        edge written outside the app.
+
+        ``note`` is required, also with ``adopt``: the motivation of the edge.
+        Refuses an edge that would close a cycle (the error names the path)
+        and a self-loop; both tasks must belong to ``project``.
+
+        The edge instantly removes the task from ``plan_ready``,
+        ``task_next_ready`` and ``agent_pick`` (``ready_tasks`` is an SQL view).
+        Response — the task plus ``op`` and ``warnings`` (list of
+        ``{code, message}``: blocker_closed, task_in_progress, cross_plan,
+        transitive; may be empty). Inverse operation — ``task_remove_dependency``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import task_service
+        from cod_doc.services.task_service import TaskNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                change = task_service.add_dependency(
+                    session,
+                    project_id=project_id,
+                    task_id=task_id,
+                    blocker_task_id=blocker_id,
+                    note=note,
+                    author=author,
+                    reason=reason,
+                    adopt=adopt,
+                )
+                warnings = task_service.dependency_warnings(
+                    session,
+                    project_id=project_id,
+                    task_id=task_id,
+                    blocker_task_id=blocker_id,
+                )
+        except TaskNotFoundError as exc:
+            raise ValueError(f"Task '{exc}' not found.") from None
+        return {**task_to_dict(change.task), "op": change.op, "warnings": warnings}
 
     @mcp.tool(name="task_list_blocked")
     def task_list_blocked(
