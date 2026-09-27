@@ -76,6 +76,25 @@ def test_parse_markdown_with_anchor() -> None:
     assert parsed[0].anchor == "data-model"
 
 
+def test_parse_markdown_percent_encoded_path() -> None:
+    # A doc key with spaces cannot sit raw in a link the web UI renders (its
+    # link regex stops at whitespace), so authors write %20. The key must be
+    # decoded, or the link is reported broken although the web page opens.
+    parsed = links.parse("See [M4](../Modules/M4%20Partner%20Bridge/partner-requests).")
+    assert len(parsed) == 1
+    assert parsed[0].kind is LinkKind.MARKDOWN
+    assert parsed[0].target_doc_key == "Modules/M4 Partner Bridge/partner-requests"
+
+
+def test_parse_markdown_percent_encoded_anchor() -> None:
+    parsed = links.parse(
+        "See [x](Open%20Questions.md#%D0%BE%D1%82%D0%BA%D1%80%D1%8B%D1%82%D1%8B%D0%B5)."
+    )
+    assert len(parsed) == 1
+    assert parsed[0].target_doc_key == "Open Questions"
+    assert parsed[0].anchor == "открытые"
+
+
 def test_parse_url() -> None:
     parsed = links.parse("Tracking issue: https://github.com/x/y/issues/1.")
     assert len(parsed) == 1
