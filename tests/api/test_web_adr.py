@@ -615,3 +615,21 @@ def test_adr_list_flags_accepted_without_date(adr_client) -> None:  # type: igno
     )
     r = client.get(f"/p/{entry.name}/adr").text
     assert r.count('class="adr-date-missing"') == 1, "proposed без даты — норма, не пробел"
+
+
+# ── ADO-233: mermaid без CDN ────────────────────────────────────────────
+
+
+def test_mermaid_loads_from_vendored_static(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    client.post(
+        f"/p/{entry.name}/adr/ADR-002/supersede",
+        data={"superseded_adr_id": "ADR-001"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/p/{entry.name}/adr/graph").text
+    assert '"/static/vendor/mermaid.min.js?v=' in r
+    assert "cdn.jsdelivr.net/npm/mermaid" not in r
+    asset = client.get("/static/vendor/mermaid.min.js")
+    assert asset.status_code == 200
+    assert 'globalThis["mermaid"]' in asset.text

@@ -1128,6 +1128,14 @@ a.nav-card-title:hover { color: var(--accent); }
   border-radius: var(--radius-md);
   overflow-x: auto;
 }
+/* ADO-233: библиотека не загрузилась — исходник схемы, как код. */
+.mermaid-fallback {
+  margin: 0;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre;
+}
 
 /* ── Revisions list ───────────────────────────────────────────────────── */
 .rev-list { list-style: none; padding: 0; margin: 0; }
