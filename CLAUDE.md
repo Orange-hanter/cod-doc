@@ -141,7 +141,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   STO-017): сканер `tests/services/_surface_parity.py` находит write-функции
   по AST и требует вызова из `cod_doc/mcp/` и `cod_doc/cli/`; его зовут
   `test_task_mutation_surface_parity.py` (`task_service`, `story_service/`) и
-  `test_doc_mutation_surface_parity.py` (`doc_service`). Ловится отсутствие
+  `test_doc_mutation_surface_parity.py` (`doc_service`) и
+  `test_plan_mutation_surface_parity.py` (`plan_service`, ADO-209). Ловится отсутствие
   функции на поверхности, но **не** расхождение сигнатур: одноимённый тул с
   другим набором параметров тест пройдёт.
 - **Исключение из «четырёх поверхностей» — `cod-doc update` (ADO-192).** На MCP
@@ -306,6 +307,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_swap_boundary_imports.py` | границу свапа рантайма: `runtime_service`/`launchd_service` импортируют только stdlib, а у `update_service` нет ленивых импортов (инверсия правила ADO-179) |
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
 | `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017) и `doc_tree_service` (ADO-116); незакрытый долг — `update_status` и `delete`, каждый с обоснованием |
+| `services/test_plan_mutation_surface_parity.py` | то же для `plan_service` (ADO-209): секции и планы на MCP и CLI; `freeze_projection` вне спеки — пишет через `doc_service` |
 | `services/test_migration_0035_preserves_data.py` | миграция не теряет секции и ссылки: наливает данные на предыдущей ревизии, потом гонит upgrade. На пустой БД такая потеря не видна |
 | `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
 | `cli/test_zsh_completion_queries.py` | SQL дополнения выполняется на свежей схеме (ловит переименование колонки) |
