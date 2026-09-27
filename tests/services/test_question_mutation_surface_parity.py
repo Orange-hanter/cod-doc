@@ -37,6 +37,7 @@ MUTATIONS = frozenset(
         "remove_option",
         "link",
         "unlink",
+        "import_document",
     }
 )
 
@@ -53,6 +54,8 @@ SPEC = ServiceSpec(
             "linked_questions",
             "open_questions_for_context",
             "code_excerpt",
+            "plan_import",
+            "import_result_to_dict",
             "check_edge",
             "verify_links",
             "broken_links",
@@ -102,4 +105,5 @@ def test_discovered_mutations_exact() -> None:
         "remove_option",
         "link",
         "unlink",
+        "import_document",
     }

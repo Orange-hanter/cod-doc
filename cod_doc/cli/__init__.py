@@ -58,7 +58,7 @@ cod-doc obligation export — экспортировать obligations_export.v1
 cod-doc structure latest|get|drift|triage|entities|contracts|scenarios
 cod-doc ctx structure     — pinned SHA structure_context
 cod-doc scenario new|list|show|update|retire|steps|link|unlink|export|coverage
-cod-doc question new|list|show|edit|resolve|drop|reopen|option|link|unlink|verify
+cod-doc question new|list|show|edit|resolve|drop|reopen|option|link|unlink|verify|import
 
 cod-doc import docs      — импорт .md/.rst/.txt из репо как Documents
 cod-doc import legacy-tasks — миграция .cod-doc/tasks.yaml в DB

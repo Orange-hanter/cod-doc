@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
     from cod_doc.domain.entities import OpenQuestion, QuestionLink, QuestionOption
 
+    from .import_doc import ImportResult
+
 
 def _iso(value: datetime | None) -> str | None:
     """ISO-8601 в UTC. SQLite отдаёт время без таймзоны, объект из identity map —
@@ -70,4 +72,31 @@ def question_to_dict(session: Session, q: OpenQuestion) -> dict[str, Any]:
         "author": q.author,
         "options": [option_to_dict(o) for o in list_options(session, q.row_id)],
         "links": [link_to_dict(e) for e in list_links(session, q.row_id)],
+    }
+
+
+def import_result_to_dict(result: ImportResult) -> dict[str, Any]:
+    """План импорта и что с ним сделано — одна форма для MCP и CLI ``--json``."""
+    plan = result.plan
+    return {
+        "doc_key": plan.doc_key,
+        "mode": plan.mode,
+        "file_path": plan.file_path,
+        "incoming_links": plan.incoming_links,
+        "skipped_links": plan.skipped_links,
+        "questions": [
+            {
+                "title": q.title,
+                "status": q.status.value,
+                "owner": q.owner,
+                "options": [title for title, _ in q.options],
+                "links": [f"{r.value} → {k.value}:{ref}" for k, ref, r in q.links],
+                "context_chars": len(q.context or ""),
+                "warnings": q.warnings,
+            }
+            for q in plan.questions
+        ],
+        "created": result.created,
+        "document_deleted": result.document_deleted,
+        "file_deleted": result.file_deleted,
     }

@@ -425,3 +425,40 @@ def register(mcp: FastMCP) -> None:  # noqa: C901 — один register на с�
                     for b in report.broken_links
                 ],
             }
+
+    @mcp.tool(name="question_import")
+    def question_import(
+        project: str,
+        doc_key: str,
+        dry_run: bool = True,
+        keep_doc: bool = False,
+        author: str = "mcp",
+    ) -> dict[str, Any]:
+        """Move a legacy ``type: open-question`` document into question rows.
+
+        **dry_run defaults to true**: the apply step deletes the document from
+        the DB and its markdown file from disk. Review the plan, then call
+        again with ``dry_run=false``.
+
+        A registry document (many ``### OQ-NNN`` items) becomes one question
+        per item; a single-question document maps its Question section,
+        ``### Option …`` headings, navigation links and blocked tasks.
+        Sections that look like a decision are reported in ``warnings`` —
+        the question stays open for a human to resolve. ``incoming_links``
+        counts links from other documents that will break.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import question_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            result = question_service.import_document(
+                session,
+                project_id=project_id,
+                doc_key=doc_key,
+                author=author,
+                dry_run=dry_run,
+                delete_document=not keep_doc,
+            )
+            return question_service.import_result_to_dict(result)

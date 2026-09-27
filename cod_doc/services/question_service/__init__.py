@@ -23,6 +23,15 @@ from ._types import (
     VerifyReport,
 )
 from .crud import create, drop, get, list_for_project, reopen, resolve, update
+from .import_doc import (
+    AlreadyImportedError,
+    ImportPlan,
+    ImportResult,
+    NotAQuestionDocumentError,
+    PlannedQuestion,
+    import_document,
+    plan_import,
+)
 from .links import (
     link,
     linked_questions,
@@ -32,11 +41,22 @@ from .links import (
     unlink,
 )
 from .options import add_option, list_options, remove_option, update_option
-from .serialize import link_to_dict, option_to_dict, question_summary, question_to_dict
+from .serialize import (
+    import_result_to_dict,
+    link_to_dict,
+    option_to_dict,
+    question_summary,
+    question_to_dict,
+)
 from .verify import broken_links, check_edge, code_excerpt, verify_links
 
 __all__ = [
+    "AlreadyImportedError",
+    "ImportPlan",
+    "ImportResult",
     "LinkCheck",
+    "NotAQuestionDocumentError",
+    "PlannedQuestion",
     "QuestionAlreadyExistsError",
     "QuestionNotFoundError",
     "QuestionOptionNotFoundError",
@@ -49,6 +69,8 @@ __all__ = [
     "create",
     "drop",
     "get",
+    "import_document",
+    "import_result_to_dict",
     "link",
     "link_to_dict",
     "linked_questions",
@@ -57,6 +79,7 @@ __all__ = [
     "list_options",
     "open_questions_for_context",
     "option_to_dict",
+    "plan_import",
     "question_summary",
     "question_to_dict",
     "questions_for_targets",

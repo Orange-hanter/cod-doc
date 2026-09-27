@@ -25,6 +25,7 @@ QUESTION_TOOLS = {
     "question_option_remove",
     "question_link",
     "question_verify",
+    "question_import",
 }
 
 

@@ -154,3 +154,37 @@ def test_task_create_addresses(root: Path) -> None:
     result = runner.invoke(main, [*base, "--title", "Other", "--addresses", "Q-404"])
     assert result.exit_code == 1
     assert "question 'Q-404' not found" in result.output
+
+
+def test_import_asks_before_deleting_and_mcp_defaults_to_dry_run(root: Path) -> None:
+    from cod_doc.mcp.server import mcp
+
+    doc = root / "docs" / "oq-x.md"
+    doc.parent.mkdir()
+    doc.write_text(
+        "---\ntype: open-question\nowner: team\n---\n\n# OQ — X?\n\n"
+        "## Question\n\nX или Y?\n\n## Options\n\n### Option A: X\n\nx\n",
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    result = runner.invoke(main, ["import", "docs", "-p", "p"])
+    assert result.exit_code == 0, result.output
+
+    plan = mcp._tool_manager._tools["question_import"].fn(project="p", doc_key="docs/oq-x")
+    assert plan["created"] == []
+    assert plan["questions"][0]["options"] == ["Option A: X"]
+    assert doc.exists()
+
+    declined = runner.invoke(main, ["question", "import", "docs/oq-x", "-p", "p"], input="n\n")
+    assert declined.exit_code == 1
+    assert "would create 1 question" in declined.output
+    assert doc.exists()
+
+    code, out = _run("import", "docs/oq-x", "-p", "p", "--yes", "--json")
+    assert code == 0, out
+    payload = json.loads(out)
+    assert payload["created"] == ["Q-001"]
+    assert payload["document_deleted"] and payload["file_deleted"]
+    assert not doc.exists()
+    code, out = _run("import", "docs/oq-x", "-p", "p", "--yes")
+    assert code == 1
