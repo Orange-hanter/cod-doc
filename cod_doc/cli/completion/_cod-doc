@@ -2348,10 +2348,11 @@ _cod-doc() {
     (cod_doc_revision_cmd)
       curcontext="${curcontext%:*:*}:cod-doc-revision-$words[1]:"
       case $words[1] in
-        (list)   _cod_doc_revision_list && ret=0 ;;
-        (revert) _cod_doc_revision_revert && ret=0 ;;
-        (show)   _cod_doc_revision_show && ret=0 ;;
-        (*)      _default && ret=0 ;;
+        (list)    _cod_doc_revision_list && ret=0 ;;
+        (revert)  _cod_doc_revision_revert && ret=0 ;;
+        (show)    _cod_doc_revision_show && ret=0 ;;
+        (summary) _cod_doc_revision_summary && ret=0 ;;
+        (*)       _default && ret=0 ;;
       esac
       ;;
   esac
@@ -2364,6 +2365,7 @@ _cod-doc() {
     'list:List revision history for an entity — or the project feed with --al…'
     'revert:Revert a revision (creates an inverse revision; history is append-o…'
     'show:Show a single revision (including its diff).'
+    'summary:Агрегаты ревизий (GROUP BY) за период.'
   )
   _describe -t cod-doc-revision-commands 'cod-doc revision command' cmds
 }
@@ -2407,6 +2409,20 @@ _cod-doc() {
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' \
     '1:revision-id:_cod_doc_revisions' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_revision_summary] )) || _cod_doc_revision_summary() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--since)--since=[ISO-8601; ревизии не раньше момента, напр. 2026-09-26]:since' \
+    '(--until)--until=[ISO-8601; ревизии не позже момента (по умолчанию — без верхней гран…]:until' \
+    '*--group-by=[Ключи агрегации; повторяйте опцию для нескольких]:group-by:(day entity_kind author)' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
   return ret
 }
 

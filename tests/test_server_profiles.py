@@ -114,8 +114,8 @@ def test_keep_tool_pure_logic() -> None:
 EXPECTED_PROFILE_COUNTS = {
     "agent": 6,
     "minimal": 21,
-    "standard": 150,
-    "full": 154,
+    "standard": 151,
+    "full": 155,
 }
 
 

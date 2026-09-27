@@ -107,8 +107,8 @@ def register(mcp: FastMCP) -> None:
         optional filters since (ISO date), author, entity_kind. Rows carry
         revision_id, entity_kind, entity_id, author, at, reason — no diff
         (fetch it via revision_get). RFC 27 F9: «ревизии за сегодня» —
-        revision_list(project, since='2026-09-26', limit=200), группировка
-        по entity_kind на стороне клиента.
+        revision_list(project, since='2026-09-26', limit=200); агрегат по
+        entity_kind/author/day за период одним вызовом — revision_summary.
         """
         from cod_doc.domain.entities import EntityKind
         from cod_doc.infra.db import transactional
@@ -170,6 +170,38 @@ def register(mcp: FastMCP) -> None:
             }
             for r in revisions
         ]
+
+    @mcp.tool(name="revision_summary")
+    def revision_summary(
+        project: str,
+        since: str,
+        until: str | None = None,
+        group_by: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Aggregate revisions by day/entity_kind/author over a period in one call.
+
+        Rows: [{<group keys>, n}] — e.g. [{'entity_kind': 'task', 'n': 2}, …].
+        group_by keys: day | entity_kind | author (default: ['entity_kind']).
+        since/until — ISO-8601, bare date = midnight UTC (same parsing as
+        revision_list's since). «Ревизии за сегодня по видам сущностей» —
+        revision_summary(project, since='2026-09-26'). Sum of n equals the
+        length of revision_list(project, since=…) without kind/ref, given a
+        large enough limit.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import revision_service
+        from cod_doc.services.task_service import parse_since
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            return revision_service.summarize(
+                session,
+                project_id,
+                since=parse_since(since),
+                until=parse_since(until) if until else None,
+                group_by=["entity_kind"] if group_by is None else group_by,
+            )
 
     @mcp.tool(name="revision_get")
     def revision_get(project: str, revision_id: str) -> dict[str, Any] | None:
