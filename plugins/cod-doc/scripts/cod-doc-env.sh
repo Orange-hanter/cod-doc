@@ -72,6 +72,12 @@ if [ -z "$COD_DOC_SLUG" ] && [ -n "$COD_DOC_ROOT" ] && command -v sqlite3 >/dev/
 	# создать `-shm`. `2>/dev/null` прячет текст, но не код возврата, а у
 	# вызывающего `set -e` — и скрипт умирает молча ещё до exec. Слаг
 	# необязателен: пустой COD_DOC_SLUG штатно обрабатывается ниже.
+	#
+	# sqlite3-direct: скрипт исполняется хуком (SessionStart, PostToolUse),
+	# бюджет — миллисекунды: `cod-doc project list --json` стоит ~388 мс
+	# против ~5 мс у sqlite3 (медианы 5 прогонов). Прецедент — zsh-дополнение
+	# (ADO-179). Чтение только `-readonly`. Для агентов и людей путь —
+	# `cod-doc project list --json` / MCP (RFC 27 F15), не sqlite3.
 	COD_DOC_SLUG="$(sqlite3 -readonly "$_cd_db" \
 		"select slug from project where root_path = '$_cd_esc' limit 1" 2>/dev/null || true)"
 	if [ -z "$COD_DOC_SLUG" ]; then

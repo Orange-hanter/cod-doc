@@ -79,3 +79,32 @@ def test_canonical_set_is_seven_states() -> None:
         f"Expected 7-state TaskStatus taxonomy, got {len(CANONICAL_STATUSES)}: "
         f"{sorted(CANONICAL_STATUSES)}"
     )
+
+
+# AFT-013: канон task-flow/doc-sync — плагин. Эталон статусов — тот же
+# CANONICAL_STATUSES из ALLOWED_TRANSITIONS, не другой скилл.
+PLUGIN_SKILLS_DIR = Path(__file__).resolve().parents[1] / "plugins" / "cod-doc" / "skills"
+PLUGIN_SKILL_FILES = sorted(PLUGIN_SKILLS_DIR.glob("**/SKILL.md"))
+
+
+def test_plugin_skills_list_all_canonical_statuses() -> None:
+    text = (PLUGIN_SKILLS_DIR / "task-flow" / "SKILL.md").read_text(encoding="utf-8")
+    missing = sorted(s for s in CANONICAL_STATUSES if f"`{s}`" not in text)
+    assert not missing, (
+        f"plugins/cod-doc/skills/task-flow/SKILL.md does not mention status(es): {missing}. "
+        f"Canonical buckets: {sorted(CANONICAL_STATUSES)}."
+    )
+
+
+def test_plugin_skills_have_no_legacy_status_list() -> None:
+    # Счёт внутри теста: пустой glob иначе выключил бы проверку молча.
+    assert len(PLUGIN_SKILL_FILES) >= 2, PLUGIN_SKILL_FILES
+    offenders = {
+        str(skill.relative_to(PLUGIN_SKILLS_DIR)): legacy
+        for skill in PLUGIN_SKILL_FILES
+        if (legacy := [t for t in ("`review`", "`deferred`") if t in skill.read_text("utf-8")])
+    }
+    assert not offenders, (
+        f"plugin skills list non-canonical status(es): {offenders}; "
+        f"canonical buckets: {sorted(CANONICAL_STATUSES)}."
+    )

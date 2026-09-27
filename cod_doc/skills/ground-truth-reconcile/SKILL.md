@@ -28,7 +28,7 @@ description: |
 
 ## Порядок арбитража (не переставлять)
 
-1. **БД (`.cod-doc/state.db`) — source of truth для трекаемых задач.**
+1. **БД cod-doc (`task_list` / `cod-doc task list`) — source of truth для трекаемых задач.**
    Статус задачи определяется записью в БД, а не markdown-таблицей.
 2. **Код — арбитр при расхождении.** Если БД и markdown спорят, смотрим,
    что реально реализовано, и приводим обоих к коду.
@@ -57,11 +57,11 @@ description: |
 ## Алгоритм прогона
 
 ```bash
-# 1. Что БД считает открытым
-sqlite3 .cod-doc/state.db \
-  "SELECT t.task_id, pl.scope, t.title, t.priority
-     FROM task t JOIN plan pl ON pl.row_id = t.plan_id
-    WHERE t.status = 'pending';"
+# 1. Что БД считает открытым (легаси 'pending' ≡ 'todo', сервис нормализует)
+#    Все планы проекта: MCP plan_list(project=<slug>) или
+cod-doc plan list -p <slug> --json
+#    Открытые задачи плана: MCP task_list(project=<slug>, status='todo', plan_scope=<scope>) или
+cod-doc task list -p <slug> -s todo --plan <scope> --json
 
 # 2. Целостность планов: циклы + done-с-незакрытыми-блокерами
 cod-doc plan audit <scope> -p <slug> --json

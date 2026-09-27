@@ -13,7 +13,7 @@ PATH — ищи `.venv/bin/cod-doc` в репозитории; нет и там 
 
 **1. Уже подключён?** Если `.cod-doc/state.db` есть — не инициализируй заново
 (`project init` перезаписывает состояние). Покажи, что там уже лежит
-(`sqlite3 -readonly .cod-doc/state.db "select slug, root_path from project"`),
+(`cod-doc project list --json` → `[{slug, root_path, db_url}]`, слаг — элемент, чей `root_path` совпадает с корнем репо),
 и переходи к шагу 4.
 
 **2. Инициализация.**

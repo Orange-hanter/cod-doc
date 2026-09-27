@@ -74,6 +74,7 @@ async def test_mcp_lists_tools(mcp_project: tuple[ProjectEntry, Path]) -> None:
     assert "doc_export" in tool_names
     # ADO-022: the only way an agent can get past the fidelity guard
     assert "doc_backfill_projection" in tool_names
+    assert "plan_list" in tool_names
     assert "plan_progress" in tool_names
     assert "plan_ready" in tool_names
     assert "plan_critical_path" in tool_names

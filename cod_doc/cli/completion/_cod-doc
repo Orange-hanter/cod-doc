@@ -1904,6 +1904,8 @@ _cod-doc() {
         (export)        _cod_doc_plan_export && ret=0 ;;
         (forward)       _cod_doc_plan_forward && ret=0 ;;
         (freeze)        _cod_doc_plan_freeze && ret=0 ;;
+        (list)          _cod_doc_plan_list && ret=0 ;;
+        (progress)      _cod_doc_plan_progress && ret=0 ;;
         (ready)         _cod_doc_plan_ready && ret=0 ;;
         (reverse)       _cod_doc_plan_reverse && ret=0 ;;
         (section)       _cod_doc_plan_section && ret=0 ;;
@@ -1924,6 +1926,8 @@ _cod-doc() {
     'export:Export markdown projections for a plan.'
     'forward:Forward chain; prerequisites of TASK_ID (must complete BEFORE it).'
     'freeze:Snapshot a plan'\''s current projection into an immutable frozen docum…'
+    'list:Все планы проекта; scope, статус, done/total, остаток и principle.'
+    'progress:Прогресс плана PLAN_SCOPE по секциям или всех планов проекта (--all…'
     'ready:List tasks ready to work on (all blocking deps done).'
     'reverse:Reverse chain; tasks unblocked when TASK_ID completes.'
     'section:Секции плана; write-путь через plan_service.'
@@ -2005,6 +2009,32 @@ _cod-doc() {
     '(--reason)--reason=[Optional reason for the freeze]:reason' \
     '(- *)--help[Show this message and exit.]' \
     '1:plan-scope:_cod_doc_plans' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_list] )) || _cod_doc_plan_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--status)--status=[Фильтр по статусу плана; empty, pending, in-progress (или in_progre…]:status' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_progress] )) || _cod_doc_plan_progress() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--all)--all[Все планы проекта]' \
+    '(--by-section)--by-section[Вместе с --all; разбивка каждого плана по секциям]' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1::plan-scope:_cod_doc_plans' && ret=0
   return ret
 }
 

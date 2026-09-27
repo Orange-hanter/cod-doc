@@ -18,8 +18,12 @@
 [ -n "$COD_DOC_SLUG" ] || exit 0
 command -v sqlite3 >/dev/null 2>&1 || exit 0
 
-# Читаем БД напрямую: SessionStart-хук должен стоить миллисекунды, а не
-# полсекунды на импорт питоновского пакета.
+# sqlite3-direct: читаем БД напрямую — SessionStart-хук должен стоить
+# миллисекунды, а не полсекунды на импорт питоновского пакета:
+# `cod-doc project list --json` стоит ~388 мс против ~5 мс у sqlite3 (медианы
+# 5 прогонов). Прецедент — zsh-дополнение (ADO-179). Чтение только
+# `-readonly`. Для агентов и людей путь — `cod-doc project list --json` / MCP
+# (RFC 27 F15), не sqlite3.
 esc="${COD_DOC_SLUG//\'/\'\'}"
 open="$(sqlite3 -readonly "$COD_DOC_ROOT/.cod-doc/state.db" "
 	select group_concat(

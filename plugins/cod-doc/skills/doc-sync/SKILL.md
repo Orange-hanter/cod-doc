@@ -14,7 +14,7 @@ PostToolUse-хук плагина напомнит (он проверяет фа
 поэтому молчит на untracked-файлах); дальше — вручную.
 
 Слаг проекта: `cod-doc project list` или
-`sqlite3 -readonly .cod-doc/state.db "select slug, root_path from project"`.
+`cod-doc project list --json` → `[{slug, root_path, db_url}]`, слаг — элемент, чей `root_path` совпадает с корнем репо.
 
 ## Правка существующего документа
 

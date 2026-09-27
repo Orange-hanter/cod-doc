@@ -9,14 +9,50 @@ from cod_doc.mcp.tools._db import require_project_id, session_factory, task_to_d
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
+    from cod_doc.services.plan_service import PlanProgress
 
-def _require_plan_id(session: Any, plan_scope: str) -> int:
-    from cod_doc.infra.repositories import PlanRepository
 
-    plan = PlanRepository(session).get_by_scope(plan_scope)
-    if plan is None or plan.row_id is None:
-        raise ValueError(f"Plan '{plan_scope}' not found.")
-    return plan.row_id
+def _require_plan_id(session: Any, project_id: int, plan_scope: str) -> int:
+    """``row_id`` плана ``plan_scope`` в проекте ``project_id``; иначе ``ValueError``.
+
+    Делегирует ``plan_service.require_plan_in_project``: текст ошибки
+    начинается прежним ``Plan '<scope>' not found.`` и перечисляет живые scope
+    проекта (RFC 27 F8). План ищется в паре (scope, project_id), поэтому план
+    другого проекта той же hub-БД тоже «not found» — это намеренно.
+    """
+    from cod_doc.services import plan_service
+
+    try:
+        return plan_service.require_plan_in_project(session, project_id, plan_scope)
+    except plan_service.PlanNotFoundError as exc:
+        raise ValueError(str(exc)) from None
+
+
+def _progress_to_dict(progress: PlanProgress, *, with_sections: bool) -> dict[str, Any]:
+    """Строка плана для ``plan_progress``: одна форма на оба режима тула."""
+    out: dict[str, Any] = {
+        "scope": progress.scope,
+        "total": progress.total,
+        "done": progress.done,
+        "in_progress": progress.in_progress,
+        "cancelled": progress.cancelled,
+        "remaining": progress.remaining,
+        "status": progress.status.value,
+    }
+    if with_sections:
+        out["sections"] = [
+            {
+                "letter": s.letter,
+                "title": s.title,
+                "total": s.total,
+                "done": s.done,
+                "cancelled": s.cancelled,
+                "remaining": s.remaining,
+                "status": s.status.value,
+            }
+            for s in progress.sections
+        ]
+    return out
 
 
 def register(mcp: FastMCP) -> None:
@@ -139,8 +175,8 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            require_project_id(session, project)
-            plan_id = _require_plan_id(session, plan_scope)
+            project_id = require_project_id(session, project)
+            plan_id = _require_plan_id(session, project_id, plan_scope)
             doc = plan_service.freeze_projection(session, plan_id, author=author, reason=reason)
         return {
             "frozen_doc_key": doc.doc_key,
@@ -148,15 +184,45 @@ def register(mcp: FastMCP) -> None:
             "title": doc.title,
         }
 
+    @mcp.tool(name="plan_list")
+    def plan_list(project: str, status: str | None = None) -> list[dict[str, Any]]:
+        """List the project's plans with progress counters (RFC 27 F8, AFT-007).
+
+        Answers «which plans exist» without guessing ``plan_scope``. Before
+        this tool agents ran ``SELECT scope FROM plan`` and failed on
+        ``plan_scope Field required`` when asking about all plans.
+
+        Returns ``[{scope, principle, status, total, done, in_progress,
+        cancelled, remaining}]`` — plans of this project only (the DB may be
+        shared by several projects in hub mode). ``principle`` is the plan's
+        human-readable description (plans have no title column).
+
+        ``status`` filters by derived plan status: ``empty`` / ``pending`` /
+        ``in-progress`` / ``done`` (``in_progress`` is accepted as an alias).
+        An unknown value raises ``ValueError`` listing the allowed ones.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import plan_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            return plan_service.list_plans_summary(session, project_id, status=status)
+
     @mcp.tool(name="plan_sections_list")
-    def plan_sections_list(project: str, plan_scope: str) -> list[dict[str, Any]]:
-        """List all sections of a plan with task counts (PCA-941).
+    def plan_sections_list(project: str, plan_scope: str | None = None) -> list[dict[str, Any]]:
+        """List plan sections with task counts (PCA-941, RFC 27 F8).
 
         Closes a discoverability gap: ``task_create`` requires a ``section_letter``
         argument, but before this tool an agent had to call ``plan_export`` and
         parse markdown to discover valid letters. Now one cheap call returns
-        ``[{section_id, letter, title, slug, position, task_count, done_count}]``
-        sorted by ``position``.
+        ``[{plan_scope, section_id, letter, title, slug, position, task_count,
+        done_count}]``.
+
+        ``plan_scope`` is optional. Given — sections of that plan sorted by
+        ``position``; an unknown scope raises ``ValueError`` listing the
+        project's plan scopes. Omitted — sections of every plan of the project,
+        ordered by plan (as in ``plan_list``), then by ``position``.
 
         Use this before ``task_create`` to confirm the section_letter exists
         in the target plan.
@@ -166,12 +232,20 @@ def register(mcp: FastMCP) -> None:
         from cod_doc.infra.db import transactional
         from cod_doc.infra.models import TaskModel
         from cod_doc.infra.repositories import PlanSectionRepository
+        from cod_doc.services import plan_service
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            require_project_id(session, project)
-            plan_id = _require_plan_id(session, plan_scope)
-            sections = PlanSectionRepository(session).list_for_plan(plan_id)
+            project_id = require_project_id(session, project)
+            if plan_scope is not None:
+                plans = [(plan_scope, _require_plan_id(session, project_id, plan_scope))]
+            else:
+                plans = [
+                    (p.scope, p.row_id)
+                    for p in plan_service.list_for_project(session, project_id)
+                    if p.row_id is not None
+                ]
+            plan_ids = [plan_id for _, plan_id in plans]
 
             rows = session.execute(
                 select(
@@ -179,15 +253,17 @@ def register(mcp: FastMCP) -> None:
                     func.count(TaskModel.row_id).label("total"),
                     func.sum(case((TaskModel.status == "done", 1), else_=0)).label("done"),
                 )
-                .where(TaskModel.plan_id == plan_id)
+                .where(TaskModel.plan_id.in_(plan_ids))
                 .group_by(TaskModel.section_id)
             ).all()
             counts: dict[int, tuple[int, int]] = {
                 r.section_id: (int(r.total or 0), int(r.done or 0)) for r in rows
             }
 
+            section_repo = PlanSectionRepository(session)
             return [
                 {
+                    "plan_scope": scope,
                     "section_id": s.row_id,
                     "letter": s.letter,
                     "title": s.title,
@@ -196,7 +272,8 @@ def register(mcp: FastMCP) -> None:
                     "task_count": counts.get(s.row_id or -1, (0, 0))[0],
                     "done_count": counts.get(s.row_id or -1, (0, 0))[1],
                 }
-                for s in sorted(sections, key=lambda x: x.position)
+                for scope, plan_id in plans
+                for s in sorted(section_repo.list_for_plan(plan_id), key=lambda x: x.position)
             ]
 
     @mcp.tool(name="plan_section_create")
@@ -417,8 +494,24 @@ def register(mcp: FastMCP) -> None:
             }
 
     @mcp.tool(name="plan_progress")
-    def plan_progress(project: str, plan_scope: str) -> dict[str, Any]:
-        """Return derived progress for a plan: total/done/cancelled/remaining per section.
+    def plan_progress(
+        project: str, plan_scope: str | None = None, by_section: bool = False
+    ) -> dict[str, Any]:
+        """Return derived progress: total/done/cancelled/remaining per plan and section.
+
+        Two modes (RFC 27 F8):
+
+        - ``plan_progress(project, plan_scope=X)`` — one plan:
+          ``{scope, total, done, in_progress, cancelled, remaining, status,
+          sections}``. Sections are always included; ``by_section`` is ignored.
+          An unknown ``plan_scope`` raises ``ValueError`` listing the project's
+          plan scopes.
+        - ``plan_progress(project)`` — progress of all plans:
+          ``{"project": ..., "plans": [<plan row>, ...]}``, each plan row with
+          the same keys as the single-plan response but without ``sections``.
+          ``plan_progress(project, by_section=true)`` — all plans by section in
+          one call: every plan row also carries ``sections``, with the same
+          numbers as the single-plan mode for that plan.
 
         `remaining` excludes cancelled tasks — they are closed, not pending
         (ADO-078). The count is reported separately as `cancelled`, so
@@ -431,30 +524,18 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            require_project_id(session, project)
-            plan_id = _require_plan_id(session, plan_scope)
-            progress = plan_service.recalc(session, plan_id)
-        return {
-            "scope": progress.scope,
-            "total": progress.total,
-            "done": progress.done,
-            "in_progress": progress.in_progress,
-            "cancelled": progress.cancelled,
-            "remaining": progress.remaining,
-            "status": progress.status.value,
-            "sections": [
-                {
-                    "letter": s.letter,
-                    "title": s.title,
-                    "total": s.total,
-                    "done": s.done,
-                    "cancelled": s.cancelled,
-                    "remaining": s.remaining,
-                    "status": s.status.value,
+            project_id = require_project_id(session, project)
+            if plan_scope is None:
+                plans = plan_service.progress_for_project(
+                    session, project_id, by_section=by_section
+                )
+                return {
+                    "project": project,
+                    "plans": [_progress_to_dict(p, with_sections=by_section) for p in plans],
                 }
-                for s in progress.sections
-            ],
-        }
+            plan_id = _require_plan_id(session, project_id, plan_scope)
+            progress = plan_service.recalc(session, plan_id)
+        return _progress_to_dict(progress, with_sections=True)
 
     @mcp.tool(name="plan_ready")
     def plan_ready(
@@ -482,8 +563,8 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            require_project_id(session, project)
-            plan_id = _require_plan_id(session, plan_scope)
+            project_id = require_project_id(session, project)
+            plan_id = _require_plan_id(session, project_id, plan_scope)
             batch = plan_service.ready_batch(session, plan_id, limit=limit, local_only=local_only)
         items = []
         for t in batch.tasks:
@@ -504,8 +585,8 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            require_project_id(session, project)
-            plan_id = _require_plan_id(session, plan_scope)
+            project_id = require_project_id(session, project)
+            plan_id = _require_plan_id(session, project_id, plan_scope)
             report = plan_service.audit(session, plan_id)
         return {
             "issues_total": report.issues_total,
@@ -524,8 +605,8 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            require_project_id(session, project)
-            plan_id = _require_plan_id(session, plan_scope)
+            project_id = require_project_id(session, project)
+            plan_id = _require_plan_id(session, project_id, plan_scope)
             return plan_service.export(session, plan_id)
 
     @mcp.tool(name="plan_critical_path")
@@ -536,8 +617,8 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            require_project_id(session, project)
-            plan_id = _require_plan_id(session, plan_scope)
+            project_id = require_project_id(session, project)
+            plan_id = _require_plan_id(session, project_id, plan_scope)
             result = plan_service.critical_path(session, plan_id)
         return {
             "length": result.length,
