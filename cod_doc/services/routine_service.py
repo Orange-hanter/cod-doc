@@ -15,6 +15,8 @@ maintenance utilities:
 - ``alembic_head``   — ADO-027 (F1): рабочая БД на head-миграции
 - ``graph_health``   — ADO-205 (RFC 26 §5.3): циклы, немые/мёртвые/кросс-плановые
   рёбра, позиции и слаги секций планов; пишет находки в ``finding``
+- ``question_links`` — OQM-009: перепроверка ссылок открытых вопросов; штампы
+  ``resolved``/``broken_reason`` читает ``curator_next``
 
 Plus the meta-check from proposal 12:
 
@@ -426,6 +428,44 @@ def _check_graph_health(
     }
 
 
+def _check_question_links(
+    session: Session,
+    project_id: int,
+    *,
+    limit: int = 50,
+    **_: Any,
+) -> dict[str, Any]:
+    """OQM-009: перепроверить ссылки всех вопросов проекта.
+
+    ``curator_next`` показывает битые ссылки вопросов по штампам последней
+    проверки (``resolved`` / ``broken_reason`` / ``last_checked`` на ребре).
+    Без этой рутины штампы обновлялись только ручным ``question verify``, и
+    переехавший файл или удалённая задача оставались невидимыми. Проверка
+    пишет только эти штампы — производное состояние, без ревизий, как и сам
+    ``verify_links``.
+    """
+    from cod_doc.services import question_service
+
+    report = question_service.verify_links(session, project_id=project_id)
+    findings: list[dict[str, Any]] = [
+        {
+            "question_id": b.question_id,
+            "to_kind": b.to_kind,
+            "to_ref": b.to_ref,
+            "broken_reason": b.broken_reason,
+        }
+        for b in report.broken_links[:limit]
+    ]
+    return {
+        "findings": findings,
+        "findings_count": report.broken,
+        "checked": report.checked,
+        "ok": report.ok,
+        "unchecked": report.unchecked,
+        "truncated": report.broken > limit,
+    }
+
+
 def _project_slug(session: Session, project_id: int) -> str:
     from cod_doc.infra.repositories import ProjectRepository
 
@@ -443,6 +483,7 @@ CHECK_CATALOG: dict[str, CheckFn] = {
     "doc_unplaced": _check_doc_unplaced,
     "doc_node_health": _check_doc_node_health,
     "graph_health": _check_graph_health,
+    "question_links": _check_question_links,
     "task_stale": _check_task_stale,
     "alembic_head": _check_alembic_head,
 }

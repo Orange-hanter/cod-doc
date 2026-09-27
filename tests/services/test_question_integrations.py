@@ -23,6 +23,7 @@ from cod_doc.services import (
     curator_service,
     doc_service,
     question_service,
+    routine_service,
     task_service,
 )
 
@@ -53,17 +54,18 @@ def _seed(session: Session, root: Path) -> int:
     sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="S", slug="A-S", position=0)
     session.add(sec)
     session.flush()
-    task_service.create(
-        session,
-        project_id=pid,
-        plan_id=plan.row_id,
-        section_id=sec.row_id,
-        task_id="PAY-001",
-        title="Integrate provider",
-        type=TaskType.FEATURE,
-        priority=Priority.MEDIUM,
-        author=AUTHOR,
-    )
+    for task_id, title in (("PAY-001", "Integrate provider"), ("PAY-002", "Compare fees")):
+        task_service.create(
+            session,
+            project_id=pid,
+            plan_id=plan.row_id,
+            section_id=sec.row_id,
+            task_id=task_id,
+            title=title,
+            type=TaskType.FEATURE,
+            priority=Priority.MEDIUM,
+            author=AUTHOR,
+        )
     doc = doc_service.create(
         session,
         project_id=pid,
@@ -210,3 +212,87 @@ def test_linked_questions_include_sections_and_all_statuses(factory, tmp_path: P
         )
     assert [(f["question_id"], f["status"]) for f in found] == [(b, "open"), (a, "resolved")]
     assert other == []
+
+
+# --------------------------------------------------------------------------- #
+# OQM-009: routine, OQM-010: answered by tasks                                 #
+# --------------------------------------------------------------------------- #
+
+
+def _curator(session: Session, pid: int, root: Path) -> dict[str, Any]:
+    master = root / "MASTER.md"
+    master.write_text("# M\n", encoding="utf-8")
+    return curator_service.next(
+        session,
+        project_id=pid,
+        root_path=root,
+        master_path=master,
+        project_slug="oq",
+        skip_links=True,
+        limit=50,
+    )
+
+
+def test_question_links_routine_stamps_broken_links_for_the_curator(  # type: ignore[no-untyped-def]
+    factory, tmp_path: Path
+) -> None:
+    with transactional(factory) as session:
+        pid = _seed(session, tmp_path)
+        qid = _q(session, pid, "битая ссылка")
+        _link(session, pid, qid, QuestionLinkKind.CODE, "gone.py")
+        # до прогона рутины штампа нет — куратор молчит
+        assert _curator(session, pid, tmp_path)["card"]["questions"]["broken_links"] == []
+
+        routine_service.create(
+            session, pid, name="ql", check_name="question_links", cron="15 1 * * *"
+        )
+        run = routine_service.run_now(session, pid, "ql")
+        card = _curator(session, pid, tmp_path)
+
+    assert run.status == "done"
+    assert run.findings_count == 1
+    assert [b["question_id"] for b in card["card"]["questions"]["broken_links"]] == [qid]
+
+
+def test_curator_suggests_resolving_when_every_addressing_task_is_done(  # type: ignore[no-untyped-def]
+    factory, tmp_path: Path
+) -> None:
+    with transactional(factory) as session:
+        pid = _seed(session, tmp_path)
+        both = _q(session, pid, "обе задачи")
+        one = _q(session, pid, "одна задача")
+        dangling = _q(session, pid, "задачи нет в БД")
+        for qid, task in ((both, "PAY-001"), (both, "PAY-002"), (one, "PAY-001")):
+            question_service.link(
+                session,
+                project_id=pid,
+                question_id=qid,
+                to_kind=QuestionLinkKind.TASK,
+                to_ref=task,
+                relation=QuestionRelation.ADDRESSED_BY,
+                author=AUTHOR,
+            )
+        question_service.link(
+            session,
+            project_id=pid,
+            question_id=dangling,
+            to_kind=QuestionLinkKind.TASK,
+            to_ref="PAY-404",
+            relation=QuestionRelation.ADDRESSED_BY,
+            author=AUTHOR,
+        )
+        task_service.complete(session, task_id="PAY-001", author=AUTHOR)
+        partial = question_service.answered_by_tasks(session, pid)
+        task_service.complete(session, task_id="PAY-002", author=AUTHOR)
+        full = question_service.answered_by_tasks(session, pid)
+        card = _curator(session, pid, tmp_path)
+
+    assert [a["question_id"] for a in partial] == [one]
+    assert [(a["question_id"], a["tasks"]) for a in full] == [
+        (both, ["PAY-001", "PAY-002"]),
+        (one, ["PAY-001"]),
+    ]
+    items = [p for p in card["priority"] if p["kind"] == "question_answered"]
+    assert [p["ref"] for p in items] == [both, one]
+    assert items[0]["suggested_action"].startswith(f"cod-doc question resolve {both} -p oq")
+    assert card["meta"]["counts"]["questions_answered"] == 2
