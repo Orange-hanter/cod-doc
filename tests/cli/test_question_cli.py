@@ -90,8 +90,8 @@ def test_new_show_json_roundtrip(root: Path) -> None:
 def test_lifecycle_and_list_filters(root: Path) -> None:
     assert _run("new", "-p", "p", "-t", "T", "-q", "Q?", "--owner", "alice")[0] == 0
     assert _run("option", "add", "Q-001", "Да", "-p", "p")[0] == 0
-    assert _run("option", "edit", "Q-001", "0", "-p", "p", "--body", "плюсы")[0] == 0
-    code, out = _run("resolve", "Q-001", "-p", "p", "--by", "ADR-002", "--option", "0")
+    assert _run("option", "edit", "Q-001", "1", "-p", "p", "--body", "плюсы")[0] == 0
+    code, out = _run("resolve", "Q-001", "-p", "p", "--by", "ADR-002", "--option", "1")
     assert code == 0, out
 
     code, out = _run("list", "-p", "p", "--json")
@@ -105,7 +105,7 @@ def test_lifecycle_and_list_filters(root: Path) -> None:
     assert "reopen it first" in out
 
     assert _run("reopen", "Q-001", "-p", "p")[0] == 0
-    assert _run("option", "rm", "Q-001", "0", "-p", "p")[0] == 0
+    assert _run("option", "rm", "Q-001", "1", "-p", "p")[0] == 0
     assert _run("edit", "Q-001", "-p", "p", "--owner", "")[0] == 0
     assert _run("drop", "Q-001", "-p", "p", "--why", "не актуально")[0] == 0
     code, out = _run("show", "Q-001", "-p", "p", "--json")

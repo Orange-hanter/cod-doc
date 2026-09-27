@@ -74,9 +74,9 @@ def test_create_with_options_and_links_then_get(root) -> None:  # type: ignore[n
 def test_lifecycle_through_tools(root) -> None:  # type: ignore[no-untyped-def]
     _tool("question_create")(project="p", title="T", question="Q?")
     _tool("question_option_add")(project="p", question_id="Q-001", title="A")
-    _tool("question_option_update")(project="p", question_id="Q-001", position=0, body="b")
+    _tool("question_option_update")(project="p", question_id="Q-001", position=1, body="b")
     resolved = _tool("question_resolve")(
-        project="p", question_id="Q-001", by_adr="ADR-003", chosen_option=0
+        project="p", question_id="Q-001", by_adr="ADR-003", chosen_option=1
     )
     assert resolved["status"] == "resolved"
     assert resolved["options"][0]["chosen"] is True
@@ -88,7 +88,7 @@ def test_lifecycle_through_tools(root) -> None:  # type: ignore[no-untyped-def]
 
     reopened = _tool("question_reopen")(project="p", question_id="Q-001")
     assert reopened["status"] == "open"
-    _tool("question_option_remove")(project="p", question_id="Q-001", position=0)
+    _tool("question_option_remove")(project="p", question_id="Q-001", position=1)
     dropped = _tool("question_drop")(project="p", question_id="Q-001", resolution="снят")
     assert dropped["status"] == "dropped"
     assert dropped["options"] == []

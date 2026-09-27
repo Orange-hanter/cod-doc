@@ -64,24 +64,23 @@ PRIORITY_OPTIONS = [p.value for p in Priority]
 LINK_KIND_OPTIONS = [k.value for k in QuestionLinkKind]
 RELATION_OPTIONS = [r.value for r in QuestionRelation]
 
-_STATUS_ICON = {"open": "❓", "resolved": "✅", "dropped": "🗄️"}
-_PRIORITY_BADGE = {
-    "critical": "badge-error",
-    "high": "badge-warning",
-    "medium": "badge-muted",
-    "low": "badge-muted",
+#: Подписи для UI. Эмодзи-иконки видов ссылок выброшены: часть из них
+#: рендерится пустым квадратом, а текстовая метка вида читается однозначно.
+STATUS_LABEL = {"open": "Открыт", "resolved": "Решён", "dropped": "Снят"}
+STATUS_TAB_LABEL = {
+    "open": "Открытые",
+    "resolved": "Решённые",
+    "dropped": "Снятые",
+    "all": "Все",
 }
-_KIND_ICON = {
-    "document": "📄",
-    "section": "§",
-    "task": "☑️",
-    "adr": "🏛️",
-    "story": "📖",
-    "scenario": "🧪",
-    "finding": "🔎",
-    "code": "⌨️",
-    "url": "🌐",
+RELATION_LABEL = {
+    "about": "о чём",
+    "blocks": "блокирует",
+    "addressed_by": "решается в",
+    "resolved_by": "решён в",
+    "see_also": "см. также",
 }
+_EXCERPT_CHARS = 140
 
 _SERVICE_ERRORS = (
     QuestionAlreadyExistsError,
@@ -111,11 +110,18 @@ def _link_href(slug: str, to_kind: str, to_ref: str) -> str:
     return routes.get(to_kind, "")
 
 
+def _plain_excerpt(text: str) -> str:
+    """Первая строка вопроса без markdown-разметки — подзаголовок в списке."""
+    line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+    line = line.replace("**", "").replace("__", "").replace("`", "").lstrip("#> ").strip()
+    return line if len(line) <= _EXCERPT_CHARS else line[: _EXCERPT_CHARS - 1] + "…"
+
+
 def _row(q: OpenQuestion) -> dict[str, Any]:
     return {
         **question_service.question_summary(q),
-        "status_icon": _STATUS_ICON.get(q.status.value, "•"),
-        "priority_badge": _PRIORITY_BADGE.get(q.priority.value, "badge-muted"),
+        "status_label": STATUS_LABEL.get(q.status.value, q.status.value),
+        "excerpt": _plain_excerpt(q.question) if q.question.strip() != q.title else "",
     }
 
 
@@ -187,11 +193,16 @@ def questions_list(
 
     rows = []
     for q in shown:
+        assert q.row_id is not None
         row = _row(q)
         row["broken"] = broken_by_question.get(q.question_id, 0)
+        row["options"] = len(question_service.list_options(session, q.row_id))
+        row["links"] = len(question_service.list_links(session, q.row_id))
         rows.append(row)
 
     counts = {s: sum(1 for q in everything if q.status.value == s) for s in STATUS_OPTIONS}
+    counts["all"] = len(everything)
+    tabs = [{"value": f, "label": STATUS_TAB_LABEL[f], "count": counts[f]} for f in STATUS_FILTERS]
     return templates.TemplateResponse(
         request,
         "project/questions_list.html",
@@ -203,7 +214,7 @@ def questions_list(
             "status_filter": status,
             "priority_filter": priority,
             "owner_filter": owner or "",
-            "status_options": STATUS_FILTERS,
+            "tabs": tabs,
             "priority_options": PRIORITY_OPTIONS,
             "owners": sorted({q.owner for q in everything if q.owner}),
         },
@@ -277,6 +288,7 @@ def question_show(
     qid: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
     error: str | None = None,
+    edit: int = 0,
 ) -> HTMLResponse:
     proj = get_project(slug)
     session, project_id = db
@@ -293,7 +305,7 @@ def question_show(
         opt["body_html"] = _prose(opt["body"], slug)
     for edge in card["links"]:
         edge["href"] = _link_href(slug, edge["to_kind"], edge["to_ref"])
-        edge["icon"] = _KIND_ICON.get(edge["to_kind"], "•")
+        edge["relation_label"] = RELATION_LABEL.get(edge["relation"], edge["relation"])
         edge["excerpt"] = (
             question_service.code_excerpt(session, project_id, edge["to_ref"])
             if edge["to_kind"] == "code"
@@ -306,8 +318,11 @@ def question_show(
         {
             "project": proj.entry,
             "q": card,
+            "status_label": STATUS_LABEL.get(card["status"], card["status"]),
+            "broken_links": sum(1 for e in card["links"] if e["resolved"] is False),
             "row_id": found.row_id,
             "error": error,
+            "edit": bool(edit),
             "priority_options": PRIORITY_OPTIONS,
             "link_kind_options": LINK_KIND_OPTIONS,
             "relation_options": RELATION_OPTIONS,

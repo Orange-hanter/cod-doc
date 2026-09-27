@@ -1,8 +1,8 @@
 """Answer options of a question — the structured half of «варианты решения».
 
-Positions are stable ids within a question: removing an option leaves a gap
-instead of renumbering, so ``resolve --option 2`` keeps meaning the option
-that was shown as #2.
+Positions are stable 1-based ids within a question: the number a person sees
+is the one they type (``resolve --option 2``). Removing an option leaves a
+gap instead of renumbering, so #2 keeps meaning the option shown as #2.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ def add_option(
     """Append an option; its position is max+1 (never reuses a removed slot)."""
     validate_text("option title", title)
     model = _require_question(session, project_id, question_id)
-    position = max((o.position for o in model.options), default=-1) + 1
+    position = max((o.position for o in model.options), default=0) + 1
     opt = QuestionOptionModel(position=position, title=title, body=body, chosen=False)
     model.options.append(opt)
     model.last_updated = datetime.now(UTC)

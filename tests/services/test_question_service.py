@@ -105,8 +105,8 @@ def test_create_allocates_sequential_ids_with_options(factory) -> None:  # type:
     assert (first.question_id, second.question_id) == ("Q-001", "Q-002")
     assert first.status is QuestionStatus.OPEN
     assert [(o.position, o.title, o.body) for o in opts] == [
-        (0, "ЮKassa", "дешевле"),
-        (1, "CloudPayments", None),
+        (1, "ЮKassa", "дешевле"),
+        (2, "CloudPayments", None),
     ]
 
 
@@ -174,7 +174,7 @@ def test_resolve_by_adr_records_edge_and_chosen_option(factory) -> None:  # type
             question_id=q.question_id,
             author=AUTHOR,
             by_adr="ADR-014",
-            chosen_option=1,
+            chosen_option=2,
         )
         links = question_service.list_links(session, q.row_id)
         opts = question_service.list_options(session, q.row_id)
@@ -226,7 +226,7 @@ def test_reopen_clears_answer_but_keeps_edges(factory) -> None:  # type: ignore[
             question_id=q.question_id,
             author=AUTHOR,
             by_adr="ADR-001",
-            chosen_option=0,
+            chosen_option=1,
             resolution="A",
         )
         reopened = question_service.reopen(
@@ -267,7 +267,7 @@ def test_option_positions_are_stable_ids(factory) -> None:  # type: ignore[no-un
         pid = _seed(session)
         q = _create(session, pid, options=[("A", None), ("B", None)])
         question_service.remove_option(
-            session, project_id=pid, question_id=q.question_id, position=0, author=AUTHOR
+            session, project_id=pid, question_id=q.question_id, position=1, author=AUTHOR
         )
         added = question_service.add_option(
             session, project_id=pid, question_id=q.question_id, title="C", author=AUTHOR
@@ -276,14 +276,14 @@ def test_option_positions_are_stable_ids(factory) -> None:  # type: ignore[no-un
             session,
             project_id=pid,
             question_id=q.question_id,
-            position=1,
+            position=2,
             title="B2",
             body="плюсы",
             author=AUTHOR,
         )
         opts = question_service.list_options(session, q.row_id)
-    assert added.position == 2
-    assert [(o.position, o.title, o.body) for o in opts] == [(1, "B2", "плюсы"), (2, "C", None)]
+    assert added.position == 3
+    assert [(o.position, o.title, o.body) for o in opts] == [(2, "B2", "плюсы"), (3, "C", None)]
 
 
 # --------------------------------------------------------------------------- #
@@ -466,7 +466,7 @@ def test_every_mutation_writes_revision_and_event(factory) -> None:  # type: ign
         common = {"project_id": pid, "question_id": qid, "author": AUTHOR}
         question_service.update(session, **common, title="T2")  # type: ignore[arg-type]
         question_service.add_option(session, **common, title="A")  # type: ignore[arg-type]
-        question_service.update_option(session, **common, position=0, body="b")  # type: ignore[arg-type]
+        question_service.update_option(session, **common, position=1, body="b")  # type: ignore[arg-type]
         question_service.link(
             session,
             **common,  # type: ignore[arg-type]
@@ -481,7 +481,7 @@ def test_every_mutation_writes_revision_and_event(factory) -> None:  # type: ign
             to_ref="AB-001",
             relation=QuestionRelation.ADDRESSED_BY,
         )
-        question_service.remove_option(session, **common, position=0)  # type: ignore[arg-type]
+        question_service.remove_option(session, **common, position=1)  # type: ignore[arg-type]
         question_service.resolve(session, **common, resolution="да")  # type: ignore[arg-type]
         question_service.reopen(session, **common)  # type: ignore[arg-type]
         question_service.drop(session, **common, resolution="снят")  # type: ignore[arg-type]

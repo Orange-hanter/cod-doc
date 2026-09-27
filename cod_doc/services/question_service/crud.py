@@ -113,7 +113,7 @@ def create(
         )
     )
     assert created.row_id is not None
-    for i, (opt_title, opt_body) in enumerate(options):
+    for i, (opt_title, opt_body) in enumerate(options, start=1):
         session.add(
             QuestionOptionModel(
                 question_row_id=created.row_id,

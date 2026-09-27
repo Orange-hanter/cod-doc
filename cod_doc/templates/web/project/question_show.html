@@ -2,6 +2,7 @@
 {% block title %}{{ q.question_id }} · {{ project.name }} — COD-DOC{% endblock %}
 {% block content %}
 {% set base = "/p/" ~ project.name ~ "/questions/" ~ q.question_id %}
+{% set chosen = q.options | selectattr("chosen") | list %}
 <nav class="crumbs">
   <a href="/">Projects</a> /
   <a href="/p/{{ project.name }}">{{ project.name }}</a> /
@@ -11,232 +12,259 @@
 
 {% with slug=project.name, active="questions" %}{% include "_layout/project_tabs.html" %}{% endwith %}
 
-<p class="question-back"><a href="/p/{{ project.name }}/questions">← Back to questions</a></p>
+<p class="question-back"><a href="/p/{{ project.name }}/questions">← К списку вопросов</a></p>
 
 {% if error %}<div class="alert alert-error"><span class="alert-msg">{{ error }}</span></div>{% endif %}
 
-<header class="task-hero">
-  <div class="task-hero-row">
+{# ── HERO: тот же каркас, что у задачи (полоса приоритета + тон статуса);
+   сам вопрос — лид героя, а не отдельная карточка. ───────────────────── #}
+<header class="task-hero prio-stripe-{{ q.priority }} q-tone-{{ q.status }}">
+  <div class="task-hero-row task-hero-top">
     <span class="task-hero-id mono">{{ q.question_id }}</span>
-    <span class="task-hero-title">{{ q.title }}</span>
-    <span class="task-hero-meta">
-      <span class="badge badge-lg badge-q-{{ q.status }}">{{ q.status_icon }} {{ q.status }}</span>
-    </span>
+    <span class="badge badge-lg badge-q-{{ q.status }}">{{ status_label }}</span>
+    <div class="task-hero-meta">
+      <span class="meta-chip prio-chip prio-{{ q.priority }}" title="приоритет">⚑ {{ q.priority }}</span>
+      {% if q.owner %}<span class="meta-chip" title="кто отвечает за ответ">{{ q.owner }}</span>{% endif %}
+    </div>
   </div>
-  <div class="task-hero-row muted">
-    <span class="badge {{ q.priority_badge }}">{{ q.priority }}</span>
-    <span class="meta-chip">Владелец: {{ q.owner or "—" }}</span>
-    <span class="meta-chip">Автор: {{ q.author }}</span>
-    <span class="meta-chip" title="{{ q.created | ts_tooltip }}">Создан: {{ q.created | short_date }}</span>
-    <span class="meta-chip" title="{{ q.last_updated | ts_tooltip }}">Изменён: {{ q.last_updated | short_date }}</span>
-    {% if q.source_doc_key %}<span class="meta-chip" title="перенесён из документа">⇠ {{ q.source_doc_key }}</span>{% endif %}
-    <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/revisions?entity_kind=question&amp;entity_id={{ row_id }}">🕘 Revision history</a>
-  </div>
+  <h1 class="task-hero-title">{{ q.title }}</h1>
+  {% if q.question_html %}<div class="q-lead doc-body">{{ q.question_html | safe }}</div>{% endif %}
 </header>
 
-<section class="task-card">
-  <div class="task-card-header"><h2>Вопрос</h2></div>
-  <div class="doc-body doc-section">{{ q.question_html | safe }}</div>
-</section>
-
-{% if q.context_html %}
-<section class="task-card">
-  <div class="task-card-header"><h2>Контекст</h2></div>
-  <div class="doc-body doc-section">{{ q.context_html | safe }}</div>
-</section>
-{% endif %}
-
-{% if q.status != "open" %}
-<section class="task-card question-resolution">
-  <div class="task-card-header">
-    <h2>{% if q.status == "resolved" %}Ответ{% else %}Снят{% endif %}</h2>
-    {% if q.resolved_at %}<span class="muted" title="{{ q.resolved_at | ts_tooltip }}">{{ q.resolved_at | short_date }}</span>{% endif %}
-  </div>
-  {% if q.resolved_by_adr %}
-    <p>Решение: <a href="/p/{{ project.name }}/adr/{{ q.resolved_by_adr }}">{{ q.resolved_by_adr }}</a></p>
-  {% endif %}
-  {% if q.resolution_html %}<div class="doc-body doc-section">{{ q.resolution_html | safe }}</div>{% endif %}
-  <form method="post" action="{{ base }}/reopen">
-    <button type="submit" class="btn btn-sm">↺ Переоткрыть</button>
-  </form>
-</section>
-{% endif %}
-
-<section class="task-card" id="options">
-  <div class="task-card-header">
-    <h2>Варианты</h2>
-    <span class="count-chip">{{ q.options | length }}</span>
-  </div>
-  {% if q.options %}
-    <ol class="question-options">
-      {% for o in q.options %}
-        <li class="question-option{% if o.chosen %} question-option-chosen{% endif %}" value="{{ o.position }}">
-          <div class="question-option-head">
-            <span class="mono muted">#{{ o.position }}</span>
-            <strong>{{ o.title }}</strong>
-            {% if o.chosen %}<span class="badge badge-success">✔ выбран</span>{% endif %}
-          </div>
-          {% if o.body_html %}<div class="doc-body doc-section">{{ o.body_html | safe }}</div>{% endif %}
-          <details>
-            <summary class="muted">править</summary>
-            <form method="post" action="{{ base }}/options/{{ o.position }}" class="settings-form">
-              <input type="hidden" name="op" value="update">
-              <label class="field"><span class="label">Title</span><input name="title" value="{{ o.title }}"></label>
-              <label class="field"><span class="label">Body (markdown; пусто — очистить)</span><textarea name="body" rows="4">{{ o.body or "" }}</textarea></label>
-              <div class="form-actions">
-                <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
-              </div>
-            </form>
-            <form method="post" action="{{ base }}/options/{{ o.position }}">
-              <input type="hidden" name="op" value="delete">
-              <button type="submit" class="btn btn-sm btn-danger">Удалить вариант</button>
-            </form>
-          </details>
-        </li>
-      {% endfor %}
-    </ol>
+<div class="task-actions q-actions">
+  {% if q.status == "open" %}
+    <a class="btn btn-sm btn-success" href="#answer">Ответить</a>
   {% else %}
-    <p class="muted">Вариантов пока нет.</p>
+    <form method="post" action="{{ base }}/reopen" class="q-inline">
+      <button type="submit" class="btn btn-sm">Переоткрыть</button>
+    </form>
   {% endif %}
-  <details>
-    <summary>➕ Добавить вариант</summary>
-    <form method="post" action="{{ base }}/options" class="settings-form">
-      <label class="field"><span class="label">Title</span><input name="title" required></label>
-      <label class="field"><span class="label">Body — плюсы, минусы, стоимость (markdown)</span><textarea name="body" rows="4"></textarea></label>
-      <div class="form-actions"><button type="submit" class="btn btn-sm btn-primary">Добавить</button></div>
-    </form>
-  </details>
-</section>
+  <a class="btn btn-sm" href="{{ base }}?edit=1#edit">Править</a>
+  <form method="post" action="{{ base }}/verify" class="q-inline">
+    <button type="submit" class="btn btn-sm" title="проверить, что цели ссылок существуют">Проверить ссылки</button>
+  </form>
+  {% if broken_links %}
+    <span class="q-broken-chip" title="по последней проверке">✗ битых ссылок: {{ broken_links }}</span>
+  {% endif %}
+  <a class="q-actions-right muted" href="/p/{{ project.name }}/revisions?entity_kind=question&amp;entity_id={{ row_id }}">История изменений</a>
+</div>
 
-<section class="task-card" id="links">
-  <div class="task-card-header">
-    <h2>Ссылки</h2>
-    <span class="count-chip">{{ q.links | length }}</span>
-    <form method="post" action="{{ base }}/verify" class="question-inline-form">
-      <button type="submit" class="btn btn-sm" title="проверить, что цели существуют">⟳ Проверить</button>
-    </form>
-  </div>
-  {% if q.links %}
-    <ul class="question-links">
-      {% for l in q.links %}
-        <li>
-          {% if l.resolved is true %}<span class="badge badge-success" title="проверено {{ l.last_checked | short_date }}">✓</span>
-          {% elif l.resolved is false %}<span class="badge badge-error" title="{{ l.broken_reason }}">✗</span>
-          {% else %}<span class="badge badge-muted" title="не проверялась">·</span>{% endif %}
-          <code>{{ l.relation }}</code> →
-          {{ l.icon }}
-          {% if l.href %}
-            <a href="{{ l.href }}"><code>{{ l.to_kind }}:{{ l.to_ref }}</code></a>
-          {% else %}
-            <code>{{ l.to_kind }}:{{ l.to_ref }}</code>
-          {% endif %}
-          {% if l.note %}<span class="muted">— {{ l.note }}</span>{% endif %}
-          {% if l.broken_reason %}<div class="row-error">{{ l.broken_reason }}</div>{% endif %}
-          <form method="post" action="{{ base }}/links" class="question-inline-form">
-            <input type="hidden" name="op" value="detach">
-            <input type="hidden" name="to_kind" value="{{ l.to_kind }}">
-            <input type="hidden" name="to_ref" value="{{ l.to_ref }}">
-            <input type="hidden" name="relation" value="{{ l.relation }}">
-            <button type="submit" class="btn btn-xs btn-ghost" title="убрать ссылку">✕</button>
-          </form>
-          {% if l.excerpt %}
-            <details class="question-excerpt">
-              <summary class="muted">{{ l.excerpt.path }}:{{ l.excerpt.start }}</summary>
-              {# Номера строк — отдельной колонкой: highlight.js перерисовывает
-                 <code> целиком и выбросил бы вложенную разметку. #}
-              <div class="question-excerpt-body">
-                <pre class="question-excerpt-gutter" aria-hidden="true">{% for line in l.excerpt.lines %}{{ line.no }}
+<div class="task-layout">
+  <main class="task-content">
+    {% if q.context_html %}
+    <section class="task-card">
+      <header class="task-card-header"><h2>Контекст</h2></header>
+      <div class="doc-body">{{ q.context_html | safe }}</div>
+    </section>
+    {% endif %}
+
+    <section class="task-card" id="options">
+      <header class="task-card-header">
+        <h2>Варианты ответа <span class="count-chip">{{ q.options | length }}</span></h2>
+      </header>
+      {% if q.options %}
+        <ol class="q-options">
+          {% for o in q.options %}
+            <li class="q-option{% if o.chosen %} q-option-chosen{% endif %}">
+              <span class="q-option-no" aria-label="вариант {{ o.position }}">{{ o.position }}</span>
+              <div class="q-option-main">
+                <div class="q-option-head">
+                  <strong>{{ o.title }}</strong>
+                  {% if o.chosen %}<span class="badge badge-success">выбран</span>{% endif %}
+                </div>
+                {% if o.body_html %}<div class="doc-body q-option-body">{{ o.body_html | safe }}</div>{% endif %}
+                <details class="q-mini">
+                  <summary>править</summary>
+                  <form method="post" action="{{ base }}/options/{{ o.position }}" class="settings-form q-form">
+                    <input type="hidden" name="op" value="update">
+                    <label class="field"><span class="label">Название</span><input name="title" value="{{ o.title }}"></label>
+                    <label class="field"><span class="label">Плюсы, минусы, стоимость — markdown; пусто очищает</span><textarea name="body" rows="4">{{ o.body or "" }}</textarea></label>
+                    <div class="form-actions">
+                      <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
+                    </div>
+                  </form>
+                  <form method="post" action="{{ base }}/options/{{ o.position }}" class="q-inline">
+                    <input type="hidden" name="op" value="delete">
+                    <button type="submit" class="btn btn-xs btn-ghost q-danger-link">Удалить вариант</button>
+                  </form>
+                </details>
+              </div>
+            </li>
+          {% endfor %}
+        </ol>
+      {% else %}
+        <p class="empty-hint">Вариантов пока нет — добавьте, если ответ выбирается из нескольких.</p>
+      {% endif %}
+      <details class="q-add">
+        <summary>Добавить вариант</summary>
+        <form method="post" action="{{ base }}/options" class="settings-form q-form">
+          <label class="field"><span class="label">Название</span><input name="title" required></label>
+          <label class="field"><span class="label">Плюсы, минусы, стоимость — markdown</span><textarea name="body" rows="4"></textarea></label>
+          <div class="form-actions"><button type="submit" class="btn btn-sm btn-primary">Добавить</button></div>
+        </form>
+      </details>
+    </section>
+
+    <section class="task-card" id="links">
+      <header class="task-card-header">
+        <h2>Ссылки <span class="count-chip">{{ q.links | length }}</span></h2>
+        <span class="muted-tiny">документы · код · задачи · ADR</span>
+      </header>
+      {% if q.links %}
+        <ul class="q-links">
+          {% for l in q.links %}
+            {% set state = "ok" if l.resolved is true else ("broken" if l.resolved is false else "unknown") %}
+            <li class="q-link q-link-{{ state }}">
+              <span class="q-link-state"
+                    title="{% if state == 'ok' %}цель существует, проверено {{ l.last_checked | short_date }}{% elif state == 'broken' %}{{ l.broken_reason }}{% else %}не проверяется{% endif %}">{% if state == "ok" %}✓{% elif state == "broken" %}✗{% else %}·{% endif %}</span>
+              <span class="q-kind">{{ l.to_kind }}</span>
+              <div class="q-link-body">
+                <div class="q-link-target">
+                  {% if l.href %}
+                    <a href="{{ l.href }}"{% if l.to_kind == "url" %} rel="noopener" target="_blank"{% endif %}><code>{{ l.to_ref }}</code></a>
+                  {% else %}
+                    <code>{{ l.to_ref }}</code>
+                  {% endif %}
+                  <span class="q-rel">{{ l.relation_label }}</span>
+                </div>
+                {% if l.note %}<div class="muted q-link-note">{{ l.note }}</div>{% endif %}
+                {% if l.broken_reason %}<div class="row-error q-link-note">{{ l.broken_reason }}</div>{% endif %}
+                {% if l.excerpt %}
+                  <details class="question-excerpt">
+                    <summary class="muted">код: {{ l.excerpt.path }}:{{ l.excerpt.start }}</summary>
+                    {# Номера строк — отдельной колонкой: highlight.js перерисовывает
+                       <code> целиком и выбросил бы вложенную разметку. #}
+                    <div class="question-excerpt-body">
+                      <pre class="question-excerpt-gutter" aria-hidden="true">{% for line in l.excerpt.lines %}{{ line.no }}
 {% endfor %}</pre>
-                <pre><code>{% for line in l.excerpt.lines %}{{ line.text }}
+                      <pre><code>{% for line in l.excerpt.lines %}{{ line.text }}
 {% endfor %}</code></pre>
+                    </div>
+                  </details>
+                {% endif %}
               </div>
-            </details>
+              <form method="post" action="{{ base }}/links" class="q-inline q-link-remove">
+                <input type="hidden" name="op" value="detach">
+                <input type="hidden" name="to_kind" value="{{ l.to_kind }}">
+                <input type="hidden" name="to_ref" value="{{ l.to_ref }}">
+                <input type="hidden" name="relation" value="{{ l.relation }}">
+                <button type="submit" class="btn btn-xs btn-ghost" title="убрать ссылку" aria-label="убрать ссылку">✕</button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty-hint">Ссылок нет. Сошлитесь на документ, секцию, файл или задачу, которых касается вопрос.</p>
+      {% endif %}
+      <details class="q-add">
+        <summary>Добавить ссылку</summary>
+        <form method="post" action="{{ base }}/links" class="settings-form q-form">
+          <input type="hidden" name="op" value="attach">
+          <div class="q-form-row">
+            <label class="field">
+              <span class="label">Вид</span>
+              <select name="to_kind">
+                {% for k in link_kind_options %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
+              </select>
+            </label>
+            <label class="field">
+              <span class="label">Связь</span>
+              <select name="relation">
+                {% for r in relation_options %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+              </select>
+            </label>
+          </div>
+          <label class="field">
+            <span class="label">Цель</span>
+            <input name="to_ref" required placeholder="ADO-042 · ADR-014 · docs/x#anchor · app/pay.py#L10-L20 · https://…">
+          </label>
+          <label class="field"><span class="label">Заметка (необязательно)</span><input name="note"></label>
+          <div class="form-actions"><button type="submit" class="btn btn-sm btn-primary">Добавить</button></div>
+        </form>
+      </details>
+    </section>
+
+    <section class="task-card" id="edit">
+      <details class="q-edit"{% if edit %} open{% endif %}>
+        <summary><strong>Править вопрос</strong></summary>
+        <form method="post" action="{{ base }}/edit" class="settings-form q-form">
+          <label class="field"><span class="label">Заголовок</span><input name="title" value="{{ q.title }}" required></label>
+          <label class="field"><span class="label">Вопрос — markdown</span><textarea name="question" rows="3" required>{{ q.question }}</textarea></label>
+          <div class="q-form-row">
+            <label class="field">
+              <span class="label">Приоритет</span>
+              <select name="priority">
+                {% for p in priority_options %}<option value="{{ p }}" {% if p == q.priority %}selected{% endif %}>{{ p }}</option>{% endfor %}
+              </select>
+            </label>
+            <label class="field"><span class="label">Владелец — пусто снимает</span><input name="owner" value="{{ q.owner or '' }}"></label>
+          </div>
+          <label class="field"><span class="label">Контекст — markdown; пусто очищает</span><textarea name="context" rows="8">{{ q.context or "" }}</textarea></label>
+          <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить</button></div>
+        </form>
+      </details>
+    </section>
+  </main>
+
+  <aside class="task-deps">
+    {% if q.status == "open" %}
+      <section class="task-card q-answer" id="answer">
+        <header class="task-card-header"><h2>Ответ</h2></header>
+        <form method="post" action="{{ base }}/resolve" class="settings-form q-form">
+          {% if q.options %}
+            <fieldset class="q-choice">
+              <legend>Выбранный вариант</legend>
+              <label class="q-choice-item"><input type="radio" name="chosen_option" value="" checked> <span class="muted">не выбран</span></label>
+              {% for o in q.options %}
+                <label class="q-choice-item"><input type="radio" name="chosen_option" value="{{ o.position }}"> <span>{{ o.position }}. {{ o.title }}</span></label>
+              {% endfor %}
+            </fieldset>
           {% endif %}
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="muted">Ссылок нет.</p>
-  {% endif %}
-  <details>
-    <summary>➕ Добавить ссылку</summary>
-    <form method="post" action="{{ base }}/links" class="settings-form">
-      <input type="hidden" name="op" value="attach">
-      <div class="adr-form-row">
-        <label class="field">
-          <span class="label">Kind</span>
-          <select name="to_kind">
-            {% for k in link_kind_options %}<option value="{{ k }}">{{ k }}</option>{% endfor %}
-          </select>
-        </label>
-        <label class="field">
-          <span class="label">Relation</span>
-          <select name="relation">
-            {% for r in relation_options %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
-          </select>
-        </label>
-      </div>
-      <label class="field">
-        <span class="label">Ref — ADO-042 · ADR-014 · docs/x · docs/x#anchor · app/pay.py#L10-L20 · app/pay.py#charge · https://…</span>
-        <input name="to_ref" required>
-      </label>
-      <label class="field"><span class="label">Note (optional)</span><input name="note"></label>
-      <div class="form-actions"><button type="submit" class="btn btn-sm btn-primary">Добавить</button></div>
-    </form>
-  </details>
-</section>
+          <label class="field">
+            <span class="label">ADR с решением</span>
+            <input name="by_adr" placeholder="ADR-NNN" pattern="^ADR-\d{3,}$">
+          </label>
+          <label class="field">
+            <span class="label">Ответ — markdown</span>
+            <textarea name="resolution" rows="3"></textarea>
+          </label>
+          <p class="muted-tiny">Нужно хотя бы одно: вариант, ADR или текст.</p>
+          <div class="form-actions"><button type="submit" class="btn btn-success q-wide">Закрыть с ответом</button></div>
+        </form>
+        <details class="q-mini">
+          <summary>Снять без ответа</summary>
+          <form method="post" action="{{ base }}/drop" class="settings-form q-form">
+            <label class="field"><span class="label">Почему снят</span><textarea name="resolution" rows="2" required></textarea></label>
+            <div class="form-actions"><button type="submit" class="btn btn-sm btn-danger">Снять вопрос</button></div>
+          </form>
+        </details>
+      </section>
+    {% else %}
+      <section class="task-card q-resolution q-resolution-{{ q.status }}">
+        <header class="task-card-header">
+          <h2>{% if q.status == "resolved" %}Ответ{% else %}Снят без ответа{% endif %}</h2>
+          {% if q.resolved_at %}<span class="muted-tiny" title="{{ q.resolved_at | ts_tooltip }}">{{ q.resolved_at | short_date }}</span>{% endif %}
+        </header>
+        {% if chosen %}<p class="q-resolution-choice">Вариант {{ chosen[0].position }}: <strong>{{ chosen[0].title }}</strong></p>{% endif %}
+        {% if q.resolved_by_adr %}
+          <p>Решение: <a class="meta-chip meta-chip-link" href="/p/{{ project.name }}/adr/{{ q.resolved_by_adr }}">{{ q.resolved_by_adr }}</a></p>
+        {% endif %}
+        {% if q.resolution_html %}<div class="doc-body">{{ q.resolution_html | safe }}</div>{% endif %}
+      </section>
+    {% endif %}
 
-{% if q.status == "open" %}
-<section class="task-card" id="answer">
-  <div class="task-card-header"><h2>Ответить</h2></div>
-  <form method="post" action="{{ base }}/resolve" class="settings-form">
-    <div class="adr-form-row">
-      <label class="field">
-        <span class="label">Выбранный вариант</span>
-        <select name="chosen_option">
-          <option value="">—</option>
-          {% for o in q.options %}<option value="{{ o.position }}">#{{ o.position }} {{ o.title }}</option>{% endfor %}
-        </select>
-      </label>
-      <label class="field">
-        <span class="label">ADR с решением</span>
-        <input name="by_adr" placeholder="ADR-NNN" pattern="^ADR-\d{3,}$">
-      </label>
-    </div>
-    <label class="field">
-      <span class="label">Ответ (markdown) — нужен хотя бы один из трёх</span>
-      <textarea name="resolution" rows="4"></textarea>
-    </label>
-    <div class="form-actions"><button type="submit" class="btn btn-success">✅ Закрыть с ответом</button></div>
-  </form>
-  <details>
-    <summary class="muted">Снять без ответа</summary>
-    <form method="post" action="{{ base }}/drop" class="settings-form">
-      <label class="field"><span class="label">Почему снят</span><textarea name="resolution" rows="2" required></textarea></label>
-      <div class="form-actions"><button type="submit" class="btn btn-danger">🗄️ Снять</button></div>
-    </form>
-  </details>
-</section>
-{% endif %}
-
-<section class="task-card">
-  <details>
-    <summary><strong>✏️ Править вопрос</strong></summary>
-    <form method="post" action="{{ base }}/edit" class="settings-form">
-      <label class="field"><span class="label">Title</span><input name="title" value="{{ q.title }}" required></label>
-      <label class="field"><span class="label">Question</span><textarea name="question" rows="3" required>{{ q.question }}</textarea></label>
-      <div class="adr-form-row">
-        <label class="field">
-          <span class="label">Priority</span>
-          <select name="priority">
-            {% for p in priority_options %}<option value="{{ p }}" {% if p == q.priority %}selected{% endif %}>{{ p }}</option>{% endfor %}
-          </select>
-        </label>
-        <label class="field"><span class="label">Owner (пусто — снять)</span><input name="owner" value="{{ q.owner or '' }}"></label>
-      </div>
-      <label class="field"><span class="label">Context (markdown; пусто — очистить)</span><textarea name="context" rows="8">{{ q.context or "" }}</textarea></label>
-      <div class="form-actions"><button type="submit" class="btn btn-primary">Сохранить</button></div>
-    </form>
-  </details>
-</section>
+    <section class="task-card">
+      <header class="task-card-header"><h2>Детали</h2></header>
+      <dl class="q-meta">
+        <dt>Статус</dt><dd><span class="badge badge-q-{{ q.status }}">{{ status_label }}</span></dd>
+        <dt>Приоритет</dt><dd>{{ q.priority }}</dd>
+        <dt>Владелец</dt><dd>{{ q.owner or "—" }}</dd>
+        <dt>Автор</dt><dd>{{ q.author }}</dd>
+        <dt>Создан</dt><dd title="{{ q.created | ts_tooltip }}">{{ q.created | short_date }}</dd>
+        <dt>Изменён</dt><dd title="{{ q.last_updated | ts_tooltip }}">{{ q.last_updated | short_date }}</dd>
+        {% if q.source_doc_key %}<dt>Перенесён из</dt><dd class="q-meta-wrap"><code>{{ q.source_doc_key }}</code></dd>{% endif %}
+      </dl>
+    </section>
+  </aside>
+</div>
 {% endblock %}

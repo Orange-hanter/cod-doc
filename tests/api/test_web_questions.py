@@ -158,10 +158,11 @@ def test_create_edit_resolve_reopen_via_forms(q_client) -> None:  # type: ignore
 
     r = q_client.post(
         f"/p/{SLUG}/questions/Q-003/resolve",
-        data={"chosen_option": "1", "by_adr": "ADR-007", "resolution": ""},
+        data={"chosen_option": "2", "by_adr": "ADR-007", "resolution": ""},
         follow_redirects=True,
     )
-    assert "✔ выбран" in r.text
+    assert "q-option q-option-chosen" in r.text
+    assert "Вариант 2: <strong>B</strong>" in r.text
     assert f'href="/p/{SLUG}/adr/ADR-007"' in r.text
 
     r = q_client.post(f"/p/{SLUG}/questions/Q-003/reopen", follow_redirects=True)
@@ -191,8 +192,8 @@ def test_service_error_comes_back_as_alert_not_500(q_client) -> None:  # type: i
 
 def test_options_and_links_forms(q_client) -> None:  # type: ignore[no-untyped-def]
     q_client.post(f"/p/{SLUG}/questions/Q-001/options", data={"title": "Stripe", "body": "нет RU"})
-    q_client.post(f"/p/{SLUG}/questions/Q-001/options/0", data={"op": "update", "title": "ЮKassa+"})
-    q_client.post(f"/p/{SLUG}/questions/Q-001/options/1", data={"op": "delete"})
+    q_client.post(f"/p/{SLUG}/questions/Q-001/options/1", data={"op": "update", "title": "ЮKassa+"})
+    q_client.post(f"/p/{SLUG}/questions/Q-001/options/2", data={"op": "delete"})
     r = q_client.post(
         f"/p/{SLUG}/questions/Q-001/links",
         data={"to_kind": "code", "to_ref": "pay.py#L3-L4", "relation": "about", "op": "attach"},
@@ -227,3 +228,28 @@ def test_document_page_lists_linked_questions(q_client) -> None:  # type: ignore
     assert r.status_code == 200
     assert 'id="questions"' in r.text
     assert f'href="/p/{SLUG}/questions/Q-001"' in r.text
+
+
+def test_list_tabs_count_every_status_and_keep_filters(q_client) -> None:  # type: ignore[no-untyped-def]
+    r = q_client.get(f"/p/{SLUG}/questions?priority=medium")
+    assert 'Открытые <span class="q-status-count">1</span>' in r.text
+    assert 'Снятые <span class="q-status-count">1</span>' in r.text
+    assert 'Все <span class="q-status-count">2</span>' in r.text
+    # вкладка статуса не теряет фильтр приоритета
+    assert f"/p/{SLUG}/questions?status=all&amp;priority=medium" in r.text
+    # подстрока вопроса без markdown-разметки
+    assert "ЮKassa или CloudPayments?" in r.text
+    assert "**ЮKassa**" not in r.text
+
+
+def test_card_answer_form_only_while_open_and_edit_flag(q_client) -> None:  # type: ignore[no-untyped-def]
+    open_card = q_client.get(f"/p/{SLUG}/questions/Q-001").text
+    assert 'id="answer"' in open_card
+    assert '<details class="q-edit">' in open_card
+    assert '<details class="q-edit" open>' in q_client.get(f"/p/{SLUG}/questions/Q-001?edit=1").text
+
+    dropped = q_client.get(f"/p/{SLUG}/questions/Q-002").text
+    assert 'id="answer"' not in dropped
+    assert "Снят без ответа" in dropped
+    assert "неактуально" in dropped
+    assert "Переоткрыть" in dropped
