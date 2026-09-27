@@ -11,7 +11,6 @@ from sqlalchemy import select
 
 from cod_doc.domain.entities import EntityKind, QuestionLinkKind
 from cod_doc.infra.models import OpenQuestionModel
-from cod_doc.services import activity_service, search_service
 from cod_doc.services.validation import ValidationError
 
 from ._types import QuestionNotFoundError
@@ -105,31 +104,31 @@ def _diff(op: str, **fields: object) -> str:
     return json.dumps({"op": op, **fields}, ensure_ascii=False, default=str)
 
 
-def record(
-    session: Session,
+def audit_kwargs(
     model: OpenQuestionModel,
     *,
     author: str,
     op: str,
     reason: str | None,
     summary: str,
-    payload: dict[str, Any],
-) -> None:
-    """Revision + activity event + FTS refresh — один вызов на каждую мутацию."""
-    session.flush()
-    activity_service.write_revision_and_emit_event(
-        session,
-        project_id=model.project_id,
-        entity_kind=EntityKind.QUESTION,
-        entity_id=model.row_id,
-        author=author,
-        diff=_diff(op, question_id=model.question_id, **payload),
-        reason=reason or op,
-        activity_kind=f"question.{op}",
-        activity_scope_kind="question",
-        activity_scope_id=model.question_id,
-        activity_payload=payload,
-        activity_summary=summary,
-    )
-    search_service.index_question(session, model)
-    session.flush()
+    payload: dict[str, object],
+) -> dict[str, Any]:
+    """Аргументы ``write_revision_and_emit_event`` для одной мутации вопроса.
+
+    Сам вызов делает ``_record`` в каждом модуле мутаций: детектор паритета
+    поверхностей (``tests/services/_surface_parity.py``) узнаёт мутацию по
+    вызову audit-trail внутри модуля, через module-local хелперы.
+    """
+    return {
+        "project_id": model.project_id,
+        "entity_kind": EntityKind.QUESTION,
+        "entity_id": model.row_id,
+        "author": author,
+        "diff": _diff(op, question_id=model.question_id, **payload),
+        "reason": reason or op,
+        "activity_kind": f"question.{op}",
+        "activity_scope_kind": "question",
+        "activity_scope_id": model.question_id,
+        "activity_payload": payload,
+        "activity_summary": summary,
+    }

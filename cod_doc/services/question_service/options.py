@@ -12,8 +12,9 @@ from typing import TYPE_CHECKING
 
 from cod_doc.infra.models import QuestionOptionModel
 from cod_doc.infra.repositories import QuestionOptionRepository
+from cod_doc.services import activity_service, search_service
 
-from ._internals import _require_question, record, validate_text
+from ._internals import _require_question, audit_kwargs, validate_text
 from ._types import QuestionOptionNotFoundError
 
 if TYPE_CHECKING:
@@ -21,6 +22,28 @@ if TYPE_CHECKING:
 
     from cod_doc.domain.entities import QuestionOption
     from cod_doc.infra.models import OpenQuestionModel
+
+
+def _record(
+    session: Session,
+    model: OpenQuestionModel,
+    *,
+    author: str,
+    op: str,
+    reason: str | None,
+    summary: str,
+    payload: dict[str, object],
+) -> None:
+    """Revision + activity event + FTS refresh — один вызов на мутацию (ADO-040)."""
+    session.flush()
+    activity_service.write_revision_and_emit_event(
+        session,
+        **audit_kwargs(
+            model, author=author, op=op, reason=reason, summary=summary, payload=payload
+        ),
+    )
+    search_service.index_question(session, model)
+    session.flush()
 
 
 def list_options(session: Session, question_row_id: int) -> list[QuestionOption]:
@@ -51,7 +74,7 @@ def add_option(
     opt = QuestionOptionModel(position=position, title=title, body=body, chosen=False)
     model.options.append(opt)
     model.last_updated = datetime.now(UTC)
-    record(
+    _record(
         session,
         model,
         author=author,
@@ -85,7 +108,7 @@ def update_option(
         changed["body"] = opt.body = body or None
     if changed:
         model.last_updated = datetime.now(UTC)
-        record(
+        _record(
             session,
             model,
             author=author,
@@ -110,7 +133,7 @@ def remove_option(
     opt = _require_option(model, position)
     model.options.remove(opt)
     model.last_updated = datetime.now(UTC)
-    record(
+    _record(
         session,
         model,
         author=author,

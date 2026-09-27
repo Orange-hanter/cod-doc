@@ -25,11 +25,12 @@ from cod_doc.domain.entities import (
 )
 from cod_doc.infra.models import OpenQuestionModel, QuestionLinkModel, QuestionOptionModel
 from cod_doc.infra.repositories import OpenQuestionRepository
+from cod_doc.services import activity_service, search_service
 
 from ._internals import (
     _next_question_id,
     _require_question,
-    record,
+    audit_kwargs,
     validate_question_id,
     validate_ref,
     validate_text,
@@ -44,6 +45,28 @@ if TYPE_CHECKING:
 # Порядок выдачи: сначала открытые, внутри — по срочности.
 _STATUS_ORDER = {s: i for i, s in enumerate(QuestionStatus)}
 _PRIORITY_ORDER = {p: i for i, p in enumerate(Priority)}
+
+
+def _record(
+    session: Session,
+    model: OpenQuestionModel,
+    *,
+    author: str,
+    op: str,
+    reason: str | None,
+    summary: str,
+    payload: dict[str, object],
+) -> None:
+    """Revision + activity event + FTS refresh — один вызов на мутацию (ADO-040)."""
+    session.flush()
+    activity_service.write_revision_and_emit_event(
+        session,
+        **audit_kwargs(
+            model, author=author, op=op, reason=reason, summary=summary, payload=payload
+        ),
+    )
+    search_service.index_question(session, model)
+    session.flush()
 
 
 def create(
@@ -102,7 +125,7 @@ def create(
         )
 
     model = _require_question(session, project_id, qid)
-    record(
+    _record(
         session,
         model,
         author=author,
@@ -116,7 +139,9 @@ def create(
             "source_doc_key": source_doc_key,
         },
     )
-    return created
+    fresh = get(session, project_id, qid)
+    assert fresh is not None
+    return fresh
 
 
 def get(session: Session, project_id: int, question_id: str) -> OpenQuestion | None:
@@ -194,7 +219,7 @@ def update(
 
     if changed:
         model.last_updated = datetime.now(UTC)
-        record(
+        _record(
             session,
             model,
             author=author,
@@ -263,7 +288,7 @@ def resolve(
             )
         )
 
-    record(
+    _record(
         session,
         model,
         author=author,
@@ -297,7 +322,7 @@ def drop(
     model.resolution = resolution
     model.resolved_at = now
     model.last_updated = now
-    record(
+    _record(
         session,
         model,
         author=author,
@@ -337,7 +362,7 @@ def reopen(
     model.resolved_at = None
     model.last_updated = datetime.now(UTC)
     _mark_chosen(model, None)
-    record(
+    _record(
         session,
         model,
         author=author,

@@ -21,11 +21,34 @@ from cod_doc.domain.entities import (
 )
 from cod_doc.infra.models import OpenQuestionModel, QuestionLinkModel
 from cod_doc.infra.repositories import OpenQuestionRepository, QuestionLinkRepository
+from cod_doc.services import activity_service, search_service
 
-from ._internals import _require_question, record, validate_ref
+from ._internals import _require_question, audit_kwargs, validate_ref
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+
+def _record(
+    session: Session,
+    model: OpenQuestionModel,
+    *,
+    author: str,
+    op: str,
+    reason: str | None,
+    summary: str,
+    payload: dict[str, object],
+) -> None:
+    """Revision + activity event + FTS refresh — один вызов на мутацию (ADO-040)."""
+    session.flush()
+    activity_service.write_revision_and_emit_event(
+        session,
+        **audit_kwargs(
+            model, author=author, op=op, reason=reason, summary=summary, payload=payload
+        ),
+    )
+    search_service.index_question(session, model)
+    session.flush()
 
 
 def list_links(session: Session, question_row_id: int) -> list[QuestionLink]:
@@ -77,8 +100,12 @@ def link(
     )
     model.links.append(edge)
     model.last_updated = datetime.now(UTC)
-    payload = {"to_kind": to_kind.value, "to_ref": to_ref, "relation": relation.value}
-    record(
+    payload: dict[str, object] = {
+        "to_kind": to_kind.value,
+        "to_ref": to_ref,
+        "relation": relation.value,
+    }
+    _record(
         session,
         model,
         author=author,
@@ -108,7 +135,7 @@ def unlink(
         return False
     model.links.remove(existing)
     model.last_updated = datetime.now(UTC)
-    record(
+    _record(
         session,
         model,
         author=author,

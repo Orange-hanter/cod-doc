@@ -25,6 +25,7 @@ from ._types import (
 from .crud import create, drop, get, list_for_project, reopen, resolve, update
 from .links import link, list_links, questions_for_targets, unlink
 from .options import add_option, list_options, remove_option, update_option
+from .serialize import link_to_dict, option_to_dict, question_summary, question_to_dict
 from .verify import broken_links, check_edge, verify_links
 
 __all__ = [
@@ -41,9 +42,13 @@ __all__ = [
     "drop",
     "get",
     "link",
+    "link_to_dict",
     "list_for_project",
     "list_links",
     "list_options",
+    "option_to_dict",
+    "question_summary",
+    "question_to_dict",
     "questions_for_targets",
     "remove_option",
     "reopen",
