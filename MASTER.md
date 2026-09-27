@@ -117,7 +117,7 @@ graph TD
     `curator_next`; аренда блоков человеческих ID; роли reader/writer/admin на
     проект. Пересматривает premise RFC 23 («сервер — это реплика», без Postgres).
     Плана нет — оценка ~35 задач в секциях A–F.
-    Файл: `📁 /proposals/28-cloud-remote-sync.md | 🗃️ doc:proposals_28-cloud-remote-sync_md | 🔑 sha:2871d30b0786`
+    Файл: `📁 /proposals/28-cloud-remote-sync.md | 🗃️ doc:proposals_28-cloud-remote-sync_md | 🔑 sha:4b18f544a521`
   - **24 (structure-track):** 🟡 Черновик — Единый контур structure/contracts/scenarios
     (docs↔code граница, obligations_export, structure_facts, scenario assessment).
     Поглощает внешнюю часть RFC 17, зависит от RFC 22.
