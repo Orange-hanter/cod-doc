@@ -62,7 +62,8 @@ def register(mcp: FastMCP) -> None:
             в ``card.drift.advisory`` (``{count, doc_keys}``).
             ``card.unplaced`` — документы в Инбоксе дерева.
             ``card.questions`` — открытые вопросы с битыми ссылками и
-            застоявшиеся (``broken_links`` / ``stale``).
+            застоявшиеся (``broken_links`` / ``stale``), а также
+            открытые, чьи ``addressed_by``-задачи все сделаны (``answered``).
             ``applicable_skills`` — ``[{name, description}]``, тела (``body``)
             только при ``include_skill_bodies=true``.
 
