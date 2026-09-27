@@ -78,7 +78,7 @@ related_docs:
 | [agent-tools-completion](agent-tools-completion-task-plan.md) | ✅ done | закрыт STB-001 |
 | [stabilization-2026-06](../audit/2026-07-29-state-of-the-project.md) | 🔄 11/12 · 1 cancelled *(2026-09-21)* | Остаток — один STB-023. STB-012 → cancelled (re-scoped как ADO-013); секция P1 закрылась 4/4, отменённая задача больше не держит её открытой |
 | **adoption-2026-08** | 🔄 137/233 · 4 cancelled *(2026-09-21)* | Треки C+D+E+W; пилоты переназначены на ZAIrgRush и Orakul ([RFC 22](../../../proposals/22-symbiosis-zairgrush-orakul.md)). Секции: **C 25/25 ✅**, D 60/98, E 18/20, F 1/1, G 9/28, H 2/2, **I Web UI 22/59**. Отменены ADO-003, ADO-004, ADO-043, ADO-051 — до ADO-078 они третий месяц числились несделанными, и секция C висела «2 осталось», не имея ни одной задачи |
-| **agent-fit-2026-09** ([RFC 27](../../../proposals/27-agent-fit.md)) | 🔄 15/18 *(2026-09-27, v1.5.0)* | Coding-агент закрывает вопросы тулами, а не SQL. Секции: **A 3/3 ✅**, **B 2/2 ✅**, **C 5/5 ✅**, **D 1/1 ✅**, **E 1/1 ✅**, F 3/6 (AFT-014/015 — живая проверка, AFT-018 — backlog) |
+| **agent-fit-2026-09** ([RFC 27](../../../proposals/27-agent-fit.md)) | ✅ 17/18 · AFT-018 backlog *(2026-09-27, v1.5.0)* | Coding-агент закрывает вопросы тулами, а не SQL. Все секции A–F закрыты; повторный замер (AFT-018) — через две недели после v1.5.0 |
 | RFC 16–21 (hackathon-track) | ❌ отбракованы 2026-08-29 | ADO-056: ни одна не закрывает спрос M2; пометки в [proposals/README.md](../../../proposals/README.md) |
 
 ## Смена приоритета: почему Adoption вперёд фич
@@ -143,7 +143,7 @@ byte-identical round-trip — перед первым `doc export` наружу)
 | C | Качество поиска: пустой индекс, бюджет, кросс-проект (SYM-011) | ✅ done (6/6), аудит [2026-09-20-doc-curator-section-c.md](../audit/2026-09-20-doc-curator-section-c.md); полный кросс-проектный скоуп RFC 22 §3.6 (`[[doc:slug:key]]`, Chroma-фильтр, `GET /api/v1/search`) остаётся STO-015/SYM-011 в `adoption-2026-08` |
 | D | `curator_next` (CUR-016) + ревизия daemon `cod-doc agent run` (CUR-017, legacy) | ✅ done (3/3), аудит [2026-09-20-doc-curator-section-d.md](../audit/2026-09-20-doc-curator-section-d.md) |
 
-### Трек RFC 27 — Agent fit — **заведён 2026-09-23**
+### Трек RFC 27 — Agent fit — **закрыт 2026-09-27 (v1.5.0)**
 
 Замер 2026-09-23: за 40 сессий coding-агент 407 раз читал `state.db` SQL-ом
 в обход тулов — больше, чем сделал MCP-вызовов вообще (398). Контракт —
@@ -158,7 +158,7 @@ byte-identical round-trip — перед первым `doc export` наружу)
 | C | Чтение без SQL: фильтры `task_list`, `plan_list`/проектный прогресс, лента ревизий, `doc_section_get`, `context_get(task)` | AFT-006…010 ✅ done, аудит [2026-09-27-agent-fit-sections-a-c-d-e.md](../audit/2026-09-27-agent-fit-sections-a-c-d-e.md) |
 | D | Надёжный `task_create`: префикс из плана, коллизии без `IntegrityError` | AFT-011 ✅ done, аудит [2026-09-27-agent-fit-sections-a-c-d-e.md](../audit/2026-09-27-agent-fit-sections-a-c-d-e.md) |
 | E | `local_only` в ready-выборке | AFT-012 ✅ done, аудит [2026-09-27-agent-fit-sections-a-c-d-e.md](../audit/2026-09-27-agent-fit-sections-a-c-d-e.md) |
-| F | Канон скиллов — плагин, инструкции без `sqlite3`, один хук, скрипт-метрика | AFT-013…016 |
+| F | Канон скиллов — плагин, инструкции без `sqlite3`, один хук, скрипт-метрика | AFT-013…017 ✅ done, AFT-018 backlog; аудит [2026-09-27-agent-fit-section-f-and-plan-closure.md](../audit/2026-09-27-agent-fit-section-f-and-plan-closure.md) |
 
 Adoption (ниже) остаётся программой пилотов. Агент в пилотах — источник
 контекста и санитар, не воркер, который закрывает чужой бэклог.
