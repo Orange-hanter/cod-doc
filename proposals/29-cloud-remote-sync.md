@@ -1,4 +1,4 @@
-# 28 — cod-doc remote: облачное хранение и доступ по модели git
+# 29 — cod-doc remote: облачное хранение и доступ по модели git
 
 > Категория: 🔵 Архитектура · Риск: высокий · Зависимости: proposal 09 (activity), proposal 22 (hub), proposal 23 (cloud plane), proposal 26 (write-путь через сервисы)
 

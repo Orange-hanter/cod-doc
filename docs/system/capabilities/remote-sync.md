@@ -12,7 +12,7 @@ related_docs:
   - backup-and-export.md
   - cloud-agent-plane.md
   - ../scenarios/remote-sync.md
-  - ../../../proposals/28-cloud-remote-sync.md
+  - ../../../proposals/29-cloud-remote-sync.md
 audience: [contributors, agents]
 ---
 
@@ -22,10 +22,10 @@ audience: [contributors, agents]
 > набор равноправных реплик. Реплики обмениваются журналом операций через
 > remote по модели git: `clone` / `pull` / `push`.
 
-> ⚠️ **Намечено, не реализовано (на 2026-09-27).** Спецификация по RFC 28
+> ⚠️ **Намечено, не реализовано (на 2026-09-27).** Спецификация по RFC 29
 > (черновик). Решения — ADR-016 (топология) и ADR-017 (идентичность и захват
 > операций), оба `proposed`. Плана нет. Контракт ниже — цель; детали схемы и
-> протокола — в [RFC 28](../../../proposals/28-cloud-remote-sync.md).
+> протокола — в [RFC 29](../../../proposals/29-cloud-remote-sync.md).
 
 ## 0. As implemented (2026-09-27)
 
@@ -141,7 +141,7 @@ remote куратор видит пунктом очереди `curator_next`. �
 
 ## 8. Связанные артефакты
 
-- RFC: [proposals/28-cloud-remote-sync.md](../../../proposals/28-cloud-remote-sync.md)
+- RFC: [proposals/29-cloud-remote-sync.md](../../../proposals/29-cloud-remote-sync.md)
 - ADR-016 — командная работа через реплики и remote (proposed)
 - ADR-017 — глобальная идентичность и захват операций (proposed)
 - Пересекается: [backup-and-export.md](backup-and-export.md) (remote как бэкап),

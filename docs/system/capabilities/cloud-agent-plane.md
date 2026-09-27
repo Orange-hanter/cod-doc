@@ -32,9 +32,9 @@ Agent profile — 6 curator-тулов (CUR-008, 2026-09-19): `agent_capabilitie
 `curator_next`, `ctx_search`, `ctx_drift`, `context_get`, `agent_report`.
 SoT по-прежнему embedded SQLite.
 
-> **Premise «SoT = Postgres» пересматривается (2026-09-27).** RFC 28 и
+> **Premise «SoT = Postgres» пересматривается (2026-09-27).** RFC 29 и
 > ADR-016 (`proposed`) предлагают командный узел как реплику с умным remote,
-> а не общую PostgreSQL; Bearer и роли §5 садятся на auth из RFC 28 §3.8. См.
+> а не общую PostgreSQL; Bearer и роли §5 садятся на auth из RFC 29 §3.8. См.
 > [remote-sync.md](remote-sync.md).
 
 > **Контракт cycle-5 в §1/§3 заменён RFC 25 (ADO-217).** Дефолтный агент —
