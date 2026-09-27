@@ -174,8 +174,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   AFT-004): там работает coding-агент по протоколу checkout → complete. Старые
   task-centric тулы (`agent_pick`, `agent_get`, `agent_complete`,
   `agent_release`) остались зарегистрированы, но видны только на
-  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 149
-  / `full` 153.
+  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 150
+  / `full` 154.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   прозе ~10 файлов; их полный список — `PROSE_COUNTERS` в
   `tests/test_profile_counts_prose.py`, который сверяет каждое вхождение с
@@ -295,7 +295,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/21/149/153) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/21/150/154) в коде и доках совпадают |
 | `test_profile_counts_prose.py` | счётчики профилей в прозе (README, MASTER, AGENTS, CLAUDE, docs, deploy, profiles.py, server.py) = живому каталогу |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `infra/test_totals_status_aliases.py` | `section_totals`/`plan_totals`/`ready_tasks` перечисляют все написания статуса из `TASK_STATUS_ALIASES` (миграция 0035) |
@@ -339,7 +339,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
   субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
-  (профиль `standard`, 149 тулов `task_*`/`doc_*`/`plan_*`/…) и
+  (профиль `standard`, 150 тулов `task_*`/`doc_*`/`plan_*`/…) и
   `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6 curator-тулов —
   `curator_next`/`ctx_*`/`context_get`/`agent_capabilities`/`agent_report`).
   Тем же launchd и тем же рантаймом живёт веб-UI — `com.cod-doc.web`. Доставка
@@ -355,9 +355,16 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   non-editable сборка в `~/.cod-doc/runtime`, чтобы грязное рабочее дерево
   не роняло все харнессы разом.
 - `/gate` — полный CI-гейт одной командой (обёртка над `scripts/gate.sh`).
-- Проектные скиллы `.claude/skills/`: `task-flow` (checkout → complete c sha,
-  создание задач/секций, service-fallback), `doc-sync` (markdown ↔ БД,
-  hash-реестр, drift-семантика).
+- Скиллы `cod-doc:task-flow` (checkout → complete c sha, создание
+  задач/секций) и `cod-doc:doc-sync` (markdown ↔ БД, hash-реестр,
+  drift-семантика) живут в `plugins/cod-doc/skills/{task-flow,doc-sync}` —
+  единственная копия (RFC 27 F14, AFT-013); локальных копий в `.claude/`
+  больше нет. Скиллы проектно-агностичны, репо-специфику они намеренно не
+  несут:
+  - слаг проекта в cod-doc — `cod-doc`;
+  - коммиты — по §«Конвенции» (conventional + ID задачи);
+  - автор в `task_complete` / revision — имя агента сессии; трейлер
+    соавторства — по инструкциям харнесса, а не из скилла.
 - PostToolUse-хук напоминает про `doc import` после правки `.md` — это не шум,
   это закон репозитория.
 

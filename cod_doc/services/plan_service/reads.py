@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select, text
 
@@ -16,7 +16,13 @@ from cod_doc.infra.repositories import (
 from cod_doc.services.task_locality import is_foreign
 
 from ._internals import _PRIORITY_ORDER, _derive_status, _require_plan
-from ._types import PlanProgress, ReadyBatch, SectionProgress
+from ._types import (
+    DerivedStatus,
+    PlanNotFoundError,
+    PlanProgress,
+    ReadyBatch,
+    SectionProgress,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -117,6 +123,148 @@ def recalc_for_project(session: Session, project_id: int) -> dict[int, PlanProgr
         )
         for r in rows
     }
+
+
+def plan_scopes(session: Session, project_id: int) -> list[str]:
+    """Scope'ы планов проекта в порядке :func:`list_for_project` (RFC 27 F8).
+
+    Выбирается одна колонка ``scope``: список нужен для подсказки в ошибке
+    «Plan not found», целые строки плана ему ни к чему.
+    """
+    stmt = (
+        select(PlanModel.scope)
+        .where(PlanModel.project_id == project_id)
+        .order_by(PlanModel.created.asc(), PlanModel.row_id.asc())
+    )
+    return [str(s) for s in session.execute(stmt).scalars()]
+
+
+def require_plan_in_project(session: Session, project_id: int, plan_scope: str) -> int:
+    """``row_id`` плана ``plan_scope`` в проекте; иначе ``PlanNotFoundError``.
+
+    Проверка идёт по паре (scope, project_id), а не через ``get_by_scope``:
+    scope уникален на БД, но в hub-БД несколько проектов, и ``get_by_scope``
+    нашёл бы план чужого проекта. Чужой план и отсутствующий дают одну и ту же
+    ошибку — существование чужого плана не раскрывается. Текст перечисляет
+    живые scope проекта, как это делает «Section not found».
+    """
+    row_id = session.execute(
+        select(PlanModel.row_id).where(
+            PlanModel.scope == plan_scope, PlanModel.project_id == project_id
+        )
+    ).scalar_one_or_none()
+    if row_id is None:
+        available = ", ".join(plan_scopes(session, project_id)) or "(none)"
+        raise PlanNotFoundError(
+            f"Plan '{plan_scope}' not found. Available plan scopes: {available}"
+        )
+    return int(row_id)
+
+
+def section_progress_for_project(
+    session: Session, project_id: int
+) -> dict[int, list[SectionProgress]]:
+    """Прогресс по секциям всех планов проекта одним SQL (RFC 27 F8).
+
+    Тот же запрос, что в :func:`recalc`, но без фильтра по одному плану —
+    ``{plan_id: [SectionProgress, ...]}`` в порядке ``position``. План без
+    секций ключа не получает. Вьюха ``section_totals`` уже учитывает
+    легаси-написания статусов и ``cancelled`` (миграции 0035/0039), поэтому
+    числа совпадают с ``recalc`` по каждому плану.
+    """
+    rows = session.execute(
+        text(
+            "SELECT s.plan_id, s.row_id, s.letter, s.title, s.slug, s.position, "
+            "       st.tasks_total, st.tasks_done, st.tasks_in_progress, "
+            "       st.tasks_cancelled "
+            "FROM plan_section s "
+            "JOIN section_totals st ON st.section_id = s.row_id "
+            "JOIN plan p ON p.row_id = s.plan_id "
+            "WHERE p.project_id = :pid "
+            "ORDER BY s.plan_id, s.position, s.row_id"
+        ),
+        {"pid": project_id},
+    ).all()
+    result: dict[int, list[SectionProgress]] = {}
+    for row in rows:
+        result.setdefault(int(row[0]), []).append(
+            SectionProgress(
+                section_id=row[1],
+                letter=row[2],
+                title=row[3],
+                slug=row[4],
+                position=row[5],
+                total=int(row[6] or 0),
+                done=int(row[7] or 0),
+                in_progress=int(row[8] or 0),
+                cancelled=int(row[9] or 0),
+                status=_derive_status(
+                    int(row[6] or 0), int(row[7] or 0), int(row[8] or 0), int(row[9] or 0)
+                ),
+            )
+        )
+    return result
+
+
+def progress_for_project(
+    session: Session, project_id: int, *, by_section: bool = False
+) -> list[PlanProgress]:
+    """Прогресс всех планов проекта в порядке :func:`list_for_project`.
+
+    Итоги — из :func:`recalc_for_project`, секции — из
+    :func:`section_progress_for_project` и только при ``by_section=True``
+    (иначе ``sections=[]``). Число запросов фиксировано и не зависит от числа
+    планов: ``recalc`` в цикле не зовётся.
+    """
+    totals = recalc_for_project(session, project_id)
+    sections = section_progress_for_project(session, project_id) if by_section else {}
+    result: list[PlanProgress] = []
+    for plan in list_for_project(session, project_id):
+        if plan.row_id is None:
+            continue
+        progress = totals[plan.row_id]
+        progress.sections = sections.get(plan.row_id, [])
+        result.append(progress)
+    return result
+
+
+#: Легаси-написание статуса плана: у задач канон ``in_progress``, у плана
+#: ``DerivedStatus.IN_PROGRESS`` = ``in-progress``.
+_DERIVED_STATUS_ALIASES = {"in_progress": DerivedStatus.IN_PROGRESS.value}
+
+
+def list_plans_summary(
+    session: Session, project_id: int, *, status: str | None = None
+) -> list[dict[str, Any]]:
+    """Сводка планов проекта: scope, principle, статус и счётчики (RFC 27 F8).
+
+    ``principle`` вместо ``title``: колонки заголовка у плана нет, его
+    человекочитаемое описание — ``principle``. ``status`` фильтрует по
+    ``DerivedStatus.value``; ``in_progress`` принимается как алиас
+    ``in-progress``, неизвестное значение — ``ValueError`` со списком
+    допустимых.
+    """
+    wanted: str | None = None
+    if status is not None:
+        wanted = _DERIVED_STATUS_ALIASES.get(status, status)
+        allowed = [s.value for s in DerivedStatus]
+        if wanted not in allowed:
+            raise ValueError(f"Unknown plan status '{status}'. Allowed: {', '.join(allowed)}")
+    principles = {p.row_id: p.principle for p in list_for_project(session, project_id)}
+    return [
+        {
+            "scope": p.scope,
+            "principle": principles.get(p.plan_id),
+            "status": p.status.value,
+            "total": p.total,
+            "done": p.done,
+            "in_progress": p.in_progress,
+            "cancelled": p.cancelled,
+            "remaining": p.remaining,
+        }
+        for p in progress_for_project(session, project_id)
+        if wanted is None or p.status.value == wanted
+    ]
 
 
 def _foreign_row_ids(session: Session, row_ids: list[int], root_path: str) -> set[int]:

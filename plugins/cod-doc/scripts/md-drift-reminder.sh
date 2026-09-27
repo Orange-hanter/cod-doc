@@ -46,6 +46,11 @@ case "$rel" in
 esac
 
 esc="${rel//\'/\'\'}"
+# sqlite3-direct: скрипт исполняется хуком PostToolUse на каждую правку,
+# бюджет — миллисекунды: `cod-doc project list --json` стоит ~388 мс против
+# ~5 мс у sqlite3 (медианы 5 прогонов). Прецедент — zsh-дополнение (ADO-179).
+# Чтение только `-readonly`. Для агентов и людей путь —
+# `cod-doc project list --json` / MCP (RFC 27 F15), не sqlite3.
 tracked="$(sqlite3 -readonly "$COD_DOC_ROOT/.cod-doc/state.db" \
 	"select doc_key from document where path = '$esc' limit 1" 2>/dev/null)"
 [ -n "$tracked" ] || exit 0

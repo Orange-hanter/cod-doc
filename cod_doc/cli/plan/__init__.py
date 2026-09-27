@@ -10,6 +10,8 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_critical_path,
     cmd_export,
     cmd_freeze,
+    cmd_list,
+    cmd_progress,
     cmd_ready,
     cmd_section,
     cmd_show,

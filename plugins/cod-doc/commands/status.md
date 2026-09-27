@@ -6,7 +6,7 @@ argument-hint: "[слаг проекта]"
 Собери статус проекта cod-doc и доложи одним экраном.
 
 Проект: `$1` — если пусто, определи слаг сам (`cod-doc project list`; в
-embedded-БД: `sqlite3 -readonly .cod-doc/state.db "select slug, root_path from project"`)
+embedded-БД: `cod-doc project list --json` → `[{slug, root_path, db_url}]`, слаг — элемент, чей `root_path` совпадает с корнем репо)
 и назови его в ответе. Если `.cod-doc/state.db` в репозитории нет — проект не
 подключён, скажи это и предложи `/cod-doc:setup`, дальше не иди.
 
