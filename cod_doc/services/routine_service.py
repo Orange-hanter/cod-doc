@@ -13,6 +13,8 @@ maintenance utilities:
 - ``doc_drift``      — wraps ``doc.drift``
 - ``task_stale``     — wraps ``task.stale``
 - ``alembic_head``   — ADO-027 (F1): рабочая БД на head-миграции
+- ``graph_health``   — ADO-205 (RFC 26 §5.3): циклы, немые/мёртвые/кросс-плановые
+  рёбра, позиции и слаги секций планов; пишет находки в ``finding``
 
 Plus the meta-check from proposal 12:
 
@@ -401,6 +403,29 @@ def _check_doc_node_health(
     }
 
 
+def _check_graph_health(
+    session: Session,
+    project_id: int,
+    **_: Any,
+) -> dict[str, Any]:
+    """ADO-205: здоровье графа задач — циклы, рёбра, секции планов.
+
+    Как и ``_check_doc_node_health``, пишет в таблицу ``finding`` (партиция
+    ``source_ref='graph_health'``), откуда находки забирает `curator_next`.
+    Правила детерминированы, сеть не нужна.
+    """
+    from cod_doc.services import graph_health
+
+    slug = _project_slug(session, project_id)
+    result = graph_health.sync(session, project_id=project_id, project_slug=slug)
+    # Сводная находка, как у doc_node_health: детали живут в таблице `finding`.
+    return {
+        "findings": [result] if result["issues"] else [],
+        "findings_count": result["issues"],
+        **result,
+    }
+
+
 def _project_slug(session: Session, project_id: int) -> str:
     from cod_doc.infra.repositories import ProjectRepository
 
@@ -417,6 +442,7 @@ CHECK_CATALOG: dict[str, CheckFn] = {
     "doc_drift": _check_doc_drift,
     "doc_unplaced": _check_doc_unplaced,
     "doc_node_health": _check_doc_node_health,
+    "graph_health": _check_graph_health,
     "task_stale": _check_task_stale,
     "alembic_head": _check_alembic_head,
 }
