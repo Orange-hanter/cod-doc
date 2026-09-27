@@ -21,7 +21,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_project, get_project_db
-from cod_doc.api.web.markdown import autolink_adr_refs, render_markdown
+from cod_doc.api.web.markdown import (
+    autolink_adr_refs,
+    lead_paragraph,
+    outline,
+    render_markdown,
+)
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import ADRStatus
 from cod_doc.services import adr_service, task_service
@@ -102,6 +107,26 @@ def _render_prose(text: str | None, slug: str) -> str:
     if not text:
         return ""
     return autolink_adr_refs(render_markdown(text), slug=slug)
+
+
+def _decision_brief(decision: str | None, slug: str) -> dict[str, Any] | None:
+    """ADO-229: суть решения для начала карточки, без нового поля в модели.
+
+    Заголовки внутри Decision — это и есть пункты решения (ADR-012: «1.
+    audit_log — снять контракт…»), их список короче любого абзаца. Нет
+    заголовков — первый абзац. Пустой Decision — карточки нет вовсе.
+    """
+    if not decision:
+        return None
+    # Пункт — сам ссылка на свой заголовок; автоссылка ADR-NNN внутри дала
+    # бы вложенный <a>.
+    points = [{"html": html, "anchor": anchor} for html, anchor in outline(decision)]
+    if points:
+        return {"points": points, "lead": ""}
+    lead = lead_paragraph(decision)
+    if not lead:
+        return None
+    return {"points": [], "lead": autolink_adr_refs(lead, slug=slug)}
 
 
 def _parse_date(s: str | None) -> date | None:
@@ -334,6 +359,7 @@ def adr_show(
             "project": proj.entry,
             "adr": payload,
             "sections": sections,
+            "brief": _decision_brief(payload.get("decision"), slug),
             "supersedes": rel["supersedes"],
             "superseded_by": rel["superseded_by"],
             "task_links": task_links,

@@ -515,3 +515,55 @@ def test_no_dead_adr_selectors() -> None:
 
     unused = sorted(styled - in_templates)
     assert not unused, f"правила без употребления в шаблонах: {unused}"
+
+
+# ── ADO-229: суть решения в начале карточки ─────────────────────────────
+
+
+def _set_decision(entry: ProjectEntry, adr_id: str, decision: str) -> None:
+    engine = make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db")
+    with transactional(make_session_factory(engine)) as session:
+        proj = ProjectRepository(session).get_by_slug("adr-demo")
+        assert proj is not None
+        assert proj.row_id is not None
+        adr_service.update(
+            session,
+            project_id=proj.row_id,
+            adr_id=adr_id,
+            title="Use SQLite for local-first",
+            status="proposed",
+            decision=decision,
+        )
+    engine.dispose()
+
+
+def test_adr_brief_lists_decision_headings(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _set_decision(
+        entry,
+        "ADR-002",
+        "### 1. `audit_log` — снять\n\nтело\n\n```\n### не заголовок\n```\n\n### 2. run_id — оставить\n",
+    )
+    r = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "Decision in brief" in r
+    brief = r.split('class="adr-brief-points"', 1)[1].split("</ol>", 1)[0]
+    assert brief.count("<li>") == 2, "заголовок внутри code fence пунктом не считается"
+    assert "<code>audit_log</code> — снять" in brief
+    assert "1. " not in brief, "ведущий номер срезан — нумерует <ol>"
+    # Ссылка пункта ведёт на якорь отрисованного заголовка.
+    anchor = brief.split('href="#', 1)[1].split('"', 1)[0]
+    assert f'id="{anchor}"' in r
+    assert brief.index('<li><a href="#') >= 0
+
+
+def test_adr_brief_falls_back_to_first_paragraph(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert 'class="adr-brief-lead">4-layer + DIP</p>' in r
+
+
+def test_adr_brief_absent_without_decision(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _set_decision(entry, "ADR-002", "")
+    r = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "Decision in brief" not in r

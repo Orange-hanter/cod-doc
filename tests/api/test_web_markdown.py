@@ -630,3 +630,26 @@ def test_renderer_itself_does_not_touch_frontmatter() -> None:
     """В теле документа из БД ведущий `---` — законная черта, не метаданные."""
     out = render_markdown("---\n\nтело")
     assert "<hr />" in out
+
+
+# ── ADO-229: outline / lead_paragraph ───────────────────────────────────
+
+
+def test_outline_anchor_matches_rendered_heading() -> None:
+    from cod_doc.api.web.markdown import outline
+
+    md = "## 2) Снять контракт\n\n#### глубоко\n\n### Третий\n"
+    items = outline(md)
+    assert [html for html, _ in items] == ["Снять контракт", "Третий"]
+    rendered = render_markdown(md)
+    for _, anchor in items:
+        assert f'id="{anchor}"' in rendered
+
+
+def test_lead_paragraph_skips_headings_and_lists() -> None:
+    from cod_doc.api.web.markdown import lead_paragraph
+
+    assert lead_paragraph("# H\n\n- item\n\nПервый **абзац**\nвторая строка\n\nещё") == (
+        "Первый <strong>абзац</strong>\nвторая строка"
+    )
+    assert lead_paragraph("") == ""

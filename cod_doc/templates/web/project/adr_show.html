@@ -58,6 +58,22 @@
 
 <div class="adr-layout">
   <article class="adr-main">
+    {# ADO-229: читатель, пришедший по ссылке из кода, ищет «что решили»;
+       Context идёт первым в теле, поэтому суть поднята над ним. #}
+    {% if brief %}
+      <section class="task-card adr-brief">
+        <div class="task-card-header"><h2>Decision in brief</h2></div>
+        {% if brief.points %}
+          <ol class="adr-brief-points">
+            {% for p in brief.points %}<li><a href="#{{ p.anchor }}">{{ p.html | safe }}</a></li>{% endfor %}
+          </ol>
+        {% else %}
+          <p class="adr-brief-lead">{{ brief.lead | safe }}</p>
+        {% endif %}
+        <a class="adr-brief-more" href="#decision">Read full decision ↓</a>
+      </section>
+    {% endif %}
+
     {% if sections %}
       <section class="task-card">
         {% for s in sections %}

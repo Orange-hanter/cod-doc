@@ -3367,6 +3367,14 @@ details > summary { cursor: pointer; }
 }
 .adr-section-title:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 
+/* ADO-229: суть решения над телом. Акцентная полоса отличает её от секций. */
+.adr-brief { border-left: 3px solid var(--accent); }
+.adr-brief-points { margin: 0 0 var(--space-2); padding-left: var(--space-5); line-height: 1.6; }
+.adr-brief-points a { color: var(--fg); }
+.adr-brief-points a:hover { color: var(--accent); }
+.adr-brief-lead { margin: 0 0 var(--space-2); }
+.adr-brief-more { font-size: 13px; }
+
 /* Действия: свёрнутые формы внизу страницы. */
 .adr-action { margin-top: var(--space-3); }
 .adr-action > summary { cursor: pointer; font-weight: 600; }
