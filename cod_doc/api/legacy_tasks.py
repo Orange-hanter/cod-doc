@@ -14,10 +14,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cod_doc.domain.entities import Plan, PlanSection, Priority, Task, TaskStatus
-from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
+from cod_doc.domain.entities import Priority, Task, TaskStatus
 from cod_doc.services import plan_service
-from cod_doc.services.validation import plan_section_slug
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -27,7 +25,8 @@ LEGACY_PLAN_SCOPE = "legacy-rest-api"
 LEGACY_SECTION_LETTER = "A"
 LEGACY_SECTION_TITLE = "Legacy REST"
 LEGACY_ID_PREFIX = "LEG"
-AUTHOR = "api-legacy"
+LEGACY_AUTHOR = "api-legacy"
+AUTHOR = LEGACY_AUTHOR
 
 _PRIORITY_TO_INT = {
     Priority.CRITICAL: 1,
@@ -89,14 +88,26 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
 
     Возвращает (plan_id, section_id). Scope уникален в пределах БД проекта
     (embedded state.db), поэтому повторные вызовы идемпотентны.
+
+    Запись идёт через ``plan_service`` и оставляет ревизию и activity event
+    (ADO-040, RFC 26 §5.1) с ``author='api-legacy'``; слаг новой секции —
+    конвенционный, его генерирует сервис. Существующие plan/plan_section не
+    трогаются.
+
+    Остаточный долг: scope уникален на всю БД, а поиск по нему не скоупится
+    проектом — в hub-БД legacy-план другого проекта будет найден и
+    переиспользован. Поведение прежнее.
     """
-    plan_repo = PlanRepository(session)
-    plan = plan_repo.get_by_scope(LEGACY_PLAN_SCOPE)
+    plan = plan_service.get_by_scope(session, LEGACY_PLAN_SCOPE)
     if plan is None:
-        plan = plan_repo.add(
-            Plan(project_id=project_id, scope=LEGACY_PLAN_SCOPE, principle="from-legacy-api")
+        plan = plan_service.create_plan(
+            session,
+            project_id=project_id,
+            scope=LEGACY_PLAN_SCOPE,
+            principle="from-legacy-api",
+            author=LEGACY_AUTHOR,
+            reason=None,
         )
-        session.flush()
     assert plan.row_id is not None
 
     sections = plan_service.list_sections(session, plan.row_id)
@@ -104,15 +115,14 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
         assert sections[0].row_id is not None
         return plan.row_id, sections[0].row_id
 
-    section = PlanSectionRepository(session).add(
-        PlanSection(
-            plan_id=plan.row_id,
-            letter=LEGACY_SECTION_LETTER,
-            title=LEGACY_SECTION_TITLE,
-            slug=plan_section_slug(LEGACY_SECTION_LETTER, LEGACY_SECTION_TITLE),
-            position=0,
-        )
+    section = plan_service.create_section(
+        session,
+        project_id=project_id,
+        plan_scope=LEGACY_PLAN_SCOPE,
+        letter=LEGACY_SECTION_LETTER,
+        title=LEGACY_SECTION_TITLE,
+        position=0,
+        author=LEGACY_AUTHOR,
     )
-    session.flush()
     assert section.row_id is not None
     return plan.row_id, section.row_id
