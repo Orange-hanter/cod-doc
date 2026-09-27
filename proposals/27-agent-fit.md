@@ -1,5 +1,11 @@
 # 27 — Agent fit: coding-агент закрывает вопросы тулами, а не SQL
 
+> **Статус: 🟢 реализован (v1.5.0, 2026-09-27)** — план `agent-fit-2026-09`
+> 17/18 `done`, AFT-018 (повторный замер) в `backlog`; аудиты:
+> [B](../docs/system/audit/2026-09-23-agent-fit-section-b.md),
+> [A/C/D/E](../docs/system/audit/2026-09-27-agent-fit-sections-a-c-d-e.md),
+> [F и закрытие](../docs/system/audit/2026-09-27-agent-fit-section-f-and-plan-closure.md).
+>
 > Категория: 🟢 Adoption · Риск: низкий · Зависимости: RFC 25 (роль куратора,
 > профиль `agent`), ADO-092 (frontmatter-расхождения — advisory), ADO-177
 > (авто-ID в скоупе проекта), RFC 26 (правка графа плана — соседняя дыра в
