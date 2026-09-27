@@ -104,6 +104,15 @@ def _next_adr_id(session: Session, project_id: int) -> str:
     return f"ADR-{max_n + 1:03d}"
 
 
+def next_adr_id(session: Session, project_id: int) -> str:
+    """Какой ``ADR-NNN`` получит следующий ``create`` без явного id (ADO-235).
+
+    Только подсказка для формы: между показом и сохранением номер может
+    занять другой автор — ``create`` всё равно выделяет его заново.
+    """
+    return _next_adr_id(session, project_id)
+
+
 def _require(session: Session, project_id: int, adr_id: str) -> ADRModel:
     row = session.execute(
         select(ADRModel).where(

@@ -205,6 +205,7 @@ def adr_new_form(
 ) -> HTMLResponse:
     """ADR-005: empty form to create a new ADR."""
     proj = get_project(slug)
+    session, project_id = db
     return templates.TemplateResponse(
         request,
         "project/adr_new.html",
@@ -213,8 +214,38 @@ def adr_new_form(
             "form_action": f"/p/{slug}/adr/new",
             "status_options": STATUS_OPTIONS,
             "default_status": "proposed",
+            "next_id": adr_service.next_adr_id(session, project_id),
         },
     )
+
+
+@router.post("/p/{slug}/adr/preview", response_class=HTMLResponse)
+def adr_preview(
+    request: Request,
+    slug: str,
+    context: Annotated[str | None, Form()] = None,
+    decision: Annotated[str | None, Form()] = None,
+    alternatives: Annotated[str | None, Form()] = None,
+    consequences: Annotated[str | None, Form()] = None,
+) -> HTMLResponse:
+    """ADO-235: markdown тела так, как его отрисует карточка, — без записи.
+
+    Тот же ``_render_prose`` и те же заголовки, что у ``adr_show``: иначе
+    предпросмотр показывал бы не то, что сохранится.
+    """
+    get_project(slug)
+    fields = {
+        "context": context,
+        "decision": decision,
+        "alternatives": alternatives,
+        "consequences": consequences,
+    }
+    sections = [
+        {"anchor": anchor, "title": title, "html": _render_prose(fields[key], slug)}
+        for key, anchor, title in _BODY_FIELDS
+        if (fields[key] or "").strip()
+    ]
+    return templates.TemplateResponse(request, "_frag/adr_preview.html", {"sections": sections})
 
 
 @router.post("/p/{slug}/adr/new")

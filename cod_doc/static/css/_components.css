@@ -3398,6 +3398,17 @@ details > summary { cursor: pointer; }
 .adr-action > summary { cursor: pointer; font-weight: 600; }
 .adr-action[open] > summary { margin-bottom: var(--space-3); }
 
+/* ADO-235: подсказки к разделам и предпросмотр markdown в формах. */
+.adr-hint { display: block; margin: 0 0 4px; font-size: 12px; color: var(--muted); }
+.adr-preview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.adr-preview-bar .adr-hint { margin: 0; }
+.adr-preview:not(:empty) {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
 /* Формы: двухколоночный ряд. */
 .adr-form-row {
   display: grid;

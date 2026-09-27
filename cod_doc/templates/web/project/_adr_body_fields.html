@@ -1,0 +1,33 @@
+{# ADO-235: четыре раздела тела ADR с подсказками и предпросмотром markdown.
+   Общий для формы New и Edit; `adr` может быть не задан (новая запись). #}
+{% set a = adr or {} %}
+<label class="field">
+  <span class="label">Context</span>
+  <span class="adr-hint">What forces the decision: the problem, constraints, measurements. Enough for a reader who wasn't there.</span>
+  <textarea name="context" rows="8">{{ a.context or '' }}</textarea>
+</label>
+<label class="field">
+  <span class="label">Decision</span>
+  <span class="adr-hint">What we chose, in the active voice. Several points? Give each a <code>### heading</code> — they become the “Decision in brief” list.</span>
+  <textarea name="decision" rows="10">{{ a.decision or '' }}</textarea>
+</label>
+<label class="field">
+  <span class="label">Alternatives considered</span>
+  <span class="adr-hint">Each rejected option and the one reason it lost.</span>
+  <textarea name="alternatives" rows="6">{{ a.alternatives or '' }}</textarea>
+</label>
+<label class="field">
+  <span class="label">Consequences</span>
+  <span class="adr-hint">What becomes easier, what we pay for it, and what is now forbidden.</span>
+  <textarea name="consequences" rows="6">{{ a.consequences or '' }}</textarea>
+</label>
+
+<div class="adr-preview-bar">
+  <button type="button" class="btn"
+          hx-post="/p/{{ project.name }}/adr/preview"
+          hx-include="closest form"
+          hx-target="next .adr-preview"
+          hx-swap="innerHTML">Preview markdown</button>
+  <span class="muted adr-hint">Renders the sections as the ADR page will, without saving.</span>
+</div>
+<div class="adr-preview" aria-live="polite"></div>

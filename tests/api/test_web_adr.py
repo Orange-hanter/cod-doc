@@ -566,7 +566,7 @@ def test_adr_brief_absent_without_decision(adr_client) -> None:  # type: ignore[
     client, entry = adr_client
     _set_decision(entry, "ADR-002", "")
     r = client.get(f"/p/{entry.name}/adr/ADR-002").text
-    assert "Decision in brief" not in r
+    assert "adr-brief" not in r
 
 
 # ── ADO-230: Referenced by ──────────────────────────────────────────────
@@ -637,3 +637,40 @@ def test_mermaid_loads_from_vendored_static(adr_client) -> None:  # type: ignore
     asset = client.get("/static/vendor/mermaid.min.js")
     assert asset.status_code == 200
     assert 'globalThis["mermaid"]' in asset.text
+
+
+# ── ADO-235: форма — подсказки и предпросмотр ───────────────────────────
+
+
+def test_adr_new_form_hints_and_next_id(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/new").text
+    assert 'placeholder="ADR-003"' in r
+    assert r.count('class="adr-hint"') >= 4
+    assert f'hx-post="/p/{entry.name}/adr/preview"' in r
+
+
+def test_adr_preview_renders_without_saving(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.post(
+        f"/p/{entry.name}/adr/preview",
+        data={
+            "decision": "### Пункт\n\n**важно** <script>alert(1)</script> ADR-001",
+            "context": "",
+        },
+    )
+    assert r.status_code == 200
+    assert ">Decision</h2>" in r.text
+    assert ">Context</h2>" not in r.text, "пустой раздел не показываем"
+    assert "<strong>важно</strong>" in r.text
+    assert "<script>" not in r.text and "&lt;script&gt;" in r.text
+    assert f'href="/p/{entry.name}/adr/ADR-001"' in r.text
+    listing = client.get(f"/p/{entry.name}/adr").text
+    assert "ADR-003" not in listing
+
+
+def test_adr_edit_form_has_preview(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-002").text  # proposed → Edit
+    assert 'class="adr-preview"' in r
+    assert "SQLite via SQLAlchemy</textarea>" in r

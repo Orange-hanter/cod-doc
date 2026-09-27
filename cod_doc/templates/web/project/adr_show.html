@@ -129,22 +129,7 @@
               <input name="decided_at" type="date" value="{{ adr.decided_at or '' }}">
             </label>
           </div>
-          <label class="field">
-            <span class="label">Context</span>
-            <textarea name="context" rows="6">{{ adr.context or '' }}</textarea>
-          </label>
-          <label class="field">
-            <span class="label">Decision</span>
-            <textarea name="decision" rows="6">{{ adr.decision or '' }}</textarea>
-          </label>
-          <label class="field">
-            <span class="label">Alternatives</span>
-            <textarea name="alternatives" rows="4">{{ adr.alternatives or '' }}</textarea>
-          </label>
-          <label class="field">
-            <span class="label">Consequences</span>
-            <textarea name="consequences" rows="4">{{ adr.consequences or '' }}</textarea>
-          </label>
+          {% include "project/_adr_body_fields.html" %}
           <div class="form-actions">
             <button type="submit" class="btn btn-primary">Save</button>
           </div>
