@@ -213,6 +213,19 @@
   _describe -t cod-doc-plan-sections 'plan section' rows
 }
 
+(( $+functions[_cod_doc_plan_section_letters] )) || _cod_doc_plan_section_letters() {
+  # `plan section update|move|rm PLAN_SCOPE LETTER` — буква секции плана.
+  # Отдельно от _cod_doc_plan_sections: там план приходит из --plan
+  # (task create/list), здесь — первым позиционным, и --plan не существует.
+  local scope filter=""
+  local -a rows
+  scope="${line[1]}"
+  _cod_doc_safe_slug "$scope" && filter="and pl.scope = '${scope//\'/\'\'}'"
+  rows=( ${(f)"$(_cod_doc_sql "select ps.letter || ':' || pl.scope || ' · ' || replace(replace(ps.title, ':', ' -'), char(10), ' ') from plan_section ps join plan pl on pl.row_id = ps.plan_id join project p on p.row_id = pl.project_id where 1=1 $(_cod_doc_where_project) $filter order by pl.scope, ps.position limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-plan-sections 'plan section' rows
+}
+
 (( $+functions[_cod_doc_doc_sections] )) || _cod_doc_doc_sections() {
   # `link sync DOC_KEY --section ANCHOR`: doc_key приходит ПОЗИЦИОННЫМ, его
   # кладёт в $line сам _arguments. У scenario new|update он в --doc-key.
@@ -264,6 +277,30 @@
   rows=( ${(f)"$(_cod_doc_sql "select b.task_id || ':' || b.status || ' · ' || replace(replace(b.title, ':', ' -'), char(10), ' ') from dependency d join task t on t.row_id = d.from_task_id join task b on b.row_id = d.to_task_id join project p on p.row_id = t.project_id where d.kind = 'blocks' $(_cod_doc_where_project) $filter order by b.task_id limit 2000;")"} )
   (( $#rows )) || return 1
   _describe -t cod-doc-task-blockers 'blocker' rows
+}
+
+(( $+functions[_cod_doc_task_blocker_candidates] )) || _cod_doc_task_blocker_candidates() {
+  # `task add-dep TASK_ID BLOCKER_ID` ставит НОВОЕ ребро — множество, обратное
+  # _cod_doc_task_blockers: задачи, которые первую ещё не блокируют. Без
+  # владельца NOT EXISTS без фильтра выбросил бы всех, кто кого-либо блокирует,
+  # поэтому без него — обычный список задач.
+  # Цикл сервис проверяет по рёбрам той же kind, отсюда и сужение по --kind.
+  # Сами циклы дополнение не предсказывает: их отвергнет CLI с путём цикла.
+  local owner kind row filter=""
+  local -a rows kept
+  owner="${line[1]}"
+  _cod_doc_safe_slug "$owner" || { _cod_doc_tasks; return }
+  kind="${(Q)opt_args[--kind]:-blocks}"
+  _cod_doc_safe_slug "$kind" || kind=blocks
+  filter="and t.task_id = '${owner//\'/\'\'}' and d.kind = '${kind//\'/\'\'}'"
+  rows=( ${(f)"$(_cod_doc_sql "select b.task_id || ':' || b.status || ' · ' || replace(replace(replace(b.title, ':', ' -'), char(10), ' '), char(9), ' ') from task b join project p on p.row_id = b.project_id where 1=1 $(_cod_doc_where_project) and not exists ( select 1 from dependency d join task t on t.row_id = d.from_task_id where d.to_task_id = b.row_id and t.project_id = b.project_id $filter ) order by b.task_id limit 2000;")"} )
+  for row in $rows; do
+    # Задача не блокирует сама себя — CLI такое ребро отвергнет.
+    [[ ${row%%:*} == "$owner" ]] && continue
+    kept+=( $row )
+  done
+  (( $#kept )) || return 1
+  _describe -t cod-doc-tasks 'blocker' kept
 }
 
 (( $+functions[_cod_doc_stories] )) || _cod_doc_stories() {
@@ -1862,12 +1899,14 @@ _cod-doc() {
       curcontext="${curcontext%:*:*}:cod-doc-plan-$words[1]:"
       case $words[1] in
         (audit)         _cod_doc_plan_audit && ret=0 ;;
+        (create)        _cod_doc_plan_create && ret=0 ;;
         (critical-path) _cod_doc_plan_critical_path && ret=0 ;;
         (export)        _cod_doc_plan_export && ret=0 ;;
         (forward)       _cod_doc_plan_forward && ret=0 ;;
         (freeze)        _cod_doc_plan_freeze && ret=0 ;;
         (ready)         _cod_doc_plan_ready && ret=0 ;;
         (reverse)       _cod_doc_plan_reverse && ret=0 ;;
+        (section)       _cod_doc_plan_section && ret=0 ;;
         (show)          _cod_doc_plan_show && ret=0 ;;
         (*)             _default && ret=0 ;;
       esac
@@ -1880,12 +1919,14 @@ _cod-doc() {
   local -a cmds
   cmds=(
     'audit:Run integrity audit; cycle detection + done-drift check.'
+    'create:Создать план SCOPE в проекте. Scope уникален на всю БД.'
     'critical-path:Show the critical path (longest sequential chain) for a plan.'
     'export:Export markdown projections for a plan.'
     'forward:Forward chain; prerequisites of TASK_ID (must complete BEFORE it).'
     'freeze:Snapshot a plan'\''s current projection into an immutable frozen docum…'
     'ready:List tasks ready to work on (all blocking deps done).'
     'reverse:Reverse chain; tasks unblocked when TASK_ID completes.'
+    'section:Секции плана; write-путь через plan_service.'
     'show:Show progress overview for a plan.'
   )
   _describe -t cod-doc-plan-commands 'cod-doc plan command' cmds
@@ -1900,6 +1941,21 @@ _cod-doc() {
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' \
     '1:plan-scope:_cod_doc_plans' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_create] )) || _cod_doc_plan_create() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--principle)--principle=[Принцип плана — одна строка о его сути]:principle' \
+    '(--author)--author=[Автор ревизии]:author' \
+    '(--reason)--reason=[Причина для ревизии]:reason' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:scope' && ret=0
   return ret
 }
 
@@ -1975,6 +2031,125 @@ _cod-doc() {
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' \
     '1:task-id:_cod_doc_tasks' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_section] )) || _cod_doc_plan_section() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_plan_section_commands' \
+    '*:: :->cod_doc_plan_section_cmd' && ret=0
+
+  case $state in
+    (cod_doc_plan_section_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-plan-section-$words[1]:"
+      case $words[1] in
+        (create) _cod_doc_plan_section_create && ret=0 ;;
+        (list)   _cod_doc_plan_section_list && ret=0 ;;
+        (move)   _cod_doc_plan_section_move && ret=0 ;;
+        (rm)     _cod_doc_plan_section_rm && ret=0 ;;
+        (update) _cod_doc_plan_section_update && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_section_commands] )) || _cod_doc_plan_section_commands() {
+  local -a cmds
+  cmds=(
+    'create:Добавить секцию LETTER с заголовком TITLE в план PLAN_SCOPE.'
+    'list:Секции плана PLAN_SCOPE в порядке хранения.'
+    'move:Переставить секцию LETTER плана PLAN_SCOPE.'
+    'rm:Удалить секцию LETTER плана PLAN_SCOPE.'
+    'update:Поправить заголовок, слаг или документ секции LETTER плана PLAN_SCO…'
+  )
+  _describe -t cod-doc-plan-section-commands 'cod-doc plan section command' cmds
+}
+
+(( $+functions[_cod_doc_plan_section_create] )) || _cod_doc_plan_section_create() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--slug)--slug=[Явный слаг секции; без него генерируется]:slug' \
+    '(--position)--position=[Позиция; по умолчанию — в конец]:position' \
+    '(--author)--author=[Автор ревизии]:author' \
+    '(--reason)--reason=[Причина для ревизии]:reason' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' \
+    '2:letter' \
+    '3:title' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_section_list] )) || _cod_doc_plan_section_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_section_move] )) || _cod_doc_plan_section_move() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--before)--before=[Поставить перед секцией с этой буквой]:before:_cod_doc_plan_section_letters' \
+    '(--after)--after=[Поставить после секции с этой буквой]:after:_cod_doc_plan_section_letters' \
+    '(--position)--position=[Поставить на позицию (0 — первая)]:position' \
+    '(--author)--author=[Автор ревизии]:author' \
+    '(--reason)--reason=[Причина для ревизии (RFC 26 §4)]:reason' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' \
+    '2:letter:_cod_doc_plan_section_letters' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_section_rm] )) || _cod_doc_plan_section_rm() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--reassign-to)--reassign-to=[Буква секции, куда перенести задачи удаляемой]:reassign-to:_cod_doc_plan_section_letters' \
+    '(--author)--author=[Автор ревизии]:author' \
+    '(--reason)--reason=[Причина для ревизии (RFC 26 §4)]:reason' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' \
+    '2:letter:_cod_doc_plan_section_letters' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_plan_section_update] )) || _cod_doc_plan_section_update() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--title)--title=[Новый заголовок]:title' \
+    '(--slug)--slug=[Новый слаг]:slug' \
+    '(--doc-id)--doc-id=[Привязать к документу проекта]:doc-id' \
+    '(--adopt)--adopt[Взять в историю секцию без ревизий; ревизия пишется, даже если меня…]' \
+    '(--author)--author=[Автор ревизии]:author' \
+    '(--reason)--reason=[Причина для ревизии (RFC 26 §4)]:reason' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:plan-scope:_cod_doc_plans' \
+    '2:letter:_cod_doc_plan_section_letters' && ret=0
   return ret
 }
 
@@ -3147,10 +3322,11 @@ _cod-doc() {
     '(--author)--author=[Автор ревизии]:author' \
     '(--reason)--reason=[Причина правки для ревизии]:reason' \
     '(--adopt)--adopt[Легализовать уже стоящее ребро; ревизия без изменения данных]' \
+    '(--kind)--kind=[Тип ребра dependency.kind; цикл проверяется только по рёбрам того ж…]:kind' \
     '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' \
     '1:task-id:_cod_doc_tasks' \
-    '2:blocker-id:_cod_doc_tasks' && ret=0
+    '2:blocker-id:_cod_doc_task_blocker_candidates' && ret=0
   return ret
 }
 

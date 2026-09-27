@@ -225,3 +225,60 @@ def test_project_option_always_completes_project_slugs() -> None:
     for line in rendered.splitlines():
         if "{-p+,--project=}" in line:
             assert "_cod_doc_projects" in line, line
+
+
+# ── RFC 26: plan create / plan section (ADO-206) ─────────────────────────────
+
+
+def _zsh_function(rendered: str, name: str) -> str:
+    """Тело zsh-функции ``name`` из сгенерированного текста."""
+    start = rendered.index(f"{name}() {{\n")
+    return rendered[start : rendered.index("\n}\n", start)]
+
+
+def test_no_complete_new_plan_identifiers() -> None:
+    assert ("plan create", "scope") in NO_COMPLETE
+    assert ("plan section create", "letter") in NO_COMPLETE
+    rendered = render_zsh(cli_root, prelude=_MINIMAL_PRELUDE)
+    plan_create = _zsh_function(rendered, "_cod_doc_plan_create")
+    assert "'1:scope'" in plan_create
+    assert "'1:scope:_cod_doc_" not in plan_create
+    section_create = _zsh_function(rendered, "_cod_doc_plan_section_create")
+    assert "'2:letter'" in section_create
+    assert "'2:letter:_cod_doc_" not in section_create
+
+
+@pytest.mark.parametrize(
+    "func",
+    [
+        "_cod_doc_plan_section_update",
+        "_cod_doc_plan_section_move",
+        "_cod_doc_plan_section_rm",
+    ],
+)
+def test_plan_section_letters_bound(func: str) -> None:
+    rendered = render_zsh(cli_root, prelude=_MINIMAL_PRELUDE)
+    body = _zsh_function(rendered, func)
+    assert "'2:letter:_cod_doc_plan_section_letters'" in body
+    if func == "_cod_doc_plan_section_move":
+        assert ":before:_cod_doc_plan_section_letters'" in body
+        assert ":after:_cod_doc_plan_section_letters'" in body
+    if func == "_cod_doc_plan_section_rm":
+        assert ":reassign-to:_cod_doc_plan_section_letters'" in body
+
+
+def test_add_dep_uses_candidates_not_blockers() -> None:
+    """add-dep ставит новое ребро, remove-dep снимает существующее — множества обратные."""
+    rendered = render_zsh(cli_root, prelude=_MINIMAL_PRELUDE)
+
+    def second_positional(body: str) -> str:
+        # Последний позиционный несёт хвост `&& ret=0` — берём только спеку.
+        match = re.search(r"'2:[^']*'", body)
+        assert match is not None
+        return match.group(0)
+
+    add_dep = _zsh_function(rendered, "_cod_doc_task_add_dep")
+    assert second_positional(add_dep) == "'2:blocker-id:_cod_doc_task_blocker_candidates'"
+    assert all("_cod_doc_task_blockers" not in line for line in add_dep.splitlines())
+    remove_dep = _zsh_function(rendered, "_cod_doc_task_remove_dep")
+    assert second_positional(remove_dep) == "'2:blocker-id:_cod_doc_task_blockers'"

@@ -202,6 +202,19 @@
   _describe -t cod-doc-plan-sections 'plan section' rows
 }
 
+(( $+functions[_cod_doc_plan_section_letters] )) || _cod_doc_plan_section_letters() {
+  # `plan section update|move|rm PLAN_SCOPE LETTER` — буква секции плана.
+  # Отдельно от _cod_doc_plan_sections: там план приходит из --plan
+  # (task create/list), здесь — первым позиционным, и --plan не существует.
+  local scope filter=""
+  local -a rows
+  scope="${line[1]}"
+  _cod_doc_safe_slug "$scope" && filter="and pl.scope = '${scope//\'/\'\'}'"
+  rows=( ${(f)"$(_cod_doc_sql "@@SQL:plan_sections@@")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-plan-sections 'plan section' rows
+}
+
 (( $+functions[_cod_doc_doc_sections] )) || _cod_doc_doc_sections() {
   # `link sync DOC_KEY --section ANCHOR`: doc_key приходит ПОЗИЦИОННЫМ, его
   # кладёт в $line сам _arguments. У scenario new|update он в --doc-key.
@@ -253,6 +266,30 @@
   rows=( ${(f)"$(_cod_doc_sql "@@SQL:task_blockers@@")"} )
   (( $#rows )) || return 1
   _describe -t cod-doc-task-blockers 'blocker' rows
+}
+
+(( $+functions[_cod_doc_task_blocker_candidates] )) || _cod_doc_task_blocker_candidates() {
+  # `task add-dep TASK_ID BLOCKER_ID` ставит НОВОЕ ребро — множество, обратное
+  # _cod_doc_task_blockers: задачи, которые первую ещё не блокируют. Без
+  # владельца NOT EXISTS без фильтра выбросил бы всех, кто кого-либо блокирует,
+  # поэтому без него — обычный список задач.
+  # Цикл сервис проверяет по рёбрам той же kind, отсюда и сужение по --kind.
+  # Сами циклы дополнение не предсказывает: их отвергнет CLI с путём цикла.
+  local owner kind row filter=""
+  local -a rows kept
+  owner="${line[1]}"
+  _cod_doc_safe_slug "$owner" || { _cod_doc_tasks; return }
+  kind="${(Q)opt_args[--kind]:-blocks}"
+  _cod_doc_safe_slug "$kind" || kind=blocks
+  filter="and t.task_id = '${owner//\'/\'\'}' and d.kind = '${kind//\'/\'\'}'"
+  rows=( ${(f)"$(_cod_doc_sql "@@SQL:task_blocker_candidates@@")"} )
+  for row in $rows; do
+    # Задача не блокирует сама себя — CLI такое ребро отвергнет.
+    [[ ${row%%:*} == "$owner" ]] && continue
+    kept+=( $row )
+  done
+  (( $#kept )) || return 1
+  _describe -t cod-doc-tasks 'blocker' kept
 }
 
 (( $+functions[_cod_doc_stories] )) || _cod_doc_stories() {

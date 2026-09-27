@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from typing import TYPE_CHECKING
 
@@ -70,6 +71,68 @@ def test_extra_filter_branches_are_valid_sql(fresh_schema_db: Path) -> None:
                 extra="and d.doc_key = 'docs/system/ARCHITECTURE'",
             )
         ).fetchall()
+        conn.execute(
+            _plain(
+                COMPLETION_QUERIES["task_blocker_candidates"],
+                slug="cod-doc",
+                extra="and t.task_id = 'TA-001' and d.kind = 'blocks'",
+            )
+        ).fetchall()
+
+
+@pytest.fixture
+def seeded_deps_db(fresh_schema_db: Path, tmp_path: Path) -> Path:
+    """Копия свежей схемы с проектом `p`, задачами TA-001..TA-004 и рёбрами.
+
+    Рёбра (from = задача, to = блокер): TA-001→TA-002 blocks,
+    TA-001→TA-003 relates, TA-004→TA-003 blocks.
+    """
+    db_path = tmp_path / "state.db"
+    shutil.copyfile(fresh_schema_db, db_path)
+    now = "2026-09-27 00:00:00"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "insert into project (row_id, slug, title, root_path, created, updated)"
+            " values (1, 'p', 'P', '/tmp/p', ?, ?)",
+            (now, now),
+        )
+        for row_id in range(1, 5):
+            conn.execute(
+                "insert into task (row_id, project_id, task_id, plan_id, section_id, title,"
+                " status, type, priority, created, last_updated)"
+                " values (?, 1, ?, 1, 1, ?, 'todo', 'task', 'p2', ?, ?)",
+                (row_id, f"TA-00{row_id}", f"Задача {row_id}", now, now),
+            )
+        conn.executemany(
+            "insert into dependency (from_task_id, to_task_id, kind) values (?, ?, ?)",
+            [(1, 2, "blocks"), (1, 3, "relates"), (4, 3, "blocks")],
+        )
+    return db_path
+
+
+def test_blocker_candidates_exclude_existing_blockers_of_same_kind(
+    seeded_deps_db: Path,
+) -> None:
+    """add-dep предлагает тех, кто владельца ещё не блокирует ребром этой kind.
+
+    Сам владелец в SQL остаётся — его отсекает zsh-функция.
+    """
+    sql = COMPLETION_QUERIES["task_blocker_candidates"]
+    with sqlite3.connect(f"file:{seeded_deps_db}?mode=ro", uri=True) as conn:
+        blocks = {
+            row[0].split(":", 1)[0]
+            for row in conn.execute(
+                _plain(sql, slug="p", extra="and t.task_id = 'TA-001' and d.kind = 'blocks'")
+            )
+        }
+        relates = {
+            row[0].split(":", 1)[0]
+            for row in conn.execute(
+                _plain(sql, slug="p", extra="and t.task_id = 'TA-001' and d.kind = 'relates'")
+            )
+        }
+    assert blocks == {"TA-001", "TA-003", "TA-004"}
+    assert relates == {"TA-001", "TA-002", "TA-004"}
 
 
 @pytest.mark.parametrize("key", sorted(COMPLETION_QUERIES))

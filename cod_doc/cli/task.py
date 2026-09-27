@@ -813,6 +813,12 @@ _ADD_DEP_MESSAGES: dict[str | None, str] = {
     is_flag=True,
     help="Легализовать уже стоящее ребро: ревизия без изменения данных",
 )
+@click.option(
+    "--kind",
+    default="blocks",
+    show_default=True,
+    help="Тип ребра dependency.kind; цикл проверяется только по рёбрам того же kind",
+)
 @click.option("--json", "as_json", is_flag=True, help="Вывод в JSON")
 @click.pass_context
 def task_add_dep(
@@ -824,6 +830,7 @@ def task_add_dep(
     author: str,
     reason: str | None,
     adopt: bool,
+    kind: str,
     as_json: bool,
 ) -> None:
     """Поставить ребро: TASK_ID блокируется BLOCKER_ID, с обязательным note.
@@ -856,12 +863,14 @@ def task_add_dep(
                 author=author,
                 reason=reason,
                 adopt=adopt,
+                kind=kind,
             )
             warnings = task_service.dependency_warnings(
                 session,
                 project_id=pid,
                 task_id=task_id,
                 blocker_task_id=blocker_id,
+                kind=kind,
             )
     except TaskNotFoundError as exc:
         console.print(f"[red]Task '{exc}' not found.[/red]")
@@ -878,6 +887,7 @@ def task_add_dep(
                     "task_id": task_id,
                     "blocker_id": blocker_id,
                     "op": change.op,
+                    "kind": kind,
                     "warnings": warnings,
                 },
                 ensure_ascii=False,
