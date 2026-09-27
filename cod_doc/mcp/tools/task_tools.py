@@ -655,6 +655,8 @@ def register(mcp: FastMCP) -> None:
         Distinct from task→task ``dependency`` edges; ``reason`` records
         external blockers like "waiting on stakeholder X" or "spec missing".
         Use task.clear_blocker to lift it.
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены).
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
@@ -681,9 +683,10 @@ def register(mcp: FastMCP) -> None:
                     payload={"reason": reason},
                     summary=f"Task {task_id} blocked: {reason[:120]}",
                 )
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
-        return task_to_dict(t)
+        return out
 
     @mcp.tool(name="task_clear_blocker")
     def task_clear_blocker(
@@ -691,7 +694,11 @@ def register(mcp: FastMCP) -> None:
         task_id: str,
         author: str = "mcp",
     ) -> dict[str, Any]:
-        """Clear the external blocker on a task (no-op if already clear)."""
+        """Clear the external blocker on a task (no-op if already clear).
+
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены).
+        """
         from cod_doc.infra.db import transactional
         from cod_doc.services import activity_service, task_service
         from cod_doc.services.task_service import TaskNotFoundError
@@ -711,9 +718,10 @@ def register(mcp: FastMCP) -> None:
                     scope_id=task_id,
                     summary=f"Task {task_id} unblocked by {author}",
                 )
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
-        return task_to_dict(t)
+        return out
 
     @mcp.tool(name="task_remove_dependency")
     def task_remove_dependency(
@@ -731,6 +739,8 @@ def register(mcp: FastMCP) -> None:
         exists (not idempotent). Writes a TASK revision
         (op=remove_dependency) and emits ``task.dependency_removed``.
         Inverse operation — ``task_add_dependency``.
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены).
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
@@ -748,11 +758,12 @@ def register(mcp: FastMCP) -> None:
                     author=author,
                     reason=reason,
                 )
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError as exc:
             raise ValueError(f"Task '{exc}' not found.") from None
         except DependencyNotFoundError as exc:
             raise ValueError(str(exc)) from None
-        return task_to_dict(t)
+        return out
 
     @mcp.tool(name="task_add_dependency")
     def task_add_dependency(
@@ -782,6 +793,8 @@ def register(mcp: FastMCP) -> None:
         Response — the task plus ``op`` and ``warnings`` (list of
         ``{code, message}``: blocker_closed, task_in_progress, cross_plan,
         transitive; may be empty). Inverse operation — ``task_remove_dependency``.
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены) плюс ``op`` и ``warnings``.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
@@ -807,9 +820,14 @@ def register(mcp: FastMCP) -> None:
                     task_id=task_id,
                     blocker_task_id=blocker_id,
                 )
+                out = {
+                    **task_to_dict(change.task, session=session),
+                    "op": change.op,
+                    "warnings": warnings,
+                }
         except TaskNotFoundError as exc:
             raise ValueError(f"Task '{exc}' not found.") from None
-        return {**task_to_dict(change.task), "op": change.op, "warnings": warnings}
+        return out
 
     @mcp.tool(name="task_list_blocked")
     def task_list_blocked(
@@ -877,6 +895,8 @@ def register(mcp: FastMCP) -> None:
 
         See also: skill ``task-standard`` (status semantics + when to dispatch
         a task into each bucket).
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены).
         """
         from cod_doc.domain.entities import TaskStatus
         from cod_doc.infra.db import transactional
@@ -906,11 +926,11 @@ def register(mcp: FastMCP) -> None:
                     payload={"new_status": new_status, "reason": reason},
                     summary=f"Task {task_id} → {new_status}",
                 )
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
         except StatusTransitionError as exc:
             raise ValueError(f"Invalid status transition: {exc}") from exc
-        out = task_to_dict(t)
         if dry_run:
             out["dry_run"] = True
         return out
@@ -1126,6 +1146,8 @@ def register(mcp: FastMCP) -> None:
 
         ``dry_run=True`` (PCA-944) validates the transition (blockers etc.)
         and returns the would-be result but rolls back the transaction.
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены).
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import activity_service, checkout_service
@@ -1159,13 +1181,13 @@ def register(mcp: FastMCP) -> None:
                     payload={"commit_sha": commit_sha},
                     summary=f"Task {task_id} completed by {author}",
                 )
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
         except TaskAlreadyDoneError:
             raise ValueError(f"Task '{task_id}' is already done.") from None
         except TaskBlockedError as exc:
             raise ValueError(str(exc)) from exc
-        out = task_to_dict(t)
         if dry_run:
             out["dry_run"] = True
         return out
