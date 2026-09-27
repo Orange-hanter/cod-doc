@@ -1213,6 +1213,23 @@ def set_blocker(
     Stored in ``task.blocked_reason``. Independent of the ``dependency`` edge
     graph (which models task→task blocks). Writes a TASK revision with
     op=set_blocker.
+
+    Статус задачи не меняется, а из ready-множества её выводит фильтр
+    ``t.blocked_reason IS NULL`` во view ``ready_tasks`` (миграция 0041,
+    ADO-225). Почему фильтр во view, а не смена статуса здесь:
+
+    - view — общий источник для всех потребителей ready-множества сразу:
+      ``plan_ready``, ``task_next_ready``, ``agent_pick``, блок Next Batch
+      при экспорте плана, веб;
+    - смена статуса потеряла бы прежний (``todo`` или ``in_progress`` с
+      checkout), и ``clear_blocker`` пришлось бы угадывать, что
+      восстанавливать, в обход ``ALLOWED_TRANSITIONS`` и протокола
+      ``via_checkout`` (ADO-039);
+    - критерий совпадает с ``list_blocked`` (``blocked_reason IS NOT NULL``):
+      задача не числится одновременно заблокированной и готовой.
+
+    Отдельного события о выходе из ready-множества нет — как и у
+    ``add_dependency``.
     """
     if not reason or not reason.strip():
         raise ValueError("reason must be non-empty")
@@ -1254,7 +1271,17 @@ def clear_blocker(
     task_id: str,
     author: str,
 ) -> Task:
-    """Clear the external blocker on a task (no-op if already clear)."""
+    """Clear the external blocker on a task (no-op if already clear).
+
+    Статус не трогается — зеркально ``set_blocker``: задача возвращается во
+    view ``ready_tasks`` (фильтр ``blocked_reason IS NULL``, миграция 0041,
+    ADO-225), как только её не держит ничто другое — статус вне
+    ``todo``/``pending`` или открытое ребро ``blocks``. Восстанавливать статус
+    не нужно, потому что ``set_blocker`` его не менял: угадывание прежнего
+    статуса обходило бы ``ALLOWED_TRANSITIONS`` и ``via_checkout`` (ADO-039).
+    Отдельного события о возврате в ready-множество нет — как и у
+    ``add_dependency``.
+    """
     model = _require_task(session, task_id, project_id=None)
     if model.blocked_reason is None:
         t = TaskRepository(session).get(model.row_id)

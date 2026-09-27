@@ -645,13 +645,19 @@ CREATE VIEW ready_tasks AS
 SELECT t.*
 FROM task t
 WHERE t.status IN ('todo','pending')
+  AND t.blocked_reason IS NULL
   AND NOT EXISTS (
     SELECT 1 FROM dependency d
     JOIN task dep ON dep.row_id = d.to_task_id
     WHERE d.from_task_id = t.row_id
+      AND d.kind = 'blocks'
       AND dep.status NOT IN ('done', 'cancelled')
   );
 ```
+
+`blocked_reason IS NULL` — миграция 0041 (ADO-225): `task_set_blocker` статус
+не меняет, а задача с внешним блокером не должна быть готовой. Тот же
+критерий у `chain_layout.ready_ids` и, зеркально, у `list_blocked`.
 
 ### 4.3a `document_body`
 
