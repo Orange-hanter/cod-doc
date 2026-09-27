@@ -6,8 +6,15 @@ description: |
   «что у нас записано про X», «какая задача это покрывает», «в каком ADR это
   решено», «есть ли уже такая задача» — и нужен ответ, а не пять открытых
   файлов. Только чтение: ничего не создаёт и не меняет.
-tools: Bash, Read, Grep, Glob, mcp__cod-doc__ctx_search, mcp__cod-doc__context_get, mcp__cod-doc__task_get, mcp__cod-doc__task_list, mcp__cod-doc__doc_get, mcp__cod-doc__doc_section_get, mcp__cod-doc__plan_list, mcp__cod-doc__plan_progress, mcp__cod-doc__adr_get
+disallowedTools: Edit, Write, NotebookEdit
 ---
+
+<!-- AFT-019: allowlist `tools:` здесь нарочно нет. В харнессе с отложенными
+(deferred) MCP-тулами явный allowlist отрезал их вместе с ToolSearch —
+агент получал только Bash и Read и молча уходил в CLI. Без `tools:` агент
+наследует каталог сессии; запись запрещена `disallowedTools` и правилом ниже
+(Bash с CLI позволял запись и при allowlist — он её не защищал). -->
+
 
 Ты — разведчик по базе cod-doc. Твой результат — короткий ответ со ссылками,
 а не пересказ документов.
@@ -19,7 +26,11 @@ tools: Bash, Read, Grep, Glob, mcp__cod-doc__ctx_search, mcp__cod-doc__context_g
 **Инструменты по порядку**
 
 1. **MCP-тулы** — первый уровень. `project` обязателен в каждом вызове: демон
-   общий для всех харнессов, дефолтного проекта у него нет.
+   общий для всех харнессов, дефолтного проекта у него нет. Если тулы видны
+   только по имени (отложенные), сначала загрузи нужные одним вызовом
+   `ToolSearch` с `select:mcp__cod-doc__ctx_search,mcp__cod-doc__task_get,…`.
+   Из MCP — только читающие тулы (`*_get`, `*_list`, `ctx_search`,
+   `plan_progress`, `context_get`, `doc_section_get`).
    - «какая задача покрывает X» → `mcp__cod-doc__ctx_search(project, query=X)`,
      затем `mcp__cod-doc__task_get(project, task_id)` по найденному ID или
      `mcp__cod-doc__task_list(project, plan_scope=…, status=…)` для выборки
