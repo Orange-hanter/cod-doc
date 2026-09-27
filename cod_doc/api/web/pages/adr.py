@@ -28,8 +28,8 @@ from cod_doc.api.web.markdown import (
     render_markdown,
 )
 from cod_doc.api.web.templates_env import templates
-from cod_doc.domain.entities import ADRStatus
-from cod_doc.services import adr_service, task_service
+from cod_doc.domain.entities import ADRStatus, EntityKind
+from cod_doc.services import adr_service, revision_service, task_service
 from cod_doc.services.adr_service import ADRAlreadyExistsError, ADRNotFoundError
 
 router = APIRouter()
@@ -330,6 +330,17 @@ def adr_show(
         adr_id, {"supersedes": [], "superseded_by": []}
     )
 
+    # ADO-231: каждая запись ADR пишет revision; страница ревизий по сущности
+    # уже есть, с карточки на неё просто не было входа.
+    history = revision_service.list_for_entity(session, EntityKind.ADR, row.row_id)
+    last_rev = history[-1] if history else None
+    history_info = {
+        "count": len(history),
+        "url": f"/p/{slug}/revisions?entity_kind={EntityKind.ADR.value}&entity_id={row.row_id}",
+        "last_at": last_rev.at if last_rev else None,
+        "last_author": last_rev.author if last_rev else None,
+    }
+
     # Голый task_id ничего не говорит о связи: без названия и статуса
     # приходилось открывать каждую задачу. Удалённая задача остаётся в
     # списке — ссылка из ADR на неё сама по себе факт.
@@ -363,6 +374,7 @@ def adr_show(
             "supersedes": rel["supersedes"],
             "superseded_by": rel["superseded_by"],
             "task_links": task_links,
+            "history": history_info,
             "candidates": candidates,
             "status_options": STATUS_OPTIONS,
         },

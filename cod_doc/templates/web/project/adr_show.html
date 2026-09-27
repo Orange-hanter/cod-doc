@@ -248,6 +248,19 @@
     </div>
     {% endif %}
 
+    {# ADO-231: вход в историю правок этого ADR. #}
+    <div class="adr-side-block">
+      <div class="adr-side-label">History <span class="count-chip">{{ history.count }}</span></div>
+      {% if history.count %}
+        <a href="{{ history.url }}">All revisions →</a>
+        <div class="muted adr-side-sub" title="{{ history.last_at | ts_tooltip }}">
+          last: {{ history.last_at | relative_time }} by {{ history.last_author }}
+        </div>
+      {% else %}
+        <p class="muted adr-side-sub">No revisions recorded.</p>
+      {% endif %}
+    </div>
+
     <div class="adr-side-block">
       <div class="adr-side-label">Tasks <span class="count-chip">{{ task_links|length }}</span></div>
       {% if task_links %}

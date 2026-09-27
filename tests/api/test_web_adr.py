@@ -580,3 +580,24 @@ def test_adr_show_lists_referencing_adrs(adr_client) -> None:  # type: ignore[no
     assert f'href="/p/{entry.name}/adr/ADR-002"' in block
     empty = client.get(f"/p/{entry.name}/adr/ADR-002").text
     assert "Nothing mentions this ADR yet." in empty
+
+
+# ── ADO-231: история правок ─────────────────────────────────────────────
+
+
+def _history_count(html: str) -> int:
+    label = html.split('History <span class="count-chip">', 1)[1]
+    return int(label.split("<", 1)[0])
+
+
+def test_adr_show_links_revision_history(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    before = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "/revisions?entity_kind=adr&amp;entity_id=" in before
+    _set_decision(entry, "ADR-002", "Новая формулировка")
+    after = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert _history_count(after) == _history_count(before) + 1
+
+    url = after.split('href="/p/adr-demo/revisions?', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+    page = client.get(f"/p/{entry.name}/revisions?{url}")
+    assert page.status_code == 200
