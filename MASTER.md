@@ -96,7 +96,7 @@ graph TD
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
-- **Описание:** 27 RFC в семи треках:
+- **Описание:** 28 RFC в семи треках:
   - **01–15 (paperclip-track):** 🟢 Реализованы — адаптация паттернов paperclipai/paperclip
     (skills, heartbeat, wake-payload, run-id, issue docs, checkout, routines,
     status taxonomy, activity log, adapter pattern, AGENTS.md, approvals,
@@ -110,6 +110,14 @@ graph TD
   - **23 (cloud-track):** 🟡 Спроектирован — Cloud decentralized agent plane
     (team-узел в облаке, ИИ-воркеры через remote MCP, SoT = Postgres).
     Задачи CAP-001…CAP-033 не начаты, приоритет ниже adoption.
+  - **28 (cloud-track):** 🟡 Черновик 2026-09-27 — cod-doc remote: облачное
+    хранение и доступ по модели git. Полная локальная реплика у каждой машины,
+    `clone`/`pull`/`push` журнала операций (`sync_op` → changeset) через S3/MinIO
+    или `cod-doc serve`; слияние LWW по полю + 3-way для текстов, конфликты в
+    `curator_next`; аренда блоков человеческих ID; роли reader/writer/admin на
+    проект. Пересматривает premise RFC 23 («сервер — это реплика», без Postgres).
+    Плана нет — оценка ~35 задач в секциях A–F.
+    Файл: `📁 /proposals/28-cloud-remote-sync.md | 🗃️ doc:proposals_28-cloud-remote-sync_md | 🔑 sha:2871d30b0786`
   - **24 (structure-track):** 🟡 Черновик — Единый контур structure/contracts/scenarios
     (docs↔code граница, obligations_export, structure_facts, scenario assessment).
     Поглощает внешнюю часть RFC 17, зависит от RFC 22.
@@ -141,7 +149,7 @@ graph TD
     checkout, который требует `task-flow`. Декомпозиция — план
     `agent-fit-2026-09` (AFT-001…AFT-016), шесть секций.
     Файл: `📁 /proposals/27-agent-fit.md | 🗃️ doc:proposals_27-agent-fit_md | 🔑 sha:a96b5b2fd500`
-- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:992e92fdeb0a`
+- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:7b9449fbad8a`
 - **Статус:** `🟢 VERIFIED`
 
 ### CI Pipeline (GitHub Actions)
@@ -297,7 +305,7 @@ graph TD
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
 | 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `ac6b97ca42c5` | 2026-09-20 | 🟢 VERIFIED |
-| 3 | proposals/README.md | `doc:proposals_README_md` | `992e92fdeb0a` | 2026-09-20 | 🟢 VERIFIED |
+| 3 | proposals/README.md | `doc:proposals_README_md` | `7b9449fbad8a` | 2026-09-20 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `7c133a394eb3` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `90c54859cba1` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
