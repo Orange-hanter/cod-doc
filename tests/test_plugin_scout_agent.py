@@ -1,4 +1,9 @@
-"""AFT-014 (RFC 27 F15): агент ``cod-doc-scout`` читает через MCP, а не sqlite3.
+"""AFT-014 (RFC 27 F15), AFT-019: агент ``cod-doc-scout`` читает через MCP, а не sqlite3.
+
+AFT-019: у агента нет allowlist ``tools:`` — в харнессе с отложенными
+MCP-тулами он отрезал их вместе с ToolSearch, и агент молча уходил в CLI.
+Агент наследует каталог; запись запрещена ``disallowedTools`` и инструкцией.
+Тулы, которые агент называет в теле, сверяются с живым каталогом.
 
 Эталон существования тулов — живой каталог профиля ``standard`` (демон
 :8801): свежий FastMCP с модулями тулов из ``cod_doc.mcp.server``, затем
@@ -8,6 +13,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,7 +40,7 @@ REQUIRED_MCP_TOOLS = {
     "mcp__cod-doc__plan_progress",
     "mcp__cod-doc__adr_get",
 }
-REQUIRED_BUILTIN_TOOLS = {"Bash", "Read", "Grep", "Glob"}
+DISALLOWED_WRITE_TOOLS = {"Edit", "Write", "NotebookEdit"}
 MUTATING = (
     "task_create",
     "task_checkout",
@@ -56,10 +62,19 @@ def _text() -> str:
     return SCOUT.read_text(encoding="utf-8")
 
 
-def _tools() -> list[str]:
+def _meta() -> dict[str, object]:
     _, front, _ = _text().split("---", 2)
     meta = yaml.safe_load(front)
-    return [t.strip() for t in meta["tools"].split(",")]
+    assert isinstance(meta, dict)
+    return meta
+
+
+def _body() -> str:
+    return _text().split("---", 2)[2]
+
+
+def _named_mcp_tools() -> set[str]:
+    return set(re.findall(r"mcp__cod-doc__[a-z_]+", _body()))
 
 
 def _live_standard_catalog(monkeypatch: pytest.MonkeyPatch) -> set[str]:
@@ -78,16 +93,29 @@ def _live_standard_catalog(monkeypatch: pytest.MonkeyPatch) -> set[str]:
     return set(fresh._tool_manager._tools)
 
 
-def test_scout_tools_include_mcp_read_tools() -> None:
-    tools = set(_tools())
-    assert tools >= REQUIRED_MCP_TOOLS | REQUIRED_BUILTIN_TOOLS, (
-        f"не хватает: {sorted((REQUIRED_MCP_TOOLS | REQUIRED_BUILTIN_TOOLS) - tools)}"
-    )
+def test_scout_has_no_tools_allowlist() -> None:
+    """AFT-019: allowlist отрезал отложенные MCP-тулы и ToolSearch."""
+    assert "tools" not in _meta()
+
+
+def test_scout_disallows_file_writes() -> None:
+    raw = str(_meta().get("disallowedTools", ""))
+    disallowed = {t.strip() for t in raw.split(",") if t.strip()}
+    assert disallowed >= DISALLOWED_WRITE_TOOLS, sorted(DISALLOWED_WRITE_TOOLS - disallowed)
+
+
+def test_scout_names_the_read_mcp_tools() -> None:
+    named = _named_mcp_tools()
+    assert named >= REQUIRED_MCP_TOOLS, sorted(REQUIRED_MCP_TOOLS - named)
+
+
+def test_scout_explains_loading_deferred_tools() -> None:
+    assert "ToolSearch" in _body()
 
 
 def test_scout_mcp_tools_exist_in_live_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     catalog = _live_standard_catalog(monkeypatch)
-    names = [t.removeprefix(MCP_PREFIX) for t in _tools() if t.startswith(MCP_PREFIX)]
+    names = [t.removeprefix(MCP_PREFIX) for t in _named_mcp_tools()]
     assert names
     missing = [n for n in names if n not in catalog]
     assert not missing, f"нет в каталоге профиля standard: {missing}"
@@ -95,7 +123,9 @@ def test_scout_mcp_tools_exist_in_live_catalog(monkeypatch: pytest.MonkeyPatch) 
 
 def test_scout_tools_are_read_only() -> None:
     offending = [
-        t for t in _tools() if any(t.removeprefix(MCP_PREFIX).startswith(m) for m in MUTATING)
+        t
+        for t in _named_mcp_tools()
+        if any(t.removeprefix(MCP_PREFIX).startswith(m) for m in MUTATING)
     ]
     assert not offending, f"мутирующие тулы у read-only агента: {offending}"
 
