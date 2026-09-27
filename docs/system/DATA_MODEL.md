@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 ---
 
 # COD-DOC — Data Model
@@ -174,7 +174,7 @@ CREATE INDEX ix_revision_entity ON revision(entity_kind, entity_id, at);
 CREATE INDEX ix_revision_parent ON revision(parent_revision_id);
 ```
 
-**`entity_kind` ∈** `'document' | 'section' | 'task' | 'plan' | 'story' | 'link' | 'module'`. Сервис, инициирующий ревизию, отвечает за корректность `entity_kind + entity_id`.
+**`entity_kind` ∈** `domain.entities.EntityKind`: `'document' | 'section' | 'task' | 'task_doc' | 'plan' | 'plan_section' | 'story' | 'story_section' | 'doc_node' | 'link' | 'module' | 'adr' | 'scenario'`. У каждой таблицы со своей нумерацией `row_id` — свой kind: пара `(entity_kind, entity_id)` — единственный адрес ревизии, и секция плана `row_id=1` под `'plan'` села бы в историю плана `row_id=1` (`'plan_section'` — ADO-201, RFC 26 §3.1). Сервис, инициирующий ревизию, отвечает за корректность `entity_kind + entity_id`.
 
 **Полиморфный `entity_id` без FK.** Намеренно: append-only история должна переживать удаление целевой сущности (audit-инвариант). Каскад от родительской таблицы НЕ затрагивает revision; «сиротские» ревизии — норма и читаются по `entity_kind + entity_id` за время жизни проекта.
 
@@ -208,8 +208,8 @@ CREATE TABLE plan_section (
   plan_id     INTEGER NOT NULL REFERENCES plan(row_id),
   letter      TEXT    NOT NULL,   -- 'A','B','C',...
   title       TEXT    NOT NULL,
-  slug        TEXT    NOT NULL,   -- 'A-Test-Coverage'
-  position    INTEGER NOT NULL,
+  slug        TEXT    NOT NULL,   -- 'A-Test-Coverage'; validate_section_slug
+  position    INTEGER NOT NULL,   -- плотный порядок 0..n-1 внутри плана (RFC 26 §3.1)
   doc_id      INTEGER REFERENCES document(row_id),  -- section file (split format)
   UNIQUE(plan_id, letter)
 );
@@ -247,11 +247,18 @@ CREATE TABLE dependency (
   from_task_id INTEGER NOT NULL REFERENCES task(row_id),
   to_task_id   INTEGER NOT NULL REFERENCES task(row_id),
   kind         TEXT    NOT NULL DEFAULT 'blocks',   -- blocks|relates|duplicates
-  note         TEXT,
+  note         TEXT,              -- мотивация ребра; write-путь требует её (ADO-202)
   UNIQUE(from_task_id, to_task_id, kind)
 );
 -- Cycle detection: в сервисе, на каждый insert.
 ```
+
+Write-путь рёбер — `task_service.add_dependency` / `remove_dependency`
+(ADO-202, RFC 26 §3.2): `note` обязателен и хранится обрезанным; повтор с тем
+же `note` — no-op без ревизии, с другим — правка `note`. Ребро, замыкающее
+цикл, отвергается `DependencyCycleError` до записи. Колонка осталась nullable:
+легаси-рёбра без мотивации не заполняются задним числом, их предъявляет
+рутина `graph_health` (ADO-205), пока зависимая задача не закрыта.
 
 ### 3.9 `AffectedFile`
 
