@@ -333,6 +333,10 @@ class EntityKind(StrEnum):
     # ADO-116: то же, что STORY_SECTION, но для разделов дерева документации —
     # своя нумерация row_id требует своего kind.
     DOC_NODE = "doc_node"
+    # ADO-201 (RFC 26 §3.1): у секции плана своя нумерация row_id (логика
+    # ADO-143), поэтому писать её ревизии под PLAN нельзя — секция row_id=1
+    # села бы в историю плана row_id=1.
+    PLAN_SECTION = "plan_section"
     LINK = "link"
     MODULE = "module"
     ADR = "adr"
