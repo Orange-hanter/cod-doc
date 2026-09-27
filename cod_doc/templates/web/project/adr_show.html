@@ -266,6 +266,39 @@
         <p class="muted adr-side-sub">No tasks linked yet.</p>
       {% endif %}
     </div>
+
+    {# ADO-230: кто опирается на решение — оценить последствия замены. #}
+    {% set refs = adr.referenced_by %}
+    {% set ref_total = refs.docs|length + refs.tasks|length + refs.adrs|length %}
+    <div class="adr-side-block">
+      <div class="adr-side-label">Referenced by <span class="count-chip">{{ ref_total }}</span></div>
+      {% if ref_total %}
+        <ul class="adr-side-list">
+          {# Одна строка на документ: секций одного документа бывает с десяток. #}
+          {% for doc_key, secs in refs.docs|groupby("doc_key") %}
+            <li><span class="muted">doc</span>
+              <a href="/p/{{ project.name }}/docs/{{ doc_key }}">{{ secs[0].title }}</a>
+              <div class="muted adr-side-sub">
+                {%- for s in secs %}<a class="muted" href="/p/{{ project.name }}/docs/{{ doc_key }}#{{ s.anchor }}">§ {{ s.heading }}</a>{% if not loop.last %} · {% endif %}{% endfor -%}
+              </div></li>
+          {% endfor %}
+          {% for t in refs.tasks %}
+            <li><span class="muted">task</span>
+              <a class="mono" href="/p/{{ project.name }}/tasks/{{ t.task_id }}">{{ t.task_id }}</a>
+              <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
+              <div class="adr-side-sub">{{ t.title }}</div></li>
+          {% endfor %}
+          {% for a in refs.adrs %}
+            <li><span class="muted">adr</span>
+              <a class="mono" href="/p/{{ project.name }}/adr/{{ a.adr_id }}">{{ a.adr_id }}</a>
+              <span class="badge badge-{{ a.status }}">{{ a.status }}</span>
+              <div class="adr-side-sub">{{ a.title }}</div></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted adr-side-sub">Nothing mentions this ADR yet.</p>
+      {% endif %}
+    </div>
   </aside>
 </div>
 {% endblock %}

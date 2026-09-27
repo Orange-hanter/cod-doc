@@ -318,7 +318,7 @@ def adr_show(
     row = adr_service.get(session, project_id, adr_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
-    payload = adr_service.adr_to_dict(session, row)
+    payload = adr_service.adr_to_dict(session, row, include_backlinks=True)
     payload["status_icon"] = _STATUS_ICON.get(payload["status"], "•")
     payload["closed"] = payload["status"] in _CLOSED_STATUSES
     sections = [

@@ -567,3 +567,16 @@ def test_adr_brief_absent_without_decision(adr_client) -> None:  # type: ignore[
     _set_decision(entry, "ADR-002", "")
     r = client.get(f"/p/{entry.name}/adr/ADR-002").text
     assert "Decision in brief" not in r
+
+
+# ── ADO-230: Referenced by ──────────────────────────────────────────────
+
+
+def test_adr_show_lists_referencing_adrs(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _set_decision(entry, "ADR-002", "Опирается на ADR-001.")
+    r = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    block = r.split("Referenced by", 1)[1].split("adr-side-block", 1)[0]
+    assert f'href="/p/{entry.name}/adr/ADR-002"' in block
+    empty = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "Nothing mentions this ADR yet." in empty
