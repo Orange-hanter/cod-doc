@@ -189,7 +189,7 @@ graph TD
   БД вместо голого markdown, quick start на 5 строк, четыре поверхности,
   таблица ссылок на остальную документацию. Подставляется как
   `long_description` пакета (`pyproject.toml → readme`).
-- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:dafcd30b685a`
+- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:a8cf3af51ac5`
 - **Статус:** `🟢 VERIFIED`
 
 ### Handbook (пользовательский справочник)
@@ -215,7 +215,7 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:e5560b4939da`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:925130f3ae04`
 - **Статус:** `🟢 VERIFIED`
 
 ### Zsh-дополнение
@@ -303,11 +303,11 @@ graph TD
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
 | 7 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-09-11 | 🟡 LEGACY |
 | 8 | Доменные модели (legacy) | `doc:models_domain_md` | `8ce613932ac9` | 2026-09-17 | 🟡 LEGACY |
-| 9 | README (витрина) | `doc:README_md` | `dafcd30b685a` | 2026-09-11 | 🟢 VERIFIED |
+| 9 | README (витрина) | `doc:README_md` | `a8cf3af51ac5` | 2026-09-11 | 🟢 VERIFIED |
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `b471c0708631` | 2026-09-20 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `01e5d3bb945c` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `e5560b4939da` | 2026-09-20 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `925130f3ae04` | 2026-09-20 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `49f6f7dc65d1` | 2026-09-20 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `b1589ce06444` | 2026-09-20 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |

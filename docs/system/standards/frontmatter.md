@@ -33,6 +33,12 @@ last_updated: 2026-09-26
 `capability`) добавлены в ADO-015: они уже жили в корпусах, но импорт молча
 превращал их в `module-spec`.
 
+`open-question` — легаси (OQM, 2026-09): новые вопросы заводятся сущностью
+`open_question` (`cod-doc question new`, MCP `question_create`), а не
+документом; существующие документы этого типа переносятся
+`cod-doc question import <doc_key>`. Тип оставлен в enum, чтобы не падал
+импорт старых корпусов.
+
 ## 2a. Допустимые `status` по `type`
 
 Каждый `type` определяет своё подмножество `status`. Несовместимая пара (например `type: execution-plan` + `status: active`) → error.
