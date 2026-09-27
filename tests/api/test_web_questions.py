@@ -10,11 +10,16 @@ from fastapi.testclient import TestClient
 
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
+from cod_doc.domain.entities import (
+    DocumentStatus,
+    DocumentType,
+    QuestionLinkKind,
+    QuestionRelation,
+)
 from cod_doc.domain.entities import Project as ProjectEntity
-from cod_doc.domain.entities import QuestionLinkKind, QuestionRelation
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
-from cod_doc.services import question_service
+from cod_doc.services import doc_service, question_service
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -60,10 +65,21 @@ def q_client(tmp_path: Path, migrate_db):  # type: ignore[no-untyped-def]
             options=[("ЮKassa", "дешевле"), ("CloudPayments", None)],
             author="human:test",
         )
+        doc_service.create(
+            session,
+            project_id=proj.row_id,
+            doc_key="docs/billing",
+            title="Billing",
+            type=DocumentType.MODULE_SPEC,
+            status=DocumentStatus.ACTIVE,
+            owner="core",
+            author="human:test",
+        )
         for kind, ref in (
             (QuestionLinkKind.CODE, "pay.py#charge"),
             (QuestionLinkKind.CODE, "gone.py"),
             (QuestionLinkKind.TASK, "PAY-001"),
+            (QuestionLinkKind.DOCUMENT, "docs/billing"),
         ):
             question_service.link(
                 session,
@@ -204,3 +220,10 @@ def test_new_form_and_tab(q_client) -> None:  # type: ignore[no-untyped-def]
     )
     assert "alert-error" in r.text
     assert f'href="/p/{SLUG}/questions"' in q_client.get(f"/p/{SLUG}").text
+
+
+def test_document_page_lists_linked_questions(q_client) -> None:  # type: ignore[no-untyped-def]
+    r = q_client.get(f"/p/{SLUG}/docs/docs/billing")
+    assert r.status_code == 200
+    assert 'id="questions"' in r.text
+    assert f'href="/p/{SLUG}/questions/Q-001"' in r.text

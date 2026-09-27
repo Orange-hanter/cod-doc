@@ -51,7 +51,7 @@ def register(mcp: FastMCP) -> None:
                 а не «ссылки в порядке».
 
         Returns:
-            ``{"card": {"drift", "links", "master", "findings", "unplaced"},
+            ``{"card": {"drift", "links", "master", "findings", "unplaced", "questions"},
             "priority": [{"kind", "ref", "reason", "suggested_action"}],
             "navigation": {"applicable_skills", "next_actions",
             "success_criteria"}, "meta": {"generated_at", "truncated",
@@ -61,6 +61,8 @@ def register(mcp: FastMCP) -> None:
             расхождения frontmatter и осиротевшие секции у ``in_sync`` лежат
             в ``card.drift.advisory`` (``{count, doc_keys}``).
             ``card.unplaced`` — документы в Инбоксе дерева.
+            ``card.questions`` — открытые вопросы с битыми ссылками и
+            застоявшиеся (``broken_links`` / ``stale``).
             ``applicable_skills`` — ``[{name, description}]``, тела (``body``)
             только при ``include_skill_bodies=true``.
 

@@ -343,6 +343,11 @@ def task_show(ctx: click.Context, task_id: str, project: str, as_json: bool) -> 
 )
 @click.option("--description", default=None)
 @click.option("--acceptance", default=None)
+@click.option(
+    "--addresses",
+    multiple=True,
+    help="Open question this task works on (Q-021); repeatable",
+)
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None)
 @click.pass_context
@@ -358,16 +363,18 @@ def task_create(
     prefix: str | None,
     description: str | None,
     acceptance: str | None,
+    addresses: tuple[str, ...],
     author: str,
     reason: str | None,
 ) -> None:
     """Create a new task in a plan section."""
     from sqlalchemy.exc import IntegrityError
 
-    from cod_doc.domain.entities import Priority, TaskType
+    from cod_doc.domain.entities import Priority, QuestionLinkKind, QuestionRelation, TaskType
     from cod_doc.infra.db import transactional
     from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
-    from cod_doc.services import task_service
+    from cod_doc.services import question_service, task_service
+    from cod_doc.services.question_service import QuestionNotFoundError
     from cod_doc.services.task_service import DuplicateTaskIdError
     from cod_doc.services.validation import ValidationError
 
@@ -408,6 +415,19 @@ def task_create(
                 acceptance=acceptance,
                 reason=reason,
             )
+            for qid in addresses:
+                question_service.link(
+                    session,
+                    project_id=project_id,
+                    question_id=qid,
+                    to_kind=QuestionLinkKind.TASK,
+                    to_ref=t.task_id,
+                    relation=QuestionRelation.ADDRESSED_BY,
+                    author=author,
+                )
+    except QuestionNotFoundError as exc:
+        console.print(f"[red]--addresses: question '{exc.args[0]}' not found.[/red]")
+        sys.exit(1)
     except DuplicateTaskIdError as exc:
         console.print(
             f"[red]task_id {exc.task_id} уже занят; следующий свободный: {exc.next_free_id}[/red]"

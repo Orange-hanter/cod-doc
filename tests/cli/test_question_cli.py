@@ -135,3 +135,22 @@ def test_errors_are_one_line_not_traceback(root: Path) -> None:
     code, out = _run("new", "-p", "p", "-t", "T", "-q", "Q?", "--link", "task:not-a-task")
     assert code == 1
     assert "does not look like a task" in out
+
+
+def test_task_create_addresses(root: Path) -> None:
+    runner = CliRunner()
+    _run("new", "-p", "p", "-t", "T", "-q", "Q?")
+    result = runner.invoke(main, ["plan", "create", "-p", "p", "p-plan", "--principle", "test"])
+    assert result.exit_code == 0, result.output
+    result = runner.invoke(main, ["plan", "section", "create", "-p", "p", "p-plan", "A", "S"])
+    assert result.exit_code == 0, result.output
+    base = ["task", "create", "-p", "p", "--plan", "p-plan", "--section", "A"]
+    base += ["--type", "feature", "--priority", "medium", "--prefix", "PP"]
+    result = runner.invoke(main, [*base, "--title", "Answer", "--addresses", "Q-001"])
+    assert result.exit_code == 0, result.output
+    _, out = _run("list", "-p", "p", "--linked-to", "task:PP-001", "--json")
+    assert [r["question_id"] for r in json.loads(out)] == ["Q-001"]
+
+    result = runner.invoke(main, [*base, "--title", "Other", "--addresses", "Q-404"])
+    assert result.exit_code == 1
+    assert "question 'Q-404' not found" in result.output

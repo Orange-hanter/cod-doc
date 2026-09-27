@@ -893,7 +893,7 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
-    '(--scope)--scope=[Ограничить поиск одним kind'\''ом]:scope:(task doc story adr finding)' \
+    '(--scope)--scope=[Ограничить поиск одним kind'\''ом]:scope:(task doc story adr finding question)' \
     '(--limit)--limit=[Лимит хитов на kind]:limit' \
     '(--projects)--projects=[Ещё слаги через запятую; искать по ним вместе с --project (общая hu…]:projects' \
     '(--json)--json[Вывод в JSON]' \
@@ -3093,7 +3093,7 @@ _cod-doc() {
   typeset -A opt_args
   _arguments -s -S \
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
-    '(--scope)--scope=[Restrict search to one kind]:scope:(task doc story adr finding)' \
+    '(--scope)--scope=[Restrict search to one kind]:scope:(task doc story adr finding question)' \
     '(--limit)--limit=:limit' \
     '(--projects)--projects=[Comma-separated extra slugs to search together with --project (shar…]:projects' \
     '(--reindex)--reindex[Rebuild the FTS index before searching.]' \
@@ -3692,6 +3692,7 @@ _cod-doc() {
     '(--prefix)--prefix=[ID prefix for auto-numbering (e.g. COD). Without --id and --prefix…]:prefix' \
     '(--description)--description=:description' \
     '(--acceptance)--acceptance=:acceptance' \
+    '*--addresses=[Open question this task works on (Q-021); repeatable]:addresses' \
     '(--author)--author=:author' \
     '(--reason)--reason=:reason' \
     '(- *)--help[Show this message and exit.]' && ret=0

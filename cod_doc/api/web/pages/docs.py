@@ -19,11 +19,17 @@ from cod_doc.api.deps import (
 from cod_doc.api.web.errors import ValidationWebError, truncate_for_cookie
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import DOCUMENT_TYPES, templates
-from cod_doc.domain.entities import DocNode, DocumentStatus, DocumentType, EntityKind
+from cod_doc.domain.entities import (
+    DocNode,
+    DocumentStatus,
+    DocumentType,
+    EntityKind,
+    QuestionLinkKind,
+)
 from cod_doc.services import doc_service as docs
 from cod_doc.services import doc_tree_service as doc_tree
 from cod_doc.services import import_service as imports
-from cod_doc.services import link_service
+from cod_doc.services import link_service, question_service
 from cod_doc.services import revision_service as revisions
 from cod_doc.services.import_service import import_or_update_markdown, scan_folder
 
@@ -1269,6 +1275,12 @@ def doc_show(
         "project/doc_show.html",
         {
             "project": {"name": proj.entry.name},
+            "linked_questions": question_service.linked_questions(
+                session,
+                project_db_id,
+                target_kind=QuestionLinkKind.DOCUMENT,
+                target_ref=doc.doc_key,
+            ),
             "doc": {
                 "doc_key": doc.doc_key,
                 "path": doc.path,

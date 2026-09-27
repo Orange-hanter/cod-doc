@@ -593,7 +593,7 @@ def ensure_index(session: Session, project_id: int) -> dict[str, Any]:
     total = sum(by_kind.values())
     if total == 0:
         counts = reindex_all(session, project_id)
-        by_kind = {k: counts[k] for k in ("task", "doc", "story", "adr", "finding")}
+        by_kind = {k: counts[k] for k in ("task", "doc", "story", "adr", "finding", "question")}
         return {"total": counts["total"], "by_kind": by_kind, "reindexed": True}
     return {"total": total, "by_kind": by_kind, "reindexed": False}
 

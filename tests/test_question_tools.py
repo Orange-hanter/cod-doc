@@ -119,3 +119,27 @@ def test_update_clears_owner(root) -> None:  # type: ignore[no-untyped-def]
     _tool("question_create")(project="p", title="T", question="Q?", owner="alice")
     updated = _tool("question_update")(project="p", question_id="Q-001", owner="")
     assert updated["owner"] is None
+
+
+def test_task_create_addresses_links_question(root) -> None:  # type: ignore[no-untyped-def]
+    _tool("question_create")(project="p", title="T", question="Q?")
+    _tool("plan_create")(project="p", scope="p-plan", sections=[{"letter": "A", "title": "S"}])
+    common = {
+        "project": "p",
+        "plan_scope": "p-plan",
+        "section_letter": "A",
+        "type": "feature",
+        "priority": "medium",
+        "id_prefix": "PP",
+    }
+    task = _tool("task_create")(**common, title="Answer it", addresses=["Q-001"])
+    assert task["addresses"] == ["Q-001"]
+    card = _tool("question_get")(project="p", question_id="Q-001")
+    assert [(e["to_kind"], e["to_ref"], e["relation"]) for e in card["links"]] == [
+        ("task", task["task_id"], "addressed_by")
+    ]
+    with pytest.raises(ValueError, match="Q-404"):
+        _tool("task_create")(**common, title="Other", addresses=["Q-404"])
+    # the whole create rolled back: no second task
+    tasks = _tool("task_list")(project="p")
+    assert [t["title"] for t in tasks["items"]] == ["Answer it"]

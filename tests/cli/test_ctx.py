@@ -255,7 +255,15 @@ def test_ctx_next_json_valid(tmp_path: Path, isolated_cod_doc_home: Path) -> Non
     assert data["project"] == "p"
     # ADO-116 добавил пятый источник: неразложенные документы. Набор ключей
     # здесь — контракт карточки, поэтому проверяется точным равенством.
-    assert set(data["card"]) == {"drift", "links", "master", "findings", "unplaced"}
+    # OQM-005 — шестой: открытые вопросы (битые ссылки, застоявшиеся).
+    assert set(data["card"]) == {
+        "drift",
+        "links",
+        "master",
+        "findings",
+        "unplaced",
+        "questions",
+    }
     assert data["card"]["drift"]["project"] == "p"
     assert set(data["meta"]) == {"generated_at", "truncated", "counts"}
     # AFT-002: advisory-строки дрейфа считаются отдельно от проблем.

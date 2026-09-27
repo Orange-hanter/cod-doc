@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from cod_doc.domain.entities import (
     OpenQuestion,
@@ -186,3 +186,97 @@ def questions_for_targets(
         if all(q.question_id != model.question_id for q in bucket):
             bucket.append(repo._to_domain(model))
     return out
+
+
+def linked_questions(
+    session: Session,
+    project_id: int,
+    *,
+    target_kind: QuestionLinkKind,
+    target_ref: str,
+    status: QuestionStatus | None = None,
+) -> list[dict[str, object]]:
+    """Вопросы, ссылающиеся на цель; для документа — и на любую его секцию.
+
+    Обратная навигация «задача/документ → вопросы». Запись —
+    ``question_id``, ``title``, ``status``, ``priority`` и ``relation``;
+    открытые первыми, вопрос с несколькими рёбрами к цели — один раз.
+    """
+    conds = [
+        (QuestionLinkModel.to_kind == target_kind.value) & (QuestionLinkModel.to_ref == target_ref)
+    ]
+    if target_kind is QuestionLinkKind.DOCUMENT:
+        conds.append(
+            (QuestionLinkModel.to_kind == QuestionLinkKind.SECTION.value)
+            & QuestionLinkModel.to_ref.startswith(f"{target_ref}#", autoescape=True)
+        )
+    stmt = (
+        select(OpenQuestionModel, QuestionLinkModel.relation)
+        .join(QuestionLinkModel, QuestionLinkModel.question_row_id == OpenQuestionModel.row_id)
+        .where(OpenQuestionModel.project_id == project_id, or_(*conds))
+        .order_by(OpenQuestionModel.question_id)
+    )
+    if status is not None:
+        stmt = stmt.where(OpenQuestionModel.status == status.value)
+    seen: set[str] = set()
+    out: list[dict[str, object]] = []
+    for model, relation in session.execute(stmt).all():
+        if model.question_id not in seen:
+            seen.add(model.question_id)
+            out.append(_hint_entry(model, relation))
+    out.sort(key=lambda e: e["status"] != QuestionStatus.OPEN.value)
+    return out
+
+
+def open_questions_for_context(
+    session: Session,
+    project_id: int,
+    *,
+    target_kind: QuestionLinkKind | None,
+    target_ref: str | None,
+    limit: int,
+) -> list[dict[str, object]]:
+    """Открытые вопросы для ``context_get.hints.open_questions``.
+
+    Сначала — связанные с целью (:func:`linked_questions`), затем добор
+    срочными (critical/high) по проекту с ``relation=None``.
+    """
+    picked: list[dict[str, object]] = []
+    if target_kind is not None and target_ref is not None:
+        picked = linked_questions(
+            session,
+            project_id,
+            target_kind=target_kind,
+            target_ref=target_ref,
+            status=QuestionStatus.OPEN,
+        )
+    seen = {str(e["question_id"]) for e in picked}
+    if len(picked) < limit:
+        urgent = session.execute(
+            select(OpenQuestionModel)
+            .where(
+                OpenQuestionModel.project_id == project_id,
+                OpenQuestionModel.status == QuestionStatus.OPEN.value,
+                OpenQuestionModel.priority.in_(_URGENT_PRIORITIES),
+            )
+            .order_by(OpenQuestionModel.question_id)
+        ).scalars()
+        ranked = sorted(urgent, key=lambda m: _URGENT_PRIORITIES.index(m.priority))
+        for model in ranked:
+            if model.question_id not in seen:
+                seen.add(model.question_id)
+                picked.append(_hint_entry(model, None))
+    return picked[:limit]
+
+
+_URGENT_PRIORITIES = ("critical", "high")
+
+
+def _hint_entry(model: OpenQuestionModel, relation: str | None) -> dict[str, object]:
+    return {
+        "question_id": model.question_id,
+        "title": model.title,
+        "status": model.status,
+        "priority": model.priority,
+        "relation": relation,
+    }
