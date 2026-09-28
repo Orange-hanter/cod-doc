@@ -75,7 +75,8 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="adr_get")
     def adr_get(project: str, adr_id: str) -> dict[str, Any]:
-        """Return an ADR with its diagrams and task links.
+        """Return an ADR with its diagrams, task links and ``referenced_by``
+        (doc sections, tasks and other ADRs that mention it).
 
         Miss returns ``{found: false, requested_adr_id, hint, related_tools}``.
         """
@@ -96,7 +97,7 @@ def register(mcp: FastMCP) -> None:
                     ),
                     "related_tools": ["adr_list", "adr_create"],
                 }
-            out = adr_service.adr_to_dict(session, row)
+            out = adr_service.adr_to_dict(session, row, include_backlinks=True)
             out["found"] = True
             return out
 

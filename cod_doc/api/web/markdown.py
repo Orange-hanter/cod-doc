@@ -422,6 +422,20 @@ def render_markdown(text: str) -> str:
             ol_items.append(m_ol.group(2))
             i += 1
             continue
+        # Продолжение пункта списка: строка с отступом или «ленивая» строка
+        # без маркера сразу под пунктом (CommonMark). Без этого перенесённый
+        # по ширине пункт рвался — хвост уезжал отдельным абзацем, а
+        # следующий пункт открывал новый <ul>.
+        # Маркер с отступом — вложенный список; вложенность не рендерим, он
+        # становится соседним пунктом, а не текстом предыдущего.
+        if list_items or ol_items:
+            stripped = line.lstrip()
+            if stripped.startswith(("- ", "* ")) or _OL_ITEM.match(stripped):
+                line = stripped
+            else:
+                (list_items or ol_items)[-1] += "\n" + stripped
+                i += 1
+                continue
         # Bullet list?
         if line.startswith(("- ", "* ")):
             flush_paragraph()
@@ -447,6 +461,55 @@ def render_markdown(text: str) -> str:
             blocks.append(f"<pre><code{lang_attr}>{html_escape(content)}</code></pre>")
 
     return "\n".join(blocks)
+
+
+_LEADING_NUMBER = re.compile(r"^\d+[.)]\s+")
+
+
+def _prose_lines(text: str) -> list[str]:
+    """Строки вне code fence и HTML-комментариев — то, что рендерер видит прозой."""
+    out: list[str] = []
+    in_fence = False
+    for line in _strip_html_comments(text.splitlines()):
+        if line.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            out.append(line)
+    return out
+
+
+def outline(text: str, *, levels: tuple[int, ...] = (2, 3)) -> list[tuple[str, str]]:
+    """Заголовки заданных уровней как ``(inline_html, anchor)``.
+
+    Якорь тот же, что ставит :func:`render_markdown`, — ссылка из оглавления
+    попадает в отрисованный заголовок. Ведущий номер («1. …») срезается:
+    вызывающий выводит пункты нумерованным списком, и «1. 1.» было бы шумом.
+    """
+    items: list[tuple[str, str]] = []
+    for line in _prose_lines(text or ""):
+        m = _HEADING.match(line)
+        if m and len(m.group(1)) in levels:
+            title = m.group(2)
+            items.append((_render_inline(_LEADING_NUMBER.sub("", title)), _slugify(title)))
+    return items
+
+
+def lead_paragraph(text: str) -> str:
+    """Первый абзац прозы (не заголовок, не список, не таблица) как HTML."""
+    para: list[str] = []
+    for line in _prose_lines(text or ""):
+        stripped = line.strip()
+        if not stripped:
+            if para:
+                break
+            continue
+        if _HEADING.match(line) or stripped.startswith(("|", ">", "- ", "* ")):
+            if para:
+                break
+            continue
+        para.append(stripped)
+    return _render_inline("\n".join(para)) if para else ""
 
 
 _SLUG_BAD = re.compile(r"[^\w\-]+", re.UNICODE)

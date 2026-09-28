@@ -34,30 +34,12 @@
         <input name="decided_at" type="date">
       </label>
       <label class="field">
-        <span class="label">Explicit ADR id (optional, otherwise auto-allocated)</span>
-        <input name="adr_id" placeholder="ADR-NNN" pattern="^ADR-\d{3}$">
+        <span class="label">ADR id (empty = {{ next_id }})</span>
+        <input name="adr_id" placeholder="{{ next_id }}" pattern="^ADR-\d{3}$">
       </label>
     </div>
 
-    <label class="field">
-      <span class="label">Context — what problem are we solving?</span>
-      <textarea name="context" rows="4"></textarea>
-    </label>
-
-    <label class="field">
-      <span class="label">Decision — what did we choose?</span>
-      <textarea name="decision" rows="4"></textarea>
-    </label>
-
-    <label class="field">
-      <span class="label">Alternatives considered</span>
-      <textarea name="alternatives" rows="3"></textarea>
-    </label>
-
-    <label class="field">
-      <span class="label">Consequences (+ pros / − cons)</span>
-      <textarea name="consequences" rows="3"></textarea>
-    </label>
+    {% include "project/_adr_body_fields.html" %}
 
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">Create ADR</button>

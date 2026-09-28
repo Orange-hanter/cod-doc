@@ -33,14 +33,46 @@
   </script>
   <script defer src="{{ static_url('htmx.min.js') }}"></script>
   <script type="module">
-    if (document.querySelector('.mermaid')) {
-      const m = await import('{{ mermaid_src }}');
-      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-      m.default.initialize({
-        startOnLoad: true,
-        theme: isDark ? 'dark' : 'default',
-        securityLevel: 'strict',
+    const blocks = [...document.querySelectorAll('.mermaid')];
+    if (blocks.length) {
+      // ADO-233: по умолчанию локальная сборка — схемы рисуются без сети.
+      const src = {{ (mermaid_src or static_url(mermaid_vendor_path)) | tojson }};
+      const sources = blocks.map((b) => b.textContent);
+      const loadMermaid = async () => {
+        if (src.endsWith('.mjs')) return (await import(src)).default;
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = src;
+          s.onload = resolve;
+          s.onerror = () => reject(new Error('cannot load ' + src));
+          document.head.append(s);
+        });
+        return window.mermaid;
+      };
+      try {
+        const m = await loadMermaid();
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        // startOnLoad вешается на событие load, а оно к этому моменту уже
+        // прошло: загрузка выше асинхронная. Поэтому run() явно.
+        m.initialize({
+          startOnLoad: false,
+          theme: isDark ? 'dark' : 'default',
+          securityLevel: 'strict',
+        });
+        await m.run({ querySelector: '.mermaid', suppressErrors: true });
+      } catch (e) {
+        console.warn('[mermaid]', e);
+      }
+      // Блок без SVG — библиотека не загрузилась: показываем исходник
+      // читаемым <pre>, а не слитый в строку текст.
+      blocks.forEach((b, i) => {
+        if (b.querySelector('svg')) return;
+        const pre = document.createElement('pre');
+        pre.className = 'mermaid-fallback';
+        pre.textContent = sources[i];
+        b.replaceChildren(pre);
       });
+      document.dispatchEvent(new CustomEvent('mermaid:rendered'));
     }
   </script>
 

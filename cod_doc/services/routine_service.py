@@ -15,6 +15,8 @@ maintenance utilities:
 - ``alembic_head``   — ADO-027 (F1): рабочая БД на head-миграции
 - ``graph_health``   — ADO-205 (RFC 26 §5.3): циклы, немые/мёртвые/кросс-плановые
   рёбра, позиции и слаги секций планов; пишет находки в ``finding``
+- ``adr_health``     — ADO-232: accepted ADR без ``decided_at``, proposed/accepted
+  с пустым ``decision``; пишет находки в ``finding``
 - ``question_links`` — OQM-009: перепроверка ссылок открытых вопросов; штампы
   ``resolved``/``broken_reason`` читает ``curator_next``
 
@@ -428,6 +430,27 @@ def _check_graph_health(
     }
 
 
+def _check_adr_health(
+    session: Session,
+    project_id: int,
+    **_: Any,
+) -> dict[str, Any]:
+    """ADO-232: пробелы реестра ADR — accepted без даты, пустое решение.
+
+    Пишет в ``finding`` (партиция ``source_ref='adr_health'``), откуда
+    находки забирает `curator_next`. Правила детерминированы.
+    """
+    from cod_doc.services import adr_health
+
+    slug = _project_slug(session, project_id)
+    result = adr_health.sync(session, project_id=project_id, project_slug=slug)
+    return {
+        "findings": [result] if result["issues"] else [],
+        "findings_count": result["issues"],
+        **result,
+    }
+
+
 def _check_question_links(
     session: Session,
     project_id: int,
@@ -483,6 +506,7 @@ CHECK_CATALOG: dict[str, CheckFn] = {
     "doc_unplaced": _check_doc_unplaced,
     "doc_node_health": _check_doc_node_health,
     "graph_health": _check_graph_health,
+    "adr_health": _check_adr_health,
     "question_links": _check_question_links,
     "task_stale": _check_task_stale,
     "alembic_head": _check_alembic_head,

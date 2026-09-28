@@ -37,7 +37,11 @@ from cod_doc.infra.models import (
     ADRModel,
     ADRSupersedeModel,
     ADRTaskModel,
+    DocumentModel,
+    LinkModel,
     ProjectModel,
+    SectionModel,
+    TaskModel,
 )
 from cod_doc.services import activity_service, search_service
 from cod_doc.services import revision_service as rev
@@ -98,6 +102,15 @@ def _next_adr_id(session: Session, project_id: int) -> str:
         if m:
             max_n = max(max_n, int(aid.split("-")[1]))
     return f"ADR-{max_n + 1:03d}"
+
+
+def next_adr_id(session: Session, project_id: int) -> str:
+    """Какой ``ADR-NNN`` получит следующий ``create`` без явного id (ADO-235).
+
+    Только подсказка для формы: между показом и сохранением номер может
+    занять другой автор — ``create`` всё равно выделяет его заново.
+    """
+    return _next_adr_id(session, project_id)
 
 
 def _require(session: Session, project_id: int, adr_id: str) -> ADRModel:
@@ -739,12 +752,87 @@ def graph(session: Session, project_id: int) -> dict[str, Any]:
 # ----------------------------------------------------------------- #
 
 
+def backlinks(session: Session, project_id: int, adr_id: str) -> dict[str, list[dict[str, Any]]]:
+    """ADO-230: кто ссылается на ``adr_id`` — секции документов, задачи, ADR.
+
+    Документы — по таблице ``link``: парсер ссылок уже ловит голое
+    ``ADR-NNN`` в секциях и пишет ``to_adr_id``. Задачи и тела ADR в ``link``
+    не попадают, их сканируем ``LIKE`` и отсеиваем по границе слова: FTS тут
+    не годится — префиксный матч на ``ADR-012`` ловит и ``ADR-0120``, а сам
+    индекс best-effort. Связи ``adr_task`` и рёбра supersede сюда не входят:
+    у них свои блоки на карточке.
+    """
+    word = re.compile(rf"(?<![\w-]){re.escape(adr_id)}(?![\w-])")
+    pattern = f"%{adr_id}%"
+
+    doc_rows = session.execute(
+        select(
+            DocumentModel.doc_key, DocumentModel.title, SectionModel.heading, SectionModel.anchor
+        )
+        .select_from(LinkModel)
+        .join(SectionModel, SectionModel.row_id == LinkModel.from_section_id)
+        .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
+        .where(LinkModel.project_id == project_id, LinkModel.to_adr_id == adr_id)
+        .order_by(DocumentModel.doc_key, SectionModel.position)
+    ).all()
+    docs: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for r in doc_rows:
+        if (r.doc_key, r.anchor) in seen:
+            continue
+        seen.add((r.doc_key, r.anchor))
+        docs.append(
+            {"doc_key": r.doc_key, "title": r.title, "heading": r.heading, "anchor": r.anchor}
+        )
+
+    task_rows = session.execute(
+        select(
+            TaskModel.task_id,
+            TaskModel.title,
+            TaskModel.status,
+            TaskModel.description,
+            TaskModel.acceptance,
+        )
+        .where(
+            TaskModel.project_id == project_id,
+            TaskModel.description.like(pattern) | TaskModel.acceptance.like(pattern),
+        )
+        .order_by(TaskModel.task_id)
+    ).all()
+    tasks = [
+        {"task_id": r.task_id, "title": r.title, "status": r.status}
+        for r in task_rows
+        if word.search(r.description or "") or word.search(r.acceptance or "")
+    ]
+
+    body_cols = (ADRModel.context, ADRModel.decision, ADRModel.alternatives, ADRModel.consequences)
+    adr_rows = session.execute(
+        select(ADRModel.adr_id, ADRModel.title, ADRModel.status, *body_cols)
+        .where(
+            ADRModel.project_id == project_id,
+            ADRModel.adr_id != adr_id,
+            body_cols[0].like(pattern)
+            | body_cols[1].like(pattern)
+            | body_cols[2].like(pattern)
+            | body_cols[3].like(pattern),
+        )
+        .order_by(ADRModel.adr_id)
+    ).all()
+    adrs = [
+        {"adr_id": r.adr_id, "title": r.title, "status": r.status}
+        for r in adr_rows
+        if any(word.search(text or "") for text in (r[3], r[4], r[5], r[6]))
+    ]
+    return {"docs": docs, "tasks": tasks, "adrs": adrs}
+
+
 def adr_to_dict(
     session: Session,
     adr: ADRModel,
     *,
     include_diagrams: bool = True,
     include_links: bool = True,
+    include_backlinks: bool = False,
 ) -> dict[str, Any]:
     out: dict[str, Any] = {
         "adr_id": adr.adr_id,
@@ -779,6 +867,10 @@ def adr_to_dict(
             .all()
         )
         out["task_links"] = [{"task_id": link.task_id, "relation": link.relation} for link in links]
+    if include_backlinks:
+        # Три запроса со сканом текста — только по явной просьбе (карточка,
+        # adr_get, adr show), а не в каждом списочном вызове.
+        out["referenced_by"] = backlinks(session, adr.project_id, adr.adr_id)
     return out
 
 

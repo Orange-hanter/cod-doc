@@ -218,11 +218,14 @@ def test_plan_show_renders_mermaid_export(plans_client) -> None:
 
 
 def test_base_loads_mermaid_when_diagram_present(plans_client) -> None:
-    """COD-061: mermaid.js loader is in <head>, gated on .mermaid presence."""
+    """COD-061: mermaid.js loader is in <head>, gated on .mermaid presence.
+
+    ADO-233: по умолчанию грузится вендорная сборка, а не CDN.
+    """
     client, entry, plan_id = plans_client
     r = client.get(f"/p/{entry.name}/plans/{plan_id}")
-    assert "mermaid.esm.min.mjs" in r.text
-    assert "querySelector('.mermaid')" in r.text
+    assert "/static/vendor/mermaid.min.js" in r.text
+    assert "querySelectorAll('.mermaid')" in r.text
 
 
 def test_plan_show_404_unknown_plan(plans_client) -> None:

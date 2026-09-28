@@ -142,12 +142,13 @@ templates.env.globals["task_status_choices"] = task_status_choices
 templates.env.globals["document_types"] = DOCUMENT_TYPES
 templates.env.filters["chain_done_count"] = chain_done_count
 templates.env.globals["static_url"] = static_url
-# COD-077 (d): operators behind a corp firewall can point at a vendored
-# Mermaid build (e.g. /static/mermaid.esm.min.mjs); default = jsDelivr CDN.
-templates.env.globals["mermaid_src"] = os.environ.get(
-    "COD_DOC_MERMAID_SRC",
-    "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs",
-)
+# ADO-233: Mermaid вендорен (static/vendor/mermaid.min.js, UMD 11.17.2) —
+# без сети схемы раньше оставались сырым текстом. Пустое значение = локальная
+# сборка через static_url; COD_DOC_MERMAID_SRC по-прежнему переопределяет
+# (COD-077 d): URL на `.mjs` грузится import()'ом, остальное — <script>.
+MERMAID_VENDOR_PATH = "vendor/mermaid.min.js"
+templates.env.globals["mermaid_src"] = os.environ.get("COD_DOC_MERMAID_SRC", "")
+templates.env.globals["mermaid_vendor_path"] = MERMAID_VENDOR_PATH
 
 # highlight.js for syntax-highlighted code blocks in rendered markdown.
 # Operators behind a firewall can vendor the assets and point the env vars

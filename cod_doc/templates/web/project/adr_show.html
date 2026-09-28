@@ -13,6 +13,22 @@
 {# ADO-135: возврат к списку липнет под топбаром, а не прячется внизу. #}
 <p class="adr-back"><a href="/p/{{ project.name }}/adr">← Back to ADR list</a></p>
 
+{# Недействующее решение говорит об этом первой строкой: читатель, пришедший
+   по ссылке из кода, иначе дочитает до конца решение, которое уже заменено. #}
+{% if superseded_by %}
+<div class="adr-banner">
+  <strong>No longer in force.</strong>
+  Replaced by
+  {% for r in superseded_by %}
+    <a class="mono" href="/p/{{ project.name }}/adr/{{ r.adr_id }}">{{ r.adr_id }}</a> — {{ r.title }}{% if r.reason %} <span class="muted">({{ r.reason }})</span>{% endif %}{% if not loop.last %}; {% endif %}
+  {% endfor %}
+</div>
+{% elif adr.closed %}
+<div class="adr-banner {% if adr.status == "rejected" %}adr-banner-rejected{% else %}adr-banner-deprecated{% endif %}">
+  <strong>No longer in force.</strong> This ADR is <code>{{ adr.status }}</code>.
+</div>
+{% endif %}
+
 {# ADO-136: .task-hero — общий компонент (_task_detail.css:3), не page-scoped.
    Тон героя намеренно нейтральный: словарь .status-tone-* описывает статусы
    задач и ни одним именем не пересекается с ADRStatus — статус несёт бейдж. #}
@@ -27,167 +43,274 @@
   <div class="task-hero-row muted">
     <span class="meta-chip">Decided: {{ adr.decided_at | short_date }}</span>
     <span class="meta-chip">Author: {{ adr.author }}</span>
+    {% for r in supersedes %}
+      <a class="meta-chip" href="/p/{{ project.name }}/adr/{{ r.adr_id }}">Replaces {{ r.adr_id }}</a>
+    {% endfor %}
+    {% if adr.status == "accepted" %}
+      <span class="meta-chip" title="Body and title are frozen. Amend by superseding; retire by deprecating.">🔒 locked</span>
+    {% endif %}
+    {% if adr.status in ("proposed", "accepted") %}
+      <a class="meta-chip adr-jump" href="#actions">
+        {%- if adr.status == "proposed" %}✎ Edit{% else %}Supersede / deprecate{% endif %} ↓</a>
+    {% endif %}
   </div>
 </header>
 
-  {% if adr.status == "proposed" %}
-  <details open class="task-card">
-    <summary class="task-card-header"><h2>Edit</h2></summary>
-    <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/edit" class="settings-form">
-      <label class="field">
-        <span class="label">Title</span>
-        <input name="title" required value="{{ adr.title }}">
-      </label>
-      <div class="adr-form-row">
-        <label class="field">
-          <span class="label">Status</span>
-          <select name="status">
-            {% for s in status_options %}
-              <option value="{{ s }}" {% if s == adr.status %}selected{% endif %}>{{ s }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label class="field">
-          <span class="label">Decided at</span>
-          {# Значение формы, не текст страницы: <input type="date"> требует
-             сырой ISO YYYY-MM-DD и не должен проходить через date-фильтр. #}
-          <input name="decided_at" type="date" value="{{ adr.decided_at or '' }}">
-        </label>
-      </div>
-      <label class="field">
-        <span class="label">Context</span>
-        <textarea name="context" rows="4">{{ adr.context or '' }}</textarea>
-      </label>
-      <label class="field">
-        <span class="label">Decision</span>
-        <textarea name="decision" rows="4">{{ adr.decision or '' }}</textarea>
-      </label>
-      <label class="field">
-        <span class="label">Alternatives</span>
-        <textarea name="alternatives" rows="3">{{ adr.alternatives or '' }}</textarea>
-      </label>
-      <label class="field">
-        <span class="label">Consequences</span>
-        <textarea name="consequences" rows="3">{{ adr.consequences or '' }}</textarea>
-      </label>
-      <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Save</button>
-      </div>
-    </form>
-  </details>
-  {% elif adr.status == "accepted" %}
-  <div class="task-card adr-locked">
-    <p class="muted">
-      <strong>This ADR is ACCEPTED and locked.</strong> Body and title are
-      frozen. To amend the decision, create a superseding ADR. To retire
-      it without replacement, deprecate it below.
-    </p>
-    <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/deprecate" class="adr-form-inline"
-          onsubmit="return confirm('Mark {{ adr.adr_id }} as DEPRECATED? This is a terminal status.');">
-      <input name="reason" placeholder="reason (optional)" class="adr-reason-inline">
-      <button type="submit" class="btn btn-danger">Deprecate</button>
-    </form>
-  </div>
-  {% else %}
-  <div class="task-card adr-locked">
-    <p class="muted">
-      <strong>This ADR is in terminal status <code>{{ adr.status }}</code>.</strong>
-      No further changes are possible. History is preserved in revisions.
-    </p>
-  </div>
-  {% endif %}
-
-  {% if adr.context %}
-  <section class="task-card">
-    <div class="task-card-header"><h2>Context</h2></div>
-    <div class="doc-body doc-section">{{ adr.context_html | safe }}</div>
-  </section>
-  {% endif %}
-
-  {% if adr.decision %}
-  <section class="task-card">
-    <div class="task-card-header"><h2>Decision</h2></div>
-    <div class="doc-body doc-section">{{ adr.decision_html | safe }}</div>
-  </section>
-  {% endif %}
-
-  {% if adr.alternatives %}
-  <section class="task-card">
-    <div class="task-card-header"><h2>Alternatives considered</h2></div>
-    <div class="doc-body doc-section">{{ adr.alternatives_html | safe }}</div>
-  </section>
-  {% endif %}
-
-  {% if adr.consequences %}
-  <section class="task-card">
-    <div class="task-card-header"><h2>Consequences</h2></div>
-    <div class="doc-body doc-section">{{ adr.consequences_html | safe }}</div>
-  </section>
-  {% endif %}
-
-  <section class="task-card">
-    <div class="task-card-header"><h2>Diagrams</h2><span class="count-chip">{{ adr.diagrams|length }}</span></div>
-    {% for d in adr.diagrams %}
-      <div class="adr-diagram">
-        {% if d.title %}<h3>{{ d.title }}</h3>{% endif %}
-        <div class="mermaid">{{ d.mermaid }}</div>
-      </div>
-    {% endfor %}
-    {% if adr.status in ("proposed", "accepted") %}
-    <details>
-      <summary>+ Attach diagram</summary>
-      <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/diagram" class="settings-form">
-        <label>
-          Title (optional)
-          <input name="title">
-        </label>
-        <label>
-          Mermaid source
-          <textarea name="mermaid" rows="6" required placeholder="graph TD;A-->B"></textarea>
-        </label>
-        <button type="submit" class="btn">Add diagram</button>
-      </form>
-    </details>
+<div class="adr-layout">
+  <article class="adr-main">
+    {# ADO-229: читатель, пришедший по ссылке из кода, ищет «что решили»;
+       Context идёт первым в теле, поэтому суть поднята над ним. #}
+    {% if brief %}
+      <section class="task-card adr-brief">
+        <div class="task-card-header"><h2>Decision in brief</h2></div>
+        {% if brief.points %}
+          <ol class="adr-brief-points">
+            {% for p in brief.points %}<li><a href="#{{ p.anchor }}">{{ p.html | safe }}</a></li>{% endfor %}
+          </ol>
+        {% else %}
+          <p class="adr-brief-lead">{{ brief.lead | safe }}</p>
+        {% endif %}
+        <a class="adr-brief-more" href="#decision">Read full decision ↓</a>
+      </section>
     {% endif %}
-  </section>
 
-  <section class="task-card">
-    <div class="task-card-header"><h2>Task links</h2><span class="count-chip">{{ adr.task_links|length }}</span></div>
-    {% if adr.task_links %}
-      <ul class="adr-tasks">
-        {% for link in adr.task_links %}
-          <li><code>{{ link.relation }}</code> → <a href="/p/{{ project.name }}/tasks/{{ link.task_id }}">{{ link.task_id }}</a></li>
+    {% if sections %}
+      <section class="task-card">
+        {% for s in sections %}
+          <h2 id="{{ s.anchor }}" class="adr-section-title">{{ s.title }}</h2>
+          <div class="doc-body doc-section">{{ s.html | safe }}</div>
+        {% endfor %}
+      </section>
+    {% else %}
+      <div class="tasks-empty">
+        <p>Тело решения пустое: нет ни контекста, ни решения.
+          {% if adr.status == "proposed" %}Заполните его в форме ниже.{% endif %}</p>
+      </div>
+    {% endif %}
+
+    {% if adr.diagrams %}
+      <section class="task-card" id="diagrams">
+        <div class="task-card-header"><h2>Diagrams</h2><span class="count-chip">{{ adr.diagrams|length }}</span></div>
+        {% for d in adr.diagrams %}
+          <div class="adr-diagram">
+            {% if d.title %}<h3>{{ d.title }}</h3>{% endif %}
+            <div class="mermaid">{{ d.mermaid }}</div>
+          </div>
+        {% endfor %}
+      </section>
+    {% endif %}
+
+    {# Действия — в конце, а не над телом: страница ADR читается чаще, чем
+       правится, а «Deprecate» над текстом стоял первым, что видел читатель. #}
+    <section class="task-card" id="actions">
+      <div class="task-card-header"><h2>Actions</h2></div>
+
+      {% if adr.status == "proposed" %}
+      <details class="adr-action" open>
+        <summary>Edit</summary>
+        <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/edit" class="settings-form">
+          <label class="field">
+            <span class="label">Title</span>
+            <input name="title" required value="{{ adr.title }}">
+          </label>
+          <div class="adr-form-row">
+            <label class="field">
+              <span class="label">Status</span>
+              <select name="status">
+                {% for s in status_options %}
+                  <option value="{{ s }}" {% if s == adr.status %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="field">
+              <span class="label">Decided at</span>
+              {# Значение формы, не текст страницы: <input type="date"> требует
+                 сырой ISO YYYY-MM-DD и не должен проходить через date-фильтр. #}
+              <input name="decided_at" type="date" value="{{ adr.decided_at or '' }}">
+            </label>
+          </div>
+          {% include "project/_adr_body_fields.html" %}
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </details>
+      {% endif %}
+
+      {% if adr.status == "accepted" %}
+      <p class="muted">
+        Accepted ADRs are frozen. To change the decision, record a new ADR
+        that replaces this one; to retire it without a replacement, deprecate it.
+      </p>
+      <details class="adr-action">
+        <summary>Supersede an older ADR</summary>
+        <p class="muted">
+          Records that {{ adr.adr_id }} replaces an older ADR. The old one is
+          flipped to <code>superseded</code> automatically.
+        </p>
+        <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/supersede" class="settings-form">
+          <label class="field">
+            <span class="label">Old ADR</span>
+            <select name="superseded_adr_id" required>
+              <option value="">—</option>
+              {% for c in candidates %}
+                <option value="{{ c.adr_id }}">{{ c.adr_id }} — {{ c.title }} ({{ c.status }})</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span class="label">Reason (optional)</span>
+            <input name="reason" placeholder="why the replacement">
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn">Mark as superseding</button>
+          </div>
+        </form>
+      </details>
+      <details class="adr-action">
+        <summary>Deprecate</summary>
+        <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/deprecate" class="settings-form"
+              onsubmit="return confirm('Mark {{ adr.adr_id }} as DEPRECATED? This is a terminal status.');">
+          <label class="field">
+            <span class="label">Reason (optional)</span>
+            <input name="reason" placeholder="why it no longer applies">
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-danger">Deprecate</button>
+          </div>
+        </form>
+      </details>
+      {% endif %}
+
+      {% if adr.status in ("proposed", "accepted") %}
+      <details class="adr-action">
+        <summary>Attach diagram</summary>
+        <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/diagram" class="settings-form">
+          <label class="field">
+            <span class="label">Title (optional)</span>
+            <input name="title">
+          </label>
+          <label class="field">
+            <span class="label">Mermaid source</span>
+            <textarea name="mermaid" rows="6" required placeholder="graph TD;A-->B"></textarea>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn">Add diagram</button>
+          </div>
+        </form>
+      </details>
+      {% else %}
+      <p class="muted">
+        This ADR is in terminal status <code>{{ adr.status }}</code>.
+        No further changes are possible. History is preserved in revisions.
+      </p>
+      {% endif %}
+    </section>
+  </article>
+
+  {# ADO-236: на телефоне сайдбар стоит над телом свёрнутым блоком, а не
+     уезжает под четыре экрана текста. На десктопе summary скрыт, а details
+     всегда раскрыт; сворачивает его на узком экране скрипт ниже — без JS
+     блок просто остаётся раскрытым. #}
+  <aside class="adr-side">
+  <details class="adr-side-toggle" open>
+    <summary>On this page · links · history</summary>
+    <div class="adr-side-body">
+    {% if sections|length > 1 %}
+    <nav class="adr-side-block">
+      <div class="adr-side-label">On this page</div>
+      <ul class="adr-side-list">
+        {% for s in sections %}<li><a href="#{{ s.anchor }}">{{ s.title }}</a></li>{% endfor %}
+        {% if adr.diagrams %}<li><a href="#diagrams">Diagrams</a></li>{% endif %}
+      </ul>
+    </nav>
+    {% endif %}
+
+    {% if supersedes or superseded_by %}
+    <div class="adr-side-block">
+      <div class="adr-side-label">Supersede chain</div>
+      <ul class="adr-side-list">
+        {% for r in superseded_by %}
+          <li>replaced by <a class="mono" href="/p/{{ project.name }}/adr/{{ r.adr_id }}">{{ r.adr_id }}</a><div class="muted adr-side-sub">{{ r.title }}</div></li>
+        {% endfor %}
+        {% for r in supersedes %}
+          <li>replaces <a class="mono" href="/p/{{ project.name }}/adr/{{ r.adr_id }}">{{ r.adr_id }}</a><div class="muted adr-side-sub">{{ r.title }}</div></li>
         {% endfor %}
       </ul>
-    {% else %}
-      <p class="muted">No tasks linked yet.</p>
+    </div>
     {% endif %}
-  </section>
 
-  {% if adr.status == "accepted" %}
-  <section class="task-card">
-    <div class="task-card-header"><h2>Supersede</h2></div>
-    <p class="muted">
-      Record that this ADR ({{ adr.adr_id }}) replaces an older one. The old
-      ADR's status will be auto-flipped to <code>superseded</code>.
-    </p>
-    <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/supersede" class="settings-form">
-      <label>
-        Old ADR (will be marked superseded)
-        <select name="superseded_adr_id" required>
-          <option value="">—</option>
-          {% for c in candidates %}
-            <option value="{{ c.adr_id }}">{{ c.adr_id }} — {{ c.title }} ({{ c.status }})</option>
+    {# ADO-231: вход в историю правок этого ADR. #}
+    <div class="adr-side-block">
+      <div class="adr-side-label">History <span class="count-chip">{{ history.count }}</span></div>
+      {% if history.count %}
+        <a href="{{ history.url }}">All revisions →</a>
+        <div class="muted adr-side-sub" title="{{ history.last_at | ts_tooltip }}">
+          last: {{ history.last_at | relative_time }} by {{ history.last_author }}
+        </div>
+      {% else %}
+        <p class="muted adr-side-sub">No revisions recorded.</p>
+      {% endif %}
+    </div>
+
+    <div class="adr-side-block">
+      <div class="adr-side-label">Tasks <span class="count-chip">{{ task_links|length }}</span></div>
+      {% if task_links %}
+        <ul class="adr-side-list">
+          {% for link in task_links %}
+            <li>
+              <span class="muted">{{ link.relation }}</span>
+              <a class="mono" href="/p/{{ project.name }}/tasks/{{ link.task_id }}">{{ link.task_id }}</a>
+              {% if link.status %}<span class="badge badge-{{ link.status }}">{{ link.status }}</span>{% endif %}
+              {% if link.title %}<div class="adr-side-sub">{{ link.title }}</div>
+              {% else %}<div class="muted adr-side-sub">task not found</div>{% endif %}
+            </li>
           {% endfor %}
-        </select>
-      </label>
-      <label>
-        Reason (optional)
-        <input name="reason" placeholder="why the replacement">
-      </label>
-      <button type="submit" class="btn">Mark as superseding</button>
-    </form>
-  </section>
-  {% endif %}
+        </ul>
+      {% else %}
+        <p class="muted adr-side-sub">No tasks linked yet.</p>
+      {% endif %}
+    </div>
 
+    {# ADO-230: кто опирается на решение — оценить последствия замены. #}
+    {% set refs = adr.referenced_by %}
+    {% set ref_total = refs.docs|length + refs.tasks|length + refs.adrs|length %}
+    <div class="adr-side-block">
+      <div class="adr-side-label">Referenced by <span class="count-chip">{{ ref_total }}</span></div>
+      {% if ref_total %}
+        <ul class="adr-side-list">
+          {# Одна строка на документ: секций одного документа бывает с десяток. #}
+          {% for doc_key, secs in refs.docs|groupby("doc_key") %}
+            <li><span class="muted">doc</span>
+              <a href="/p/{{ project.name }}/docs/{{ doc_key }}">{{ secs[0].title }}</a>
+              <div class="muted adr-side-sub">
+                {%- for s in secs %}<a class="muted" href="/p/{{ project.name }}/docs/{{ doc_key }}#{{ s.anchor }}">§ {{ s.heading }}</a>{% if not loop.last %} · {% endif %}{% endfor -%}
+              </div></li>
+          {% endfor %}
+          {% for t in refs.tasks %}
+            <li><span class="muted">task</span>
+              <a class="mono" href="/p/{{ project.name }}/tasks/{{ t.task_id }}">{{ t.task_id }}</a>
+              <span class="badge badge-{{ t.status }}">{{ t.status }}</span>
+              <div class="adr-side-sub">{{ t.title }}</div></li>
+          {% endfor %}
+          {% for a in refs.adrs %}
+            <li><span class="muted">adr</span>
+              <a class="mono" href="/p/{{ project.name }}/adr/{{ a.adr_id }}">{{ a.adr_id }}</a>
+              <span class="badge badge-{{ a.status }}">{{ a.status }}</span>
+              <div class="adr-side-sub">{{ a.title }}</div></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted adr-side-sub">Nothing mentions this ADR yet.</p>
+      {% endif %}
+    </div>
+    </div>
+  </details>
+  </aside>
+  <script>
+    if (window.matchMedia('(max-width: 960px)').matches) {
+      document.querySelector('.adr-side-toggle')?.removeAttribute('open');
+    }
+  </script>
+</div>
 {% endblock %}
