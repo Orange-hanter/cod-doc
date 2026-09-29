@@ -109,6 +109,9 @@ docs/system/
 │   ├── 2026-09-19-doc-curator-section-b.md, 2026-09-20-doc-curator-section-{c,d}.md ← RFC 25
 │   └── 2026-09-23-agent-fit-section-b.md       ← RFC 27, секция B (AFT-004/005)
 │
+├── research/
+│   └── 2026-09-30-rfc-lifecycle.md ← жизненный цикл RFC и связь с ADR (исследование)
+│
 ├── releases/
 │   └── 2026-08-30-sprint-m4.md     ← релиз-заметка спринта M4
 │
@@ -186,6 +189,7 @@ docs/system/
 | scenarios/* (генерируется scenario_service) | draft | cod-doc core |
 | migration/from-restate | draft | cod-doc core |
 | releases/2026-08-30-sprint-m4 | active | cod-doc core |
+| research/2026-09-30-rfc-lifecycle | draft | cod-doc core |
 | roadmap/ROADMAP | active | cod-doc core |
 | roadmap/task-graph | maintained | cod-doc core |
 | roadmap/cod-doc-task-plan | done | cod-doc core |
@@ -291,6 +295,7 @@ docs/system/
 | 2026-09-20 | **RFC 25 §3.4/§3.5 Section D closure — план `doc-curator-2026-09` закрыт целиком (18/18).** Документация догнала код CUR-016 (`curator_next` doc card, PR #74) и CUR-017 (daemon idle без автогенерации, PR #49): `docs/HANDBOOK.md` §9 получил legacy-баннер и правки §9.1/§9.3/§9.4, скилл `orchestrator` переписан на алгоритм `agent_capabilities → curator_next → ctx_search/context_get`, `ctx_docs` убран из прозы цикла (тул вне профиля `agent` с CUR-016). `docs/system/roadmap/ROADMAP.md`, `proposals/README.md`, `proposals/25-doc-curator-agent.md` переведены в «закрыт» с итоговой таблицей 12 задач CUR-007…018 и PR-номерами. Находки: F3 `ci.yml`/`cd.yml` хэш-реестр устарел независимо от этого плана, F4 `pytest-xdist` (отсутствовал по аудиту секции B) уже установлен — resolved, F5 `agent_capabilities().next_action_hint` не упоминает `curator_next` (код не трогали, кандидат в backlog), F6 `curator_next` — три прохода по корпусу без `paths`. Аудит-отчёт: [audit/2026-09-20-doc-curator-section-d.md](audit/2026-09-20-doc-curator-section-d.md). |
 | 2026-09-26 | **Разбор находок демона doc-review (ADO-217).** Статусы 31 audit-отчёта закрытых циклов переведены в `resolved` (`active` остался только у `2026-07-29-state-of-the-project`), `2026-06-04-self-improvement-compared` получил frontmatter; реестр §5 и дерево §2 покрывают все 43 audit-файла, все 20 roadmap-файлов, `releases/` и `structure.md`. Спринт-файлы M1–M5 переведены в `done`, DoD M1/M5 дотянут по аудитам, у M4 открыт один пункт (sha ADO-040 = `REPLACE_SHA`). Планы-зомби agent-tools-completion, cod-doc-task-plan, web-frontend-task-plan закрыты. Строка Observability (2026-05-07) перенесена по хронологии. |
 | 2026-09-26 | **Гигиена корпуса (ADO-219).** Из БД удалены четыре строки-реликта `system/…` (дубли по `path` для release M4, e5c-run-analysis, sprint-m5, tracking-loop-closure — `doc import` падал на `MultipleResultsFound`) и фикстура `specs/specs/modules` (файл тоже, по образцу PCA-911); зарегистрированы аудиты doc-curator B/C/D и agent-fit B; `2026-05-15-tracks-closure-drift` приведён к стандарту frontmatter (`resolved` после сверки находок F1/F2/F4/F5/F8/F9). |
+| 2026-09-30 | **Исследование жизненного цикла RFC.** Добавлен [research/2026-09-30-rfc-lifecycle.md](research/2026-09-30-rfc-lifecycle.md): RFC — предложение со своим циклом, при принятии порождает ADR и план; замер: 29 RFC с `type=module-spec` и `status=draft`, `plan.parent_doc_id` пуст у всех планов. |
 
 ## 7. Соглашения об оформлении
 
