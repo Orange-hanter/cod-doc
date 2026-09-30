@@ -510,6 +510,38 @@ def test_stale_export_and_missing_are_reported_never_repaired(project) -> None:
     assert plan.reported_only[DriftStatus.MISSING.value] == 1
 
 
+def test_conflict_is_reported_never_repaired(project) -> None:
+    """ACU-001: правки с обеих сторон — не edited_in_place, import не планируется.
+
+    Импорт такого файла молча перезаписал бы правку БД в тех же секциях;
+    решение за человеком, а `update` обязан о нём сказать счётчиком.
+    """
+    factory, root = project
+    (root / "alpha.md").write_text(_ALPHA, encoding="utf-8")
+    _import_docs()
+
+    with transactional(factory) as session:
+        doc_service.add_section(
+            session,
+            document_id=_doc_row_id(session, "alpha"),
+            anchor="extra",
+            heading="Extra",
+            level=2,
+            position=1,
+            body="Правка в БД.",
+            author="human:test",
+        )
+    with (root / "alpha.md").open("a", encoding="utf-8") as fh:
+        fh.write("\nПравка на диске.\n")
+
+    with transactional(factory, commit=False) as session:
+        plan = _diagnose(session, root)
+
+    assert not [a for a in plan.actions if a.kind == repair_service.KIND_DOC_IMPORT]
+    assert plan.reported_only[DriftStatus.CONFLICT.value] == 1
+    assert plan.reported_only[DriftStatus.STALE_EXPORT.value] == 0
+
+
 def test_apply_on_the_reported_only_project_writes_no_file(project) -> None:
     """`doc export` не зовётся вовсе: пропавший файл так и остаётся пропавшим."""
     factory, root = project

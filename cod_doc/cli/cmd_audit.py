@@ -152,6 +152,19 @@ def _check_drift(doc: Any, root: Path, session: Any, findings: list[AuditFinding
                 details={"path": doc.path, "status": report.status.value},
             )
         )
+    elif report.status == DriftStatus.CONFLICT:
+        findings.append(
+            AuditFinding(
+                code="DR-003",
+                severity="warning",
+                subject=f"doc:{doc.doc_key}",
+                message=(
+                    "Both the DB and the on-disk file changed since last export "
+                    "(export would lose the file edit, import the DB edit)"
+                ),
+                details={"path": doc.path, "status": report.status.value},
+            )
+        )
     elif report.status == DriftStatus.MISSING:
         findings.append(
             AuditFinding(

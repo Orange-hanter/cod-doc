@@ -3,7 +3,7 @@ name: doc-sync
 description: |
   Синхронизация markdown ↔ БД в cod-doc: doc import после правки файла, hash
   update для реестра MASTER.md, семантика drift, регистрация нового документа.
-  Триггеры: drift, doc import, edited_in_place, stale_export, MASTER.md, хэш,
+  Триггеры: drift, doc import, edited_in_place, stale_export, conflict, MASTER.md, хэш,
   реестр, правка документации, документ не виден в БД.
 ---
 
@@ -37,6 +37,7 @@ cod-doc doc import MASTER.md -p <slug>    # и сам MASTER.md — тоже в 
 | `edited_in_place` | файл правлен, БД отстала | **дефект** → `doc import` |
 | `stale_export` | БД свежее, проекция на диске старее | **норма** в files-are-source; не трогать |
 | `missing` | файла нет | разобраться; вслепую не пересоздавать |
+| `conflict` | после выгрузки правили и БД, и файл | **дефект**, решает человек: `doc export <key> --dry-run` показывает, что потеряет файл; в files-are-source обычно прав файл → `doc import` (правки БД в тех же секциях уйдут) |
 
 `doc export` на диск — под guard'ом до byte-identical round-trip; наружу
 экспортировать не надо.

@@ -53,32 +53,36 @@ _ADVISORY_KEYS_CAP = 10
 # --------------------------------------------------------------------- #
 # Порядок очереди. Числа — ранги сортировки, не «важность в процентах».  #
 # Шкала одна на все виды находок, поэтому и живёт одной таблицей:        #
-# missing > edited_in_place > LINK-BROKEN > hash BROKEN > hash STALE >   #
-# stale_export > finding.                                               #
+# missing > conflict > edited_in_place > LINK-BROKEN > hash BROKEN >     #
+# hash STALE > stale_export > finding.                                  #
 # --------------------------------------------------------------------- #
 _RANK_DRIFT_MISSING = 0
-_RANK_DRIFT_EDITED = 1
-_RANK_LINK_BROKEN = 2
-_RANK_MASTER_BROKEN = 3
-_RANK_MASTER_STALE = 4
-_RANK_DRIFT_STALE_EXPORT = 5
+# ACU-001: правки с обеих сторон. Выше edited_in_place: там import чинит
+# без потерь, здесь любой автоматический шаг теряет одну из правок.
+_RANK_DRIFT_CONFLICT = 1
+_RANK_DRIFT_EDITED = 2
+_RANK_LINK_BROKEN = 3
+_RANK_MASTER_BROKEN = 4
+_RANK_MASTER_STALE = 5
+_RANK_DRIFT_STALE_EXPORT = 6
 # ADO-116: неразложенные документы. Ниже всего, что рвёт целостность, — они
 # находимы поиском и не теряются, — но выше внешних находок: пока корпус не
 # разложен, навигация по нему не работает, а RFC 25 §3.1 прямо относит
 # «неклассифицированный import» к работе куратора.
-_RANK_UNPLACED = 6
-_RANK_FINDING = 7
+_RANK_UNPLACED = 7
+_RANK_FINDING = 8
 # OQM-005: битая ссылка открытого вопроса рвёт навигацию так же, как битая
 # ссылка в документе, — тот же ранг. Застоявшийся вопрос — не поломка, а
 # напоминание: ниже всех внешних находок.
 _RANK_QUESTION_LINK_BROKEN = _RANK_LINK_BROKEN
 # OQM-010: задачи под вопрос закрыты, а вопрос открыт — почти наверняка
 # забытый ответ. Важнее «давно не трогали»: здесь есть что сделать прямо сейчас.
-_RANK_QUESTION_ANSWERED = 8
-_RANK_QUESTION_STALE = 9
+_RANK_QUESTION_ANSWERED = 9
+_RANK_QUESTION_STALE = 10
 
 _DRIFT_RANK: dict[str, int] = {
     "missing": _RANK_DRIFT_MISSING,
+    "conflict": _RANK_DRIFT_CONFLICT,
     "edited_in_place": _RANK_DRIFT_EDITED,
     "stale_export": _RANK_DRIFT_STALE_EXPORT,
 }
@@ -114,7 +118,7 @@ _NEXT_ACTIONS: tuple[str, ...] = (
 )
 
 _SUCCESS_CRITERIA: tuple[str, ...] = (
-    "ctx_drift(project) не показывает missing / edited_in_place / stale_export.",
+    "ctx_drift(project) не показывает missing / conflict / edited_in_place / stale_export.",
     "Ни одной нерезолвящейся ссылки (LINK-BROKEN) в затронутых документах.",
     "Реестр хэшей MASTER.md без BROKEN / STALE.",
     "Открытые findings либо промоутнуты в задачу, либо сняты с обоснованием.",
@@ -344,6 +348,12 @@ def _drift_priority(issue: dict[str, Any], slug: str) -> tuple[int, dict[str, st
     if status == "edited_in_place":
         reason = f"файл {path} правился на диске — правка не доехала до БД"
         action = f"cod-doc doc import {path} -p {slug}"
+    elif status == "conflict":
+        reason = (
+            f"после выгрузки правили и БД, и файл {path} — ни import, ни export "
+            "не сведут их без потери; решает человек"
+        )
+        action = f"cod-doc doc export {doc_key} -p {slug} --dry-run"
     elif status == "missing":
         reason = f"документ есть в БД, файла {path} нет на диске"
         action = f"cod-doc doc export {doc_key} -p {slug}"

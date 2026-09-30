@@ -94,3 +94,23 @@ def test_fingerprint_is_stable_and_discriminating() -> None:
 
     other, _ = fingerprint_drift_gate(**{**args, "subject": "changelog|Y"})
     assert other != first
+
+
+def test_every_drift_status_has_its_own_severity_and_explanation() -> None:
+    """ACU-001: новый статус дрейфа не имеет права молча стать «minor» без текста.
+
+    Сборщик берёт severity через ``.get(status, "minor")``, а объяснение —
+    через ``.get(status, status)``: забытый статус тихо уходит в самую мягкую
+    категорию с голым именем вместо объяснения. ``conflict`` — ровно такой
+    случай: он опаснее ``stale_export``, а без записи в таблицах выглядел бы
+    как он.
+    """
+    from cod_doc.services.projection_service import DriftStatus
+
+    for status in DriftStatus:
+        if status is DriftStatus.IN_SYNC:
+            continue
+        assert status.value in gate._DRIFT_SEVERITY, status
+        body = gate._drift_body(status.value, "docs/a")
+        assert body != f"`docs/a`: {status.value}.", status
+    assert gate._DRIFT_SEVERITY["conflict"] == "major"

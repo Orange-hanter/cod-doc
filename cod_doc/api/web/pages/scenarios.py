@@ -64,12 +64,14 @@ _DRIFT_BADGE = {
     "stale_export": "badge-warning",
     "edited_in_place": "badge-warning",
     "missing": "badge-error",
+    "conflict": "badge-error",
 }
 _DRIFT_HEALTH = {
     "in_sync": "success",
     "stale_export": "warning",
     "edited_in_place": "warning",
     "missing": "error",
+    "conflict": "error",
 }
 _DRIFT_UNAVAILABLE: dict[str, Any] = {
     "level": "muted",

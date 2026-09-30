@@ -30,7 +30,7 @@ def register(mcp: FastMCP) -> None:
         открытые findings — и отдаёт их одной очередью с уже проставленным
         приоритетом и готовой командой на каждый пункт.
 
-        Порядок очереди фиксирован: ``missing`` → ``edited_in_place`` →
+        Порядок очереди фиксирован: ``missing`` → ``conflict`` → ``edited_in_place`` →
         ``LINK-BROKEN`` → hash ``BROKEN`` → hash ``STALE`` → ``stale_export``
         → finding. Сначала то, что делает документ недоступным, потом то, что
         делает его неточным.

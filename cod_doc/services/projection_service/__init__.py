@@ -14,6 +14,9 @@ Concepts:
     between file and `projection_hash`).
   - `IN_SYNC`: file matches the last export, and DB content is also unchanged.
   - `MISSING`: the projection file does not exist on disk.
+  - `CONFLICT` (ACU-001): DB content changed since export AND the file is
+    neither the last export nor the accepted import — the file
+    `export_document` refuses to overwrite.
 
 Public API:
 - `render_markdown` — pure: render frontmatter + body to a markdown string.
