@@ -96,6 +96,34 @@ def test_bullet_list() -> None:
     assert "<li>three</li>" in out
 
 
+def test_bullet_item_wrapped_by_width_stays_one_item() -> None:
+    """Перенос пункта по ширине — продолжение пункта, а не новый абзац.
+
+    Так записаны тела ADR (ADR-012): хвост пункта уезжал отдельным абзацем,
+    а следующий пункт открывал второй <ul>.
+    """
+    md = "- `run_id` есть в таблицах:\n  `approval`, `finding`.\n- второй пункт"
+    out = render_markdown(md)
+    assert out.count("<ul>") == 1
+    assert (
+        "<li><code>run_id</code> есть в таблицах:\n<code>approval</code>, <code>finding</code>.</li>"
+        in out
+    )
+    assert "<p>" not in out
+
+
+def test_lazy_continuation_and_ordered_list() -> None:
+    out = render_markdown("1. первый\nхвост первого\n2. второй")
+    assert out.count("<ol>") == 1
+    assert "<li>первый\nхвост первого</li>" in out
+
+
+def test_indented_marker_becomes_sibling_item() -> None:
+    """Вложенность не рендерим, но вложенный пункт — пункт, а не текст."""
+    out = render_markdown("- a\n  - b\n- c")
+    assert "<li>a</li><li>b</li><li>c</li>" in out
+
+
 def test_code_fence_renders_pre_code() -> None:
     md = "```python\ndef f(): pass\n```"
     out = render_markdown(md)
@@ -602,3 +630,26 @@ def test_renderer_itself_does_not_touch_frontmatter() -> None:
     """В теле документа из БД ведущий `---` — законная черта, не метаданные."""
     out = render_markdown("---\n\nтело")
     assert "<hr />" in out
+
+
+# ── ADO-229: outline / lead_paragraph ───────────────────────────────────
+
+
+def test_outline_anchor_matches_rendered_heading() -> None:
+    from cod_doc.api.web.markdown import outline
+
+    md = "## 2) Снять контракт\n\n#### глубоко\n\n### Третий\n"
+    items = outline(md)
+    assert [html for html, _ in items] == ["Снять контракт", "Третий"]
+    rendered = render_markdown(md)
+    for _, anchor in items:
+        assert f'id="{anchor}"' in rendered
+
+
+def test_lead_paragraph_skips_headings_and_lists() -> None:
+    from cod_doc.api.web.markdown import lead_paragraph
+
+    assert lead_paragraph("# H\n\n- item\n\nПервый **абзац**\nвторая строка\n\nещё") == (
+        "Первый <strong>абзац</strong>\nвторая строка"
+    )
+    assert lead_paragraph("") == ""

@@ -40,6 +40,7 @@ from cod_doc.services import (
     commit_link_service,
     doc_service,
     doc_tree_service,
+    question_service,
     repair_service,
     repo_index_service,
     task_doc_service,
@@ -385,6 +386,22 @@ def test_adr_create_emits_event(engine_with_schema) -> None:  # type: ignore[no-
             select(ActivityEventModel).where(ActivityEventModel.kind == "adr.created")
         ).scalar_one()
         assert ev.scope_id == "ADR-001"
+
+
+def test_question_create_emits_event(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        question_service.create(
+            session, project_id=p, title="X", question="Y?", author="human:test"
+        )
+
+    with transactional(factory) as session:
+        ev = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "question.created")
+        ).scalar_one()
+        assert ev.scope_id == "Q-001"
+        assert ev.actor_kind == "human"
 
 
 def test_approval_request_emits_event(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

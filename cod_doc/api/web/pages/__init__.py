@@ -22,6 +22,7 @@ from . import (
     navigator,
     plans,
     project,
+    questions,
     revisions,
     routines,
     run,
@@ -48,6 +49,8 @@ router.include_router(navigator.router)
 router.include_router(standards.router)
 # RFC 24 §9 scenarios — read-only list + detail (authoring half).
 router.include_router(scenarios.router)
+# OQM-004 open questions — list, card and write forms (DB-only entity).
+router.include_router(questions.router)
 # ADRs — list/show/new/graph + supersede form (ADR-004/005/006).
 # Registered BEFORE docs.router because docs has a `/p/{slug}/docs/...`
 # greedy match that wouldn't shadow `/adr` anyway, but keep next to its

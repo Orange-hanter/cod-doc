@@ -1,0 +1,20 @@
+{# OQM-005: вопросы, ссылающиеся на эту задачу/документ (обратная навигация).
+   Variables: linked_questions (list), project.name. Пусто — блок не рендерится. #}
+{% if linked_questions %}
+<section class="task-card" id="questions">
+  <div class="task-card-header">
+    <h2>❓ Вопросы</h2>
+    <span class="count-chip">{{ linked_questions | length }}</span>
+  </div>
+  <ul class="question-links">
+    {% for lq in linked_questions %}
+      <li>
+        <span class="badge badge-q-{{ lq.status }}">{{ lq.status }}</span>
+        <a class="mono" href="/p/{{ project.name }}/questions/{{ lq.question_id }}">{{ lq.question_id }}</a>
+        {{ lq.title }}
+        {% if lq.relation %}<code class="muted">{{ lq.relation }}</code>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

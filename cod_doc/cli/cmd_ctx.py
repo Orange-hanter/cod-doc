@@ -455,7 +455,7 @@ _CTX_SEARCH_DEFAULT_LIMIT = 20
 @click.option("--project", "-p", required=True, help="Слаг проекта")
 @click.option(
     "--scope",
-    type=click.Choice(["task", "doc", "story", "adr", "finding"]),
+    type=click.Choice(["task", "doc", "story", "adr", "finding", "question"]),
     default=None,
     help="Ограничить поиск одним kind'ом",
 )

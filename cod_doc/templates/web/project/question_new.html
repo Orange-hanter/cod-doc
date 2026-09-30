@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}New question · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/questions">Questions</a> /
+  <span>New</span>
+</nav>
+
+{% with slug=project.name, active="questions" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<p class="question-back"><a href="/p/{{ project.name }}/questions">← К списку вопросов</a></p>
+
+<header class="page-header">
+  <div><h1>Новый вопрос</h1></div>
+</header>
+
+{% if error %}<div class="alert alert-error"><span class="alert-msg">{{ error }}</span></div>{% endif %}
+
+<div class="task-layout">
+  <main class="task-content">
+    <section class="task-card">
+      <form method="post" action="/p/{{ project.name }}/questions/new" class="settings-form q-form">
+        <label class="field">
+          <span class="label">Заголовок</span>
+          <input name="title" required autofocus placeholder="Какой платёжный провайдер для RU?">
+        </label>
+
+        <label class="field">
+          <span class="label">Вопрос — что именно нужно решить (markdown)</span>
+          <textarea name="question" rows="3" required></textarea>
+        </label>
+
+        <div class="q-form-row">
+          <label class="field">
+            <span class="label">Приоритет</span>
+            <select name="priority">
+              {% for p in priority_options %}
+                <option value="{{ p }}" {% if p == "medium" %}selected{% endif %}>{{ p }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span class="label">Владелец — кто отвечает за ответ</span>
+            <input name="owner" placeholder="необязательно">
+          </label>
+        </div>
+
+        <label class="field">
+          <span class="label">Контекст — предыстория, ограничения, что уже известно (markdown)</span>
+          <textarea name="context" rows="7"></textarea>
+        </label>
+
+        <label class="field">
+          <span class="label">Варианты ответа — по одному в строке</span>
+          <textarea name="options" rows="3" placeholder="ЮKassa&#10;CloudPayments"></textarea>
+        </label>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Создать вопрос</button>
+          <a class="btn btn-ghost" href="/p/{{ project.name }}/questions">Отмена</a>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <aside class="task-deps">
+    <section class="task-card q-guide">
+      <header class="task-card-header"><h2>Вопрос, ADR или задача?</h2></header>
+      <dl class="q-guide-list">
+        <dt>Вопрос</dt>
+        <dd>Решения нет и фаворита тоже: «как будем масштабировать?», «X или Y?».</dd>
+        <dt>ADR</dt>
+        <dd>Решение принято или обсуждается с вариантом-фаворитом — пишите ADR.</dd>
+        <dt>Задача</dt>
+        <dd>Понятно, что делать, — это работа, а не вопрос.</dd>
+      </dl>
+    </section>
+    <section class="task-card q-guide">
+      <header class="task-card-header"><h2>После создания</h2></header>
+      <ul class="q-guide-steps">
+        <li>подробно опишите варианты: плюсы, минусы, стоимость;</li>
+        <li>сошлитесь на документы, секции, файлы и задачи, которых касается вопрос;</li>
+        <li>закройте вопрос ADR, выбранным вариантом или текстом ответа.</li>
+      </ul>
+    </section>
+  </aside>
+</div>
+{% endblock %}

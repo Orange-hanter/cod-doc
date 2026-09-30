@@ -13,9 +13,9 @@
   <div>
     <h1>🏛️ Architecture Decision Records</h1>
     <p class="muted">
-      Important design decisions, their context, consequences, and a DAG of
-      what replaces what. Use ADRs when «why we built it this way» needs to
-      survive turnover.
+      Decisions whose «why» must survive turnover: context, the choice,
+      rejected alternatives and consequences. A newer ADR replaces an older
+      one instead of editing it.
     </p>
   </div>
   <div class="page-header-actions">
@@ -24,22 +24,21 @@
   </div>
 </header>
 
-{# ADO-133: фильтр обязан работать без JS — onchange только ускоряет.
-   Образец — tasks_legacy_list.html: noscript-кнопка + ссылка «clear». #}
-<form class="filter-bar" method="get" action="/p/{{ project.name }}/adr">
-  <label>Status:
-    <select name="status" onchange="this.form.submit()">
-      <option value="" {% if not status_filter %}selected{% endif %}>any</option>
-      {% for s in status_options %}
-        <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <noscript><button type="submit">Apply</button></noscript>
-  {% if status_filter %}
-    <a class="muted" href="/p/{{ project.name }}/adr">clear</a>
-  {% endif %}
-</form>
+{# Фильтр — ссылки, а не <select onchange>: работает без JS без noscript-
+   кнопки (ADO-133), а счётчик показывает распределение по статусам ещё до
+   клика. Пустые статусы шаблону не приходят, кроме выбранного. #}
+<nav class="filter-bar adr-filter" aria-label="Filter by status">
+  <a class="adr-chip{% if not status_filter %} is-active{% endif %}"
+     href="/p/{{ project.name }}/adr"{% if not status_filter %} aria-current="page"{% endif %}>
+    all <span class="adr-chip-count">{{ total }}</span>
+  </a>
+  {% for c in status_chips %}
+    <a class="adr-chip{% if c.status == "proposed" %} adr-chip-proposed{% endif %}{% if status_filter == c.status %} is-active{% endif %}"
+       href="/p/{{ project.name }}/adr?status={{ c.status }}"{% if status_filter == c.status %} aria-current="page"{% endif %}>
+      {{ c.icon }} {{ c.status }} <span class="adr-chip-count">{{ c.count }}</span>
+    </a>
+  {% endfor %}
+</nav>
 
 {% if not items %}
   <div class="tasks-empty">
@@ -60,24 +59,42 @@
     <thead>
       <tr>
         <th>ID</th>
+        <th>Title</th>
         <th>Status</th>
         <th class="adr-col-when">Decided</th>
-        <th>Title</th>
-        <th>Author</th>
       </tr>
     </thead>
     <tbody>
       {% for it in items %}
-        <tr>
+        <tr{% if it.closed %} class="adr-row-closed"{% endif %}>
           {# Ссылка в первой ячейке растягивается на строку через ::after
              (см. .adr-table в _components.css): клик работает по всей строке
              и без JS. Заголовок остаётся отдельной ссылкой для средней кнопки
              мыши и для скринридера. #}
           <td class="mono"><a class="adr-row-link" href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.adr_id }}</a></td>
+          <td>
+            <a href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.title }}</a>
+            {% if it.superseded_by or it.supersedes %}
+              <div class="adr-rel">
+                {% for r in it.superseded_by %}
+                  <span>replaced by <a class="mono" href="/p/{{ project.name }}/adr/{{ r.adr_id }}">{{ r.adr_id }}</a></span>
+                {% endfor %}
+                {% for r in it.supersedes %}
+                  <span>replaces <a class="mono" href="/p/{{ project.name }}/adr/{{ r.adr_id }}">{{ r.adr_id }}</a></span>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </td>
           <td><span class="badge badge-{{ it.status }}">{{ it.status_icon }} {{ it.status }}</span></td>
-          <td class="muted adr-col-when">{{ it.decided_at | short_date }}</td>
-          <td><a href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.title }}</a></td>
-          <td class="muted">{{ it.author }}</td>
+          {# ADO-232: у принятого решения дата обязана быть — пробел виден,
+             а не прячется за прочерком. Рутина adr_health заводит находку. #}
+          {# ADO-236: автор — в подсказке даты, а не отдельной колонкой:
+             `human:git-history-recovery` отнимал ширину у заголовка. #}
+          <td class="muted adr-col-when" title="by {{ it.author }}">
+            {%- if not it.decided_at and it.status == "accepted" -%}
+              <span class="adr-date-missing" title="Accepted without a decision date — see routine adr_health · by {{ it.author }}">not recorded</span>
+            {%- else -%}{{ it.decided_at | short_date }}{%- endif -%}
+          </td>
         </tr>
       {% endfor %}
     </tbody>

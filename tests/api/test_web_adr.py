@@ -282,7 +282,35 @@ def test_adr_graph_renders_mermaid(adr_client) -> None:  # type: ignore[no-untyp
     assert "ADR_001" in r.text  # node id (dash → underscore)
     assert "ADR_002" in r.text
     # The mermaid edge: literal source has "-->" but Jinja escapes it to "--&gt;".
-    assert ("ADR_002 --> ADR_001" in r.text) or ("ADR_002 --&gt; ADR_001" in r.text)
+    assert "ADR_002 --&gt;|replaces| ADR_001" in r.text
+    # Узел окрашен по статусу через classDef, а не эмодзи в подписи.
+    assert "]:::superseded" in r.text
+    assert "classDef superseded" in r.text
+
+
+def test_adr_graph_draws_only_chained_nodes(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """Одиночные ADR в mermaid не идут — иначе стрелку не найти среди
+    несвязанных прямоугольников; они перечислены блоком «Standalone»."""
+    client, entry = adr_client
+    create = client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Unrelated", "status": "proposed"},
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    client.post(
+        f"/p/{entry.name}/adr/ADR-002/supersede",
+        data={"superseded_adr_id": "ADR-001"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/p/{entry.name}/adr/graph")
+    mermaid = r.text.split('<div class="mermaid adr-graph-canvas">', 1)[1].split("</div>", 1)[0]
+    assert "ADR_001" in mermaid
+    assert "ADR_003" not in mermaid
+    assert "Standalone" in r.text
+    assert f'href="/p/{entry.name}/adr/ADR-003"' in r.text
+    # Схема — под списками, а не над ними.
+    assert r.text.index("Standalone") < r.text.index('<div class="mermaid adr-graph-canvas">')
 
 
 def test_adr_graph_empty_state(adr_client, tmp_path: Path, migrate_db) -> None:  # type: ignore[no-untyped-def]
@@ -317,7 +345,7 @@ def test_adr_list_uses_shared_component_vocabulary(adr_client) -> None:
     client, entry = adr_client
     r = client.get(f"/p/{entry.name}/adr")
     assert 'class="page-header"' in r.text
-    assert 'class="filter-bar"' in r.text
+    assert 'class="filter-bar adr-filter"' in r.text
     assert 'class="grid adr-table"' in r.text
 
 
@@ -335,18 +363,71 @@ def test_adr_list_filter_works_without_js(adr_client) -> None:
 
     До ADO-133 у формы был единственный `<select onchange>` — без submit-кнопки
     и без noscript, так что с выключенным JS фильтр выбирался, но не применялся.
+    Теперь фильтр — обычные ссылки: JS ему не нужен вовсе.
     """
     client, entry = adr_client
     r = client.get(f"/p/{entry.name}/adr")
-    assert "<noscript>" in r.text
-    assert 'type="submit"' in r.text
-    assert f'action="/p/{entry.name}/adr"' in r.text, "у формы должен быть явный action"
+    assert "onchange" not in r.text
+    assert f'href="/p/{entry.name}/adr?status=accepted"' in r.text
+    assert f'href="/p/{entry.name}/adr?status=proposed"' in r.text
 
 
-def test_adr_list_offers_clear_only_when_filtered(adr_client) -> None:
+def test_adr_list_filter_chips_carry_counts(adr_client) -> None:
+    """Счётчик у чипа — распределение по статусам без перехода; пустой
+    статус не показываем, пока он не выбран."""
     client, entry = adr_client
-    assert ">clear<" not in client.get(f"/p/{entry.name}/adr").text
-    assert ">clear<" in client.get(f"/p/{entry.name}/adr?status=accepted").text
+    r = client.get(f"/p/{entry.name}/adr")
+    assert 'all <span class="adr-chip-count">2</span>' in r.text
+    assert 'accepted <span class="adr-chip-count">1</span>' in r.text
+    assert "?status=rejected" not in r.text
+    filtered = client.get(f"/p/{entry.name}/adr?status=rejected").text
+    assert 'href="/p/adr-demo/adr?status=rejected" aria-current="page"' in filtered
+
+
+def test_adr_list_marks_active_chip(adr_client) -> None:
+    client, entry = adr_client
+    unfiltered = client.get(f"/p/{entry.name}/adr").text
+    assert f'href="/p/{entry.name}/adr" aria-current="page"' in unfiltered
+    filtered = client.get(f"/p/{entry.name}/adr?status=accepted").text
+    assert f'href="/p/{entry.name}/adr?status=accepted" aria-current="page"' in filtered
+    assert f'href="/p/{entry.name}/adr" aria-current="page"' not in filtered
+
+
+def test_adr_supersede_relation_visible_on_list_and_detail(adr_client) -> None:
+    """Связь «кем заменён» видна там, где читают, а не только на графе."""
+    client, entry = adr_client
+    client.post(
+        f"/p/{entry.name}/adr/ADR-002/supersede",
+        data={"superseded_adr_id": "ADR-001", "reason": "v2"},
+        follow_redirects=False,
+    )
+    listing = client.get(f"/p/{entry.name}/adr").text
+    assert 'class="adr-row-closed"' in listing
+    assert "replaced by" in listing
+    old = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert "No longer in force." in old
+    assert f'href="/p/{entry.name}/adr/ADR-002"' in old
+    new = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "Replaces ADR-001" in new
+    assert "No longer in force." not in new
+
+
+def test_adr_show_task_link_to_missing_task_is_kept(adr_client) -> None:
+    """Ссылка из ADR на задачу, которой нет в БД, не роняет страницу и не
+    пропадает: сама ссылка — факт, а название подставить неоткуда."""
+    client, entry = adr_client
+    engine = make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db")
+    with transactional(make_session_factory(engine)) as session:
+        proj = ProjectRepository(session).get_by_slug("adr-demo")
+        assert proj is not None
+        assert proj.row_id is not None
+        adr_service.link_task(session, project_id=proj.row_id, adr_id="ADR-001", task_id="ADO-999")
+    engine.dispose()
+
+    r = client.get(f"/p/{entry.name}/adr/ADR-001")
+    assert r.status_code == 200
+    assert f'href="/p/{entry.name}/tasks/ADO-999"' in r.text
+    assert "task not found" in r.text
 
 
 def test_adr_list_row_and_title_are_clickable(adr_client) -> None:
@@ -434,3 +515,180 @@ def test_no_dead_adr_selectors() -> None:
 
     unused = sorted(styled - in_templates)
     assert not unused, f"правила без употребления в шаблонах: {unused}"
+
+
+# ── ADO-229: суть решения в начале карточки ─────────────────────────────
+
+
+def _set_decision(entry: ProjectEntry, adr_id: str, decision: str) -> None:
+    engine = make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db")
+    with transactional(make_session_factory(engine)) as session:
+        proj = ProjectRepository(session).get_by_slug("adr-demo")
+        assert proj is not None
+        assert proj.row_id is not None
+        adr_service.update(
+            session,
+            project_id=proj.row_id,
+            adr_id=adr_id,
+            title="Use SQLite for local-first",
+            status="proposed",
+            decision=decision,
+        )
+    engine.dispose()
+
+
+def test_adr_brief_lists_decision_headings(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _set_decision(
+        entry,
+        "ADR-002",
+        "### 1. `audit_log` — снять\n\nтело\n\n```\n### не заголовок\n```\n\n### 2. run_id — оставить\n",
+    )
+    r = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "Decision in brief" in r
+    brief = r.split('class="adr-brief-points"', 1)[1].split("</ol>", 1)[0]
+    assert brief.count("<li>") == 2, "заголовок внутри code fence пунктом не считается"
+    assert "<code>audit_log</code> — снять" in brief
+    assert "1. " not in brief, "ведущий номер срезан — нумерует <ol>"
+    # Ссылка пункта ведёт на якорь отрисованного заголовка.
+    anchor = brief.split('href="#', 1)[1].split('"', 1)[0]
+    assert f'id="{anchor}"' in r
+    assert brief.index('<li><a href="#') >= 0
+
+
+def test_adr_brief_falls_back_to_first_paragraph(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert 'class="adr-brief-lead">4-layer + DIP</p>' in r
+
+
+def test_adr_brief_absent_without_decision(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _set_decision(entry, "ADR-002", "")
+    r = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "adr-brief" not in r
+
+
+# ── ADO-230: Referenced by ──────────────────────────────────────────────
+
+
+def test_adr_show_lists_referencing_adrs(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _set_decision(entry, "ADR-002", "Опирается на ADR-001.")
+    r = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    block = r.split("Referenced by", 1)[1].split("adr-side-block", 1)[0]
+    assert f'href="/p/{entry.name}/adr/ADR-002"' in block
+    empty = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "Nothing mentions this ADR yet." in empty
+
+
+# ── ADO-231: история правок ─────────────────────────────────────────────
+
+
+def _history_count(html: str) -> int:
+    label = html.split('History <span class="count-chip">', 1)[1]
+    return int(label.split("<", 1)[0])
+
+
+def test_adr_show_links_revision_history(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    before = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "/revisions?entity_kind=adr&amp;entity_id=" in before
+    _set_decision(entry, "ADR-002", "Новая формулировка")
+    after = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert _history_count(after) == _history_count(before) + 1
+
+    url = after.split('href="/p/adr-demo/revisions?', 1)[1].split('"', 1)[0].replace("&amp;", "&")
+    page = client.get(f"/p/{entry.name}/revisions?{url}")
+    assert page.status_code == 200
+
+
+# ── ADO-232: пропущенная дата у accepted ─────────────────────────────────
+
+
+def test_adr_list_flags_accepted_without_date(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Undated", "status": "accepted", "decision": "d"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert r.count('class="adr-date-missing"') == 1, "proposed без даты — норма, не пробел"
+
+
+# ── ADO-233: mermaid без CDN ────────────────────────────────────────────
+
+
+def test_mermaid_loads_from_vendored_static(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    client.post(
+        f"/p/{entry.name}/adr/ADR-002/supersede",
+        data={"superseded_adr_id": "ADR-001"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/p/{entry.name}/adr/graph").text
+    assert '"/static/vendor/mermaid.min.js?v=' in r
+    assert "cdn.jsdelivr.net/npm/mermaid" not in r
+    # ADO-234: узлы кликабельны нашим скриптом, а не ослабленным mermaid.
+    assert 'class="mermaid adr-graph-canvas"' in r
+    assert "mermaid:rendered" in r
+    assert "securityLevel: 'strict'" in r
+    asset = client.get("/static/vendor/mermaid.min.js")
+    assert asset.status_code == 200
+    assert 'globalThis["mermaid"]' in asset.text
+
+
+# ── ADO-235: форма — подсказки и предпросмотр ───────────────────────────
+
+
+def test_adr_new_form_hints_and_next_id(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/new").text
+    assert 'placeholder="ADR-003"' in r
+    assert r.count('class="adr-hint"') >= 4
+    assert f'hx-post="/p/{entry.name}/adr/preview"' in r
+
+
+def test_adr_preview_renders_without_saving(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.post(
+        f"/p/{entry.name}/adr/preview",
+        data={
+            "decision": "### Пункт\n\n**важно** <script>alert(1)</script> ADR-001",
+            "context": "",
+        },
+    )
+    assert r.status_code == 200
+    assert ">Decision</h2>" in r.text
+    assert ">Context</h2>" not in r.text, "пустой раздел не показываем"
+    assert "<strong>важно</strong>" in r.text
+    assert "<script>" not in r.text and "&lt;script&gt;" in r.text
+    assert f'href="/p/{entry.name}/adr/ADR-001"' in r.text
+    listing = client.get(f"/p/{entry.name}/adr").text
+    assert "ADR-003" not in listing
+
+
+def test_adr_edit_form_has_preview(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-002").text  # proposed → Edit
+    assert 'class="adr-preview"' in r
+    assert "SQLite via SQLAlchemy</textarea>" in r
+
+
+# ── ADO-236: автор в подсказке, сайдбар сворачивается ───────────────────
+
+
+def test_adr_list_author_moves_to_tooltip(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert "<th>Author</th>" not in r and ">Author<" not in r
+    assert 'title="by human"' in r
+
+
+def test_adr_show_sidebar_is_collapsible(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    # Без JS блок раскрыт: сворачивает его только скрипт на узком экране.
+    assert '<details class="adr-side-toggle" open>' in r
+    assert "matchMedia('(max-width: 960px)')" in r

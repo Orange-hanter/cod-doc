@@ -9,6 +9,31 @@ from cod_doc.mcp.tools._db import require_project_id, session_factory, task_to_d
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
+    from sqlalchemy.orm import Session
+
+
+def _link_addressed_questions(
+    session: Session, project_id: int, task_id: str, question_ids: list[str], author: str
+) -> list[str]:
+    """OQM-005: ``addressed_by`` из вопросов на только что созданную задачу."""
+    from cod_doc.domain.entities import QuestionLinkKind, QuestionRelation
+    from cod_doc.services import question_service
+    from cod_doc.services.question_service import QuestionNotFoundError
+
+    for qid in question_ids:
+        try:
+            question_service.link(
+                session,
+                project_id=project_id,
+                question_id=qid,
+                to_kind=QuestionLinkKind.TASK,
+                to_ref=task_id,
+                relation=QuestionRelation.ADDRESSED_BY,
+                author=author,
+            )
+        except QuestionNotFoundError as exc:
+            raise ValueError(f"addresses: question {qid!r} not found") from exc
+    return list(question_ids)
 
 
 def register(mcp: FastMCP) -> None:
@@ -350,6 +375,7 @@ def register(mcp: FastMCP) -> None:
         blocked_by: list[str] | None = None,
         affects_files: list[str] | None = None,
         story_id: str | None = None,
+        addresses: list[str] | None = None,
         author: str = "mcp",
         reason: str | None = None,
         allow_duplicate: bool = False,
@@ -375,6 +401,9 @@ def register(mcp: FastMCP) -> None:
         - affects_files: list of paths this task touches
         - acceptance: acceptance criterion (free-text)
         - story_id: related user story ID (e.g. 'US-004')
+        - addresses: open questions this task works on (e.g. ['Q-021']);
+          each gets an ``addressed_by`` link to the new task, in the same
+          transaction. The response echoes them as ``addresses``.
 
         Duplicate guard: by default (allow_duplicate=False) the service
         rejects a new task whose normalized title matches an existing task
@@ -443,6 +472,10 @@ def register(mcp: FastMCP) -> None:
                     allow_duplicate=allow_duplicate,
                 )
                 result = task_to_dict(t, session=session)
+                if addresses:
+                    result["addresses"] = _link_addressed_questions(
+                        session, project_id, t.task_id, addresses, author
+                    )
                 # Чужим может быть только абсолютный путь — без них lookup
                 # root_path не нужен (и не трогаем лишний раз БД).
                 if affects_files and any(PurePath(p).is_absolute() for p in affects_files):
@@ -655,6 +688,8 @@ def register(mcp: FastMCP) -> None:
         Distinct from task→task ``dependency`` edges; ``reason`` records
         external blockers like "waiting on stakeholder X" or "spec missing".
         Use task.clear_blocker to lift it.
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены).
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
@@ -681,9 +716,10 @@ def register(mcp: FastMCP) -> None:
                     payload={"reason": reason},
                     summary=f"Task {task_id} blocked: {reason[:120]}",
                 )
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
-        return task_to_dict(t)
+        return out
 
     @mcp.tool(name="task_clear_blocker")
     def task_clear_blocker(
@@ -691,7 +727,11 @@ def register(mcp: FastMCP) -> None:
         task_id: str,
         author: str = "mcp",
     ) -> dict[str, Any]:
-        """Clear the external blocker on a task (no-op if already clear)."""
+        """Clear the external blocker on a task (no-op if already clear).
+
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены).
+        """
         from cod_doc.infra.db import transactional
         from cod_doc.services import activity_service, task_service
         from cod_doc.services.task_service import TaskNotFoundError
@@ -711,9 +751,10 @@ def register(mcp: FastMCP) -> None:
                     scope_id=task_id,
                     summary=f"Task {task_id} unblocked by {author}",
                 )
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
-        return task_to_dict(t)
+        return out
 
     @mcp.tool(name="task_remove_dependency")
     def task_remove_dependency(
@@ -731,6 +772,8 @@ def register(mcp: FastMCP) -> None:
         exists (not idempotent). Writes a TASK revision
         (op=remove_dependency) and emits ``task.dependency_removed``.
         Inverse operation — ``task_add_dependency``.
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены).
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
@@ -748,11 +791,12 @@ def register(mcp: FastMCP) -> None:
                     author=author,
                     reason=reason,
                 )
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError as exc:
             raise ValueError(f"Task '{exc}' not found.") from None
         except DependencyNotFoundError as exc:
             raise ValueError(str(exc)) from None
-        return task_to_dict(t)
+        return out
 
     @mcp.tool(name="task_add_dependency")
     def task_add_dependency(
@@ -782,6 +826,8 @@ def register(mcp: FastMCP) -> None:
         Response — the task plus ``op`` and ``warnings`` (list of
         ``{code, message}``: blocker_closed, task_in_progress, cross_plan,
         transitive; may be empty). Inverse operation — ``task_remove_dependency``.
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены) плюс ``op`` и ``warnings``.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
@@ -807,9 +853,14 @@ def register(mcp: FastMCP) -> None:
                     task_id=task_id,
                     blocker_task_id=blocker_id,
                 )
+                out = {
+                    **task_to_dict(change.task, session=session),
+                    "op": change.op,
+                    "warnings": warnings,
+                }
         except TaskNotFoundError as exc:
             raise ValueError(f"Task '{exc}' not found.") from None
-        return {**task_to_dict(change.task), "op": change.op, "warnings": warnings}
+        return out
 
     @mcp.tool(name="task_list_blocked")
     def task_list_blocked(
@@ -877,6 +928,8 @@ def register(mcp: FastMCP) -> None:
 
         See also: skill ``task-standard`` (status semantics + when to dispatch
         a task into each bucket).
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены).
         """
         from cod_doc.domain.entities import TaskStatus
         from cod_doc.infra.db import transactional
@@ -906,11 +959,11 @@ def register(mcp: FastMCP) -> None:
                     payload={"new_status": new_status, "reason": reason},
                     summary=f"Task {task_id} → {new_status}",
                 )
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
         except StatusTransitionError as exc:
             raise ValueError(f"Invalid status transition: {exc}") from exc
-        out = task_to_dict(t)
         if dry_run:
             out["dry_run"] = True
         return out
@@ -1126,6 +1179,8 @@ def register(mcp: FastMCP) -> None:
 
         ``dry_run=True`` (PCA-944) validates the transition (blockers etc.)
         and returns the would-be result but rolls back the transaction.
+        Ответ имеет форму task_get (plan_scope, section_letter, blocked_by,
+        affects_files, story_id заполнены).
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import activity_service, checkout_service
@@ -1159,13 +1214,13 @@ def register(mcp: FastMCP) -> None:
                     payload={"commit_sha": commit_sha},
                     summary=f"Task {task_id} completed by {author}",
                 )
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
         except TaskAlreadyDoneError:
             raise ValueError(f"Task '{task_id}' is already done.") from None
         except TaskBlockedError as exc:
             raise ValueError(str(exc)) from exc
-        out = task_to_dict(t)
         if dry_run:
             out["dry_run"] = True
         return out

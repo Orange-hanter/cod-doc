@@ -62,7 +62,8 @@ def test_routine_list_empty(tmp_path: Path, isolated_cod_doc_home: Path) -> None
         with transactional(factory) as session:
             proj = ProjectRepository(session).get_by_slug("p")
             assert proj is not None and proj.row_id is not None
-            routine_service.delete(session, proj.row_id, "approval_stale_default")
+            for name in ("approval_stale_default", "question_links_daily"):
+                routine_service.delete(session, proj.row_id, name)
     finally:
         engine.dispose()
 

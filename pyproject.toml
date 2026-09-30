@@ -118,6 +118,7 @@ include = ["cod_doc*"]
     "static/*.js",
     "static/*.svg",
     "static/css/*.css",
+    "static/vendor/*.js",
     # Шаблон `alembic revision`. Без него non-editable установка умеет
     # `upgrade`, но не умеет создать новую миграцию.
     "infra/migrations/*.mako",

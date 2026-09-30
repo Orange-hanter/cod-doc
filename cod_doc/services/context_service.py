@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import or_, select
 
-from cod_doc.domain.entities import TaskStatus, equivalent_task_statuses
+from cod_doc.domain.entities import QuestionLinkKind, TaskStatus, equivalent_task_statuses
 from cod_doc.infra.models import (
     ADRModel,
     ADRTaskModel,
@@ -56,6 +56,7 @@ from cod_doc.infra.models import (
     TaskModel,
     UserStoryModel,
 )
+from cod_doc.services import question_service
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -868,6 +869,25 @@ def _assemble(
     )
 
 
+# OQM-005: ``hints.open_questions`` — decisions-and-questions §4 («≤ 3 открытых
+# question»). Связанные с целью идут первыми, добор — срочными по проекту.
+_MAX_OPEN_QUESTIONS = 3
+_QUESTION_TARGET_KINDS = {"document": "document", "task": "task"}
+
+
+def _open_questions(
+    session: Session, project_id: int, target_kind: str, target_id: str
+) -> list[dict[str, Any]]:
+    link_kind = _QUESTION_TARGET_KINDS.get(target_kind)
+    return question_service.open_questions_for_context(
+        session,
+        project_id,
+        target_kind=QuestionLinkKind(link_kind) if link_kind else None,
+        target_ref=target_id if link_kind else None,
+        limit=_MAX_OPEN_QUESTIONS,
+    )
+
+
 def _master_stale(session: Session, project_id: int) -> bool:
     """MASTER проекта в ``stale_export``/``edited_in_place`` (RFC 27 F11).
 
@@ -962,6 +982,10 @@ def context_get(
             budget.charge(stale_cost)
 
     packet = _assemble(session, project_id, target_kind, target_id, depth, budget)
+    if depth != "L0":
+        packet.hints["open_questions"] = _affordable(
+            _open_questions(session, project_id, target_kind, target_id), budget
+        )
 
     # L2: цепочки и кросс-ссылки идут в пакет только целиком. Не влезли —
     # пакет честно деградирует до L1, вместо тихого перебора бюджета.
