@@ -101,8 +101,13 @@ def detect_drift(
     orphans = orphan_section_anchors(session, document_id, file_text)
 
     accepted_file_hash = getattr(model, "content_sha256_head", None)
+    # ACU-001: the file is "ours" iff it is the last export or the accepted
+    # import — the same set `_assert_file_provenance` lets `export_document`
+    # overwrite. The status therefore predicts the guard: `stale_export` means
+    # an export will go through, `conflict` means it will be refused.
+    ours = {h for h in (model.projection_hash, accepted_file_hash) if h}
     if model.projection_hash != db_hash:
-        status = DriftStatus.STALE_EXPORT
+        status = DriftStatus.STALE_EXPORT if file_hash in ours else DriftStatus.CONFLICT
     elif accepted_file_hash and file_hash == accepted_file_hash:
         status = DriftStatus.IN_SYNC
     elif file_hash != model.projection_hash:

@@ -252,6 +252,98 @@ def test_detect_drift_edited_in_place(engine_with_schema, root_path: Path) -> No
         assert report.status is proj.DriftStatus.EDITED_IN_PLACE
 
 
+def _add_db_section(session: Session, doc_id: int) -> None:
+    docs.add_section(
+        session,
+        document_id=doc_id,
+        anchor="s",
+        heading="S",
+        level=2,
+        position=0,
+        body="X\n",
+        author="human:test",
+    )
+
+
+def test_detect_drift_conflict_when_db_and_file_both_changed(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path
+) -> None:
+    """ACU-001: правка в БД и правка файла после одной выгрузки — конфликт.
+
+    Раньше первая ветка классификатора смотрела только на БД и называла это
+    ``stale_export``, а куратор советовал ``doc export`` — выгрузку, которая
+    затёрла бы ручную правку файла, не будь у неё собственного guard'а.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+
+        result = proj.export_document(session, doc_id, root_path=root_path)
+        _add_db_section(session, doc_id)
+        result.path.write_text(result.path.read_text() + "\nHand edit.\n", encoding="utf-8")
+
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.status is proj.DriftStatus.CONFLICT
+
+
+def test_detect_drift_stale_export_when_file_is_the_accepted_import(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path
+) -> None:
+    """Файл = принятый импорт, БД ушла вперёд — это не конфликт, а stale_export."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+
+        imported = "---\ntitle: Imported\n---\n# Imported\n\nHand-kept markdown.\n"
+        (root_path / "test-doc.md").write_text(imported, encoding="utf-8")
+
+        from cod_doc.infra.models import DocumentModel
+        from cod_doc.services.projection_service._safety import _sha256
+        from cod_doc.services.projection_service.render import render_markdown
+
+        model = session.get(DocumentModel, doc_id)
+        assert model is not None
+        model.content_sha256_head = _sha256(imported)
+        model.projection_hash = _sha256(render_markdown(session, doc_id))
+        session.flush()
+
+        _add_db_section(session, doc_id)
+
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.status is proj.DriftStatus.STALE_EXPORT
+
+
+@pytest.mark.parametrize("edit_file", [False, True])
+def test_drift_status_predicts_the_export_guard(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path, edit_file: bool
+) -> None:
+    """``conflict`` ⇔ export откажет; ``stale_export`` ⇔ export пройдёт.
+
+    Статус и guard выгрузки обязаны отвечать одинаково: иначе очередь куратора
+    ставит пункт «сделай export», который упадёт на ExportGuardError.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+
+        result = proj.export_document(session, doc_id, root_path=root_path)
+        _add_db_section(session, doc_id)
+        if edit_file:
+            result.path.write_text(result.path.read_text() + "\nHand edit.\n", encoding="utf-8")
+
+        status = proj.detect_drift(session, doc_id, root_path=root_path).status
+        if edit_file:
+            assert status is proj.DriftStatus.CONFLICT
+            with pytest.raises(proj.ExportGuardError):
+                proj.export_document(session, doc_id, root_path=root_path)
+        else:
+            assert status is proj.DriftStatus.STALE_EXPORT
+            proj.export_document(session, doc_id, root_path=root_path)
+
+
 def test_detect_drift_accepts_imported_file_hash_baseline(
     engine_with_schema, root_path: Path
 ) -> None:  # type: ignore[no-untyped-def]

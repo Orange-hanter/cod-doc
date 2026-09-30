@@ -16,6 +16,7 @@ hash ``STALE``       реестр ``MASTER.md`` разошёлся с файло
 ===================  =========================================================
 
 Не чинятся никогда: ``stale_export`` (в files-are-source режиме это норма),
+``conflict`` (правки с обеих сторон — выбор источника за человеком, ACU-001),
 ``missing`` (вслепую не пересоздаём), hash ``BROKEN`` (пересчёт только
 предупредит, файла всё равно нет), ``unplaced`` и внешние findings.
 Засев дерева (ADO-224) — не раскладка: разделы появляются, документы
@@ -426,6 +427,11 @@ def _reported_only(card: dict[str, Any]) -> dict[str, int]:
         ),
         DriftStatus.MISSING.value: sum(
             1 for i in issues if i["status"] == DriftStatus.MISSING.value
+        ),
+        # ACU-001: до появления статуса такие документы считались здесь же как
+        # stale_export — без отдельного счётчика `update` о них бы замолчал.
+        DriftStatus.CONFLICT.value: sum(
+            1 for i in issues if i["status"] == DriftStatus.CONFLICT.value
         ),
         "hash_broken": sum(1 for e in card["master"] if e["status"] == _MASTER_BROKEN),
         "unplaced": int(card["unplaced"]["count"]),

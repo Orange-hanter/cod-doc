@@ -51,6 +51,9 @@ SOURCE = "cod_doc_drift"
 # drift-статус → severity в терминах движка (critical/major/minor/nit).
 _DRIFT_SEVERITY: dict[str, str] = {
     "missing": "major",
+    # ACU-001: правки с обеих сторон — ни import, ни export не сводят их без
+    # потери, поэтому на уровне missing, а не рядовой рассинхронизации.
+    "conflict": "major",
     "stale_export": "minor",
     "edited_in_place": "minor",
 }
@@ -202,6 +205,11 @@ def _drift_body(status: str, doc_key: str) -> str:
             "в БД есть изменения, которых нет в файле — проекция устарела (`cod-doc doc export`)"
         ),
         "missing": "документ есть в БД, но файла по его пути нет на диске",
+        "conflict": (
+            "после последнего экспорта правили и БД, и файл — export затрёт правку "
+            "файла, import — правку БД; свести вручную (`cod-doc doc export --dry-run` "
+            "покажет разницу)"
+        ),
     }.get(status, status)
     return f"`{doc_key}`: {explanation}."
 
