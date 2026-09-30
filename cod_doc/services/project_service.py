@@ -149,6 +149,9 @@ def _bootstrap_default_routines(session: Session, project_id: int) -> None:
 _DEFAULT_ROUTINES: tuple[tuple[str, str, str], ...] = (
     ("approval_stale_default", "approval_stale", "*/15 * * * *"),
     ("question_links_daily", "question_links", "15 1 * * *"),
+    # ACU-005: после всех ночных проверок. Без `curator_auto` в config.yaml
+    # прогон сухой — рутина только считает план, поэтому заводится всегда.
+    ("curator_sweep_nightly", "curator_sweep", "0 2 * * *"),
 )
 
 
