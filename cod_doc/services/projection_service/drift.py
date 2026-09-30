@@ -106,7 +106,13 @@ def detect_drift(
     # overwrite. The status therefore predicts the guard: `stale_export` means
     # an export will go through, `conflict` means it will be refused.
     ours = {h for h in (model.projection_hash, accepted_file_hash) if h}
-    if model.projection_hash != db_hash:
+    if file_hash == db_hash:
+        # ACU-003: the file already is what the DB renders. That is the state
+        # right after the curator's sync PR is merged and pulled — the export
+        # happened in another tree and `projection_hash` still holds the old
+        # baseline, so every branch below would misread it as drift.
+        status = DriftStatus.IN_SYNC
+    elif model.projection_hash != db_hash:
         status = DriftStatus.STALE_EXPORT if file_hash in ours else DriftStatus.CONFLICT
     elif accepted_file_hash and file_hash == accepted_file_hash:
         status = DriftStatus.IN_SYNC

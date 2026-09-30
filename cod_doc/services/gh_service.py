@@ -8,7 +8,8 @@
 Гарантии модуля:
 
 - **read-only по чужому рабочему дереву**: используются только `gh pr view`,
-  `gh api` и `gh repo view`; ни `git`-команд, ни записи файлов;
+  `gh pr list`, `gh pr create/edit` с явной `--head`, `gh api` и
+  `gh repo view`; ни `git`-команд, ни записи файлов;
 - **идемпотентность**: :func:`upsert_marker_comment` ищет свой комментарий по
   маркеру и делает `PATCH`, а не новый `POST`. Повторный прогон обязан вернуть
   тот же ``comment_id``.
@@ -26,6 +27,8 @@ from typing import Any
 __all__ = [
     "CommentRef",
     "GhError",
+    "PullRequestRef",
+    "ensure_draft_pr",
     "find_marker_comment",
     "pr_changed_files",
     "resolve_repo",
@@ -44,6 +47,14 @@ class CommentRef:
     comment_id: int
     url: str
     action: str  # created | updated | unchanged | skipped
+
+
+@dataclass(slots=True, frozen=True)
+class PullRequestRef:
+    """Открытый PR ветки и что с ним сделали: created | updated | unchanged."""
+
+    url: str
+    action: str
 
 
 def _run_gh(args: list[str], *, cwd: Path | None = None) -> str:
@@ -171,3 +182,40 @@ def upsert_marker_comment(
         url=str(payload.get("html_url") or ""),
         action=action,
     )
+
+
+def ensure_draft_pr(
+    *,
+    head: str,
+    base: str,
+    title: str,
+    body: str,
+    repo: str | None = None,
+    cwd: Path | None = None,
+) -> PullRequestRef:
+    """Один открытый PR ветки ``head``: найти или создать draft, тело — свежее.
+
+    ACU-003 (RFC 28 §3.8): куратор держит ровно один PR синхронизации и
+    дополняет его. Тело сравнивается байт в байт, как у комментария-маркера:
+    неизменившееся не переписывается.
+    """
+    repo_name = resolve_repo(repo=repo, cwd=cwd)
+    list_args = ["pr", "list", "--repo", repo_name, "--head", head, "--state", "open"]
+    listed = _run_gh([*list_args, "--json", "url,body"], cwd=cwd)
+    found: Any = json.loads(listed or "[]")
+    existing = found[0] if isinstance(found, list) and found else None
+    with tempfile.TemporaryDirectory(prefix="cod-doc-curator-pr-") as td:
+        body_file = Path(td) / "body.md"
+        body_file.write_text(body, encoding="utf-8")
+        if existing is None:
+            create_args = ["pr", "create", "--repo", repo_name, "--draft", "--head", head]
+            created = _run_gh(
+                [*create_args, "--base", base, "--title", title, "--body-file", str(body_file)],
+                cwd=cwd,
+            )
+            return PullRequestRef(url=created.strip().splitlines()[-1], action="created")
+        url = str(existing.get("url") or "")
+        if str(existing.get("body") or "") == body:
+            return PullRequestRef(url=url, action="unchanged")
+        _run_gh(["pr", "edit", url, "--repo", repo_name, "--body-file", str(body_file)], cwd=cwd)
+    return PullRequestRef(url=url, action="updated")
