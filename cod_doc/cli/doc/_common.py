@@ -30,6 +30,7 @@ _DRIFT_ICON = {
     "stale_export": "⚠️",
     "edited_in_place": "🔄",
     "missing": "❌",
+    "conflict": "⛔",
 }
 
 

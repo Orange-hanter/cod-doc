@@ -621,7 +621,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(name="doc_drift")
     def doc_drift(project: str, doc_key: str) -> dict[str, Any]:
         """Detect drift between DB content, projection_hash, and the on-disk file.
-        status: in_sync | stale_export | edited_in_place | missing.
+        status: in_sync | stale_export | edited_in_place | missing | conflict.
         """
         from pathlib import Path
 

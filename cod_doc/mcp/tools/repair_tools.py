@@ -44,7 +44,7 @@ def register(mcp: FastMCP) -> None:
         пересчёт; нерезолвящиеся derived-ссылки → resync секций; замки
         ``checked_out_at`` старше ``ttl_minutes`` → снятие; незаведённое
         дерево разделов → засев дефолтного (без раскладки). Всё остальное
-        (``stale_export``, ``missing``, hash ``BROKEN``, ``unplaced``,
+        (``stale_export``, ``conflict``, ``missing``, hash ``BROKEN``, ``unplaced``,
         внешние findings) уходит счётчиками в ``reported_only`` и не
         трогается.
 

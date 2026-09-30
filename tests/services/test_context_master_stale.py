@@ -131,6 +131,31 @@ def test_master_stale_export_is_stale(engine_with_schema: Engine, tmp_path: Path
     assert core["master_stale"] is True
 
 
+def test_master_in_conflict_is_stale(engine_with_schema: Engine, tmp_path: Path) -> None:
+    """ACU-001: MASTER правили и в БД, и на диске — живой случай cod-doc.
+
+    Хук post-merge переписывает реестр хэшей в файле, а БД ушла вперёд
+    своими правками; раньше это читалось как ``stale_export``, после
+    ACU-001 — ``conflict``, и флаг обязан остаться ``True``.
+    """
+    with transactional(make_session_factory(engine_with_schema)) as session:
+        project_id = _project(session, tmp_path)
+        master_id = _import_master(session, project_id, tmp_path)
+        doc_service.patch_section(
+            session,
+            document_id=master_id,
+            anchor="summary",
+            new_body="149 MCP-тулов.",
+            author="human:test",
+            reindex=False,
+        )
+        (tmp_path / "MASTER.md").write_text(MASTER + "\nПравка руками.\n", encoding="utf-8")
+
+        core = _get(session, project_id)["core"]
+
+    assert core["master_stale"] is True
+
+
 def test_no_master_document_is_not_stale(engine_with_schema: Engine, tmp_path: Path) -> None:
     with transactional(make_session_factory(engine_with_schema)) as session:
         project_id = _project(session, tmp_path)
