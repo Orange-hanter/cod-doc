@@ -1108,6 +1108,7 @@ _cod-doc() {
     '(--force)--force[Re-export even if hash matches]' \
     '(--dry-run)--dry-run[Show the unified diff the export would apply; write nothing]' \
     '(--force-write)--force-write[Overwrite an edited/foreign/unshaped/unmigrated file (lifts all fou…]' \
+    '(--author)--author=:author' \
     '(- *)--help[Show this message and exit.]' \
     '1:doc-key:_cod_doc_docs' && ret=0
   return ret
@@ -1532,6 +1533,8 @@ _cod-doc() {
   local -a line
   typeset -A opt_args
   _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта; по умолчанию — зарегистрированный проект, в корне кот…]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
     '(- *)--help[Show this message and exit.]' \
     '1::master-path:_files' && ret=0
   return ret

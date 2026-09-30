@@ -100,7 +100,9 @@ def test_repo_doc_roundtrip_is_byte_identical(
     with transactional(factory) as session:
         project_id = _seed_project(session, root_path)
         doc_id = _import_file(session, project_id, rel_path, raw)
-        proj.export_document(session, doc_id, root_path=root_path, force_write=True)
+        proj.export_document(
+            session, doc_id, root_path=root_path, force_write=True, author="human:test"
+        )
 
     written = (root_path / rel_path).read_text(encoding="utf-8")
     assert written == raw
@@ -122,7 +124,9 @@ def test_export_is_a_fixed_point(
     with transactional(factory) as session:
         project_id = _seed_project(session, root_path)
         doc_id = _import_file(session, project_id, rel_path, raw)
-        proj.export_document(session, doc_id, root_path=root_path, force_write=True)
+        proj.export_document(
+            session, doc_id, root_path=root_path, force_write=True, author="human:test"
+        )
         first = (root_path / rel_path).read_text(encoding="utf-8")
 
         proj.import_document(
@@ -132,7 +136,9 @@ def test_export_is_a_fixed_point(
             author="human:test",
             root_path=root_path,
         )
-        proj.export_document(session, doc_id, root_path=root_path, force=True, force_write=True)
+        proj.export_document(
+            session, doc_id, root_path=root_path, force=True, force_write=True, author="human:test"
+        )
 
     assert (root_path / rel_path).read_text(encoding="utf-8") == first
 
@@ -306,7 +312,9 @@ def test_dry_run_reports_the_diff_and_writes_nothing(
     with transactional(factory) as session:
         project_id = _seed_project(session, root_path)
         doc_id = _import_file(session, project_id, "d.md", raw)
-        result = proj.export_document(session, doc_id, root_path=root_path, dry_run=True)
+        result = proj.export_document(
+            session, doc_id, root_path=root_path, dry_run=True, author="human:test"
+        )
 
     assert result.written is False
     assert result.diff is not None
@@ -329,9 +337,11 @@ def test_export_refuses_to_overwrite_an_unknown_file(
         project_id = _seed_project(session, root_path)
         doc_id = _import_file(session, project_id, "d.md", raw)
         with pytest.raises(proj.ExportGuardError, match="edited in place"):
-            proj.export_document(session, doc_id, root_path=root_path)
+            proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
-        proj.export_document(session, doc_id, root_path=root_path, force_write=True)
+        proj.export_document(
+            session, doc_id, root_path=root_path, force_write=True, author="human:test"
+        )
 
     assert target.read_text(encoding="utf-8") == raw
 
@@ -348,7 +358,9 @@ def test_export_refuses_a_foreign_checkout_when_asked_to(
         project_id = _seed_project(session, root_path)
         doc_id = _import_file(session, project_id, "d.md", raw)
         with pytest.raises(proj.ExportGuardError, match="own"):
-            proj.export_document(session, doc_id, root_path=root_path, own_checkout_only=True)
+            proj.export_document(
+                session, doc_id, root_path=root_path, own_checkout_only=True, author="human:test"
+            )
 
         result = proj.export_document(
             session,
@@ -356,6 +368,7 @@ def test_export_refuses_a_foreign_checkout_when_asked_to(
             root_path=root_path,
             own_checkout_only=True,
             force_write=True,
+            author="human:test",
         )
 
     assert result.written is True
@@ -413,7 +426,7 @@ def test_export_refuses_when_projection_fidelity_is_unknown(
     with transactional(factory) as session:
         _project_id, doc_id, raw = _seed_legacy_doc(session, root_path, rel_path)
         with pytest.raises(proj.ExportGuardError, match="backfill"):
-            proj.export_document(session, doc_id, root_path=root_path)
+            proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
     assert (root_path / rel_path).read_text(encoding="utf-8") == raw
 
@@ -436,7 +449,7 @@ def test_legacy_row_without_frontmatter_is_not_given_one(
         rendered = proj.render_markdown(session, doc_id)
         assert rendered.startswith("---"), "precondition: the projection invents frontmatter"
         with pytest.raises(proj.ExportGuardError, match="backfill"):
-            proj.export_document(session, doc_id, root_path=root_path)
+            proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
     assert (root_path / rel_path).read_text(encoding="utf-8") == raw
 
@@ -453,7 +466,7 @@ def test_export_after_backfill_is_byte_identical(
         project_id, doc_id, raw = _seed_legacy_doc(session, root_path, rel_path)
         report = proj.backfill_projection_fidelity(session, project_id, root_path=root_path)
         assert report.filled == 1
-        result = proj.export_document(session, doc_id, root_path=root_path)
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
         assert result.written is True
 
     assert (root_path / rel_path).read_text(encoding="utf-8") == raw
@@ -484,7 +497,7 @@ def test_fidelity_guard_does_not_fire_for_a_db_authored_document(
             author="human:test",
         )
         assert doc.row_id is not None
-        first = proj.export_document(session, doc.row_id, root_path=root_path)
+        first = proj.export_document(session, doc.row_id, root_path=root_path, author="human:test")
         assert first.written is True
 
         model = session.get(DocumentModel, doc.row_id)
@@ -493,7 +506,7 @@ def test_fidelity_guard_does_not_fire_for_a_db_authored_document(
         model.status = "active"
         session.flush()
 
-        second = proj.export_document(session, doc.row_id, root_path=root_path)
+        second = proj.export_document(session, doc.row_id, root_path=root_path, author="human:test")
 
     assert second.written is True
     assert "status: active" in (root_path / "authored.md").read_text(encoding="utf-8")
@@ -508,7 +521,9 @@ def test_force_write_lifts_the_fidelity_guard(
 
     with transactional(factory) as session:
         _project_id, doc_id, raw = _seed_legacy_doc(session, root_path, rel_path)
-        result = proj.export_document(session, doc_id, root_path=root_path, force_write=True)
+        result = proj.export_document(
+            session, doc_id, root_path=root_path, force_write=True, author="human:test"
+        )
 
     assert result.written is True
     assert (root_path / rel_path).read_text(encoding="utf-8") != raw
@@ -523,7 +538,9 @@ def test_dry_run_previews_when_fidelity_is_unknown(
 
     with transactional(factory) as session:
         _project_id, doc_id, raw = _seed_legacy_doc(session, root_path, rel_path)
-        result = proj.export_document(session, doc_id, root_path=root_path, dry_run=True)
+        result = proj.export_document(
+            session, doc_id, root_path=root_path, dry_run=True, author="human:test"
+        )
 
     assert result.written is False
     assert result.diff
@@ -581,7 +598,7 @@ def test_export_refuses_a_row_migration_0026_has_not_repaired(
     with transactional(factory) as session:
         _project_id, doc_id = _seed_pre_0026_doc(session, root_path, "d.md", _CAPABILITY_DOC)
         with pytest.raises(proj.ExportGuardError, match="0026_document_type_recoercion"):
-            proj.export_document(session, doc_id, root_path=root_path)
+            proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
     assert (root_path / "d.md").read_text(encoding="utf-8") == _CAPABILITY_DOC
 
@@ -599,7 +616,7 @@ def test_export_is_byte_identical_once_the_type_is_recoerced(
         assert model is not None
         model.type = DocumentType.CAPABILITY.value  # what migration 0026 writes
         session.flush()
-        result = proj.export_document(session, doc_id, root_path=root_path)
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
     assert result.written is True
     assert (root_path / "d.md").read_text(encoding="utf-8") == _CAPABILITY_DOC
@@ -619,7 +636,7 @@ def test_type_recoercion_guard_ignores_a_type_no_build_can_store(
 
     with transactional(factory) as session:
         _project_id, doc_id = _seed_pre_0026_doc(session, root_path, "k.md", raw)
-        result = proj.export_document(session, doc_id, root_path=root_path)
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
     assert result.written is True
     assert (root_path / "k.md").read_text(encoding="utf-8") == raw
@@ -633,7 +650,9 @@ def test_force_write_lifts_the_type_recoercion_guard(
 
     with transactional(factory) as session:
         _project_id, doc_id = _seed_pre_0026_doc(session, root_path, "d.md", _CAPABILITY_DOC)
-        result = proj.export_document(session, doc_id, root_path=root_path, force_write=True)
+        result = proj.export_document(
+            session, doc_id, root_path=root_path, force_write=True, author="human:test"
+        )
 
     assert result.written is True
     assert "type: module-spec" in (root_path / "d.md").read_text(encoding="utf-8")

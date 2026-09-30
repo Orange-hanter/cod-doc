@@ -538,10 +538,11 @@ def test_one_broken_repairer_does_not_stop_the_rest(
     with (root / "beta.md").open("a", encoding="utf-8") as fh:
         fh.write("\nПравка мимо БД.\n")
 
-    def _boom(_master_path: Path) -> tuple[int, list[str]]:
+    def _boom(*_args: object, **_kwargs: object) -> tuple[int, list[str]]:
         raise RuntimeError("реестр не переписался")
 
-    monkeypatch.setattr(repair_service, "update_hashes", _boom)
+    # ACU-002: чинилка ходит в реестр через hash_service, а не в core напрямую.
+    monkeypatch.setattr(repair_service.hash_service, "update_master_hashes", _boom)
 
     with transactional(factory) as session:
         result = _apply(session, root)

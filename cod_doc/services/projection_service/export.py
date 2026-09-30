@@ -202,6 +202,7 @@ def export_document(
     document_id: int,
     *,
     root_path: Path,
+    author: str,
     force: bool = False,
     audience: str | None = None,
     dry_run: bool = False,
@@ -239,6 +240,10 @@ def export_document(
 
     `dry_run=True` renders and diffs without touching disk or DB, and never
     trips a guard: the result carries the unified diff in `ExportResult.diff`.
+
+    ACU-002 (ADO-040): a write to disk is a mutation of the project and
+    leaves a `doc.exported` activity event by `author`. Only an actual write
+    does — a skipped or dry-run export changed nothing and emits nothing.
 
     Returns `ExportResult` with `written=False` on a skipped or dry-run export.
     """
@@ -293,6 +298,24 @@ def export_document(
     if audience is None:
         model.projection_hash = content_hash
         session.flush()
+
+    from cod_doc.services import activity_service
+
+    activity_service.emit_for_write(
+        session,
+        model.project_id,
+        "doc.exported",
+        author,
+        scope_kind="doc",
+        scope_id=model.doc_key,
+        payload={
+            "path": str(target),
+            "content_hash": content_hash,
+            "audience": audience,
+            "force_write": force_write,
+        },
+        summary=f"{model.doc_key} → {target.name}",
+    )
 
     return ExportResult(
         document_id=document_id,
