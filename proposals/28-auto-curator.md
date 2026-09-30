@@ -28,12 +28,12 @@ frontmatter.
 | Контракты | Агент извлекает draft, человек подтверждает; строгая проверка — только confirmed |
 | Классы улучшений | Устаревшее относительно кода; пробелы покрытия; противоречия и дубли; связность и недостающие ADR |
 | Перегрузка ревью | Потолок открытых предложений + приоритет; при потолке LLM на новые не тратится |
-| Ссылки на код | Якорь на символ `path::Qualified.name`; однозначный переезд символа — auto, иначе approval |
+| Ссылки на код | Якорь на символ `path#Qualified.name` (грамматика уже принята в main, OQM-002); однозначный переезд символа — auto, иначе approval |
 | Источник событий | Опрос git (HEAD main) + `activity_event` |
 | Рантайм | Четвёртый launchd-сервис `com.cod-doc.curator` |
 | LLM | Два яруса: лёгкая модель — триаж и извлечение, сильная — текст; суточный лимит токенов на проект |
 | Виды контрактов | Архитектурные правила, публичный API, факты-числа и конфиг, поведенческие инварианты |
-| Док ≠ код | **Всегда спрашивать**: человек выбирает «править док» или «завести задачу на код» |
+| Док ≠ код | **Всегда спрашивать**: открытый вопрос (OQM) с вариантами «править док» / «задача на код» / «контракт устарел» |
 | Размер предложения | Пакет на причину: одна причина → один approval со всеми правками по ней |
 | CI | Confirmed детерминированные контракты — гейт в CI; со временем заменяют ручные anti-drift тесты |
 | Обучение | Правки предложений перед одобрением и причины отказов → память проекта → промпт |
@@ -41,11 +41,19 @@ frontmatter.
 | Код в облако | Можно всё, кроме пофайлового denylist; секретоподобные значения маскируются |
 | Масштаб | Пилот на `cod-doc`; прежний план `auto-curator-2026-09` — фаза 1 |
 
-## 2. Текущее состояние (проверено по коду 2026-09-27)
+> **Сверено с main 2026-09-30** (OQM-001…010, ADO-225…236, ADO-228).
+> Нового типа документа нет — появилась сущность «открытый вопрос» (S15), а
+> тип `open-question` стал легаси (S20). Следствия для RFC: выбор «док ≠ код»
+> идёт через вопрос, а не через новый тип approval (§3.6); канон ссылки на
+> код — `path#symbol` в уже принятой грамматике (§3.3); один резолвер ссылок
+> на код для документов, вопросов и куратора; `detect_missing_adr` следует
+> правилу «нет решения — вопрос, а не ADR» (§3.5).
+
+## 2. Текущее состояние (проверено по коду 2026-09-27, дополнено 2026-09-30)
 
 | # | Факт | Где |
 |---|---|---|
-| S1 | `curator_next` read-only, очередь из 8 видов с фиксированным рангом: drift `missing` → `edited_in_place` → `LINK-BROKEN` → hash `BROKEN` → hash `STALE` → `stale_export` → `unplaced` → finding | `services/curator_service.py:54-73, 341-368` |
+| S1 | `curator_next` read-only, очередь из 11 видов с фиксированным рангом: drift `missing` → `edited_in_place` → `LINK-BROKEN` / `question_link` → hash `BROKEN` → hash `STALE` → `stale_export` → `unplaced` → finding → `question_answered` → `question` (открыт > 30 дней) | `services/curator_service.py:54-78, 290-304` |
 | S2 | Детерминированно чинятся `missing`/`stale_export` (export), `edited_in_place` (import), hash `STALE`, `unplaced` с совпавшим правилом. Суждения требуют `LINK-BROKEN`, hash `BROKEN`, `unplaced` без правила, findings | `curator_service.py:244-338` |
 | S3 | **Дрейф не видит конфликта.** Изменились и БД, и файл — документ получает `stale_export`; автоматический export затёр бы ручную правку | `projection_service/drift.py:104-111`; `_types.py:13-17` |
 | S4 | `export_document` и `update_hashes` пишут файл без `author` и без activity-события (ADO-040) | `projection_service/export.py:200`; `core/hash_calc.py:128` |
@@ -59,6 +67,12 @@ frontmatter.
 | S12 | Сценарии (RFC 24 §9) реализованы: `scenario`/`scenario_step`/`scenario_link` | `infra/models/scenarios.py:28`; TSC-001…014 |
 | S13 | Три launchd-сервиса (mcp, mcp-agent, web), ни один не планировщик; тик рутин — пользовательский crontab из editable `.venv` | `services/launchd_service.py:86-90`; `crontab -l` |
 | S14 | `actor_kind_for_author("agent:curator")` → `agent` | `domain/entities.py:365` |
+| S15 | **Открытые вопросы** (OQM-001…010): сущность `open_question` (Q-NNN), не проецируется в markdown; варианты `open_question_option(chosen)`; ссылки `to_kind` ∈ document/section/task/adr/story/scenario/finding/code/url, `relation` ∈ about/blocks/addressed_by/resolved_by/see_also; ревизии `EntityKind.QUESTION`, события `question.*`, FTS для открытых. `resolve(chosen_option)` только помечает вариант — **исполнения нет**. OQM-010: вопрос, у которого все `addressed_by`-задачи `done`, всплывает в `curator_next` как `question_answered`, сам не закрывается; задача связывается через `task_create(addresses=[Q])`. Поверхности: CLI `question`, 13 MCP `question_*` (standard/full), веб `/p/<slug>/questions` | `infra/models/questions.py:30-121`; `services/question_service/crud.py:243-302`, `links.py:287`; `mcp/tools/task_tools.py:378` |
+| S16 | Ссылка на код — `path` или `path#fragment`, фрагмент — символ или `L10-L20` | `question_service/_internals.py:74`; `link_service/resolver.py:39`; `parser.py:132` |
+| S17 | `resolve_code_ref` проверяет **только существование файла в рабочем дереве** `project.root_path`; проверка символа — «future enhancement». Рутина `question_links` (`question_links_daily`, 01:15) штампует рёбра `resolved/broken_reason/last_checked` без ревизий и без `finding` | `link_service/resolver.py:281-330`; `routine_service.py:454, 501`; `project_service.py:149` |
+| S18 | Рутина `adr_health`: `proposed`/`accepted` ADR с пустым `decision` и `accepted` без `decided_at` → `finding(source_ref="adr_health")`. Скилл `adr-author`: нет решения и фаворита — заводится вопрос, а не ADR | `services/adr_health.py:40-46`; `routine_service.py:433`; `skills/adr-author/SKILL.md` |
+| S19 | `revision_service.summarize` (MCP `revision_summary`): счётчики ревизий за период с группировкой `day`/`entity_kind`/`author`, без diff | `services/revision_service.py:274` |
+| S20 | Легаси-тип документа `open-question` переносится в вопросы `cod-doc question import`, который удаляет документ **из БД и с диска** | `question_service/import_doc.py:24-26`; `docs/system/standards/frontmatter.md` §2 |
 
 Вывод: фундамент контрактов (S11, S12), индекс (S10) и очередь (S1) есть.
 Нет: исполнителя без клиента (S13), расширенного индекса (S10), исполняемых
@@ -105,6 +119,7 @@ graph LR
 | Правка документа | Курсор по `activity_event` (`doc.*`, автор не `agent:curator`) | `extract_claims(doc)` → `detect_contradictions(doc)` → `check_links(doc)` |
 | Ночь (02:00) | Планировщик | полный `sweep` (фаза 1), `detect_coverage`, `detect_contradictions(all)`, `detect_missing_adr(коммиты за сутки)`, рутины по cron |
 | Одобрение approval | Хук в `approval_service.resolve` | применение пакета; `export_sync` |
+| Решение вопроса куратора | Курсор по `activity_event` `question.resolved`, автор вопроса `agent:curator` | исполнение выбранного варианта (§3.6) |
 
 Приоритет задания = ранг вида × вес причины (мерж > правка > ночь). Worker
 берёт задания по приоритету, пока хватает суточного бюджета (§3.9); LLM-задания
@@ -120,9 +135,17 @@ graph LR
   `SymbolProvider`; первая грамматика — Python (паритет с текущим `ast`),
   затем TypeScript. Инкрементально: переиндексируются только файлы из
   `git diff` между sha.
-- **Канон ссылки** — `path::Qualified.name` (без строки). Строка
-  вычисляется индексом при отображении и экспорте. Ссылка на файл целиком —
-  `path`.
+- **Канон ссылки** — `path#Qualified.name` (без строки): та же грамматика
+  `path#fragment`, что уже приняли ссылки документов и вопросов (S16),
+  только фрагмент — квалифицированное имя из индекса, а не подстрока.
+  Строка вычисляется индексом при отображении и экспорте. Ссылка на файл
+  целиком — `path`. Формы `#L10-L20` — легаси.
+- **Один резолвер.** `link_service.resolve_code_ref` (S17) переводится с
+  «файл есть в рабочем дереве» на индекс по sha HEAD `main`: файл есть в
+  `repo_file@sha`, символ — в `repo_symbol@sha` по `qualname`. Им же
+  пользуются ссылки документов, вопросов и `check_code_refs` — отдельного
+  резолвера у куратора нет. Рутина `question_links` остаётся, но проверяет
+  тем же резолвером; её штампы — вход `check_code_refs` для вопросов.
 - **Резолв ссылки** при каждом `check_code_refs`:
 
   | Результат | Действие |
@@ -130,11 +153,12 @@ graph LR
   | Символ на месте | ничего |
   | Символ исчез по пути, но **ровно один** символ с тем же `qualname`-хвостом и сигнатурой есть в другом файле (переезд) | **auto**: `link_retarget`, автор `agent:curator` |
   | Несколько кандидатов или изменилась сигнатура | **propose**: пакет с кандидатами |
-  | Исчез без следа | **ask** (§3.6): «убрать упоминание» или «задача на код» |
+  | Исчез без следа | **ask** (§3.6, вопрос): «убрать упоминание» или «задача на код» |
 
-- **Миграция `path:line`.** Разовый проход: `path:N` → символ, в чей
-  диапазон попадает строка N на sha, когда ссылка была записана (из
-  revision); однозначно — auto, иначе остаётся `path:line` с находкой.
+- **Миграция `#L…`.** Разовый проход: `path#L10-L20` → символ, в чей
+  диапазон попадает строка на sha, когда ссылка была записана (из
+  revision); однозначно — auto, иначе остаётся как есть с находкой.
+  Распространяется и на `open_question_link.to_kind=code`.
 
 ### 3.4. Контракты
 
@@ -145,7 +169,7 @@ graph LR
 |---|---|---|
 | Архитектурное правило | `forbids_dependency`, `depends_on` | `repo_import`: нет/есть импорта из `from_glob` в `to_glob` |
 | Публичный API | `entity_exists`, `exports`, `signature` | `repo_symbol`: символ есть, экспортирован, сигнатура совпадает |
-| Факт-число / конфиг | `value` (новый) | `expected_json = {probe, args, value}`; `probe` — из закрытого реестра: `constant(path::NAME)`, `count_symbols(pattern)`, `count_decorated(decorator)`, `cli_commands(group)`, `mcp_tools(profile)` |
+| Факт-число / конфиг | `value` (новый) | `expected_json = {probe, args, value}`; `probe` — из закрытого реестра: `constant(path#NAME)`, `count_symbols(pattern)`, `count_decorated(decorator)`, `cli_commands(group)`, `mcp_tools(profile)` |
 | Поведенческий инвариант | `scenario` / `invariant` (новый) | ссылка на тест или сценарий существует и не `retired`; сам тест гоняет CI |
 
 - **Извлечение.** Задание `extract_claims(doc)` отдаёт лёгкой модели
@@ -154,7 +178,7 @@ graph LR
   утверждение, вот цитата, вот что сейчас говорит код». Подтверждённые
   становятся `confirmed`, `provenance=agent`.
 - **Строгость.** Только `confirmed` участвуют в `structure_drift` и CI.
-  Расхождение confirmed-контракта с кодом → **ask** (§3.6), не правка.
+  Расхождение confirmed-контракта с кодом → **ask** (§3.6, вопрос), не правка.
 - **Привязка к тексту.** `content_hash` секции: секцию переписали — контракт
   переходит в `stale` и уходит на повторное подтверждение.
 - **CI-гейт.** `export_sync` кладёт confirmed-контракты в репо как
@@ -171,13 +195,13 @@ graph LR
 | Детектор | Вход | Ярус LLM | Выход |
 |---|---|---|---|
 | `sweep` (фаза 1) | очередь `curator_next` | нет / лёгкий | auto + пакеты `doc_patch` |
-| `check_code_refs` | ссылки дока на изменённые файлы | нет | auto / пакет / ask |
-| `check_claims` | confirmed-контракты по изменённым файлам | нет | ask |
+| `check_code_refs` | ссылки документов **и вопросов** на изменённые файлы | нет | auto / пакет / вопрос |
+| `check_claims` | confirmed-контракты по изменённым файлам | нет | вопрос |
 | `detect_stale` | секции, ссылающиеся на изменённые символы, + diff символа | сильный | пакет `doc_patch` с новой редакцией абзаца |
 | `detect_coverage` | экспортированные символы и точки входа без единой ссылки из доков | лёгкий (отбор) + сильный (черновик) | пакет «новая секция» в разделе дерева по `doc_taxonomy` |
 | `detect_contradictions` | пары секций с пересекающимися сущностями (общие ссылки, одинаковые числа/имена) | лёгкий (кандидаты) + сильный (вердикт) | пакет «свести к одному источнику»: одна секция — канон, остальные — ссылка |
 | `detect_links` | упоминания сущностей без ссылки (имя символа, ADR-NNN, task_id в тексте) | нет | auto для однозначных, иначе пакет |
-| `detect_missing_adr` | коммиты за сутки: новые зависимости, новые таблицы/миграции, смена публичного API | сильный | пакет «черновик ADR» (`adr_create`, статус `proposed`) |
+| `detect_missing_adr` | коммиты за сутки: новые зависимости, новые таблицы/миграции, смена публичного API | сильный | по скиллу `adr-author`: решение видно из кода → пакет «черновик ADR» с **заполненным** `decision` (иначе `adr_health` сразу даст находку, S18); решения нет → открытый вопрос с вариантами |
 
 Каждый детектор пишет находки в свою партицию `finding` (`source="curator"`,
 `source_ref=<детектор>`) и сверяет её через `reconcile_partition` с
@@ -186,31 +210,45 @@ graph LR
 
 ### 3.6. Предложения: пакеты, выбор, потолок
 
-- **Три типа approval** (строки в `VALID_TYPES`, миграция не нужна):
+- **Два типа approval и открытый вопрос.** Одобрение готовой правки —
+  approval (строка в `VALID_TYPES`, миграция не нужна); выбор направления —
+  открытый вопрос (S15), у которого уже есть варианты, типизированные
+  ссылки, CLI/MCP/веб и замыкание через задачи.
 
-  | Тип | Когда | Что одобряет человек |
+  | Форма | Когда | Что делает человек |
   |---|---|---|
-  | `doc_patch` | правка текста, ссылок, раскладки, новая секция, черновик ADR | пакет операций из `CURATOR_OPS`, каждая с diff; принять целиком или по пунктам |
-  | `doc_code_mismatch` | док ≠ код (исчезнувший символ, нарушенный confirmed-контракт, stale-абзац с изменённой семантикой) | **выбор**: (a) править док — агент готовит diff только после выбора, (b) задача на код — `task_create` в план `curator-inbox` проекта с цитатой контракта и фактом из индекса, (c) контракт устарел — `retired` |
-  | `contract_confirm` | извлечённые draft-контракты секции | подтвердить / отклонить / поправить `expected` по каждому |
+  | approval `doc_patch` | правка текста, ссылок, раскладки, новая секция, черновик ADR | одобряет пакет операций из `CURATOR_OPS`, каждая с diff; целиком или по пунктам |
+  | approval `contract_confirm` | извлечённые draft-контракты секции | подтверждает / отклоняет / правит `expected` по каждому |
+  | вопрос (`author=agent:curator`) | док ≠ код: исчезнувший символ, нарушенный confirmed-контракт, stale-абзац с изменённой семантикой; решение без фаворита из `detect_missing_adr` | выбирает вариант: (a) «править док» — агент готовит `doc_patch` только после выбора; (b) «задача на код» — `task_create(addresses=[Q])` в план `curator-inbox` с цитатой контракта и фактом из индекса, дальше вопрос закрывает OQM-010 (`question_answered`); (c) «контракт устарел» — `claim_set_status(retired)` |
+
+  Ссылки вопроса: `code` (`about`) на символ, `section` (`about`) на
+  утверждение, `finding` (`see_also`) на находку-источник. Приоритет — от
+  контракта (confirmed MUST → `high`). Вопрос, закрытый текстом или через
+  ADR без выбранного варианта, агент не исполняет — только снимает свои
+  находки по нему.
 
 - **Пакет на причину.** Причина = мерж-sha, правка документа или ночная
   находка. Все операции одной причины — один approval; `payload.items[]`
   с отдельным `base_revision_id` на каждый. Частичное одобрение применяет
   выбранные пункты, остальные уходят в `denied` с памятью (§3.7).
-- **Потолок.** `curator.max_pending` (по умолчанию 20) открытых approval на
-  проект. На потолке LLM-задания не создают новых пакетов; находки копятся.
+- **Потолок.** `curator.max_pending` (по умолчанию 20) открытых approval и
+  вопросов автора `agent:curator` на проект. На потолке LLM-задания не создают новых пакетов; находки копятся.
   Пакет с приоритетом выше самого низкого открытого вытесняет его
   (`superseded`, находки остаются). Приоритет пакета — максимум по пунктам;
-  `doc_code_mismatch` по confirmed-контракту всегда выше `doc_patch`.
+  вопрос по confirmed-контракту всегда выше `doc_patch`.
 - **Исполнение** — закрытый реестр `CURATOR_OPS` (`link_retarget`,
   `doc_set_node`, `section_patch`, `section_add`, `claim_set_status`,
-  `adr_create`, `task_create`) → сервисные функции с revision и событием,
-  в транзакции `resolve`. Оптимистичная блокировка по `base_revision_id`;
+  `adr_create`, `task_create`, `question_create`, `question_link`) →
+  сервисные функции с revision и событием: для approval — в транзакции
+  `approval_service.resolve`, для вопроса — заданием по событию
+  `question.resolved` (сам `question_service.resolve` исполнения не
+  получает: вопросы бывают не только куратора). Оптимистичная блокировка по `base_revision_id`;
   разошлось — пункт `expired(stale_base)`, задание ставится заново.
 - **Поверхности** — CLI `cod-doc approval list|show|approve|deny`, веб
-  «Предложения куратора» с diff и выбором, MCP `approval_resolve`
-  (есть). Паритет — `_surface_parity` над `approval_service`.
+  «Предложения куратора» с diff, MCP `approval_resolve` (есть). Паритет —
+  `_surface_parity` над `approval_service`. Для вопросов — готовые
+  `cod-doc question` / `question_*` / `/p/<slug>/questions`; страница
+  предложений показывает и открытые вопросы куратора ссылкой туда.
 
 ### 3.7. Память проекта
 
@@ -232,8 +270,12 @@ graph LR
 - После каждого применения (auto или одобрения) задание `export_sync`:
   worktree `~/.cod-doc/curator/<slug>/` → `git fetch` → ветка
   `curator/sync` от `origin/main` (или продолжение открытой) → `doc export`
-  изменённых документов + `hash update` + `.cod-doc/contracts.json` →
-  коммит `docs(curator): …` с перечнем причин и ссылками на approval.
+  изменённых документов + **удаление файлов удалённых документов** (в
+  т.ч. после `question import`, S20) + `hash update` +
+  `.cod-doc/contracts.json` →
+  коммит `docs(curator): …` с перечнем причин и ссылками на approval и
+  вопросы; сводка изменений за сутки в описании PR — из
+  `revision_summary(group_by=[author, entity_kind])` (S19).
 - Один открытый PR на проект, создаётся и дополняется через `gh`, draft
   снимается раз в сутки после ночного обхода. Мерж — человеком. В `main`
   агент не пушит никогда.
@@ -265,7 +307,7 @@ graph LR
 
 1. **Код не правится.** Агент пишет только в БД cod-doc и в markdown/
    `contracts.json` в своём worktree. Правка кода — только задачей через
-   `doc_code_mismatch` → выбор человека.
+   открытый вопрос → выбор человека.
 2. **Конфликт — отдельный статус** `DriftStatus.CONFLICT` (S3); без него
    автоматика не включается.
 3. **Каждая запись оставляет след**: revision и/или activity-событие с
@@ -284,8 +326,8 @@ graph LR
 |---|---|---|
 | 1. Санитария без клиента | прежний RFC 28: `CONFLICT`, след у export/hash, `sweep` (auto + report), исполняемый `doc_patch`, CLI/веб approval, LLM-предлагатели ссылок и раскладки | `auto-curator-2026-09` (ACU-001…015), с правкой ACU-003 → worktree и sync PR |
 | 2. Фоновый сервис | `com.cod-doc.curator`, `curator_job`, `curator_state`, опрос git и `activity_event`, ночной планировщик, перенос тика рутин, бюджет и учёт токенов, приватность | новый план |
-| 3. Индекс и ссылки на код | tree-sitter `SymbolProvider`, индекс по sha, `qualname`/`signature`/`exported`, канон `path::symbol`, `check_code_refs`, миграция `path:line` | новый план |
-| 4. Контракты | извлечение, `contract_confirm`, `value`/`invariant`, проверки по индексу, `doc_code_mismatch`, `contracts.json` + `contracts check` в CI | новый план |
+| 3. Индекс и ссылки на код | tree-sitter `SymbolProvider`, индекс по sha, `qualname`/`signature`/`exported`, канон `path#symbol`, общий резолвер по индексу для документов и вопросов, `check_code_refs`, миграция `#L…` | новый план |
+| 4. Контракты | извлечение, `contract_confirm`, `value`/`invariant`, проверки по индексу, вопрос «док ≠ код» и исполнение `question.resolved`, `contracts.json` + `contracts check` в CI | новый план |
 | 5. Детекторы содержания | `detect_stale`, `detect_coverage`, `detect_contradictions`, `detect_links`, `detect_missing_adr`, пакеты на причину, потолок и вытеснение | новый план |
 | 6. Память | `curator_memory`, правки и отказы → промпт, `suppress`, сжатие в `doc-style` | новый план |
 
