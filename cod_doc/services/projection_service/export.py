@@ -47,15 +47,22 @@ def _audience_target(canonical: Path, audience: str) -> Path:
     return canonical.with_name(f"{canonical.stem}.{safe}{canonical.suffix}")
 
 
-def _assert_file_provenance(model: DocumentModel, target: Path, file_hash: str) -> None:
+def _assert_file_provenance(
+    model: DocumentModel, target: Path, file_hash: str, content_hash: str
+) -> None:
     """Refuse to overwrite content cod-doc never wrote or accepted (ADO-010, F7).
 
     A file matching either the last export (`projection_hash`) or the last
     accepted import (`content_sha256_head`) is ours to rewrite. Anything else
     is a human edit — or an unknown file at that path — and overwriting it
     would destroy work with no way back.
+
+    ACU-003: a file that already holds exactly the content about to be
+    written loses nothing either. That is the owner's checkout after the
+    curator's sync PR is merged: the export happened in another tree, the
+    baseline here is stale, and this write is what moves it forward.
     """
-    known = {h for h in (model.projection_hash, model.content_sha256_head) if h}
+    known = {h for h in (model.projection_hash, model.content_sha256_head, content_hash) if h}
     if file_hash not in known:
         raise ExportGuardError(
             f"{target} does not match the last export or import of "
@@ -208,6 +215,7 @@ def export_document(
     dry_run: bool = False,
     force_write: bool = False,
     own_checkout_only: bool = False,
+    record_projection: bool = True,
 ) -> ExportResult:
     """Write the document projection to disk and update `projection_hash`.
 
@@ -245,6 +253,16 @@ def export_document(
     leaves a `doc.exported` activity event by `author`. Only an actual write
     does — a skipped or dry-run export changed nothing and emits nothing.
 
+    ACU-003: `record_projection=False` writes a copy into *another* tree —
+    the curator's own clone behind the sync PR (RFC 28 §3.8). `projection_hash`
+    is the baseline of the owner's checkout; moving it to what sits in an
+    unmerged branch would turn the owner's untouched file into
+    `edited_in_place`, and the next `cod-doc update` would import that old
+    file over the DB. Such an export also skips the provenance guard: the
+    caller decides which files in its tree are its own. The fidelity and
+    recoercion guards still apply — they are about the shape of what gets
+    written, not about whose file it replaces.
+
     Returns `ExportResult` with `written=False` on a skipped or dry-run export.
     """
     model = _require_doc_model(session, document_id)
@@ -278,7 +296,8 @@ def export_document(
             _assert_own_checkout(root_path)
         if audience is None and exists:
             file_hash = _sha256(current)
-            _assert_file_provenance(model, target, file_hash)
+            if record_projection:
+                _assert_file_provenance(model, target, file_hash, content_hash)
             _assert_projection_fidelity_known(
                 model,
                 target,
@@ -295,7 +314,7 @@ def export_document(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
-    if audience is None:
+    if audience is None and record_projection:
         model.projection_hash = content_hash
         session.flush()
 
@@ -313,6 +332,7 @@ def export_document(
             "content_hash": content_hash,
             "audience": audience,
             "force_write": force_write,
+            "record_projection": record_projection,
         },
         summary=f"{model.doc_key} → {target.name}",
     )

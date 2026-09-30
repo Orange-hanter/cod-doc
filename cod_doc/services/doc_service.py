@@ -890,7 +890,14 @@ def delete(
         author,
         scope_kind="doc",
         scope_id=doc_key,
-        payload={"doc_key": doc_key, "section_count": section_count, "reason": reason},
+        # ACU-003: `path` — единственная память о файле проекции после
+        # удаления строки: по ней куратор убирает файл из своей sync-ветки.
+        payload={
+            "doc_key": doc_key,
+            "path": doc.path,
+            "section_count": section_count,
+            "reason": reason,
+        },
         summary=f"Document {doc_key} deleted ({section_count} section(s))",
     )
 

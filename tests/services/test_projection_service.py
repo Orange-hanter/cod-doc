@@ -281,7 +281,7 @@ def test_detect_drift_conflict_when_db_and_file_both_changed(  # type: ignore[no
         p = _seed_project(session)
         doc_id = _make_doc(session, p)
 
-        result = proj.export_document(session, doc_id, root_path=root_path)
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
         _add_db_section(session, doc_id)
         result.path.write_text(result.path.read_text() + "\nHand edit.\n", encoding="utf-8")
 
@@ -331,7 +331,7 @@ def test_drift_status_predicts_the_export_guard(  # type: ignore[no-untyped-def]
         p = _seed_project(session)
         doc_id = _make_doc(session, p)
 
-        result = proj.export_document(session, doc_id, root_path=root_path)
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
         _add_db_section(session, doc_id)
         if edit_file:
             result.path.write_text(result.path.read_text() + "\nHand edit.\n", encoding="utf-8")
@@ -340,10 +340,70 @@ def test_drift_status_predicts_the_export_guard(  # type: ignore[no-untyped-def]
         if edit_file:
             assert status is proj.DriftStatus.CONFLICT
             with pytest.raises(proj.ExportGuardError):
-                proj.export_document(session, doc_id, root_path=root_path)
+                proj.export_document(session, doc_id, root_path=root_path, author="human:test")
         else:
             assert status is proj.DriftStatus.STALE_EXPORT
-            proj.export_document(session, doc_id, root_path=root_path)
+            proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+
+
+def test_export_into_another_tree_leaves_the_baseline_alone(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path, tmp_path: Path
+) -> None:
+    """ACU-003: выгрузка в клон куратора не двигает projection_hash.
+
+    Иначе нетронутый файл владельца стал бы edited_in_place, и следующий
+    `cod-doc update` импортировал бы его поверх БД.
+    """
+    factory = make_session_factory(engine_with_schema)
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+        exported = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+        baseline = proj.detect_drift(session, doc_id, root_path=root_path).projection_hash
+        _add_db_section(session, doc_id)
+        # В клоне — не выгрузка и не импорт (та же форма, другое тело): проверку
+        # «наш ли файл» делает вызывающий, проверки формы остаются.
+        (clone / "test-doc.md").write_text(
+            exported.path.read_text(encoding="utf-8") + "\nforeign edit\n", encoding="utf-8"
+        )
+
+        result = proj.export_document(
+            session, doc_id, root_path=clone, author="agent:curator", record_projection=False
+        )
+
+        assert result.written
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.projection_hash == baseline
+        assert report.status is proj.DriftStatus.STALE_EXPORT
+
+
+def test_file_matching_the_db_render_is_in_sync_and_export_adopts_it(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path
+) -> None:
+    """ACU-003: состояние владельца после мержа sync PR.
+
+    Файл уже равен рендеру БД, а projection_hash — старый: выгрузка шла в
+    клоне. Это in_sync, а не conflict; обычная выгрузка проходит guard
+    (перезапись тем же содержимым ничего не теряет) и ставит базовую линию.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+        _add_db_section(session, doc_id)
+        result.path.write_text(proj.render_markdown(session, doc_id), encoding="utf-8")
+
+        before = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert before.status is proj.DriftStatus.IN_SYNC
+        assert before.projection_hash != before.db_content_hash
+
+        proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+        after = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert after.status is proj.DriftStatus.IN_SYNC
+        assert after.projection_hash == after.db_content_hash
 
 
 def test_detect_drift_accepts_imported_file_hash_baseline(
