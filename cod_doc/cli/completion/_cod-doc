@@ -825,6 +825,8 @@ _cod-doc() {
         (next)      _cod_doc_ctx_next && ret=0 ;;
         (search)    _cod_doc_ctx_search && ret=0 ;;
         (structure) _cod_doc_ctx_structure && ret=0 ;;
+        (sweep)     _cod_doc_ctx_sweep && ret=0 ;;
+        (sync)      _cod_doc_ctx_sync && ret=0 ;;
         (*)         _default && ret=0 ;;
       esac
       ;;
@@ -840,6 +842,8 @@ _cod-doc() {
     'next:Doc card куратора; что протухло и за что браться первым (CUR-016).'
     'search:Поиск по проекту (FTS5) — тот же движок, что и ``cod-doc search``.'
     'structure:Pinned BFS structure slice. Requires head SHA or snapshot fingerpri…'
+    'sweep:Прогон куратора (RFC 28, ACU-004); сам в БД, файлы в клон, прочее —…'
+    'sync:Выгрузить проекции в клон куратора и обновить draft PR ``curator/sy…'
   )
   _describe -t cod-doc-ctx-commands 'cod-doc ctx command' cmds
 }
@@ -913,6 +917,33 @@ _cod-doc() {
     '*--scope=:scope-refs' \
     '(--budget-tokens)--budget-tokens=:budget-tokens' \
     '(--depth)--depth=:dependency-depth' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ctx_sweep] )) || _cod_doc_ctx_sweep() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--apply)--apply[Писать в БД (по умолчанию — сухой прогон; тот же план, без записи)]' \
+    '(--sync)--sync[Выгрузить файлы в клон куратора и обновить PR curator/sync (только…]' \
+    '(--max-auto)--max-auto=[Потолок записей за прогон]:max-auto' \
+    '(--author)--author=:author' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ctx_sync] )) || _cod_doc_ctx_sync() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
 }
