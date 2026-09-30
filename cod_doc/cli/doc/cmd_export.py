@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     default=False,
     help="Overwrite an edited/foreign/unshaped/unmigrated file (lifts all four guards)",
 )
+@click.option("--author", default="cli", show_default=True)
 @click.pass_context
 def doc_export(
     ctx: click.Context,
@@ -38,6 +39,7 @@ def doc_export(
     force: bool,
     dry_run: bool,
     force_write: bool,
+    author: str,
 ) -> None:
     """Export a document projection to disk (writes <project-root>/<doc.path>).
 
@@ -69,6 +71,7 @@ def doc_export(
                 session,
                 d.row_id,
                 root_path=root,
+                author=author,
                 force=force,
                 dry_run=dry_run,
                 force_write=force_write,
