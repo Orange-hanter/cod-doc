@@ -4,7 +4,7 @@ Approvals pause tasks pending a human decision. On resolve the service
 returns a :class:`WakeContext` hint that callers can pass to
 ``run_agent_once`` to immediately resume the requesting agent.
 
-Types: 'plan_review' | 'risky_action' | 'fm_escalation' | 'budget' | 'manual'
+Types: 'plan_review' | 'risky_action' | 'fm_escalation' | 'budget' | 'manual' | 'doc_patch'
 Status: 'pending' | 'approved' | 'denied' | 'cancelled' | 'expired'
 
 Invariant: at most one pending approval per task (enforced in ``request``).
@@ -21,6 +21,8 @@ Public API
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -39,10 +41,19 @@ from cod_doc.services.run_context import get_current_run_id
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-VALID_TYPES = frozenset({"plan_review", "risky_action", "fm_escalation", "budget", "manual"})
+#: ACU-008 (RFC 28 §3.6): готовая правка документации от фонового куратора —
+#: одна операция с diff, которую человек одобряет или отклоняет.
+DOC_PATCH = "doc_patch"
+VALID_TYPES = frozenset(
+    {"plan_review", "risky_action", "fm_escalation", "budget", "manual", DOC_PATCH}
+)
 VALID_STATUSES = frozenset({"pending", "approved", "denied", "cancelled", "expired"})
 # Default approval TTL per proposal 12 note (48 hours for single-user).
 DEFAULT_TTL_HOURS = 48
+#: ACU-008: сколько дней отказ человека подавляет то же предложение. Без
+#: памяти куратор предлагал бы отклонённое каждую ночь; без срока — никогда
+#: больше, даже когда документ вокруг уже изменился.
+DENIAL_MEMORY_DAYS = 30
 
 
 @dataclass
@@ -238,6 +249,99 @@ def request(
             pass  # best-effort; approval creation must not fail due to this
 
     return _to_domain(m, session)
+
+
+@dataclass(slots=True, frozen=True)
+class DocPatchRequest:
+    """Итог :func:`request_doc_patch`.
+
+    ``outcome``: ``created`` — новый approval; ``duplicate`` — такой же уже
+    ждёт решения, возвращён он; ``suppressed`` — такой же отклонён меньше
+    :data:`DENIAL_MEMORY_DAYS` назад, approval нет.
+    """
+
+    outcome: str
+    fingerprint: str
+    approval: Approval | None
+
+
+def doc_patch_fingerprint(op: str, args: dict[str, Any]) -> str:
+    """Отпечаток предложения: операция и её аргументы, без diff и обоснования.
+
+    Diff и текст обоснования модель формулирует каждый раз по-разному; сама
+    правка — нет. Ключи сортируются, чтобы порядок в словаре не делал из
+    одного предложения два.
+    """
+    canonical = json.dumps(
+        {"op": op, "args": args}, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def request_doc_patch(
+    session: Session,
+    project_id: int,
+    *,
+    op: str,
+    args: dict[str, Any],
+    diff: str,
+    rationale: str,
+    base_revision_id: str | None = None,
+    requested_by: str = "agent:curator",
+    now: datetime | None = None,
+) -> DocPatchRequest:
+    """ACU-008 (RFC 28 §3.3 п.4–5, §3.6): предложить правку документации.
+
+    Payload: ``{op, args, base_revision_id, fingerprint, diff, rationale,
+    run_id}``. ``base_revision_id`` — голова, на которую рассчитана правка:
+    разойдётся к моменту одобрения — исполнитель (ACU-009) правку не
+    применит. Повтор того же предложения не плодит approval: ждущий — тот
+    же, недавно отклонённый — молчит. ``now`` — для тестов памяти отказа.
+    """
+    if not op.strip():
+        raise ValueError("doc_patch: op обязателен")
+    if not diff.strip():
+        raise ValueError("doc_patch: пустой diff — предлагать нечего")
+    fingerprint = doc_patch_fingerprint(op, args)
+    moment = now or datetime.now(UTC)
+    remembered_since = moment - timedelta(days=DENIAL_MEMORY_DAYS)
+
+    same = session.execute(
+        select(ApprovalModel).where(
+            ApprovalModel.project_id == project_id,
+            ApprovalModel.approval_type == DOC_PATCH,
+            ApprovalModel.status.in_(("pending", "denied")),
+        )
+    ).scalars()
+    for model in same:
+        if (model.payload_json or {}).get("fingerprint") != fingerprint:
+            continue
+        if model.status == "pending":
+            return DocPatchRequest("duplicate", fingerprint, _to_domain(model, session))
+        if model.resolved_at is not None and _as_utc(model.resolved_at) > remembered_since:
+            return DocPatchRequest("suppressed", fingerprint, None)
+
+    approval = request(
+        session,
+        project_id,
+        approval_type=DOC_PATCH,
+        requested_by=requested_by,
+        payload={
+            "op": op,
+            "args": args,
+            "base_revision_id": base_revision_id,
+            "fingerprint": fingerprint,
+            "diff": diff,
+            "rationale": rationale,
+            "run_id": get_current_run_id(),
+        },
+    )
+    return DocPatchRequest("created", fingerprint, approval)
+
+
+def _as_utc(moment: datetime) -> datetime:
+    """SQLite отдаёт время без зоны, хоть колонка и timezone=True."""
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
 
 
 def get(session: Session, project_id: int, approval_id: str) -> Approval | None:

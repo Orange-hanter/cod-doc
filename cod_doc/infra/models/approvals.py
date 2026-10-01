@@ -20,7 +20,7 @@ from .base import Base, _utcnow
 class ApprovalModel(Base):
     """A pending or resolved decision gate.
 
-    Types: 'plan_review' | 'risky_action' | 'fm_escalation' | 'budget' | 'manual'
+    Types: 'plan_review' | 'risky_action' | 'fm_escalation' | 'budget' | 'manual' | 'doc_patch'
     Status: 'pending' | 'approved' | 'denied' | 'cancelled' | 'expired'
 
     ``run_id`` links to the agent run that requested the approval (NULL for
