@@ -28,6 +28,9 @@
           resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
         document.documentElement.setAttribute('data-theme', resolved);
+        if (localStorage.getItem('cod-doc-palette') === 'soft') {
+          document.documentElement.setAttribute('data-palette', 'soft');
+        }
       } catch (e) { /* localStorage may be denied — fall back to default */ }
     })();
   </script>
@@ -129,6 +132,12 @@
             aria-label="Live updates: idle"
             title="Live updates: idle">idle</span>
     {% endif %}
+    <button type="button" class="palette-toggle" id="palette-toggle"
+            aria-label="Toggle soft palette" title="Soft palette">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm0 1.5v13a6.5 6.5 0 0 1 0-13z"/>
+      </svg>
+    </button>
     <button type="button" class="theme-toggle" id="theme-toggle"
             aria-label="Toggle theme" title="Toggle theme">
       <svg class="icon-sun" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
