@@ -30,12 +30,16 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
+from uuid import uuid4
 
-from cod_doc.services import curator_service, doc_tree_service, repair_service
+from cod_doc.services import curator_service, doc_tree_service, repair_service, revision_service
+from cod_doc.services.run_context import run_scope
 
 if TYPE_CHECKING:
+    from datetime import datetime
     from pathlib import Path
 
     from sqlalchemy.orm import Session
@@ -43,8 +47,11 @@ if TYPE_CHECKING:
     from cod_doc.config import ProjectEntry
     from cod_doc.services.curator_sync_service import SyncReport
 
-DEFAULT_AUTHOR = "agent:curator"
+DEFAULT_AUTHOR = curator_service.CURATOR_AUTHOR
 DEFAULT_MAX_AUTO = 50
+
+#: ``agent_run.wake_reason`` прогона с записью (ACU-007).
+WAKE_REASON = "curator_sweep"
 
 #: Виды исполнителя фазы D, которые куратору не положены (см. докстринг).
 _REPAIR_SKIPPED = frozenset(
@@ -79,6 +86,23 @@ class SweepReport:
     sync: dict[str, Any] | None = None
     reported: list[dict[str, str]] = field(default_factory=list)
     capped: list[str] = field(default_factory=list)
+    #: ACU-007: строка `agent_run` прогона с записью; у сухого — None.
+    run_id: str | None = None
+    #: Ревизии прогона по видам сущностей (`revision_summary`, ADO-228).
+    changes: list[dict[str, Any]] = field(default_factory=list)
+
+    def summary(self) -> dict[str, Any]:
+        """Счётчики для ``agent_run.summary``: сколько сделано, отдано, оставлено."""
+        return {
+            "applied": self.applied_count,
+            "placed": len(self.placed),
+            "synced": len((self.sync or {}).get("exported", []))
+            + len((self.sync or {}).get("deleted", [])),
+            "proposed": 0,  # предложения появятся с секцией D
+            "reported": len(self.reported),
+            "capped": len(self.capped),
+            "changes": self.changes,
+        }
 
     @property
     def applied_count(self) -> int:
@@ -113,26 +137,81 @@ def sweep(
     )
     card: dict[str, Any] = payload["card"]
     report = SweepReport(applied=apply)
-    budget = max_auto
+    coords = _Coords(project_id, root_path, master_path, slug, author, max_auto, sync)
 
-    budget = _repair(session, project_id, root_path, master_path, slug, author, budget, report)
-    _place(session, project_id, author, budget, report)
+    if not apply:
+        _act(session, card, coords, report)
+        _collect_reported(payload, card, report, set(), synced_master=False)
+        return report
 
-    synced_docs: set[str] = set()
-    synced_master = False
-    if sync is not None and apply and _needs_sync(card):
-        sync_report = sync(session, project_id)
-        report.sync = sync_report.to_dict()
-        synced_docs = set(sync_report.exported) | set(sync_report.deleted)
-        synced_master = sync_report.hashes_updated > 0
+    # ACU-007: запись идёт внутри `run_scope` — строка `agent_run` и `run_id`
+    # на каждой ревизии и событии прогона. Сухой прогон строку не пишет: он
+    # не пишет ничего.
+    with run_scope(
+        session, project_id=project_id, run_id=str(uuid4()), wake_reason=WAKE_REASON
+    ) as run:
+        synced_docs, synced_master = _act(session, card, coords, report)
+        _collect_reported(payload, card, report, synced_docs, synced_master=synced_master)
+        report.run_id = run.run_id
+        report.changes = _changes(session, project_id, since=run.started_at, author=author)
+        run.summary = json.dumps(report.summary(), ensure_ascii=False)
+    return report
 
+
+@dataclass(slots=True, frozen=True)
+class _Coords:
+    project_id: int
+    root_path: Path
+    master_path: Path
+    slug: str
+    author: str
+    max_auto: int
+    sync: SyncFn | None
+
+
+def _act(
+    session: Session, card: dict[str, Any], c: _Coords, report: SweepReport
+) -> tuple[set[str], bool]:
+    """Уровень 1 и выгрузка в клон; вернуть (что ушло в клон, переписан ли реестр)."""
+    budget = _repair(
+        session, c.project_id, c.root_path, c.master_path, c.slug, c.author, c.max_auto, report
+    )
+    _place(session, c.project_id, c.author, budget, report)
+    if c.sync is None or not report.applied or not _needs_sync(card):
+        return set(), False
+    sync_report = c.sync(session, c.project_id)
+    report.sync = sync_report.to_dict()
+    return set(sync_report.exported) | set(sync_report.deleted), sync_report.hashes_updated > 0
+
+
+def _collect_reported(
+    payload: dict[str, Any],
+    card: dict[str, Any],
+    report: SweepReport,
+    synced_docs: set[str],
+    *,
+    synced_master: bool,
+) -> None:
     handled = _handled_refs(card, report, synced_docs, synced_master)
     report.reported = [
         {"kind": str(item["kind"]), "ref": str(item["ref"]), "reason": str(item["reason"])}
         for item in payload["priority"]
         if (str(item["kind"]), str(item["ref"])) not in handled
     ]
-    return report
+
+
+def _changes(
+    session: Session, project_id: int, *, since: datetime, author: str
+) -> list[dict[str, Any]]:
+    """Что прогон записал — по видам сущностей (ADO-228, свой агрегат не пишем)."""
+    rows = revision_service.summarize(
+        session, project_id, since=since, group_by=["author", "entity_kind"]
+    )
+    return [
+        {"entity_kind": row["entity_kind"], "n": row["n"]}
+        for row in rows
+        if row.get("author") == author
+    ]
 
 
 def _repair(
