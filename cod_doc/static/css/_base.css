@@ -134,6 +134,107 @@
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
 
+/* Soft palette — тёплая «бумага» из борда роя ZAIrgRush (swarm/board.py).
+ * Ортогональна режиму: data-palette="soft" на <html> меняет только токены,
+ * а data-theme по-прежнему решает light/dark — hljs, mermaid и иконка
+ * переключателя смотрят только на него. Светлый селектор исключает dark,
+ * иначе при равной специфичности он перебил бы тёмные токены выше.
+ * Заливки --success/--danger/--warning в тёмном варианте взяты темнее,
+ * чем текстовые *-soft-fg: на них лежит захардкоженный белый текст. */
+[data-palette="soft"]:not([data-theme="dark"]) {
+  --fg:           #1b1a17;
+  --fg-strong:    #0f0e0c;
+  --muted:        #625c52;
+  --muted-strong: #48443d;
+  --bg:           #fffefb;
+  --bg-alt:       #f8f6f1;
+  --bg-soft:      #f3f0ea;
+  --bg-inset:     #efece5;
+  --border:       #dcd6ca;
+  --border-soft:  #e8e3d8;
+  --border-strong:#c9c1b2;
+
+  --accent:           #2a5ca8;
+  --accent-fg:        #ffffff;
+  --accent-soft-bg:   #e2eaf7;
+  --accent-soft-fg:   #1d3f73;
+  --accent-hover:     #234e90;
+
+  --success:          #2c7a4b;
+  --success-soft-bg:  #e4f0e6;
+  --success-soft-fg:  #1e5634;
+  --success-border:   #b5d6bd;
+
+  --warning:          #9a6a00;
+  --warning-soft-bg:  #f8ecd2;
+  --warning-soft-fg:  #5e4100;
+  --warning-border:   #dcbf7d;
+
+  --danger:           #b0372b;
+  --danger-soft-bg:   #f8e1dd;
+  --danger-soft-fg:   #7a241c;
+  --danger-border:    #e3a79f;
+
+  --info:             #2a5ca8;
+  --info-soft-bg:     #e2eaf7;
+  --info-soft-fg:     #1d3f73;
+  --info-border:      #a9c1e6;
+
+  --purple:           #6f4fa8;
+  --purple-soft-bg:   #ece6f5;
+
+  --shadow-sm: 0 1px 2px rgba(60, 50, 30, 0.05);
+  --shadow-md: 0 3px 6px rgba(60, 50, 30, 0.08), 0 1px 2px rgba(60, 50, 30, 0.04);
+  --shadow-lg: 0 8px 24px rgba(60, 50, 30, 0.12);
+}
+
+[data-palette="soft"][data-theme="dark"] {
+  --fg:           #e9e7e2;
+  --fg-strong:    #f7f5f0;
+  --muted:        #8f897d;
+  --muted-strong: #aaa498;
+  --bg:           #1a1c21;
+  --bg-alt:       #1e2026;
+  --bg-soft:      #22252b;
+  --bg-inset:     #131418;
+  --border:       #30333a;
+  --border-soft:  #25282e;
+  --border-strong:#41454d;
+
+  --accent:           #8ab0ee;
+  --accent-fg:        #131418;
+  --accent-soft-bg:   #1b2538;
+  --accent-soft-fg:   #a9c4f2;
+  --accent-hover:     #a3c1f2;
+
+  --success:          #4e9a65;
+  --success-soft-bg:  #1a2b20;
+  --success-soft-fg:  #8fd6a2;
+  --success-border:   #2f5a3b;
+
+  --warning:          #c08a2e;
+  --warning-soft-bg:  #2e2616;
+  --warning-soft-fg:  #e2ad55;
+  --warning-border:   #5e4a22;
+
+  --danger:           #c9604f;
+  --danger-soft-bg:   #321e1c;
+  --danger-soft-fg:   #f19a8f;
+  --danger-border:    #6a3530;
+
+  --info:             #8ab0ee;
+  --info-soft-bg:     #1b2538;
+  --info-soft-fg:     #a9c4f2;
+  --info-border:      #34507e;
+
+  --purple:           #a58ad8;
+  --purple-soft-bg:   #2a2238;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 3px 6px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
 /* ── Base reset & typography ──────────────────────────────────────────── */
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -229,7 +330,7 @@ code { font-size: 12px; }
 }
 
 /* Theme toggle button */
-.theme-toggle {
+.theme-toggle, .palette-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -241,12 +342,14 @@ code { font-size: 12px; }
   cursor: pointer;
   transition: all var(--motion-fast);
 }
-.theme-toggle:hover { color: var(--fg); border-color: var(--border-strong); background: var(--bg-alt); }
-.theme-toggle svg { width: 16px; height: 16px; }
+.theme-toggle:hover, .palette-toggle:hover { color: var(--fg); border-color: var(--border-strong); background: var(--bg-alt); }
+.theme-toggle svg, .palette-toggle svg { width: 16px; height: 16px; }
 .theme-toggle .icon-sun { display: block; }
 .theme-toggle .icon-moon { display: none; }
 [data-theme="dark"] .theme-toggle .icon-sun { display: none; }
 [data-theme="dark"] .theme-toggle .icon-moon { display: block; }
+/* Палитра: тот же 32-px квадрат; активная мягкая подсвечена акцентом. */
+[data-palette="soft"] .palette-toggle { color: var(--accent); border-color: var(--accent); }
 
 /* ── Content shell ────────────────────────────────────────────────────── */
 .content {

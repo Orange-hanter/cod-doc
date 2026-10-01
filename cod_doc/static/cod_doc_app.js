@@ -23,6 +23,18 @@
     });
   }
 
+  // Палитра ортогональна light/dark: атрибут есть — мягкая, нет — исходная.
+  const PALETTE_KEY = 'cod-doc-palette';
+  const paletteToggle = document.getElementById('palette-toggle');
+  if (paletteToggle) {
+    paletteToggle.addEventListener('click', () => {
+      const soft = root.getAttribute('data-palette') !== 'soft';
+      if (soft) root.setAttribute('data-palette', 'soft');
+      else root.removeAttribute('data-palette');
+      try { localStorage.setItem(PALETTE_KEY, soft ? 'soft' : 'default'); } catch (e) { /* ignore */ }
+    });
+  }
+
   // Sync to system preference if user hasn't explicitly chosen.
   try {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
