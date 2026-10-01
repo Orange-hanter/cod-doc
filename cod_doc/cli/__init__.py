@@ -59,6 +59,7 @@ cod-doc structure latest|get|drift|triage|entities|contracts|scenarios
 cod-doc ctx structure     — pinned SHA structure_context
 cod-doc scenario new|list|show|update|retire|steps|link|unlink|export|coverage
 cod-doc question new|list|show|edit|resolve|drop|reopen|option|link|unlink|verify|import
+cod-doc approval list|show|approve|deny|cancel
 
 cod-doc import docs      — импорт .md/.rst/.txt из репо как Documents
 cod-doc import legacy-tasks — миграция .cod-doc/tasks.yaml в DB
@@ -88,6 +89,7 @@ import click
 
 from cod_doc.cli.activity import activity
 from cod_doc.cli.adr import adr
+from cod_doc.cli.approval import approval
 from cod_doc.cli.cmd_adapter import adapter
 from cod_doc.cli.cmd_agent import agent
 from cod_doc.cli.cmd_audit import audit
@@ -151,6 +153,7 @@ main.add_command(plan)
 main.add_command(story)
 main.add_command(scenario)
 main.add_command(question)
+main.add_command(approval)
 main.add_command(doc)
 main.add_command(link)
 main.add_command(revision)

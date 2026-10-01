@@ -127,6 +127,11 @@ def _approval_to_dict(a: Approval) -> dict[str, Any]:
     }
 
 
+def to_dict(approval: Approval) -> dict[str, Any]:
+    """JSON-safe форма одобрения — та же, что отдают ``list_approvals`` и ``resolve``."""
+    return _approval_to_dict(approval)
+
+
 def _cancel_existing_pending(
     session: Session,
     project_id: int,

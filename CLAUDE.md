@@ -99,6 +99,7 @@ cod-doc doc tree classify -p cod-doc      # сухая раскладка по �
 cod-doc doc tree health -p cod-doc        # пробелы в наполненности разделов; --sync пишет findings
 cod-doc ctx docs|drift|search --json     # контекст для промпта в JSON (ctx docs --include-body — с телом)
 cod-doc ctx next -p cod-doc --json       # doc card куратора: очередь «что чинить» (зеркало MCP curator_next)
+cod-doc approval list|show|approve|deny -p cod-doc  # предложения куратора (doc_patch): approve исполняет правку
 cod-doc ingest ai_review -p cod-doc --from-pr 123   # findings из артефакта PR через gh; далее finding_promote
 cod-doc ctx drift -p orakul --pr 562 --comment      # drift-гейт PR: находки → идемпотентный комментарий (--dry-run для проверки)
 cod-doc completion zsh                   # печатает готовый _cod-doc; установка — scripts/install-zsh-completion.sh
@@ -309,6 +310,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
 | `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017) и `doc_tree_service` (ADO-116); незакрытый долг — `update_status` и `delete`, каждый с обоснованием |
 | `services/test_plan_mutation_surface_parity.py` | то же для `plan_service` (ADO-209): секции и планы на MCP и CLI; `freeze_projection` вне спеки — пишет через `doc_service` |
+| `services/test_approval_mutation_surface_parity.py` | то же для `approval_service` (ACU-010): `resolve`/`cancel` на MCP и CLI; `request_doc_patch` — внутренний (собирает куратор), `request` — долг CLI с обоснованием |
 | `services/test_migration_0035_preserves_data.py` | миграция не теряет секции и ссылки: наливает данные на предыдущей ревизии, потом гонит upgrade. На пустой БД такая потеря не видна |
 | `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
 | `cli/test_zsh_completion_queries.py` | SQL дополнения выполняется на свежей схеме (ловит переименование колонки) |
