@@ -4,7 +4,7 @@ Approvals pause tasks pending a human decision. On resolve the service
 returns a :class:`WakeContext` hint that callers can pass to
 ``run_agent_once`` to immediately resume the requesting agent.
 
-Types: 'plan_review' | 'risky_action' | 'fm_escalation' | 'budget' | 'manual'
+Types: 'plan_review' | 'risky_action' | 'fm_escalation' | 'budget' | 'manual' | 'doc_patch'
 Status: 'pending' | 'approved' | 'denied' | 'cancelled' | 'expired'
 
 Invariant: at most one pending approval per task (enforced in ``request``).
@@ -21,6 +21,8 @@ Public API
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -39,10 +41,23 @@ from cod_doc.services.run_context import get_current_run_id
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
-VALID_TYPES = frozenset({"plan_review", "risky_action", "fm_escalation", "budget", "manual"})
+#: ACU-008 (RFC 28 §3.6): готовая правка документации от фонового куратора —
+#: одна операция с diff, которую человек одобряет или отклоняет.
+DOC_PATCH = "doc_patch"
+VALID_TYPES = frozenset(
+    {"plan_review", "risky_action", "fm_escalation", "budget", "manual", DOC_PATCH}
+)
 VALID_STATUSES = frozenset({"pending", "approved", "denied", "cancelled", "expired"})
+#: Статус одобрения, ждущего решения. Константа, а не литерал у вызывающих:
+#: слово совпадает с легаси-алиасом статуса задачи, и страж
+#: `test_task_status_write_canonicalisation` по литералу их не различит.
+PENDING = "pending"
 # Default approval TTL per proposal 12 note (48 hours for single-user).
 DEFAULT_TTL_HOURS = 48
+#: ACU-008: сколько дней отказ человека подавляет то же предложение. Без
+#: памяти куратор предлагал бы отклонённое каждую ночь; без срока — никогда
+#: больше, даже когда документ вокруг уже изменился.
+DENIAL_MEMORY_DAYS = 30
 
 
 @dataclass
@@ -114,6 +129,11 @@ def _approval_to_dict(a: Approval) -> dict[str, Any]:
         "linked_task_refs": a.linked_task_refs,
         "linked_doc_revision_ids": a.linked_doc_revision_ids,
     }
+
+
+def to_dict(approval: Approval) -> dict[str, Any]:
+    """JSON-safe форма одобрения — та же, что отдают ``list_approvals`` и ``resolve``."""
+    return _approval_to_dict(approval)
 
 
 def _cancel_existing_pending(
@@ -240,6 +260,99 @@ def request(
     return _to_domain(m, session)
 
 
+@dataclass(slots=True, frozen=True)
+class DocPatchRequest:
+    """Итог :func:`request_doc_patch`.
+
+    ``outcome``: ``created`` — новый approval; ``duplicate`` — такой же уже
+    ждёт решения, возвращён он; ``suppressed`` — такой же отклонён меньше
+    :data:`DENIAL_MEMORY_DAYS` назад, approval нет.
+    """
+
+    outcome: str
+    fingerprint: str
+    approval: Approval | None
+
+
+def doc_patch_fingerprint(op: str, args: dict[str, Any]) -> str:
+    """Отпечаток предложения: операция и её аргументы, без diff и обоснования.
+
+    Diff и текст обоснования модель формулирует каждый раз по-разному; сама
+    правка — нет. Ключи сортируются, чтобы порядок в словаре не делал из
+    одного предложения два.
+    """
+    canonical = json.dumps(
+        {"op": op, "args": args}, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def request_doc_patch(
+    session: Session,
+    project_id: int,
+    *,
+    op: str,
+    args: dict[str, Any],
+    diff: str,
+    rationale: str,
+    base_revision_id: str | None = None,
+    requested_by: str = "agent:curator",
+    now: datetime | None = None,
+) -> DocPatchRequest:
+    """ACU-008 (RFC 28 §3.3 п.4–5, §3.6): предложить правку документации.
+
+    Payload: ``{op, args, base_revision_id, fingerprint, diff, rationale,
+    run_id}``. ``base_revision_id`` — голова, на которую рассчитана правка:
+    разойдётся к моменту одобрения — исполнитель (ACU-009) правку не
+    применит. Повтор того же предложения не плодит approval: ждущий — тот
+    же, недавно отклонённый — молчит. ``now`` — для тестов памяти отказа.
+    """
+    if not op.strip():
+        raise ValueError("doc_patch: op обязателен")
+    if not diff.strip():
+        raise ValueError("doc_patch: пустой diff — предлагать нечего")
+    fingerprint = doc_patch_fingerprint(op, args)
+    moment = now or datetime.now(UTC)
+    remembered_since = moment - timedelta(days=DENIAL_MEMORY_DAYS)
+
+    same = session.execute(
+        select(ApprovalModel).where(
+            ApprovalModel.project_id == project_id,
+            ApprovalModel.approval_type == DOC_PATCH,
+            ApprovalModel.status.in_(("pending", "denied")),
+        )
+    ).scalars()
+    for model in same:
+        if (model.payload_json or {}).get("fingerprint") != fingerprint:
+            continue
+        if model.status == "pending":
+            return DocPatchRequest("duplicate", fingerprint, _to_domain(model, session))
+        if model.resolved_at is not None and _as_utc(model.resolved_at) > remembered_since:
+            return DocPatchRequest("suppressed", fingerprint, None)
+
+    approval = request(
+        session,
+        project_id,
+        approval_type=DOC_PATCH,
+        requested_by=requested_by,
+        payload={
+            "op": op,
+            "args": args,
+            "base_revision_id": base_revision_id,
+            "fingerprint": fingerprint,
+            "diff": diff,
+            "rationale": rationale,
+            "run_id": get_current_run_id(),
+        },
+    )
+    return DocPatchRequest("created", fingerprint, approval)
+
+
+def _as_utc(moment: datetime) -> datetime:
+    """SQLite отдаёт время без зоны, хоть колонка и timezone=True."""
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
+
+
 def get(session: Session, project_id: int, approval_id: str) -> Approval | None:
     m = session.execute(
         select(ApprovalModel).where(
@@ -322,6 +435,11 @@ def resolve(
         raise ValueError(f"Approval is already {m.status!r}, cannot resolve.")
 
     now = datetime.now(UTC)
+    if m.approval_type == DOC_PATCH and decision == "approve":
+        stale = _doc_patch_stale_reason(session, project_id, m.payload_json or {})
+        if stale is not None:
+            return _expire_stale(session, project_id, m, resolved_by=resolved_by, reason=stale)
+
     m.status = "approved" if decision == "approve" else "denied"
     m.resolved_by = resolved_by
     m.resolved_at = now
@@ -338,6 +456,17 @@ def resolve(
         payload={"decision": decision, "comment": comment},
         summary=f"Approval {approval_id} {decision}d",
     )
+
+    # ACU-009: одобренный doc_patch исполняется здесь же, в транзакции
+    # решения. Исключение в операции откатывает и само одобрение — approval
+    # не может остаться `approved` с неприменённой правкой.
+    applied: dict[str, Any] | None = None
+    if m.approval_type == DOC_PATCH and decision == "approve":
+        from cod_doc.services import curator_ops
+
+        payload = m.payload_json or {}
+        op = curator_ops.require(str(payload.get("op", "")))
+        applied = op.apply(session, project_id, dict(payload.get("args") or {}), resolved_by)
 
     domain = _to_domain(m, session)
 
@@ -356,6 +485,58 @@ def resolve(
     return {
         "approval": _approval_to_dict(domain),
         "wake_hint": wake_hint,
+        "applied": applied,
+    }
+
+
+def _doc_patch_stale_reason(
+    session: Session, project_id: int, payload: dict[str, Any]
+) -> str | None:
+    """Почему doc_patch устарел, или None. Незнакомая операция — ошибка сразу.
+
+    Сверяется голова ревизий предмета правки с той, на которую правка
+    рассчитана. ``base_revision_id`` пуст — предлагавший сверку не просил.
+    """
+    from cod_doc.services import curator_ops
+
+    op = curator_ops.require(str(payload.get("op", "")))
+    base = payload.get("base_revision_id")
+    if base is None:
+        return None
+    head = op.head(session, project_id, dict(payload.get("args") or {}))
+    if head != base:
+        return f"stale_base: правка рассчитана на {base}, голова сейчас {head}"
+    return None
+
+
+def _expire_stale(
+    session: Session,
+    project_id: int,
+    m: ApprovalModel,
+    *,
+    resolved_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Одобрение пришло к устаревшей правке: approval истекает, ничего не пишется."""
+    m.status = "expired"
+    m.resolved_by = resolved_by
+    m.resolved_at = datetime.now(UTC)
+    m.decision_comment = reason
+    session.flush()
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "approval.expired",
+        resolved_by,
+        scope_kind="approval",
+        scope_id=m.approval_id,
+        payload={"reason": reason},
+        summary=f"Approval {m.approval_id} expired: {reason}",
+    )
+    return {
+        "approval": _approval_to_dict(_to_domain(m, session)),
+        "wake_hint": None,
+        "applied": None,
     }
 
 

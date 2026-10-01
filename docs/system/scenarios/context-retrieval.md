@@ -22,10 +22,10 @@ Capability document: `docs/system/capabilities/context-retrieval.md`
 
 | Kind | Count |
 |---|---|
-| `happy_path` | 1 |
+| `happy_path` | 2 |
 | `error_path` | 1 |
 | `boundary_value` | 1 |
-| `invariant` | 1 |
+| `invariant` | 0 |
 | `integration` | 1 |
 | **total** | **5** |
 
@@ -33,7 +33,7 @@ Capability document: `docs/system/capabilities/context-retrieval.md`
 
 **Kind:** `happy_path`
 **Status:** `draft`
-**Anchor:** `docs/system/capabilities/context-retrieval#0-as-implemented-2026-09-15`
+**Anchor:** `docs/system/capabilities/context-retrieval#0-as-implemented-2026-09-27`
 
 ### Preconditions
 
@@ -55,7 +55,7 @@ TSC-002. Claims match code as of 2026-09-15.
 
 **Kind:** `error_path`
 **Status:** `draft`
-**Anchor:** `docs/system/capabilities/context-retrieval#0-as-implemented-2026-09-15`
+**Anchor:** `docs/system/capabilities/context-retrieval#0-as-implemented-2026-09-27`
 
 ### Preconditions
 
@@ -77,7 +77,7 @@ TSC-002. Claims match code as of 2026-09-15.
 
 **Kind:** `boundary_value`
 **Status:** `draft`
-**Anchor:** `docs/system/capabilities/context-retrieval#0-as-implemented-2026-09-15`
+**Anchor:** `docs/system/capabilities/context-retrieval#0-as-implemented-2026-09-27`
 
 ### Preconditions
 
@@ -95,33 +95,34 @@ Embeddings are not configured (no embedder / placeholder key).
 
 TSC-002. Claims match code as of 2026-09-15.
 
-## SCN-039 — hints.open_questions is always an empty list
+## SCN-039 — hints.open_questions lists linked open questions first, then urgent ones
 
-**Kind:** `invariant`
+**Kind:** `happy_path`
 **Status:** `draft`
-**Anchor:** `docs/system/capabilities/context-retrieval#0-as-implemented-2026-09-15`
+**Anchor:** `docs/system/capabilities/context-retrieval#0-as-implemented-2026-09-27`
 
 ### Preconditions
 
-Open-question documents may or may not exist.
+Open questions exist: one linked to a section of the target document, one to the document itself, one critical question linked elsewhere, one resolved question linked to the document.
 
 ### Steps
 
-1. Call `context_get` on a document at L1
+1. Call `context_get` on the document at L1
+2. Call `context_get` on the same document at L0
 
 ### Expected result
 
-`hints.open_questions` is `[]` regardless of DocumentType.open-question rows.
+At L1 `hints.open_questions` holds at most 3 entries: the section-linked and document-linked questions first (with their `relation`), then the critical one with `relation: null`; the resolved question is absent. At L0 the list is `[]`.
 
 ### Notes
 
-TSC-002. Claims match code as of 2026-09-15.
+OQM-005. Rewritten 2026-09-27: until then this scenario asserted that the list was always empty.
 
 ## SCN-040 — MCP context_get is the live contract, not CLI `context get`
 
 **Kind:** `integration`
 **Status:** `draft`
-**Anchor:** `docs/system/capabilities/context-retrieval#0-as-implemented-2026-09-15`
+**Anchor:** `docs/system/capabilities/context-retrieval#0-as-implemented-2026-09-27`
 
 ### Preconditions
 

@@ -40,6 +40,7 @@ from cod_doc.services import (
     commit_link_service,
     doc_service,
     doc_tree_service,
+    question_service,
     repair_service,
     repo_index_service,
     task_doc_service,
@@ -387,6 +388,22 @@ def test_adr_create_emits_event(engine_with_schema) -> None:  # type: ignore[no-
         assert ev.scope_id == "ADR-001"
 
 
+def test_question_create_emits_event(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        question_service.create(
+            session, project_id=p, title="X", question="Y?", author="human:test"
+        )
+
+    with transactional(factory) as session:
+        ev = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "question.created")
+        ).scalar_one()
+        assert ev.scope_id == "Q-001"
+        assert ev.actor_kind == "human"
+
+
 def test_approval_request_emits_event(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -639,3 +656,89 @@ def test_repo_index_scan_emits_event(engine_with_schema, tmp_path: Path) -> None
             select(ActivityEventModel).where(ActivityEventModel.kind == "repo_index.scanned")
         ).scalar_one()
         assert ev.payload["files"] >= 1
+
+
+def test_doc_export_emits_event_only_on_a_real_write(  # type: ignore[no-untyped-def]
+    engine_with_schema, tmp_path: Path
+) -> None:
+    """ACU-002: запись файла проекции — мутация, её автор виден в журнале.
+
+    Повторная выгрузка без изменений ничего не пишет на диск — и события нет.
+    """
+    from cod_doc.services import projection_service
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _new_doc(session, p, "exported-doc")
+        first = projection_service.export_document(
+            session, doc_id, root_path=root, author="agent:curator"
+        )
+        again = projection_service.export_document(
+            session, doc_id, root_path=root, author="agent:curator"
+        )
+    assert first.written and not again.written
+
+    with transactional(factory) as session:
+        ev = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "doc.exported")
+        ).scalar_one()
+        assert ev.scope_id == "exported-doc"
+        assert ev.actor_id == "agent:curator"
+        assert ev.actor_kind == "agent"
+        assert ev.payload["content_hash"] == first.content_hash
+
+
+def _master_with_wrong_hash(root: Path) -> Path:
+    (root / "beta.md").write_text("# Beta\n", encoding="utf-8")
+    master = root / "MASTER.md"
+    master.write_text(
+        "# MASTER\n\n- **Ссылка:** 📁 /beta.md | 🗃️ doc:beta_md | 🔑 sha:0123456789ab\n",
+        encoding="utf-8",
+    )
+    return master
+
+
+def test_master_hash_update_emits_event(engine_with_schema, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """ACU-002: реестр хэшей — файл, но пересчёт его — запись в проект."""
+    from cod_doc.services import hash_service
+
+    master = _master_with_wrong_hash(tmp_path)
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        updated, _ = hash_service.update_master_hashes(session, p, master, author="cli:update")
+    assert updated >= 1
+
+    with transactional(factory) as session:
+        ev = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == hash_service.EVENT_KIND)
+        ).scalar_one()
+        assert ev.actor_id == "cli:update"
+        assert ev.payload["updated"] == updated
+
+
+def test_master_hash_update_without_changes_emits_nothing(  # type: ignore[no-untyped-def]
+    engine_with_schema, tmp_path: Path
+) -> None:
+    from cod_doc.services import hash_service
+
+    master = _master_with_wrong_hash(tmp_path)
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        hash_service.update_master_hashes(session, p, master, author="cli")
+        updated, _ = hash_service.update_master_hashes(session, p, master, author="cli")
+    assert updated == 0
+
+    with transactional(factory) as session:
+        events = (
+            session.execute(
+                select(ActivityEventModel).where(ActivityEventModel.kind == hash_service.EVENT_KIND)
+            )
+            .scalars()
+            .all()
+        )
+        assert len(events) == 1

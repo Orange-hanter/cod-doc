@@ -20,6 +20,19 @@ class AIBackendError(RuntimeError):
     """The LLM backend is unavailable or returned an error."""
 
 
+@dataclass(frozen=True, slots=True)
+class LiteReply:
+    """Ответ лёгкой модели вместе с расходом токенов (RFC 28 §3.9, ACU-012).
+
+    Куратор считает токены каждого прогона в ``agent_run``; голый текст
+    ``_call_lite_raw`` этот счёт терял.
+    """
+
+    text: str
+    tokens_in: int = 0
+    tokens_out: int = 0
+
+
 @dataclass
 class ImproveResult:
     """Improved text plus the metering info needed to record a trace row."""
@@ -345,6 +358,11 @@ def _call_lite_raw(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> str:
     Uses ``cfg.lite_model`` when set, falls back to ``cfg.model``.
     Raises ``AIBackendError`` on any failure.
     """
+    return call_lite(prompt, cfg, max_tokens=max_tokens).text
+
+
+def call_lite(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> LiteReply:
+    """То же, что ``_call_lite_raw``, плюс токены ответа — для учёта в прогоне."""
     import time as _time
 
     if not cfg.api_key:
@@ -393,4 +411,9 @@ def _call_lite_raw(prompt: str, cfg: Config, *, max_tokens: int = 1024) -> str:
                 "Возьми модель без reasoning или подними бюджет."
             )
         raise AIBackendError(f"LLM returned empty response (finish_reason={choice.finish_reason}).")
-    return raw
+    usage = completion.usage
+    return LiteReply(
+        text=raw,
+        tokens_in=int(getattr(usage, "prompt_tokens", 0) or 0),
+        tokens_out=int(getattr(usage, "completion_tokens", 0) or 0),
+    )

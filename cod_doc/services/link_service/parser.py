@@ -8,6 +8,7 @@ this output to look up targets in the DB.
 from __future__ import annotations
 
 import re
+from urllib.parse import unquote
 
 from cod_doc.domain.entities import LinkKind
 
@@ -164,6 +165,12 @@ def _href_to_doc_key(href: str) -> tuple[str | None, str | None]:
         href = href[1:]
     if href.endswith(".md"):
         href = href[:-3]
+    # Doc keys contain spaces, and a markdown href cannot (the web renderer's
+    # link pattern stops at whitespace), so authors write `%20`. Decode last,
+    # after the structural `../` / `.md` handling, so an encoded `%2E%2E/`
+    # stays a literal name rather than turning into a path step.
+    href = unquote(href)
+    anchor = unquote(anchor) if anchor else anchor
     return (href or None, anchor or None)
 
 

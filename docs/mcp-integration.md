@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **154 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **170 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -39,9 +39,9 @@ MCP (Model Context Protocol) — стандартный протокол для 
 | Тул | Что делает |
 |-----|------------|
 | `agent_capabilities()` | L0 entry-point: server version, `role: "doc-curator"` (на `agent`; на остальных профилях — `coder`), `forbidden`, доступные skills, валидные TaskStatus, default_project, `next_action_hint` → `ctx_drift` → `ctx_search`. <4KB. |
-| `curator_next(project, limit?, include_skill_bodies?, skip_links?)` | **Doc card** (CUR-016, AFT-002): `{card{drift{issues, advisory{count, doc_keys}}, links, master, findings, unplaced}, priority[{kind, ref, reason, suggested_action}], navigation{applicable_skills[{name, description}], next_actions, success_criteria}, meta{generated_at, truncated, counts{drift_issues, drift_advisory, …}, not_collected?}}`. `drift.issues` — только не-`in_sync`; расхождения frontmatter и осиротевшие секции у `in_sync`-документов — в `drift.advisory`. Тела скиллов — только при `include_skill_bodies=true`, описания — строкой меню, как в `agent_capabilities`. Строка `links` — `{doc_key, code, body}`: заголовок уже в `priority[].reason`, якорь — в `body` и `priority[].ref`. `skip_links=true` не собирает `links`, и тогда `meta.not_collected = ["links"]`. Порядок очереди: `missing` → `edited_in_place` → `LINK-BROKEN` → hash `BROKEN` → hash `STALE` → `stale_export` → finding. Read-only, идемпотентен. |
+| `curator_next(project, limit?, include_skill_bodies?, skip_links?)` | **Doc card** (CUR-016, AFT-002): `{card{drift{issues, advisory{count, doc_keys}}, links, master, findings, unplaced}, priority[{kind, ref, reason, suggested_action}], navigation{applicable_skills[{name, description}], next_actions, success_criteria}, meta{generated_at, truncated, counts{drift_issues, drift_advisory, pending_proposals, …}, not_collected?}}`. `drift.issues` — только не-`in_sync`; расхождения frontmatter и осиротевшие секции у `in_sync`-документов — в `drift.advisory`. Тела скиллов — только при `include_skill_bodies=true`, описания — строкой меню, как в `agent_capabilities`. Строка `links` — `{doc_key, code, body}`: заголовок уже в `priority[].reason`, якорь — в `body` и `priority[].ref`. `skip_links=true` не собирает `links`, и тогда `meta.not_collected = ["links"]`. Порядок очереди: `missing` → `conflict` → `edited_in_place` → `LINK-BROKEN` → hash `BROKEN` → hash `STALE` → `stale_export` → finding. Read-only, идемпотентен. |
 | `ctx_search(project, query, scope?, limit?)` | FTS-поиск по doc/adr/story/task: `{query, total, by_kind: {doc, adr, story, task: [...]}}`. Lazy reindex пустого индекса (CUR-007). |
-| `ctx_drift(project, limit?)` | Дрейф markdown ↔ БД по всему проекту: `edited_in_place` / `stale_export` / `missing` (`= doc_drift_all`). Сканируется весь корпус; `limit` режет только `issues`, `truncated: true` — строк больше, чем показано; `problem_count`/`counts` — по всему корпусу (AFT-003). |
+| `ctx_drift(project, limit?)` | Дрейф markdown ↔ БД по всему проекту: `edited_in_place` / `stale_export` / `missing` / `conflict` (ACU-001: правили и БД, и файл — `doc export` откажет по guard'у) (`= doc_drift_all`). Сканируется весь корпус; `limit` режет только `issues`, `truncated: true` — строк больше, чем показано; `problem_count`/`counts` — по всему корпусу (AFT-003). |
 | `context_get(project, target_kind, target_id, depth?)` | Snowball-пакет (L0/L1/L2) под token budget. |
 | `agent_report(project, task_id, kind, message, agent_id?, payload?)` | Dispatcher. `kind ∈ {progress, blocker, approval_request, needs_context}` — эскалация человеку. |
 
@@ -86,8 +86,8 @@ coding-агента.
 ```bash
 cod-doc-mcp                              # agent (default) — 6 curator tools
 cod-doc-mcp --profile minimal            # 21 cold-start tools
-cod-doc-mcp --profile standard           # 150 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 154 (включая legacy)
+cod-doc-mcp --profile standard           # 166 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 170 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 # CLI equivalent (ADO-079): same catalog filter
 cod-doc mcp --profile standard
@@ -142,7 +142,7 @@ cod-doc mcp --profile standard
 
 | Демон | Адрес | Профиль | Тулов |
 |---|---|---|---|
-| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 150 |
+| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 166 |
 | `com.cod-doc.mcp-agent` | `http://127.0.0.1:8802/mcp` | `agent` | 6 |
 
 Установка, апгрейд и управление — `deploy/launchd/cod-doc-services.sh`
@@ -328,7 +328,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **plan.\*** | 15 | Планы исполнения и графы зависимостей. **Breaking (ADO-199, RFC 26 §3.3):** дефолтный слаг секции в `plan_create`/`plan_section_create` — `plan_section_slug` (`{LETTER}-{Kebab}`, напр. `F-Structure-protocol-RFC-24`), а не заголовок целиком; явный слаг вне конвенции, буква вне `^[A-Z]{1,2}$`, отрицательная позиция и управляющие символы в заголовке отклоняются. HTML-сущности в заголовке (`&amp;`) — не ошибка, а `warnings` в ответе. Уже лежащие в БД слаги вне конвенции читаются как прежде | `plan_create`, `plan_freeze`, `plan_section_create`, `plan_section_update`, `plan_section_move`, `plan_section_delete`, `plan_list`, `plan_sections_list`, `plan_ready`, `plan_progress`, `plan_critical_path`, `plan_forward_chain`, `plan_reverse_chain`, `plan_audit`, `plan_export` |
 | **story.\*** | 11 | User stories + acceptance criteria + секции | `story_create`, `story_list`, `story_get`, `story_link`, `story_add_criterion`, `story_set_criterion_met`, `story_update_status`, `story_coverage`, `story_section_create`, `story_section_list`, `story_set_section` |
 | **link.\*** | 4 | Гибридные ссылки между документами | `link_list`, `link_sync`, `link_verify`, `link_suggest_for_section` |
-| **revision.\*** | 3 | История изменений сущностей. `revision_list` без `kind`/`ref` отдаёт проектную ленту (фильтры `since`/`author`/`entity_kind`) | `revision_list`, `revision_get`, `revision_revert` |
+| **revision.\*** | 4 | История изменений сущностей. `revision_list` без `kind`/`ref` отдаёт проектную ленту (фильтры `since`/`author`/`entity_kind`); `revision_summary` — агрегат ленты по `day`/`entity_kind`/`author` за период одним вызовом (ADO-228) | `revision_list`, `revision_get`, `revision_revert`, `revision_summary` |
 | **run.\*** | 1 | Инспекция прогонов встроенного оркестратора (ADR-012) | `run_get` |
 | **approval.\*** | 5 | Human-in-the-loop одобрения | `approval_request`, `approval_list`, `approval_get`, `approval_resolve`, `approval_cancel` |
 | **activity.\*** | 2 | Единый audit-таймлайн + GROUP BY агрегаты (RFC 27 F9) | `activity_list`, `activity_summary` |
@@ -341,13 +341,14 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **Legacy (YAML агент)** | 3 | Остаток legacy-surface после STB-002 (2026-06-08): resume-вход + context-хелперы. YAML CRUD (проекты/задачи/MASTER/поиск + hash/verify) удалён — БД источник истины. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
 | **finding.\* (RFC 22)** | 4 | Внешние находки (ai-review / ZAIrgRush / routines): triage и промоушен в задачи. Только профили standard/full | `finding_list`, `finding_get`, `finding_promote`, `finding_dismiss` |
 | **ctx.\* (RFC 22 / RFC 25 §3.2)** | 4 | Контекст для внешних потребителей: `ctx_docs` = `doc_list`, `ctx_search` = `search_service.search` с lazy reindex пустого FTS-индекса (CUR-007) и необязательным `projects=[слаг, …]` — кросс-проектный поиск в пределах одной (hub) БД, чужой `db_url` = ошибка (CUR-013), `ctx_drift` = `doc_drift_all` (SYM-006D); `ctx_search` и `ctx_drift` входят в дефолтный профиль `agent`, а `ctx_docs` с CUR-016 уступил там место `curator_next`. `ctx_drift_gate` — детерминированный гейт документации по файлам PR с идемпотентным PR-комментарием (SYM-010), только standard/full | `ctx_docs`, `ctx_search`, `ctx_drift`, `ctx_drift_gate` |
-| **curator.\* (RFC 25 §3.5)** | 1 | Doc card куратора (CUR-016): дрейф проекции, нерезолвящиеся ссылки, протухшие записи реестра хэшей MASTER.md и открытые findings — одной очередью с готовой командой на каждый пункт. Входит в дефолтный профиль `agent`; зеркало в CLI — `cod-doc ctx next` | `curator_next` |
+| **curator.\* (RFC 25 §3.5, RFC 28)** | 3 | Doc card куратора (CUR-016): дрейф проекции, нерезолвящиеся ссылки, протухшие записи реестра хэшей MASTER.md и открытые findings — одной очередью с готовой командой на каждый пункт; входит в дефолтный профиль `agent`, зеркало в CLI — `cod-doc ctx next`. Прогон куратора `curator_sweep` (ACU-004/006): в БД сам через общий исполнитель `project_repair`, файлы — только в клон куратора, прочее — в `reported`; по умолчанию сухой (`apply=false`), зеркало — `cod-doc ctx sweep`. `curator_sync` (ACU-003): выгрузка в клон `<COD_DOC_HOME>/curator/<slug>` и draft PR `curator/sync`, чекаут владельца и `main` не трогаются; зеркало — `cod-doc ctx sync`. Прогон и выгрузка — только профили standard/full | `curator_next`, `curator_sweep`, `curator_sync` |
 | **scenario.\* (RFC 24 §9)** | 9 | Сценарии тестирования: авторская половина RFC 24 — что должно быть верно (вид, предусловия, шаги, ожидаемый результат, якорь в capability-документе) и проекция в `docs/system/scenarios/`. Вердикты покрытия сюда не попадают: это доказательства producer'а (STR-002). Только профили standard/full | `scenario_create`, `scenario_get`, `scenario_list`, `scenario_update`, `scenario_retire`, `scenario_set_steps`, `scenario_link`, `scenario_export`, `scenario_coverage` |
+| **question.\* (OQM)** | 13 | Открытые вопросы — сущность БД, в markdown не проецируется: вопрос, контекст, варианты ответа, статус `open/resolved/dropped`, ссылки на документы/секции/код/задачи/ADR с проверкой существования. Только профили standard/full | `question_create`, `question_get`, `question_list`, `question_update`, `question_resolve`, `question_drop`, `question_reopen`, `question_option_add`, `question_option_update`, `question_option_remove`, `question_link`, `question_verify`, `question_import` |
 | **structure.\*** | 5 | Pinned code-structure snapshots, drift, scenarios and BFS context (not projection drift; not ai_review findings) | `structure_get`, `structure_context`, `structure_drift`, `structure_scenarios`, `structure_diff` |
 | **doc_tree.\* / doc_node.\* (ADO-116)** | 8 | Дерево документации как данные: разделы с намерением и порядком, детерминированная раскладка по правилам и Инбокс для того, что правилам не подошло. `doc_tree_classify` по умолчанию `dry_run=true` и не трогает то, что человек разложил руками. Только профили standard/full | `doc_tree_get`, `doc_tree_unplaced`, `doc_tree_init`, `doc_tree_classify`, `doc_set_node`, `doc_node_create`, `doc_node_update`, `doc_node_delete` |
 | **doc_node_health.\* / doc_node_intent.\*** | 3 | Пробелы в наполненности разделов: пусто, ниже `min_docs`, без `intent`, вырожденная типизация корпуса, пачка безымянных индексов. Дерево отвечает «где лежит», это — «чего не написано». `doc_node_health_sync` пишет находки в общую таблицу `finding`, поэтому пробел виден `curator_next` и промоутится в задачу. Детерминированная часть без LLM; `doc_node_intent_analyze` — вердикт модели «покрывают ли документы раздела его intent», в своей партиции находок, чтобы упавший проход не закрыл детерминированные. Только профили standard/full | `doc_node_health_get`, `doc_node_health_sync`, `doc_node_intent_analyze` |
-| **repair.\* (ADO-192)** | 1 | Фаза D команды `cod-doc update`: починка состояния проекта по карточке `curator_next` — `edited_in_place` → `doc import`, протухший реестр хэшей `MASTER.md` → пересчёт, нерезолвящиеся derived-ссылки → resync секций, замки старше TTL → снятие, незаведённое дерево разделов (проект старше ADO-116) → засев дефолтного без раскладки. Остальное (`stale_export`, `missing`, hash `BROKEN`, `unplaced`, findings) уходит счётчиками в `reported_only`. `dry_run=true` по умолчанию: тул, молча переписывающий десяток документов на спекулятивном вызове, — мина. Фазы A–C на MCP не выставлены, см. абзац ниже. Только профили standard/full | `project_repair` |
-| **ИТОГО** | **154** | | |
+| **repair.\* (ADO-192)** | 1 | Фаза D команды `cod-doc update`: починка состояния проекта по карточке `curator_next` — `edited_in_place` → `doc import`, протухший реестр хэшей `MASTER.md` → пересчёт, нерезолвящиеся derived-ссылки → resync секций, замки старше TTL → снятие, незаведённое дерево разделов (проект старше ADO-116) → засев дефолтного без раскладки. Остальное (`stale_export`, `conflict`, `missing`, hash `BROKEN`, `unplaced`, findings) уходит счётчиками в `reported_only`. `dry_run=true` по умолчанию: тул, молча переписывающий десяток документов на спекулятивном вызове, — мина. Фазы A–C на MCP не выставлены, см. абзац ниже. Только профили standard/full | `project_repair` |
+| **ИТОГО** | **170** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в
@@ -414,7 +415,7 @@ C — верификация, D — автопочинка состояния п
 | Copilot Chat | ✅ | ✅ | ❌ | Частично |
 | Claude Desktop | ✅ | ✅ | ❌ | Через copy-paste |
 | CI/CD | ✅ | ❌ | ✅ | ❌ |
-| Кол-во инструментов | 154 | 154 | ~8 | 0 |
+| Кол-во инструментов | 155 | 155 | ~8 | 0 |
 | Семантический поиск | ✅ | ✅ | ❌ | ❌ |
 | `project` в вызове | обязателен | можно через дефолт | — | — |
 | Дефолтный проект | нет (общий процесс) | есть (процесс = сессия) | — | — |

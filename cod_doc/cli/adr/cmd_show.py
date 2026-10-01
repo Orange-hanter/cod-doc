@@ -34,7 +34,7 @@ def adr_show(ctx: click.Context, project: str, adr_id: str, as_json: bool) -> No
         if row is None:
             console.print(f"[red]ADR {adr_id!r} not found in {project!r}.[/red]")
             raise SystemExit(1)
-        payload = adr_service.adr_to_dict(session, row)
+        payload = adr_service.adr_to_dict(session, row, include_backlinks=True)
 
     if as_json:
         click.echo(_json.dumps(payload, indent=2, ensure_ascii=False))
@@ -70,5 +70,17 @@ def adr_show(ctx: click.Context, project: str, adr_id: str, as_json: bool) -> No
         body.append(f"[bold]Task links ({len(links)})[/bold]")
         for link in links:
             body.append(f"  {link['relation']:<12} → {link['task_id']}")
+        body.append("")
+
+    refs = payload.get("referenced_by") or {}
+    total = sum(len(v) for v in refs.values())
+    if total:
+        body.append(f"[bold]Referenced by ({total})[/bold]")
+        for d in refs.get("docs", []):
+            body.append(f"  doc   {d['doc_key']}#{d['anchor']}")
+        for t in refs.get("tasks", []):
+            body.append(f"  task  {t['task_id']} — {t['title']}")
+        for a in refs.get("adrs", []):
+            body.append(f"  adr   {a['adr_id']} — {a['title']}")
 
     console.print(Panel("\n".join(body), expand=False))

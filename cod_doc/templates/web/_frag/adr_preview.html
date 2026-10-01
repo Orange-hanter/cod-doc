@@ -1,0 +1,9 @@
+{# ADO-235: предпросмотр тела ADR — та же разметка секций, что на карточке. #}
+{% if sections %}
+  {% for s in sections %}
+    <h2 class="adr-section-title">{{ s.title }}</h2>
+    <div class="doc-body doc-section">{{ s.html | safe }}</div>
+  {% endfor %}
+{% else %}
+  <p class="muted">Nothing to preview yet — fill in at least one section.</p>
+{% endif %}

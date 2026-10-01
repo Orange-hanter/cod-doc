@@ -13,8 +13,9 @@ from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_p
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import templates
 from cod_doc.core.project import TaskStatus as LegacyTaskStatus
-from cod_doc.domain.entities import EntityKind, TaskStatus
+from cod_doc.domain.entities import EntityKind, QuestionLinkKind, TaskStatus
 from cod_doc.services import plan_service as plans
+from cod_doc.services import question_service
 from cod_doc.services import revision_service as revisions
 from cod_doc.services import task_service as tasks
 from cod_doc.services import trace_service as traces
@@ -528,12 +529,16 @@ def task_show(
 
     # Plan + section breadcrumb info.
     plan = plans.get_for_project(session, project_db_id, task.plan_id)
+    linked_questions = question_service.linked_questions(
+        session, project_db_id, target_kind=QuestionLinkKind.TASK, target_ref=task_id
+    )
 
     return templates.TemplateResponse(
         request,
         "project/task_show.html",
         {
             "project": {"name": proj.entry.name},
+            "linked_questions": linked_questions,
             "task": {
                 "task_id": task.task_id,
                 "title": task.title,

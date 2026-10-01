@@ -113,6 +113,8 @@ def _bootstrap_default_routines(session: Session, project_id: int) -> None:
 
     Default routines:
     - approval_stale (every 15 min): auto-expire pending approvals past expires_at.
+    - question_links (daily, OQM-009): re-check links of open questions so
+      ``curator_next`` sees broken ones without a manual ``question verify``.
 
     Uses an explicit existence check (instead of try/except + UniqueConstraint)
     because IntegrityError invalidates the surrounding session.
@@ -122,25 +124,35 @@ def _bootstrap_default_routines(session: Session, project_id: int) -> None:
     from cod_doc.infra.models import RoutineModel
     from cod_doc.services import routine_service
 
-    existing = session.execute(
-        select(RoutineModel.row_id).where(
-            RoutineModel.project_id == project_id,
-            RoutineModel.name == "approval_stale_default",
+    for name, check_name, cron in _DEFAULT_ROUTINES:
+        existing = session.execute(
+            select(RoutineModel.row_id).where(
+                RoutineModel.project_id == project_id,
+                RoutineModel.name == name,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            continue
+        routine_service.create(
+            session,
+            project_id=project_id,
+            name=name,
+            check_name=check_name,
+            trigger="cron",
+            cron=cron,
+            on_finding="comment_only",
+            enabled=True,
         )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return
 
-    routine_service.create(
-        session,
-        project_id=project_id,
-        name="approval_stale_default",
-        check_name="approval_stale",
-        trigger="cron",
-        cron="*/15 * * * *",
-        on_finding="comment_only",
-        enabled=True,
-    )
+
+#: (name, check, cron) рутин, которые заводит ``project init``.
+_DEFAULT_ROUTINES: tuple[tuple[str, str, str], ...] = (
+    ("approval_stale_default", "approval_stale", "*/15 * * * *"),
+    ("question_links_daily", "question_links", "15 1 * * *"),
+    # ACU-005: после всех ночных проверок. Без `curator_auto` в config.yaml
+    # прогон сухой — рутина только считает план, поэтому заводится всегда.
+    ("curator_sweep_nightly", "curator_sweep", "0 2 * * *"),
+)
 
 
 def init_project(entry: ProjectEntry) -> InitResult:

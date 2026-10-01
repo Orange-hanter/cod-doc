@@ -6,7 +6,9 @@ description: |
   агент или человек принимает архитектурное решение, затрагивающее ≥ 2
   модуля или меняющее схему БД / контракт между слоями.
   Триггеры: adr, decision, supersede, deprecate, rationale, trade-off,
-  architecture, alternative, choose, switch, replace, migrate.
+  architecture, alternative, choose, switch, replace, migrate,
+  open question, question, вопрос, открытый вопрос, question_create,
+  question_resolve, OQ.
 ---
 
 # Skill — ADR Author
@@ -35,6 +37,29 @@ description: |
 - мелких рефакторов / переименований;
 - багфиксов без архитектурных следствий;
 - выбора имени переменной / стиля кода (это standards, не ADR).
+
+## Вопрос вместо ADR
+
+Решения ещё нет и варианта-фаворита тоже — это **открытый вопрос**, не ADR.
+Вопрос — сущность БД (`question_*`, `cod-doc question`, веб
+`/p/<slug>/questions`), в markdown он не пишется: ни раздела «Open
+questions» в документе, ни файла `open-questions/*.md`.
+
+- Заведи: `question_create(project, title, question, context, options=[…],
+  links=[…])`. Варианты — `{"title", "body"}`, плюсы и минусы в `body`.
+- Сошлись на то, чего вопрос касается: `question_link(to_kind=…)` —
+  `document`, `section` (`<doc_key>#<anchor>`), `code` (`path`,
+  `path#symbol`, `path#L10-L20`), `task` (`relation="blocks"` — задача
+  ждёт ответа), `adr`, `story`, `scenario`, `finding`, `url`. Код
+  проверяется тем же правилом, что ссылки в документах; `question_verify`
+  перепроверяет всё.
+- Задача, которая добывает ответ: `task_create(..., addresses=["Q-021"])`.
+- Решили — запиши ADR и закрой вопрос: `question_resolve(by_adr="ADR-NNN",
+  chosen_option=N)`. Решение без ADR — `resolution="…"`; вопрос снят без
+  ответа — `question_drop(resolution="почему")`.
+- Нашёл старый документ `type: open-question` — перенеси его:
+  `question_import(doc_key)` (сначала план, `dry_run=false` — применить;
+  документ и файл удаляются).
 
 ## Структура ADR
 

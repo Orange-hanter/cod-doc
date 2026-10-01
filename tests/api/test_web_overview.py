@@ -125,7 +125,7 @@ def overview_client(tmp_path: Path, migrate_db):
             owner="docs",
             author="human:dakh",
         )
-        projection_service.export_document(session, doc.row_id, root_path=repo)
+        projection_service.export_document(session, doc.row_id, root_path=repo, author="human:test")
         routine_service.create(
             session,
             proj.row_id,

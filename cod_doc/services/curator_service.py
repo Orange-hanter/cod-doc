@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -40,6 +40,11 @@ _CURATOR_SKILLS: tuple[str, ...] = (
 #: ``limit``, но карточка остаётся обозримой даже при большом хвосте.
 _FINDINGS_CAP = 50
 
+#: Потолки раздела вопросов в карточке и порог «застоявшегося» вопроса.
+_QUESTION_LINKS_CAP = 20
+_STALE_QUESTIONS_CAP = 10
+_QUESTION_STALE_DAYS = 30
+
 #: Сколько ключей advisory-документов перечислять в карточке. Остальные
 #: отражены только в ``advisory.count``: список нужен как образец, а не как
 #: реестр — полный даёт ``ctx_drift``.
@@ -48,24 +53,43 @@ _ADVISORY_KEYS_CAP = 10
 # --------------------------------------------------------------------- #
 # Порядок очереди. Числа — ранги сортировки, не «важность в процентах».  #
 # Шкала одна на все виды находок, поэтому и живёт одной таблицей:        #
-# missing > edited_in_place > LINK-BROKEN > hash BROKEN > hash STALE >   #
-# stale_export > finding.                                               #
+# missing > conflict > edited_in_place > LINK-BROKEN > hash BROKEN >     #
+# hash STALE > stale_export > finding.                                  #
 # --------------------------------------------------------------------- #
 _RANK_DRIFT_MISSING = 0
-_RANK_DRIFT_EDITED = 1
-_RANK_LINK_BROKEN = 2
-_RANK_MASTER_BROKEN = 3
-_RANK_MASTER_STALE = 4
-_RANK_DRIFT_STALE_EXPORT = 5
+# ACU-001: правки с обеих сторон. Выше edited_in_place: там import чинит
+# без потерь, здесь любой автоматический шаг теряет одну из правок.
+_RANK_DRIFT_CONFLICT = 1
+_RANK_DRIFT_EDITED = 2
+_RANK_LINK_BROKEN = 3
+_RANK_MASTER_BROKEN = 4
+_RANK_MASTER_STALE = 5
+_RANK_DRIFT_STALE_EXPORT = 6
 # ADO-116: неразложенные документы. Ниже всего, что рвёт целостность, — они
 # находимы поиском и не теряются, — но выше внешних находок: пока корпус не
 # разложен, навигация по нему не работает, а RFC 25 §3.1 прямо относит
 # «неклассифицированный import» к работе куратора.
-_RANK_UNPLACED = 6
-_RANK_FINDING = 7
+_RANK_UNPLACED = 7
+_RANK_FINDING = 8
+# OQM-005: битая ссылка открытого вопроса рвёт навигацию так же, как битая
+# ссылка в документе, — тот же ранг. Застоявшийся вопрос — не поломка, а
+# напоминание: ниже всех внешних находок.
+_RANK_QUESTION_LINK_BROKEN = _RANK_LINK_BROKEN
+# OQM-010: задачи под вопрос закрыты, а вопрос открыт — почти наверняка
+# забытый ответ. Важнее «давно не трогали»: здесь есть что сделать прямо сейчас.
+_RANK_QUESTION_ANSWERED = 9
+# ACU-007 (RFC 28 §3.5): предложения, которые куратор оставил человеку
+# (approval и открытые вопросы автора `agent:curator`). Тот же ярус, что и
+# находки: ход за человеком, но целостность корпуса не страдает.
+_RANK_PROPOSALS = _RANK_FINDING
+
+#: Автор, под которым фоновый куратор пишет предложения (RFC 28 §3.10 п.7).
+CURATOR_AUTHOR = "agent:curator"
+_RANK_QUESTION_STALE = 10
 
 _DRIFT_RANK: dict[str, int] = {
     "missing": _RANK_DRIFT_MISSING,
+    "conflict": _RANK_DRIFT_CONFLICT,
     "edited_in_place": _RANK_DRIFT_EDITED,
     "stale_export": _RANK_DRIFT_STALE_EXPORT,
 }
@@ -101,7 +125,7 @@ _NEXT_ACTIONS: tuple[str, ...] = (
 )
 
 _SUCCESS_CRITERIA: tuple[str, ...] = (
-    "ctx_drift(project) не показывает missing / edited_in_place / stale_export.",
+    "ctx_drift(project) не показывает missing / conflict / edited_in_place / stale_export.",
     "Ни одной нерезолвящейся ссылки (LINK-BROKEN) в затронутых документах.",
     "Реестр хэшей MASTER.md без BROKEN / STALE.",
     "Открытые findings либо промоутнуты в задачу, либо сняты с обоснованием.",
@@ -229,6 +253,93 @@ def _findings_card(session: Session, project_id: int) -> list[dict[str, Any]]:
     return list_findings(session, project_id, status="open", limit=_FINDINGS_CAP)
 
 
+def _questions_card(session: Session, project_id: int) -> dict[str, Any]:
+    """Открытые вопросы, требующие внимания: битые ссылки и застоявшиеся.
+
+    Битость — по последнему ``question verify``: карточка только читает и сама
+    ссылки не перепроверяет.
+    """
+    from cod_doc.domain.entities import QuestionStatus
+    from cod_doc.services import question_service
+
+    broken = question_service.broken_links(session, project_id=project_id)
+    cutoff = datetime.now(UTC) - timedelta(days=_QUESTION_STALE_DAYS)
+    stale = [
+        {"question_id": q.question_id, "title": q.title, "priority": q.priority.value}
+        for q in question_service.list_for_project(session, project_id, status=QuestionStatus.OPEN)
+        if q.last_updated is not None and _as_utc(q.last_updated) < cutoff
+    ]
+    return {
+        "broken_links": [
+            {
+                "question_id": b.question_id,
+                "to_kind": b.to_kind,
+                "to_ref": b.to_ref,
+                "broken_reason": b.broken_reason,
+            }
+            for b in broken[:_QUESTION_LINKS_CAP]
+        ],
+        "stale": stale[:_STALE_QUESTIONS_CAP],
+        "answered": question_service.answered_by_tasks(session, project_id)[:_STALE_QUESTIONS_CAP],
+    }
+
+
+def _as_utc(value: datetime) -> datetime:
+    """SQLite отдаёт время без таймзоны; в БД оно всегда UTC."""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _question_priorities(card: dict[str, Any], slug: str) -> list[tuple[int, dict[str, str]]]:
+    """Пункты очереди по вопросам: по одному на битую ссылку и на застоявшийся вопрос."""
+    items: list[tuple[int, dict[str, str]]] = []
+    for b in card["broken_links"]:
+        qid = b["question_id"]
+        items.append(
+            (
+                _RANK_QUESTION_LINK_BROKEN,
+                {
+                    "kind": "question_link",
+                    "ref": f"{qid} → {b['to_kind']}:{b['to_ref']}",
+                    "reason": str(b["broken_reason"] or "ссылка вопроса не резолвится"),
+                    "suggested_action": f"cod-doc question show {qid} -p {slug}",
+                },
+            )
+        )
+    for q in card["answered"]:
+        qid = q["question_id"]
+        tasks = ", ".join(q["tasks"])
+        items.append(
+            (
+                _RANK_QUESTION_ANSWERED,
+                {
+                    "kind": "question_answered",
+                    "ref": qid,
+                    "reason": f"все задачи под вопрос сделаны ({tasks}) — {q['title']}",
+                    "suggested_action": (
+                        f'cod-doc question resolve {qid} -p {slug} -r "ответ из {tasks}"'
+                    ),
+                },
+            )
+        )
+    for q in card["stale"]:
+        qid = q["question_id"]
+        items.append(
+            (
+                _RANK_QUESTION_STALE,
+                {
+                    "kind": "question",
+                    "ref": qid,
+                    "reason": (
+                        f"{q['priority']}: открыт больше {_QUESTION_STALE_DAYS} дней "
+                        f"без правок — {q['title']}"
+                    ),
+                    "suggested_action": f"cod-doc question show {qid} -p {slug}",
+                },
+            )
+        )
+    return items
+
+
 def _drift_priority(issue: dict[str, Any], slug: str) -> tuple[int, dict[str, str]] | None:
     """Пункт очереди по одной drift-находке, или ``None`` для ``in_sync``.
 
@@ -244,6 +355,12 @@ def _drift_priority(issue: dict[str, Any], slug: str) -> tuple[int, dict[str, st
     if status == "edited_in_place":
         reason = f"файл {path} правился на диске — правка не доехала до БД"
         action = f"cod-doc doc import {path} -p {slug}"
+    elif status == "conflict":
+        reason = (
+            f"после выгрузки правили и БД, и файл {path} — ни import, ни export "
+            "не сведут их без потери; решает человек"
+        )
+        action = f"cod-doc doc export {doc_key} -p {slug} --dry-run"
     elif status == "missing":
         reason = f"документ есть в БД, файла {path} нет на диске"
         action = f"cod-doc doc export {doc_key} -p {slug}"
@@ -338,11 +455,49 @@ def _unplaced_priority(card: dict[str, Any], slug: str) -> tuple[int, dict[str, 
     }
 
 
+def _pending_proposals(session: Session, project_id: int) -> int:
+    """Сколько решений ждёт человек от куратора: approval + открытые вопросы."""
+    from sqlalchemy import func, select
+
+    from cod_doc.infra.models import ApprovalModel
+    from cod_doc.infra.models.questions import OpenQuestionModel
+
+    approvals = session.execute(
+        select(func.count()).where(
+            ApprovalModel.project_id == project_id,
+            ApprovalModel.status == "pending",
+            ApprovalModel.requested_by == CURATOR_AUTHOR,
+        )
+    ).scalar_one()
+    questions = session.execute(
+        select(func.count()).where(
+            OpenQuestionModel.project_id == project_id,
+            OpenQuestionModel.status == "open",
+            OpenQuestionModel.author == CURATOR_AUTHOR,
+        )
+    ).scalar_one()
+    return int(approvals) + int(questions)
+
+
+def _proposals_priority(count: int, slug: str) -> tuple[int, dict[str, str]] | None:
+    if not count:
+        return None
+    return _RANK_PROPOSALS, {
+        "kind": "proposals",
+        "ref": f"{count} pending",
+        "reason": f"куратор ждёт решения по {count} предложениям (approval и вопросы)",
+        "suggested_action": (
+            f'approval_list(project="{slug}", status="pending"); cod-doc question list -p {slug}'
+        ),
+    }
+
+
 def _build_priority(
     card: dict[str, Any],
     *,
     slug: str,
     master_rel: str,
+    pending_proposals: int = 0,
 ) -> list[dict[str, str]]:
     """Свести четыре источника в одну очередь и отсортировать по рангу.
 
@@ -356,9 +511,13 @@ def _build_priority(
     ranked.extend(_link_priority(link, slug) for link in card["links"])
     ranked.extend(item for item in master_items if item is not None)
     ranked.extend(_finding_priority(f, slug) for f in card["findings"])
+    ranked.extend(_question_priorities(card["questions"], slug))
     unplaced = _unplaced_priority(card["unplaced"], slug)
     if unplaced is not None:
         ranked.append(unplaced)
+    proposals = _proposals_priority(pending_proposals, slug)
+    if proposals is not None:
+        ranked.append(proposals)
     ranked.sort(key=lambda pair: pair[0])
     return [item for _rank, item in ranked]
 
@@ -402,7 +561,7 @@ def next(
             так что этот флаг — единственный путь куратора к телам.
 
     Returns:
-        ``{"card": {drift, links, master, findings, unplaced},
+        ``{"card": {drift, links, master, findings, unplaced, questions},
         "priority": [...], "navigation": {...}, "meta": {...}}``. Карточка —
         полный срез, ``priority`` — усечённая очередь действий по нему.
 
@@ -431,8 +590,10 @@ def next(
         "master": _master_card(master_path, root_path),
         "findings": _findings_card(session, project_id),
         "unplaced": _unplaced_card(session, project_id),
+        "questions": _questions_card(session, project_id),
     }
-    priority = _build_priority(card, slug=slug, master_rel=master_rel)
+    pending = _pending_proposals(session, project_id)
+    priority = _build_priority(card, slug=slug, master_rel=master_rel, pending_proposals=pending)
     # Очередь собрана по полным находкам (reason берётся из title); в самой
     # карточке title и path — повтор priority[].reason и doc_key.
     card["links"] = [
@@ -449,6 +610,10 @@ def next(
             "master": len(card["master"]),
             "findings": len(card["findings"]),
             "unplaced": card["unplaced"]["count"],
+            "question_links": len(card["questions"]["broken_links"]),
+            "questions_stale": len(card["questions"]["stale"]),
+            "questions_answered": len(card["questions"]["answered"]),
+            "pending_proposals": pending,
             "priority_total": len(priority),
         },
     }

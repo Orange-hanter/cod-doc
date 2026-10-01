@@ -113,7 +113,7 @@ def test_export_creates_file_and_updates_hash(engine_with_schema, root_path: Pat
         p = _seed_project(session)
         doc_id = _make_doc(session, p, doc_key="modules/guide")
 
-        result = proj.export_document(session, doc_id, root_path=root_path)
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
         assert result.written is True
         assert result.path == root_path / "modules/guide.md"
@@ -132,10 +132,10 @@ def test_export_skips_when_hash_matches(engine_with_schema, root_path: Path) -> 
         p = _seed_project(session)
         doc_id = _make_doc(session, p)
 
-        first = proj.export_document(session, doc_id, root_path=root_path)
+        first = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
         assert first.written is True
 
-        second = proj.export_document(session, doc_id, root_path=root_path)
+        second = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
         assert second.written is False
         assert second.content_hash == first.content_hash
 
@@ -146,8 +146,10 @@ def test_export_force_rewrites_even_when_in_sync(engine_with_schema, root_path: 
         p = _seed_project(session)
         doc_id = _make_doc(session, p)
 
-        proj.export_document(session, doc_id, root_path=root_path)
-        result = proj.export_document(session, doc_id, root_path=root_path, force=True)
+        proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+        result = proj.export_document(
+            session, doc_id, root_path=root_path, force=True, author="human:test"
+        )
         assert result.written is True
 
 
@@ -157,7 +159,7 @@ def test_export_creates_parent_directories(engine_with_schema, root_path: Path) 
         p = _seed_project(session)
         doc_id = _make_doc(session, p, doc_key="a/b/c/nested")
 
-        result = proj.export_document(session, doc_id, root_path=root_path)
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
         assert result.path.exists()
         assert result.path.parent.is_dir()
 
@@ -168,7 +170,7 @@ def test_export_reruns_after_content_change(engine_with_schema, root_path: Path)
         p = _seed_project(session)
         doc_id = _make_doc(session, p)
 
-        first = proj.export_document(session, doc_id, root_path=root_path)
+        first = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
         # Modify the document; hash in DB should differ from projection_hash.
         docs.add_section(
@@ -182,7 +184,7 @@ def test_export_reruns_after_content_change(engine_with_schema, root_path: Path)
             author="human:test",
         )
 
-        second = proj.export_document(session, doc_id, root_path=root_path)
+        second = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
         assert second.written is True
         assert second.content_hash != first.content_hash
 
@@ -208,7 +210,7 @@ def test_detect_drift_in_sync_after_export(engine_with_schema, root_path: Path) 
         p = _seed_project(session)
         doc_id = _make_doc(session, p)
 
-        proj.export_document(session, doc_id, root_path=root_path)
+        proj.export_document(session, doc_id, root_path=root_path, author="human:test")
         report = proj.detect_drift(session, doc_id, root_path=root_path)
         assert report.status is proj.DriftStatus.IN_SYNC
 
@@ -219,7 +221,7 @@ def test_detect_drift_stale_export_after_db_change(engine_with_schema, root_path
         p = _seed_project(session)
         doc_id = _make_doc(session, p)
 
-        proj.export_document(session, doc_id, root_path=root_path)
+        proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
         # Mutate DB without re-exporting.
         docs.add_section(
@@ -243,13 +245,165 @@ def test_detect_drift_edited_in_place(engine_with_schema, root_path: Path) -> No
         p = _seed_project(session)
         doc_id = _make_doc(session, p)
 
-        result = proj.export_document(session, doc_id, root_path=root_path)
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
         # Simulate in-place edit of the markdown file.
         result.path.write_text(result.path.read_text() + "\n# Extra\n", encoding="utf-8")
 
         report = proj.detect_drift(session, doc_id, root_path=root_path)
         assert report.status is proj.DriftStatus.EDITED_IN_PLACE
+
+
+def _add_db_section(session: Session, doc_id: int) -> None:
+    docs.add_section(
+        session,
+        document_id=doc_id,
+        anchor="s",
+        heading="S",
+        level=2,
+        position=0,
+        body="X\n",
+        author="human:test",
+    )
+
+
+def test_detect_drift_conflict_when_db_and_file_both_changed(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path
+) -> None:
+    """ACU-001: правка в БД и правка файла после одной выгрузки — конфликт.
+
+    Раньше первая ветка классификатора смотрела только на БД и называла это
+    ``stale_export``, а куратор советовал ``doc export`` — выгрузку, которая
+    затёрла бы ручную правку файла, не будь у неё собственного guard'а.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+        _add_db_section(session, doc_id)
+        result.path.write_text(result.path.read_text() + "\nHand edit.\n", encoding="utf-8")
+
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.status is proj.DriftStatus.CONFLICT
+
+
+def test_detect_drift_stale_export_when_file_is_the_accepted_import(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path
+) -> None:
+    """Файл = принятый импорт, БД ушла вперёд — это не конфликт, а stale_export."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+
+        imported = "---\ntitle: Imported\n---\n# Imported\n\nHand-kept markdown.\n"
+        (root_path / "test-doc.md").write_text(imported, encoding="utf-8")
+
+        from cod_doc.infra.models import DocumentModel
+        from cod_doc.services.projection_service._safety import _sha256
+        from cod_doc.services.projection_service.render import render_markdown
+
+        model = session.get(DocumentModel, doc_id)
+        assert model is not None
+        model.content_sha256_head = _sha256(imported)
+        model.projection_hash = _sha256(render_markdown(session, doc_id))
+        session.flush()
+
+        _add_db_section(session, doc_id)
+
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.status is proj.DriftStatus.STALE_EXPORT
+
+
+@pytest.mark.parametrize("edit_file", [False, True])
+def test_drift_status_predicts_the_export_guard(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path, edit_file: bool
+) -> None:
+    """``conflict`` ⇔ export откажет; ``stale_export`` ⇔ export пройдёт.
+
+    Статус и guard выгрузки обязаны отвечать одинаково: иначе очередь куратора
+    ставит пункт «сделай export», который упадёт на ExportGuardError.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+        _add_db_section(session, doc_id)
+        if edit_file:
+            result.path.write_text(result.path.read_text() + "\nHand edit.\n", encoding="utf-8")
+
+        status = proj.detect_drift(session, doc_id, root_path=root_path).status
+        if edit_file:
+            assert status is proj.DriftStatus.CONFLICT
+            with pytest.raises(proj.ExportGuardError):
+                proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+        else:
+            assert status is proj.DriftStatus.STALE_EXPORT
+            proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+
+
+def test_export_into_another_tree_leaves_the_baseline_alone(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path, tmp_path: Path
+) -> None:
+    """ACU-003: выгрузка в клон куратора не двигает projection_hash.
+
+    Иначе нетронутый файл владельца стал бы edited_in_place, и следующий
+    `cod-doc update` импортировал бы его поверх БД.
+    """
+    factory = make_session_factory(engine_with_schema)
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+        exported = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+        baseline = proj.detect_drift(session, doc_id, root_path=root_path).projection_hash
+        _add_db_section(session, doc_id)
+        # В клоне — не выгрузка и не импорт (та же форма, другое тело): проверку
+        # «наш ли файл» делает вызывающий, проверки формы остаются.
+        (clone / "test-doc.md").write_text(
+            exported.path.read_text(encoding="utf-8") + "\nforeign edit\n", encoding="utf-8"
+        )
+
+        result = proj.export_document(
+            session, doc_id, root_path=clone, author="agent:curator", record_projection=False
+        )
+
+        assert result.written
+        report = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert report.projection_hash == baseline
+        assert report.status is proj.DriftStatus.STALE_EXPORT
+
+
+def test_file_matching_the_db_render_is_in_sync_and_export_adopts_it(  # type: ignore[no-untyped-def]
+    engine_with_schema, root_path: Path
+) -> None:
+    """ACU-003: состояние владельца после мержа sync PR.
+
+    Файл уже равен рендеру БД, а projection_hash — старый: выгрузка шла в
+    клоне. Это in_sync, а не conflict; обычная выгрузка проходит guard
+    (перезапись тем же содержимым ничего не теряет) и ставит базовую линию.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p = _seed_project(session)
+        doc_id = _make_doc(session, p)
+        result = proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+        _add_db_section(session, doc_id)
+        result.path.write_text(proj.render_markdown(session, doc_id), encoding="utf-8")
+
+        before = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert before.status is proj.DriftStatus.IN_SYNC
+        assert before.projection_hash != before.db_content_hash
+
+        proj.export_document(session, doc_id, root_path=root_path, author="human:test")
+        after = proj.detect_drift(session, doc_id, root_path=root_path)
+        assert after.status is proj.DriftStatus.IN_SYNC
+        assert after.projection_hash == after.db_content_hash
 
 
 def test_detect_drift_accepts_imported_file_hash_baseline(
@@ -290,7 +444,7 @@ def test_detect_project_drift_returns_counts_and_issues(
         p = _seed_project(session)
         synced_id = _make_doc(session, p, doc_key="synced")
         _make_doc(session, p, doc_key="missing")
-        proj.export_document(session, synced_id, root_path=root_path)
+        proj.export_document(session, synced_id, root_path=root_path, author="human:test")
 
         report = proj.detect_project_drift(session, p, root_path=root_path)
 
@@ -322,7 +476,9 @@ def test_import_no_op_when_hash_matches(engine_with_schema, root_path: Path) -> 
         p = _seed_project(session)
         doc_id = _make_doc(session, p)
 
-        export_result = proj.export_document(session, doc_id, root_path=root_path)
+        export_result = proj.export_document(
+            session, doc_id, root_path=root_path, author="human:test"
+        )
 
         report = proj.import_document(
             session,
@@ -342,7 +498,9 @@ def test_import_applies_frontmatter_field_changes(engine_with_schema, root_path:
         p = _seed_project(session)
         doc_id = _make_doc(session, p, status=DocumentStatus.DRAFT)
 
-        export_result = proj.export_document(session, doc_id, root_path=root_path)
+        export_result = proj.export_document(
+            session, doc_id, root_path=root_path, author="human:test"
+        )
 
         # Edit the file to change status from draft to active.
         old_content = export_result.path.read_text(encoding="utf-8")
@@ -377,7 +535,9 @@ def test_import_applies_body_changes_and_accepts_file_baseline(
             body="Before.\n",
             author="human:test",
         )
-        export_result = proj.export_document(session, doc_id, root_path=root_path)
+        export_result = proj.export_document(
+            session, doc_id, root_path=root_path, author="human:test"
+        )
 
         new_content = export_result.path.read_text(encoding="utf-8").replace(
             "Before.",
@@ -423,7 +583,7 @@ def test_export_refuses_absolute_path_in_db(engine_with_schema, root_path: Path)
         session.flush()
 
         with pytest.raises(proj.PathEscapeError):
-            proj.export_document(session, doc_id, root_path=root_path)
+            proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
         assert not Path("/etc/cod_doc_pwned").exists()
 
@@ -445,7 +605,7 @@ def test_export_refuses_dotdot_path_in_db(
         session.flush()
 
         with pytest.raises(proj.PathEscapeError):
-            proj.export_document(session, doc_id, root_path=root_path)
+            proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
         # Confirm no file landed in tmp_path's parent (the escape target).
         assert not (tmp_path / "escaped.md").exists()
@@ -493,7 +653,9 @@ def test_drift_reports_a_status_the_db_disagrees_with(engine_with_schema, root_p
     with transactional(factory) as session:
         project_id = _seed_project(session)
         doc_id = _make_doc(session, project_id, status=DocumentStatus.ACTIVE)
-        target = proj.export_document(session, doc_id, root_path=root_path).path
+        target = proj.export_document(
+            session, doc_id, root_path=root_path, author="human:test"
+        ).path
 
         target.write_text(
             target.read_text(encoding="utf-8").replace("status: active", "status: authoritative"),
@@ -520,7 +682,9 @@ def test_drift_reports_a_status_no_version_of_the_db_can_hold(  # type: ignore[n
     with transactional(factory) as session:
         project_id = _seed_project(session)
         doc_id = _make_doc(session, project_id, status=DocumentStatus.ACTIVE)
-        target = proj.export_document(session, doc_id, root_path=root_path).path
+        target = proj.export_document(
+            session, doc_id, root_path=root_path, author="human:test"
+        ).path
 
         target.write_text(
             target.read_text(encoding="utf-8").replace("status: active", "status: marinated"),
@@ -544,7 +708,9 @@ def test_terminal_work_status_round_trips_without_metadata_drift(  # type: ignor
     with transactional(factory) as session:
         project_id = _seed_project(session)
         doc_id = _make_doc(session, project_id, status=status)
-        target = proj.export_document(session, doc_id, root_path=root_path).path
+        target = proj.export_document(
+            session, doc_id, root_path=root_path, author="human:test"
+        ).path
         assert f"status: {status.value}" in target.read_text(encoding="utf-8")
 
         report = proj.detect_drift(session, doc_id, root_path=root_path)
@@ -580,7 +746,7 @@ def test_project_drift_lists_a_metadata_mismatch_even_when_content_is_in_sync(  
         )
         doc_id = report.document.row_id
         assert doc_id is not None
-        proj.export_document(session, doc_id, root_path=root_path)
+        proj.export_document(session, doc_id, root_path=root_path, author="human:test")
 
         summary = proj.detect_project_drift(session, project_id, root_path=root_path)
         assert summary.counts["metadata_mismatch"] == 1

@@ -539,6 +539,7 @@ def register(mcp: FastMCP) -> None:
         force: bool = False,
         dry_run: bool = False,
         force_write: bool = False,
+        author: str = "mcp",
     ) -> dict[str, Any]:
         """Export a document projection to disk. Returns {path, written, content_hash, diff}.
         Skips if projection_hash already matches current DB content (unless force=true).
@@ -549,7 +550,8 @@ def register(mcp: FastMCP) -> None:
         (ADO-015) to rewrite the `type:` of a row whose stored type is an older
         build's coercion — apply migration 0026 (`cod-doc project init`) first.
         Preview with dry_run=true (returns a unified diff, writes nothing),
-        override with force_write=true.
+        override with force_write=true. A real write leaves a `doc.exported`
+        activity event by `author` (ACU-002).
         """
         from pathlib import Path
 
@@ -567,6 +569,7 @@ def register(mcp: FastMCP) -> None:
                 session,
                 d.row_id,
                 root_path=root,
+                author=author,
                 force=force,
                 dry_run=dry_run,
                 force_write=force_write,
@@ -618,7 +621,7 @@ def register(mcp: FastMCP) -> None:
     @mcp.tool(name="doc_drift")
     def doc_drift(project: str, doc_key: str) -> dict[str, Any]:
         """Detect drift between DB content, projection_hash, and the on-disk file.
-        status: in_sync | stale_export | edited_in_place | missing.
+        status: in_sync | stale_export | edited_in_place | missing | conflict.
         """
         from pathlib import Path
 

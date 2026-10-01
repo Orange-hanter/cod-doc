@@ -158,6 +158,21 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | **Scenarios — сценарии тестирования (RFC 24 §9, авторская половина)** | | | |
 | `GET /p/{slug}/scenarios` | Список сценариев по возможностям: фильтры вид/возможность/статус, счётчики, дрейф проекции | `scenario_service.list_for_project` + `project_coverage` + `projection_service.detect_project_drift` | ✅ | ADO-185 |
 | `GET /p/{slug}/scenarios/{scenario_id}` | Карточка сценария: герой, предусловия, шаги, ожидаемый результат, связи, проекция | `scenario_service.get` + `list_steps` + `list_links` | ✅ | ADO-185 |
+| `GET /p/{slug}/proposals` | Предложения куратора: ждущие `doc_patch` с операцией, обоснованием и diff; открытые вопросы автора `agent:curator` | `approval_service.list_approvals` + `question_service.list_for_project` | ✅ | ACU-011 |
+| `POST /p/{slug}/proposals/{approval_id}/approve` | Одобрить: правка применяется в той же транзакции (ACU-009) или approval истекает как устаревший → редирект с `?notice=` | `approval_service.resolve` | ✅ | ACU-011 |
+| `POST /p/{slug}/proposals/{approval_id}/deny` | Отклонить с причиной (`decision_comment`; куратор не повторит 30 дней) | `approval_service.resolve` | ✅ | ACU-011 |
+| `GET /p/{slug}/questions` | Открытые вопросы: фильтры статус/приоритет/владелец, счётчики open/resolved/dropped и битых ссылок | `question_service.list_for_project` + `broken_links` | ✅ | OQM-004 |
+| `GET /p/{slug}/questions/new` | Форма нового вопроса: заголовок, вопрос, контекст, приоритет, владелец, варианты построчно | — | ✅ | OQM-004 |
+| `POST /p/{slug}/questions/new` | Создать вопрос → редирект на карточку; ошибка валидации → форма с `?error=` | `question_service.create` | ✅ | OQM-004 |
+| `GET /p/{slug}/questions/{qid}` | Карточка вопроса: вопрос и контекст (markdown), варианты, ссылки с бейджем verify и фрагментом кода, ответ, формы | `question_service.question_to_dict` + `code_excerpt` | ✅ | OQM-004 |
+| `POST /p/{slug}/questions/{qid}/edit` | Правка полей вопроса | `question_service.update` | ✅ | OQM-004 |
+| `POST /p/{slug}/questions/{qid}/resolve` | Закрыть с ответом: выбранный вариант, ADR и/или текст | `question_service.resolve` | ✅ | OQM-004 |
+| `POST /p/{slug}/questions/{qid}/drop` | Снять без ответа с причиной | `question_service.drop` | ✅ | OQM-004 |
+| `POST /p/{slug}/questions/{qid}/reopen` | Переоткрыть вопрос | `question_service.reopen` | ✅ | OQM-004 |
+| `POST /p/{slug}/questions/{qid}/options` | Добавить вариант ответа | `question_service.add_option` | ✅ | OQM-004 |
+| `POST /p/{slug}/questions/{qid}/options/{position}` | Правка (`op=update`) или удаление (`op=delete`) варианта | `question_service.update_option` / `remove_option` | ✅ | OQM-004 |
+| `POST /p/{slug}/questions/{qid}/links` | Добавить ссылку с немедленной проверкой (`op=attach`) или убрать (`op=detach`) | `question_service.link` + `verify_links` / `unlink` | ✅ | OQM-004 |
+| `POST /p/{slug}/questions/{qid}/verify` | Перепроверить ссылки вопроса | `question_service.verify_links` | ✅ | OQM-004 |
 | **Ревизии, рутины, запуски агента**  | | | |
 | `GET /p/{slug}/revisions` | Лог ревизий (фильтр по entity) | `revision_service.list_for_project` | ✅ | WEB-021 |
 | `GET /p/{slug}/routines` | Список routines + история запусков | `routine_service.list_routines` + `history` | ✅ | PCA-919 |

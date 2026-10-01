@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 ContextTargetKind = Literal["document", "task", "plan", "module"]
 ContextDepth = Literal["L0", "L1", "L2", "L3"]
-SearchScope = Literal["task", "doc", "story", "adr", "finding"]
+SearchScope = Literal["task", "doc", "story", "adr", "finding", "question"]
 
 
 class FindingIngestRequest(BaseModel):

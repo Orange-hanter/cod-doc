@@ -298,7 +298,8 @@ def test_show_back_link_is_sticky(scn_client) -> None:  # type: ignore[no-untype
     css = (Path(__file__).resolve().parents[2] / "cod_doc/static/css/_components.css").read_text(
         encoding="utf-8"
     )
-    block = css.split(".adr-back, .scn-back {", 1)[1].split("}", 1)[0]
+    # Правило ищется по вхождению селектора: список селекторов этого правила растёт.
+    block = css.split(".scn-back", 1)[1].split("{", 1)[1].split("}", 1)[0]
     assert "position: sticky" in block
 
 

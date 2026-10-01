@@ -335,7 +335,7 @@ def test_export_with_public_audience_does_not_overwrite_projection_hash(  # type
         pid = _seed_project(session)
         did = _create_doc(session, pid, sensitivity=Sensitivity.CONFIDENTIAL, body="secret-stuff")
         # First, do canonical export to seed projection_hash.
-        proj.export_document(session, did, root_path=tmp_path)
+        proj.export_document(session, did, root_path=tmp_path, author="human:test")
         from cod_doc.infra.models import DocumentModel
 
         canonical_hash = session.get(DocumentModel, did).projection_hash
@@ -344,7 +344,9 @@ def test_export_with_public_audience_does_not_overwrite_projection_hash(  # type
         # Audience export to a sibling directory must not change the hash.
         public_dir = tmp_path / "public"
         public_dir.mkdir()
-        result = proj.export_document(session, did, root_path=public_dir, audience="public")
+        result = proj.export_document(
+            session, did, root_path=public_dir, audience="public", author="human:test"
+        )
         assert session.get(DocumentModel, did).projection_hash == canonical_hash
         # And the public file must NOT contain the secret body. ADO-053: it
         # lives at the audience-suffixed path, not the canonical one.
@@ -368,12 +370,14 @@ def test_audience_export_same_root_keeps_canonical_and_drift_in_sync(  # type: i
     with transactional(factory) as session:
         pid = _seed_project(session)
         did = _create_doc(session, pid, sensitivity=Sensitivity.CONFIDENTIAL, body="secret-stuff")
-        proj.export_document(session, did, root_path=tmp_path)
+        proj.export_document(session, did, root_path=tmp_path, author="human:test")
         canonical_path = tmp_path / session.get(DocumentModel, did).path
         canonical_text = canonical_path.read_text(encoding="utf-8")
         assert "secret-stuff" in canonical_text
 
-        result = proj.export_document(session, did, root_path=tmp_path, audience="public")
+        result = proj.export_document(
+            session, did, root_path=tmp_path, audience="public", author="human:test"
+        )
 
         assert result.path != canonical_path
         assert result.path.name.endswith(".public.md")
@@ -395,8 +399,10 @@ def test_import_after_audience_export_keeps_canonical_body(  # type: ignore[no-u
     with transactional(factory) as session:
         pid = _seed_project(session)
         did = _create_doc(session, pid, sensitivity=Sensitivity.CONFIDENTIAL, body="secret-stuff")
-        proj.export_document(session, did, root_path=tmp_path)
-        proj.export_document(session, did, root_path=tmp_path, audience="public")
+        proj.export_document(session, did, root_path=tmp_path, author="human:test")
+        proj.export_document(
+            session, did, root_path=tmp_path, audience="public", author="human:test"
+        )
 
         canonical_path = tmp_path / session.get(DocumentModel, did).path
         import_service.import_or_update_markdown(

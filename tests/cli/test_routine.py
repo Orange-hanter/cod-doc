@@ -10,7 +10,7 @@ from cod_doc.cli import main
 from cod_doc.config import Config
 from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.repositories import ProjectRepository
-from cod_doc.services import routine_service
+from cod_doc.services import project_service, routine_service
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -62,7 +62,10 @@ def test_routine_list_empty(tmp_path: Path, isolated_cod_doc_home: Path) -> None
         with transactional(factory) as session:
             proj = ProjectRepository(session).get_by_slug("p")
             assert proj is not None and proj.row_id is not None
-            routine_service.delete(session, proj.row_id, "approval_stale_default")
+            # Список — из самого сервиса: новая рутина по умолчанию (ACU-005:
+            # curator_sweep_nightly) не должна ронять этот тест.
+            for name, _check, _cron in project_service._DEFAULT_ROUTINES:
+                routine_service.delete(session, proj.row_id, name)
     finally:
         engine.dispose()
 

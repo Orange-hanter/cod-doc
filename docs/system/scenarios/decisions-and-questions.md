@@ -22,10 +22,10 @@ Capability document: `docs/system/capabilities/decisions-and-questions.md`
 
 | Kind | Count |
 |---|---|
-| `happy_path` | 1 |
-| `error_path` | 1 |
-| `boundary_value` | 1 |
-| `invariant` | 1 |
+| `happy_path` | 2 |
+| `error_path` | 0 |
+| `boundary_value` | 0 |
+| `invariant` | 2 |
 | `integration` | 1 |
 | **total** | **5** |
 
@@ -33,7 +33,7 @@ Capability document: `docs/system/capabilities/decisions-and-questions.md`
 
 **Kind:** `happy_path`
 **Status:** `draft`
-**Anchor:** `docs/system/capabilities/decisions-and-questions#0-as-implemented-2026-09-15`
+**Anchor:** `docs/system/capabilities/decisions-and-questions#0-as-implemented-2026-09-27`
 
 ### Preconditions
 
@@ -51,55 +51,58 @@ The decision is an `ADR-NNN` row, not a free markdown file.
 
 TSC-002. Claims match code as of 2026-09-15.
 
-## SCN-072 — There is no OpenQuestion CRUD MCP tool
+## SCN-072 — question_* tools exist on standard/full and stay off agent/minimal
 
-**Kind:** `error_path`
+**Kind:** `happy_path`
 **Status:** `draft`
-**Anchor:** `docs/system/capabilities/decisions-and-questions#0-as-implemented-2026-09-15`
+**Anchor:** `docs/system/capabilities/decisions-and-questions#0-as-implemented-2026-09-27`
 
 ### Preconditions
 
-The standard MCP catalog is loaded.
+The MCP catalog is built for each profile (agent, minimal, standard, full).
 
 ### Steps
 
-1. List MCP tool names for `question` / `open_question`
+1. List tool names on each profile
+2. Filter names starting with `question_`
 
 ### Expected result
 
-No OpenQuestion create/get/list tools exist.
+All 13 `question_*` tools (create/get/list/update/resolve/drop/reopen, option_add/update/remove, link, verify, import) are present on standard and full and absent on agent and minimal.
 
 ### Notes
 
-TSC-002. Claims match code as of 2026-09-15.
+OQM-003/OQM-006. Rewritten 2026-09-27: until then this scenario asserted that no OpenQuestion tool existed.
 
-## SCN-073 — open-question is a DocumentType without an entity table
+## SCN-073 — An open question never becomes a document or section
 
-**Kind:** `boundary_value`
+**Kind:** `invariant`
 **Status:** `draft`
-**Anchor:** `docs/system/capabilities/decisions-and-questions#0-as-implemented-2026-09-15`
+**Anchor:** `docs/system/capabilities/decisions-and-questions#0-as-implemented-2026-09-27`
 
 ### Preconditions
 
-The domain enum and schema are loaded.
+A project DB at migration 0042 or later.
 
 ### Steps
 
-1. Inspect `DocumentType` and the models package
+1. Count `document` and `section` rows
+2. Create a question with context and options, then resolve it
+3. Count `document` and `section` rows again
 
 ### Expected result
 
-`DocumentType.OPEN_QUESTION` exists; there is no `OpenQuestion` model/table.
+The counts of `document` and `section` rows are unchanged: the question lives only in `open_question` / `open_question_option` / `open_question_link`. `DocumentType.OPEN_QUESTION` stays only for legacy rows, which `question_import` moves into the entity and deletes.
 
 ### Notes
 
-TSC-002. Claims match code as of 2026-09-15.
+OQM-001/OQM-002. Rewritten 2026-09-27: until then this scenario asserted that there was no entity table.
 
 ## SCN-074 — Decisions are the ADR aggregate, not a parallel Decision entity
 
 **Kind:** `invariant`
 **Status:** `draft`
-**Anchor:** `docs/system/capabilities/decisions-and-questions#0-as-implemented-2026-09-15`
+**Anchor:** `docs/system/capabilities/decisions-and-questions#0-as-implemented-2026-09-27`
 
 ### Preconditions
 
@@ -121,7 +124,7 @@ TSC-002. Claims match code as of 2026-09-15.
 
 **Kind:** `integration`
 **Status:** `draft`
-**Anchor:** `docs/system/capabilities/decisions-and-questions#0-as-implemented-2026-09-15`
+**Anchor:** `docs/system/capabilities/decisions-and-questions#0-as-implemented-2026-09-27`
 
 ### Preconditions
 

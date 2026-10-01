@@ -154,6 +154,7 @@ def export_group(
         session,
         document.row_id,
         root_path=root_path,
+        author=author,
         force=force,
         dry_run=dry_run,
         own_checkout_only=own_checkout_only,

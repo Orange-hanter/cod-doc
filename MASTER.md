@@ -17,7 +17,7 @@
 - **Текущий статус:** 🟢 ACTIVE — **M5 «Гейт, которому можно верить + симбиоз в бою» закрыт 2026-09-06**.
   Прогон 2026-09-07: 1639 тестов зелёные, ruff/mypy чистые, ~137 документов
   (`stale_export`=0 после reconcile миграций 0026–0029). Поверхность:
-  154 MCP-тула (профили agent/minimal/standard/full — 6/21/150/154), 12 скиллов, 6 ADR, 25 stories.
+  170 MCP-тула (профили agent/minimal/standard/full — 6/21/166/170), 12 скиллов, 6 ADR, 25 stories.
   CI на main впервые зелёный (`bcb32f2`, [run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088)).
 - **Агент-куратор документации закрыт 2026-09-20; текущий приоритет — adoption через симбиоз.**
   Дефолтный ИИ-агент **не исполняет продуктовые задачи** — поддерживает корпус,
@@ -96,7 +96,7 @@ graph TD
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
-- **Описание:** 28 RFC в семи треках:
+- **Описание:** 27 RFC в семи треках:
   - **01–15 (paperclip-track):** 🟢 Реализованы — адаптация паттернов paperclipai/paperclip
     (skills, heartbeat, wake-payload, run-id, issue docs, checkout, routines,
     status taxonomy, activity log, adapter pattern, AGENTS.md, approvals,
@@ -110,14 +110,6 @@ graph TD
   - **23 (cloud-track):** 🟡 Спроектирован — Cloud decentralized agent plane
     (team-узел в облаке, ИИ-воркеры через remote MCP, SoT = Postgres).
     Задачи CAP-001…CAP-033 не начаты, приоритет ниже adoption.
-  - **29 (cloud-track):** 🟡 Черновик 2026-09-27 — cod-doc remote: облачное
-    хранение и доступ по модели git. Полная локальная реплика у каждой машины,
-    `clone`/`pull`/`push` журнала операций (`sync_op` → changeset) через S3/MinIO
-    или `cod-doc serve`; слияние LWW по полю + 3-way для текстов, конфликты в
-    `curator_next`; аренда блоков человеческих ID; роли reader/writer/admin на
-    проект. Пересматривает premise RFC 23 («сервер — это реплика», без Postgres).
-    Плана нет — оценка ~35 задач в секциях A–F.
-    Файл: `📁 /proposals/29-cloud-remote-sync.md | 🗃️ doc:proposals_29-cloud-remote-sync_md | 🔑 sha:ba03791abf90`
   - **24 (structure-track):** 🟡 Черновик — Единый контур structure/contracts/scenarios
     (docs↔code граница, obligations_export, structure_facts, scenario assessment).
     Поглощает внешнюю часть RFC 17, зависит от RFC 22.
@@ -149,7 +141,7 @@ graph TD
     checkout, который требует `task-flow`. Декомпозиция — план
     `agent-fit-2026-09` (AFT-001…AFT-016), шесть секций.
     Файл: `📁 /proposals/27-agent-fit.md | 🗃️ doc:proposals_27-agent-fit_md | 🔑 sha:a96b5b2fd500`
-- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:6a4cc6657f06`
+- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:420cf2d9d3f0`
 - **Статус:** `🟢 VERIFIED`
 
 ### CI Pipeline (GitHub Actions)
@@ -197,7 +189,7 @@ graph TD
   БД вместо голого markdown, quick start на 5 строк, четыре поверхности,
   таблица ссылок на остальную документацию. Подставляется как
   `long_description` пакета (`pyproject.toml → readme`).
-- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:c8eb078c3139`
+- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:c81363efcc1d`
 - **Статус:** `🟢 VERIFIED`
 
 ### Handbook (пользовательский справочник)
@@ -217,13 +209,13 @@ graph TD
   накопленным markdown: починка конфига, выбор пилота, 4 архетипа проектов,
   ежедневный цикл, известные шероховатости. В отличие от tutorial — про
   живые репозитории, а не про пример с нуля.
-- **Ссылка:** `📁 /docs/adoption-playbook.md | 🗃️ doc:docs_adoption-playbook_md | 🔑 sha:01e5d3bb945c`
+- **Ссылка:** `📁 /docs/adoption-playbook.md | 🗃️ doc:docs_adoption-playbook_md | 🔑 sha:030f64ed9160`
 - **Статус:** `🟢 VERIFIED`
 
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:4a18dffc6fdc`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:cba1839d72eb`
 - **Статус:** `🟢 VERIFIED`
 
 ### Zsh-дополнение
@@ -305,17 +297,17 @@ graph TD
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
 | 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `3d030c8712e8` | 2026-09-20 | 🟢 VERIFIED |
-| 3 | proposals/README.md | `doc:proposals_README_md` | `6a4cc6657f06` | 2026-09-20 | 🟢 VERIFIED |
+| 3 | proposals/README.md | `doc:proposals_README_md` | `420cf2d9d3f0` | 2026-09-20 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `7c133a394eb3` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `90c54859cba1` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
 | 7 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-09-11 | 🟡 LEGACY |
 | 8 | Доменные модели (legacy) | `doc:models_domain_md` | `8ce613932ac9` | 2026-09-17 | 🟡 LEGACY |
-| 9 | README (витрина) | `doc:README_md` | `c8eb078c3139` | 2026-09-11 | 🟢 VERIFIED |
+| 9 | README (витрина) | `doc:README_md` | `c81363efcc1d` | 2026-09-11 | 🟢 VERIFIED |
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `b471c0708631` | 2026-09-20 | 🟢 VERIFIED |
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
-| 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `01e5d3bb945c` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `4a18dffc6fdc` | 2026-09-20 | 🟢 VERIFIED |
+| 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `030f64ed9160` | 2026-09-11 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `cba1839d72eb` | 2026-09-20 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `49f6f7dc65d1` | 2026-09-20 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `b1589ce06444` | 2026-09-20 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |

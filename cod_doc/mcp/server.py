@@ -35,6 +35,7 @@ from cod_doc.mcp.tools import (
     legacy_agent_tools,
     link_tools,
     plan_tools,
+    question_tools,
     repair_tools,
     revision_tools,
     routine_tools,
@@ -92,6 +93,8 @@ for _module in (
     finding_tools,
     # RFC 24 §9 scenario.* (authoring half; the evidence half is STR-004)
     scenario_tools,
+    # OQM-003 question.* (open questions — DB entity, never projected to markdown)
+    question_tools,
     structure_tools,
     # RFC 25 §3.5 / CUR-016 curator.* (doc card: drift + links + hashes)
     curator_tools,
@@ -166,7 +169,7 @@ def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> Non
     help="Tool-surface profile (default: agent). agent=6 curator tools (RFC 25: "
     "curator_next/ctx_search/ctx_drift/context_get + capabilities/report); "
     "minimal=21 cold-start curated CRUD; "
-    "standard=150 DB-backed tools without legacy; full=154 including legacy "
+    "standard=166 DB-backed tools without legacy; full=170 including legacy "
     "agent tools. Counts enforced by tests/test_server_profiles.py.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")

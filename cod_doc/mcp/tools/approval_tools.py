@@ -36,7 +36,7 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Create a new approval request.
 
-        approval_type: 'plan_review' | 'risky_action' | 'fm_escalation' | 'budget' | 'manual'
+        approval_type: 'plan_review' | 'risky_action' | 'fm_escalation' | 'budget' | 'manual' | 'doc_patch'
         payload: {'title': str, 'summary': str, 'recommendedAction': str, 'risks': list[str]}
         linked_task_refs: task_id strings whose execution is gated by this approval.
         linked_doc_revision_ids: revision_ids of docs this approval references.
@@ -169,11 +169,19 @@ def register(mcp: FastMCP) -> None:
         decision: 'approve' | 'deny'
         resolved_by: operator identifier.
 
-        Returns: {'approval': {...}, 'wake_hint': {...} | null}
+        Returns: {'approval': {...}, 'wake_hint': {...} | null, 'applied': {...} | null}
 
         ``wake_hint`` — if non-null, pass its fields to ``run_agent_once`` to
         resume the requesting agent: wake_reason='approval_resolved',
         task_id=wake_hint.task_id.
+
+        ACU-009: approving a ``doc_patch`` executes its op (closed registry
+        ``CURATOR_OPS``: link_retarget, doc_set_node, question_link_retarget)
+        in the same transaction, authored by ``resolved_by``; ``applied``
+        carries the result. If the target changed since the proposal
+        (``base_revision_id`` ≠ current head) the approval becomes
+        ``expired`` and nothing is written. A failing op rolls the approval
+        back to ``pending``.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import activity_service, approval_service

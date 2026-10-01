@@ -35,7 +35,7 @@ changed it.
 - **Built for LLM agents.** The default `agent` MCP profile is a 6-tool
   documentation curator (`agent_capabilities`, `curator_next`, `ctx_search`,
   `ctx_drift`, `context_get`, `agent_report`): one queue of what to fix, with a
-  ready command per item — no 154-tool cold start. Task-centric tools (`agent_pick`,
+  ready command per item — no 170-tool cold start. Task-centric tools (`agent_pick`,
   `task_checkout`, `task_complete`, …) are not in the `agent` profile: they are
   visible only on `--profile standard` / `full`, where coding agents execute tasks.
 - **Zero infrastructure.** Python 3.13+ and the SQLite that ships with it. No
@@ -67,7 +67,7 @@ cod-doc-mcp --profile agent           # MCP over stdio for Claude Code / Desktop
 | Surface | Entry point | For |
 |---|---|---|
 | CLI | `cod-doc` | day-to-day human work; `task`, `doc`, `plan`, `story`, `link`, `adr` groups |
-| MCP | `cod-doc-mcp` | LLM agents; profiles `agent` (6 curator tools, default), `minimal` (21), `standard` (150), `full` (154) |
+| MCP | `cod-doc-mcp` | LLM agents; profiles `agent` (6 curator tools, default), `minimal` (21), `standard` (166), `full` (170) |
 | REST + Web | `cod-doc serve` | dashboards, review, editing in the browser |
 | TUI | `cod-doc tui` | legacy terminal UI |
 

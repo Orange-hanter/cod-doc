@@ -222,7 +222,9 @@ def test_doc_drift_routine_payload_contains_project_summary(engine_with_schema, 
             owner="docs",
             author="human:test",
         )
-        projection_service.export_document(session, synced.row_id, root_path=tmp_path)
+        projection_service.export_document(
+            session, synced.row_id, root_path=tmp_path, author="human:test"
+        )
         routines.create(
             session, proj_id, name="doc_drift", check_name="doc_drift", trigger="manual"
         )
@@ -307,7 +309,9 @@ def test_doc_drift_routine_limit_caps_findings_not_count(engine_with_schema, tmp
                 owner="docs",
                 author="human:test",
             )
-        projection_service.export_document(session, synced.row_id, root_path=tmp_path)
+        projection_service.export_document(
+            session, synced.row_id, root_path=tmp_path, author="human:test"
+        )
 
         result = routines._check_doc_drift(session, proj_id, limit=1)
 
