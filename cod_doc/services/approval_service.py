@@ -426,6 +426,11 @@ def resolve(
         raise ValueError(f"Approval is already {m.status!r}, cannot resolve.")
 
     now = datetime.now(UTC)
+    if m.approval_type == DOC_PATCH and decision == "approve":
+        stale = _doc_patch_stale_reason(session, project_id, m.payload_json or {})
+        if stale is not None:
+            return _expire_stale(session, project_id, m, resolved_by=resolved_by, reason=stale)
+
     m.status = "approved" if decision == "approve" else "denied"
     m.resolved_by = resolved_by
     m.resolved_at = now
@@ -442,6 +447,17 @@ def resolve(
         payload={"decision": decision, "comment": comment},
         summary=f"Approval {approval_id} {decision}d",
     )
+
+    # ACU-009: одобренный doc_patch исполняется здесь же, в транзакции
+    # решения. Исключение в операции откатывает и само одобрение — approval
+    # не может остаться `approved` с неприменённой правкой.
+    applied: dict[str, Any] | None = None
+    if m.approval_type == DOC_PATCH and decision == "approve":
+        from cod_doc.services import curator_ops
+
+        payload = m.payload_json or {}
+        op = curator_ops.require(str(payload.get("op", "")))
+        applied = op.apply(session, project_id, dict(payload.get("args") or {}), resolved_by)
 
     domain = _to_domain(m, session)
 
@@ -460,6 +476,58 @@ def resolve(
     return {
         "approval": _approval_to_dict(domain),
         "wake_hint": wake_hint,
+        "applied": applied,
+    }
+
+
+def _doc_patch_stale_reason(
+    session: Session, project_id: int, payload: dict[str, Any]
+) -> str | None:
+    """Почему doc_patch устарел, или None. Незнакомая операция — ошибка сразу.
+
+    Сверяется голова ревизий предмета правки с той, на которую правка
+    рассчитана. ``base_revision_id`` пуст — предлагавший сверку не просил.
+    """
+    from cod_doc.services import curator_ops
+
+    op = curator_ops.require(str(payload.get("op", "")))
+    base = payload.get("base_revision_id")
+    if base is None:
+        return None
+    head = op.head(session, project_id, dict(payload.get("args") or {}))
+    if head != base:
+        return f"stale_base: правка рассчитана на {base}, голова сейчас {head}"
+    return None
+
+
+def _expire_stale(
+    session: Session,
+    project_id: int,
+    m: ApprovalModel,
+    *,
+    resolved_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Одобрение пришло к устаревшей правке: approval истекает, ничего не пишется."""
+    m.status = "expired"
+    m.resolved_by = resolved_by
+    m.resolved_at = datetime.now(UTC)
+    m.decision_comment = reason
+    session.flush()
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "approval.expired",
+        resolved_by,
+        scope_kind="approval",
+        scope_id=m.approval_id,
+        payload={"reason": reason},
+        summary=f"Approval {m.approval_id} expired: {reason}",
+    )
+    return {
+        "approval": _approval_to_dict(_to_domain(m, session)),
+        "wake_hint": None,
+        "applied": None,
     }
 
 
