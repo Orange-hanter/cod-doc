@@ -69,6 +69,9 @@ def register(mcp: FastMCP) -> None:
             открытые, чьи ``addressed_by``-задачи все сделаны (``answered``).
             ``applicable_skills`` — ``[{name, description}]``, тела (``body``)
             только при ``include_skill_bodies=true``.
+            ``meta.counts.pending_proposals`` — сколько решений ждёт человек
+            от фонового куратора (approval и открытые вопросы автора
+            ``agent:curator``); при ненулевом в очереди пункт ``proposals``.
 
         Read-only: ни одной записи в БД — повторный вызов безопасен.
         """

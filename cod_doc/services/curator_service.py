@@ -78,6 +78,13 @@ _RANK_QUESTION_LINK_BROKEN = _RANK_LINK_BROKEN
 # OQM-010: задачи под вопрос закрыты, а вопрос открыт — почти наверняка
 # забытый ответ. Важнее «давно не трогали»: здесь есть что сделать прямо сейчас.
 _RANK_QUESTION_ANSWERED = 9
+# ACU-007 (RFC 28 §3.5): предложения, которые куратор оставил человеку
+# (approval и открытые вопросы автора `agent:curator`). Тот же ярус, что и
+# находки: ход за человеком, но целостность корпуса не страдает.
+_RANK_PROPOSALS = _RANK_FINDING
+
+#: Автор, под которым фоновый куратор пишет предложения (RFC 28 §3.10 п.7).
+CURATOR_AUTHOR = "agent:curator"
 _RANK_QUESTION_STALE = 10
 
 _DRIFT_RANK: dict[str, int] = {
@@ -448,11 +455,49 @@ def _unplaced_priority(card: dict[str, Any], slug: str) -> tuple[int, dict[str, 
     }
 
 
+def _pending_proposals(session: Session, project_id: int) -> int:
+    """Сколько решений ждёт человек от куратора: approval + открытые вопросы."""
+    from sqlalchemy import func, select
+
+    from cod_doc.infra.models import ApprovalModel
+    from cod_doc.infra.models.questions import OpenQuestionModel
+
+    approvals = session.execute(
+        select(func.count()).where(
+            ApprovalModel.project_id == project_id,
+            ApprovalModel.status == "pending",
+            ApprovalModel.requested_by == CURATOR_AUTHOR,
+        )
+    ).scalar_one()
+    questions = session.execute(
+        select(func.count()).where(
+            OpenQuestionModel.project_id == project_id,
+            OpenQuestionModel.status == "open",
+            OpenQuestionModel.author == CURATOR_AUTHOR,
+        )
+    ).scalar_one()
+    return int(approvals) + int(questions)
+
+
+def _proposals_priority(count: int, slug: str) -> tuple[int, dict[str, str]] | None:
+    if not count:
+        return None
+    return _RANK_PROPOSALS, {
+        "kind": "proposals",
+        "ref": f"{count} pending",
+        "reason": f"куратор ждёт решения по {count} предложениям (approval и вопросы)",
+        "suggested_action": (
+            f'approval_list(project="{slug}", status="pending"); cod-doc question list -p {slug}'
+        ),
+    }
+
+
 def _build_priority(
     card: dict[str, Any],
     *,
     slug: str,
     master_rel: str,
+    pending_proposals: int = 0,
 ) -> list[dict[str, str]]:
     """Свести четыре источника в одну очередь и отсортировать по рангу.
 
@@ -470,6 +515,9 @@ def _build_priority(
     unplaced = _unplaced_priority(card["unplaced"], slug)
     if unplaced is not None:
         ranked.append(unplaced)
+    proposals = _proposals_priority(pending_proposals, slug)
+    if proposals is not None:
+        ranked.append(proposals)
     ranked.sort(key=lambda pair: pair[0])
     return [item for _rank, item in ranked]
 
@@ -544,7 +592,8 @@ def next(
         "unplaced": _unplaced_card(session, project_id),
         "questions": _questions_card(session, project_id),
     }
-    priority = _build_priority(card, slug=slug, master_rel=master_rel)
+    pending = _pending_proposals(session, project_id)
+    priority = _build_priority(card, slug=slug, master_rel=master_rel, pending_proposals=pending)
     # Очередь собрана по полным находкам (reason берётся из title); в самой
     # карточке title и path — повтор priority[].reason и doc_key.
     card["links"] = [
@@ -564,6 +613,7 @@ def next(
             "question_links": len(card["questions"]["broken_links"]),
             "questions_stale": len(card["questions"]["stale"]),
             "questions_answered": len(card["questions"]["answered"]),
+            "pending_proposals": pending,
             "priority_total": len(priority),
         },
     }
