@@ -22,6 +22,7 @@ from . import (
     navigator,
     plans,
     project,
+    proposals,
     questions,
     revisions,
     routines,
@@ -51,6 +52,8 @@ router.include_router(standards.router)
 router.include_router(scenarios.router)
 # OQM-004 open questions — list, card and write forms (DB-only entity).
 router.include_router(questions.router)
+# ACU-011 (RFC 28 §3.6): предложения фонового куратора — doc_patch с diff.
+router.include_router(proposals.router)
 # ADRs — list/show/new/graph + supersede form (ADR-004/005/006).
 # Registered BEFORE docs.router because docs has a `/p/{slug}/docs/...`
 # greedy match that wouldn't shadow `/adr` anyway, but keep next to its

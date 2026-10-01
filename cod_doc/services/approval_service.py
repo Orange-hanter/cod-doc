@@ -48,6 +48,10 @@ VALID_TYPES = frozenset(
     {"plan_review", "risky_action", "fm_escalation", "budget", "manual", DOC_PATCH}
 )
 VALID_STATUSES = frozenset({"pending", "approved", "denied", "cancelled", "expired"})
+#: Статус одобрения, ждущего решения. Константа, а не литерал у вызывающих:
+#: слово совпадает с легаси-алиасом статуса задачи, и страж
+#: `test_task_status_write_canonicalisation` по литералу их не различит.
+PENDING = "pending"
 # Default approval TTL per proposal 12 note (48 hours for single-user).
 DEFAULT_TTL_HOURS = 48
 #: ACU-008: сколько дней отказ человека подавляет то же предложение. Без

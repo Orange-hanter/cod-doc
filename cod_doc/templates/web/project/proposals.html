@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Proposals · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <span>Proposals</span>
+</nav>
+
+{% with slug=project.name, active="proposals" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<header class="page-header">
+  <div>
+    <h1>Предложения куратора</h1>
+    <p class="muted">
+      Готовые правки, которые фоновый куратор не применяет сам: одобрение применяет
+      правку сразу, отказ запоминается на 30 дней. Если документ изменили после
+      предложения, одобрение ничего не запишет — правка устарела.
+    </p>
+  </div>
+  <div class="page-header-actions">
+    <a class="btn" href="/p/{{ project.name }}/run">Прогоны</a>
+  </div>
+</header>
+
+{% if error %}
+  <div class="alert alert-error"><span class="alert-msg">{{ error }}</span></div>
+{% endif %}
+{% if notice %}
+  <div class="alert alert-info"><span class="alert-msg">{{ notice }}</span></div>
+{% endif %}
+
+{% if not proposals %}
+  <div class="tasks-empty">
+    <div class="tasks-empty-icon">✓</div>
+    <p>Предложений, ждущих решения, нет.</p>
+  </div>
+{% else %}
+  <p class="muted">Ждут решения: <strong>{{ total }}</strong></p>
+  {% for p in proposals %}
+    <section class="card proposal-card" id="p-{{ p.approval_id }}">
+      <div class="proposal-head">
+        <span class="badge">{{ p.op }}</span>
+        <code class="mono muted">{{ p.approval_id[:8] }}</code>
+        {% if p.args.doc_key %}<a href="/p/{{ project.name }}/docs/{{ p.args.doc_key }}">{{ p.args.doc_key }}</a>{% endif %}
+        {% if p.args.anchor %}<span class="muted">#{{ p.args.anchor }}</span>{% endif %}
+        {% if p.args.question_id %}<a href="/p/{{ project.name }}/questions/{{ p.args.question_id }}">{{ p.args.question_id }}</a>{% endif %}
+      </div>
+      {% if p.rationale %}<p class="proposal-why">{{ p.rationale }}</p>{% endif %}
+      {% if p.diff_lines %}
+        <pre class="proposal-diff mono">{% for line in p.diff_lines %}<span class="pd-{{ line.kind }}">{{ line.text }}</span>
+{% endfor %}</pre>
+      {% endif %}
+      <div class="proposal-actions">
+        <form method="post" action="/p/{{ project.name }}/proposals/{{ p.approval_id }}/approve">
+          <button class="btn btn-primary" type="submit">Одобрить и применить</button>
+        </form>
+        <form method="post" action="/p/{{ project.name }}/proposals/{{ p.approval_id }}/deny" class="proposal-deny">
+          <input type="text" name="reason" placeholder="Почему нет (запомнится)" aria-label="Причина отказа">
+          <button class="btn" type="submit">Отклонить</button>
+        </form>
+      </div>
+    </section>
+  {% endfor %}
+{% endif %}
+
+{% if curator_questions %}
+  <h2>Вопросы куратора</h2>
+  <p class="muted">Где куратору нужен выбор, а не одобрение готовой правки: документ или код.</p>
+  <ul class="proposal-questions">
+    {% for q in curator_questions %}
+      <li>
+        <a href="/p/{{ project.name }}/questions/{{ q.question_id }}">{{ q.question_id }}</a>
+        {{ q.title }} <span class="muted">· {{ q.priority }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+{% endblock %}
