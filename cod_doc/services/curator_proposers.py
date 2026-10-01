@@ -343,3 +343,87 @@ def _outcome(result: approval_service.DocPatchRequest) -> dict[str, Any]:
         "outcome": result.outcome,
         "approval_id": result.approval.approval_id if result.approval else None,
     }
+
+
+# --------------------------------------------------------------------- #
+# ACU-013: раздел для неразложенного документа                           #
+# --------------------------------------------------------------------- #
+
+#: Сколько тела документа идёт в промпт: заголовок и начало говорят о
+#: назначении больше, чем хвост, а промпт остаётся дешёвым.
+_BODY_CHARS = 2000
+
+
+def _node_prompt(doc_key: str, title: str, doc_type: str, body: str, nodes: list[str]) -> str:
+    numbered = "\n".join(f"{i}. {n}" for i, n in enumerate(nodes, start=1))
+    return (
+        "Ты раскладываешь проектную документацию по разделам дерева.\n"
+        f"Документ: {doc_key}\nЗаголовок: {title}\nТип: {doc_type}\n"
+        f"Начало документа:\n---\n{body}\n---\n"
+        f"Разделы (ключ — название: что в нём должно лежать):\n{numbered}\n\n"
+        "Выбери номер раздела, куда документ кладётся по смыслу, или 0, если ни "
+        "один не подходит. Не выдумывай разделов вне списка.\n"
+        'Ответь только JSON: {"choice": <номер>, "why": "<одна фраза>"}'
+    )
+
+
+def propose_node_placements(
+    session: Session,
+    project_id: int,
+    *,
+    chooser: Chooser,
+    max_proposals: int,
+    author: str,
+    stats: ProposerStats,
+) -> None:
+    """Предложить раздел документам Инбокса, которым не подошло ни одно правило.
+
+    Документы, которые раскладываются правилами, прогон кладёт сам (ACU-004);
+    сюда попадают только оставшиеся. Кандидаты — все разделы дерева, кроме
+    служебного Инбокса; модель выбирает номер, ответ вне списка отбрасывается.
+    """
+    from cod_doc.services import doc_tree_service
+
+    nodes = [n for n in doc_tree_service.list_nodes(session, project_id) if not n.is_inbox]
+    if not nodes:
+        return  # дерева нет: засев — решение человека
+    labels = [f"{n.node_key} — {n.title}: {n.intent or 'назначение не описано'}" for n in nodes]
+    unplaced = doc_tree_service.classify_project(
+        session, project_id=project_id, author=author, dry_run=True
+    ).unplaced
+    for placement in unplaced:
+        if stats.created >= max_proposals:
+            return
+        doc = doc_service.get(session, project_id, placement.doc_key)
+        if doc is None or doc.row_id is None:
+            continue
+        body = (doc_service.render_body(session, doc.row_id) or "")[:_BODY_CHARS]
+        try:
+            picked, why = _choose(
+                chooser,
+                _node_prompt(doc.doc_key, doc.title, str(doc.type), body, labels),
+                labels,
+                stats,
+            )
+        except AIBackendError as exc:
+            stats.reported.append({"kind": "unplaced", "ref": doc.doc_key, "reason": f"LLM: {exc}"})
+            continue
+        if picked is None:
+            stats.reported.append({"kind": "unplaced", "ref": doc.doc_key, "reason": why})
+            continue
+        node_key = nodes[labels.index(picked)].node_key
+        result = approval_service.request_doc_patch(
+            session,
+            project_id,
+            op="doc_set_node",
+            args={"doc_key": doc.doc_key, "node_key": node_key},
+            diff=f"-{doc.doc_key}: Инбокс\n+{doc.doc_key}: {node_key}\n",
+            rationale=why,
+            base_revision_id=revision_service.head_for_entity(
+                session, EntityKind.DOCUMENT, doc.row_id
+            ),
+            requested_by=author,
+        )
+        stats.proposed.append(
+            {"kind": "unplaced", "ref": doc.doc_key, "op": "doc_set_node", **_outcome(result)}
+        )

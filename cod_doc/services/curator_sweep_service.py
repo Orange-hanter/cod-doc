@@ -231,6 +231,16 @@ def _propose(
         author=author,
         stats=stats,
     )
+    # ACU-013: документам, которым не подошло ни одно правило, — раздел на выбор
+    # модели. Общий потолок: `stats.created` считает предложения обоих.
+    curator_proposers.propose_node_placements(
+        session,
+        project_id,
+        chooser=chooser,
+        max_proposals=max_proposals,
+        author=author,
+        stats=stats,
+    )
     report.proposed = stats.proposed
     report.llm_calls = stats.llm_calls
     report.tokens_in = stats.tokens_in
@@ -358,13 +368,20 @@ def _handled_refs(
             handled.add(("drift", str(issue["doc_key"])))
     if synced_master:
         handled.update(("master", str(e["path"])) for e in card["master"] if e["status"] == "STALE")
-    if report.placed and not _still_unplaced(card, report):
+    covered = _covered_unplaced(report)
+    if covered and covered >= int(card["unplaced"]["count"]):
         handled.update(("unplaced", ref) for ref in _unplaced_refs(card))
     return handled
 
 
-def _still_unplaced(card: dict[str, Any], report: SweepReport) -> bool:
-    return int(card["unplaced"]["count"]) > len(report.placed)
+def _covered_unplaced(report: SweepReport) -> int:
+    """Сколько документов Инбокса прогон закрыл: разложил сам или предложил раздел."""
+    proposed = sum(
+        1
+        for p in report.proposed
+        if p["kind"] == "unplaced" and p["outcome"] in ("created", "duplicate")
+    )
+    return len(report.placed) + proposed
 
 
 def _unplaced_refs(card: dict[str, Any]) -> list[str]:
