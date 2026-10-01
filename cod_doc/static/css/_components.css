@@ -3776,3 +3776,38 @@ details > summary { cursor: pointer; }
 .q-guide-list dt:first-child { margin-top: 0; }
 .q-guide-list dd { margin: 2px 0 0; color: var(--muted); line-height: 1.5; }
 .q-guide-steps { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+/* ACU-011: предложения куратора (doc_patch) */
+.proposal-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  padding: var(--space-3);
+  margin: var(--space-3) 0;
+}
+.proposal-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.proposal-why { margin: 8px 0; }
+.proposal-diff {
+  background: var(--bg-alt);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 8px 0;
+}
+.proposal-diff .pd-add { color: var(--success); }
+.proposal-diff .pd-del { color: var(--danger); }
+.proposal-diff .pd-ctx { color: var(--muted); }
+.proposal-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.proposal-deny { display: flex; gap: 6px; align-items: center; }
+.proposal-deny input {
+  min-width: 260px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+.proposal-questions { margin: 0; padding-left: 18px; line-height: 1.7; }
