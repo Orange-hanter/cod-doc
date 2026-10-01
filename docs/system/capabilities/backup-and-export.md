@@ -27,6 +27,12 @@ audience: [contributors, agents]
 ручную правку и чужой checkout. SoT для восстановления — файл
 `.cod-doc/state.db` (+ alembic), не dump-CLI.
 
+> **Пересечение с remote-sync (2026-09-27).** По RFC 29 любой remote хранит
+> полную историю проекта, и `cod-doc clone` восстанавливает его на чистой
+> машине — это закрывает сценарий «потеря диска» без `backup`/`restore`.
+> Автономный архив (§2–3) и нейтральный export (§4) остаются в этой
+> capability. См. [remote-sync.md](remote-sync.md).
+
 ## 1. Зачем
 
 БД (`.cod-doc/state.db`) — источник истины для документов, задач, ссылок и

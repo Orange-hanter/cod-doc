@@ -92,7 +92,7 @@ graph TD
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
   capabilities/*, standards/*, audit/*, roadmap/*, migration/. Это source of
   truth для поведения системы и единая точка входа для контрибьютора.
-- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:80445ede7120`
+- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:6be4408fc0f4`
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
@@ -141,7 +141,7 @@ graph TD
     checkout, который требует `task-flow`. Декомпозиция — план
     `agent-fit-2026-09` (AFT-001…AFT-016), шесть секций.
     Файл: `📁 /proposals/27-agent-fit.md | 🗃️ doc:proposals_27-agent-fit_md | 🔑 sha:a96b5b2fd500`
-- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:4181708ff073`
+- **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:420cf2d9d3f0`
 - **Статус:** `🟢 VERIFIED`
 
 ### CI Pipeline (GitHub Actions)
@@ -296,8 +296,8 @@ graph TD
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
-| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `80445ede7120` | 2026-09-20 | 🟢 VERIFIED |
-| 3 | proposals/README.md | `doc:proposals_README_md` | `4181708ff073` | 2026-09-20 | 🟢 VERIFIED |
+| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `6be4408fc0f4` | 2026-09-20 | 🟢 VERIFIED |
+| 3 | proposals/README.md | `doc:proposals_README_md` | `420cf2d9d3f0` | 2026-09-20 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `7c133a394eb3` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `90c54859cba1` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
