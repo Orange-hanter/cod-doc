@@ -205,6 +205,7 @@ def _check_curator_sweep(
         entry=entry,
         apply=entry.curator_auto,
         sync=entry.curator_sync,
+        propose=entry.curator_llm,
         max_auto=max_auto if max_auto is not None else curator_sweep_service.DEFAULT_MAX_AUTO,
     )
     return {

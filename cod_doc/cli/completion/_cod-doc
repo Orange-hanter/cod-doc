@@ -1035,6 +1035,7 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
     '(--apply)--apply[Писать в БД (по умолчанию — сухой прогон; тот же план, без записи)]' \
     '(--sync)--sync[Выгрузить файлы в клон куратора и обновить PR curator/sync (только…]' \
+    '(--propose)--propose[LLM-предлагатели; новые цели битых ссылок как doc_patch (только с -…]' \
     '(--max-auto)--max-auto=[Потолок записей за прогон]:max-auto' \
     '(--author)--author=:author' \
     '(--json)--json[Вывод в JSON]' \

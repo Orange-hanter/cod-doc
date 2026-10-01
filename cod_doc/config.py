@@ -63,6 +63,9 @@ class ProjectEntry(BaseSettings):
     #: Выгрузка проекций в клон куратора с пушем ветки `curator/sync` и draft
     #: PR. Отдельный флаг: это исходящее действие, а не запись в свою БД.
     curator_sync: bool = False
+    #: ACU-012 (RFC 28 §3.10 п.4): LLM-предлагатели прогона (ссылки, раскладка).
+    #: Фрагменты документов уходят в облачную модель — включается явно.
+    curator_llm: bool = False
 
     @property
     def root(self) -> Path:

@@ -102,6 +102,7 @@ def register(mcp: FastMCP) -> None:
         project: str,
         apply: bool = False,
         sync: bool = False,
+        propose: bool = False,
         max_auto: int = DEFAULT_MAX_AUTO,
         author: str = "agent:curator",
     ) -> dict[str, Any]:
@@ -118,6 +119,8 @@ def register(mcp: FastMCP) -> None:
 
         ``apply=false`` (по умолчанию) — сухой прогон: тот же отчёт, ни одной
         записи. ``sync`` пишет наружу (ветка и PR) и действует только при
+        ``apply=true``. ``propose`` (ACU-012) — LLM-предлагатели: новые цели
+        битых ссылок становятся approval ``doc_patch``; тоже только при
         ``apply=true``. ``max_auto`` — потолок записей в БД за прогон:
         не влезшая группа целиком уходит в ``capped``.
 
@@ -136,6 +139,7 @@ def register(mcp: FastMCP) -> None:
                 entry=entry,
                 apply=apply,
                 sync=sync and apply,
+                propose=propose and apply,
                 max_auto=max_auto,
                 author=author,
             )

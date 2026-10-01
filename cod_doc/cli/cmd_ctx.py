@@ -661,6 +661,12 @@ def ctx_next(
     default=False,
     help="Выгрузить файлы в клон куратора и обновить PR curator/sync (только с --apply)",
 )
+@click.option(
+    "--propose",
+    is_flag=True,
+    default=False,
+    help="LLM-предлагатели: новые цели битых ссылок как doc_patch (только с --apply)",
+)
 @click.option("--max-auto", default=None, type=int, help="Потолок записей за прогон")
 @click.option("--author", default="agent:curator", show_default=True)
 @click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
@@ -670,6 +676,7 @@ def ctx_sweep(
     project: str,
     apply: bool,
     with_sync: bool,
+    propose: bool,
     max_auto: int | None,
     author: str,
     as_json: bool,
@@ -684,6 +691,8 @@ def ctx_sweep(
 
     if with_sync and not apply:
         raise click.UsageError("--sync пишет наружу (ветка и PR) и требует --apply")
+    if propose and not apply:
+        raise click.UsageError("--propose создаёт предложения (approval) и требует --apply")
     cfg: Config = ctx.obj["config"]
     entry = cfg.get_project(project)
     if entry is None:
@@ -697,6 +706,7 @@ def ctx_sweep(
                 entry=entry,
                 apply=apply,
                 sync=with_sync,
+                propose=propose,
                 max_auto=max_auto
                 if max_auto is not None
                 else curator_sweep_service.DEFAULT_MAX_AUTO,
