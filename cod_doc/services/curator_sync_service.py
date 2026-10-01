@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from sqlalchemy import ScalarResult
     from sqlalchemy.orm import Session
 
+    from cod_doc.config import ProjectEntry
     from cod_doc.domain.entities import Document
 
 SYNC_BRANCH = "curator/sync"
@@ -332,4 +333,32 @@ def _pr_body(git: GitRunner, cwd: Path, base_ref: str) -> str:
         "PR только доставляет markdown. Ветка пересобирается от базы, когда та "
         "уходит вперёд.\n\n"
         f"Коммиты:\n{commits}\n"
+    )
+
+
+def clone_dir_for(slug: str) -> Path:
+    """Клон куратора проекта: ``<COD_DOC_HOME>/curator/<slug>`` (RFC 28 §3.8)."""
+    from cod_doc.config import config_dir
+
+    return config_dir() / "curator" / slug
+
+
+def sync_project(
+    session: Session,
+    project_id: int,
+    *,
+    entry: ProjectEntry,
+    author: str = DEFAULT_AUTHOR,
+) -> SyncReport:
+    """ACU-006: выгрузка по записи реестра — вход для рутины, CLI и MCP.
+
+    Координаты (корень чекаута владельца, клон) выводятся здесь одним
+    способом: три поверхности не должны собирать их каждая по-своему.
+    """
+    return export_sync(
+        session,
+        project_id,
+        repo_root=entry.root,
+        clone_dir=clone_dir_for(entry.name),
+        author=author,
     )

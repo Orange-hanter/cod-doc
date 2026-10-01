@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
+    from cod_doc.config import ProjectEntry
     from cod_doc.services.curator_sync_service import SyncReport
 
 DEFAULT_AUTHOR = "agent:curator"
@@ -234,3 +235,36 @@ def _still_unplaced(card: dict[str, Any], report: SweepReport) -> bool:
 
 def _unplaced_refs(card: dict[str, Any]) -> list[str]:
     return [f"{int(card['unplaced']['count'])} docs"]
+
+
+def sweep_project(
+    session: Session,
+    project_id: int,
+    *,
+    entry: ProjectEntry,
+    apply: bool,
+    sync: bool,
+    max_auto: int = DEFAULT_MAX_AUTO,
+    author: str = DEFAULT_AUTHOR,
+) -> SweepReport:
+    """ACU-006: прогон по записи реестра — вход для рутины, CLI и MCP.
+
+    ``apply`` / ``sync`` передаёт вызывающий: рутина берёт их из флагов
+    ``curator_auto`` / ``curator_sync``, человек в CLI и агент в MCP — явно.
+    """
+    from cod_doc.services import curator_sync_service
+
+    def _to_clone(session: Session, project_id: int) -> SyncReport:
+        return curator_sync_service.sync_project(session, project_id, entry=entry, author=author)
+
+    return sweep(
+        session,
+        project_id,
+        root_path=entry.root,
+        master_path=entry.master_path,
+        slug=entry.name,
+        apply=apply,
+        max_auto=max_auto,
+        author=author,
+        sync=_to_clone if sync else None,
+    )

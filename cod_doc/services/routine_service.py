@@ -190,43 +190,27 @@ def _check_curator_sweep(
     ``curator_sync`` вдобавок пушит выгрузку в ветку ``curator/sync`` клона.
     Находки рутины — пункты, оставленные человеку.
     """
-    from cod_doc.config import Config, config_dir
+    from cod_doc.config import Config
     from cod_doc.infra.models.project import ProjectModel
-    from cod_doc.services import curator_sweep_service, curator_sync_service
+    from cod_doc.services import curator_sweep_service
 
     project = session.get(ProjectModel, project_id)
-    root = _get_project_root(session, project_id)
-    if project is None or root is None:
-        return {"findings": [], "findings_count": 0, "note": "project root not found"}
-    entry = Config.load().get_project(project.slug)
-    auto = bool(entry and entry.curator_auto)
-    master = entry.master_path if entry else root / "MASTER.md"
+    entry = Config.load().get_project(project.slug) if project is not None else None
+    if entry is None:
+        return {"findings": [], "findings_count": 0, "note": "project not in registry"}
 
-    clone_dir = config_dir() / "curator" / project.slug
-
-    def _to_clone(session: Session, project_id: int) -> curator_sync_service.SyncReport:
-        return curator_sync_service.export_sync(
-            session, project_id, repo_root=root, clone_dir=clone_dir
-        )
-
-    sync: curator_sweep_service.SyncFn | None = (
-        _to_clone if entry is not None and entry.curator_sync else None
-    )
-
-    report = curator_sweep_service.sweep(
+    report = curator_sweep_service.sweep_project(
         session,
         project_id,
-        root_path=root,
-        master_path=master,
-        slug=project.slug,
-        apply=auto,
+        entry=entry,
+        apply=entry.curator_auto,
+        sync=entry.curator_sync,
         max_auto=max_auto if max_auto is not None else curator_sweep_service.DEFAULT_MAX_AUTO,
-        sync=sync,
     )
     return {
         **report.to_dict(),
-        "mode": "apply" if auto else "dry_run",
-        "sync_enabled": sync is not None,
+        "mode": "apply" if entry.curator_auto else "dry_run",
+        "sync_enabled": entry.curator_sync,
         "findings": report.reported,
         "findings_count": len(report.reported),
     }

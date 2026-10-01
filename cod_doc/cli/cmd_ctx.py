@@ -646,6 +646,132 @@ def ctx_next(
         )
 
 
+@ctx.command("sweep")
+@click.option("--project", "-p", required=True, help="Слаг проекта")
+@click.option(
+    "--apply",
+    is_flag=True,
+    default=False,
+    help="Писать в БД (по умолчанию — сухой прогон: тот же план, без записи)",
+)
+@click.option(
+    "--sync",
+    "with_sync",
+    is_flag=True,
+    default=False,
+    help="Выгрузить файлы в клон куратора и обновить PR curator/sync (только с --apply)",
+)
+@click.option("--max-auto", default=None, type=int, help="Потолок записей за прогон")
+@click.option("--author", default="agent:curator", show_default=True)
+@click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
+@click.pass_context
+def ctx_sweep(
+    ctx: click.Context,
+    project: str,
+    apply: bool,
+    with_sync: bool,
+    max_auto: int | None,
+    author: str,
+    as_json: bool,
+) -> None:
+    """Прогон куратора (RFC 28, ACU-004): сам в БД, файлы в клон, прочее — отчёт.
+
+    Зеркало MCP ``curator_sweep``. Без ``--apply`` ничего не пишет — ни в БД,
+    ни в клон. Файлы чекаута владельца прогон не трогает никогда.
+    """
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import curator_sweep_service
+
+    if with_sync and not apply:
+        raise click.UsageError("--sync пишет наружу (ветка и PR) и требует --apply")
+    cfg: Config = ctx.obj["config"]
+    entry = cfg.get_project(project)
+    if entry is None:
+        raise click.ClickException(f"Проект не найден: {project}")
+    factory, engine, _root = _project_session(cfg, project)
+    try:
+        with transactional(factory, commit=apply) as session:
+            report = curator_sweep_service.sweep_project(
+                session,
+                _require_project_id(session, project),
+                entry=entry,
+                apply=apply,
+                sync=with_sync,
+                max_auto=max_auto
+                if max_auto is not None
+                else curator_sweep_service.DEFAULT_MAX_AUTO,
+                author=author,
+            )
+    finally:
+        engine.dispose()
+
+    payload = {"project": project, **report.to_dict()}
+    if as_json:
+        click.echo(_json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    mode = "запись" if apply else "сухой прогон"
+    console.rule(f"[bold]Прогон куратора — {project} ({mode})[/bold]")
+    repair = report.repair or {}
+    planned = [a for a in repair.get("actions", []) if not a.get("skipped")]
+    console.print(f"В БД: починка {len(planned)}, раскладка {len(report.placed)}")
+    if report.sync is not None:
+        console.print(
+            f"Клон: выгружено {len(report.sync['exported'])}, "
+            f"удалено {len(report.sync['deleted'])}, PR: {report.sync['pr_url'] or '—'}"
+        )
+    for note in report.capped:
+        console.print(f"[yellow]Потолок: {note}[/yellow]")
+    console.print(f"Человеку: [cyan]{len(report.reported)}[/cyan]")
+    for item in report.reported:
+        console.print(f"  {item['kind']:<18} {item['ref']}  [dim]{item['reason']}[/dim]")
+
+
+@ctx.command("sync")
+@click.option("--project", "-p", required=True, help="Слаг проекта")
+@click.option("--author", default="agent:curator", show_default=True)
+@click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
+@click.pass_context
+def ctx_sync(ctx: click.Context, project: str, author: str, as_json: bool) -> None:
+    """Выгрузить проекции в клон куратора и обновить draft PR ``curator/sync``.
+
+    Зеркало MCP ``curator_sync`` (RFC 28 §3.8, ACU-003). Пишет только в клон
+    ``<COD_DOC_HOME>/curator/<slug>`` и в ветку ``curator/sync`` на remote;
+    чекаут владельца и ``main`` не трогаются.
+    """
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import curator_sync_service
+
+    cfg: Config = ctx.obj["config"]
+    entry = cfg.get_project(project)
+    if entry is None:
+        raise click.ClickException(f"Проект не найден: {project}")
+    factory, engine, _root = _project_session(cfg, project)
+    try:
+        with transactional(factory) as session:
+            report = curator_sync_service.sync_project(
+                session, _require_project_id(session, project), entry=entry, author=author
+            )
+    except curator_sync_service.GitError as exc:
+        raise click.ClickException(str(exc)) from exc
+    finally:
+        engine.dispose()
+
+    payload = {"project": project, **report.to_dict()}
+    if as_json:
+        click.echo(_json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    state = "пересобрана" if report.rebuilt else "продолжена"
+    console.print(f"Ветка {report.branch} {state} от {report.base}")
+    console.print(
+        f"Выгружено {len(report.exported)}, удалено {len(report.deleted)}, "
+        f"пропущено {len(report.skipped)}"
+    )
+    for item in report.skipped:
+        console.print(f"  [yellow]{item['path']}[/yellow]  [dim]{item['reason']}[/dim]")
+    console.print(f"PR: {report.pr_url or '—'}")
+
+
 @ctx.command("structure")
 @click.option("--project", "-p", required=True)
 @click.option("--head-sha", default=None)
