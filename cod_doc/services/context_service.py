@@ -889,7 +889,7 @@ def _open_questions(
 
 
 def _master_stale(session: Session, project_id: int) -> bool:
-    """MASTER проекта в ``stale_export``/``edited_in_place`` (RFC 27 F11).
+    """MASTER проекта в ``stale_export``/``edited_in_place``/``conflict`` (RFC 27 F11).
 
     ``master_excerpt`` читается с диска, а не из БД: при дрейфе выдержка
     расходится с БД, и вызывающий должен об этом знать. Нет документа
@@ -926,6 +926,8 @@ def _master_stale(session: Session, project_id: int) -> bool:
     return report.status in {
         projection_service.DriftStatus.STALE_EXPORT,
         projection_service.DriftStatus.EDITED_IN_PLACE,
+        # ACU-001: правки с обеих сторон — выдержка с диска тем более не БД.
+        projection_service.DriftStatus.CONFLICT,
     }
 
 
@@ -958,8 +960,9 @@ def context_get(
     master_content: Optional pre-loaded MASTER.md text for master_excerpt.
                     Выдержка читается с диска, не из БД, поэтому рядом с ней
                     в ``core`` едет ``master_stale: bool`` (RFC 27 F11):
-                    ``True`` — документ ``MASTER.md`` в ``stale_export`` или
-                    ``edited_in_place``, содержимое выдержки расходится с БД
+                    ``True`` — документ ``MASTER.md`` в ``stale_export``,
+                    ``edited_in_place`` или ``conflict``, содержимое выдержки
+                    расходится с БД
                     и доверять ему нельзя. Флаг учитывается в бюджете; не
                     влезла выдержка — нет и флага.
     """

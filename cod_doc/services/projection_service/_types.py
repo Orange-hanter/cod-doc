@@ -15,6 +15,10 @@ class DriftStatus(StrEnum):
     STALE_EXPORT = "stale_export"  # DB changed but not yet exported
     EDITED_IN_PLACE = "edited_in_place"  # file changed after last export
     MISSING = "missing"  # file not on disk
+    # ACU-001: DB changed after the last export AND the file is neither that
+    # export nor the accepted import — exactly the file `export_document`
+    # refuses to overwrite. Neither side may win automatically.
+    CONFLICT = "conflict"
 
 
 # ADO-092: the counts key for documents whose frontmatter disagrees with the

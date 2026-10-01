@@ -370,6 +370,7 @@ _cod-doc() {
         (adapter)    _cod_doc_adapter && ret=0 ;;
         (adr)        _cod_doc_adr && ret=0 ;;
         (agent)      _cod_doc_agent && ret=0 ;;
+        (approval)   _cod_doc_approval && ret=0 ;;
         (audit)      _cod_doc_audit && ret=0 ;;
         (completion) _cod_doc_completion && ret=0 ;;
         (ctx)        _cod_doc_ctx && ret=0 ;;
@@ -414,6 +415,7 @@ _cod-doc() {
     'adapter:Manage LLM adapters (built-in + external plugins).'
     'adr:Manage Architecture Decision Records (new / list / show / supersede…'
     'agent:Управление агентом.'
+    'approval:Одобрения; предложения куратора и прочие решения человека.'
     'audit:Audit document frontmatter (FM-* rules) and optionally drift (DR-00…'
     'completion:Shell-completion для cod-doc.'
     'ctx:Контекст проекта для внешних потребителей (docs / drift / search /…'
@@ -756,6 +758,110 @@ _cod-doc() {
   return ret
 }
 
+(( $+functions[_cod_doc_approval] )) || _cod_doc_approval() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_approval_commands' \
+    '*:: :->cod_doc_approval_cmd' && ret=0
+
+  case $state in
+    (cod_doc_approval_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-approval-$words[1]:"
+      case $words[1] in
+        (approve) _cod_doc_approval_approve && ret=0 ;;
+        (cancel)  _cod_doc_approval_cancel && ret=0 ;;
+        (deny)    _cod_doc_approval_deny && ret=0 ;;
+        (list)    _cod_doc_approval_list && ret=0 ;;
+        (show)    _cod_doc_approval_show && ret=0 ;;
+        (*)       _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_approval_commands] )) || _cod_doc_approval_commands() {
+  local -a cmds
+  cmds=(
+    'approve:Одобрить. У doc_patch правка применяется сразу — или approval истек…'
+    'cancel:Отменить ждущее одобрение (вопрос снят, решать больше нечего).'
+    'deny:Отклонить. Тот же doc_patch куратор не предложит 30 дней.'
+    'list:Список одобрений (по умолчанию — ждущие решения).'
+    'show:Одобрение целиком; у doc_patch — операция, обоснование и diff.'
+  )
+  _describe -t cod-doc-approval-commands 'cod-doc approval command' cmds
+}
+
+(( $+functions[_cod_doc_approval_approve] )) || _cod_doc_approval_approve() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--by)--by=[Кто одобряет]:by' \
+    '(--comment)--comment=:comment' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:approval-id' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_approval_cancel] )) || _cod_doc_approval_cancel() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--reason)--reason=[Почему отменяется]:reason' \
+    '(--by)--by=:by' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:approval-id' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_approval_deny] )) || _cod_doc_approval_deny() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--by)--by=[Кто отклоняет]:by' \
+    '(--reason)--reason=[Почему — запомнится для куратора]:reason' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:approval-id' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_approval_list] )) || _cod_doc_approval_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--status)--status=:status:(pending approved denied cancelled expired all)' \
+    '(--type)--type=[Тип, например doc_patch]:approval-type' \
+    '(--limit)--limit=:limit' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_approval_show] )) || _cod_doc_approval_show() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:approval-id' && ret=0
+  return ret
+}
+
 (( $+functions[_cod_doc_audit] )) || _cod_doc_audit() {
   local curcontext="$curcontext" ret=1
   local -a line
@@ -825,6 +931,8 @@ _cod-doc() {
         (next)      _cod_doc_ctx_next && ret=0 ;;
         (search)    _cod_doc_ctx_search && ret=0 ;;
         (structure) _cod_doc_ctx_structure && ret=0 ;;
+        (sweep)     _cod_doc_ctx_sweep && ret=0 ;;
+        (sync)      _cod_doc_ctx_sync && ret=0 ;;
         (*)         _default && ret=0 ;;
       esac
       ;;
@@ -840,6 +948,8 @@ _cod-doc() {
     'next:Doc card куратора; что протухло и за что браться первым (CUR-016).'
     'search:Поиск по проекту (FTS5) — тот же движок, что и ``cod-doc search``.'
     'structure:Pinned BFS structure slice. Requires head SHA or snapshot fingerpri…'
+    'sweep:Прогон куратора (RFC 28, ACU-004); сам в БД, файлы в клон, прочее —…'
+    'sync:Выгрузить проекции в клон куратора и обновить draft PR ``curator/sy…'
   )
   _describe -t cod-doc-ctx-commands 'cod-doc ctx command' cmds
 }
@@ -913,6 +1023,34 @@ _cod-doc() {
     '*--scope=:scope-refs' \
     '(--budget-tokens)--budget-tokens=:budget-tokens' \
     '(--depth)--depth=:dependency-depth' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ctx_sweep] )) || _cod_doc_ctx_sweep() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--apply)--apply[Писать в БД (по умолчанию — сухой прогон; тот же план, без записи)]' \
+    '(--sync)--sync[Выгрузить файлы в клон куратора и обновить PR curator/sync (только…]' \
+    '(--propose)--propose[LLM-предлагатели; новые цели битых ссылок как doc_patch (только с -…]' \
+    '(--max-auto)--max-auto=[Потолок записей за прогон]:max-auto' \
+    '(--author)--author=:author' \
+    '(--json)--json[Вывод в JSON]' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_ctx_sync] )) || _cod_doc_ctx_sync() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' && ret=0
   return ret
 }
@@ -1108,6 +1246,7 @@ _cod-doc() {
     '(--force)--force[Re-export even if hash matches]' \
     '(--dry-run)--dry-run[Show the unified diff the export would apply; write nothing]' \
     '(--force-write)--force-write[Overwrite an edited/foreign/unshaped/unmigrated file (lifts all fou…]' \
+    '(--author)--author=:author' \
     '(- *)--help[Show this message and exit.]' \
     '1:doc-key:_cod_doc_docs' && ret=0
   return ret
@@ -1532,6 +1671,8 @@ _cod-doc() {
   local -a line
   typeset -A opt_args
   _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Слаг проекта; по умолчанию — зарегистрированный проект, в корне кот…]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
     '(- *)--help[Show this message and exit.]' \
     '1::master-path:_files' && ret=0
   return ret

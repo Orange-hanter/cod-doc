@@ -59,7 +59,9 @@ def _bootstrap_repo(tmp_path: Path) -> tuple[Config, ProjectEntry]:
             owner="docs",
             author="human:test",
         )
-        projection_service.export_document(session, synced.row_id, root_path=repo)
+        projection_service.export_document(
+            session, synced.row_id, root_path=repo, author="human:test"
+        )
 
         doc_service.create(
             session,

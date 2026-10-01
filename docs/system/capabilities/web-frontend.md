@@ -158,6 +158,9 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | **Scenarios — сценарии тестирования (RFC 24 §9, авторская половина)** | | | |
 | `GET /p/{slug}/scenarios` | Список сценариев по возможностям: фильтры вид/возможность/статус, счётчики, дрейф проекции | `scenario_service.list_for_project` + `project_coverage` + `projection_service.detect_project_drift` | ✅ | ADO-185 |
 | `GET /p/{slug}/scenarios/{scenario_id}` | Карточка сценария: герой, предусловия, шаги, ожидаемый результат, связи, проекция | `scenario_service.get` + `list_steps` + `list_links` | ✅ | ADO-185 |
+| `GET /p/{slug}/proposals` | Предложения куратора: ждущие `doc_patch` с операцией, обоснованием и diff; открытые вопросы автора `agent:curator` | `approval_service.list_approvals` + `question_service.list_for_project` | ✅ | ACU-011 |
+| `POST /p/{slug}/proposals/{approval_id}/approve` | Одобрить: правка применяется в той же транзакции (ACU-009) или approval истекает как устаревший → редирект с `?notice=` | `approval_service.resolve` | ✅ | ACU-011 |
+| `POST /p/{slug}/proposals/{approval_id}/deny` | Отклонить с причиной (`decision_comment`; куратор не повторит 30 дней) | `approval_service.resolve` | ✅ | ACU-011 |
 | `GET /p/{slug}/questions` | Открытые вопросы: фильтры статус/приоритет/владелец, счётчики open/resolved/dropped и битых ссылок | `question_service.list_for_project` + `broken_links` | ✅ | OQM-004 |
 | `GET /p/{slug}/questions/new` | Форма нового вопроса: заголовок, вопрос, контекст, приоритет, владелец, варианты построчно | — | ✅ | OQM-004 |
 | `POST /p/{slug}/questions/new` | Создать вопрос → редирект на карточку; ошибка валидации → форма с `?error=` | `question_service.create` | ✅ | OQM-004 |

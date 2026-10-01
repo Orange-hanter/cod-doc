@@ -175,6 +175,40 @@ def test_drift_item_suggests_doc_import_with_the_slug(curator_session) -> None:
     assert "не доехала до БД" in drift_item["reason"]
 
 
+def test_conflict_outranks_edited_in_place_and_suggests_a_dry_run(curator_session) -> None:
+    """ACU-001: beta правили и в БД, и на диске — это не stale_export.
+
+    Конфликт встаёт выше edited_in_place (alpha), а команда в пункте — сухой
+    ``doc export --dry-run``: он показывает разницу и ничего не пишет, решение
+    «import или export» остаётся человеку.
+    """
+    from cod_doc.services import doc_service
+
+    session, root = curator_session
+    _seed_all_three(root)
+    beta = doc_service.get(session, _project_id(session), "beta")
+    assert beta is not None and beta.row_id is not None
+    doc_service.add_section(
+        session,
+        document_id=beta.row_id,
+        anchor="db-only",
+        heading="DB only",
+        level=2,
+        position=0,
+        body="Правка в БД.\n",
+        author="human:test",
+    )
+    with (root / "beta.md").open("a", encoding="utf-8") as fh:
+        fh.write("\nПравка на диске.\n")
+
+    drift = [i for i in _call(session, root)["priority"] if i["kind"] == "drift"]
+    refs = [i["ref"] for i in drift]
+    assert refs.index("beta") < refs.index("alpha")
+    beta_item = drift[refs.index("beta")]
+    assert beta_item["suggested_action"] == f"cod-doc doc export beta -p {_PROJECT} --dry-run"
+    assert "правили и БД, и файл" in beta_item["reason"]
+
+
 def test_link_item_points_at_the_section_anchor(curator_session) -> None:
     session, root = curator_session
     _seed_all_three(root)

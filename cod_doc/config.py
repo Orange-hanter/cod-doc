@@ -57,6 +57,15 @@ class ProjectEntry(BaseSettings):
     enabled: bool = True
     daemon_enabled: bool = True
     db_url: str | None = None
+    #: ACU-005 (RFC 28 §3.10 п.4): ночной прогон куратора пишет в БД сам.
+    #: Выключено — рутина `curator_sweep` считает тот же план и ничего не пишет.
+    curator_auto: bool = False
+    #: Выгрузка проекций в клон куратора с пушем ветки `curator/sync` и draft
+    #: PR. Отдельный флаг: это исходящее действие, а не запись в свою БД.
+    curator_sync: bool = False
+    #: ACU-012 (RFC 28 §3.10 п.4): LLM-предлагатели прогона (ссылки, раскладка).
+    #: Фрагменты документов уходят в облачную модель — включается явно.
+    curator_llm: bool = False
 
     @property
     def root(self) -> Path:

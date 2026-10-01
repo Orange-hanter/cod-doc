@@ -24,6 +24,7 @@ description: |
 | `stale_export` | DB content изменился относительно последней экспорт-проекции | `doc.export(force=False)` или `force=True` после ручной проверки — но сперва проверь ADO-022 (ниже) |
 | `edited_in_place` | Файл правился в обход revision-flow (file hash расходится с projection_hash) | reconciliation-flow: либо `import_document`, либо ручной merge с записью revision |
 | `missing` | Файл удалён | если дока удалили — `doc.deprecate`; если случайность — восстановить из git history |
+| `conflict` | После выгрузки правили и БД, и файл (файл не совпадает ни с последней выгрузкой, ни с принятым импортом) | автоматически не чинить: `doc_export(dry_run=True)` показывает, что потеряет файл; дальше либо `import_document` (прав файл), либо `doc_export(force_write=True)` (права БД), либо ручной merge |
 
 ## Осиротевшие секции — сигнал рядом со статусом, не пятый статус (ADO-213)
 
@@ -68,6 +69,10 @@ delete-section`; `dry_run` показывает удаляемое тело.
       force=True`).
 4. Если `missing` → решить, удалили или потерялся; зависит от
    `last_updated` и git log.
+5. Если `conflict` → это не `stale_export`: `doc_export` без
+   `force_write` откажет по guard'у, а с ним затрёт правку файла.
+   Сравнить обе стороны (`doc_export(dry_run=True)`), выбрать источник,
+   решение записать revision'ом.
 
 ## Старая БД: сначала `doc_backfill_projection` (ADO-022)
 

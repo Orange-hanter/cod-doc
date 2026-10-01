@@ -16,6 +16,7 @@ hash ``STALE``       реестр ``MASTER.md`` разошёлся с файло
 ===================  =========================================================
 
 Не чинятся никогда: ``stale_export`` (в files-are-source режиме это норма),
+``conflict`` (правки с обеих сторон — выбор источника за человеком, ACU-001),
 ``missing`` (вслепую не пересоздаём), hash ``BROKEN`` (пересчёт только
 предупредит, файла всё равно нет), ``unplaced`` и внешние findings.
 Засев дерева (ADO-224) — не раскладка: разделы появляются, документы
@@ -60,7 +61,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from cod_doc.core.hash_calc import LINK_PATTERN, update_hashes
+from cod_doc.core.hash_calc import LINK_PATTERN
 from cod_doc.infra.models import DocumentModel, SectionModel, TaskModel
 from cod_doc.services import (
     activity_service,
@@ -68,6 +69,7 @@ from cod_doc.services import (
     curator_service,
     doc_service,
     doc_tree_service,
+    hash_service,
 )
 from cod_doc.services import link_service as link_svc
 from cod_doc.services.projection_service import DriftStatus, import_document
@@ -427,6 +429,11 @@ def _reported_only(card: dict[str, Any]) -> dict[str, int]:
         DriftStatus.MISSING.value: sum(
             1 for i in issues if i["status"] == DriftStatus.MISSING.value
         ),
+        # ACU-001: до появления статуса такие документы считались здесь же как
+        # stale_export — без отдельного счётчика `update` о них бы замолчал.
+        DriftStatus.CONFLICT.value: sum(
+            1 for i in issues if i["status"] == DriftStatus.CONFLICT.value
+        ),
         "hash_broken": sum(1 for e in card["master"] if e["status"] == _MASTER_BROKEN),
         "unplaced": int(card["unplaced"]["count"]),
         "findings": len(card["findings"]),
@@ -545,8 +552,11 @@ def _run_doc_import(session: Session, action: RepairAction, ctx: _Context) -> No
 
 
 def _run_hash_update(session: Session, action: RepairAction, ctx: _Context) -> None:
-    del session  # реестр живёт на диске, а не в БД
-    updated, warnings = update_hashes(ctx.master_path)
+    # Реестр живёт на диске, но запись в него — мутация проекта: событие
+    # `master.hashes_updated` пишет сервис (ACU-002).
+    updated, warnings = hash_service.update_master_hashes(
+        session, ctx.project_id, ctx.master_path, author=ctx.author
+    )
     action.applied = True
     action.detail = f"{action.detail}; переписано записей: {updated}"
     if warnings:
