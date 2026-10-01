@@ -45,10 +45,13 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
     from cod_doc.config import ProjectEntry
+    from cod_doc.services.curator_proposers import Chooser
     from cod_doc.services.curator_sync_service import SyncReport
 
 DEFAULT_AUTHOR = curator_service.CURATOR_AUTHOR
 DEFAULT_MAX_AUTO = 50
+#: Потолок новых предложений doc_patch за прогон (RFC 28 §3.6, потолок ревью).
+DEFAULT_MAX_PROPOSALS = 10
 
 #: ``agent_run.wake_reason`` прогона с записью (ACU-007).
 WAKE_REASON = "curator_sweep"
@@ -90,6 +93,11 @@ class SweepReport:
     run_id: str | None = None
     #: Ревизии прогона по видам сущностей (`revision_summary`, ADO-228).
     changes: list[dict[str, Any]] = field(default_factory=list)
+    #: ACU-012: предложения doc_patch этого прогона (created / duplicate / suppressed).
+    proposed: list[dict[str, Any]] = field(default_factory=list)
+    llm_calls: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
 
     def summary(self) -> dict[str, Any]:
         """Счётчики для ``agent_run.summary``: сколько сделано, отдано, оставлено."""
@@ -98,7 +106,10 @@ class SweepReport:
             "placed": len(self.placed),
             "synced": len((self.sync or {}).get("exported", []))
             + len((self.sync or {}).get("deleted", [])),
-            "proposed": 0,  # предложения появятся с секцией D
+            "proposed": sum(1 for p in self.proposed if p["outcome"] == "created"),
+            "llm_calls": self.llm_calls,
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
             "reported": len(self.reported),
             "capped": len(self.capped),
             "changes": self.changes,
@@ -125,8 +136,16 @@ def sweep(
     max_auto: int = DEFAULT_MAX_AUTO,
     author: str = DEFAULT_AUTHOR,
     sync: SyncFn | None = None,
+    chooser: Chooser | None = None,
+    max_proposals: int = DEFAULT_MAX_PROPOSALS,
 ) -> SweepReport:
-    """Один прогон куратора по очереди ``curator_next`` проекта."""
+    """Один прогон куратора по очереди ``curator_next`` проекта.
+
+    ``chooser`` — лёгкая модель для предлагателей (ACU-012); ``None`` — без
+    LLM, пункты, которым нужно суждение, уходят человеку как есть.
+    Предлагатели работают только при ``apply``: предложение — это запись
+    approval.
+    """
     payload = curator_service.next(
         session,
         project_id=project_id,
@@ -151,7 +170,15 @@ def sweep(
         session, project_id=project_id, run_id=str(uuid4()), wake_reason=WAKE_REASON
     ) as run:
         synced_docs, synced_master = _act(session, card, coords, report)
-        _collect_reported(payload, card, report, synced_docs, synced_master=synced_master)
+        handled: set[tuple[str, str]] = set()
+        if chooser is not None:
+            handled = _propose(session, project_id, chooser, max_proposals, author, report)
+            run.llm_calls = report.llm_calls
+            run.llm_tokens_in = report.tokens_in
+            run.llm_tokens_out = report.tokens_out
+        _collect_reported(
+            payload, card, report, synced_docs, synced_master=synced_master, proposed=handled
+        )
         report.run_id = run.run_id
         report.changes = _changes(session, project_id, since=run.started_at, author=author)
         run.summary = json.dumps(report.summary(), ensure_ascii=False)
@@ -184,6 +211,33 @@ def _act(
     return set(sync_report.exported) | set(sync_report.deleted), sync_report.hashes_updated > 0
 
 
+def _propose(
+    session: Session,
+    project_id: int,
+    chooser: Chooser,
+    max_proposals: int,
+    author: str,
+    report: SweepReport,
+) -> set[tuple[str, str]]:
+    """Предлагатели секции D; вернуть пункты очереди, закрытые предложением."""
+    from cod_doc.services import curator_proposers
+
+    stats = curator_proposers.ProposerStats()
+    curator_proposers.propose_link_retargets(
+        session,
+        project_id,
+        chooser=chooser,
+        max_proposals=max_proposals,
+        author=author,
+        stats=stats,
+    )
+    report.proposed = stats.proposed
+    report.llm_calls = stats.llm_calls
+    report.tokens_in = stats.tokens_in
+    report.tokens_out = stats.tokens_out
+    return stats.handled
+
+
 def _collect_reported(
     payload: dict[str, Any],
     card: dict[str, Any],
@@ -191,8 +245,9 @@ def _collect_reported(
     synced_docs: set[str],
     *,
     synced_master: bool,
+    proposed: set[tuple[str, str]] | None = None,
 ) -> None:
-    handled = _handled_refs(card, report, synced_docs, synced_master)
+    handled = _handled_refs(card, report, synced_docs, synced_master) | (proposed or set())
     report.reported = [
         {"kind": str(item["kind"]), "ref": str(item["ref"]), "reason": str(item["reason"])}
         for item in payload["priority"]
@@ -325,8 +380,13 @@ def sweep_project(
     sync: bool,
     max_auto: int = DEFAULT_MAX_AUTO,
     author: str = DEFAULT_AUTHOR,
+    propose: bool = False,
+    chooser: Chooser | None = None,
 ) -> SweepReport:
     """ACU-006: прогон по записи реестра — вход для рутины, CLI и MCP.
+
+    ``propose`` включает LLM-предлагатели (ACU-012) с лёгкой моделью из
+    конфига; ``chooser`` — подмена модели (тесты).
 
     ``apply`` / ``sync`` передаёт вызывающий: рутина берёт их из флагов
     ``curator_auto`` / ``curator_sync``, человек в CLI и агент в MCP — явно.
@@ -346,4 +406,22 @@ def sweep_project(
         max_auto=max_auto,
         author=author,
         sync=_to_clone if sync else None,
+        chooser=(chooser or default_chooser()) if propose else None,
     )
+
+
+def default_chooser() -> Chooser:
+    """Лёгкая модель из конфига: короткий ответ-выбор, бюджет 400 токенов."""
+    from cod_doc.config import Config
+    from cod_doc.services import ai_text
+
+    cfg = Config.load()
+
+    def _choose(prompt: str) -> ai_text.LiteReply:
+        return ai_text.call_lite(prompt, cfg, max_tokens=_CHOOSER_MAX_TOKENS)
+
+    return _choose
+
+
+#: Бюджет ответа выбора: номер кандидата и одна фраза обоснования.
+_CHOOSER_MAX_TOKENS = 400

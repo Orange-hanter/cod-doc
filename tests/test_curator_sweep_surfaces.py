@@ -110,3 +110,13 @@ def test_agent_profile_stays_without_the_new_tools() -> None:
     assert "curator_sweep" not in AGENT_TOOLS
     assert "curator_sync" not in AGENT_TOOLS
     assert len(AGENT_TOOLS) == 6
+
+
+def test_cli_refuses_propose_without_apply(tmp_path: Path, isolated_cod_doc_home: Path) -> None:
+    """ACU-012: предложения — запись approval, без --apply их не создать."""
+    _project(tmp_path)
+
+    result = CliRunner().invoke(main, ["ctx", "sweep", "-p", "p", "--propose"])
+
+    assert result.exit_code == 2
+    assert "--apply" in result.output
