@@ -199,11 +199,11 @@ def test_settings_get_marks_unknown_model_as_custom(settings_client) -> None:
 
 
 def test_settings_get_marks_known_preset_selected() -> None:
-    """A model in the catalog → that preset is the selected option."""
+    """A catalog model on the OpenRouter endpoint → that preset is selected."""
     Config(
         api_key="sk-test",
         model="anthropic/claude-sonnet-4-6",
-        base_url="https://x",
+        base_url="https://openrouter.ai/api/v1",
     ).save()
     from cod_doc.api.server import app
 
@@ -216,17 +216,30 @@ def test_settings_get_marks_known_preset_selected() -> None:
 
 
 def test_settings_get_renders_embedding_backend_dropdown(settings_client) -> None:
-    """COD-043: settings page exposes a backend <select> with openai + local."""
+    """COD-043: settings page exposes openai / openrouter / local backends."""
     client, _ = settings_client
     r = client.get("/settings")
     body = r.text
     assert 'name="embedding_backend"' in body
     assert "OpenAI-compatible" in body
     assert "Local sentence-transformers" in body
-    # By default, the openai option is selected.
-    assert 'value="openai"\n                selected' in body or (
-        '<option value="openai"' in body and "selected" in body
-    )
+    assert 'value="openai"' in body
+    assert "checked" in body
+
+
+def test_settings_page_is_grouped_and_offers_presets(settings_client) -> None:
+    """Subgroups plus ready-made model, lite and embedding presets."""
+    client, _ = settings_client
+    r = client.get("/settings")
+    body = r.text
+    for legend in ("Source", "Models", "Generation limits", "Embeddings", "Agent"):
+        assert f"<legend>{legend}</legend>" in body
+    assert 'name="model_bundle"' in body
+    assert "Balanced" in body
+    assert 'id="lite-preset"' in body
+    assert 'id="embedding-preset"' in body
+    assert "Qwen3 Embedding 8B" in body
+    assert "Same as main model" in body
 
 
 def test_settings_post_persists_embedding_backend(settings_client) -> None:
@@ -293,3 +306,43 @@ def test_settings_post_uncheck_auto_commit_clears_it(settings_client) -> None:
         follow_redirects=False,
     )
     assert cfg.auto_commit is False
+
+
+def test_settings_ollama_source_drops_unrelated_fields() -> None:
+    """Ollama tag is a preset; URL, bundles and a free-text id are not shown."""
+    Config(
+        api_key="sk",
+        base_url="https://ollama.com/v1",
+        model="qwen3.5:397b",
+        lite_model="gemma4:31b",
+    ).save()
+    from cod_doc.api.server import app
+
+    with TestClient(app, raise_server_exceptions=True) as client:
+        body = client.get("/settings").text
+    assert 'id="base-url-field" hidden' in body
+    assert 'id="bundle-group" hidden' in body
+    assert 'id="model-id-field" hidden' in body
+    assert 'id="provider-row"' in body
+    assert "Ollama Cloud" in body
+    assert "Direct API" in body
+
+
+def test_settings_post_local_ollama_fills_placeholder_key(settings_client) -> None:
+    client, cfg = settings_client
+    cfg.api_key = ""
+    client.post(
+        "/settings",
+        data={
+            "api_key": "",
+            "base_url": "http://127.0.0.1:11434/v1",
+            "model": "llama3.3",
+            "max_tokens": str(cfg.max_tokens),
+            "max_iterations": str(cfg.max_iterations),
+            "agent_interval": str(cfg.agent_interval),
+            "embedding_model": cfg.embedding_model,
+        },
+        follow_redirects=False,
+    )
+    assert cfg.api_key == "ollama"
+    assert cfg.base_url == "http://127.0.0.1:11434/v1"

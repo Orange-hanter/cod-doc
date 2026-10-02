@@ -1265,6 +1265,135 @@ a.nav-card-title:hover { color: var(--accent); }
 .settings-form .form-actions { margin-top: var(--space-3); display: flex; gap: var(--space-2); }
 .settings-form button { padding: 6px 18px; font: inherit; cursor: pointer; }
 
+/* Страница /settings. Остальные формы с классом .settings-form эти правила
+   не подхватывают: они сидят не внутри .settings-page. */
+.settings-page { max-width: 880px; }
+/* Author `display` on cards and fields beats the UA [hidden] rule. */
+.settings-page [hidden] { display: none !important; }
+.settings-page h1 { margin-bottom: var(--space-2); }
+.settings-lead {
+  margin: 0 0 var(--space-4);
+  max-width: 68ch;
+  color: var(--muted);
+}
+.settings-note {
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: 12px;
+}
+.settings-math {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-alt);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.settings-math p { margin: 0 0 var(--space-2); }
+.settings-math ul { margin: 0; padding-left: 1.2em; }
+.settings-math li + li { margin-top: var(--space-2); }
+.settings-math-formula {
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+.settings-page .settings-form .field input,
+.settings-page .settings-form .field select {
+  max-width: none;
+  width: 100%;
+}
+.settings-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3) var(--space-4);
+}
+.settings-fields-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.settings-fields .field { margin: 0; min-width: 0; }
+.settings-group + .settings-group {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+.settings-group h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+.settings-presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: var(--space-2);
+}
+.settings-preset,
+.settings-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-alt);
+  cursor: pointer;
+}
+.settings-choice {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+.settings-choice > span { display: flex; flex-direction: column; gap: 2px; }
+.settings-preset:has(input:checked),
+.settings-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft-bg);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.settings-preset input,
+.settings-choice input { margin: 2px 0 0; }
+.settings-preset-title { font-weight: 600; font-size: 13px; color: var(--fg); }
+.settings-preset-note { font-size: 11px; line-height: 1.35; color: var(--muted); }
+.settings-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+.settings-pill {
+  display: inline-block;
+  margin-left: var(--space-1);
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-soft);
+  color: var(--muted-strong);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+.settings-pill-ok { background: var(--success-soft-bg); color: var(--success-soft-fg); }
+.settings-pill-warn { background: var(--warning-soft-bg); color: var(--warning-soft-fg); }
+.settings-savebar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.settings-savebar .muted { margin-right: auto; font-size: 12px; }
+.settings-page .settings-savebar .btn { font-weight: 600; padding: 8px 22px; }
+@media (max-width: 720px) {
+  .settings-fields,
+  .settings-fields-3,
+  .settings-choices { grid-template-columns: 1fr; }
+}
+
 /* ── Section inline edit ──────────────────────────────────────────────── */
 .section-edit-btn {
   background: transparent;

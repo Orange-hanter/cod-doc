@@ -8,9 +8,13 @@
 
 Список неполный по построению: это подсказка для UI и CLI, а не источник
 истины. Неизвестная модель — просто ``None``, работать это не мешает.
+``PRESETS`` — тот же список, ужатый до строк, которые страница настроек
+показывает выпадающим списком.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 NATIVE_DIMENSIONS: dict[str, int] = {
     "openai/text-embedding-ada-002": 1536,
@@ -34,3 +38,84 @@ RECOMMENDED_DIMENSIONS = 2048
 def known_dimensions(model_id: str) -> int | None:
     """Нативная размерность модели, если она нам известна."""
     return NATIVE_DIMENSIONS.get(model_id)
+
+
+@dataclass(frozen=True, slots=True)
+class EmbeddingPreset:
+    """Одна строка выпадающего списка на странице настроек.
+
+    ``dimensions`` — значение, которое форма подставляет в поле размерности.
+    ``None`` значит «оставить пустым»: пустое поле — нативная размерность, и
+    подстановка нативного числа сменила бы отпечаток коллекции с ``@native``
+    на ``@1536`` без реальной причины. Непустое значение — осознанная
+    Matryoshka-обрезка (домашний стандарт Qwen — 2048 из 4096).
+    """
+
+    model_id: str
+    label: str
+    notes: str
+    backends: tuple[str, ...]
+    dimensions: int | None = None
+    recommended: bool = False
+
+
+PRESETS: tuple[EmbeddingPreset, ...] = (
+    EmbeddingPreset(
+        model_id=RECOMMENDED_MODEL,
+        label="Qwen3 Embedding 8B",
+        notes="Рекомендуется. Нативные 4096, форма ставит обрезку 2048.",
+        backends=("openrouter",),
+        dimensions=RECOMMENDED_DIMENSIONS,
+        recommended=True,
+    ),
+    EmbeddingPreset(
+        model_id="qwen/qwen3-embedding-4b",
+        label="Qwen3 Embedding 4B",
+        notes="Меньше Qwen. Нативные 2560, поле размерности остаётся пустым.",
+        backends=("openrouter",),
+    ),
+    EmbeddingPreset(
+        model_id="google/gemini-embedding-2",
+        label="Gemini Embedding 2",
+        notes="Нативные 3072.",
+        backends=("openrouter",),
+    ),
+    EmbeddingPreset(
+        model_id="openai/text-embedding-3-small",
+        label="OpenAI Embedding 3 small",
+        notes="Дешёвая общая модель. Нативные 1536.",
+        backends=("openai", "openrouter"),
+    ),
+    EmbeddingPreset(
+        model_id="openai/text-embedding-3-large",
+        label="OpenAI Embedding 3 large",
+        notes="Точнее small, дороже. Нативные 3072.",
+        backends=("openai", "openrouter"),
+    ),
+    EmbeddingPreset(
+        model_id="openai/text-embedding-ada-002",
+        label="Ada 002",
+        notes="Прежний дефолт. Нативные 1536.",
+        backends=("openai", "openrouter"),
+    ),
+    EmbeddingPreset(
+        model_id="all-MiniLM-L6-v2",
+        label="MiniLM L6",
+        notes="Быстрая локальная модель на CPU, без ключа.",
+        backends=("local",),
+    ),
+    EmbeddingPreset(
+        model_id="paraphrase-multilingual-MiniLM-L12-v2",
+        label="Multilingual MiniLM",
+        notes="Локальная модель, лучше покрывает русский текст.",
+        backends=("local",),
+    ),
+)
+
+
+def matching_preset(model_id: str, backend: str) -> EmbeddingPreset | None:
+    """Пресет, если эта модель предлагается для данного бэкенда."""
+    for preset in PRESETS:
+        if preset.model_id == model_id and backend in preset.backends:
+            return preset
+    return None

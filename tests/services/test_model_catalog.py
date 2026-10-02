@@ -47,3 +47,38 @@ def test_get_returns_none_for_unknown_id() -> None:
 def test_is_known_matches_get() -> None:
     assert model_catalog.is_known("anthropic/claude-sonnet-4-6")
     assert not model_catalog.is_known("vendor/never-existed")
+
+
+def test_grouped_keeps_vendor_order() -> None:
+    labels = [label for label, _models in model_catalog.grouped(model_catalog.CATALOG)]
+    assert labels[0] == "Anthropic"
+    assert "OpenAI" in labels
+    assert len(labels) == len(set(labels))
+
+
+def test_bundles_point_at_catalog_models() -> None:
+    assert len(model_catalog.BUNDLES) >= 3
+    for bundle in model_catalog.BUNDLES:
+        assert model_catalog.is_known(bundle.model)
+        assert model_catalog.is_lite_known(bundle.lite_model)
+    match = model_catalog.matching_bundle(
+        "anthropic/claude-sonnet-4-6",
+        "openai/gpt-4.1-mini",
+    )
+    assert match is not None
+    assert match.bundle_id == "balanced"
+    assert model_catalog.matching_bundle("anthropic/claude-sonnet-4-6", "") is None
+
+
+def test_matching_provider_uses_base_url() -> None:
+    openrouter = model_catalog.matching_provider("https://openrouter.ai/api/v1/")
+    assert openrouter.provider_id == "openrouter"
+    assert openrouter.allows_bundles
+    ollama = model_catalog.matching_provider("http://localhost:11434/v1")
+    assert ollama.provider_id == "ollama-local"
+    assert ollama.fallback_key == "ollama"
+    assert not ollama.needs_key
+    custom = model_catalog.matching_provider("https://example.internal/v1")
+    assert custom.provider_id == "custom"
+    assert model_catalog.find_source_model(custom, "gpt-5") is None
+    assert model_catalog.find_source_model(openrouter, "anthropic/claude-sonnet-4-6") is not None
