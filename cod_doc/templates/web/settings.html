@@ -3,192 +3,626 @@
 {% block content %}
 <nav class="crumbs"><a href="/">Projects</a> / <span>Settings</span></nav>
 
-<h1>Settings</h1>
+<div class="settings-page">
+  <h1>Settings</h1>
+  <p class="settings-lead">
+    Сначала источник API. Адрес, ключ и список моделей подстраиваются под него:
+    чужой формат id ниже не показывается.
+  </p>
 
-<form method="post" action="/settings" class="settings-form">
-  <fieldset>
-    <legend>LLM</legend>
-    <label class="field">
-      <span class="label">API key</span>
-      <input type="password" name="api_key"
-             placeholder="{% if config.api_key_set %}{{ config.api_key_masked }} (оставь пустым — не менять){% else %}sk-…{% endif %}">
-      <small class="muted">
-        {% if config.api_key_set %}
-          Ключ установлен ({{ config.api_key_masked }}). Пустое поле — оставить как есть.
-          Чтобы удалить — введи дефис&nbsp;«−».
-        {% else %}
-          Ключ не установлен. Перейди на OpenRouter за ключом.
-        {% endif %}
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Base URL</span>
-      <input type="text" name="base_url" value="{{ config.base_url }}" required>
-    </label>
-    <label class="field">
-      <span class="label">Model preset</span>
-      <select id="model-preset" onchange="syncModelPreset(this)">
-        {% for m in model_catalog %}
-          <option value="{{ m.model_id }}"
-                  data-notes="{{ m.notes }}"
-                  {% if config.model == m.model_id %}selected{% endif %}>
-            {{ m.describe }}
-          </option>
+  <form method="post" action="/settings" class="settings-form">
+    <fieldset>
+      <legend>Source</legend>
+      <div class="settings-presets" role="radiogroup" aria-label="API family">
+        {% for family in families %}
+          <label class="settings-preset">
+            <input type="radio" name="chat_family" value="{{ family.family_id }}"
+                   {% if active_family == family.family_id %}checked{% endif %}
+                   onchange="applyFamily(this)">
+            <span class="settings-preset-title">{{ family.label }}</span>
+            <span class="settings-preset-note">{{ family.blurb }}</span>
+          </label>
         {% endfor %}
-        <option value="__custom__" {% if model_is_custom %}selected{% endif %}>
-          Custom — type model ID below
-        </option>
-      </select>
-      <small class="muted" id="model-notes">
-        {% for m in model_catalog %}{% if config.model == m.model_id %}{{ m.notes }}{% endif %}{% endfor %}
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Model ID</span>
-      <input type="text" id="model-id" name="model" value="{{ config.model }}" required>
-      <small class="muted">
-        OpenRouter route slug (e.g. <code>anthropic/claude-sonnet-4-6</code>).
-        Pricing/context above are informational — provider invoice wins.
-      </small>
-    </label>
-    <script>
-      function syncModelPreset(select) {
-        const input = document.getElementById('model-id');
-        const notes = document.getElementById('model-notes');
-        if (select.value === '__custom__') {
-          input.focus();
-          notes.textContent = 'Введи custom model ID вручную.';
-        } else {
-          input.value = select.value;
-          const opt = select.options[select.selectedIndex];
-          notes.textContent = opt.dataset.notes || '';
-        }
+      </div>
+
+      <div class="settings-group" id="provider-row" {% if not show_provider_row %}hidden{% endif %}>
+        <h3>Provider</h3>
+        <div class="settings-presets" role="radiogroup" aria-label="Provider">
+          {% for p in providers %}
+            <label class="settings-preset" {% if p.family != active_family %}hidden{% endif %}>
+              <input type="radio" name="chat_provider" value="{{ p.provider_id }}"
+                     data-family="{{ p.family }}"
+                     data-base-url="{{ p.base_url }}"
+                     data-needs-key="{{ '1' if p.needs_key else '0' }}"
+                     data-bundles="{{ '1' if p.allows_bundles else '0' }}"
+                     data-key-note="{{ p.key_note }}"
+                     {% if active_provider == p.provider_id %}checked{% endif %}
+                     onchange="applyProvider(this, true)">
+              <span class="settings-preset-title">{{ p.label }}</span>
+              <span class="settings-preset-note">{{ p.blurb }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="settings-group" id="chat-credentials"
+           {% if not show_api_key and not show_base_url %}hidden{% endif %}>
+        <h3>Credentials</h3>
+        <div class="settings-fields">
+          <label class="field" id="api-key-field" {% if not show_api_key %}hidden{% endif %}>
+            <span class="label">
+              API key
+              {% if config.api_key_set %}
+                <span class="settings-pill settings-pill-ok">set</span>
+              {% else %}
+                <span class="settings-pill settings-pill-warn">missing</span>
+              {% endif %}
+            </span>
+            <input type="password" name="api_key" autocomplete="off"
+                   placeholder="{% if config.api_key_set %}{{ config.api_key_masked }} (оставь пустым — не менять){% else %}ключ провайдера{% endif %}">
+            <small class="muted">
+              <span id="api-key-note">{{ active_key_note }}</span>
+              {% if config.api_key_set %}
+                Пустое поле — оставить как есть. Чтобы удалить — введи дефис&nbsp;«−».
+              {% else %}
+                Ключ не установлен.
+              {% endif %}
+            </small>
+          </label>
+          <label class="field" id="base-url-field" {% if not show_base_url %}hidden{% endif %}>
+            <span class="label">Base URL</span>
+            <input type="text" id="base-url" name="base_url" value="{{ config.base_url }}" required>
+            <small class="muted">OpenAI-совместимый endpoint, включая <code>/v1</code>.</small>
+          </label>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Models</legend>
+      <div class="settings-group" id="bundle-group" {% if not show_bundles %}hidden{% endif %}>
+        <h3>Preset</h3>
+        <div class="settings-presets" role="radiogroup" aria-label="Model preset">
+          {% for b in bundles %}
+            <label class="settings-preset">
+              <input type="radio" name="model_bundle" value="{{ b.bundle_id }}"
+                     data-model="{{ b.model }}" data-lite="{{ b.lite_model }}"
+                     {% if active_bundle == b.bundle_id %}checked{% endif %}
+                     onchange="applyBundle(this)">
+              <span class="settings-preset-title">{{ b.label }}</span>
+              <span class="settings-preset-note">{{ b.blurb }}</span>
+            </label>
+          {% endfor %}
+          <label class="settings-preset">
+            <input type="radio" name="model_bundle" value="custom"
+                   {% if not active_bundle %}checked{% endif %}>
+            <span class="settings-preset-title">Custom</span>
+            <span class="settings-preset-note">Модели ниже не трогать пакетом.</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Main model</h3>
+        <div class="settings-fields">
+          <label class="field">
+            <span class="label">Preset</span>
+            <select id="model-preset" onchange="syncModelPreset(this)">
+              {% for p in providers %}
+                {% if p.models %}
+                  <optgroup label="{{ p.label }}" data-provider="{{ p.provider_id }}"
+                            {% if p.provider_id != active_provider %}hidden disabled{% endif %}>
+                    {% for m in p.models %}
+                      <option value="{{ m.model_id }}"
+                              data-provider="{{ p.provider_id }}"
+                              data-notes="{{ m.notes }}"
+                              {% if p.provider_id != active_provider %}hidden disabled{% endif %}
+                              {% if config.model == m.model_id and p.provider_id == active_provider %}selected{% endif %}>
+                        {{ m.label }}
+                      </option>
+                    {% endfor %}
+                  </optgroup>
+                {% endif %}
+              {% endfor %}
+              <option value="__custom__" {% if model_is_custom %}selected{% endif %}>
+                Other — type model ID
+              </option>
+            </select>
+            <small class="muted" id="model-notes">
+              {% for p in providers %}{% for m in p.models %}{% if config.model == m.model_id and p.provider_id == active_provider %}{{ m.notes }}{% endif %}{% endfor %}{% endfor %}
+            </small>
+          </label>
+          <label class="field" id="model-id-field" {% if not model_is_custom %}hidden{% endif %}>
+            <span class="label">Model ID</span>
+            <input type="text" id="model-id" name="model" value="{{ config.model }}" required>
+            <small class="muted">Формат id зависит от источника выше.</small>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Lite model</h3>
+        <p class="settings-note">Быстрые подсказки в UI. Пусто — та же модель, что основная.</p>
+        <div class="settings-fields">
+          <label class="field">
+            <span class="label">Preset</span>
+            <select id="lite-preset" onchange="syncLitePreset(this)">
+              <option value="" {% if not config.lite_model %}selected{% endif %}>
+                Same as main model
+              </option>
+              {% for p in providers %}
+                {% if p.models %}
+                  <optgroup label="{{ p.label }}" data-provider="{{ p.provider_id }}"
+                            {% if p.provider_id != active_provider %}hidden disabled{% endif %}>
+                    {% for m in p.models if m.lite %}
+                      <option value="{{ m.model_id }}"
+                              data-provider="{{ p.provider_id }}"
+                              data-notes="{{ m.notes }}"
+                              {% if p.provider_id != active_provider %}hidden disabled{% endif %}
+                              {% if config.lite_model == m.model_id and p.provider_id == active_provider %}selected{% endif %}>
+                        {{ m.label }}
+                      </option>
+                    {% endfor %}
+                  </optgroup>
+                {% endif %}
+              {% endfor %}
+              <option value="__custom__" {% if lite_is_custom %}selected{% endif %}>
+                Other — type model ID
+              </option>
+            </select>
+            <small class="muted" id="lite-notes">
+              {% if not config.lite_model %}
+                Пусто — UI-подсказки идут в основную модель.
+              {% else %}
+                {% for p in providers %}{% for m in p.models %}{% if config.lite_model == m.model_id and p.provider_id == active_provider %}{{ m.notes }}{% endif %}{% endfor %}{% endfor %}
+              {% endif %}
+            </small>
+          </label>
+          <label class="field" id="lite-id-field" {% if not lite_is_custom %}hidden{% endif %}>
+            <span class="label">Lite model ID</span>
+            <input type="text" id="lite-model-id" name="lite_model" value="{{ config.lite_model }}"
+                   placeholder="пусто = основная модель">
+          </label>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Generation limits</legend>
+      <div class="settings-math">
+        <p>
+          Число в поле — потолок одного ответа в токенах, не размер входа.
+          Если модель столько не умеет, текст оборвётся или вызов вернёт ошибку.
+        </p>
+        <p class="settings-math-formula">токены ≈ символы / 4</p>
+        <p>
+          Так считает код (<code>len(текст)&nbsp;//&nbsp;4</code>):
+          около 2 токенов на русское слово и 1,5 на английское.
+        </p>
+        <p class="settings-math-formula">документ = секции × слова в секции × коэффициент</p>
+        <p>Сверху запас на JSON и схемы. Подстановки, из которых взяты значения по умолчанию:</p>
+        <ul>
+          <li>
+            <strong>Global, 8192.</strong>
+            Один шаг агента и improve-text, не документ.
+            8192 × 4 символа ≈ 4000 русских слов,
+            либо короткий текст плюс JSON вызова инструмента в том же ответе.
+          </li>
+          <li>
+            <strong>Docs, heavy, 64000.</strong>
+            architecture, module-spec, module-subdoc, основная модель.
+            12 секций × 900 слов × 2 ≈ 22&nbsp;000 на прозу.
+            Схемы, таблицы и код легко удваивают это, поэтому в поле 64&nbsp;000.
+          </li>
+          <li>
+            <strong>Docs, default, 16000.</strong>
+            Остальные типы; если задана лёгкая модель, пишет она.
+            8 × 500 × 2 ≈ 8&nbsp;000 (vision, guide)
+            и 6 × 350 × 2 ≈ 4&nbsp;200 (standard, decision).
+            16&nbsp;000 закрывает оба плюс JSON-обёртку.
+          </li>
+        </ul>
+      </div>
+      <div class="settings-fields settings-fields-3">
+        <label class="field">
+          <span class="label">Global</span>
+          <input type="number" name="max_tokens" value="{{ config.max_tokens }}" min="1" required>
+          <small class="muted">
+            Один шаг агента и improve-text. Генерация документов сюда не ходит.
+          </small>
+        </label>
+        <label class="field">
+          <span class="label">Docs, heavy</span>
+          <input type="number" name="doc_max_tokens_heavy"
+                 value="{{ config.doc_max_tokens_heavy }}" min="1024" step="1024" required>
+          <small class="muted">
+            architecture, module-spec и module-subdoc. Пишет основная модель.
+          </small>
+        </label>
+        <label class="field">
+          <span class="label">Docs, default</span>
+          <input type="number" name="doc_max_tokens_default"
+                 value="{{ config.doc_max_tokens_default }}" min="1024" step="1024" required>
+          <small class="muted">
+            vision, guide, standard, decision и остальные типы.
+            Если задана лёгкая модель, пишет она.
+          </small>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Embeddings</legend>
+      <div class="settings-group">
+        <h3>Backend</h3>
+        <div class="settings-presets" role="radiogroup" aria-label="Embedding backend">
+          <label class="settings-preset">
+            <input type="radio" name="embedding_backend" value="openai"
+                   {% if config.embedding_backend == "openai" %}checked{% endif %}
+                   onchange="syncEmbeddingBackend()">
+            <span class="settings-preset-title">OpenAI-compatible</span>
+            <span class="settings-preset-note">/embeddings. Берёт ключ чата, если свой не задан.</span>
+          </label>
+          <label class="settings-preset">
+            <input type="radio" name="embedding_backend" value="openrouter"
+                   {% if config.embedding_backend == "openrouter" %}checked{% endif %}
+                   onchange="syncEmbeddingBackend()">
+            <span class="settings-preset-title">OpenRouter</span>
+            <span class="settings-preset-note">Свой ключ и обрезка размерности.</span>
+          </label>
+          <label class="settings-preset">
+            <input type="radio" name="embedding_backend" value="local"
+                   {% if config.embedding_backend == "local" %}checked{% endif %}
+                   onchange="syncEmbeddingBackend()">
+            <span class="settings-preset-title">Local sentence-transformers</span>
+            <span class="settings-preset-note">CPU, без ключа. Нужен extra <code>embeddings-local</code>.</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Model</h3>
+        <div class="settings-fields">
+          <label class="field">
+            <span class="label">Preset</span>
+            <select id="embedding-preset" onchange="syncEmbeddingPreset(this, true)">
+              {% for p in embedding_presets %}
+                <option value="{{ p.model_id }}"
+                        data-notes="{{ p.notes }}"
+                        data-backends="{{ p.backends }}"
+                        {% if p.dimensions %}data-dimensions="{{ p.dimensions }}"{% endif %}
+                        {% if not p.visible %}hidden disabled{% endif %}
+                        {% if p.selected %}selected{% endif %}>
+                  {{ p.label }}{% if p.recommended %} · recommended{% endif %}
+                </option>
+              {% endfor %}
+              <option value="__custom__" {% if embedding_is_custom %}selected{% endif %}>
+                Other — type model ID
+              </option>
+            </select>
+            <small class="muted" id="embedding-notes">
+              {% for p in embedding_presets %}{% if p.selected %}{{ p.notes }}{% endif %}{% endfor %}
+            </small>
+          </label>
+          <label class="field" id="embedding-id-field" {% if not embedding_is_custom %}hidden{% endif %}>
+            <span class="label">Model ID</span>
+            <input type="text" id="embedding-model-id" name="embedding_model"
+                   value="{{ config.embedding_model }}" required>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-group" id="embedding-credentials"
+           {% if config.embedding_backend == "local" %}hidden{% endif %}>
+        <h3>Credentials</h3>
+        <div class="settings-fields">
+          <label class="field" id="embedding-key-field">
+            <span class="label">
+              API key
+              {% if config.embedding_api_key_set %}
+                <span class="settings-pill settings-pill-ok">set</span>
+              {% else %}
+                <span class="settings-pill">optional</span>
+              {% endif %}
+            </span>
+            <input type="password" name="embedding_api_key" autocomplete="off"
+                   placeholder="{% if config.embedding_api_key_set %}{{ config.embedding_api_key_masked }}{% else %}not set{% endif %}">
+            <small class="muted" id="embedding-key-note">
+              {% if config.embedding_backend == "openrouter" %}
+                Обязателен: ключ чата OpenRouter не наследует.
+              {% else %}
+                Пусто — взять ключ чата. «−» — удалить свой.
+              {% endif %}
+            </small>
+          </label>
+          <label class="field" id="embedding-url-field"
+                 {% if config.embedding_backend != "openai" %}hidden{% endif %}>
+            <span class="label">Base URL</span>
+            <input type="text" id="embedding-base-url" name="embedding_base_url"
+                   value="{{ config.embedding_base_url }}"
+                   placeholder="пусто = адрес чата">
+            <small class="muted">Только если эмбеддер живёт не там, где чат.</small>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Index</h3>
+        <div class="settings-fields">
+          <label class="field" id="embedding-dims-field"
+                 {% if config.embedding_backend != "openrouter" %}hidden{% endif %}>
+            <span class="label">Dimensions</span>
+            <input type="number" name="embedding_dimensions" id="embedding-dimensions" min="1"
+                   value="{{ config.embedding_dimensions }}" placeholder="native">
+            <small class="muted">
+              Пусто — нативная. Qwen ставит 2048.
+              Смена несовместима со старым индексом: <code>cod-doc embed reset</code>.
+            </small>
+          </label>
+          <label class="field">
+            <span class="label">Batch size</span>
+            <input type="number" name="embedding_batch_size" min="1"
+                   value="{{ config.embedding_batch_size }}">
+            <small class="muted">Сколько документов уходит в один запрос.</small>
+          </label>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Agent</legend>
+      <div class="settings-group">
+        <h3>Loop</h3>
+        <div class="settings-fields">
+          <label class="field">
+            <span class="label">Max iterations</span>
+            <input type="number" name="max_iterations" value="{{ config.max_iterations }}" min="1" required>
+            <small class="muted">Сколько шагов агент делает за одну задачу.</small>
+          </label>
+          <label class="field">
+            <span class="label">Daemon interval (sec)</span>
+            <input type="number" name="agent_interval" value="{{ config.agent_interval }}" min="5" required>
+            <small class="muted">Как часто демон опрашивает очередь.</small>
+          </label>
+        </div>
+      </div>
+      <div class="settings-group">
+        <h3>Switches</h3>
+        <div class="settings-choices">
+          <label class="settings-choice">
+            <input type="checkbox" name="auto_commit"{% if config.auto_commit %} checked{% endif %}>
+            <span>
+              <span class="settings-preset-title">Auto-commit after task</span>
+              <span class="settings-preset-note">Коммит рабочего дерева, когда задача закрывается.</span>
+            </span>
+          </label>
+          <label class="settings-choice">
+            <input type="checkbox" name="agent_enabled"{% if config.agent_enabled %} checked{% endif %}>
+            <span>
+              <span class="settings-preset-title">Autonomous agent enabled</span>
+              <span class="settings-preset-note">Снятая галка не даст агенту стартовать со следующим запуском контейнера. Уже запущенный останавливается кнопкой Stop на странице проектов.</span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="settings-savebar">
+      <span class="muted">Пустые поля ключей не затирают сохранённое.</span>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  const EMBEDDING_DEFAULTS = {
+    openrouter: "qwen/qwen3-embedding-8b",
+    openai: "openai/text-embedding-3-small",
+    local: "all-MiniLM-L6-v2",
+  };
+
+  function notesOf(select) {
+    const opt = select.options[select.selectedIndex];
+    return (opt && opt.dataset.notes) || "";
+  }
+
+  function revealIdFields() {
+    document.getElementById("model-id-field").hidden =
+      document.getElementById("model-preset").value !== "__custom__";
+    document.getElementById("lite-id-field").hidden =
+      document.getElementById("lite-preset").value !== "__custom__";
+  }
+
+  function filterModels(selectId, providerId) {
+    const select = document.getElementById(selectId);
+    for (const opt of select.options) {
+      if (!opt.dataset.provider) {
+        opt.hidden = false;
+        opt.disabled = false;
+        continue;
       }
-    </script>
-    <label class="field">
-      <span class="label">Lite model <span class="muted-tiny">(AI autocomplete)</span></span>
-      <input type="text" name="lite_model" value="{{ config.lite_model }}"
-             placeholder="e.g. openai/gpt-4o-mini — defaults to main model if empty">
-      <small class="muted">
-        Used for fast UI helpers (doc suggest, quick meta-fill). Cheap, low-latency.
-        Leave empty to use the main model.
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Max tokens (global)</span>
-      <input type="number" name="max_tokens" value="{{ config.max_tokens }}" min="1" required>
-      <small class="muted">
-        Default cap for agent steps and improve-text. Doc generation uses the two budgets below instead.
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Doc gen — heavy (architecture / module-spec)</span>
-      <input type="number" name="doc_max_tokens_heavy"
-             value="{{ config.doc_max_tokens_heavy }}" min="1024" step="1024" required>
-      <small class="muted">
-        Output budget for deep technical docs. 64K is comfortable for Deepseek V3 / Claude Sonnet 4.6;
-        raise to 100K+ if your model supports it and you want maximum depth.
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Doc gen — default (vision / guide / standard / other)</span>
-      <input type="number" name="doc_max_tokens_default"
-             value="{{ config.doc_max_tokens_default }}" min="1024" step="1024" required>
-      <small class="muted">
-        Output budget for all other doc types. 16K covers a thorough multi-section doc.
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Embedding backend</span>
-      <select name="embedding_backend">
-        <option value="openai"
-                {% if config.embedding_backend == "openai" %}selected{% endif %}>
-          OpenAI-compatible /embeddings (uses API key)
-        </option>
-        <option value="openrouter"
-                {% if config.embedding_backend == "openrouter" %}selected{% endif %}>
-          OpenRouter (dedicated key, supports dimensions)
-        </option>
-        <option value="local"
-                {% if config.embedding_backend == "local" %}selected{% endif %}>
-          Local sentence-transformers (CPU, no API key)
-        </option>
-      </select>
-      <small class="muted">
-        <code>local</code> requires the optional extra:
-        <code>pip install 'cod-doc[embeddings-local]'</code>.
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Embedding model</span>
-      <input type="text" name="embedding_model" value="{{ config.embedding_model }}" required>
-      <small class="muted">
-        For <code>openai</code>/<code>openrouter</code>: a route like
-        <code>openai/text-embedding-ada-002</code> or
-        <code>qwen/qwen3-embedding-8b</code>. For <code>local</code>:
-        a sentence-transformers id like <code>all-MiniLM-L6-v2</code>.
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Embedding API key</span>
-      <input type="password" name="embedding_api_key"
-             placeholder="{% if config.embedding_api_key_set %}{{ config.embedding_api_key_masked }}{% else %}not set{% endif %}">
-      <small class="muted">
-        Separate from the LLM key: <code>openrouter</code> does <b>not</b> inherit it.
-        Empty = keep current; type <code>-</code> to delete.
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Embedding base URL</span>
-      <input type="text" name="embedding_base_url" value="{{ config.embedding_base_url }}"
-             placeholder="https://openrouter.ai/api/v1">
-      <small class="muted">
-        Empty = LLM base URL for <code>openai</code>, OpenRouter for <code>openrouter</code>.
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Embedding dimensions</span>
-      <input type="number" name="embedding_dimensions" min="1"
-             value="{{ config.embedding_dimensions }}" placeholder="native">
-      <small class="muted">
-        Matryoshka truncation on the provider side (e.g. 2048 for
-        <code>qwen/qwen3-embedding-8b</code>). Changing it makes the existing
-        collection incompatible — run <code>cod-doc embed reset</code>.
-      </small>
-    </label>
-    <label class="field">
-      <span class="label">Embedding batch size</span>
-      <input type="number" name="embedding_batch_size" min="1"
-             value="{{ config.embedding_batch_size }}">
-    </label>
-  </fieldset>
+      const visible = opt.dataset.provider === providerId;
+      opt.hidden = !visible;
+      opt.disabled = !visible;
+    }
+    for (const group of select.querySelectorAll("optgroup")) {
+      const any = [...group.querySelectorAll("option")].some((opt) => !opt.disabled);
+      group.hidden = !any;
+      group.disabled = !any;
+    }
+  }
 
-  <fieldset>
-    <legend>Agent</legend>
-    <label class="field">
-      <span class="label">Max iterations</span>
-      <input type="number" name="max_iterations" value="{{ config.max_iterations }}" min="1" required>
-    </label>
-    <label class="field">
-      <span class="label">Daemon interval (sec)</span>
-      <input type="number" name="agent_interval" value="{{ config.agent_interval }}" min="5" required>
-    </label>
-    <label class="field-checkbox">
-      <input type="checkbox" name="auto_commit"{% if config.auto_commit %} checked{% endif %}>
-      <span>Auto-commit after task</span>
-    </label>
-    <label class="field-checkbox">
-      <input type="checkbox" name="agent_enabled"{% if config.agent_enabled %} checked{% endif %}>
-      <span>Autonomous agent enabled</span>
-    </label>
-    <small class="muted field-hint">
-      Если снять галку — агент не запустится при следующем старте контейнера.
-      Для немедленной остановки используй кнопку <strong>Stop</strong> на главной странице.
-    </small>
-  </fieldset>
+  function syncModelPreset(select) {
+    const input = document.getElementById("model-id");
+    const notes = document.getElementById("model-notes");
+    if (select.value === "__custom__") {
+      notes.textContent = "Введи model id в формате выбранного источника.";
+    } else {
+      input.value = select.value;
+      notes.textContent = notesOf(select);
+    }
+    revealIdFields();
+    markBundleCustomUnlessMatch();
+  }
 
-  <div class="form-actions">
-    <button type="submit">Save</button>
-  </div>
-</form>
+  function syncLitePreset(select) {
+    const input = document.getElementById("lite-model-id");
+    const notes = document.getElementById("lite-notes");
+    if (select.value === "__custom__") {
+      notes.textContent = "Введи model id в формате выбранного источника.";
+    } else if (select.value === "") {
+      input.value = "";
+      notes.textContent = "Пусто — UI-подсказки идут в основную модель.";
+    } else {
+      input.value = select.value;
+      notes.textContent = notesOf(select);
+    }
+    revealIdFields();
+    markBundleCustomUnlessMatch();
+  }
+
+  function setSelectTo(selectId, inputId, notesId, modelId) {
+    const select = document.getElementById(selectId);
+    const input = document.getElementById(inputId);
+    const notes = document.getElementById(notesId);
+    input.value = modelId;
+    for (const opt of select.options) {
+      if (opt.value === modelId && !opt.disabled) {
+        select.value = modelId;
+        notes.textContent = opt.dataset.notes || "";
+        revealIdFields();
+        return;
+      }
+    }
+    select.value = "__custom__";
+    notes.textContent = modelId;
+    revealIdFields();
+  }
+
+  function applyBundle(radio) {
+    if (radio.value === "custom") return;
+    setSelectTo("model-preset", "model-id", "model-notes", radio.dataset.model);
+    setSelectTo("lite-preset", "lite-model-id", "lite-notes", radio.dataset.lite);
+  }
+
+  function markBundleCustomUnlessMatch() {
+    const bundleGroup = document.getElementById("bundle-group");
+    if (bundleGroup.hidden) return;
+    const model = document.getElementById("model-id").value.trim();
+    const lite = document.getElementById("lite-model-id").value.trim();
+    let matched = false;
+    for (const radio of document.querySelectorAll('input[name="model_bundle"]')) {
+      if (radio.value !== "custom" && radio.dataset.model === model && radio.dataset.lite === lite) {
+        radio.checked = true;
+        matched = true;
+      }
+    }
+    if (!matched) {
+      const custom = document.querySelector('input[name="model_bundle"][value="custom"]');
+      if (custom) custom.checked = true;
+    }
+  }
+
+  function checkedProvider() {
+    return document.querySelector('input[name="chat_provider"]:checked');
+  }
+
+  function applyProvider(radio, resetModels) {
+    const url = document.getElementById("base-url");
+    document.getElementById("base-url-field").hidden = radio.value !== "custom";
+    document.getElementById("api-key-field").hidden = radio.dataset.needsKey !== "1";
+    document.getElementById("chat-credentials").hidden =
+      radio.value !== "custom" && radio.dataset.needsKey !== "1";
+    if (radio.value !== "custom") url.value = radio.dataset.baseUrl;
+    const note = document.getElementById("api-key-note");
+    if (note) note.textContent = radio.dataset.keyNote || "";
+    document.getElementById("bundle-group").hidden = radio.dataset.bundles !== "1";
+    filterModels("model-preset", radio.value);
+    filterModels("lite-preset", radio.value);
+    if (resetModels) {
+      const select = document.getElementById("model-preset");
+      const first = [...select.options].find(
+        (opt) => opt.dataset.provider === radio.value && !opt.disabled
+      );
+      select.value = first ? first.value : "__custom__";
+      syncModelPreset(select);
+      const lite = document.getElementById("lite-preset");
+      lite.value = "";
+      syncLitePreset(lite);
+    } else {
+      revealIdFields();
+    }
+  }
+
+  function applyFamily(radio) {
+    const family = radio.value;
+    const providers = [...document.querySelectorAll('input[name="chat_provider"]')];
+    let first = null;
+    for (const provider of providers) {
+      const visible = provider.dataset.family === family;
+      provider.closest(".settings-preset").hidden = !visible;
+      if (visible && !first) first = provider;
+    }
+    document.getElementById("provider-row").hidden = providers.filter(
+      (provider) => provider.dataset.family === family
+    ).length < 2;
+    if (!first) return;
+    first.checked = true;
+    applyProvider(first, true);
+  }
+
+  function embeddingBackend() {
+    const picked = document.querySelector('input[name="embedding_backend"]:checked');
+    return picked ? picked.value : "openai";
+  }
+
+  function syncEmbeddingPreset(select, focusCustom) {
+    const input = document.getElementById("embedding-model-id");
+    const notes = document.getElementById("embedding-notes");
+    const dims = document.getElementById("embedding-dimensions");
+    const dimsField = document.getElementById("embedding-dims-field");
+    const idField = document.getElementById("embedding-id-field");
+    const backend = embeddingBackend();
+    dimsField.hidden = backend !== "openrouter";
+    if (select.value === "__custom__") {
+      idField.hidden = false;
+      if (focusCustom) input.focus();
+      notes.textContent = "Введи model id этого бэкенда.";
+      if (backend !== "openrouter") dims.value = "";
+      return;
+    }
+    idField.hidden = true;
+    input.value = select.value;
+    const opt = select.options[select.selectedIndex];
+    notes.textContent = opt.dataset.notes || "";
+    if (backend === "openrouter") dims.value = opt.dataset.dimensions || "";
+    else dims.value = "";
+  }
+
+  function syncEmbeddingBackend() {
+    const backend = embeddingBackend();
+    const local = backend === "local";
+    document.getElementById("embedding-credentials").hidden = local;
+    document.getElementById("embedding-url-field").hidden = backend !== "openai";
+    document.getElementById("embedding-key-note").textContent = backend === "openrouter"
+      ? "Обязателен: ключ чата OpenRouter не наследует."
+      : "Пусто — взять ключ чата. «−» — удалить свой.";
+    if (backend !== "openai") document.getElementById("embedding-base-url").value = "";
+    const select = document.getElementById("embedding-preset");
+    for (const opt of select.options) {
+      if (opt.value === "__custom__") {
+        opt.hidden = false;
+        opt.disabled = false;
+        continue;
+      }
+      const visible = (opt.dataset.backends || "").split(",").includes(backend);
+      opt.hidden = !visible;
+      opt.disabled = !visible;
+    }
+    const wanted = EMBEDDING_DEFAULTS[backend];
+    const match = [...select.options].find((opt) => opt.value === wanted && !opt.disabled);
+    select.value = match ? match.value : "__custom__";
+    syncEmbeddingPreset(select, false);
+  }
+</script>
 {% endblock %}

@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from cod_doc.api.deps import get_config
 from cod_doc.api.web.templates_env import templates
+from cod_doc.core.embeddings.catalog import PRESETS as EMBEDDING_PRESETS
 from cod_doc.core.embeddings.registry import list_embedding_adapters
 from cod_doc.core.embeddings.settings import DEFAULT_BATCH_SIZE
 from cod_doc.services import model_catalog
@@ -19,6 +20,31 @@ router = APIRouter()
 @router.get("/settings", response_class=HTMLResponse)
 def settings_show(request: Request) -> HTMLResponse:
     cfg = get_config()
+    provider = model_catalog.matching_provider(cfg.base_url)
+    bundle = (
+        model_catalog.matching_bundle(cfg.model, cfg.lite_model)
+        if provider.allows_bundles
+        else None
+    )
+    source_model = model_catalog.find_source_model(provider, cfg.model)
+    lite_source = (
+        model_catalog.find_source_model(provider, cfg.lite_model) if cfg.lite_model else None
+    )
+    embedding_presets = [
+        {
+            "model_id": preset.model_id,
+            "label": preset.label,
+            "notes": preset.notes,
+            "backends": ",".join(preset.backends),
+            "dimensions": preset.dimensions or "",
+            "recommended": preset.recommended,
+            "visible": cfg.embedding_backend in preset.backends,
+            "selected": (
+                cfg.embedding_backend in preset.backends and preset.model_id == cfg.embedding_model
+            ),
+        }
+        for preset in EMBEDDING_PRESETS
+    ]
     return templates.TemplateResponse(
         request,
         "settings.html",
@@ -44,16 +70,22 @@ def settings_show(request: Request) -> HTMLResponse:
                 "doc_max_tokens_heavy": cfg.doc_max_tokens_heavy,
                 "doc_max_tokens_default": cfg.doc_max_tokens_default,
             },
-            "model_catalog": [
-                {
-                    "model_id": m.model_id,
-                    "label": m.label,
-                    "describe": m.describe(),
-                    "notes": m.notes,
-                }
-                for m in model_catalog.CATALOG
-            ],
-            "model_is_custom": not model_catalog.is_known(cfg.model),
+            "families": model_catalog.FAMILIES,
+            "providers": model_catalog.PROVIDERS,
+            "active_provider": provider.provider_id,
+            "active_family": provider.family,
+            "active_key_note": provider.key_note,
+            "show_provider_row": len(model_catalog.providers_in(provider.family)) > 1,
+            "show_bundles": provider.allows_bundles,
+            "show_api_key": provider.needs_key,
+            "show_base_url": provider.provider_id == "custom",
+            "model_is_custom": source_model is None,
+            "lite_is_custom": bool(cfg.lite_model)
+            and (lite_source is None or not lite_source.lite),
+            "bundles": model_catalog.BUNDLES,
+            "active_bundle": bundle.bundle_id if bundle else "",
+            "embedding_presets": embedding_presets,
+            "embedding_is_custom": not any(row["selected"] for row in embedding_presets),
         },
     )
 
@@ -89,6 +121,10 @@ def settings_save(
     elif api_key.strip():
         cfg.api_key = api_key.strip()
     cfg.base_url = base_url.strip()
+    # Локальный Ollama ключа не имеет, а OpenAI-клиент пустой ключ не принимает.
+    provider = model_catalog.matching_provider(cfg.base_url)
+    if not cfg.api_key and provider.fallback_key:
+        cfg.api_key = provider.fallback_key
     cfg.model = model.strip()
     cfg.max_tokens = max_tokens
     cfg.auto_commit = auto_commit == "on"
