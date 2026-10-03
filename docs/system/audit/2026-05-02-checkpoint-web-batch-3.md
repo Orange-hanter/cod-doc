@@ -1,5 +1,5 @@
 ---
-type: checkpoint-report
+type: audit-report
 scope: cod_doc/api/web/* + cod_doc/services/plan_service.py (Section B closed + WEB-051)
 status: resolved
 source_of_truth: false

@@ -1,6 +1,6 @@
 ---
-status: implemented
-type: tech-proposal
+status: active
+type: rfc
 author: human:dakh
 date: 2026-05-06
 scope: web-ui · link-service · markdown-renderer · semantic-backfill

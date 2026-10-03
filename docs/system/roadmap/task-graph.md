@@ -1,7 +1,7 @@
 ---
-type: reference
+type: index
 scope: all-tasks
-status: maintained
+status: active
 created: 2026-05-01
 last_updated: 2026-05-01
 source_of_truth:

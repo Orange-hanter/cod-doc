@@ -1,5 +1,5 @@
 ---
-type: migration-plan
+type: plan
 scope: restate-to-cod-doc
 status: draft
 source_of_truth: true

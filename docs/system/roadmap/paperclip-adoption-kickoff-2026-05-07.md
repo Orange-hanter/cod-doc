@@ -1,5 +1,5 @@
 ---
-type: kickoff-brief
+type: guide
 scope: paperclip-adoption / Phase 1 (Skills & Heartbeat)
 status: active
 source_of_truth: false

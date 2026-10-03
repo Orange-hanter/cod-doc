@@ -1,5 +1,5 @@
 ---
-type: checkpoint-report
+type: audit-report
 scope: cod_doc/api/web/* + cod_doc/core/project.py (Section F first batch)
 status: resolved
 source_of_truth: false

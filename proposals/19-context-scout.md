@@ -1,3 +1,7 @@
+---
+type: rfc
+---
+
 # 19 — Context-Scout: «умный grep» через cod-doc MCP
 
 > ❌ ОТБРАКОВАНА 2026-08-29 (ADO-056) — см. [proposals/README.md](README.md) § «Отбраковка». Текст ниже — исходное предложение, не план работ.

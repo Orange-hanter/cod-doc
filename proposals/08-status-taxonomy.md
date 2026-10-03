@@ -1,3 +1,7 @@
+---
+type: rfc
+---
+
 # 08 — Status taxonomy: `in_review` ≠ `blocked`
 
 > Категория: 🟡 Адаптация · Риск: низкий · Зависимости: —

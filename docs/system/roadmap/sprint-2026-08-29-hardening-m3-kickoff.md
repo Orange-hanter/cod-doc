@@ -1,5 +1,5 @@
 ---
-type: sprint-plan
+type: plan
 scope: adoption-2026-08
 status: done
 source_of_truth: false

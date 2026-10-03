@@ -1,5 +1,5 @@
 ---
-type: checkpoint-report
+type: audit-report
 scope: cod_doc/api/web/* + tests/api/* (Section C closed + polish closure)
 status: resolved
 source_of_truth: false

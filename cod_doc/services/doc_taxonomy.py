@@ -97,7 +97,7 @@ DEFAULT_TREE: tuple[NodeSpec, ...] = (
             "контрибьютора. Документы, на которые ссылаются извне и с которых "
             "начинается онбординг."
         ),
-        expected_types=("guide", "module-spec"),
+        expected_types=("guide", "module-spec", "index"),
         min_docs=1,
     ),
     NodeSpec(
@@ -149,13 +149,13 @@ DEFAULT_TREE: tuple[NodeSpec, ...] = (
         node_key="proposals",
         title="RFC и предложения",
         intent="Предложения об изменениях: контекст, предложение, миграция, риски.",
-        expected_types=("analysis", "design", "module-spec"),
+        expected_types=("rfc", "analysis", "design", "module-spec"),
     ),
     NodeSpec(
         node_key="roadmap",
         title="Планы и роадмап",
         intent="Приоритеты, милстоуны, планы исполнения и их секции.",
-        expected_types=("plan", "execution-plan"),
+        expected_types=("plan", "execution-plan", "index"),
     ),
     NodeSpec(
         node_key="audit",
@@ -260,6 +260,11 @@ DEFAULT_RULES: tuple[PlacementRule, ...] = (
         reason="каталог proposals/",
     ),
     PlacementRule(
+        node_key="proposals",
+        types=(DocumentType.RFC,),
+        reason="тип rfc",
+    ),
+    PlacementRule(
         node_key="roadmap",
         types=(DocumentType.PLAN, DocumentType.EXECUTION_PLAN),
         reason="тип plan/execution-plan",
@@ -289,7 +294,7 @@ DEFAULT_RULES: tuple[PlacementRule, ...] = (
         types=(DocumentType.GUIDE,),
         reason="тип guide",
     ),
-    # Намеренно последнее правило. MASTER/README — точка входа своего каталога
+    # Намеренно в хвосте, после всех правил по каталогу. MASTER/README — точка входа своего каталога
     # на любой глубине, но только если каталог не разобран правилом выше:
     # `proposals/README` — индекс RFC и остаётся в RFC, а `docs/system/MASTER`
     # каталогом не покрыт и становится точкой входа.
@@ -297,6 +302,15 @@ DEFAULT_RULES: tuple[PlacementRule, ...] = (
         node_key="entry",
         basenames=("master", "readme", "index"),
         reason="точка входа каталога, не покрытого другим правилом",
+    ),
+    # Тип `index` без правила выше по каталогу: навигационный документ, чьё
+    # имя не MASTER/README. Своего раздела у индексов нет — индекс каталога
+    # живёт в разделе каталога (ROADMAP — в roadmap), поэтому правило стоит
+    # последним и подбирает только то, что каталогом не покрыто.
+    PlacementRule(
+        node_key="entry",
+        types=(DocumentType.INDEX,),
+        reason="тип index",
     ),
 )
 

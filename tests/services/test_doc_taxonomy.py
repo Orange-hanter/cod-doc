@@ -35,6 +35,14 @@ from cod_doc.services.doc_taxonomy import (
         ("MASTER", DocumentType.MODULE_SPEC, "entry"),
         ("docs/system/MASTER", DocumentType.MODULE_SPEC, "entry"),
         ("docs/adoption-playbook", DocumentType.GUIDE, "entry"),
+        # ADO-238: RFC — по типу, даже вне proposals/; индекс каталога остаётся
+        # в каталоге, индекс без каталога — точка входа.
+        ("docs/rfc/42-x", DocumentType.RFC, "proposals"),
+        ("proposals/25-doc-curator-agent", DocumentType.RFC, "proposals"),
+        ("docs/system/roadmap/ROADMAP", DocumentType.INDEX, "roadmap"),
+        ("docs/system/roadmap/task-graph", DocumentType.INDEX, "roadmap"),
+        ("docs/system/MASTER", DocumentType.INDEX, "entry"),
+        ("docs/map", DocumentType.INDEX, "entry"),
     ],
 )
 def test_known_shapes_land_where_expected(

@@ -92,7 +92,7 @@ graph TD
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
   capabilities/*, standards/*, audit/*, roadmap/*, migration/. Это source of
   truth для поведения системы и единая точка входа для контрибьютора.
-- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:1ee0e8898e95`
+- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:4be5cf18fede`
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
@@ -123,7 +123,7 @@ graph TD
     write-path, кросс-проектный `ctx_search(projects=...)` работает в
     hub-режиме (CUR-013). Секции A/B/C/D — все done, см. аудиты секций
     B/C/D. Частично реанимирует поисковый контракт RFC 19.
-    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:97648d0ab324`
+    Файл: `📁 /proposals/25-doc-curator-agent.md | 🗃️ doc:proposals_25-doc-curator-agent_md | 🔑 sha:e1a0a53a159d`
   - **26 (graph-editing-track):** 🟢 **Реализован 2026-09-27, секция J 12/12** — Правка графа плана: секции и
     рёбра как первоклассные операции. Рождён из инцидента: пять правок на
     `Restate` (заголовок и позиция секции плана, три ребра зависимости) внесены
@@ -133,14 +133,14 @@ graph TD
     путь не видит по построению. Декомпозиция — секция J плана
     `adoption-2026-08` (ADO-199…ADO-210); аудит —
     `docs/system/audit/2026-09-27-adoption-section-j-plan-graph.md`.
-    Файл: `📁 /proposals/26-plan-graph-editing.md | 🗃️ doc:proposals_26-plan-graph-editing_md | 🔑 sha:024c63e71a6d`
+    Файл: `📁 /proposals/26-plan-graph-editing.md | 🗃️ doc:proposals_26-plan-graph-editing_md | 🔑 sha:08fa546762b9`
   - **27 (agent-fit-track):** 🟢 **Реализован в v1.5.0 (2026-09-27), план 17/18** — Agent fit: coding-агент закрывает
     вопросы тулами, а не SQL. Рождён из замера 2026-09-23: за 40 сессий 407
     прямых чтений `state.db` против 398 MCP-вызовов, `curator_next` ≈25 КБ
     при 8 пунктах очереди, `agent_capabilities` на `standard` запрещает
     checkout, который требует `task-flow`. Декомпозиция — план
     `agent-fit-2026-09` (AFT-001…AFT-016), шесть секций.
-    Файл: `📁 /proposals/27-agent-fit.md | 🗃️ doc:proposals_27-agent-fit_md | 🔑 sha:a96b5b2fd500`
+    Файл: `📁 /proposals/27-agent-fit.md | 🗃️ doc:proposals_27-agent-fit_md | 🔑 sha:6842c0a1b839`
 - **Ссылка:** `📁 /proposals/README.md | 🗃️ doc:proposals_README_md | 🔑 sha:420cf2d9d3f0`
 - **Статус:** `🟢 VERIFIED`
 
@@ -229,14 +229,14 @@ graph TD
 ### ROADMAP (милстоуны и приоритеты) ⭐
 - **Описание:** Милстоуны M1–M6, статусы фаз, декомпозиция планов. M1–M5 закрыты,
   M6 (hub + кросс-проектность) в подготовке.
-- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:a438fd0bd4e4`
+- **Ссылка:** `📁 /docs/system/roadmap/ROADMAP.md | 🗃️ doc:docs_system_roadmap_ROADMAP_md | 🔑 sha:c97e398c3dc9`
 - **Статус:** `🟢 VERIFIED`
 
 ### RFC 22: Symbiosis (ZAIrgRush + Orakul)
 - **Описание:** Proposal программы симбиоза: cod-doc отдаёт спеки/ADR/контекст,
   пилоты возвращают findings и измерения. Решение 2026-08-25 о переназначении
   пилотов.
-- **Ссылка:** `📁 /proposals/22-symbiosis-zairgrush-orakul.md | 🗃️ doc:proposals_22-symbiosis-zairgrush-orakul_md | 🔑 sha:b1589ce06444`
+- **Ссылка:** `📁 /proposals/22-symbiosis-zairgrush-orakul.md | 🗃️ doc:proposals_22-symbiosis-zairgrush-orakul_md | 🔑 sha:65d8abd8a17a`
 - **Статус:** `🟢 VERIFIED`
 
 ## 4. ⚡ Quick Actions & Handoffs
@@ -296,7 +296,7 @@ graph TD
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
-| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `1ee0e8898e95` | 2026-09-20 | 🟢 VERIFIED |
+| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `4be5cf18fede` | 2026-09-20 | 🟢 VERIFIED |
 | 3 | proposals/README.md | `doc:proposals_README_md` | `420cf2d9d3f0` | 2026-09-20 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `7c133a394eb3` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `90c54859cba1` | 2026-09-11 | 🟢 VERIFIED |
@@ -308,14 +308,14 @@ graph TD
 | 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `030f64ed9160` | 2026-09-11 | 🟢 VERIFIED |
 | 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `2988e2a70f9e` | 2026-09-20 | 🟢 VERIFIED |
-| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `a438fd0bd4e4` | 2026-09-20 | 🟢 VERIFIED |
-| 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `b1589ce06444` | 2026-09-20 | 🟢 VERIFIED |
+| 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `c97e398c3dc9` | 2026-09-20 | 🟢 VERIFIED |
+| 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `65d8abd8a17a` | 2026-09-20 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
 | 17 | RFC 24 Structure/Contracts/Scenarios | `doc:proposals_24-structure-contracts-scenarios_md` | `fd5676874195` | 2026-09-15 | 🟡 DRAFT |
-| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `97648d0ab324` | 2026-09-20 | 🟢 VERIFIED |
+| 18 | RFC 25 Doc-curator agent | `doc:proposals_25-doc-curator-agent_md` | `e1a0a53a159d` | 2026-09-20 | 🟢 VERIFIED |
 | 19 | Zsh-дополнение | `doc:docs_zsh-completion_md` | `f177c8373beb` | 2026-09-17 | 🟢 VERIFIED |
-| 20 | RFC 26 Правка графа плана | `doc:proposals_26-plan-graph-editing_md` | `024c63e71a6d` | 2026-09-27 | 🟢 VERIFIED |
-| 21 | RFC 27 Agent fit | `doc:proposals_27-agent-fit_md` | `a96b5b2fd500` | 2026-09-27 | 🟢 VERIFIED |
+| 20 | RFC 26 Правка графа плана | `doc:proposals_26-plan-graph-editing_md` | `08fa546762b9` | 2026-09-27 | 🟢 VERIFIED |
+| 21 | RFC 27 Agent fit | `doc:proposals_27-agent-fit_md` | `6842c0a1b839` | 2026-09-27 | 🟢 VERIFIED |
 
 > **Всего:** 21 документов | 🟢 VERIFIED: 14 | 🟡 LEGACY: 3 | 🟡 DRAFT: 4 | 🔴 STALE: 0 | 🔴 BROKEN: 0
 >

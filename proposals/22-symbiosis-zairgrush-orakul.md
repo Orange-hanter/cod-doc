@@ -1,3 +1,7 @@
+---
+type: rfc
+---
+
 # 22 — Symbiosis: cod-doc ↔ ZAIrgRush ↔ ai-review (Orakul)
 
 > Категория: 🔵 Архитектура · Риск: высокий · Зависимости: proposal 04 (run-id), proposal 07 (routines / `on_finding`), proposal 09 (activity log); поглощает внешнюю часть proposal 16 (pair-hacker) и 17 (drift detector)

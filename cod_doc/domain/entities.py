@@ -54,6 +54,17 @@ class DocumentType(StrEnum):
     # Projection of the ``scenario`` tables — one file per capability. Generated
     # by ``scenario_service.export``; never authored by hand.
     SCENARIO_SET = "scenario-set"
+    # ADO-238: two genres this repo was already writing under names the enum
+    # did not know, so every import folded them into ``module-spec``.
+    # ``index`` — a navigation document whose body is a map of other documents
+    # (MASTER, ROADMAP, a catalogue README); it was authored as
+    # ``documentation-master`` / ``roadmap-index`` / ``reference``.
+    # ``rfc`` — a numbered change proposal under ``proposals/``, authored as
+    # ``proposal`` / ``ux-proposal`` / ``tech-proposal``. Its own lifecycle
+    # (accepted / implemented / superseded) is research 2026-09-30, not here:
+    # ``document.status`` keeps the shared vocabulary.
+    INDEX = "index"
+    RFC = "rfc"
 
 
 class DocumentStatus(StrEnum):
