@@ -1,11 +1,11 @@
 ---
 type: audit-report
 scope: agent-fit-sections-a-c-d-e
-status: active
+status: resolved
 source_of_truth: true
 owner: cod-doc core
 created: 2026-09-27
-last_updated: 2026-09-27
+last_updated: 2026-10-03
 related_docs:
   - ../../../proposals/27-agent-fit.md
   - ../../../proposals/26-plan-graph-editing.md
