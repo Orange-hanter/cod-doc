@@ -137,7 +137,11 @@ def register(mcp: FastMCP) -> None:
         alternatives: str | None = None,
         consequences: str | None = None,
     ) -> dict[str, Any]:
-        """Patch ADR fields. Only supplied (non-None) fields change."""
+        """Patch ADR fields. Only supplied (non-None) fields change.
+
+        Accepting (``status="accepted"``) without ``decided_at`` stamps
+        today's date unless the ADR already has one (ARG-002).
+        """
         from cod_doc.infra.db import transactional
         from cod_doc.services import adr_service
         from cod_doc.services.adr_service import ADRNotFoundError
@@ -173,6 +177,7 @@ def register(mcp: FastMCP) -> None:
         decision: str | None = None,
         alternatives: str | None = None,
         consequences: str | None = None,
+        clear_decided_at: bool = False,
     ) -> dict[str, Any]:
         """Re-sync an ADR body from its markdown projection (ADO-168).
 
@@ -189,6 +194,10 @@ def register(mcp: FastMCP) -> None:
         The audit trail distinguishes the two: revision ``op=sync_body`` and
         activity event ``adr.body_synced``. Supplying nothing that differs
         from the stored row is a no-op — no revision, no event.
+
+        ``clear_decided_at=True`` (ARG-002) removes the decision date —
+        ``decided_at=None`` means "leave as is", so clearing needs its own
+        flag. Passing both is an error.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import adr_service
@@ -209,6 +218,7 @@ def register(mcp: FastMCP) -> None:
                     alternatives=alternatives,
                     consequences=consequences,
                     author="agent",
+                    clear_decided_at=clear_decided_at,
                 )
                 return adr_service.adr_to_dict(session, row)
         except ADRNotFoundError as exc:
@@ -287,6 +297,92 @@ def register(mcp: FastMCP) -> None:
         except ADRNotFoundError as exc:
             raise ValueError(str(exc)) from exc
 
+    @mcp.tool(name="adr_relate")
+    def adr_relate(
+        project: str,
+        from_adr_id: str,
+        to_adr_id: str,
+        kind: str,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Record that ``from_adr_id`` amends or depends on ``to_adr_id`` (ARG-001).
+
+        ``kind``: ``amends`` — both decisions stay in force, the new one
+        changes the scope of the old (ADR-010 amends ADR-005);
+        ``depends_on`` — ``from`` cannot be accepted before ``to``
+        (ADR-017 depends on ADR-016). Unlike ``adr_supersede`` neither
+        status changes, and the relation may be recorded from any status of
+        ``from``, including ACCEPTED.
+
+        A repeated relation, a self-loop, a cycle within one kind or an
+        unknown ``kind`` is an error. To change ``reason``, call
+        ``adr_unrelate`` first. Both sides show up in ``adr_get`` under
+        ``relations.outgoing`` / ``relations.incoming``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_service
+        from cod_doc.services.adr_service import ADRNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                edge = adr_service.relate(
+                    session,
+                    project_id=project_id,
+                    from_adr_id=from_adr_id,
+                    to_adr_id=to_adr_id,
+                    kind=kind,
+                    reason=reason,
+                    author="agent",
+                )
+                return {
+                    "from": from_adr_id,
+                    "to": to_adr_id,
+                    "kind": edge.kind,
+                    "reason": edge.reason,
+                    "at": edge.at.isoformat() if edge.at else None,
+                }
+        except ADRNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @mcp.tool(name="adr_unrelate")
+    def adr_unrelate(
+        project: str,
+        from_adr_id: str,
+        to_adr_id: str,
+        kind: str,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Remove a relation recorded by ``adr_relate`` (ARG-001).
+
+        A missing relation is an error, not a no-op. ``reason`` goes to the
+        revision written on ``from_adr_id``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_service
+        from cod_doc.services.adr_service import (
+            ADRNotFoundError,
+            ADRRelationNotFoundError,
+        )
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                adr_service.unrelate(
+                    session,
+                    project_id=project_id,
+                    from_adr_id=from_adr_id,
+                    to_adr_id=to_adr_id,
+                    kind=kind,
+                    reason=reason,
+                    author="agent",
+                )
+                return {"from": from_adr_id, "to": to_adr_id, "kind": kind, "removed": True}
+        except (ADRNotFoundError, ADRRelationNotFoundError) as exc:
+            raise ValueError(str(exc)) from exc
+
     @mcp.tool(name="adr_link_task")
     def adr_link_task(
         project: str,
@@ -351,10 +447,12 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="adr_graph")
     def adr_graph(project: str) -> dict[str, Any]:
-        """Return the full supersede DAG: ``{nodes: [...], edges: [...]}``.
+        """Return the ADR graph: ``{nodes: [...], edges: [...], relations: [...]}``.
 
-        Each node carries adr_id + title + status; each edge carries
-        from/to (canonical ADR-NNN ids) + reason. Suitable for direct
+        Each node carries adr_id + title + status; each ``edges`` item is a
+        supersede edge with from/to (canonical ADR-NNN ids) + reason.
+        ``relations`` (ARG-001) lists ``amends`` / ``depends_on`` links as
+        from/to/kind/reason — they change no status. Suitable for direct
         Mermaid rendering.
         """
         from cod_doc.infra.db import transactional

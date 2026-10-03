@@ -20,6 +20,12 @@ _FIELDS = ("title", "decided_at", "context", "decision", "alternatives", "conseq
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.option("--title", default=None, help="Title as written in the projection")
 @click.option("--decided-at", default=None, help="ISO date (YYYY-MM-DD)")
+@click.option(
+    "--clear-decided-at",
+    is_flag=True,
+    default=False,
+    help="Remove the decision date (e.g. a proposal date stored on a proposed ADR)",
+)
 @click.option("--context", default=None, help="Context section")
 @click.option("--decision", default=None, help="Decision section")
 @click.option("--alternatives", default=None, help="Alternatives section")
@@ -33,6 +39,7 @@ def adr_sync(
     project: str,
     title: str | None,
     decided_at: str | None,
+    clear_decided_at: bool,
     context: str | None,
     decision: str | None,
     alternatives: str | None,
@@ -51,6 +58,7 @@ def adr_sync(
     ``adr update`` (from PROPOSED), ``adr deprecate`` or ``adr supersede``.
 
     Passing no field is an error — that is a typo, not a no-op.
+    ``--clear-decided-at`` counts as a field and excludes ``--decided-at``.
     """
     from datetime import date
 
@@ -66,7 +74,10 @@ def adr_sync(
         "alternatives": alternatives,
         "consequences": consequences,
     }
-    if all(v is None for v in supplied.values()):
+    if clear_decided_at and decided_at is not None:
+        console.print("[red]--clear-decided-at and --decided-at are mutually exclusive.[/red]")
+        raise SystemExit(2)
+    if all(v is None for v in supplied.values()) and not clear_decided_at:
         console.print(
             "[red]Nothing to sync: pass at least one of "
             f"{', '.join('--' + f.replace('_', '-') for f in _FIELDS)}.[/red]"
@@ -104,6 +115,7 @@ def adr_sync(
                 consequences=consequences,
                 author=author,
                 reason=reason,
+                clear_decided_at=clear_decided_at,
             )
             changed = [f for f in _FIELDS if getattr(row, f) != was[f]]
     except ADRNotFoundError as exc:

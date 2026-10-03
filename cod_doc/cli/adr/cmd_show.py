@@ -72,6 +72,22 @@ def adr_show(ctx: click.Context, project: str, adr_id: str, as_json: bool) -> No
             body.append(f"  {link['relation']:<12} → {link['task_id']}")
         body.append("")
 
+    # ARG-001: связи «уточняет» / «опирается на» в обе стороны.
+    rels = payload.get("relations") or {}
+    out_label = {"amends": "amends", "depends_on": "depends on"}
+    in_label = {"amends": "amended by", "depends_on": "needed by"}
+    rel_lines = [
+        f"  {out_label.get(r['kind'], r['kind']):<11} → {r['adr_id']} — {r['title']} ({r['status']})"
+        for r in rels.get("outgoing", [])
+    ] + [
+        f"  {in_label.get(r['kind'], r['kind']):<11} ← {r['adr_id']} — {r['title']} ({r['status']})"
+        for r in rels.get("incoming", [])
+    ]
+    if rel_lines:
+        body.append(f"[bold]Relations ({len(rel_lines)})[/bold]")
+        body.extend(rel_lines)
+        body.append("")
+
     refs = payload.get("referenced_by") or {}
     total = sum(len(v) for v in refs.values())
     if total:

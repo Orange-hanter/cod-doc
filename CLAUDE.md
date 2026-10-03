@@ -176,8 +176,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   AFT-004): там работает coding-агент по протоколу checkout → complete. Старые
   task-centric тулы (`agent_pick`, `agent_get`, `agent_complete`,
   `agent_release`) остались зарегистрированы, но видны только на
-  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 167
-  / `full` 171.
+  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 169
+  / `full` 173.
   Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
   прозе ~10 файлов; их полный список — `PROSE_COUNTERS` в
   `tests/test_profile_counts_prose.py`, который сверяет каждое вхождение с
@@ -297,7 +297,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/21/167/171) в коде и доках совпадают |
+| `test_server_profiles.py` | counts профилей (6/21/169/173) в коде и доках совпадают |
 | `test_profile_counts_prose.py` | счётчики профилей в прозе (README, MASTER, AGENTS, CLAUDE, docs, deploy, profiles.py, server.py) = живому каталогу |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `infra/test_totals_status_aliases.py` | `section_totals`/`plan_totals`/`ready_tasks` перечисляют все написания статуса из `TASK_STATUS_ALIASES` (миграция 0035) |
@@ -344,7 +344,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
   субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
-  (профиль `standard`, 167 тулов `task_*`/`doc_*`/`plan_*`/…) и
+  (профиль `standard`, 169 тулов `task_*`/`doc_*`/`plan_*`/…) и
   `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6 curator-тулов —
   `curator_next`/`ctx_*`/`context_get`/`agent_capabilities`/`agent_report`).
   Тем же launchd и тем же рантаймом живёт веб-UI — `com.cod-doc.web`. Доставка

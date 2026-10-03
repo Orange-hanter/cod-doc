@@ -107,6 +107,39 @@ class ADRSupersedeModel(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
+#: ARG-001 (RFC 34 §3.1): виды связи между ADR помимо замены. Замена живёт
+#: в ``adr_supersedes``: она меняет статус старого решения, эти — нет.
+ADR_RELATION_KINDS: tuple[str, ...] = ("amends", "depends_on")
+
+
+class ADRRelationModel(Base):
+    """Связь «уточняет» / «опирается на» между двумя ADR одного проекта.
+
+    ``from_id`` — решение, которое заявляет связь: ADR-010 уточняет ADR-005,
+    ADR-017 опирается на ADR-016. Оба решения остаются в своих статусах.
+    """
+
+    __tablename__ = "adr_relation"
+    __table_args__ = (
+        UniqueConstraint("from_id", "to_id", "kind", name="uq_adr_relation_edge"),
+        CheckConstraint("from_id <> to_id", name="ck_adr_relation_no_self_loop"),
+        CheckConstraint("kind IN ('amends','depends_on')", name="ck_adr_relation_kind"),
+        Index("ix_adr_relation_from", "from_id"),
+        Index("ix_adr_relation_to", "to_id"),
+    )
+
+    row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    from_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("adr.row_id", ondelete="CASCADE"), nullable=False
+    )
+    to_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("adr.row_id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
 class ADRTaskModel(Base):
     __tablename__ = "adr_task"
     __table_args__ = (
