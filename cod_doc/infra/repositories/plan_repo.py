@@ -25,6 +25,7 @@ class PlanRepository(BaseRepository[Plan, PlanModel]):
             completed_log_id=model.completed_log_id,
             created=model.created,
             last_updated=model.last_updated,
+            id_prefix=model.id_prefix,
         )
 
     def _to_model(self, entity: Plan) -> PlanModel:
@@ -35,6 +36,7 @@ class PlanRepository(BaseRepository[Plan, PlanModel]):
             "module_id": entity.module_id,
             "parent_doc_id": entity.parent_doc_id,
             "completed_log_id": entity.completed_log_id,
+            "id_prefix": entity.id_prefix,
         }
         if entity.row_id is not None:
             kwargs["row_id"] = entity.row_id

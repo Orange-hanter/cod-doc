@@ -2100,6 +2100,7 @@ _cod-doc() {
     '(--principle)--principle=[Принцип плана — одна строка о его сути]:principle' \
     '(--author)--author=[Автор ревизии]:author' \
     '(--reason)--reason=[Причина для ревизии]:reason' \
+    '(--id-prefix)--id-prefix=[Префикс ID новых задач плана (2-5 заглавных, напр. WEB) — ADO-243]:id-prefix' \
     '(--json)--json[Вывод в JSON]' \
     '(- *)--help[Show this message and exit.]' \
     '1:scope' && ret=0
@@ -3761,6 +3762,7 @@ _cod-doc() {
         (create)     _cod_doc_task_create && ret=0 ;;
         (list)       _cod_doc_task_list && ret=0 ;;
         (move)       _cod_doc_task_move && ret=0 ;;
+        (move-plan)  _cod_doc_task_move_plan && ret=0 ;;
         (release)    _cod_doc_task_release && ret=0 ;;
         (remove-dep) _cod_doc_task_remove_dep && ret=0 ;;
         (show)       _cod_doc_task_show && ret=0 ;;
@@ -3782,6 +3784,7 @@ _cod-doc() {
     'create:Create a new task in a plan section.'
     'list:List tasks for a project.'
     'move:Переложить задачи в другую секцию того же плана (группировка бэклог…'
+    'move-plan:Перенести задачи в секцию ДРУГОГО плана того же проекта (ADO-243).'
     'release:Release the checkout lock on TASK_ID. Status is left unchanged.'
     'remove-dep:Remove a dependency edge (TASK_ID is no longer blocked by BLOCKER_I…'
     'show:Show details of a single task.'
@@ -3888,6 +3891,25 @@ _cod-doc() {
     '(--section)--section=[Буква целевой секции]:section-letter:_cod_doc_plan_sections' \
     '(--author)--author=:author' \
     '(--reason)--reason=:reason' \
+    '(--dry-run)--dry-run[Показать, что будет перенесено, и откатить]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '*:task-ids' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_task_move_plan] )) || _cod_doc_task_move_plan() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--plan)--plan=[Scope целевого плана]:plan-scope:_cod_doc_plans' \
+    '(--section)--section=[Буква целевой секции]:section-letter:_cod_doc_plan_sections' \
+    '(--from-section)--from-section=[Перенести всю секцию; '\''<scope>;<буква>'\'' вместо списка TASK_IDS]:from-section' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--continue-on-error)--continue-on-error[Не откатывать батч на ошибке задачи — копить ошибки и переносить ос…]' \
     '(--dry-run)--dry-run[Показать, что будет перенесено, и откатить]' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' \

@@ -66,6 +66,7 @@ def register(mcp: FastMCP) -> None:
         sections: list[dict[str, Any]] | None = None,
         author: str = "mcp",
         reason: str | None = None,
+        id_prefix: str | None = None,
     ) -> dict[str, Any]:
         """Create a new Plan in the project, optionally with initial sections.
 
@@ -91,6 +92,10 @@ def register(mcp: FastMCP) -> None:
                     defaults to the index in the list.
         author:     provenance of the revisions and events (default ``mcp``).
         reason:     optional reason stored on the revisions.
+        id_prefix:  ADO-243 — prefix of new task IDs in this plan (2-5 capital
+                    letters, ``WEB`` → ``WEB-001``). Set it on a plan that
+                    receives tasks via ``task_move_to_plan``: otherwise the
+                    prefix is inferred from the moved tasks.
 
         Returns ``{"plan_id", "scope", "principle", "sections": [...]}``, plus
         ``warnings: [...]`` when a section title looks HTML-escaped (``&amp;``);
@@ -111,6 +116,7 @@ def register(mcp: FastMCP) -> None:
                 principle=principle,
                 author=author,
                 reason=reason,
+                id_prefix=id_prefix,
             )
 
             seeded: list[dict[str, Any]] = []
@@ -150,6 +156,7 @@ def register(mcp: FastMCP) -> None:
                 "plan_id": plan.row_id,
                 "scope": plan.scope,
                 "principle": plan.principle,
+                "id_prefix": plan.id_prefix,
                 "sections": seeded,
             }
             if warnings:

@@ -1165,6 +1165,92 @@ def register(mcp: FastMCP) -> None:
             result["dry_run"] = True
         return result
 
+    @mcp.tool(name="task_move_to_plan")
+    def task_move_to_plan(
+        project: str,
+        plan_scope: str,
+        section_letter: str,
+        task_ids: list[str] | None = None,
+        from_section: str | None = None,
+        author: str = "mcp",
+        reason: str | None = None,
+        continue_on_error: bool = False,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Move tasks into a section of ANOTHER plan of the same project (ADO-243).
+
+        Разбор бэклога на тематические планы: внутри одного плана —
+        ``task_move_to_section``, между планами — этот тул. Сохраняются
+        ``task_id``, статус, замок, ревизии, документы задачи, связи с
+        историями и рёбра зависимостей; меняются только план и секция.
+
+        Задачи — либо ``task_ids``, либо ``from_section`` вида
+        ``"<scope>:<letter>"`` (вся исходная секция); ровно одно из двух.
+        Задача на замке чужого агента не переносится — сначала
+        ``task_release``. Префикс новых задач целевого плана задаёт
+        ``plan_create(id_prefix=...)``.
+
+        Батч — одна транзакция: по умолчанию любая ошибка откатывает весь
+        перенос; с ``continue_on_error=True`` ошибки копятся по-задачно.
+        Каждая задача получает ревизию ``op=plan`` и событие
+        ``task.plan_changed``. ``warnings`` перечисляет рёбра зависимостей,
+        оказавшиеся между планами: ``plan_critical_path`` /
+        ``plan_forward_chain`` / ``plan_reverse_chain`` их не видят.
+
+        ``dry_run=True`` проверяет и возвращает результат, откатывая транзакцию.
+
+        Returns ``{"moved": [...], "skipped": [...], "errors": [{"task_id",
+        "message"}], "warnings": [...], "section": {...}, "committed": bool}``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import task_service
+        from cod_doc.services.checkout_service import CheckoutConflictError
+        from cod_doc.services.task_service import (
+            CrossPlanMoveError,
+            SectionNotFoundError,
+            TaskNotFoundError,
+        )
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf, commit=not dry_run) as session:
+                project_id = require_project_id(session, project)
+                res = task_service.move_tasks_to_plan(
+                    session,
+                    project_id=project_id,
+                    plan_scope=plan_scope,
+                    section_letter=section_letter,
+                    author=author,
+                    task_ids=task_ids,
+                    from_section=from_section,
+                    reason=reason,
+                    continue_on_error=continue_on_error,
+                )
+                moved = [task_to_dict(t, session) for t in res.moved]
+        except (
+            TaskNotFoundError,
+            SectionNotFoundError,
+            CrossPlanMoveError,
+            CheckoutConflictError,
+        ) as exc:
+            raise ValueError(str(exc)) from None
+
+        result: dict[str, Any] = {
+            "moved": moved,
+            "skipped": res.skipped,
+            "errors": res.errors,
+            "warnings": res.warnings,
+            "section": {
+                "letter": res.section_letter,
+                "title": res.section_title,
+                "plan_scope": res.plan_scope,
+            },
+            "committed": not dry_run,
+        }
+        if dry_run:
+            result["dry_run"] = True
+        return result
+
     @mcp.tool(name="task_complete")
     def task_complete(
         project: str,
