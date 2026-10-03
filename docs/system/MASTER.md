@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-04-19
-last_updated: 2026-09-26
+last_updated: 2026-10-03
 audience: [contributors, agents]
 related_code:
   - cod_doc/core/project.py
@@ -78,7 +78,7 @@ docs/system/
 ├── scenarios/                      ← ГЕНЕРИРУЕТСЯ scenario_service, по файлу
 │   └── <capability>.md             ←   на capability; правь сценарии, не файл
 │
-├── audit/                          ← 43 отчёта; статусы — §5
+├── audit/                          ← 47 отчётов; статусы — §5
 │   ├── 2026-04-19-initial-audit.md         ← первый формальный аудит пакета
 │   ├── 2026-04-25-section-a-data-core.md   ← аудит ядра (Section A)
 │   ├── 2026-04-25-section-b-services.md    ← аудит сервисов (Section B)
@@ -108,7 +108,11 @@ docs/system/
 │   ├── 2026-09-10-sprint-m1-phase1.md          ← закрытие спринта M1
 │   ├── 2026-09-11-sprint-m2-feedback-loop.md   ← закрытие спринта M2
 │   ├── 2026-09-19-doc-curator-section-b.md, 2026-09-20-doc-curator-section-{c,d}.md ← RFC 25
-│   └── 2026-09-23-agent-fit-section-b.md       ← RFC 27, секция B (AFT-004/005)
+│   ├── 2026-09-23-agent-fit-section-b.md       ← RFC 27, секция B (AFT-004/005)
+│   ├── 2026-09-27-adoption-section-j-plan-graph.md  ← RFC 26, секция J adoption (правка графа плана)
+│   ├── 2026-09-27-agent-fit-section-f-and-plan-closure.md  ← RFC 27, секция F и закрытие agent-fit-2026-09
+│   ├── 2026-09-27-agent-fit-sections-a-c-d-e.md  ← RFC 27, секции A, C, D, E
+│   └── 2026-10-03-adoption-2026-08-closure.md  ← 🧭 закрытие и распил adoption-2026-08 (ADO-243)
 │
 ├── research/
 │   └── 2026-09-30-rfc-lifecycle.md ← жизненный цикл RFC и связь с ADR (исследование)
@@ -256,6 +260,10 @@ docs/system/
 | audit/2026-09-20-doc-curator-section-c | resolved | cod-doc core |
 | audit/2026-09-20-doc-curator-section-d | resolved | cod-doc core |
 | audit/2026-09-23-agent-fit-section-b | resolved | cod-doc core |
+| audit/2026-09-27-adoption-section-j-plan-graph | resolved | cod-doc core |
+| audit/2026-09-27-agent-fit-section-f-and-plan-closure | resolved | cod-doc core |
+| audit/2026-09-27-agent-fit-sections-a-c-d-e | resolved | cod-doc core |
+| audit/2026-10-03-adoption-2026-08-closure | resolved | cod-doc core |
 
 Пока пакет в статусе `draft` — изменения допустимы без revision-истории. После `active` любая правка обязана вести к revision-записи (см. [standards/revision-history.md](standards/revision-history.md)). Статус `resolved` — для audit-отчётов, чьи задачи закрыты (см. [standards/frontmatter.md §7](standards/frontmatter.md)); `active` из аудитов держит только живой ориентир `2026-07-29-state-of-the-project`. Статусы в таблице — те, что записаны во frontmatter файлов (сверено ADO-217, 2026-09-26).
 
@@ -300,6 +308,7 @@ docs/system/
 | 2026-09-26 | **Гигиена корпуса (ADO-219).** Из БД удалены четыре строки-реликта `system/…` (дубли по `path` для release M4, e5c-run-analysis, sprint-m5, tracking-loop-closure — `doc import` падал на `MultipleResultsFound`) и фикстура `specs/specs/modules` (файл тоже, по образцу PCA-911); зарегистрированы аудиты doc-curator B/C/D и agent-fit B; `2026-05-15-tracks-closure-drift` приведён к стандарту frontmatter (`resolved` после сверки находок F1/F2/F4/F5/F8/F9). |
 | 2026-09-27 | **Remote Sync спроектирован (RFC 29, черновик).** Capability [remote-sync](capabilities/remote-sync.md): проект как набор равноправных реплик на SQLite, обмен журналом операций через remote по модели git (`clone`/`pull`/`push`), remote — `file://`, S3/MinIO или `cod-doc serve` с токенами и ролями reader/writer/admin. Решения — ADR-016 (команда через реплики, а не через общую PostgreSQL ADR-010) и ADR-017 (глобальный `uid`, захват операций в `before_flush`, аренда человеческих ID), оба `proposed`. Сценарии SCN-081…089 → [scenarios/remote-sync.md](scenarios/remote-sync.md). Плана и историй нет — заводятся после приёмки ADR. RFC: [proposals/29](../../proposals/29-cloud-remote-sync.md). |
 | 2026-09-30 | **Исследование жизненного цикла RFC.** Добавлен [research/2026-09-30-rfc-lifecycle.md](research/2026-09-30-rfc-lifecycle.md): RFC — предложение со своим циклом, при принятии порождает ADR и план; замер: 29 RFC с `type=module-spec` и `status=draft`, `plan.parent_doc_id` пуст у всех планов. |
+| 2026-10-03 | **`adoption-2026-08` закрыт и распилен (ADO-243).** Инструмент `task_move_to_plan` (#164) перенёс 137 задач с сохранением `task_id`, ревизий и зависимостей: секция I → план `web-ui` (WUI), G + SYM-011 → `storage-parity` (STO), 39 открытых из D → `tech-debt` (DEBT, шесть тем). Перед распилом разобраны зомби: ADO-165/173/181/198/080 закрыты с коммитами, ADO-169 отменена. Источник STO-* (ADR-010 + hub-режим) записан, в ROADMAP — трек S (ADO-084). Аудит: [audit/2026-10-03-adoption-2026-08-closure.md](audit/2026-10-03-adoption-2026-08-closure.md). |
 
 ## 7. Соглашения об оформлении
 
