@@ -1,5 +1,5 @@
 ---
-type: kickoff-brief
+type: guide
 scope: web-frontend / Section F (Hardening) → Section B remainder
 status: active
 source_of_truth: false

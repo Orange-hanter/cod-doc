@@ -93,7 +93,7 @@ def register(mcp: FastMCP) -> None:
               execution-log | standard | architecture | vision | guide |
               user-story | decision | open-question | redirect |
               design | audit | audit-report | journal | plan | analysis |
-              research | capability | scenario-set.
+              research | capability | scenario-set | index | rfc.
         status: draft | review | active | authoritative | resolved | done | deprecated.
         sensitivity: public | internal | confidential | restricted.
         """

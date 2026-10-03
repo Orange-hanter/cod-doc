@@ -1,5 +1,5 @@
 ---
-type: roadmap-index
+type: index
 scope: cod-doc-roadmap
 status: active
 source_of_truth: true

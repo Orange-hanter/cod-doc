@@ -21,7 +21,7 @@ last_updated: 2026-09-26
 
 | Поле | Значения | Мэппинг в БД |
 |------|----------|--------------|
-| `type` | `module-spec`, `module-subdoc`, `execution-plan`, `task-section`, `execution-log`, `standard`, `architecture`, `vision`, `guide`, `user-story`, `decision`, `open-question`, `redirect`, `design`, `audit`, `audit-report`, `journal`, `plan`, `analysis`, `research`, `capability`, `scenario-set` | `document.type` |
+| `type` | `module-spec`, `module-subdoc`, `execution-plan`, `task-section`, `execution-log`, `standard`, `architecture`, `vision`, `guide`, `user-story`, `decision`, `open-question`, `redirect`, `design`, `audit`, `audit-report`, `journal`, `plan`, `analysis`, `research`, `capability`, `scenario-set`, `index`, `rfc` | `document.type` |
 | `status` | См. таблицу §2a (зависит от `type`); чужие написания — §2b | `document.status` |
 | `owner` | Строка (команда или роль) | `document.owner` |
 | `last_updated` | `YYYY-MM-DD` | `document.last_updated` |
@@ -32,6 +32,36 @@ last_updated: 2026-09-26
 (`design`, `audit`, `audit-report`, `journal`, `plan`, `analysis`, `research`,
 `capability`) добавлены в ADO-015: они уже жили в корпусах, но импорт молча
 превращал их в `module-spec`.
+
+`index` и `rfc` добавлены в ADO-238 по той же причине: корпус cod-doc писал
+их под чужими именами, и импорт сводил их в `module-spec`. `index` —
+навигационный документ, чьё тело — карта других документов (MASTER, ROADMAP,
+граф задач); `rfc` — нумерованное предложение `proposals/NN-*` (формат —
+скилл `rfc-authoring`). Миграция `0044` вернула оба типа строкам, у которых
+они уже стояли во frontmatter.
+
+### Решения по значениям вне enum (ADO-238)
+
+Значение, которого нет в enum, импорт сводит в `module-spec` (тип) или `draft`
+(статус), а `doc drift` показывает его как `metadata_mismatch`. Новое значение
+в enum заводится, только если это отдельный жанр со своими правилами; синоним
+существующего значения переписывается в файле.
+
+| Было во frontmatter | Стало | Решение |
+|---|---|---|
+| `documentation-master`, `roadmap-index`, `reference` (граф задач) | `index` | новый тип |
+| `proposal`, `ux-proposal`, `tech-proposal` | `rfc` | новый тип |
+| `sprint-plan`, `migration-plan` | `plan` | переписать |
+| `checkpoint-report` | `audit-report` | переписать |
+| `kickoff-brief` | `guide` | переписать: онбординг трека — где что лежит, команды |
+| `data-model` | `module-spec` | переписать: этот тип ждёт раздел дерева `data-model` |
+| `standard` у релиз-заметки | `execution-log`, статус `done` | переписать: заметок одна за пять месяцев, свой жанр не окупается |
+| статус `implemented` (RFC) | `active` | переписать: RFC не переезжает в `done`, реализацию ведёт план |
+| статус `maintained` | `active` | переписать: синоним |
+
+Собственный жизненный цикл RFC (`accepted` → `implemented` → `superseded`)
+в общий `DocumentStatus` намеренно не входит: это предмет исследования
+`research/2026-09-30-rfc-lifecycle.md` (отдельное поле `rfc_status`).
 
 `open-question` — легаси (OQM, 2026-09): новые вопросы заводятся сущностью
 `open_question` (`cod-doc question new`, MCP `question_create`), а не
@@ -50,6 +80,8 @@ last_updated: 2026-09-26
 | `user-story` | `draft` → `accepted` → `delivered` → `archived` | `archived` |
 | `audit-report`, `audit` | `active` (живой аудит) → `resolved` (закрыт: находки разобраны, отчёт остаётся действительным) → `deprecated` (замещён; в frontmatter `superseded`) | `resolved` / `deprecated` |
 | `design`, `analysis`, `research`, `capability`, `decision`, `open-question`, `scenario-set` | `draft` → `review` → `active` → `deprecated` | `deprecated` |
+| `rfc` | `draft` → `review` → `active` (принят; реализацию трекает план, не статус) → `deprecated` (отклонён или замещён) | `deprecated` |
+| `index` | `draft` → `active` → `deprecated` — индекс поддерживается, а не завершается | `deprecated` |
 | `plan` | `pending` → `in-progress` → `done` (опц. `blocked`, `cancelled`); хранение — как у `execution-plan` | `done` / `cancelled` |
 | `journal` | `active` — журнал не «завершается», он либо ведётся, либо `deprecated` | `deprecated` |
 

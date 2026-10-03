@@ -284,6 +284,34 @@ DOC_TYPE_GUIDES: dict[str, str] = {
         "  - Coverage verdicts (covered/partial/missing/unverifiable) never\n"
         "    appear here — they are producer evidence, not authored claims."
     ),
+    "index": (
+        "INDEX documents are maps of other documents: a reader opens one to\n"
+        "find where something lives, not to learn the thing itself.\n"
+        "Sections:\n"
+        "  1. Purpose — one paragraph: what this index covers and for whom\n"
+        "  2. Map — table or tree: document / one-line summary / status\n"
+        "  3. Reading order, if the documents build on each other\n"
+        "  4. Where the rest lives — pointers to neighbouring indexes\n"
+        "STRICT RULES:\n"
+        "  - Every entry is a link; no content is restated beyond one line.\n"
+        "  - No decisions, designs or plans of its own — those belong in the\n"
+        "    documents it points to."
+    ),
+    "rfc": (
+        "RFC documents propose one change before it is built.\n"
+        "File: proposals/NN-kebab-slug.md; NN is never reused, even after rejection.\n"
+        "First line after the title — meta line: Категория · Риск · Зависимости.\n"
+        "Sections (in this order):\n"
+        "  1. Context — the pain and where it is known from\n"
+        "  2. Current state — what already exists, with file:line\n"
+        "  3. Proposal — signatures, table schemas, tool names\n"
+        "  4. Migration / backward compatibility\n"
+        "  5. Risks and non-goals\n"
+        "  6. Estimate — rough task count and order\n"
+        "STRICT RULES:\n"
+        "  - Implementation progress is tracked by a plan, not by this document.\n"
+        "  - Name existing code exactly; no proposal without the current state."
+    ),
 }
 
 

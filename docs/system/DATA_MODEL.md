@@ -1,5 +1,5 @@
 ---
-type: data-model
+type: module-spec
 scope: cod-doc-system
 status: draft
 source_of_truth: true

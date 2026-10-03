@@ -1,5 +1,5 @@
 ---
-type: proposal
+type: rfc
 number: 16
 title: Cloud decentralized agent plane
 category: architecture

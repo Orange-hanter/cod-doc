@@ -1,3 +1,7 @@
+---
+type: rfc
+---
+
 # 18 — Vibecoder's Diary: activity_log → human-friendly daily doc
 
 > ❌ ОТБРАКОВАНА 2026-08-29 (ADO-056) — см. [proposals/README.md](README.md) § «Отбраковка». Текст ниже — исходное предложение, не план работ.

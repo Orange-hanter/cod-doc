@@ -1,5 +1,5 @@
 ---
-type: kickoff-brief
+type: guide
 scope: cloud-agent-plane
 status: active
 source_of_truth: false

@@ -1,5 +1,5 @@
 ---
-type: documentation-master
+type: index
 scope: cod-doc-system
 status: draft
 source_of_truth: true

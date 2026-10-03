@@ -1,3 +1,7 @@
+---
+type: rfc
+---
+
 # 17 — Living Specification: ADR ↔ Tasks ↔ Code ↔ Docs drift detector
 
 > ❌ ОТБРАКОВАНА 2026-08-29 (ADO-056) — см. [proposals/README.md](README.md) § «Отбраковка». Текст ниже — исходное предложение, не план работ.
