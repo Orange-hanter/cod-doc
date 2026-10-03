@@ -584,9 +584,11 @@ _cod-doc() {
         (graph)     _cod_doc_adr_graph && ret=0 ;;
         (list)      _cod_doc_adr_list && ret=0 ;;
         (new)       _cod_doc_adr_new && ret=0 ;;
+        (relate)    _cod_doc_adr_relate && ret=0 ;;
         (show)      _cod_doc_adr_show && ret=0 ;;
         (supersede) _cod_doc_adr_supersede && ret=0 ;;
         (sync)      _cod_doc_adr_sync && ret=0 ;;
+        (unrelate)  _cod_doc_adr_unrelate && ret=0 ;;
         (*)         _default && ret=0 ;;
       esac
       ;;
@@ -602,9 +604,11 @@ _cod-doc() {
     'graph:Emit the full ADR supersede DAG (Mermaid markdown or JSON).'
     'list:List ADRs in a project.'
     'new:Create a new ADR (auto-allocates ADR-NNN if --adr-id omitted).'
+    'relate:Record that FROM_ADR_ID amends or depends on TO_ADR_ID.'
     'show:Show full details of one ADR (with diagrams + task links).'
     'supersede:Mark SUPERSEDED_ADR_ID as replaced by SUPERSEDING_ADR_ID.'
     'sync:Re-sync ADR_ID'\''s body from markdown, ignoring the status gate.'
+    'unrelate:Remove a relation recorded by `adr relate`. A missing relation is a…'
   )
   _describe -t cod-doc-adr-commands 'cod-doc adr command' cmds
 }
@@ -674,6 +678,21 @@ _cod-doc() {
   return ret
 }
 
+(( $+functions[_cod_doc_adr_relate] )) || _cod_doc_adr_relate() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--kind)--kind=[amends; both stay in force; depends_on; FROM cannot be accepted bef…]:kind:(amends depends_on)' \
+    '(--reason)--reason=[Why — a quote from the ADR body works best]:reason' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:from-adr-id' \
+    '2:to-adr-id' && ret=0
+  return ret
+}
+
 (( $+functions[_cod_doc_adr_show] )) || _cod_doc_adr_show() {
   local curcontext="$curcontext" ret=1
   local -a line
@@ -707,6 +726,7 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--title)--title=[Title as written in the projection]:title' \
     '(--decided-at)--decided-at=[ISO date (YYYY-MM-DD)]:decided-at' \
+    '(--clear-decided-at)--clear-decided-at[Remove the decision date (e.g. a proposal date stored on a proposed…]' \
     '(--context)--context=[Context section]:context' \
     '(--decision)--decision=[Decision section]:decision' \
     '(--alternatives)--alternatives=[Alternatives section]:alternatives' \
@@ -715,6 +735,21 @@ _cod-doc() {
     '(--reason)--reason=:reason' \
     '(- *)--help[Show this message and exit.]' \
     '1:adr-id:_cod_doc_adrs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_unrelate] )) || _cod_doc_adr_unrelate() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--kind)--kind=:kind:(amends depends_on)' \
+    '(--reason)--reason=[Why the relation is removed]:reason' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:from-adr-id' \
+    '2:to-adr-id' && ret=0
   return ret
 }
 

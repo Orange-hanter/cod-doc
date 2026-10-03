@@ -9,6 +9,7 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_graph,
     cmd_list,
     cmd_new,
+    cmd_relate,
     cmd_show,
     cmd_supersede,
     cmd_sync,

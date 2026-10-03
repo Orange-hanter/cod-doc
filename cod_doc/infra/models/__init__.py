@@ -18,7 +18,13 @@ point.
 from __future__ import annotations
 
 from .activity import ActivityEventModel
-from .adrs import ADRDiagramModel, ADRModel, ADRSupersedeModel, ADRTaskModel
+from .adrs import (
+    ADRDiagramModel,
+    ADRModel,
+    ADRRelationModel,
+    ADRSupersedeModel,
+    ADRTaskModel,
+)
 from .approvals import ApprovalDocRevisionLinkModel, ApprovalModel, ApprovalTaskLinkModel
 from .base import Base, _utcnow
 from .comments import DocCommentModel
@@ -72,6 +78,7 @@ from .traces import TraceCallModel
 __all__ = [
     "ADRDiagramModel",
     "ADRModel",
+    "ADRRelationModel",
     "ADRSupersedeModel",
     "ADRTaskModel",
     "ActivityEventModel",
