@@ -28,6 +28,8 @@ class PlanModel(Base):
     )
     scope: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     principle: Mapped[str | None] = mapped_column(String(32))
+    # ADO-243: префикс ID новых задач плана. NULL — вывод по задачам плана.
+    id_prefix: Mapped[str | None] = mapped_column(String(5))
     module_id: Mapped[str | None] = mapped_column(String(64))
     parent_doc_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("document.row_id", ondelete="SET NULL")

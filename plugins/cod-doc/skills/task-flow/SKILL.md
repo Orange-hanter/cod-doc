@@ -64,12 +64,35 @@ activity events.
 | закрытие | `task_complete` | `cod-doc task complete <TASK_ID> -p <slug> --commit <sha>` |
 | секция плана | `plan_section_create(project, plan_scope, letter, title)` | `cod-doc plan section create PLAN_SCOPE LETTER TITLE -p <slug>` |
 | grooming (description / acceptance / priority) | `task_update` | `cod-doc task update` |
+| перенос в другую секцию того же плана | `task_move_to_section` | `cod-doc task move TASK_ID… -p <slug> --plan <scope> --section <L>` |
+| перенос в другой план (ADO-243) | `task_move_to_plan` | `cod-doc task move-plan TASK_ID… -p <slug> --plan <scope> --section <L>` (`--from-section scope:L` — всю секцию) |
 | смена title | по дизайну нет: `cancel` с причиной + новая задача | — |
 | поиск дубля перед созданием | `task_find_duplicate` | — |
 | зависшие задачи | `task_stale`, `task_list_blocked` | — |
 
 MCP недоступен → CLI (`cod-doc task …`); ad-hoc скрипты по `state.db`
 запрещены.
+
+## Разбор бэклога
+
+Разросшийся план (секция-свалка без цели, внутри — самостоятельные треки)
+распиливается на тематические планы **переносом**, а не пересозданием: перенос
+сохраняет `task_id`, ревизии, документы задачи и зависимости, пересоздание их
+теряет.
+
+1. **Сначала зомби.** Сверь открытые задачи с кодом и историей коммитов:
+   сделанное — `task_complete` с настоящим sha, устаревшее — `cancelled` с
+   причиной. Переносить имеет смысл только живое.
+2. **Целевой план — с явным префиксом:** `plan_create(project, scope,
+   id_prefix="WEB", sections=[…])` (CLI: `cod-doc plan create <scope> -p <slug>
+   --principle … --id-prefix WEB`). Без него новые задачи плана унаследуют
+   префикс переехавших.
+3. **Перенос с `dry_run=True`**, затем по-настоящему. Читай `warnings`: рёбра
+   зависимостей между планами законны, но `plan_critical_path` /
+   `plan_forward_chain` / `plan_reverse_chain` их не видят.
+4. **Чужой замок не трогается.** Задача, захваченная другим агентом, в батче
+   даёт ошибку; снимать её — решение владельца через `task_release --force`.
+5. **Источник опустел — закрой его** audit-отчётом, как закрытую секцию.
 
 ## Статусы
 

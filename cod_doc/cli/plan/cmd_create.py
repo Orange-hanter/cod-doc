@@ -27,6 +27,11 @@ if TYPE_CHECKING:
 @click.option("--principle", required=True, help="Принцип плана — одна строка о его сути")
 @click.option("--author", default="cli", show_default=True, help="Автор ревизии")
 @click.option("--reason", default=None, help="Причина для ревизии")
+@click.option(
+    "--id-prefix",
+    default=None,
+    help="Префикс ID новых задач плана (2-5 заглавных, напр. WEB) — ADO-243",
+)
 @click.option("--json", "as_json", is_flag=True, default=False, help="Вывод в JSON")
 @click.pass_context
 def plan_create(
@@ -36,6 +41,7 @@ def plan_create(
     principle: str,
     author: str,
     reason: str | None,
+    id_prefix: str | None,
     as_json: bool,
 ) -> None:
     """Создать план SCOPE в проекте. Scope уникален на всю БД.
@@ -62,11 +68,13 @@ def plan_create(
             principle=principle,
             author=author,
             reason=reason,
+            id_prefix=id_prefix,
         )
         payload = {
             "plan_id": created.row_id,
             "scope": created.scope,
             "principle": created.principle,
+            "id_prefix": created.id_prefix,
         }
 
     if as_json:

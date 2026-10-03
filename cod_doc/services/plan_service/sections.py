@@ -28,6 +28,7 @@ from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
 from cod_doc.services import activity_service
 from cod_doc.services import revision_service as rev
 from cod_doc.services.validation import (
+    validate_id_prefix,
     validate_plan_section_position,
     validate_plan_section_title,
     validate_section_slug,
@@ -98,13 +99,25 @@ def create_plan(
     principle: str | None,
     author: str,
     reason: str | None = None,
+    id_prefix: str | None = None,
 ) -> Plan:
-    """Завести план. ``scope`` уникален на всю БД, а не в пределах проекта."""
+    """Завести план. ``scope`` уникален на всю БД, а не в пределах проекта.
+
+    ``id_prefix`` (ADO-243) закрепляет префикс ID новых задач плана
+    (``WEB`` → ``WEB-001``). Без него префикс выводится из задач плана, а у
+    пустого — из ``scope``; после переноса чужих задач в план
+    (``task_service.move_tasks_to_plan``) такой вывод даёт их префикс, поэтому план,
+    в который переносят, стоит заводить с явным префиксом.
+    """
     repo = PlanRepository(session)
     if repo.get_by_scope(scope) is not None:
         raise PlanAlreadyExistsError(scope)
+    if id_prefix is not None:
+        validate_id_prefix(id_prefix)
 
-    plan = repo.add(Plan(project_id=project_id, scope=scope, principle=principle))
+    plan = repo.add(
+        Plan(project_id=project_id, scope=scope, principle=principle, id_prefix=id_prefix)
+    )
     session.flush()
     assert plan.row_id is not None
 
@@ -114,7 +127,7 @@ def create_plan(
         entity_kind=EntityKind.PLAN,
         entity_id=plan.row_id,
         author=author,
-        diff=_diff("create_plan", scope=scope, principle=principle),
+        diff=_diff("create_plan", scope=scope, principle=principle, id_prefix=id_prefix),
         reason=reason or "create_plan",
     )
     activity_service.emit_for_write(
@@ -124,7 +137,7 @@ def create_plan(
         author,
         scope_kind=EntityKind.PLAN.value,
         scope_id=scope,
-        payload={"scope": scope, "principle": principle},
+        payload={"scope": scope, "principle": principle, "id_prefix": id_prefix},
         summary=f"Plan {scope} created",
     )
     return plan

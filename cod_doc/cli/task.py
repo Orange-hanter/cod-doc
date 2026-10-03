@@ -696,6 +696,118 @@ def task_move(
     )
 
 
+@task.command("move-plan")
+@click.argument("task_ids", nargs=-1)
+@click.option("--project", "-p", required=True, help="Project slug")
+@click.option("--plan", "plan_scope", required=True, help="Scope целевого плана")
+@click.option("--section", "section_letter", required=True, help="Буква целевой секции")
+@click.option(
+    "--from-section",
+    default=None,
+    help="Перенести всю секцию: '<scope>:<буква>' вместо списка TASK_IDS",
+)
+@click.option("--author", default="cli", show_default=True)
+@click.option("--reason", default=None)
+@click.option(
+    "--continue-on-error",
+    is_flag=True,
+    help="Не откатывать батч на ошибке задачи — копить ошибки и переносить остальные",
+)
+@click.option("--dry-run", is_flag=True, help="Показать, что будет перенесено, и откатить")
+@click.option("--json", "as_json", is_flag=True)
+@click.pass_context
+def task_move_plan(
+    ctx: click.Context,
+    task_ids: tuple[str, ...],
+    project: str,
+    plan_scope: str,
+    section_letter: str,
+    from_section: str | None,
+    author: str,
+    reason: str | None,
+    continue_on_error: bool,
+    dry_run: bool,
+    as_json: bool,
+) -> None:
+    """Перенести задачи в секцию ДРУГОГО плана того же проекта (ADO-243).
+
+    Внутри одного плана — `task move`. Сохраняются task_id, статус, замок,
+    ревизии, документы задачи, связи с историями и зависимости. Задачи —
+    списком TASK_IDS или всей секцией через --from-section scope:буква.
+    Задачу на чужом замке не переносит: сначала `task release`.
+
+    Одна транзакция на батч; каждая задача получает ревизию и событие
+    task.plan_changed. Рёбра зависимостей, оказавшиеся между планами,
+    печатаются предупреждением: critical-path/forward/reverse их не видят.
+    """
+    from cod_doc.infra.db import transactional
+    from cod_doc.services import task_service
+    from cod_doc.services.checkout_service import CheckoutConflictError
+    from cod_doc.services.task_service import (
+        CrossPlanMoveError,
+        SectionNotFoundError,
+        TaskNotFoundError,
+    )
+
+    if bool(task_ids) == bool(from_section):
+        console.print("[red]Нужно ровно одно: TASK_IDS или --from-section.[/red]")
+        sys.exit(1)
+
+    cfg: Config = ctx.obj["config"]
+    sf = _make_session(project, cfg)
+
+    try:
+        with transactional(sf, commit=not dry_run) as session:
+            project_id = _require_project_id(session, project)
+            res = task_service.move_tasks_to_plan(
+                session,
+                project_id=project_id,
+                plan_scope=plan_scope,
+                section_letter=section_letter,
+                author=author,
+                task_ids=list(task_ids) if task_ids else None,
+                from_section=from_section,
+                reason=reason,
+                continue_on_error=continue_on_error,
+            )
+            moved = [t.task_id for t in res.moved]
+    except TaskNotFoundError as exc:
+        console.print(f"[red]Task '{exc}' not found.[/red]")
+        sys.exit(1)
+    except (SectionNotFoundError, CrossPlanMoveError, CheckoutConflictError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if as_json:
+        # ADO-176: машинный вывод — через click.echo, не rich.
+        click.echo(
+            _json.dumps(
+                {
+                    "moved": moved,
+                    "skipped": res.skipped,
+                    "errors": res.errors,
+                    "warnings": res.warnings,
+                    "section": res.section_letter,
+                    "plan_scope": res.plan_scope,
+                    "committed": not dry_run,
+                    "dry_run": dry_run,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return
+
+    prefix = "[yellow]dry-run:[/yellow] " if dry_run else "[green]✅[/green] "
+    console.print(
+        f"{prefix}перенесено {len(moved)} → {res.plan_scope}/{res.section_letter}; "
+        f"пропущено (уже там): {len(res.skipped)}; ошибок: {len(res.errors)}"
+    )
+    for err in res.errors:
+        console.print(f"  {err['task_id']}: {err['message']}", style="red", markup=False)
+    for warning in res.warnings:
+        console.print(f"  ⚠ {warning}", style="yellow", markup=False)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # task complete
 # ──────────────────────────────────────────────────────────────────────────────

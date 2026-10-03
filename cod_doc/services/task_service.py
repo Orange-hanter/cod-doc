@@ -34,11 +34,11 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import (
@@ -221,7 +221,16 @@ def id_prefix_for_plan(session: Session, plan_id: int) -> str:
     нумерует ``AFT-*``, а не ``AGE-*``. Берётся самый частый префикс, при
     равенстве — префикс самой поздней задачи (наибольший ``row_id``). Задач
     с разбираемым ID нет — префикс из scope.
+
+    ADO-243: явный ``plan.id_prefix`` выигрывает у обоих выводов. После
+    ``move_tasks_to_plan`` самый частый префикс — это префикс переехавших задач, а
+    не плана, куда они переехали.
     """
+    explicit = session.execute(
+        select(PlanModel.id_prefix).where(PlanModel.row_id == plan_id)
+    ).scalar_one_or_none()
+    if explicit:
+        return explicit
     counts: dict[str, int] = {}
     latest: dict[str, int] = {}
     rows = session.execute(
@@ -913,6 +922,295 @@ def move_to_section(
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t
+
+
+def _move_one_to_plan(
+    session: Session,
+    *,
+    task_id: str,
+    new_section_id: int,
+    author: str,
+    reason: str | None = None,
+    project_id: int | None = None,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
+) -> Task:
+    """Move a task into a section of ANOTHER plan of the same project (op=plan, ADO-243).
+
+    Зачем отдельная операция, а не ослабленный `move_to_section`: смена плана
+    меняет пару `plan_id`/`section_id` разом, а пересоздание задачи в новом
+    плане теряет историю — ревизии висят на `row_id`. Здесь меняется только
+    пара FK; `row_id`, `task_id`, статус, замок, ревизии, `task_doc`,
+    `story_link`, `affects_files` и рёбра зависимостей остаются на месте.
+
+    Правила:
+
+    - целевая секция обязана принадлежать плану того же проекта, что и задача
+      (`CrossPlanMoveError`); перенос внутри плана — это `move_to_section`;
+    - задачу на замке чужого актора не переносим (`CheckoutConflictError`):
+      это вырвало бы её из-под исполнителя. Снять замок — явный
+      `task_release`, отдельным видимым шагом;
+    - `done` / `cancelled` переносятся: это реорганизация истории, итоги
+      планов — производные view.
+
+    `task_id` не перенумеровывается: на него ссылаются коммиты, документы и
+    `completed_commit`. Префикс новых задач целевого плана задаёт
+    `plan.id_prefix`.
+
+    No-op, когда задача уже в целевой секции. Revision (`op="plan"`) и
+    activity event `task.plan_changed` пишутся одним атомарным вызовом
+    (ADO-040). У обоих планов поднимается `last_updated` (COD-022).
+    Автоматического revert для `op="plan"` нет — откат это обратный перенос.
+    """
+    from cod_doc.services.checkout_service import CheckoutConflictError
+
+    model = _require_task(session, task_id, project_id=project_id)
+    old_section_id = model.section_id
+    old_plan_id = model.plan_id
+    if old_section_id == new_section_id:
+        t = TaskRepository(session).get_by_task_id(task_id)
+        assert t is not None
+        return t
+
+    sections = PlanSectionRepository(session)
+    new_section = sections.get(new_section_id)
+    if new_section is None:
+        raise SectionNotFoundError(f"Unknown section_id: {new_section_id}")
+    new_plan = session.get(PlanModel, new_section.plan_id)
+    if new_plan is None or new_plan.project_id != model.project_id:
+        raise CrossPlanMoveError(
+            f"Section {new_section_id} belongs to a plan of another project; "
+            f"task {task_id} can only move within its own project"
+        )
+    if new_section.plan_id == old_plan_id:
+        raise CrossPlanMoveError(
+            f"Section {new_section_id} is in the same plan as task {task_id}; "
+            "use move_to_section for a move within one plan"
+        )
+    if model.checked_out_by and model.checked_out_by != author:
+        raise CheckoutConflictError(task_id=task_id, locked_by=model.checked_out_by)
+
+    old_plan = session.get(PlanModel, old_plan_id)
+    old_scope = old_plan.scope if old_plan else "?"
+    old_section = sections.get(old_section_id)
+    old_letter = old_section.letter if old_section else "?"
+    new_scope = new_plan.scope
+    new_letter = new_section.letter
+
+    now = datetime.now(UTC)
+    model.plan_id = new_plan.row_id
+    model.section_id = new_section_id
+    model.last_updated = now
+    for plan_model in (old_plan, new_plan):
+        if plan_model is not None:
+            plan_model.last_updated = now
+    session.flush()
+
+    activity_service.write_revision_and_emit_event(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff(
+            "plan",
+            old_plan=old_scope,
+            new_plan=new_scope,
+            old_section=old_section_id,
+            new_section=new_section_id,
+            old_letter=old_letter,
+            new_letter=new_letter,
+        ),
+        reason=reason,
+        expected_parent_revision_id=expected_parent_revision_id,
+        activity_kind="task.plan_changed",
+        activity_scope_kind="task",
+        activity_scope_id=task_id,
+        activity_payload={
+            "old_plan": old_scope,
+            "new_plan": new_scope,
+            "old_letter": old_letter,
+            "new_letter": new_letter,
+            "reason": reason,
+        },
+        activity_summary=f"Task {task_id}: plan {old_scope}/{old_letter} → {new_scope}/{new_letter}",
+    )
+
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return t
+
+
+def cross_plan_dependency_warnings(
+    session: Session, *, project_id: int, task_ids: list[str]
+) -> list[str]:
+    """Рёбра зависимостей задач `task_ids`, второй конец которых в другом плане.
+
+    Такое ребро законно — `ready_tasks` глобален и считает его верно, — но
+    `critical_path` / `forward` / `reverse` строятся внутри одного плана и его
+    не видят. Поэтому после переноса между планами (ADO-243) о нём
+    предупреждаем, а не запрещаем. Одна строка на ребро; порядок — по первой
+    задаче из `task_ids`, которой ребро касается. `project_id` обязателен:
+    в hub-БД тот же `task_id` может жить в другом проекте.
+    """
+    if not task_ids:
+        return []
+    order = {tid: i for i, tid in enumerate(task_ids)}
+    moved_rows = {
+        row_id
+        for (row_id,) in session.execute(
+            select(TaskModel.row_id).where(
+                TaskModel.project_id == project_id, TaskModel.task_id.in_(task_ids)
+            )
+        ).all()
+    }
+    if not moved_rows:
+        return []
+    edges = session.execute(
+        select(DependencyModel.from_task_id, DependencyModel.to_task_id, DependencyModel.kind)
+        .where(
+            DependencyModel.from_task_id.in_(moved_rows)
+            | DependencyModel.to_task_id.in_(moved_rows)
+        )
+        .distinct()
+    ).all()
+    ends = {row_id for edge in edges for row_id in edge[:2]}
+    info = {
+        row_id: (tid, scope)
+        for row_id, tid, scope in session.execute(
+            select(TaskModel.row_id, TaskModel.task_id, PlanModel.scope)
+            .join(PlanModel, PlanModel.row_id == TaskModel.plan_id)
+            .where(TaskModel.row_id.in_(ends))
+        ).all()
+    }
+
+    def rank(edge: tuple[int, int, str]) -> int:
+        return min(order.get(info[row][0], len(order)) for row in edge[:2])
+
+    out: list[str] = []
+    for frm, to, kind in sorted(edges, key=rank):
+        (frm_tid, frm_scope), (to_tid, to_scope) = info[frm], info[to]
+        if frm_scope != to_scope:
+            out.append(
+                f"{frm_tid} ({frm_scope}) --{kind}--> {to_tid} ({to_scope}): "
+                "ребро между планами — critical_path/forward/reverse его не видят"
+            )
+    return out
+
+
+@dataclass(slots=True)
+class MovePlanResult:
+    """Итог батча `move_tasks_to_plan` (ADO-243): одна форма для MCP и CLI."""
+
+    plan_scope: str
+    section_letter: str
+    section_title: str
+    moved: list[Task] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)
+    errors: list[dict[str, str]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def _section_in_plan(
+    session: Session, *, project_id: int, plan_scope: str, letter: str
+) -> PlanSectionModel:
+    """Секция `letter` плана `plan_scope` проекта; иначе `SectionNotFoundError`.
+
+    План ищется в паре (scope, project_id): в hub-БД `scope` чужого проекта
+    не должен находиться (RFC 27 F8).
+    """
+    plan_id = session.execute(
+        select(PlanModel.row_id).where(
+            PlanModel.scope == plan_scope, PlanModel.project_id == project_id
+        )
+    ).scalar_one_or_none()
+    if plan_id is None:
+        raise SectionNotFoundError(f"Plan '{plan_scope}' not found in this project")
+    section = session.execute(
+        select(PlanSectionModel).where(
+            PlanSectionModel.plan_id == plan_id,
+            func.upper(PlanSectionModel.letter) == letter.upper(),
+        )
+    ).scalar_one_or_none()
+    if section is None:
+        raise SectionNotFoundError(f"Section '{letter}' not found in plan {plan_scope!r}")
+    return section
+
+
+def move_tasks_to_plan(
+    session: Session,
+    *,
+    project_id: int,
+    plan_scope: str,
+    section_letter: str,
+    author: str,
+    task_ids: list[str] | None = None,
+    from_section: str | None = None,
+    reason: str | None = None,
+    continue_on_error: bool = False,
+) -> MovePlanResult:
+    """Батч `_move_one_to_plan` — общий вход для MCP `task_move_to_plan` и CLI `task move-plan`.
+
+    Задачи задаются либо списком `task_ids`, либо `from_section` вида
+    ``<scope>:<letter>`` — все задачи исходной секции в порядке `task_id`;
+    ровно одно из двух. Ошибка на задаче без `continue_on_error` всплывает
+    исключением — транзакцию откатывает вызывающий; с ним — копится в
+    `errors`, остальные переносятся. После переносов — предупреждения о
+    рёбрах между планами (`cross_plan_dependency_warnings`).
+    """
+    from cod_doc.services.checkout_service import CheckoutConflictError
+
+    if (task_ids is None) == (from_section is None):
+        raise ValueError("pass exactly one of task_ids / from_section")
+    target = _section_in_plan(
+        session, project_id=project_id, plan_scope=plan_scope, letter=section_letter
+    )
+    if from_section is not None:
+        src_scope, sep, src_letter = from_section.rpartition(":")
+        if not sep or not src_scope or not src_letter:
+            raise ValueError(
+                f"from_section must look like '<scope>:<letter>', got {from_section!r}"
+            )
+        source = _section_in_plan(
+            session, project_id=project_id, plan_scope=src_scope, letter=src_letter
+        )
+        task_ids = list(
+            session.execute(
+                select(TaskModel.task_id)
+                .where(TaskModel.section_id == source.row_id)
+                .order_by(TaskModel.task_id)
+            ).scalars()
+        )
+    assert task_ids is not None
+    if not task_ids:
+        raise ValueError("nothing to move: task list is empty")
+
+    result = MovePlanResult(
+        plan_scope=plan_scope, section_letter=target.letter, section_title=target.title
+    )
+    for task_id in task_ids:
+        try:
+            current = _require_task(session, task_id, project_id=project_id)
+            if current.section_id == target.row_id:
+                result.skipped.append(task_id)
+                continue
+            result.moved.append(
+                _move_one_to_plan(
+                    session,
+                    task_id=task_id,
+                    new_section_id=target.row_id,
+                    author=author,
+                    reason=reason,
+                    project_id=project_id,
+                )
+            )
+        except (TaskNotFoundError, CrossPlanMoveError, CheckoutConflictError) as exc:
+            if not continue_on_error:
+                raise
+            result.errors.append({"task_id": task_id, "message": str(exc)})
+    result.warnings = cross_plan_dependency_warnings(
+        session, project_id=project_id, task_ids=[t.task_id for t in result.moved]
+    )
+    return result
 
 
 def complete(

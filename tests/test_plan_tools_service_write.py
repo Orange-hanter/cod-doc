@@ -170,7 +170,7 @@ def test_plan_create_response_and_trail(
         scope="plan-x",
         sections=[{"letter": "A", "title": "Data Core"}, {"letter": "B", "title": "Q&amp;A"}],
     )
-    assert set(out) == {"plan_id", "scope", "principle", "sections", "warnings"}
+    assert set(out) == {"plan_id", "scope", "principle", "id_prefix", "sections", "warnings"}
     assert out["scope"] == "plan-x"
     assert out["principle"] == "from-rfc"
     for sec in out["sections"]:

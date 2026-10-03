@@ -561,6 +561,8 @@ class Plan:
     completed_log_id: int | None = None
     created: datetime | None = None
     last_updated: datetime | None = None
+    #: ADO-243: явный префикс ID новых задач; None — вывод по задачам плана.
+    id_prefix: str | None = None
 
 
 @dataclass(slots=True)
