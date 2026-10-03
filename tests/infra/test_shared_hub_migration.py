@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
@@ -24,6 +24,8 @@ from tests._alembic import run_alembic
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from sqlalchemy.orm import Session
+
 BEFORE = "0026_document_type_recoercion"
 
 
@@ -34,6 +36,31 @@ def _alembic(db_url: str, *args: str) -> None:
 @pytest.fixture
 def db_url(tmp_path: Path) -> str:
     return f"sqlite:///{tmp_path / 'shared_hub.db'}"
+
+
+def _insert_plan(session: Session, *, project_id: int, scope: str, now: datetime) -> int:
+    """Завести план сырым SQL — без колонок, которых нет на старой ревизии."""
+    session.execute(
+        text(
+            "INSERT INTO plan (project_id, scope, created, last_updated) "
+            "VALUES (:pid, :scope, :now, :now)"
+        ),
+        {"pid": project_id, "scope": scope, "now": now},
+    )
+    return int(
+        session.execute(
+            text("SELECT row_id FROM plan WHERE scope = :scope"), {"scope": scope}
+        ).scalar_one()
+    )
+
+
+def _plan_id(session: Session, project_id: int) -> int:
+    """``row_id`` плана проекта — только колонка, а не вся ORM-строка."""
+    return int(
+        session.execute(
+            select(PlanModel.row_id).where(PlanModel.project_id == project_id)
+        ).scalar_one()
+    )
 
 
 def _seed_pre_0027(db_url: str) -> tuple[int, int, int, int, int, int]:
@@ -54,30 +81,22 @@ def _seed_pre_0027(db_url: str) -> tuple[int, int, int, int, int, int]:
             session.add_all([proj_a, proj_b])
             session.flush()
 
-            plan_a = PlanModel(
-                project_id=proj_a.row_id,
-                scope="a-plan",
-                created=now,
-                last_updated=now,
+            # План — сырым SQL: ORM-модель знает колонки поздних ревизий
+            # (``id_prefix``, 0043), которых в схеме 0026 ещё нет.
+            plan_a_id, plan_b_id = (
+                _insert_plan(session, project_id=pid, scope=scope, now=now)
+                for pid, scope in ((proj_a.row_id, "a-plan"), (proj_b.row_id, "b-plan"))
             )
-            plan_b = PlanModel(
-                project_id=proj_b.row_id,
-                scope="b-plan",
-                created=now,
-                last_updated=now,
-            )
-            session.add_all([plan_a, plan_b])
-            session.flush()
 
             sec_a = PlanSectionModel(
-                plan_id=plan_a.row_id,
+                plan_id=plan_a_id,
                 letter="A",
                 title="Section A",
                 slug="A-sec",
                 position=0,
             )
             sec_b = PlanSectionModel(
-                plan_id=plan_b.row_id,
+                plan_id=plan_b_id,
                 letter="A",
                 title="Section B",
                 slug="B-sec",
@@ -89,7 +108,7 @@ def _seed_pre_0027(db_url: str) -> tuple[int, int, int, int, int, int]:
             t_a1 = TaskModel(
                 project_id=proj_a.row_id,
                 task_id="TASK-001",
-                plan_id=plan_a.row_id,
+                plan_id=plan_a_id,
                 section_id=sec_a.row_id,
                 title="A first",
                 status="pending",
@@ -101,7 +120,7 @@ def _seed_pre_0027(db_url: str) -> tuple[int, int, int, int, int, int]:
             t_a2 = TaskModel(
                 project_id=proj_a.row_id,
                 task_id="TASK-002",
-                plan_id=plan_a.row_id,
+                plan_id=plan_a_id,
                 section_id=sec_a.row_id,
                 title="A second",
                 status="done",
@@ -113,7 +132,7 @@ def _seed_pre_0027(db_url: str) -> tuple[int, int, int, int, int, int]:
             t_b1 = TaskModel(
                 project_id=proj_b.row_id,
                 task_id="B-001",
-                plan_id=plan_b.row_id,
+                plan_id=plan_b_id,
                 section_id=sec_b.row_id,
                 title="B first",
                 status="pending",
@@ -192,12 +211,12 @@ def test_upgrade_allows_same_task_id_across_projects(seeded_pre_0027: str) -> No
     try:
         with transactional(factory) as session:
             proj_b = session.query(ProjectModel).filter_by(slug="b").one()
-            plan_b = session.query(PlanModel).filter_by(project_id=proj_b.row_id).one()
-            sec_b = session.query(PlanSectionModel).filter_by(plan_id=plan_b.row_id).one()
+            plan_b_id = _plan_id(session, proj_b.row_id)
+            sec_b = session.query(PlanSectionModel).filter_by(plan_id=plan_b_id).one()
             duplicate = TaskModel(
                 project_id=proj_b.row_id,
                 task_id="TASK-001",  # same as a project A task, different project
-                plan_id=plan_b.row_id,
+                plan_id=plan_b_id,
                 section_id=sec_b.row_id,
                 title="B duplicate of A-001",
                 status="pending",
@@ -230,12 +249,12 @@ def test_upgrade_rejects_same_task_id_within_project(seeded_pre_0027: str) -> No
             transactional(factory) as session,
         ):
             proj_a = session.query(ProjectModel).filter_by(slug="a").one()
-            plan_a = session.query(PlanModel).filter_by(project_id=proj_a.row_id).one()
-            sec_a = session.query(PlanSectionModel).filter_by(plan_id=plan_a.row_id).one()
+            plan_a_id = _plan_id(session, proj_a.row_id)
+            sec_a = session.query(PlanSectionModel).filter_by(plan_id=plan_a_id).one()
             duplicate = TaskModel(
                 project_id=proj_a.row_id,
                 task_id="TASK-001",  # already exists in project A
-                plan_id=plan_a.row_id,
+                plan_id=plan_a_id,
                 section_id=sec_a.row_id,
                 title="A duplicate",
                 status="pending",
@@ -276,13 +295,13 @@ def test_downgrade_fails_when_task_id_is_shared_across_projects(seeded_pre_0027:
     try:
         with transactional(factory) as session:
             proj_b = session.query(ProjectModel).filter_by(slug="b").one()
-            plan_b = session.query(PlanModel).filter_by(project_id=proj_b.row_id).one()
-            sec_b = session.query(PlanSectionModel).filter_by(plan_id=plan_b.row_id).one()
+            plan_b_id = _plan_id(session, proj_b.row_id)
+            sec_b = session.query(PlanSectionModel).filter_by(plan_id=plan_b_id).one()
             session.add(
                 TaskModel(
                     project_id=proj_b.row_id,
                     task_id="TASK-001",  # collides with project A
-                    plan_id=plan_b.row_id,
+                    plan_id=plan_b_id,
                     section_id=sec_b.row_id,
                     title="B collides",
                     status="pending",

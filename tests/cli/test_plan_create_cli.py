@@ -65,7 +65,7 @@ def test_plan_create_json(tmp_path: Path) -> None:
     result = _create([_SCOPE, "--principle", "P", "--json"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
-    assert set(data) == {"plan_id", "scope", "principle"}
+    assert set(data) == {"plan_id", "scope", "principle", "id_prefix"}
     assert data["scope"] == "plan-x"
     assert data["principle"] == "P"
 
