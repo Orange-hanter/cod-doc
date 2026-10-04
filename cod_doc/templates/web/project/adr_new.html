@@ -15,6 +15,11 @@
 </header>
 
 <form method="post" action="{{ form_action }}" class="settings-form">
+    {% if amends %}
+      {# ARG-005: «Amend with a new ADR» с карточки. #}
+      <input type="hidden" name="amends" value="{{ amends.adr_id }}">
+      <div class="adr-strip">This ADR will amend <a class="mono" href="/p/{{ project.name }}/adr/{{ amends.adr_id }}">{{ amends.adr_id }}</a> {{ amends.title }}; both stay in force.</div>
+    {% endif %}
     <label class="field">
       <span class="label">Title (required)</span>
       <input name="title" required autofocus placeholder="e.g. Use SQLite for local-first deployment">

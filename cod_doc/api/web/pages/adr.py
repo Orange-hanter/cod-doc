@@ -13,6 +13,7 @@ Routes:
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from typing import Annotated, Any
 
@@ -226,6 +227,94 @@ _GRAPH_RELATION_ARROW = {
 }
 
 
+#: ARG-005: разделы тела, полноту которых карточка показывает перед решением.
+_RECORD_FIELDS: tuple[tuple[str, str], ...] = (
+    ("context", "Context"),
+    ("decision", "Decision"),
+    ("alternatives", "Alternatives"),
+    ("consequences", "Consequences"),
+)
+
+#: Сколько символов названия альтернативы показывать в блоке «Rejected».
+_ALT_TITLE_MAX = 90
+
+_ALT_ENUM = re.compile(r"^\w{1,2}[.)]\s+")
+_ALT_LEAD = re.compile(r"^(?:\*\*(?P<bold>.+?)\*\*|(?:\d+[.)]|[-*])\s+(?P<item>.+))")
+
+
+def _alternative_titles(text: str | None) -> list[str]:
+    """Названия отвергнутых вариантов: заголовки, жирные начала абзацев, пункты.
+
+    Тела ADR пишут альтернативы по-разному: ``### A. …`` заголовком,
+    ``**A. …** Отвергнуто: …`` абзацем (ADR-016), ``1. Mem0 — …`` списком
+    (ADR-009). Для блока «Rejected» нужно только название — до первого
+    « — » или точки с пробелом.
+    """
+    if not text:
+        return []
+    heads = [anchor_title for anchor_title, _ in outline(text)]
+    if heads:
+        return [re.sub(r"<[^>]+>", "", h) for h in heads]
+    titles: list[str] = []
+    for line in text.splitlines():
+        m = _ALT_LEAD.match(line.strip())
+        if not m:
+            continue
+        lead = (m.group("bold") or m.group("item") or "").strip()
+        # «A. Общая PostgreSQL» — перечислитель срезаем до разреза по «. »,
+        # иначе от названия оставалась одна буква.
+        lead = _ALT_ENUM.sub("", lead)
+        lead = re.split(r" — |: |\. ", lead, maxsplit=1)[0].rstrip(".")
+        if len(lead) > _ALT_TITLE_MAX:
+            lead = lead[: _ALT_TITLE_MAX - 1] + "…"
+        titles.append(lead)
+    return titles
+
+
+def _decision_effects(rels: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """«Что изменится при принятии» — по связям черновика (ARG-005).
+
+    Каждая запись — ``{adr_id, title, text, warn}``; ``warn`` — то, что
+    мешает принять сейчас или требует пересмотра.
+    """
+    effects: list[dict[str, Any]] = []
+    for r in rels.get("outgoing", []):
+        if r["kind"] == "amends":
+            effects.append(
+                {
+                    **r,
+                    "text": "gets “amended by” this ADR; both stay in force",
+                    "warn": r["status"] in _CLOSED_STATUSES,
+                }
+            )
+        elif r["status"] == "accepted":
+            effects.append({**r, "text": "this ADR relies on it — it is in force", "warn": False})
+        elif r["status"] == "proposed":
+            effects.append(
+                {**r, "text": "is not accepted yet — accept it first or together", "warn": True}
+            )
+        else:
+            effects.append(
+                {**r, "text": f"is {r['status']} — revisit this dependency", "warn": True}
+            )
+    for r in rels.get("incoming", []):
+        if r["kind"] == "depends_on":
+            effects.append(
+                {
+                    **r,
+                    "text": "depends on this ADR — it can be accepted after this one",
+                    "warn": False,
+                }
+            )
+    return effects
+
+
+def _record_completeness(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {"name": name, "ok": bool((payload.get(key) or "").strip())} for key, name in _RECORD_FIELDS
+    ]
+
+
 def _render_prose(text: str | None, slug: str) -> str:
     """Markdown-render an ADR body field and autolink bare ``ADR-NNN`` refs."""
     if not text:
@@ -352,10 +441,16 @@ def adr_new_form(
     request: Request,
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    amends: str | None = None,
 ) -> HTMLResponse:
-    """ADR-005: empty form to create a new ADR."""
+    """ADR-005: empty form to create a new ADR.
+
+    ARG-005: ``?amends=ADR-NNN`` — «уточнить новым ADR» с карточки: новое
+    решение сразу получит связь ``amends`` на исходное.
+    """
     proj = get_project(slug)
     session, project_id = db
+    amended = adr_service.get(session, project_id, amends) if amends else None
     return templates.TemplateResponse(
         request,
         "project/adr_new.html",
@@ -365,6 +460,7 @@ def adr_new_form(
             "status_options": STATUS_OPTIONS,
             "default_status": "proposed",
             "next_id": adr_service.next_adr_id(session, project_id),
+            "amends": {"adr_id": amended.adr_id, "title": amended.title} if amended else None,
         },
     )
 
@@ -410,8 +506,13 @@ def adr_new_submit(
     alternatives: Annotated[str | None, Form()] = None,
     consequences: Annotated[str | None, Form()] = None,
     adr_id: Annotated[str | None, Form()] = None,
+    amends: Annotated[str | None, Form()] = None,
 ) -> RedirectResponse:
-    """Create the ADR and redirect to its detail page."""
+    """Create the ADR and redirect to its detail page.
+
+    ARG-005: ``amends`` — создать и тут же записать связь «уточняет» одной
+    транзакцией: решение без связи потеряло бы, ради чего его завели.
+    """
     session, project_id = db
     try:
         row = adr_service.create(
@@ -427,10 +528,22 @@ def adr_new_submit(
             adr_id=(adr_id.strip() if adr_id else None),
             author="human:web",
         )
+        if amends:
+            adr_service.relate(
+                session,
+                project_id=project_id,
+                from_adr_id=row.adr_id,
+                to_adr_id=amends,
+                kind="amends",
+                author="human:web",
+            )
         session.commit()
     except ADRAlreadyExistsError as exc:
         session.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ADRNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -547,11 +660,34 @@ def adr_show(
 
     # Кандидаты на замену — только действующие решения: заменить уже
     # заменённый, отозванный или отклонённый ADR нечего.
+    all_rows = adr_service.list_for_project(session, project_id)
     candidates = [
         {"adr_id": r.adr_id, "title": r.title, "status": r.status}
-        for r in adr_service.list_for_project(session, project_id)
+        for r in all_rows
         if r.adr_id != adr_id and r.status not in _CLOSED_STATUSES
     ]
+
+    # ARG-005: связи «уточняет» / «опирается на» и то, что нужно для решения.
+    rels = payload.get("relations") or {"outgoing": [], "incoming": []}
+    today = datetime.now(UTC).date()
+    created = {r.adr_id: r.created.date() for r in all_rows}
+    proposed_amendments = [
+        {**r, "waiting": (today - created[r["adr_id"]]).days if r["adr_id"] in created else None}
+        for r in rels["incoming"]
+        if r["kind"] == "amends" and r["status"] == "proposed"
+    ]
+    record = _record_completeness(payload)
+    refs = payload.get("referenced_by") or {"docs": [], "tasks": [], "adrs": []}
+    decide = None
+    if payload["status"] == "proposed":
+        decide = {
+            "waiting": (today - row.created.date()).days,
+            "effects": _decision_effects(rels),
+            "rejected": _alternative_titles(payload.get("alternatives")),
+            "doc_sections": len(refs["docs"]),
+            "doc_count": len({d["doc_key"] for d in refs["docs"]}),
+            "today": today.isoformat(),
+        }
 
     return templates.TemplateResponse(
         request,
@@ -567,8 +703,69 @@ def adr_show(
             "history": history_info,
             "candidates": candidates,
             "status_options": STATUS_OPTIONS,
+            "relations": rels,
+            "proposed_amendments": proposed_amendments,
+            "record": record,
+            "record_gaps": [f["name"] for f in record if not f["ok"]],
+            "decide": decide,
+            "author_is_agent": actor_kind_for_author(payload["author"]) == ActorKind.AGENT,
         },
     )
+
+
+@router.post("/p/{slug}/adr/{adr_id}/accept")
+def adr_accept(
+    slug: str,
+    adr_id: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    decided_at: Annotated[str | None, Form()] = None,
+) -> RedirectResponse:
+    """ARG-005: принять черновик с карточки. Без даты сервис поставит сегодняшнюю (ARG-002)."""
+    return _decide(slug, adr_id, db, status="accepted", decided_at=_parse_date(decided_at))
+
+
+@router.post("/p/{slug}/adr/{adr_id}/reject")
+def adr_reject(
+    slug: str,
+    adr_id: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    reason: Annotated[str | None, Form()] = None,
+) -> RedirectResponse:
+    """ARG-005: отклонить черновик с карточки; причина уходит в ревизию."""
+    return _decide(slug, adr_id, db, status="rejected", reason=(reason or "").strip() or None)
+
+
+def _decide(
+    slug: str,
+    adr_id: str,
+    db: tuple[Session, int],
+    *,
+    status: str,
+    decided_at: date | None = None,
+    reason: str | None = None,
+) -> RedirectResponse:
+    session, project_id = db
+    row = adr_service.get(session, project_id, adr_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"ADR {adr_id} not found")
+    if row.status != "proposed":
+        # Повторная отправка формы с устаревшей страницы — не ошибка сервера.
+        raise HTTPException(status_code=409, detail=f"ADR {adr_id} is {row.status}, not proposed")
+    try:
+        adr_service.update(
+            session,
+            project_id=project_id,
+            adr_id=adr_id,
+            status=status,
+            decided_at=decided_at,
+            author="human:web",
+            reason=reason or f"{status} via web",
+        )
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url=f"/p/{slug}/adr/{adr_id}", status_code=303)
 
 
 @router.post("/p/{slug}/adr/{adr_id}/edit")

@@ -3469,6 +3469,71 @@ details > summary { cursor: pointer; }
 .adr-rel { font-size: 13px; color: var(--muted); white-space: nowrap; }
 .adr-rel-link { color: var(--muted); border-bottom: 1px dotted currentColor; text-decoration: none; }
 .adr-rel-link:hover, .adr-rel-link:focus-visible { color: var(--warning); text-decoration: none; }
+/* ARG-005: блок «Needs a decision» у черновика — тон бейджа proposed. */
+.adr-decide {
+  margin: 0 0 var(--space-4);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  overflow: hidden;
+}
+.adr-decide-head {
+  padding: var(--space-2) var(--space-4);
+  background: var(--warning-soft-bg);
+  color: var(--warning-soft-fg);
+  font-weight: 600;
+}
+.adr-decide-head span { font-weight: 400; }
+.adr-decide-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.adr-decide-col { padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.adr-decide-col + .adr-decide-col { border-left: 1px solid var(--border-soft); }
+@media (max-width: 760px) {
+  .adr-decide-grid { grid-template-columns: minmax(0, 1fr); }
+  .adr-decide-col + .adr-decide-col { border-left: 0; border-top: 1px solid var(--border-soft); }
+}
+.adr-decide-blk { font-size: 14px; }
+.adr-decide-blk h3 {
+  margin: 0 0 var(--space-1);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.adr-decide-blk ul { margin: 0; padding-left: var(--space-4); }
+.adr-decide-blk p { margin: 0; }
+.adr-decide-warn { color: var(--warning); }
+.adr-decide-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-alt);
+}
+.adr-decide-confirm > summary { list-style: none; cursor: pointer; }
+.adr-decide-confirm > summary::-webkit-details-marker { display: none; }
+.adr-decide-confirm[open] { flex: 1 1 100%; }
+.adr-decide-form { margin-top: var(--space-3); font-size: 14px; }
+.adr-decide-form ul { margin: var(--space-1) 0 var(--space-3); padding-left: var(--space-4); }
+
+/* Полнота записи: заполненный раздел — зелёный, пустой — янтарный. */
+.adr-record { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.adr-record-ok, .adr-record-gap { font-size: 12px; padding: 1px 8px; border-radius: 999px; }
+.adr-record-ok { background: var(--success-soft-bg); color: var(--success-soft-fg); }
+.adr-record-gap { background: var(--warning-soft-bg); color: var(--warning-soft-fg); }
+
+/* Полоса связи или предупреждения над телом действующего ADR. */
+.adr-strip {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-alt);
+  font-size: 14px;
+}
+.adr-strip-warn { border-color: var(--warning-border); background: var(--warning-soft-bg); color: var(--warning-soft-fg); }
+
 /* Баннер «решение не действует» над героем. */
 .adr-banner {
   margin: 0 0 var(--space-3);
