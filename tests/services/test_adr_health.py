@@ -33,7 +33,7 @@ def test_rules() -> None:
     assert [i.code for i in assess_rows([_row("accepted", dated=False)])] == [
         "adr_missing_decided_at"
     ]
-    assert [i.code for i in assess_rows([_row("proposed", decision="  ")])] == [
+    assert [i.code for i in assess_rows([_row("proposed", dated=False, decision="  ")])] == [
         "adr_empty_decision"
     ]
     # proposed без даты — норма: решение ещё не принято.
@@ -41,6 +41,88 @@ def test_rules() -> None:
     # Недействующему решению пробелы не предъявляем.
     for status in ("superseded", "deprecated", "rejected"):
         assert assess_rows([_row(status, dated=False, decision=None)]) == []
+
+
+_TODAY = date(2026, 10, 3)
+
+
+def test_proposed_with_date_is_flagged() -> None:
+    """ARG-003: дата у непринятого изображает решение, которого нет (ADR-009)."""
+    issues = assess_rows([_row("proposed", dated=True)], today=_TODAY)
+    assert [(i.code, i.scope_id) for i in issues] == [("adr_proposed_has_date", "ADR-001")]
+    assert "--clear-decided-at" in issues[0].body
+
+
+def test_stale_proposal_threshold() -> None:
+    """Ровно 30 дней — ещё норма, 31 — находка; у accepted срок не считается."""
+
+    def row(status: str, created: date) -> ADRRow:
+        return ADRRow(
+            adr_id="ADR-009",
+            title="T",
+            status=status,
+            has_decided_at=False,
+            decision="x",
+            created=created,
+        )
+
+    assert assess_rows([row("proposed", date(2026, 9, 3))], today=_TODAY) == []
+    issues = assess_rows([row("proposed", date(2026, 9, 2))], today=_TODAY)
+    assert [i.code for i in issues] == ["adr_stale_proposal"]
+    assert "31" in issues[0].title
+    # ADR-009 на живой БД: предложен 2026-05-17.
+    assert "139" in assess_rows([row("proposed", date(2026, 5, 17))], today=_TODAY)[0].title
+    accepted = ADRRow(
+        adr_id="ADR-001",
+        title="T",
+        status="accepted",
+        has_decided_at=True,
+        decision="x",
+        created=date(2026, 1, 1),
+    )
+    assert assess_rows([accepted], today=_TODAY) == []
+
+
+def test_depends_on_closed_target() -> None:
+    """Опора на снятое решение — находка на пару; на действующее — нет."""
+
+    def row(status: str, deps: tuple[tuple[str, str], ...]) -> ADRRow:
+        return ADRRow(
+            adr_id="ADR-017",
+            title="T",
+            status=status,
+            has_decided_at=status == "accepted",
+            decision="x",
+            depends_on=deps,
+        )
+
+    deps = (("ADR-016", "rejected"), ("ADR-010", "accepted"))
+    issues = assess_rows([row("proposed", deps)], today=_TODAY)
+    assert [(i.code, i.scope_kind, i.scope_id) for i in issues] == [
+        ("adr_depends_on_closed", "adr_relation", "ADR-017->ADR-016")
+    ]
+    # Источник сам снят — его опоры не предъявляем.
+    assert assess_rows([row("deprecated", deps)], today=_TODAY) == []
+
+
+def test_depends_on_closed_read_from_db(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """``assess`` читает depends_on из adr_relation вместе со статусом цели."""
+    from cod_doc.services import adr_health
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _project(session, tmp_path)
+        adr_service.create(session, project_id=pid, title="Реплики", adr_id="ADR-016", decision="d")
+        adr_service.create(
+            session, project_id=pid, title="Идентичность", adr_id="ADR-017", decision="d"
+        )
+        adr_service.relate(
+            session, project_id=pid, from_adr_id="ADR-017", to_adr_id="ADR-016", kind="depends_on"
+        )
+        assert "adr_depends_on_closed" not in {i.code for i in adr_health.assess(session, pid)}
+        adr_service.update(session, project_id=pid, adr_id="ADR-016", status="rejected")
+        codes = [(i.code, i.scope_id) for i in adr_health.assess(session, pid)]
+    assert ("adr_depends_on_closed", "ADR-017->ADR-016") in codes
 
 
 def _project(session: Session, root: Path) -> int:
