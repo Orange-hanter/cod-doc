@@ -155,6 +155,8 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/adr/{adr_id}/diagram` | Добавление Mermaid-диаграммы к ADR | `adr_service.add_diagram` | ✅ | `ADR-005` |
 | `POST /p/{slug}/adr/{adr_id}/supersede` | Запись supersede-ребра | `adr_service.supersede` | ✅ | `ADR-005` |
 | `POST /p/{slug}/adr/{adr_id}/deprecate` | Перевод ADR в DEPRECATED | `adr_service.deprecate` | ✅ | `ADR-005` |
+| `POST /p/{slug}/adr/{adr_id}/accept` | Принять черновик с карточки; без даты — сегодняшняя | `adr_service.update` | ✅ | `ARG-005` |
+| `POST /p/{slug}/adr/{adr_id}/reject` | Отклонить черновик с карточки; причина — в ревизию | `adr_service.update` | ✅ | `ARG-005` |
 | **Scenarios — сценарии тестирования (RFC 24 §9, авторская половина)** | | | |
 | `GET /p/{slug}/scenarios` | Список сценариев по возможностям: фильтры вид/возможность/статус, счётчики, дрейф проекции | `scenario_service.list_for_project` + `project_coverage` + `projection_service.detect_project_drift` | ✅ | ADO-185 |
 | `GET /p/{slug}/scenarios/{scenario_id}` | Карточка сценария: герой, предусловия, шаги, ожидаемый результат, связи, проекция | `scenario_service.get` + `list_steps` + `list_links` | ✅ | ADO-185 |
