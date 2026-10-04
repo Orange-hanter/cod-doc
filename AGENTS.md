@@ -65,7 +65,7 @@ tests/             # pytest suites: services/ + mcp/ + api/ + agent/ + …
 ## 4. Dev setup
 
 ```bash
-pip install -e .[dev]
+uv sync --extra dev             # the exact CI environment from uv.lock
 alembic upgrade head            # init/upgrade local SQLite schema
 pytest tests/ -n auto --dist loadfile -v --tb=short   # run the suite
 ```
