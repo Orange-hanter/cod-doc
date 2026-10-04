@@ -99,11 +99,14 @@ def test_adr_list_status_filter(adr_client) -> None:  # type: ignore[no-untyped-
     assert "ADR-002" not in r.text
 
 
-def test_adr_list_shows_status_icon(adr_client) -> None:  # type: ignore[no-untyped-def]
+def test_adr_list_shows_status_glyph(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """ARG-004: статус — знак слева; у действующего пусто, у черновика «!»."""
     client, entry = adr_client
-    r = client.get(f"/p/{entry.name}/adr")
-    # Default 'accepted' icon is the green check.
-    assert "✅" in r.text
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert '<td class="adr-col-glyph adr-glyph-proposed" title="proposed">' in r
+    assert '<td class="adr-col-glyph " title="accepted">' in r
+    # Статус словом — для скринридера.
+    assert '<span class="adr-sr">accepted</span>' in r
 
 
 def test_adr_list_renders_decided_at(adr_client) -> None:  # type: ignore[no-untyped-def]
@@ -345,56 +348,57 @@ def test_adr_list_uses_shared_component_vocabulary(adr_client) -> None:
     client, entry = adr_client
     r = client.get(f"/p/{entry.name}/adr")
     assert 'class="page-header"' in r.text
-    assert 'class="filter-bar adr-filter"' in r.text
+    assert 'class="filter-bar adr-filter adr-summary"' in r.text
     assert 'class="grid adr-table"' in r.text
 
 
-def test_adr_list_status_is_a_badge_not_bare_text(adr_client) -> None:
-    """Статус — бейдж; иконка живёт ВНУТРИ него, а не вместо него."""
+def test_adr_list_drops_status_badges(adr_client) -> None:
+    """ARG-004: бейдж статуса в строке заменён знаком — строка действующего молчит."""
     client, entry = adr_client
-    r = client.get(f"/p/{entry.name}/adr")
-    assert 'class="badge badge-accepted"' in r.text
-    assert 'class="badge badge-proposed"' in r.text
-    assert "✅" in r.text, "иконку нельзя терять при переходе на бейджи"
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert 'class="badge badge-accepted"' not in r
+    assert 'class="badge badge-proposed"' not in r
 
 
 def test_adr_list_filter_works_without_js(adr_client) -> None:
     """Инвариант капабилити §5: формы работают без JS.
 
-    До ADO-133 у формы был единственный `<select onchange>` — без submit-кнопки
-    и без noscript, так что с выключенным JS фильтр выбирался, но не применялся.
-    Теперь фильтр — обычные ссылки: JS ему не нужен вовсе.
+    ARG-004: фильтры — ссылки сводки (``?view=``), JS им не нужен.
     """
     client, entry = adr_client
     r = client.get(f"/p/{entry.name}/adr")
     assert "onchange" not in r.text
-    assert f'href="/p/{entry.name}/adr?status=accepted"' in r.text
-    assert f'href="/p/{entry.name}/adr?status=proposed"' in r.text
+    assert f'href="/p/{entry.name}/adr?view=pending"' in r.text
 
 
-def test_adr_list_filter_chips_carry_counts(adr_client) -> None:
-    """Счётчик у чипа — распределение по статусам без перехода; пустой
-    статус не показываем, пока он не выбран."""
+def test_adr_list_summary_counts(adr_client) -> None:
+    """Сводка: всего, действуют, ждут решения; пустые фильтры не рисуются."""
     client, entry = adr_client
-    r = client.get(f"/p/{entry.name}/adr")
-    assert 'all <span class="adr-chip-count">2</span>' in r.text
-    assert 'accepted <span class="adr-chip-count">1</span>' in r.text
-    assert "?status=rejected" not in r.text
-    filtered = client.get(f"/p/{entry.name}/adr?status=rejected").text
-    assert 'href="/p/adr-demo/adr?status=rejected" aria-current="page"' in filtered
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert "2 decisions</a>" in r
+    assert "<span>1 in force</span>" in r
+    assert "1 awaiting decision</a>" in r
+    assert "?view=replaced" not in r
+    assert "?view=gaps" not in r
 
 
-def test_adr_list_marks_active_chip(adr_client) -> None:
+def test_adr_list_marks_active_filter(adr_client) -> None:
     client, entry = adr_client
     unfiltered = client.get(f"/p/{entry.name}/adr").text
     assert f'href="/p/{entry.name}/adr" aria-current="page"' in unfiltered
-    filtered = client.get(f"/p/{entry.name}/adr?status=accepted").text
-    assert f'href="/p/{entry.name}/adr?status=accepted" aria-current="page"' in filtered
+    filtered = client.get(f"/p/{entry.name}/adr?view=pending").text
+    assert f'href="/p/{entry.name}/adr?view=pending" aria-current="page"' in filtered
     assert f'href="/p/{entry.name}/adr" aria-current="page"' not in filtered
+    assert "ADR-002" in filtered
+    assert "ADR-001" not in filtered
 
 
 def test_adr_supersede_relation_visible_on_list_and_detail(adr_client) -> None:
-    """Связь «кем заменён» видна там, где читают, а не только на графе."""
+    """Связь «кем заменён» видна там, где читают, а не только на графе.
+
+    ARG-004: заменённое строкой по умолчанию не показывается — на него ведёт
+    пометка «replaces» у преемника; само оно — в фильтре «replaced».
+    """
     client, entry = adr_client
     client.post(
         f"/p/{entry.name}/adr/ADR-002/supersede",
@@ -402,8 +406,12 @@ def test_adr_supersede_relation_visible_on_list_and_detail(adr_client) -> None:
         follow_redirects=False,
     )
     listing = client.get(f"/p/{entry.name}/adr").text
-    assert 'class="adr-row-closed"' in listing
-    assert "replaced by" in listing
+    assert 'data-adr="ADR-001"' not in listing
+    assert "· replaces" in listing
+    assert 'data-target="ADR-001"' in listing
+    replaced = client.get(f"/p/{entry.name}/adr?view=replaced").text
+    assert 'class="adr-row-closed"' in replaced
+    assert "· replaced by" in replaced
     old = client.get(f"/p/{entry.name}/adr/ADR-001").text
     assert "No longer in force." in old
     assert f'href="/p/{entry.name}/adr/ADR-002"' in old
@@ -509,6 +517,9 @@ def test_no_dead_adr_selectors() -> None:
 
     # `adr-ref` рождается в рендерере, а не в шаблоне — учитываем отдельно.
     in_templates.add("adr-ref")
+    # ARG-004: классы знаков и колонки «когда» выбирает роут списка.
+    pages = root / "api" / "web" / "pages" / "adr.py"
+    in_templates |= {m.group(0) for m in class_re.finditer(pages.read_text(encoding="utf-8"))}
 
     unstyled = sorted(in_templates - styled)
     assert not unstyled, f"классы без единого CSS-правила: {unstyled}"
@@ -692,3 +703,62 @@ def test_adr_show_sidebar_is_collapsible(adr_client) -> None:  # type: ignore[no
     # Без JS блок раскрыт: сворачивает его только скрипт на узком экране.
     assert '<details class="adr-side-toggle" open>' in r
     assert "matchMedia('(max-width: 960px)')" in r
+
+
+# ── ARG-004: сигналы списка ──────────────────────────────────────────────
+
+
+def _relate(entry, from_id: str, to_id: str, kind: str) -> None:  # type: ignore[no-untyped-def]
+    from pathlib import Path
+
+    db = Path(entry.path) / ".cod-doc" / "state.db"
+    engine = make_engine(f"sqlite:///{db}")
+    with transactional(make_session_factory(engine)) as session:
+        proj = ProjectRepository(session).get_by_slug("adr-demo")
+        assert proj is not None and proj.row_id is not None
+        adr_service.relate(
+            session, project_id=proj.row_id, from_adr_id=from_id, to_adr_id=to_id, kind=kind
+        )
+    engine.dispose()
+
+
+def test_adr_list_when_column(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """«Когда»: дата у действующего, срок ожидания у черновика, «no date» у пробела."""
+    client, entry = adr_client
+    client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Undated", "status": "accepted", "decision": "d"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert "2026-04-05" in r
+    assert '<span class="adr-when-waiting">waiting 0 d</span>' in r
+    assert '<span class="adr-date-missing">no date</span>' in r
+
+
+def test_adr_list_facts_only_on_flagged_rows(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """Строка фактов — у черновика и у записи с пробелом; действующее молчит."""
+    client, entry = adr_client
+    client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Undated", "status": "accepted", "decision": "d"},
+        follow_redirects=False,
+    )
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert r.count('class="adr-facts"') == 2  # ADR-002 (proposed) и ADR-003 (без даты)
+    assert '<span class="adr-fact-gap">accepted without a decision date</span>' in r
+    assert "no doc references" in r
+    gaps = client.get(f"/p/{entry.name}/adr?view=gaps").text
+    assert 'data-adr="ADR-003"' in gaps
+    assert 'data-adr="ADR-001"' not in gaps
+
+
+def test_adr_list_relation_notes(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """Пометки связей: исходящие всегда, входящая amends — только от не-черновика."""
+    client, entry = adr_client
+    _relate(entry, "ADR-002", "ADR-001", "amends")  # ADR-002 — proposed
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert "· will amend" in r
+    assert "amended by" not in r
+    assert "adr-rel-link" in r
+    assert "HOLD_MS = 2000" in r  # подсветка связанной строки гаснет сама

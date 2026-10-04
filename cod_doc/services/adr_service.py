@@ -1074,6 +1074,33 @@ def backlinks(session: Session, project_id: int, adr_id: str) -> dict[str, list[
     return {"docs": docs, "tasks": tasks, "adrs": adrs}
 
 
+def reference_counts(session: Session, project_id: int) -> dict[str, dict[str, int]]:
+    """ARG-004: сколько секций документов и задач ссылается на каждый ADR.
+
+    Для строки фактов в списке: «на него ссылаются 6 секций, задач нет».
+    Секции считаются по таблице ``link`` (как в :func:`backlinks`), задачи —
+    только явные связи ``adr_task``: упоминание в тексте задачи — не опора.
+    Два агрегирующих запроса на весь проект, а не :func:`backlinks` на
+    каждую строку со сканом текста.
+    """
+    out: dict[str, dict[str, int]] = {}
+    for adr_id, n in session.execute(
+        select(LinkModel.to_adr_id, func.count(func.distinct(LinkModel.from_section_id)))
+        .where(LinkModel.project_id == project_id, LinkModel.to_adr_id.is_not(None))
+        .group_by(LinkModel.to_adr_id)
+    ).all():
+        if adr_id is not None:  # отфильтровано в WHERE; проверка — для типов
+            out.setdefault(adr_id, {"docs": 0, "tasks": 0})["docs"] = int(n)
+    for adr_id, n in session.execute(
+        select(ADRModel.adr_id, func.count(func.distinct(ADRTaskModel.task_id)))
+        .join(ADRTaskModel, ADRTaskModel.adr_row_id == ADRModel.row_id)
+        .where(ADRModel.project_id == project_id)
+        .group_by(ADRModel.adr_id)
+    ).all():
+        out.setdefault(adr_id, {"docs": 0, "tasks": 0})["tasks"] = int(n)
+    return out
+
+
 def adr_to_dict(
     session: Session,
     adr: ADRModel,
