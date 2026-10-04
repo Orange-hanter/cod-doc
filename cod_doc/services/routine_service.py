@@ -16,7 +16,8 @@ maintenance utilities:
 - ``graph_health``   — ADO-205 (RFC 26 §5.3): циклы, немые/мёртвые/кросс-плановые
   рёбра, позиции и слаги секций планов; пишет находки в ``finding``
 - ``adr_health``     — ADO-232: accepted ADR без ``decided_at``, proposed/accepted
-  с пустым ``decision``; пишет находки в ``finding``
+  с пустым ``decision``; ARG-003: дата у proposed, черновик старше 30 дней,
+  ``depends_on`` на снятое решение; пишет находки в ``finding``
 - ``question_links`` — OQM-009: перепроверка ссылок открытых вопросов; штампы
   ``resolved``/``broken_reason`` читает ``curator_next``
 
@@ -477,7 +478,8 @@ def _check_adr_health(
     project_id: int,
     **_: Any,
 ) -> dict[str, Any]:
-    """ADO-232: пробелы реестра ADR — accepted без даты, пустое решение.
+    """ADO-232/ARG-003: пробелы реестра ADR — accepted без даты, пустое решение,
+    дата у proposed, долгий черновик, опора на снятое решение.
 
     Пишет в ``finding`` (партиция ``source_ref='adr_health'``), откуда
     находки забирает `curator_next`. Правила детерминированы.
