@@ -19,7 +19,7 @@ pattern, audit cadence). Этот файл их не дублирует.
 Виртуальное окружение — `.venv/` в корне (тесты сами ищут `.venv/bin/alembic`).
 
 ```bash
-pip install -e '.[dev]'
+uv sync --extra dev                      # ровно окружение CI из uv.lock (pip install -e '.[dev]' — без лока)
 alembic upgrade head                     # схема локальной SQLite
 
 .venv/bin/pytest tests/ -n auto --dist loadfile -q --tb=short   # весь прогон (~2090 тестов)
@@ -74,10 +74,14 @@ scripts/gate.sh                          # все четыре шага; зел�
 (subprocess, пути, версии библиотек), прогоняй на свежем venv **до** пуша:
 
 ```bash
-uv venv --python 3.12 /tmp/ci-repro
-uv pip install --python /tmp/ci-repro/bin/python '.[dev]'
-uvx ruff@latest check cod_doc/ tests/   # CI ставит свежий ruff, локальный venv отстаёт
+UV_PROJECT_ENVIRONMENT=/tmp/ci-repro uv sync --frozen --extra dev --python 3.13
+/tmp/ci-repro/bin/ruff check cod_doc/ tests/   # те же версии, что в CI: обе стороны из uv.lock
 ```
+
+CI ставит окружение `uv sync --frozen` из закоммиченного `uv.lock`. Правишь
+зависимости в `pyproject.toml` — `uv lock` и коммить лок вместе с ним:
+`--frozen` в CI падает на рассинхроне, а не пересчитывает молча. Обновление
+версий — еженедельный PR Dependabot (`.github/dependabot.yml`).
 
 Запуск поверхностей:
 

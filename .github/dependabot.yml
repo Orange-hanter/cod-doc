@@ -1,0 +1,20 @@
+# Лок (`uv.lock`) замораживает окружение CI — значит, обновлять его надо
+# явно, иначе зависимости застынут навсегда. Раз в неделю одним PR на
+# экосистему: CI на нём прогонит гейт против новых версий до мержа.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

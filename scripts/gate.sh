@@ -93,7 +93,7 @@ if [[ -n "$PY" ]] && "$PY" -c "import xdist" >/dev/null 2>&1; then
   # и файл целиком на одном воркере сохраняет порядок обычного прогона.
   pytest_args+=(-n auto --dist loadfile)
 else
-  NOTES+=("без xdist — venv отстал от pyproject, почини: .venv/bin/pip install -e '.[dev]'")
+  NOTES+=("без xdist — venv отстал от pyproject, почини: uv sync --extra dev")
 fi
 
 RUFF="$(bin ruff)"
@@ -102,7 +102,7 @@ PYTEST="$(bin pytest)"
 for tool in "$RUFF" "$MYPY" "$PYTEST"; do
   if [[ -z "$tool" ]]; then
     echo "GATE НЕ ЗАПУЩЕН: нет ruff/mypy/pytest ни в .venv, ни в PATH." >&2
-    echo "Поставь окружение: python -m venv .venv && .venv/bin/pip install -e '.[dev]'" >&2
+    echo "Поставь окружение: uv sync --extra dev" >&2
     exit 127
   fi
 done
