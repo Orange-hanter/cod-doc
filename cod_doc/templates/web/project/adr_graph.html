@@ -14,11 +14,10 @@
 
 <header class="page-header">
   <div>
-    <h1>🔁 Supersede DAG</h1>
+    <h1>🔁 Decision graph</h1>
     <p class="muted">
-      Each arrow points from the <em>new</em> ADR to the <em>old</em> one it
-      replaces. Only ADRs with a replacement edge are drawn; the rest are
-      listed below.
+      Each arrow points from the ADR that states the link to the one it is
+      about. Only ADRs with a link are drawn; the rest are listed below.
     </p>
   </div>
 </header>
@@ -28,7 +27,7 @@
        картинка, которая их иллюстрирует. #}
     {% if chained %}
       <section class="task-card">
-        <div class="task-card-header"><h2>In a chain</h2><span class="count-chip">{{ chained|length }}</span></div>
+        <div class="task-card-header"><h2>Linked</h2><span class="count-chip">{{ chained|length }}</span></div>
         <ul class="adr-graph-nodes">
         {% for n in chained %}
           <li>
@@ -42,7 +41,7 @@
     {% else %}
       <div class="tasks-empty">
         <div class="tasks-empty-icon">🔁</div>
-        <p>Ни одно решение ещё не заменяло другое — рисовать нечего.</p>
+        <p>Ни одно решение ещё не заменяло, не уточняло и не опиралось на другое — рисовать нечего.</p>
       </div>
     {% endif %}
 
@@ -63,8 +62,14 @@
 
     {% if chained %}
       <section class="task-card">
-        <div class="task-card-header"><h2>Graph</h2></div>
+        <div class="task-card-header"><h2>Graph</h2><span class="count-chip">{{ edge_count }}</span></div>
         <div class="mermaid adr-graph-canvas">{{ mermaid }}</div>
+        {# ARG-006: начертание стрелки = вид связи. #}
+        <ul class="adr-graph-legend">
+          <li><span class="adr-graph-arrow" aria-hidden="true"></span><b>replaces</b> — the old decision is no longer in force</li>
+          <li><span class="adr-graph-arrow adr-graph-arrow-amends" aria-hidden="true"></span><b>amends</b> — both stay in force, the new one changes the scope of the old</li>
+          <li><span class="adr-graph-arrow adr-graph-arrow-depends" aria-hidden="true"></span><b>depends on</b> — cannot be accepted before the other one</li>
+        </ul>
         {# ADO-234: `click` в mermaid запрещён securityLevel:'strict', а его не
            ослабить — диаграммы ADR пишут пользователи. Переход навешиваем
            сами на готовый SVG: id узла — `…-flowchart-ADR_012-<n>`. #}
