@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru" data-theme="light">
+<html lang="ru" data-theme="light" data-palette="soft">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -28,6 +28,9 @@
           resolved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
         document.documentElement.setAttribute('data-theme', resolved);
+        if (localStorage.getItem('cod-doc-palette') === 'default') {
+          document.documentElement.removeAttribute('data-palette');
+        }
       } catch (e) { /* localStorage may be denied — fall back to default */ }
     })();
   </script>
@@ -52,11 +55,12 @@
       try {
         const m = await loadMermaid();
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const isSoft = document.documentElement.getAttribute('data-palette') === 'soft';
         // startOnLoad вешается на событие load, а оно к этому моменту уже
         // прошло: загрузка выше асинхронная. Поэтому run() явно.
         m.initialize({
           startOnLoad: false,
-          theme: isDark ? 'dark' : 'default',
+          theme: isDark ? 'dark' : (isSoft ? 'neutral' : 'default'),
           securityLevel: 'strict',
         });
         await m.run({ querySelector: '.mermaid', suppressErrors: true });
@@ -129,6 +133,12 @@
             aria-label="Live updates: idle"
             title="Live updates: idle">idle</span>
     {% endif %}
+    <button type="button" class="palette-toggle" id="palette-toggle"
+            aria-label="Toggle palette" title="Soft / classic palette">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm0 1.5v13a6.5 6.5 0 0 1 0-13z"/>
+      </svg>
+    </button>
     <button type="button" class="theme-toggle" id="theme-toggle"
             aria-label="Toggle theme" title="Toggle theme">
       <svg class="icon-sun" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
