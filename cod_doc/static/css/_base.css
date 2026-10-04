@@ -135,7 +135,9 @@
 }
 
 /* Soft palette — тёплая «бумага» из борда роя ZAIrgRush (swarm/board.py).
- * Ортогональна режиму: data-palette="soft" на <html> меняет только токены,
+ * Палитра по умолчанию: base.html рендерит data-palette="soft", а
+ * исходная (GitHub) включается кнопкой и хранится как "default".
+ * Ортогональна режиму: data-palette="soft" на <html> меняет токены,
  * а data-theme по-прежнему решает light/dark — hljs, mermaid и иконка
  * переключателя смотрят только на него. Светлый селектор исключает dark,
  * иначе при равной специфичности он перебил бы тёмные токены выше.
@@ -147,9 +149,9 @@
   --muted:        #625c52;
   --muted-strong: #48443d;
   --bg:           #fffefb;
-  --bg-alt:       #f8f6f1;
-  --bg-soft:      #f3f0ea;
-  --bg-inset:     #efece5;
+  --bg-alt:       #faf8f4;
+  --bg-soft:      #f1eee7;
+  --bg-inset:     #f6f4ef;
   --border:       #dcd6ca;
   --border-soft:  #e8e3d8;
   --border-strong:#c9c1b2;
@@ -183,9 +185,9 @@
   --purple:           #6f4fa8;
   --purple-soft-bg:   #ece6f5;
 
-  --shadow-sm: 0 1px 2px rgba(60, 50, 30, 0.05);
-  --shadow-md: 0 3px 6px rgba(60, 50, 30, 0.08), 0 1px 2px rgba(60, 50, 30, 0.04);
-  --shadow-lg: 0 8px 24px rgba(60, 50, 30, 0.12);
+  --shadow-sm: none;
+  --shadow-md: 0 2px 6px rgba(60, 50, 30, 0.06);
+  --shadow-lg: 0 8px 24px rgba(60, 50, 30, 0.10);
 }
 
 [data-palette="soft"][data-theme="dark"] {
@@ -230,9 +232,17 @@
   --purple:           #a58ad8;
   --purple-soft-bg:   #2a2238;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 3px 6px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-sm: none;
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* Геометрия борда не зависит от режима: углы мельче, бейджи почти
+ * прямоугольные. --radius-pill не трогаем — на нём держатся точки статуса. */
+[data-palette="soft"] {
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 }
 
 /* ── Base reset & typography ──────────────────────────────────────────── */
@@ -589,3 +599,36 @@ code { font-size: 12px; }
 .section-body pre code, .doc-preamble pre code { background: transparent; padding: 0; }
 .section-body ul, .doc-preamble ul { margin: 0 0 var(--space-2); padding-left: var(--space-5); }
 .doc-mode-toggle { margin-left: auto; }
+
+/* ── Soft palette: оверрайды компонентов ──────────────────────────────
+ * Борд роя плоский: градиенты заменены сплошной заливкой, а числа
+ * показателей и бренд набраны моноширинным с табличными цифрами.
+ * Специфичность [data-palette] + класс выше любого правила из
+ * _components.css, поэтому порядок подключения файлов не важен. */
+[data-palette="soft"] body { line-height: 1.55; }
+[data-palette="soft"] .topbar { backdrop-filter: none; }
+[data-palette="soft"] .topbar .brand {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+[data-palette="soft"] .topbar .brand::before {
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}
+[data-palette="soft"] .card-value,
+[data-palette="soft"] .metric-tile .value,
+[data-palette="soft"] .tasks-stat-value,
+[data-palette="soft"] .docs-stat-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+[data-palette="soft"] .progress-fill { background: var(--success); }
+[data-palette="soft"] .tasks-stats-bar { background: var(--bg-soft); }
+[data-palette="soft"] .tasks-stats-bar-fill { background: var(--success); }
+[data-palette="soft"] .project-card::before,
+[data-palette="soft"] .project-card.is-running::before { background: var(--accent); }
+[data-palette="soft"] .project-card:hover { transform: none; }
+[data-palette="soft"] .stories-header-icon { background: var(--accent-soft-bg); }
