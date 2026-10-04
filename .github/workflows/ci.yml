@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           python-version: "3.13"
           activate-environment: true
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           python-version: "3.13"
           activate-environment: true
@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           python-version: ${{ matrix.python }}
           activate-environment: true
@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           python-version: "3.13"
           activate-environment: true
@@ -132,7 +132,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           python-version: "3.13"
           activate-environment: true
