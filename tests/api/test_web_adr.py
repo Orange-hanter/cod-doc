@@ -762,3 +762,131 @@ def test_adr_list_relation_notes(adr_client) -> None:  # type: ignore[no-untyped
     assert "amended by" not in r
     assert "adr-rel-link" in r
     assert "HOLD_MS = 2000" in r  # подсветка связанной строки гаснет сама
+
+
+# ── ARG-005: карточка — «Needs a decision», принятие, связи ──────────────
+
+
+def _adr_row(entry, adr_id: str):  # type: ignore[no-untyped-def]
+    from pathlib import Path
+
+    db = Path(entry.path) / ".cod-doc" / "state.db"
+    engine = make_engine(f"sqlite:///{db}")
+    with transactional(make_session_factory(engine)) as session:
+        proj = ProjectRepository(session).get_by_slug("adr-demo")
+        assert proj is not None and proj.row_id is not None
+        row = adr_service.get(session, proj.row_id, adr_id)
+        assert row is not None
+        out = {"status": row.status, "decided_at": row.decided_at}
+    engine.dispose()
+    return out
+
+
+def test_proposed_card_shows_decision_context(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """ADR-002 (proposed) уточнит ADR-001; ADR-003 опирается на ADR-002."""
+    client, entry = adr_client
+    client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Builds on 002", "status": "proposed"},
+        follow_redirects=False,
+    )
+    _relate(entry, "ADR-002", "ADR-001", "amends")
+    _relate(entry, "ADR-003", "ADR-002", "depends_on")
+    r = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "Needs a decision" in r
+    assert "gets “amended by” this ADR; both stay in force" in r
+    assert "depends on this ADR — it can be accepted after this one" in r
+    # Полнота записи: Alternatives и Consequences пусты.
+    assert '<span class="adr-record-ok">Context</span>' in r
+    assert '<span class="adr-record-gap">Alternatives</span>' in r
+    assert f'action="/p/{entry.name}/adr/ADR-002/accept"' in r
+    assert "confirm(" not in r.split('class="adr-decide"', 1)[1].split("</section>", 1)[0]
+
+
+def test_accepted_card_has_no_decision_block(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert "Needs a decision" not in r
+    assert f'href="/p/{entry.name}/adr/new?amends=ADR-001"' in r
+
+
+def test_accept_from_card_stamps_today(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """Без даты в форме сервис ставит сегодняшнюю (ARG-002); повтор — 409."""
+    from datetime import UTC, datetime
+
+    client, entry = adr_client
+    resp = client.post(f"/p/{entry.name}/adr/ADR-002/accept", data={}, follow_redirects=False)
+    assert resp.status_code == 303
+    row = _adr_row(entry, "ADR-002")
+    assert row == {"status": "accepted", "decided_at": datetime.now(UTC).date()}
+    again = client.post(f"/p/{entry.name}/adr/ADR-002/accept", data={}, follow_redirects=False)
+    assert again.status_code == 409
+
+
+def test_accept_from_card_keeps_given_date(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    resp = client.post(
+        f"/p/{entry.name}/adr/ADR-002/accept",
+        data={"decided_at": "2026-09-30"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert _adr_row(entry, "ADR-002")["decided_at"] == date(2026, 9, 30)
+
+
+def test_reject_from_card(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    resp = client.post(
+        f"/p/{entry.name}/adr/ADR-002/reject",
+        data={"reason": "covered by ADR-001"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert _adr_row(entry, "ADR-002")["status"] == "rejected"
+
+
+def test_accepted_card_shows_proposed_amendment(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _relate(entry, "ADR-002", "ADR-001", "amends")
+    r = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert "Proposed amendment." in r
+    assert "would amend this decision" in r
+    assert "amendment proposed by" in r  # сайдбар «Relations»
+
+
+def test_amend_with_new_adr_records_relation(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    form = client.get(f"/p/{entry.name}/adr/new?amends=ADR-001").text
+    assert '<input type="hidden" name="amends" value="ADR-001">' in form
+    resp = client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Narrower layering", "status": "proposed", "amends": "ADR-001"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    card = client.get(resp.headers["location"]).text
+    assert "will amend" in card
+    assert f'href="/p/{entry.name}/adr/ADR-001"' in card
+
+
+def test_alternative_titles_from_live_formats() -> None:
+    """Названия альтернатив из двух форм живого реестра: жирный абзац и список."""
+    from cod_doc.api.web.pages.adr import _alternative_titles
+
+    adr_016 = (
+        "**A. Общая PostgreSQL (ADR-010 / RFC 23).** Отвергнуто как командный путь: нет офлайна.\n\n"
+        "**B. Синхронизация файла state.db (облачная папка, rsync, S3 целиком).** Отвергнуто."
+    )
+    assert _alternative_titles(adr_016) == [
+        "Общая PostgreSQL (ADR-010 / RFC 23)",
+        "Синхронизация файла state.db (облачная папка, rsync, S3 целиком)",
+    ]
+    adr_009 = (
+        "1. TencentDB-Agent-Memory (Tencent, TypeScript) — иерархическая память.\n\n"
+        "2. Mem0 (Python, pip install mem0ai) — абстракция памяти."
+    )
+    assert _alternative_titles(adr_009) == [
+        "TencentDB-Agent-Memory (Tencent, TypeScript)",
+        "Mem0 (Python, pip install mem0ai)",
+    ]
+    assert _alternative_titles("Просто абзац прозы без перечисления.") == []
