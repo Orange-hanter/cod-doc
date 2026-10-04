@@ -102,6 +102,13 @@ _GRAPH_CLASSDEF = {
 }
 
 
+#: ARG-006: стрелка mermaid на каждый вид связи из ``adr_relation``.
+_GRAPH_RELATION_ARROW = {
+    "amends": "-.->|amends|",
+    "depends_on": "==>|depends on|",
+}
+
+
 def _render_prose(text: str | None, slug: str) -> str:
     """Markdown-render an ADR body field and autolink bare ``ADR-NNN`` refs."""
     if not text:
@@ -293,7 +300,7 @@ def adr_graph_page(
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
 ) -> HTMLResponse:
-    """ADR-006: full supersede DAG rendered as a Mermaid block."""
+    """ADR-006: граф решений — замены и связи (ARG-006) одной mermaid-схемой."""
     proj = get_project(slug)
     session, project_id = db
     graph = adr_service.graph(session, project_id)
@@ -301,7 +308,10 @@ def adr_graph_page(
     # В mermaid идут только узлы с рёбрами. Весь реестр целиком давал граф
     # из десятка несвязанных прямоугольников, среди которых единственная
     # стрелка терялась; одиночные решения перечислены списком под графом.
-    linked = {e["from"] for e in graph["edges"]} | {e["to"] for e in graph["edges"]}
+    # ARG-006: связи «уточняет» / «опирается на» рисуются вместе с заменами,
+    # их узлы тоже уходят из «Standalone».
+    every_edge = [*graph["edges"], *graph["relations"]]
+    linked = {e["from"] for e in every_edge} | {e["to"] for e in every_edge}
     chained = [n for n in graph["nodes"] if n["adr_id"] in linked]
     standalone = [n for n in graph["nodes"] if n["adr_id"] not in linked]
 
@@ -317,6 +327,11 @@ def adr_graph_page(
         from_id = edge["from"].replace("-", "_")
         to_id = edge["to"].replace("-", "_")
         lines.append(f"  {from_id} -->|replaces| {to_id}")
+    # Вид связи — начертание стрелки: пунктир «уточняет» (оба действуют),
+    # толстая «опирается на» (порядок принятия). Легенда — в шаблоне.
+    for rel in graph["relations"]:
+        arrow = _GRAPH_RELATION_ARROW[rel["kind"]]
+        lines.append(f"  {rel['from'].replace('-', '_')} {arrow} {rel['to'].replace('-', '_')}")
     # Цвет узла = статус; палитра повторяет бейджи списка.
     lines.extend(f"  classDef {status} {style}" for status, style in _GRAPH_CLASSDEF.items())
     mermaid_src = "\n".join(lines)
@@ -330,6 +345,7 @@ def adr_graph_page(
             "mermaid": mermaid_src,
             "has_nodes": bool(graph["nodes"]),
             "chained": chained,
+            "edge_count": len(every_edge),
             "standalone": standalone,
             "status_icons": _STATUS_ICON,
         },
