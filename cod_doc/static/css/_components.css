@@ -1209,7 +1209,7 @@ a.nav-card-title:hover { color: var(--accent); }
 .costs-table { min-width: 860px; }        /* 7 колонок, из них пять числовых */
 .plans-table { min-width: 880px; }        /* scope + принцип прозой + прогресс-бар 100px */
 .tasks-legacy-table { min-width: 700px; }
-.adr-table { min-width: 560px; } /* ID + заголовок + бейдж + дата; автор в подсказке (ADO-236) */
+.adr-table { min-width: 560px; } /* знак + ID + заголовок с фактами + «когда»; автор в подсказке (ADO-236) */
 .section-tasks { min-width: 680px; }
 /* Живёт в узком треке `.overview-block` (auto-fit от 340px), поэтому порог
    ниже: здесь прокрутка внутри карточки — норма, а не сигнал о тесноте. */
@@ -3399,33 +3399,58 @@ details > summary { cursor: pointer; }
   font-size: 13px;
 }
 
-/* Фильтр списка: чипы-ссылки со счётчиком вместо <select>. */
-.adr-filter { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
-.adr-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--fg);
-  font-size: 13px;
-  text-decoration: none;
+/* ARG-004: сводка над списком — счёт и ссылки-фильтры вместо чипов статусов.
+   Ссылка-фильтр выглядит как подчёркнутое пунктиром число; выбранная —
+   сплошным. «Ждут решения» и «с пробелами» — тоном бейджа proposed. */
+.adr-filter { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); align-items: baseline; }
+.adr-summary { font-size: 13px; color: var(--muted); padding-bottom: var(--space-2); }
+.adr-summary-total { color: var(--fg); font-weight: 600; text-decoration: none; }
+.adr-summary-flt { color: var(--muted); text-decoration: none; border-bottom: 1px dashed currentColor; }
+.adr-summary-warn { color: var(--warning); }
+.adr-summary a:hover { text-decoration: none; color: var(--accent); }
+.adr-summary a.is-active { color: var(--fg-strong); border-bottom-style: solid; }
+
+/* Номер не переносится: на 390px «ADR-» и «001» разъезжались по строкам. */
+.adr-table td.mono { white-space: nowrap; }
+
+/* Знак статуса слева от номера; у действующего пусто. */
+.adr-col-glyph { width: 16px; padding-right: 0; text-align: center; font-weight: 700; }
+.adr-glyph-proposed { color: var(--warning); }
+.adr-glyph-superseded, .adr-glyph-deprecated { color: var(--muted); }
+.adr-glyph-rejected { color: var(--danger); }
+.adr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
-.adr-chip:hover { border-color: var(--border-strong); text-decoration: none; }
-.adr-chip.is-active { border-color: var(--accent); background: var(--accent-soft-bg); color: var(--accent); }
-.adr-chip-count {
-  min-width: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--bg-alt);
+
+/* Срок ожидания черновика; после STALE_PROPOSAL_DAYS — янтарь. */
+.adr-when-waiting { color: var(--muted); }
+.adr-when-stale { color: var(--warning); font-weight: 600; }
+
+/* Строка фактов — только у черновиков и записей с пробелами. */
+.adr-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  margin-top: 2px;
+  font-size: 12px;
   color: var(--muted);
-  font-size: 11px;
-  text-align: center;
 }
-/* Непринятые решения — то, что ждёт человека; счётчик подсвечен тоном бейджа. */
-.adr-chip-proposed .adr-chip-count { background: var(--warning-soft-bg); color: var(--warning-soft-fg); }
+.adr-fact-gap { color: var(--warning); }
+
+/* Подсветка связанной строки при наведении на пометку связи. */
+@keyframes adr_row_pulse {
+  0%, 100% { color: var(--fg); }
+  35%, 65% { color: var(--warning); }
+}
+.adr-table tr.is-lit .adr-row-title { animation: adr_row_pulse 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .adr-table tr.is-lit .adr-row-title { animation: none; color: var(--warning); text-decoration: underline; }
+}
 
 /* ADO-232: пропущенная дата у accepted — пробел в данных, а не «нет даты». */
 .adr-date-missing {
@@ -3440,7 +3465,10 @@ details > summary { cursor: pointer; }
 /* Строка недействующего решения приглушена, но кликабельна. */
 .adr-row-closed td { color: var(--muted); }
 .adr-row-closed td a:not(.adr-row-link) { color: var(--muted); }
-.adr-rel { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 2px; font-size: 12px; color: var(--muted); }
+/* Пометка связи в строке: «· amends ADR-005». */
+.adr-rel { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.adr-rel-link { color: var(--muted); border-bottom: 1px dotted currentColor; text-decoration: none; }
+.adr-rel-link:hover, .adr-rel-link:focus-visible { color: var(--warning); text-decoration: none; }
 /* Баннер «решение не действует» над героем. */
 .adr-banner {
   margin: 0 0 var(--space-3);

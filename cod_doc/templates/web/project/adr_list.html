@@ -20,33 +20,43 @@
   </div>
   <div class="page-header-actions">
     <a class="btn btn-primary" href="/p/{{ project.name }}/adr/new">+ New ADR</a>
-    <a class="btn" href="/p/{{ project.name }}/adr/graph">🔁 Supersede graph</a>
+    <a class="btn" href="/p/{{ project.name }}/adr/graph">🔁 Decision graph</a>
   </div>
 </header>
 
-{# Фильтр — ссылки, а не <select onchange>: работает без JS без noscript-
-   кнопки (ADO-133), а счётчик показывает распределение по статусам ещё до
-   клика. Пустые статусы шаблону не приходят, кроме выбранного. #}
-<nav class="filter-bar adr-filter" aria-label="Filter by status">
-  <a class="adr-chip{% if not status_filter %} is-active{% endif %}"
-     href="/p/{{ project.name }}/adr"{% if not status_filter %} aria-current="page"{% endif %}>
-    all <span class="adr-chip-count">{{ total }}</span>
-  </a>
-  {% for c in status_chips %}
-    <a class="adr-chip{% if c.status == "proposed" %} adr-chip-proposed{% endif %}{% if status_filter == c.status %} is-active{% endif %}"
-       href="/p/{{ project.name }}/adr?status={{ c.status }}"{% if status_filter == c.status %} aria-current="page"{% endif %}>
-      {{ c.icon }} {{ c.status }} <span class="adr-chip-count">{{ c.count }}</span>
-    </a>
-  {% endfor %}
+{# ARG-004 (RFC 34 §3.2): сводка вместо чипов статусов. Числа «ждут решения»,
+   «с пробелами», «заменено» — ссылки-фильтры: без JS, как прежние чипы
+   (ADO-133). Остальное — просто счёт. #}
+<nav class="filter-bar adr-filter adr-summary" aria-label="Summary and filters">
+  <a class="adr-summary-total{% if not view and not status_filter %} is-active{% endif %}"
+     href="/p/{{ project.name }}/adr"{% if not view and not status_filter %} aria-current="page"{% endif %}>
+    {{ summary.total }} decisions</a>
+  <span>{{ summary.in_force }} in force</span>
+  {% if summary.pending %}
+    <a class="adr-summary-flt adr-summary-warn{% if view == "pending" %} is-active{% endif %}"
+       href="/p/{{ project.name }}/adr?view=pending"{% if view == "pending" %} aria-current="page"{% endif %}>
+      {{ summary.pending }} awaiting decision</a>
+  {% endif %}
+  {% if summary.gaps %}
+    <a class="adr-summary-flt adr-summary-warn{% if view == "gaps" %} is-active{% endif %}"
+       href="/p/{{ project.name }}/adr?view=gaps"{% if view == "gaps" %} aria-current="page"{% endif %}>
+      {{ summary.gaps }} with gaps in the record</a>
+  {% endif %}
+  {% if summary.replaced %}
+    <a class="adr-summary-flt{% if view == "replaced" %} is-active{% endif %}"
+       href="/p/{{ project.name }}/adr?view=replaced"{% if view == "replaced" %} aria-current="page"{% endif %}>
+      {{ summary.replaced }} replaced</a>
+  {% endif %}
+  {% if summary.withdrawn %}<span>{{ summary.withdrawn }} withdrawn</span>{% endif %}
 </nav>
 
 {% if not items %}
   <div class="tasks-empty">
     <div class="tasks-empty-icon">🏛️</div>
     <p>
-      {% if status_filter %}
-        Нет ADR со статусом <code>{{ status_filter }}</code>.
-        <a href="/p/{{ project.name }}/adr">Показать все</a>.
+      {% if status_filter or view %}
+        Nothing matches this filter.
+        <a href="/p/{{ project.name }}/adr">Show all</a>.
       {% else %}
         Решений пока нет. <a href="/p/{{ project.name }}/adr/new">Заведите первое</a>,
         когда «почему мы сделали так» должно пережить смену команды.
@@ -58,47 +68,63 @@
   <table class="grid adr-table">
     <thead>
       <tr>
+        <th class="adr-col-glyph"><span class="adr-sr">Status</span></th>
         <th>ID</th>
-        <th>Title</th>
-        <th>Status</th>
-        <th class="adr-col-when">Decided</th>
+        <th>Decision</th>
+        <th class="adr-col-when">When</th>
       </tr>
     </thead>
     <tbody>
       {% for it in items %}
-        <tr{% if it.closed %} class="adr-row-closed"{% endif %}>
-          {# Ссылка в первой ячейке растягивается на строку через ::after
-             (см. .adr-table в _components.css): клик работает по всей строке
-             и без JS. Заголовок остаётся отдельной ссылкой для средней кнопки
-             мыши и для скринридера. #}
+        <tr data-adr="{{ it.adr_id }}"{% if it.closed %} class="adr-row-closed"{% endif %}>
+          {# Знак — единственный носитель статуса в строке; у действующего пусто,
+             строка молчит. Для скринридера статус словом. #}
+          <td class="adr-col-glyph {{ it.glyph_cls }}" title="{{ it.status }}">
+            <span aria-hidden="true">{{ it.glyph }}</span><span class="adr-sr">{{ it.status }}</span>
+          </td>
+          {# Ссылка в ID растягивается на строку через ::after (ADO-133). #}
           <td class="mono"><a class="adr-row-link" href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.adr_id }}</a></td>
           <td>
-            <a href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.title }}</a>
-            {% if it.superseded_by or it.supersedes %}
-              <div class="adr-rel">
-                {% for r in it.superseded_by %}
-                  <span>replaced by <a class="mono" href="/p/{{ project.name }}/adr/{{ r.adr_id }}">{{ r.adr_id }}</a></span>
-                {% endfor %}
-                {% for r in it.supersedes %}
-                  <span>replaces <a class="mono" href="/p/{{ project.name }}/adr/{{ r.adr_id }}">{{ r.adr_id }}</a></span>
-                {% endfor %}
+            <a class="adr-row-title" href="/p/{{ project.name }}/adr/{{ it.adr_id }}">{{ it.title }}</a>
+            {% for n in it.notes %}
+              <span class="adr-rel">· {{ n.label }}
+                <a class="mono adr-rel-link" data-target="{{ n.adr_id }}" href="/p/{{ project.name }}/adr/{{ n.adr_id }}">{{ n.adr_id }}</a></span>
+            {% endfor %}
+            {% if it.facts %}
+              <div class="adr-facts">
+                {% for g in it.gaps %}<span class="adr-fact-gap">{{ g }}</span>{% endfor %}
+                {% for f in it.facts %}<span>{{ f }}</span>{% endfor %}
               </div>
             {% endif %}
           </td>
-          <td><span class="badge badge-{{ it.status }}">{{ it.status_icon }} {{ it.status }}</span></td>
-          {# ADO-232: у принятого решения дата обязана быть — пробел виден,
-             а не прячется за прочерком. Рутина adr_health заводит находку. #}
-          {# ADO-236: автор — в подсказке даты, а не отдельной колонкой:
-             `human:git-history-recovery` отнимал ширину у заголовка. #}
-          <td class="muted adr-col-when" title="by {{ it.author }}">
-            {%- if not it.decided_at and it.status == "accepted" -%}
-              <span class="adr-date-missing" title="Accepted without a decision date — see routine adr_health · by {{ it.author }}">not recorded</span>
-            {%- else -%}{{ it.decided_at | short_date }}{%- endif -%}
+          {# ADO-236: автор — в подсказке колонки, а не отдельной колонкой. #}
+          <td class="adr-col-when" title="{{ it.when.title or ('by ' ~ it.author) }}">
+            {%- if it.when.cls %}<span class="{{ it.when.cls }}">{{ it.when.text }}</span>{% else %}{{ it.when.text }}{% endif -%}
           </td>
         </tr>
       {% endfor %}
     </tbody>
   </table>
   </div>
+  {# ARG-004: наведение или фокус на пометке связи подсвечивает связанную
+     строку; гаснет через 2 с после ухода. Без JS пометка — обычная ссылка. #}
+  <script>
+    (() => {
+      const HOLD_MS = 2000;
+      let timer = null;
+      let lit = null;
+      const off = () => { if (lit) lit.classList.remove('is-lit'); lit = null; };
+      document.querySelectorAll('.adr-table .adr-rel-link[data-target]').forEach((a) => {
+        const row = document.querySelector(`.adr-table tr[data-adr="${a.dataset.target}"]`);
+        if (!row) return;
+        const on = () => { clearTimeout(timer); if (lit !== row) { off(); row.classList.add('is-lit'); lit = row; } };
+        const leave = () => { clearTimeout(timer); timer = setTimeout(off, HOLD_MS); };
+        a.addEventListener('mouseenter', on);
+        a.addEventListener('focus', on);
+        a.addEventListener('mouseleave', leave);
+        a.addEventListener('blur', leave);
+      });
+    })();
+  </script>
 {% endif %}
 {% endblock %}

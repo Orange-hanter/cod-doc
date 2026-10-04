@@ -13,7 +13,7 @@ Routes:
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -28,8 +28,8 @@ from cod_doc.api.web.markdown import (
     render_markdown,
 )
 from cod_doc.api.web.templates_env import templates
-from cod_doc.domain.entities import ADRStatus, EntityKind
-from cod_doc.services import adr_service, revision_service, task_service
+from cod_doc.domain.entities import ActorKind, ADRStatus, EntityKind, actor_kind_for_author
+from cod_doc.services import adr_health, adr_service, revision_service, task_service
 from cod_doc.services.adr_service import ADRAlreadyExistsError, ADRNotFoundError
 
 router = APIRouter()
@@ -102,6 +102,123 @@ _GRAPH_CLASSDEF = {
 }
 
 
+#: ARG-004: фильтры сводки над списком (``?view=``).
+_LIST_VIEWS = frozenset({"pending", "gaps", "replaced"})
+
+#: Знак слева от номера. У действующего знака нет — строка молчит.
+_STATUS_GLYPH = {
+    "proposed": "!",
+    "superseded": "↻",
+    "deprecated": "⊘",
+    "rejected": "×",
+}
+
+#: Класс цвета знака. Полные имена, а не f-строка: их ищет
+#: ``test_no_dead_adr_selectors`` — у каждого класса есть правило в CSS.
+_GLYPH_CLASS = {
+    "proposed": "adr-glyph-proposed",
+    "superseded": "adr-glyph-superseded",
+    "deprecated": "adr-glyph-deprecated",
+    "rejected": "adr-glyph-rejected",
+}
+
+#: Находки ``adr_health``, которые список показывает как пробел в записи.
+#: ``adr_stale_proposal`` сюда не входит: долгое ожидание уже видно в
+#: колонке «когда» и в фильтре «ждут решения».
+_GAP_TEXT = {
+    "adr_missing_decided_at": "accepted without a decision date",
+    "adr_empty_decision": "the Decision section is empty",
+    "adr_proposed_has_date": "has a decision date but is not accepted",
+    "adr_depends_on_closed": "depends on a decision that is no longer in force",
+}
+
+
+def _row_visible(
+    adr_id: str,
+    row_status: str,
+    *,
+    status: str | None,
+    view: str | None,
+    gaps: dict[str, list[str]],
+) -> bool:
+    if status:
+        return row_status == status
+    if view == "pending":
+        return row_status == "proposed"
+    if view == "gaps":
+        return adr_id in gaps
+    if view == "replaced":
+        return row_status == "superseded"
+    # По умолчанию заменённое строкой не показываем: на него ведёт пометка
+    # «replaces» у преемника, а в списке оно выглядело бы ещё одним решением.
+    return row_status != "superseded"
+
+
+def _when(status: str, decided_at: date | None, created: date, today: date) -> dict[str, str]:
+    """Колонка «когда»: дата решения, срок ожидания черновика или пробел."""
+    if status == "proposed":
+        days = (today - created).days
+        stale = days > adr_health.STALE_PROPOSAL_DAYS
+        return {
+            "text": f"waiting {days} d",
+            "cls": "adr-when-stale" if stale else "adr-when-waiting",
+            "title": f"proposed {created.isoformat()}",
+        }
+    if status == "accepted" and decided_at is None:
+        return {
+            "text": "no date",
+            "cls": "adr-date-missing",
+            "title": "Accepted without a decision date — see routine adr_health",
+        }
+    return {"text": decided_at.isoformat() if decided_at else "—", "cls": "", "title": ""}
+
+
+def _facts(status: str, created: date, author: str, ref: dict[str, int]) -> list[str]:
+    """Строка фактов под заголовком: то, что нужно, чтобы решать, не открывая ADR."""
+    facts = []
+    if status == "proposed":
+        facts.append(f"proposed {created.isoformat()}")
+    # Роль автора — только через резолвер ADR-012, не по префиксу строки.
+    is_agent = actor_kind_for_author(author) == ActorKind.AGENT
+    facts.append("written by an agent" if is_agent else f"by {author}")
+    docs, tasks = ref["docs"], ref["tasks"]
+    facts.append(
+        f"{docs} doc section{'s' if docs != 1 else ''} refer to it" if docs else "no doc references"
+    )
+    facts.append(f"{tasks} linked task{'s' if tasks != 1 else ''}" if tasks else "no tasks")
+    return facts
+
+
+def _relation_notes(graph: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    """Пометки связей в строке: «replaces ADR-011», «amends ADR-005», …
+
+    Исходящие связи показываются всегда. Входящие — только от решений, которые
+    уже не черновики: у ADR-010 строка не кричит о том, что ADR-016 ещё
+    только собирается его уточнить (это видно на карточке). Входящая
+    ``depends_on`` на строке не показывается вовсе — порядок принятия важен
+    тому, кто опирается, а не тому, на кого.
+    """
+    status = {n["adr_id"]: n["status"] for n in graph["nodes"]}
+    out: dict[str, list[dict[str, str]]] = {}
+
+    def add(adr_id: str, label: str, target: str) -> None:
+        out.setdefault(adr_id, []).append({"label": label, "adr_id": target})
+
+    for e in graph["edges"]:
+        add(e["from"], "replaces", e["to"])
+        add(e["to"], "replaced by", e["from"])
+    for rel in graph["relations"]:
+        src, dst, kind = rel["from"], rel["to"], rel["kind"]
+        proposed = status.get(src) == "proposed"
+        if kind == "amends":
+            add(src, "will amend" if proposed else "amends", dst)
+            if not proposed:
+                add(dst, "amended by", src)
+        else:
+            add(src, "depends on", dst)
+    return out
+
+
 #: ARG-006: стрелка mermaid на каждый вид связи из ``adr_relation``.
 _GRAPH_RELATION_ARROW = {
     "amends": "-.->|amends|",
@@ -151,43 +268,62 @@ def adr_list(
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
     status: str | None = None,
+    view: str | None = None,
 ) -> HTMLResponse:
-    """ADR-004: list page with status filter + badges."""
+    """ARG-004 (RFC 34 §3.2): список отвечает «что мне решать» и «на что опереться».
+
+    Действующее решение в строке молчит: номер, заголовок, дата. Сигналы —
+    только у строк, которым нужно действие: черновик несёт срок ожидания и
+    факты (автор, кто ссылается, задачи), запись с пробелом — сам пробел.
+    Пробелы берутся из ``adr_health.assess`` — те же правила, что у рутины,
+    а не второй список условий в шаблоне.
+
+    ``view`` — фильтры сводки: ``pending`` (ждут решения), ``gaps`` (пробелы
+    в записи), ``replaced`` (заменённые; по умолчанию строкой не
+    показываются — на них ведёт пометка у преемника). ``status`` оставлен для
+    старых ссылок.
+    """
     proj = get_project(slug)
     session, project_id = db
     status = status or None
+    view = view if view in _LIST_VIEWS else None
     all_rows = adr_service.list_for_project(session, project_id)
-    relations = _relations(adr_service.graph(session, project_id))
+    graph = adr_service.graph(session, project_id)
+    notes = _relation_notes(graph)
+    refs = adr_service.reference_counts(session, project_id)
+    gaps: dict[str, list[str]] = {}
+    for issue in adr_health.assess(session, project_id):
+        if issue.code in _GAP_TEXT:
+            adr_id = issue.scope_id.split("->", 1)[0]
+            gaps.setdefault(adr_id, []).append(_GAP_TEXT[issue.code])
+    today = datetime.now(UTC).date()
 
-    # Фильтр — ссылки-чипы со счётчиками, а не <select>: без JS работает
-    # сам по себе, а число рядом со статусом отвечает «сколько решений ещё
-    # не принято» без перехода. Пустые статусы не показываем, кроме
-    # выбранного — иначе с него не уйти.
     counts = {s: 0 for s in STATUS_OPTIONS}
     for r in all_rows:
         counts[r.status] = counts.get(r.status, 0) + 1
-    status_chips = [
-        {"status": s, "count": counts[s], "icon": _STATUS_ICON.get(s, "•")}
-        for s in STATUS_OPTIONS
-        if counts[s] or s == status
-    ]
 
     items = []
     for r in all_rows:
-        if status and r.status != status:
+        if not _row_visible(r.adr_id, r.status, status=status, view=view, gaps=gaps):
             continue
-        rel = relations.get(r.adr_id, {"supersedes": [], "superseded_by": []})
+        pending = r.status == "proposed"
+        row_gaps = gaps.get(r.adr_id, [])
+        ref = refs.get(r.adr_id, {"docs": 0, "tasks": 0})
         items.append(
             {
                 "adr_id": r.adr_id,
                 "title": r.title,
                 "status": r.status,
-                "status_icon": _STATUS_ICON.get(r.status, "•"),
-                "decided_at": r.decided_at,
+                "glyph": _STATUS_GLYPH.get(r.status, ""),
+                "glyph_cls": _GLYPH_CLASS.get(r.status, ""),
                 "author": r.author,
                 "closed": r.status in _CLOSED_STATUSES,
-                "supersedes": rel["supersedes"],
-                "superseded_by": rel["superseded_by"],
+                "notes": notes.get(r.adr_id, []),
+                "when": _when(r.status, r.decided_at, r.created.date(), today),
+                "facts": _facts(r.status, r.created.date(), r.author, ref)
+                if pending or row_gaps
+                else [],
+                "gaps": row_gaps,
             }
         )
 
@@ -198,8 +334,15 @@ def adr_list(
             "project": proj.entry,
             "items": items,
             "status_filter": status,
-            "status_chips": status_chips,
-            "total": len(all_rows),
+            "view": view,
+            "summary": {
+                "total": len(all_rows),
+                "in_force": counts.get("accepted", 0),
+                "pending": counts.get("proposed", 0),
+                "gaps": len(gaps),
+                "replaced": counts.get("superseded", 0),
+                "withdrawn": counts.get("deprecated", 0) + counts.get("rejected", 0),
+            },
         },
     )
 
