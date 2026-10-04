@@ -12,6 +12,8 @@ and CLI in ``cod_doc.cli.adr``):
 - ``supersede(new_adr_id, old_adr_id, reason?)`` — create edge AND
   mark old as ``superseded`` in one transaction.
 - ``link_task(adr_id, task_id, relation='implements')``.
+- ``relate(from_adr_id, to_adr_id, kind)`` / ``unrelate(...)`` — связи
+  «уточняет» (``amends``) и «опирается на» (``depends_on``), ARG-001.
 - ``graph(project_id)`` — full supersede DAG + status-by-node payload.
 - ``render_markdown(...)`` — project one ADR through the default Jinja
   template into a markdown string (for export / git-visibility).
@@ -35,6 +37,7 @@ from cod_doc.domain.entities import EntityKind
 from cod_doc.infra.models import (
     ADRDiagramModel,
     ADRModel,
+    ADRRelationModel,
     ADRSupersedeModel,
     ADRTaskModel,
     DocumentModel,
@@ -43,11 +46,12 @@ from cod_doc.infra.models import (
     SectionModel,
     TaskModel,
 )
+from cod_doc.infra.models.adrs import ADR_RELATION_KINDS
 from cod_doc.services import activity_service, search_service
 from cod_doc.services import revision_service as rev
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+    from sqlalchemy.orm import InstrumentedAttribute, Session
 
 
 def _diff(op: str, **fields: object) -> str:
@@ -60,6 +64,14 @@ class ADRNotFoundError(LookupError):
 
 class ADRAlreadyExistsError(ValueError):
     pass
+
+
+class ADRRelationExistsError(ValueError):
+    """ARG-001: такая связь уже записана — повтор считается ошибкой вызывающего."""
+
+
+class ADRRelationNotFoundError(LookupError):
+    """ARG-001: снимаемой связи нет."""
 
 
 class ADRImmutableError(ValueError):
@@ -258,6 +270,12 @@ def update(
         if status not in _LEGAL_STATUSES:
             raise ValueError(f"invalid status {status!r}")
         changed["status"] = {"old": row.status, "new": status}
+        # ARG-002 (RFC 34 F1): принятие без даты оставляло decided_at пустым —
+        # так ADR-015 пролежал accepted без даты две недели. Дату ставит сервис,
+        # а не форма: MCP и веб ведут себя одинаково. Явная дата побеждает,
+        # уже записанная — тоже.
+        if status == "accepted" and decided_at is None and row.decided_at is None:
+            decided_at = datetime.now(UTC).date()
     if title is not None and title != row.title:
         changed["title"] = {"old": row.title, "new": title}
     if decided_at is not None and decided_at != row.decided_at:
@@ -355,6 +373,7 @@ def sync_body(
     consequences: str | None = None,
     author: str = "human",
     reason: str | None = None,
+    clear_decided_at: bool = False,
 ) -> ADRModel:
     """Re-sync an ADR's body from its markdown projection, ignoring the status gate.
 
@@ -379,7 +398,15 @@ def sync_body(
       projection sync never reads as a hand edit of a decision.
 
     A call that changes nothing is a no-op: no revision, no event.
+
+    ``clear_decided_at`` (ARG-002) убирает дату решения: ``None`` в
+    ``decided_at`` значит «не менять», поэтому очистке нужен свой флаг.
+    Случай из жизни — ADR-009: черновик с датой, которая была датой
+    предложения. Флаг вместе с ``decided_at`` противоречит сам себе и
+    отвергается.
     """
+    if clear_decided_at and decided_at is not None:
+        raise ValueError("clear_decided_at and decided_at are mutually exclusive")
     row = _require(session, project_id, adr_id)
 
     incoming: dict[str, Any] = {
@@ -404,6 +431,8 @@ def sync_body(
             changed[field] = {"old": row.title, "new": value}
         else:
             changed[field] = {"changed": True}
+    if clear_decided_at and row.decided_at is not None:
+        changed["decided_at"] = {"old": row.decided_at.isoformat(), "new": None}
 
     if not changed:
         return row
@@ -712,6 +741,205 @@ def link_task(
     return row
 
 
+# ----------------------------------------------------------------- #
+# Связи «уточняет» / «опирается на» (ARG-001, RFC 34 §3.1)           #
+# ----------------------------------------------------------------- #
+
+
+def _validate_relation_kind(kind: str) -> None:
+    if kind not in ADR_RELATION_KINDS:
+        raise ValueError(
+            f"invalid relation kind {kind!r}; expected one of {list(ADR_RELATION_KINDS)}"
+        )
+
+
+def _has_relation_path(session: Session, *, start_id: int, target_id: int, kind: str) -> bool:
+    """DFS по рёбрам одного вида; True, если из ``start_id`` достижим ``target_id``."""
+    seen: set[int] = set()
+    stack: list[int] = [start_id]
+    while stack:
+        node = stack.pop()
+        if node == target_id:
+            return True
+        if node in seen:
+            continue
+        seen.add(node)
+        stack.extend(
+            session.execute(
+                select(ADRRelationModel.to_id).where(
+                    ADRRelationModel.from_id == node, ADRRelationModel.kind == kind
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return False
+
+
+def relate(
+    session: Session,
+    *,
+    project_id: int,
+    from_adr_id: str,
+    to_adr_id: str,
+    kind: str,
+    reason: str | None = None,
+    author: str = "human",
+) -> ADRRelationModel:
+    """Записать, что ``from_adr_id`` уточняет (``amends``) или опирается на
+    (``depends_on``) ``to_adr_id``.
+
+    Статусы обоих решений не меняются — в этом отличие от :func:`supersede`.
+    Связь заводится в любом статусе источника: это запись об отношении, а не
+    правка решения, поэтому заморозка accepted её не касается. Черновик
+    ADR-016 может заявить, что уточнит ADR-010, ещё до принятия.
+
+    Повтор той же связи — :class:`ADRRelationExistsError`: вызывающий
+    считает, что связи нет, и молча согласиться значило бы потерять его
+    ``reason``. Цикл внутри одного вида отвергается: два решения не могут
+    уточнять друг друга, и порядок принятия по ``depends_on`` должен
+    существовать.
+
+    Ревизия пишется на ``from``-решение: связь — его утверждение.
+    """
+    _validate_relation_kind(kind)
+    if from_adr_id == to_adr_id:
+        raise ValueError("an ADR cannot relate to itself")
+    src = _require(session, project_id, from_adr_id)
+    dst = _require(session, project_id, to_adr_id)
+    existing = session.execute(
+        select(ADRRelationModel).where(
+            ADRRelationModel.from_id == src.row_id,
+            ADRRelationModel.to_id == dst.row_id,
+            ADRRelationModel.kind == kind,
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise ADRRelationExistsError(
+            f"{from_adr_id} already {kind} {to_adr_id}; "
+            f"remove it with unrelate first to change the reason"
+        )
+    if _has_relation_path(session, start_id=dst.row_id, target_id=src.row_id, kind=kind):
+        raise ValueError(f"{kind} {from_adr_id} → {to_adr_id} would create a cycle")
+    edge = ADRRelationModel(
+        from_id=src.row_id,
+        to_id=dst.row_id,
+        kind=kind,
+        reason=reason,
+        at=datetime.now(UTC),
+    )
+    session.add(edge)
+    session.flush()
+    rev.write(
+        session,
+        project_id=project_id,
+        entity_kind=EntityKind.ADR,
+        entity_id=src.row_id,
+        author=author,
+        diff=_diff("relate", adr_id=from_adr_id, to=to_adr_id, kind=kind, reason=reason),
+        reason=reason or "relate",
+    )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "adr.related",
+        author,
+        scope_kind="adr",
+        scope_id=from_adr_id,
+        payload={"to": to_adr_id, "kind": kind, "reason": reason},
+        summary=f"ADR {from_adr_id} {kind} {to_adr_id}",
+    )
+    return edge
+
+
+def unrelate(
+    session: Session,
+    *,
+    project_id: int,
+    from_adr_id: str,
+    to_adr_id: str,
+    kind: str,
+    reason: str | None = None,
+    author: str = "human",
+) -> None:
+    """Снять связь, записанную :func:`relate`. Нет связи — :class:`ADRRelationNotFoundError`."""
+    _validate_relation_kind(kind)
+    src = _require(session, project_id, from_adr_id)
+    dst = _require(session, project_id, to_adr_id)
+    edge = session.execute(
+        select(ADRRelationModel).where(
+            ADRRelationModel.from_id == src.row_id,
+            ADRRelationModel.to_id == dst.row_id,
+            ADRRelationModel.kind == kind,
+        )
+    ).scalar_one_or_none()
+    if edge is None:
+        raise ADRRelationNotFoundError(f"no {kind} relation {from_adr_id} → {to_adr_id}")
+    old_reason = edge.reason
+    session.delete(edge)
+    session.flush()
+    rev.write(
+        session,
+        project_id=project_id,
+        entity_kind=EntityKind.ADR,
+        entity_id=src.row_id,
+        author=author,
+        diff=_diff("unrelate", adr_id=from_adr_id, to=to_adr_id, kind=kind, old_reason=old_reason),
+        reason=reason or "unrelate",
+    )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "adr.unrelated",
+        author,
+        scope_kind="adr",
+        scope_id=from_adr_id,
+        payload={"to": to_adr_id, "kind": kind, "reason": reason},
+        summary=f"ADR {from_adr_id} no longer {kind} {to_adr_id}",
+    )
+
+
+def relations(session: Session, adr: ADRModel) -> dict[str, list[dict[str, Any]]]:
+    """Связи ADR в обе стороны: ``outgoing`` — что он заявляет, ``incoming`` — кто о нём.
+
+    Каждая запись несёт заголовок и статус другой стороны: карточке и
+    агенту нужно «уточнит ADR-010 (accepted)», а не голый номер.
+    """
+    other = ADRModel.__table__.alias("other_adr")
+
+    def _side(
+        own_col: InstrumentedAttribute[int], other_col: InstrumentedAttribute[int]
+    ) -> list[dict[str, Any]]:
+        rows = session.execute(
+            select(
+                other.c.adr_id,
+                other.c.title,
+                other.c.status,
+                ADRRelationModel.kind,
+                ADRRelationModel.reason,
+            )
+            .select_from(ADRRelationModel)
+            .join(other, other.c.row_id == other_col)
+            .where(own_col == adr.row_id)
+            .order_by(ADRRelationModel.kind, other.c.adr_id)
+        ).all()
+        return [
+            {
+                "adr_id": r.adr_id,
+                "title": r.title,
+                "status": r.status,
+                "kind": r.kind,
+                "reason": r.reason,
+            }
+            for r in rows
+        ]
+
+    return {
+        "outgoing": _side(ADRRelationModel.from_id, ADRRelationModel.to_id),
+        "incoming": _side(ADRRelationModel.to_id, ADRRelationModel.from_id),
+    }
+
+
 def graph(session: Session, project_id: int) -> dict[str, Any]:
     """Return the supersede DAG for ``project_id``:
 
@@ -741,9 +969,29 @@ def graph(session: Session, project_id: int) -> dict[str, Any]:
         .join(old_alias, old_alias.c.row_id == ADRSupersedeModel.superseded_id)
         .where(new_alias.c.project_id == project_id)
     ).all()
+    from_alias = ADRModel.__table__.alias("rel_from")
+    to_alias = ADRModel.__table__.alias("rel_to")
+    rel_rows = session.execute(
+        select(
+            from_alias.c.adr_id.label("from_id"),
+            to_alias.c.adr_id.label("to_id"),
+            ADRRelationModel.kind,
+            ADRRelationModel.reason,
+        )
+        .select_from(ADRRelationModel)
+        .join(from_alias, from_alias.c.row_id == ADRRelationModel.from_id)
+        .join(to_alias, to_alias.c.row_id == ADRRelationModel.to_id)
+        .where(from_alias.c.project_id == project_id)
+        .order_by(from_alias.c.adr_id, ADRRelationModel.kind)
+    ).all()
     return {
         "nodes": [{"adr_id": n.adr_id, "title": n.title, "status": n.status} for n in nodes],
         "edges": [{"from": e.new_id, "to": e.old_id, "reason": e.reason} for e in edge_rows],
+        # ARG-001: связи без смены статуса — отдельным списком, чтобы
+        # потребители ``edges`` (страница графа, CLI) читали только замены.
+        "relations": [
+            {"from": r.from_id, "to": r.to_id, "kind": r.kind, "reason": r.reason} for r in rel_rows
+        ],
     }
 
 
@@ -867,6 +1115,7 @@ def adr_to_dict(
             .all()
         )
         out["task_links"] = [{"task_id": link.task_id, "relation": link.relation} for link in links]
+        out["relations"] = relations(session, adr)
     if include_backlinks:
         # Три запроса со сканом текста — только по явной просьбе (карточка,
         # adr_get, adr show), а не в каждом списочном вызове.
