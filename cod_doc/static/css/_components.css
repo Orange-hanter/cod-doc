@@ -3609,11 +3609,39 @@ details > summary { cursor: pointer; }
 .adr-graph-canvas .adr-graph-link:focus-visible rect { stroke-width: 3px; }
 .adr-graph-canvas .adr-graph-link:focus-visible { outline: none; }
 
+/* ARG-006: mermaid вписывает SVG в ширину контейнера, и цепочка из четырёх
+   узлов на 390px сжималась до нечитаемого шрифта. Ниже минимальной ширины
+   схема прокручивается внутри своей карточки, страница не едет вбок. */
+.adr-graph-canvas { overflow-x: auto; }
+.adr-graph-canvas svg { min-width: 720px; }
+
 .adr-graph-nodes {
   margin: 0;
   padding-left: var(--space-4);
   line-height: 1.7;
 }
+
+/* ARG-006: легенда под схемой — начертание стрелки повторяет mermaid
+   (сплошная / пунктир / толстая). */
+.adr-graph-legend {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 13px;
+  color: var(--muted);
+}
+.adr-graph-legend li { display: flex; align-items: center; gap: var(--space-2); }
+.adr-graph-legend b { color: var(--fg); font-weight: 600; white-space: nowrap; }
+.adr-graph-arrow {
+  flex: 0 0 28px;
+  height: 0;
+  border-top: 2px solid var(--muted-strong);
+}
+.adr-graph-arrow-amends { border-top-style: dotted; }
+.adr-graph-arrow-depends { border-top-width: 4px; }
 
 /* Автоссылка ADR-NNN в прозе (markdown.py:343). Класс переименовывать нельзя —
    он зафиксирован тестами рендерера. */

@@ -762,3 +762,47 @@ def test_adr_list_relation_notes(adr_client) -> None:  # type: ignore[no-untyped
     assert "amended by" not in r
     assert "adr-rel-link" in r
     assert "HOLD_MS = 2000" in r  # подсветка связанной строки гаснет сама
+
+
+# ── ARG-006: связи «уточняет» / «опирается на» на графе ─────────────────
+
+
+def test_adr_graph_draws_relations_with_their_arrows(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """Пунктир — amends, толстая — depends on; узлы связей уходят из Standalone."""
+    from pathlib import Path
+
+    client, entry = adr_client
+    created = client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Builds on 002", "status": "proposed"},
+        follow_redirects=False,
+    )
+    assert created.status_code == 303
+    db = Path(entry.path) / ".cod-doc" / "state.db"
+    factory = make_session_factory(make_engine(f"sqlite:///{db}"))
+    with transactional(factory) as session:
+        proj = ProjectRepository(session).get_by_slug("adr-demo")
+        assert proj is not None and proj.row_id is not None
+        adr_service.relate(
+            session,
+            project_id=proj.row_id,
+            from_adr_id="ADR-002",
+            to_adr_id="ADR-001",
+            kind="amends",
+        )
+        adr_service.relate(
+            session,
+            project_id=proj.row_id,
+            from_adr_id="ADR-003",
+            to_adr_id="ADR-002",
+            kind="depends_on",
+        )
+
+    r = client.get(f"/p/{entry.name}/adr/graph")
+    assert r.status_code == 200
+    mermaid = r.text.split('<div class="mermaid adr-graph-canvas">', 1)[1].split("</div>", 1)[0]
+    assert "ADR_002 -.-&gt;|amends| ADR_001" in mermaid
+    assert "ADR_003 ==&gt;|depends on| ADR_002" in mermaid
+    # Все три ADR связаны — секции «Standalone» нет вовсе.
+    assert "Standalone" not in r.text
+    assert "adr-graph-legend" in r.text
