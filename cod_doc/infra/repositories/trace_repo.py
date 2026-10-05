@@ -24,7 +24,7 @@ class TraceCallRepository(BaseRepository[TraceCall, TraceCallModel]):
         if model.tool_calls:
             try:
                 tool_calls = json.loads(model.tool_calls)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 tool_calls = None
         return TraceCall(
             row_id=model.row_id,

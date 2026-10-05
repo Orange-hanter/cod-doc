@@ -74,7 +74,7 @@ scripts/gate.sh                          # все четыре шага; зел�
 (subprocess, пути, версии библиотек), прогоняй на свежем venv **до** пуша:
 
 ```bash
-UV_PROJECT_ENVIRONMENT=/tmp/ci-repro uv sync --frozen --extra dev --python 3.13
+UV_PROJECT_ENVIRONMENT=/tmp/ci-repro uv sync --frozen --extra dev --python 3.14
 /tmp/ci-repro/bin/ruff check cod_doc/ tests/   # те же версии, что в CI: обе стороны из uv.lock
 ```
 

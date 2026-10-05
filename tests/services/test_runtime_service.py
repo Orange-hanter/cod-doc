@@ -262,6 +262,48 @@ def test_build_installs_into_the_freshly_made_venv(tmp_path: Path, fake: _FakeRu
     assert fake.calls.index(fake.argv("uv venv")) < fake.calls.index(argv)
 
 
+def _with_lock(fake: _FakeRun) -> None:
+    """Собираемая ревизия несёт `uv.lock` — как всякая ревизия начиная с #175."""
+    fake.on("worktree add", lambda argv: (Path(argv[-2]) / "uv.lock").write_text(""))
+
+
+def test_build_installs_dependencies_from_the_revisions_lock(
+    tmp_path: Path, fake: _FakeRun
+) -> None:
+    """Демоны получают версии из лока ревизии, а не свежайшие по нижним границам."""
+    staged = tmp_path / "runtime.staged"
+    _build_succeeds(fake, staged)
+    _with_lock(fake)
+
+    report = runtime_service.build_staged(_repo(tmp_path), SHA, runtime=tmp_path / "runtime")
+
+    export = fake.argv("uv export")
+    assert export[export.index("--project") + 1] == report.src
+    assert "--frozen" in export
+    assert "--no-emit-project" in export
+    reqs = export[export.index("--output-file") + 1]
+    deps = fake.argv("uv pip install", "-r")
+    assert deps[deps.index("-r") + 1] == reqs
+    assert deps[deps.index("--python") + 1] == str(staged / "bin" / "python")
+    package = fake.argv("uv pip install", "--no-deps")
+    assert report.src in package
+    order = [fake.calls.index(c) for c in (fake.argv("uv venv"), export, deps, package)]
+    assert order == sorted(order)
+    assert report.ok is True
+
+
+def test_build_without_a_lock_installs_the_package_with_its_deps(
+    tmp_path: Path, fake: _FakeRun
+) -> None:
+    """Ревизия старше лока (`update --ref <старый sha>`) собирается по-старому."""
+    _build_succeeds(fake, tmp_path / "runtime.staged")
+
+    runtime_service.build_staged(_repo(tmp_path), SHA, runtime=tmp_path / "runtime")
+
+    assert not fake.called("uv export")
+    assert "--no-deps" not in fake.argv("uv pip install")
+
+
 def test_build_reports_version_and_runs_the_console_script(tmp_path: Path, fake: _FakeRun) -> None:
     staged = tmp_path / "runtime.staged"
     _build_succeeds(fake, staged, version="1.5.0")

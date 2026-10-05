@@ -32,7 +32,7 @@ def is_ignored_by_git(rel: str, repo_root: Path) -> bool:
             timeout=_GIT_TIMEOUT_S,
             check=False,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return False
     # 0 — игнорируется, 1 — нет, 128 — git не смог ответить (не репозиторий).
     return done.returncode == 0

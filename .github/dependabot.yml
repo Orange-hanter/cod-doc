@@ -7,9 +7,19 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Группа — только minor/patch: мажор приходит отдельным PR. Иначе один
+    # ломающий мажор в общем PR держит красными все остальные обновления.
     groups:
       python:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # Пин `mcp<2` в pyproject осознанный (PR#5): 2.x убрал
+      # `mcp.server.fastmcp.FastMCP`. Dependabot не уважает верхнюю границу —
+      # он её расширяет (#178 переписал `<2` на `<3`). Мажор mcp — отдельная
+      # миграция, а не еженедельный бамп.
+      - dependency-name: mcp
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -18,3 +28,18 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # Базовый образ python:*-slim и бинарь uv в Dockerfile — тоже пины.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns: ["*"]
+    ignore:
+      # Версия Python меняется вместе с CI, pyproject и рантаймом (см.
+      # переезд на 3.14), а не одним образом: `3.14-slim` → `3.15-slim`
+      # не бампаем, патчи 3.14.x тег и так подтягивает.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

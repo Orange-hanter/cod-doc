@@ -8,13 +8,13 @@ dynamic = ["version"]
 description = "Context Orchestrator for Documentation — autonomous multi-project documentation agent"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Documentation",
     "Typing :: Typed",
 ]
@@ -134,7 +134,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = [
@@ -279,13 +279,13 @@ runtime-evaluated-decorators = [
 "cod_doc/mcp/tools/task_tools.py" = ["ANN401", "C901"]
 
 [tool.mypy]
-# ADO-097: 3.13 — единственная поддерживаемая версия (`requires-python >=3.13`),
+# ADO-097: одна поддерживаемая версия — с 2026-10-05 это 3.14 (`requires-python >=3.14`),
 # матрица CI гоняет её же. До этого здесь стоял 3.12 вынужденно: numpy приезжает
 # транзитивно (openai._extras.numpy_proxy → numpy), с 2.5 его стабы написаны на
 # PEP 695, и под `python_version = "3.11"` mypy обрывал проверку целиком на
 # `Type statement is only supported in Python 3.12+`. Вместе с 3.11 ушла и
 # расходившаяся с ним версия проверки типов.
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 warn_return_any = true
 warn_unused_configs = true

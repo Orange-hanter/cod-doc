@@ -67,7 +67,7 @@ class OpenRouterEmbeddingAdapter(OpenAICompatEmbeddingAdapter):
             return Decimal(0)
         try:
             return Decimal(str(raw))
-        except (ArithmeticError, ValueError):
+        except ArithmeticError, ValueError:
             return Decimal(0)
 
     def _provider_of(self, response: CreateEmbeddingResponse) -> str | None:
@@ -128,5 +128,5 @@ def _per_million(raw: object) -> float | None:
         return None
     try:
         return float(str(raw)) * 1_000_000
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None

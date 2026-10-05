@@ -76,7 +76,7 @@ def stats_for_entry(entry: ProjectEntry) -> dict[str, Any]:
     """DB ``task_summary`` + live ``agent_run`` status; yaml only if DB is missing."""
     try:
         factory, engine = db_for_entry(entry)
-    except (SchemaMismatchError, SQLAlchemyError, OSError):
+    except SchemaMismatchError, SQLAlchemyError, OSError:
         return _yaml_fallback(entry)
 
     try:
@@ -97,7 +97,7 @@ def stats_for_entry(entry: ProjectEntry) -> dict[str, Any]:
                 "last_run": last_run,
                 "source": "db",
             }
-    except (OperationalError, SQLAlchemyError):
+    except OperationalError, SQLAlchemyError:
         return _yaml_fallback(entry)
     finally:
         engine.dispose()

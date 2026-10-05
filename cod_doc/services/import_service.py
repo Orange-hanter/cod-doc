@@ -333,7 +333,7 @@ def _coerce_enum[ENUM: StrEnum](
         return default
     try:
         return enum_cls(text)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         pass
     alias = (aliases or {}).get(text.lower())
     if alias is not None:

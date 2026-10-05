@@ -410,7 +410,7 @@ def _drifting_doc_keys(session: Session, project_id: int, root: Path) -> set[str
 
     try:
         report = projection_service.detect_project_drift(session, project_id, root_path=root)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return set()
     return {item.doc_key for item in report.issues}
 
