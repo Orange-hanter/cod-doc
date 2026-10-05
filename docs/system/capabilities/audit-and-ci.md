@@ -129,12 +129,12 @@ related_docs:
 |-----|--------|
 | **Lint (ruff)** — `ruff check` + `ruff format --check` | ✅ blocking |
 | **Typecheck (mypy)** — `mypy cod_doc/` strict | ✅ blocking |
-| **Test py3.13** — `pytest -n auto --dist loadfile`; матрица только 3.13 (ADO-097) | ✅ blocking |
+| **Test py3.14** — `pytest -n auto --dist loadfile`; матрица только 3.14 (ADO-097, переезд с 3.13 — 2026-10-05) | ✅ blocking |
 | **Zsh completion** — дрейф артефакта + синтаксис | ✅ blocking |
 | **Docker build** — сборка образа + smoke test | ✅ blocking |
 | **Web routes drift** — `cod-doc audit --web-routes` | ⚠️ advisory (`continue-on-error`, ADO-011/012) |
 
-Concurrency-group отменяет суперседнутые runs, кэш pip — через `cache-dependency-path: pyproject.toml`.
+Окружение во всех джобах — `uv sync --frozen` из закоммиченного `uv.lock` (кэш `astral-sh/setup-uv`); из того же лока собираются Docker-образ и рантайм `cod-doc update`. Concurrency-group отменяет суперседнутые прогоны PR; прогон `main` доводится до конца. Обязательные проверки закреплены защитой ветки `main`.
 
 ### 4.2 Внешний workflow для пользовательских проектов (целевой пример)
 
@@ -149,7 +149,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.13' }  # requires-python >=3.13
+        with: { python-version: '3.14' }  # requires-python >=3.14
       - run: pip install cod-doc
       - run: cod-doc audit --strict --json > audit.json
       - if: failure()
@@ -160,7 +160,7 @@ jobs:
 
 ```yaml
 audit:
-  image: python:3.13
+  image: python:3.14
   script:
     - pip install cod-doc
     - cod-doc audit --strict --json | tee audit.json

@@ -156,7 +156,7 @@ def _drift_by_group(
         report = projection_service.detect_project_drift(
             session, project_id, root_path=root, paths=paths
         )
-    except (OSError, ValueError):
+    except OSError, ValueError:
         # A project without a docs/ tree must not 500 the list.
         return {}, dict(_DRIFT_UNAVAILABLE)
 

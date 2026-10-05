@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/cod-doc/"><img src="https://img.shields.io/pypi/v/cod-doc" alt="PyPI"></a>
-  <a href="https://pypi.org/project/cod-doc/"><img src="https://img.shields.io/pypi/pyversions/cod-doc" alt="Python 3.13+"></a>
+  <a href="https://pypi.org/project/cod-doc/"><img src="https://img.shields.io/pypi/pyversions/cod-doc" alt="Python 3.14+"></a>
   <a href="https://github.com/Orange-hanter/cod-doc/actions/workflows/ci.yml"><img src="https://github.com/Orange-hanter/cod-doc/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
@@ -38,7 +38,7 @@ changed it.
   ready command per item — no 173-tool cold start. Task-centric tools (`agent_pick`,
   `task_checkout`, `task_complete`, …) are not in the `agent` profile: they are
   visible only on `--profile standard` / `full`, where coding agents execute tasks.
-- **Zero infrastructure.** Python 3.13+ and the SQLite that ships with it. No
+- **Zero infrastructure.** Python 3.14+ and the SQLite that ships with it. No
   daemon, no indexer, no external database — the project DB is a single file.
 
 ## Quick start
@@ -100,7 +100,7 @@ The repository is documented in Russian; this README is the English entry point.
 
 ## Requirements
 
-Python 3.13+ (3.13 tested in CI; 3.11/3.12 dropped 2026-09-07). SQLite ships with Python; no
+Python 3.14+ (3.14 tested in CI; 3.13 dropped 2026-10-05, 3.11/3.12 on 2026-09-07). SQLite ships with Python; no
 external database, daemon or indexer is required. The project DB is a single
 file under `.cod-doc/` and must live on a local disk — WAL mode does not work
 on iCloud, NFS or SMB shares.

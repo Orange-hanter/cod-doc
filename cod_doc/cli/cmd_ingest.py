@@ -69,7 +69,7 @@ _AI_REVIEW_VERSIONS = frozenset({1, 2})
 def _load_json_object(path: Path) -> dict[str, Any] | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+    except OSError, json.JSONDecodeError, UnicodeDecodeError:
         return None
     return data if isinstance(data, dict) else None
 

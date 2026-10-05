@@ -18,3 +18,12 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  # Базовый образ python:*-slim и бинарь uv в Dockerfile — тоже пины.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns: ["*"]

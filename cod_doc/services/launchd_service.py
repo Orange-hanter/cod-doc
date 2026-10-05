@@ -187,7 +187,7 @@ def _http_ok(request: urllib.request.Request) -> bool:
     try:
         with urllib.request.urlopen(request, timeout=PROBE_TIMEOUT_S) as response:
             return _HTTP_OK_MIN <= int(response.status) < _HTTP_OK_LIMIT
-    except (urllib.error.URLError, OSError, ValueError):
+    except urllib.error.URLError, OSError, ValueError:
         return False
 
 

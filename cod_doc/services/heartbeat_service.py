@@ -147,7 +147,7 @@ def _recent_changes_for_task(
         try:
             diff = json.loads(rev.diff)
             op = diff.get("op", "?") if isinstance(diff, dict) else "?"
-        except (json.JSONDecodeError, AttributeError):
+        except json.JSONDecodeError, AttributeError:
             op = "?"
         out.append(
             {

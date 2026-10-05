@@ -1,11 +1,14 @@
 """Тесты cod_doc.core.context"""
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from cod_doc.core.context import get_context, parse_ref
 from cod_doc.core.hash_calc import make_ref
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture

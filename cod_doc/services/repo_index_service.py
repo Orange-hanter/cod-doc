@@ -131,7 +131,7 @@ def _extract_python(
     """
     try:
         tree = ast.parse(source)
-    except (SyntaxError, ValueError):
+    except SyntaxError, ValueError:
         return [], []
 
     symbols: list[tuple[str, str, int, str | None]] = []

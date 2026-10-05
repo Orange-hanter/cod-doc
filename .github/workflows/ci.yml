@@ -42,7 +42,7 @@ jobs:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           activate-environment: true
       - run: uv sync --frozen --extra dev
       - run: ruff check cod_doc/ tests/
@@ -58,7 +58,7 @@ jobs:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           activate-environment: true
       - run: uv sync --frozen --extra dev
       - run: mypy cod_doc/
@@ -72,8 +72,11 @@ jobs:
       matrix:
         # ADO-097: одна поддерживаемая версия — 3.11/3.12 сняты с поддержки
         # 2026-09-07; две джобы по ~14 минут уходили на версии, которые
-        # `requires-python = ">=3.13"` больше не допускает.
-        python: ["3.13"]
+        # тогдашний `requires-python = ">=3.13"` больше не допускал.
+        # 2026-10-05 — переезд на 3.14 целиком (CI, образ, рантайм `cod-doc
+        # update`). Меняешь версию — правь и обязательную проверку
+        # `Test py<версия>` в защите main, иначе PR ждут несуществующую джобу.
+        python: ["3.14"]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -116,7 +119,7 @@ jobs:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           activate-environment: true
       - run: uv sync --frozen
       # Аудит читает capabilities/web-frontend.md §3 с диска и сравнивает с
@@ -134,7 +137,7 @@ jobs:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           activate-environment: true
       # Ставим zsh ЯВНО: тест синтаксиса помечен skipif(which("zsh") is None),
       # и на runner'е без zsh он молча пропустится — то есть гейт, ради

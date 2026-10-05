@@ -87,7 +87,7 @@ def _staged_md_paths(root: Path) -> set[str]:
             check=True,
         )
         return {line.strip() for line in result.stdout.splitlines() if line.strip().endswith(".md")}
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except subprocess.CalledProcessError, FileNotFoundError:
         return set()
 
 

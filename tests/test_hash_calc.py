@@ -2,7 +2,7 @@
 
 import hashlib
 import subprocess
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -13,6 +13,9 @@ from cod_doc.core.hash_calc import (
     make_ref,
     update_hashes,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
