@@ -1,0 +1,140 @@
+name: PR Review (AI)
+
+# Ревью PR движком ai-reviewer (MoA: специалисты → агрегатор → верификатор).
+# Итог — один «липкий» комментарий плюс inline-треды; экспорт находок уходит
+# артефактом `pr-review-export-<PR>`, его забирает
+# `cod-doc ingest ai_review --from-pr <PR>` (cod_doc/cli/cmd_ingest.py).
+#
+# Движок — внешний приватный репозиторий Orange-hanter/ai-reviewer, ревизия
+# закреплена в ops/ai-reviewer-ref и читается из БАЗОВОЙ ветки: код из
+# чекаута PR никогда не исполняется с секретами этого прогона. Схема
+# повторяет GatewayDemo (.github/workflows/pr-review.yml там же).
+#
+# Не обязательная проверка: красный вердикт LLM виден в PR, но мерж не
+# держит. Сделать блокирующей — добавить `AI code review` в защиту main.
+on:
+  pull_request:
+    types: [opened, ready_for_review, synchronize, reopened]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Номер PR для ручного ревью'
+        required: true
+
+# Новый пуш отменяет идущее ревью: токены на гонку не тратим.
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: AI code review
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # LLM-фаза ограничена REVIEW_TIME_BUDGET_MIN=20 ниже
+    # Черновики и PR ботов (Dependabot) не ревьюим; ready_for_review возвращает
+    # черновик в работу через тип события.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.draft == false && github.event.pull_request.user.type != 'Bot')
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Секреты недоступны в `if` уровня джобы, поэтому гейт — шаг. Без ключа
+      # LLM или без доступа к движку (PR из форка, секреты не заведены) ревью
+      # пропускается зелёным, а не падает «нет ключа».
+      - name: Preflight — required secrets
+        id: pre
+        env:
+          HAS_LLM: ${{ secrets.OLLAMA_API_KEY != '' }}
+          HAS_ENGINE_KEY: ${{ secrets.AI_REVIEWER_SSH_KEY != '' }}
+        run: |
+          if [ "$HAS_LLM" != "true" ] || [ "$HAS_ENGINE_KEY" != "true" ]; then
+            echo "→ OLLAMA_API_KEY / AI_REVIEWER_SSH_KEY не заведены — AI-ревью пропущено"
+            echo "ready=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.pre.outputs.ready == '1'
+        with:
+          node-version: '24'
+
+      # Защита от pwn-request: пин движка читается из базовой ветки. PR,
+      # меняющий ops/ai-reviewer-ref, меняет движок только после мержа.
+      - name: Read pinned engine ref
+        id: pin
+        if: steps.pre.outputs.ready == '1'
+        env:
+          BASE_REF: ${{ github.base_ref }}   # через env, не в run: (script injection)
+        run: |
+          BASE_REF="${BASE_REF:-main}"
+          [[ "$BASE_REF" =~ ^[A-Za-z0-9_./-]+$ ]] || { echo "invalid BASE_REF"; exit 1; }
+          REF="$(git show "origin/$BASE_REF:ops/ai-reviewer-ref" 2>/dev/null | tr -d '[:space:]' || true)"
+          if [ -z "$REF" ]; then
+            echo "→ пина нет в origin/$BASE_REF (бутстрап-PR) — ревью пропущено"
+            echo "ref=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [[ "$REF" =~ ^[A-Za-z0-9_./-]+$ ]] || { echo "invalid engine ref: $REF"; exit 1; }
+          echo "→ движок ai-reviewer@$REF"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+
+      # Движок приватный — GITHUB_TOKEN этого репозитория его не читает.
+      # AI_REVIEWER_SSH_KEY — приватная половина read-only deploy key на
+      # Orange-hanter/ai-reviewer: ограничен одним репозиторием, писать не может.
+      - name: Checkout pinned AI review engine
+        if: steps.pin.outputs.ref != ''
+        uses: actions/checkout@v7
+        with:
+          repository: Orange-hanter/ai-reviewer
+          ref: ${{ steps.pin.outputs.ref }}
+          ssh-key: ${{ secrets.AI_REVIEWER_SSH_KEY }}
+          persist-credentials: false
+          path: .ai-reviewer-engine
+
+      # Без continue-on-error: скрипт выходит с 1 только на мерж-гейте
+      # (подтверждённые critical/major), инфраструктурные сбои — fail-open.
+      # Профиль — .ai-reviewer.json в корне, движок находит его сам.
+      - name: Run AI review
+        if: steps.pin.outputs.ref != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          REVIEW_MODE: moa
+          MOA_REFERENCE_MODELS: kimi-k2.7-code,glm-5.2,deepseek-v4-flash
+          MOA_SPECIALIST_MODELS: security:deepseek-v4-flash,correctness:kimi-k2.7-code,architecture:glm-5.2
+          MOA_AGGREGATOR: minimax-m3
+          OLLAMA_MODELS_FALLBACK: deepseek-v4-flash
+          REVIEW_BLOCK_ON: critical,major
+          REVIEW_BLOCK_SINGLE: critical
+          REVIEW_CONFIDENCE_MIN: '0.8'
+          REVIEW_VERIFIER: '1'
+          REVIEW_VERIFIER_MODEL: deepseek-v4-pro
+          REVIEW_VERIFIER_STRICT: '1'
+          # eslint/ast-grep prescan видит только JS/TS; cod-doc — Python.
+          REVIEW_PRESCAN: '0'
+          REVIEW_EXPORT: '1'
+          REVIEW_TIME_BUDGET_MIN: '20'  # дедлайн LLM; timeout-minutes выше обязан быть больше
+        run: node .ai-reviewer-engine/bin/pr-review.mjs
+
+      # Имя артефакта — контракт с cod_doc/cli/cmd_ingest.py (`pr-review-export-<PR>`).
+      # У GatewayDemo оно другое (`ai-review-export-*`) — не копировать оттуда.
+      - name: Upload review export
+        if: always() && steps.pin.outputs.ref != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-review-export-${{ github.event.pull_request.number || inputs.pr_number }}
+          path: .ai-review/export/
+          if-no-files-found: ignore
+          retention-days: 30
