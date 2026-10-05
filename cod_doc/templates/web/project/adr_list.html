@@ -21,6 +21,7 @@
   <div class="page-header-actions">
     <a class="btn btn-primary" href="/p/{{ project.name }}/adr/new">+ New ADR</a>
     <a class="btn" href="/p/{{ project.name }}/adr/graph">🔁 Decision graph</a>
+    <a class="btn" href="/p/{{ project.name }}/adr/shelves">🗂️ Shelves</a>
   </div>
 </header>
 
@@ -74,8 +75,29 @@
         <th class="adr-col-when">When</th>
       </tr>
     </thead>
+    {# ARG-009 (RFC 34 §3.4): строки разложены по полкам. Пока полок нет,
+       группа одна и без заголовка — список выглядит плоским. #}
+    {% for shelf in shelves %}
     <tbody>
-      {% for it in items %}
+      {% if shelf.name %}
+        <tr class="adr-shelf-head">
+          <th colspan="3" scope="rowgroup">
+            <span class="adr-shelf-name{% if shelf.no_topic %} adr-shelf-loose{% endif %}">{{ shelf.name }}</span>
+            {% if shelf.includes or shelf.excludes %}
+            <details class="adr-shelf-about">
+              <summary aria-label="What belongs on {{ shelf.name }}">i</summary>
+              <div class="adr-shelf-bubble">
+                {% if shelf.includes %}<div><b>In.</b> {{ shelf.includes }}</div>{% endif %}
+                {% if shelf.excludes %}<div class="muted"><b>Not here.</b> {{ shelf.excludes }}</div>{% endif %}
+                <a href="/p/{{ project.name }}/adr/shelves">Edit shelves</a>
+              </div>
+            </details>
+            {% endif %}
+          </th>
+          <td class="adr-col-when adr-shelf-count">{{ shelf["items"]|length }}</td>
+        </tr>
+      {% endif %}
+      {% for it in shelf["items"] %}
         <tr data-adr="{{ it.adr_id }}"{% if it.closed %} class="adr-row-closed"{% endif %}>
           {# Знак — единственный носитель статуса в строке; у действующего пусто,
              строка молчит. Для скринридера статус словом. #}
@@ -104,6 +126,7 @@
         </tr>
       {% endfor %}
     </tbody>
+    {% endfor %}
   </table>
   </div>
   {# ARG-004: наведение или фокус на пометке связи подсвечивает связанную

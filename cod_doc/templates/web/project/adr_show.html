@@ -43,6 +43,21 @@
   <div class="task-hero-row muted">
     <span class="meta-chip">Decided: {{ adr.decided_at | short_date }}</span>
     <span class="meta-chip">Author: {{ adr.author }}</span>
+    {# ARG-010: полку меняют здесь, в любом статусе — это место решения, а не
+       его текст. Только из существующих; новую заводят на странице «Shelves». #}
+    {% if topics %}
+    <form method="post" action="/p/{{ project.name }}/adr/{{ adr.adr_id }}/topic" class="adr-topic-pick">
+      <label><span class="adr-sr">Shelf</span>
+        <select name="topic" aria-label="Shelf">
+          <option value=""{% if not adr.topic %} selected{% endif %}>No topic</option>
+          {% for t in topics %}<option value="{{ t }}"{% if t == adr.topic %} selected{% endif %}>{{ t }}</option>{% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn-sm">Move</button>
+    </form>
+    {% else %}
+    <a class="meta-chip" href="/p/{{ project.name }}/adr/shelves">No shelves yet</a>
+    {% endif %}
     {% for r in supersedes %}
       <a class="meta-chip" href="/p/{{ project.name }}/adr/{{ r.adr_id }}">Replaces {{ r.adr_id }}</a>
     {% endfor %}
