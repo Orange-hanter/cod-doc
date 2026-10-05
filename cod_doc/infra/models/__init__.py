@@ -24,6 +24,7 @@ from .adrs import (
     ADRRelationModel,
     ADRSupersedeModel,
     ADRTaskModel,
+    ADRTopicModel,
 )
 from .approvals import ApprovalDocRevisionLinkModel, ApprovalModel, ApprovalTaskLinkModel
 from .base import Base, _utcnow
@@ -81,6 +82,7 @@ __all__ = [
     "ADRRelationModel",
     "ADRSupersedeModel",
     "ADRTaskModel",
+    "ADRTopicModel",
     "ActivityEventModel",
     "AffectedFileModel",
     "AgentRunModel",

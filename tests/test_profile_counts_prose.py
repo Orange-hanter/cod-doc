@@ -101,7 +101,7 @@ PROSE_COUNTERS: list[tuple[str, str, str]] = [
     ("README.md", r"`standard` \((\d+)\)", "standard"),
     ("README.md", r"`full` \((\d+)\)", "full"),
     # MASTER.md — строка статуса
-    ("MASTER.md", r"(\d+) MCP-тула \(профили", "full"),
+    ("MASTER.md", r"(\d+) MCP-тул(?:а|ов) \(профили", "full"),
     ("MASTER.md", r"профили agent/minimal/standard/full — (\d+)/\d+/\d+/\d+", "agent"),
     ("MASTER.md", r"профили agent/minimal/standard/full — \d+/(\d+)/\d+/\d+", "minimal"),
     ("MASTER.md", r"профили agent/minimal/standard/full — \d+/\d+/(\d+)/\d+", "standard"),
@@ -166,4 +166,4 @@ def test_every_pattern_still_matches(path: str, pattern: str, profile: str) -> N
 
 
 def test_live_counts_literal(live_counts: dict[str, int]) -> None:
-    assert live_counts == {"agent": 6, "minimal": 21, "standard": 169, "full": 173}
+    assert live_counts == {"agent": 6, "minimal": 21, "standard": 175, "full": 179}

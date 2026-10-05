@@ -17,7 +17,7 @@ cod-doc предоставляет 4 слоя доступа:
 | **MCP** | **LLM-клиенты** | **Copilot, Claude, агенты** |
 
 MCP (Model Context Protocol) — стандартный протокол для подключения LLM
-к внешним инструментам. cod-doc реализует MCP server с **173 инструментами**
+к внешним инструментам. cod-doc реализует MCP server с **179 инструментами**
 (точная цифра валидируется тестом `tests/test_mcp_integration_doc.py`),
 сгруппированных в 4 профиля.
 
@@ -86,8 +86,8 @@ coding-агента.
 ```bash
 cod-doc-mcp                              # agent (default) — 6 curator tools
 cod-doc-mcp --profile minimal            # 21 cold-start tools
-cod-doc-mcp --profile standard           # 169 CRUD tools (без legacy)
-cod-doc-mcp --profile full               # все 173 (включая legacy)
+cod-doc-mcp --profile standard           # 175 CRUD tools (без legacy)
+cod-doc-mcp --profile full               # все 179 (включая legacy)
 COD_DOC_PROFILE=full cod-doc-mcp         # через env
 # CLI equivalent (ADO-079): same catalog filter
 cod-doc mcp --profile standard
@@ -142,7 +142,7 @@ cod-doc mcp --profile standard
 
 | Демон | Адрес | Профиль | Тулов |
 |---|---|---|---|
-| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 169 |
+| `com.cod-doc.mcp` | `http://127.0.0.1:8801/mcp` | `standard` | 175 |
 | `com.cod-doc.mcp-agent` | `http://127.0.0.1:8802/mcp` | `agent` | 6 |
 
 Установка, апгрейд и управление — `deploy/launchd/cod-doc-services.sh`
@@ -335,7 +335,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **routine.\*** | 7 | Cron-style health checks | `routine_create`, `routine_list`, `routine_get`, `routine_update_status`, `routine_delete`, `routine_run_now`, `routine_history` |
 | **skill.\*** | 2 | Каталог skill-инструкций для агента | `skill_list`, `skill_get` |
 | **agent.\* (cycle-5)** | 6 | Cycle-5 task-flow surface. На профиле `agent` (RFC 25 §3.2) в allowlist остались только `agent_capabilities`/`agent_report`, курс задают `ctx_*`/`context_get` из семейства ниже; task-centric `agent_pick`/`agent_get`/`agent_complete`/`agent_release` видны на `standard`/`full` | `agent_capabilities`, `agent_pick`, `agent_get`, `agent_report`, `agent_complete`, `agent_release` |
-| **adr.\* (ADR-002)** | 12 | Architecture Decision Records: CRUD + supersede DAG + связи «уточняет»/«опирается на» (ARG-001) + task links + Mermaid diagrams + deprecate + projection sync | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_sync_body`, `adr_add_diagram`, `adr_supersede`, `adr_relate`, `adr_unrelate`, `adr_deprecate`, `adr_link_task`, `adr_graph` |
+| **adr.\* (ADR-002)** | 18 | Architecture Decision Records: CRUD + supersede DAG + связи «уточняет»/«опирается на» (ARG-001) + полки (ARG-008) + task links + Mermaid diagrams + deprecate + projection sync | `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_sync_body`, `adr_add_diagram`, `adr_supersede`, `adr_relate`, `adr_unrelate`, `adr_topic_list`, `adr_topic_create`, `adr_topic_update`, `adr_topic_move`, `adr_topic_delete`, `adr_set_topic`, `adr_deprecate`, `adr_link_task`, `adr_graph` |
 | **context / capabilities / session** | 9 | Admin: snowball-сборка контекста, L0 bootstrap, tool discovery + per-tool describe, change-log, safe-call envelope, workspace defaults | `context_get`, `capabilities`, `tool_search`, `tool_describe`, `tools_diff`, `tool_call_safe`, `set_default_project`, `get_default_project`, `clear_default_project` |
 | **check_config** | 1 | Самодиагностика сервера | `check_config` |
 | **Legacy (YAML агент)** | 3 | Остаток legacy-surface после STB-002 (2026-06-08): resume-вход + context-хелперы. YAML CRUD (проекты/задачи/MASTER/поиск + hash/verify) удалён — БД источник истины. | `run_agent_once`, `get_agent_context`, `clear_agent_context` |
@@ -348,7 +348,7 @@ LLM может разобрать MASTER.md и выстроить карту п�
 | **doc_tree.\* / doc_node.\* (ADO-116)** | 8 | Дерево документации как данные: разделы с намерением и порядком, детерминированная раскладка по правилам и Инбокс для того, что правилам не подошло. `doc_tree_classify` по умолчанию `dry_run=true` и не трогает то, что человек разложил руками. Только профили standard/full | `doc_tree_get`, `doc_tree_unplaced`, `doc_tree_init`, `doc_tree_classify`, `doc_set_node`, `doc_node_create`, `doc_node_update`, `doc_node_delete` |
 | **doc_node_health.\* / doc_node_intent.\*** | 3 | Пробелы в наполненности разделов: пусто, ниже `min_docs`, без `intent`, вырожденная типизация корпуса, пачка безымянных индексов. Дерево отвечает «где лежит», это — «чего не написано». `doc_node_health_sync` пишет находки в общую таблицу `finding`, поэтому пробел виден `curator_next` и промоутится в задачу. Детерминированная часть без LLM; `doc_node_intent_analyze` — вердикт модели «покрывают ли документы раздела его intent», в своей партиции находок, чтобы упавший проход не закрыл детерминированные. Только профили standard/full | `doc_node_health_get`, `doc_node_health_sync`, `doc_node_intent_analyze` |
 | **repair.\* (ADO-192)** | 1 | Фаза D команды `cod-doc update`: починка состояния проекта по карточке `curator_next` — `edited_in_place` → `doc import`, протухший реестр хэшей `MASTER.md` → пересчёт, нерезолвящиеся derived-ссылки → resync секций, замки старше TTL → снятие, незаведённое дерево разделов (проект старше ADO-116) → засев дефолтного без раскладки. Остальное (`stale_export`, `conflict`, `missing`, hash `BROKEN`, `unplaced`, findings) уходит счётчиками в `reported_only`. `dry_run=true` по умолчанию: тул, молча переписывающий десяток документов на спекулятивном вызове, — мина. Фазы A–C на MCP не выставлены, см. абзац ниже. Только профили standard/full | `project_repair` |
-| **ИТОГО** | **173** | | |
+| **ИТОГО** | **179** | | |
 
 Legacy-семейство дублирует часть DB-поверхности (например `add_task` ↔
 `task_create`, `list_tasks` ↔ `task_list`) и помечено `DEPRECATED` в

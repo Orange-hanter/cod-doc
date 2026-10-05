@@ -400,6 +400,8 @@ class EntityKind(StrEnum):
     LINK = "link"
     MODULE = "module"
     ADR = "adr"
+    # ARG-008: полка реестра ADR — своя нумерация row_id (логика ADO-143).
+    ADR_TOPIC = "adr_topic"
     SCENARIO = "scenario"
     QUESTION = "question"
 

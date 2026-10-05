@@ -13,6 +13,7 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_show,
     cmd_supersede,
     cmd_sync,
+    cmd_topic,
 )
 from ._group import adr
 

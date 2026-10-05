@@ -37,6 +37,7 @@ SPEC = ServiceSpec(
             "link_task",
             "relate",
             "unrelate",
+            "set_topic",
         }
     ),
     known_reads=frozenset(
@@ -45,6 +46,7 @@ SPEC = ServiceSpec(
             "list_for_project",
             "graph",
             "relations",
+            "topic_name",
             "backlinks",
             "adr_to_dict",
             "next_adr_id",
@@ -104,6 +106,7 @@ def test_discovered_mutations_exact() -> None:
         "link_task",
         "relate",
         "unrelate",
+        "set_topic",
     }
 
 

@@ -17,7 +17,7 @@
 - **Текущий статус:** 🟢 ACTIVE — **M5 «Гейт, которому можно верить + симбиоз в бою» закрыт 2026-09-06**.
   Прогон 2026-09-07: 1639 тестов зелёные, ruff/mypy чистые, ~137 документов
   (`stale_export`=0 после reconcile миграций 0026–0029). Поверхность:
-  173 MCP-тула (профили agent/minimal/standard/full — 6/21/169/173), 12 скиллов, 6 ADR, 25 stories.
+  179 MCP-тулов (профили agent/minimal/standard/full — 6/21/175/179), 12 скиллов, 6 ADR, 25 stories.
   CI на main впервые зелёный (`bcb32f2`, [run 33765619088](https://github.com/Orange-hanter/cod-doc/actions/runs/33765619088)).
 - **Агент-куратор документации закрыт 2026-09-20; текущий приоритет — adoption через симбиоз.**
   Дефолтный ИИ-агент **не исполняет продуктовые задачи** — поддерживает корпус,
@@ -148,14 +148,14 @@ graph TD
 - **Описание:** Непрерывная интеграция: ruff-линтинг (blocking), mypy strict
   (blocking), pytest на Python 3.13 (единственная версия матрицы с ADO-097;
   `requires-python >=3.13`), Docker build + smoke test.
-- **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:7c133a394eb3`
+- **Ссылка:** `📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:f2100eafddc6`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
 
 ### CD Pipeline (GitHub Actions)
 - **Описание:** Доставка: сборка Docker-образа и публикация в GHCR при
   тегировании v* (семантическое версионирование: v1.2.3).
-- **Ссылка:** `📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:90c54859cba1`
+- **Ссылка:** `📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:7e324927bb4d`
 - **Статус:** `🟢 VERIFIED`
 - **Ответственный агент:** `@Orchestrator`
 
@@ -189,7 +189,7 @@ graph TD
   БД вместо голого markdown, quick start на 5 строк, четыре поверхности,
   таблица ссылок на остальную документацию. Подставляется как
   `long_description` пакета (`pyproject.toml → readme`).
-- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:115e9b53d8ef`
+- **Ссылка:** `📁 /README.md | 🗃️ doc:README_md | 🔑 sha:989a1bdd5c77`
 - **Статус:** `🟢 VERIFIED`
 
 ### Handbook (пользовательский справочник)
@@ -201,7 +201,7 @@ graph TD
 ### Гайд по документированию (tutorial)
 - **Описание:** Пошаговое руководство по созданию документации проекта с нуля
   через COD-DOC (~30 минут, пример weather-cli).
-- **Ссылка:** `📁 /docs/cod-doc-guide.md | 🗃️ doc:docs_cod-doc-guide_md | 🔑 sha:d1cb6f8ae835`
+- **Ссылка:** `📁 /docs/cod-doc-guide.md | 🗃️ doc:docs_cod-doc-guide_md | 🔑 sha:6d751521e398`
 - **Статус:** `🟢 VERIFIED`
 
 ### Adoption Playbook (как завести на своих проектах) ⭐
@@ -215,7 +215,7 @@ graph TD
 ### MCP-интеграция (catalog)
 - **Описание:** Подключение cod-doc к VS Code Copilot, Claude Desktop, Claude
   Code, другим LLM-системам через MCP. Каталог инструментов.
-- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:80e59f14b2c1`
+- **Ссылка:** `📁 /docs/mcp-integration.md | 🗃️ doc:docs_mcp-integration_md | 🔑 sha:fcf8e5cc8cc5`
 - **Статус:** `🟢 VERIFIED`
 
 ### Zsh-дополнение
@@ -270,12 +270,12 @@ graph TD
   },
   "handoffs": {
     "ci": {
-      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:7c133a394eb3",
+      "workflow": "📁 /.github/workflows/ci.yml | 🗃️ doc:github_workflows_ci_yml | 🔑 sha:f2100eafddc6",
       "trigger": "push / pull_request в main и develop",
       "pipeline": "ruff → mypy → pytest (Python 3.13, ADO-097) → docker build + smoke test"
     },
     "cd": {
-      "workflow": "📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:90c54859cba1",
+      "workflow": "📁 /.github/workflows/cd.yml | 🗃️ doc:github_workflows_cd_yml | 🔑 sha:7e324927bb4d",
       "trigger": "push тега v* (семантическое версионирование: v1.2.3)",
       "pipeline": "docker build → push в GHCR (теги: version, major.minor, major, sha)"
     }
@@ -298,16 +298,16 @@ graph TD
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
 | 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `4be5cf18fede` | 2026-09-20 | 🟢 VERIFIED |
 | 3 | proposals/README.md | `doc:proposals_README_md` | `dffa61deb07d` | 2026-09-20 | 🟢 VERIFIED |
-| 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `7c133a394eb3` | 2026-09-11 | 🟢 VERIFIED |
-| 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `90c54859cba1` | 2026-09-11 | 🟢 VERIFIED |
+| 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `f2100eafddc6` | 2026-09-11 | 🟢 VERIFIED |
+| 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `7e324927bb4d` | 2026-09-11 | 🟢 VERIFIED |
 | 6 | Архитектура (legacy) | `doc:arch_architecture_md` | `7d32687d9139` | 2026-09-11 | 🟡 LEGACY |
 | 7 | Спецификация модулей (legacy) | `doc:specs_modules_md` | `5c335c97fd99` | 2026-09-11 | 🟡 LEGACY |
 | 8 | Доменные модели (legacy) | `doc:models_domain_md` | `8ce613932ac9` | 2026-09-17 | 🟡 LEGACY |
-| 9 | README (витрина) | `doc:README_md` | `115e9b53d8ef` | 2026-09-11 | 🟢 VERIFIED |
+| 9 | README (витрина) | `doc:README_md` | `989a1bdd5c77` | 2026-09-11 | 🟢 VERIFIED |
 | 10 | Handbook | `doc:docs_HANDBOOK_md` | `b471c0708631` | 2026-09-20 | 🟢 VERIFIED |
-| 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `d1cb6f8ae835` | 2026-09-11 | 🟢 VERIFIED |
+| 11 | Гайд по документированию | `doc:docs_cod-doc-guide_md` | `6d751521e398` | 2026-09-11 | 🟢 VERIFIED |
 | 12 | Adoption Playbook | `doc:docs_adoption-playbook_md` | `030f64ed9160` | 2026-09-11 | 🟢 VERIFIED |
-| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `80e59f14b2c1` | 2026-09-20 | 🟢 VERIFIED |
+| 13 | MCP-интеграция | `doc:docs_mcp-integration_md` | `fcf8e5cc8cc5` | 2026-09-20 | 🟢 VERIFIED |
 | 14 | ROADMAP | `doc:docs_system_roadmap_ROADMAP_md` | `c97e398c3dc9` | 2026-09-20 | 🟢 VERIFIED |
 | 15 | RFC 22 Symbiosis | `doc:proposals_22-symbiosis-zairgrush-orakul_md` | `65d8abd8a17a` | 2026-09-20 | 🟢 VERIFIED |
 | 16 | RFC 23 Cloud Agent Plane | `doc:proposals_23-cloud-decentralized-agent-plane_md` | `7a7e5586902d` | 2026-09-11 | 🟡 DRAFT |
