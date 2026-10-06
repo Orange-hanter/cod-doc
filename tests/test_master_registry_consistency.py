@@ -1,14 +1,16 @@
 """ADO-180: реестр в MASTER.md описан дважды и обязан сходиться.
 
-У документа два представления: блок со ссылкой
-``📁 /path | 🗃️ doc:key | 🔑 sha:…`` и строка сводной таблицы с тем же
-doc-key. `update_hashes` обновлял только первое, таблица велась руками — и
-молча отставала: на момент правки 7 записей из 16 расходились, причём во всех
-семи правдой была ссылка.
+У документа два представления: блок со ссылкой ``📁 /path | 🗃️ doc:key``
+и строка сводной таблицы с тем же doc-key.
 
-Инвариант тут не «числа равны». Две строки таблицы (RFC 23, RFC 24) блока со
-ссылкой не имеют вовсе, и это нормально. Проверяемое утверждение: **там, где
-оба представления есть, они согласны**, и счётчик «Всего» равен числу строк.
+DEBT-001: хэшей в реестре cod-doc больше нет. Хранимый ``🔑 sha:`` дублировал
+дрейф БД для документов, что в ней живут, и его приходилось переписывать при
+каждой их правке — 40 из 78 коммитов в MASTER.md с июня меняли только хэши.
+Устаревание ловит ``cod-doc doc drift``; здесь проверяется то, что дрейф не
+видит: ссылка ведёт на существующий файл и описана в таблице.
+
+Инвариант не «числа равны». Две строки таблицы (RFC 23, RFC 24) блока со
+ссылкой не имеют вовсе, и это нормально.
 """
 
 from __future__ import annotations
@@ -16,18 +18,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from cod_doc.core.hash_calc import LINK_PATTERN, is_ignored_by_git
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MASTER = REPO_ROOT / "MASTER.md"
 
-#: Блок со ссылкой: путь, doc-key и хэш в одной строке.
-_LINK = re.compile(r"📁 (?P<path>\S+) \| 🗃️ (?P<key>doc:[\w-]+) \| 🔑 sha:(?P<hash>[0-9a-f]{12})")
+#: Строка сводной таблицы: номер, название, doc-key, дата, статус.
+_ROW = re.compile(r"^\|\s*(?P<num>\d+)\s*\|[^|]*\|\s*`(?P<key>doc:[\w-]+)`\s*\|", re.M)
 
-#: Строка сводной таблицы: номер, название, doc-key, хэш, дата, статус.
-_ROW = re.compile(
-    r"^\|\s*(?P<num>\d+)\s*\|[^|]*\|\s*`(?P<key>doc:[\w-]+)`\s*\|\s*`(?P<hash>[0-9a-f]{12})`", re.M
-)
-
-#: Любая строка таблицы, включая запись №1 без хэша.
+#: Любая строка таблицы.
 _ANY_ROW = re.compile(r"^\|\s*(\d+)\s*\|", re.M)
 
 _TOTAL = re.compile(r"\*\*Всего:\*\* (?P<n>\d+) документов")
@@ -37,31 +36,39 @@ def _text() -> str:
     return MASTER.read_text(encoding="utf-8")
 
 
-def test_hashes_agree_between_link_and_table() -> None:
-    """Ядро задачи: два представления одного документа не расходятся."""
+def test_every_link_is_listed_in_the_table() -> None:
+    """Ядро ADO-180: у блока со ссылкой есть строка в таблице."""
     text = _text()
-    links = {m.group("key"): m.group("hash") for m in _LINK.finditer(text)}
-    rows = {m.group("key"): m.group("hash") for m in _ROW.finditer(text)}
+    links = {m.group("vec_id") for m in LINK_PATTERN.finditer(text)}
+    rows = {m.group("key") for m in _ROW.finditer(text)}
 
-    mismatched = {
-        key: (links[key], rows[key])
-        for key in links.keys() & rows.keys()
-        if links[key] != rows[key]
-    }
-    assert not mismatched, (
-        "хэш в блоке со ссылкой не совпадает с хэшем в таблице.\n"
-        "Пересчитать: cod-doc hash update\n"
-        + "\n".join(f"  {k}: ссылка {a} != таблица {b}" for k, (a, b) in sorted(mismatched.items()))
+    assert links, "в MASTER.md не нашлось ни одной гибридной ссылки"
+    missing = sorted(links - rows)
+    assert not missing, f"ссылки без строки в таблице §5.1: {missing}"
+
+
+def test_registry_stores_no_hashes() -> None:
+    """DEBT-001: хэш в ссылке вернул бы ручной пересчёт при каждой правке."""
+    hashed = [m.group(0) for m in LINK_PATTERN.finditer(_text()) if m.group("hash")]
+    assert not hashed, (
+        "в реестре cod-doc снова хранится 🔑 sha: — устаревание ловит "
+        f"`cod-doc doc drift`, хэш не нужен: {hashed}"
     )
 
 
-def test_table_numbering_is_contiguous() -> None:
-    """Нумерация строк — сплошная: пропуск означает потерянную запись.
+def test_every_link_target_exists() -> None:
+    """Ссылка ведёт на файл. Отсутствие под `.gitignore` — штатно (ADO-174)."""
+    broken = [
+        rel
+        for m in LINK_PATTERN.finditer(_text())
+        if not (REPO_ROOT / (rel := m.group("path").lstrip("/"))).exists()
+        and not is_ignored_by_git(rel, REPO_ROOT)
+    ]
+    assert not broken, f"битые ссылки в MASTER.md: {broken}"
 
-    Считаем ВСЕ строки таблицы, а не только с хэшем: у записи №1 (сам
-    MASTER.md) в колонке хэша стоит `regen-on-write` — файл ссылается на себя,
-    и его хэш менялся бы от собственной записи.
-    """
+
+def test_table_numbering_is_contiguous() -> None:
+    """Нумерация строк — сплошная: пропуск означает потерянную запись."""
     numbers = [int(m.group(1)) for m in _ANY_ROW.finditer(_text())]
     assert numbers == list(range(1, len(numbers) + 1)), f"нумерация разъехалась: {numbers}"
 
@@ -81,8 +88,8 @@ def test_total_counter_matches_the_table() -> None:
 def test_no_handwritten_valid_counter_returns() -> None:
     """«N/N VALID» вёлся руками и не сходился ни с чем — не возвращаем.
 
-    Согласованность теперь утверждают тесты выше, а не строка в файле,
-    которую надо помнить обновить (ADO-180).
+    Согласованность утверждают тесты выше, а не строка в файле, которую надо
+    помнить обновить (ADO-180).
     """
     assert "VALID**" not in _text(), (
         "ручной счётчик «N/N VALID» вернулся в MASTER.md; "
@@ -91,8 +98,8 @@ def test_no_handwritten_valid_counter_returns() -> None:
 
 
 def test_every_link_target_is_declared_with_a_path() -> None:
-    """У каждого блока есть путь — без него `update_hashes` нечего считать."""
-    for match in _LINK.finditer(_text()):
+    """У каждого блока путь абсолютный от корня репо."""
+    for match in LINK_PATTERN.finditer(_text()):
         assert match.group("path").startswith("/"), (
-            f"{match.group('key')}: путь '{match.group('path')}' не абсолютный от корня репо"
+            f"{match.group('vec_id')}: путь '{match.group('path')}' не абсолютный от корня репо"
         )

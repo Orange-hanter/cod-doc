@@ -8,15 +8,15 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
-from cod_doc.core.hash_calc import calc_hash
+from cod_doc.core.hash_calc import LINK_PATTERN, calc_hash
 
 if TYPE_CHECKING:
+    import re
     from pathlib import Path
 
-REF_PATTERN = re.compile(
-    r"📁\s+(?P<path>\S+)\s+\|\s+🗃️\s+(?P<vec_id>\S+)\s+\|\s+🔑\s+sha:(?P<hash>[0-9a-f]{12})"
-)
-INLINE_REF = re.compile(r"📁\s+\S+\s+\|\s+🗃️\s+\S+\s+\|\s+🔑\s+sha:[0-9a-f]{12}")
+# Один регэксп на формат: хвост `🔑 sha:` необязателен (DEBT-001).
+REF_PATTERN: re.Pattern[str] = LINK_PATTERN
+INLINE_REF: re.Pattern[str] = LINK_PATTERN
 PAGE_SIZE = 200  # строк
 
 
@@ -24,7 +24,7 @@ def parse_ref(ref: str) -> dict[str, Any]:
     m = REF_PATTERN.search(ref)
     if not m:
         raise ValueError(
-            f"Неверный формат ссылки: {ref!r}\nОжидается: 📁 /path | 🗃️ doc:id | 🔑 sha:12hex"
+            f"Неверный формат ссылки: {ref!r}\nОжидается: 📁 /path | 🗃️ doc:id [| 🔑 sha:12hex]"
         )
     return m.groupdict()
 
@@ -60,7 +60,8 @@ def get_context(
         }
 
     actual_hash = calc_hash(file_path)
-    if actual_hash != expected_hash:
+    # Ссылка без хэша сверять не с чем: её устаревание ловит дрейф БД.
+    if expected_hash is not None and actual_hash != expected_hash:
         return {
             "content": None,
             "metadata": {

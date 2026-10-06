@@ -1,8 +1,8 @@
 """PCA-951 / AGT-001 / RFC 25: MCP server profiles — control which tools are exposed.
 
-Four profiles (counts validated by tests/test_server_profiles.py::
-test_profile_counts_match_documented_values — keep them in sync with
-AGENTS.md §5.9, server.py --profile help, docs/mcp-integration.md):
+Four profiles. The tool counts below are derived, not hand-kept (DEBT-001):
+``python -m cod_doc.mcp.profile_counts --write`` rewrites them, and the
+pre-commit hook runs it through ``scripts/regen.sh``:
 
 - ``agent`` (RFC 25 §3.2/§3.5, **default**) — 6 curator tools for the
   default AI agent, whose role is documentation availability and search,

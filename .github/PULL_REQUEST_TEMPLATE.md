@@ -19,7 +19,7 @@
 
 
 ## 🔍 Validation Block
-- [ ] Хэши ссылок сверены (`cod-doc hash update` из корня репо) и изменённые .md импортированы (`cod-doc doc import <file> -p <slug>`)
+- [ ] Изменённые .md импортированы (`cod-doc doc import <file> -p <slug>`), `cod-doc doc drift --project <slug> --all` чист
 - [ ] Self-check JSON прикреплён (см. ниже)
 - [ ] Changelog в `MASTER.md` обновлён
 - [ ] Нет выдуманных артефактов — все ссылки указывают на реальные файлы

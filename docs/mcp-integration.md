@@ -316,13 +316,15 @@ LLM может разобрать MASTER.md и выстроить карту п�
 
 > Источник истины — `tools/list` MCP-клиента и `skill_list` для гайдов.
 > Эта таблица — навигатор «что в каком семействе» на текущий релиз.
-> Числа сверяются с реальным каталогом через
-> [`tests/test_mcp_integration_doc.py`](../tests/test_mcp_integration_doc.py).
+> Числа в колонке «Кол-во» и ИТОГО производные: pre-commit пересчитывает их
+> по перечисленным в строке тулам (`python -m cod_doc.mcp.profile_counts
+> --write`, DEBT-001). Добавил тул — впиши его имя в строку семейства,
+> число руками не трогай.
 
 | Семейство | Кол-во | Назначение | Ключевые тулы |
 |-----------|-------:|------------|---------------|
 | **doc.\*** | 14 | DB-backed документы | `doc_list`, `doc_body`, `doc_create`, `doc_rename`, `doc_add_section`, `doc_patch_section`, `doc_delete_section`, `doc_export`, `doc_drift`, `doc_drift_all`, `doc_get`, `doc_section_get`, `doc_accept`, `doc_backfill_projection` |
-| **task.\*** | 20 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_update`, `task_move_to_section`, `task_move_to_plan`, `task_complete`, `task_set_blocker`, `task_add_dependency`, `task_remove_dependency`, `task_find_duplicate`, `task_log_progress`, … |
+| **task.\*** | 20 | DB-backed задачи (lifecycle) | `task_create`, `task_create_many`, `task_get`, `task_list`, `task_next_ready`, `task_update_status`, `task_update`, `task_move_to_section`, `task_move_to_plan`, `task_complete`, `task_set_blocker`, `task_add_dependency`, `task_remove_dependency`, `task_find_duplicate`, `task_log_progress`, `task_clear_blocker`, `task_list_blocked`, `task_stale`, `task_summary`, `task_heartbeat_context` |
 | **task_doc.\*** | 5 | Артефакты, связанные с задачей | `task_doc_put`, `task_doc_get`, `task_doc_list`, `task_doc_revisions`, `task_doc_revert` |
 | **task_checkout / task_release** | 2 | Атомарный захват задачи (PCA-200) | `task_checkout`, `task_release` |
 | **plan.\*** | 15 | Планы исполнения и графы зависимостей. **Breaking (ADO-199, RFC 26 §3.3):** дефолтный слаг секции в `plan_create`/`plan_section_create` — `plan_section_slug` (`{LETTER}-{Kebab}`, напр. `F-Structure-protocol-RFC-24`), а не заголовок целиком; явный слаг вне конвенции, буква вне `^[A-Z]{1,2}$`, отрицательная позиция и управляющие символы в заголовке отклоняются. HTML-сущности в заголовке (`&amp;`) — не ошибка, а `warnings` в ответе. Уже лежащие в БД слаги вне конвенции читаются как прежде | `plan_create`, `plan_freeze`, `plan_section_create`, `plan_section_update`, `plan_section_move`, `plan_section_delete`, `plan_list`, `plan_sections_list`, `plan_ready`, `plan_progress`, `plan_critical_path`, `plan_forward_chain`, `plan_reverse_chain`, `plan_audit`, `plan_export` |

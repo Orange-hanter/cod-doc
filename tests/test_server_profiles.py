@@ -5,7 +5,9 @@ from __future__ import annotations
 import pytest
 
 from cod_doc.mcp import server as mcp_server
+from cod_doc.mcp.profile_counts import catalog
 from cod_doc.mcp.profiles import (
+    AGENT_TOOLS,
     LEGACY_TOOLS,
     MINIMAL_TOOLS,
     keep_tool,
@@ -108,26 +110,9 @@ def test_keep_tool_pure_logic() -> None:
     assert keep_tool("plan_audit", "standard") is True
 
 
-# ADO-052: documented counts. When this test fails after adding/removing a
-# tool, update the numbers here AND in: AGENTS.md §5.9, cod_doc/mcp/profiles.py
-# docstring, cod_doc/mcp/server.py --profile help, docs/mcp-integration.md.
-EXPECTED_PROFILE_COUNTS = {
-    "agent": 6,
-    "minimal": 21,
-    "standard": 169,
-    "full": 173,
-}
-
-
-def test_profile_counts_match_documented_values() -> None:
-    """Smoke: registry ↔ profile counts must match what the docs promise."""
-    names = list(mcp_server.mcp._tool_manager._tools)
-    actual = {p: sum(1 for n in names if keep_tool(n, p)) for p in EXPECTED_PROFILE_COUNTS}
-    assert actual == EXPECTED_PROFILE_COUNTS, (
-        f"profile counts drifted: {actual} — update EXPECTED_PROFILE_COUNTS and the docs "
-        "(AGENTS.md §5.9, profiles.py docstring, server.py --profile help, "
-        "docs/mcp-integration.md)"
-    )
+# DEBT-001: числа профилей здесь больше не дублируются. Документированные
+# значения сверяет и переписывает cod_doc.mcp.profile_counts
+# (tests/test_profile_counts_prose.py); литерал здесь был третьей ручной копией.
 
 
 # Admin-tier SYM-006D names: PR-gate and finding triage. These stay out of
@@ -225,7 +210,7 @@ def test_cod_doc_mcp_cli_help_defaults_to_agent() -> None:
 
 
 def test_cod_doc_mcp_cli_applies_agent_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ADO-079: `cod-doc mcp --profile agent` filters to the 6-tool surface."""
+    """ADO-079: `cod-doc mcp --profile agent` filters to the curator allowlist."""
     from click.testing import CliRunner
 
     from cod_doc.cli import main
@@ -234,7 +219,7 @@ def test_cod_doc_mcp_cli_applies_agent_profile(monkeypatch: pytest.MonkeyPatch) 
     result = CliRunner().invoke(main, ["mcp", "--profile", "agent"])
     assert result.exit_code == 0, result.output
     assert mcp_server.get_active_profile() == "agent"
-    assert len(_registered_names()) == EXPECTED_PROFILE_COUNTS["agent"]
+    assert _registered_names() == AGENT_TOOLS
 
 
 def test_cod_doc_mcp_cli_applies_standard_profile(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -246,7 +231,7 @@ def test_cod_doc_mcp_cli_applies_standard_profile(monkeypatch: pytest.MonkeyPatc
     result = CliRunner().invoke(main, ["mcp", "--profile", "standard"])
     assert result.exit_code == 0, result.output
     assert mcp_server.get_active_profile() == "standard"
-    assert len(_registered_names()) == EXPECTED_PROFILE_COUNTS["standard"]
+    assert _registered_names() == {n for n in catalog() if keep_tool(n, "standard")}
 
 
 def test_run_mcp_server_applies_profile_before_serve(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -254,4 +239,4 @@ def test_run_mcp_server_applies_profile_before_serve(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(mcp_server.mcp, "run", lambda *args, **kwargs: None)
     mcp_server.run_mcp_server(transport="stdio", host="127.0.0.1", port=8001, profile="agent")
     assert mcp_server.get_active_profile() == "agent"
-    assert len(_registered_names()) == EXPECTED_PROFILE_COUNTS["agent"]
+    assert _registered_names() == AGENT_TOOLS
