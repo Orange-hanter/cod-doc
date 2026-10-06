@@ -111,10 +111,13 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           REVIEW_MODE: moa
-          MOA_REFERENCE_MODELS: kimi-k2.7-code,glm-5.2,deepseek-v4-flash
-          MOA_SPECIALIST_MODELS: security:deepseek-v4-flash,correctness:kimi-k2.7-code,architecture:glm-5.2
+          MOA_REFERENCE_MODELS: kimi-k2.7-code,glm-5.2,deepseek-v4.1-flash
+          MOA_SPECIALIST_MODELS: security:deepseek-v4.1-flash,correctness:kimi-k2.7-code,architecture:glm-5.2
           MOA_AGGREGATOR: minimax-m3
-          OLLAMA_MODELS_FALLBACK: deepseek-v4-flash
+          OLLAMA_MODELS_FALLBACK: deepseek-v4.1-flash
+          # deepseek-v4-flash снят Ollama Cloud 2026-09-25 (HTTP 410 «retired»):
+          # специалист security молча выпадал, а фолбэк указывал на мёртвую модель.
+          # Каталог — https://ollama.com/api/tags.
           REVIEW_BLOCK_ON: critical,major
           REVIEW_BLOCK_SINGLE: critical
           REVIEW_CONFIDENCE_MIN: '0.8'
