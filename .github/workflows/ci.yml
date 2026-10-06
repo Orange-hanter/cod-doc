@@ -63,19 +63,25 @@ jobs:
       - run: uv sync --frozen --extra dev
       - run: mypy cod_doc/
 
-  # ── Tests (matrix across supported Python versions) ────────────────────────
-  test:
-    name: "Test py${{ matrix.python }}"
+  # ── Tests (matrix: Python version × shard) ────────────────────────────────
+  # Набор разложен по файлам на три раннера (`COD_DOC_TEST_SHARD`, хук в
+  # tests/conftest.py): на одном четырёхъядерном раннере pytest шёл ~150 с и
+  # был всем критическим путём прогона, остальные джобы укладываются в ~50 с.
+  # Обязательная проверка в защите main — агрегат `test` ниже, а не доли:
+  # число долей можно менять, не трогая настройки репозитория.
+  test-shard:
+    name: "Test py${{ matrix.python }} (${{ matrix.shard }}/3)"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        shard: [1, 2, 3]
         # ADO-097: одна поддерживаемая версия — 3.11/3.12 сняты с поддержки
         # 2026-09-07; две джобы по ~14 минут уходили на версии, которые
         # тогдашний `requires-python = ">=3.13"` больше не допускал.
         # 2026-10-05 — переезд на 3.14 целиком (CI, образ, рантайм `cod-doc
-        # update`). Меняешь версию — правь и обязательную проверку
-        # `Test py<версия>` в защите main, иначе PR ждут несуществующую джобу.
+        # update`). Меняешь версию — правь и имя агрегата `test` ниже, и
+        # обязательную проверку `Test py<версия>` в защите main.
         python: ["3.14"]
     steps:
       - uses: actions/checkout@v7
@@ -107,6 +113,24 @@ jobs:
         env:
           COD_DOC_API_KEY: ${{ secrets.COD_DOC_TEST_API_KEY || 'sk-test-placeholder' }}
           COD_DOC_AUTO_COMMIT: "false"
+          COD_DOC_TEST_SHARD: "${{ matrix.shard }}/3"
+
+  # Агрегат долей — его имя `Test py3.14` и стоит в обязательных проверках.
+  # `if: always()`: без него при упавшей доле агрегат был бы skipped, а
+  # пропущенная обязательная проверка мерж не блокирует. Меняешь версию
+  # Python в матрице — правь и имя здесь, и контекст в защите main.
+  test:
+    name: "Test py3.14"
+    runs-on: ubuntu-latest
+    needs: test-shard
+    if: always()
+    steps:
+      - name: Все доли зелёные
+        env:
+          RESULT: ${{ needs.test-shard.result }}
+        run: |
+          echo "test-shard: $RESULT"
+          [ "$RESULT" = "success" ]
 
   # ── Web routes drift (advisory, ADO-012) ─────────────────────────────────
   web-routes:

@@ -129,10 +129,11 @@ related_docs:
 |-----|--------|
 | **Lint (ruff)** — `ruff check` + `ruff format --check` | ✅ blocking |
 | **Typecheck (mypy)** — `mypy cod_doc/` strict | ✅ blocking |
-| **Test py3.14** — `pytest -n auto --dist loadfile`; матрица только 3.14 (ADO-097, переезд с 3.13 — 2026-10-05) | ✅ blocking |
+| **Test py3.14** — агрегат трёх долей `Test py3.14 (i/3)`: `pytest -n auto --dist loadfile` с `COD_DOC_TEST_SHARD=i/3` (раскладка по файлам, хук в `tests/conftest.py`); матрица только 3.14 (ADO-097, переезд с 3.13 — 2026-10-05) | ✅ blocking |
 | **Zsh completion** — дрейф артефакта + синтаксис | ✅ blocking |
 | **Docker build** — сборка образа + smoke test | ✅ blocking |
 | **Web routes drift** — `cod-doc audit --web-routes` | ⚠️ advisory (`continue-on-error`, ADO-011/012) |
+| **AI code review** (`pr-review.yml`) — движок ai-reviewer по пину `ops/ai-reviewer-ref`, профиль `.ai-reviewer.json`; артефакт `pr-review-export-<PR>` для `cod-doc ingest ai_review --from-pr` | ⚠️ advisory (не в защите `main`; без секретов `OLLAMA_API_KEY`/`AI_REVIEWER_SSH_KEY` пропускается) |
 
 Окружение во всех джобах — `uv sync --frozen` из закоммиченного `uv.lock` (кэш `astral-sh/setup-uv`); из того же лока собираются Docker-образ и рантайм `cod-doc update`. Concurrency-group отменяет суперседнутые прогоны PR; прогон `main` доводится до конца. Обязательные проверки закреплены защитой ветки `main`.
 
