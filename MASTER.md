@@ -92,7 +92,7 @@ graph TD
 - **Описание:** Целевой пакет описания COD-DOC: VISION, ARCHITECTURE, DATA_MODEL,
   capabilities/*, standards/*, audit/*, roadmap/*, migration/. Это source of
   truth для поведения системы и единая точка входа для контрибьютора.
-- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:4be5cf18fede`
+- **Ссылка:** `📁 /docs/system/MASTER.md | 🗃️ doc:docs_system_MASTER_md | 🔑 sha:7c8549ac7d85`
 - **Статус:** `🟢 VERIFIED`
 
 ### Proposals (RFC backlog)
@@ -296,7 +296,7 @@ graph TD
 | # | Документ | 🗃️ doc-id | 🔑 Хэш (sha:12) | 📅 Проверен | Статус |
 |---|----------|-----------|-----------------|-------------|--------|
 | 1 | MASTER.md (этот файл) | `doc:MASTER_md` | regen-on-write | 2026-09-11 | 🟢 VERIFIED |
-| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `4be5cf18fede` | 2026-09-20 | 🟢 VERIFIED |
+| 2 | docs/system/MASTER.md | `doc:docs_system_MASTER_md` | `7c8549ac7d85` | 2026-09-20 | 🟢 VERIFIED |
 | 3 | proposals/README.md | `doc:proposals_README_md` | `dffa61deb07d` | 2026-09-20 | 🟢 VERIFIED |
 | 4 | CI Pipeline | `doc:github_workflows_ci_yml` | `f2100eafddc6` | 2026-09-11 | 🟢 VERIFIED |
 | 5 | CD Pipeline | `doc:github_workflows_cd_yml` | `7e324927bb4d` | 2026-09-11 | 🟢 VERIFIED |
