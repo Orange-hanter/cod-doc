@@ -35,8 +35,11 @@ capability, audit, kickoff, README, HANDBOOK. Триггер-keywords:
 Формат:
 
 ```
-📁 /path/to/file.ext | 🗃️ doc:sanitized_path | 🔑 sha:12hexchars
+📁 /path/to/file.ext | 🗃️ doc:sanitized_path
 ```
+
+Хвост `| 🔑 sha:12hexchars` необязателен; для документа из БД его не ставят —
+устаревание ловит дрейф, а хранимый хэш пришлось бы переписывать.
 
 Полный формат — для записей в `MASTER.md` Validation Table (раздел 5.1).
 Для inline — markdown-relative: `[label](relative/path.md)`.

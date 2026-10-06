@@ -30,9 +30,10 @@ argument-hint: "[путь к .md | --all] [--fix]"
 <cod-doc> doc import <path> -p <slug>
 ```
 
-Если правленый файл входит в hash-реестр корневого `MASTER.md` — после
-импорта ещё `<cod-doc> hash update`, а затем `doc import MASTER.md`,
-иначе реестр разъедется с файлами.
+Если ссылка на правленый файл в корневом `MASTER.md` несёт `🔑 sha:` —
+после импорта ещё `<cod-doc> hash update`, а затем `doc import MASTER.md`,
+иначе реестр разъедется с файлами. Ссылка без хэша (`📁 /path | 🗃️ doc:key`)
+этого шага не требует.
 
 `doc export` на диск не запускай — он под guard'ом до byte-identical
 round-trip.

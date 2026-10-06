@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from cod_doc.core.hash_calc import (
+    LINK_PATTERN,
     calc_hash,
     check_hash,
     check_stale_refs,
@@ -168,3 +169,92 @@ def test_without_git_behaviour_is_unchanged(tmp_path: Path) -> None:
     _n, warns = update_hashes(master)
 
     assert any("BROKEN" in w for w in warns)
+
+
+# ── DEBT-001: хвост `🔑 sha:` необязателен ────────────────────────────────
+#
+# Хранимый хэш дублирует дрейф БД для документов, что в ней живут, и каждая
+# их правка требовала переписать MASTER.md. Ссылка без хэша проверяется
+# только на существование файла; ссылки с хэшем ведут себя как раньше.
+
+
+def test_make_ref_without_hash(tmp_file: Path) -> None:
+    ref = make_ref(tmp_file, tmp_file.parent, with_hash=False)
+    assert ref == "📁 /test.md | 🗃️ doc:test_md"
+
+
+def test_hashless_link_is_never_stale(tmp_path: Path) -> None:
+    (tmp_path / "a.md").write_text("one", encoding="utf-8")
+    master = tmp_path / "MASTER.md"
+    master.write_text("- **Ссылка:** `📁 /a.md | 🗃️ doc:a_md`\n", encoding="utf-8")
+
+    assert check_stale_refs(master, repo_root=tmp_path) == []
+    (tmp_path / "a.md").write_text("two", encoding="utf-8")
+    assert check_stale_refs(master, repo_root=tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "- `📁 /a.md | 🗃️ doc:a_md`",
+        '"workflow": "📁 /a.md | 🗃️ doc:a_md",',
+        "📁 /a.md | 🗃️ doc:a_md",
+    ],
+)
+def test_hashless_link_key_stops_at_delimiter(line: str) -> None:
+    """Без хэша ключ не съедает закрывающий бэктик или кавычку JSON-строки."""
+    m = LINK_PATTERN.search(line)
+    assert m is not None
+    assert (m.group("path"), m.group("vec_id"), m.group("hash")) == ("/a.md", "doc:a_md", None)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "`📁 /path/to/file.ext | 🗃️ doc:{id} | 🔑 sha:{12hex}`",
+        "📁 /path/to/file.ext | 🗃️ doc:sanitized_path | 🔑 sha:12hexchars",
+    ],
+)
+def test_format_placeholder_is_not_a_link(line: str) -> None:
+    """Пример формата с плейсхолдером хэша не становится «ссылкой без хэша»."""
+    assert LINK_PATTERN.search(line) is None
+
+
+def test_hashless_link_to_missing_file_is_broken(tmp_path: Path) -> None:
+    master = tmp_path / "MASTER.md"
+    master.write_text("`📁 /gone.md | 🗃️ doc:gone_md`\n", encoding="utf-8")
+
+    assert check_stale_refs(master, repo_root=tmp_path) == [
+        {"path": "gone.md", "status": "BROKEN", "expected": ""}
+    ]
+
+
+def test_update_hashes_leaves_hashless_link_alone(tmp_path: Path) -> None:
+    """Хэш не дописывается, а файл без изменений не перезаписывается."""
+    (tmp_path / "a.md").write_text("one", encoding="utf-8")
+    master = tmp_path / "MASTER.md"
+    body = "`📁 /a.md | 🗃️ doc:a_md`\n"
+    master.write_text(body, encoding="utf-8")
+    mtime = master.stat().st_mtime_ns
+
+    n, warns = update_hashes(master)
+
+    assert (n, warns) == (0, [])
+    assert master.read_text(encoding="utf-8") == body
+    assert master.stat().st_mtime_ns == mtime
+
+
+def test_hashed_link_in_backticks_still_updates(tmp_path: Path) -> None:
+    """Обратная совместимость: инлайн-код с хэшем пересчитывается как раньше."""
+    spec = tmp_path / "a.md"
+    spec.write_text("one", encoding="utf-8")
+    master = tmp_path / "MASTER.md"
+    master.write_text("`📁 /a.md | 🗃️ doc:a_md | 🔑 sha:000000000000`\n", encoding="utf-8")
+
+    n, _warns = update_hashes(master)
+
+    assert n == 1
+    assert master.read_text(encoding="utf-8") == (
+        f"`📁 /a.md | 🗃️ doc:a_md | 🔑 sha:{calc_hash(spec)}`\n"
+    )
+    assert check_stale_refs(master, repo_root=tmp_path) == []

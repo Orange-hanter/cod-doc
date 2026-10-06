@@ -270,12 +270,18 @@ def _registry_paths(master_path: Path) -> set[str]:
     """Пути из реестра гибридных ссылок ``MASTER.md``.
 
     Принадлежность реестру решает, нужен ли после импорта ``update_hashes``:
-    правка файла на диске меняет его sha, а реестр об этом не знает.
+    правка файла на диске меняет его sha, а реестр об этом не знает. Ссылка
+    без хэша (DEBT-001) реестру хэшей не принадлежит: пересчитывать в ней
+    нечего.
     """
     if not master_path.exists():
         return set()
     content = master_path.read_text(encoding="utf-8")
-    return {m.group("path").lstrip("/") for m in LINK_PATTERN.finditer(content)}
+    return {
+        m.group("path").lstrip("/")
+        for m in LINK_PATTERN.finditer(content)
+        if m.group("hash") is not None
+    }
 
 
 def _stale_locks(session: Session, project_id: int, ttl_minutes: int) -> list[str]:
