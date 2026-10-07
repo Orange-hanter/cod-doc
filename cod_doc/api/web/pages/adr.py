@@ -141,6 +141,10 @@ _GAP_TEXT = {
 }
 
 
+#: Подпись полки для ADR без темы; это не строка в ``adr_topic``.
+_NO_TOPIC = "No topic"
+
+
 def _shelf_sort_key(
     status: str, decided_at: date | None, created: date, adr_id: str
 ) -> tuple[int, int, str]:
@@ -192,10 +196,6 @@ def _group_by_shelf(
             }
         )
     return shelves
-
-
-#: Подпись полки для ADR без темы; это не строка в ``adr_topic``.
-_NO_TOPIC = "No topic"
 
 
 def _row_visible(
@@ -533,7 +533,7 @@ def adr_new_form(
             "default_status": "proposed",
             "next_id": adr_service.next_adr_id(session, project_id),
             "amends": {"adr_id": amended.adr_id, "title": amended.title} if amended else None,
-            "topics": [t.name for t in adr_topic_service.list_for_project(session, project_id)],
+            "topics": adr_topic_service.names(session, project_id),
             # «Уточнить новым ADR» — по умолчанию на ту же полку, что исходное решение.
             "default_topic": adr_service.topic_name(session, amended) if amended else None,
         },
@@ -604,12 +604,13 @@ def adr_new_submit(
             adr_id=(adr_id.strip() if adr_id else None),
             author="human:web",
         )
-        if (topic or "").strip():
+        shelf = (topic or "").strip()
+        if shelf:
             adr_service.set_topic(
                 session,
                 project_id=project_id,
                 adr_id=row.adr_id,
-                topic=(topic or "").strip(),
+                topic=shelf,
                 author="human:web",
             )
         if amends:
@@ -707,7 +708,7 @@ def adr_shelves_page(
     session, project_id = db
     topics = adr_topic_service.list_for_project(session, project_id)
     counts = adr_topic_service.adr_counts(session, project_id)
-    loose = sum(1 for r in adr_service.list_for_project(session, project_id) if r.topic_id is None)
+    loose = adr_topic_service.loose_count(session, project_id)
     return templates.TemplateResponse(
         request,
         "project/adr_shelves.html",
@@ -768,7 +769,7 @@ def adr_shelves_submit(
         elif action == "delete":
             adr_topic_service.delete(session, project_id=project_id, name=name, author=author)
         else:
-            raise HTTPException(status_code=400, detail=f"unknown shelf action {action!r}")
+            raise HTTPException(status_code=400, detail="unknown shelf action")
         session.commit()
     except ADRTopicNotFoundError as exc:
         session.rollback()
@@ -880,7 +881,7 @@ def adr_show(
             "record_gaps": [f["name"] for f in record if not f["ok"]],
             "decide": decide,
             "author_is_agent": actor_kind_for_author(payload["author"]) == ActorKind.AGENT,
-            "topics": [t.name for t in adr_topic_service.list_for_project(session, project_id)],
+            "topics": adr_topic_service.names(session, project_id),
         },
     )
 

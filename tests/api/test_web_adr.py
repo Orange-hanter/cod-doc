@@ -950,6 +950,12 @@ def _shelf_names(html: str) -> list[str]:
     return re.findall(r'class="adr-shelf-name[^"]*">([^<]+)<', html)
 
 
+def _adr_order(html: str) -> list[str]:
+    import re
+
+    return re.findall(r'data-adr="(ADR-[^"]+)"', html)
+
+
 def test_list_is_flat_without_shelves(adr_client) -> None:  # type: ignore[no-untyped-def]
     client, entry = adr_client
     r = client.get(f"/p/{entry.name}/adr").text
@@ -968,7 +974,7 @@ def test_list_groups_by_shelf_in_order(adr_client) -> None:  # type: ignore[no-u
     r = client.get(f"/p/{entry.name}/adr").text
     assert _shelf_names(r) == ["Architecture", "No topic"]
     assert "Empty shelf" not in r
-    assert r.index('data-adr="ADR-001"') < r.index('data-adr="ADR-002"')
+    assert _adr_order(r) == ["ADR-001", "ADR-002"]
     # Фильтр «awaiting decision» оставляет только полку с черновиком.
     pending = client.get(f"/p/{entry.name}/adr?view=pending").text
     assert _shelf_names(pending) == ["No topic"]
@@ -982,6 +988,27 @@ def test_shelf_about_shows_includes(adr_client) -> None:  # type: ignore[no-unty
     assert "<b>In.</b> SQLite, PostgreSQL" in r
 
 
+def test_shelf_text_is_html_escaped(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    payload = "<script>alert(1)</script>"
+    _shelf(client, entry, action="create", name="Storage", includes=payload)
+    client.post(f"/p/{entry.name}/adr/ADR-002/topic", data={"topic": "Storage"})
+    for page in (f"/p/{entry.name}/adr", f"/p/{entry.name}/adr/shelves"):
+        r = client.get(page).text
+        assert payload not in r
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in r
+
+
+def test_shelf_name_is_normalised(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    assert _shelf(client, entry, action="create", name="  Storage  ") == 303
+    resp = client.post(
+        f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": " Storage "}, follow_redirects=False
+    )
+    assert resp.status_code == 303
+    assert _shelf(client, entry, action="delete", name=" Storage") == 303
+
+
 def test_shelves_page_lifecycle(adr_client) -> None:  # type: ignore[no-untyped-def]
     client, entry = adr_client
     _shelf(client, entry, action="create", name="Storage")
@@ -993,8 +1020,12 @@ def test_shelves_page_lifecycle(adr_client) -> None:  # type: ignore[no-untyped-
     assert _shelf(client, entry, action="delete", name="Data") == 303
     card = client.get(f"/p/{entry.name}/adr/ADR-001").text
     assert "No shelves yet" in card
-    assert _shelf(client, entry, action="delete", name="Data") == 404
-    assert _shelf(client, entry, action="explode", name="x") == 400
+    gone = client.post(f"/p/{entry.name}/adr/shelves", data={"action": "delete", "name": "Data"})
+    assert gone.status_code == 404
+    assert gone.json()["detail"] == "ADR topic 'Data' not found"
+    bad = client.post(f"/p/{entry.name}/adr/shelves", data={"action": "explode", "name": "x"})
+    assert bad.status_code == 400
+    assert bad.json()["detail"] == "unknown shelf action"
 
 
 def test_card_moves_adr_between_shelves(adr_client) -> None:  # type: ignore[no-untyped-def]
@@ -1008,6 +1039,7 @@ def test_card_moves_adr_between_shelves(adr_client) -> None:  # type: ignore[no-
     assert '<option value="Storage" selected>Storage</option>' in card
     missing = client.post(f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Nope"})
     assert missing.status_code == 404
+    assert missing.json()["detail"] == "ADR topic 'Nope' not found"
 
 
 def test_new_form_puts_adr_on_shelf(adr_client) -> None:  # type: ignore[no-untyped-def]

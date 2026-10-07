@@ -50,8 +50,13 @@ def _diff(op: str, **fields: object) -> str:
     return json.dumps({"op": op, **fields}, ensure_ascii=False)
 
 
+def _norm(name: str) -> str:
+    """Имя полки в каноническом виде: пробелы схлопнуты, по краям срезаны."""
+    return " ".join(name.split())
+
+
 def _clean_name(name: str) -> str:
-    clean = " ".join(name.split())
+    clean = _norm(name)
     if not clean:
         raise ValueError("topic name must not be empty")
     if len(clean) > NAME_MAX:
@@ -78,9 +83,11 @@ def list_for_project(session: Session, project_id: int) -> list[ADRTopicModel]:
 
 
 def get(session: Session, project_id: int, name: str) -> ADRTopicModel | None:
+    """Полка по имени. Имя нормализуется так же, как при записи (``_clean_name``):
+    « Хранение » из формы или CLI находит «Хранение»."""
     return session.execute(
         select(ADRTopicModel).where(
-            ADRTopicModel.project_id == project_id, ADRTopicModel.name == name
+            ADRTopicModel.project_id == project_id, ADRTopicModel.name == _norm(name)
         )
     ).scalar_one_or_none()
 
@@ -102,6 +109,28 @@ def names_by_id(session: Session, project_id: int) -> dict[int, str]:
             )
         ).all()
     }
+
+
+def names(session: Session, project_id: int) -> list[str]:
+    """Имена полок в порядке показа — для выпадающих списков."""
+    return list(
+        session.execute(
+            select(ADRTopicModel.name)
+            .where(ADRTopicModel.project_id == project_id)
+            .order_by(ADRTopicModel.position, ADRTopicModel.row_id)
+        ).scalars()
+    )
+
+
+def loose_count(session: Session, project_id: int) -> int:
+    """Сколько ADR проекта лежит в «Без темы»."""
+    return int(
+        session.execute(
+            select(func.count()).where(
+                ADRModel.project_id == project_id, ADRModel.topic_id.is_(None)
+            )
+        ).scalar_one()
+    )
 
 
 def adr_counts(session: Session, project_id: int) -> dict[int, int]:
@@ -267,7 +296,7 @@ def move(
     if position < 0:
         raise ValueError("position must be >= 0")
     topics = list_for_project(session, project_id)
-    topic = next((t for t in topics if t.name == name), None)
+    topic = next((t for t in topics if t.name == _norm(name)), None)
     if topic is None:
         raise ADRTopicNotFoundError(f"ADR topic {name!r} not found")
     old = topics.index(topic)
