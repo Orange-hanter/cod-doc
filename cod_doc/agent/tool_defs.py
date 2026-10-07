@@ -89,7 +89,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "properties": {
                     "ref": {
                         "type": "string",
-                        "description": "Гибридная ссылка: 📁 /path | 🗃️ doc:id | 🔑 sha:12hex",
+                        "description": "Гибридная ссылка: 📁 /path | 🗃️ doc:id [| 🔑 sha:12hex]",
                     },
                     "depth": {
                         "type": "string",

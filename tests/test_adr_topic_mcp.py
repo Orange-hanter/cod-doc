@@ -7,9 +7,10 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from mcp.server.fastmcp import FastMCP
+from sqlalchemy import select
 
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
-from cod_doc.infra.models import ProjectModel
+from cod_doc.infra.models import ActivityEventModel, ProjectModel
 from cod_doc.services import adr_service
 from tests._alembic import run_alembic
 
@@ -83,7 +84,33 @@ def test_topic_tools_roundtrip(tools: dict[str, Callable[..., Any]]) -> None:
 
 
 def test_set_topic_unknown_is_value_error(tools: dict[str, Callable[..., Any]]) -> None:
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(ValueError, match="topic 'Нет такой' not found"):
         tools["adr_set_topic"](project="p", adr_id="ADR-005", topic="Нет такой")
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(ValueError, match="ADR-404"):
+        tools["adr_set_topic"](project="p", adr_id="ADR-404", topic=None)
+    with pytest.raises(ValueError, match="topic 'Нет такой' not found"):
         tools["adr_topic_delete"](project="p", name="Нет такой")
+
+
+def test_topic_tools_emit_activity_events(
+    tools: dict[str, Callable[..., Any]], factory: sessionmaker[Session]
+) -> None:
+    tools["adr_topic_create"](project="p", name="Хранение")
+    tools["adr_topic_update"](project="p", name="Хранение", includes="SQLite")
+    tools["adr_set_topic"](project="p", adr_id="ADR-005", topic="Хранение")
+    tools["adr_topic_delete"](project="p", name="Хранение")
+    with transactional(factory) as s:
+        kinds = list(
+            s.execute(
+                select(ActivityEventModel.kind)
+                .where(ActivityEventModel.kind.like("adr.topic%"))
+                .order_by(ActivityEventModel.row_id)
+            ).scalars()
+        )
+    assert kinds == [
+        "adr.topic_created",
+        "adr.topic_updated",
+        "adr.topic_set",
+        "adr.topic_set",
+        "adr.topic_deleted",
+    ]

@@ -1069,8 +1069,8 @@ systemd. Стек-трейс покажет конкретную причину.
 ### 11.1. pytest
 
 ```bash
-.venv/bin/pytest tests/ -q             # full suite (~512 tests, ~110s)
-.venv/bin/pytest tests/api/ -q         # web only (~137, ~30s)
+.venv/bin/pytest tests/ -q             # full suite
+.venv/bin/pytest tests/api/ -q         # web only
 .venv/bin/pytest tests/services/ -q    # service layer
 .venv/bin/pytest tests/infra/ -q       # repositories + migrations
 ```
@@ -1162,7 +1162,7 @@ ids.
 |---|---|
 | **Web** | `/p/<slug>/adr` (list), `/adr/new` (form), `/adr/<id>` (detail + edit + diagram-attach + supersede), `/adr/graph` (Mermaid supersede DAG) |
 | **CLI** | `cod-doc adr new -p <slug> --title "..." --status accepted` · `adr list` · `adr show <id>` · `adr supersede <new> <old>` · `adr graph --format mermaid\|json` |
-| **MCP** | 8 tools under `--profile standard\|full`: `adr_create`, `adr_get`, `adr_list`, `adr_update`, `adr_add_diagram`, `adr_supersede`, `adr_link_task`, `adr_graph` |
+| **MCP** | `adr_*` under `--profile standard\|full` — the family row `adr.*` in [`docs/mcp-integration.md`](mcp-integration.md) lists them all |
 | **Migrator** | `cod_doc.services.adr_migrator.migrate_from_file(session, project_id, md_path)` |
 
 **ADR ↔ task link.** When a task implements / invalidates / discovers

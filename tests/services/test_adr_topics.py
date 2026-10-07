@@ -13,7 +13,7 @@ from cod_doc.domain.entities import EntityKind
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import ADRModel, ProjectModel, RevisionModel
 from cod_doc.services import adr_service, adr_topic_service
-from cod_doc.services.adr_service import ADRImmutableError
+from cod_doc.services.adr_service import ADRImmutableError, ADRNotFoundError
 from cod_doc.services.adr_topic_service import ADRTopicExistsError, ADRTopicNotFoundError
 
 if TYPE_CHECKING:
@@ -161,3 +161,64 @@ def test_adr_counts(engine_with_schema: Engine) -> None:
         t = adr_topic_service.create(session, project_id=pid, name="Хранение")
         adr_service.set_topic(session, project_id=pid, adr_id="ADR-005", topic="Хранение")
         assert adr_topic_service.adr_counts(session, pid) == {t.row_id: 1}
+
+
+def _second_project(session: Session) -> int:
+    now = datetime.now(UTC)
+    other = ProjectModel(slug="other", title="O", root_path="/tmp/o", config_json={})
+    other.created = now
+    other.updated = now
+    session.add(other)
+    session.flush()
+    return other.row_id
+
+
+def test_topics_are_project_scoped(engine_with_schema: Engine) -> None:
+    """Полки и решения одного проекта не видны и не трогаются из другого."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        other = _second_project(session)
+        adr_topic_service.create(session, project_id=pid, name="Хранение")
+        adr_service.set_topic(session, project_id=pid, adr_id="ADR-005", topic="Хранение")
+        with pytest.raises(ADRNotFoundError):
+            adr_service.set_topic(session, project_id=other, adr_id="ADR-005", topic=None)
+        with pytest.raises(ADRTopicNotFoundError):
+            adr_topic_service.delete(session, project_id=other, name="Хранение")
+        with pytest.raises(ADRTopicNotFoundError):
+            adr_topic_service.update(session, project_id=other, name="Хранение", includes="x")
+        # Одноимённая полка в другом проекте — отдельная строка, не дубликат.
+        adr_topic_service.create(session, project_id=other, name="Хранение")
+        assert adr_topic_service.names_by_id(session, other) != adr_topic_service.names_by_id(
+            session, pid
+        )
+        assert adr_topic_service.adr_counts(session, other) == {}
+        assert adr_service.topic_name(session, _adr(session, "ADR-005")) == "Хранение"
+
+
+def _adr(session: Session, adr_id: str) -> ADRModel:
+    return session.execute(select(ADRModel).where(ADRModel.adr_id == adr_id)).scalar_one()
+
+
+def test_scope_text_is_bounded(engine_with_schema: Engine) -> None:
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        too_long = "x" * (adr_topic_service.SCOPE_MAX + 1)
+        with pytest.raises(ValueError, match="includes is longer"):
+            adr_topic_service.create(session, project_id=pid, name="A", includes=too_long)
+        adr_topic_service.create(session, project_id=pid, name="A")
+        with pytest.raises(ValueError, match="excludes is longer"):
+            adr_topic_service.update(session, project_id=pid, name="A", excludes=too_long)
+
+
+def test_deleted_topic_row_id_is_not_reused(engine_with_schema: Engine) -> None:
+    """Висячий ``topic_id`` (очистку обошли прямым SQL) не указывает на новую полку."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        gone = adr_topic_service.create(session, project_id=pid, name="Старая").row_id
+        session.delete(adr_topic_service.require(session, pid, "Старая"))
+        session.flush()
+        fresh = adr_topic_service.create(session, project_id=pid, name="Новая").row_id
+    assert fresh != gone

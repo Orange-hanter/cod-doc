@@ -32,6 +32,10 @@ if TYPE_CHECKING:
 
 #: Предел длины названия полки — колонка ``String(64)``.
 NAME_MAX = 64
+#: Предел длины «входит» / «не входит». Состав полки — пара фраз, которую
+#: куратор читает в промпте классификации; длинный текст раздувает и промпт,
+#: и каждую ревизию с activity-событием.
+SCOPE_MAX = 500
 
 
 class ADRTopicNotFoundError(LookupError):
@@ -52,6 +56,13 @@ def _clean_name(name: str) -> str:
         raise ValueError("topic name must not be empty")
     if len(clean) > NAME_MAX:
         raise ValueError(f"topic name is longer than {NAME_MAX} characters")
+    return clean
+
+
+def _clean_scope(field: str, value: str) -> str:
+    clean = value.strip()
+    if len(clean) > SCOPE_MAX:
+        raise ValueError(f"topic {field} is longer than {SCOPE_MAX} characters")
     return clean
 
 
@@ -79,6 +90,18 @@ def require(session: Session, project_id: int, name: str) -> ADRTopicModel:
     if topic is None:
         raise ADRTopicNotFoundError(f"ADR topic {name!r} not found")
     return topic
+
+
+def names_by_id(session: Session, project_id: int) -> dict[int, str]:
+    """Имена полок проекта одним запросом: ``{row_id: name}`` — для списков ADR."""
+    return {
+        int(row_id): str(name)
+        for row_id, name in session.execute(
+            select(ADRTopicModel.row_id, ADRTopicModel.name).where(
+                ADRTopicModel.project_id == project_id
+            )
+        ).all()
+    }
 
 
 def adr_counts(session: Session, project_id: int) -> dict[int, int]:
@@ -160,8 +183,8 @@ def create(
     topic = ADRTopicModel(
         project_id=project_id,
         name=clean,
-        includes=includes.strip(),
-        excludes=excludes.strip(),
+        includes=_clean_scope("includes", includes),
+        excludes=_clean_scope("excludes", excludes),
         position=0 if last is None else int(last) + 1,
         created=now,
         last_updated=now,
@@ -204,8 +227,11 @@ def update(
             changed["renamed"] = {"old": topic.name, "new": clean}
             topic.name = clean
     for field, value in (("includes", includes), ("excludes", excludes)):
-        if value is not None and value.strip() != getattr(topic, field):
-            setattr(topic, field, value.strip())
+        if value is None:
+            continue
+        clean = _clean_scope(field, value)
+        if clean != getattr(topic, field):
+            setattr(topic, field, clean)
             changed[field] = {"changed": True}
     if not changed:
         return topic

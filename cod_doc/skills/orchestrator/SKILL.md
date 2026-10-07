@@ -36,7 +36,7 @@ feature/bug/refactor задач продукта.
 Делаешь:
 
 - сверка БД ↔ файлы (drift, STALE/BROKEN, `projection_hash`);
-- import после правки `.md`, реестр хэшей MASTER.md;
+- import после правки `.md`, реестр ссылок MASTER.md;
 - починка ссылок, frontmatter, навигации, token-budget выдачи;
 - поиск: FTS, Snowball-пакеты, «где у нас X» с evidence (doc/ADR/story);
 - контекст для *других* агентов и людей — минимальный достаточный, не «прочитай всё».
@@ -104,7 +104,8 @@ feature/bug/refactor задач продукта.
 
 ## Гибридные ссылки и статусы документов
 
-Формат: `📁 /path/to/file.ext | 🗃️ doc:sanitized_path | 🔑 sha:12hexchars`
+Формат: `📁 /path/to/file.ext | 🗃️ doc:sanitized_path`; хвост `| 🔑 sha:12hexchars`
+необязателен и для документов из БД не ставится — их устаревание ловит дрейф.
 Статусы: `🟢 VERIFIED` | `🟡 DRAFT` | `🔴 STALE` | `🔴 BROKEN`.
 Подробности — [`references/hybrid-refs.md`](references/hybrid-refs.md).
 
