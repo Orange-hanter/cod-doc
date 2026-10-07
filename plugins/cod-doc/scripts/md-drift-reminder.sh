@@ -58,9 +58,11 @@ tracked="$(sqlite3 -readonly "$COD_DOC_ROOT/.cod-doc/state.db" \
 bin="${COD_DOC_BIN:-cod-doc}"
 msg="cod-doc drift: правлен tracked-документ ${rel} (doc_key ${tracked}). Синхронизируй БД: ${bin} doc import '${rel}' -p ${COD_DOC_SLUG}"
 
-# Реестр хэшей корневого MASTER.md: если файл в нём — нужен ещё пересчёт.
-if [ -f "$COD_DOC_ROOT/MASTER.md" ] && grep -qF "$rel" "$COD_DOC_ROOT/MASTER.md" 2>/dev/null; then
-	msg="${msg} ; файл упомянут в MASTER.md — если он в hash-реестре, ещё и ${bin} hash update"
+# Реестр хэшей корневого MASTER.md: пересчёт нужен, только если ссылка на
+# файл несёт `🔑 sha:`. Ссылка без хэша (DEBT-001) ничего не требует.
+if [ -f "$COD_DOC_ROOT/MASTER.md" ] \
+	&& grep -F "📁 /${rel} " "$COD_DOC_ROOT/MASTER.md" 2>/dev/null | grep -qF '🔑 sha:'; then
+	msg="${msg} ; ссылка в MASTER.md несёт хэш — ещё и ${bin} hash update"
 fi
 
 printf '%s ; проверка: %s doc drift -p %s --all\n' "$msg" "$bin" "$COD_DOC_SLUG"

@@ -166,11 +166,11 @@ def run_mcp_server(*, transport: str, host: str, port: int, profile: str) -> Non
     type=click.Choice(sorted(VALID_PROFILES)),
     default=os.environ.get("COD_DOC_PROFILE", "agent"),
     show_default=True,
-    help="Tool-surface profile (default: agent). agent=6 curator tools (RFC 25: "
+    help="Tool-surface profile (default: agent). agent=curator tools (RFC 25: "
     "curator_next/ctx_search/ctx_drift/context_get + capabilities/report); "
-    "minimal=21 cold-start curated CRUD; "
-    "standard=175 DB-backed tools without legacy; full=179 including legacy "
-    "agent tools. Counts enforced by tests/test_server_profiles.py.",
+    "minimal=cold-start curated CRUD; "
+    "standard=DB-backed tools without legacy; full=everything including legacy "
+    "agent tools. Counts: python -m cod_doc.mcp.profile_counts.",
 )
 @click.option("--log-level", default=None, envvar="LOG_LEVEL")
 @click.option("--log-format", default=None, envvar="LOG_FORMAT")

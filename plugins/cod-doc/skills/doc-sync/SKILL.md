@@ -23,12 +23,17 @@ cod-doc doc import <file.md> -p <slug>    # frontmatter + body → БД
 cod-doc doc drift -p <slug> --all         # контроль: edited_in_place == 0
 ```
 
-Если файл входит в hash-реестр корневого `MASTER.md`:
+Гибридная ссылка `📁 /path | 🗃️ doc:key` хэша не требует: устаревание
+документа из БД ловит `doc drift`. Только если ссылка на файл в корневом
+`MASTER.md` несёт хвост `| 🔑 sha:…` (старый формат), реестр нужно пересчитать:
 
 ```bash
 cod-doc hash update                       # пересчёт реестра (правит MASTER.md)
 cod-doc doc import MASTER.md -p <slug>    # и сам MASTER.md — тоже в БД
 ```
+
+Хэш в ссылке на документ из БД лучше снять: он дублирует дрейф и требует
+этих двух шагов при каждой правке.
 
 ## Семантика drift
 

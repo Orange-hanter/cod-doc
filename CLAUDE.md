@@ -22,7 +22,7 @@ pattern, audit cadence). Этот файл их не дублирует.
 uv sync --extra dev                      # ровно окружение CI из uv.lock (pip install -e '.[dev]' — без лока)
 alembic upgrade head                     # схема локальной SQLite
 
-.venv/bin/pytest tests/ -n auto --dist loadfile -q --tb=short   # весь прогон (~2090 тестов)
+.venv/bin/pytest tests/ -n auto --dist loadfile -q --tb=short   # весь прогон
 .venv/bin/pytest tests/services/test_task_create.py -q      # один модуль
 .venv/bin/pytest tests/services/test_task_create.py::test_create_auto_generates_task_id -v   # один тест
 .venv/bin/pytest tests/ -k "checkout" -q                    # по подстроке
@@ -111,8 +111,10 @@ cod-doc completion zsh                   # печатает готовый _cod-
 
 Zsh-дополнение (`docs/zsh-completion.md`): артефакт
 `cod_doc/cli/completion/_cod-doc` **генерируется** из click-дерева
-(`python -m cod_doc.cli.completion --write`) и коммитится. Правил CLI —
-регенерируй, иначе падает `tests/cli/test_zsh_completion_drift.py`.
+(`python -m cod_doc.cli.completion --write`) и коммитится. Руками его не
+пересчитывают: `pre-commit` зовёт `scripts/regen.sh`, когда в коммите есть
+`cod_doc/cli/` или `cod_doc/mcp/`; без хука падает
+`tests/cli/test_zsh_completion_drift.py`.
 Значения (слаги проектов, task_id, doc_key, plan.scope…) берутся напрямую из
 `~/.cod-doc/config.yaml` и read-only SQLite: звать из дополнения сам `cod-doc`
 нельзя: даже после ADO-179 `--help` стоит ~180 мс против ~20 мс у прямого
@@ -122,8 +124,14 @@ Zsh-дополнение (`docs/zsh-completion.md`): артефакт
 `upgrade()`/`downgrade()` → `alembic upgrade head` + `alembic downgrade -1`
 как smoke-тест.
 
-Git-хуки — `bash hooks/install.sh`: `pre-commit` проверяет формат гибридных
-ссылок (`📁 … | 🗃️ … | 🔑 sha:…`), `post-merge` пересчитывает хэши,
+Производные значения — счётчики профилей MCP в прозе и `_cod-doc` — не
+правятся руками (DEBT-001). `scripts/regen.sh` пересчитывает всё разом и
+печатает изменённые файлы; `python -m cod_doc.mcp.profile_counts` печатает
+живые счётчики, `--check`/`--write` сверяют и чинят прозу.
+
+Git-хуки — `bash hooks/install.sh`: `pre-commit` зовёт `scripts/regen.sh` и
+добавляет пересчитанное в коммит, затем проверяет формат гибридных ссылок
+(`📁 … | 🗃️ …`, хвост `| 🔑 sha:…` необязателен);
 `pre-push` гоняет `scripts/gate.sh` и не выпускает красную ветку наружу.
 Пуш выбран точкой перехода потому, что гейт идёт ~2 минуты, а коммитов в ветке
 десяток; обойти — `SKIP_GATE=1 git push` или `--no-verify`.
@@ -167,7 +175,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 - **MCP: один файл = одна семья тулов.** `mcp/tools/*_tools.py` экспортируют
   `register(mcp)`; `mcp/server.py` вызывает их в цикле, затем `apply_profile()`
   **фильтрует уже зарегистрированный** каталог (`mcp/profiles.py`). Профиль
-  `agent` — **дефолтный**, 6 curator-тулов (RFC 25 §3.2/§3.5,
+  `agent` — **дефолтный**, curator-тулы (RFC 25 §3.2/§3.5,
   CUR-007/008/016): `agent_capabilities`, `curator_next`, `ctx_search`,
   `ctx_drift`, `context_get`, `agent_report`. Роль оркестратора — куратор
   документации и поиска, не исполнитель задач; вход в работу —
@@ -180,12 +188,13 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   AFT-004): там работает coding-агент по протоколу checkout → complete. Старые
   task-centric тулы (`agent_pick`, `agent_get`, `agent_complete`,
   `agent_release`) остались зарегистрированы, но видны только на
-  `standard`/`full` — для coding-агента. Дальше `minimal` 21 / `standard` 175
-  / `full` 179.
-  Счётчики зафиксированы тестом `test_server_profiles.py` и продублированы в
-  прозе ~10 файлов; их полный список — `PROSE_COUNTERS` в
-  `tests/test_profile_counts_prose.py`, который сверяет каждое вхождение с
-  живым каталогом. Меняешь набор тулов — правь всё, что гейт покажет красным. Новые agent-фичи идут в `agent_*`, а не
+  `standard`/`full` — для coding-агента.
+  Числа тулов профилей — `python -m cod_doc.mcp.profile_counts`; в прозу их не пишут
+  (DEBT-001: 53 ручных вхождения в 8 файлах). Остались два места — докстринг
+  `profiles.py` и `docs/mcp-integration.md` (вместе с таблицей семейств); их
+  перечисляет `PROSE_COUNTERS` в `cod_doc/mcp/profile_counts.py`, а
+  `scripts/regen.sh` из pre-commit переписывает. Добавил тул — впиши его имя в
+  строку семейства в `docs/mcp-integration.md`, число посчитается само. Новые agent-фичи идут в `agent_*`, а не
   в расширение internal CRUD.
 - **`mcp/tools/_db.py`** — общий вход в БД для тулов: `session_factory(project)`
   резолвит слаг (или workspace-default) → Config → engine. `project=None`
@@ -284,9 +293,13 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   висящие на них `link`. Проверено: 1379 секций и 841 ссылка. На пустой
   тестовой БД такая миграция зеленеет.
 - **Проекция markdown** — артефакт, не исходник: `Document.projection_hash`
-  ловит edit-in-place (`cod-doc doc drift`), а `MASTER.md` держит отдельный
-  реестр хэшей файлов — пересчёт через `cod-doc hash update`
-  (`core/hash_calc.py::update_hashes`). Правил `doc.body` — обнови реестр.
+  ловит edit-in-place (`cod-doc doc drift`). Реестр ссылок в `MASTER.md`
+  хэшей не хранит (DEBT-001): хранимый `🔑 sha:` дублировал этот дрейф и
+  переписывался при каждой правке документа — 40 из 78 коммитов в
+  `MASTER.md` с июня. Формат с хэшем поддерживается для чужих проектов
+  (`cod-doc hash update`, `core/hash_calc.py::update_hashes`); в ссылку на
+  документ из БД его не возвращай — это стережёт
+  `tests/test_master_registry_consistency.py`.
 
 ## Anti-drift тесты
 
@@ -301,8 +314,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `test_orchestrator_skill_refs.py` | orchestrator SKILL.md не зовёт несуществующие тулы |
 | `test_mcp_integration_doc.py` | числа в `docs/mcp-integration.md` = реальный `len(list_tools())` |
 | `test_web_routes_audit.py` | живые web-роуты задокументированы |
-| `test_server_profiles.py` | counts профилей (6/21/175/179) в коде и доках совпадают |
-| `test_profile_counts_prose.py` | счётчики профилей в прозе (README, MASTER, AGENTS, CLAUDE, docs, deploy, profiles.py, server.py) = живому каталогу |
+| `test_server_profiles.py` | состав профилей: allowlist'ы `agent`/`minimal`, legacy вне `standard` |
+| `test_profile_counts_prose.py` | `profile_counts --check`: числа в `profiles.py` и `docs/mcp-integration.md` = живому каталогу, каждый тул перечислен в одной строке семейств |
 | `test_actor_kind_single_source.py` | `actor_kind` выводится только через `domain.entities.actor_kind_for_author` (ADR-012) |
 | `infra/test_totals_status_aliases.py` | `section_totals`/`plan_totals`/`ready_tasks` перечисляют все написания статуса из `TASK_STATUS_ALIASES` (миграция 0035) |
 | `infra/test_task_status_canonicalisation_migration.py` | бэкфилл 0037 сводит легаси-написания в канон, ready-множество при этом не гаснет |
@@ -315,8 +328,6 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017) и `doc_tree_service` (ADO-116); незакрытый долг — `update_status` и `delete`, каждый с обоснованием |
 | `services/test_plan_mutation_surface_parity.py` | то же для `plan_service` (ADO-209): секции и планы на MCP и CLI; `freeze_projection` вне спеки — пишет через `doc_service` |
 | `services/test_adr_mutation_surface_parity.py` | то же для `adr_service` (ARG-001): `relate`/`unrelate` на обеих поверхностях; долг CLI — `update`, `add_diagram`, `link_task`, каждый с обоснованием |
-| `services/test_adr_topic_mutation_surface_parity.py` | то же для `adr_topic_service` (ARG-008): полки ADR — `create`/`update`/`move`/`delete` на MCP и CLI, долга нет |
-| `services/test_migration_0046_preserves_adr_data.py` | 0046 добавляет и снимает `adr.topic_id` без пересоздания `adr`: диаграммы, задачи, замены и связи переживают upgrade и downgrade |
 | `services/test_approval_mutation_surface_parity.py` | то же для `approval_service` (ACU-010): `resolve`/`cancel` на MCP и CLI; `request_doc_patch` — внутренний (собирает куратор), `request` — долг CLI с обоснованием |
 | `services/test_migration_0035_preserves_data.py` | миграция не теряет секции и ссылки: наливает данные на предыдущей ревизии, потом гонит upgrade. На пустой БД такая потеря не видна |
 | `cli/test_zsh_completion_drift.py` | `_cod-doc` = живое click-дерево; новая команда роняет CI до регенерации |
@@ -351,8 +362,8 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 
 - MCP-сервер `cod-doc` — **один постоянный HTTP-демон на машину**, а не
   субпроцесс на сессию (ADO-171). `com.cod-doc.mcp` на `127.0.0.1:8801`
-  (профиль `standard`, 175 тулов `task_*`/`doc_*`/`plan_*`/…) и
-  `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, 6 curator-тулов —
+  (профиль `standard`, тулы `task_*`/`doc_*`/`plan_*`/…) и
+  `com.cod-doc.mcp-agent` на `:8802` (профиль `agent`, curator-тулы —
   `curator_next`/`ctx_*`/`context_get`/`agent_capabilities`/`agent_report`).
   Тем же launchd и тем же рантаймом живёт веб-UI — `com.cod-doc.web`. Доставка
   ревизий — `cod-doc update` (ADO-192): собирает ветку remote'а свежим venv,

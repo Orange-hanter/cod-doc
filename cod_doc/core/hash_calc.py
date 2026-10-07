@@ -38,8 +38,26 @@ def is_ignored_by_git(rel: str, repo_root: Path) -> bool:
     return done.returncode == 0
 
 
+#: Гибридная ссылка ``📁 /path | 🗃️ doc:key [| 🔑 sha:12hex]``.
+#:
+#: DEBT-001: хвост с хэшем необязателен. Хранимый хэш дублирует дрейф БД
+#: (``Document.projection_hash``) для любого документа, что живёт в БД, а
+#: каждая правка такого документа требовала переписать ``MASTER.md`` —
+#: 40 из 78 коммитов в нём с июня меняли только хэши. Ссылка без хэша
+#: проверяется на существование файла, устаревание ловит ``doc drift``.
+#: Ссылки с хэшем работают как раньше.
+#:
+#: ``vec_id`` не захватывает бэктик и кавычку: ссылка стоит в инлайн-коде или
+#: в JSON-строке, и без хэша ``\S+`` съел бы закрывающий символ.
+#:
+#: Хвост ``| 🔑`` с невалидным хэшем — не «ссылка без хэша», а не ссылка:
+#: lookahead отвергает примеры формата вроде ``🔑 sha:{12hex}``, которые
+#: раньше не матчились и должны не матчиться дальше. Квантификатор у
+#: ``vec_id`` possessive: без него движок укорачивает ключ на символ и
+#: проходит lookahead с середины слова.
 LINK_PATTERN = re.compile(
-    r"(📁\s+(?P<path>\S+)\s+\|\s+🗃️\s+(?P<vec_id>\S+)\s+\|\s+🔑\s+sha:)(?P<hash>[0-9a-f]{12})"
+    r"📁\s+(?P<path>\S+)\s+\|\s+🗃️\s+(?P<vec_id>[^\s`|\"]++)"
+    r"(?:\s+\|\s+🔑\s+sha:(?P<hash>[0-9a-f]{12})|(?!\s+\|\s+🔑))"
 )
 
 #: Строка сводной таблицы реестра:
@@ -80,7 +98,8 @@ def check_stale_refs(
 
     ``BROKEN`` — файла по пути из ссылки нет на диске. ``STALE`` — файл есть,
     но его sha256[:12] разошёлся с записанным в реестре; ``actual`` несёт
-    фактический хэш. Записи, где хэш совпал, не возвращаются.
+    фактический хэш. Записи, где хэш совпал, не возвращаются. Ссылка без
+    хэша бывает только ``BROKEN``: сверять её не с чем, ``expected`` пуст.
 
     CUR-016: логика жила приватной ``routine_service._check_stale_refs`` и у
     второго потребителя (doc card куратора) не было способа её позвать, кроме
@@ -94,7 +113,7 @@ def check_stale_refs(
     findings: list[dict[str, str]] = []
     for m in LINK_PATTERN.finditer(content):
         rel = m.group("path").lstrip("/")
-        expected = m.group("hash")
+        expected = m.group("hash") or ""
         target = root / rel
         if not target.exists():
             if is_ignored_by_git(rel, root):
@@ -104,7 +123,7 @@ def check_stale_refs(
                 # чекаута — ничего. Диагноз не должен зависеть от места запуска.
                 continue
             findings.append({"path": rel, "status": "BROKEN", "expected": expected})
-        elif not check_hash(target, expected):
+        elif expected and not check_hash(target, expected):
             findings.append(
                 {
                     "path": rel,
@@ -116,13 +135,18 @@ def check_stale_refs(
     return findings
 
 
-def make_ref(file_path: Path, repo_root: Path) -> str:
-    """Сгенерировать гибридную ссылку для файла."""
+def make_ref(file_path: Path, repo_root: Path, *, with_hash: bool = True) -> str:
+    """Сгенерировать гибридную ссылку для файла.
+
+    ``with_hash=False`` — ссылка без хэша, для документа, чьё устаревание
+    ловит дрейф БД (DEBT-001).
+    """
     rel = file_path.relative_to(repo_root)
-    h = calc_hash(file_path)
     sanitized = str(rel).replace("/", "_").replace("\\", "_").replace(".", "_")
-    vec_id = f"doc:{sanitized}"
-    return f"📁 /{rel} | 🗃️ {vec_id} | 🔑 sha:{h}"
+    ref = f"📁 /{rel} | 🗃️ doc:{sanitized}"
+    if not with_hash:
+        return ref
+    return f"{ref} | 🔑 sha:{calc_hash(file_path)}"
 
 
 def update_hashes(master_path: Path) -> tuple[int, list[str]]:
@@ -136,6 +160,10 @@ def update_hashes(master_path: Path) -> tuple[int, list[str]]:
     семи правдой была ссылка. Теперь колонка хэша в таблице производная: она
     берётся из блока того же документа, а строки без блока (RFC 23, RFC 24)
     остаются нетронутыми.
+
+    DEBT-001: ссылка без хэша не трогается и хэш не получает. Файл
+    перезаписывается, только если что-то поменялось: безусловная запись
+    двигала mtime впустую.
     """
     master = Path(master_path)
     repo_root = master.parent
@@ -149,8 +177,10 @@ def update_hashes(master_path: Path) -> tuple[int, list[str]]:
     def replace_link_hash(m: re.Match[str]) -> str:
         nonlocal updated
         rel = m.group("path").lstrip("/")
+        if m.group("hash") is None:
+            return m.group(0)
         target = repo_root / rel
-        prefix = m.group(1)
+        prefix = m.string[m.start() : m.start("hash")]
         if not target.exists():
             # Хэш отсутствующего файла сохраняем как есть — пересчитать его не
             # из чего, а обнулять запись нельзя.
@@ -178,8 +208,10 @@ def update_hashes(master_path: Path) -> tuple[int, list[str]]:
         return m.group("prefix") + new_hash + m.group("suffix")
 
     # Порядок важен: сначала блоки наполняют `fresh`, затем таблица его читает.
+    original = content
     content = LINK_PATTERN.sub(replace_link_hash, content)
     content = TABLE_ROW_PATTERN.sub(replace_table_hash, content)
 
-    master.write_text(content, encoding="utf-8")
+    if content != original:
+        master.write_text(content, encoding="utf-8")
     return updated, warnings
