@@ -33,16 +33,18 @@ KEP, Rust RFC, Nygard ADR) у предложения есть собственн
 
 ## 2. Текущее состояние (проверено по коду и живой БД 2026-10-04)
 
+Пересверено с main 2026-10-07, после ARG-008…010 (полки ADR) и DEBT-001.
+
 | Факт | Где |
 |---|---|
 | Тип `rfc` есть (ADO-238), миграция 0044 вернула его 32 документам | `cod_doc/domain/entities.py:67` |
 | RFC раскладывается в раздел `proposals` по типу | `cod_doc/services/doc_taxonomy.py:265` |
 | Статус RFC — общий `DocumentStatus`; `accepted` сводится в `active`, `rejected`/`superseded` — в `deprecated`; стандарт отсылает к отдельному полю `rfc_status` | `docs/system/standards/frontmatter.md:62`, `:83` |
-| На живой БД: 32 RFC, 29 `draft`, 3 `active`; отбракованные 16–21 — `draft` | `document` |
+| На живой БД: 33 RFC (с этим), 30 `draft`, 3 `active`; отбракованные 16–21 — `draft` | `document` |
 | Отбраковка и причины — только проза | `proposals/README`, блок «Отбраковка 2026-08-29» |
 | Номера резервируются прозой («30 зарезервирован…», «резерв C4 сдвинут с 34 на 35») | `proposals/README` |
-| `plan.parent_doc_id` есть в схеме и читается контекстом, но его некому записать: `create_plan` не принимает родителя; пуст у 18 из 18 планов | `cod_doc/services/plan_service/sections.py:94`, `cod_doc/services/context_service.py:536` |
-| У ADR нет ссылки на документ-источник; ADR-009/016/017 в `proposed` без родителя. Связи ADR ↔ ADR есть (RFC 34, миграция 0045) | `cod_doc/infra/models/adr.py:23` |
+| `plan.parent_doc_id` есть в схеме и читается контекстом, но его некому записать: `create_plan` не принимает родителя; пуст у 19 из 19 планов | `cod_doc/services/plan_service/sections.py:94`, `cod_doc/services/context_service.py:536` |
+| У ADR нет ссылки на документ-источник; ADR-009/016/017 в `proposed` без родителя. Связи ADR ↔ ADR (RFC 34, миграция 0045) и полки `adr.topic_id` (ARG-008, миграция 0046) есть | `cod_doc/infra/models/adrs.py:23` |
 | `adr_health` ловит долгий черновик ADR, но не «ADR без RFC» | `cod_doc/services/adr_health.py:16` |
 | Вопрос умеет блокировать документ: `question_link(to_kind=document, relation=blocks)` | `cod_doc/domain/entities.py:352` |
 
@@ -99,7 +101,9 @@ CREATE TABLE rfc_meta (
 - `rfc_number` — из имени файла `proposals/NN-slug`; коллизию ловит UNIQUE
   (Q-005).
 - ADR → RFC: `adr.source_doc_id INTEGER NULL REFERENCES document(row_id) ON
-  DELETE SET NULL` (Q-003). Миграция трогает `adr`, не `document`.
+  DELETE SET NULL` (Q-003). Миграция трогает `adr`, не `document`; колонка
+  добавляется как `adr.topic_id` в 0046 — `ADD COLUMN`, без пересоздания
+  таблицы, которое унесло бы по CASCADE диаграммы и связи ADR.
 - RFC → план: существующий `plan.parent_doc_id`; новый необязательный
   параметр `parent_doc_key` у `create_plan` / `plan_create` / `cod-doc plan
   create` и отдельная операция `plan_set_parent`.
@@ -145,8 +149,9 @@ Frontmatter-проекция RFC получает поля `rfc_status`, `goal`,
 | `create_plan(parent_doc_key=…)`, `set_parent` | `plan_create(parent_doc_key)`, `plan_set_parent` | `cod-doc plan create --rfc NN`, `cod-doc plan set-parent` |
 | `adr_service.create/update(source_doc_key)` | `adr_create/adr_update(source_doc_key)` | `cod-doc adr new --rfc NN` |
 
-Профили: `rfc_*` и `plan_set_parent` — `standard`/`full`; счётчики в прозе
-обновляются по `PROSE_COUNTERS`. Паритет мутаций — новый
+Профили: `rfc_*` и `plan_set_parent` — `standard`/`full`; имена новых тулов
+вписываются в строку семейства `docs/mcp-integration.md`, числа профилей
+пересчитывает `scripts/regen.sh` (DEBT-001). Паритет мутаций — новый
 `tests/services/test_rfc_mutation_surface_parity.py` по образцу ADR. Каждый
 переход пишет ревизию и событие `rfc.<action>` (ADO-040).
 
@@ -188,8 +193,8 @@ Frontmatter-проекция RFC получает поля `rfc_status`, `goal`,
 3. Остальные статусы — задача бэкфилла через `rfc_transition` с ревизиями:
    агент собирает таблицу «RFC → статус → основание», владелец утверждает
    (Q-004). Там же — `plan_set_parent` для известных пар (RFC 25, 27, 28, 34).
-4. `downgrade()` удаляет таблицу и колонку; `document.status` остаётся
-   последним записанным.
+4. `downgrade()` удаляет таблицу и колонку (нативный `DROP COLUMN`, как в
+   0046); `document.status` остаётся последним записанным.
 5. Документ без строки `rfc_meta` (RFC, заведённый до релиза) `rfc_service`
    читает как `draft` и создаёт строку при первом переходе.
 
