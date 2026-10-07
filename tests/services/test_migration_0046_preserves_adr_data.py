@@ -81,5 +81,29 @@ def test_0046_keeps_adr_children_up_and_down(tmp_path: Path) -> None:
     run_alembic("upgrade", "head", db_url=db_url)
     assert _counts(db_path) == expected
 
+    assert "topic_id" in _adr_columns(db_path)
+
     run_alembic("downgrade", _PREVIOUS, db_url=db_url)
     assert _counts(db_path) == expected
+    # downgrade снимает ровно то, что добавил upgrade: колонку, индекс и таблицу.
+    assert "topic_id" not in _adr_columns(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        leftovers = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE name IN"
+                " ('adr_topic', 'ix_adr_topic_id', 'ix_adr_topic_project_position')"
+            )
+        }
+    finally:
+        conn.close()
+    assert leftovers == set()
+
+
+def _adr_columns(db_path: Path) -> set[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        return {r[1] for r in conn.execute("PRAGMA table_info('adr')")}
+    finally:
+        conn.close()

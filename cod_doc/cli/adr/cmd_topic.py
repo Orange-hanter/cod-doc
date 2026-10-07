@@ -59,7 +59,7 @@ def topic_list(ctx: click.Context, project: str, as_json: bool) -> None:
 @click.argument("name")
 @click.option("--includes", default="", help="What belongs on this topic")
 @click.option("--excludes", default="", help="What goes elsewhere (and where)")
-@click.option("--author", default="cli", show_default=True)
+@click.option("--author", default="human:cli", show_default=True)
 @click.pass_context
 def topic_create(
     ctx: click.Context, project: str, name: str, includes: str, excludes: str, author: str
@@ -94,7 +94,7 @@ def topic_create(
 @click.option("--rename", "new_name", default=None, help="New name")
 @click.option("--includes", default=None)
 @click.option("--excludes", default=None)
-@click.option("--author", default="cli", show_default=True)
+@click.option("--author", default="human:cli", show_default=True)
 @click.pass_context
 def topic_update(
     ctx: click.Context,
@@ -140,7 +140,7 @@ def topic_update(
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.argument("name")
 @click.argument("position", type=int)
-@click.option("--author", default="cli", show_default=True)
+@click.option("--author", default="human:cli", show_default=True)
 @click.pass_context
 def topic_move(ctx: click.Context, project: str, name: str, position: int, author: str) -> None:
     """Move topic NAME to POSITION (0-based); the others shift."""
@@ -169,7 +169,7 @@ def topic_move(ctx: click.Context, project: str, name: str, position: int, autho
 @adr_topic.command("delete")
 @click.option("--project", "-p", required=True, help="Project slug")
 @click.argument("name")
-@click.option("--author", default="cli", show_default=True)
+@click.option("--author", default="human:cli", show_default=True)
 @click.option("--yes", is_flag=True, default=False, help="Do not ask")
 @click.pass_context
 def topic_delete(ctx: click.Context, project: str, name: str, author: str, yes: bool) -> None:
@@ -203,7 +203,7 @@ def topic_delete(ctx: click.Context, project: str, name: str, author: str, yes: 
 @click.argument("adr_id")
 @click.argument("topic", required=False)
 @click.option("--clear", is_flag=True, default=False, help="Move the ADR to «no topic»")
-@click.option("--author", default="cli", show_default=True)
+@click.option("--author", default="human:cli", show_default=True)
 @click.pass_context
 def adr_set_topic(
     ctx: click.Context,

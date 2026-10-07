@@ -265,3 +265,121 @@ def test_topic_name_ignores_other_projects_topic(engine_with_schema: Engine) -> 
         row.topic_id = foreign.row_id
         session.flush()
         assert adr_service.topic_name(session, row) is None
+
+
+def _topic_ops(session: Session) -> list[dict[str, object]]:
+    return [
+        json.loads(d)
+        for d in session.execute(
+            select(RevisionModel.diff)
+            .where(RevisionModel.entity_kind == EntityKind.ADR_TOPIC)
+            .order_by(RevisionModel.row_id)
+        ).scalars()
+    ]
+
+
+def test_move_and_delete_record_shifted_neighbours(engine_with_schema: Engine) -> None:
+    """Перенумерация соседей — тоже запись: сдвиг виден в ревизии move и delete."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        for name in ("А", "Б", "В"):
+            adr_topic_service.create(session, project_id=pid, name=name)
+        adr_topic_service.move(session, project_id=pid, name="В", position=0)
+        adr_topic_service.delete(session, project_id=pid, name="В")
+        ops = _topic_ops(session)
+    move, delete = ops[-2], ops[-1]
+    assert (move["op"], move["old"], move["new"]) == ("move", 2, 0)
+    assert move["shifted"] == {"А": [0, 1], "Б": [1, 2]}
+    assert delete["op"] == "delete"
+    assert delete["shifted"] == {"А": [1, 0], "Б": [2, 1]}
+
+
+def test_update_records_old_and_new_scope(engine_with_schema: Engine) -> None:
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_topic_service.create(session, project_id=pid, name="А", includes="SQLite")
+        adr_topic_service.update(
+            session, project_id=pid, name="А", includes="PostgreSQL", excludes="Векторы"
+        )
+        last = _topic_ops(session)[-1]
+    assert last["includes"] == {"old": "SQLite", "new": "PostgreSQL"}
+    assert last["excludes"] == {"old": "", "new": "Векторы"}
+
+
+def test_move_rejects_negative_position(engine_with_schema: Engine) -> None:
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_topic_service.create(session, project_id=pid, name="А")
+        with pytest.raises(ValueError, match="position must be >= 0"):
+            adr_topic_service.move(session, project_id=pid, name="А", position=-1)
+
+
+@pytest.mark.parametrize(
+    ("op", "field"),
+    [
+        ("create", "includes"),
+        ("create", "excludes"),
+        ("update", "includes"),
+        ("update", "excludes"),
+    ],
+)
+def test_scope_limit_is_inclusive(engine_with_schema: Engine, op: str, field: str) -> None:
+    """Ровно SCOPE_MAX проходит, на символ больше — нет; на обоих полях и в обеих операциях."""
+    factory = make_session_factory(engine_with_schema)
+    limit = adr_topic_service.SCOPE_MAX
+    with transactional(factory) as session:
+        pid = _seed(session)
+        if op == "update":
+            adr_topic_service.create(session, project_id=pid, name="А")
+
+        def write(value: str) -> None:
+            if op == "create":
+                adr_topic_service.create(
+                    session, project_id=pid, name=f"А{len(value)}", **{field: value}
+                )
+            else:
+                adr_topic_service.update(session, project_id=pid, name="А", **{field: value})
+
+        write("x" * limit)
+        stored = adr_topic_service.require(session, pid, "А" if op == "update" else f"А{limit}")
+        assert len(getattr(stored, field)) == limit
+        with pytest.raises(ValueError, match=f"{field} is longer than {limit}"):
+            write("y" * (limit + 1))
+
+
+def test_dangling_topic_id_resolves_to_no_topic(engine_with_schema: Engine) -> None:
+    """Полку удалили мимо сервиса: ADR остаётся с висячим topic_id, новая полка его не подхватывает."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_topic_service.create(session, project_id=pid, name="Старая")
+        adr_service.set_topic(session, project_id=pid, adr_id="ADR-005", topic="Старая")
+        session.delete(adr_topic_service.require(session, pid, "Старая"))
+        session.flush()
+        adr_topic_service.create(session, project_id=pid, name="Новая")
+        row = _adr(session, "ADR-005")
+        assert row.topic_id is not None
+        assert adr_service.topic_name(session, row) is None
+        assert adr_topic_service.adr_counts(session, pid) == {row.topic_id: 1}
+        # Снять висячую полку можно: старое имя в ревизии — None, а не чужая полка.
+        adr_service.set_topic(session, project_id=pid, adr_id="ADR-005", topic=None)
+        last = _adr_ops(session, "ADR-005")[-1]
+    assert (last["op"], last["old"], last["new"]) == ("set_topic", None, None)
+
+
+def test_set_topic_does_not_leak_foreign_old_name(engine_with_schema: Engine) -> None:
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        other = _second_project(session)
+        foreign = adr_topic_service.create(session, project_id=other, name="Чужая")
+        adr_topic_service.create(session, project_id=pid, name="Своя")
+        row = _adr(session, "ADR-005")
+        row.topic_id = foreign.row_id
+        session.flush()
+        adr_service.set_topic(session, project_id=pid, adr_id="ADR-005", topic="Своя")
+        last = _adr_ops(session, "ADR-005")[-1]
+    assert (last["old"], last["new"]) == (None, "Своя")

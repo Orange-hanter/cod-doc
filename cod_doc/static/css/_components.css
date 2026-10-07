@@ -3456,6 +3456,11 @@ details > summary { cursor: pointer; }
   font-size: 13px;
   white-space: normal;
 }
+/* На узком экране таблица прокручивается в .table-scroll, и absolute-пузырь
+   обрезается её правым краем. Скрипт в adr_list.html ставит его fixed по
+   координатам «i» при открытии и закрывает при прокрутке; без JS остаётся
+   absolute — обрезан, но доступен прокруткой таблицы. */
+.adr-shelf-bubble.is-pinned { width: auto; }
 
 /* ARG-010: выбор полки в шапке карточки. */
 .adr-topic-pick { display: inline-flex; align-items: center; gap: var(--space-1); }

@@ -110,6 +110,15 @@ def test_topic_tools_emit_activity_events(
                 .order_by(ActivityEventModel.row_id)
             ).scalars()
         )
+        actors = set(
+            s.execute(
+                select(ActivityEventModel.actor_kind, ActivityEventModel.actor_id).where(
+                    ActivityEventModel.kind.like("adr.topic%")
+                )
+            ).all()
+        )
+    # MCP пишет от агента: actor_kind выведен единственной точкой из author="agent".
+    assert actors == {("agent", "agent")}
     assert kinds == [
         "adr.topic_created",
         "adr.topic_updated",
@@ -129,3 +138,12 @@ def test_topic_tools_are_project_scoped(tools: dict[str, Callable[..., Any]]) ->
     with pytest.raises(ValueError, match="not in DB"):
         tools["adr_topic_list"](project="nope")
     assert [t["name"] for t in tools["adr_topic_list"](project="p")] == ["Хранение"]
+
+
+def test_set_topic_keeps_accepted_body_frozen(tools: dict[str, Callable[..., Any]]) -> None:
+    """Смена полки через MCP не размораживает тело принятого решения."""
+    tools["adr_topic_create"](project="p", name="Хранение")
+    tools["adr_set_topic"](project="p", adr_id="ADR-005", topic="Хранение")
+    with pytest.raises(ValueError, match=r"(?i)accepted|immutable|frozen"):
+        tools["adr_update"](project="p", adr_id="ADR-005", title="Другое")
+    assert tools["adr_get"](project="p", adr_id="ADR-005")["title"] == "PostgreSQL"

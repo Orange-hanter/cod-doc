@@ -111,6 +111,39 @@ def names_by_id(session: Session, project_id: int) -> dict[int, str]:
     }
 
 
+def name_by_id(session: Session, project_id: int, topic_id: int | None) -> str | None:
+    """Имя полки по ``row_id`` в пределах проекта; ``None`` — нет полки или она чужая.
+
+    FK у ``adr.topic_id`` нет (миграция 0046), поэтому резолв всегда скоупится
+    проектом: испорченная ссылка не раскрывает имя полки другого проекта.
+    """
+    if topic_id is None:
+        return None
+    name: str | None = session.execute(
+        select(ADRTopicModel.name).where(
+            ADRTopicModel.row_id == topic_id, ADRTopicModel.project_id == project_id
+        )
+    ).scalar_one_or_none()
+    return name
+
+
+def _positions(session: Session, project_id: int) -> dict[str, int]:
+    return {t.name: t.position for t in list_for_project(session, project_id)}
+
+
+def _shifted(before: dict[str, int], after: dict[str, int], *, skip: str) -> dict[str, list[int]]:
+    """Соседние полки, чья позиция сдвинулась: ``{name: [old, new]}``.
+
+    Перенумерация — тоже запись: без этого списка в ревизии ``move``/``delete``
+    видно только перемещённую полку, а сдвиг остальных теряется.
+    """
+    return {
+        name: [before[name], pos]
+        for name, pos in after.items()
+        if name != skip and name in before and before[name] != pos
+    }
+
+
 def names(session: Session, project_id: int) -> list[str]:
     """Имена полок в порядке показа — для выпадающих списков."""
     return list(
@@ -201,7 +234,10 @@ def create(
     author: str = "human",
     reason: str | None = None,
 ) -> ADRTopicModel:
-    """Завести полку. Встаёт в конец: перед «Без темы», которая всегда последняя."""
+    """Завести полку в конец списка (``position`` = max + 1).
+
+    «Без темы» — не строка в ``adr_topic``: веб-слой рисует её после всех полок.
+    """
     clean = _clean_name(name)
     if get(session, project_id, clean) is not None:
         raise ADRTopicExistsError(f"ADR topic {clean!r} already exists")
@@ -259,9 +295,10 @@ def update(
         if value is None:
             continue
         clean = _clean_scope(field, value)
-        if clean != getattr(topic, field):
+        previous = getattr(topic, field)
+        if clean != previous:
             setattr(topic, field, clean)
-            changed[field] = {"changed": True}
+            changed[field] = {"old": previous, "new": clean}
     if not changed:
         return topic
     topic.last_updated = datetime.now(UTC)
@@ -303,6 +340,7 @@ def move(
     new = min(position, len(topics) - 1)
     if new == old and topic.position == old:
         return topic
+    before = {t.name: t.position for t in topics}
     topics.pop(old)
     topics.insert(new, topic)
     for i, t in enumerate(topics):
@@ -316,7 +354,11 @@ def move(
         op="move",
         event="adr.topic_moved",
         author=author,
-        diff_fields={"old": old, "new": new},
+        diff_fields={
+            "old": old,
+            "new": new,
+            "shifted": _shifted(before, {t.name: t.position for t in topics}, skip=topic.name),
+        },
         summary=f"ADR topic «{topic.name}» moved {old} → {new}",
         reason=reason,
     )
@@ -356,6 +398,13 @@ def delete(
             author=author,
             reason=reason or f"topic «{name}» deleted",
         )
+    before = _positions(session, project_id)
+    session.delete(topic)
+    session.flush()
+    # Порядок без дыр: оставшиеся полки — 0..n-1.
+    for i, t in enumerate(list_for_project(session, project_id)):
+        t.position = i
+    session.flush()
     _write(
         session,
         project_id,
@@ -363,14 +412,11 @@ def delete(
         op="delete",
         event="adr.topic_deleted",
         author=author,
-        diff_fields={"unshelved": adr_ids},
-        summary=f"ADR topic «{name}» deleted, {len(adr_ids)} ADR(s) to «no topic»",
+        diff_fields={
+            "unshelved": adr_ids,
+            "shifted": _shifted(before, _positions(session, project_id), skip=topic.name),
+        },
+        summary=f"ADR topic «{topic.name}» deleted, {len(adr_ids)} ADR(s) to «no topic»",
         reason=reason,
     )
-    session.delete(topic)
-    session.flush()
-    # Порядок без дыр: оставшиеся полки — 0..n-1.
-    for i, t in enumerate(list_for_project(session, project_id)):
-        t.position = i
-    session.flush()
     return len(adr_ids)

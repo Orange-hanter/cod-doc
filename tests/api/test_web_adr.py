@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
@@ -985,7 +986,9 @@ def test_shelf_about_shows_includes(adr_client) -> None:  # type: ignore[no-unty
     _shelf(client, entry, action="create", name="Storage", includes="SQLite, PostgreSQL")
     client.post(f"/p/{entry.name}/adr/ADR-002/topic", data={"topic": "Storage"})
     r = client.get(f"/p/{entry.name}/adr").text
-    assert "<b>In.</b> SQLite, PostgreSQL" in r
+    about = re.search(r'<details class="adr-shelf-about">(.*?)</details>', r, re.S)
+    assert about is not None
+    assert "SQLite, PostgreSQL" in about.group(1)
 
 
 def test_shelf_text_is_html_escaped(adr_client) -> None:  # type: ignore[no-untyped-def]
