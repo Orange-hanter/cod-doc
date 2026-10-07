@@ -402,7 +402,7 @@ def import_legacy_tasks(
             priority_raw = raw.get("priority", 3)
             try:
                 priority = _LEGACY_PRIORITY_MAP.get(int(priority_raw), Priority.MEDIUM)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 priority = Priority.MEDIUM
             legacy_status = str(raw.get("status", "pending")).strip().lower()
             status = _LEGACY_STATUS_MAP.get(legacy_status, TaskStatus.PENDING)

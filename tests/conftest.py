@@ -8,6 +8,7 @@ tests that intentionally create an empty config.
 from __future__ import annotations
 
 import os
+import zlib
 from pathlib import Path
 
 import pytest
@@ -88,3 +89,35 @@ def isolated_api_runtime_state() -> None:
     dispose_all_engines()
     webhook_registry.clear()
     set_config(Config())
+
+
+#: `COD_DOC_TEST_SHARD=<i>/<n>` — прогнать только i-ю из n долей набора (1-based).
+#: Так CI раскладывает pytest на несколько раннеров: на четырёх ядрах одного
+#: раннера прогон шёл ~150 с и был всем критическим путём.
+_SHARD_ENV = "COD_DOC_TEST_SHARD"
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Оставить в прогоне только файлы своей доли, остальные — deselected.
+
+    Делим по файлам, а не по тестам — по той же причине, что `--dist loadfile`:
+    тесты одного файла делят внутрипроцессные глобалы и должны идти в одном
+    процессе. Доля файла — crc32 его пути: стабильна между прогонами и не
+    перетасовывает раскладку, когда добавляется новый файл. Перекос долей на
+    замере — 14% от идеала при трёх долях.
+    """
+    spec = os.environ.get(_SHARD_ENV, "").strip()
+    if not spec:
+        return
+    index, _, total = spec.partition("/")
+    shard, shards = int(index), int(total)
+    if not 1 <= shard <= shards:
+        raise pytest.UsageError(f"{_SHARD_ENV}={spec}: ожидалось <i>/<n> с 1 ≤ i ≤ n")
+    keep: list[pytest.Item] = []
+    drop: list[pytest.Item] = []
+    for item in items:
+        path = item.nodeid.split("::", 1)[0]
+        (keep if zlib.crc32(path.encode()) % shards == shard - 1 else drop).append(item)
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+        items[:] = keep

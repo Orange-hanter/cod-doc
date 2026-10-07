@@ -1,11 +1,14 @@
 """Тесты cod_doc.core.context"""
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from cod_doc.core.context import get_context, parse_ref
 from cod_doc.core.hash_calc import make_ref
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -84,3 +87,16 @@ def test_get_context_l2_dependencies(repo: Path) -> None:
     result = get_context(outer_ref, repo, depth="L2")
     assert result["status"] == "VALID"
     assert len(result["metadata"]["dependencies"]) == 1
+
+
+def test_get_context_hashless_ref_is_valid_after_edit(repo: Path) -> None:
+    """DEBT-001: ссылку без хэша сверять не с чем — содержимое отдаётся."""
+    ref = "`📁 /specs/auth.md | 🗃️ doc:specs_auth_md`"
+    assert parse_ref(ref)["hash"] is None
+    (repo / "specs" / "auth.md").write_text("# Auth\nEdited.", encoding="utf-8")
+
+    result = get_context(ref, repo)
+
+    assert result["status"] == "VALID"
+    assert result["metadata"]["vec_id"] == "doc:specs_auth_md"
+    assert "Edited." in result["content"]

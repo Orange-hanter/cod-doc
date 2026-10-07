@@ -7,7 +7,7 @@
 
 ## Что понадобится
 
-- Python 3.13+ с установленным `cod-doc`
+- Python 3.14+ с установленным `cod-doc`
 - Любой проект с исходным кодом (мы создадим демо-проект)
 - Терминал
 
@@ -188,7 +188,7 @@ CLI-утилита для получения прогноза погоды из 
 - Форматы вывода: таблица, JSON, compact
 
 ## Стек
-- Python 3.13+
+- Python 3.14+
 - Click (CLI framework)
 - httpx (HTTP client)
 - OpenWeatherMap API
@@ -351,7 +351,7 @@ await session.call_tool("search_docs", {
 
 ### VS Code + Copilot Chat
 1. Добавить MCP-сервер в `.vscode/mcp.json`
-2. Copilot получает доступ к 23 инструмента cod-doc
+2. Copilot получает доступ к инструментам cod-doc
 3. Можно спросить: "покажи статус проекта", "какие задачи не закрыты", "обнови хэши"
 
 ### Claude Desktop / любой MCP-клиент

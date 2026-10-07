@@ -236,6 +236,13 @@
   _describe -t cod-doc-adrs 'ADR' rows
 }
 
+(( $+functions[_cod_doc_adr_topics] )) || _cod_doc_adr_topics() {
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "@@SQL:adr_topics@@")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-adr-topics 'ADR topic' rows
+}
+
 (( $+functions[_cod_doc_adrs_other] )) || _cod_doc_adrs_other() {
   # `adr supersede НОВЫЙ СТАРЫЙ` берёт два РАЗНЫХ идентификатора. Повтор
   # первого CLI отвергнет, так что предлагать его — вредный совет.

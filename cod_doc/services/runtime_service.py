@@ -52,7 +52,7 @@ __all__ = [
 ]
 
 #: Дефолтная версия Python для сборки рантайма (переопределяется COD_DOC_PYTHON).
-DEFAULT_PYTHON_VERSION = "3.13"
+DEFAULT_PYTHON_VERSION = "3.14"
 
 #: Потолок ожидания внешнего бинаря. git fetch по холодной сети бывает долгим,
 #: но висеть вечно под launchd команда не должна.
@@ -302,7 +302,7 @@ def _build(repo: Path, sha: str, *, src: Path, staged: Path, python_version: str
 
     shutil.rmtree(staged, ignore_errors=True)
     _run(["uv", "venv", "--python", python_version, "--relocatable", str(staged), "--quiet"])
-    _run(["uv", "pip", "install", "--python", str(staged / "bin" / "python"), str(src), "--quiet"])
+    _install_into(staged / "bin" / "python", src)
 
     try:
         probe = _run([str(staged / "bin" / "python"), "-P", "-c", _VERSION_PROBE])
@@ -319,6 +319,27 @@ def _build(repo: Path, sha: str, *, src: Path, staged: Path, python_version: str
             f"собранный рантайм не запускается: console-script cod-doc падает ({exc})"
         ) from exc
     return version
+
+
+def _install_into(python: Path, src: Path) -> None:
+    """Поставить ревизию в venv: зависимости из её ``uv.lock``, затем сам пакет.
+
+    Без лока ``uv pip install <src>`` берёт свежайшее из того, что разрешают
+    нижние границы pyproject, и демоны работают на версиях, которых CI не
+    видел. Лок читается из собираемой ревизии, а не из чекаута: ``--ref``
+    обязан получить ровно её окружение. Экспорт идёт с хэшами, пакет — с
+    ``--no-deps``, чтобы резолвер не пересчитал уже поставленное. Ревизия
+    старше лока (``update --ref <старый sha>``) ставится по-старому.
+    """
+    py = str(python)
+    if not (src / "uv.lock").is_file():
+        _run(["uv", "pip", "install", "--python", py, str(src), "--quiet"])
+        return
+    reqs = src.parent / "requirements.lock.txt"
+    export = ["uv", "export", "--project", str(src), "--frozen", "--no-dev", "--no-emit-project"]
+    _run([*export, "--quiet", "--output-file", str(reqs)])
+    _run(["uv", "pip", "install", "--python", py, "-r", str(reqs), "--quiet"])
+    _run(["uv", "pip", "install", "--python", py, "--no-deps", str(src), "--quiet"])
 
 
 def drop_build_src(src: Path) -> None:

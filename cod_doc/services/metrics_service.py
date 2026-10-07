@@ -92,7 +92,7 @@ def _derive_state_durations(
         diff_raw = r.diff or ""
         try:
             payload = json.loads(diff_raw) if diff_raw.startswith("{") else None
-        except (ValueError, json.JSONDecodeError):
+        except ValueError, json.JSONDecodeError:
             payload = None
         if not isinstance(payload, dict):
             continue

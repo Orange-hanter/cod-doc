@@ -1,8 +1,8 @@
 """PCA-951 / AGT-001 / RFC 25: MCP server profiles — control which tools are exposed.
 
-Four profiles (counts validated by tests/test_server_profiles.py::
-test_profile_counts_match_documented_values — keep them in sync with
-AGENTS.md §5.9, server.py --profile help, docs/mcp-integration.md):
+Four profiles. The tool counts below are derived, not hand-kept (DEBT-001):
+``python -m cod_doc.mcp.profile_counts --write`` rewrites them, and the
+pre-commit hook runs it through ``scripts/regen.sh``:
 
 - ``agent`` (RFC 25 §3.2/§3.5, **default**) — 6 curator tools for the
   default AI agent, whose role is documentation availability and search,
@@ -25,11 +25,11 @@ AGENTS.md §5.9, server.py --profile help, docs/mcp-integration.md):
   rewrites whatever it happens to find.
 - ``minimal`` — 21-tool cold-start surface for non-agent integrations
   that still want a curated subset of CRUD tools.
-- ``standard`` — 169-tool DB-backed surface; drops only the remaining
+- ``standard`` — 175-tool DB-backed surface; drops only the remaining
   legacy YAML-backed agent tools (run_agent_once, get_agent_context, …).
   The legacy YAML CRUD tools were removed in STB-002 (2026-06-08) once
   the DB became the source of truth.
-- ``full`` — all 173 tools the server registers, including the remaining
+- ``full`` — all 179 tools the server registers, including the remaining
   legacy agent tools. For admin / migration / debugging sessions.
 
 Active profile is chosen at server start via CLI ``--profile`` or env

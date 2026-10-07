@@ -91,6 +91,17 @@ COMPLETION_QUERIES: Final[dict[str, str]] = {
          order by a.adr_id
          limit {QUERY_LIMIT};
     """,
+    # Полки ADR — в заданном человеком порядке. Имя полки — значение, и
+    # двоеточие в нём экранируется: `_describe` режет по первому неэкранированному.
+    "adr_topics": f"""
+        select replace(t.name, ':', '\\:') || ':' ||
+               replace(replace(substr(t.includes, 1, 60), ':', ' -'), char(10), ' ')
+          from adr_topic t
+          join project p on p.row_id = t.project_id
+         where 1=1 {PROJECT_FILTER}
+         order by p.slug, t.position
+         limit {QUERY_LIMIT};
+    """,
     # У user_story НЕТ колонки title — человекочитаемое поле зовётся narrative.
     "stories": f"""
         select s.story_id || ':' || s.status || ' · ' ||
@@ -215,6 +226,11 @@ PATH_SOURCES: Final[dict[tuple[str, str], str]] = {
     # ребро, add-dep ставит новое, так что источник remove-dep тут вреден.
     ("task add-dep", "blocker_id"): f"{_P}_task_blocker_candidates",
     ("adr supersede", "superseded_adr_id"): f"{_P}_adrs_other",
+    # Полка — существующая; `adr topic create NAME` вводит новую и не дополняется.
+    ("adr set-topic", "topic"): f"{_P}_adr_topics",
+    ("adr topic update", "name"): f"{_P}_adr_topics",
+    ("adr topic move", "name"): f"{_P}_adr_topics",
+    ("adr topic delete", "name"): f"{_P}_adr_topics",
     # `plan section update|move|rm PLAN_SCOPE LETTER`: буква — существующая
     # секция, сужаем по позиционному плану. Дест `letter` не в PARAM_SOURCES:
     # у `plan section create` та же буква вводит новую секцию.

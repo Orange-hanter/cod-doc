@@ -14,6 +14,7 @@ and CLI in ``cod_doc.cli.adr``):
 - ``link_task(adr_id, task_id, relation='implements')``.
 - ``relate(from_adr_id, to_adr_id, kind)`` / ``unrelate(...)`` — связи
   «уточняет» (``amends``) и «опирается на» (``depends_on``), ARG-001.
+- ``set_topic(adr_id, topic)`` — положить решение на полку (ARG-008).
 - ``graph(project_id)`` — full supersede DAG + status-by-node payload.
 - ``render_markdown(...)`` — project one ADR through the default Jinja
   template into a markdown string (for export / git-visibility).
@@ -40,6 +41,7 @@ from cod_doc.infra.models import (
     ADRRelationModel,
     ADRSupersedeModel,
     ADRTaskModel,
+    ADRTopicModel,
     DocumentModel,
     LinkModel,
     ProjectModel,
@@ -47,7 +49,7 @@ from cod_doc.infra.models import (
     TaskModel,
 )
 from cod_doc.infra.models.adrs import ADR_RELATION_KINDS
-from cod_doc.services import activity_service, search_service
+from cod_doc.services import activity_service, adr_topic_service, search_service
 from cod_doc.services import revision_service as rev
 
 if TYPE_CHECKING:
@@ -692,6 +694,67 @@ def _has_path(session: Session, *, start_id: int, target_id: int) -> bool:
     return False
 
 
+def set_topic(
+    session: Session,
+    *,
+    project_id: int,
+    adr_id: str,
+    topic: str | None,
+    author: str = "human",
+    reason: str | None = None,
+) -> ADRModel:
+    """ARG-008: положить решение на полку; ``topic=None`` — снять в «Без темы».
+
+    Работает в любом статусе, включая accepted и терминальные: полка — место,
+    где решение лежит, а не его содержание, и заморозка тела её не касается
+    (RFC 34 §3.4). Полка должна существовать — завести её здесь нельзя, это
+    решение человека (``adr_topic_service.create``). Без изменений — no-op.
+    """
+    row = _require(session, project_id, adr_id)
+    new = adr_topic_service.require(session, project_id, topic) if topic is not None else None
+    new_id = new.row_id if new is not None else None
+    if row.topic_id == new_id:
+        return row
+    old = session.get(ADRTopicModel, row.topic_id) if row.topic_id is not None else None
+    old_name = old.name if old is not None else None
+    row.topic_id = new_id
+    row.last_updated = datetime.now(UTC)
+    session.flush()
+    rev.write(
+        session,
+        project_id=project_id,
+        entity_kind=EntityKind.ADR,
+        entity_id=row.row_id,
+        author=author,
+        diff=_diff("set_topic", adr_id=adr_id, old=old_name, new=topic),
+        reason=reason or "set_topic",
+    )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "adr.topic_set",
+        author,
+        scope_kind="adr",
+        scope_id=adr_id,
+        payload={"old": old_name, "new": topic},
+        summary=f"ADR {adr_id} → {topic or 'no topic'}",
+    )
+    return row
+
+
+def topic_name(session: Session, adr: ADRModel) -> str | None:
+    if adr.topic_id is None:
+        return None
+    # Скоуп по проекту решения: FK у topic_id нет, и чужая полка не должна
+    # всплыть даже при испорченной ссылке.
+    name: str | None = session.execute(
+        select(ADRTopicModel.name).where(
+            ADRTopicModel.row_id == adr.topic_id, ADRTopicModel.project_id == adr.project_id
+        )
+    ).scalar_one_or_none()
+    return name
+
+
 def link_task(
     session: Session,
     *,
@@ -1119,6 +1182,7 @@ def adr_to_dict(
         "alternatives": adr.alternatives,
         "consequences": adr.consequences,
         "author": adr.author,
+        "topic": topic_name(session, adr),
         "created": adr.created.isoformat() if adr.created else None,
         "last_updated": adr.last_updated.isoformat() if adr.last_updated else None,
     }

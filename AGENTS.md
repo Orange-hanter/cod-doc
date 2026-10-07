@@ -6,8 +6,8 @@
 
 > ⚠️ **RFC 25 (2026-09-15): дефолтный агент — куратор документации, не
 > исполнитель задач.** Скилл `orchestrator` запрещает `agent_pick` /
-> `task_checkout` по feature/bug/refactor. Поверхность `agent` — 6
-> curator-тулов (`agent_capabilities`, `curator_next`, `ctx_search`,
+> `task_checkout` по feature/bug/refactor. Поверхность `agent` —
+> curator-тулы (`agent_capabilities`, `curator_next`, `ctx_search`,
 > `ctx_drift`, `context_get`, `agent_report`); `agent_capabilities()`
 > отдаёт `role: "doc-curator"` и `forbidden: ["agent_pick",
 > "task_checkout", "task_complete"]`; на `minimal`/`standard`/`full` тот
@@ -20,7 +20,7 @@
 > зовёт человек или coding-агент.
 > Cycle-5 bodies: `cod_doc/services/agent_service.py`, обёртки
 > `cod_doc/mcp/tools/agent_tools.py`; doc card — `cod_doc/services/curator_service.py`
-> + `cod_doc/mcp/tools/curator_tools.py`. Счётчики 6/21/169/173.
+> + `cod_doc/mcp/tools/curator_tools.py`. Счётчики профилей — `python -m cod_doc.mcp.profile_counts`.
 
 ## 1. Цель проекта
 
@@ -65,7 +65,7 @@ tests/             # pytest suites: services/ + mcp/ + api/ + agent/ + …
 ## 4. Dev setup
 
 ```bash
-pip install -e .[dev]
+uv sync --extra dev             # the exact CI environment from uv.lock
 alembic upgrade head            # init/upgrade local SQLite schema
 pytest tests/ -n auto --dist loadfile -v --tb=short   # run the suite
 ```
@@ -78,8 +78,11 @@ pytest tests/ -n auto --dist loadfile -v --tb=short   # run the suite
 
 ## 5. Core engineering rules
 
-1. **Hash-verified docs.** Любое изменение `doc.body` → пересчёт sha →
-   обновление `MASTER.md` секции с хэшами (через `update_master_hashes`).
+1. **Drift-verified docs.** Любое изменение `doc.body` на диске →
+   `cod-doc doc import`; устаревание ловит `cod-doc doc drift`. Гибридные
+   ссылки в `MASTER.md` хэшей не хранят (`📁 /path | 🗃️ doc:key`, DEBT-001):
+   хранимый `🔑 sha:` дублировал дрейф БД и требовал правки `MASTER.md` при
+   каждой правке документа. Формат с хэшем по-прежнему поддерживается.
 2. **Snowball Protocol.** Грузить контекст по уровням L0/L1/L2 (см.
    `docs/system/capabilities/context-retrieval.md`).
 3. **Атомарный checkout.** `todo → in_progress` только через
@@ -119,11 +122,11 @@ pytest tests/ -n auto --dist loadfile -v --tb=short   # run the suite
 9. **MCP server profiles** (PCA-951, cycle-4 default-switch). Запуск:
    ```
    cod-doc-mcp                                # agent (default)
-   cod-doc-mcp --profile minimal              # 21-tool cold-start
-   cod-doc-mcp --profile full                 # все 173, включая legacy
+   cod-doc-mcp --profile minimal              # cold-start, курированный CRUD
+   cod-doc-mcp --profile full                 # все тулы, включая legacy
    COD_DOC_PROFILE=full cod-doc-mcp           # через env
    ```
-   - ``agent`` — **default**: 6 curator-тулов (RFC 25 §3.2/§3.5,
+   - ``agent`` — **default**: curator-тулы (RFC 25 §3.2/§3.5,
      CUR-008 + CUR-016): `agent_capabilities`, `curator_next`,
      `ctx_search`, `ctx_drift`, `context_get`, `agent_report`. Роль —
      доступность документации и поиск, не исполнение продуктовых задач.
@@ -133,13 +136,13 @@ pytest tests/ -n auto --dist loadfile -v --tb=short   # run the suite
      (`agent_pick`…`agent_release`) остались зарегистрированы, но видны
      только на `standard`/`full` — их зовёт человек или coding-агент.
      Актуальный allowlist — `cod_doc/mcp/profiles.py::AGENT_TOOLS`.
-   - ``minimal`` — 21-tool cold-start surface для свежих интеграций.
-   - ``standard`` — 169 DB-backed тулов без legacy YAML.
-   - ``full`` — все 173 тулов, включая legacy. Только для админ-сценариев
+   - ``minimal`` — cold-start surface для свежих интеграций.
+   - ``standard`` — DB-backed тулы без legacy YAML.
+   - ``full`` — все тулы, включая legacy. Только для админ-сценариев
      и обратной совместимости с до-cycle-3 интеграциями.
-   Counts зафиксированы тестом
-   `tests/test_server_profiles.py::test_profile_counts_match_documented_values` —
-   при добавлении/удалении тула обнови числа там и здесь.
+   Числа тулов — `python -m cod_doc.mcp.profile_counts` (DEBT-001); в прозу их не пишут, кроме
+   докстринга `profiles.py` и `docs/mcp-integration.md`, где их пересчитывает
+   `scripts/regen.sh` из pre-commit.
    См. `cod_doc/mcp/profiles.py`.
 10. **Презентация не пишет ORM** (RFC 26 §5.1, ADO-208). `cod_doc/mcp/`,
     `cod_doc/cli/`, `cod_doc/api/` пишут только через `services/`: ни

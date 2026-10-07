@@ -1,7 +1,7 @@
 {
   "name": "cod-doc",
   "description": "Документация и задачи проекта живут в БД cod-doc, markdown — проекция. Плагин даёт скиллы task-flow/doc-sync, команды статуса/задач/дрейфа, агента-разведчика и напоминание о рассинхроне после правки markdown. MCP-сервер ставится отдельно — общий HTTP-демон, см. deploy/launchd/.",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "author": {
     "name": "Daniil Akhramiuk"
   },

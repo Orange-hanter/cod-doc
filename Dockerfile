@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 LABEL maintainer="COD-DOC" \
       description="Context Orchestrator for Documentation — autonomous agent"
@@ -11,18 +11,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# ── 2. pip upgrade (separate layer — almost never invalidated) ────────────────
-RUN pip install --no-cache-dir --upgrade pip
+# ── 2. uv (pinned binary from the official image; Dependabot bumps the tag) ──
+COPY --from=ghcr.io/astral-sh/uv:0.12.23 /uv /usr/local/bin/uv
 
-# ── 3. Python dependencies (cached until pyproject.toml changes) ─────────────
-#    Extract deps via stdlib tomllib (Python 3.11+) — no stub needed.
-COPY pyproject.toml ./
-RUN python -c "import tomllib; deps=tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']; open('/tmp/reqs.txt','w').write('\n'.join(deps))" \
-    && pip install --no-cache-dir -r /tmp/reqs.txt \
+# ── 3. Python dependencies (cached until pyproject.toml / uv.lock change) ────
+#    Ровно версии из uv.lock — те же, на которых зелёный CI. Раньше здесь
+#    ставились нижние границы из pyproject через pip, и опубликованный образ
+#    получал то, что свежее всего в день сборки, а не то, что проверено.
+#    `--frozen` падает на рассинхроне лока с pyproject, а не пересчитывает;
+#    экспорт идёт с хэшами, так что подмена пакета в индексе роняет сборку.
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --no-dev --no-emit-project --quiet -o /tmp/reqs.txt \
+    && uv pip install --system --no-cache -r /tmp/reqs.txt \
     && rm /tmp/reqs.txt
 
 # ── 4. Application source (invalidated on every code change) ─────────────────
-#    pip install --no-deps registers entry-points without re-downloading deps.
+#    --no-deps registers entry-points without re-downloading deps.
 COPY cod_doc/ ./cod_doc/
 COPY alembic.ini ./
 COPY entrypoint.sh ./
@@ -36,7 +40,7 @@ RUN chmod +x ./entrypoint.sh \
     && if [ -n "$COD_DOC_VERSION" ]; then \
          export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_COD_DOC="$COD_DOC_VERSION"; \
        fi \
-    && pip install --no-cache-dir --no-deps .
+    && uv pip install --system --no-cache --no-deps .
 
 # ── 5. Runtime directories & env defaults ────────────────────────────────────
 RUN mkdir -p /data/cod-doc /projects

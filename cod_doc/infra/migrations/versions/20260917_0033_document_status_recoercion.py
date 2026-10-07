@@ -64,7 +64,7 @@ def _authored_status(frontmatter_json: object) -> str | None:
     if isinstance(decoded, (str, bytes)):
         try:
             decoded = json.loads(decoded)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return None
     if not isinstance(decoded, dict):
         return None

@@ -79,7 +79,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             try:
                 project_id = require_project_id(session, project)
-            except (LookupError, ValueError):
+            except LookupError, ValueError:
                 return None
 
             batch = plan_reads.ready_batch_for_project(session, project_id, local_only=local_only)

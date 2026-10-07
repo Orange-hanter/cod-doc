@@ -921,7 +921,7 @@ def _master_stale(session: Session, project_id: int) -> bool:
         report = projection_service.detect_drift(
             session, master_id, root_path=Path(project.root_path)
         )
-    except (ValueError, OSError):
+    except ValueError, OSError:
         return False
     return report.status in {
         projection_service.DriftStatus.STALE_EXPORT,

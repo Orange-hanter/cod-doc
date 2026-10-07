@@ -50,6 +50,9 @@ class ADRModel(Base):
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
+    # ARG-008: полка ADR. Внешнего ключа на уровне БД нет намеренно (миграция
+    # 0046): «Без темы» при удалении полки ставит adr_topic_service.delete.
+    topic_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     diagrams: Mapped[list[ADRDiagramModel]] = relationship(
         back_populates="adr",
@@ -138,6 +141,39 @@ class ADRRelationModel(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class ADRTopicModel(Base):
+    """ARG-008 (RFC 34 §3.4): полка реестра ADR — тема, о чём решение.
+
+    ``includes`` / ``excludes`` — состав полки: агент выбирает полку по ним,
+    человек видит их под «i» в списке. ``position`` — порядок полок в списке.
+    """
+
+    __tablename__ = "adr_topic"
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_adr_topic_name"),
+        Index("ix_adr_topic_project_position", "project_id", "position"),
+        # FK у ``adr.topic_id`` нет (миграция 0046); AUTOINCREMENT не даёт
+        # row_id удалённой полки достаться новой, так что висячая ссылка
+        # не укажет на чужую полку.
+        {"sqlite_autoincrement": True},
+    )
+
+    row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    includes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    excludes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    last_updated: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
 
 
 class ADRTaskModel(Base):

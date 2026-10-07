@@ -6,14 +6,29 @@ on:
   pull_request:
     branches: [main]
 
+# Отменяем только устаревшие прогоны PR. Прогон main доводим до конца: два
+# мержа подряд иначе гасили первый, и коммит на main оставался без вердикта
+# CI вовсе.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 # `fetch-depth: 0` во всех checkout-шагах — не перестраховка. Версия пакета
 # выводится из git через setuptools-scm, а `actions/checkout` по умолчанию
 # клонирует глубиной 1 и без тегов: сборка называла бы себя `0.1.dev<N>`
 # вместо ревизии, и `cod-doc --version` в образе врал бы.
+#
+# Окружение — `uv sync --frozen` из закоммиченного `uv.lock`, а не
+# `pip install .[dev]`. Без лока pip ставил свежайшие версии всего, что
+# разрешают нижние границы в pyproject, и CI расходился с локальным venv сам
+# собой (ADO-070: 10×RUF036 приехали правилом, которого не было локально).
+# `--frozen` падает, если лок не соответствует pyproject, а не пересчитывает
+# его молча. Обновление лока — PR от Dependabot или `uv lock --upgrade`.
+# `activate-environment` кладёт `.venv/bin` в PATH следующих шагов, поэтому
+# команды ниже зовутся как есть; тот же `.venv/bin/alembic` ищут тесты.
 
 jobs:
 
@@ -22,17 +37,14 @@ jobs:
     name: Lint (ruff)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
-          python-version: "3.13"
-      # ADO-070: ставим ruff из dev-экстры проекта, а не голым `pip install ruff`.
-      # Иначе CI берёт свежайшую версию, локальный venv — ту, что стояла, и гейт
-      # расходится сам собой: 10×RUF036 приехали в CI правилом, которого нет
-      # в локальной версии.
-      - run: pip install .[dev]
+          python-version: "3.14"
+          activate-environment: true
+      - run: uv sync --frozen --extra dev
       - run: ruff check cod_doc/ tests/
       - run: ruff format --check cod_doc/ tests/
 
@@ -41,34 +53,45 @@ jobs:
     name: Typecheck (mypy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
-          python-version: "3.13"
-      - run: pip install .[dev]
+          python-version: "3.14"
+          activate-environment: true
+      - run: uv sync --frozen --extra dev
       - run: mypy cod_doc/
 
-  # ── Tests (matrix across supported Python versions) ────────────────────────
-  test:
-    name: "Test py${{ matrix.python }}"
+  # ── Tests (matrix: Python version × shard) ────────────────────────────────
+  # Набор разложен по файлам на три раннера (`COD_DOC_TEST_SHARD`, хук в
+  # tests/conftest.py): на одном четырёхъядерном раннере pytest шёл ~150 с и
+  # был всем критическим путём прогона, остальные джобы укладываются в ~50 с.
+  # Обязательная проверка в защите main — агрегат `test` ниже, а не доли:
+  # число долей можно менять, не трогая настройки репозитория.
+  test-shard:
+    name: "Test py${{ matrix.python }} (${{ matrix.shard }}/3)"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        shard: [1, 2, 3]
         # ADO-097: одна поддерживаемая версия — 3.11/3.12 сняты с поддержки
         # 2026-09-07; две джобы по ~14 минут уходили на версии, которые
-        # `requires-python = ">=3.13"` больше не допускает.
-        python: ["3.13"]
+        # тогдашний `requires-python = ">=3.13"` больше не допускал.
+        # 2026-10-05 — переезд на 3.14 целиком (CI, образ, рантайм `cod-doc
+        # update`). Меняешь версию — правь и имя агрегата `test` ниже, и
+        # обязательную проверку `Test py<версия>` в защите main.
+        python: ["3.14"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install .[dev]
+          activate-environment: true
+      - run: uv sync --frozen --extra dev
       # ADO-070: 25, а не 10. Полный прогон занимал ~11 минут, и джоба
       # убивалась таймаутом на 64% тестов — pytest даже не успевал напечатать
       # сводку с трейсбеками. Раньше это было незаметно: джоба падала на
@@ -81,11 +104,33 @@ jobs:
       # сохраняет ту же последовательность вызовов, что и обычный прогон.
       # Разница по времени с `load` — в пределах 8%, платить за неё
       # чувствительностью к порядку незачем.
-      - run: pytest tests/ -n auto --dist loadfile -v --tb=short --timeout=120
+      #
+      # `-q`, а не `-v`: `-v` печатал ~3800 строк PASSED, среди которых
+      # приходилось искать упавший тест. Трейсбеки и сводка FAILED от `-q`
+      # не зависят.
+      - run: pytest tests/ -n auto --dist loadfile -q --tb=short --timeout=120
         timeout-minutes: 25
         env:
           COD_DOC_API_KEY: ${{ secrets.COD_DOC_TEST_API_KEY || 'sk-test-placeholder' }}
           COD_DOC_AUTO_COMMIT: "false"
+          COD_DOC_TEST_SHARD: "${{ matrix.shard }}/3"
+
+  # Агрегат долей — его имя `Test py3.14` и стоит в обязательных проверках.
+  # `if: always()`: без него при упавшей доле агрегат был бы skipped, а
+  # пропущенная обязательная проверка мерж не блокирует. Меняешь версию
+  # Python в матрице — правь и имя здесь, и контекст в защите main.
+  test:
+    name: "Test py3.14"
+    runs-on: ubuntu-latest
+    needs: test-shard
+    if: always()
+    steps:
+      - name: Все доли зелёные
+        env:
+          RESULT: ${{ needs.test-shard.result }}
+        run: |
+          echo "test-shard: $RESULT"
+          [ "$RESULT" = "success" ]
 
   # ── Web routes drift (advisory, ADO-012) ─────────────────────────────────
   web-routes:
@@ -93,13 +138,14 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true # advisory — дрейф роутов не блокирует CI (ADO-011/012)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
-          python-version: "3.13"
-      - run: pip install .
+          python-version: "3.14"
+          activate-environment: true
+      - run: uv sync --frozen
       # Аудит читает capabilities/web-frontend.md §3 с диска и сравнивает с
       # живыми роутами из routers; БД/импорт не нужны, только реестр проекта.
       - run: cod-doc project add . --name cod-doc
@@ -110,12 +156,13 @@ jobs:
     name: Zsh completion (drift + syntax)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
+          activate-environment: true
       # Ставим zsh ЯВНО: тест синтаксиса помечен skipif(which("zsh") is None),
       # и на runner'е без zsh он молча пропустится — то есть гейт, ради
       # которого он написан, тихо исчезнет. Отдельная job, чтобы не вешать
@@ -124,23 +171,25 @@ jobs:
       # без CLI-бинарника честно уходит в тихий `return 1` — тест бы упал не
       # на регрессии, а на составе образа.
       - run: sudo apt-get update && sudo apt-get install -y zsh sqlite3
-      - run: pip install '.[dev]'
+      - run: uv sync --frozen --extra dev
       - run: python -m cod_doc.cli.completion --check
       - run: zsh -n cod_doc/cli/completion/_cod-doc
       - run: zsh -n cod_doc/cli/completion/prelude.zsh
       - run: pytest tests/cli/ -q -k zsh_completion --tb=short
 
   # ── Docker Build (smoke test) ─────────────────────────────────────────────
+  # Без `needs:`: образ собирается из исходников и не зависит от вердикта
+  # lint/typecheck/test. С зависимостью его ~75 секунд прибавлялись к хвосту
+  # каждого прогона; блокирует мерж он и так — как обязательная проверка.
   docker:
     name: Docker build
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # теги нужны setuptools-scm, см. комментарий выше
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
           context: .
           push: false

@@ -1,11 +1,14 @@
 """Тесты cod_doc.core.project"""
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from cod_doc.config import ProjectEntry
 from cod_doc.core.project import Project, Task, TaskStatus
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture

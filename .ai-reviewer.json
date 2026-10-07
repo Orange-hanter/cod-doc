@@ -1,0 +1,17 @@
+{
+  "name": "cod-doc",
+  "repositoryUri": "https://github.com/Orange-hanter/cod-doc",
+  "repoRulesFile": "AGENTS.md",
+
+  "prompts": {
+    "aggregatorExtra": "Решения, объявленные в правилах проекта, находками не являются ни в какой severity: русский текст в докстрингах, комментариях и сообщениях (RUF001-003 и E501 отключены намеренно), длинные объяснительные комментарии, отсутствие batch_alter_table в миграциях таблицы document, четыре равные поверхности (services выставляются и в CLI, и в MCP).",
+    "verifierExtra": "Отклоняй блокирующую severity, обоснование которой сводится к архитектурному предпочтению или стилю, а не к неверности, видимой в самом диффе."
+  },
+
+  "layout": {
+    "appDir": "",
+    "logic": "^cod_doc/(?:services|domain|infra|mcp|api|cli|agent|core)/.+\\.py$",
+    "e2eSpec": "^tests/.+\\.py$",
+    "sensitive": "^(?:cod_doc/infra/migrations|cod_doc/services/(?:runtime_service|update_service|launchd_service)\\.py|\\.github/workflows|Dockerfile|entrypoint\\.sh|ops/)"
+  }
+}

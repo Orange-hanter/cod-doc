@@ -15,6 +15,11 @@
 </header>
 
 <form method="post" action="{{ form_action }}" class="settings-form">
+    {% if amends %}
+      {# ARG-005: «Amend with a new ADR» с карточки. #}
+      <input type="hidden" name="amends" value="{{ amends.adr_id }}">
+      <div class="adr-strip">This ADR will amend <a class="mono" href="/p/{{ project.name }}/adr/{{ amends.adr_id }}">{{ amends.adr_id }}</a> {{ amends.title }}; both stay in force.</div>
+    {% endif %}
     <label class="field">
       <span class="label">Title (required)</span>
       <input name="title" required autofocus placeholder="e.g. Use SQLite for local-first deployment">
@@ -33,6 +38,15 @@
         <span class="label">Decided at (optional)</span>
         <input name="decided_at" type="date">
       </label>
+      {% if topics %}
+      <label class="field">
+        <span class="label">Shelf (optional)</span>
+        <select name="topic">
+          <option value="">No topic</option>
+          {% for t in topics %}<option value="{{ t }}"{% if t == default_topic %} selected{% endif %}>{{ t }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
       <label class="field">
         <span class="label">ADR id (empty = {{ next_id }})</span>
         <input name="adr_id" placeholder="{{ next_id }}" pattern="^ADR-\d{3}$">

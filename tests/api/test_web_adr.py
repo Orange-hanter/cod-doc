@@ -806,3 +806,257 @@ def test_adr_graph_draws_relations_with_their_arrows(adr_client) -> None:  # typ
     # Все три ADR связаны — секции «Standalone» нет вовсе.
     assert "Standalone" not in r.text
     assert "adr-graph-legend" in r.text
+
+
+# ── ARG-005: карточка — «Needs a decision», принятие, связи ──────────────
+
+
+def _adr_row(entry, adr_id: str):  # type: ignore[no-untyped-def]
+    from pathlib import Path
+
+    db = Path(entry.path) / ".cod-doc" / "state.db"
+    engine = make_engine(f"sqlite:///{db}")
+    with transactional(make_session_factory(engine)) as session:
+        proj = ProjectRepository(session).get_by_slug("adr-demo")
+        assert proj is not None and proj.row_id is not None
+        row = adr_service.get(session, proj.row_id, adr_id)
+        assert row is not None
+        out = {"status": row.status, "decided_at": row.decided_at}
+    engine.dispose()
+    return out
+
+
+def test_proposed_card_shows_decision_context(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """ADR-002 (proposed) уточнит ADR-001; ADR-003 опирается на ADR-002."""
+    client, entry = adr_client
+    client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Builds on 002", "status": "proposed"},
+        follow_redirects=False,
+    )
+    _relate(entry, "ADR-002", "ADR-001", "amends")
+    _relate(entry, "ADR-003", "ADR-002", "depends_on")
+    r = client.get(f"/p/{entry.name}/adr/ADR-002").text
+    assert "Needs a decision" in r
+    assert "gets “amended by” this ADR; both stay in force" in r
+    assert "depends on this ADR — it can be accepted after this one" in r
+    # Полнота записи: Alternatives и Consequences пусты.
+    assert '<span class="adr-record-ok">Context</span>' in r
+    assert '<span class="adr-record-gap">Alternatives</span>' in r
+    assert f'action="/p/{entry.name}/adr/ADR-002/accept"' in r
+    assert "confirm(" not in r.split('class="adr-decide"', 1)[1].split("</section>", 1)[0]
+
+
+def test_accepted_card_has_no_decision_block(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert "Needs a decision" not in r
+    assert f'href="/p/{entry.name}/adr/new?amends=ADR-001"' in r
+
+
+def test_accept_from_card_stamps_today(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """Без даты в форме сервис ставит сегодняшнюю (ARG-002); повтор — 409."""
+    from datetime import UTC, datetime
+
+    client, entry = adr_client
+    resp = client.post(f"/p/{entry.name}/adr/ADR-002/accept", data={}, follow_redirects=False)
+    assert resp.status_code == 303
+    row = _adr_row(entry, "ADR-002")
+    assert row == {"status": "accepted", "decided_at": datetime.now(UTC).date()}
+    again = client.post(f"/p/{entry.name}/adr/ADR-002/accept", data={}, follow_redirects=False)
+    assert again.status_code == 409
+
+
+def test_accept_from_card_keeps_given_date(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    resp = client.post(
+        f"/p/{entry.name}/adr/ADR-002/accept",
+        data={"decided_at": "2026-09-30"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert _adr_row(entry, "ADR-002")["decided_at"] == date(2026, 9, 30)
+
+
+def test_reject_from_card(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    resp = client.post(
+        f"/p/{entry.name}/adr/ADR-002/reject",
+        data={"reason": "covered by ADR-001"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert _adr_row(entry, "ADR-002")["status"] == "rejected"
+
+
+def test_accepted_card_shows_proposed_amendment(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _relate(entry, "ADR-002", "ADR-001", "amends")
+    r = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert "Proposed amendment." in r
+    assert "would amend this decision" in r
+    assert "amendment proposed by" in r  # сайдбар «Relations»
+
+
+def test_amend_with_new_adr_records_relation(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    form = client.get(f"/p/{entry.name}/adr/new?amends=ADR-001").text
+    assert '<input type="hidden" name="amends" value="ADR-001">' in form
+    resp = client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Narrower layering", "status": "proposed", "amends": "ADR-001"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    card = client.get(resp.headers["location"]).text
+    assert "will amend" in card
+    assert f'href="/p/{entry.name}/adr/ADR-001"' in card
+
+
+def test_alternative_titles_from_live_formats() -> None:
+    """Названия альтернатив из двух форм живого реестра: жирный абзац и список."""
+    from cod_doc.api.web.pages.adr import _alternative_titles
+
+    adr_016 = (
+        "**A. Общая PostgreSQL (ADR-010 / RFC 23).** Отвергнуто как командный путь: нет офлайна.\n\n"
+        "**B. Синхронизация файла state.db (облачная папка, rsync, S3 целиком).** Отвергнуто."
+    )
+    assert _alternative_titles(adr_016) == [
+        "Общая PostgreSQL (ADR-010 / RFC 23)",
+        "Синхронизация файла state.db (облачная папка, rsync, S3 целиком)",
+    ]
+    adr_009 = (
+        "1. TencentDB-Agent-Memory (Tencent, TypeScript) — иерархическая память.\n\n"
+        "2. Mem0 (Python, pip install mem0ai) — абстракция памяти."
+    )
+    assert _alternative_titles(adr_009) == [
+        "TencentDB-Agent-Memory (Tencent, TypeScript)",
+        "Mem0 (Python, pip install mem0ai)",
+    ]
+    assert _alternative_titles("Просто абзац прозы без перечисления.") == []
+
+
+# ── ARG-009/010: полки в списке, страница «Shelves», выбор полки ────────
+
+
+def _shelf(client, entry, **data: str) -> int:  # type: ignore[no-untyped-def]
+    resp = client.post(f"/p/{entry.name}/adr/shelves", data=data, follow_redirects=False)
+    return int(resp.status_code)
+
+
+def _shelf_names(html: str) -> list[str]:
+    import re
+
+    return re.findall(r'class="adr-shelf-name[^"]*">([^<]+)<', html)
+
+
+def _adr_order(html: str) -> list[str]:
+    import re
+
+    return re.findall(r'data-adr="(ADR-[^"]+)"', html)
+
+
+def test_list_is_flat_without_shelves(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert 'class="adr-shelf-head"' not in r
+    assert f'href="/p/{entry.name}/adr/shelves"' in r
+
+
+def test_list_groups_by_shelf_in_order(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """Полки в заданном порядке, «No topic» последней, пустая полка скрыта."""
+    client, entry = adr_client
+    assert _shelf(client, entry, action="create", name="Storage", includes="SQLite") == 303
+    assert _shelf(client, entry, action="create", name="Empty shelf") == 303
+    assert _shelf(client, entry, action="create", name="Architecture") == 303
+    assert _shelf(client, entry, action="move", name="Architecture", position="0") == 303
+    client.post(f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Architecture"})
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert _shelf_names(r) == ["Architecture", "No topic"]
+    assert "Empty shelf" not in r
+    assert _adr_order(r) == ["ADR-001", "ADR-002"]
+    # Фильтр «awaiting decision» оставляет только полку с черновиком.
+    pending = client.get(f"/p/{entry.name}/adr?view=pending").text
+    assert _shelf_names(pending) == ["No topic"]
+
+
+def test_shelf_about_shows_includes(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _shelf(client, entry, action="create", name="Storage", includes="SQLite, PostgreSQL")
+    client.post(f"/p/{entry.name}/adr/ADR-002/topic", data={"topic": "Storage"})
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert "<b>In.</b> SQLite, PostgreSQL" in r
+
+
+def test_shelf_text_is_html_escaped(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    payload = "<script>alert(1)</script>"
+    _shelf(client, entry, action="create", name="Storage", includes=payload)
+    client.post(f"/p/{entry.name}/adr/ADR-002/topic", data={"topic": "Storage"})
+    for page in (f"/p/{entry.name}/adr", f"/p/{entry.name}/adr/shelves"):
+        r = client.get(page).text
+        assert payload not in r
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in r
+
+
+def test_shelf_name_is_normalised(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    assert _shelf(client, entry, action="create", name="  Storage  ") == 303
+    resp = client.post(
+        f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": " Storage "}, follow_redirects=False
+    )
+    assert resp.status_code == 303
+    assert _shelf(client, entry, action="delete", name=" Storage") == 303
+
+
+def test_shelves_page_lifecycle(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _shelf(client, entry, action="create", name="Storage")
+    client.post(f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Storage"})
+    page = client.get(f"/p/{entry.name}/adr/shelves").text
+    assert "1 ADR on this shelf will move to “No topic”." in page
+    assert "confirm(" not in page
+    assert _shelf(client, entry, action="update", name="Storage", new_name="Data") == 303
+    assert _shelf(client, entry, action="delete", name="Data") == 303
+    card = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert "No shelves yet" in card
+    gone = client.post(f"/p/{entry.name}/adr/shelves", data={"action": "delete", "name": "Data"})
+    assert gone.status_code == 404
+    assert gone.json()["detail"] == "ADR topic 'Data' not found"
+    bad = client.post(f"/p/{entry.name}/adr/shelves", data={"action": "explode", "name": "x"})
+    assert bad.status_code == 400
+    assert bad.json()["detail"] == "unknown shelf action"
+    nowhere = client.post(f"/p/{entry.name}/adr/shelves", data={"action": "move", "name": "x"})
+    assert nowhere.status_code == 400
+    assert nowhere.json()["detail"] == "move needs a position"
+
+
+def test_card_moves_adr_between_shelves(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _shelf(client, entry, action="create", name="Storage")
+    resp = client.post(
+        f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Storage"}, follow_redirects=False
+    )
+    assert resp.status_code == 303
+    card = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert '<option value="Storage" selected>Storage</option>' in card
+    missing = client.post(f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Nope"})
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "ADR topic 'Nope' not found"
+
+
+def test_new_form_puts_adr_on_shelf(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _shelf(client, entry, action="create", name="Storage")
+    client.post(f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Storage"})
+    # «Amend with a new ADR» предлагает полку исходного решения.
+    form = client.get(f"/p/{entry.name}/adr/new?amends=ADR-001").text
+    assert '<option value="Storage" selected>Storage</option>' in form
+    resp = client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Shelved", "status": "proposed", "topic": "Storage"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    card = client.get(resp.headers["location"]).text
+    assert '<option value="Storage" selected>Storage</option>' in card
