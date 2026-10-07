@@ -585,9 +585,11 @@ _cod-doc() {
         (list)      _cod_doc_adr_list && ret=0 ;;
         (new)       _cod_doc_adr_new && ret=0 ;;
         (relate)    _cod_doc_adr_relate && ret=0 ;;
+        (set-topic) _cod_doc_adr_set_topic && ret=0 ;;
         (show)      _cod_doc_adr_show && ret=0 ;;
         (supersede) _cod_doc_adr_supersede && ret=0 ;;
         (sync)      _cod_doc_adr_sync && ret=0 ;;
+        (topic)     _cod_doc_adr_topic && ret=0 ;;
         (unrelate)  _cod_doc_adr_unrelate && ret=0 ;;
         (*)         _default && ret=0 ;;
       esac
@@ -605,9 +607,11 @@ _cod-doc() {
     'list:List ADRs in a project.'
     'new:Create a new ADR (auto-allocates ADR-NNN if --adr-id omitted).'
     'relate:Record that FROM_ADR_ID amends or depends on TO_ADR_ID.'
+    'set-topic:Put ADR_ID on TOPIC (any status, including accepted). --clear remov…'
     'show:Show full details of one ADR (with diagrams + task links).'
     'supersede:Mark SUPERSEDED_ADR_ID as replaced by SUPERSEDING_ADR_ID.'
     'sync:Re-sync ADR_ID'\''s body from markdown, ignoring the status gate.'
+    'topic:ADR topics («shelves»); what a decision is about. Order = display o…'
     'unrelate:Remove a relation recorded by `adr relate`. A missing relation is a…'
   )
   _describe -t cod-doc-adr-commands 'cod-doc adr command' cmds
@@ -693,6 +697,20 @@ _cod-doc() {
   return ret
 }
 
+(( $+functions[_cod_doc_adr_set_topic] )) || _cod_doc_adr_set_topic() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--clear)--clear[Move the ADR to «no topic»]' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:adr-id:_cod_doc_adrs' \
+    '2::topic' && ret=0
+  return ret
+}
+
 (( $+functions[_cod_doc_adr_show] )) || _cod_doc_adr_show() {
   local curcontext="$curcontext" ret=1
   local -a line
@@ -735,6 +753,108 @@ _cod-doc() {
     '(--reason)--reason=:reason' \
     '(- *)--help[Show this message and exit.]' \
     '1:adr-id:_cod_doc_adrs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_topic] )) || _cod_doc_adr_topic() {
+  local curcontext="$curcontext" state line ret=1
+  typeset -A opt_args
+  _arguments -C -s -S \
+    '(- *)--help[Show this message and exit.]' \
+    '1: :_cod_doc_adr_topic_commands' \
+    '*:: :->cod_doc_adr_topic_cmd' && ret=0
+
+  case $state in
+    (cod_doc_adr_topic_cmd)
+      curcontext="${curcontext%:*:*}:cod-doc-adr-topic-$words[1]:"
+      case $words[1] in
+        (create) _cod_doc_adr_topic_create && ret=0 ;;
+        (delete) _cod_doc_adr_topic_delete && ret=0 ;;
+        (list)   _cod_doc_adr_topic_list && ret=0 ;;
+        (move)   _cod_doc_adr_topic_move && ret=0 ;;
+        (update) _cod_doc_adr_topic_update && ret=0 ;;
+        (*)      _default && ret=0 ;;
+      esac
+      ;;
+  esac
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_topic_commands] )) || _cod_doc_adr_topic_commands() {
+  local -a cmds
+  cmds=(
+    'create:Create topic NAME at the end of the list.'
+    'delete:Delete topic NAME. Its ADRs move to «no topic».'
+    'list:List topics in display order with how many ADRs each holds.'
+    'move:Move topic NAME to POSITION (0-based); the others shift.'
+    'update:Rename topic NAME or edit its includes/excludes.'
+  )
+  _describe -t cod-doc-adr-topic-commands 'cod-doc adr topic command' cmds
+}
+
+(( $+functions[_cod_doc_adr_topic_create] )) || _cod_doc_adr_topic_create() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--includes)--includes=[What belongs on this topic]:includes' \
+    '(--excludes)--excludes=[What goes elsewhere (and where)]:excludes' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_topic_delete] )) || _cod_doc_adr_topic_delete() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--yes)--yes[Do not ask]' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_topic_list] )) || _cod_doc_adr_topic_list() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_topic_move] )) || _cod_doc_adr_topic_move() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' \
+    '2:position' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_adr_topic_update] )) || _cod_doc_adr_topic_update() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--rename)--rename=[New name]:new-name' \
+    '(--includes)--includes=:includes' \
+    '(--excludes)--excludes=:excludes' \
+    '(--author)--author=:author' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:name' && ret=0
   return ret
 }
 

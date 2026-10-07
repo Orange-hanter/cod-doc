@@ -108,12 +108,13 @@ def register(mcp: FastMCP) -> None:
         Returns a list of compact rows (no diagrams/links — use adr_get for those).
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import adr_service
+        from cod_doc.services import adr_service, adr_topic_service
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             rows = adr_service.list_for_project(session, project_id, status=status)
+            topics = adr_topic_service.names_by_id(session, project_id)
             return [
                 {
                     "adr_id": r.adr_id,
@@ -121,6 +122,7 @@ def register(mcp: FastMCP) -> None:
                     "status": r.status,
                     "decided_at": r.decided_at.isoformat() if r.decided_at else None,
                     "author": r.author,
+                    "topic": topics.get(r.topic_id) if r.topic_id is not None else None,
                 }
                 for r in rows
             ]
@@ -381,6 +383,170 @@ def register(mcp: FastMCP) -> None:
                 )
                 return {"from": from_adr_id, "to": to_adr_id, "kind": kind, "removed": True}
         except (ADRNotFoundError, ADRRelationNotFoundError) as exc:
+            raise ValueError(str(exc)) from exc
+
+    # ----------------------------------------------------------------- #
+    # ARG-008 (RFC 34 §3.4): полки реестра ADR                            #
+    # ----------------------------------------------------------------- #
+
+    @mcp.tool(name="adr_topic_list")
+    def adr_topic_list(project: str) -> list[dict[str, Any]]:
+        """List the project's ADR topics («shelves») in their display order.
+
+        Each row: ``{name, includes, excludes, position, adr_count}``. ADRs
+        with no topic are not a row — they are ``topic: null`` in
+        ``adr_list``. Pick a topic for ``adr_set_topic`` from this list by
+        ``includes`` / ``excludes``; creating a new topic is a human decision.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_topic_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            counts = adr_topic_service.adr_counts(session, project_id)
+            return [
+                adr_topic_service.topic_to_dict(t, adr_count=counts.get(t.row_id, 0))
+                for t in adr_topic_service.list_for_project(session, project_id)
+            ]
+
+    @mcp.tool(name="adr_topic_create")
+    def adr_topic_create(
+        project: str,
+        name: str,
+        includes: str = "",
+        excludes: str = "",
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Create an ADR topic at the end of the list (ARG-008).
+
+        ``includes`` / ``excludes`` describe what belongs on the shelf and what
+        goes elsewhere — the curator picks topics by them. A duplicate name is
+        an error.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_topic_service
+
+        sf, _ = session_factory(project)
+        with transactional(sf) as session:
+            project_id = require_project_id(session, project)
+            topic = adr_topic_service.create(
+                session,
+                project_id=project_id,
+                name=name,
+                includes=includes,
+                excludes=excludes,
+                author="agent",
+                reason=reason,
+            )
+            return adr_topic_service.topic_to_dict(topic, adr_count=0)
+
+    @mcp.tool(name="adr_topic_update")
+    def adr_topic_update(
+        project: str,
+        name: str,
+        new_name: str | None = None,
+        includes: str | None = None,
+        excludes: str | None = None,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        """Rename an ADR topic or edit its includes/excludes. ``None`` leaves a field as is."""
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_topic_service
+        from cod_doc.services.adr_topic_service import ADRTopicNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                topic = adr_topic_service.update(
+                    session,
+                    project_id=project_id,
+                    name=name,
+                    new_name=new_name,
+                    includes=includes,
+                    excludes=excludes,
+                    author="agent",
+                    reason=reason,
+                )
+                counts = adr_topic_service.adr_counts(session, project_id)
+                return adr_topic_service.topic_to_dict(topic, adr_count=counts.get(topic.row_id, 0))
+        except ADRTopicNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @mcp.tool(name="adr_topic_move")
+    def adr_topic_move(
+        project: str, name: str, position: int, reason: str | None = None
+    ) -> dict[str, Any]:
+        """Move an ADR topic to ``position`` (0-based); the others shift, no gaps."""
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_topic_service
+        from cod_doc.services.adr_topic_service import ADRTopicNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                topic = adr_topic_service.move(
+                    session,
+                    project_id=project_id,
+                    name=name,
+                    position=position,
+                    author="agent",
+                    reason=reason,
+                )
+                counts = adr_topic_service.adr_counts(session, project_id)
+                return adr_topic_service.topic_to_dict(topic, adr_count=counts.get(topic.row_id, 0))
+        except ADRTopicNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @mcp.tool(name="adr_topic_delete")
+    def adr_topic_delete(project: str, name: str, reason: str | None = None) -> dict[str, Any]:
+        """Delete an ADR topic. Its ADRs move to «no topic»; returns how many."""
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_topic_service
+        from cod_doc.services.adr_topic_service import ADRTopicNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                moved = adr_topic_service.delete(
+                    session, project_id=project_id, name=name, author="agent", reason=reason
+                )
+                return {"name": name, "deleted": True, "unshelved": moved}
+        except ADRTopicNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @mcp.tool(name="adr_set_topic")
+    def adr_set_topic(
+        project: str, adr_id: str, topic: str | None = None, reason: str | None = None
+    ) -> dict[str, Any]:
+        """Put an ADR on a topic; ``topic=None`` moves it to «no topic» (ARG-008).
+
+        Allowed in any status, including ACCEPTED: the topic is where the
+        decision lies, not what it says. The topic must exist — see
+        ``adr_topic_list``.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import adr_service
+        from cod_doc.services.adr_service import ADRNotFoundError
+        from cod_doc.services.adr_topic_service import ADRTopicNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf) as session:
+                project_id = require_project_id(session, project)
+                row = adr_service.set_topic(
+                    session,
+                    project_id=project_id,
+                    adr_id=adr_id,
+                    topic=topic,
+                    author="agent",
+                    reason=reason,
+                )
+                return {"adr_id": row.adr_id, "topic": adr_service.topic_name(session, row)}
+        except (ADRNotFoundError, ADRTopicNotFoundError) as exc:
             raise ValueError(str(exc)) from exc
 
     @mcp.tool(name="adr_link_task")
