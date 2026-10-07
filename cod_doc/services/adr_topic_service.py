@@ -399,10 +399,11 @@ def delete(
             reason=reason or f"topic «{name}» deleted",
         )
     before = _positions(session, project_id)
-    session.delete(topic)
-    session.flush()
-    # Порядок без дыр: оставшиеся полки — 0..n-1.
-    for i, t in enumerate(list_for_project(session, project_id)):
+    # Порядок без дыр: оставшиеся полки — 0..n-1. Перенумерация и ревизия —
+    # пока строка полки жива: после delete+flush её атрибуты держатся только
+    # на настройках сессии.
+    rest = [t for t in list_for_project(session, project_id) if t.row_id != topic.row_id]
+    for i, t in enumerate(rest):
         t.position = i
     session.flush()
     _write(
@@ -414,9 +415,11 @@ def delete(
         author=author,
         diff_fields={
             "unshelved": adr_ids,
-            "shifted": _shifted(before, _positions(session, project_id), skip=topic.name),
+            "shifted": _shifted(before, {t.name: t.position for t in rest}, skip=topic.name),
         },
         summary=f"ADR topic «{topic.name}» deleted, {len(adr_ids)} ADR(s) to «no topic»",
         reason=reason,
     )
+    session.delete(topic)
+    session.flush()
     return len(adr_ids)
