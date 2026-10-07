@@ -15,6 +15,10 @@
   удалением полки её решения уходят в «Без темы» той же транзакцией, с
   ревизией на каждое.
 
+Страховка на случай, если очистку обойдут (прямой SQL): ``adr_topic`` —
+``AUTOINCREMENT``, row_id удалённой полки не переиспользуется, и висячий
+``topic_id`` не укажет на чужую полку — ``topic_name`` вернёт ``None``.
+
 Revision ID: 0046_adr_topics
 Revises: 0045_adr_relations
 Create Date: 2026-10-06
@@ -48,6 +52,7 @@ def upgrade() -> None:
         sa.Column("created", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_updated", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("project_id", "name", name="uq_adr_topic_name"),
+        sqlite_autoincrement=True,
     )
     op.create_index("ix_adr_topic_project_position", "adr_topic", ["project_id", "position"])
     op.add_column("adr", sa.Column("topic_id", sa.Integer(), nullable=True))

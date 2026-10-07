@@ -154,6 +154,10 @@ class ADRTopicModel(Base):
     __table_args__ = (
         UniqueConstraint("project_id", "name", name="uq_adr_topic_name"),
         Index("ix_adr_topic_project_position", "project_id", "position"),
+        # FK у ``adr.topic_id`` нет (миграция 0046); AUTOINCREMENT не даёт
+        # row_id удалённой полки достаться новой, так что висячая ссылка
+        # не укажет на чужую полку.
+        {"sqlite_autoincrement": True},
     )
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)

@@ -56,7 +56,9 @@ def test_topic_lifecycle() -> None:
     assert code == 0, out
     # Удаление полки с решениями спрашивает подтверждение; --yes снимает вопрос.
     code, out = _run("topic", "delete", "-p", "p", "Данные", input_="n\n")
-    assert code != 0
+    assert code == 1, out
+    assert "Aborted" in out
+    assert [t["name"] for t in _topics()] == ["Агент", "Данные"]
     code, out = _run("topic", "delete", "-p", "p", "Данные", "--yes")
     assert code == 0, out
     assert "1 ADR(s) now have no topic" in out
@@ -72,7 +74,23 @@ def test_set_topic_errors() -> None:
     code, out = _run("set-topic", "-p", "p", "ADR-005")
     assert code == 2
     assert "exactly one" in out
+    code, out = _run("set-topic", "-p", "p", "ADR-005", "  ")
+    assert code == 2
+    assert "exactly one" in out
     code, out = _run("topic", "create", "-p", "p", "A")
+    assert code == 0, out
     code, out = _run("topic", "create", "-p", "p", "A")
     assert code == 2
     assert "already exists" in out
+
+
+@pytest.mark.usefixtures("root")
+def test_topic_output_escapes_rich_markup() -> None:
+    name = "[red]x[/red]"
+    code, out = _run("topic", "create", "-p", "p", name, "--includes", "[link=http://e]y[/link]")
+    assert code == 0, out
+    assert name in out
+    code, out = _run("topic", "list", "-p", "p")
+    assert code == 0, out
+    assert name in out
+    assert "[link=http://e]y[/link]" in out

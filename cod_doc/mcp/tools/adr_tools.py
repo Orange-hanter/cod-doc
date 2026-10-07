@@ -108,12 +108,13 @@ def register(mcp: FastMCP) -> None:
         Returns a list of compact rows (no diagrams/links — use adr_get for those).
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.services import adr_service
+        from cod_doc.services import adr_service, adr_topic_service
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             rows = adr_service.list_for_project(session, project_id, status=status)
+            topics = adr_topic_service.names_by_id(session, project_id)
             return [
                 {
                     "adr_id": r.adr_id,
@@ -121,7 +122,7 @@ def register(mcp: FastMCP) -> None:
                     "status": r.status,
                     "decided_at": r.decided_at.isoformat() if r.decided_at else None,
                     "author": r.author,
-                    "topic": adr_service.topic_name(session, r),
+                    "topic": topics.get(r.topic_id) if r.topic_id is not None else None,
                 }
                 for r in rows
             ]
