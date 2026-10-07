@@ -247,6 +247,13 @@
   _describe -t cod-doc-adrs 'ADR' rows
 }
 
+(( $+functions[_cod_doc_adr_topics] )) || _cod_doc_adr_topics() {
+  local -a rows
+  rows=( ${(f)"$(_cod_doc_sql "select replace(t.name, ':', '\:') || ':' || replace(replace(substr(t.includes, 1, 60), ':', ' -'), char(10), ' ') from adr_topic t join project p on p.row_id = t.project_id where 1=1 $(_cod_doc_where_project) order by p.slug, t.position limit 2000;")"} )
+  (( $#rows )) || return 1
+  _describe -t cod-doc-adr-topics 'ADR topic' rows
+}
+
 (( $+functions[_cod_doc_adrs_other] )) || _cod_doc_adrs_other() {
   # `adr supersede НОВЫЙ СТАРЫЙ` берёт два РАЗНЫХ идентификатора. Повтор
   # первого CLI отвергнет, так что предлагать его — вредный совет.
@@ -707,7 +714,7 @@ _cod-doc() {
     '(--author)--author=:author' \
     '(- *)--help[Show this message and exit.]' \
     '1:adr-id:_cod_doc_adrs' \
-    '2::topic' && ret=0
+    '2::topic:_cod_doc_adr_topics' && ret=0
   return ret
 }
 
@@ -815,7 +822,7 @@ _cod-doc() {
     '(--author)--author=:author' \
     '(--yes)--yes[Do not ask]' \
     '(- *)--help[Show this message and exit.]' \
-    '1:name' && ret=0
+    '1:name:_cod_doc_adr_topics' && ret=0
   return ret
 }
 
@@ -838,7 +845,7 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--author)--author=:author' \
     '(- *)--help[Show this message and exit.]' \
-    '1:name' \
+    '1:name:_cod_doc_adr_topics' \
     '2:position' && ret=0
   return ret
 }
@@ -854,7 +861,7 @@ _cod-doc() {
     '(--excludes)--excludes=:excludes' \
     '(--author)--author=:author' \
     '(- *)--help[Show this message and exit.]' \
-    '1:name' && ret=0
+    '1:name:_cod_doc_adr_topics' && ret=0
   return ret
 }
 

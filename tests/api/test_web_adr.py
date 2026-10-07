@@ -934,3 +934,129 @@ def test_alternative_titles_from_live_formats() -> None:
         "Mem0 (Python, pip install mem0ai)",
     ]
     assert _alternative_titles("Просто абзац прозы без перечисления.") == []
+
+
+# ── ARG-009/010: полки в списке, страница «Shelves», выбор полки ────────
+
+
+def _shelf(client, entry, **data: str) -> int:  # type: ignore[no-untyped-def]
+    resp = client.post(f"/p/{entry.name}/adr/shelves", data=data, follow_redirects=False)
+    return int(resp.status_code)
+
+
+def _shelf_names(html: str) -> list[str]:
+    import re
+
+    return re.findall(r'class="adr-shelf-name[^"]*">([^<]+)<', html)
+
+
+def _adr_order(html: str) -> list[str]:
+    import re
+
+    return re.findall(r'data-adr="(ADR-[^"]+)"', html)
+
+
+def test_list_is_flat_without_shelves(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert 'class="adr-shelf-head"' not in r
+    assert f'href="/p/{entry.name}/adr/shelves"' in r
+
+
+def test_list_groups_by_shelf_in_order(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """Полки в заданном порядке, «No topic» последней, пустая полка скрыта."""
+    client, entry = adr_client
+    assert _shelf(client, entry, action="create", name="Storage", includes="SQLite") == 303
+    assert _shelf(client, entry, action="create", name="Empty shelf") == 303
+    assert _shelf(client, entry, action="create", name="Architecture") == 303
+    assert _shelf(client, entry, action="move", name="Architecture", position="0") == 303
+    client.post(f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Architecture"})
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert _shelf_names(r) == ["Architecture", "No topic"]
+    assert "Empty shelf" not in r
+    assert _adr_order(r) == ["ADR-001", "ADR-002"]
+    # Фильтр «awaiting decision» оставляет только полку с черновиком.
+    pending = client.get(f"/p/{entry.name}/adr?view=pending").text
+    assert _shelf_names(pending) == ["No topic"]
+
+
+def test_shelf_about_shows_includes(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _shelf(client, entry, action="create", name="Storage", includes="SQLite, PostgreSQL")
+    client.post(f"/p/{entry.name}/adr/ADR-002/topic", data={"topic": "Storage"})
+    r = client.get(f"/p/{entry.name}/adr").text
+    assert "<b>In.</b> SQLite, PostgreSQL" in r
+
+
+def test_shelf_text_is_html_escaped(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    payload = "<script>alert(1)</script>"
+    _shelf(client, entry, action="create", name="Storage", includes=payload)
+    client.post(f"/p/{entry.name}/adr/ADR-002/topic", data={"topic": "Storage"})
+    for page in (f"/p/{entry.name}/adr", f"/p/{entry.name}/adr/shelves"):
+        r = client.get(page).text
+        assert payload not in r
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in r
+
+
+def test_shelf_name_is_normalised(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    assert _shelf(client, entry, action="create", name="  Storage  ") == 303
+    resp = client.post(
+        f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": " Storage "}, follow_redirects=False
+    )
+    assert resp.status_code == 303
+    assert _shelf(client, entry, action="delete", name=" Storage") == 303
+
+
+def test_shelves_page_lifecycle(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _shelf(client, entry, action="create", name="Storage")
+    client.post(f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Storage"})
+    page = client.get(f"/p/{entry.name}/adr/shelves").text
+    assert "1 ADR on this shelf will move to “No topic”." in page
+    assert "confirm(" not in page
+    assert _shelf(client, entry, action="update", name="Storage", new_name="Data") == 303
+    assert _shelf(client, entry, action="delete", name="Data") == 303
+    card = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert "No shelves yet" in card
+    gone = client.post(f"/p/{entry.name}/adr/shelves", data={"action": "delete", "name": "Data"})
+    assert gone.status_code == 404
+    assert gone.json()["detail"] == "ADR topic 'Data' not found"
+    bad = client.post(f"/p/{entry.name}/adr/shelves", data={"action": "explode", "name": "x"})
+    assert bad.status_code == 400
+    assert bad.json()["detail"] == "unknown shelf action"
+    nowhere = client.post(f"/p/{entry.name}/adr/shelves", data={"action": "move", "name": "x"})
+    assert nowhere.status_code == 400
+    assert nowhere.json()["detail"] == "move needs a position"
+
+
+def test_card_moves_adr_between_shelves(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _shelf(client, entry, action="create", name="Storage")
+    resp = client.post(
+        f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Storage"}, follow_redirects=False
+    )
+    assert resp.status_code == 303
+    card = client.get(f"/p/{entry.name}/adr/ADR-001").text
+    assert '<option value="Storage" selected>Storage</option>' in card
+    missing = client.post(f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Nope"})
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "ADR topic 'Nope' not found"
+
+
+def test_new_form_puts_adr_on_shelf(adr_client) -> None:  # type: ignore[no-untyped-def]
+    client, entry = adr_client
+    _shelf(client, entry, action="create", name="Storage")
+    client.post(f"/p/{entry.name}/adr/ADR-001/topic", data={"topic": "Storage"})
+    # «Amend with a new ADR» предлагает полку исходного решения.
+    form = client.get(f"/p/{entry.name}/adr/new?amends=ADR-001").text
+    assert '<option value="Storage" selected>Storage</option>' in form
+    resp = client.post(
+        f"/p/{entry.name}/adr/new",
+        data={"title": "Shelved", "status": "proposed", "topic": "Storage"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    card = client.get(resp.headers["location"]).text
+    assert '<option value="Storage" selected>Storage</option>' in card

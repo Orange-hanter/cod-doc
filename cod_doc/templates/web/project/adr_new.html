@@ -38,6 +38,15 @@
         <span class="label">Decided at (optional)</span>
         <input name="decided_at" type="date">
       </label>
+      {% if topics %}
+      <label class="field">
+        <span class="label">Shelf (optional)</span>
+        <select name="topic">
+          <option value="">No topic</option>
+          {% for t in topics %}<option value="{{ t }}"{% if t == default_topic %} selected{% endif %}>{{ t }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endif %}
       <label class="field">
         <span class="label">ADR id (empty = {{ next_id }})</span>
         <input name="adr_id" placeholder="{{ next_id }}" pattern="^ADR-\d{3}$">

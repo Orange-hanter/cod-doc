@@ -30,8 +30,15 @@ from cod_doc.api.web.markdown import (
 )
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import ActorKind, ADRStatus, EntityKind, actor_kind_for_author
-from cod_doc.services import adr_health, adr_service, revision_service, task_service
+from cod_doc.services import (
+    adr_health,
+    adr_service,
+    adr_topic_service,
+    revision_service,
+    task_service,
+)
 from cod_doc.services.adr_service import ADRAlreadyExistsError, ADRNotFoundError
+from cod_doc.services.adr_topic_service import ADRTopicNotFoundError
 
 router = APIRouter()
 
@@ -132,6 +139,63 @@ _GAP_TEXT = {
     "adr_proposed_has_date": "has a decision date but is not accepted",
     "adr_depends_on_closed": "depends on a decision that is no longer in force",
 }
+
+
+#: Подпись полки для ADR без темы; это не строка в ``adr_topic``.
+_NO_TOPIC = "No topic"
+
+
+def _shelf_sort_key(
+    status: str, decided_at: date | None, created: date, adr_id: str
+) -> tuple[int, int, str]:
+    """ARG-009: порядок внутри полки — действующие (свежие сверху), черновики
+    (дольше ждущие сверху), затем снятые, отклонённые и заменённые."""
+    if status == "accepted":
+        # Без даты — в конец действующих; ordinal со знаком минус даёт «свежие сверху».
+        return (0, -decided_at.toordinal() if decided_at else 0, adr_id)
+    if status == "proposed":
+        return (1, created.toordinal(), adr_id)
+    return (2, 0, adr_id)
+
+
+def _group_by_shelf(
+    items: list[dict[str, Any]], topics: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """ARG-009 (RFC 34 §3.4): строки списка, разложенные по полкам.
+
+    Полки — в заданном человеком порядке, «No topic» — последней. Полка без
+    видимых строк не показывается: пустая полка в списке шум, а под фильтром
+    — тем более. Пока у проекта нет ни одной полки, возвращается одна группа
+    без заголовка — список выглядит плоским, как до полок.
+    """
+    if not topics:
+        return [{"name": None, "items": sorted(items, key=lambda it: it["sort"])}]
+    by_topic: dict[int | None, list[dict[str, Any]]] = {}
+    for it in items:
+        by_topic.setdefault(it["topic_id"], []).append(it)
+    shelves: list[dict[str, Any]] = [
+        {
+            "name": t["name"],
+            "includes": t["includes"],
+            "excludes": t["excludes"],
+            "items": sorted(by_topic[t["row_id"]], key=lambda it: it["sort"]),
+        }
+        for t in topics
+        if by_topic.get(t["row_id"])
+    ]
+    known = {t["row_id"] for t in topics}
+    loose = [it for tid, rows in by_topic.items() if tid not in known for it in rows]
+    if loose:
+        shelves.append(
+            {
+                "name": _NO_TOPIC,
+                "includes": "",
+                "excludes": "",
+                "items": sorted(loose, key=lambda it: it["sort"]),
+                "no_topic": True,
+            }
+        )
+    return shelves
 
 
 def _row_visible(
@@ -413,8 +477,15 @@ def adr_list(
                 if pending or row_gaps
                 else [],
                 "gaps": row_gaps,
+                "topic_id": r.topic_id,
+                "sort": _shelf_sort_key(r.status, r.decided_at, r.created.date(), r.adr_id),
             }
         )
+    # Словари, а не ORM-модели: веб-слой не импортирует infra (test_web_layer_imports).
+    topics = [
+        {"row_id": t.row_id, **adr_topic_service.topic_to_dict(t)}
+        for t in adr_topic_service.list_for_project(session, project_id)
+    ]
 
     return templates.TemplateResponse(
         request,
@@ -422,6 +493,7 @@ def adr_list(
         {
             "project": proj.entry,
             "items": items,
+            "shelves": _group_by_shelf(items, topics),
             "status_filter": status,
             "view": view,
             "summary": {
@@ -461,6 +533,9 @@ def adr_new_form(
             "default_status": "proposed",
             "next_id": adr_service.next_adr_id(session, project_id),
             "amends": {"adr_id": amended.adr_id, "title": amended.title} if amended else None,
+            "topics": adr_topic_service.names(session, project_id),
+            # «Уточнить новым ADR» — по умолчанию на ту же полку, что исходное решение.
+            "default_topic": adr_service.topic_name(session, amended) if amended else None,
         },
     )
 
@@ -507,6 +582,7 @@ def adr_new_submit(
     consequences: Annotated[str | None, Form()] = None,
     adr_id: Annotated[str | None, Form()] = None,
     amends: Annotated[str | None, Form()] = None,
+    topic: Annotated[str | None, Form()] = None,
 ) -> RedirectResponse:
     """Create the ADR and redirect to its detail page.
 
@@ -528,6 +604,15 @@ def adr_new_submit(
             adr_id=(adr_id.strip() if adr_id else None),
             author="human:web",
         )
+        shelf = (topic or "").strip()
+        if shelf:
+            adr_service.set_topic(
+                session,
+                project_id=project_id,
+                adr_id=row.adr_id,
+                topic=shelf,
+                author="human:web",
+            )
         if amends:
             adr_service.relate(
                 session,
@@ -541,7 +626,7 @@ def adr_new_submit(
     except ADRAlreadyExistsError as exc:
         session.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ADRNotFoundError as exc:
+    except (ADRNotFoundError, ADRTopicNotFoundError) as exc:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
@@ -606,6 +691,95 @@ def adr_graph_page(
             "status_icons": _STATUS_ICON,
         },
     )
+
+
+@router.get("/p/{slug}/adr/shelves", response_class=HTMLResponse)
+def adr_shelves_page(
+    request: Request,
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+) -> HTMLResponse:
+    """ARG-010 (RFC 34 §3.4): полками управляют здесь, а список только читают.
+
+    Создание, правка состава, порядок и удаление; пустые полки видны только
+    на этой странице. «No topic» — не полка, а счётчик внизу.
+    """
+    proj = get_project(slug)
+    session, project_id = db
+    topics = adr_topic_service.list_for_project(session, project_id)
+    counts = adr_topic_service.adr_counts(session, project_id)
+    loose = adr_topic_service.loose_count(session, project_id)
+    return templates.TemplateResponse(
+        request,
+        "project/adr_shelves.html",
+        {
+            "project": proj.entry,
+            "shelves": [
+                adr_topic_service.topic_to_dict(t, adr_count=counts.get(t.row_id, 0))
+                for t in topics
+            ],
+            "loose": loose,
+        },
+    )
+
+
+@router.post("/p/{slug}/adr/shelves")
+def adr_shelves_submit(
+    slug: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    action: Annotated[str, Form()],
+    name: Annotated[str, Form()],
+    new_name: Annotated[str | None, Form()] = None,
+    includes: Annotated[str | None, Form()] = None,
+    excludes: Annotated[str | None, Form()] = None,
+    position: Annotated[int | None, Form()] = None,
+) -> RedirectResponse:
+    """ARG-010: одна точка записи полок — ``action`` ∈ create/update/move/delete.
+
+    Один POST, а не ``/adr/shelves/<name>/…``: имя полки — кириллица с
+    пробелами, а путь вида ``/adr/shelves/edit`` перехватил бы роут
+    ``/adr/{adr_id}/edit``.
+    """
+    session, project_id = db
+    author = "human:web"
+    try:
+        if action == "create":
+            adr_topic_service.create(
+                session,
+                project_id=project_id,
+                name=name,
+                includes=includes or "",
+                excludes=excludes or "",
+                author=author,
+            )
+        elif action == "update":
+            adr_topic_service.update(
+                session,
+                project_id=project_id,
+                name=name,
+                new_name=new_name,
+                includes=includes,
+                excludes=excludes,
+                author=author,
+            )
+        elif action == "move":
+            if position is None:
+                raise HTTPException(status_code=400, detail="move needs a position")
+            adr_topic_service.move(
+                session, project_id=project_id, name=name, position=position, author=author
+            )
+        elif action == "delete":
+            adr_topic_service.delete(session, project_id=project_id, name=name, author=author)
+        else:
+            raise HTTPException(status_code=400, detail="unknown shelf action")
+        session.commit()
+    except ADRTopicNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return RedirectResponse(url=f"/p/{slug}/adr/shelves", status_code=303)
 
 
 @router.get("/p/{slug}/adr/{adr_id}", response_class=HTMLResponse)
@@ -709,8 +883,33 @@ def adr_show(
             "record_gaps": [f["name"] for f in record if not f["ok"]],
             "decide": decide,
             "author_is_agent": actor_kind_for_author(payload["author"]) == ActorKind.AGENT,
+            "topics": adr_topic_service.names(session, project_id),
         },
     )
+
+
+@router.post("/p/{slug}/adr/{adr_id}/topic")
+def adr_set_topic_form(
+    slug: str,
+    adr_id: str,
+    db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    topic: Annotated[str | None, Form()] = None,
+) -> RedirectResponse:
+    """ARG-010: выбрать полку с карточки — в любом статусе; пусто — «No topic»."""
+    session, project_id = db
+    try:
+        adr_service.set_topic(
+            session,
+            project_id=project_id,
+            adr_id=adr_id,
+            topic=(topic or "").strip() or None,
+            author="human:web",
+        )
+        session.commit()
+    except (ADRNotFoundError, ADRTopicNotFoundError) as exc:
+        session.rollback()
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return RedirectResponse(url=f"/p/{slug}/adr/{adr_id}", status_code=303)
 
 
 @router.post("/p/{slug}/adr/{adr_id}/accept")

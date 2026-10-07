@@ -68,7 +68,9 @@ def test_create_appends_and_rejects_duplicates(engine_with_schema: Engine) -> No
             adr_topic_service.create(session, project_id=pid, name="   ")
         revs = (
             session.execute(
-                select(RevisionModel.diff).where(RevisionModel.entity_kind == EntityKind.ADR_TOPIC)
+                select(RevisionModel.diff)
+                .where(RevisionModel.entity_kind == EntityKind.ADR_TOPIC)
+                .order_by(RevisionModel.row_id)
             )
             .scalars()
             .all()
@@ -222,3 +224,44 @@ def test_deleted_topic_row_id_is_not_reused(engine_with_schema: Engine) -> None:
         session.flush()
         fresh = adr_topic_service.create(session, project_id=pid, name="Новая").row_id
     assert fresh != gone
+
+
+def test_lookup_normalises_name(engine_with_schema: Engine) -> None:
+    """Имя ищется в том же виде, в каком записано: пробелы по краям и внутри схлопнуты."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_topic_service.create(session, project_id=pid, name="Хранение  данных")
+        adr_service.set_topic(session, project_id=pid, adr_id="ADR-005", topic=" Хранение данных ")
+        adr_topic_service.move(session, project_id=pid, name="Хранение   данных", position=0)
+        assert adr_topic_service.require(session, pid, "Хранение данных ").name == (
+            "Хранение данных"
+        )
+
+
+def test_loose_count_and_names(engine_with_schema: Engine) -> None:
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed(session)
+        other = _second_project(session)
+        adr_service.create(session, project_id=other, title="Чужое", adr_id="ADR-001")
+        adr_topic_service.create(session, project_id=pid, name="Б")
+        adr_topic_service.create(session, project_id=pid, name="А")
+        adr_topic_service.move(session, project_id=pid, name="А", position=0)
+        assert adr_topic_service.names(session, pid) == ["А", "Б"]
+        assert adr_topic_service.loose_count(session, pid) == 2
+        adr_service.set_topic(session, project_id=pid, adr_id="ADR-005", topic="А")
+        assert adr_topic_service.loose_count(session, pid) == 1
+
+
+def test_topic_name_ignores_other_projects_topic(engine_with_schema: Engine) -> None:
+    """Испорченный topic_id, указывающий на полку другого проекта, не раскрывает её имя."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+        other = _second_project(session)
+        foreign = adr_topic_service.create(session, project_id=other, name="Чужая")
+        row = _adr(session, "ADR-005")
+        row.topic_id = foreign.row_id
+        session.flush()
+        assert adr_service.topic_name(session, row) is None

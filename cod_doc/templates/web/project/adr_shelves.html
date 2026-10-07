@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}ADR shelves · {{ project.name }} — COD-DOC{% endblock %}
+{% block content %}
+<nav class="crumbs">
+  <a href="/">Projects</a> /
+  <a href="/p/{{ project.name }}">{{ project.name }}</a> /
+  <a href="/p/{{ project.name }}/adr">ADRs</a> /
+  <span>Shelves</span>
+</nav>
+
+{% with slug=project.name, active="adr" %}{% include "_layout/project_tabs.html" %}{% endwith %}
+
+<p class="adr-back"><a href="/p/{{ project.name }}/adr">← Back to ADR list</a></p>
+
+<header class="page-header">
+  <div>
+    <h1>🗂️ ADR shelves</h1>
+    <p class="muted">
+      A shelf says what a decision is about. Each ADR sits on one shelf or on
+      none. The list shows shelves in this order and hides empty ones; they
+      stay here. “In” and “Not here” tell people — and the curator — where a
+      decision belongs.
+    </p>
+  </div>
+</header>
+
+{# ARG-010 (RFC 34 §3.4): полками управляют здесь, список только читает.
+   Каждое действие — обычная форма: без JS и без диалогов браузера. #}
+{% if shelves %}
+<div class="table-scroll">
+<table class="grid adr-shelves-table">
+  <thead>
+    <tr>
+      <th class="adr-shelves-col-order">Order</th>
+      <th>Shelf</th>
+      <th>In</th>
+      <th>Not here</th>
+      <th class="adr-col-when">ADRs</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in shelves %}
+    <tr>
+      <td class="adr-shelves-col-order">
+        <form method="post" action="/p/{{ project.name }}/adr/shelves" class="adr-shelves-move">
+          <input type="hidden" name="action" value="move">
+          <input type="hidden" name="name" value="{{ s.name }}">
+          <button class="btn btn-sm" name="position" value="{{ s.position - 1 }}"{% if loop.first %} disabled{% endif %} aria-label="Move {{ s.name }} up{% if loop.first %} (already first){% endif %}">↑</button>
+          <button class="btn btn-sm" name="position" value="{{ s.position + 1 }}"{% if loop.last %} disabled{% endif %} aria-label="Move {{ s.name }} down{% if loop.last %} (already last){% endif %}">↓</button>
+        </form>
+      </td>
+      <td>
+        <b>{{ s.name }}</b>{% if not s.adr_count %} <span class="muted adr-shelves-hidden">· hidden in the list while empty</span>{% endif %}
+        <details class="adr-action">
+          <summary>Edit</summary>
+          <form method="post" action="/p/{{ project.name }}/adr/shelves" class="settings-form">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="name" value="{{ s.name }}">
+            <label class="field"><span class="label">Name</span>
+              <input name="new_name" value="{{ s.name }}" required maxlength="64"></label>
+            <label class="field"><span class="label">In</span>
+              <textarea name="includes" rows="2">{{ s.includes }}</textarea></label>
+            <label class="field"><span class="label">Not here</span>
+              <textarea name="excludes" rows="2">{{ s.excludes }}</textarea></label>
+            <div class="form-actions"><button type="submit" class="btn btn-primary">Save</button></div>
+          </form>
+        </details>
+        <details class="adr-action">
+          <summary>Delete…</summary>
+          <form method="post" action="/p/{{ project.name }}/adr/shelves" class="settings-form">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="name" value="{{ s.name }}">
+            <p>
+              {% if s.adr_count %}{{ s.adr_count }} ADR{{ "s" if s.adr_count != 1 }} on this shelf will move to “No topic”.
+              {% else %}The shelf is empty.{% endif %}
+            </p>
+            <div class="form-actions"><button type="submit" class="btn btn-danger">Delete “{{ s.name }}”</button></div>
+          </form>
+        </details>
+      </td>
+      <td class="adr-shelves-text">{{ s.includes or "—" }}</td>
+      <td class="adr-shelves-text muted">{{ s.excludes or "—" }}</td>
+      <td class="adr-col-when">{{ s.adr_count }}</td>
+    </tr>
+    {% endfor %}
+    <tr class="adr-shelves-loose">
+      <td></td>
+      <td colspan="3">No topic <span class="muted">· always last; the curator never proposes it</span></td>
+      <td class="adr-col-when">{{ loose }}</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+{% else %}
+  <div class="tasks-empty">
+    <div class="tasks-empty-icon">🗂️</div>
+    <p>No shelves yet — the ADR list stays flat. Create the first one below.</p>
+  </div>
+{% endif %}
+
+<section class="task-card">
+  <div class="task-card-header"><h2>New shelf</h2></div>
+  <form method="post" action="/p/{{ project.name }}/adr/shelves" class="settings-form">
+    <input type="hidden" name="action" value="create">
+    <label class="field"><span class="label">Name</span>
+      <input name="name" required maxlength="64" placeholder="e.g. Storage"></label>
+    <label class="field"><span class="label">In</span>
+      <textarea name="includes" rows="2" placeholder="What belongs here: SQLite, PostgreSQL, schema and migrations"></textarea></label>
+    <label class="field"><span class="label">Not here</span>
+      <textarea name="excludes" rows="2" placeholder="What goes elsewhere, and where: embeddings — “Search and context”"></textarea></label>
+    <div class="form-actions"><button type="submit" class="btn btn-primary">Create shelf</button></div>
+  </form>
+</section>
+{% endblock %}

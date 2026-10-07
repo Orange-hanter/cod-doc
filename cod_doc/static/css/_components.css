@@ -1209,6 +1209,7 @@ a.nav-card-title:hover { color: var(--accent); }
 .costs-table { min-width: 860px; }        /* 7 колонок, из них пять числовых */
 .plans-table { min-width: 880px; }        /* scope + принцип прозой + прогресс-бар 100px */
 .tasks-legacy-table { min-width: 700px; }
+.adr-shelves-table { min-width: 720px; } /* порядок + имя с правкой + два текста + число */
 .adr-table { min-width: 560px; } /* знак + ID + заголовок с фактами + «когда»; автор в подсказке (ADO-236) */
 .section-tasks { min-width: 680px; }
 /* Живёт в узком треке `.overview-block` (auto-fit от 340px), поэтому порог
@@ -3409,6 +3410,63 @@ details > summary { cursor: pointer; }
 .adr-summary-warn { color: var(--warning); }
 .adr-summary a:hover { text-decoration: none; color: var(--accent); }
 .adr-summary a.is-active { color: var(--fg-strong); border-bottom-style: solid; }
+
+/* ARG-009: заголовок полки — строка над её решениями. Число решений стоит в
+   колонке «когда», в одну вертикаль с датами (решение сессии в Cursor). */
+.adr-table tr.adr-shelf-head th,
+.adr-table tr.adr-shelf-head td {
+  padding-top: var(--space-4);
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.adr-shelf-name { font-size: 14px; font-weight: 600; color: var(--fg-strong); }
+.adr-shelf-loose { color: var(--muted); font-weight: 500; }
+.adr-shelf-count { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Пузырь состава всплывает под «i», а не раздвигает строку: в потоке он
+   выталкивал название полки под себя. */
+.adr-shelf-about { position: relative; display: inline-block; margin-left: var(--space-2); font-weight: 400; vertical-align: middle; }
+.adr-shelf-about > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--muted);
+  font: italic 11px/1 Georgia, serif;
+  cursor: pointer;
+}
+.adr-shelf-about > summary::-webkit-details-marker { display: none; }
+.adr-shelf-about[open] > summary { border-color: var(--accent); color: var(--accent); }
+.adr-shelf-bubble {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  width: min(560px, 80vw);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: 13px;
+  white-space: normal;
+}
+
+/* ARG-010: выбор полки в шапке карточки. */
+.adr-topic-pick { display: inline-flex; align-items: center; gap: var(--space-1); }
+.adr-topic-pick select { font-size: 13px; padding: 2px 6px; }
+
+/* ARG-010: страница «Shelves». */
+.adr-shelves-col-order { width: 84px; white-space: nowrap; }
+.adr-shelves-move { display: inline-flex; gap: 4px; }
+.adr-shelves-text { max-width: 320px; font-size: 13px; }
+.adr-shelves-hidden { font-size: 12px; }
+.adr-shelves-loose td { color: var(--muted); background: var(--bg-alt); }
 
 /* Номер не переносится: на 390px «ADR-» и «001» разъезжались по строкам. */
 .adr-table td.mono { white-space: nowrap; }

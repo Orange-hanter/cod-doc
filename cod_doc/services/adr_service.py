@@ -745,8 +745,14 @@ def set_topic(
 def topic_name(session: Session, adr: ADRModel) -> str | None:
     if adr.topic_id is None:
         return None
-    topic = session.get(ADRTopicModel, adr.topic_id)
-    return topic.name if topic is not None else None
+    # Скоуп по проекту решения: FK у topic_id нет, и чужая полка не должна
+    # всплыть даже при испорченной ссылке.
+    name: str | None = session.execute(
+        select(ADRTopicModel.name).where(
+            ADRTopicModel.row_id == adr.topic_id, ADRTopicModel.project_id == adr.project_id
+        )
+    ).scalar_one_or_none()
+    return name
 
 
 def link_task(

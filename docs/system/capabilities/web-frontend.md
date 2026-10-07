@@ -155,6 +155,9 @@ Web-маршруты живут в `cod_doc.api.web.*` и подключаютс
 | `POST /p/{slug}/adr/{adr_id}/diagram` | Добавление Mermaid-диаграммы к ADR | `adr_service.add_diagram` | ✅ | `ADR-005` |
 | `POST /p/{slug}/adr/{adr_id}/supersede` | Запись supersede-ребра | `adr_service.supersede` | ✅ | `ADR-005` |
 | `POST /p/{slug}/adr/{adr_id}/deprecate` | Перевод ADR в DEPRECATED | `adr_service.deprecate` | ✅ | `ADR-005` |
+| `GET /p/{slug}/adr/shelves` | Полки ADR: порядок, состав, пустые полки, «No topic» | `adr_topic_service.list_for_project` | ✅ | `ARG-010` |
+| `POST /p/{slug}/adr/shelves` | Создать / править / переставить / удалить полку (`action`) | `adr_topic_service.create` / `update` / `move` / `delete` | ✅ | `ARG-010` |
+| `POST /p/{slug}/adr/{adr_id}/topic` | Положить ADR на полку с карточки | `adr_service.set_topic` | ✅ | `ARG-010` |
 | `POST /p/{slug}/adr/{adr_id}/accept` | Принять черновик с карточки; без даты — сегодняшняя | `adr_service.update` | ✅ | `ARG-005` |
 | `POST /p/{slug}/adr/{adr_id}/reject` | Отклонить черновик с карточки; причина — в ревизию | `adr_service.update` | ✅ | `ARG-005` |
 | **Scenarios — сценарии тестирования (RFC 24 §9, авторская половина)** | | | |
