@@ -167,7 +167,9 @@
         }
         const anchor = box.querySelector('summary').getBoundingClientRect();
         bubble.classList.add('is-pinned');
-        bubble.style.cssText = `position:fixed;top:${anchor.bottom + GAP}px;left:${EDGE}px;right:${EDGE}px`;
+        // Выше экрана пузырь не бывает: длинный состав прокручивается внутри.
+        const maxHeight = window.innerHeight - 2 * EDGE;
+        bubble.style.cssText = `position:fixed;top:${anchor.bottom + GAP}px;left:${EDGE}px;right:${EDGE}px;max-height:${maxHeight}px;overflow-y:auto`;
         // Снизу не помещается — над «i»; верх не выше края экрана.
         const height = bubble.getBoundingClientRect().height;
         if (anchor.bottom + GAP + height > window.innerHeight - EDGE) {
