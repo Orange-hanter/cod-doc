@@ -51,6 +51,7 @@
   {% if summary.withdrawn %}<span>{{ summary.withdrawn }} withdrawn</span>{% endif %}
 </nav>
 
+{# Пусто = нет видимых строк; shelves собраны из тех же items (_group_by_shelf). #}
 {% if not items %}
   <div class="tasks-empty">
     <div class="tasks-empty-icon">🏛️</div>
@@ -94,6 +95,7 @@
             </details>
             {% endif %}
           </th>
+          {# shelf — dict: shelf.items в Jinja нашёл бы метод dict.items(), поэтому ключом. #}
           <td class="adr-col-when adr-shelf-count">{{ shelf["items"]|length }}</td>
         </tr>
       {% endif %}
@@ -147,6 +149,39 @@
         a.addEventListener('mouseleave', leave);
         a.addEventListener('blur', leave);
       });
+    })();
+    // На узком экране таблица прокручивается сама, и пузырь «i» обрезается её
+    // краем: открытый пузырь ставим fixed по координатам «i», а прокрутка
+    // (страницы или таблицы) его закрывает — fixed-блок от «i» бы оторвался.
+    (() => {
+      const narrow = window.matchMedia('(max-width: 640px)');
+      const GAP = 4;
+      const EDGE = 16;
+      const pin = (box) => {
+        const bubble = box.querySelector('.adr-shelf-bubble');
+        if (!bubble) return;
+        if (!box.open || !narrow.matches) {
+          bubble.classList.remove('is-pinned');
+          bubble.style.cssText = '';
+          return;
+        }
+        const anchor = box.querySelector('summary').getBoundingClientRect();
+        bubble.classList.add('is-pinned');
+        // Выше экрана пузырь не бывает: длинный состав прокручивается внутри.
+        const maxHeight = window.innerHeight - 2 * EDGE;
+        bubble.style.cssText = `position:fixed;top:${anchor.bottom + GAP}px;left:${EDGE}px;right:${EDGE}px;max-height:${maxHeight}px;overflow-y:auto`;
+        // Снизу не помещается — над «i»; верх не выше края экрана.
+        const height = bubble.getBoundingClientRect().height;
+        if (anchor.bottom + GAP + height > window.innerHeight - EDGE) {
+          bubble.style.top = `${Math.max(EDGE, anchor.top - GAP - height)}px`;
+        }
+      };
+      const boxes = document.querySelectorAll('.adr-shelf-about');
+      boxes.forEach((box) => box.addEventListener('toggle', () => pin(box)));
+      const closeAll = () => boxes.forEach((box) => { if (box.open && narrow.matches) box.open = false; });
+      window.addEventListener('scroll', closeAll, { passive: true });
+      document.querySelectorAll('.table-scroll').forEach((el) => el.addEventListener('scroll', closeAll, { passive: true }));
+      narrow.addEventListener('change', () => boxes.forEach(pin));
     })();
   </script>
 {% endif %}

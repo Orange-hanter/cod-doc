@@ -21,7 +21,19 @@ from ._surface_parity import (
 SPEC = ServiceSpec(
     name="adr_topic_service",
     known_mutations=frozenset({"create", "update", "move", "delete"}),
-    known_reads=frozenset({"list_for_project", "get", "require", "adr_counts", "topic_to_dict"}),
+    known_reads=frozenset(
+        {
+            "list_for_project",
+            "get",
+            "require",
+            "adr_counts",
+            "topic_to_dict",
+            "name_by_id",
+            "names_by_id",
+            "names",
+            "loose_count",
+        }
+    ),
 )
 
 

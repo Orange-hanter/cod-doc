@@ -41,7 +41,6 @@ from cod_doc.infra.models import (
     ADRRelationModel,
     ADRSupersedeModel,
     ADRTaskModel,
-    ADRTopicModel,
     DocumentModel,
     LinkModel,
     ProjectModel,
@@ -715,8 +714,7 @@ def set_topic(
     new_id = new.row_id if new is not None else None
     if row.topic_id == new_id:
         return row
-    old = session.get(ADRTopicModel, row.topic_id) if row.topic_id is not None else None
-    old_name = old.name if old is not None else None
+    old_name = adr_topic_service.name_by_id(session, project_id, row.topic_id)
     row.topic_id = new_id
     row.last_updated = datetime.now(UTC)
     session.flush()
@@ -743,16 +741,7 @@ def set_topic(
 
 
 def topic_name(session: Session, adr: ADRModel) -> str | None:
-    if adr.topic_id is None:
-        return None
-    # Скоуп по проекту решения: FK у topic_id нет, и чужая полка не должна
-    # всплыть даже при испорченной ссылке.
-    name: str | None = session.execute(
-        select(ADRTopicModel.name).where(
-            ADRTopicModel.row_id == adr.topic_id, ADRTopicModel.project_id == adr.project_id
-        )
-    ).scalar_one_or_none()
-    return name
+    return adr_topic_service.name_by_id(session, adr.project_id, adr.topic_id)
 
 
 def link_task(
