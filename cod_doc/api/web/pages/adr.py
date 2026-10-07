@@ -762,7 +762,9 @@ def adr_shelves_submit(
                 excludes=excludes,
                 author=author,
             )
-        elif action == "move" and position is not None:
+        elif action == "move":
+            if position is None:
+                raise HTTPException(status_code=400, detail="move needs a position")
             adr_topic_service.move(
                 session, project_id=project_id, name=name, position=position, author=author
             )

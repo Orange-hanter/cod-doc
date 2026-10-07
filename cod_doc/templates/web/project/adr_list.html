@@ -138,7 +138,7 @@
       let lit = null;
       const off = () => { if (lit) lit.classList.remove('is-lit'); lit = null; };
       document.querySelectorAll('.adr-table .adr-rel-link[data-target]').forEach((a) => {
-        const row = document.querySelector(`.adr-table tr[data-adr="${a.dataset.target}"]`);
+        const row = document.querySelector(`.adr-table tr[data-adr="${CSS.escape(a.dataset.target)}"]`);
         if (!row) return;
         const on = () => { clearTimeout(timer); if (lit !== row) { off(); row.classList.add('is-lit'); lit = row; } };
         const leave = () => { clearTimeout(timer); timer = setTimeout(off, HOLD_MS); };

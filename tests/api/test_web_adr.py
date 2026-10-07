@@ -1026,6 +1026,9 @@ def test_shelves_page_lifecycle(adr_client) -> None:  # type: ignore[no-untyped-
     bad = client.post(f"/p/{entry.name}/adr/shelves", data={"action": "explode", "name": "x"})
     assert bad.status_code == 400
     assert bad.json()["detail"] == "unknown shelf action"
+    nowhere = client.post(f"/p/{entry.name}/adr/shelves", data={"action": "move", "name": "x"})
+    assert nowhere.status_code == 400
+    assert nowhere.json()["detail"] == "move needs a position"
 
 
 def test_card_moves_adr_between_shelves(adr_client) -> None:  # type: ignore[no-untyped-def]
