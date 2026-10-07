@@ -46,8 +46,11 @@ def tools(
             s, project_id=pid, title="PostgreSQL", adr_id="ADR-005", status="accepted"
         )
 
+        s.add(ProjectModel(slug="other", title="o", root_path="/tmp/o", created=now, updated=now))
+
+    # Подменяется только фабрика сессий; проект резолвится настоящим
+    # require_project_id по слагу, так что скоуп проверяется по-честному.
     monkeypatch.setattr(adr_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(adr_tools, "require_project_id", lambda session, project: pid)
     mcp = FastMCP("test")
     adr_tools.register(mcp)
     return {name: tool.fn for name, tool in mcp._tool_manager._tools.items()}
@@ -114,3 +117,15 @@ def test_topic_tools_emit_activity_events(
         "adr.topic_set",
         "adr.topic_deleted",
     ]
+
+
+def test_topic_tools_are_project_scoped(tools: dict[str, Callable[..., Any]]) -> None:
+    tools["adr_topic_create"](project="p", name="Хранение")
+    with pytest.raises(ValueError, match="ADR-005"):
+        tools["adr_set_topic"](project="other", adr_id="ADR-005", topic=None)
+    with pytest.raises(ValueError, match="topic 'Хранение' not found"):
+        tools["adr_topic_delete"](project="other", name="Хранение")
+    assert tools["adr_topic_list"](project="other") == []
+    with pytest.raises(ValueError, match="not in DB"):
+        tools["adr_topic_list"](project="nope")
+    assert [t["name"] for t in tools["adr_topic_list"](project="p")] == ["Хранение"]

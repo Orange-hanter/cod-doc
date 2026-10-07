@@ -469,7 +469,8 @@ def register(mcp: FastMCP) -> None:
                     author="agent",
                     reason=reason,
                 )
-                return adr_topic_service.topic_to_dict(topic)
+                counts = adr_topic_service.adr_counts(session, project_id)
+                return adr_topic_service.topic_to_dict(topic, adr_count=counts.get(topic.row_id, 0))
         except ADRTopicNotFoundError as exc:
             raise ValueError(str(exc)) from exc
 
@@ -494,7 +495,8 @@ def register(mcp: FastMCP) -> None:
                     author="agent",
                     reason=reason,
                 )
-                return adr_topic_service.topic_to_dict(topic)
+                counts = adr_topic_service.adr_counts(session, project_id)
+                return adr_topic_service.topic_to_dict(topic, adr_count=counts.get(topic.row_id, 0))
         except ADRTopicNotFoundError as exc:
             raise ValueError(str(exc)) from exc
 

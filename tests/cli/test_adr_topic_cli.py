@@ -86,6 +86,7 @@ def test_set_topic_errors() -> None:
 
 @pytest.mark.usefixtures("root")
 def test_topic_output_escapes_rich_markup() -> None:
+    """Разметка в имени и составе полки печатается буквально, Rich её не исполняет."""
     name = "[red]x[/red]"
     code, out = _run("topic", "create", "-p", "p", name, "--includes", "[link=http://e]y[/link]")
     assert code == 0, out
