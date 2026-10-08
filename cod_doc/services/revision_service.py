@@ -127,6 +127,32 @@ def write(
     return _to_domain(model)
 
 
+#: Превью diff — первая строка, не длиннее этого.
+DIFF_PREVIEW_CHARS = 200
+
+
+def diff_preview(diff: str | None, *, limit: int = DIFF_PREVIEW_CHARS) -> str:
+    """Первая строка diff для ленты ревизий, с читаемой кириллицей.
+
+    Сервисы пишут diff с ``ensure_ascii=False``, но ревизии, записанные
+    раньше, хранят ``\\u0425…`` вместо «Хранение». Такой JSON-объект или
+    массив переписывается с ``ensure_ascii=False`` при показе; всё прочее —
+    unified diff тела секции, JSON-скаляр, текст с обратным слешем —
+    показывается байт-в-байт.
+    """
+    if not diff:
+        return ""
+    text = diff
+    if "\\u" in diff:
+        try:
+            parsed = json.loads(diff)
+        except ValueError:
+            parsed = None
+        if isinstance(parsed, dict | list):
+            text = json.dumps(parsed, ensure_ascii=False)
+    return text.splitlines()[0][:limit]
+
+
 def list_for_entity(
     session: Session,
     entity_kind: EntityKind,

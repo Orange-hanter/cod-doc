@@ -45,7 +45,24 @@ def test_entity_filter_does_not_cross_projects(engine_with_schema: Engine) -> No
                 author="human:test",
                 diff=diff,
             )
-        rows = revision_service.list_for_project(
-            session, mine, entity_kind=EntityKind.ADR, entity_id=7
+        # Тот же row_id у сущности другого рода в своём проекте — не та сущность.
+        revision_service.write(
+            session,
+            project_id=mine,
+            entity_kind=EntityKind.TASK,
+            entity_id=7,
+            author="human:test",
+            diff='{"op": "task"}',
         )
-    assert [r.diff for r in rows] == ['{"op": "mine"}']
+
+        def diffs(pid: int, kind: EntityKind | None) -> list[str]:
+            rows = revision_service.list_for_project(session, pid, entity_kind=kind, entity_id=7)
+            return sorted(r.diff for r in rows)
+
+        assert diffs(mine, EntityKind.ADR) == ['{"op": "mine"}']
+        assert diffs(other, EntityKind.ADR) == ['{"op": "other"}']
+        assert diffs(mine, EntityKind.TASK) == ['{"op": "task"}']
+        assert diffs(other, EntityKind.TASK) == []
+        # Без entity_kind фильтр по row_id всё равно не выходит за проект.
+        assert diffs(mine, None) == ['{"op": "mine"}', '{"op": "task"}']
+        assert diffs(other, None) == ['{"op": "other"}']

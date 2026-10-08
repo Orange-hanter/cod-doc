@@ -1021,13 +1021,22 @@ def test_move_keeps_keyboard_focus_on_moved_shelf(adr_client) -> None:  # type: 
     def focused(html: str) -> list[str]:
         return re.findall(r'autofocus aria-label="([^"]+)"', html)
 
+    def target(location: str) -> tuple[str, dict[str, list[str]]]:
+        from urllib.parse import parse_qs, urlsplit
+
+        parts = urlsplit(location)
+        return parts.path, parse_qs(parts.query)
+
     resp = client.post(
         f"/p/{entry.name}/adr/shelves",
         data={"action": "move", "name": "Agent", "position": "2", "from_position": "1"},
         follow_redirects=False,
     )
     assert resp.status_code == 303
-    assert resp.headers["location"] == f"/p/{entry.name}/adr/shelves?moved=Agent&dir=down"
+    assert target(resp.headers["location"]) == (
+        f"/p/{entry.name}/adr/shelves",
+        {"moved": ["Agent"], "dir": ["down"]},
+    )
     # Agent теперь последний: ↓ заблокирована, фокус — на ↑.
     assert focused(client.get(resp.headers["location"]).text) == ["Move Agent up"]
 
@@ -1036,7 +1045,10 @@ def test_move_keeps_keyboard_focus_on_moved_shelf(adr_client) -> None:  # type: 
         data={"action": "move", "name": "Team", "position": "0", "from_position": "2"},
         follow_redirects=False,
     )
-    assert resp.headers["location"].endswith("moved=Team&dir=up")
+    assert target(resp.headers["location"]) == (
+        f"/p/{entry.name}/adr/shelves",
+        {"moved": ["Team"], "dir": ["up"]},
+    )
     assert focused(client.get(resp.headers["location"]).text) == ["Move Team down"]
 
     # В середине списка фокус — на той же стрелке.
@@ -1056,7 +1068,7 @@ def test_move_keeps_keyboard_focus_on_moved_shelf(adr_client) -> None:  # type: 
         data={"action": "move", "name": "Storage", "position": "0"},
         follow_redirects=False,
     )
-    assert bare.headers["location"] == f"/p/{entry.name}/adr/shelves"
+    assert target(bare.headers["location"]) == (f"/p/{entry.name}/adr/shelves", {})
 
 
 def test_shelves_page_lifecycle(adr_client) -> None:  # type: ignore[no-untyped-def]

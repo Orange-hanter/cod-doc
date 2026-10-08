@@ -76,7 +76,7 @@ def _write_revision(
 ) -> str:
     """Append a snapshot revision; return new revision_id."""
     new_rev_id = str(ULID())
-    diff = json.dumps({"op": "put", "body": body})
+    diff = json.dumps({"op": "put", "body": body}, ensure_ascii=False)
     session.add(
         RevisionModel(
             revision_id=new_rev_id,

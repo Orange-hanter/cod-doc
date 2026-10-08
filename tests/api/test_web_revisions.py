@@ -187,7 +187,7 @@ def test_diff_preview_shows_cyrillic_not_escapes() -> None:
     """JSON-diff, записанный с ensure_ascii=True, в превью читается кириллицей."""
     import json
 
-    from cod_doc.api.web.pages.revisions import _diff_preview
+    from cod_doc.services.revision_service import diff_preview as _diff_preview
 
     stored = json.dumps({"op": "set_topic", "old": "Хранение", "new": "Агент"})
     assert "\\u0425" in stored
@@ -195,13 +195,17 @@ def test_diff_preview_shows_cyrillic_not_escapes() -> None:
 
 
 def test_diff_preview_keeps_non_json_and_truncates() -> None:
-    from cod_doc.api.web.pages.revisions import _PREVIEW_CHARS, _diff_preview
+    from cod_doc.services.revision_service import DIFF_PREVIEW_CHARS as _PREVIEW_CHARS
+    from cod_doc.services.revision_service import diff_preview as _diff_preview
 
     assert _diff_preview("--- a\n+++ b\n@@ -1 +1 @@") == "--- a"
     assert _diff_preview(None) == ""
     # JSON без \\u-escape показывается байт-в-байт, как записан.
     assert _diff_preview('{"op":"x","n":1}') == '{"op":"x","n":1}'
     assert _diff_preview("true") == "true"
+    # \\u в JSON-скаляре или не-JSON тексте не переписывается.
+    assert _diff_preview('"\\u0425"') == '"\\u0425"'
+    assert _diff_preview("path C:\\users\\u1") == "path C:\\users\\u1"
     preview = _diff_preview('{"body": "' + "я" * 500 + '"}')
     assert len(preview) == _PREVIEW_CHARS
     # Режется по символам, а не по байтам: многобайтовая буква не рвётся.
@@ -217,7 +221,7 @@ def test_revisions_page_escapes_diff_preview(revisions_client) -> None:
     from cod_doc.infra.models import ProjectModel
     from cod_doc.services import revision_service
 
-    client, entry, _ = revisions_client
+    client, entry, task_row_id = revisions_client
     engine = make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db")
     try:
         with transactional(make_session_factory(engine)) as session:
@@ -227,8 +231,8 @@ def test_revisions_page_escapes_diff_preview(revisions_client) -> None:
             revision_service.write(
                 session,
                 project_id=pid,
-                entity_kind=EntityKind.ADR_TOPIC,
-                entity_id=1,
+                entity_kind=EntityKind.TASK,
+                entity_id=task_row_id,
                 author="human:test",
                 diff=json.dumps({"op": "create", "name": "<script>alert(1)</script>Хранение"}),
             )
