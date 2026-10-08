@@ -1054,12 +1054,18 @@ def test_move_keeps_keyboard_focus_on_moved_shelf(adr_client) -> None:  # type: 
     # В середине списка фокус — на той же стрелке.
     page = client.get(f"/p/{entry.name}/adr/shelves?moved=Storage&dir=up").text
     assert focused(page) == ["Move Storage up"]
-    # Мусор в dir фокус не ставит.
-    assert focused(client.get(f"/p/{entry.name}/adr/shelves?moved=Storage&dir=x").text) == []
+    # Мусор в dir фокус не ставит, а страница рисуется как обычно.
+    junk = client.get(f"/p/{entry.name}/adr/shelves?moved=Storage&dir=x")
+    assert junk.status_code == 200
+    assert focused(junk.text) == []
+    assert all(f'aria-label="Move {n} up' in junk.text for n in ("Storage", "Agent", "Team"))
     # moved только сравнивается с именем полки и в разметку не попадает.
     payload = '"><script>alert(1)</script>'
     page = client.get(f"/p/{entry.name}/adr/shelves", params={"moved": payload, "dir": "up"}).text
+    # moved не выводится ни сырым, ни экранированным — его в разметке нет вовсе.
     assert payload not in page
+    assert "&#34;&gt;&lt;script" not in page
+    assert "&quot;&gt;&lt;script" not in page
     assert "alert(1)" not in page
     assert focused(page) == []
     # Ручной POST без исходной позиции двигает полку, но фокус не ставит.

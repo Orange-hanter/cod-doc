@@ -55,6 +55,16 @@ def test_entity_filter_does_not_cross_projects(engine_with_schema: Engine) -> No
             diff='{"op": "task"}',
         )
 
+        # Своя ревизия с другим row_id: фильтр по entity_id без kind её не отдаёт.
+        revision_service.write(
+            session,
+            project_id=mine,
+            entity_kind=EntityKind.ADR,
+            entity_id=9,
+            author="human:test",
+            diff='{"op": "adr-9"}',
+        )
+
         def diffs(pid: int, kind: EntityKind | None) -> list[str]:
             rows = revision_service.list_for_project(session, pid, entity_kind=kind, entity_id=7)
             return sorted(r.diff for r in rows)
