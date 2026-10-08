@@ -198,4 +198,7 @@ def test_diff_preview_keeps_non_json_and_truncates() -> None:
 
     assert _diff_preview("--- a\n+++ b\n@@ -1 +1 @@") == "--- a"
     assert _diff_preview(None) == ""
-    assert len(_diff_preview('{"body": "' + "я" * 500 + '"}')) == _PREVIEW_CHARS
+    preview = _diff_preview('{"body": "' + "я" * 500 + '"}')
+    assert len(preview) == _PREVIEW_CHARS
+    # Режется по символам, а не по байтам: многобайтовая буква не рвётся.
+    assert preview == '{"body": "' + "я" * (_PREVIEW_CHARS - len('{"body": "'))

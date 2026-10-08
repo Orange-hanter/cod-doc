@@ -1044,6 +1044,12 @@ def test_move_keeps_keyboard_focus_on_moved_shelf(adr_client) -> None:  # type: 
     assert focused(page) == ["Move Storage up"]
     # Мусор в dir фокус не ставит.
     assert focused(client.get(f"/p/{entry.name}/adr/shelves?moved=Storage&dir=x").text) == []
+    # moved только сравнивается с именем полки и в разметку не попадает.
+    payload = '"><script>alert(1)</script>'
+    page = client.get(f"/p/{entry.name}/adr/shelves", params={"moved": payload, "dir": "up"}).text
+    assert payload not in page
+    assert "alert(1)" not in page
+    assert focused(page) == []
 
 
 def test_shelves_page_lifecycle(adr_client) -> None:  # type: ignore[no-untyped-def]
