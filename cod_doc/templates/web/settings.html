@@ -412,7 +412,98 @@
       <button type="submit" class="btn btn-primary">Save</button>
     </div>
   </form>
+
+  {# Вне формы выше: стиль текста не уходит на сервер, а живёт в localStorage
+     браузера (cod_doc_text.js) и применяется сразу, без Save. Здесь только
+     каркас: пресеты, шрифты и границы ползунков рисует codDocText.mount(). #}
+  <div class="settings-form text-style" id="text-style">
+    <fieldset>
+      <legend>Текст и шрифт</legend>
+      <p class="settings-note">
+        Применяется сразу ко всем страницам этого браузера; на сервер не уходит.
+        Шрифты — только установленные в системе: если выбранного нет, браузер
+        возьмёт следующий из стека.
+      </p>
+
+      <div class="settings-group">
+        <h3>Пресет</h3>
+        <div class="settings-presets" role="radiogroup" aria-label="Пресет текста" data-ts-presets></div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Тонкая подгонка</h3>
+        <div class="settings-fields">
+          <label class="field">
+            <span class="label">Размер текста <output data-ts-out="scale"></output></span>
+            <input type="range" data-key="scale" step="1">
+            <small class="muted">От исходного кегля 14px; масштабирует весь текст, не трогая отступы.</small>
+          </label>
+          <label class="field">
+            <span class="label">Межстрочный интерфейса <output data-ts-out="lineHeight"></output></span>
+            <input type="range" data-key="lineHeight" step="0.05">
+            <small class="muted">Таблицы, списки, формы.</small>
+          </label>
+          <label class="field">
+            <span class="label">Межстрочный документов <output data-ts-out="proseLineHeight"></output></span>
+            <input type="range" data-key="proseLineHeight" step="0.05">
+            <small class="muted">Тело секций документов и полей задач.</small>
+          </label>
+          <label class="field">
+            <span class="label">Ширина строки документов <output data-ts-out="measure"></output></span>
+            <input type="range" data-key="measure" step="2">
+            <small class="muted">В символах; крайнее левое положение — без ограничения.</small>
+          </label>
+        </div>
+        <div class="settings-fields settings-fields-3">
+          <label class="field">
+            <span class="label">Шрифт интерфейса</span>
+            <select data-key="sans"></select>
+          </label>
+          <label class="field">
+            <span class="label">Шрифт документов</span>
+            <select data-key="prose"></select>
+          </label>
+          <label class="field">
+            <span class="label">Моноширинный</span>
+            <select data-key="mono"></select>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Образец</h3>
+        <div class="text-style-sample">
+          <div class="section-body">
+            <p>Документы, задачи и планы живут в БД, а markdown — вторичная проекция.
+            Так выглядит тело секции документа: длинный абзац переносится по ширине
+            строки, межстрочный задаёт воздух между строками.</p>
+            <p>Код в тексте — <code>cod-doc doc drift --all</code>, ссылки — <a href="#text-style">как здесь</a>.</p>
+          </div>
+          <div class="table-scroll">
+          <table class="grid text-sample-table">
+            <thead><tr><th>ID</th><th>Задача</th><th class="num">Оценка</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">ADO-240</td><td>Регулятор шрифта в настройках</td><td class="num">3</td></tr>
+              <tr><td class="mono">ADO-241</td><td>Плотная таблица интерфейса</td><td class="num">1</td></tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" class="btn" data-ts-reset>Сбросить к стандарту</button>
+      </div>
+    </fieldset>
+  </div>
 </div>
+
+<script>
+  (function () {
+    const root = document.getElementById("text-style");
+    if (window.codDocText && root) window.codDocText.mount(root);
+  })();
+</script>
 
 <script>
   const EMBEDDING_DEFAULTS = {

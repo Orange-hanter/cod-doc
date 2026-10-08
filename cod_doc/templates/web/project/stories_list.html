@@ -101,7 +101,7 @@
                 {% for d in t.docs %}
                   <li class="stories-context-row {% if d.is_fresh %}stories-context-fresh{% endif %}">
                     <a href="/p/{{ project.name }}/docs/{{ d.doc_key }}" class="mono">{{ d.doc_key }}</a>
-                    <span class="ds-chip ds-chip-{{ d.status }}" style="font-size:9px; padding:0 6px;">{{ d.status }}</span>
+                    <span class="ds-chip ds-chip-{{ d.status }}" style="font-size:calc(9px * var(--text-scale, 1)); padding:0 6px;">{{ d.status }}</span>
                     <span class="muted-tiny">{{ d.updated_at | relative_time }}</span>
                     {% if d.is_fresh %}<span class="stories-context-badge">⚡ fresh</span>{% endif %}
                   </li>

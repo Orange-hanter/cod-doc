@@ -78,6 +78,16 @@
   /* Type */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace;
+  /* Регулятор текста (Settings → «Текст и шрифт»). Значения ниже — пресет
+   * «Стандарт»; выбранные пользователем bootstrap в base.html кладёт инлайном
+   * на <html> до отрисовки. Любой font-size в стилях и шаблонах обязан идти
+   * через `calc(Npx * var(--text-scale, 1))`, иначе он не масштабируется —
+   * это стережёт tests/api/test_web_text_style.py. */
+  --text-scale: 1;
+  --line-height: 1.5;
+  --font-prose: var(--font-sans);
+  --prose-line-height: 1.5;
+  --prose-measure: none;
 
   --motion-fast: 0.12s ease;
   --motion-mid:  0.2s ease;
@@ -250,7 +260,7 @@
 html, body { margin: 0; padding: 0; }
 html { background: var(--bg-inset); }
 body {
-  font: 14px/1.5 var(--font-sans);
+  font: calc(14px * var(--text-scale, 1))/var(--line-height, 1.5) var(--font-sans);
   color: var(--fg);
   background: var(--bg-inset);
   -webkit-font-smoothing: antialiased;
@@ -262,11 +272,11 @@ a { color: var(--accent); text-decoration: none; transition: color var(--motion-
 a:hover { text-decoration: underline; }
 
 h1, h2, h3, h4, h5 { color: var(--fg-strong); }
-h1 { font-size: 22px; font-weight: 600; margin: 0 0 var(--space-4); letter-spacing: -0.01em; }
-h2 { font-size: 16px; font-weight: 600; margin: var(--space-6) 0 var(--space-2); }
+h1 { font-size: calc(22px * var(--text-scale, 1)); font-weight: 600; margin: 0 0 var(--space-4); letter-spacing: -0.01em; }
+h2 { font-size: calc(16px * var(--text-scale, 1)); font-weight: 600; margin: var(--space-6) 0 var(--space-2); }
 
 code, pre, .mono { font-family: var(--font-mono); }
-code { font-size: 12px; }
+code { font-size: calc(12px * var(--text-scale, 1)); }
 
 ::selection { background: var(--accent-soft-bg); color: var(--accent-soft-fg); }
 
@@ -289,7 +299,7 @@ code { font-size: 12px; }
   align-items: center;
   gap: var(--space-2);
   font-weight: 700;
-  font-size: 14px;
+  font-size: calc(14px * var(--text-scale, 1));
   color: var(--fg-strong);
   letter-spacing: 0.02em;
   /* На телефонной ширине flex дожимал бренд до переноса по дефису —
@@ -309,7 +319,7 @@ code { font-size: 12px; }
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-md);
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
 }
 .topbar nav a:hover { color: var(--fg); background: var(--bg-alt); text-decoration: none; }
 .topbar nav a.active { color: var(--fg-strong); background: var(--bg-alt); }
@@ -371,7 +381,7 @@ code { font-size: 12px; }
 
 /* ── Crumbs ───────────────────────────────────────────────────────────── */
 .crumbs {
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   color: var(--muted);
   margin: 0 0 var(--space-2);
   display: flex;
@@ -404,7 +414,7 @@ code { font-size: 12px; }
   padding: var(--space-2) var(--space-4);
   color: var(--muted);
   border-bottom: 2px solid transparent;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   font-weight: 500;
   white-space: nowrap;
   transition: color var(--motion-fast), border-color var(--motion-fast);
@@ -430,7 +440,7 @@ code { font-size: 12px; }
 .grid {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -446,7 +456,7 @@ code { font-size: 12px; }
 .grid th {
   background: var(--bg-alt);
   font-weight: 600;
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
@@ -455,7 +465,7 @@ code { font-size: 12px; }
 .grid tbody tr { transition: background var(--motion-fast); }
 .grid tbody tr:hover { background: var(--bg-alt); }
 .grid td.num, .grid th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.mono { font-family: var(--font-mono); font-size: 12px; }
+.mono { font-family: var(--font-mono); font-size: calc(12px * var(--text-scale, 1)); }
 .muted { color: var(--muted); }
 
 /* ── Warnings / hints ─────────────────────────────────────────────────── */
@@ -466,7 +476,7 @@ code { font-size: 12px; }
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   margin: 0 0 var(--space-4);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
 }
 
 /* ── Cards ────────────────────────────────────────────────────────────── */
@@ -485,14 +495,14 @@ code { font-size: 12px; }
 }
 .card:hover { border-color: var(--border-strong); }
 .card-label {
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
   font-weight: 600;
 }
 .card-value {
-  font-size: 22px;
+  font-size: calc(22px * var(--text-scale, 1));
   font-weight: 600;
   margin-top: var(--space-1);
   font-variant-numeric: tabular-nums;
@@ -516,7 +526,7 @@ code { font-size: 12px; }
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-x: auto;
@@ -527,7 +537,7 @@ code { font-size: 12px; }
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   color: var(--muted);
   margin: 0 0 var(--space-4);
 }
@@ -541,7 +551,7 @@ code { font-size: 12px; }
   align-items: start;
 }
 .sections-nav {
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale, 1));
   position: sticky;
   top: calc(var(--topbar-h) + var(--space-3));
   background: var(--bg);
@@ -552,7 +562,7 @@ code { font-size: 12px; }
   overflow-y: auto;
 }
 .sections-nav h2 {
-  font-size: 11px;
+  font-size: calc(11px * var(--text-scale, 1));
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
@@ -577,16 +587,21 @@ code { font-size: 12px; }
 }
 .doc-section:first-child { border-top: 0; margin-top: 0; }
 .doc-section h2, .doc-section h3, .doc-section h4 { margin: 0 0 var(--space-2); }
-.doc-section h2 { font-size: 17px; }
-.doc-section h3 { font-size: 14px; }
-.doc-section h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.doc-section h2 { font-size: calc(17px * var(--text-scale, 1)); }
+.doc-section h3 { font-size: calc(14px * var(--text-scale, 1)); }
+.doc-section h4 { font-size: calc(12px * var(--text-scale, 1)); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.section-body, .doc-preamble {
+  font-family: var(--font-prose, var(--font-sans));
+  line-height: var(--prose-line-height, 1.5);
+  max-width: var(--prose-measure, none);
+}
 .section-body p, .doc-preamble p { margin: 0 0 var(--space-2); }
 .section-body code, .doc-preamble code {
   background: var(--bg-alt);
   padding: 1px 5px;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
 }
 .section-body pre, .doc-preamble pre {
   background: var(--bg-alt);
@@ -594,7 +609,7 @@ code { font-size: 12px; }
   border-radius: var(--radius-md);
   padding: var(--space-2) var(--space-3);
   overflow-x: auto;
-  font-size: 12px;
+  font-size: calc(12px * var(--text-scale, 1));
 }
 .section-body pre code, .doc-preamble pre code { background: transparent; padding: 0; }
 .section-body ul, .doc-preamble ul { margin: 0 0 var(--space-2); padding-left: var(--space-5); }
