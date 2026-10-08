@@ -1023,7 +1023,7 @@ def test_move_keeps_keyboard_focus_on_moved_shelf(adr_client) -> None:  # type: 
 
     resp = client.post(
         f"/p/{entry.name}/adr/shelves",
-        data={"action": "move", "name": "Agent", "position": "2"},
+        data={"action": "move", "name": "Agent", "position": "2", "from_position": "1"},
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -1033,7 +1033,7 @@ def test_move_keeps_keyboard_focus_on_moved_shelf(adr_client) -> None:  # type: 
 
     resp = client.post(
         f"/p/{entry.name}/adr/shelves",
-        data={"action": "move", "name": "Team", "position": "0"},
+        data={"action": "move", "name": "Team", "position": "0", "from_position": "2"},
         follow_redirects=False,
     )
     assert resp.headers["location"].endswith("moved=Team&dir=up")
@@ -1050,6 +1050,13 @@ def test_move_keeps_keyboard_focus_on_moved_shelf(adr_client) -> None:  # type: 
     assert payload not in page
     assert "alert(1)" not in page
     assert focused(page) == []
+    # Ручной POST без исходной позиции двигает полку, но фокус не ставит.
+    bare = client.post(
+        f"/p/{entry.name}/adr/shelves",
+        data={"action": "move", "name": "Storage", "position": "0"},
+        follow_redirects=False,
+    )
+    assert bare.headers["location"] == f"/p/{entry.name}/adr/shelves"
 
 
 def test_shelves_page_lifecycle(adr_client) -> None:  # type: ignore[no-untyped-def]

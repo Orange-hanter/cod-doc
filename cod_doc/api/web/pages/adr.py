@@ -724,7 +724,7 @@ def adr_shelves_page(
             "loose": loose,
             # После ↑/↓ страница перерисовывается редиректом: фокус возвращается
             # на ту же стрелку той же полки, иначе клавиатура теряет место.
-            "moved": moved,
+            "moved": moved if moved in {t.name for t in topics} else None,
             "moved_dir": direction if direction in {"up", "down"} else None,
         },
     )
@@ -740,6 +740,7 @@ def adr_shelves_submit(
     includes: Annotated[str | None, Form()] = None,
     excludes: Annotated[str | None, Form()] = None,
     position: Annotated[int | None, Form()] = None,
+    from_position: Annotated[int | None, Form()] = None,
 ) -> RedirectResponse:
     """ARG-010: одна точка записи полок — ``action`` ∈ create/update/move/delete.
 
@@ -773,12 +774,14 @@ def adr_shelves_submit(
         elif action == "move":
             if position is None:
                 raise HTTPException(status_code=400, detail="move needs a position")
-            before = adr_topic_service.require(session, project_id, name).position
             topic = adr_topic_service.move(
                 session, project_id=project_id, name=name, position=position, author=author
             )
-            direction = "up" if topic.position < before else "down"
-            after += "?" + urlencode({"moved": topic.name, "dir": direction})
+            # Исходную позицию несёт форма: направление для фокуса без второго
+            # запроса. Без неё (ручной POST) редирект просто без фокуса.
+            if from_position is not None:
+                direction = "up" if position < from_position else "down"
+                after += "?" + urlencode({"moved": topic.name, "dir": direction})
         elif action == "delete":
             adr_topic_service.delete(session, project_id=project_id, name=name, author=author)
         else:

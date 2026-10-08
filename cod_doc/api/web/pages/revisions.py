@@ -28,10 +28,12 @@ def _diff_preview(diff: str | None) -> str:
     """
     if not diff:
         return ""
-    try:
-        text = json.dumps(json.loads(diff), ensure_ascii=False)
-    except ValueError:
-        text = diff
+    text = diff
+    if "\\u" in diff:
+        try:
+            text = json.dumps(json.loads(diff), ensure_ascii=False)
+        except ValueError:
+            text = diff
     return text.splitlines()[0][:_PREVIEW_CHARS]
 
 
