@@ -69,13 +69,17 @@
     return Math.min(hi, Math.max(lo, n));
   }
 
+  // Object.hasOwn моложе остального кода страницы (Safari 15.4): скрипт
+  // синхронный и стоит в <head>, ему нельзя падать на старом движке.
+  const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+
   // Чужое или испорченное значение в localStorage не должно ломать вёрстку:
   // каждое поле проверяется и при отказе берётся из «Стандарта».
   function normalize(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
-    const pick = (group, key) => (Object.hasOwn(FONTS[group], src[key]) ? src[key] : DEFAULT[key]);
+    const pick = (group, key) => (hasOwn(FONTS[group], src[key]) ? src[key] : DEFAULT[key]);
     return {
-      preset: Object.hasOwn(PRESETS, src.preset) ? src.preset : 'custom',
+      preset: hasOwn(PRESETS, src.preset) ? src.preset : 'custom',
       scale: clamp(src.scale, LIMITS.scale, DEFAULT.scale),
       lineHeight: clamp(src.lineHeight, LIMITS.lineHeight, DEFAULT.lineHeight),
       proseLineHeight: clamp(src.proseLineHeight, LIMITS.proseLineHeight, DEFAULT.proseLineHeight),
@@ -103,11 +107,15 @@
     try { localStorage.setItem(KEY, JSON.stringify(style)); } catch (e) { /* ignore */ }
   }
 
-  function apply(style, el) {
+  function apply(raw, el) {
+    // Нормализуем и здесь: apply виден на window, и в CSS-переменные не
+    // должна попасть строка, которую не пропустил бы normalize.
+    const style = normalize(raw);
     const s = (el || document.documentElement).style;
     const set = (name, value) => (value === null ? s.removeProperty(name) : s.setProperty(name, value));
     // Совпадающее с :root не пишем: инлайн тогда пуст, и правка дефолтов в
-    // _base.css доезжает до тех, кто регулятор не трогал.
+    // _base.css доезжает до тех, кто регулятор не трогал. Совпадение
+    // PRESETS.standard с :root стережёт tests/api/test_web_text_style.py.
     set('--text-scale', style.scale === DEFAULT.scale ? null : String(style.scale / 100));
     set('--line-height', style.lineHeight === DEFAULT.lineHeight ? null : String(style.lineHeight));
     set('--prose-line-height', style.proseLineHeight === DEFAULT.proseLineHeight ? null : String(style.proseLineHeight));
@@ -127,6 +135,97 @@
     return 'custom';
   }
 
-  window.codDocText = { KEY, FONTS, PRESETS, LIMITS, load, save, apply, fromPreset, normalize, matchPreset };
-  apply(load());
+  const CUSTOM = { label: 'Свой', note: 'Ползунки и шрифты ниже; запоминается последняя подгонка.' };
+
+  const FORMAT = {
+    scale: (v) => v + '%',
+    lineHeight: (v) => v.toFixed(2),
+    proseLineHeight: (v) => v.toFixed(2),
+    measure: (v) => (v ? v + 'ch' : 'без ограничения'),
+  };
+
+  // Контролы секции «Текст и шрифт» (settings.html). Шаблон даёт только
+  // каркас — контейнер [data-ts-presets], ползунки и селекты с data-key,
+  // <output data-ts-out="key">, кнопку [data-ts-reset]; пресеты, шрифты и
+  // границы рисуются отсюда, чтобы форма данных не утекала в шаблон.
+  function mount(root) {
+    let style = load();
+    const presets = root.querySelector('[data-ts-presets]');
+    const radios = {};
+    for (const [id, preset] of [...Object.entries(PRESETS), ['custom', CUSTOM]]) {
+      const label = document.createElement('label');
+      label.className = 'settings-preset';
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'text_preset';
+      input.value = id;
+      radios[id] = input;
+      const title = document.createElement('span');
+      title.className = 'settings-preset-title';
+      title.textContent = preset.label;
+      const note = document.createElement('span');
+      note.className = 'settings-preset-note';
+      note.textContent = preset.note;
+      label.append(input, title, note);
+      presets.append(label);
+    }
+
+    const ranges = [...root.querySelectorAll('input[type="range"][data-key]')];
+    for (const input of ranges) {
+      const [lo, hi] = LIMITS[input.dataset.key];
+      // У ширины строки шаг левее нижней границы — «без ограничения» (0).
+      input.min = input.dataset.key === 'measure' ? lo - Number(input.step) : lo;
+      input.max = hi;
+    }
+    const selects = [...root.querySelectorAll('select[data-key]')];
+    for (const select of selects) {
+      for (const [id, font] of Object.entries(FONTS[select.dataset.key])) {
+        select.add(new Option(font.label, id));
+      }
+    }
+
+    function render() {
+      for (const input of ranges) {
+        const key = input.dataset.key;
+        input.value = key === 'measure' && !style[key] ? input.min : style[key];
+        const out = root.querySelector(`[data-ts-out="${key}"]`);
+        if (out) out.textContent = FORMAT[key](style[key]);
+      }
+      for (const select of selects) select.value = style[select.dataset.key];
+      radios[style.preset].checked = true;
+    }
+
+    function commit(next) {
+      style = normalize(next);
+      apply(style);
+      save(style);
+      render();
+    }
+
+    presets.addEventListener('change', (ev) => {
+      const id = ev.target.value;
+      // «Свой» без подгонки ничего не меняет: оставляет текущие значения
+      // и только снимает привязку к пресету.
+      commit(id === 'custom' ? { ...style, preset: 'custom' } : fromPreset(id));
+    });
+    const onTweak = (ev) => {
+      const key = ev.target.dataset.key;
+      let value = ev.target.type === 'range' ? Number(ev.target.value) : ev.target.value;
+      if (key === 'measure' && value < LIMITS.measure[0]) value = 0;
+      const next = { ...style, [key]: value };
+      next.preset = matchPreset(next);
+      commit(next);
+    };
+    for (const input of ranges) input.addEventListener('input', onTweak);
+    for (const select of selects) select.addEventListener('change', onTweak);
+    const reset = root.querySelector('[data-ts-reset]');
+    if (reset) reset.addEventListener('click', () => commit(fromPreset('standard')));
+
+    render();
+  }
+
+  window.codDocText = { KEY, FONTS, PRESETS, LIMITS, load, save, apply, fromPreset, normalize, matchPreset, mount };
+  // Сбой здесь не должен стоить странице отрисовки: без регулятора она
+  // просто остаётся со стилем :root.
+  try { apply(load()); } catch (e) { console.warn('[cod-doc-text]', e); }
 })();

@@ -12,7 +12,7 @@
 <div class="tasks-page">
 
   {% if legacy_count and legacy_count > 0 %}
-    <p class="muted" style="margin-bottom: var(--space-3); font-size: calc(12px * var(--text-scale));">
+    <p class="muted" style="margin-bottom: var(--space-3); font-size: calc(12px * var(--text-scale, 1));">
       📁 <a href="/p/{{ project.name }}/tasks/legacy">Legacy YAML tasks ({{ legacy_count }})</a>
       — stored in <code>.cod-doc/tasks.yaml</code>, not yet migrated.
     </p>
@@ -175,7 +175,7 @@
       </div>
     {% endif %}
 
-    <p class="muted" style="margin-top:var(--space-2); font-size:calc(12px * var(--text-scale));">
+    <p class="muted" style="margin-top:var(--space-2); font-size:calc(12px * var(--text-scale, 1));">
       {{ tasks | length }} task{% if tasks | length != 1 %}s{% endif %} shown.
     </p>
 

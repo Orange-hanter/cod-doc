@@ -414,8 +414,8 @@
   </form>
 
   {# Вне формы выше: стиль текста не уходит на сервер, а живёт в localStorage
-     браузера (cod_doc_text.js) и применяется сразу, без Save. Пресеты и
-     списки шрифтов рисует скрипт ниже из window.codDocText — один источник. #}
+     браузера (cod_doc_text.js) и применяется сразу, без Save. Здесь только
+     каркас: пресеты, шрифты и границы ползунков рисует codDocText.mount(). #}
   <div class="settings-form text-style" id="text-style">
     <fieldset>
       <legend>Текст и шрифт</legend>
@@ -427,45 +427,45 @@
 
       <div class="settings-group">
         <h3>Пресет</h3>
-        <div class="settings-presets" role="radiogroup" aria-label="Пресет текста" id="ts-presets"></div>
+        <div class="settings-presets" role="radiogroup" aria-label="Пресет текста" data-ts-presets></div>
       </div>
 
       <div class="settings-group">
         <h3>Тонкая подгонка</h3>
         <div class="settings-fields">
           <label class="field">
-            <span class="label">Размер текста <output id="ts-scale-out"></output></span>
-            <input type="range" id="ts-scale" data-key="scale" step="1">
+            <span class="label">Размер текста <output data-ts-out="scale"></output></span>
+            <input type="range" data-key="scale" step="1">
             <small class="muted">От исходного кегля 14px; масштабирует весь текст, не трогая отступы.</small>
           </label>
           <label class="field">
-            <span class="label">Межстрочный интерфейса <output id="ts-lineHeight-out"></output></span>
-            <input type="range" id="ts-lineHeight" data-key="lineHeight" step="0.05">
+            <span class="label">Межстрочный интерфейса <output data-ts-out="lineHeight"></output></span>
+            <input type="range" data-key="lineHeight" step="0.05">
             <small class="muted">Таблицы, списки, формы.</small>
           </label>
           <label class="field">
-            <span class="label">Межстрочный документов <output id="ts-proseLineHeight-out"></output></span>
-            <input type="range" id="ts-proseLineHeight" data-key="proseLineHeight" step="0.05">
+            <span class="label">Межстрочный документов <output data-ts-out="proseLineHeight"></output></span>
+            <input type="range" data-key="proseLineHeight" step="0.05">
             <small class="muted">Тело секций документов и полей задач.</small>
           </label>
           <label class="field">
-            <span class="label">Ширина строки документов <output id="ts-measure-out"></output></span>
-            <input type="range" id="ts-measure" data-key="measure" step="2">
+            <span class="label">Ширина строки документов <output data-ts-out="measure"></output></span>
+            <input type="range" data-key="measure" step="2">
             <small class="muted">В символах; крайнее левое положение — без ограничения.</small>
           </label>
         </div>
         <div class="settings-fields settings-fields-3">
           <label class="field">
             <span class="label">Шрифт интерфейса</span>
-            <select id="ts-sans" data-key="sans" data-group="sans"></select>
+            <select data-key="sans"></select>
           </label>
           <label class="field">
             <span class="label">Шрифт документов</span>
-            <select id="ts-prose" data-key="prose" data-group="prose"></select>
+            <select data-key="prose"></select>
           </label>
           <label class="field">
             <span class="label">Моноширинный</span>
-            <select id="ts-mono" data-key="mono" data-group="mono"></select>
+            <select data-key="mono"></select>
           </label>
         </div>
       </div>
@@ -492,7 +492,7 @@
       </div>
 
       <div class="form-actions">
-        <button type="button" class="btn" id="ts-reset">Сбросить к стандарту</button>
+        <button type="button" class="btn" data-ts-reset>Сбросить к стандарту</button>
       </div>
     </fieldset>
   </div>
@@ -500,88 +500,8 @@
 
 <script>
   (function () {
-    const T = window.codDocText;
     const root = document.getElementById("text-style");
-    if (!T || !root) return;
-    let style = T.load();
-
-    const FORMAT = {
-      scale: (v) => v + "%",
-      lineHeight: (v) => v.toFixed(2),
-      proseLineHeight: (v) => v.toFixed(2),
-      measure: (v) => (v ? v + "ch" : "без ограничения"),
-    };
-
-    const presets = document.getElementById("ts-presets");
-    const radios = {};
-    for (const [id, preset] of [...Object.entries(T.PRESETS), ["custom", { label: "Свой", note: "Ползунки и шрифты ниже; запоминается последняя подгонка." }]]) {
-      const label = document.createElement("label");
-      label.className = "settings-preset";
-      const input = document.createElement("input");
-      input.type = "radio";
-      input.name = "text_preset";
-      input.value = id;
-      radios[id] = input;
-      const title = document.createElement("span");
-      title.className = "settings-preset-title";
-      title.textContent = preset.label;
-      const note = document.createElement("span");
-      note.className = "settings-preset-note";
-      note.textContent = preset.note;
-      label.append(input, title, note);
-      presets.append(label);
-    }
-
-    const ranges = [...root.querySelectorAll('input[type="range"]')];
-    for (const input of ranges) {
-      const [lo, hi] = T.LIMITS[input.dataset.key];
-      // У ширины строки шаг левее нижней границы — «без ограничения» (0).
-      input.min = input.dataset.key === "measure" ? lo - Number(input.step) : lo;
-      input.max = hi;
-    }
-    const selects = [...root.querySelectorAll("select[data-group]")];
-    for (const select of selects) {
-      for (const [id, font] of Object.entries(T.FONTS[select.dataset.group])) {
-        select.add(new Option(font.label, id));
-      }
-    }
-
-    function render() {
-      for (const input of ranges) {
-        const key = input.dataset.key;
-        input.value = key === "measure" && !style[key] ? input.min : style[key];
-        document.getElementById("ts-" + key + "-out").textContent = FORMAT[key](style[key]);
-      }
-      for (const select of selects) select.value = style[select.dataset.key];
-      radios[style.preset].checked = true;
-    }
-
-    function commit(next) {
-      style = T.normalize(next);
-      T.apply(style);
-      T.save(style);
-      render();
-    }
-
-    presets.addEventListener("change", (ev) => {
-      const id = ev.target.value;
-      // «Свой» без подгонки ничего не меняет: оставляет текущие значения
-      // и только снимает привязку к пресету.
-      commit(id === "custom" ? { ...style, preset: "custom" } : T.fromPreset(id));
-    });
-    const onTweak = (ev) => {
-      const key = ev.target.dataset.key;
-      let value = ev.target.type === "range" ? Number(ev.target.value) : ev.target.value;
-      if (key === "measure" && value < T.LIMITS.measure[0]) value = 0;
-      const next = { ...style, [key]: value };
-      next.preset = T.matchPreset(next);
-      commit(next);
-    };
-    for (const input of ranges) input.addEventListener("input", onTweak);
-    for (const select of selects) select.addEventListener("change", onTweak);
-    document.getElementById("ts-reset").addEventListener("click", () => commit(T.fromPreset("standard")));
-
-    render();
+    if (window.codDocText && root) window.codDocText.mount(root);
   })();
 </script>
 

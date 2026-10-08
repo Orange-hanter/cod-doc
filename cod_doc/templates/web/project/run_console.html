@@ -206,15 +206,15 @@
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2);">
           <div>
             <div class="muted-tiny">Done</div>
-            <div style="font-size: calc(18px * var(--text-scale)); font-weight: 600; color: var(--success);">{{ _done }}</div>
+            <div style="font-size: calc(18px * var(--text-scale, 1)); font-weight: 600; color: var(--success);">{{ _done }}</div>
           </div>
           <div>
             <div class="muted-tiny">Failed</div>
-            <div style="font-size: calc(18px * var(--text-scale)); font-weight: 600; color: var(--danger);">{{ _failed }}</div>
+            <div style="font-size: calc(18px * var(--text-scale, 1)); font-weight: 600; color: var(--danger);">{{ _failed }}</div>
           </div>
           <div>
             <div class="muted-tiny">Running</div>
-            <div style="font-size: calc(18px * var(--text-scale)); font-weight: 600; color: var(--info);">{{ _running_n }}</div>
+            <div style="font-size: calc(18px * var(--text-scale, 1)); font-weight: 600; color: var(--info);">{{ _running_n }}</div>
           </div>
         </div>
       </div>

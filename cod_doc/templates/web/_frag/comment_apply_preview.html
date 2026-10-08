@@ -52,7 +52,7 @@
           <details>
             <summary class="muted-tiny">Редактировать перед применением</summary>
             <textarea name="new_body__{{ r.anchor }}" rows="14"
-                      style="width:100%; font-family:var(--font-mono); font-size:calc(12px * var(--text-scale));">{{ r.new_body }}</textarea>
+                      style="width:100%; font-family:var(--font-mono); font-size:calc(12px * var(--text-scale, 1));">{{ r.new_body }}</textarea>
           </details>
 
           {# Hidden mirror used when the user doesn't open the editor —
