@@ -34,6 +34,8 @@
       } catch (e) { /* localStorage may be denied — fall back to default */ }
     })();
   </script>
+  {# Без defer: стиль текста должен лечь до первой отрисовки, как тема выше. #}
+  <script src="{{ static_url('cod_doc_text.js') }}"></script>
   <script defer src="{{ static_url('htmx.min.js') }}"></script>
   <script type="module">
     const blocks = [...document.querySelectorAll('.mermaid')];

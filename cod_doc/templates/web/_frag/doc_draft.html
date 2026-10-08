@@ -95,7 +95,7 @@
   display: flex; align-items: center; gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
   margin-bottom: var(--space-4);
   border: 1px solid var(--border);
 }
@@ -111,8 +111,8 @@
   padding-bottom: var(--space-3);
   border-bottom: 1px solid var(--border-soft);
 }
-.draft-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; margin-bottom: 3px; }
-.draft-title-preview { font-size: 18px; font-weight: 700; color: var(--fg-strong); }
+.draft-label { font-size: calc(10px * var(--text-scale)); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; margin-bottom: 3px; }
+.draft-title-preview { font-size: calc(18px * var(--text-scale)); font-weight: 700; color: var(--fg-strong); }
 .draft-meta-chips { display: flex; gap: var(--space-2); flex-shrink: 0; margin-top: 4px; }
 
 .draft-form { display: flex; flex-direction: column; gap: var(--space-3); }
@@ -130,7 +130,7 @@
 
 .draft-field { display: flex; flex-direction: column; gap: var(--space-1); }
 .draft-field label {
-  font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  font-size: calc(10px * var(--text-scale)); text-transform: uppercase; letter-spacing: .08em;
   color: var(--muted); font-weight: 700;
 }
 .draft-field input[type="text"],
@@ -138,7 +138,7 @@
 .draft-field .draft-textarea {
   padding: 7px 10px;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--text-scale));
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -150,7 +150,7 @@
   outline: 2px solid var(--accent-soft-bg);
   outline-offset: -1px;
 }
-.draft-textarea { resize: vertical; line-height: 1.55; width: 100%; font-family: var(--font-mono); font-size: 12px; }
+.draft-textarea { resize: vertical; line-height: 1.55; width: 100%; font-family: var(--font-mono); font-size: calc(12px * var(--text-scale)); }
 
 .draft-block {
   border: 1px solid var(--border-soft);
@@ -172,14 +172,14 @@
   background: var(--accent);
   color: var(--accent-fg);
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; flex-shrink: 0;
+  font-size: calc(12px * var(--text-scale)); font-weight: 700; flex-shrink: 0;
 }
 .draft-section-block .draft-block-icon { background: var(--purple); }
-.draft-block-title { font-size: 12px; font-weight: 600; color: var(--fg-strong); }
+.draft-block-title { font-size: calc(12px * var(--text-scale)); font-weight: 600; color: var(--fg-strong); }
 .draft-collapse-btn {
   margin-left: auto;
   background: transparent; border: 0;
-  cursor: pointer; font-size: 12px;
+  cursor: pointer; font-size: calc(12px * var(--text-scale));
   color: var(--muted); padding: 0 var(--space-1);
   transition: transform var(--motion-fast);
 }
