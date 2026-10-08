@@ -101,7 +101,9 @@ def _upsert_suggestion(
             session.execute(
                 update(LinkSuggestionModel)
                 .where(LinkSuggestionModel.row_id == existing.row_id)
-                .values(score=score, evidence=json.dumps(evidence), updated_at=now)
+                .values(
+                    score=score, evidence=json.dumps(evidence, ensure_ascii=False), updated_at=now
+                )
             )
         return False  # not a new row
 
@@ -111,7 +113,7 @@ def _upsert_suggestion(
             to_doc_key=to_doc_key,
             to_section_id=to_section_id,
             score=score,
-            evidence=json.dumps(evidence),
+            evidence=json.dumps(evidence, ensure_ascii=False),
             state="pending",
             created_at=now,
             updated_at=now,

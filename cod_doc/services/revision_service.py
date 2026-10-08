@@ -129,6 +129,9 @@ def write(
 
 #: Превью diff — первая строка, не длиннее этого.
 DIFF_PREVIEW_CHARS = 200
+#: Больше этого diff в превью не парсится: лента ревизий разбирает JSON на
+#: каждой строке страницы, а тело секции в diff размера не ограничено.
+DIFF_PREVIEW_PARSE_MAX = 64 * 1024
 
 
 def diff_preview(diff: str | None, *, limit: int = DIFF_PREVIEW_CHARS) -> str:
@@ -146,7 +149,7 @@ def diff_preview(diff: str | None, *, limit: int = DIFF_PREVIEW_CHARS) -> str:
     if not diff:
         return ""
     text = diff
-    if diff.lstrip()[:1] in ("{", "[") and "\\u" in diff:
+    if len(diff) <= DIFF_PREVIEW_PARSE_MAX and diff.lstrip()[:1] in ("{", "[") and "\\u" in diff:
         try:
             parsed = json.loads(diff)
         except ValueError:

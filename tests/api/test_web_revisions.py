@@ -195,6 +195,8 @@ def test_diff_preview_shows_cyrillic_not_escapes() -> None:
 
 
 def test_diff_preview_keeps_non_json_and_truncates() -> None:
+    import json
+
     from cod_doc.services.revision_service import DIFF_PREVIEW_CHARS as _PREVIEW_CHARS
     from cod_doc.services.revision_service import diff_preview as _diff_preview
 
@@ -206,6 +208,11 @@ def test_diff_preview_keeps_non_json_and_truncates() -> None:
     # \\u в JSON-скаляре или не-JSON тексте не переписывается.
     assert _diff_preview('"\\u0425"') == '"\\u0425"'
     assert _diff_preview("path C:\\users\\u1") == "path C:\\users\\u1"
+    # Слишком большой diff не парсится: первая строка как есть.
+    from cod_doc.services.revision_service import DIFF_PREVIEW_PARSE_MAX
+
+    big = json.dumps({"op": "Х", "body": "x" * DIFF_PREVIEW_PARSE_MAX})
+    assert _diff_preview(big).startswith('{"op": "\\u0425"')
     preview = _diff_preview('{"body": "' + "я" * 500 + '"}')
     assert len(preview) == _PREVIEW_CHARS
     # Режется по символам, а не по байтам: многобайтовая буква не рвётся.

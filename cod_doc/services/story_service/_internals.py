@@ -24,4 +24,4 @@ def _require_story(session: Session, story_id: str) -> UserStoryModel:
 
 
 def _diff(op: str, **fields: object) -> str:
-    return json.dumps({"op": op, **fields})
+    return json.dumps({"op": op, **fields}, ensure_ascii=False)
