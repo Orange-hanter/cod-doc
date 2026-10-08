@@ -129,7 +129,7 @@
 
 | #   | Документ                                                | Категория      | Эффект                                            | Риск    |
 | --- | ------------------------------------------------------- | -------------- | ------------------------------------------------- | ------- |
-| 30  | [Жизненный цикл RFC](30-rfc-lifecycle.md) | 🟡 Адаптация · **черновик** | Собственный статус RFC (`rfc_meta`: draft → review → accepted → implemented / rejected / deferred / withdrawn / superseded), goal/appetite/no-gos и гейт принятия по блокирующим вопросам (Q-001…006), связи RFC → план (`plan.parent_doc_id`) и ADR → RFC (`adr.source_doc_id`), генерируемый каталог, рутина `rfc_health`; план `rfc-lifecycle-2026-10` (RFL) | средний |
+| 30  | [Жизненный цикл RFC](30-rfc-lifecycle.md) | 🟡 Адаптация · **черновик** | Собственный статус RFC (`rfc_meta`: draft → review → accepted → implemented / rejected / deferred / withdrawn / superseded), goal/appetite/no-gos и гейт принятия по блокирующим вопросам (Q-001…006 решены 2026-10-08), связи RFC → план (`plan.parent_doc_id`) и ADR → RFC (ребро `adr_document`), генерируемый каталог, рутина `rfc_health`; план `rfc-lifecycle-2026-10` (RFL) | средний |
 | 31  | [Приём идей и точка обязательства](31-idea-intake.md) | 🟡 Адаптация · **черновик** | Сущность `idea` (I-NNN) с треками S/M/L/expedite, `idea_promote` в задачу/историю/RFC, backlog ≠ todo, потоковый план с секцией на capability | средний |
 | 33  | [Поток: внимание, качество, бюджеты](33-flow-attention-quality-budget.md) | 🟡 Адаптация · **черновик** | Починка метрик длительности, очередь «ждёт человека», сигналы брака, расход агентов из транскриптов и бюджет плана вместо WIP-лимитов | средний |
 

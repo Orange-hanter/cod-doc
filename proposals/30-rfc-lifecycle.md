@@ -100,10 +100,25 @@ CREATE TABLE rfc_meta (
 
 - `rfc_number` — из имени файла `proposals/NN-slug`; коллизию ловит UNIQUE
   (Q-005).
-- ADR → RFC: `adr.source_doc_id INTEGER NULL REFERENCES document(row_id) ON
-  DELETE SET NULL` (Q-003). Миграция трогает `adr`, не `document`; колонка
-  добавляется как `adr.topic_id` в 0046 — `ADD COLUMN`, без пересоздания
-  таблицы, которое унесло бы по CASCADE диаграммы и связи ADR.
+- ADR → RFC: ребро `adr_document` (Q-003), а не колонка на `adr`: у ADR,
+  обсуждённого в двух RFC, оба родителя, и та же таблица послужит связи
+  ADR ↔ capability в RFC 35. Сейчас одно значение `relation='source'`
+  («решение принято в этом RFC»); RFC 35 добавит своё отдельной миграцией.
+
+  ```sql
+  CREATE TABLE adr_document (
+    row_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    adr_id      INTEGER NOT NULL REFERENCES adr(row_id) ON DELETE CASCADE,
+    document_id INTEGER NOT NULL REFERENCES document(row_id) ON DELETE CASCADE,
+    relation    VARCHAR(16) NOT NULL DEFAULT 'source',
+    at          DATETIME NOT NULL,
+    UNIQUE (adr_id, document_id, relation),
+    CHECK (relation IN ('source'))
+  );
+  ```
+
+  Новая таблица не трогает ни `adr`, ни `document` — ни `ADD COLUMN`, ни
+  пересоздания с CASCADE.
 - RFC → план: существующий `plan.parent_doc_id`; новый необязательный
   параметр `parent_doc_key` у `create_plan` / `plan_create` / `cod-doc plan
   create` и отдельная операция `plan_set_parent`.
@@ -123,8 +138,8 @@ Frontmatter-проекция RFC получает поля `rfc_status`, `goal`,
 3. статус не `review`.
 
 При успехе: `rfc_status=accepted`, `decided_at=today`; если передан
-`plan_scope` — план получает `parent_doc_id`. ADR, у которых
-`source_doc_id` = этот RFC и статус `proposed`, **не** принимаются
+`plan_scope` — план получает `parent_doc_id`. ADR с ребром `source` на
+этот RFC и статусом `proposed` **не** принимаются
 автоматически: ответ возвращает их списком «решить следом». Тело после
 принятия не блокируется — правка секции принятого RFC даёт пункт куратора
 (§3.6). Проверка «у каждой дельты есть целевая секция capability» добавится
@@ -145,9 +160,10 @@ Frontmatter-проекция RFC получает поля `rfc_status`, `goal`,
 | `list(status=…)` | `rfc_list` | `cod-doc rfc list [--status]` |
 | `get` — мета, ADR, план с прогрессом, вопросы | `rfc_get` | `cod-doc rfc show NN` |
 | `update_meta` (goal/appetite/no_gos) | `rfc_update` | `cod-doc rfc set NN --goal …` |
+| `reserve(number, title)` — заглушка в `draft` вместо строки README (Q-005) | `rfc_reserve` | `cod-doc rfc reserve NN "Название"` |
 | `review` / `accept` / `reject` / `defer` / `withdraw` / `supersede` | `rfc_transition(action=…)` | `cod-doc rfc review|accept|reject|defer|withdraw|supersede NN` |
 | `create_plan(parent_doc_key=…)`, `set_parent` | `plan_create(parent_doc_key)`, `plan_set_parent` | `cod-doc plan create --rfc NN`, `cod-doc plan set-parent` |
-| `adr_service.create/update(source_doc_key)` | `adr_create/adr_update(source_doc_key)` | `cod-doc adr new --rfc NN` |
+| `adr_service.link_document` / `unlink_document` (`relation='source'`); `create(source_doc_key)` ставит ребро сразу | `adr_link_doc` / `adr_unlink_doc`, `adr_create(source_doc_key)` | `cod-doc adr link-doc` / `unlink-doc ADR-NNN --rfc NN`, `cod-doc adr new --rfc NN` |
 
 Профили: `rfc_*` и `plan_set_parent` — `standard`/`full`; имена новых тулов
 вписываются в строку семейства `docs/mcp-integration.md`, числа профилей
@@ -174,18 +190,19 @@ Frontmatter-проекция RFC получает поля `rfc_status`, `goal`,
 | `rfc_implemented_drift` | статус расходится с закрытостью плана |
 | `rfc_stale_review` | `draft`/`review` без ревизий 30 дней |
 | `rfc_edited_after_accept` | ревизия секции позже `decided_at` у `accepted`/`implemented` |
-| `adr_orphan_proposal` | ADR `proposed` без `source_doc_id` дольше `STALE_PROPOSAL_DAYS` — дополняет `adr_health`, не дублирует «долгий черновик» |
+| `adr_orphan_proposal` | ADR `proposed` без ребра `source` в `adr_document` дольше `STALE_PROPOSAL_DAYS` — дополняет `adr_health`, не дублирует «долгий черновик» |
 
 ### 3.7. Скиллы
 
 `rfc-authoring`: раздел «Жизненный цикл» — по §3.1; новые поля frontmatter;
 резерв номера — заглушкой RFC в `draft`, а не строкой README. `adr-author`:
-шаг «указать `source_doc_key`, если решение принимается в RFC».
+шаг «связать ADR с RFC (`source_doc_key` / `adr link-doc`), если решение
+принимается в RFC; RFC может быть несколько».
 
 ## 4. Миграция и обратная совместимость
 
-1. Миграция создаёт `rfc_meta` и `adr.source_doc_id`; `document` не трогает
-   (никакого `batch_alter_table`).
+1. Миграция создаёт таблицы `rfc_meta` и `adr_document`; `adr` и
+   `document` не трогает (никакого `batch_alter_table`).
 2. Бэкфилл в той же миграции: строка `rfc_meta` на каждый `type=rfc`,
    `rfc_number` из `doc_key`; 16–21 → `rejected` с причиной из README, прочие
    → `draft`. Миграционный тест наливает документы на предыдущей ревизии
@@ -193,8 +210,8 @@ Frontmatter-проекция RFC получает поля `rfc_status`, `goal`,
 3. Остальные статусы — задача бэкфилла через `rfc_transition` с ревизиями:
    агент собирает таблицу «RFC → статус → основание», владелец утверждает
    (Q-004). Там же — `plan_set_parent` для известных пар (RFC 25, 27, 28, 34).
-4. `downgrade()` удаляет таблицу и колонку (нативный `DROP COLUMN`, как в
-   0046); `document.status` остаётся последним записанным.
+4. `downgrade()` удаляет обе таблицы; `document.status` остаётся
+   последним записанным.
 5. Документ без строки `rfc_meta` (RFC, заведённый до релиза) `rfc_service`
    читает как `draft` и создаёт строку при первом переходе.
 
@@ -221,24 +238,26 @@ Frontmatter-проекция RFC получает поля `rfc_status`, `goal`,
 
 | Секция | Задачи |
 |---|---|
-| **A. Данные** | RFL-001 миграция `rfc_meta` + `adr.source_doc_id` + бесспорный бэкфилл; RFL-002 домен и машина переходов |
+| **A. Данные** | RFL-001 миграция `rfc_meta` + `adr_document` + бесспорный бэкфилл; RFL-002 домен и машина переходов |
 | **B. Сервис и поверхности** | RFL-003 `rfc_service` и гейт; RFL-004 MCP; RFL-005 CLI; RFL-006 веб; RFL-007 frontmatter |
-| **C. Связи** | RFL-008 родитель плана; RFL-009 ADR → RFC; RFL-010 `implemented` |
+| **C. Связи** | RFL-008 родитель плана; RFL-009 ADR → RFC через `adr_document`; RFL-010 `implemented` |
 | **D. Каталог, куратор, скиллы** | RFL-011 каталог README; RFL-012 `rfc_health`; RFL-013 скиллы; RFL-014 ручной бэкфилл |
 
 RFL-008 стартует сразу — от `rfc_meta` не зависит. Остальное идёт от
-RFL-001 → RFL-002 → RFL-003; RFL-001 ждёт ответов на Q-001, Q-003, Q-005.
+RFL-001 → RFL-002 → RFL-003. Вопросы Q-001…Q-006 решены 2026-10-08 (§7).
 
 ## 7. Открытые вопросы
 
-Заведены сущностями, каждый блокирует принятие этого RFC (`relation=blocks`);
-в тексте выше стоит рекомендуемый вариант.
+Заведены сущностями со связью `relation=blocks` на этот RFC; все шесть
+решены владельцем 2026-10-08, текст выше приведён к решениям. По Q-003
+выбран не рекомендованный вариант: ребро `adr_document` вместо колонки
+`adr.source_doc_id`.
 
-| Вопрос | Тема | Рекомендация |
+| Вопрос | Тема | Решение |
 |---|---|---|
 | Q-001 | колонки на `document` или `rfc_meta` | `rfc_meta` |
 | Q-002 | `implemented` хранить или вычислять | хранить + сверка |
-| Q-003 | ADR → RFC: колонка или ребро | `adr.source_doc_id` |
+| Q-003 | ADR → RFC: колонка или ребро | ребро `adr_document`, `relation='source'` |
 | Q-004 | бэкфилл 32 RFC | бесспорные — миграцией, остальные — владелец |
 | Q-005 | номер из файла или счётчик | из файла + UNIQUE |
 | Q-006 | статус `deferred` | нужен |
