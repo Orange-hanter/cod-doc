@@ -134,21 +134,24 @@ DIFF_PREVIEW_CHARS = 200
 def diff_preview(diff: str | None, *, limit: int = DIFF_PREVIEW_CHARS) -> str:
     """Первая строка diff для ленты ревизий, с читаемой кириллицей.
 
-    Сервисы пишут diff с ``ensure_ascii=False``, но ревизии, записанные
-    раньше, хранят ``\\u0425…`` вместо «Хранение». Такой JSON-объект или
-    массив переписывается с ``ensure_ascii=False`` при показе; всё прочее —
-    unified diff тела секции, JSON-скаляр, текст с обратным слешем —
-    показывается байт-в-байт.
+    Сервисы пишут diff с ``ensure_ascii=False`` (ARG-010), но ревизии,
+    записанные раньше, хранят ``\\u0425…`` вместо «Хранение». Такой
+    JSON-объект или массив переписывается с ``ensure_ascii=False`` при
+    показе; всё прочее — unified diff тела секции, JSON-скаляр, текст с
+    обратным слешем — показывается байт-в-байт.
+
+    Ветка переходная: новые ревизии escape-кодов не несут, а старые не
+    переписываются — ревизия это история, а не данные для нормализации.
     """
     if not diff:
         return ""
     text = diff
-    if "\\u" in diff:
+    if diff.lstrip()[:1] in ("{", "[") and "\\u" in diff:
         try:
             parsed = json.loads(diff)
         except ValueError:
             parsed = None
-        if isinstance(parsed, dict | list):
+        if isinstance(parsed, (dict, list)):
             text = json.dumps(parsed, ensure_ascii=False)
     return text.splitlines()[0][:limit]
 

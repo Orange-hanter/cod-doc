@@ -694,6 +694,23 @@ def adr_graph_page(
     )
 
 
+def _move_focus(
+    name: str, index: int, total: int, moved: str | None, direction: str | None
+) -> str | None:
+    """Какая стрелка полки получает фокус после ↑/↓: ``"up"``, ``"down"`` или нет.
+
+    Перемещение перерисовывает страницу редиректом, и без этого фокус
+    клавиатуры падал бы в ``<body>``. Фокус — на ту же стрелку той же полки,
+    а если она у края списка заблокирована, — на соседнюю.
+    """
+    if name != moved or direction not in {"up", "down"}:
+        return None
+    first, last = index == 0, index == total - 1
+    if direction == "up":
+        return "down" if first else "up"
+    return "up" if last else "down"
+
+
 @router.get("/p/{slug}/adr/shelves", response_class=HTMLResponse)
 def adr_shelves_page(
     request: Request,
@@ -718,14 +735,13 @@ def adr_shelves_page(
         {
             "project": proj.entry,
             "shelves": [
-                adr_topic_service.topic_to_dict(t, adr_count=counts.get(t.row_id, 0))
-                for t in topics
+                {
+                    **adr_topic_service.topic_to_dict(t, adr_count=counts.get(t.row_id, 0)),
+                    "focus": _move_focus(t.name, i, len(topics), moved, direction),
+                }
+                for i, t in enumerate(topics)
             ],
             "loose": loose,
-            # После ↑/↓ страница перерисовывается редиректом: фокус возвращается
-            # на ту же стрелку той же полки, иначе клавиатура теряет место.
-            "moved": moved if moved in {t.name for t in topics} else None,
-            "moved_dir": direction if direction in {"up", "down"} else None,
         },
     )
 
