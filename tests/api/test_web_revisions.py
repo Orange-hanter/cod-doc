@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
 from cod_doc.domain.entities import (
+    EntityKind,
     Plan,
     PlanSection,
     Priority,
@@ -180,3 +181,70 @@ def test_revisions_404_unknown_project(revisions_client) -> None:
     client, _, _ = revisions_client
     r = client.get("/p/nope/revisions")
     assert r.status_code == 404
+
+
+def test_diff_preview_shows_cyrillic_not_escapes() -> None:
+    """JSON-diff, записанный с ensure_ascii=True, в превью читается кириллицей."""
+    import json
+
+    from cod_doc.services.revision_service import diff_preview as _diff_preview
+
+    stored = json.dumps({"op": "set_topic", "old": "Хранение", "new": "Агент"})
+    assert "\\u0425" in stored
+    assert _diff_preview(stored) == '{"op": "set_topic", "old": "Хранение", "new": "Агент"}'
+
+
+def test_diff_preview_keeps_non_json_and_truncates() -> None:
+    import json
+
+    from cod_doc.services.revision_service import DIFF_PREVIEW_CHARS as _PREVIEW_CHARS
+    from cod_doc.services.revision_service import diff_preview as _diff_preview
+
+    assert _diff_preview("--- a\n+++ b\n@@ -1 +1 @@") == "--- a"
+    assert _diff_preview(None) == ""
+    # JSON без \\u-escape показывается байт-в-байт, как записан.
+    assert _diff_preview('{"op":"x","n":1}') == '{"op":"x","n":1}'
+    assert _diff_preview("true") == "true"
+    # \\u в JSON-скаляре или не-JSON тексте не переписывается.
+    assert _diff_preview('"\\u0425"') == '"\\u0425"'
+    assert _diff_preview("path C:\\users\\u1") == "path C:\\users\\u1"
+    # Слишком большой diff не парсится: первая строка как есть.
+    from cod_doc.services.revision_service import DIFF_PREVIEW_PARSE_MAX
+
+    big = json.dumps({"op": "Х", "body": "x" * DIFF_PREVIEW_PARSE_MAX})
+    assert _diff_preview(big).startswith('{"op": "\\u0425"')
+    preview = _diff_preview('{"body": "' + "я" * 500 + '"}')
+    assert len(preview) == _PREVIEW_CHARS
+    # Режется по символам, а не по байтам: многобайтовая буква не рвётся.
+    assert preview == '{"body": "' + "я" * (_PREVIEW_CHARS - len('{"body": "'))
+
+
+def test_revisions_page_escapes_diff_preview(revisions_client) -> None:
+    """Превью diff на странице экранируется: в diff попадает пользовательский ввод."""
+    import json
+
+    from sqlalchemy import select
+
+    from cod_doc.infra.models import ProjectModel
+    from cod_doc.services import revision_service
+
+    client, entry, task_row_id = revisions_client
+    engine = make_engine(f"sqlite:///{entry.path}/.cod-doc/state.db")
+    try:
+        with transactional(make_session_factory(engine)) as session:
+            pid = session.execute(
+                select(ProjectModel.row_id).where(ProjectModel.slug == "demo")
+            ).scalar_one()
+            revision_service.write(
+                session,
+                project_id=pid,
+                entity_kind=EntityKind.TASK,
+                entity_id=task_row_id,
+                author="human:test",
+                diff=json.dumps({"op": "create", "name": "<script>alert(1)</script>Хранение"}),
+            )
+    finally:
+        engine.dispose()
+    page = client.get("/p/demo/revisions").text
+    assert "<script>alert(1)</script>" not in page
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;Хранение" in page

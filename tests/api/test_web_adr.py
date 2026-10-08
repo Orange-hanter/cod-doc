@@ -1012,6 +1012,71 @@ def test_shelf_name_is_normalised(adr_client) -> None:  # type: ignore[no-untype
     assert _shelf(client, entry, action="delete", name=" Storage") == 303
 
 
+def test_move_keeps_keyboard_focus_on_moved_shelf(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """После ↑/↓ фокус возвращается на стрелку той же полки, а у края — на соседнюю."""
+    client, entry = adr_client
+    for name in ("Storage", "Agent", "Team"):
+        _shelf(client, entry, action="create", name=name)
+
+    def focused(html: str) -> list[str]:
+        return re.findall(r'autofocus aria-label="([^"]+)"', html)
+
+    def target(location: str) -> tuple[str, dict[str, list[str]]]:
+        from urllib.parse import parse_qs, urlsplit
+
+        parts = urlsplit(location)
+        return parts.path, parse_qs(parts.query)
+
+    resp = client.post(
+        f"/p/{entry.name}/adr/shelves",
+        data={"action": "move", "name": "Agent", "position": "2", "from_position": "1"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert target(resp.headers["location"]) == (
+        f"/p/{entry.name}/adr/shelves",
+        {"moved": ["Agent"], "dir": ["down"]},
+    )
+    # Agent теперь последний: ↓ заблокирована, фокус — на ↑.
+    assert focused(client.get(resp.headers["location"]).text) == ["Move Agent up"]
+
+    resp = client.post(
+        f"/p/{entry.name}/adr/shelves",
+        data={"action": "move", "name": "Team", "position": "0", "from_position": "2"},
+        follow_redirects=False,
+    )
+    assert target(resp.headers["location"]) == (
+        f"/p/{entry.name}/adr/shelves",
+        {"moved": ["Team"], "dir": ["up"]},
+    )
+    assert focused(client.get(resp.headers["location"]).text) == ["Move Team down"]
+
+    # В середине списка фокус — на той же стрелке.
+    page = client.get(f"/p/{entry.name}/adr/shelves?moved=Storage&dir=up").text
+    assert focused(page) == ["Move Storage up"]
+    # Мусор в dir фокус не ставит, а страница рисуется как обычно.
+    junk = client.get(f"/p/{entry.name}/adr/shelves?moved=Storage&dir=x")
+    assert junk.status_code == 200
+    assert focused(junk.text) == []
+    assert all(f'aria-label="Move {n} up' in junk.text for n in ("Storage", "Agent", "Team"))
+    # moved только сравнивается с именем полки и в разметку не попадает.
+    payload = '"><script>alert(1)</script>'
+    page = client.get(f"/p/{entry.name}/adr/shelves", params={"moved": payload, "dir": "up"}).text
+    # moved не выводится ни сырым, ни экранированным — его в разметке нет вовсе.
+    assert payload not in page
+    assert "&#34;&gt;&lt;script" not in page
+    assert "&quot;&gt;&lt;script" not in page
+    assert "alert(1)" not in page
+    assert focused(page) == []
+    # Ручной POST без исходной позиции двигает полку, но фокус не ставит.
+    bare = client.post(
+        f"/p/{entry.name}/adr/shelves",
+        data={"action": "move", "name": "Storage", "position": "0"},
+        follow_redirects=False,
+    )
+    assert target(bare.headers["location"]) == (f"/p/{entry.name}/adr/shelves", {})
+
+
 def test_shelves_page_lifecycle(adr_client) -> None:  # type: ignore[no-untyped-def]
     client, entry = adr_client
     _shelf(client, entry, action="create", name="Storage")

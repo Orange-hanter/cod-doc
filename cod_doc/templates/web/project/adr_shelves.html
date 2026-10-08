@@ -45,8 +45,9 @@
         <form method="post" action="/p/{{ project.name }}/adr/shelves" class="adr-shelves-move">
           <input type="hidden" name="action" value="move">
           <input type="hidden" name="name" value="{{ s.name }}">
-          <button class="btn btn-sm" name="position" value="{{ s.position - 1 }}"{% if loop.first %} disabled{% endif %} aria-label="Move {{ s.name }} up{% if loop.first %} (already first){% endif %}">↑</button>
-          <button class="btn btn-sm" name="position" value="{{ s.position + 1 }}"{% if loop.last %} disabled{% endif %} aria-label="Move {{ s.name }} down{% if loop.last %} (already last){% endif %}">↓</button>
+          <input type="hidden" name="from_position" value="{{ s.position }}">
+          <button class="btn btn-sm" name="position" value="{{ s.position - 1 }}"{% if loop.first %} disabled{% endif %}{% if s.focus == 'up' %} autofocus{% endif %} aria-label="Move {{ s.name }} up{% if loop.first %} (already first){% endif %}">↑</button>
+          <button class="btn btn-sm" name="position" value="{{ s.position + 1 }}"{% if loop.last %} disabled{% endif %}{% if s.focus == 'down' %} autofocus{% endif %} aria-label="Move {{ s.name }} down{% if loop.last %} (already last){% endif %}">↓</button>
         </form>
       </td>
       <td>

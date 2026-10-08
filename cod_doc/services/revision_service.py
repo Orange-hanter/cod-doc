@@ -127,6 +127,38 @@ def write(
     return _to_domain(model)
 
 
+#: Превью diff — первая строка, не длиннее этого.
+DIFF_PREVIEW_CHARS = 200
+#: Больше этого diff в превью не парсится: лента ревизий разбирает JSON на
+#: каждой строке страницы, а тело секции в diff размера не ограничено.
+DIFF_PREVIEW_PARSE_MAX = 64 * 1024
+
+
+def diff_preview(diff: str | None, *, limit: int = DIFF_PREVIEW_CHARS) -> str:
+    """Первая строка diff для ленты ревизий, с читаемой кириллицей.
+
+    Сервисы пишут diff с ``ensure_ascii=False`` (ARG-010), но ревизии,
+    записанные раньше, хранят ``\\u0425…`` вместо «Хранение». Такой
+    JSON-объект или массив переписывается с ``ensure_ascii=False`` при
+    показе; всё прочее — unified diff тела секции, JSON-скаляр, текст с
+    обратным слешем — показывается байт-в-байт.
+
+    Ветка переходная: новые ревизии escape-кодов не несут, а старые не
+    переписываются — ревизия это история, а не данные для нормализации.
+    """
+    if not diff:
+        return ""
+    text = diff
+    if len(diff) <= DIFF_PREVIEW_PARSE_MAX and diff.lstrip()[:1] in ("{", "[") and "\\u" in diff:
+        try:
+            parsed = json.loads(diff)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, (dict, list)):
+            text = json.dumps(parsed, ensure_ascii=False)
+    return text.splitlines()[0][:limit]
+
+
 def list_for_entity(
     session: Session,
     entity_kind: EntityKind,

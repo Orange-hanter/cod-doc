@@ -16,8 +16,9 @@ from __future__ import annotations
 import re
 from datetime import UTC, date, datetime
 from typing import Annotated, Any
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -693,11 +694,30 @@ def adr_graph_page(
     )
 
 
+def _move_focus(
+    name: str, index: int, total: int, moved: str | None, direction: str | None
+) -> str | None:
+    """Какая стрелка полки получает фокус после ↑/↓: ``"up"``, ``"down"`` или нет.
+
+    Перемещение перерисовывает страницу редиректом, и без этого фокус
+    клавиатуры падал бы в ``<body>``. Фокус — на ту же стрелку той же полки,
+    а если она у края списка заблокирована, — на соседнюю.
+    """
+    if name != moved or direction not in {"up", "down"}:
+        return None
+    first, last = index == 0, index == total - 1
+    if direction == "up":
+        return "down" if first else "up"
+    return "up" if last else "down"
+
+
 @router.get("/p/{slug}/adr/shelves", response_class=HTMLResponse)
 def adr_shelves_page(
     request: Request,
     slug: str,
     db: Annotated[tuple[Session, int], Depends(get_project_db)],
+    moved: str | None = None,
+    direction: Annotated[str | None, Query(alias="dir")] = None,
 ) -> HTMLResponse:
     """ARG-010 (RFC 34 §3.4): полками управляют здесь, а список только читают.
 
@@ -715,8 +735,11 @@ def adr_shelves_page(
         {
             "project": proj.entry,
             "shelves": [
-                adr_topic_service.topic_to_dict(t, adr_count=counts.get(t.row_id, 0))
-                for t in topics
+                {
+                    **adr_topic_service.topic_to_dict(t, adr_count=counts.get(t.row_id, 0)),
+                    "focus": _move_focus(t.name, i, len(topics), moved, direction),
+                }
+                for i, t in enumerate(topics)
             ],
             "loose": loose,
         },
@@ -733,6 +756,7 @@ def adr_shelves_submit(
     includes: Annotated[str | None, Form()] = None,
     excludes: Annotated[str | None, Form()] = None,
     position: Annotated[int | None, Form()] = None,
+    from_position: Annotated[int | None, Form()] = None,
 ) -> RedirectResponse:
     """ARG-010: одна точка записи полок — ``action`` ∈ create/update/move/delete.
 
@@ -742,6 +766,7 @@ def adr_shelves_submit(
     """
     session, project_id = db
     author = "human:web"
+    after = f"/p/{slug}/adr/shelves"
     try:
         if action == "create":
             adr_topic_service.create(
@@ -765,9 +790,14 @@ def adr_shelves_submit(
         elif action == "move":
             if position is None:
                 raise HTTPException(status_code=400, detail="move needs a position")
-            adr_topic_service.move(
+            topic = adr_topic_service.move(
                 session, project_id=project_id, name=name, position=position, author=author
             )
+            # Исходную позицию несёт форма: направление для фокуса без второго
+            # запроса. Без неё (ручной POST) редирект просто без фокуса.
+            if from_position is not None:
+                direction = "up" if position < from_position else "down"
+                after += "?" + urlencode({"moved": topic.name, "dir": direction})
         elif action == "delete":
             adr_topic_service.delete(session, project_id=project_id, name=name, author=author)
         else:
@@ -779,7 +809,7 @@ def adr_shelves_submit(
     except ValueError as exc:
         session.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return RedirectResponse(url=f"/p/{slug}/adr/shelves", status_code=303)
+    return RedirectResponse(url=after, status_code=303)
 
 
 @router.get("/p/{slug}/adr/{adr_id}", response_class=HTMLResponse)

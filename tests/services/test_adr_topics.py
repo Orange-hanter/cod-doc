@@ -383,3 +383,18 @@ def test_set_topic_does_not_leak_foreign_old_name(engine_with_schema: Engine) ->
         adr_service.set_topic(session, project_id=pid, adr_id="ADR-005", topic="Своя")
         last = _adr_ops(session, "ADR-005")[-1]
     assert (last["old"], last["new"]) == (None, "Своя")
+
+
+def test_topic_name_length_is_bounded_on_server(engine_with_schema: Engine) -> None:
+    """Предел имени держит сервис, а не maxlength формы: и create, и rename."""
+    factory = make_session_factory(engine_with_schema)
+    limit = adr_topic_service.NAME_MAX
+    with transactional(factory) as session:
+        pid = _seed(session)
+        adr_topic_service.create(session, project_id=pid, name="я" * limit)
+        with pytest.raises(ValueError, match=f"longer than {limit}"):
+            adr_topic_service.create(session, project_id=pid, name="ю" * (limit + 1))
+        with pytest.raises(ValueError, match=f"longer than {limit}"):
+            adr_topic_service.update(
+                session, project_id=pid, name="я" * limit, new_name="ю" * (limit + 1)
+            )

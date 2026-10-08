@@ -707,7 +707,9 @@ def update_status(
     doc.last_updated = datetime.now(UTC)
     session.flush()
 
-    diff = json.dumps({"op": "status", "from": old_status, "to": new_status.value})
+    diff = json.dumps(
+        {"op": "status", "from": old_status, "to": new_status.value}, ensure_ascii=False
+    )
     rev.write(
         session,
         project_id=doc.project_id,
@@ -787,7 +789,8 @@ def rename(
             "op": "rename",
             "from": {"doc_key": old_key, "path": old_path},
             "to": {"doc_key": new_doc_key, "path": target_path},
-        }
+        },
+        ensure_ascii=False,
     )
     rev.write(
         session,

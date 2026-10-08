@@ -57,7 +57,7 @@ def revisions_log(
                         "author": r.author,
                         "at": r.at,
                         "reason": r.reason or "",
-                        "diff_preview": (r.diff or "").splitlines()[0][:200] if r.diff else "",
+                        "diff_preview": revisions.diff_preview(r.diff),
                     }
                 )
 

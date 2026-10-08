@@ -87,4 +87,4 @@ def _resolve_doc_anchor(
 
 
 def _diff(op: str, **fields: object) -> str:
-    return json.dumps({"op": op, **fields})
+    return json.dumps({"op": op, **fields}, ensure_ascii=False)

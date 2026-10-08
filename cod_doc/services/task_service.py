@@ -313,7 +313,7 @@ def _add_task(
 
 
 def _task_diff(op: str, **fields: object) -> str:
-    return json.dumps({"op": op, **fields})
+    return json.dumps({"op": op, **fields}, ensure_ascii=False)
 
 
 # --------------------------------------------------------------------------- #
