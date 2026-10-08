@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -11,6 +12,28 @@ from cod_doc.api.deps import get_project, try_open_project_db
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import EntityKind
 from cod_doc.services import revision_service as revisions
+
+#: Превью diff в таблице ревизий — первая строка, не длиннее этого.
+_PREVIEW_CHARS = 200
+
+
+def _diff_preview(diff: str | None) -> str:
+    """Первая строка diff для таблицы, с читаемой кириллицей.
+
+    Часть сервисов пишет diff через ``json.dumps`` с ``ensure_ascii=True``,
+    и в превью вместо «Хранение» стояло ``\\u0425…``. JSON переписывается
+    с ``ensure_ascii=False`` при показе — так читаются и уже записанные
+    ревизии, а формат хранения не меняется. Не-JSON (unified diff тела
+    секции) показывается как есть.
+    """
+    if not diff:
+        return ""
+    try:
+        text = json.dumps(json.loads(diff), ensure_ascii=False)
+    except ValueError:
+        text = diff
+    return text.splitlines()[0][:_PREVIEW_CHARS]
+
 
 router = APIRouter()
 
@@ -57,7 +80,7 @@ def revisions_log(
                         "author": r.author,
                         "at": r.at,
                         "reason": r.reason or "",
-                        "diff_preview": (r.diff or "").splitlines()[0][:200] if r.diff else "",
+                        "diff_preview": _diff_preview(r.diff),
                     }
                 )
 

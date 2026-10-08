@@ -1012,6 +1012,40 @@ def test_shelf_name_is_normalised(adr_client) -> None:  # type: ignore[no-untype
     assert _shelf(client, entry, action="delete", name=" Storage") == 303
 
 
+def test_move_keeps_keyboard_focus_on_moved_shelf(adr_client) -> None:  # type: ignore[no-untyped-def]
+    """После ↑/↓ фокус возвращается на стрелку той же полки, а у края — на соседнюю."""
+    client, entry = adr_client
+    for name in ("Storage", "Agent", "Team"):
+        _shelf(client, entry, action="create", name=name)
+
+    def focused(html: str) -> list[str]:
+        return re.findall(r'autofocus aria-label="([^"]+)"', html)
+
+    resp = client.post(
+        f"/p/{entry.name}/adr/shelves",
+        data={"action": "move", "name": "Agent", "position": "2"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"] == f"/p/{entry.name}/adr/shelves?moved=Agent&dir=down"
+    # Agent теперь последний: ↓ заблокирована, фокус — на ↑.
+    assert focused(client.get(resp.headers["location"]).text) == ["Move Agent up"]
+
+    resp = client.post(
+        f"/p/{entry.name}/adr/shelves",
+        data={"action": "move", "name": "Team", "position": "0"},
+        follow_redirects=False,
+    )
+    assert resp.headers["location"].endswith("moved=Team&dir=up")
+    assert focused(client.get(resp.headers["location"]).text) == ["Move Team down"]
+
+    # В середине списка фокус — на той же стрелке.
+    page = client.get(f"/p/{entry.name}/adr/shelves?moved=Storage&dir=up").text
+    assert focused(page) == ["Move Storage up"]
+    # Мусор в dir фокус не ставит.
+    assert focused(client.get(f"/p/{entry.name}/adr/shelves?moved=Storage&dir=x").text) == []
+
+
 def test_shelves_page_lifecycle(adr_client) -> None:  # type: ignore[no-untyped-def]
     client, entry = adr_client
     _shelf(client, entry, action="create", name="Storage")

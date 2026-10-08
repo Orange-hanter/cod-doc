@@ -180,3 +180,22 @@ def test_revisions_404_unknown_project(revisions_client) -> None:
     client, _, _ = revisions_client
     r = client.get("/p/nope/revisions")
     assert r.status_code == 404
+
+
+def test_diff_preview_shows_cyrillic_not_escapes() -> None:
+    """JSON-diff, записанный с ensure_ascii=True, в превью читается кириллицей."""
+    import json
+
+    from cod_doc.api.web.pages.revisions import _diff_preview
+
+    stored = json.dumps({"op": "set_topic", "old": "Хранение", "new": "Агент"})
+    assert "\\u0425" in stored
+    assert _diff_preview(stored) == '{"op": "set_topic", "old": "Хранение", "new": "Агент"}'
+
+
+def test_diff_preview_keeps_non_json_and_truncates() -> None:
+    from cod_doc.api.web.pages.revisions import _PREVIEW_CHARS, _diff_preview
+
+    assert _diff_preview("--- a\n+++ b\n@@ -1 +1 @@") == "--- a"
+    assert _diff_preview(None) == ""
+    assert len(_diff_preview('{"body": "' + "я" * 500 + '"}')) == _PREVIEW_CHARS
