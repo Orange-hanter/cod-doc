@@ -152,7 +152,7 @@ def diff_preview(diff: str | None, *, limit: int = DIFF_PREVIEW_CHARS) -> str:
     if len(diff) <= DIFF_PREVIEW_PARSE_MAX and diff.lstrip()[:1] in ("{", "[") and "\\u" in diff:
         try:
             parsed = json.loads(diff)
-        except ValueError:
+        except json.JSONDecodeError:
             parsed = None
         if isinstance(parsed, (dict, list)):
             text = json.dumps(parsed, ensure_ascii=False)
