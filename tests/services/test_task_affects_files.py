@@ -278,6 +278,27 @@ def test_out_of_root_path_warns_but_is_written(engine_with_schema) -> None:  # t
         assert _paths(session, row_id) == ["/elsewhere/x.py", "/repo/proj/in.py", "rel.py"]
 
 
+@pytest.mark.parametrize("mode", ["replace", "add"])
+def test_already_stored_foreign_path_does_not_warn_again(  # type: ignore[no-untyped-def]
+    engine_with_schema, mode: str
+) -> None:
+    """Предупреждение — только о реально добавленных путях: no-op не шумит (ревью PR #190)."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session, ["/elsewhere/x.py", "rel.py"])
+
+        change = tasks.update_affects_files(
+            session,
+            task_id=_TASK,
+            paths=["/elsewhere/x.py", "rel.py"] if mode == "replace" else ["/elsewhere/x.py"],
+            mode=mode,
+            author="human:t",
+        )
+
+        assert change.changed is False
+        assert change.warnings == []
+
+
 def test_remove_mode_never_warns(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:

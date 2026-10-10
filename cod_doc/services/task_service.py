@@ -893,7 +893,8 @@ def update_affects_files(
     ``activity_service.write_revision_and_emit_event`` (ADO-040).
 
     AFT-012: абсолютные пути вне ``root_path`` проекта не отклоняются, а
-    попадают в ``warnings`` (в режиме ``remove`` предупреждать не о чем).
+    попадают в ``warnings`` — только реально добавленные этим вызовом (в режиме
+    ``remove`` и при no-op предупреждать не о чем).
     """
     if mode not in AFFECTS_FILES_MODES:
         raise ValueError(f"unknown mode {mode!r}; expected one of {list(AFFECTS_FILES_MODES)}")
@@ -915,10 +916,13 @@ def update_affects_files(
     else:
         new = sorted(set(old) - set(requested))
 
+    # AFT-012: warn only about paths this call actually adds — a path already
+    # in the set was reported when it was added, and a no-op stays silent.
     warnings: list[str] = []
-    if mode != "remove":
+    added_paths = sorted(set(new) - set(old))
+    if added_paths:
         project = session.get(ProjectModel, model.project_id)
-        warning = foreign_paths_warning(requested, project.root_path if project else "")
+        warning = foreign_paths_warning(added_paths, project.root_path if project else "")
         if warning is not None:
             warnings.append(warning)
 
