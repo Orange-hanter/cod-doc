@@ -632,7 +632,7 @@ def task_update(
 
     for warning in warnings:
         console.print(f"[yellow]⚠ {escape(warning)}[/yellow]")
-    console.print(f"[green]✅ {task_id}: обновлено — {', '.join(changed)}[/green]")
+    console.print(f"[green]✅ {escape(task_id)}: обновлено — {', '.join(changed)}[/green]")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
