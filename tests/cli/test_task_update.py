@@ -9,14 +9,20 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from click.testing import CliRunner
+from click.testing import CliRunner, Result
 from sqlalchemy import select
 
 from cod_doc.cli import main
 from cod_doc.config import Config
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import db_for_entry, transactional
-from cod_doc.infra.models import ActivityEventModel, PlanModel, PlanSectionModel
+from cod_doc.infra.models import (
+    ActivityEventModel,
+    AffectedFileModel,
+    PlanModel,
+    PlanSectionModel,
+    TaskModel,
+)
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import task_service as tasks
 
@@ -150,3 +156,119 @@ def test_task_update_unknown_task_exits_nonzero(tmp_path: Path) -> None:
     )
     assert result.exit_code == 1
     assert "not found" in result.output
+
+
+# --------------------------------------------------------------------------- #
+# AFT-021: --affects-file / --affects-mode / --clear-affects-files            #
+# --------------------------------------------------------------------------- #
+
+
+def _seed_files(name: str, paths: list[str]) -> None:
+    for session in _session(name):
+        tasks.update_affects_files(
+            session, task_id="GCL-001", paths=paths, mode="replace", author="human:seed"
+        )
+
+
+def _files(name: str) -> list[str]:
+    for session in _session(name):
+        return sorted(
+            session.execute(
+                select(AffectedFileModel.path)
+                .join(TaskModel, TaskModel.row_id == AffectedFileModel.task_id)
+                .where(TaskModel.task_id == "GCL-001")
+            ).scalars()
+        )
+    raise AssertionError("unreachable")
+
+
+def _update(*args: str) -> Result:
+    return CliRunner().invoke(main, ["task", "update", "GCL-001", "--project", "gp", *args])
+
+
+def test_task_update_help_lists_affects_options() -> None:
+    result = CliRunner().invoke(main, ["task", "update", "--help"])
+    assert result.exit_code == 0, result.output
+    for opt in ("--affects-file", "--affects-mode", "--clear-affects-files"):
+        assert opt in result.output
+
+
+def test_task_update_affects_file_replaces_by_default(tmp_path: Path) -> None:
+    _init_project(tmp_path)
+    _seed_task("gp")
+    _seed_files("gp", ["src/old.py"])
+
+    result = _update("--affects-file", "src/a.py", "--affects-file", "src/a.py")
+    assert result.exit_code == 0, result.output
+    assert "affects_files" in result.output
+    assert _files("gp") == ["src/a.py"]
+
+
+def test_task_update_affects_mode_add_and_remove(tmp_path: Path) -> None:
+    _init_project(tmp_path)
+    _seed_task("gp")
+    _seed_files("gp", ["src/a.py"])
+
+    result = _update("--affects-file", "src/b.py", "--affects-mode", "add")
+    assert result.exit_code == 0, result.output
+    assert _files("gp") == ["src/a.py", "src/b.py"]
+
+    result = _update("--affects-file", "src/a.py", "--affects-mode", "remove")
+    assert result.exit_code == 0, result.output
+    assert _files("gp") == ["src/b.py"]
+
+
+def test_task_update_clear_affects_files(tmp_path: Path) -> None:
+    _init_project(tmp_path)
+    _seed_task("gp")
+    _seed_files("gp", ["src/a.py", "src/b.py"])
+
+    result = _update("--clear-affects-files")
+    assert result.exit_code == 0, result.output
+    assert _files("gp") == []
+
+
+def test_task_update_same_set_is_noop(tmp_path: Path) -> None:
+    _init_project(tmp_path)
+    _seed_task("gp")
+    _seed_files("gp", ["src/a.py"])
+
+    result = _update("--affects-file", "src/a.py")
+    assert result.exit_code == 0, result.output
+    for session in _session("gp"):
+        kinds = list(
+            session.execute(
+                select(ActivityEventModel.kind).where(
+                    ActivityEventModel.kind == "task.affects_files_updated"
+                )
+            ).scalars()
+        )
+        assert len(kinds) == 1, "только сид, повтор того же набора — no-op"
+
+
+def test_task_update_out_of_root_path_warns(tmp_path: Path) -> None:
+    _init_project(tmp_path)
+    _seed_task("gp")
+
+    result = _update("--affects-file", "/elsewhere/x.py")
+    assert result.exit_code == 0, result.output
+    assert "/elsewhere/x.py" in result.output
+    assert _files("gp") == ["/elsewhere/x.py"]
+
+
+def test_task_update_clear_conflicts_with_affects_file(tmp_path: Path) -> None:
+    _init_project(tmp_path)
+    _seed_task("gp")
+
+    result = _update("--clear-affects-files", "--affects-file", "src/a.py")
+    assert result.exit_code != 0
+    assert "--clear-affects-files" in result.output
+
+
+def test_task_update_affects_mode_without_files_fails(tmp_path: Path) -> None:
+    _init_project(tmp_path)
+    _seed_task("gp")
+
+    result = _update("--affects-mode", "add")
+    assert result.exit_code != 0
+    assert "--affects-file" in result.output

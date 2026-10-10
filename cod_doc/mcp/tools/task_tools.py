@@ -424,7 +424,7 @@ def register(mcp: FastMCP) -> None:
         from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
         from cod_doc.mcp.tools import _idempotency
         from cod_doc.services import task_service
-        from cod_doc.services.task_locality import foreign_paths
+        from cod_doc.services.task_locality import foreign_paths_warning
         from cod_doc.services.task_service import DuplicateTaskError
         from cod_doc.services.validation import ValidationError
 
@@ -481,14 +481,9 @@ def register(mcp: FastMCP) -> None:
                 if affects_files and any(PurePath(p).is_absolute() for p in affects_files):
                     project_row = session.get(ProjectModel, project_id)
                     root_path = project_row.root_path if project_row is not None else ""
-                    foreign = foreign_paths(affects_files, root_path)
-                    if foreign:
-                        result.setdefault("warnings", []).append(
-                            f"affects_files вне корня проекта {root_path}: "
-                            f"{', '.join(foreign)}; task_next_ready/plan_ready "
-                            "по умолчанию (local_only=true) такую задачу не выдадут, "
-                            "если все её файлы чужие"
-                        )
+                    warning = foreign_paths_warning(affects_files, root_path)
+                    if warning is not None:
+                        result.setdefault("warnings", []).append(warning)
         except DuplicateTaskError as exc:
             raise ValueError(
                 f"duplicate_of={exc.existing_task_id} "
@@ -975,15 +970,18 @@ def register(mcp: FastMCP) -> None:
         description: str | None = None,
         acceptance: str | None = None,
         priority: str | None = None,
+        affects_files: list[str] | None = None,
+        affects_files_mode: str = "replace",
         author: str = "mcp",
         reason: str | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Groom an existing task: rewrite description / acceptance / priority.
+        """Groom an existing task: description / acceptance / priority / affects_files.
 
         ADO-067: до этого тула правка этих полей была доступна только из web —
         агент не мог переформулировать скоуп собственной задачи или
-        переоценить приоритет штатным путём.
+        переоценить приоритет штатным путём. AFT-021 добавил ``affects_files``:
+        до него набор задавался только в ``task_create``.
 
         Передавай только те поля, которые меняешь; ``None`` = «не трогать».
         Пустая строка — легальное значение (очистить поле). Хотя бы одно поле
@@ -991,22 +989,42 @@ def register(mcp: FastMCP) -> None:
 
         priority: critical | high | medium | low.
 
+        affects_files + affects_files_mode (replace | add | remove, default
+        replace): ``replace`` — набор становится ровно этим списком (``[]``
+        очищает), ``add`` / ``remove`` — добавить / убрать перечисленные пути.
+        Дубли схлопываются. Пути вне ``root_path`` проекта не отклоняются —
+        ответ несёт ``warnings`` (AFT-012). Набор влияет на локальность задачи
+        в ``task_next_ready`` / ``plan_ready`` (RFC 27 F13).
+
         Не меняет ``title`` (идентичность задачи), ``status`` (см.
         ``task_update_status`` / ``task_checkout``) и принадлежность плану.
 
         Каждое изменённое поле оставляет отдельную TASK-ревизию и activity
-        event; неизменившееся значение — no-op без ревизии.
+        event; неизменившееся значение — no-op без ревизии. Ревизию
+        ``affects_files`` откатывает ``revision_revert``. ``updated_fields``
+        перечисляет переданные поля.
 
         ``dry_run=True`` валидирует и возвращает результат, откатывая транзакцию.
         """
         from cod_doc.domain.entities import Priority
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
-        from cod_doc.services.task_service import TaskNotFoundError
+        from cod_doc.services.task_service import AFFECTS_FILES_MODES, TaskNotFoundError
 
-        if description is None and acceptance is None and priority is None:
+        if (
+            description is None
+            and acceptance is None
+            and priority is None
+            and affects_files is None
+        ):
             raise ValueError(
-                "task_update: pass at least one of description / acceptance / priority."
+                "task_update: pass at least one of "
+                "description / acceptance / priority / affects_files."
+            )
+        if affects_files_mode not in AFFECTS_FILES_MODES:
+            raise ValueError(
+                f"Unknown affects_files_mode: {affects_files_mode!r}; "
+                f"expected one of {list(AFFECTS_FILES_MODES)}"
             )
         if priority is not None:
             try:
@@ -1018,6 +1036,7 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         changed: list[str] = []
+        warnings: list[str] = []
         try:
             with transactional(sf, commit=not dry_run) as session:
                 require_project_id(session, project)
@@ -1051,10 +1070,24 @@ def register(mcp: FastMCP) -> None:
                         reason=reason,
                     )
                     changed.append("priority")
+                if affects_files is not None:
+                    change = task_service.update_affects_files(
+                        session,
+                        task_id=task_id,
+                        paths=affects_files,
+                        mode=affects_files_mode,
+                        author=author,
+                        reason=reason,
+                    )
+                    t = change.task
+                    warnings.extend(change.warnings)
+                    changed.append("affects_files")
+                out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
-        out = task_to_dict(t)
         out["updated_fields"] = changed
+        if warnings:
+            out["warnings"] = warnings
         if dry_run:
             out["dry_run"] = True
         return out

@@ -41,10 +41,27 @@ def is_foreign(paths: Sequence[str], root_path: str) -> bool:
 def foreign_paths(paths: Sequence[str], root_path: str) -> list[str]:
     """Абсолютные пути вне корня в исходном порядке.
 
-    Используется предупреждением ``task_service.create`` при путях вне
-    ``root_path`` проекта.
+    Используется предупреждением ``task_create`` / ``task_update`` при путях
+    вне ``root_path`` проекта.
     """
     if not root_path:
         return []
     root = PurePath(os.path.normpath(root_path))
     return [p for p in paths if PurePath(p).is_absolute() and not _inside(p, root)]
+
+
+def foreign_paths_warning(paths: Sequence[str], root_path: str) -> str | None:
+    """AFT-012: текст предупреждения о путях вне корня или ``None``, если таких нет.
+
+    Общий для ``task_create`` (MCP) и ``task_service.update_affects_files``
+    (AFT-021) — запись не отклоняется, вызывающий получает только текст.
+    """
+    foreign = foreign_paths(paths, root_path)
+    if not foreign:
+        return None
+    return (
+        f"affects_files вне корня проекта {root_path}: "
+        f"{', '.join(foreign)}; task_next_ready/plan_ready "
+        "по умолчанию (local_only=true) такую задачу не выдадут, "
+        "если все её файлы чужие"
+    )
