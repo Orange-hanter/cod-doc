@@ -548,7 +548,7 @@ def task_update(
     author: str,
     reason: str | None,
 ) -> None:
-    """Grooming уже созданной задачи: description / acceptance / priority / affects_files.
+    """Правит задачу: description, acceptance, priority, affects_files.
 
     ADO-067: раньше эти поля правились только из web-UI. Передавай только
     те опции, которые меняешь. Не меняет title и status (см. `task status`).

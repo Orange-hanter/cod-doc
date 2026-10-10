@@ -3951,7 +3951,7 @@ _cod-doc() {
     'remove-dep:Remove a dependency edge (TASK_ID is no longer blocked by BLOCKER_I…'
     'show:Show details of a single task.'
     'status:Update task status (does not validate deps; use '\''complete'\'' for done…'
-    'update:Grooming уже созданной задачи; description / acceptance / priority…'
+    'update:Правит задачу; description, acceptance, priority, affects_files.'
   )
   _describe -t cod-doc-task-commands 'cod-doc task command' cmds
 }

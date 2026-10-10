@@ -261,7 +261,11 @@ def test_task_update_out_of_root_path_warns(tmp_path: Path) -> None:
 
     result = _update("--affects-file", "/elsewhere/x.py")
     assert result.exit_code == 0, result.output
-    assert "/elsewhere/x.py" in result.output
+    # The success line echoes the path too: only text between the ⚠ marker and the ✅
+    # line proves the warning (rich may wrap the warning over several lines).
+    out = result.output
+    assert out.count("⚠") == 1
+    assert "/elsewhere/x.py" in out[out.index("⚠") : out.index("✅")]
     assert _files("gp") == ["/elsewhere/x.py"]
 
 
