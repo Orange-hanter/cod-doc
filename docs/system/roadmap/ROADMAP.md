@@ -82,6 +82,7 @@ related_docs:
 | **storage-parity** (трек S) | 🔄 9/29 *(2026-10-03)* | Бывшая секция G + SYM-011; STO-001…028, префикс `STO`. Приоритет и критерий выхода — трек S ниже |
 | **tech-debt** | 🟡 0/39 *(2026-10-03)* | Открытое из секции D `adoption-2026-08` по темам: A схема и домен, B routines, C дрейф/ссылки/поиск, D документация и решения владельца, E CLI/web/качество, F пилот ZAIrgRush; префикс `DEBT` |
 | **agent-fit-2026-09** ([RFC 27](../../../proposals/27-agent-fit.md)) | ✅ 17/18 · AFT-018 backlog *(2026-09-27, v1.5.0)* | Coding-агент закрывает вопросы тулами, а не SQL. Все секции A–F закрыты; повторный замер (AFT-018) — через две недели после v1.5.0 |
+| **cloud-remote-2026-10** ([RFC 29](../../../proposals/29-cloud-remote-sync.md)) | ⏸ 0/43 · backlog *(2026-10-11)* | Репликация проекта по модели git: `clone`/`pull`/`push` через S3/MinIO или `cod-doc serve`. Ждёт приёмки ADR-016/017; предусловия STO-018, STO-024 (`storage-parity`) |
 | RFC 16–21 (hackathon-track) | ❌ отбракованы 2026-08-29 | ADO-056: ни одна не закрывает спрос M2; пометки в [proposals/README.md](../../../proposals/README.md) |
 
 ## Смена приоритета: почему Adoption вперёд фич
@@ -162,6 +163,25 @@ byte-identical round-trip — перед первым `doc export` наружу)
 | D | Надёжный `task_create`: префикс из плана, коллизии без `IntegrityError` | AFT-011 ✅ done, аудит [2026-09-27-agent-fit-sections-a-c-d-e.md](../audit/2026-09-27-agent-fit-sections-a-c-d-e.md) |
 | E | `local_only` в ready-выборке | AFT-012 ✅ done, аудит [2026-09-27-agent-fit-sections-a-c-d-e.md](../audit/2026-09-27-agent-fit-sections-a-c-d-e.md) |
 | F | Канон скиллов — плагин, инструкции без `sqlite3`, один хук, скрипт-метрика | AFT-013…017 ✅ done, AFT-018 backlog; аудит [2026-09-27-agent-fit-section-f-and-plan-closure.md](../audit/2026-09-27-agent-fit-section-f-and-plan-closure.md) |
+
+### Трек RFC 29 — Cloud remote — **backlog до приёмки ADR-016/017**
+
+Проект живёт одной `state.db` на машине: второй машины, команды и бэкапа нет.
+Контракт — [RFC 29](../../../proposals/29-cloud-remote-sync.md) (решения Q-007…Q-017,
+контракты §10, DoD §11.1); решения — ADR-016 (команда через реплики) и ADR-017
+(идентичность и захват операций), оба `proposed`. План в БД —
+**`cloud-remote-2026-10`**, 43 задачи `CLO-001…043` в `backlog`. Порядок: A → B → C,
+D и E параллельно после B, F по ходу. Старт: приёмка ADR, затем STO-018 и STO-024
+в `storage-parity`, затем перевод секции A в `todo`.
+
+| Секция | Содержание | Задачи |
+|---|---|---|
+| A | Реестр классов, миграции `uid`/`rank`, HLC, хук захвата, снятие bulk-записи в authored | CLO-001…009 |
+| B | Changeset, `RemoteStore`/`FileRemote`, push, pull, дайджест, CLI и MCP | CLO-010…016 |
+| C | `sync_conflict`, LWW, 3-way, статус, рёбра, tombstone, натуральные ключи, ревизии, подсказки, куратор, сходимость | CLO-017…027 |
+| D | `S3Remote`, снапшоты и clone, аренда номеров и checkout, эпохи, `restricted` | CLO-028…033 |
+| E | Доступ, `/api/sync/v1`, Bearer и rate limit, роли, CLI доступа, Caddy | CLO-034…039 |
+| F | Рутина `sync`, ARCHITECTURE/DATA_MODEL, capability и скилл, финальный прогон на двух машинах | CLO-040…043 |
 
 Adoption (ниже) остаётся программой пилотов. Агент в пилотах — источник
 контекста и санитар, не воркер, который закрывает чужой бэклог.
