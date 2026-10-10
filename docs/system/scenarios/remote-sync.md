@@ -51,6 +51,10 @@ Capability document: `docs/system/capabilities/remote-sync.md`
 
 На обеих репликах у задачи T новый title и статус in_progress; sync_conflict не создан; cod-doc sync verify на A и B показывает один дайджест.
 
+### Links
+
+- `verifies` → `task:CLO-018`
+
 ## SCN-082 — clone на чистой машине восстанавливает проект до состояния remote
 
 **Kind:** `happy_path`
@@ -70,6 +74,10 @@ Capability document: `docs/system/capabilities/remote-sync.md`
 
 Проект demo зарегистрирован в реестре, его state.db содержит все документы, задачи и ревизии remote, а дайджест authored-данных совпадает с дайджестом головы refs/main.
 
+### Links
+
+- `verifies` → `task:CLO-029`
+
 ## SCN-083 — Push, не видевший чужого push, отвергается, а не перезаписывает refs/main
 
 **Kind:** `error_path`
@@ -87,6 +95,10 @@ Capability document: `docs/system/capabilities/remote-sync.md`
 ### Expected result
 
 Команда завершается ненулевым кодом с сообщением «remote ушёл вперёд — сделайте pull»; refs/main на remote по-прежнему указывает на changeset реплики A.
+
+### Links
+
+- `verifies` → `task:CLO-012`
 
 ## SCN-084 — Умный remote отвергает push с токеном reader и changeset с чужим author
 
@@ -107,6 +119,10 @@ Capability document: `docs/system/capabilities/remote-sync.md`
 
 Оба push отвергнуты: первый — 403 «роль reader не допускает push», второй — отказ «author bob не принадлежит actor alice»; refs/main не изменился.
 
+### Links
+
+- `verifies` → `task:CLO-037`
+
 ## SCN-085 — Реплика не применяет changeset со схемой новее своей
 
 **Kind:** `error_path`
@@ -124,6 +140,10 @@ Capability document: `docs/system/capabilities/remote-sync.md`
 ### Expected result
 
 Pull завершается отказом «remote на схеме 0043, у вас 0041 — cod-doc update»; ни одна операция changeset'а не применена, локальная БД не изменилась.
+
+### Links
+
+- `verifies` → `task:CLO-013`
 
 ## SCN-086 — Исчерпанная офлайн аренда номеров даёт провизорный ID, который закрепляется при push
 
@@ -145,6 +165,10 @@ Pull завершается отказом «remote на схеме 0043, у в�
 
 До push задача имеет провизорный ID вида ADO-~xxxx; после push — постоянный номер из нового блока, не совпадающий ни с одним номером реплики B, а task_get по провизорному ID возвращает задачу с пометкой «переименовано в ADO-NNN».
 
+### Links
+
+- `verifies` → `task:CLO-030`
+
 ## SCN-087 — Реплики, применившие одно множество changeset'ов в разном порядке, сходятся к одному дайджесту
 
 **Kind:** `invariant`
@@ -165,6 +189,10 @@ Pull завершается отказом «remote на схеме 0043, у в�
 
 Все три реплики показывают один и тот же дайджест authored-данных; одинаковы и множества открытых sync_conflict (по uid).
 
+### Links
+
+- `verifies` → `task:CLO-027`
+
 ## SCN-088 — Каждая запись в authored-данные попадает в журнал операций
 
 **Kind:** `invariant`
@@ -183,6 +211,10 @@ Pull завершается отказом «remote на схеме 0043, у в�
 ### Expected result
 
 В sync_op есть операция с entity_uid изменённой сущности, со всеми изменёнными authored-полями в fields и их прежними значениями в base; поля классов derived и local в операцию не попали.
+
+### Links
+
+- `verifies` → `task:CLO-009`
 
 ## SCN-089 — Конфликт правки секции виден в curator_next и разрешается через CLI с доставкой на другую реплику
 
@@ -205,6 +237,10 @@ Pull завершается отказом «remote на схеме 0043, у в�
 
 После pull на B создан ровно один sync_conflict, и curator_next показывает его пунктом очереди с командой sync resolve; после разрешения и обмена секция на A и B одинакова, конфликт в статусе resolved, а resolve оставил ревизию и activity event с автором реплики B.
 
+### Links
+
+- `verifies` → `task:CLO-026`
+
 ## SCN-090 — Секции с одним заголовком, созданные на двух репликах, склеиваются в одну
 
 **Kind:** `boundary_value`
@@ -225,6 +261,10 @@ Pull завершается отказом «remote на схеме 0043, у в�
 
 На B в документе ровно одна секция с якорем `8-открытые-вопросы`; uid секции B записан в entity_alias на uid секции A; открыт один sync_conflict по телу (X против Y без общего предка). Если X и Y равны — конфликта нет.
 
+### Links
+
+- `verifies` → `task:CLO-023`
+
 ## SCN-091 — Совпавшая буква секции плана перебуквляется детерминированно
 
 **Kind:** `boundary_value`
@@ -244,6 +284,10 @@ Pull завершается отказом «remote на схеме 0043, у в�
 ### Expected result
 
 На обеих репликах две секции: K — созданная раньше по HLC, L — вторая; каждая задача осталась в своей секции; на обеих одинаковое событие plan_section.relettered K→L и один дайджест.
+
+### Links
+
+- `verifies` → `task:CLO-023`
 
 ## SCN-092 — Удаление документа против правки его секции даёт восстановимый конфликт
 
@@ -266,6 +310,10 @@ Pull завершается отказом «remote на схеме 0043, у в�
 
 После pull документ и 12 секций на B удалены каскадом, журнал A содержит одну операцию delete; открыт один sync_conflict со снимком поддерева и правкой B. После resolve документ восстановлен с правкой B, а resolve оставил ревизию и activity event.
 
+### Links
+
+- `verifies` → `task:CLO-022`
+
 ## SCN-093 — Параллельные вставки шагов сценария сливаются по rank без конфликта
 
 **Kind:** `happy_path`
@@ -287,6 +335,10 @@ Pull завершается отказом «remote на схеме 0043, у в�
 
 На обеих репликах семь шагов в порядке: 1, 2, шаг A, 3, 4, 5, шаг B; журналы содержат по одной операции insert и ни одной правки rank у старых шагов; sync_conflict нет.
 
+### Links
+
+- `verifies` → `task:CLO-004`
+
 ## SCN-094 — Второй checkout задачи при настроенном remote получает отказ до начала работы
 
 **Kind:** `error_path`
@@ -306,6 +358,10 @@ Pull завершается отказом «remote на схеме 0043, у в�
 
 Checkout на A проходит и создаёт замок на remote; checkout на B отказывает с сообщением, кто и когда взял задачу; статус задачи на B не меняется.
 
+### Links
+
+- `verifies` → `task:CLO-031`
+
 ## SCN-095 — cod-doc update с незапушенными операциями перед сменой эпохи требует push
 
 **Kind:** `error_path`
@@ -323,6 +379,10 @@ Checkout на A проходит и создаёт замок на remote; check
 ### Expected result
 
 Update не накатывает миграцию и завершается сообщением «3 незапушенные операции — сначала cod-doc push»; схема реплики остаётся 0044, операции на месте.
+
+### Links
+
+- `verifies` → `task:CLO-032`
 
 ## SCN-096 — Документ restricted не попадает ни в один changeset
 
@@ -343,3 +403,7 @@ Update не накатывает миграцию и завершается со
 ### Expected result
 
 Ни один объект на remote не содержит uid документа и его секций; sync status показывает «1 документ restricted — локальный»; дайджест реплики совпадает с remote.
+
+### Links
+
+- `verifies` → `task:CLO-033`

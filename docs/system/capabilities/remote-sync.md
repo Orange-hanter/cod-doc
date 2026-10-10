@@ -177,7 +177,10 @@ reverse proxy (Caddy) с TLS на 443. Сервер ограничивает ч�
 
 ## 8. Связанные артефакты
 
-- RFC: [proposals/29-cloud-remote-sync.md](../../../proposals/29-cloud-remote-sync.md)
+- RFC: [proposals/29-cloud-remote-sync.md](../../../proposals/29-cloud-remote-sync.md) —
+  контракты §10, декомпозиция и DoD §11
+- План: `cloud-remote-2026-10` (CLO-001…043, backlog), трек в
+  [ROADMAP](../roadmap/ROADMAP.md)
 - ADR-016 — командная работа через реплики и remote (proposed)
 - ADR-017 — глобальная идентичность и захват операций (proposed)
 - Пересекается: [backup-and-export.md](backup-and-export.md) (remote как бэкап),
