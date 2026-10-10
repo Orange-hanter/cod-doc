@@ -359,7 +359,9 @@ class RevertNotSupportedError(NotImplementedError):
     """Raised for revision ops or entity kinds that cannot be auto-reverted."""
 
 
-def revert(session: Session, revision_id: str, *, author: str) -> Revision:
+def revert(
+    session: Session, revision_id: str, *, author: str, project_id: int | None = None
+) -> Revision:
     """Undo a revision by delegating to the entity-owning service.
 
     Dispatches based on `entity_kind` + the `op` field in `revision.diff`:
@@ -374,8 +376,15 @@ def revert(session: Session, revision_id: str, *, author: str) -> Revision:
 
     The inverse operation is written as a new revision (not amending history).
     Raises `RevertNotSupportedError` for ops or entity kinds not listed above.
+
+    ``project_id`` — скоуп поверхности (MCP, CLI): ревизия чужого проекта
+    общей hub-БД ищется как отсутствующая (`LookupError`), а не откатывается.
+    ``revision_id`` — глобально уникальный ULID, поэтому без скоупа поиск
+    однозначен; ``None`` оставлен внутренним вызывающим.
     """
     stmt = select(RevisionModel).where(RevisionModel.revision_id == revision_id)
+    if project_id is not None:
+        stmt = stmt.where(RevisionModel.project_id == project_id)
     model = session.execute(stmt).scalar_one_or_none()
     if model is None:
         raise LookupError(f"revision not found: {revision_id!r}")
@@ -451,7 +460,9 @@ def _revert_task_affects_files(
 
     Ревизия хранит набор целиком, поэтому откат — ``replace`` на него, какой
     бы режим ни был у исходной правки. Если набор с тех пор уже равен
-    ``old``, сервис отработает no-op и новой ревизии не будет.
+    ``old``, сервис отработает no-op и новой ревизии не будет. Набор, который
+    нынешнее правило путей отвергает, — `RevertNotSupportedError` с
+    ``revision_id``.
     """
     task_model = session.get(TaskModel, model.entity_id)
     if task_model is None:
@@ -459,15 +470,23 @@ def _revert_task_affects_files(
 
     from cod_doc.services import task_service as _tasks
 
-    _tasks.update_affects_files(
-        session,
-        task_id=task_model.task_id,
-        paths=old_paths,
-        mode="replace",
-        author=author,
-        reason=f"revert revision {model.revision_id}",
-        project_id=task_model.project_id,
-    )
+    try:
+        _tasks.update_affects_files(
+            session,
+            task_id=task_model.task_id,
+            paths=old_paths,
+            mode="replace",
+            author=author,
+            reason=f"revert revision {model.revision_id}",
+            project_id=task_model.project_id,
+        )
+    except ValueError as exc:
+        # Набор из ревизии не проходит нынешнее правило путей (легаси-импорт
+        # или ревизия старше `normalize_affected_paths`): без обёртки ошибка
+        # не говорила бы, что упал именно откат.
+        raise RevertNotSupportedError(
+            f"TASK revision {model.revision_id}: набор 'old' не проходит правило путей — {exc}"
+        ) from exc
 
 
 _HUNK_HEADER_RE = re.compile(r"@@[^@]+@@")

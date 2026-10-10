@@ -521,7 +521,10 @@ def task_status(
     multiple=True,
     type=click.Path(),
     metavar="PATH",
-    help="Путь в affects_files (повторяемый); режим — --affects-mode",
+    help=(
+        "Путь в affects_files (повторяемый); режим — --affects-mode. Пишется как есть:"
+        " ../ и абсолютные пути допустимы (вне корня — предупреждение)"
+    ),
 )
 @click.option(
     "--affects-mode",
@@ -530,7 +533,9 @@ def task_status(
     help="Как применить --affects-file: replace (по умолчанию) / add / remove",
 )
 @click.option(
-    "--clear-affects-files", is_flag=True, help="Очистить affects_files (replace на пустой набор)"
+    "--clear-affects-files",
+    is_flag=True,
+    help="Очистить affects_files; в MCP то же — пустой список affects_files",
 )
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None)
@@ -556,6 +561,10 @@ def task_update(
     AFT-021: `--affects-file` (повторяемый) с `--affects-mode replace|add|remove`
     правит набор затронутых файлов; `--clear-affects-files` очищает его.
     Пути вне корня проекта записываются с предупреждением (AFT-012).
+    Отдельный флаг очистки нужен потому, что повторяемая опция не умеет
+    передать пустой список — в MCP это `affects_files=[]`. Путь — метка
+    локальности, а не файл: `../`, обратные слэши и абсолютные пути не
+    нормализуются и не отвергаются; пустой путь и невидимые символы — ошибка.
     """
     from cod_doc.domain.entities import Priority
     from cod_doc.infra.db import transactional
@@ -594,6 +603,7 @@ def task_update(
                     new_description=description,
                     author=author,
                     reason=reason,
+                    project_id=pid,
                 )
                 changed.append("description")
             if acceptance is not None:
@@ -603,6 +613,7 @@ def task_update(
                     new_acceptance=acceptance,
                     author=author,
                     reason=reason,
+                    project_id=pid,
                 )
                 changed.append("acceptance")
             if priority is not None:
@@ -612,6 +623,7 @@ def task_update(
                     new_priority=Priority(priority),
                     author=author,
                     reason=reason,
+                    project_id=pid,
                 )
                 changed.append("priority")
             if touch_files:

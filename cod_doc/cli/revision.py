@@ -486,8 +486,8 @@ def revision_revert(ctx: click.Context, revision_id: str, project: str, author: 
 
     try:
         with transactional(sf) as session:
-            _require_project_id(session, project)
-            new_rev = revision_service.revert(session, revision_id, author=author)
+            pid = _require_project_id(session, project)
+            new_rev = revision_service.revert(session, revision_id, author=author, project_id=pid)
     except LookupError:
         console.print(f"[red]Revision '{revision_id}' not found.[/red]")
         sys.exit(1)

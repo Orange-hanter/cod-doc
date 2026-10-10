@@ -219,6 +219,7 @@ def task_field_patch(
             **{f"new_{field}": body},
             author="human:web",
             reason=f"web inline {field}",
+            project_id=project_db_id,
         )
         session.commit()
     except RevisionConflictError as exc:

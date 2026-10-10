@@ -167,8 +167,15 @@ def test_task_update_unknown_task_exits_nonzero(tmp_path: Path) -> None:
 
 def _seed_files(name: str, paths: list[str]) -> None:
     for session in _session(name):
+        project = ProjectRepository(session).get_by_slug(name)
+        assert project is not None
         tasks.update_affects_files(
-            session, task_id="GCL-001", paths=paths, mode="replace", author="human:seed"
+            session,
+            task_id="GCL-001",
+            paths=paths,
+            mode="replace",
+            author="human:seed",
+            project_id=project.row_id,
         )
 
 
@@ -265,8 +272,37 @@ def test_task_update_out_of_root_path_warns(tmp_path: Path) -> None:
     # line proves the warning (rich may wrap the warning over several lines).
     out = result.output
     assert out.count("⚠") == 1
-    assert "/elsewhere/x.py" in out[out.index("⚠") : out.index("✅")]
+    warning = " ".join(out[out.index("⚠") : out.index("✅")].split())
+    assert "/elsewhere/x.py" in warning
+    assert "вне корня проекта" in warning, "маркер ⚠ должен нести текст предупреждения"
+    assert str(tmp_path) not in warning, "root_path машины в предупреждение не попадает"
     assert _files("gp") == ["/elsewhere/x.py"]
+
+
+def test_task_update_relative_parent_path_is_stored_as_given(tmp_path: Path) -> None:
+    """``../`` не нормализуется и не отвергается: путь — метка локальности, не файл."""
+    _init_project(tmp_path)
+    _seed_task("gp")
+
+    result = _update("--affects-file", "../shared/x.py")
+    assert result.exit_code == 0, result.output
+    assert "⚠" not in result.output, "относительный путь не абсолютный — предупреждать не о чем"
+    assert _files("gp") == ["../shared/x.py"]
+
+
+def test_task_update_rejects_empty_and_invisible_paths(tmp_path: Path) -> None:
+    _init_project(tmp_path)
+    _seed_task("gp")
+    _seed_files("gp", ["src/keep.py"])
+
+    empty = _update("--affects-file", "  ")
+    assert empty.exit_code == 1
+    assert "пуст" in empty.output
+
+    bidi = _update("--affects-file", "src/\u202eyp.a")
+    assert bidi.exit_code == 1
+    assert "невидим" in bidi.output
+    assert _files("gp") == ["src/keep.py"]
 
 
 def test_task_update_clear_conflicts_with_affects_file(tmp_path: Path) -> None:

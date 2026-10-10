@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from sqlalchemy.orm import Session
 
+    from cod_doc.domain.entities import Task
+
 
 def _link_addressed_questions(
     session: Session, project_id: int, task_id: str, question_ids: list[str], author: str
@@ -992,9 +994,18 @@ def register(mcp: FastMCP) -> None:
         affects_files + affects_files_mode (replace | add | remove, default
         replace): ``replace`` — набор становится ровно этим списком (``[]``
         очищает), ``add`` / ``remove`` — добавить / убрать перечисленные пути.
-        Дубли схлопываются. Пути вне ``root_path`` проекта не отклоняются —
-        ответ несёт ``warnings`` (AFT-012). Набор влияет на локальность задачи
-        в ``task_next_ready`` / ``plan_ready`` (RFC 27 F13).
+        Дубли схлопываются, обрамляющие пробелы срезаются; пустой путь и
+        невидимые символы (управляющие, bidi/zero-width, разделители строк) —
+        ValueError. ``../``, обратные слэши и абсолютные пути пишутся как есть:
+        путь — метка локальности, файловых операций по нему нет. Пути вне
+        ``root_path`` проекта не отклоняются — ответ несёт ``warnings``
+        (AFT-012). Набор влияет на локальность задачи в ``task_next_ready`` /
+        ``plan_ready`` (RFC 27 F13). CLI-эквивалент очистки
+        (``affects_files=[]``) — ``cod-doc task update --clear-affects-files``:
+        повторяемая опция не умеет передать пустой список.
+
+        ``task_id`` ищется только в ``project``: задача другого проекта общей
+        БД — «not found».
 
         Не меняет ``title`` (идентичность задачи), ``status`` (см.
         ``task_update_status`` / ``task_checkout``) и принадлежность плану.
@@ -1041,9 +1052,9 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf, commit=not dry_run) as session:
                 pid = require_project_id(session, project)
-                t = task_service.get(session, task_id)
-                if t is None:
-                    raise TaskNotFoundError(task_id)
+                # Хотя бы одно поле передано (проверено выше), и каждый сервис
+                # ищет задачу в скоупе ``pid`` — отдельный get до правок не нужен.
+                t: Task | None = None
                 if description is not None:
                     t = task_service.update_description(
                         session,
@@ -1051,6 +1062,7 @@ def register(mcp: FastMCP) -> None:
                         new_description=description,
                         author=author,
                         reason=reason,
+                        project_id=pid,
                     )
                     changed.append("description")
                 if acceptance is not None:
@@ -1060,6 +1072,7 @@ def register(mcp: FastMCP) -> None:
                         new_acceptance=acceptance,
                         author=author,
                         reason=reason,
+                        project_id=pid,
                     )
                     changed.append("acceptance")
                 if priority is not None:
@@ -1069,6 +1082,7 @@ def register(mcp: FastMCP) -> None:
                         new_priority=priority_enum,
                         author=author,
                         reason=reason,
+                        project_id=pid,
                     )
                     changed.append("priority")
                 if affects_files is not None:
@@ -1085,6 +1099,7 @@ def register(mcp: FastMCP) -> None:
                     warnings.extend(change.warnings)
                     if change.changed:
                         changed.append("affects_files")
+                assert t is not None
                 out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
