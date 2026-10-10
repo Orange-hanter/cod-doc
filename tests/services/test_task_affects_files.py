@@ -267,7 +267,15 @@ def test_paths_are_stripped_before_dedup(engine_with_schema) -> None:  # type: i
 
 @pytest.mark.parametrize(
     ("paths", "match"),
-    [(["  "], "пуст"), ([""], "пуст"), (["src/a.py", "\n"], "пуст"), (["a\x00b"], "NUL")],
+    [
+        (["  "], "пуст"),
+        ([""], "пуст"),
+        (["src/a.py", "\n"], "пуст"),
+        (["a\x00b"], "NUL"),
+        (["a\tb.py"], "управляющ"),
+        (["a\x1b[31mb.py"], "управляющ"),
+        (["src/a\nb.py"], "управляющ"),
+    ],
 )
 def test_invalid_paths_are_rejected(  # type: ignore[no-untyped-def]
     engine_with_schema, paths: list[str], match: str
@@ -280,6 +288,27 @@ def test_invalid_paths_are_rejected(  # type: ignore[no-untyped-def]
                 session, task_id=_TASK, paths=paths, mode="replace", author="human:t"
             )
         assert _paths(session, row_id) == ["src/keep.py"]
+
+
+@pytest.mark.parametrize(
+    ("affected", "match"),
+    [(["a\x00b"], "NUL"), (["a\tb.py"], "управляющ"), (["  "], "пуст")],
+)
+def test_create_rejects_the_same_invalid_paths(  # type: ignore[no-untyped-def]
+    engine_with_schema, affected: list[str], match: str
+) -> None:
+    """`create()` и `update_affects_files()` проверяют путь одним правилом: NUL не
+    пишется в hub-Postgres, управляющие символы ломают вывод CLI и markdown."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session, pytest.raises(ValueError, match=match):
+        _seed(session, affected)
+
+
+def test_create_keeps_unusual_paths_as_given(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _pid, row_id = _seed(session, ["../outside.py", "..\\win.py", " src/padded.py "])
+        assert _paths(session, row_id) == ["../outside.py", "..\\win.py", "src/padded.py"]
 
 
 @pytest.mark.parametrize("path", ["../outside.py", "..\\win.py", "/etc/passwd"])

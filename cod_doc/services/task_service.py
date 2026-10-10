@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -383,6 +384,28 @@ def find_duplicate_by_title(session: Session, project_id: int, title: str) -> Ta
     return None
 
 
+def normalize_affected_paths(paths: list[str]) -> list[str]:
+    """Одно правило для ``affects_files`` в `create()` и `update_affects_files()`.
+
+    Обрамляющие пробелы срезаются (иначе ``" a.py "`` и ``"a.py"`` расходятся в
+    дедупе и локальности). Пустой путь, NUL и прочие управляющие символы
+    (Unicode Cc) — ValueError: NUL не пишется в text-колонку hub-Postgres, а
+    управляющие символы ломают вывод CLI и markdown-проекцию. Остальное — как
+    передано: путь — метка локальности, файловых операций по нему нет, поэтому
+    ``../``, обратные слэши и абсолютные пути допустимы (вне ``root_path`` —
+    AFT-012 warning у вызывающего).
+    """
+    out = [p.strip() for p in paths]
+    for p in out:
+        if not p:
+            raise ValueError("affects_files: путь не может быть пустым")
+        if "\x00" in p:
+            raise ValueError("affects_files: NUL в пути")
+        if any(unicodedata.category(ch) == "Cc" for ch in p):
+            raise ValueError(f"affects_files: управляющий символ в пути {p!r}")
+    return out
+
+
 def create(
     session: Session,
     *,
@@ -478,7 +501,7 @@ def create(
         session.flush()
 
     if affected_files:
-        for path in affected_files:
+        for path in normalize_affected_paths(affected_files):
             session.add(
                 AffectedFileModel(
                     task_id=task.row_id,
@@ -901,11 +924,7 @@ def update_affects_files(
     """
     if mode not in AFFECTS_FILES_MODES:
         raise ValueError(f"unknown mode {mode!r}; expected one of {list(AFFECTS_FILES_MODES)}")
-    paths = [p.strip() for p in paths]
-    if any(not p for p in paths):
-        raise ValueError("affects_files: путь не может быть пустым")
-    if any("\x00" in p for p in paths):
-        raise ValueError("affects_files: NUL в пути")
+    paths = normalize_affected_paths(paths)
     requested = list(dict.fromkeys(paths))
 
     model = _require_task(session, task_id, project_id=project_id)
