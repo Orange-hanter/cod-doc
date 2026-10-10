@@ -1547,14 +1547,10 @@ def get(session: Session, task_id: str, *, project_id: int | None = None) -> Tas
 
     Поверхности, которые решают по найденной задаче (MCP/CLI ``move``),
     передают проект: иначе в общей hub-БД нашлась бы одноимённая чужая.
+    Дефолт ``None`` — легаси-поведение для ~всех прочих чтений; сделать скоуп
+    обязательным — задача AFT-023.
     """
-    if project_id is None:
-        return TaskRepository(session).get_by_task_id(task_id)
-    try:
-        model = _require_task(session, task_id, project_id=project_id)
-    except TaskNotFoundError:
-        return None
-    return TaskRepository(session).get(model.row_id)
+    return TaskRepository(session).get_by_task_id(task_id, project_id=project_id)
 
 
 def list_for_plan(session: Session, plan_id: int) -> list[Task]:

@@ -159,16 +159,16 @@ def diff_preview(diff: str | None, *, limit: int = DIFF_PREVIEW_CHARS) -> str:
     return text.splitlines()[0][:limit]
 
 
-def get(session: Session, revision_id: str, *, project_id: int | None) -> Revision | None:
-    """Ревизия по ULID; с ``project_id`` — только ревизия этого проекта.
+def get(session: Session, revision_id: str, *, project_id: int) -> Revision | None:
+    """Ревизия по ULID — только ревизия проекта ``project_id``.
 
-    ``project_id`` обязателен, как у мутаций (AFT-022): MCP ``revision_get``
-    и CLI ``revision show`` иначе отдавали бы diff, автора и причину чужого
-    проекта общей hub-БД по одному лишь ULID.
+    ``project_id`` обязателен и не принимает ``None`` (AFT-022): MCP
+    ``revision_get`` и CLI ``revision show`` иначе отдавали бы diff, автора и
+    причину чужого проекта общей hub-БД по одному лишь ULID.
     """
-    stmt = select(RevisionModel).where(RevisionModel.revision_id == revision_id)
-    if project_id is not None:
-        stmt = stmt.where(RevisionModel.project_id == project_id)
+    stmt = select(RevisionModel).where(
+        RevisionModel.revision_id == revision_id, RevisionModel.project_id == project_id
+    )
     model = session.execute(stmt).scalar_one_or_none()
     return _to_domain(model) if model is not None else None
 

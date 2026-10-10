@@ -272,6 +272,7 @@ def test_task_update_out_of_root_path_warns(tmp_path: Path) -> None:
     # line proves the warning (rich may wrap the warning over several lines).
     out = result.output
     assert out.count("⚠") == 1
+    assert out.count("✅") == 1, out
     warning = " ".join(out[out.index("⚠") : out.index("✅")].split())
     assert "/elsewhere/x.py" in warning
     assert "вне корня проекта" in warning, "маркер ⚠ должен нести текст предупреждения"

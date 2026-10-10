@@ -306,8 +306,7 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
         other_pid = other.row_id
 
     move = _tool(_register(monkeypatch, factory, other_pid), "task_move_to_section")
-    # TaskNotFoundError несёт только task_id — сообщение «MV-001: MV-001».
-    with pytest.raises(ValueError, match=task.task_id):
+    with pytest.raises(ValueError, match=rf"^{task.task_id}: task not found in project 'other'$"):
         move(project="other", task_ids=[task.task_id], plan_scope="mv-plan", section_letter="B")
 
     with transactional(factory) as session:

@@ -1099,7 +1099,8 @@ def register(mcp: FastMCP) -> None:
                     warnings.extend(change.warnings)
                     if change.changed:
                         changed.append("affects_files")
-                assert t is not None
+                if t is None:  # недостижимо: выше проверено, что передано хотя бы одно поле
+                    raise RuntimeError("task_update: ни одно поле не применено")
                 out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
@@ -1197,9 +1198,16 @@ def register(mcp: FastMCP) -> None:
                     )
                     moved.append(task_to_dict(t))
                 except (TaskNotFoundError, SectionNotFoundError, CrossPlanMoveError) as exc:
-                    errors.append({"task_id": task_id, "message": str(exc)})
+                    # TaskNotFoundError несёт только task_id — без пояснения
+                    # сообщение выходило «MV-001: MV-001».
+                    message = (
+                        f"task not found in project {project!r}"
+                        if isinstance(exc, TaskNotFoundError)
+                        else str(exc)
+                    )
+                    errors.append({"task_id": task_id, "message": message})
                     if not continue_on_error:
-                        raise ValueError(f"{task_id}: {exc}") from None
+                        raise ValueError(f"{task_id}: {message}") from None
             committed = not dry_run
 
         result: dict[str, Any] = {
