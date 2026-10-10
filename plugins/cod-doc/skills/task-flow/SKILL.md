@@ -63,7 +63,7 @@ activity events.
 | release | `task_release` | `cod-doc task release <TASK_ID> -p <slug> --agent <имя>` (`--force` — чужой лок) |
 | закрытие | `task_complete` | `cod-doc task complete <TASK_ID> -p <slug> --commit <sha>` |
 | секция плана | `plan_section_create(project, plan_scope, letter, title)` | `cod-doc plan section create PLAN_SCOPE LETTER TITLE -p <slug>` |
-| grooming (description / acceptance / priority) | `task_update` | `cod-doc task update` |
+| grooming (description / acceptance / priority / affects_files) | `task_update` | `cod-doc task update` |
 | перенос в другую секцию того же плана | `task_move_to_section` | `cod-doc task move TASK_ID… -p <slug> --plan <scope> --section <L>` |
 | перенос в другой план (ADO-243) | `task_move_to_plan` | `cod-doc task move-plan TASK_ID… -p <slug> --plan <scope> --section <L>` (`--from-section scope:L` — всю секцию) |
 | смена title | по дизайну нет: `cancel` с причиной + новая задача | — |

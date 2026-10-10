@@ -116,12 +116,14 @@ backlog ─→ todo ─→ in_progress ─→ in_review ─→ done
 
 | Поверхность | Как |
 |---|---|
-| MCP | `task_update(project, task_id, description=…, acceptance=…, priority=…)` — любое подмножество полей; ответ содержит `updated_fields` |
-| CLI | `cod-doc task update TASK_ID -p SLUG --description … --acceptance … --priority …` |
+| MCP | `task_update(project, task_id, description=…, acceptance=…, priority=…, affects_files=[…], affects_files_mode="replace"\|"add"\|"remove")` — любое подмножество полей; ответ содержит `updated_fields` (и `warnings` для путей вне корня проекта) |
+| CLI | `cod-doc task update TASK_ID -p SLUG --description … --acceptance … --priority … --affects-file PATH… --affects-mode replace\|add\|remove` (`--clear-affects-files` — очистить) |
 
 Каждое изменённое поле пишет ревизию и activity event
 (`task.description_updated` / `task.acceptance_updated` /
-`task.priority_changed`), поэтому `--reason` стоит заполнять.
+`task.priority_changed` / `task.affects_files_updated`), поэтому `--reason`
+стоит заполнять. Устаревшие `affects_files` правь сразу (AFT-021): по ним
+считается локальность задачи в ready-выборке.
 
 `title` тул не меняет: смена имени — это смена идентичности задачи, заводи
 новую и отменяй старую. Статус живёт отдельно (`task_update_status` /
