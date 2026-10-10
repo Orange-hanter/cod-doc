@@ -30,6 +30,7 @@ from cod_doc.infra.models import (
     PlanModel,
     PlanSectionModel,
     ProjectModel,
+    RevisionModel,
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import revision_service as rev
@@ -71,6 +72,17 @@ def _seed(session: Session, affected: list[str] | None = None) -> tuple[int, int
     )
     assert task.row_id is not None
     return proj.row_id, task.row_id
+
+
+def _other_project(session: Session) -> int:
+    """Второй проект без задач — для проверок скоупа по проекту."""
+    now = datetime.now(UTC)
+    proj = ProjectModel(slug="other", title="O", root_path="/repo/other", config_json={})
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
+    return proj.row_id
 
 
 def _paths(session: Session, row_id: int) -> list[str]:
@@ -239,6 +251,71 @@ def test_blank_path_is_rejected(engine_with_schema) -> None:  # type: ignore[no-
             )
 
 
+def test_paths_are_stripped_before_dedup(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """``" src/a.py "`` и ``"src/a.py"`` — один путь, а не визуальный дубль."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _pid, row_id = _seed(session, ["src/a.py"])
+
+        change = tasks.update_affects_files(
+            session, task_id=_TASK, paths=[" src/a.py ", "\tsrc/b.py"], mode="add", author="human:t"
+        )
+
+        assert change.new == ["src/a.py", "src/b.py"]
+        assert _paths(session, row_id) == ["src/a.py", "src/b.py"]
+
+
+@pytest.mark.parametrize(
+    ("paths", "match"),
+    [(["  "], "пуст"), ([""], "пуст"), (["src/a.py", "\n"], "пуст"), (["a\x00b"], "NUL")],
+)
+def test_invalid_paths_are_rejected(  # type: ignore[no-untyped-def]
+    engine_with_schema, paths: list[str], match: str
+) -> None:
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _pid, row_id = _seed(session, ["src/keep.py"])
+        with pytest.raises(ValueError, match=match):
+            tasks.update_affects_files(
+                session, task_id=_TASK, paths=paths, mode="replace", author="human:t"
+            )
+        assert _paths(session, row_id) == ["src/keep.py"]
+
+
+@pytest.mark.parametrize("path", ["../outside.py", "..\\win.py", "/etc/passwd"])
+def test_unusual_paths_are_stored_as_given(engine_with_schema, path: str) -> None:  # type: ignore[no-untyped-def]
+    """Контракт: путь — строка-метка для локальности, файловых операций по нему нет.
+
+    Как и `create()`, сервис его не нормализует и не отвергает; путь вне
+    ``root_path`` (абсолютный) даёт AFT-012 warning.
+    """
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _pid, row_id = _seed(session)
+        change = tasks.update_affects_files(
+            session, task_id=_TASK, paths=[path], mode="replace", author="human:t"
+        )
+        assert _paths(session, row_id) == [path]
+        assert bool(change.warnings) == path.startswith("/")
+
+
+def test_foreign_project_id_raises_not_found(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _pid, row_id = _seed(session, ["src/a.py"])
+        other_pid = _other_project(session)
+        with pytest.raises(TaskNotFoundError):
+            tasks.update_affects_files(
+                session,
+                task_id=_TASK,
+                paths=["src/x.py"],
+                mode="replace",
+                author="human:t",
+                project_id=other_pid,
+            )
+        assert _paths(session, row_id) == ["src/a.py"]
+
+
 def test_unknown_mode_is_rejected(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -348,6 +425,32 @@ def test_revision_revert_of_add_restores_set(engine_with_schema) -> None:  # typ
         assert _paths(session, row_id) == []
 
 
+@pytest.mark.parametrize("old", ["src/a.py", None, [1, 2]])
+def test_revision_revert_rejects_malformed_old(engine_with_schema, old: object) -> None:  # type: ignore[no-untyped-def]
+    """``old`` не список строк — отказ, а не набор из символов строки."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _pid, row_id = _seed(session, ["src/a.py"])
+        tasks.update_affects_files(
+            session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t"
+        )
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        model = session.execute(
+            select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
+        ).scalar_one()
+        diff = json.loads(model.diff)
+        if old is None:
+            del diff["old"]
+        else:
+            diff["old"] = old
+        model.diff = json.dumps(diff)
+        session.flush()
+
+        with pytest.raises(rev.RevertNotSupportedError):
+            rev.revert(session, target.revision_id, author="human:undo")
+        assert _paths(session, row_id) == ["src/b.py"]
+
+
 # --------------------------------------------------------------------------- #
 # MCP: task_update                                                             #
 # --------------------------------------------------------------------------- #
@@ -440,10 +543,26 @@ def test_mcp_task_update_same_set_writes_no_revision(engine_with_schema, monkeyp
         before = _revisions(session, row_id)
 
     task_update = _tool(_register(monkeypatch, factory, pid), "task_update")
-    task_update(project="af", task_id=_TASK, affects_files=["src/a.py"])
+    out = task_update(project="af", task_id=_TASK, affects_files=["src/a.py"])
 
+    assert out["updated_fields"] == [], "no-op не числится изменённым полем"
     with transactional(factory) as session:
         assert _revisions(session, row_id) == before
+
+
+def test_mcp_task_update_foreign_project_not_found(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Задача проекта A через ``project=B`` — «не найдена», набор A не тронут."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _pid, row_id = _seed(session, ["src/a.py"])
+        other_pid = _other_project(session)
+
+    task_update = _tool(_register(monkeypatch, factory, other_pid), "task_update")
+    with pytest.raises(ValueError, match="not found"):
+        task_update(project="other", task_id=_TASK, affects_files=["src/x.py"])
+
+    with transactional(factory) as session:
+        assert _paths(session, row_id) == ["src/a.py"]
 
 
 def test_mcp_task_update_out_of_root_warns(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -514,6 +633,11 @@ def test_task_turns_local_after_paths_change(engine_with_schema, monkeypatch) ->
 
 
 def test_task_turns_foreign_after_paths_change(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Чужая задача не попадает в ``ready_for_project`` вовсе.
+
+    Здесь plain-вариант, а не ``ready_batch_for_project``, как выше: проверяем
+    сам ready-набор, а счётчик ``skipped_foreign`` уже покрыт соседним тестом.
+    """
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid, _row_id = _seed(session, ["src/a.py"])

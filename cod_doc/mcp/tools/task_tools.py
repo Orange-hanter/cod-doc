@@ -1002,14 +1002,15 @@ def register(mcp: FastMCP) -> None:
         Каждое изменённое поле оставляет отдельную TASK-ревизию и activity
         event; неизменившееся значение — no-op без ревизии. Ревизию
         ``affects_files`` откатывает ``revision_revert``. ``updated_fields``
-        перечисляет переданные поля.
+        перечисляет переданные поля; ``affects_files`` попадает туда, только
+        если набор действительно изменился.
 
         ``dry_run=True`` валидирует и возвращает результат, откатывая транзакцию.
         """
-        from cod_doc.domain.entities import Priority
+        from cod_doc.domain.entities import AFFECTS_FILES_MODES, Priority
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
-        from cod_doc.services.task_service import AFFECTS_FILES_MODES, TaskNotFoundError
+        from cod_doc.services.task_service import TaskNotFoundError
 
         if (
             description is None
@@ -1039,7 +1040,7 @@ def register(mcp: FastMCP) -> None:
         warnings: list[str] = []
         try:
             with transactional(sf, commit=not dry_run) as session:
-                require_project_id(session, project)
+                pid = require_project_id(session, project)
                 t = task_service.get(session, task_id)
                 if t is None:
                     raise TaskNotFoundError(task_id)
@@ -1078,10 +1079,12 @@ def register(mcp: FastMCP) -> None:
                         mode=affects_files_mode,
                         author=author,
                         reason=reason,
+                        project_id=pid,
                     )
                     t = change.task
                     warnings.extend(change.warnings)
-                    changed.append("affects_files")
+                    if change.changed:
+                        changed.append("affects_files")
                 out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None

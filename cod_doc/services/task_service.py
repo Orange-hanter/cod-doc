@@ -46,6 +46,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import (
+    AFFECTS_FILES_MODES,
     AffectedFileKind,
     EntityKind,
     Priority,
@@ -845,10 +846,6 @@ def update_priority(
     return t
 
 
-#: Режимы `update_affects_files`: полная замена набора, добавление, удаление.
-AFFECTS_FILES_MODES: tuple[str, ...] = ("replace", "add", "remove")
-
-
 @dataclass(frozen=True)
 class AffectsFilesChange:
     """Результат `update_affects_files()`.
@@ -873,6 +870,7 @@ def update_affects_files(
     author: str,
     mode: str = "replace",
     reason: str | None = None,
+    project_id: int | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> AffectsFilesChange:
     """Править ``affects_files`` уже созданной задачи (AFT-021).
@@ -883,8 +881,13 @@ def update_affects_files(
 
     ``mode``: ``replace`` — набор становится ровно ``paths`` (``[]`` очищает);
     ``add`` — пути из ``paths`` добавляются к текущим; ``remove`` — убираются
-    (отсутствующие игнорируются). Пути пишутся как есть, как в `create()`;
-    дубли схлопываются (``uq_affected_file_task_path``), пустой путь — ValueError.
+    (отсутствующие игнорируются). Обрамляющие пробелы срезаются — иначе
+    ``" a.py "`` и ``"a.py"`` расходятся в дедупе и локальности; в остальном
+    пути пишутся как есть, как в `create()`. Дубли схлопываются
+    (``uq_affected_file_task_path``), пустой путь и NUL — ValueError.
+
+    ``project_id`` ограничивает поиск задачи проектом: тот же ``task_id`` в
+    чужом проекте общей hub-БД — `TaskNotFoundError`, а не чужая правка.
 
     Совпадение итогового набора с текущим (порядок не важен) — no-op без
     ревизии и события. Иначе — TASK-ревизия ``op=affects_files`` со старым и
@@ -898,11 +901,14 @@ def update_affects_files(
     """
     if mode not in AFFECTS_FILES_MODES:
         raise ValueError(f"unknown mode {mode!r}; expected one of {list(AFFECTS_FILES_MODES)}")
-    if any(not p.strip() for p in paths):
+    paths = [p.strip() for p in paths]
+    if any(not p for p in paths):
         raise ValueError("affects_files: путь не может быть пустым")
+    if any("\x00" in p for p in paths):
+        raise ValueError("affects_files: NUL в пути")
     requested = list(dict.fromkeys(paths))
 
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     rows = list(
         session.execute(
             select(AffectedFileModel).where(AffectedFileModel.task_id == model.row_id)

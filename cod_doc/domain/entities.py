@@ -207,6 +207,12 @@ class AffectedFileKind(StrEnum):
     CONFIG = "config"
 
 
+#: Режимы правки ``affects_files`` (AFT-021): полная замена набора, добавление,
+#: удаление. Живёт в domain, а не в `task_service`: CLI берёт его на уровне
+#: модуля, а `import cod_doc.cli` не должен тянуть SQLAlchemy (ADO-179).
+AFFECTS_FILES_MODES: tuple[str, ...] = ("replace", "add", "remove")
+
+
 class UserStoryStatus(StrEnum):
     DRAFT = "draft"
     ACCEPTED = "accepted"

@@ -410,7 +410,12 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
     op = diff_obj.get("op")
 
     if op == "affects_files":
-        _revert_task_affects_files(session, model, old_paths=list(diff_obj["old"]), author=author)
+        old_paths = diff_obj.get("old")
+        if not isinstance(old_paths, list) or not all(isinstance(p, str) for p in old_paths):
+            raise RevertNotSupportedError(
+                f"TASK revision {model.revision_id}: op=affects_files без списка путей в 'old'"
+            )
+        _revert_task_affects_files(session, model, old_paths=old_paths, author=author)
         return
     if op == "status":
         old_status = TaskStatus(diff_obj["old"])
@@ -461,6 +466,7 @@ def _revert_task_affects_files(
         mode="replace",
         author=author,
         reason=f"revert revision {model.revision_id}",
+        project_id=task_model.project_id,
     )
 
 

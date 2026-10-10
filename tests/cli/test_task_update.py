@@ -6,6 +6,7 @@ tests/services/test_task_update_fields.py.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,7 @@ from cod_doc.infra.models import (
     AffectedFileModel,
     PlanModel,
     PlanSectionModel,
+    RevisionModel,
     TaskModel,
 )
 from cod_doc.infra.repositories import ProjectRepository
@@ -244,6 +246,13 @@ def test_task_update_same_set_is_noop(tmp_path: Path) -> None:
             ).scalars()
         )
         assert len(kinds) == 1, "только сид, повтор того же набора — no-op"
+        revisions = [
+            r
+            for r in session.execute(select(RevisionModel.diff)).scalars()
+            if json.loads(r).get("op") == "affects_files"
+        ]
+        assert len(revisions) == 1, "только ревизия сида"
+    assert "без изменений" in result.output
 
 
 def test_task_update_out_of_root_path_warns(tmp_path: Path) -> None:
