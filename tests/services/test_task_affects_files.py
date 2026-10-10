@@ -462,7 +462,7 @@ def test_revision_revert_restores_previous_set(engine_with_schema) -> None:  # t
         _update(session, task_id=_TASK, paths=["src/c.py"], mode="replace", author="human:t")
         target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
 
-        rev.revert(session, target.revision_id, author="human:undo")
+        rev.revert(session, target.revision_id, author="human:undo", project_id=target.project_id)
 
         assert _paths(session, row_id) == ["src/a.py", "src/b.py"]
         inverse = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
@@ -483,7 +483,7 @@ def test_revision_revert_of_add_restores_set(engine_with_schema) -> None:  # typ
         _update(session, task_id=_TASK, paths=["src/new.py"], mode="add", author="human:t")
         target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
 
-        rev.revert(session, target.revision_id, author="human:undo")
+        rev.revert(session, target.revision_id, author="human:undo", project_id=target.project_id)
 
         assert _paths(session, row_id) == []
 
@@ -508,7 +508,9 @@ def test_revision_revert_rejects_malformed_old(engine_with_schema, old: object) 
         session.flush()
 
         with pytest.raises(rev.RevertNotSupportedError):
-            rev.revert(session, target.revision_id, author="human:undo")
+            rev.revert(
+                session, target.revision_id, author="human:undo", project_id=target.project_id
+            )
         assert _paths(session, row_id) == ["src/b.py"]
 
 
@@ -623,7 +625,9 @@ def test_revision_revert_wraps_rejected_old_paths(engine_with_schema) -> None:  
         session.flush()
 
         with pytest.raises(rev.RevertNotSupportedError, match=target.revision_id):
-            rev.revert(session, target.revision_id, author="human:undo")
+            rev.revert(
+                session, target.revision_id, author="human:undo", project_id=target.project_id
+            )
         assert _paths(session, row_id) == ["src/b.py"]
 
 

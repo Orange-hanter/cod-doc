@@ -258,7 +258,9 @@ def test_revert_of_a_historical_legacy_revision_lands_canonical(engine_with_sche
             reason="ревизия из до-канонической эпохи",
         )
 
-        rev.revert(session, historical.revision_id, author="human:test")
+        rev.revert(
+            session, historical.revision_id, author="human:test", project_id=historical.project_id
+        )
 
         assert _raw_status(session, "CA-007") == TaskStatus.TODO.value
 

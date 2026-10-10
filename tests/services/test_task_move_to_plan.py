@@ -354,7 +354,7 @@ def test_revert_of_a_plan_move_is_an_explicit_refusal(engine_with_schema) -> Non
         last = rev.list_for_entity(session, EntityKind.TASK, task.row_id)[-1]
 
         with pytest.raises(RevertNotSupportedError):
-            rev.revert(session, last.revision_id, author="human:test")
+            rev.revert(session, last.revision_id, author="human:test", project_id=last.project_id)
 
 
 # --------------------------------------------------------------------------- #

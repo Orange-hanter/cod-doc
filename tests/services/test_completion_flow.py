@@ -82,7 +82,9 @@ def test_revert_task_status_change(engine_with_schema) -> None:  # type: ignore[
         status_rev = history[-1]
         assert status_rev.diff.startswith('{"op": "status"')
 
-        rev.revert(session, status_rev.revision_id, author="human:test")
+        rev.revert(
+            session, status_rev.revision_id, author="human:test", project_id=status_rev.project_id
+        )
 
         t = tasks.get(session, "CF-001")
         assert t is not None
@@ -103,7 +105,12 @@ def test_revert_task_complete(engine_with_schema) -> None:  # type: ignore[no-un
             tasks.get(session, "CF-001").row_id,  # type: ignore[union-attr]
         )
         complete_rev = history[-1]
-        rev.revert(session, complete_rev.revision_id, author="human:test")
+        rev.revert(
+            session,
+            complete_rev.revision_id,
+            author="human:test",
+            project_id=complete_rev.project_id,
+        )
 
         t = tasks.get(session, "CF-001")
         assert t is not None
@@ -123,7 +130,12 @@ def test_revert_task_unsupported_op_raises(engine_with_schema) -> None:  # type:
         )
         create_rev = history[0]
         with pytest.raises(rev.RevertNotSupportedError):
-            rev.revert(session, create_rev.revision_id, author="human:test")
+            rev.revert(
+                session,
+                create_rev.revision_id,
+                author="human:test",
+                project_id=create_rev.project_id,
+            )
 
 
 # ============================================================================ #
@@ -167,7 +179,9 @@ def test_revert_section_patch_restores_old_body(engine_with_schema) -> None:  # 
         history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
         patch_rev = history[-1]
 
-        rev.revert(session, patch_rev.revision_id, author="human:test")
+        rev.revert(
+            session, patch_rev.revision_id, author="human:test", project_id=patch_rev.project_id
+        )
 
         from cod_doc.infra.models import SectionModel
 
@@ -209,7 +223,9 @@ def test_revert_section_writes_new_revision(engine_with_schema) -> None:  # type
         n_before = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id))
 
         patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[-1]
-        rev.revert(session, patch_rev.revision_id, author="human:test")
+        rev.revert(
+            session, patch_rev.revision_id, author="human:test", project_id=patch_rev.project_id
+        )
 
         n_after = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id))
         assert n_after == n_before + 1  # the revert is a new revision
@@ -241,7 +257,9 @@ def test_revert_document_rename_restores_key(engine_with_schema) -> None:  # typ
         )
         rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)[-1]
 
-        rev.revert(session, rename_rev.revision_id, author="human:test")
+        rev.revert(
+            session, rename_rev.revision_id, author="human:test", project_id=rename_rev.project_id
+        )
 
         from cod_doc.infra.models import DocumentModel
 
@@ -264,7 +282,9 @@ def test_revert_unsupported_entity_kind_raises(engine_with_schema) -> None:  # t
             diff='{"op": "create"}',
         )
         with pytest.raises(rev.RevertNotSupportedError):
-            rev.revert(session, written.revision_id, author="human:test")
+            rev.revert(
+                session, written.revision_id, author="human:test", project_id=written.project_id
+            )
 
 
 # ============================================================================ #

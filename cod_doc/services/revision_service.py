@@ -373,9 +373,7 @@ class RevertNotSupportedError(NotImplementedError):
     """Raised for revision ops or entity kinds that cannot be auto-reverted."""
 
 
-def revert(
-    session: Session, revision_id: str, *, author: str, project_id: int | None = None
-) -> Revision:
+def revert(session: Session, revision_id: str, *, author: str, project_id: int) -> Revision:
     """Undo a revision by delegating to the entity-owning service.
 
     Dispatches based on `entity_kind` + the `op` field in `revision.diff`:
@@ -391,14 +389,13 @@ def revert(
     The inverse operation is written as a new revision (not amending history).
     Raises `RevertNotSupportedError` for ops or entity kinds not listed above.
 
-    ``project_id`` — скоуп поверхности (MCP, CLI): ревизия чужого проекта
-    общей hub-БД ищется как отсутствующая (`LookupError`), а не откатывается.
-    ``revision_id`` — глобально уникальный ULID, поэтому без скоупа поиск
-    однозначен; ``None`` оставлен внутренним вызывающим.
+    ``project_id`` обязателен и не принимает ``None``, как у `get` (AFT-022):
+    ревизия чужого проекта общей hub-БД ищется как отсутствующая
+    (`LookupError`), а не откатывается.
     """
-    stmt = select(RevisionModel).where(RevisionModel.revision_id == revision_id)
-    if project_id is not None:
-        stmt = stmt.where(RevisionModel.project_id == project_id)
+    stmt = select(RevisionModel).where(
+        RevisionModel.revision_id == revision_id, RevisionModel.project_id == project_id
+    )
     model = session.execute(stmt).scalar_one_or_none()
     if model is None:
         raise LookupError(f"revision not found: {revision_id!r}")

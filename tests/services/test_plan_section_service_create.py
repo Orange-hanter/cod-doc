@@ -280,7 +280,7 @@ def test_revert_plan_section_not_supported(
         ).scalar_one()
 
     with pytest.raises(revision_service.RevertNotSupportedError), transactional(sf) as s:
-        revision_service.revert(s, revision_id, author="t")
+        revision_service.revert(s, revision_id, author="t", project_id=alpha)
 
 
 def test_diff_is_module_local() -> None:

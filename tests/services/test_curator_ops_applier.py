@@ -127,7 +127,7 @@ def test_approving_applies_the_patch_by_the_approver_and_revert_undoes_it(
         )
         assert next(r.author for r in revisions if r.revision_id == head) == "human:dakh"
 
-        revision_service.revert(session, head, author="human:dakh")
+        revision_service.revert(session, head, author="human:dakh", project_id=pid)
         assert _body(session, doc_id) == _BODY
 
 

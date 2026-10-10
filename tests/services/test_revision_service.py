@@ -245,4 +245,4 @@ def test_revert_raises_lookup_for_unknown_revision_id(engine_with_schema) -> Non
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session, pytest.raises(LookupError):
-        rev.revert(session, "01HQX5Z9F0K8R0000000000000", author="human:test")
+        rev.revert(session, "01HQX5Z9F0K8R0000000000000", author="human:test", project_id=1)
