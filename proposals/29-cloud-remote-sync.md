@@ -11,7 +11,8 @@ type: rfc
 > (глобальная идентичность и захват операций), оба `proposed`. Целевой контракт —
 > capability [remote-sync](../docs/system/capabilities/remote-sync.md), сценарии
 > SCN-081…089 — [scenarios/remote-sync](../docs/system/scenarios/remote-sync.md).
-> Следующий шаг после приёмки ADR — истории, `plan_create` на scope
+> Открытые вопросы Q-007…Q-016 решены владельцем 2026-10-10, текст приведён к
+> решениям (§9). Следующий шаг после приёмки ADR — истории, `plan_create` на scope
 > `cloud-remote-2026-10` и разбиение по секциям A–F из §7.
 
 ## 1. Контекст
@@ -84,11 +85,30 @@ git — источник модели (DAG коммитов, fast-forward push, 
 | `authored` | операции над полями | project, document, section, doc_node, doc_comment, plan, plan_section, task, dependency, affected_file, task_document, adr (+ supersedes/task/diagram), user_story (+ acceptance/link/section), scenario (+ step/link), module (+ dependency/code), tag (+ document_tag/task_tag/story_tag), external_ref, commit_link, approval (+ task/doc_revision link), routine (определение), structure_waiver, finding с `source != "routine"` |
 | `journal` | append-only, без слияния | revision, activity_event кроме `link.*` и `routine.fired` |
 | `derived` | ничего; пересобирается после pull | link, link_suggestion, doc_node_suggestion, `db_search_idx*` (FTS5), code_*, structure_* кроме structure_waiver, doc_code_claim, repo_file, repo_symbol, repo_import, finding с `source = "routine"` |
-| `local` | никогда | routine_run, agent_run, trace_call, task_metrics, finding_source_run, sidecar `.cod-doc/runs/*.jsonl` (ADR-015); колонки `document.projection_hash`, `document.content_sha256_head` — они описывают локальное рабочее дерево |
+| `local` | никогда | routine_run, agent_run, trace_call, task_metrics, finding_source_run, sidecar `.cod-doc/runs/*.jsonl` (ADR-015); колонки `document.projection_hash`, `document.content_sha256_head` — они описывают локальное рабочее дерево; колонка `position` у упорядоченных таблиц (вычисляется из `rank`, Q-009); строки документа с `sensitivity = restricted` и его секций (Q-015) |
+
+**Порядок (Q-009).** Шесть упорядоченных таблиц — `section`, `plan_section`,
+`doc_node`, `scenario_step`, `story_acceptance`, `adr_diagram` — получают
+синхронизируемую колонку `rank TEXT` (дробный индекс, LexoRank-подобная строка).
+Вставка между соседями пишет один `rank` и не трогает остальных; равные `rank`
+упорядочиваются по `uid`. Целый `position` остаётся для существующих запросов, но
+становится `local` и пересчитывается из `rank` на каждой реплике.
+
+**Restricted не уезжает (Q-015).** Документ с `sensitivity = restricted` и все его
+секции — `local` построчно: класс определяется не таблицей, а значением колонки.
+`confidential` и ниже синхронизируются: аудитория — участники проекта. Понижение
+`restricted → internal` уезжает первым upsert'ом всего документа; повышение уже
+уехавшего документа до `restricted` пишет предупреждение «на remote осталась
+история» — changeset неизменяем. Ссылки на restricted-документ с других реплик
+честно битые (derived `link`).
 
 Markdown-проекции не синхронизируются вовсе: их везёт git репозитория. После pull
 `doc drift` покажет расхождение, если БД ушла вперёд от закоммиченного файла, —
-ровно та же семантика, что сегодня после правки через MCP.
+ровно та же семантика, что сегодня после правки через MCP. **Два канала
+независимы (Q-013):** git везёт файлы, remote — операции; одинаковые значения,
+приехавшие по обоим каналам, сливаются без конфликта. В синхронизируемом проекте
+правки идут через БД, `doc import` — только для новых файлов и инициализации
+репозитория; `edited_in_place` там — отклонение, которое показывает куратор.
 
 Routine-находки — `derived`: каждая реплика пересчитывает их сама, а партиция
 автозакрытия (`finding_service.reconcile_partition`) остаётся локальной. Иначе две
@@ -116,6 +136,18 @@ Routine-находки — `derived`: каждая реплика пересчи
    резолвят алиас с пометкой «переименовано в ADO-241».
 
 Коллизия двух постоянных номеров невозможна по построению: блоки не пересекаются.
+
+**Натуральные ключи (Q-007).** Аренда защищает только номера. У части сущностей
+ключ — имя, которое придумывает человек, под `UNIQUE`; одно имя на двух репликах
+получает разные `uid`. Правило зависит от вида ключа:
+
+| Ключ | Вид | При совпадении |
+|---|---|---|
+| `document.doc_key`, `section.anchor` (в документе), `doc_node.node_key`, `routine.name` | имя-смысл: одно имя = одно намерение | склейка: выживает `uid` с меньшим HLC создания, второй пишется в `entity_alias`, поля сливаются по §3.7; тела без общего предка — равные без конфликта, разные → `sync_conflict` |
+| `plan_section.letter` (в плане) | метка-порядок: буква ничего не значит | вторая по HLC перебуквляется в следующую свободную, задачи остаются при своих секциях; событие `plan_section.relettered` |
+
+Перебуквление детерминировано: обе реплики выбирают одну и ту же букву, потому что
+сортируют по `(hlc, uid)`.
 
 ### 3.4 Журнал операций
 
@@ -182,11 +214,12 @@ zstd. Первые 4 байта объекта — версия формата: 
 
 ```
 <project_uid>/
-  refs/main              # sha256 головы; меняется только CAS
-  leases/<PREFIX>        # {"next": 261, "holders": {...}}; меняется только CAS
-  objects/ab/cdef….zst   # changeset'ы
-  snapshots/<sha>.db.zst # SQLite authored+journal на момент changeset <sha>
-  meta.json              # {"schema_min": "0041…", "created": …}
+  refs/main                   # sha256 головы; меняется только CAS
+  leases/<PREFIX>             # {"next": 261, "holders": {...}}; меняется только CAS
+  leases/checkout/<task_uid>  # {"replica", "actor", "at", "ttl"} — замок checkout (Q-011)
+  objects/ab/cdef….zst        # changeset'ы
+  snapshots/<epoch>/<sha>.db.zst  # SQLite authored+journal на момент changeset <sha>
+  meta.json                   # {"epoch": "0045…", "schema_min": "0045…", "created": …}
 ```
 
 **Транспорт** — один интерфейс, три реализации:
@@ -241,9 +274,28 @@ sequenceDiagram
 - **clone** — последний снапшот + changeset'ы после него. Снапшот пишет тот, кто
   делает push, если с прошлого снапшота накопилось больше N операций (по умолчанию
   5000), — иначе clone проекта со 100k операций replay'ил бы их все.
-- **Схема.** Реплика не применяет changeset с `schema_head` новее своей головы
-  миграций: `pull` отвечает «remote на схеме 0043, у вас 0041 — `cod-doc update`».
-  Push с более старой схемы, чем `meta.schema_min`, отвергается тем же сообщением.
+- **Схема и эпохи (Q-012).** Реплика не применяет changeset с `schema_head` новее
+  своей головы миграций: `pull` отвечает «remote на схеме 0043, у вас 0041 —
+  `cod-doc update`». Миграция, меняющая `authored`-колонки, открывает **эпоху**:
+  1. `cod-doc update` перед миграцией проверяет неупакованные операции и требует
+     `cod-doc push`; push на старой схеме принимается, пока `meta.epoch` remote не
+     сменилась;
+  2. первый push на новой схеме пишет снапшот `snapshots/<epoch>/…` и поднимает
+     `meta.epoch` и `meta.schema_min`;
+  3. changeset'ы прошлых эпох больше не воспроизводятся: `clone` и отставшие
+     реплики стартуют со снапшота эпохи;
+  4. реплика, пропустившая смену эпохи с незапушенными операциями, применить их уже
+     не может — `cod-doc sync export-pending` выгружает их в файл для ручного
+     переноса.
+  Push со схемой старше `meta.schema_min` отвергается тем же сообщением про
+  `cod-doc update`. Миграция, не трогающая `authored`-колонки, эпоху не открывает.
+- **Checkout (Q-011).** Если у проекта настроен remote, `task_checkout` берёт замок
+  `leases/checkout/<task_uid>` тем же CAS, что и `refs/main`, — на S3 и на умном
+  remote одинаково. Занятый замок — отказ сразу: «взята dakh@macbook в 14:02».
+  `task_release`, `task_complete` и TTL (`release_stale`) снимают замок там же.
+  Без сети `task_checkout` отказывает; `task_checkout --offline` берёт провизорный
+  замок, а двойной захват ловится при pull как `sync_conflict`. Проект без remote
+  работает по ADO-039 как сегодня.
 - **Пересборка derived** после pull: `link_sync` по затронутым секциям, FTS по
   затронутым документам, routine-находки — при следующем прогоне рутины.
 
@@ -251,18 +303,28 @@ sequenceDiagram
 
 Слияние детерминировано: две реплики, применившие одно множество changeset'ов в
 любом порядке, приходят к одному состоянию. Проверка — `cod-doc sync verify`:
-sha256 от канонической выгрузки `authored`-таблиц по `uid`, сравнение с дайджестом
-в последнем changeset'е.
+дайджест реплики сравнивается с дайджестом в последнем changeset'е.
+
+**Дайджест.** sha256 потока строк, отсортированного по `(entity_kind, uid)`;
+строка — канонический JSON `authored`-колонок сущности (ключи по алфавиту, FK как
+`uid`, время в UTC ISO-8601). В дайджест **не** входят `row_id`, `local`-колонки
+(`position`, хэши рабочего дерева), строки `restricted`-документов и
+`revision.parent_revision_id` (порядок ревизий на репликах может различаться,
+Q-010); состав ревизий по `revision_id` входит.
 
 | Что | Правило | Конфликт |
 |---|---|---|
-| скалярное поле (title, priority, order, plan_section) | LWW по HLC **на уровне поля**: правки разных полей одной задачи не конфликтуют | нет |
+| скалярное поле (title, priority, plan_section) | LWW по HLC **на уровне поля**: правки разных полей одной задачи не конфликтуют | нет |
+| одинаковое значение с обеих сторон (в т.ч. правка, приехавшая и git, и remote) | значения равны — операция поглощается | нет |
+| порядок (`rank`, Q-009) | LWW по полю; вставки рядом не трогают соседей, равные `rank` — по `uid` | нет |
+| совпадение натурального ключа (Q-007) | имя-смысл — склейка + `entity_alias`; метка-порядок — перебуквление второй | разные тела без общего предка → `sync_conflict` |
 | текст (section.body, task.description, task.acceptance, task_document.body, adr.decision, user_story.narrative) | 3-way merge построчно от `base`; непересекающиеся ханки сливаются | пересекающиеся ханки → `sync_conflict`, в БД остаётся «наше», «их» лежит в конфликте |
 | `task.status` | если изменили обе стороны — побеждает больший HLC, но только при допустимом переходе из значения другой стороны по `task_status_machine.ALLOWED_TRANSITIONS` | недопустимая пара или двойной офлайн-`task_checkout` → `sync_conflict` |
 | множества (dependency, *_tag, story_link, adr_task, affected_file) | add-wins: добавление одной стороны и удаление другой → элемент остаётся | нет |
-| delete против edit | delete выигрывает (tombstone по uid) | `sync_conflict` с последним состоянием «их» — восстановимо |
+| delete против edit (Q-008) | delete выигрывает: в журнал идёт одна операция delete родителя (tombstone по uid), поддерево сносит тот же `ON DELETE CASCADE` на каждой реплике; операция над потомком мёртвого родителя не применяется | `sync_conflict` со снимком поддерева — `sync resolve --take theirs` восстанавливает |
 | человеческий ID | не сливается: коллизий нет по §3.3 | — |
 | journal (revision, activity_event) | объединение по глобальному ID | нет |
+| цепочка ревизий (Q-010) | чужая ревизия встаёт со своим `revision_id`, `author`, `reason`; `parent_revision_id` = локальная голова на момент применения; история на реплике линейна, оптимистическая блокировка (ARCHITECTURE §12.1) работает как сегодня — устаревший `expected_parent_revision_id` получает `OptimisticLockError` | нет |
 
 Конфликт — строка таблицы, а не маркеры в тексте:
 
@@ -272,8 +334,8 @@ CREATE TABLE sync_conflict (
   project_id   INTEGER NOT NULL REFERENCES project(row_id),
   entity_kind  TEXT NOT NULL,
   entity_uid   TEXT NOT NULL,
-  field        TEXT,                 -- NULL для delete/edit
-  ours         TEXT, theirs TEXT, base TEXT,
+  field        TEXT,                 -- NULL для delete/edit и склейки ключей
+  ours         TEXT, theirs TEXT, base TEXT,  -- для delete/edit theirs = JSON-снимок поддерева
   theirs_op    TEXT NOT NULL,        -- op_id чужой операции
   status       TEXT NOT NULL,        -- 'open' | 'resolved'
   resolved_by  TEXT, resolved_at DATETIME
@@ -335,6 +397,12 @@ reader.
 - **Глупый remote** не знает участников: доступ равен S3-кредам, `author` не
   проверяется. Годится для одного владельца на нескольких машинах или для группы,
   где все доверяют всем; `cod-doc remote add s3://…` пишет об этом предупреждение.
+- **Развёртывание (Q-014).** `cod-doc serve` слушает только loopback; наружу его
+  выставляет reverse proxy (Caddy) с TLS от Let's Encrypt, на VPS открыт только 443.
+  TLS в cod-doc не встраивается. Сервер ограничивает частоту запросов на токен и IP
+  и пишет отказы аутентификации в журнал (`auth.denied` в `activity_event` сервера) —
+  без этого первый публичный порт на Hermes слеп к перебору. MinIO и MailPit
+  остаются за SSH-туннелем; облачные агенты (VISION §6 п. 5) ходят тем же HTTPS.
 
 ### 3.9 Поверхности
 
@@ -347,7 +415,9 @@ reader.
 | `cod-doc remote login <name>` | — | сохранить токен |
 | `cod-doc clone <url> [--project <slug>] [<dir>]` | — | снапшот + хвост, регистрация в реестре |
 | `cod-doc fetch` / `pull` / `push` `-p <slug>` | `sync_pull`, `sync_push` | §3.6 |
-| `cod-doc sync status -p <slug>` | `sync_status` | ahead/behind, неупакованные операции, открытые конфликты, аренды |
+| `cod-doc sync status -p <slug>` | `sync_status` | ahead/behind, неупакованные операции, открытые конфликты, аренды, эпоха remote, число `restricted`-документов (не уезжают), подсказка про drift |
+| `cod-doc task checkout <id> [--offline]` | `task_checkout(offline=…)` | при настроенном remote — замок через CAS (§3.6); `--offline` — провизорный |
+| `cod-doc sync export-pending` | — | выгрузка незапушенных операций в файл после пропущенной смены эпохи |
 | `cod-doc sync conflicts` / `resolve <uid> --take …` | `sync_conflicts`, `sync_resolve` | §3.7 |
 | `cod-doc sync verify` | `sync_status(verify=True)` | дайджест реплики против remote |
 | `cod-doc sync log [-n 20]` | — | changeset'ы: автор, реплика, число операций |
@@ -370,6 +440,12 @@ reader.
   `replica`, `sync_op`, `changeset`, `sync_ref`, `sync_conflict`, `entity_alias`.
   Таблицы доступа (`actor`, `api_token`, `project_member`) — отдельной ревизией
   секции E, они нужны только серверу.
+- **`rank` (Q-009)** — в той же ревизии: `ADD COLUMN rank` в шесть упорядоченных
+  таблиц, бэкфилл равномерными строками в порядке текущего `position`; `UNIQUE` на
+  `(scenario_row_id, position)`, `(story_id, position)`, `(adr_id, position)`
+  снимается — порядок держит `rank`, а `position` пересчитывается. На SQLite снятие
+  ограничения — пересоздание таблицы; это допустимо для трёх дочерних таблиц, но не
+  для `document` (см. следующий пункт), а `document` в этом списке нет.
 - **Никакого `batch_alter_table` на `document`**: на SQLite он пересоздаёт таблицу, и
   CASCADE уносит все секции и ссылки (см. CLAUDE.md). Только `ALTER TABLE … ADD
   COLUMN` + `CREATE UNIQUE INDEX`. Тест по образцу
@@ -381,18 +457,20 @@ reader.
   может иметь remote, часть нет.
 - **Postgres не нужен.** Блокеры STO-018…024 остаются блокерами RFC 23, но не этого
   RFC: и реплика, и сервер работают на SQLite.
-- **Связь с ADR-010.** ADR-010 оставляет PostgreSQL профилем server/cloud и
-  требует его исполнимости (CI-job `test-postgres`). Этот RFC профиль не
-  отменяет, но снимает с него роль единственного пути к командной работе:
-  команда = реплики на SQLite + remote. Решение зафиксировано в ADR-016
-  (`proposed`), его следствия для схемы — в ADR-017; supersede ли ADR-016
-  ADR-010 целиком или уточняет его (как ADR-010 уточнил ADR-005) — решает
-  владелец при приёмке, до начала секции A.
+- **`doc import` в синхронизируемом проекте (Q-013)** — только для новых файлов и
+  инициализации репозитория; правки идут через БД. Для самого cod-doc это расходится
+  с нынешним PostToolUse-хуком «после правки `.md` — `doc import`»; смена хука и
+  правила в CLAUDE.md — отдельная идея, этот RFC её не делает.
+- **Связь с ADR-010 (Q-016).** ADR-016 **уточняет** ADR-010, а не отменяет его — так
+  же, как ADR-010 уточнил ADR-005. PostgreSQL остаётся опциональным профилем
+  server/cloud; секция G `adoption-2026-08` (STO-018…024) и CI-job `test-postgres`
+  живут, но выходят из критического пути к командной работе: команда = реплики на
+  SQLite + remote. Связь фиксируется `adr_relate(ADR-016 → ADR-010)`.
 - **Связь с RFC 23.** Его premise «SoT = Postgres в облаке» заменяется на «сервер —
   это такая же реплика с умным remote». Сервер может материализовать проект в
   локальную SQLite и отдавать её web UI и облачным агентам через remote MCP; секции
   B–D RFC 23 (`agent_apply`, токены, проекция) садятся на auth из §3.8. Сам RFC 23
-  не отменяется, но его секция A (Postgres SoT) требует пересмотра.
+  не отменяется; его секция A (Postgres SoT) — `deferred`.
 - **Принцип «Не берём: multi-tenant»** из `proposals/README.md` не нарушается:
   команда — это участники одного проекта на одном сервере владельца. Организаций,
   тенантов, регистрации и биллинга нет.
@@ -407,9 +485,13 @@ reader.
 | Новая таблица забыта в реестре | тест «каждая модель классифицирована» (§3.2) |
 | Качество 3-way merge для markdown-текстов | построчный merge + конфликт вместо маркеров; единица слияния — секция, а не документ, поэтому правки разных секций одного документа не пересекаются |
 | Рост `sync_op` и объектов | упакованные операции старше последнего снапшота удаляются локально (`sync gc`); на remote объекты старше двух снапшотов — по флагу |
-| Расхождение схем между машинами | `schema_head` в changeset + отказ применять новее; доставка по-прежнему `cod-doc update` |
+| Расхождение схем между машинами | `schema_head` в changeset + отказ применять новее; эпохи (§3.6) — `cod-doc update` сначала требует push |
+| Потеря незапушенных правок при пропущенной смене эпохи | `update` блокируется до push; если реплика всё же отстала — `sync export-pending` в файл |
 | Утечка токена | отзыв (`token revoke`), `last_used`, токен на устройство, а не на человека |
+| Перебор токенов на публичном 443 | rate limit на токен и IP, журнал `auth.denied`, TLS у Caddy (§3.8) |
+| Секрет уехал до повышения до `restricted` | предупреждение «история на remote»; чистка — только пересозданием remote (вне v1) |
 | Сдвиг часов | HLC, а не стенное время |
+| Checkout зависит от сети | `--offline` с конфликтом при pull; проект без remote — как сегодня |
 
 **Не делаем в v1**
 
@@ -438,15 +520,17 @@ reader.
 
 ## 7. Оценка
 
-Около 35 задач, 6–8 недель; секции плана `cloud-remote-2026-10` (префикс `CLO`):
+Около 40 задач, 7–9 недель; секции плана `cloud-remote-2026-10` (префикс `CLO`).
+Решения Q-007…Q-016 добавили `rank`, склейку ключей, tombstone поддерева, аренду
+checkout, эпохи и развёртывание — плюс пять задач к первоначальной оценке.
 
 | Секция | Содержание | Задач |
 |---|---|---|
-| A. Идентичность и журнал | миграция `uid`, реестр классов, `sync_op` + хук `before_flush`, HLC, гейты «модель классифицирована» и «нет bulk в authored» | 7 |
-| B. Changeset и file-remote | формат и адресация, `RemoteStore`, `FileRemote`, fetch/push/fast-forward, `sync status/log` | 6 |
-| C. Слияние и конфликты | LWW по полю, 3-way merge текста, статус-машина, add-wins, tombstones, `sync_conflict`, `sync verify`, пункт в `curator_next` | 7 |
-| D. S3 и clone | `S3Remote` с conditional PUT, снапшоты, `clone`, аренда ID и провизорные ID, `entity_alias` | 5 |
-| E. Умный remote и доступ | `/api/sync/v1`, `actor`/`api_token`/`project_member`, Bearer-гейт на sync + `/api/v1` + MCP-http, проверка `author`, `member`/`token` CLI | 6 |
+| A. Идентичность и журнал | миграция `uid` + `rank` (6 таблиц, снятие UNIQUE), реестр классов (вкл. построчный `restricted`), `sync_op` + хук `before_flush`, HLC, гейты «модель классифицирована» и «нет bulk в authored» | 8 |
+| B. Changeset и file-remote | формат и адресация, `RemoteStore`, `FileRemote`, fetch/push/fast-forward, `sync status/log`, дайджест | 6 |
+| C. Слияние и конфликты | LWW по полю, 3-way merge текста, статус-машина, add-wins, tombstone поддерева, натуральные ключи (склейка/перебуквление), ревизии поверх локальной головы, `sync_conflict`, `sync verify`, пункт в `curator_next` | 9 |
+| D. S3, clone, эпохи | `S3Remote` с conditional PUT, снапшоты по эпохам, `clone`, аренда ID и провизорные ID, `entity_alias`, аренда checkout, `update` требует push, `export-pending` | 7 |
+| E. Умный remote и доступ | `/api/sync/v1`, `actor`/`api_token`/`project_member`, Bearer-гейт на sync + `/api/v1` + MCP-http, проверка `author`, rate limit и `auth.denied`, рецепт Caddy, `member`/`token` CLI | 6 |
 | F. Поверхности и документация | MCP-тулы + счётчики профилей, рутина `sync`, zsh-дополнение, ARCHITECTURE §8/§12, capability-док, скилл | 4 |
 
 A → B → C строго последовательны; D и E параллельны после B; F идёт по ходу.
@@ -464,3 +548,26 @@ A → B → C строго последовательны; D и E паралле
    показывает один дайджест.
 4. На умном remote токен с ролью reader получает 403 на push; changeset с чужим
    `author` отвергается.
+5. При настроенном remote второй `task_checkout` той же задачи получает отказ до
+   начала работы; `restricted`-документ после push на remote не найден.
+
+## 9. Открытые вопросы
+
+Заведены сущностями со связью `relation=blocks` на этот RFC; все десять решены
+владельцем 2026-10-10 по сценариям «ноутбук A / десктоп B офлайн → push / pull»,
+текст выше приведён к решениям. Везде выбран рекомендованный вариант; к Q-013
+владелец добавил правило про `doc import`. Дайджест `sync verify` (§3.7) —
+техническое определение, отдельным вопросом не заводился.
+
+| Вопрос | Тема | Решение |
+|---|---|---|
+| Q-007 | совпадение натуральных ключей | имя-смысл — склейка + `entity_alias`; буква `plan_section` — перебуквление (§3.3) |
+| Q-008 | удаление и DB-каскады | tombstone родителя; потомок под мёртвым родителем → конфликт со снимком (§3.7) |
+| Q-009 | порядок элементов | дробный `rank`, `position` — local (§3.2, §4) |
+| Q-010 | ревизии и блокировка | линейная история, `revision_id` общие, parent = локальная голова (§3.7) |
+| Q-011 | checkout на репликах | замок через remote CAS, `--offline` — провизорный (§3.6) |
+| Q-012 | эволюция схемы | эпохи: push до миграции, снапшот эпохи, `export-pending` (§3.6) |
+| Q-013 | markdown и git | каналы независимы; `doc import` — только новые файлы и инициализация (§3.2, §4) |
+| Q-014 | выставление умного remote | Caddy + TLS на 443, rate limit, журнал отказов (§3.8) |
+| Q-015 | restricted / confidential | `restricted` — local построчно, не уезжает (§3.2) |
+| Q-016 | ADR-016 и ADR-010 | уточняет; Postgres опционален, RFC 23 §A — deferred (§4) |

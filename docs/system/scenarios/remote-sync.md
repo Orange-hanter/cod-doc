@@ -22,12 +22,12 @@ Capability document: `docs/system/capabilities/remote-sync.md`
 
 | Kind | Count |
 |---|---|
-| `happy_path` | 2 |
-| `error_path` | 3 |
-| `boundary_value` | 1 |
-| `invariant` | 2 |
+| `happy_path` | 3 |
+| `error_path` | 6 |
+| `boundary_value` | 3 |
+| `invariant` | 3 |
 | `integration` | 1 |
-| **total** | **9** |
+| **total** | **16** |
 
 ## SCN-081 — Правки разных полей одной задачи на двух офлайн-репликах сливаются без конфликта
 
@@ -204,3 +204,142 @@ Pull завершается отказом «remote на схеме 0043, у в�
 ### Expected result
 
 После pull на B создан ровно один sync_conflict, и curator_next показывает его пунктом очереди с командой sync resolve; после разрешения и обмена секция на A и B одинакова, конфликт в статусе resolved, а resolve оставил ревизию и activity event с автором реплики B.
+
+## SCN-090 — Секции с одним заголовком, созданные на двух репликах, склеиваются в одну
+
+**Kind:** `boundary_value`
+**Status:** `draft`
+**Anchor:** `docs/system/capabilities/remote-sync#5-инварианты`
+
+### Preconditions
+
+Реплики A и B совпадают; в документе RFC 29 нет секции с якорем `8-открытые-вопросы`. Обе реплики без сети.
+
+### Steps
+
+1. На реплике A добавить секцию «8. Открытые вопросы» с телом X
+2. На реплике B добавить секцию с тем же заголовком и телом Y
+3. На A выполнить cod-doc push, на B выполнить cod-doc pull
+
+### Expected result
+
+На B в документе ровно одна секция с якорем `8-открытые-вопросы`; uid секции B записан в entity_alias на uid секции A; открыт один sync_conflict по телу (X против Y без общего предка). Если X и Y равны — конфликта нет.
+
+## SCN-091 — Совпавшая буква секции плана перебуквляется детерминированно
+
+**Kind:** `boundary_value`
+**Status:** `draft`
+**Anchor:** `docs/system/capabilities/remote-sync#2-модель`
+
+### Preconditions
+
+В плане `adoption-2026-08` последняя секция — J. Реплики A и B совпадают и без сети.
+
+### Steps
+
+1. На реплике A создать секцию плана K «Remote sync» и задачу в ней
+2. На реплике B создать секцию плана K «Postgres parity» и задачу в ней
+3. Выполнить pull и push на обеих репликах, пока новых changeset'ов нет
+
+### Expected result
+
+На обеих репликах две секции: K — созданная раньше по HLC, L — вторая; каждая задача осталась в своей секции; на обеих одинаковое событие plan_section.relettered K→L и один дайджест.
+
+## SCN-092 — Удаление документа против правки его секции даёт восстановимый конфликт
+
+**Kind:** `error_path`
+**Status:** `draft`
+**Anchor:** `docs/system/capabilities/remote-sync#2-модель`
+
+### Preconditions
+
+Реплики A и B совпадают; документ `docs/system/roadmap/cod-doc-task-plan` содержит 12 секций. Обе без сети.
+
+### Steps
+
+1. На реплике A удалить документ
+2. На реплике B изменить тело одной его секции
+3. На A выполнить cod-doc push, на B выполнить cod-doc pull
+4. На B выполнить cod-doc sync resolve <uid> --take theirs
+
+### Expected result
+
+После pull документ и 12 секций на B удалены каскадом, журнал A содержит одну операцию delete; открыт один sync_conflict со снимком поддерева и правкой B. После resolve документ восстановлен с правкой B, а resolve оставил ревизию и activity event.
+
+## SCN-093 — Параллельные вставки шагов сценария сливаются по rank без конфликта
+
+**Kind:** `happy_path`
+**Status:** `draft`
+**Anchor:** `docs/system/capabilities/remote-sync#5-инварианты`
+
+### Preconditions
+
+У SCN-081 пять шагов с rank a0, b5, c0, c5, d0. Реплики A и B совпадают и без сети.
+
+### Steps
+
+1. На реплике A вставить шаг между вторым и третьим
+2. На реплике B добавить шаг в конец
+3. Выполнить pull и push на обеих репликах
+4. Прочитать шаги SCN-081 на обеих
+
+### Expected result
+
+На обеих репликах семь шагов в порядке: 1, 2, шаг A, 3, 4, 5, шаг B; журналы содержат по одной операции insert и ни одной правки rank у старых шагов; sync_conflict нет.
+
+## SCN-094 — Второй checkout задачи при настроенном remote получает отказ до начала работы
+
+**Kind:** `error_path`
+**Status:** `draft`
+**Anchor:** `docs/system/capabilities/remote-sync#3-контракт-поверхностей`
+
+### Preconditions
+
+У проекта настроен s3-remote, обе реплики онлайн; задача ADO-230 в статусе todo, замка leases/checkout/<uid> нет.
+
+### Steps
+
+1. На реплике A вызвать task_checkout ADO-230
+2. На реплике B вызвать task_checkout ADO-230
+
+### Expected result
+
+Checkout на A проходит и создаёт замок на remote; checkout на B отказывает с сообщением, кто и когда взял задачу; статус задачи на B не меняется.
+
+## SCN-095 — cod-doc update с незапушенными операциями перед сменой эпохи требует push
+
+**Kind:** `error_path`
+**Status:** `draft`
+**Anchor:** `docs/system/capabilities/remote-sync#5-инварианты`
+
+### Preconditions
+
+Реплика на схеме 0044 с тремя неупакованными операциями; новый релиз содержит миграцию 0045, меняющую authored-колонку.
+
+### Steps
+
+1. Выполнить cod-doc update
+
+### Expected result
+
+Update не накатывает миграцию и завершается сообщением «3 незапушенные операции — сначала cod-doc push»; схема реплики остаётся 0044, операции на месте.
+
+## SCN-096 — Документ restricted не попадает ни в один changeset
+
+**Kind:** `invariant`
+**Status:** `draft`
+**Anchor:** `docs/system/capabilities/remote-sync#4-доступ`
+
+### Preconditions
+
+В проекте есть документ с sensitivity=restricted и тремя секциями; к проекту подключён s3-remote.
+
+### Steps
+
+1. Изменить одну секцию restricted-документа
+2. Выполнить cod-doc push
+3. Выполнить cod-doc sync status
+
+### Expected result
+
+Ни один объект на remote не содержит uid документа и его секций; sync status показывает «1 документ restricted — локальный»; дайджест реплики совпадает с remote.
