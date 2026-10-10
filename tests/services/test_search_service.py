@@ -777,6 +777,8 @@ def test_task_acceptance_and_blocker_are_indexed(engine_with_schema) -> None:  #
             author="t",
             project_id=pid,
         )
+        # set_blocker / clear_blocker скоупа проекта пока не принимают (ADO-200,
+        # легаси-долг); project_id с AFT-022 требуют только grooming-мутации.
         task_service.set_blocker(
             session, task_id="INC-003", reason="waiting on kryptonite", author="t"
         )

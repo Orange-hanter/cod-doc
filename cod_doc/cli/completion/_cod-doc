@@ -4141,7 +4141,7 @@ _cod-doc() {
     '(--description)--description=[Новый текст description (пустая строка очищает)]:description' \
     '(--acceptance)--acceptance=[Новый текст acceptance (пустая строка очищает)]:acceptance' \
     '(--priority)--priority=[Новый приоритет]:priority:(critical high medium low)' \
-    '*--affects-file=[Путь в affects_files (повторяемый); режим — --affects-mode. Пишется…]:path:_files' \
+    '*--affects-file=[Путь в affects_files, как есть (повторяемый); режим — --affects-mode]:path:_files' \
     '(--affects-mode)--affects-mode=[Как применить --affects-file; replace (по умолчанию) / add / remove]:affects-mode:(replace add remove)' \
     '(--clear-affects-files)--clear-affects-files[Очистить affects_files; в MCP то же — пустой список affects_files]' \
     '(--author)--author=:author' \

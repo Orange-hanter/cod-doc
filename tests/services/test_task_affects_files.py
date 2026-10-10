@@ -401,6 +401,27 @@ def test_out_of_root_path_warns_but_is_written(engine_with_schema) -> None:  # t
         assert _paths(session, row_id) == ["/elsewhere/x.py", "/repo/proj/in.py", "rel.py"]
 
 
+def test_absolute_path_without_project_root_warns(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Без ``root_path`` локальность абсолютного пути не проверить — об этом говорится явно."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, row_id = _seed(session)
+        project = session.get(ProjectModel, pid)
+        assert project is not None
+        project.root_path = ""
+        session.flush()
+
+        change = _update(
+            session, task_id=_TASK, paths=["/abs/x.py", "rel.py"], mode="replace", author="human:t"
+        )
+
+        assert len(change.warnings) == 1
+        assert "root_path проекта не задан" in change.warnings[0]
+        assert "/abs/x.py" in change.warnings[0]
+        assert "rel.py" not in change.warnings[0]
+        assert _paths(session, row_id) == ["/abs/x.py", "rel.py"]
+
+
 @pytest.mark.parametrize("mode", ["replace", "add"])
 def test_already_stored_foreign_path_does_not_warn_again(  # type: ignore[no-untyped-def]
     engine_with_schema, mode: str
@@ -772,6 +793,31 @@ def test_mcp_revision_revert_foreign_project_not_found(engine_with_schema, monke
 
     with transactional(factory) as session:
         assert _paths(session, row_id) == ["src/b.py"]
+
+
+def test_mcp_revision_get_foreign_project_is_null(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """``revision_get(project=B)`` не отдаёт diff/автора ревизии проекта A."""
+    from cod_doc.mcp.tools import revision_tools
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, row_id = _seed(session, ["src/a.py"])
+        other_pid = _other_project(session)
+        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1].revision_id
+
+    monkeypatch.setattr(revision_tools, "session_factory", lambda project: (factory, None))
+    monkeypatch.setattr(revision_tools, "require_project_id", lambda session, project: other_pid)
+    foreign = FastMCP("test")
+    revision_tools.register(foreign)
+    assert _tool(foreign, "revision_get")(project="other", revision_id=target)["result"] is None
+
+    monkeypatch.setattr(revision_tools, "require_project_id", lambda session, project: pid)
+    own = FastMCP("test")
+    revision_tools.register(own)
+    # ``dict | None`` FastMCP отдаёт обёрнутым в ``{"result": …}``.
+    got = _tool(own, "revision_get")(project="af", revision_id=target)["result"]
+    assert got["revision_id"] == target
 
 
 def test_mcp_task_update_out_of_root_warns(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]

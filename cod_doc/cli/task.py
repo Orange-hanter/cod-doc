@@ -521,10 +521,7 @@ def task_status(
     multiple=True,
     type=click.Path(),
     metavar="PATH",
-    help=(
-        "Путь в affects_files (повторяемый); режим — --affects-mode. Пишется как есть:"
-        " ../ и абсолютные пути допустимы (вне корня — предупреждение)"
-    ),
+    help="Путь в affects_files, как есть (повторяемый); режим — --affects-mode",
 )
 @click.option(
     "--affects-mode",
@@ -705,7 +702,7 @@ def task_move(
 
     try:
         with transactional(sf, commit=not dry_run) as session:
-            _require_project_id(session, project)
+            pid = _require_project_id(session, project)
             plan = PlanRepository(session).get_by_scope(plan_scope)
             if plan is None or plan.row_id is None:
                 console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
@@ -722,7 +719,7 @@ def task_move(
                 sys.exit(1)
 
             for task_id in task_ids:
-                current = task_service.get(session, task_id)
+                current = task_service.get(session, task_id, project_id=pid)
                 if current is None:
                     raise TaskNotFoundError(task_id)
                 if current.section_id == section.row_id:
@@ -734,6 +731,7 @@ def task_move(
                     new_section_id=section.row_id,
                     author=author,
                     reason=reason,
+                    project_id=pid,
                 )
                 moved.append(task_id)
     except TaskNotFoundError as exc:

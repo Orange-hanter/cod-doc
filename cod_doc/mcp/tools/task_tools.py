@@ -1166,7 +1166,7 @@ def register(mcp: FastMCP) -> None:
         committed = False
 
         with transactional(sf, commit=not dry_run) as session:
-            require_project_id(session, project)
+            pid = require_project_id(session, project)
             plan = PlanRepository(session).get_by_scope(plan_scope)
             if plan is None or plan.row_id is None:
                 raise ValueError(f"Plan '{plan_scope}' not found.")
@@ -1181,7 +1181,7 @@ def register(mcp: FastMCP) -> None:
 
             for task_id in task_ids:
                 try:
-                    current = task_service.get(session, task_id)
+                    current = task_service.get(session, task_id, project_id=pid)
                     if current is None:
                         raise TaskNotFoundError(task_id)
                     if current.section_id == section_id:
@@ -1193,6 +1193,7 @@ def register(mcp: FastMCP) -> None:
                         new_section_id=section_id,
                         author=author,
                         reason=reason,
+                        project_id=pid,
                     )
                     moved.append(task_to_dict(t))
                 except (TaskNotFoundError, SectionNotFoundError, CrossPlanMoveError) as exc:

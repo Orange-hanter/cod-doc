@@ -606,8 +606,13 @@ def update_status(
     via_checkout: bool = False,
     strict: bool = True,
     force: bool = False,
+    project_id: int | None = None,
 ) -> Task:
     """Set task.status directly; no dep-gate.
+
+    ``project_id`` сужает поиск задачи проектом (AFT-022); пока опционален —
+    ``update_status`` зовут ~40 мест, и обязательным он станет отдельной
+    правкой. Его передаёт откат ревизии.
 
     For the guarded `→done` transition that validates blocking deps, use
     `complete()` instead.
@@ -638,11 +643,11 @@ def update_status(
         validate_transition,
     )
 
-    # ADO-200: project_id=None — легаси-долг. Публичные сигнатуры update_status,
-    # _update_text_field, update_priority, move_to_section, complete,
-    # set_blocker, clear_blocker и log_progress в этой задаче не меняются,
-    # скоупа проекта у них нет — поиск по всей БД, как раньше.
-    model = _require_task(session, task_id, project_id=None)
+    # ADO-200: project_id=None — легаси-долг. У complete, set_blocker,
+    # clear_blocker и log_progress скоупа проекта нет — поиск по всей БД, как
+    # раньше; grooming-мутации (description/acceptance/priority/affects_files,
+    # move_to_section) его требуют с AFT-022.
+    model = _require_task(session, task_id, project_id=project_id)
     old_status = model.status
     target_status = canonical_task_status(new_status)
     # Сравнение по бакету, а не по строке: `todo → pending` — не переход, а
@@ -1032,6 +1037,7 @@ def move_to_section(
     task_id: str,
     new_section_id: int,
     author: str,
+    project_id: int | None,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
@@ -1050,11 +1056,14 @@ def move_to_section(
 
     No-op, когда задача уже в целевой секции. Revision и activity event
     пишутся одним атомарным вызовом (правило ADO-040).
+
+    ``project_id`` обязателен и без значения по умолчанию, как у остальных
+    grooming-мутаций (AFT-022, ADO-200).
     """
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     old_section_id = model.section_id
     if old_section_id == new_section_id:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -1533,8 +1542,19 @@ def complete(
     return t
 
 
-def get(session: Session, task_id: str) -> Task | None:
-    return TaskRepository(session).get_by_task_id(task_id)
+def get(session: Session, task_id: str, *, project_id: int | None = None) -> Task | None:
+    """Задача по ``task_id``; с ``project_id`` — только в этом проекте.
+
+    Поверхности, которые решают по найденной задаче (MCP/CLI ``move``),
+    передают проект: иначе в общей hub-БД нашлась бы одноимённая чужая.
+    """
+    if project_id is None:
+        return TaskRepository(session).get_by_task_id(task_id)
+    try:
+        model = _require_task(session, task_id, project_id=project_id)
+    except TaskNotFoundError:
+        return None
+    return TaskRepository(session).get(model.row_id)
 
 
 def list_for_plan(session: Session, plan_id: int) -> list[Task]:

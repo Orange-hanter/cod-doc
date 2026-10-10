@@ -159,6 +159,20 @@ def diff_preview(diff: str | None, *, limit: int = DIFF_PREVIEW_CHARS) -> str:
     return text.splitlines()[0][:limit]
 
 
+def get(session: Session, revision_id: str, *, project_id: int | None) -> Revision | None:
+    """Ревизия по ULID; с ``project_id`` — только ревизия этого проекта.
+
+    ``project_id`` обязателен, как у мутаций (AFT-022): MCP ``revision_get``
+    и CLI ``revision show`` иначе отдавали бы diff, автора и причину чужого
+    проекта общей hub-БД по одному лишь ULID.
+    """
+    stmt = select(RevisionModel).where(RevisionModel.revision_id == revision_id)
+    if project_id is not None:
+        stmt = stmt.where(RevisionModel.project_id == project_id)
+    model = session.execute(stmt).scalar_one_or_none()
+    return _to_domain(model) if model is not None else None
+
+
 def list_for_entity(
     session: Session,
     entity_kind: EntityKind,
@@ -450,6 +464,7 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
         # machine (e.g. in_progress → pending). Bypass validation since the
         # original transition was already validated when first applied.
         force=True,
+        project_id=task_model.project_id,
     )
 
 
@@ -470,23 +485,26 @@ def _revert_task_affects_files(
 
     from cod_doc.services import task_service as _tasks
 
+    # Набор из ревизии проверяется до правки и отдельно: ревизия могла
+    # прийти из легаси-импорта или быть старше `normalize_affected_paths`.
+    # Оборачивается только этот отказ — прочие ValueError сервиса остаются
+    # собой и не маскируются под «откат не поддержан».
     try:
-        _tasks.update_affects_files(
-            session,
-            task_id=task_model.task_id,
-            paths=old_paths,
-            mode="replace",
-            author=author,
-            reason=f"revert revision {model.revision_id}",
-            project_id=task_model.project_id,
-        )
+        _tasks.normalize_affected_paths(old_paths)
     except ValueError as exc:
-        # Набор из ревизии не проходит нынешнее правило путей (легаси-импорт
-        # или ревизия старше `normalize_affected_paths`): без обёртки ошибка
-        # не говорила бы, что упал именно откат.
         raise RevertNotSupportedError(
             f"TASK revision {model.revision_id}: набор 'old' не проходит правило путей — {exc}"
         ) from exc
+
+    _tasks.update_affects_files(
+        session,
+        task_id=task_model.task_id,
+        paths=old_paths,
+        mode="replace",
+        author=author,
+        reason=f"revert revision {model.revision_id}",
+        project_id=task_model.project_id,
+    )
 
 
 _HUNK_HEADER_RE = re.compile(r"@@[^@]+@@")
