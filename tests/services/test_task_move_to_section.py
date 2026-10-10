@@ -105,6 +105,7 @@ def test_move_writes_revision_and_event(engine_with_schema) -> None:  # type: ig
             new_section_id=b,
             author="agent:run-X",
             reason="реструктуризация бэклога",
+            project_id=p,
         )
         assert moved.section_id == b
 
@@ -141,7 +142,9 @@ def test_move_persists_section_id(engine_with_schema) -> None:  # type: ignore[n
         p, pl, a, b = _seed(session)
         task = _task(session, p, pl, a)
 
-        tasks.move_to_section(session, task_id=task.task_id, new_section_id=b, author="human:test")
+        tasks.move_to_section(
+            session, task_id=task.task_id, new_section_id=b, author="human:test", project_id=p
+        )
 
         session.flush()
         model = session.execute(
@@ -160,7 +163,9 @@ def test_move_to_same_section_is_noop(engine_with_schema) -> None:  # type: igno
         assert task.row_id is not None
         before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
 
-        tasks.move_to_section(session, task_id=task.task_id, new_section_id=a, author="human:test")
+        tasks.move_to_section(
+            session, task_id=task.task_id, new_section_id=a, author="human:test", project_id=p
+        )
 
         after = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
         assert after == before
@@ -174,7 +179,11 @@ def test_move_unknown_section_raises(engine_with_schema) -> None:  # type: ignor
 
         with pytest.raises(SectionNotFoundError):
             tasks.move_to_section(
-                session, task_id=task.task_id, new_section_id=999_999, author="human:test"
+                session,
+                task_id=task.task_id,
+                new_section_id=999_999,
+                author="human:test",
+                project_id=p,
             )
 
 
@@ -187,19 +196,49 @@ def test_move_across_plans_raises(engine_with_schema) -> None:  # type: ignore[n
 
         with pytest.raises(CrossPlanMoveError):
             tasks.move_to_section(
-                session, task_id=task.task_id, new_section_id=other_section, author="human:test"
+                session,
+                task_id=task.task_id,
+                new_section_id=other_section,
+                author="human:test",
+                project_id=p,
             )
 
 
 def test_move_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _p, _pl, _a, b = _seed(session)
+        p, _pl, _a, b = _seed(session)
 
         with pytest.raises(TaskNotFoundError):
             tasks.move_to_section(
-                session, task_id="NOPE-001", new_section_id=b, author="human:test"
+                session, task_id="NOPE-001", new_section_id=b, author="human:test", project_id=p
             )
+
+
+def test_move_task_of_another_project_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-022: задача проекта A под ``project_id`` проекта B — «не найдена», секция прежняя."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, a, b = _seed(session)
+        task = _task(session, p, pl, a)
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="other", title="O", root_path="/o", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+
+        with pytest.raises(TaskNotFoundError):
+            tasks.move_to_section(
+                session,
+                task_id=task.task_id,
+                new_section_id=b,
+                author="human:test",
+                project_id=other.row_id,
+            )
+        moved = tasks.get(session, task.task_id)
+        assert moved is not None
+        assert moved.section_id == a
 
 
 # --------------------------------------------------------------------------- #
@@ -250,6 +289,30 @@ def test_mcp_move_batch_moves_all(engine_with_schema, monkeypatch) -> None:  # t
         )
         # Одно событие на задачу: батч не схлопывает историю.
         assert len(events) == 3
+
+
+def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """AFT-022: ``task_move_to_section(project=B)`` не перекладывает задачу проекта A."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, a, _b = _seed(session)
+        task = _task(session, p, pl, a)
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="other", title="O", root_path="/o", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+        other_pid = other.row_id
+
+    move = _tool(_register(monkeypatch, factory, other_pid), "task_move_to_section")
+    with pytest.raises(ValueError, match=rf"^{task.task_id}: task not found in project 'other'$"):
+        move(project="other", task_ids=[task.task_id], plan_scope="mv-plan", section_letter="B")
+
+    with transactional(factory) as session:
+        got = tasks.get(session, task.task_id)
+        assert got is not None
+        assert got.section_id == a
 
 
 def test_mcp_move_is_case_insensitive_on_letter(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]

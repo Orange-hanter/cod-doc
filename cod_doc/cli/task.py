@@ -521,7 +521,7 @@ def task_status(
     multiple=True,
     type=click.Path(),
     metavar="PATH",
-    help="Путь в affects_files (повторяемый); режим — --affects-mode",
+    help="Путь в affects_files, как есть (повторяемый); режим — --affects-mode",
 )
 @click.option(
     "--affects-mode",
@@ -530,7 +530,9 @@ def task_status(
     help="Как применить --affects-file: replace (по умолчанию) / add / remove",
 )
 @click.option(
-    "--clear-affects-files", is_flag=True, help="Очистить affects_files (replace на пустой набор)"
+    "--clear-affects-files",
+    is_flag=True,
+    help="Очистить affects_files; в MCP то же — пустой список affects_files",
 )
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None)
@@ -556,6 +558,10 @@ def task_update(
     AFT-021: `--affects-file` (повторяемый) с `--affects-mode replace|add|remove`
     правит набор затронутых файлов; `--clear-affects-files` очищает его.
     Пути вне корня проекта записываются с предупреждением (AFT-012).
+    Отдельный флаг очистки нужен потому, что повторяемая опция не умеет
+    передать пустой список — в MCP это `affects_files=[]`. Путь — метка
+    локальности, а не файл: `../`, обратные слэши и абсолютные пути не
+    нормализуются и не отвергаются; пустой путь и невидимые символы — ошибка.
     """
     from cod_doc.domain.entities import Priority
     from cod_doc.infra.db import transactional
@@ -594,6 +600,7 @@ def task_update(
                     new_description=description,
                     author=author,
                     reason=reason,
+                    project_id=pid,
                 )
                 changed.append("description")
             if acceptance is not None:
@@ -603,6 +610,7 @@ def task_update(
                     new_acceptance=acceptance,
                     author=author,
                     reason=reason,
+                    project_id=pid,
                 )
                 changed.append("acceptance")
             if priority is not None:
@@ -612,6 +620,7 @@ def task_update(
                     new_priority=Priority(priority),
                     author=author,
                     reason=reason,
+                    project_id=pid,
                 )
                 changed.append("priority")
             if touch_files:
@@ -693,7 +702,7 @@ def task_move(
 
     try:
         with transactional(sf, commit=not dry_run) as session:
-            _require_project_id(session, project)
+            pid = _require_project_id(session, project)
             plan = PlanRepository(session).get_by_scope(plan_scope)
             if plan is None or plan.row_id is None:
                 console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
@@ -710,7 +719,7 @@ def task_move(
                 sys.exit(1)
 
             for task_id in task_ids:
-                current = task_service.get(session, task_id)
+                current = task_service.get(session, task_id, project_id=pid)
                 if current is None:
                     raise TaskNotFoundError(task_id)
                 if current.section_id == section.row_id:
@@ -722,6 +731,7 @@ def task_move(
                     new_section_id=section.row_id,
                     author=author,
                     reason=reason,
+                    project_id=pid,
                 )
                 moved.append(task_id)
     except TaskNotFoundError as exc:

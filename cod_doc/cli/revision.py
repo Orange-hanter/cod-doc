@@ -412,24 +412,18 @@ def revision_summary(
 @click.pass_context
 def revision_show(ctx: click.Context, revision_id: str, project: str, as_json: bool) -> None:
     """Show a single revision (including its diff)."""
-    from sqlalchemy import select
-
     from cod_doc.infra.db import transactional
-    from cod_doc.infra.models import RevisionModel
     from cod_doc.services import revision_service
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
     with transactional(sf) as session:
-        _require_project_id(session, project)  # validate project exists
-        model = session.execute(
-            select(RevisionModel).where(RevisionModel.revision_id == revision_id)
-        ).scalar_one_or_none()
-        if model is None:
+        pid = _require_project_id(session, project)
+        r = revision_service.get(session, revision_id, project_id=pid)
+        if r is None:
             console.print(f"[red]Revision '{revision_id}' not found.[/red]")
             sys.exit(1)
-        r = revision_service._to_domain(model)
 
     if as_json:
         click.echo(
@@ -486,8 +480,8 @@ def revision_revert(ctx: click.Context, revision_id: str, project: str, author: 
 
     try:
         with transactional(sf) as session:
-            _require_project_id(session, project)
-            new_rev = revision_service.revert(session, revision_id, author=author)
+            pid = _require_project_id(session, project)
+            new_rev = revision_service.revert(session, revision_id, author=author, project_id=pid)
     except LookupError:
         console.print(f"[red]Revision '{revision_id}' not found.[/red]")
         sys.exit(1)

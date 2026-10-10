@@ -88,6 +88,7 @@ def test_update_priority_writes_revision_and_event(engine_with_schema) -> None: 
             new_priority=Priority.CRITICAL,
             author="agent:run-X",
             reason="переоценка спринта",
+            project_id=p,
         )
         assert updated.priority is Priority.CRITICAL
 
@@ -125,6 +126,7 @@ def test_update_priority_same_value_is_noop(engine_with_schema) -> None:  # type
             task_id=task.task_id,
             new_priority=Priority.MEDIUM,
             author="human:test",
+            project_id=p,
         )
 
         after = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
@@ -134,13 +136,14 @@ def test_update_priority_same_value_is_noop(engine_with_schema) -> None:  # type
 def test_update_priority_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed_plan(session)
+        p, _pl, _s = _seed_plan(session)
         with pytest.raises(TaskNotFoundError):
             tasks.update_priority(
                 session,
                 task_id="NOPE-999",
                 new_priority=Priority.LOW,
                 author="human:test",
+                project_id=p,
             )
 
 

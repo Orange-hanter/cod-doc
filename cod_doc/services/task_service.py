@@ -49,6 +49,7 @@ from sqlalchemy.exc import IntegrityError
 from cod_doc.domain.entities import (
     AFFECTS_FILES_MODES,
     AffectedFileKind,
+    AffectsFilesMode,
     EntityKind,
     Priority,
     Task,
@@ -384,13 +385,20 @@ def find_duplicate_by_title(session: Session, project_id: int, title: str) -> Ta
     return None
 
 
+#: Категории Unicode, запрещённые в пути ``affects_files``: управляющие (Cc),
+#: форматирующие (Cf) и разделители строк/абзацев (Zl, Zp).
+_FORBIDDEN_PATH_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+
+
 def normalize_affected_paths(paths: list[str]) -> list[str]:
     """Одно правило для ``affects_files`` в `create()` и `update_affects_files()`.
 
     Обрамляющие пробелы срезаются (иначе ``" a.py "`` и ``"a.py"`` расходятся в
-    дедупе и локальности). Пустой путь, NUL и прочие управляющие символы
-    (Unicode Cc) — ValueError: NUL не пишется в text-колонку hub-Postgres, а
-    управляющие символы ломают вывод CLI и markdown-проекцию. Остальное — как
+    дедупе и локальности). Пустой путь, NUL и прочие невидимые символы —
+    ValueError: NUL не пишется в text-колонку hub-Postgres, управляющие (Unicode
+    Cc) и разделители строк/абзацев (Zl, Zp) ломают вывод CLI и
+    markdown-проекцию, а форматирующие (Cf: bidi-override U+202E, zero-width
+    U+200B, BOM) показывают в выводе не тот путь, что записан. Остальное — как
     передано: путь — метка локальности, файловых операций по нему нет, поэтому
     ``../``, обратные слэши и абсолютные пути допустимы (вне ``root_path`` —
     AFT-012 warning у вызывающего).
@@ -401,8 +409,8 @@ def normalize_affected_paths(paths: list[str]) -> list[str]:
             raise ValueError("affects_files: путь не может быть пустым")
         if "\x00" in p:
             raise ValueError("affects_files: NUL в пути")
-        if any(unicodedata.category(ch) == "Cc" for ch in p):
-            raise ValueError(f"affects_files: управляющий символ в пути {p!r}")
+        if any(unicodedata.category(ch) in _FORBIDDEN_PATH_CATEGORIES for ch in p):
+            raise ValueError(f"affects_files: управляющий или невидимый символ в пути {p!r}")
     return out
 
 
@@ -598,8 +606,13 @@ def update_status(
     via_checkout: bool = False,
     strict: bool = True,
     force: bool = False,
+    project_id: int | None = None,
 ) -> Task:
     """Set task.status directly; no dep-gate.
+
+    ``project_id`` сужает поиск задачи проектом (AFT-022); пока опционален —
+    ``update_status`` зовут ~40 мест, и обязательным он станет отдельной
+    правкой. Его передаёт откат ревизии.
 
     For the guarded `→done` transition that validates blocking deps, use
     `complete()` instead.
@@ -630,11 +643,11 @@ def update_status(
         validate_transition,
     )
 
-    # ADO-200: project_id=None — легаси-долг. Публичные сигнатуры update_status,
-    # _update_text_field, update_priority, move_to_section, complete,
-    # set_blocker, clear_blocker и log_progress в этой задаче не меняются,
-    # скоупа проекта у них нет — поиск по всей БД, как раньше.
-    model = _require_task(session, task_id, project_id=None)
+    # ADO-200: project_id=None — легаси-долг. У complete, set_blocker,
+    # clear_blocker и log_progress скоупа проекта нет — поиск по всей БД, как
+    # раньше; grooming-мутации (description/acceptance/priority/affects_files,
+    # move_to_section) его требуют с AFT-022.
+    model = _require_task(session, task_id, project_id=project_id)
     old_status = model.status
     target_status = canonical_task_status(new_status)
     # Сравнение по бакету, а не по строке: `todo → pending` — не переход, а
@@ -722,6 +735,7 @@ def _update_text_field(
     new_value: str,
     author: str,
     reason: str | None,
+    project_id: int | None,
     expected_parent_revision_id: str | object | None,
 ) -> Task:
     """Shared body for update_description / update_acceptance.
@@ -729,10 +743,10 @@ def _update_text_field(
     No-ops when value is unchanged. Writes a TASK revision with
     op=`<field>` carrying old/new content (length-only when very long).
     """
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     old_value = getattr(model, field) or ""
     if old_value == new_value:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -778,10 +792,17 @@ def update_description(
     task_id: str,
     new_description: str,
     author: str,
+    project_id: int | None,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
-    """Replace task.description; writes a TASK revision (op=description)."""
+    """Replace task.description; writes a TASK revision (op=description).
+
+    ``project_id`` обязателен и без значения по умолчанию (как у
+    `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
+    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` — явный отказ
+    от скоупа.
+    """
     return _update_text_field(
         session,
         task_id=task_id,
@@ -789,6 +810,7 @@ def update_description(
         new_value=new_description,
         author=author,
         reason=reason,
+        project_id=project_id,
         expected_parent_revision_id=expected_parent_revision_id,
     )
 
@@ -799,10 +821,17 @@ def update_acceptance(
     task_id: str,
     new_acceptance: str,
     author: str,
+    project_id: int | None,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
-    """Replace task.acceptance; writes a TASK revision (op=acceptance)."""
+    """Replace task.acceptance; writes a TASK revision (op=acceptance).
+
+    ``project_id`` обязателен и без значения по умолчанию (как у
+    `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
+    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` — явный отказ
+    от скоупа.
+    """
     return _update_text_field(
         session,
         task_id=task_id,
@@ -810,6 +839,7 @@ def update_acceptance(
         new_value=new_acceptance,
         author=author,
         reason=reason,
+        project_id=project_id,
         expected_parent_revision_id=expected_parent_revision_id,
     )
 
@@ -820,6 +850,7 @@ def update_priority(
     task_id: str,
     new_priority: Priority,
     author: str,
+    project_id: int | None,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
@@ -832,11 +863,16 @@ def update_priority(
     Revision и activity event пишутся одним атомарным вызовом
     ``activity_service.write_revision_and_emit_event`` (правило ADO-040);
     ``actor_kind`` выводится из ``author``.
+
+    ``project_id`` обязателен и без значения по умолчанию (как у
+    `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
+    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` — явный отказ
+    от скоупа.
     """
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     old_priority = model.priority
     if old_priority == new_priority.value:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -891,9 +927,9 @@ def update_affects_files(
     task_id: str,
     paths: list[str],
     author: str,
+    project_id: int | None,
     mode: str = "replace",
     reason: str | None = None,
-    project_id: int | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> AffectsFilesChange:
     """Править ``affects_files`` уже созданной задачи (AFT-021).
@@ -904,13 +940,17 @@ def update_affects_files(
 
     ``mode``: ``replace`` — набор становится ровно ``paths`` (``[]`` очищает);
     ``add`` — пути из ``paths`` добавляются к текущим; ``remove`` — убираются
-    (отсутствующие игнорируются). Обрамляющие пробелы срезаются — иначе
-    ``" a.py "`` и ``"a.py"`` расходятся в дедупе и локальности; в остальном
-    пути пишутся как есть, как в `create()`. Дубли схлопываются
-    (``uq_affected_file_task_path``), пустой путь и NUL — ValueError.
+    (отсутствующие игнорируются). Пути проходят то же правило, что и в
+    `create()` (`normalize_affected_paths`). Дубли схлопываются
+    (``uq_affected_file_task_path``).
 
-    ``project_id`` ограничивает поиск задачи проектом: тот же ``task_id`` в
-    чужом проекте общей hub-БД — `TaskNotFoundError`, а не чужая правка.
+    ``kind`` пути не задаётся ни здесь, ни в `create()`: новые строки —
+    ``source``. Строки, которые остаются в наборе, не пересоздаются и свой
+    ``kind`` сохраняют.
+
+    ``project_id`` обязателен и без значения по умолчанию (как у
+    `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
+    hub-БД — `TaskNotFoundError`, а не чужая правка.
 
     Совпадение итогового набора с текущим (порядок не важен) — no-op без
     ревизии и события. Иначе — TASK-ревизия ``op=affects_files`` со старым и
@@ -934,9 +974,9 @@ def update_affects_files(
         ).scalars()
     )
     old = sorted(r.path for r in rows)
-    if mode == "replace":
+    if mode == AffectsFilesMode.REPLACE:
         new = sorted(requested)
-    elif mode == "add":
+    elif mode == AffectsFilesMode.ADD:
         new = sorted(set(old) | set(requested))
     else:
         new = sorted(set(old) - set(requested))
@@ -944,10 +984,10 @@ def update_affects_files(
     # AFT-012: warn only about paths this call actually adds — a path already
     # in the set was reported when it was added, and a no-op stays silent.
     warnings: list[str] = []
-    added_paths = sorted(set(new) - set(old))
-    if added_paths:
+    added = sorted(set(new) - set(old))
+    if added:
         project = session.get(ProjectModel, model.project_id)
-        warning = foreign_paths_warning(added_paths, project.root_path if project else "")
+        warning = foreign_paths_warning(added, project.root_path if project else "")
         if warning is not None:
             warnings.append(warning)
 
@@ -956,7 +996,6 @@ def update_affects_files(
         assert t is not None
         return AffectsFilesChange(task=t, old=old, new=new, changed=False, warnings=warnings)
 
-    added = sorted(set(new) - set(old))
     removed = sorted(set(old) - set(new))
     for row in rows:
         if row.path in removed:
@@ -983,7 +1022,7 @@ def update_affects_files(
         activity_scope_id=model.task_id,
         activity_payload={"mode": mode, "added": added, "removed": removed, "reason": reason},
         activity_summary=(
-            f"Task {model.task_id}: affects_files +{len(added)} −{len(removed)} ({mode})"
+            f"Task {model.task_id}: affects_files +{len(added)} -{len(removed)} ({mode})"
         ),
     )
 
@@ -998,6 +1037,7 @@ def move_to_section(
     task_id: str,
     new_section_id: int,
     author: str,
+    project_id: int | None,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
@@ -1016,11 +1056,14 @@ def move_to_section(
 
     No-op, когда задача уже в целевой секции. Revision и activity event
     пишутся одним атомарным вызовом (правило ADO-040).
+
+    ``project_id`` обязателен и без значения по умолчанию, как у остальных
+    grooming-мутаций (AFT-022, ADO-200).
     """
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     old_section_id = model.section_id
     if old_section_id == new_section_id:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -1499,8 +1542,15 @@ def complete(
     return t
 
 
-def get(session: Session, task_id: str) -> Task | None:
-    return TaskRepository(session).get_by_task_id(task_id)
+def get(session: Session, task_id: str, *, project_id: int | None = None) -> Task | None:
+    """Задача по ``task_id``; с ``project_id`` — только в этом проекте.
+
+    Поверхности, которые решают по найденной задаче (MCP/CLI ``move``),
+    передают проект: иначе в общей hub-БД нашлась бы одноимённая чужая.
+    Дефолт ``None`` — легаси-поведение для ~всех прочих чтений; сделать скоуп
+    обязательным — задача AFT-023.
+    """
+    return TaskRepository(session).get_by_task_id(task_id, project_id=project_id)
 
 
 def list_for_plan(session: Session, plan_id: int) -> list[Task]:

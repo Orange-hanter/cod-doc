@@ -755,6 +755,7 @@ def test_task_description_update_is_indexed(engine_with_schema) -> None:  # type
             task_id="INC-002",
             new_description="Now mentions rendezvous in the body.",
             author="t",
+            project_id=pid,
         )
 
     with transactional(factory) as session:
@@ -770,8 +771,14 @@ def test_task_acceptance_and_blocker_are_indexed(engine_with_schema) -> None:  #
 
     with transactional(factory) as session:
         task_service.update_acceptance(
-            session, task_id="INC-003", new_acceptance="zeppelin lands", author="t"
+            session,
+            task_id="INC-003",
+            new_acceptance="zeppelin lands",
+            author="t",
+            project_id=pid,
         )
+        # set_blocker / clear_blocker скоупа проекта пока не принимают (ADO-200,
+        # легаси-долг); project_id с AFT-022 требуют только grooming-мутации.
         task_service.set_blocker(
             session, task_id="INC-003", reason="waiting on kryptonite", author="t"
         )

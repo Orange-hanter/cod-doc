@@ -159,6 +159,20 @@ def diff_preview(diff: str | None, *, limit: int = DIFF_PREVIEW_CHARS) -> str:
     return text.splitlines()[0][:limit]
 
 
+def get(session: Session, revision_id: str, *, project_id: int) -> Revision | None:
+    """Ревизия по ULID — только ревизия проекта ``project_id``.
+
+    ``project_id`` обязателен и не принимает ``None`` (AFT-022): MCP
+    ``revision_get`` и CLI ``revision show`` иначе отдавали бы diff, автора и
+    причину чужого проекта общей hub-БД по одному лишь ULID.
+    """
+    stmt = select(RevisionModel).where(
+        RevisionModel.revision_id == revision_id, RevisionModel.project_id == project_id
+    )
+    model = session.execute(stmt).scalar_one_or_none()
+    return _to_domain(model) if model is not None else None
+
+
 def list_for_entity(
     session: Session,
     entity_kind: EntityKind,
@@ -359,7 +373,9 @@ class RevertNotSupportedError(NotImplementedError):
     """Raised for revision ops or entity kinds that cannot be auto-reverted."""
 
 
-def revert(session: Session, revision_id: str, *, author: str) -> Revision:
+def revert(
+    session: Session, revision_id: str, *, author: str, project_id: int | None = None
+) -> Revision:
     """Undo a revision by delegating to the entity-owning service.
 
     Dispatches based on `entity_kind` + the `op` field in `revision.diff`:
@@ -374,8 +390,15 @@ def revert(session: Session, revision_id: str, *, author: str) -> Revision:
 
     The inverse operation is written as a new revision (not amending history).
     Raises `RevertNotSupportedError` for ops or entity kinds not listed above.
+
+    ``project_id`` — скоуп поверхности (MCP, CLI): ревизия чужого проекта
+    общей hub-БД ищется как отсутствующая (`LookupError`), а не откатывается.
+    ``revision_id`` — глобально уникальный ULID, поэтому без скоупа поиск
+    однозначен; ``None`` оставлен внутренним вызывающим.
     """
     stmt = select(RevisionModel).where(RevisionModel.revision_id == revision_id)
+    if project_id is not None:
+        stmt = stmt.where(RevisionModel.project_id == project_id)
     model = session.execute(stmt).scalar_one_or_none()
     if model is None:
         raise LookupError(f"revision not found: {revision_id!r}")
@@ -441,6 +464,7 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
         # machine (e.g. in_progress → pending). Bypass validation since the
         # original transition was already validated when first applied.
         force=True,
+        project_id=task_model.project_id,
     )
 
 
@@ -451,13 +475,26 @@ def _revert_task_affects_files(
 
     Ревизия хранит набор целиком, поэтому откат — ``replace`` на него, какой
     бы режим ни был у исходной правки. Если набор с тех пор уже равен
-    ``old``, сервис отработает no-op и новой ревизии не будет.
+    ``old``, сервис отработает no-op и новой ревизии не будет. Набор, который
+    нынешнее правило путей отвергает, — `RevertNotSupportedError` с
+    ``revision_id``.
     """
     task_model = session.get(TaskModel, model.entity_id)
     if task_model is None:
         raise LookupError(f"task #{model.entity_id} not found (may have been deleted)")
 
     from cod_doc.services import task_service as _tasks
+
+    # Набор из ревизии проверяется до правки и отдельно: ревизия могла
+    # прийти из легаси-импорта или быть старше `normalize_affected_paths`.
+    # Оборачивается только этот отказ — прочие ValueError сервиса остаются
+    # собой и не маскируются под «откат не поддержан».
+    try:
+        _tasks.normalize_affected_paths(old_paths)
+    except ValueError as exc:
+        raise RevertNotSupportedError(
+            f"TASK revision {model.revision_id}: набор 'old' не проходит правило путей — {exc}"
+        ) from exc
 
     _tasks.update_affects_files(
         session,
