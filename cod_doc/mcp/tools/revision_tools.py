@@ -241,7 +241,7 @@ def register(mcp: FastMCP) -> None:
         author: str = "mcp",
     ) -> dict[str, Any]:
         """Revert a revision by creating an inverse revision (history is append-only).
-        Supported: TASK status/complete, SECTION unified-diff, DOCUMENT rename.
+        Supported: TASK status/complete/affects_files, SECTION unified-diff, DOCUMENT rename.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import revision_service

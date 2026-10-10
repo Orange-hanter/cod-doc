@@ -3951,7 +3951,7 @@ _cod-doc() {
     'remove-dep:Remove a dependency edge (TASK_ID is no longer blocked by BLOCKER_I…'
     'show:Show details of a single task.'
     'status:Update task status (does not validate deps; use '\''complete'\'' for done…'
-    'update:Grooming уже созданной задачи; description / acceptance / priority.'
+    'update:Правит задачу; description, acceptance, priority, affects_files.'
   )
   _describe -t cod-doc-task-commands 'cod-doc task command' cmds
 }
@@ -4141,6 +4141,9 @@ _cod-doc() {
     '(--description)--description=[Новый текст description (пустая строка очищает)]:description' \
     '(--acceptance)--acceptance=[Новый текст acceptance (пустая строка очищает)]:acceptance' \
     '(--priority)--priority=[Новый приоритет]:priority:(critical high medium low)' \
+    '*--affects-file=[Путь в affects_files (повторяемый); режим — --affects-mode]:path:_files' \
+    '(--affects-mode)--affects-mode=[Как применить --affects-file; replace (по умолчанию) / add / remove]:affects-mode:(replace add remove)' \
+    '(--clear-affects-files)--clear-affects-files[Очистить affects_files (replace на пустой набор)]' \
     '(--author)--author=:author' \
     '(--reason)--reason=:reason' \
     '(- *)--help[Show this message and exit.]' \

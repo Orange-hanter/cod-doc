@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
-from cod_doc.domain.entities import TaskStatus, TaskType
+from cod_doc.domain.entities import AFFECTS_FILES_MODES, TaskStatus, TaskType
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -514,6 +515,23 @@ def task_status(
     type=click.Choice(["critical", "high", "medium", "low"]),
     help="Новый приоритет",
 )
+@click.option(
+    "--affects-file",
+    "affects_files",
+    multiple=True,
+    type=click.Path(),
+    metavar="PATH",
+    help="Путь в affects_files (повторяемый); режим — --affects-mode",
+)
+@click.option(
+    "--affects-mode",
+    default=None,
+    type=click.Choice(AFFECTS_FILES_MODES),
+    help="Как применить --affects-file: replace (по умолчанию) / add / remove",
+)
+@click.option(
+    "--clear-affects-files", is_flag=True, help="Очистить affects_files (replace на пустой набор)"
+)
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None)
 @click.pass_context
@@ -524,31 +542,51 @@ def task_update(
     description: str | None,
     acceptance: str | None,
     priority: str | None,
+    affects_files: tuple[str, ...],
+    affects_mode: str | None,
+    clear_affects_files: bool,
     author: str,
     reason: str | None,
 ) -> None:
-    """Grooming уже созданной задачи: description / acceptance / priority.
+    """Правит задачу: description, acceptance, priority, affects_files.
 
     ADO-067: раньше эти поля правились только из web-UI. Передавай только
     те опции, которые меняешь. Не меняет title и status (см. `task status`).
+
+    AFT-021: `--affects-file` (повторяемый) с `--affects-mode replace|add|remove`
+    правит набор затронутых файлов; `--clear-affects-files` очищает его.
+    Пути вне корня проекта записываются с предупреждением (AFT-012).
     """
     from cod_doc.domain.entities import Priority
     from cod_doc.infra.db import transactional
     from cod_doc.services import task_service
     from cod_doc.services.task_service import TaskNotFoundError
 
-    if description is None and acceptance is None and priority is None:
+    if clear_affects_files and (affects_files or affects_mode is not None):
         console.print(
-            "[red]Нечего менять: передай хотя бы --description / --acceptance / --priority.[/red]"
+            "[red]--clear-affects-files не сочетается с --affects-file / --affects-mode.[/red]"
+        )
+        sys.exit(1)
+    if affects_mode is not None and not affects_files:
+        console.print("[red]--affects-mode без --affects-file: нечего применять.[/red]")
+        sys.exit(1)
+    touch_files = clear_affects_files or bool(affects_files)
+
+    if description is None and acceptance is None and priority is None and not touch_files:
+        console.print(
+            "[red]Нечего менять: передай хотя бы --description / --acceptance / --priority"
+            " / --affects-file / --clear-affects-files.[/red]"
         )
         sys.exit(1)
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
     changed: list[str] = []
+    warnings: list[str] = []
 
     try:
         with transactional(sf) as session:
+            pid = _require_project_id(session, project)
             if description is not None:
                 task_service.update_description(
                     session,
@@ -576,11 +614,32 @@ def task_update(
                     reason=reason,
                 )
                 changed.append("priority")
+            if touch_files:
+                change = task_service.update_affects_files(
+                    session,
+                    task_id=task_id,
+                    paths=list(affects_files),
+                    mode=affects_mode or "replace",
+                    author=author,
+                    reason=reason,
+                    project_id=pid,
+                )
+                warnings.extend(change.warnings)
+                if change.changed:
+                    changed.append("affects_files")
     except TaskNotFoundError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
         sys.exit(1)
+    except ValueError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        sys.exit(1)
 
-    console.print(f"[green]✅ {task_id}: обновлено — {', '.join(changed)}[/green]")
+    for warning in warnings:
+        console.print(f"[yellow]⚠ {escape(warning)}[/yellow]")
+    if not changed:
+        console.print(f"[green]✅ {escape(task_id)}: без изменений[/green]")
+        return
+    console.print(f"[green]✅ {escape(task_id)}: обновлено — {', '.join(changed)}[/green]")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -366,6 +366,8 @@ def revert(session: Session, revision_id: str, *, author: str) -> Revision:
 
     * **TASK** — `op=status`: restore old status via TaskService.update_status.
       `op=complete`: same (restores `old_status` from diff).
+      `op=affects_files`: restore the old set via
+      TaskService.update_affects_files(mode='replace') (AFT-021).
     * **SECTION** — unified-diff body: restore old body via difflib.restore +
       DocService.patch_section.
     * **DOCUMENT** — `op=rename`: restore old doc_key via DocService.rename.
@@ -407,6 +409,14 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
     diff_obj = json.loads(model.diff)
     op = diff_obj.get("op")
 
+    if op == "affects_files":
+        old_paths = diff_obj.get("old")
+        if not isinstance(old_paths, list) or not all(isinstance(p, str) for p in old_paths):
+            raise RevertNotSupportedError(
+                f"TASK revision {model.revision_id}: op=affects_files без списка путей в 'old'"
+            )
+        _revert_task_affects_files(session, model, old_paths=old_paths, author=author)
+        return
     if op == "status":
         old_status = TaskStatus(diff_obj["old"])
     elif op == "complete":
@@ -431,6 +441,32 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
         # machine (e.g. in_progress → pending). Bypass validation since the
         # original transition was already validated when first applied.
         force=True,
+    )
+
+
+def _revert_task_affects_files(
+    session: Session, model: RevisionModel, *, old_paths: list[str], author: str
+) -> None:
+    """AFT-021: вернуть набор ``affects_files``, сохранённый в ревизии как ``old``.
+
+    Ревизия хранит набор целиком, поэтому откат — ``replace`` на него, какой
+    бы режим ни был у исходной правки. Если набор с тех пор уже равен
+    ``old``, сервис отработает no-op и новой ревизии не будет.
+    """
+    task_model = session.get(TaskModel, model.entity_id)
+    if task_model is None:
+        raise LookupError(f"task #{model.entity_id} not found (may have been deleted)")
+
+    from cod_doc.services import task_service as _tasks
+
+    _tasks.update_affects_files(
+        session,
+        task_id=task_model.task_id,
+        paths=old_paths,
+        mode="replace",
+        author=author,
+        reason=f"revert revision {model.revision_id}",
+        project_id=task_model.project_id,
     )
 
 

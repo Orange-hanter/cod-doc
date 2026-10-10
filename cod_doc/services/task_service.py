@@ -9,6 +9,10 @@ Public API:
   правки уже созданной задачи (ADO-067); каждая пишет TASK revision +
   activity event и выставлена в CLI (`cod-doc task update`) и MCP
   (`task_update`).
+- `update_affects_files` — replace/add/remove набора ``affects_files``
+  (AFT-021); TASK revision (op=affects_files, старый и новый набор,
+  откатывается `revision_service.revert`) + activity event; та же пара
+  поверхностей.
 - `move_to_section` — переложить задачу в другую секцию того же плана
   (группировка бэклога); пишет TASK revision (op=section) + activity event,
   выставлена в CLI (`cod-doc task move`) и MCP (`task_move_to_section`).
@@ -34,6 +38,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -42,6 +47,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import (
+    AFFECTS_FILES_MODES,
     AffectedFileKind,
     EntityKind,
     Priority,
@@ -65,6 +71,7 @@ from cod_doc.infra.repositories import PlanSectionRepository, TaskRepository
 from cod_doc.infra.sql_helpers import ensure_outer_transaction, priority_sql_order
 from cod_doc.services import activity_service, event_bus, search_service, validation
 from cod_doc.services import revision_service as rev
+from cod_doc.services.task_locality import foreign_paths_warning
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -377,6 +384,28 @@ def find_duplicate_by_title(session: Session, project_id: int, title: str) -> Ta
     return None
 
 
+def normalize_affected_paths(paths: list[str]) -> list[str]:
+    """Одно правило для ``affects_files`` в `create()` и `update_affects_files()`.
+
+    Обрамляющие пробелы срезаются (иначе ``" a.py "`` и ``"a.py"`` расходятся в
+    дедупе и локальности). Пустой путь, NUL и прочие управляющие символы
+    (Unicode Cc) — ValueError: NUL не пишется в text-колонку hub-Postgres, а
+    управляющие символы ломают вывод CLI и markdown-проекцию. Остальное — как
+    передано: путь — метка локальности, файловых операций по нему нет, поэтому
+    ``../``, обратные слэши и абсолютные пути допустимы (вне ``root_path`` —
+    AFT-012 warning у вызывающего).
+    """
+    out = [p.strip() for p in paths]
+    for p in out:
+        if not p:
+            raise ValueError("affects_files: путь не может быть пустым")
+        if "\x00" in p:
+            raise ValueError("affects_files: NUL в пути")
+        if any(unicodedata.category(ch) == "Cc" for ch in p):
+            raise ValueError(f"affects_files: управляющий символ в пути {p!r}")
+    return out
+
+
 def create(
     session: Session,
     *,
@@ -472,7 +501,7 @@ def create(
         session.flush()
 
     if affected_files:
-        for path in affected_files:
+        for path in normalize_affected_paths(affected_files):
             session.add(
                 AffectedFileModel(
                     task_id=task.row_id,
@@ -838,6 +867,129 @@ def update_priority(
     t = TaskRepository(session).get(model.row_id)
     assert t is not None
     return t
+
+
+@dataclass(frozen=True)
+class AffectsFilesChange:
+    """Результат `update_affects_files()`.
+
+    ``old`` / ``new`` — наборы до и после, отсортированы (как в
+    `task_to_dict`). ``changed=False`` — наборы совпали, ничего не записано.
+    ``warnings`` — AFT-012: добавленные пути вне ``root_path`` проекта.
+    """
+
+    task: Task
+    old: list[str]
+    new: list[str]
+    changed: bool
+    warnings: list[str] = field(default_factory=list)
+
+
+def update_affects_files(
+    session: Session,
+    *,
+    task_id: str,
+    paths: list[str],
+    author: str,
+    mode: str = "replace",
+    reason: str | None = None,
+    project_id: int | None = None,
+    expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
+) -> AffectsFilesChange:
+    """Править ``affects_files`` уже созданной задачи (AFT-021).
+
+    До AFT-021 набор задавался только в `create()`, а он участвует в
+    локальности задачи (RFC 27 F13) и в ready-выборке — устаревшие пути
+    искажали и то и другое.
+
+    ``mode``: ``replace`` — набор становится ровно ``paths`` (``[]`` очищает);
+    ``add`` — пути из ``paths`` добавляются к текущим; ``remove`` — убираются
+    (отсутствующие игнорируются). Обрамляющие пробелы срезаются — иначе
+    ``" a.py "`` и ``"a.py"`` расходятся в дедупе и локальности; в остальном
+    пути пишутся как есть, как в `create()`. Дубли схлопываются
+    (``uq_affected_file_task_path``), пустой путь и NUL — ValueError.
+
+    ``project_id`` ограничивает поиск задачи проектом: тот же ``task_id`` в
+    чужом проекте общей hub-БД — `TaskNotFoundError`, а не чужая правка.
+
+    Совпадение итогового набора с текущим (порядок не важен) — no-op без
+    ревизии и события. Иначе — TASK-ревизия ``op=affects_files`` со старым и
+    новым набором (её откатывает `revision_service.revert`) и activity event
+    ``task.affects_files_updated`` одним вызовом
+    ``activity_service.write_revision_and_emit_event`` (ADO-040).
+
+    AFT-012: абсолютные пути вне ``root_path`` проекта не отклоняются, а
+    попадают в ``warnings`` — только реально добавленные этим вызовом (в режиме
+    ``remove`` и при no-op предупреждать не о чем).
+    """
+    if mode not in AFFECTS_FILES_MODES:
+        raise ValueError(f"unknown mode {mode!r}; expected one of {list(AFFECTS_FILES_MODES)}")
+    paths = normalize_affected_paths(paths)
+    requested = list(dict.fromkeys(paths))
+
+    model = _require_task(session, task_id, project_id=project_id)
+    rows = list(
+        session.execute(
+            select(AffectedFileModel).where(AffectedFileModel.task_id == model.row_id)
+        ).scalars()
+    )
+    old = sorted(r.path for r in rows)
+    if mode == "replace":
+        new = sorted(requested)
+    elif mode == "add":
+        new = sorted(set(old) | set(requested))
+    else:
+        new = sorted(set(old) - set(requested))
+
+    # AFT-012: warn only about paths this call actually adds — a path already
+    # in the set was reported when it was added, and a no-op stays silent.
+    warnings: list[str] = []
+    added_paths = sorted(set(new) - set(old))
+    if added_paths:
+        project = session.get(ProjectModel, model.project_id)
+        warning = foreign_paths_warning(added_paths, project.root_path if project else "")
+        if warning is not None:
+            warnings.append(warning)
+
+    if new == old:
+        t = TaskRepository(session).get(model.row_id)
+        assert t is not None
+        return AffectsFilesChange(task=t, old=old, new=new, changed=False, warnings=warnings)
+
+    added = sorted(set(new) - set(old))
+    removed = sorted(set(old) - set(new))
+    for row in rows:
+        if row.path in removed:
+            session.delete(row)
+    for path in added:
+        session.add(
+            AffectedFileModel(task_id=model.row_id, path=path, kind=AffectedFileKind.SOURCE.value)
+        )
+    model.last_updated = datetime.now(UTC)
+    session.flush()
+    session.expire(model, ["affected_files"])
+
+    activity_service.write_revision_and_emit_event(
+        session,
+        project_id=model.project_id,
+        entity_kind=EntityKind.TASK,
+        entity_id=model.row_id,
+        author=author,
+        diff=_task_diff("affects_files", mode=mode, old=old, new=new),
+        reason=reason,
+        expected_parent_revision_id=expected_parent_revision_id,
+        activity_kind="task.affects_files_updated",
+        activity_scope_kind="task",
+        activity_scope_id=model.task_id,
+        activity_payload={"mode": mode, "added": added, "removed": removed, "reason": reason},
+        activity_summary=(
+            f"Task {model.task_id}: affects_files +{len(added)} −{len(removed)} ({mode})"
+        ),
+    )
+
+    t = TaskRepository(session).get(model.row_id)
+    assert t is not None
+    return AffectsFilesChange(task=t, old=old, new=new, changed=True, warnings=warnings)
 
 
 def move_to_section(
