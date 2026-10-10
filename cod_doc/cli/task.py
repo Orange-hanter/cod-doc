@@ -703,7 +703,7 @@ def task_move(
     try:
         with transactional(sf, commit=not dry_run) as session:
             pid = _require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope)
+            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=pid)
             if plan is None or plan.row_id is None:
                 console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
                 sys.exit(1)

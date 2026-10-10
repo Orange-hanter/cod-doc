@@ -300,9 +300,11 @@ def test_task_update_rejects_empty_and_invisible_paths(tmp_path: Path) -> None:
     assert empty.exit_code == 1
     assert "пуст" in empty.output
 
-    bidi = _update("--affects-file", "src/\u202eyp.a")
-    assert bidi.exit_code == 1
-    assert "невидим" in bidi.output
+    # bidi-override, zero-width, BOM, разделитель строки — тем же правилом, что в сервисе
+    for invisible in ("src/\u202eyp.a", "src/\u200ba.py", "\ufeffsrc/a.py", "src/a\u2028b.py"):
+        result = _update("--affects-file", invisible)
+        assert result.exit_code == 1, invisible
+        assert "невидим" in result.output, invisible
     assert _files("gp") == ["src/keep.py"]
 
 

@@ -304,10 +304,15 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
         session.add(other)
         session.flush()
         other_pid = other.row_id
+        _second_plan(session, other_pid)  # план "mv-other" с секцией A — у проекта B
 
     move = _tool(_register(monkeypatch, factory, other_pid), "task_move_to_section")
-    with pytest.raises(ValueError, match=rf"^{task.task_id}: task not found in project 'other'$"):
+    # План проекта A из проекта B не виден...
+    with pytest.raises(ValueError, match=r"^Plan 'mv-plan' not found\.$"):
         move(project="other", task_ids=[task.task_id], plan_scope="mv-plan", section_letter="B")
+    # ...а в своём плане B задача проекта A — «не найдена».
+    with pytest.raises(ValueError, match=rf"^{task.task_id}: task not found in project 'other'$"):
+        move(project="other", task_ids=[task.task_id], plan_scope="mv-other", section_letter="A")
 
     with transactional(factory) as session:
         got = tasks.get(session, task.task_id)

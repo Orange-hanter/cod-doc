@@ -654,7 +654,7 @@ def update_status(
     # смена написания, и до ADO-156 она проходила как настоящая смена статуса
     # (ревизия, событие, перевод задачи обратно в легаси).
     if canonical_task_status(old_status) == target_status:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -928,7 +928,7 @@ def update_affects_files(
     paths: list[str],
     author: str,
     project_id: int | None,
-    mode: str = "replace",
+    mode: AffectsFilesMode | str = AffectsFilesMode.REPLACE,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> AffectsFilesChange:
@@ -962,8 +962,13 @@ def update_affects_files(
     попадают в ``warnings`` — только реально добавленные этим вызовом (в режиме
     ``remove`` и при no-op предупреждать не о чем).
     """
-    if mode not in AFFECTS_FILES_MODES:
-        raise ValueError(f"unknown mode {mode!r}; expected one of {list(AFFECTS_FILES_MODES)}")
+    # Строка с поверхностей (MCP, CLI) приводится к enum здесь, в одном месте.
+    try:
+        mode = AffectsFilesMode(mode)
+    except ValueError:
+        raise ValueError(
+            f"unknown mode {mode!r}; expected one of {list(AFFECTS_FILES_MODES)}"
+        ) from None
     paths = normalize_affected_paths(paths)
     requested = list(dict.fromkeys(paths))
 
@@ -1014,15 +1019,20 @@ def update_affects_files(
         entity_kind=EntityKind.TASK,
         entity_id=model.row_id,
         author=author,
-        diff=_task_diff("affects_files", mode=mode, old=old, new=new),
+        diff=_task_diff("affects_files", mode=mode.value, old=old, new=new),
         reason=reason,
         expected_parent_revision_id=expected_parent_revision_id,
         activity_kind="task.affects_files_updated",
         activity_scope_kind="task",
         activity_scope_id=model.task_id,
-        activity_payload={"mode": mode, "added": added, "removed": removed, "reason": reason},
+        activity_payload={
+            "mode": mode.value,
+            "added": added,
+            "removed": removed,
+            "reason": reason,
+        },
         activity_summary=(
-            f"Task {model.task_id}: affects_files +{len(added)} -{len(removed)} ({mode})"
+            f"Task {model.task_id}: affects_files +{len(added)} -{len(removed)} ({mode.value})"
         ),
     )
 

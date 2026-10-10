@@ -1168,7 +1168,7 @@ def register(mcp: FastMCP) -> None:
 
         with transactional(sf, commit=not dry_run) as session:
             pid = require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope)
+            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=pid)
             if plan is None or plan.row_id is None:
                 raise ValueError(f"Plan '{plan_scope}' not found.")
             sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
