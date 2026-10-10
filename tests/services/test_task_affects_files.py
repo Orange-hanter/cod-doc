@@ -333,7 +333,18 @@ def test_create_keeps_unusual_paths_as_given(engine_with_schema) -> None:  # typ
         assert _paths(session, row_id) == ["../outside.py", "..\\win.py", "src/padded.py"]
 
 
-@pytest.mark.parametrize("path", ["../outside.py", "..\\win.py", "/etc/passwd"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../outside.py",
+        "..\\win.py",
+        "/etc/passwd",
+        # ZWJ в эмодзи-последовательности и ZWNJ персидского письма — легитимны
+        "docs/\U0001f468\u200d\U0001f4bb.md",
+        "docs/\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645.md",
+        "docs/\U0001f1fa\U0001f1e6.md",
+    ],
+)
 def test_unusual_paths_are_stored_as_given(engine_with_schema, path: str) -> None:  # type: ignore[no-untyped-def]
     """Контракт: путь — строка-метка для локальности, файловых операций по нему нет.
 

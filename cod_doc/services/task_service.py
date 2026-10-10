@@ -389,6 +389,17 @@ def find_duplicate_by_title(session: Session, project_id: int, title: str) -> Ta
 #: форматирующие (Cf) и разделители строк/абзацев (Zl, Zp).
 _FORBIDDEN_PATH_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 
+#: Исключения из Cf: ZWNJ/ZWJ входят в легитимные имена — эмодзи-последовательности
+#: (``👨‍💻``) и письменности вроде персидской и деванагари. Видимый путь они не
+#: подменяют, в отличие от bidi-override, U+200B и BOM.
+_ALLOWED_FORMAT_CHARS = frozenset({"\u200c", "\u200d"})
+
+
+def _forbidden_in_path(ch: str) -> bool:
+    return unicodedata.category(ch) in _FORBIDDEN_PATH_CATEGORIES and ch not in (
+        _ALLOWED_FORMAT_CHARS
+    )
+
 
 def normalize_affected_paths(paths: list[str]) -> list[str]:
     """Одно правило для ``affects_files`` в `create()` и `update_affects_files()`.
@@ -398,7 +409,9 @@ def normalize_affected_paths(paths: list[str]) -> list[str]:
     ValueError: NUL не пишется в text-колонку hub-Postgres, управляющие (Unicode
     Cc) и разделители строк/абзацев (Zl, Zp) ломают вывод CLI и
     markdown-проекцию, а форматирующие (Cf: bidi-override U+202E, zero-width
-    U+200B, BOM) показывают в выводе не тот путь, что записан. Остальное — как
+    U+200B, BOM) показывают в выводе не тот путь, что записан. ZWNJ/ZWJ
+    (U+200C/U+200D) разрешены: без них не записать эмодзи-последовательность
+    и ряд письменностей. Остальное — как
     передано: путь — метка локальности, файловых операций по нему нет, поэтому
     ``../``, обратные слэши и абсолютные пути допустимы (вне ``root_path`` —
     AFT-012 warning у вызывающего).
@@ -409,7 +422,7 @@ def normalize_affected_paths(paths: list[str]) -> list[str]:
             raise ValueError("affects_files: путь не может быть пустым")
         if "\x00" in p:
             raise ValueError("affects_files: NUL в пути")
-        if any(unicodedata.category(ch) in _FORBIDDEN_PATH_CATEGORIES for ch in p):
+        if any(_forbidden_in_path(ch) for ch in p):
             raise ValueError(f"affects_files: управляющий или невидимый символ в пути {p!r}")
     return out
 

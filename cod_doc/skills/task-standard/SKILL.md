@@ -120,8 +120,9 @@ backlog ─→ todo ─→ in_progress ─→ in_review ─→ done
 | CLI | `cod-doc task update TASK_ID -p SLUG --description … --acceptance … --priority … --affects-file PATH… --affects-mode replace\|add\|remove` (режим по умолчанию — `replace`; `--clear-affects-files` — очистить) |
 
 Пути `affects_files` — метки локальности, а не файлы: пробелы по краям
-срезаются, пустой путь и невидимые символы (управляющие, bidi/zero-width,
-разделители строк) отвергаются, `../` и абсолютные пути пишутся как есть.
+срезаются, пустой путь и невидимые символы (управляющие, bidi, U+200B, BOM,
+разделители строк) отвергаются — ZWJ/ZWNJ эмодзи и письменностей допустимы;
+`../` и абсолютные пути пишутся как есть.
 
 Каждое изменённое поле пишет ревизию и activity event
 (`task.description_updated` / `task.acceptance_updated` /
