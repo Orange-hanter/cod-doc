@@ -394,8 +394,14 @@ _FORBIDDEN_PATH_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
 #: подменяют, в отличие от bidi-override, U+200B и BOM.
 _ALLOWED_FORMAT_CHARS = frozenset({"\u200c", "\u200d"})
 
+#: Невидимые «заполнители» вне Cc/Cf/Zl/Zp: категория Lo/So, но глифа нет —
+#: хангыльские филлеры и пустой шаблон Брайля выглядят как пробел или ничего.
+_INVISIBLE_FILLERS = frozenset({"\u115f", "\u1160", "\u3164", "\uffa0", "\u2800"})
+
 
 def _forbidden_in_path(ch: str) -> bool:
+    if ch in _INVISIBLE_FILLERS:
+        return True
     return unicodedata.category(ch) in _FORBIDDEN_PATH_CATEGORIES and ch not in (
         _ALLOWED_FORMAT_CHARS
     )
@@ -441,10 +447,14 @@ def _require_plan_section_in_project(
     чужого проекта общей hub-БД, и задача проекта A легла бы в план B.
     """
     plan = session.get(PlanModel, plan_id)
-    if plan is None or plan.project_id != project_id:
+    if plan is None:
+        raise ValueError(f"plan #{plan_id} does not exist")
+    if plan.project_id != project_id:
         raise ValueError(f"plan #{plan_id} not found in project #{project_id}")
     section = session.get(PlanSectionModel, section_id)
-    if section is None or section.plan_id != plan_id:
+    if section is None:
+        raise ValueError(f"section #{section_id} does not exist")
+    if section.plan_id != plan_id:
         raise ValueError(f"section #{section_id} not found in plan #{plan_id}")
 
 

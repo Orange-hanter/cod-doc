@@ -219,6 +219,10 @@ def test_create_rejects_plan_of_another_project_and_section_of_another_plan(
             _task(session, p, other.plan, other.section, task_id="MV-101")
         with pytest.raises(ValueError, match=f"section #{other_section} not found in plan #{pl}"):
             _task(session, p, pl, other_section, task_id="MV-102")
+        with pytest.raises(ValueError, match="plan #999999 does not exist"):
+            _task(session, p, 999_999, other_section, task_id="MV-103")
+        with pytest.raises(ValueError, match="section #999999 does not exist"):
+            _task(session, p, pl, 999_999, task_id="MV-104")
 
 
 def test_move_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

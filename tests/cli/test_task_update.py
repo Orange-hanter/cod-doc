@@ -325,3 +325,40 @@ def test_task_update_affects_mode_without_files_fails(tmp_path: Path) -> None:
     result = _update("--affects-mode", "add")
     assert result.exit_code != 0
     assert "--affects-file" in result.output
+
+
+# --------------------------------------------------------------------------- #
+# revision show: ошибки без traceback (ai-review #192)                        #
+# --------------------------------------------------------------------------- #
+
+
+def test_revision_show_unknown_project_and_revision_exit_cleanly(tmp_path: Path) -> None:
+    """``_require_project_id`` и ``revision_service.get`` не бросают наружу:
+    неизвестный проект и неизвестная ревизия — сообщение и код 1, не traceback."""
+    _init_project(tmp_path)
+    _seed_task("gp")
+    _seed_files("gp", ["src/a.py"])
+
+    unknown_project = CliRunner().invoke(
+        main, ["revision", "show", "01HQX5Z9F0K8R0000000000000", "-p", "nope"]
+    )
+    assert unknown_project.exit_code == 1
+    assert unknown_project.exception is None or isinstance(unknown_project.exception, SystemExit)
+
+    unknown_revision = CliRunner().invoke(
+        main, ["revision", "show", "01HQX5Z9F0K8R0000000000000", "-p", "gp"]
+    )
+    assert unknown_revision.exit_code == 1
+    assert isinstance(unknown_revision.exception, SystemExit)
+    assert "not found" in unknown_revision.output
+
+    for session in _session("gp"):
+        rid = (
+            session.execute(select(RevisionModel.revision_id).order_by(RevisionModel.row_id.desc()))
+            .scalars()
+            .first()
+        )
+    assert rid is not None
+    shown = CliRunner().invoke(main, ["revision", "show", rid, "-p", "gp", "--json"])
+    assert shown.exit_code == 0, shown.output
+    assert json.loads(shown.output)["revision_id"] == rid

@@ -293,6 +293,9 @@ def test_paths_are_stripped_before_dedup(engine_with_schema) -> None:  # type: i
         # Zl / Zp: разделители строки и абзаца
         (["src/a\u2028b.py"], "невидим"),
         (["src/a\u2029b.py"], "невидим"),
+        # Lo/So без глифа: хангыльский филлер и пустой шаблон Брайля
+        (["src/\u3164.py"], "невидим"),
+        (["src/a\u2800b.py"], "невидим"),
     ],
 )
 def test_invalid_paths_are_rejected(  # type: ignore[no-untyped-def]
@@ -881,6 +884,25 @@ def test_mcp_revision_get_foreign_project_is_null(engine_with_schema, monkeypatc
     # ``dict | None`` FastMCP отдаёт обёрнутым в ``{"result": …}``.
     got = _tool(own, "revision_get")(project="af", revision_id=target)["result"]
     assert got["revision_id"] == target
+
+
+def test_mcp_revision_get_unknown_project_and_revision(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Ошибки ``revision_get`` — штатные: неизвестный проект — ValueError с
+    подсказкой (как у всех DB-тулов), неизвестная ревизия — null."""
+    from cod_doc.mcp.tools import revision_tools
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+
+    monkeypatch.setattr(revision_tools, "session_factory", lambda project: (factory, None))
+    mcp = FastMCP("test")
+    revision_tools.register(mcp)
+    revision_get = _tool(mcp, "revision_get")
+
+    with pytest.raises(ValueError, match="Project 'nope' not in DB"):
+        revision_get(project="nope", revision_id="01HQX5Z9F0K8R0000000000000")
+    assert revision_get(project="af", revision_id="01HQX5Z9F0K8R0000000000000")["result"] is None
 
 
 def test_mcp_task_update_out_of_root_warns(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
