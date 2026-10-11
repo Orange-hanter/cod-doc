@@ -336,34 +336,20 @@ class ToolExecutor:
 
     def _tool_link_list(self, doc_key: str) -> dict[str, Any]:
         try:
-            from sqlalchemy import select
-
             from cod_doc.infra.db import transactional
-            from cod_doc.infra.models import DocumentModel, SectionModel
-            from cod_doc.services import link_service
+            from cod_doc.services import doc_service, link_service
             from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             with transactional(sf) as session:
                 project_id = require_project_id(session, self.project.entry.name)
-                doc_row = session.execute(
-                    select(DocumentModel.row_id).where(
-                        DocumentModel.project_id == project_id,
-                        DocumentModel.doc_key == doc_key,
-                    )
-                ).scalar_one_or_none()
-                if doc_row is None:
+                doc = doc_service.get(session, project_id, doc_key)
+                if doc is None or doc.row_id is None:
                     return {"error": f"Document '{doc_key}' not found"}
-                sec_ids = (
-                    session.execute(
-                        select(SectionModel.row_id).where(SectionModel.document_id == doc_row)
-                    )
-                    .scalars()
-                    .all()
-                )
                 links = []
-                for sid in sec_ids:
-                    links.extend(link_service.list_for_section(session, int(sid)))
+                for sec in doc_service.get_sections(session, doc.row_id):
+                    if sec.row_id is not None:
+                        links.extend(link_service.list_for_section(session, sec.row_id))
 
             return {
                 "doc_key": doc_key,

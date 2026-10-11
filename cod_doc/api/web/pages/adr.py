@@ -853,7 +853,7 @@ def adr_show(
     # списке — ссылка из ADR на неё сама по себе факт.
     task_links = []
     for link in payload["task_links"]:
-        task = task_service.get(session, link["task_id"])
+        task = task_service.get(session, link["task_id"], project_id=project_id)
         task_links.append(
             {
                 **link,

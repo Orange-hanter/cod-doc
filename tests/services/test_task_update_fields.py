@@ -186,7 +186,7 @@ def test_mcp_task_update_changes_all_three_fields(engine_with_schema, monkeypatc
     assert out["updated_fields"] == ["description", "acceptance", "priority"]
 
     with transactional(factory) as session:
-        t = tasks.get(session, "GRM-001")
+        t = tasks.get(session, "GRM-001", project_id=p)
         assert t is not None
         assert t.priority is Priority.HIGH
         assert t.description == "новая формулировка скоупа"
@@ -227,7 +227,7 @@ def test_mcp_task_update_dry_run_rolls_back(engine_with_schema, monkeypatch) -> 
     assert out["dry_run"] is True
 
     with transactional(factory) as session:
-        t = tasks.get(session, "GRM-001")
+        t = tasks.get(session, "GRM-001", project_id=p)
         assert t is not None
         assert t.priority is Priority.MEDIUM, "dry_run не должен коммитить"
 

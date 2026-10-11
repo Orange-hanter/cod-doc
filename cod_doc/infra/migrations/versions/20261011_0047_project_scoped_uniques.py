@@ -113,6 +113,9 @@ def _rebuild_sqlite(*, to_scoped: bool) -> None:
         # Порядок создания (rowid в sqlite_master), а не имени: представление,
         # зависящее от другого, когда-то создавалось после него — значит, в этом
         # порядке их можно восстановить. Снимаем в обратном: сначала зависимые.
+        # Порядок — гигиена, не условие корректности: SQLite не разрешает ссылки
+        # при CREATE VIEW, только при чтении (проверено на 3.53, тест
+        # test_migration_0047_view_order), так что съехавший rowid не ломает пересоздание.
         views = bind.exec_driver_sql(
             "SELECT name, sql FROM sqlite_master WHERE type = 'view' ORDER BY rowid"
         ).fetchall()
@@ -173,8 +176,24 @@ def upgrade() -> None:
         _rebuild_sqlite(to_scoped=True)
         return
     for target in _TARGETS:
-        op.drop_constraint(target.pg_global, target.table, type_="unique")
+        op.drop_constraint(_pg_global_unique_name(target), target.table, type_="unique")
         op.create_unique_constraint(target.constraint, target.table, ["project_id", target.column])
+
+
+def _pg_global_unique_name(target: _Target) -> str:
+    """Имя действующего глобального UNIQUE(col) на PostgreSQL.
+
+    Ищется по составу колонок, а не берётся из константы: автоимя
+    ``<table>_<col>_key`` верно только для ограничения, созданного без явного
+    имени. Константа ``pg_global`` — запасной вариант и имя для downgrade.
+    """
+    for unique in sa.inspect(op.get_bind()).get_unique_constraints(target.table):
+        if list(unique["column_names"]) == [target.column] and unique["name"]:
+            return str(unique["name"])
+    raise RuntimeError(
+        f"0047: на {target.table} не найден UNIQUE({target.column}); схема не та, "
+        "что ожидает миграция"
+    )
 
 
 def downgrade() -> None:

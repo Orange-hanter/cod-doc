@@ -14,7 +14,7 @@ from cod_doc.domain.entities import (
     equivalent_task_statuses,
 )
 from cod_doc.infra.models import TaskModel
-from cod_doc.infra.repositories.base import BaseRepository
+from cod_doc.infra.repositories.base import BaseRepository, require_int_project_id
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -72,6 +72,16 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
 
     def get_by_task_id(self, task_id: str) -> Task | None:
         stmt = select(TaskModel).where(TaskModel.task_id == task_id)
+        model = self.session.execute(stmt).scalar_one_or_none()
+        return self._to_domain(model) if model else None
+
+    def get_in_project(self, task_id: str, *, project_id: int) -> Task | None:
+        # STO-029: task_id уникален в проекте (uq_task_project_task_id), не во
+        # всей БД — в hub-БД глобальный поиск отдал бы чужую задачу.
+        require_int_project_id(project_id)
+        stmt = select(TaskModel).where(
+            TaskModel.project_id == project_id, TaskModel.task_id == task_id
+        )
         model = self.session.execute(stmt).scalar_one_or_none()
         return self._to_domain(model) if model else None
 

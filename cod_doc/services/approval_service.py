@@ -244,7 +244,7 @@ def request(
     _IN_PROGRESS_STATUSES = {"in_progress", "in-progress"}
     for ref in task_refs:
         try:
-            task = _task_svc.get(session, ref)
+            task = _task_svc.get(session, ref, project_id=project_id)
             if task is not None and task.status.value in _IN_PROGRESS_STATUSES:
                 _task_svc.update_status(
                     session,

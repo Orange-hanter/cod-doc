@@ -21,6 +21,7 @@ from cod_doc.infra.models import PlanModel, PlanSectionModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import checkout_service
 from cod_doc.services import task_service as tasks
+from cod_doc.services.project_lookup import require_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -89,7 +90,7 @@ def _seed() -> None:
 
 def _scope_of(task_id: str) -> str:
     for session in _session():
-        t = tasks.get(session, task_id)
+        t = tasks.get(session, task_id, project_id=require_project_id(session, NAME))
         assert t is not None
         plan = session.get(PlanModel, t.plan_id)
         assert plan is not None

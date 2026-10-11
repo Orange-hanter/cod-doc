@@ -16,9 +16,18 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
+class ProjectNotFoundError(LookupError, ValueError):
+    """Проекта со слагом нет в БД.
+
+    Сосед ``PlanNotFoundError``/``StoryNotFoundError`` — тоже ``LookupError``;
+    ``ValueError`` в базах оставлен, потому что раньше здесь падал голый
+    ``ValueError`` и места перехвата на поверхностях ловят именно его.
+    """
+
+
 def require_project_id(session: Session, slug: str) -> int:
-    """``row_id`` проекта по слагу; нет в БД — ``ValueError`` с подсказкой."""
+    """``row_id`` проекта по слагу; нет в БД — ``ProjectNotFoundError`` с подсказкой."""
     proj = ProjectRepository(session).get_by_slug(slug)
     if proj is None or proj.row_id is None:
-        raise ValueError(f"Project '{slug}' not in DB — run 'cod-doc project add' first.")
+        raise ProjectNotFoundError(f"Project '{slug}' not in DB — run 'cod-doc project add' first.")
     return proj.row_id

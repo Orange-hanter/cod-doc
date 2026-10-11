@@ -77,14 +77,14 @@ def test_revert_task_status_change(engine_with_schema) -> None:  # type: ignore[
         history = rev.list_for_entity(
             session,
             EntityKind.TASK,
-            tasks.get(session, "CF-001").row_id,  # type: ignore[union-attr]
+            tasks.get(session, "CF-001", project_id=p).row_id,  # type: ignore[union-attr]
         )
         status_rev = history[-1]
         assert status_rev.diff.startswith('{"op": "status"')
 
         rev.revert(session, status_rev.revision_id, author="human:test")
 
-        t = tasks.get(session, "CF-001")
+        t = tasks.get(session, "CF-001", project_id=p)
         assert t is not None
         # ADO-156: реверт приземляется в канонический бакет, а не в легаси.
         assert t.status is TaskStatus.TODO
@@ -100,12 +100,12 @@ def test_revert_task_complete(engine_with_schema) -> None:  # type: ignore[no-un
         history = rev.list_for_entity(
             session,
             EntityKind.TASK,
-            tasks.get(session, "CF-001").row_id,  # type: ignore[union-attr]
+            tasks.get(session, "CF-001", project_id=p).row_id,  # type: ignore[union-attr]
         )
         complete_rev = history[-1]
         rev.revert(session, complete_rev.revision_id, author="human:test")
 
-        t = tasks.get(session, "CF-001")
+        t = tasks.get(session, "CF-001", project_id=p)
         assert t is not None
         assert t.status is TaskStatus.TODO
 
@@ -119,7 +119,7 @@ def test_revert_task_unsupported_op_raises(engine_with_schema) -> None:  # type:
         history = rev.list_for_entity(
             session,
             EntityKind.TASK,
-            tasks.get(session, "CF-001").row_id,  # type: ignore[union-attr]
+            tasks.get(session, "CF-001", project_id=p).row_id,  # type: ignore[union-attr]
         )
         create_rev = history[0]
         with pytest.raises(rev.RevertNotSupportedError):
@@ -298,7 +298,7 @@ def test_complete_plan_update_is_in_same_transaction(engine_with_schema) -> None
         tasks.complete(session, task_id="CF-001", author="human:test")
 
         # Both changes visible within the same session.
-        t = tasks.get(session, "CF-001")
+        t = tasks.get(session, "CF-001", project_id=p)
         plan = session.get(PlanModel, pl)
         assert t.status is TaskStatus.DONE  # type: ignore[union-attr]
         # Both timestamps should be very close (same flush cycle).

@@ -25,7 +25,7 @@ def coverage(session: Session, story_id: str, *, project_id: int) -> StoryCovera
 
     impl_tasks = list_tasks(session, story_id, project_id=project_id)
     tasks_total = len(impl_tasks)
-    tasks_done = sum(1 for t in impl_tasks if t.status.value == "done")
+    tasks_done = sum(1 for t in impl_tasks if t.status.value == TaskStatus.DONE.value)
     # ADO-078: тот же дефект, что в `plan_service`, — «закрыто» было сведено к
     # `done`, и стори, чья последняя реализующая задача отменена, не доходила
     # до DELIVERED никогда. `cancelled` тоже терминален

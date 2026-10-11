@@ -1,4 +1,4 @@
-"""STO-023: поиск по plan.scope / story_id / module_id скоупится проектом.
+"""STO-023/029: поиск по plan.scope / story_id / module_id / task_id скоупится проектом.
 
 Миграция 0047 (STO-018) сделала эти ключи уникальными в проекте, а не во всей
 БД. В hub-БД два проекта законно держат одинаковые ``cod-doc-bootstrap``,
@@ -15,15 +15,17 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from cod_doc.domain.entities import StoryLinkKind, StoryRelation
+from cod_doc.domain.entities import Priority, StoryLinkKind, StoryRelation, TaskType
 from cod_doc.infra.db import transactional
-from cod_doc.services import plan_service
+from cod_doc.infra.repositories import PlanSectionRepository
+from cod_doc.services import agent_service, plan_service, task_service
 from cod_doc.services import story_service as stories
 from tests._project_scoped_seed import MODULE, SCOPE, SLUGS, STORY
 from tests._project_scoped_seed import seed_two_projects as _seed
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
+    from sqlalchemy.orm import Session, sessionmaker
 
 
 @pytest.mark.parametrize("slug", SLUGS)
@@ -66,16 +68,52 @@ def test_story_lookups_return_own_project_story(engine_with_schema: Engine, slug
         assert stories.list_links(session, STORY, project_id=pids[other]) == []
 
 
-@pytest.mark.parametrize("bad", [None, "1", True])
-def test_scoped_repo_lookups_reject_non_int_project_id(
-    engine_with_schema: Engine, bad: object
-) -> None:
-    """``project_id=None`` дал бы ``WHERE project_id IS NULL`` и тихое «не найдено»."""
-    from cod_doc.infra.repositories import PlanRepository, UserStoryRepository
+TASK = "ADO-001"
 
-    factory, _ = _seed(engine_with_schema)
+
+def _seed_same_task_id(engine: Engine) -> tuple[sessionmaker[Session], dict[str, int]]:
+    """Поверх общего сида — задача ``ADO-001`` в каждом проекте (STO-029)."""
+    factory, pids = _seed(engine)
     with transactional(factory) as session:
-        with pytest.raises(TypeError, match="project_id must be int"):
-            PlanRepository(session).get_by_scope(SCOPE, project_id=bad)
-        with pytest.raises(TypeError, match="project_id must be int"):
-            UserStoryRepository(session).get_by_story_id(STORY, project_id=bad)
+        for slug, pid in pids.items():
+            plan = plan_service.get_by_scope(session, SCOPE, project_id=pid)
+            assert plan is not None and plan.row_id is not None
+            (section,) = PlanSectionRepository(session).list_for_plan(plan.row_id)
+            assert section.row_id is not None
+            task_service.create(
+                session,
+                project_id=pid,
+                plan_id=plan.row_id,
+                section_id=section.row_id,
+                task_id=TASK,
+                title=f"Task of {slug}",
+                type=TaskType.FEATURE,
+                priority=Priority.MEDIUM,
+                author="human:test",
+            )
+    return factory, pids
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_task_get_returns_own_project_task(engine_with_schema: Engine, slug: str) -> None:
+    """task_id уникален в проекте: глобальный поиск падал на MultipleResultsFound."""
+    factory, pids = _seed_same_task_id(engine_with_schema)
+    with transactional(factory) as session:
+        task = task_service.get(session, TASK, project_id=pids[slug])
+        assert task is not None
+        assert task.project_id == pids[slug]
+        assert task.title == f"Task of {slug}"
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_agent_get_related_task_returns_own_project_task(
+    engine_with_schema: Engine, slug: str
+) -> None:
+    """Ветка ``related_task`` не отдаёт карточку задачи чужого проекта."""
+    factory, pids = _seed_same_task_id(engine_with_schema)
+    with transactional(factory) as session:
+        out = agent_service.get(
+            session, project_id=pids[slug], task_id=TASK, what="related_task", ref=TASK
+        )
+    assert out["found"] is True
+    assert out["payload"]["title"] == f"Task of {slug}"

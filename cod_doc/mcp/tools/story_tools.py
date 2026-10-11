@@ -128,17 +128,22 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
+                project_id = require_project_id(session, project)
                 s = story_service.update_status(
                     session,
-                    project_id=require_project_id(session, project),
+                    project_id=project_id,
                     story_id=story_id,
                     new_status=UserStoryStatus(new_status),
                     author=author,
                     reason=reason,
                 )
+                # Статус секцию не трогает, но ответ той же формы, что story_get.
+                section_key = None
+                if s.section_id is not None:
+                    section_key = story_service.section_keys(session, project_id).get(s.section_id)
         except StoryNotFoundError:
             raise ValueError(f"Story '{story_id}' not found.") from None
-        return story_to_dict(s)
+        return story_to_dict(s, section_key)
 
     @mcp.tool(name="story_add_criterion")
     def story_add_criterion(

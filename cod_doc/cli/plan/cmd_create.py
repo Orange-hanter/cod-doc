@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from ._common import _guard, _make_session, _project_id, console
+from ._common import _guard, _make_session, console
 from ._group import plan
 
 if TYPE_CHECKING:
@@ -51,19 +51,18 @@ def plan_create(
     """
     from cod_doc.infra.db import transactional
     from cod_doc.services import plan_service
+    from cod_doc.services.project_lookup import require_project_id
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
-    # Фаза 1: проект (только чтение — sys.exit здесь безопасен).
-    with transactional(sf) as session:
-        pid = _project_id(session, project)
-
-    # Фаза 2: запись; ошибка откатывает транзакцию, _guard печатает сообщение.
+    # Проект резолвится в той же транзакции, что и запись: id из отдельной
+    # фазы чтения мог протухнуть к коммиту. ProjectNotFoundError — LookupError,
+    # _guard печатает её текст после отката.
     with _guard(), transactional(sf) as session:
         created = plan_service.create_plan(
             session,
-            project_id=pid,
+            project_id=require_project_id(session, project),
             scope=scope,
             principle=principle,
             author=author,

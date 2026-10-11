@@ -28,6 +28,7 @@ from cod_doc.infra.repositories import (
     ProjectRepository,
 )
 from cod_doc.services import task_service as tasks
+from cod_doc.services.project_lookup import require_project_id
 
 
 @pytest.fixture
@@ -462,7 +463,9 @@ def test_chain_cards_have_no_nested_anchors(tasks_client) -> None:
     engine = make_engine(f"sqlite:///{db_path}")
     factory = make_session_factory(engine)
     with transactional(factory) as session:
-        anchor_task = tasks.get(session, task_id="AUTH-001")
+        anchor_task = tasks.get(
+            session, task_id="AUTH-001", project_id=require_project_id(session, entry.name)
+        )
         tasks.create(
             session,
             project_id=anchor_task.project_id,

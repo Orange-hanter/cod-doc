@@ -517,7 +517,7 @@ def task_show(
     proj = get_project(slug)
     session, project_db_id = db
 
-    task = tasks.get(session, task_id)
+    task = tasks.get(session, task_id, project_id=project_db_id)
     if task is None or task.project_id != project_db_id:
         raise HTTPException(404, f"Задача не найдена: {task_id}")
     assert task.row_id is not None

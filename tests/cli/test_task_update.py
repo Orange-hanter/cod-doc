@@ -27,6 +27,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import task_service as tasks
+from cod_doc.services.project_lookup import require_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -116,7 +117,7 @@ def test_task_update_changes_fields_and_leaves_trail(tmp_path: Path) -> None:
     assert "priority" in result.output
 
     for session in _session("gp"):
-        t = tasks.get(session, "GCL-001")
+        t = tasks.get(session, "GCL-001", project_id=require_project_id(session, "gp"))
         assert t is not None
         assert t.description == "новая формулировка"
         assert t.priority is Priority.CRITICAL

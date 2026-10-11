@@ -179,7 +179,7 @@ def test_move_keeps_dependency_and_warns_about_the_cross_plan_edge(engine_with_s
 
         _move(session, "ADO-002", new["A"])
 
-        moved = tasks.get(session, "ADO-002")
+        moved = tasks.get(session, "ADO-002", project_id=p)
         assert moved is not None
         assert task_to_dict(moved, session)["blocked_by"] == ["ADO-001"]
         warnings = tasks.cross_plan_dependency_warnings(session, project_id=p, task_ids=["ADO-002"])

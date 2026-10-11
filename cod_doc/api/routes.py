@@ -215,9 +215,9 @@ def update_task(name: str, task_id: str, body: dict[str, Any]) -> dict[str, Any]
     unknown = set(body) - _SUPPORTED_PATCH_FIELDS
     if unknown:
         raise HTTPException(422, f"Неподдерживаемые поля: {', '.join(sorted(unknown))}")
-    session, _project_id = _legacy_session(name)
+    session, project_id = _legacy_session(name)
     try:
-        if task_service.get(session, task_id) is None:
+        if task_service.get(session, task_id, project_id=project_id) is None:
             raise HTTPException(404, f"Задача не найдена: {task_id}")
         if "result" in body:
             task_service.log_progress(
@@ -246,7 +246,7 @@ def update_task(name: str, task_id: str, body: dict[str, Any]) -> dict[str, Any]
                 # / неизвестный статус — всё это конфликт с контрактом машины.
                 raise HTTPException(409, str(exc)) from exc
         session.commit()
-        task = task_service.get(session, task_id)
+        task = task_service.get(session, task_id, project_id=project_id)
         assert task is not None
         return legacy_tasks.to_legacy_dict(task)
     except Exception:

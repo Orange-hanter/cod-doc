@@ -7,16 +7,13 @@ type: rfc
 > Категория: 🔵 Архитектура · Риск: высокий · Зависимости: proposal 09 (activity), proposal 22 (hub), proposal 23 (cloud plane), proposal 26 (write-путь через сервисы)
 
 > **Статус: принят 2026-10-11** (черновик 2026-09-27, сверен со схемой 2026-10-11).
-> ADR-016 и ADR-017 приняты владельцем 2026-10-11, открытых блокирующих вопросов нет.
-> Контракты — §10, декомпозиция и DoD — §11; план `cloud-remote-2026-10`
-> (CLO-001…043) — секция A в `todo`, остальное в `backlog`.
-> Решения вынесены в ADR-016 (команда через реплики и remote) и ADR-017
-> (глобальная идентичность и захват операций), оба `proposed`. Целевой контракт —
-> capability [remote-sync](../docs/system/capabilities/remote-sync.md), сценарии
-> SCN-081…089 — [scenarios/remote-sync](../docs/system/scenarios/remote-sync.md).
-> Открытые вопросы Q-007…Q-016 решены владельцем 2026-10-10, текст приведён к
-> решениям (§9). Следующий шаг после приёмки ADR — истории, `plan_create` на scope
-> `cloud-remote-2026-10` и разбиение по секциям A–F из §7.
+> Решения — ADR-016 (команда через реплики и remote) и ADR-017 (глобальная
+> идентичность и захват операций), оба приняты владельцем 2026-10-11. Открытые
+> вопросы Q-007…Q-017 решены (§9), блокирующих нет. Контракты — §10, декомпозиция и
+> DoD — §11; план `cloud-remote-2026-10` (CLO-001…043): секция A в `todo`, остальное
+> в `backlog`. Целевой контракт — capability
+> [remote-sync](../docs/system/capabilities/remote-sync.md), сценарии SCN-081…096 —
+> [scenarios/remote-sync](../docs/system/scenarios/remote-sync.md).
 
 ## 1. Контекст
 
@@ -52,7 +49,7 @@ git — источник модели (DAG коммитов, fast-forward push, 
 | PK — локальный `row_id INTEGER`, FK — тоже `row_id` | все `cod_doc/infra/models/*.py` | один и тот же `row_id` на двух машинах — разные сущности; переносить FK нельзя |
 | Человеческие ID выдаются как `max+1` | `task_service.py:190` `_next_task_id`, `adr_service.py:105` `_next_adr_id` (обёртка `next_adr_id` `:120`), `scenario_service/_internals.py:33` `_next_scenario_id`, `story_service/crud.py:157` `next_story_id`, `question_service/_internals.py:49` `_next_question_id` | две офлайн-реплики гарантированно выдадут один и тот же `ADO-229` разным задачам |
 | Позиции выдаются как `max+1` | `document_repo.py:208`, `story_repo.py:182`, `scenario_repo.py:111` | две вставки «в конец» на разных репликах получат одну позицию |
-| Глобальные `UNIQUE` вместо проектных | `plan.scope`, `user_story.story_id` (`stories.py:48`), `module.module_id` — STO-018/024 закрыты миграцией `0047_project_scoped_uniques` 2026-10-11; поиски без `project_id` — STO-023 ✅; `task_service.get` — STO-029 | клон проекта в hub, где уже есть такой scope/story_id, упадёт на вставке; предусловие секции A |
+| Глобальные `UNIQUE` вместо проектных | `plan.scope`, `user_story.story_id` (`stories.py:48`), `module.module_id` — STO-018/024 закрыты миграцией `0047_project_scoped_uniques` 2026-10-11; поиски без `project_id` — STO-023 ✅; `task_service.get` — STO-029 ✅; write-пути по `task_id` — STO-030 | клон проекта в hub, где уже есть такой scope/story_id, упадёт на вставке; предусловие секции A |
 | `revision.diff` — unified diff, не состояние | `infra/models/revisions.py:42` | по журналу ревизий сущность не восстановить; для сущностей без ревизий (dependency, tag) журнала нет вовсе |
 | Глобальные ID уже есть точечно | `revision.revision_id` ULID (`revisions.py:33`), `activity_event.id` UUID, `finding.finding_uid` uuid7 | журнальные таблицы уже переносимы без перенумерации |
 | Единая точка write-пути | `activity_service.py:177` `write_revision_and_emit_event`, `:147` `emit_for_write` (ADO-040) | место есть, но оно видит событие, а не полный набор изменённых полей |
@@ -206,7 +203,8 @@ Routine-находки — `derived`: каждая реплика пересчи
 `0047_project_scoped_uniques` (`UNIQUE(project_id, …)`); STO-023 убирает поиски по
 этим ключам без `project_id`, иначе вместо ошибки миграции были бы плавающие
 падения и чужой проект в выдаче (закрыта 2026-10-11). STO-029 — тот же класс для
-`task_service.get(task_id)`; CLO-002 стартует после неё.
+`task_service.get(task_id)`, закрыта тем же PR #193; STO-030 — write-пути задач
+(checkout, complete, update_status) по `task_id` без `project_id`, блокирует CLO-002.
 
 **Рёбра и связи** — `dependency`, `adr_supersedes`, `adr_relation`, `adr_task`,
 `module_dependency`, `scenario_link`, `story_link`, `open_question_link`,
@@ -633,7 +631,7 @@ reader.
 | F. Поверхности и документация | рутина `sync`, ARCHITECTURE/DATA_MODEL, capability и скилл, финальный прогон | 4 |
 
 A → B → C строго последовательны; D и E параллельны после B; F идёт по ходу.
-Предусловия вне плана — STO-018 ✅, STO-024 ✅, STO-023 ✅, STO-029.
+Предусловия вне плана — STO-018 ✅, STO-024 ✅, STO-023 ✅, STO-029 ✅, STO-030.
 
 ## 8. Критерий успеха
 
@@ -1073,7 +1071,7 @@ s3://cod-doc-remotes:
 
 План `cloud-remote-2026-10` (префикс `CLO`), 43 задачи, все заводятся в статусе
 `backlog` до приёмки ADR-016/017. Секции A → B → C последовательны; D и E
-параллельны после B; F — по ходу. Предусловия вне плана: **STO-018 ✅, STO-024 ✅, STO-023 ✅, STO-029**.
+параллельны после B; F — по ходу. Предусловия вне плана: **STO-018 ✅, STO-024 ✅, STO-023 ✅, STO-029 ✅, STO-030**.
 
 ### 11.1 DoD
 
@@ -1112,7 +1110,7 @@ critical» из `task-standard` соблюдено: 8 из 43), блокеры, 
 | ID | Задача | Тип · Пр. | Блокеры | Acceptance | Файлы |
 |---|---|---|---|---|---|
 | CLO-001 | Implement: реестр классов `sync_registry` и гейт полноты | f · M | — | все 64 таблицы классифицированы по §3.2; тест падает на модели без записи и на FK, не покрытом `logical_fks`; `row_is_local` для `restricted`, `authored_columns` для `link_suggestion.state` | `cod_doc/infra/sync_registry.py`, `tests/infra/test_sync_registry_complete.py` |
-| CLO-002 | Migration: `0048_sync_identity` — `uid`, служебные таблицы | m · H | CLO-001, STO-018 ✅, STO-023 ✅, STO-024 ✅, STO-029 | DDL §10.1; бэкфилл uuid7, у рёбер — uuid5; тест сохранности на `0047`: число секций, ссылок, задач, рёбер совпадает; downgrade симметричен | `cod_doc/infra/migrations/versions/…0048_sync_identity.py`, `cod_doc/infra/models/*.py`, `tests/infra/test_migration_0048_preserves_data.py` |
+| CLO-002 | Migration: `0048_sync_identity` — `uid`, служебные таблицы | m · H | CLO-001, STO-018 ✅, STO-023 ✅, STO-024 ✅, STO-029 ✅, STO-030 | DDL §10.1; бэкфилл uuid7, у рёбер — uuid5; тест сохранности на `0047`: число секций, ссылок, задач, рёбер совпадает; downgrade симметричен | `cod_doc/infra/migrations/versions/…0048_sync_identity.py`, `cod_doc/infra/models/*.py`, `tests/infra/test_migration_0048_preserves_data.py` |
 | CLO-003 | Migration: `0049_sync_rank` — `rank` в 11 местах, снятие 4 UNIQUE | m · M | CLO-002 | порядок внутри каждого родителя до и после совпадает; у четырёх пересоздаваемых таблиц нет CASCADE-детей (проверка в тесте); downgrade восстанавливает UNIQUE | `…0049_sync_rank.py`, `tests/infra/test_migration_0049_rank.py` |
 | CLO-004 | Refactor: выдача и чтение порядка через `rank` | r · M | CLO-003 | вставка между соседями пишет один `rank`; `position` пересчитывается; аллокаторы `document_repo.py:208`, `story_repo.py:182`, `scenario_repo.py:111` переписаны; SCN-093 | `cod_doc/infra/repositories/*.py`, `cod_doc/services/plan_service/sections.py`, `cod_doc/services/doc_tree_service.py` |
 | CLO-005 | Implement: HLC и `replica` (`is_self`) | f · M | CLO-002 | HLC монотонен при откате часов назад; одна `is_self` на проект; формат из §10.1 | `cod_doc/infra/hlc.py`, `tests/infra/test_hlc.py` |

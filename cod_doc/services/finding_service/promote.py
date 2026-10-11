@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING, Any
 
 from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.models import FindingModel
-from cod_doc.services import activity_service, search_service, task_service
+from cod_doc.infra.repositories import PlanSectionRepository
+from cod_doc.services import activity_service, plan_service, search_service, task_service
+from cod_doc.services.finding_service.queries import get_finding
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -140,3 +142,45 @@ def promote_finding(
         }
 
     raise ValueError(f"unknown on_finding policy: {on_finding!r}")
+
+
+def promote_finding_by_ref(
+    session: Session,
+    *,
+    project_id: int,
+    finding_uid: str,
+    plan_scope: str,
+    section_letter: str,
+    on_finding: str,
+    author: str = "finding_service",
+    id_prefix: str = "FND",
+) -> dict[str, Any]:
+    """:func:`promote_finding` по внешним ключам: ``finding_uid``, scope плана, буква секции.
+
+    Резолв и проверка существования живут здесь, а не в поверхности: план
+    ищется в проекте (scope уникален только в нём, STO-023), буква секции —
+    без учёта регистра. Промах — ``ValueError`` с текстом для агента.
+    """
+    plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
+    if plan is None or plan.row_id is None:
+        raise ValueError(f"Plan '{plan_scope}' not found.")
+    sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
+    section = next((s for s in sections if s.letter.upper() == section_letter.upper()), None)
+    if section is None or section.row_id is None:
+        letters = ", ".join(s.letter for s in sections)
+        raise ValueError(f"Section '{section_letter}' not found. Available: {letters}")
+
+    finding = get_finding(session, project_id, finding_uid)
+    if finding is None:
+        raise ValueError(f"finding '{finding_uid}' not found")
+
+    return promote_finding(
+        session,
+        project_id=project_id,
+        finding_id=finding["finding_id"],
+        on_finding=on_finding,
+        plan_id=plan.row_id,
+        section_id=section.row_id,
+        author=author,
+        id_prefix=id_prefix,
+    )

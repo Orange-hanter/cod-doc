@@ -11,6 +11,8 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from cod_doc.cli._common import printable
+from cod_doc.cli._common import require_project_id as _require_project_id
 from cod_doc.domain.entities import AFFECTS_FILES_MODES, TaskStatus, TaskType
 from cod_doc.logging_config import get_logger
 
@@ -61,16 +63,6 @@ def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
         sys.exit(1)
     factory, _engine = db_for_entry(entry)
     return factory
-
-
-def _require_project_id(session: Session, project_name: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    proj = ProjectRepository(session).get_by_slug(project_name)
-    if proj is None or proj.row_id is None:
-        console.print(f"[red]Project '{project_name}' not in DB. Run 'project add' first.[/red]")
-        sys.exit(1)
-    return proj.row_id
 
 
 @click.group()
@@ -265,7 +257,7 @@ def task_show(ctx: click.Context, task_id: str, project: str, as_json: bool) -> 
     sf = _make_session(project, cfg)
 
     with transactional(sf) as session:
-        t = task_service.get(session, task_id)
+        t = task_service.get(session, task_id, project_id=_require_project_id(session, project))
 
     if t is None:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
@@ -387,7 +379,11 @@ def task_create(
         project_id = _require_project_id(session, project)
         plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
         if plan is None or plan.row_id is None:
-            console.print(f"[red]Plan '{plan_scope}' not found in project '{project}'.[/red]")
+            console.print(
+                f"Plan '{printable(plan_scope)}' not found in project '{printable(project)}'.",
+                style="red",
+                markup=False,
+            )
             sys.exit(1)
         sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
         section = next((s for s in sections if s.letter.upper() == section_letter.upper()), None)
@@ -701,7 +697,11 @@ def task_move(
             project_id = _require_project_id(session, project)
             plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
             if plan is None or plan.row_id is None:
-                console.print(f"[red]Plan '{plan_scope}' not found in project '{project}'.[/red]")
+                console.print(
+                    f"Plan '{printable(plan_scope)}' not found in project '{printable(project)}'.",
+                    style="red",
+                    markup=False,
+                )
                 sys.exit(1)
             sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
             section = next(
@@ -715,7 +715,7 @@ def task_move(
                 sys.exit(1)
 
             for task_id in task_ids:
-                current = task_service.get(session, task_id)
+                current = task_service.get(session, task_id, project_id=project_id)
                 if current is None:
                     raise TaskNotFoundError(task_id)
                 if current.section_id == section.row_id:

@@ -77,10 +77,7 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            try:
-                project_id = require_project_id(session, project)
-            except LookupError, ValueError:
-                return None
+            project_id = require_project_id(session, project)
 
             batch = plan_reads.ready_batch_for_project(session, project_id, local_only=local_only)
             ready = batch.tasks
@@ -332,10 +329,16 @@ def register(mcp: FastMCP) -> None:
 
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
+        from cod_doc.services.project_lookup import ProjectNotFoundError
 
         sf, entry = session_factory(project)
         with transactional(sf) as session:
-            t = task_service.get(session, task_id)
+            try:
+                pid: int | None = require_project_id(session, project)
+            except ProjectNotFoundError:
+                # Проекта нет в БД — ниже остаётся YAML-фолбэк и miss-hint.
+                pid = None
+            t = None if pid is None else task_service.get(session, task_id, project_id=pid)
             if t is not None:
                 return task_to_dict(t, session=session)
 
@@ -1048,7 +1051,7 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf, commit=not dry_run) as session:
                 pid = require_project_id(session, project)
-                t = task_service.get(session, task_id)
+                t = task_service.get(session, task_id, project_id=pid)
                 if t is None:
                     raise TaskNotFoundError(task_id)
                 if description is not None:
@@ -1173,7 +1176,7 @@ def register(mcp: FastMCP) -> None:
 
             for task_id in task_ids:
                 try:
-                    current = task_service.get(session, task_id)
+                    current = task_service.get(session, task_id, project_id=project_id)
                     if current is None:
                         raise TaskNotFoundError(task_id)
                     if current.section_id == section_id:

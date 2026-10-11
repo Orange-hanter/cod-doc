@@ -22,7 +22,7 @@ from cod_doc.infra.models import (
     StorySectionModel,
     UserStoryModel,
 )
-from cod_doc.infra.repositories.base import BaseRepository, require_int_project_id
+from cod_doc.infra.repositories.base import BaseRepository, require_int_project_id, require_key
 
 
 class UserStoryRepository(BaseRepository[UserStory, UserStoryModel]):
@@ -64,6 +64,7 @@ class UserStoryRepository(BaseRepository[UserStory, UserStoryModel]):
     def get_by_story_id(self, story_id: str, *, project_id: int) -> UserStory | None:
         # STO-023: story_id уникален в проекте (0047), не во всей БД.
         require_int_project_id(project_id)
+        require_key(story_id, "story_id")
         stmt = select(UserStoryModel).where(
             UserStoryModel.project_id == project_id, UserStoryModel.story_id == story_id
         )

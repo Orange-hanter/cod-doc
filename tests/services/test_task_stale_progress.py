@@ -151,7 +151,7 @@ def test_log_progress_writes_revision(engine_with_schema) -> None:  # type: igno
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _make_in_progress(session, p, pl, s, "PR-001")
-        t = task_service.get(session, "PR-001")
+        t = task_service.get(session, "PR-001", project_id=p)
         assert t is not None and t.row_id is not None
 
         task_service.log_progress(

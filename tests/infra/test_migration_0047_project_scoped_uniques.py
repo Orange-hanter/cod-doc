@@ -105,8 +105,12 @@ def _add_keys(conn: sqlite3.Connection, project_id: int, *, base: int) -> None:
     )
 
 
-def _seed(db_path: Path) -> None:
-    """Проект с ключами и по строке в каждой CASCADE-дочерней таблице."""
+def _seed(db_path: Path) -> dict[str, int]:
+    """Проект с ключами и по строке в каждой CASCADE-дочерней таблице.
+
+    Возвращает счётчики сразу после сида — с ними тесты сверяют БД после
+    миграции. Ожидание выводится из самого сида, а не дублируется числами.
+    """
     now = _now()
     conn = _connect(db_path)
     try:
@@ -153,6 +157,14 @@ def _seed(db_path: Path) -> None:
     finally:
         conn.close()
 
+    seeded = _counts(db_path)
+    empty = sorted(t for t, n in seeded.items() if n == 0)
+    assert not empty, (
+        f"_seed не наполнил CASCADE-дочерние таблицы {empty}: потерю строк в них "
+        "миграция покажет как пустоту до и после — добавь строку в _seed"
+    )
+    return seeded
+
 
 #: Идентификаторы, которые разрешено подставлять в SQL строкой: имена таблиц
 #: и колонок не параметризуются, поэтому каждое сверяется с этим списком.
@@ -176,10 +188,6 @@ def _counts(db_path: Path) -> dict[str, int]:
         conn.close()
 
 
-def _seeded_counts() -> dict[str, int]:
-    return {t: 1 for t in _CHILD_TABLES} | {"task": 2, "module": 2}
-
-
 def _fk_violations(db_path: Path) -> list[tuple[object, ...]]:
     conn = sqlite3.connect(db_path)
     try:
@@ -193,12 +201,11 @@ def test_upgrade_keeps_cascade_children(tmp_path: Path, seed_at: str) -> None:
     db_path = tmp_path / "seeded.db"
     db_url = f"sqlite:///{db_path}"
     run_alembic("upgrade", seed_at, db_url=db_url)
-    _seed(db_path)
-    assert _counts(db_path) == _seeded_counts()
+    seeded = _seed(db_path)
 
     run_alembic("upgrade", "head", db_url=db_url)
 
-    assert _counts(db_path) == _seeded_counts()
+    assert _counts(db_path) == seeded
     assert _fk_violations(db_path) == []
 
 
@@ -248,12 +255,12 @@ def test_downgrade_is_symmetric_and_keeps_data(tmp_path: Path) -> None:
     db_path = tmp_path / "roundtrip.db"
     db_url = f"sqlite:///{db_path}"
     run_alembic("upgrade", _PREVIOUS, db_url=db_url)
-    _seed(db_path)
+    seeded = _seed(db_path)
     run_alembic("upgrade", _THIS, db_url=db_url)
 
     run_alembic("downgrade", _PREVIOUS, db_url=db_url)
 
-    assert _counts(db_path) == _seeded_counts()
+    assert _counts(db_path) == seeded
     assert _fk_violations(db_path) == []
     conn = _connect(db_path)
     try:

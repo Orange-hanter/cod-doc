@@ -97,7 +97,7 @@ def task_field_edit_form(
         raise NotFoundWebError(f"Unknown task field: {field}")
     proj = get_project(slug)
     session, project_db_id = db
-    task = tasks.get(session, task_id)
+    task = tasks.get(session, task_id, project_id=project_db_id)
     if task is None or task.project_id != project_db_id:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
     return _render_task_field_edit(request, project_name=proj.entry.name, task=task, field=field)
@@ -118,7 +118,7 @@ def task_field_view_fragment(
         raise NotFoundWebError(f"Unknown task field: {field}")
     proj = get_project(slug)
     session, project_db_id = db
-    task = tasks.get(session, task_id)
+    task = tasks.get(session, task_id, project_id=project_db_id)
     if task is None or task.project_id != project_db_id:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
     return _render_task_field_view(request, project_name=proj.entry.name, task=task, field=field)
@@ -147,7 +147,7 @@ def task_field_improve(
         raise NotFoundWebError(f"Unknown task field: {field}")
     proj = get_project(slug)
     session, project_db_id = db
-    task = tasks.get(session, task_id)
+    task = tasks.get(session, task_id, project_id=project_db_id)
     if task is None or task.project_id != project_db_id:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 
@@ -207,7 +207,7 @@ def task_field_patch(
         raise NotFoundWebError(f"Unknown task field: {field}")
     proj = get_project(slug)
     session, project_db_id = db
-    existing = tasks.get(session, task_id)
+    existing = tasks.get(session, task_id, project_id=project_db_id)
     if existing is None or existing.project_id != project_db_id:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 

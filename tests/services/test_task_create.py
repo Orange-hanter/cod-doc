@@ -76,7 +76,7 @@ def test_create_persists_task_with_todo_status(engine_with_schema) -> None:  # t
         assert task.status == TaskStatus.TODO
 
     with transactional(factory) as session:
-        loaded = tasks.get(session, "MY-001")
+        loaded = tasks.get(session, "MY-001", project_id=p)
         assert loaded is not None
         assert loaded.priority == Priority.MEDIUM
 

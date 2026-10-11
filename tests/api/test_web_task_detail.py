@@ -560,11 +560,12 @@ def test_task_detail_trace_section_lists_calls(task_detail_client) -> None:
     from cod_doc.infra.db import make_engine, make_session_factory, transactional
     from cod_doc.services import task_service as task_svc
     from cod_doc.services import trace_service as trace_svc
+    from cod_doc.services.project_lookup import require_project_id
 
     engine = make_engine(f"sqlite:///{db_path}")
     factory = make_session_factory(engine)
     with transactional(factory) as session:
-        task = task_svc.get(session, "DET-001")
+        task = task_svc.get(session, "DET-001", project_id=require_project_id(session, entry.name))
         assert task is not None and task.row_id is not None
         trace_svc.record(
             session,

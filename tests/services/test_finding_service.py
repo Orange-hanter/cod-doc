@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing
+import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -20,6 +21,7 @@ from cod_doc.infra.models import (
     PlanModel,
     PlanSectionModel,
     ProjectModel,
+    TaskModel,
 )
 from cod_doc.services.finding_service import (
     FindingSeed,
@@ -31,6 +33,7 @@ from cod_doc.services.finding_service import (
     ingest_findings,
     list_findings,
     promote_finding,
+    promote_finding_by_ref,
 )
 from tests._alembic import run_alembic
 
@@ -321,6 +324,55 @@ def _ingest_single_finding(session: Any, project_id: int) -> FindingModel:
     return session.execute(
         select(FindingModel).where(FindingModel.project_id == project_id)
     ).scalar_one()
+
+
+def test_promote_by_ref_resolves_plan_section_and_finding(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Резолв для ``finding_promote`` живёт в сервисе: scope, буква (без регистра), uid."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id, _plan_id, section_id = _seed_plan(session)
+        finding = _ingest_single_finding(session, project_id)
+
+        outcome = promote_finding_by_ref(
+            session,
+            project_id=project_id,
+            finding_uid=finding.finding_uid,
+            plan_scope="p-plan",
+            section_letter="a",
+            on_finding="create_task",
+            author="test",
+        )
+        assert outcome["promoted"] is True
+        task = session.execute(
+            select(TaskModel).where(TaskModel.task_id == outcome["task_id"])
+        ).scalar_one()
+        assert task.section_id == section_id
+
+
+@pytest.mark.parametrize(
+    ("plan_scope", "letter", "uid", "message"),
+    [
+        ("nope", "A", None, "Plan 'nope' not found."),
+        ("p-plan", "Z", None, "Section 'Z' not found. Available: A"),
+        ("p-plan", "A", "missing-uid", "finding 'missing-uid' not found"),
+    ],
+)
+def test_promote_by_ref_misses_raise_value_error(  # type: ignore[no-untyped-def]
+    engine_with_schema, plan_scope: str, letter: str, uid: str | None, message: str
+) -> None:
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id, _, _ = _seed_plan(session)
+        finding = _ingest_single_finding(session, project_id)
+        with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+            promote_finding_by_ref(
+                session,
+                project_id=project_id,
+                finding_uid=uid or finding.finding_uid,
+                plan_scope=plan_scope,
+                section_letter=letter,
+                on_finding="create_task",
+            )
 
 
 def test_promote_create_task_emits_activity_event(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

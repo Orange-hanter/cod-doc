@@ -1,4 +1,4 @@
-"""STO-023 на MCP-поверхности: ``task_create`` и ``story_get`` скоупятся проектом.
+"""STO-023 на MCP-поверхности: ``task_create`` и ``story_*`` скоупятся проектом.
 
 Сервисная сторона тех же поисков — ``tests/services/test_project_scoped_lookups.py``.
 Тулы берутся из ``mcp._tool_manager._tools`` — так их зовут все MCP-тесты
@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from cod_doc.infra.db import make_engine, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, TaskModel
+from cod_doc.services import story_service as stories
 from tests._alembic import run_alembic
 from tests._project_scoped_seed import SCOPE, SLUGS, STORY, seed_two_projects
 
@@ -39,7 +40,12 @@ def engine(tmp_path: Path) -> Iterator[Engine]:
 def _mcp_tools(
     monkeypatch: pytest.MonkeyPatch, factory: sessionmaker[Session]
 ) -> dict[str, Callable[..., Any]]:
-    """task_create / story_get на свежем FastMCP; слаг резолвится по БД, как в бою."""
+    """task_create / story_* на свежем FastMCP; слаг резолвится по БД, как в бою.
+
+    Второй элемент кортежа ``session_factory`` — ``None``: тул, взявший проект
+    оттуда, а не из ``require_project_id(session, slug)``, упадёт, а не
+    подставит чужой проект.
+    """
     from cod_doc.mcp.tools import story_tools, task_tools
 
     monkeypatch.setattr(task_tools, "session_factory", lambda project: (factory, None))
@@ -47,7 +53,8 @@ def _mcp_tools(
     mcp = FastMCP("test")
     task_tools.register(mcp)
     story_tools.register(mcp)
-    return {name: mcp._tool_manager._tools[name].fn for name in ("task_create", "story_get")}
+    names = ("task_create", "story_get", "story_update_status")
+    return {name: mcp._tool_manager._tools[name].fn for name in names}
 
 
 @pytest.mark.parametrize("slug", SLUGS)
@@ -88,3 +95,24 @@ def test_mcp_story_get_returns_own_project_story(
     out = tools["story_get"](project=slug, story_id=STORY)
     assert out is not None
     assert out["persona"] == f"persona-{slug}"
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_mcp_story_update_status_returns_section_key(
+    monkeypatch: pytest.MonkeyPatch, engine: Engine, slug: str
+) -> None:
+    """Ответ той же формы, что у ``story_get``: ключ секции, а не ``null``."""
+    factory, pids = seed_two_projects(engine)
+    with transactional(factory) as session:
+        stories.create_section(
+            session, project_id=pids[slug], key=f"sec-{slug}", title=slug, author="human:test"
+        )
+        stories.assign_section(
+            session, project_id=pids[slug], story_id=STORY, key=f"sec-{slug}", author="human:test"
+        )
+    tools = _mcp_tools(monkeypatch, factory)
+
+    out = tools["story_update_status"](project=slug, story_id=STORY, new_status="accepted")
+    assert out["status"] == "accepted"
+    assert out["section"] == f"sec-{slug}"
+    assert tools["story_get"](project=slug, story_id=STORY)["section"] == f"sec-{slug}"

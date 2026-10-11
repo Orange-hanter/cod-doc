@@ -9,7 +9,7 @@ from cod_doc.services.finding_service.fingerprint import (
     fingerprint_routine,
     fingerprint_zairgrush,
 )
-from cod_doc.services.finding_service.promote import promote_finding
+from cod_doc.services.finding_service.promote import promote_finding, promote_finding_by_ref
 from cod_doc.services.finding_service.queries import (
     dismiss_finding,
     finding_to_dict,
@@ -31,5 +31,6 @@ __all__ = [
     "ingest_findings",
     "list_findings",
     "promote_finding",
+    "promote_finding_by_ref",
     "reconcile_partition",
 ]

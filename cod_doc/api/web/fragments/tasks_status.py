@@ -46,7 +46,7 @@ def task_status_update(
 
     session, project_db_id = db
 
-    existing = tasks.get(session, task_id)
+    existing = tasks.get(session, task_id, project_id=project_db_id)
     if existing is None or existing.project_id != project_db_id:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 
@@ -59,7 +59,7 @@ def task_status_update(
             and normalise(new_status.value) == "in_progress"
         ):
             checkout_service.checkout(session, task_id=task_id, agent="human:web")
-            checked = tasks.get(session, task_id)
+            checked = tasks.get(session, task_id, project_id=project_db_id)
             assert checked is not None
             updated = checked
         else:
@@ -124,7 +124,7 @@ def task_complete(
     proj = get_project(slug)
     session, project_db_id = db
 
-    existing = tasks.get(session, task_id)
+    existing = tasks.get(session, task_id, project_id=project_db_id)
     if existing is None or existing.project_id != project_db_id:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 

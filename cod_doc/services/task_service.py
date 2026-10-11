@@ -1499,8 +1499,9 @@ def complete(
     return t
 
 
-def get(session: Session, task_id: str) -> Task | None:
-    return TaskRepository(session).get_by_task_id(task_id)
+def get(session: Session, task_id: str, *, project_id: int) -> Task | None:
+    # STO-029: task_id уникален только в проекте.
+    return TaskRepository(session).get_in_project(task_id, project_id=project_id)
 
 
 def list_for_plan(session: Session, plan_id: int) -> list[Task]:

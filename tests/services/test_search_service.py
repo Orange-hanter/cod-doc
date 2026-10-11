@@ -973,7 +973,7 @@ def test_write_path_survives_a_missing_index_table(engine_with_schema) -> None: 
         _make_task(session, pid, plid, sid, "INC-020", "Survives a missing index")
 
     with transactional(factory) as session:
-        t = task_service.get(session, "INC-020")
+        t = task_service.get(session, "INC-020", project_id=pid)
     assert t is not None
 
 

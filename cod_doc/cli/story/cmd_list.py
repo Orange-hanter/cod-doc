@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 import click
 from rich.table import Table
 
-from ._common import _STATUS_ICON, _make_session, _require_project_id, console
+from cod_doc.cli._common import require_project_id as _require_project_id
+
+from ._common import _STATUS_ICON, _make_session, console
 from ._group import story
 
 if TYPE_CHECKING:

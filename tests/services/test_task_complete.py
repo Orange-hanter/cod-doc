@@ -206,7 +206,7 @@ def test_complete_rejects_terminal_sources(engine_with_schema, from_status) -> N
         with pytest.raises(StatusTransitionError):
             tasks.complete(session, task_id=task.task_id, author="x")
 
-        rejected = tasks.get(session, task.task_id)
+        rejected = tasks.get(session, task.task_id, project_id=p)
         assert rejected is not None
         assert rejected.status is from_status
 
@@ -223,7 +223,7 @@ def test_complete_allows_legal_sources(engine_with_schema, from_status) -> None:
         _force_status(session, task.task_id, from_status)
 
         tasks.complete(session, task_id=task.task_id, author="x")
-        done = tasks.get(session, task.task_id)
+        done = tasks.get(session, task.task_id, project_id=p)
         assert done is not None
         assert done.status is TaskStatus.DONE
 
@@ -239,7 +239,7 @@ def test_complete_from_todo_goes_via_checkout_leg(engine_with_schema, from_statu
 
         tasks.complete(session, task_id=task.task_id, author="x")
 
-        done = tasks.get(session, task.task_id)
+        done = tasks.get(session, task.task_id, project_id=p)
         assert done is not None
         assert done.status is TaskStatus.DONE
         history = rev.list_for_entity(session, EntityKind.TASK, done.row_id)  # type: ignore[arg-type]

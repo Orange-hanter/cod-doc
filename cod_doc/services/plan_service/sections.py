@@ -165,7 +165,7 @@ def create_section(
     функция не возвращает: их формирует поверхность через
     ``validation.audit_html_escaped_text``.
     """
-    plan = _require_plan(session, project_id, plan_scope)
+    plan = _require_plan(session, plan_scope, project_id=project_id)
     repo = PlanSectionRepository(session)
     current = repo.list_for_plan(plan.row_id)
     if any(s.letter.upper() == letter.strip().upper() for s in current):
@@ -251,7 +251,7 @@ def update_section(
         slug = slug.strip()
         validate_section_slug(slug)
 
-    plan = _require_plan(session, project_id, plan_scope)
+    plan = _require_plan(session, plan_scope, project_id=project_id)
     model = _require_section(session, plan.row_id, letter, project_id=project_id)
     if doc_id is not None:
         doc = session.get(DocumentModel, doc_id)
@@ -358,7 +358,7 @@ def move_section(
     if position is not None:
         validate_plan_section_position(position)
 
-    plan = _require_plan(session, project_id, plan_scope)
+    plan = _require_plan(session, plan_scope, project_id=project_id)
     target = _require_section(session, plan.row_id, letter, project_id=project_id)
     anchor_letter = before if before is not None else after
     anchor: PlanSectionModel | None = None
@@ -459,7 +459,7 @@ def delete_section(
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError("reason is required for delete_section (RFC 26 §4)")
 
-    plan = _require_plan(session, project_id, plan_scope)
+    plan = _require_plan(session, plan_scope, project_id=project_id)
     model = _require_section(session, plan.row_id, letter, project_id=project_id)
     target: PlanSectionModel | None = None
     if reassign_to is not None:
@@ -523,7 +523,7 @@ def delete_section(
     return len(moved_task_ids)
 
 
-def _require_plan(session: Session, project_id: int, plan_scope: str) -> PlanModel:
+def _require_plan(session: Session, plan_scope: str, *, project_id: int) -> PlanModel:
     # scope уникален в проекте (STO-018, миграция 0047): без project_id в
     # hub-БД с одинаковым scope в двух проектах запрос дал бы
     # MultipleResultsFound. Чужой план не раскрывается — его просто не видно.

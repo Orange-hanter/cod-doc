@@ -14,6 +14,8 @@ import click
 from rich.table import Table
 from rich.text import Text
 
+from cod_doc.cli._common import printable
+
 from ._common import _fail, _guard, _make_session, _project_id, console
 from ._group import plan
 
@@ -124,7 +126,7 @@ def section_list(ctx: click.Context, plan_scope: str, project: str, as_json: boo
         found = plan_service.get_by_scope(session, plan_scope, project_id=pid)
         # Текст тот же, что у сервиса.
         if found is None or found.row_id is None:
-            _fail(f"Plan '{plan_scope}' not found in project")
+            _fail(f"Plan '{printable(plan_scope)}' not found in project")
             return
         rows = [
             {

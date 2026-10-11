@@ -48,6 +48,8 @@ def test_dependent_views_survive_rebuild(tmp_path: Path) -> None:
     conn = sqlite3.connect(db_path)
     try:
         names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='view'")}
+        # plan_totals создан задолго до 0047 и читает plan — его 0047 снимает и
+        # восстанавливает вместе с тестовыми; проверяем, что и он пережил пересборку.
         assert {"aa_dep", "zz_base", "plan_totals"} <= names
         assert conn.execute("SELECT count(*) FROM aa_dep").fetchone() == (0,)
     finally:

@@ -125,6 +125,9 @@ def test_create_race_on_unique_maps_to_already_exists(engine_with_schema) -> Non
         with session.no_autoflush, pytest.raises(stories.StoryAlreadyExistsError) as exc:
             _make_story(session, proj, story_id="US-001")
         assert exc.value.__cause__ is not None
+        # flush упал на UNIQUE, и сессия ждёт явного отката: pytest.raises
+        # проглотил ошибку, так что commit() на выходе из transactional()
+        # упал бы с PendingRollbackError вместо зелёного теста.
         session.rollback()
 
 

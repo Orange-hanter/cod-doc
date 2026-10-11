@@ -216,7 +216,9 @@ def _build_task_card(
 
     skills = _matching_skills_with_bodies(task.title, task.type.value)
 
-    # Четыре запроса на вызов — сериализуем один раз (story_id, affects_files…).
+    # task_to_dict с сессией делает четыре запроса (план и секция, blocked_by,
+    # affects_files, story_id); карточке он нужен дважды — для "task" и для
+    # "affected_files", поэтому сериализуем один раз.
     task_dict = task_to_dict(task, session=session)
     return {
         "task": task_dict,
@@ -302,7 +304,7 @@ def get(
 
         if not ref:
             return {"found": False, "what": what, "ref": ref, "hint": "ref=task_id required"}
-        t = task_service.get(session, ref)
+        t = task_service.get(session, ref, project_id=project_id)
         if t is None:
             return {"found": False, "what": what, "ref": ref, "hint": f"task_id not found: {ref}"}
         return {
@@ -653,6 +655,7 @@ def pick(
     from cod_doc.infra.models import TaskModel
     from cod_doc.infra.repositories import TaskRepository
     from cod_doc.services import checkout_service
+    from cod_doc.services.checkout_service import CheckoutConflictError, CheckoutStatusError
     from cod_doc.services.plan_service import reads as plan_reads
 
     repo = TaskRepository(session)
@@ -716,7 +719,10 @@ def pick(
             target.task_id,
             agent=agent_id,
         )
-    except Exception as exc:  # CheckoutConflictError or status drift
+    except (CheckoutConflictError, CheckoutStatusError, LookupError) as exc:
+        # Гонка за замок, дрейф статуса, задачу удалили между выборкой и
+        # чекаутом — тексты доменные. Ошибки драйвера не перехватываются:
+        # str() от них несёт SQL и параметры, наружу им незачем.
         return {
             "task": None,
             "reason": "checkout_failed",

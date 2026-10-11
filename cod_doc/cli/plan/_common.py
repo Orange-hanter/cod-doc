@@ -11,6 +11,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from cod_doc.cli._common import printable, require_project_id
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -50,14 +51,8 @@ def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
 
 
 def _project_id(session: Session, project: str) -> int:
-    """Слаг → ``project.row_id``; нет проекта в БД — сообщение и exit 1.
-
-    Тот же резолв, что фаза 1 ``task add-dep``. Импорт ленивый: модуль
-    ``cod_doc.cli.task`` тянет ``infra`` только в телах функций (ADO-179).
-    """
-    from cod_doc.cli.task import _require_project_id
-
-    return _require_project_id(session, project)
+    """Слаг → ``project.row_id``; нет проекта в БД — сообщение и exit 1."""
+    return require_project_id(session, project)
 
 
 def _fail(message: str) -> None:
@@ -108,7 +103,9 @@ def _require_plan_id(session: Session, project: str, plan_scope: str) -> int:
     plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
     if plan is None or plan.row_id is None:
         console.print(
-            f"Plan '{plan_scope}' not found in project '{project}'.", style="red", markup=False
+            f"Plan '{printable(plan_scope)}' not found in project '{printable(project)}'.",
+            style="red",
+            markup=False,
         )
         sys.exit(1)
     return plan.row_id
