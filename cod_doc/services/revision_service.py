@@ -425,6 +425,20 @@ def revert(session: Session, revision_id: str, *, author: str, project_id: int) 
 # --------------------------------------------------------------------------- #
 
 
+def _task_of_revision(session: Session, model: RevisionModel) -> TaskModel:
+    """Задача TASK-ревизии — только если она в проекте самой ревизии.
+
+    `revert` уже сверил проект ревизии с проектом вызывающего; задача
+    достаётся по ``entity_id``, и её проект сверяется с ревизией ещё раз — при
+    рассинхроне (легаси-импорт, ручная правка БД) откат иначе молча лёг бы на
+    задачу чужого проекта.
+    """
+    task_model = session.get(TaskModel, model.entity_id)
+    if task_model is None or task_model.project_id != model.project_id:
+        raise LookupError(f"task #{model.entity_id} not found in project #{model.project_id}")
+    return task_model
+
+
 def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None:
     diff_obj = json.loads(model.diff)
     op = diff_obj.get("op")
@@ -444,9 +458,7 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
     else:
         raise RevertNotSupportedError(f"cannot auto-revert TASK revision with op={op!r}")
 
-    task_model = session.get(TaskModel, model.entity_id)
-    if task_model is None:
-        raise LookupError(f"task #{model.entity_id} not found (may have been deleted)")
+    task_model = _task_of_revision(session, model)
 
     # Import locally to avoid circular dependency.
     from cod_doc.services import task_service as _tasks
@@ -476,9 +488,7 @@ def _revert_task_affects_files(
     нынешнее правило путей отвергает, — `RevertNotSupportedError` с
     ``revision_id``.
     """
-    task_model = session.get(TaskModel, model.entity_id)
-    if task_model is None:
-        raise LookupError(f"task #{model.entity_id} not found (may have been deleted)")
+    task_model = _task_of_revision(session, model)
 
     from cod_doc.services import task_service as _tasks
 

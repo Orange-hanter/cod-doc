@@ -156,11 +156,10 @@ def _tool(mcp: FastMCP, name: str) -> Any:
     return mcp._tool_manager._tools[name].fn
 
 
-def _register(monkeypatch, factory, proj_id: int) -> FastMCP:  # type: ignore[no-untyped-def]
+def _register(monkeypatch, factory) -> FastMCP:  # type: ignore[no-untyped-def]
     from cod_doc.mcp.tools import task_tools
 
     monkeypatch.setattr(task_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(task_tools, "require_project_id", lambda session, project: proj_id)
     mcp = FastMCP("test")
     task_tools.register(mcp)
     return mcp
@@ -172,7 +171,7 @@ def test_mcp_task_update_changes_all_three_fields(engine_with_schema, monkeypatc
         p, pl, s = _seed_plan(session)
         _task(session, p, pl, s)
 
-    task_update = _tool(_register(monkeypatch, factory, p), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(
         project="gr",
         task_id="GRM-001",
@@ -211,7 +210,7 @@ def test_mcp_task_update_partial_leaves_other_fields(engine_with_schema, monkeyp
         p, pl, s = _seed_plan(session)
         _task(session, p, pl, s)
 
-    task_update = _tool(_register(monkeypatch, factory, p), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="gr", task_id="GRM-001", priority="low")
 
     assert out["updated_fields"] == ["priority"]
@@ -225,7 +224,7 @@ def test_mcp_task_update_dry_run_rolls_back(engine_with_schema, monkeypatch) -> 
         p, pl, s = _seed_plan(session)
         _task(session, p, pl, s)
 
-    task_update = _tool(_register(monkeypatch, factory, p), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="gr", task_id="GRM-001", priority="critical", dry_run=True)
     assert out["dry_run"] is True
 
@@ -238,9 +237,9 @@ def test_mcp_task_update_dry_run_rolls_back(engine_with_schema, monkeypatch) -> 
 def test_mcp_task_update_requires_at_least_one_field(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        p, _pl, _s = _seed_plan(session)
+        _p, _pl, _s = _seed_plan(session)
 
-    task_update = _tool(_register(monkeypatch, factory, p), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     with pytest.raises(ValueError, match="at least one"):
         task_update(project="gr", task_id="GRM-001")
 
@@ -248,9 +247,9 @@ def test_mcp_task_update_requires_at_least_one_field(engine_with_schema, monkeyp
 def test_mcp_task_update_rejects_unknown_priority(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        p, _pl, _s = _seed_plan(session)
+        _p, _pl, _s = _seed_plan(session)
 
-    task_update = _tool(_register(monkeypatch, factory, p), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     with pytest.raises(ValueError, match="Unknown priority"):
         task_update(project="gr", task_id="GRM-001", priority="urgent")
 
@@ -258,8 +257,8 @@ def test_mcp_task_update_rejects_unknown_priority(engine_with_schema, monkeypatc
 def test_mcp_task_update_unknown_task_raises_value_error(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        p, _pl, _s = _seed_plan(session)
+        _p, _pl, _s = _seed_plan(session)
 
-    task_update = _tool(_register(monkeypatch, factory, p), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     with pytest.raises(ValueError, match="not found"):
         task_update(project="gr", task_id="NOPE-999", priority="low")

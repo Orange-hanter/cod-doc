@@ -422,8 +422,12 @@ def normalize_affected_paths(paths: list[str]) -> list[str]:
             raise ValueError("affects_files: путь не может быть пустым")
         if "\x00" in p:
             raise ValueError("affects_files: NUL в пути")
-        if any(_forbidden_in_path(ch) for ch in p):
-            raise ValueError(f"affects_files: управляющий или невидимый символ в пути {p!r}")
+        bad = next((ch for ch in p if _forbidden_in_path(ch)), None)
+        if bad is not None:
+            raise ValueError(
+                f"affects_files: управляющий или невидимый символ U+{ord(bad):04X} "
+                f"(категория {unicodedata.category(bad)}) в пути {p!r}"
+            )
     return out
 
 
@@ -748,7 +752,7 @@ def _update_text_field(
     new_value: str,
     author: str,
     reason: str | None,
-    project_id: int | None,
+    project_id: int,
     expected_parent_revision_id: str | object | None,
 ) -> Task:
     """Shared body for update_description / update_acceptance.
@@ -805,7 +809,7 @@ def update_description(
     task_id: str,
     new_description: str,
     author: str,
-    project_id: int | None,
+    project_id: int,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
@@ -813,8 +817,8 @@ def update_description(
 
     ``project_id`` обязателен и без значения по умолчанию (как у
     `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
-    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` — явный отказ
-    от скоупа.
+    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` не принимается:
+    обходить скоуп grooming-мутациям незачем.
     """
     return _update_text_field(
         session,
@@ -834,7 +838,7 @@ def update_acceptance(
     task_id: str,
     new_acceptance: str,
     author: str,
-    project_id: int | None,
+    project_id: int,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
@@ -842,8 +846,8 @@ def update_acceptance(
 
     ``project_id`` обязателен и без значения по умолчанию (как у
     `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
-    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` — явный отказ
-    от скоупа.
+    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` не принимается:
+    обходить скоуп grooming-мутациям незачем.
     """
     return _update_text_field(
         session,
@@ -863,7 +867,7 @@ def update_priority(
     task_id: str,
     new_priority: Priority,
     author: str,
-    project_id: int | None,
+    project_id: int,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
@@ -879,8 +883,8 @@ def update_priority(
 
     ``project_id`` обязателен и без значения по умолчанию (как у
     `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
-    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` — явный отказ
-    от скоупа.
+    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` не принимается:
+    обходить скоуп grooming-мутациям незачем.
     """
     model = _require_task(session, task_id, project_id=project_id)
     old_priority = model.priority
@@ -940,7 +944,7 @@ def update_affects_files(
     task_id: str,
     paths: list[str],
     author: str,
-    project_id: int | None,
+    project_id: int,
     mode: AffectsFilesMode | str = AffectsFilesMode.REPLACE,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
@@ -1060,7 +1064,7 @@ def move_to_section(
     task_id: str,
     new_section_id: int,
     author: str,
-    project_id: int | None,
+    project_id: int,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:

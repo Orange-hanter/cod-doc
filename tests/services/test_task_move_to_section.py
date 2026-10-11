@@ -250,11 +250,10 @@ def _tool(mcp: FastMCP, name: str) -> Any:
     return mcp._tool_manager._tools[name].fn
 
 
-def _register(monkeypatch, factory, proj_id: int) -> FastMCP:  # type: ignore[no-untyped-def]
+def _register(monkeypatch, factory) -> FastMCP:  # type: ignore[no-untyped-def]
     from cod_doc.mcp.tools import task_tools
 
     monkeypatch.setattr(task_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(task_tools, "require_project_id", lambda session, project: proj_id)
     mcp = FastMCP("test")
     task_tools.register(mcp)
     return mcp
@@ -267,7 +266,7 @@ def test_mcp_move_batch_moves_all(engine_with_schema, monkeypatch) -> None:  # t
         for n in (1, 2, 3):
             _task(session, p, pl, a, task_id=f"MV-00{n}")
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_section")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     out = move(
         project="mv",
         task_ids=["MV-001", "MV-002", "MV-003"],
@@ -306,7 +305,7 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
         other_pid = other.row_id
         _second_plan(session, other_pid)  # план "mv-other" с секцией A — у проекта B
 
-    move = _tool(_register(monkeypatch, factory, other_pid), "task_move_to_section")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     # План проекта A из проекта B не виден...
     with pytest.raises(ValueError, match=r"^Plan 'mv-plan' not found\.$"):
         move(project="other", task_ids=[task.task_id], plan_scope="mv-plan", section_letter="B")
@@ -326,7 +325,7 @@ def test_mcp_move_is_case_insensitive_on_letter(engine_with_schema, monkeypatch)
         p, pl, a, b = _seed(session)
         _task(session, p, pl, a)
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_section")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     out = move(project="mv", task_ids=["MV-001"], plan_scope="mv-plan", section_letter="b")
     assert len(out["moved"]) == 1
     assert out["moved"][0]["section_id"] == b
@@ -338,7 +337,7 @@ def test_mcp_move_already_there_is_skipped_not_error(engine_with_schema, monkeyp
         p, pl, a, _b = _seed(session)
         _task(session, p, pl, a)
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_section")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     out = move(project="mv", task_ids=["MV-001"], plan_scope="mv-plan", section_letter="A")
     assert out["moved"] == []
     assert out["skipped"] == ["MV-001"]
@@ -351,7 +350,7 @@ def test_mcp_move_dry_run_rolls_back(engine_with_schema, monkeypatch) -> None:  
         p, pl, a, _b = _seed(session)
         _task(session, p, pl, a)
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_section")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     out = move(
         project="mv",
         task_ids=["MV-001"],
@@ -374,7 +373,7 @@ def test_mcp_move_rolls_back_whole_batch_on_error(engine_with_schema, monkeypatc
         p, pl, a, _b = _seed(session)
         _task(session, p, pl, a)
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_section")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     with pytest.raises(ValueError, match="NOPE-001"):
         move(
             project="mv",
@@ -394,7 +393,7 @@ def test_mcp_move_continue_on_error_commits_the_good_ones(engine_with_schema, mo
         p, pl, a, b = _seed(session)
         _task(session, p, pl, a)
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_section")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     out = move(
         project="mv",
         task_ids=["MV-001", "NOPE-001"],
@@ -416,7 +415,7 @@ def test_mcp_move_unknown_section_raises(engine_with_schema, monkeypatch) -> Non
         p, pl, a, _b = _seed(session)
         _task(session, p, pl, a)
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_section")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     with pytest.raises(ValueError, match="Section 'Z' not found"):
         move(project="mv", task_ids=["MV-001"], plan_scope="mv-plan", section_letter="Z")
 
@@ -424,8 +423,8 @@ def test_mcp_move_unknown_section_raises(engine_with_schema, monkeypatch) -> Non
 def test_mcp_move_empty_task_ids_raises(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        p, _pl, _a, _b = _seed(session)
+        _p, _pl, _a, _b = _seed(session)
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_section")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     with pytest.raises(ValueError, match="task_ids is empty"):
         move(project="mv", task_ids=[], plan_scope="mv-plan", section_letter="B")

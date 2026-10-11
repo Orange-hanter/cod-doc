@@ -426,10 +426,9 @@ def test_absolute_path_without_project_root_warns(engine_with_schema) -> None:  
             session, task_id=_TASK, paths=["/abs/x.py", "rel.py"], mode="replace", author="human:t"
         )
 
-        assert len(change.warnings) == 1
-        assert "root_path проекта не задан" in change.warnings[0]
-        assert "/abs/x.py" in change.warnings[0]
-        assert "rel.py" not in change.warnings[0]
+        assert change.warnings == [
+            "root_path проекта не задан — локальность не проверить для: /abs/x.py"
+        ]
         assert _paths(session, row_id) == ["/abs/x.py", "rel.py"]
 
 
@@ -576,7 +575,7 @@ def test_grooming_fields_are_scoped_by_project(engine_with_schema, field: str) -
     """Тот же скоуп, что у ``affects_files``: задача чужого проекта — «не найдена»."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid, _row_id = _seed(session)
         other_pid = _other_project(session)
         calls = {
             "description": lambda pid: tasks.update_description(
@@ -596,7 +595,8 @@ def test_grooming_fields_are_scoped_by_project(engine_with_schema, field: str) -
         with pytest.raises(TaskNotFoundError):
             calls[field](other_pid)
 
-        task = tasks.get(session, _TASK)
+        assert tasks.get(session, _TASK, project_id=other_pid) is None
+        task = tasks.get(session, _TASK, project_id=pid)
         assert task is not None
         assert task.description is None
         assert task.acceptance is None
@@ -612,12 +612,32 @@ def test_revision_revert_is_scoped_by_project(engine_with_schema) -> None:  # ty
         _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
         target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
 
-        with pytest.raises(LookupError):
+        with pytest.raises(LookupError, match=f"revision not found: '{target.revision_id}'"):
             rev.revert(session, target.revision_id, author="human:undo", project_id=other_pid)
         assert _paths(session, row_id) == ["src/b.py"]
 
         rev.revert(session, target.revision_id, author="human:undo", project_id=pid)
         assert _paths(session, row_id) == ["src/a.py"]
+
+
+def test_revision_revert_refuses_task_of_another_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Ревизия проекта B, чья ``entity_id`` указывает на задачу проекта A (рассинхрон
+    легаси-импорта), не откатывается на задачу A."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _pid, row_id = _seed(session, ["src/a.py"])
+        other_pid = _other_project(session)
+        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        model = session.execute(
+            select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
+        ).scalar_one()
+        model.project_id = other_pid
+        session.flush()
+
+        with pytest.raises(LookupError, match=f"not found in project #{other_pid}"):
+            rev.revert(session, target.revision_id, author="human:undo", project_id=other_pid)
+        assert _paths(session, row_id) == ["src/b.py"]
 
 
 def test_revision_revert_wraps_rejected_old_paths(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -651,7 +671,10 @@ def _tool(mcp: FastMCP, name: str) -> Callable[..., Any]:
     """Тул через публичный ``FastMCP.call_tool`` — тот же путь, что у клиента.
 
     Возвращает структурированный результат; ``ToolError`` разворачивается в
-    исключение самого тула, чтобы проверять его тип и текст.
+    исключение самого тула, чтобы проверять его тип и текст. Без ``__cause__``
+    (FastMCP сменил обёртку) наружу идёт сам ``ToolError`` — тогда упадут
+    тесты на ``ValueError`` вроде ``test_mcp_task_update_rejects_unknown_mode``,
+    а не пройдут молча.
     """
 
     def call(**arguments: Any) -> Any:
@@ -666,11 +689,10 @@ def _tool(mcp: FastMCP, name: str) -> Callable[..., Any]:
     return call
 
 
-def _register(monkeypatch, factory, proj_id: int) -> FastMCP:  # type: ignore[no-untyped-def]
+def _register(monkeypatch, factory) -> FastMCP:  # type: ignore[no-untyped-def]
     from cod_doc.mcp.tools import task_tools
 
     monkeypatch.setattr(task_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(task_tools, "require_project_id", lambda session, project: proj_id)
     mcp = FastMCP("test")
     task_tools.register(mcp)
     return mcp
@@ -679,9 +701,9 @@ def _register(monkeypatch, factory, proj_id: int) -> FastMCP:  # type: ignore[no
 def test_mcp_task_update_replaces_affects_files(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        pid, row_id = _seed(session, ["src/a.py"])
+        _pid, row_id = _seed(session, ["src/a.py"])
 
-    task_update = _tool(_register(monkeypatch, factory, pid), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(
         project="af", task_id=_TASK, affects_files=["src/x.py", "src/x.py", "src/y.py"]
     )
@@ -696,9 +718,9 @@ def test_mcp_task_update_replaces_affects_files(engine_with_schema, monkeypatch)
 def test_mcp_task_update_add_and_remove_modes(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        pid, _row_id = _seed(session, ["src/a.py", "src/b.py"])
+        _pid, _row_id = _seed(session, ["src/a.py", "src/b.py"])
 
-    task_update = _tool(_register(monkeypatch, factory, pid), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(
         project="af", task_id=_TASK, affects_files=["src/c.py"], affects_files_mode="add"
     )
@@ -716,9 +738,9 @@ def test_mcp_task_update_add_and_remove_modes(engine_with_schema, monkeypatch) -
 def test_mcp_task_update_empty_list_clears(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        pid, row_id = _seed(session, ["src/a.py"])
+        _pid, row_id = _seed(session, ["src/a.py"])
 
-    task_update = _tool(_register(monkeypatch, factory, pid), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="af", task_id=_TASK, affects_files=[])
 
     assert out["updated_fields"] == ["affects_files"]
@@ -730,10 +752,10 @@ def test_mcp_task_update_empty_list_clears(engine_with_schema, monkeypatch) -> N
 def test_mcp_task_update_none_leaves_affects_files(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        pid, row_id = _seed(session, ["src/a.py"])
+        _pid, row_id = _seed(session, ["src/a.py"])
         before = _revisions(session, row_id)
 
-    task_update = _tool(_register(monkeypatch, factory, pid), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="af", task_id=_TASK, priority="high")
 
     assert out["updated_fields"] == ["priority"]
@@ -745,10 +767,10 @@ def test_mcp_task_update_none_leaves_affects_files(engine_with_schema, monkeypat
 def test_mcp_task_update_same_set_writes_no_revision(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        pid, row_id = _seed(session, ["src/a.py"])
+        _pid, row_id = _seed(session, ["src/a.py"])
         before = _revisions(session, row_id)
 
-    task_update = _tool(_register(monkeypatch, factory, pid), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="af", task_id=_TASK, affects_files=["src/a.py"])
 
     assert out["updated_fields"] == [], "no-op не числится изменённым полем"
@@ -761,9 +783,9 @@ def test_mcp_task_update_foreign_project_not_found(engine_with_schema, monkeypat
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
-        other_pid = _other_project(session)
+        _other_project(session)
 
-    task_update = _tool(_register(monkeypatch, factory, other_pid), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     with pytest.raises(ValueError, match="not found"):
         task_update(project="other", task_id=_TASK, affects_files=["src/x.py"])
 
@@ -776,9 +798,9 @@ def test_mcp_task_update_foreign_project_leaves_priority(engine_with_schema, mon
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed(session)
-        other_pid = _other_project(session)
+        _other_project(session)
 
-    task_update = _tool(_register(monkeypatch, factory, other_pid), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     with pytest.raises(ValueError, match="not found"):
         task_update(project="other", task_id=_TASK, priority="critical")
 
@@ -795,12 +817,11 @@ def test_mcp_revision_revert_foreign_project_not_found(engine_with_schema, monke
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
-        other_pid = _other_project(session)
+        _other_project(session)
         _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
         target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1].revision_id
 
     monkeypatch.setattr(revision_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(revision_tools, "require_project_id", lambda session, project: other_pid)
     mcp = FastMCP("test")
     revision_tools.register(mcp)
     with pytest.raises(ValueError, match="not found"):
@@ -816,18 +837,16 @@ def test_mcp_revision_get_foreign_project_is_null(engine_with_schema, monkeypatc
 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        pid, row_id = _seed(session, ["src/a.py"])
-        other_pid = _other_project(session)
+        _pid, row_id = _seed(session, ["src/a.py"])
+        _other_project(session)
         _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
         target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1].revision_id
 
     monkeypatch.setattr(revision_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(revision_tools, "require_project_id", lambda session, project: other_pid)
     foreign = FastMCP("test")
     revision_tools.register(foreign)
     assert _tool(foreign, "revision_get")(project="other", revision_id=target)["result"] is None
 
-    monkeypatch.setattr(revision_tools, "require_project_id", lambda session, project: pid)
     own = FastMCP("test")
     revision_tools.register(own)
     # ``dict | None`` FastMCP отдаёт обёрнутым в ``{"result": …}``.
@@ -838,9 +857,9 @@ def test_mcp_revision_get_foreign_project_is_null(engine_with_schema, monkeypatc
 def test_mcp_task_update_out_of_root_warns(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        pid, row_id = _seed(session)
+        _pid, row_id = _seed(session)
 
-    task_update = _tool(_register(monkeypatch, factory, pid), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="af", task_id=_TASK, affects_files=["/elsewhere/x.py"])
 
     assert len(out["warnings"]) == 1
@@ -852,9 +871,9 @@ def test_mcp_task_update_out_of_root_warns(engine_with_schema, monkeypatch) -> N
 def test_mcp_task_update_rejects_unknown_mode(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        pid, _row_id = _seed(session)
+        _pid, _row_id = _seed(session)
 
-    task_update = _tool(_register(monkeypatch, factory, pid), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     with pytest.raises(ValueError, match="affects_files_mode"):
         task_update(project="af", task_id=_TASK, affects_files=["a"], affects_files_mode="x")
 
@@ -862,9 +881,9 @@ def test_mcp_task_update_rejects_unknown_mode(engine_with_schema, monkeypatch) -
 def test_mcp_task_update_dry_run_keeps_set(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        pid, row_id = _seed(session, ["src/a.py"])
+        _pid, row_id = _seed(session, ["src/a.py"])
 
-    task_update = _tool(_register(monkeypatch, factory, pid), "task_update")
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="af", task_id=_TASK, affects_files=["src/b.py"], dry_run=True)
 
     assert out["dry_run"] is True
@@ -886,7 +905,7 @@ def test_task_turns_local_after_paths_change(engine_with_schema, monkeypatch) ->
         assert [t.task_id for t in foreign.tasks] == []
         assert foreign.skipped_foreign == 1
 
-    mcp = _register(monkeypatch, factory, pid)
+    mcp = _register(monkeypatch, factory)
     _tool(mcp, "task_update")(
         project="af",
         task_id=_TASK,

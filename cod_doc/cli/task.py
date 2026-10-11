@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from cod_doc.domain.entities import AFFECTS_FILES_MODES, TaskStatus, TaskType
+from cod_doc.domain.entities import AFFECTS_FILES_MODES, AffectsFilesMode, TaskStatus, TaskType
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -628,7 +628,7 @@ def task_update(
                     session,
                     task_id=task_id,
                     paths=list(affects_files),
-                    mode=affects_mode or "replace",
+                    mode=affects_mode or AffectsFilesMode.REPLACE,
                     author=author,
                     reason=reason,
                     project_id=pid,
