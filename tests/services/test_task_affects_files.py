@@ -296,6 +296,8 @@ def test_paths_are_stripped_before_dedup(engine_with_schema) -> None:  # type: i
         # Lo/So без глифа: хангыльский филлер и пустой шаблон Брайля
         (["src/\u3164.py"], "невидим"),
         (["src/a\u2800b.py"], "невидим"),
+        # Cs: одиночный суррогат не кодируется в UTF-8
+        (["src/\ud800.py"], "невидим"),
     ],
 )
 def test_invalid_paths_are_rejected(  # type: ignore[no-untyped-def]

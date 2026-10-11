@@ -357,6 +357,8 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
         session.flush()
         other_pid = other.row_id
         _second_plan(session, other_pid)  # план "mv-other" с секцией A — у проекта B
+        assert task.row_id is not None
+        revisions_before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
 
     move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     # План проекта A из проекта B не виден...
@@ -369,9 +371,15 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
         move(project="other", task_ids=[task.task_id], plan_scope="mv-other", section_letter="A")
 
     with transactional(factory) as session:
-        got = tasks.get(session, task.task_id)
+        got = tasks.get(session, task.task_id, project_id=p)
         assert got is not None
         assert got.section_id == a
+        # Отказ не оставил следа: ни ревизии, ни события о переносе.
+        assert len(rev.list_for_entity(session, EntityKind.TASK, task.row_id)) == revisions_before
+        moved_events = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "task.section_changed")
+        ).all()
+        assert moved_events == []
 
 
 def test_mcp_move_is_case_insensitive_on_letter(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]

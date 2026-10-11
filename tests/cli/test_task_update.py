@@ -287,8 +287,10 @@ def test_task_update_relative_parent_path_is_stored_as_given(tmp_path: Path) -> 
 
     result = _update("--affects-file", "../shared/x.py")
     assert result.exit_code == 0, result.output
-    # Относительный путь не абсолютный — предупреждать не о чем: вывод — одна строка успеха.
-    assert " ".join(result.output.split()) == "✅ GCL-001: обновлено — affects_files", result.output
+    # Относительный путь не абсолютный — предупреждать не о чем.
+    assert "⚠" not in result.output, result.output
+    assert "вне корня" not in result.output, result.output
+    assert "обновлено — affects_files" in result.output
     assert _files("gp") == ["../shared/x.py"]
 
 
@@ -343,7 +345,8 @@ def test_revision_show_unknown_project_and_revision_exit_cleanly(tmp_path: Path)
         main, ["revision", "show", "01HQX5Z9F0K8R0000000000000", "-p", "nope"]
     )
     assert unknown_project.exit_code == 1
-    assert unknown_project.exception is None or isinstance(unknown_project.exception, SystemExit)
+    assert isinstance(unknown_project.exception, SystemExit)
+    assert "Project not found: nope" in unknown_project.output
 
     unknown_revision = CliRunner().invoke(
         main, ["revision", "show", "01HQX5Z9F0K8R0000000000000", "-p", "gp"]

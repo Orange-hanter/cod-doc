@@ -330,6 +330,8 @@ def test_revert_section_with_plus_in_doc_key(engine_with_schema) -> None:  # typ
             author="human:test",
         )
         patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[-1]
+        # Метка несёт doc_key с «+» — именно её прежний [^+]* не дочитывал.
+        assert patch_rev.diff.startswith("--- section:c++-guide#intro+++ section:c++-guide#intro@@")
 
         rev.revert(session, patch_rev.revision_id, author="human:test", project_id=p)
 

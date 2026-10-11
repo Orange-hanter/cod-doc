@@ -241,6 +241,28 @@ def test_explicit_none_expected_parent_on_existing_entity_raises(engine_with_sch
             )
 
 
+def test_revert_of_another_projects_revision_is_not_found(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-022: ревизия проекта A под ``project_id`` проекта B ищется как отсутствующая."""
+    factory = make_session_factory(engine_with_schema)
+
+    with transactional(factory) as session:
+        a = _add_project(session, "a")
+        b = _add_project(session, "b")
+        r = rev.write(
+            session,
+            project_id=a,
+            entity_kind=EntityKind.TASK,
+            entity_id=42,
+            author="agent:task-steward",
+            diff="--- /dev/null\n+++ task\n@@",
+            reason="initial",
+        )
+        with pytest.raises(LookupError, match="revision not found"):
+            rev.revert(session, r.revision_id, author="human:test", project_id=b)
+        assert rev.get(session, r.revision_id, project_id=b) is None
+        assert rev.get(session, r.revision_id, project_id=a) is not None
+
+
 def test_revert_raises_lookup_for_unknown_revision_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
 

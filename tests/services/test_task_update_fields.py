@@ -254,6 +254,31 @@ def test_mcp_task_update_rejects_unknown_priority(engine_with_schema, monkeypatc
         task_update(project="gr", task_id="GRM-001", priority="urgent")
 
 
+def test_mcp_task_update_task_of_another_project_is_not_found(
+    engine_with_schema, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """AFT-022: ``task_update(project=B)`` не меняет задачу проекта A."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, s = _seed_plan(session)
+        _task(session, p, pl, s)
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="other", title="O", root_path="/tmp/o", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+
+    task_update = _tool(_register(monkeypatch, factory), "task_update")
+    with pytest.raises(ValueError, match="not found"):
+        task_update(project="other", task_id="GRM-001", priority="critical")
+
+    with transactional(factory) as session:
+        task = tasks.get(session, "GRM-001", project_id=p)
+        assert task is not None
+        assert task.priority is Priority.MEDIUM
+
+
 def test_mcp_task_update_unknown_task_raises_value_error(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:

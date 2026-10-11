@@ -386,8 +386,9 @@ def find_duplicate_by_title(session: Session, project_id: int, title: str) -> Ta
 
 
 #: Категории Unicode, запрещённые в пути ``affects_files``: управляющие (Cc),
-#: форматирующие (Cf) и разделители строк/абзацев (Zl, Zp).
-_FORBIDDEN_PATH_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+#: форматирующие (Cf), разделители строк/абзацев (Zl, Zp) и одиночные
+#: суррогаты (Cs) — последние не кодируются в UTF-8 и роняют запись в БД.
+_FORBIDDEN_PATH_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
 
 #: Исключения из Cf: ZWNJ/ZWJ входят в легитимные имена — эмодзи-последовательности
 #: (``👨‍💻``) и письменности вроде персидской и деванагари. Видимый путь они не
