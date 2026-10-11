@@ -11,8 +11,6 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from sqlalchemy.orm import Session
 
-    from cod_doc.domain.entities import Task
-
 
 def _link_addressed_questions(
     session: Session, project_id: int, task_id: str, question_ids: list[str], author: str
@@ -89,7 +87,7 @@ def register(mcp: FastMCP) -> None:
             if plan_scope is not None:
                 from cod_doc.infra.repositories import PlanRepository
 
-                plan = PlanRepository(session).get_by_scope(plan_scope)
+                plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
                 plan_id = plan.row_id if plan is not None else -1
                 ready = [t for t in ready if getattr(t, "plan_id", None) == plan_id]
             if not ready:
@@ -440,7 +438,7 @@ def register(mcp: FastMCP) -> None:
 
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope)
+            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
             if plan is None or plan.row_id is None:
                 raise ValueError(f"Plan '{plan_scope}' not found.")
             sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
@@ -562,7 +560,7 @@ def register(mcp: FastMCP) -> None:
         # Resolve plan + section once.
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope)
+            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
             if plan is None or plan.row_id is None:
                 raise ValueError(f"Plan '{plan_scope}' not found.")
             sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
@@ -944,6 +942,7 @@ def register(mcp: FastMCP) -> None:
                     new_status=TaskStatus(new_status),
                     author=author,
                     reason=reason,
+                    project_id=project_id,
                 )
                 activity_service.emit(
                     session,
@@ -1054,9 +1053,11 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf, commit=not dry_run) as session:
                 pid = require_project_id(session, project)
-                # Хотя бы одно поле передано (проверено выше), и каждый сервис
-                # ищет задачу в скоупе ``pid`` — отдельный get до правок не нужен.
-                t: Task | None = None
+                # Один поиск в скоупе проекта до правок: задача чужого проекта —
+                # «not found» сразу, и ``t`` дальше всегда задача.
+                t = task_service.get(session, task_id, project_id=pid)
+                if t is None:
+                    raise TaskNotFoundError(task_id)
                 if description is not None:
                     t = task_service.update_description(
                         session,
@@ -1101,8 +1102,6 @@ def register(mcp: FastMCP) -> None:
                     warnings.extend(change.warnings)
                     if change.changed:
                         changed.append("affects_files")
-                if t is None:  # недостижимо: выше проверено, что передано хотя бы одно поле
-                    raise RuntimeError("task_update: ни одно поле не применено")
                 out = task_to_dict(t, session=session)
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None

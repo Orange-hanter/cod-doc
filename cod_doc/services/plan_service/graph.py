@@ -35,7 +35,7 @@ _FORWARD_CHAIN_SQL = text("""
 WITH RECURSIVE chain(row_id, depth) AS (
     SELECT t.row_id, 0
     FROM task t
-    WHERE t.task_id = :task_id
+    WHERE t.row_id = :row_id
   UNION ALL
     SELECT d.to_task_id, chain.depth + 1
     FROM chain
@@ -46,7 +46,7 @@ WITH RECURSIVE chain(row_id, depth) AS (
 SELECT DISTINCT t.row_id, t.task_id, t.title, t.status, MIN(chain.depth) AS depth
 FROM chain
 JOIN task t ON t.row_id = chain.row_id
-WHERE chain.row_id != (SELECT row_id FROM task WHERE task_id = :task_id)
+WHERE chain.row_id != :row_id
 GROUP BY t.row_id, t.task_id, t.title, t.status
 ORDER BY depth
 """)
@@ -55,7 +55,7 @@ _REVERSE_CHAIN_SQL = text("""
 WITH RECURSIVE chain(row_id, depth) AS (
     SELECT t.row_id, 0
     FROM task t
-    WHERE t.task_id = :task_id
+    WHERE t.row_id = :row_id
   UNION ALL
     SELECT d.from_task_id, chain.depth + 1
     FROM chain
@@ -66,7 +66,7 @@ WITH RECURSIVE chain(row_id, depth) AS (
 SELECT DISTINCT t.row_id, t.task_id, t.title, t.status, MIN(chain.depth) AS depth
 FROM chain
 JOIN task t ON t.row_id = chain.row_id
-WHERE chain.row_id != (SELECT row_id FROM task WHERE task_id = :task_id)
+WHERE chain.row_id != :row_id
 GROUP BY t.row_id, t.task_id, t.title, t.status
 ORDER BY depth
 """)
@@ -101,20 +101,33 @@ ORDER BY max_depth DESC
 """)
 
 
-def forward_chain(session: Session, task_id: str) -> list[ChainEntry]:
+def _chain_root(session: Session, task_id: str, project_id: int | None) -> int:
+    """row_id задачи-корня цепочки; с ``project_id`` — только в этом проекте.
+
+    Цепочка якорится на row_id, а не на ``task_id``: в общей hub-БД один
+    ``task_id`` живёт в нескольких проектах (нумерация — на проект), и поиск
+    без скоупа падал ``MultipleResultsFound`` (AFT-022).
+    """
+    stmt = select(TaskModel.row_id).where(TaskModel.task_id == task_id)
+    if project_id is not None:
+        stmt = stmt.where(TaskModel.project_id == project_id)
+    row = session.execute(stmt).scalar_one_or_none()
+    if row is None:
+        raise TaskNotFoundInPlanError(task_id)
+    return int(row)
+
+
+def forward_chain(
+    session: Session, task_id: str, *, project_id: int | None = None
+) -> list[ChainEntry]:
     """Prerequisites of *task_id*: tasks that must complete BEFORE it.
 
     Follows `blocks`-edges transitively. Ordered by depth (depth=1 = direct
     prerequisite). Raises `TaskNotFoundInPlanError` if task_id unknown.
     Per [user-stories-graph.md §6]: ``cod-doc graph forward <task_id>``.
     """
-    row = session.execute(
-        select(TaskModel.row_id).where(TaskModel.task_id == task_id)
-    ).scalar_one_or_none()
-    if row is None:
-        raise TaskNotFoundInPlanError(task_id)
-
-    rows = session.execute(_FORWARD_CHAIN_SQL, {"task_id": task_id}).all()
+    row_id = _chain_root(session, task_id, project_id)
+    rows = session.execute(_FORWARD_CHAIN_SQL, {"row_id": row_id}).all()
     return [
         ChainEntry(
             task_id=r[1],
@@ -126,20 +139,17 @@ def forward_chain(session: Session, task_id: str) -> list[ChainEntry]:
     ]
 
 
-def reverse_chain(session: Session, task_id: str) -> list[ChainEntry]:
+def reverse_chain(
+    session: Session, task_id: str, *, project_id: int | None = None
+) -> list[ChainEntry]:
     """Dependents of *task_id*: tasks unblocked when it completes.
 
     Follows `blocks`-edges transitively in the reverse direction. Depth=1 =
     directly blocked. Raises `TaskNotFoundInPlanError` if task_id unknown.
     Per [user-stories-graph.md §6]: ``cod-doc graph reverse <task_id>``.
     """
-    row = session.execute(
-        select(TaskModel.row_id).where(TaskModel.task_id == task_id)
-    ).scalar_one_or_none()
-    if row is None:
-        raise TaskNotFoundInPlanError(task_id)
-
-    rows = session.execute(_REVERSE_CHAIN_SQL, {"task_id": task_id}).all()
+    row_id = _chain_root(session, task_id, project_id)
+    rows = session.execute(_REVERSE_CHAIN_SQL, {"row_id": row_id}).all()
     return [
         ChainEntry(
             task_id=r[1],

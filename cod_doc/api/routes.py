@@ -240,6 +240,7 @@ def update_task(name: str, task_id: str, body: dict[str, Any]) -> dict[str, Any]
                         new_status=TaskStatus(new_status),
                         author=legacy_tasks.AUTHOR,
                         strict=True,
+                        project_id=project_id,
                     )
             except ValueError as exc:
                 # StatusTransitionError / TaskAlreadyDoneError / TaskBlockedError

@@ -395,6 +395,15 @@ class RevertNotSupportedError(NotImplementedError):
     """Raised for revision ops or entity kinds that cannot be auto-reverted."""
 
 
+class RevisionNotFoundError(LookupError):
+    """Ревизии с таким ULID нет в проекте вызывающего.
+
+    Отдельный подкласс, чтобы поверхности отличали «нет ревизии» от «ревизия
+    есть, но её сущность удалена или лежит в другом проекте» — второе тоже
+    `LookupError`, и его текст не должен подменяться на «not found».
+    """
+
+
 def revert(session: Session, revision_id: str, *, author: str, project_id: int) -> Revision:
     """Undo a revision by delegating to the entity-owning service.
 
@@ -417,7 +426,7 @@ def revert(session: Session, revision_id: str, *, author: str, project_id: int) 
     """
     model = _revision_in_project(session, revision_id, project_id)
     if model is None:
-        raise LookupError(f"revision not found: {revision_id!r}")
+        raise RevisionNotFoundError(f"revision not found: {revision_id!r}")
 
     kind = EntityKind(model.entity_kind)
 

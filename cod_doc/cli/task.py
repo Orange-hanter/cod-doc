@@ -385,7 +385,7 @@ def task_create(
     # Phase 1: resolve IDs (read-only — sys.exit here is safe, nothing to commit)
     with transactional(sf) as session:
         project_id = _require_project_id(session, project)
-        plan = PlanRepository(session).get_by_scope(plan_scope)
+        plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
         if plan is None or plan.row_id is None:
             console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
             sys.exit(1)
@@ -476,12 +476,14 @@ def task_status(
 
     try:
         with transactional(sf) as session:
+            pid = _require_project_id(session, project)
             t = task_service.update_status(
                 session,
                 task_id=task_id,
                 new_status=TaskStatus(new_status),
                 author=author,
                 reason=reason,
+                project_id=pid,
             )
     except TaskNotFoundError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")

@@ -988,9 +988,10 @@ def update_affects_files(
 
     ``mode``: ``replace`` — набор становится ровно ``paths`` (``[]`` очищает);
     ``add`` — пути из ``paths`` добавляются к текущим; ``remove`` — убираются
-    (отсутствующие игнорируются). Пути проходят то же правило, что и в
-    `create()` (`normalize_affected_paths`). Дубли схлопываются
-    (``uq_affected_file_task_path``).
+    (отсутствующие игнорируются). В ``replace``/``add`` пути проходят то же
+    правило, что и в `create()` (`normalize_affected_paths`); ``remove``
+    ничего не пишет и правилом не проверяется — так убираются и легаси-строки,
+    записанные до него. Дубли схлопываются (``uq_affected_file_task_path``).
 
     ``kind`` пути не задаётся ни здесь, ни в `create()`: новые строки —
     ``source``. Строки, которые остаются в наборе, не пересоздаются и свой
@@ -1017,8 +1018,14 @@ def update_affects_files(
         raise ValueError(
             f"unknown mode {mode!r}; expected one of {list(AFFECTS_FILES_MODES)}"
         ) from None
-    paths = normalize_affected_paths(paths)
-    requested = list(dict.fromkeys(paths))
+    if mode == AffectsFilesMode.REMOVE:
+        # Удаление ничего не пишет, поэтому правило путей к нему не
+        # применяется: легаси-строки, записанные до `normalize_affected_paths`
+        # (с U+200B, bidi, пробелами по краям), иначе нельзя было бы убрать
+        # поштучно. Путь сверяется и как передан, и после strip.
+        requested = list(dict.fromkeys([*paths, *(p.strip() for p in paths)]))
+    else:
+        requested = list(dict.fromkeys(normalize_affected_paths(paths)))
 
     model = _require_task(session, task_id, project_id=project_id)
     rows = list(
@@ -1609,6 +1616,24 @@ def get(session: Session, task_id: str, *, project_id: int | None = None) -> Tas
     обязательным — задача AFT-023.
     """
     return TaskRepository(session).get_by_task_id(task_id, project_id=project_id)
+
+
+def get_many(session: Session, task_ids: list[str], *, project_id: int) -> dict[str, Task]:
+    """Задачи проекта по списку ``task_id`` одним запросом: ``{task_id: Task}``.
+
+    Отсутствующие ID в результат не попадают. Для страниц, которые
+    подставляют title/status к спискам ссылок (карточка ADR), — вместо
+    ``get`` на каждую ссылку.
+    """
+    if not task_ids:
+        return {}
+    repo = TaskRepository(session)
+    models = session.execute(
+        select(TaskModel).where(
+            TaskModel.project_id == project_id, TaskModel.task_id.in_(set(task_ids))
+        )
+    ).scalars()
+    return {m.task_id: repo._to_domain(m) for m in models}
 
 
 def list_for_plan(session: Session, plan_id: int) -> list[Task]:

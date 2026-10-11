@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from cod_doc.logging_config import get_logger
@@ -473,7 +474,7 @@ def revision_revert(ctx: click.Context, revision_id: str, project: str, author: 
     """Revert a revision (creates an inverse revision; history is append-only)."""
     from cod_doc.infra.db import transactional
     from cod_doc.services import revision_service
-    from cod_doc.services.revision_service import RevertNotSupportedError
+    from cod_doc.services.revision_service import RevertNotSupportedError, RevisionNotFoundError
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
@@ -482,8 +483,12 @@ def revision_revert(ctx: click.Context, revision_id: str, project: str, author: 
         with transactional(sf) as session:
             pid = _require_project_id(session, project)
             new_rev = revision_service.revert(session, revision_id, author=author, project_id=pid)
-    except LookupError:
+    except RevisionNotFoundError:
         console.print(f"[red]Revision '{revision_id}' not found.[/red]")
+        sys.exit(1)
+    except LookupError as exc:
+        # Ревизия есть, но её сущность удалена или в другом проекте.
+        console.print(f"[red]Revision '{revision_id}' cannot be reverted: {escape(str(exc))}[/red]")
         sys.exit(1)
     except RevertNotSupportedError as exc:
         console.print(f"[red]Revert not supported: {exc}[/red]")

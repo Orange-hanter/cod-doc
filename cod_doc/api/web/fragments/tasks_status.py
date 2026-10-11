@@ -47,7 +47,7 @@ def task_status_update(
     session, project_db_id = db
 
     existing = tasks.get(session, task_id, project_id=project_db_id)
-    if existing is None or existing.project_id != project_db_id:
+    if existing is None:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 
     inline_alert: tuple[str, str] | None = None
@@ -70,6 +70,7 @@ def task_status_update(
                 author="human:web",
                 reason="web inline status",
                 strict=False,  # web UI allows direct jumps (user may skip steps)
+                project_id=project_db_id,
             )
         session.commit()
     except (CheckoutConflictError, CheckoutStatusError) as exc:
@@ -125,7 +126,7 @@ def task_complete(
     session, project_db_id = db
 
     existing = tasks.get(session, task_id, project_id=project_db_id)
-    if existing is None or existing.project_id != project_db_id:
+    if existing is None:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 
     inline_alert: tuple[str, str] | None = None

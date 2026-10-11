@@ -1014,7 +1014,7 @@ def _create_finding_task(
     from sqlalchemy import select as _select
 
     from cod_doc.domain.entities import Priority, TaskType
-    from cod_doc.infra.models import TaskModel
+    from cod_doc.infra.models import PlanModel, TaskModel
     from cod_doc.services import task_service
 
     sig = _signature_for_routine(routine.name)
@@ -1023,9 +1023,13 @@ def _create_finding_task(
         f"Routine `{routine.name}` reported {len(findings)} finding(s).\n\n"
         f"Latest result: {findings[:5]!r}\n\n{sig}"
     )
+    # План берётся у последней задачи проекта, чей план — этого же проекта:
+    # `task_service.create` отвергает план чужого проекта (AFT-022), и легаси-
+    # задача в чужом плане иначе молча обнуляла бы политику create_task.
     fallback = session.execute(
         _select(TaskModel)
-        .where(TaskModel.project_id == project_id)
+        .join(PlanModel, PlanModel.row_id == TaskModel.plan_id)
+        .where(TaskModel.project_id == project_id, PlanModel.project_id == project_id)
         .order_by(TaskModel.row_id.desc())
         .limit(1)
     ).scalar_one_or_none()
