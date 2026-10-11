@@ -298,6 +298,46 @@ def _move_revision_to(session: Session, revision_id: str, project_id: int) -> No
     session.flush()
 
 
+def test_revert_section_with_plus_in_doc_key(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """``doc_key`` не валидируется и может содержать ``+``: метка ревизии всё равно читается."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, _, _ = _seed(session)
+        doc = docs.create(
+            session,
+            project_id=p,
+            doc_key="c++-guide",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.DRAFT,
+            title="C++",
+            author="human:test",
+        )
+        sec = docs.add_section(
+            session,
+            document_id=doc.row_id,
+            anchor="intro",
+            heading="Intro",
+            level=2,
+            position=0,
+            body="Original body.\n",
+            author="human:test",
+        )
+        docs.patch_section(
+            session,
+            document_id=doc.row_id,
+            anchor="intro",
+            new_body="Updated body.\n",
+            author="human:test",
+        )
+        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[-1]
+
+        rev.revert(session, patch_rev.revision_id, author="human:test", project_id=p)
+
+        section = session.get(SectionModel, sec.row_id)
+        assert section is not None
+        assert section.body == "Original body.\n"
+
+
 def test_revert_section_of_another_project_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:

@@ -431,6 +431,23 @@ def normalize_affected_paths(paths: list[str]) -> list[str]:
     return out
 
 
+def _require_plan_section_in_project(
+    session: Session, *, project_id: int, plan_id: int, section_id: int
+) -> None:
+    """План — проекта ``project_id``, секция — этого плана (AFT-022).
+
+    ``plan_id``/``section_id`` — два независимых FK без проверки принадлежности:
+    вызывающий (рутина `finding_promote`, импортёр) мог подставить план
+    чужого проекта общей hub-БД, и задача проекта A легла бы в план B.
+    """
+    plan = session.get(PlanModel, plan_id)
+    if plan is None or plan.project_id != project_id:
+        raise ValueError(f"plan #{plan_id} not found in project #{project_id}")
+    section = session.get(PlanSectionModel, section_id)
+    if section is None or section.plan_id != plan_id:
+        raise ValueError(f"section #{section_id} not found in plan #{plan_id}")
+
+
 def create(
     session: Session,
     *,
@@ -489,6 +506,9 @@ def create(
             )
 
     validation.validate_task_type(type.value)
+    _require_plan_section_in_project(
+        session, project_id=project_id, plan_id=plan_id, section_id=section_id
+    )
 
     now = datetime.now(UTC)
     repo = TaskRepository(session)

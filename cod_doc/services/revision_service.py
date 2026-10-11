@@ -431,7 +431,7 @@ def revert(session: Session, revision_id: str, *, author: str, project_id: int) 
 
 
 def _require_same_project(
-    model: RevisionModel, entity: str, owner_project_id: int | None, project_id: int
+    model: RevisionModel, entity: str, owner_project_id: int, project_id: int
 ) -> None:
     """Сущность ревизии обязана лежать в проекте вызывающего (AFT-022).
 
@@ -577,7 +577,10 @@ def _restore_original_from_unified(diff: str) -> str:
 #: (`doc_service.section_label`; строки заголовка склеены — ``lineterm=""``).
 #: Сверяется только заголовок и только с начала diff: тело секции может само
 #: содержать текст вида ``section:x#y`` и подменило бы метку (ai-review #85).
-_SECTION_LABEL_RE = re.compile(r"--- (?:/dev/null|section:[^+]*)\+\+\+ section:[^#]*#([^@]+)@@")
+#: Откуда-часть — ленивое ``.*?`` до ``+++ section:``, а не ``[^+]*``: ``doc_key``
+#: не валидируется и может содержать ``+`` (``c++-guide``). ``.`` не ловит
+#: перевод строки, поэтому совпадение по-прежнему ограничено заголовком.
+_SECTION_LABEL_RE = re.compile(r"--- (?:/dev/null|section:.*?)\+\+\+ section:[^#]*#([^@]+)@@")
 
 
 def _revert_section(
@@ -598,7 +601,9 @@ def _revert_section(
     if sec is None:
         raise LookupError(f"section #{model.entity_id} not found")
     doc = session.get(DocumentModel, sec.document_id)
-    _require_same_project(model, "section", doc.project_id if doc else None, project_id)
+    if doc is None:
+        raise LookupError(f"section #{model.entity_id}: document #{sec.document_id} not found")
+    _require_same_project(model, "section", doc.project_id, project_id)
     # Без метки принадлежность не доказать — и такой ревизии на практике нет:
     # оба писателя (`add_section`, `patch_section`) метят diff, без метки
     # остаётся лишь пустой diff секции, созданной с пустым телом.
@@ -667,7 +672,9 @@ def _revert_task_doc(
     if td is None:
         raise RevertNotSupportedError(f"TASK_DOC entity #{model.entity_id} not found")
     owner = session.get(TaskModel, td.task_id)
-    _require_same_project(model, "task_doc", owner.project_id if owner else None, project_id)
+    if owner is None:
+        raise LookupError(f"task_doc #{model.entity_id}: task #{td.task_id} not found")
+    _require_same_project(model, "task_doc", owner.project_id, project_id)
     task_doc_service.revert(
         session,
         project_id=project_id,

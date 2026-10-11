@@ -25,7 +25,6 @@ from cod_doc.domain.entities import (
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
     ActivityEventModel,
-    DocumentModel,
     LinkModel,
     ProjectModel,
     RevisionModel,
@@ -66,9 +65,9 @@ def _new_doc(session: Session, project_id: int, doc_key: str = "handbook") -> Do
 
 def _doc_project(session: Session, doc_id: int) -> int:
     """Проект документа — скоуп для ``rev.revert`` (AFT-022)."""
-    return session.execute(
-        select(DocumentModel.project_id).where(DocumentModel.row_id == doc_id)
-    ).scalar_one()
+    doc = docs.get_doc_by_id(session, doc_id)
+    assert doc is not None
+    return doc.project_id
 
 
 def _seed_three(session: Session) -> int:

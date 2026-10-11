@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pytest
 from mcp.server.fastmcp import FastMCP
@@ -205,6 +205,22 @@ def test_move_across_plans_raises(engine_with_schema) -> None:  # type: ignore[n
             )
 
 
+def test_create_rejects_plan_of_another_project_and_section_of_another_plan(
+    engine_with_schema,
+) -> None:  # type: ignore[no-untyped-def]
+    """AFT-022: ``plan_id``/``section_id`` — независимые FK; принадлежность сверяется."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, _a, _b = _seed(session)
+        _other_plan_id, other_section = _second_plan(session, p)
+        other = _other_project_with_plan(session)
+
+        with pytest.raises(ValueError, match=f"plan #{other.plan} not found in project #{p}"):
+            _task(session, p, other.plan, other.section, task_id="MV-101")
+        with pytest.raises(ValueError, match=f"section #{other_section} not found in plan #{pl}"):
+            _task(session, p, pl, other_section, task_id="MV-102")
+
+
 def test_move_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -216,30 +232,62 @@ def test_move_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[n
             )
 
 
+class _Other(NamedTuple):
+    project: int
+    plan: int
+    section: int
+
+
+def _other_project_with_plan(session: Session) -> _Other:
+    """Проект B со своим планом ``other-plan`` и секцией A."""
+    now = datetime.now(UTC)
+    proj = ProjectModel(slug="other", title="O", root_path="/o", config_json={})
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
+    plan = PlanModel(project_id=proj.row_id, scope="other-plan", created=now, last_updated=now)
+    session.add(plan)
+    session.flush()
+    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="O", slug="A-O", position=0)
+    session.add(sec)
+    session.flush()
+    return _Other(proj.row_id, plan.row_id, sec.row_id)
+
+
 def test_move_task_of_another_project_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    """AFT-022: задача проекта A под ``project_id`` проекта B — «не найдена», секция прежняя."""
+    """AFT-022: задача одного проекта под ``project_id`` другого — «не найдена», в обе стороны."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         p, pl, a, b = _seed(session)
-        task = _task(session, p, pl, a)
-        now = datetime.now(UTC)
-        other = ProjectModel(slug="other", title="O", root_path="/o", config_json={})
-        other.created = now
-        other.updated = now
-        session.add(other)
-        session.flush()
+        task_a = _task(session, p, pl, a)
+        other = _other_project_with_plan(session)
+        task_b = _task(session, other.project, other.plan, other.section, task_id="MV-900")
 
+        # A → B: задача проекта A под скоупом B
         with pytest.raises(TaskNotFoundError):
             tasks.move_to_section(
                 session,
-                task_id=task.task_id,
+                task_id=task_a.task_id,
                 new_section_id=b,
                 author="human:test",
-                project_id=other.row_id,
+                project_id=other.project,
             )
-        moved = tasks.get(session, task.task_id)
-        assert moved is not None
-        assert moved.section_id == a
+        # B → A: задача проекта B под скоупом A
+        with pytest.raises(TaskNotFoundError):
+            tasks.move_to_section(
+                session,
+                task_id=task_b.task_id,
+                new_section_id=other.section,
+                author="human:test",
+                project_id=p,
+            )
+        moved_a = tasks.get(session, task_a.task_id, project_id=p)
+        moved_b = tasks.get(session, task_b.task_id, project_id=other.project)
+        assert moved_a is not None
+        assert moved_a.section_id == a
+        assert moved_b is not None
+        assert moved_b.section_id == other.section
 
 
 # --------------------------------------------------------------------------- #

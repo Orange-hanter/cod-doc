@@ -359,6 +359,42 @@ def test_promote_create_task_emits_activity_event(engine_with_schema) -> None:  
         assert events[0].payload["promoted_task_id"] == outcome["task_id"]
 
 
+def test_promote_create_task_rejects_plan_of_another_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-022: рутина не кладёт задачу проекта A в план проекта B."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id, _plan_id, _section_id = _seed_plan(session)
+        finding = _ingest_single_finding(session, project_id)
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="other", title="O", root_path="/tmp/o", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+        foreign_plan = PlanModel(
+            project_id=other.row_id, scope="o-plan", created=now, last_updated=now
+        )
+        session.add(foreign_plan)
+        session.flush()
+        foreign_sec = PlanSectionModel(
+            plan_id=foreign_plan.row_id, letter="A", title="O", slug="A-O", position=0
+        )
+        session.add(foreign_sec)
+        session.flush()
+
+        with pytest.raises(ValueError, match=f"plan #{foreign_plan.row_id} not found in project"):
+            promote_finding(
+                session,
+                project_id=project_id,
+                finding_id=finding.row_id,
+                on_finding="create_task",
+                plan_id=foreign_plan.row_id,
+                section_id=foreign_sec.row_id,
+                author="test",
+            )
+        assert session.get(FindingModel, finding.row_id).status == "open"
+
+
 def test_promote_comment_only_is_no_op(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
