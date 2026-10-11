@@ -32,7 +32,7 @@ def plan_export(ctx: click.Context, plan_scope: str, project: str, section: str)
     sf = _make_session(project, cfg)
 
     with transactional(sf) as session:
-        plan_id = _require_plan_id(session, plan_scope)
+        plan_id = _require_plan_id(session, project, plan_scope)
         projections = plan_service.export(session, plan_id)
 
     keys = list(projections.keys()) if section == "all" else [section]

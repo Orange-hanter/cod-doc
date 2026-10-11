@@ -168,7 +168,12 @@ def story_set_section(
     try:
         with transactional(sf) as session:
             section = story_service.assign_section(
-                session, story_id=story_id, key=key, author=author, reason=reason
+                session,
+                project_id=_require_project_id(session, project),
+                story_id=story_id,
+                key=key,
+                author=author,
+                reason=reason,
             )
     except StoryNotFoundError:
         console.print(f"[red]Story '{story_id}' not found.[/red]")

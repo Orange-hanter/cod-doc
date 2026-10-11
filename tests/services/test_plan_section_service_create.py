@@ -111,13 +111,17 @@ def test_create_plan_duplicate_scope_raises(
     _make_plan(sf, alpha)
     assert _audit_counts(sf) == (1, 1)
 
-    for project_id in (alpha, beta):
-        with pytest.raises(svc.PlanAlreadyExistsError), transactional(sf) as s:
-            svc.create_plan(s, project_id=project_id, scope="plan-x", principle=None, author="t")
-
+    with pytest.raises(svc.PlanAlreadyExistsError), transactional(sf) as s:
+        svc.create_plan(s, project_id=alpha, scope="plan-x", principle=None, author="t")
     assert _audit_counts(sf) == (1, 1)
+
+    # STO-018/STO-023: scope уникален в проекте, не в БД — другой проект
+    # заводит план с тем же scope.
     with transactional(sf) as s:
-        assert _count(s, PlanModel) == 1
+        svc.create_plan(s, project_id=beta, scope="plan-x", principle=None, author="t")
+    assert _audit_counts(sf) == (2, 2)
+    with transactional(sf) as s:
+        assert _count(s, PlanModel) == 2
 
 
 def test_create_section_writes_revision_and_event(

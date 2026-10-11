@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from ._common import _COVERAGE_ICON, _make_session, console
+from ._common import _COVERAGE_ICON, _make_session, _require_project_id, console
 from ._group import story
 
 if TYPE_CHECKING:
@@ -31,7 +31,9 @@ def story_coverage(ctx: click.Context, story_id: str, project: str, as_json: boo
 
     try:
         with transactional(sf) as session:
-            cov = story_service.coverage(session, story_id)
+            cov = story_service.coverage(
+                session, story_id, project_id=_require_project_id(session, project)
+            )
     except StoryNotFoundError:
         console.print(f"[red]Story '{story_id}' not found.[/red]")
         sys.exit(1)

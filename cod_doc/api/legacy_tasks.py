@@ -86,19 +86,15 @@ def to_legacy_dict(task: Task) -> dict[str, Any]:
 def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
     """Лениво создаёт служебный план/секцию для legacy-задач проекта.
 
-    Возвращает (plan_id, section_id). Scope уникален в пределах БД проекта
-    (embedded state.db), поэтому повторные вызовы идемпотентны.
+    Возвращает (plan_id, section_id). Scope уникален в пределах проекта
+    (STO-018, миграция 0047), поэтому повторные вызовы идемпотентны.
 
     Запись идёт через ``plan_service`` и оставляет ревизию и activity event
     (ADO-040, RFC 26 §5.1) с ``author='api-legacy'``; слаг новой секции —
     конвенционный, его генерирует сервис. Существующие plan/plan_section не
     трогаются.
-
-    Остаточный долг: scope уникален на всю БД, а поиск по нему не скоупится
-    проектом — в hub-БД legacy-план другого проекта будет найден и
-    переиспользован. Поведение прежнее.
     """
-    plan = plan_service.get_by_scope(session, LEGACY_PLAN_SCOPE)
+    plan = plan_service.get_by_scope(session, LEGACY_PLAN_SCOPE, project_id=project_id)
     if plan is None:
         plan = plan_service.create_plan(
             session,

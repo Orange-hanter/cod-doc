@@ -73,11 +73,15 @@ def _resolve_blocked_by_ids(session: Session, task_row_id: int) -> list[str]:
     return list(session.execute(stmt).scalars())
 
 
-def _resolve_story_id(session: Session, task_id: str) -> str | None:
+def _resolve_story_id(session: Session, project_id: int, task_id: str) -> str | None:
     return session.execute(
         select(UserStoryModel.story_id)
         .join(StoryLinkModel, StoryLinkModel.story_id == UserStoryModel.row_id)
-        .where(StoryLinkModel.to_kind == "task", StoryLinkModel.to_ref == task_id)
+        .where(
+            UserStoryModel.project_id == project_id,
+            StoryLinkModel.to_kind == "task",
+            StoryLinkModel.to_ref == task_id,
+        )
         .limit(1)
     ).scalar_one_or_none()
 
@@ -96,10 +100,14 @@ def _resolve_ancestry(session: Session, model: TaskModel) -> dict[str, Any]:
         ),
         "story": None,
     }
-    story_id = _resolve_story_id(session, model.task_id)
+    story_id = _resolve_story_id(session, model.project_id, model.task_id)
     if story_id is not None:
+        # STO-023: story_id уникален в проекте (0047), не во всей БД.
         story_model = session.execute(
-            select(UserStoryModel).where(UserStoryModel.story_id == story_id).limit(1)
+            select(UserStoryModel).where(
+                UserStoryModel.project_id == model.project_id,
+                UserStoryModel.story_id == story_id,
+            )
         ).scalar_one_or_none()
         if story_model is not None:
             out["story"] = {

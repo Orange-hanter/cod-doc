@@ -91,6 +91,7 @@ def task_to_dict(t: Task, session: Session | None = None) -> dict[str, Any]:
             select(UserStoryModel.story_id)
             .join(StoryLinkModel, StoryLinkModel.story_id == UserStoryModel.row_id)
             .where(
+                UserStoryModel.project_id == t.project_id,
                 StoryLinkModel.to_kind == "task",
                 StoryLinkModel.to_ref == t.task_id,
             )

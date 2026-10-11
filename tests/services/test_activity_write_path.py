@@ -481,6 +481,7 @@ def test_story_link_emits_event(engine_with_schema) -> None:  # type: ignore[no-
         )
         story_links.link(
             session,
+            project_id=p,
             story_id="US-001",
             to_kind=StoryLinkKind.TASK,
             to_ref="ST-001",

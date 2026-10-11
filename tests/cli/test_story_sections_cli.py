@@ -14,6 +14,7 @@ from click.testing import CliRunner
 from cod_doc.cli import main
 from cod_doc.config import Config
 from cod_doc.infra.db import db_for_entry, transactional
+from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import story_service
 
 PROJECT = "sp"
@@ -35,8 +36,11 @@ def _read(story_id: str):  # type: ignore[no-untyped-def]
     factory, engine = db_for_entry(entry)
     try:
         with transactional(factory) as session:
-            story = story_service.get(session, story_id)
-            acceptance = story_service.list_acceptance(session, story_id)
+            proj = ProjectRepository(session).get_by_slug(PROJECT)
+            assert proj is not None
+            assert proj.row_id is not None
+            story = story_service.get(session, story_id, project_id=proj.row_id)
+            acceptance = story_service.list_acceptance(session, story_id, project_id=proj.row_id)
             return story, acceptance
     finally:
         engine.dispose()

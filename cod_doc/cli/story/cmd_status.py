@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from ._common import _STATUS_ICON, _make_session, console
+from ._common import _STATUS_ICON, _make_session, _require_project_id, console
 from ._group import story
 
 if TYPE_CHECKING:
@@ -46,6 +46,7 @@ def story_status(
         with transactional(sf) as session:
             s = story_service.update_status(
                 session,
+                project_id=_require_project_id(session, project),
                 story_id=story_id,
                 new_status=UserStoryStatus(new_status),
                 author=author,

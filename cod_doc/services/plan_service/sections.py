@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
 
 class PlanAlreadyExistsError(ValueError):
-    """План с таким scope уже есть — scope уникален на всю БД."""
+    """План с таким scope уже есть в проекте — scope уникален в пределах проекта."""
 
     def __init__(self, scope: str) -> None:
         super().__init__(f"Plan with scope '{scope}' already exists.")
@@ -101,7 +101,7 @@ def create_plan(
     reason: str | None = None,
     id_prefix: str | None = None,
 ) -> Plan:
-    """Завести план. ``scope`` уникален на всю БД, а не в пределах проекта.
+    """Завести план. ``scope`` уникален в пределах проекта (STO-018, миграция 0047).
 
     ``id_prefix`` (ADO-243) закрепляет префикс ID новых задач плана
     (``WEB`` → ``WEB-001``). Без него префикс выводится из задач плана, а у
@@ -110,7 +110,7 @@ def create_plan(
     в который переносят, стоит заводить с явным префиксом.
     """
     repo = PlanRepository(session)
-    if repo.get_by_scope(scope) is not None:
+    if repo.get_by_scope(scope, project_id=project_id) is not None:
         raise PlanAlreadyExistsError(scope)
     if id_prefix is not None:
         validate_id_prefix(id_prefix)
@@ -524,13 +524,13 @@ def delete_section(
 
 
 def _require_plan(session: Session, project_id: int, plan_scope: str) -> PlanModel:
-    # PlanRepository.get_by_scope скоупа проекта не знает: scope уникален на
-    # БД, и без сверки project_id чужой план резолвился бы из любого проекта.
-    # Текст ошибки одинаковый в обоих случаях — чужой план не раскрывается.
+    # scope уникален в проекте (STO-018, миграция 0047): без project_id в
+    # hub-БД с одинаковым scope в двух проектах запрос дал бы
+    # MultipleResultsFound. Чужой план не раскрывается — его просто не видно.
     model = session.execute(
-        select(PlanModel).where(PlanModel.scope == plan_scope)
+        select(PlanModel).where(PlanModel.project_id == project_id, PlanModel.scope == plan_scope)
     ).scalar_one_or_none()
-    if model is None or model.project_id != project_id:
+    if model is None:
         raise PlanNotFoundError(f"Plan '{plan_scope}' not found in project")
     return model
 

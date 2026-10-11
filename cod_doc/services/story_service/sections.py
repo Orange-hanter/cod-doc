@@ -139,6 +139,7 @@ def section_keys(session: Session, project_id: int) -> dict[int, str]:
 def assign_section(
     session: Session,
     *,
+    project_id: int,
     story_id: str,
     key: str | None,
     author: str,
@@ -150,7 +151,7 @@ def assign_section(
     Идемпотентно: повторная привязка к той же секции не пишет ни ревизию, ни
     событие — как ``update_status`` и ``set_criterion_met``.
     """
-    model = _require_story(session, story_id)
+    model = _require_story(session, story_id, project_id=project_id)
     repo = StorySectionRepository(session)
 
     new_section: StorySection | None = None

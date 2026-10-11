@@ -44,7 +44,7 @@ def plan_ready(
     sf = _make_session(project, cfg)
 
     with transactional(sf) as session:
-        plan_id = _require_plan_id(session, plan_scope)
+        plan_id = _require_plan_id(session, project, plan_scope)
         batch = plan_service.ready_batch(session, plan_id, limit=limit, local_only=local_only)
     tasks = batch.tasks
     skipped_foreign = batch.skipped_foreign

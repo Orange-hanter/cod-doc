@@ -100,10 +100,12 @@ def _guard() -> AbstractContextManager[None]:
     return _cm()
 
 
-def _require_plan_id(session: Session, plan_scope: str) -> int:
+def _require_plan_id(session: Session, project: str, plan_scope: str) -> int:
+    """``plan_scope`` проекта → ``plan.row_id``; scope уникален в проекте (STO-023)."""
     from cod_doc.infra.repositories import PlanRepository
 
-    plan = PlanRepository(session).get_by_scope(plan_scope)
+    project_id = _project_id(session, project)
+    plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
     if plan is None or plan.row_id is None:
         console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
         sys.exit(1)

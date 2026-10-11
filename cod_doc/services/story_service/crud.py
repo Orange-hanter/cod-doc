@@ -68,7 +68,9 @@ def create(
     validation.validate_story_id(story_id)
     if (
         session.execute(
-            select(UserStoryModel.row_id).where(UserStoryModel.story_id == story_id)
+            select(UserStoryModel.row_id).where(
+                UserStoryModel.project_id == project_id, UserStoryModel.story_id == story_id
+            )
         ).scalar_one_or_none()
         is not None
     ):
@@ -146,8 +148,8 @@ def create(
     return story
 
 
-def get(session: Session, story_id: str) -> UserStory | None:
-    return UserStoryRepository(session).get_by_story_id(story_id)
+def get(session: Session, story_id: str, *, project_id: int) -> UserStory | None:
+    return UserStoryRepository(session).get_by_story_id(story_id, project_id=project_id)
 
 
 def list_for_project(session: Session, project_id: int) -> list[UserStory]:
@@ -175,19 +177,19 @@ def next_story_id(session: Session, project_id: int, prefix: str = "US") -> str:
     return f"{prefix}-{max_n + 1:03d}"
 
 
-def list_acceptance(session: Session, story_id: str) -> list[StoryAcceptance]:
-    model = _require_story(session, story_id)
+def list_acceptance(session: Session, story_id: str, *, project_id: int) -> list[StoryAcceptance]:
+    model = _require_story(session, story_id, project_id=project_id)
     return StoryAcceptanceRepository(session).list_for_story(model.row_id)
 
 
-def list_links(session: Session, story_id: str) -> list[StoryLink]:
-    model = _require_story(session, story_id)
+def list_links(session: Session, story_id: str, *, project_id: int) -> list[StoryLink]:
+    model = _require_story(session, story_id, project_id=project_id)
     return StoryLinkRepository(session).list_for_story(model.row_id)
 
 
-def list_tasks(session: Session, story_id: str) -> list[Task]:
+def list_tasks(session: Session, story_id: str, *, project_id: int) -> list[Task]:
     """Tasks linked to the story via `implemented_by` relation."""
-    model = _require_story(session, story_id)
+    model = _require_story(session, story_id, project_id=project_id)
     stmt = (
         select(TaskModel)
         .join(StoryLinkModel, StoryLinkModel.to_ref == TaskModel.task_id)
@@ -206,16 +208,17 @@ def list_tasks(session: Session, story_id: str) -> list[Task]:
 def update_status(
     session: Session,
     *,
+    project_id: int,
     story_id: str,
     new_status: UserStoryStatus,
     author: str,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> UserStory:
-    model = _require_story(session, story_id)
+    model = _require_story(session, story_id, project_id=project_id)
     old_status = model.status
     if old_status == new_status.value:
-        s = UserStoryRepository(session).get_by_story_id(story_id)
+        s = UserStoryRepository(session).get_by_story_id(story_id, project_id=project_id)
         assert s is not None
         return s
 

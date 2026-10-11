@@ -61,8 +61,11 @@ class UserStoryRepository(BaseRepository[UserStory, UserStoryModel]):
             kwargs["section_id"] = entity.section_id
         return UserStoryModel(**kwargs)
 
-    def get_by_story_id(self, story_id: str) -> UserStory | None:
-        stmt = select(UserStoryModel).where(UserStoryModel.story_id == story_id)
+    def get_by_story_id(self, story_id: str, *, project_id: int) -> UserStory | None:
+        # STO-023: story_id уникален в проекте (0047), не во всей БД.
+        stmt = select(UserStoryModel).where(
+            UserStoryModel.project_id == project_id, UserStoryModel.story_id == story_id
+        )
         m = self.session.execute(stmt).scalar_one_or_none()
         return self._to_domain(m) if m else None
 

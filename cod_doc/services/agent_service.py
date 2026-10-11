@@ -184,6 +184,7 @@ def _build_task_card(
         select(UserStoryModel)
         .join(StoryLinkModel, StoryLinkModel.story_id == UserStoryModel.row_id)
         .where(
+            UserStoryModel.project_id == project_id,
             StoryLinkModel.to_kind == "task",
             StoryLinkModel.to_ref == task.task_id,
         )
@@ -194,7 +195,9 @@ def _build_task_card(
 
         # UserStoryModel.status/priority are str columns, not enum instances.
         # list_acceptance takes the canonical story_id (string), not row_id.
-        acceptance_criteria = story_service.list_acceptance(session, story_link.story_id)
+        acceptance_criteria = story_service.list_acceptance(
+            session, story_link.story_id, project_id=project_id
+        )
         story_full = {
             "story_id": story_link.story_id,
             "persona": story_link.persona,
@@ -320,11 +323,13 @@ def get(
         if not ref:
             return {"found": False, "what": what, "ref": ref, "hint": "ref=story_id required"}
         s = session.execute(
-            select(UserStoryModel).where(UserStoryModel.story_id == ref)
+            select(UserStoryModel).where(
+                UserStoryModel.project_id == project_id, UserStoryModel.story_id == ref
+            )
         ).scalar_one_or_none()
         if s is None:
             return {"found": False, "what": what, "ref": ref, "hint": f"story_id not found: {ref}"}
-        ac = story_service.list_acceptance(session, ref)
+        ac = story_service.list_acceptance(session, ref, project_id=project_id)
         return {
             "found": True,
             "what": what,
@@ -344,7 +349,7 @@ def get(
     if what == "plan_export":
         if not ref:
             return {"found": False, "what": what, "ref": ref, "hint": "ref=plan_scope required"}
-        plan = PlanRepository(session).get_by_scope(ref)
+        plan = PlanRepository(session).get_by_scope(ref, project_id=project_id)
         if plan is None or plan.row_id is None:
             return {
                 "found": False,
@@ -705,7 +710,7 @@ def pick(
     if plan_scope is not None:
         from cod_doc.infra.repositories import PlanRepository
 
-        plan = PlanRepository(session).get_by_scope(plan_scope)
+        plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
         plan_id = plan.row_id if plan is not None else -1
         ready = [t for t in ready if getattr(t, "plan_id", None) == plan_id]
     if ready:

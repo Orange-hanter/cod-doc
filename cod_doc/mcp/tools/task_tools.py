@@ -87,7 +87,7 @@ def register(mcp: FastMCP) -> None:
             if plan_scope is not None:
                 from cod_doc.infra.repositories import PlanRepository
 
-                plan = PlanRepository(session).get_by_scope(plan_scope)
+                plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
                 plan_id = plan.row_id if plan is not None else -1
                 ready = [t for t in ready if getattr(t, "plan_id", None) == plan_id]
             if not ready:
@@ -438,7 +438,7 @@ def register(mcp: FastMCP) -> None:
 
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope)
+            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
             if plan is None or plan.row_id is None:
                 raise ValueError(f"Plan '{plan_scope}' not found.")
             sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
@@ -560,7 +560,7 @@ def register(mcp: FastMCP) -> None:
         # Resolve plan + section once.
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope)
+            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
             if plan is None or plan.row_id is None:
                 raise ValueError(f"Plan '{plan_scope}' not found.")
             sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
@@ -1151,8 +1151,8 @@ def register(mcp: FastMCP) -> None:
         committed = False
 
         with transactional(sf, commit=not dry_run) as session:
-            require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope)
+            project_id = require_project_id(session, project)
+            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
             if plan is None or plan.row_id is None:
                 raise ValueError(f"Plan '{plan_scope}' not found.")
             sections = PlanSectionRepository(session).list_for_plan(plan.row_id)

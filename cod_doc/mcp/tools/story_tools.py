@@ -37,11 +37,12 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            s = story_service.get(session, story_id)
+            project_id = require_project_id(session, project)
+            s = story_service.get(session, story_id, project_id=project_id)
             if s is None:
                 return None
-            acceptance = story_service.list_acceptance(session, story_id)
-            links = story_service.list_links(session, story_id)
+            acceptance = story_service.list_acceptance(session, story_id, project_id=project_id)
+            links = story_service.list_links(session, story_id, project_id=project_id)
             section_key = None
             if s.section_id is not None:
                 section_key = story_service.section_keys(session, s.project_id).get(s.section_id)
@@ -129,6 +130,7 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 s = story_service.update_status(
                     session,
+                    project_id=require_project_id(session, project),
                     story_id=story_id,
                     new_status=UserStoryStatus(new_status),
                     author=author,
@@ -154,7 +156,11 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf) as session:
                 ac = story_service.add_criterion(
-                    session, story_id=story_id, criterion=criterion, author=author
+                    session,
+                    project_id=require_project_id(session, project),
+                    story_id=story_id,
+                    criterion=criterion,
+                    author=author,
                 )
         except StoryNotFoundError:
             raise ValueError(f"Story '{story_id}' not found.") from None
@@ -189,6 +195,7 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 lk = story_service.link(
                     session,
+                    project_id=require_project_id(session, project),
                     story_id=story_id,
                     to_kind=StoryLinkKind(to_kind),
                     to_ref=to_ref,
@@ -218,7 +225,9 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                cov = story_service.coverage(session, story_id)
+                cov = story_service.coverage(
+                    session, story_id, project_id=require_project_id(session, project)
+                )
         except StoryNotFoundError:
             raise ValueError(f"Story '{story_id}' not found.") from None
         return {
@@ -253,7 +262,12 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf) as session:
                 ac = story_service.set_criterion_met(
-                    session, story_id=story_id, position=position, met=met, author=author
+                    session,
+                    project_id=require_project_id(session, project),
+                    story_id=story_id,
+                    position=position,
+                    met=met,
+                    author=author,
                 )
         except StoryNotFoundError:
             raise ValueError(f"Story '{story_id}' not found.") from None
@@ -345,7 +359,11 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf) as session:
                 sec = story_service.assign_section(
-                    session, story_id=story_id, key=key, author=author
+                    session,
+                    project_id=require_project_id(session, project),
+                    story_id=story_id,
+                    key=key,
+                    author=author,
                 )
                 result = (
                     {"key": sec.key, "title": sec.title, "position": sec.position}

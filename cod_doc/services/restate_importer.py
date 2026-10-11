@@ -317,8 +317,8 @@ def _ensure_import_plan(session: Session, project_id: int) -> tuple[int, int]:
     Created on first call; reused on subsequent imports for the same project.
     """
     plan_repo = PlanRepository(session)
-    plan = plan_repo.get_by_scope(_IMPORT_PLAN_SCOPE)
-    if plan is not None and plan.project_id == project_id and plan.row_id is not None:
+    plan = plan_repo.get_by_scope(_IMPORT_PLAN_SCOPE, project_id=project_id)
+    if plan is not None and plan.row_id is not None:
         plan_id = plan.row_id
     else:
         new_plan = plan_repo.add(

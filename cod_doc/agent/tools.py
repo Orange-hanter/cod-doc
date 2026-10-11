@@ -293,14 +293,15 @@ class ToolExecutor:
     def _tool_plan_ready(self, plan_scope: str, limit: int = 5) -> dict[str, Any]:
         try:
             from cod_doc.infra.db import transactional
-            from cod_doc.mcp.tools._db import task_to_dict
+            from cod_doc.mcp.tools._db import require_project_id, task_to_dict
             from cod_doc.services import plan_service
 
             sf = self._make_db_session()
             with transactional(sf) as session:
                 from cod_doc.infra.repositories import PlanRepository
 
-                plan = PlanRepository(session).get_by_scope(plan_scope)
+                project_id = require_project_id(session, self.project.entry.name)
+                plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
                 if plan is None or plan.row_id is None:
                     return {"error": f"Plan '{plan_scope}' not found"}
                 tasks = plan_service.ready(session, plan.row_id, limit=limit)
@@ -385,14 +386,16 @@ class ToolExecutor:
     def _tool_story_get(self, story_id: str) -> dict[str, Any]:
         try:
             from cod_doc.infra.db import transactional
+            from cod_doc.mcp.tools._db import require_project_id
             from cod_doc.services import story_service
 
             sf = self._make_db_session()
             with transactional(sf) as session:
-                story = story_service.get(session, story_id)
+                project_id = require_project_id(session, self.project.entry.name)
+                story = story_service.get(session, story_id, project_id=project_id)
                 if story is None:
                     return {"error": f"Story '{story_id}' not found"}
-                criteria = story_service.list_acceptance(session, story_id)
+                criteria = story_service.list_acceptance(session, story_id, project_id=project_id)
             return {
                 "story_id": story.story_id,
                 "persona": story.persona,

@@ -385,7 +385,7 @@ def task_create(
     # Phase 1: resolve IDs (read-only — sys.exit here is safe, nothing to commit)
     with transactional(sf) as session:
         project_id = _require_project_id(session, project)
-        plan = PlanRepository(session).get_by_scope(plan_scope)
+        plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
         if plan is None or plan.row_id is None:
             console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
             sys.exit(1)
@@ -693,8 +693,8 @@ def task_move(
 
     try:
         with transactional(sf, commit=not dry_run) as session:
-            _require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope)
+            project_id = _require_project_id(session, project)
+            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
             if plan is None or plan.row_id is None:
                 console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
                 sys.exit(1)

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from ._common import _make_session, console
+from ._common import _make_session, _require_project_id, console
 from ._group import story
 
 if TYPE_CHECKING:
@@ -54,6 +54,7 @@ def story_link(
         with transactional(sf) as session:
             lk = story_service.link(
                 session,
+                project_id=_require_project_id(session, project),
                 story_id=story_id,
                 to_kind=StoryLinkKind(to_kind),
                 to_ref=to_ref,

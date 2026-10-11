@@ -79,7 +79,7 @@ def test_create_with_initial_acceptance(engine_with_schema) -> None:  # type: ig
             proj,
             acceptance=["Invite link expires in 7 days.", "Revoked invite cannot be used."],
         )
-        items = stories.list_acceptance(session, story.story_id)
+        items = stories.list_acceptance(session, story.story_id, project_id=story.project_id)
         assert [a.criterion for a in items] == [
             "Invite link expires in 7 days.",
             "Revoked invite cannot be used.",
@@ -111,7 +111,8 @@ def test_create_rejects_invalid_story_id(engine_with_schema) -> None:  # type: i
 def test_get_returns_none_for_unknown(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        assert stories.get(session, "GHOST-001") is None
+        proj = _seed_project(session)
+        assert stories.get(session, "GHOST-001", project_id=proj) is None
 
 
 def test_list_for_project_orders_by_story_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -137,6 +138,7 @@ def test_update_status_writes_revision_and_chains(engine_with_schema) -> None:  
 
         updated = stories.update_status(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             new_status=UserStoryStatus.DELIVERED,
             author="human:test",
@@ -158,6 +160,7 @@ def test_update_status_no_op_writes_no_revision(engine_with_schema) -> None:  # 
         story = _make_story(session, proj)
         stories.update_status(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             new_status=UserStoryStatus.ACCEPTED,
             author="human:test",
@@ -174,6 +177,7 @@ def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type
 
         stories.update_status(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             new_status=UserStoryStatus.DELIVERED,
             author="other",
@@ -182,6 +186,7 @@ def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type
         with pytest.raises(rev.RevisionConflictError):
             stories.update_status(
                 session,
+                project_id=story.project_id,
                 story_id=story.story_id,
                 new_status=UserStoryStatus.DEFERRED,
                 author="human:test",
@@ -202,6 +207,7 @@ def test_add_criterion_appends_at_next_position(engine_with_schema) -> None:  # 
 
         a2 = stories.add_criterion(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             criterion="Second.",
             author="human:test",
@@ -209,6 +215,7 @@ def test_add_criterion_appends_at_next_position(engine_with_schema) -> None:  # 
         assert a2.position == 1
         a3 = stories.add_criterion(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             criterion="Third.",
             author="human:test",
@@ -224,6 +231,7 @@ def test_set_criterion_met_writes_revision(engine_with_schema) -> None:  # type:
 
         updated = stories.set_criterion_met(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             position=0,
             met=True,
@@ -231,7 +239,7 @@ def test_set_criterion_met_writes_revision(engine_with_schema) -> None:  # type:
         )
         assert updated.met is True
 
-        items = stories.list_acceptance(session, story.story_id)
+        items = stories.list_acceptance(session, story.story_id, project_id=story.project_id)
         assert items[0].met is True and items[1].met is False
 
         history = rev.list_for_entity(session, EntityKind.STORY, story.row_id)
@@ -246,6 +254,7 @@ def test_set_criterion_met_unknown_position_raises(engine_with_schema) -> None: 
         with pytest.raises(stories.AcceptanceNotFoundError):
             stories.set_criterion_met(
                 session,
+                project_id=story.project_id,
                 story_id=story.story_id,
                 position=99,
                 met=True,

@@ -44,7 +44,7 @@ def plan_create(
     id_prefix: str | None,
     as_json: bool,
 ) -> None:
-    """Создать план SCOPE в проекте. Scope уникален на всю БД.
+    """Создать план SCOPE в проекте. Scope уникален в пределах проекта.
 
     Пишет ревизию и событие plan.created. Секции не создаются —
     добавляй их через `cod-doc plan section create`.

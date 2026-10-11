@@ -121,10 +121,9 @@ def section_list(ctx: click.Context, plan_scope: str, project: str, as_json: boo
 
     with transactional(sf) as session:
         pid = _project_id(session, project)
-        found = plan_service.get_by_scope(session, plan_scope)
-        # scope уникален на всю БД: без сверки project_id чужой план
-        # читался бы из любого проекта. Текст тот же, что у сервиса.
-        if found is None or found.row_id is None or found.project_id != pid:
+        found = plan_service.get_by_scope(session, plan_scope, project_id=pid)
+        # Текст тот же, что у сервиса.
+        if found is None or found.row_id is None:
             _fail(f"Plan '{plan_scope}' not found in project")
             return
         rows = [

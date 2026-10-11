@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from ._common import _make_session, console
+from ._common import _make_session, _require_project_id, console
 from ._group import story
 
 if TYPE_CHECKING:
@@ -38,7 +38,11 @@ def story_add_criterion(
     try:
         with transactional(sf) as session:
             ac = story_service.add_criterion(
-                session, story_id=story_id, criterion=criterion, author=author
+                session,
+                project_id=_require_project_id(session, project),
+                story_id=story_id,
+                criterion=criterion,
+                author=author,
             )
     except StoryNotFoundError:
         console.print(f"[red]Story '{story_id}' not found.[/red]")

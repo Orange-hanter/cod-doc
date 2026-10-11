@@ -821,7 +821,11 @@ def test_story_create_and_criterion_are_indexed(engine_with_schema) -> None:  # 
 
     with transactional(factory) as session:
         story_acceptance.add_criterion(
-            session, story_id="US-100", criterion="search returns the marmalade", author="t"
+            session,
+            project_id=pid,
+            story_id="US-100",
+            criterion="search returns the marmalade",
+            author="t",
         )
 
     with transactional(factory) as session:
