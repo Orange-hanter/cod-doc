@@ -587,17 +587,33 @@ def _restore_original_from_unified(diff: str) -> str:
     return "".join(result)
 
 
-#: Заголовок SECTION-ревизии: ``--- <откуда>+++ section:<doc_key>#<anchor>@@``
-#: (`doc_service.section_label`; строки заголовка склеены — ``lineterm=""``).
-#: Сверяется только заголовок и только с начала diff: тело секции может само
-#: содержать текст вида ``section:x#y`` и подменило бы метку (ai-review #85).
-#: Откуда-часть — жадное ``.*`` до ПОСЛЕДНЕГО ``+++ section:`` в строке
-#: заголовка, а не ``[^+]*``: ``doc_key`` не валидируется и может содержать
-#: ``+`` (``c++-guide``). Жадность, а не ленивость: куда-метка пишется
-#: последней, и старый якорь с подстрокой ``+++ section:x#y@@`` не подменит её.
-#: ``.`` не ловит перевод строки — совпадение ограничено заголовком, тело
-#: секции (со следующей строки) в разбор не попадает.
-_SECTION_LABEL_RE = re.compile(r"--- (?:/dev/null|section:.*)\+\+\+ section:[^#]*#([^@]+)@@")
+#: Заголовок SECTION-ревизии: ``--- <откуда>+++ section:<doc_key>#<anchor>@@ -…``
+#: (`doc_service.section_label`; строки заголовка склеены — ``lineterm=""``,
+#: и сразу за куда-меткой идёт заголовок ханка ``@@ -``). Сверяется только
+#: заголовок и только с начала diff: тело секции может само содержать текст
+#: вида ``section:x#y`` и подменило бы метку (ai-review #85).
+_HUNK_START_RE = re.compile(r"@@ -\d")
+_SECTION_LABEL_RE = re.compile(r"--- (?:/dev/null|section:.*)\+\+\+ section:[^#]*#([^@]+)$")
+
+
+def _section_label_anchor(diff: str) -> str | None:
+    """Якорь куда-метки SECTION-ревизии или ``None``, если её не прочитать однозначно.
+
+    Ни ``doc_key``, ни якорь не валидируются, поэтому метка может содержать
+    ``+`` (``c++-guide``) и даже ``+++ section:``. Регулярка не должна угадывать
+    границу (ai-review #192: ленивый разбор отдавал якорь из подстроки
+    старого якоря, жадный — из подстроки нового): заголовок берётся до начала
+    ханка, и если ``+++ section:`` в нём не ровно один — разбор отказывает, а
+    откат — вместе с ним. Отказ безопасен: ревизия просто не откатывается.
+    """
+    hunk = _HUNK_START_RE.search(diff)
+    if hunk is None:
+        return None
+    header = diff[: hunk.start()]
+    if "\n" in header or header.count("+++ section:") != 1:
+        return None
+    labelled = _SECTION_LABEL_RE.match(header)
+    return labelled.group(1) if labelled else None
 
 
 def _revert_section(
@@ -624,9 +640,13 @@ def _revert_section(
     # Без метки принадлежность не доказать — и такой ревизии на практике нет:
     # оба писателя (`add_section`, `patch_section`) метят diff, без метки
     # остаётся лишь пустой diff секции, созданной с пустым телом.
-    labelled = _SECTION_LABEL_RE.match(model.diff)
-    if labelled is None or labelled.group(1) != sec.anchor:
-        written_for = f"anchor {labelled.group(1)!r}" if labelled else "no section label"
+    written_anchor = _section_label_anchor(model.diff)
+    if written_anchor is None or written_anchor != sec.anchor:
+        written_for = (
+            f"anchor {written_anchor!r}"
+            if written_anchor is not None
+            else "no unambiguous section label"
+        )
         raise RevertNotSupportedError(
             f"revision {model.revision_id} was written for {written_for}, but section "
             f"row {model.entity_id} now holds anchor {sec.anchor!r} — the row id was "

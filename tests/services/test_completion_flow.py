@@ -338,16 +338,26 @@ def test_section_label_with_plus_in_doc_key_is_read_and_reverted(engine_with_sch
         assert section.body == "Original body.\n"
 
 
-def test_section_label_takes_the_last_target_on_the_header_line() -> None:
-    """Куда-метка пишется последней: старый якорь с подстрокой ``+++ section:…@@``
-    не подменяет её, а тело секции со следующей строки в разбор не попадает."""
-    spoofed = (
-        "--- section:d#a+++ section:d#evil@@+++ section:d#real@@ -1 +1 @@\n"
-        "-old\n+new +++ section:d#body@@\n"
-    )
-    labelled = rev._SECTION_LABEL_RE.match(spoofed)
-    assert labelled is not None
-    assert labelled.group(1) == "real"
+@pytest.mark.parametrize(
+    ("diff", "anchor"),
+    [
+        # обычная метка и метка с «+» в doc_key читаются
+        ("--- section:d#a+++ section:d#a@@ -1 +1 @@-old\n+new\n", "a"),
+        ("--- section:c++-guide#intro+++ section:c++-guide#intro@@ -1 +1 @@-o\n+n\n", "intro"),
+        ("--- /dev/null+++ section:d#a@@ -0,0 +1 @@+new\n", "a"),
+        # «+++ section:» внутри якоря — заголовок неоднозначен, разбор отказывает
+        ("--- section:d#a+++ section:d#evil@@+++ section:d#real@@ -1 +1 @@-o\n+n\n", None),
+        ("--- section:d#a+++ section:d#x+++ section:d#y@@ -1 +1 @@-o\n+n\n", None),
+        # тело секции не участвует: метка из него не берётся
+        ("-old\n+new +++ section:d#body@@ -1 +1 @@\n", None),
+        # без ханка метки нет
+        ("", None),
+    ],
+)
+def test_section_label_anchor_is_read_only_when_unambiguous(diff: str, anchor: str | None) -> None:
+    """Писатель и читатель метки не расходятся: что нельзя разобрать однозначно —
+    не откатывается (ai-review #192, parser differential)."""
+    assert rev._section_label_anchor(diff) == anchor
 
 
 def test_revert_section_of_another_project_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
