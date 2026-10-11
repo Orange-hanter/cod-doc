@@ -28,6 +28,7 @@ from cod_doc.infra.models import DocumentModel, RevisionModel, SectionModel, Tas
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from sqlalchemy import ColumnElement
     from sqlalchemy.orm import InstrumentedAttribute, Session
 
 
@@ -181,14 +182,25 @@ def get(session: Session, revision_id: str, *, project_id: int) -> Revision | No
     return _to_domain(model) if model is not None else None
 
 
+def _project_scope(project_id: int | None) -> tuple[ColumnElement[bool], ...]:
+    """Условие ``project_id`` для выборки ревизий; пусто, когда скоупа нет."""
+    return () if project_id is None else (RevisionModel.project_id == project_id,)
+
+
 def list_for_entity(
     session: Session,
     entity_kind: EntityKind,
     entity_id: int,
     *,
     limit: int | None = None,
+    project_id: int | None = None,
 ) -> list[Revision]:
     """History for the entity, oldest → newest.
+
+    ``project_id`` — скоуп поверхностей (MCP, CLI, web): ``entity_id`` — row_id,
+    общий на всю hub-БД, и без фильтра перебором id читалась бы история
+    чужого проекта. Поверхности и так резолвят сущность в скоупе проекта;
+    фильтр — второй рубеж. Сделать его обязательным — AFT-023.
 
     With `limit=None` (default) the full history is returned, exactly as
     before. With `limit` set, SQL fetches only the last `limit` revisions
@@ -202,6 +214,7 @@ def list_for_entity(
             .where(
                 RevisionModel.entity_kind == entity_kind.value,
                 RevisionModel.entity_id == entity_id,
+                *_project_scope(project_id),
             )
             .order_by(RevisionModel.at.asc(), RevisionModel.row_id.asc())
         )
@@ -212,6 +225,7 @@ def list_for_entity(
         .where(
             RevisionModel.entity_kind == entity_kind.value,
             RevisionModel.entity_id == entity_id,
+            *_project_scope(project_id),
         )
         .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
         .limit(limit)

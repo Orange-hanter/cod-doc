@@ -623,6 +623,23 @@ def test_revision_revert_is_scoped_by_project(engine_with_schema) -> None:  # ty
         assert _paths(session, row_id) == ["src/a.py"]
 
 
+@pytest.mark.parametrize("limit", [None, 1])
+def test_list_for_entity_is_scoped_by_project(engine_with_schema, limit: int | None) -> None:  # type: ignore[no-untyped-def]
+    """История сущности проекта A под ``project_id`` проекта B пуста — в обеих ветках."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, row_id = _seed(session, ["src/a.py"])
+        other_pid = _other_project(session)
+        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
+
+        own = rev.list_for_entity(session, EntityKind.TASK, row_id, limit=limit, project_id=pid)
+        foreign = rev.list_for_entity(
+            session, EntityKind.TASK, row_id, limit=limit, project_id=other_pid
+        )
+        assert own
+        assert foreign == []
+
+
 def test_revision_revert_refuses_task_of_another_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Ревизия проекта B, чья ``entity_id`` указывает на задачу проекта A (рассинхрон
     легаси-импорта), не откатывается на задачу A."""

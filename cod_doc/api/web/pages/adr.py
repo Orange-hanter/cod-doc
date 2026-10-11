@@ -839,7 +839,9 @@ def adr_show(
 
     # ADO-231: каждая запись ADR пишет revision; страница ревизий по сущности
     # уже есть, с карточки на неё просто не было входа.
-    history = revision_service.list_for_entity(session, EntityKind.ADR, row.row_id)
+    history = revision_service.list_for_entity(
+        session, EntityKind.ADR, row.row_id, project_id=project_id
+    )
     last_rev = history[-1] if history else None
     history_info = {
         "count": len(history),

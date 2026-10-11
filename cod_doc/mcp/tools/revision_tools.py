@@ -131,7 +131,7 @@ def register(mcp: FastMCP) -> None:
                 project_id = require_project_id(session, project)
                 entity_id = _resolve_entity_id(session, kind, ref, project_id)
                 revisions = revision_service.list_for_entity(
-                    session, EntityKind(kind), entity_id, limit=limit
+                    session, EntityKind(kind), entity_id, limit=limit, project_id=project_id
                 )
             return [
                 {
