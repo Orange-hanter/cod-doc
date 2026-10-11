@@ -49,6 +49,7 @@ from .graph import chain_layout, critical_path, forward_chain, reverse_chain
 from .reads import (
     get_by_scope,
     get_for_project,
+    get_section_by_letter,
     list_for_project,
     list_plans_summary,
     list_sections,
@@ -101,6 +102,7 @@ __all__ = [
     "freeze_projection",
     "get_by_scope",
     "get_for_project",
+    "get_section_by_letter",
     "list_for_project",
     "list_plans_summary",
     "list_sections",

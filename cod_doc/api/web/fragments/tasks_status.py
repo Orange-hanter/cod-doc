@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import Annotated
-from urllib.parse import quote, urlsplit
+from urllib.parse import SplitResult, quote, urlsplit
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -15,7 +15,7 @@ from cod_doc.api.deps import get_project, get_project_db
 from cod_doc.api.web.errors import (
     NotFoundWebError,
     ValidationWebError,
-    truncate_for_cookie,
+    set_flash_cookie,
 )
 from cod_doc.domain.entities import TaskStatus
 from cod_doc.services import checkout_service
@@ -25,40 +25,79 @@ from cod_doc.services.revision_service import RevisionConflictError
 from cod_doc.services.task_service import TaskAlreadyDoneError, TaskBlockedError
 from cod_doc.services.task_status_machine import StatusTransitionError, normalise
 
-from ._shared import _is_htmx, _render_task_row
+from ._shared import _is_htmx, _log_write_failure, _render_task_row
 
 router = APIRouter()
 logger = logging.getLogger("cod_doc.api")
 
 # Текст для баннера, когда сбой не доменный. str() от IntegrityError несёт
-# SQL и параметры запроса — схему БД пользователю показывать незачем; сам
-# текст остаётся в логе сервера.
+# SQL и параметры запроса — схему БД пользователю показывать незачем; в лог
+# сервера уходят тип исключения и имя ограничения.
 _GENERIC_SAVE_ERROR = "Не удалось сохранить изменения."
 
 
 def _generic_save_error(exc: Exception, *, task_id: str) -> tuple[str, str]:
-    logger.warning("web task write failed for %s", task_id, exc_info=exc)
+    _log_write_failure(logger, "web task write", task_id, exc)
     return ("error", _GENERIC_SAVE_ERROR)
+
+
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+# Что остаётся в пути и запросе как есть; прочее (пробел, кавычки, угловые
+# скобки, не-ASCII) percent-кодируется. ``%`` здесь — чтобы уже закодированное
+# не кодировалось второй раз.
+_PATH_SAFE = "/%:@!$&'()*+,;=-._~"
+_QUERY_SAFE = _PATH_SAFE + "?"
+# C0 и DEL: в адресе им не место ни сырыми, ни после чистки.
+_CONTROL_CHARS = frozenset(chr(c) for c in (*range(0x20), 0x7F))
+
+
+def _has_unsafe_chars(value: str) -> bool:
+    # ``urlsplit`` молча вырезает \t, \r и \n, поэтому проверка идёт по
+    # сырому заголовку, до разбора.
+    return "\\" in value or not _CONTROL_CHARS.isdisjoint(value)
+
+
+def _same_origin(parts: SplitResult, request: Request) -> bool:
+    """Схема, хост и порт совпадают без учёта регистра и с дефолтным портом."""
+    scheme = parts.scheme.lower()
+    if scheme not in _DEFAULT_PORTS or scheme != request.url.scheme.lower():
+        return False
+    try:
+        port = parts.port or _DEFAULT_PORTS[scheme]
+    except ValueError:  # порт не число или вне диапазона
+        return False
+    own_port = request.url.port or _DEFAULT_PORTS[scheme]
+    own_host = (request.url.hostname or "").lower()
+    return bool(parts.hostname) and parts.hostname == own_host and port == own_port
 
 
 def _safe_back_url(request: Request, fallback: str) -> str:
     """Путь возврата из ``Referer``, только в пределах этого же сайта (CWE-601).
 
-    Браузер шлёт ``Referer`` абсолютным URL, поэтому чужой хост — отказ, свой
-    хост — сводится к относительному пути. Итог обязан начинаться с одного
-    ``/``: ``//evil`` и ``/\\evil`` браузер читает как адрес другого хоста.
+    Абсолютный ``Referer`` принимается, когда схема, хост и порт совпадают с
+    запросом (регистр и явный дефолтный порт не в счёт), относительный — когда
+    начинается ровно с одного ``/``: ``//evil`` браузер читает как адрес
+    другого хоста. Обратный слеш и управляющие символы в любом месте — отказ:
+    браузеры читают ``\\`` как ``/``. Итог всегда относительный путь,
+    собранный заново из разобранных пути и запроса с percent-кодированием,
+    так что сырые байты заголовка в ``Location`` не попадают.
     """
     referer = request.headers.get("Referer")
-    if not referer:
+    if not referer or _has_unsafe_chars(referer):
         return fallback
     parts = urlsplit(referer)
-    foreign = parts.scheme not in ("http", "https") or parts.netloc != request.url.netloc
-    if (parts.scheme or parts.netloc) and foreign:
+    if parts.scheme or parts.netloc:
+        if not _same_origin(parts, request):
+            return fallback
+    elif referer.startswith("//"):
         return fallback
     path = parts.path
-    if not path.startswith("/") or path.startswith("//") or "\\" in path:
+    if not path.startswith("/") or path.startswith("//"):
         return fallback
-    return f"{path}?{parts.query}" if parts.query else path
+    back = quote(path, safe=_PATH_SAFE)
+    if parts.query:
+        back += "?" + quote(parts.query, safe=_QUERY_SAFE)
+    return back
 
 
 @router.post("/p/{slug}/tasks/{task_id}/status", response_class=HTMLResponse)
@@ -79,7 +118,7 @@ def task_status_update(
     session, project_db_id = db
 
     existing = tasks.get(session, task_id, project_id=project_db_id)
-    if existing is None or existing.project_id != project_db_id:
+    if existing is None:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 
     inline_alert: tuple[str, str] | None = None
@@ -138,13 +177,7 @@ def task_status_update(
     redirect = RedirectResponse(url=f"/p/{proj.entry.name}/tasks", status_code=303)
     if inline_alert is not None:
         severity, message = inline_alert
-        redirect.set_cookie("flash_severity", severity, max_age=30, path="/")
-        redirect.set_cookie(
-            "flash_message",
-            quote(truncate_for_cookie(message)),
-            max_age=30,
-            path="/",
-        )
+        set_flash_cookie(redirect, request, severity=severity, message=message)
     return redirect
 
 
@@ -165,7 +198,7 @@ def task_complete(
     session, project_db_id = db
 
     existing = tasks.get(session, task_id, project_id=project_db_id)
-    if existing is None or existing.project_id != project_db_id:
+    if existing is None:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 
     inline_alert: tuple[str, str] | None = None
@@ -215,11 +248,5 @@ def task_complete(
     redirect = RedirectResponse(url=back, status_code=303)
     if inline_alert is not None:
         severity, message = inline_alert
-        redirect.set_cookie("flash_severity", severity, max_age=30, path="/")
-        redirect.set_cookie(
-            "flash_message",
-            quote(truncate_for_cookie(message)),
-            max_age=30,
-            path="/",
-        )
+        set_flash_cookie(redirect, request, severity=severity, message=message)
     return redirect

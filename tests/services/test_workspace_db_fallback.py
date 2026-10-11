@@ -82,3 +82,27 @@ def test_session_factory_explicit_overrides_default(tmp_path, monkeypatch) -> No
         _workspace.clear()
 
     assert captured["resolved"] == "explicit-arg"
+
+
+def test_session_factory_unknown_project_keeps_add_hint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Слага нет в реестре — подсказка та же, что при отсутствии в БД."""
+
+    class _EmptyCfg:
+        @staticmethod
+        def get_project(_name: str) -> None:
+            return None
+
+    monkeypatch.setattr("cod_doc.config.Config.load", lambda: _EmptyCfg())
+    with pytest.raises(ValueError, match="run 'cod-doc project add' first"):
+        _db.session_factory("ghost")
+
+
+def test_require_project_id_unknown_project_keeps_add_hint(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Слаг есть в реестре, а в БД нет — подсказка сохраняется через сервис."""
+    from cod_doc.infra.db import make_session_factory, transactional
+
+    with (
+        transactional(make_session_factory(engine_with_schema)) as session,
+        pytest.raises(ValueError, match="run 'cod-doc project add' first"),
+    ):
+        _db.require_project_id(session, "ghost")

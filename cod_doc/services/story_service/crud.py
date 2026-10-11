@@ -80,7 +80,13 @@ def create(
 
     section_id: int | None = None
     if section_key is not None:
-        section = StorySectionRepository(session).get_by_key(project_id, section_key)
+        # Пустой ключ секцией не бывает (validate_story_section_key) — тот же
+        # промах, а не ошибка аргумента из репозитория.
+        section = (
+            StorySectionRepository(session).get_by_key(project_id, section_key)
+            if section_key
+            else None
+        )
         if section is None:
             raise SectionNotFoundError(section_key)
         section_id = section.row_id

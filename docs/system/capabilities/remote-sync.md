@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-09-27
-last_updated: 2026-10-10
+last_updated: 2026-10-11
 related_docs:
   - ../ARCHITECTURE.md
   - ../DATA_MODEL.md

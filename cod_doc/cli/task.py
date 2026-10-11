@@ -365,7 +365,6 @@ def task_create(
 
     from cod_doc.domain.entities import Priority, QuestionLinkKind, QuestionRelation, TaskType
     from cod_doc.infra.db import transactional
-    from cod_doc.infra.repositories import PlanSectionRepository
     from cod_doc.services import plan_service, question_service, task_service
     from cod_doc.services.question_service import QuestionNotFoundError
     from cod_doc.services.task_service import DuplicateTaskIdError
@@ -385,10 +384,11 @@ def task_create(
                 markup=False,
             )
             sys.exit(1)
-        sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
-        section = next((s for s in sections if s.letter.upper() == section_letter.upper()), None)
+        section = plan_service.get_section_by_letter(
+            session, plan.row_id, section_letter, project_id=project_id
+        )
         if section is None or section.row_id is None:
-            letters = ", ".join(s.letter for s in sections)
+            letters = ", ".join(s.letter for s in plan_service.list_sections(session, plan.row_id))
             console.print(f"[red]Section '{section_letter}' not found. Available: {letters}[/red]")
             sys.exit(1)
         plan_id = plan.row_id
@@ -682,7 +682,6 @@ def task_move(
     Каждая задача получает свою ревизию и своё событие.
     """
     from cod_doc.infra.db import transactional
-    from cod_doc.infra.repositories import PlanSectionRepository
     from cod_doc.services import plan_service, task_service
     from cod_doc.services.task_service import (
         CrossPlanMoveError,
@@ -707,10 +706,8 @@ def task_move(
                     markup=False,
                 )
                 sys.exit(1)
-            sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
-            section = next(
-                (s for s in sections if s.letter.upper() == section_letter.upper()),
-                None,
+            section = plan_service.get_section_by_letter(
+                session, plan.row_id, section_letter, project_id=project_id
             )
             if section is None or section.row_id is None:
                 console.print(

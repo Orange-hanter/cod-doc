@@ -67,6 +67,9 @@ def ensure_outer_transaction(session: Session) -> None:
         conn.exec_driver_sql("BEGIN")
 
 
+_SQLITE_UNIQUE_PREFIX = "UNIQUE constraint failed:"
+
+
 def is_unique_violation(
     exc: IntegrityError, *, constraint: str, table: str, columns: tuple[str, ...]
 ) -> bool:
@@ -74,14 +77,23 @@ def is_unique_violation(
 
     Postgres (psycopg) отдаёт имя ограничения структурно —
     ``exc.orig.diag.constraint_name``; сравнивается оно, а не текст ошибки.
-    SQLite имени не сообщает, только колонки, поэтому сверяется точный текст
-    ``UNIQUE constraint failed: <table>.<col>, …``: подстрока по имени колонки
-    совпала бы и с CHECK или внешним ключом на ту же колонку, и чужой сбой
-    молча превратился бы в «уже существует».
+    SQLite имени не сообщает, только колонки. Тип сбоя берётся из
+    расширенного кода ``sqlite_errorname`` (``SQLITE_CONSTRAINT_UNIQUE``), а
+    набор колонок разбирается из ``UNIQUE constraint failed: <table>.<col>, …``
+    и сверяется целиком: подстрока по имени колонки совпала бы и с CHECK или
+    внешним ключом на ту же колонку, и чужой сбой молча превратился бы в
+    «уже существует». Пробелы вокруг имён колонок на результат не влияют.
     """
-    diag = getattr(exc.orig, "diag", None)
+    orig = exc.orig
+    diag = getattr(orig, "diag", None)
     name = getattr(diag, "constraint_name", None)
     if name is not None:
         return bool(name == constraint)
-    expected = "UNIQUE constraint failed: " + ", ".join(f"{table}.{c}" for c in columns)
-    return str(exc.orig).strip() == expected
+    errorname = getattr(orig, "sqlite_errorname", None)
+    if errorname is not None and errorname != "SQLITE_CONSTRAINT_UNIQUE":
+        return False
+    message = str(orig).strip()
+    if not message.startswith(_SQLITE_UNIQUE_PREFIX):
+        return False
+    failed = tuple(part.strip() for part in message[len(_SQLITE_UNIQUE_PREFIX) :].split(","))
+    return failed == tuple(f"{table}.{c}" for c in columns)

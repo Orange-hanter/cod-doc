@@ -8,7 +8,6 @@ skill_get — one call gives it everything.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
@@ -466,10 +465,21 @@ def report(
     if kind == "approval_request":
         from cod_doc.services import approval_service
 
+        # Тип приходит из payload агента: чужое значение — структурный отказ,
+        # как у неизвестного kind, а не исключение из approval_service.
+        approval_type = (payload or {}).get("approval_type", "manual")
+        if not isinstance(approval_type, str) or approval_type not in approval_service.VALID_TYPES:
+            legal_types = sorted(approval_service.VALID_TYPES)
+            return {
+                "ok": False,
+                "kind": kind,
+                "hint": f"unknown approval_type {approval_type!r}. Legal values: {legal_types}",
+                "legal_approval_types": legal_types,
+            }
         approval = approval_service.request(
             session,
             project_id,
-            approval_type=(payload or {}).get("approval_type", "manual"),
+            approval_type=approval_type,
             requested_by=agent_id,
             payload={"message": message, **(payload or {})},
             linked_task_refs=[task_id],
@@ -480,7 +490,7 @@ def report(
             session,
             project_id,
             "approval.requested",
-            actor_kind="agent",
+            actor_kind=actor_kind_for_author(agent_id),
             actor_id=agent_id,
             scope_kind="approval",
             scope_id=approval.approval_id,
@@ -499,7 +509,7 @@ def report(
             session,
             project_id,
             "agent.needs_context",
-            actor_kind="agent",
+            actor_kind=actor_kind_for_author(agent_id),
             actor_id=agent_id,
             scope_kind="task",
             scope_id=task_id,
@@ -572,7 +582,7 @@ def complete(
         session,
         project_id,
         "task.completed",
-        actor_kind="agent",
+        actor_kind=actor_kind_for_author(agent_id),
         actor_id=agent_id,
         scope_kind="task",
         scope_id=task_id,
@@ -596,36 +606,44 @@ def release(
     agent_id: str,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    """AGT-007: release checkout lock without transitioning to done."""
-    from cod_doc.services import activity_service, checkout_service
+    """AGT-007: release checkout lock without transitioning to done.
+
+    ``in_progress`` откатывается в ``todo`` через ``task_service.update_status``
+    — со сверкой по статус-машине, ревизией и событием перехода, как любая
+    смена статуса. Отказы — структурным ответом, как у ``pick``.
+    """
+    from cod_doc.domain.entities import TaskStatus
+    from cod_doc.services import activity_service, checkout_service, task_service
     from cod_doc.services.checkout_service import CheckoutConflictError
     from cod_doc.services.task_service import TaskNotFoundError
+    from cod_doc.services.task_status_machine import StatusTransitionError, normalise
 
     try:
         result = checkout_service.release(
             session, task_id, project_id=project_id, agent=agent_id, force=False
         )
+        if normalise(result.new_status) == TaskStatus.IN_PROGRESS_NEW.value:
+            updated = task_service.update_status(
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                new_status=TaskStatus.TODO,
+                author=agent_id,
+                reason=reason or "agent_release",
+            )
+            result.new_status = updated.status.value
     except TaskNotFoundError:
         return {"ok": False, "hint": f"task not found: {task_id}"}
     except CheckoutConflictError as exc:
         return {"ok": False, "hint": str(exc), "code": "not_held_by_this_agent"}
-
-    from cod_doc.infra.models import TaskModel
-
-    task = session.execute(
-        select(TaskModel).where(TaskModel.project_id == project_id, TaskModel.task_id == task_id)
-    ).scalar_one()
-    if task.status in {"in_progress", "in-progress"}:
-        task.status = "todo"
-        task.last_updated = datetime.now(UTC)
-        session.flush()
-        result.new_status = "todo"
+    except StatusTransitionError as exc:
+        return {"ok": False, "hint": str(exc), "code": "status_transition"}
 
     activity_service.emit(
         session,
         project_id,
         "task.released",
-        actor_kind="agent",
+        actor_kind=actor_kind_for_author(agent_id),
         actor_id=agent_id,
         scope_kind="task",
         scope_id=task_id,

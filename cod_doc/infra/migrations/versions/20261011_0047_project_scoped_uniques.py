@@ -14,7 +14,7 @@ SQLite не умеет снимать ограничение, поэтому т�
 транзакции SQLite молча игнорирует, а 0027 срабатывала только потому, что
 драйвер открывает транзакцию лениво. Здесь прагма идёт через
 ``autocommit_block``, её значение проверяется перед первым ``DROP``, а после
-пересборки ``PRAGMA foreign_key_check`` должен вернуть пусто.
+пересборки ``PRAGMA foreign_key_check`` по трём таблицам и их детям должен вернуть пусто.
 
 Таблица пересоздаётся из её собственного SQL в ``sqlite_master`` с заменой
 ровно одного ограничения — так в новую таблицу переходят все колонки, в том
@@ -65,6 +65,28 @@ def _quote_ident(name: str) -> str:
     код, и ``"`` в имени без удвоения ломал бы синтаксис посреди пересборки.
     """
     return '"' + name.replace('"', '""') + '"'
+
+
+def _tables_to_check(bind: Connection) -> list[str]:
+    """Пересобранные таблицы и все таблицы, чьи внешние ключи ссылаются на них."""
+    targets = {target.table for target in _TARGETS}
+    tables = [
+        str(name)
+        for (name,) in bind.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        )
+    ]
+    children = {
+        table
+        for table in tables
+        if any(
+            row[2] in targets
+            for row in bind.exec_driver_sql(
+                f"PRAGMA foreign_key_list({_quote_ident(table)})"
+            ).fetchall()
+        )
+    }
+    return sorted(targets | children)
 
 
 def _global_clause(column: str) -> re.Pattern[str]:
@@ -157,7 +179,16 @@ def _rebuild_sqlite(*, to_scoped: bool) -> None:
         for _name, view_sql in views:
             op.execute(view_sql)
 
-        violations = bind.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+        # Только то, что пересборка могла задеть: три таблицы и их дети. Проверка
+        # всей БД остановила бы миграцию на чужих давних нарушениях (hub, ручные
+        # правки), к 0047 не относящихся.
+        violations = [
+            row
+            for table in _tables_to_check(bind)
+            for row in bind.exec_driver_sql(
+                f"PRAGMA foreign_key_check({_quote_ident(table)})"
+            ).fetchall()
+        ]
         if violations:
             raise RuntimeError(f"0047: после пересборки нарушены внешние ключи: {violations[:5]}")
     finally:

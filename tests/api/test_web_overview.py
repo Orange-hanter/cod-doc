@@ -499,6 +499,53 @@ def test_complete_post_returns_to_same_site_referer(
     assert r.headers["location"] == expected
 
 
+def test_complete_post_integrity_error_log_has_no_sql_or_params(
+    overview_client, monkeypatch, caplog
+) -> None:
+    """WARNING-лог несёт тип и ограничение, а не текст запроса и параметры."""
+    import logging
+
+    from sqlalchemy.exc import IntegrityError
+
+    def boom(*_a: object, **_kw: object) -> None:
+        raise IntegrityError(
+            "INSERT INTO secret_table",
+            {"p": "secret-param"},
+            Exception("UNIQUE constraint failed: task.x"),
+        )
+
+    monkeypatch.setattr(tasks, "complete", boom)
+    client, entry = overview_client
+    with caplog.at_level(logging.WARNING, logger="cod_doc.api"):
+        client.post(f"/p/{entry.name}/tasks/OVR-002/complete", headers={"HX-Request": "true"})
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert warnings
+    for record in warnings:
+        text = record.getMessage()
+        assert "secret" not in text
+        assert record.exc_info is None
+    assert any("UNIQUE constraint failed: task.x" in r.getMessage() for r in warnings)
+
+
+def test_complete_post_flash_cookies_are_httponly_lax(overview_client, monkeypatch) -> None:
+    """Flash читает только сервер: HttpOnly и SameSite=Lax, Secure — только на https."""
+    from sqlalchemy.exc import IntegrityError
+
+    def boom(*_a: object, **_kw: object) -> None:
+        raise IntegrityError("INSERT", {}, Exception("x"))
+
+    monkeypatch.setattr(tasks, "complete", boom)
+    client, entry = overview_client
+    r = client.post(f"/p/{entry.name}/tasks/OVR-002/complete", follow_redirects=False)
+    cookies = [v for k, v in r.headers.multi_items() if k == "set-cookie"]
+    assert {c.split("=", 1)[0] for c in cookies} == {"flash_severity", "flash_message"}
+    for cookie in cookies:
+        attrs = cookie.lower()
+        assert "httponly" in attrs
+        assert "samesite=lax" in attrs
+        assert "secure" not in attrs.replace("samesite", "")
+
+
 def test_complete_post_integrity_error_text_stays_server_side(overview_client, monkeypatch) -> None:
     """str() от IntegrityError несёт SQL и параметры — в баннер идёт общий текст."""
     from sqlalchemy.exc import IntegrityError

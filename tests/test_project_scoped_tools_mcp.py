@@ -116,3 +116,26 @@ def test_mcp_story_update_status_returns_section_key(
     assert out["status"] == "accepted"
     assert out["section"] == f"sec-{slug}"
     assert tools["story_get"](project=slug, story_id=STORY)["section"] == f"sec-{slug}"
+
+
+@pytest.mark.parametrize(("asked", "passed"), [(10**9, 500), (-1, 1), (0, 1), (25, 25)])
+def test_mcp_finding_list_clamps_limit(
+    monkeypatch: pytest.MonkeyPatch, engine: Engine, asked: int, passed: int
+) -> None:
+    """``limit`` клиента не уходит в SQL как есть: -1 в SQLite — «без предела»."""
+    from cod_doc.mcp.tools import finding_tools
+    from cod_doc.services import finding_service
+
+    factory, _ = seed_two_projects(engine)
+    monkeypatch.setattr(finding_tools, "session_factory", lambda project: (factory, None))
+    seen: dict[str, int] = {}
+
+    def fake_list(_session: object, _pid: int, **kw: Any) -> list[dict[str, Any]]:
+        seen["limit"] = kw["limit"]
+        return []
+
+    monkeypatch.setattr(finding_service, "list_findings", fake_list)
+    mcp = FastMCP("test")
+    finding_tools.register(mcp)
+    mcp._tool_manager._tools["finding_list"].fn(project=SLUGS[0], limit=asked)
+    assert seen["limit"] == passed

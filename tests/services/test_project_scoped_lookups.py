@@ -17,7 +17,7 @@ import pytest
 
 from cod_doc.domain.entities import Priority, StoryLinkKind, StoryRelation, TaskStatus, TaskType
 from cod_doc.infra.db import transactional
-from cod_doc.infra.models import TaskModel
+from cod_doc.infra.models import DependencyModel, TaskModel
 from cod_doc.infra.repositories import PlanSectionRepository, TaskRepository
 from cod_doc.services import (
     agent_service,
@@ -282,6 +282,36 @@ def test_reverse_chain_walks_own_project_only(engine_with_schema: Engine, slug: 
     assert [e.task_id for e in chain] == [_EXTRA[slug]]
 
 
+def _forge_cross_project_edge(
+    factory: sessionmaker[Session], pids: dict[str, int], *, forward: bool
+) -> None:
+    """Ребро из своей задачи alpha в задачу beta — сервис такое не создаёт.
+
+    ``task_service`` отказывает кросс-проектным блокерам, поэтому ребро
+    пишется в ORM напрямую: так выглядит испорченная или слитая hub-БД.
+    ``forward=True`` — задача beta становится prerequisite задачи alpha;
+    иначе — её dependent.
+    """
+    with transactional(factory) as session:
+        own = task_service.get(session, _EXTRA["alpha"], project_id=pids["alpha"])
+        foreign = task_service.get(session, _EXTRA["beta"], project_id=pids["beta"])
+        assert own is not None and own.row_id is not None
+        assert foreign is not None and foreign.row_id is not None
+        src, dst = (own.row_id, foreign.row_id) if forward else (foreign.row_id, own.row_id)
+        session.add(DependencyModel(from_task_id=src, to_task_id=dst, kind="blocks"))
+
+
+@pytest.mark.parametrize("forward", [True, False])
+def test_chain_stops_at_project_boundary(engine_with_schema: Engine, forward: bool) -> None:
+    """Рекурсия CTE не переходит по ребру в задачу чужого проекта."""
+    factory, pids = _seed_chain(engine_with_schema, forward=forward)
+    _forge_cross_project_edge(factory, pids, forward=forward)
+    walk = plan_service.forward_chain if forward else plan_service.reverse_chain
+    with transactional(factory) as session:
+        chain = walk(session, TASK, project_id=pids["alpha"])
+    assert [e.task_id for e in chain] == [_EXTRA["alpha"]]
+
+
 @pytest.mark.parametrize("slug", SLUGS)
 def test_heartbeat_context_returns_own_project_task(engine_with_schema: Engine, slug: str) -> None:
     factory, pids = _seed_same_task_id(engine_with_schema)
@@ -289,3 +319,30 @@ def test_heartbeat_context_returns_own_project_task(engine_with_schema: Engine, 
         out = heartbeat_service.heartbeat_context(session, project_id=pids[slug], task_id=TASK)
     assert out["task"]["id"] == TASK
     assert out["task"]["title"] == f"Task of {slug}"
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_get_section_by_letter_is_case_insensitive_and_project_scoped(
+    engine_with_schema: Engine, slug: str
+) -> None:
+    """Буква — без учёта регистра; ``plan_id`` чужого проекта секций не открывает."""
+    factory, pids = _seed(engine_with_schema)
+    with transactional(factory) as session:
+        plan = plan_service.get_by_scope(session, SCOPE, project_id=pids[slug])
+        assert plan is not None and plan.row_id is not None
+        (section,) = plan_service.list_sections(session, plan.row_id)
+        for letter in (section.letter.lower(), f" {section.letter.upper()} "):
+            found = plan_service.get_section_by_letter(
+                session, plan.row_id, letter, project_id=pids[slug]
+            )
+            assert found is not None and found.row_id == section.row_id
+        assert (
+            plan_service.get_section_by_letter(
+                session, plan.row_id, section.letter, project_id=pids[_other(slug)]
+            )
+            is None
+        )
+        assert (
+            plan_service.get_section_by_letter(session, plan.row_id, "ZZ", project_id=pids[slug])
+            is None
+        )

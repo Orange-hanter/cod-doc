@@ -168,6 +168,10 @@ class StorySectionRepository(BaseRepository[StorySection, StorySectionModel]):
         return StorySectionModel(**kwargs)
 
     def get_by_key(self, project_id: int, key: str) -> StorySection | None:
+        # key уникален в проекте (uq_story_section_project_key): с
+        # project_id=None или key=None запрос тихо вернул бы «не найдено».
+        require_int_project_id(project_id)
+        require_key(key, "key")
         stmt = select(StorySectionModel).where(
             StorySectionModel.project_id == project_id,
             StorySectionModel.key == key,

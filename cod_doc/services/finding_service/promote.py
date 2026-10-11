@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from cod_doc.domain.entities import Priority, TaskType, actor_kind_for_author
 from cod_doc.infra.models import FindingModel, PlanModel, PlanSectionModel
-from cod_doc.infra.repositories import PlanSectionRepository
 from cod_doc.services import activity_service, plan_service, search_service, task_service
 from cod_doc.services.finding_service.queries import get_finding
 
@@ -175,10 +174,11 @@ def promote_finding_by_ref(
     plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
     if plan is None or plan.row_id is None:
         raise ValueError(f"Plan '{plan_scope}' not found.")
-    sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
-    section = next((s for s in sections if s.letter.upper() == section_letter.upper()), None)
+    section = plan_service.get_section_by_letter(
+        session, plan.row_id, section_letter, project_id=project_id
+    )
     if section is None or section.row_id is None:
-        letters = ", ".join(s.letter for s in sections)
+        letters = ", ".join(s.letter for s in plan_service.list_sections(session, plan.row_id))
         raise ValueError(f"Section '{section_letter}' not found. Available: {letters}")
 
     finding = get_finding(session, project_id, finding_uid)

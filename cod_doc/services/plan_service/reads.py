@@ -45,6 +45,21 @@ def list_sections(session: Session, plan_id: int) -> list[PlanSection]:
     return PlanSectionRepository(session).list_for_plan(plan_id)
 
 
+def get_section_by_letter(
+    session: Session, plan_id: int, letter: str, *, project_id: int
+) -> PlanSection | None:
+    """Секция плана по букве без учёта регистра; None — нет такой.
+
+    План сверяется с проектом: голый ``plan_id`` чужого проекта секций не
+    открывает (STO-023). Единая точка «буква → секция» для поверхностей —
+    раньше каждая команда сравнивала буквы сама.
+    """
+    if get_for_project(session, project_id, plan_id) is None:
+        return None
+    wanted = letter.strip().upper()
+    return next((s for s in list_sections(session, plan_id) if s.letter.upper() == wanted), None)
+
+
 def get_for_project(session: Session, project_id: int, plan_id: int) -> Plan | None:
     """Return the plan iff it belongs to the project; None otherwise.
 

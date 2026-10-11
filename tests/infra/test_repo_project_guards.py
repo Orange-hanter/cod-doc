@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING
 import pytest
 
 from cod_doc.infra.db import make_engine, transactional
-from cod_doc.infra.repositories import PlanRepository, UserStoryRepository
+from cod_doc.infra.repositories import (
+    PlanRepository,
+    StorySectionRepository,
+    UserStoryRepository,
+)
 from tests._alembic import run_alembic
 from tests._project_scoped_seed import SCOPE, STORY
 from tests._project_scoped_seed import seed_two_projects as _seed
@@ -43,6 +47,8 @@ def test_scoped_repo_lookups_reject_non_int_project_id(
             PlanRepository(session).get_by_scope(SCOPE, project_id=bad)
         with pytest.raises(TypeError, match="project_id must be int"):
             UserStoryRepository(session).get_by_story_id(STORY, project_id=bad)
+        with pytest.raises(TypeError, match="project_id must be int"):
+            StorySectionRepository(session).get_by_key(bad, "annex")
 
 
 @pytest.mark.parametrize("bad", [0, -1])
@@ -55,6 +61,8 @@ def test_scoped_repo_lookups_reject_non_positive_project_id(
             PlanRepository(session).get_by_scope(SCOPE, project_id=bad)
         with pytest.raises(ValueError, match="project_id must be positive"):
             UserStoryRepository(session).get_by_story_id(STORY, project_id=bad)
+        with pytest.raises(ValueError, match="project_id must be positive"):
+            StorySectionRepository(session).get_by_key(bad, "annex")
 
 
 @pytest.mark.parametrize("bad", [None, "", 1])
@@ -68,3 +76,5 @@ def test_scoped_repo_lookups_reject_empty_or_non_str_key(
             PlanRepository(session).get_by_scope(bad, project_id=pid)
         with pytest.raises((TypeError, ValueError), match="story_id must be a non-empty str"):
             UserStoryRepository(session).get_by_story_id(bad, project_id=pid)
+        with pytest.raises((TypeError, ValueError), match="key must be a non-empty str"):
+            StorySectionRepository(session).get_by_key(pid, bad)

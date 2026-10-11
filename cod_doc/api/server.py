@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
-from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -26,7 +25,7 @@ from cod_doc.api.routes import router as core_router
 from cod_doc.api.structure import router as structure_router
 from cod_doc.api.v1.routes import router as v1_router
 from cod_doc.api.web import fragments_router, pages_router
-from cod_doc.api.web.errors import WebError, truncate_for_cookie
+from cod_doc.api.web.errors import WebError, set_flash_cookie
 from cod_doc.api.web.templates_env import STATIC_DIR, templates
 from cod_doc.api.webhooks import router as webhook_router
 from cod_doc.api.websocket import router as websocket_router
@@ -107,15 +106,5 @@ async def web_error_handler(request: Request, exc: WebError) -> Response:
         )
     referer = request.headers.get("Referer") or "/"
     response = RedirectResponse(url=referer, status_code=303)
-    # Plain cookies; flash is short-lived and not security-sensitive (the
-    # message comes from the same trust domain). Path "/" so any page reads it.
-    # Cookie headers are latin-1 only, so percent-encode the message;
-    # truncate first to stay under browser's 4 KB cookie cap.
-    response.set_cookie("flash_severity", exc.severity, max_age=30, path="/")
-    response.set_cookie(
-        "flash_message",
-        quote(truncate_for_cookie(exc.message)),
-        max_age=30,
-        path="/",
-    )
+    set_flash_cookie(response, request, severity=exc.severity, message=exc.message)
     return response

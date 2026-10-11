@@ -62,7 +62,8 @@ def _build_wake_for_run(
         )
 
     from cod_doc.infra.db import db_for_entry, transactional
-    from cod_doc.services.project_lookup import require_project_id
+
+    from ._db import require_project_id
 
     sf, _engine = db_for_entry(proj.entry)
     with transactional(sf) as session:

@@ -7,12 +7,40 @@ redirect with cookie-flash (form post).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.api.web.templates_env import templates
+
+
+def _log_write_failure(logger: logging.Logger, what: str, task_id: str, exc: Exception) -> None:
+    """Записать сбой web-записи без SQL и значений параметров.
+
+    ``str(IntegrityError)`` несёт текст запроса и параметры, а сообщение
+    Postgres — ещё и ``DETAIL`` со значениями ключа. На WARNING уходят тип
+    исключения и имя нарушенного ограничения (у SQLite его заменяет первая
+    строка сообщения драйвера: там только таблица и колонки); полный
+    traceback — на DEBUG, для отладки на своей машине.
+    """
+    cause: BaseException = exc
+    constraint = None
+    if isinstance(exc, IntegrityError) and exc.orig is not None:
+        cause = exc.orig
+        constraint = getattr(getattr(cause, "diag", None), "constraint_name", None)
+        if constraint is None:
+            constraint = next(iter(str(cause).splitlines()), None)
+    logger.warning(
+        "%s failed for %s: %s (constraint=%s)",
+        what,
+        task_id,
+        type(cause).__name__,
+        constraint,
+    )
+    logger.debug("%s failed for %s", what, task_id, exc_info=exc)
 
 
 def _is_htmx(request: Request) -> bool:

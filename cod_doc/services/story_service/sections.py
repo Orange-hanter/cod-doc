@@ -162,7 +162,8 @@ def assign_section(
 
     new_section: StorySection | None = None
     if key is not None:
-        new_section = repo.get_by_key(model.project_id, key)
+        # Пустой ключ — промах, как в ``create`` (validate_story_section_key).
+        new_section = repo.get_by_key(model.project_id, key) if key else None
         if new_section is None:
             raise SectionNotFoundError(key)
 

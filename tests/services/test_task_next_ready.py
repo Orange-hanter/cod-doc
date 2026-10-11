@@ -110,6 +110,19 @@ def test_task_next_ready_empty_returns_none(engine_with_schema, monkeypatch) -> 
     assert result is None
 
 
+def test_task_next_ready_plan_scope_filters_and_unknown_scope_is_none(
+    engine_with_schema, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id, plan_id, sec_id = _seed(session)
+        _make(session, proj_id, plan_id, sec_id, "NRD-001")
+
+    task_next_ready = _setup(monkeypatch, factory)
+    assert task_next_ready(project="nr", plan_scope="nr-plan")["task_id"] == "NRD-001"
+    assert task_next_ready(project="nr", plan_scope="no-such-plan") is None
+
+
 def test_task_next_ready_unknown_project_raises(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """Проекта нет в БД — ошибка, как у соседних тулов, а не «готовых задач нет»."""
     from cod_doc.services.project_lookup import ProjectNotFoundError

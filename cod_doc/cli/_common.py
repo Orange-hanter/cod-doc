@@ -38,14 +38,15 @@ def require_project_id(session: Session, project_name: str) -> int:
     ``services.project_lookup.require_project_id``: ``ProjectNotFoundError`` —
     ``LookupError``, и ``_guard`` печатает её после отката.
     """
-    from cod_doc.infra.repositories import ProjectRepository
+    from cod_doc.services.project_lookup import ProjectNotFoundError
+    from cod_doc.services.project_lookup import require_project_id as _require
 
-    proj = ProjectRepository(session).get_by_slug(project_name)
-    if proj is None or proj.row_id is None:
+    try:
+        return _require(session, project_name)
+    except ProjectNotFoundError:
         console.print(
             f"Project '{printable(project_name)}' not in DB. Run 'project add' first.",
             style="red",
             markup=False,
         )
         sys.exit(1)
-    return proj.row_id

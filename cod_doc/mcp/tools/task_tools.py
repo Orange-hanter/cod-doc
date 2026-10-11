@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from cod_doc.domain.entities import actor_kind_for_author
@@ -10,6 +11,8 @@ from cod_doc.mcp.tools._db import require_project_id, session_factory, task_to_d
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 
 def _link_addressed_questions(
@@ -67,7 +70,9 @@ def register(mcp: FastMCP) -> None:
         pass ``local_only=False`` to see them.
 
         Use this as the input to ``task_checkout``. Returns ``None`` when
-        the ready-set is empty.
+        the ready-set is empty (or ``plan_scope`` names no plan of the
+        project). A project missing from the DB raises ``ValueError`` with
+        the ``cod-doc project add`` hint, like every other task tool.
         """
         from sqlalchemy import select as _select
 
@@ -82,11 +87,13 @@ def register(mcp: FastMCP) -> None:
             batch = plan_reads.ready_batch_for_project(session, project_id, local_only=local_only)
             ready = batch.tasks
             if plan_scope is not None:
-                from cod_doc.infra.repositories import PlanRepository
+                from cod_doc.services import plan_service
 
-                plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
-                plan_id = plan.row_id if plan is not None else -1
-                ready = [t for t in ready if getattr(t, "plan_id", None) == plan_id]
+                plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
+                if plan is None:
+                    # Плана с таким scope в проекте нет — готовых задач в нём тоже.
+                    return None
+                ready = [t for t in ready if t.plan_id == plan.row_id]
             if not ready:
                 return None
             ready_ids = [t.row_id for t in ready if t.row_id is not None]
@@ -677,11 +684,17 @@ def register(mcp: FastMCP) -> None:
             # которых нет в БД.
             created = []
             if not errors:
+                # Сюда доходят только не-доменные сбои (доменные уже записаны
+                # в errors по элементу): str() от OperationalError или
+                # IntegrityError на коммите несёт SQL и параметры. Клиенту —
+                # тип, traceback — в DEBUG-лог сервера.
+                logger.warning("task_create_many batch failed: %s", type(exc).__name__)
+                logger.debug("task_create_many batch failed", exc_info=exc)
                 errors.append(
                     {
                         "index": None,
                         "title": None,
-                        "message": f"{type(exc).__name__}: {exc}",
+                        "message": f"{type(exc).__name__}: batch rolled back",
                         "code": "internal",
                     }
                 )

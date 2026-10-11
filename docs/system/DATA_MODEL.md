@@ -201,7 +201,7 @@ CREATE TABLE plan (
   completed_log_id INTEGER REFERENCES document(row_id),
   created         TEXT NOT NULL,
   last_updated    TEXT NOT NULL,
-  UNIQUE (project_id, scope)                -- STO-018, миграция 0047: в проекте, не во всей БД
+  UNIQUE(project_id, scope)                 -- STO-018, миграция 0047: в проекте, не во всей БД
 );
 
 CREATE TABLE plan_section (
@@ -288,7 +288,7 @@ CREATE TABLE story_section (
   key        TEXT    NOT NULL,             -- 'module-1', 'annex'
   title      TEXT    NOT NULL,             -- «Управление запасами»
   position   INTEGER NOT NULL,
-  UNIQUE (project_id, key)
+  UNIQUE(project_id, key)
 );
 
 CREATE INDEX ix_story_section_project ON story_section(project_id, position);
@@ -305,7 +305,7 @@ CREATE TABLE user_story (
   last_updated TEXT NOT NULL,
   -- SET NULL, не CASCADE: удаление секции осиротит историю, но не удалит её.
   section_id   INTEGER REFERENCES story_section(row_id) ON DELETE SET NULL,
-  UNIQUE (project_id, story_id)            -- STO-018, миграция 0047
+  UNIQUE(project_id, story_id)             -- STO-018, миграция 0047
 );
 
 CREATE TABLE story_acceptance (
@@ -336,7 +336,7 @@ CREATE TABLE module (
   status       TEXT    NOT NULL,
   spec_doc_id  INTEGER REFERENCES document(row_id),
   plan_id      INTEGER REFERENCES plan(row_id),
-  UNIQUE (project_id, module_id)           -- STO-024, миграция 0047
+  UNIQUE(project_id, module_id)            -- STO-024, миграция 0047
 );
 
 CREATE TABLE module_dependency (
@@ -530,7 +530,7 @@ CREATE TABLE scenario (
   author           TEXT    NOT NULL,
   created          TEXT    NOT NULL,
   last_updated     TEXT    NOT NULL,
-  UNIQUE (project_id, scenario_id)
+  UNIQUE(project_id, scenario_id)
 );
 CREATE INDEX ix_scenario_project_group ON scenario(project_id, group_key, position);
 CREATE INDEX ix_scenario_document_id   ON scenario(document_id);
@@ -541,7 +541,7 @@ CREATE TABLE scenario_step (
   scenario_row_id INTEGER NOT NULL REFERENCES scenario(row_id) ON DELETE CASCADE,
   position        INTEGER NOT NULL,
   text            TEXT    NOT NULL,
-  UNIQUE (scenario_row_id, position)
+  UNIQUE(scenario_row_id, position)
 );
 
 CREATE TABLE scenario_link (
@@ -550,7 +550,7 @@ CREATE TABLE scenario_link (
   to_kind         TEXT    NOT NULL,            -- task|story|document|criterion
   to_ref          TEXT    NOT NULL,            -- id задачи / стори / doc_key / 'US-013#2'
   relation        TEXT    NOT NULL,            -- verifies|specified_in|exercised_by
-  UNIQUE (scenario_row_id, to_kind, to_ref, relation)
+  UNIQUE(scenario_row_id, to_kind, to_ref, relation)
 );
 ```
 

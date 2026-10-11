@@ -6,6 +6,7 @@ CHECK, внешний ключ), и чужой сбой молча превра�
 
 from __future__ import annotations
 
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -53,3 +54,49 @@ def test_postgres_matches_by_constraint_name_only() -> None:
     assert not is_unique_violation(
         IntegrityError("INSERT", {}, _PgError("user_story_section_id_fkey")), **_KW
     )
+
+
+def _real_sqlite_error(ddl: str, insert: str) -> IntegrityError:
+    """Настоящий ``sqlite3.IntegrityError`` с расширенным кодом ошибки."""
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute(ddl)
+        conn.execute(insert)
+        try:
+            conn.execute(insert)
+        except sqlite3.IntegrityError as err:
+            return IntegrityError("INSERT", {}, err)
+    finally:
+        conn.close()
+    raise AssertionError("insert did not fail")
+
+
+def test_real_sqlite_unique_violation_matches() -> None:
+    exc = _real_sqlite_error(
+        "CREATE TABLE user_story (project_id INT, story_id TEXT, UNIQUE (project_id, story_id))",
+        "INSERT INTO user_story VALUES (1, 'S-1')",
+    )
+    assert getattr(exc.orig, "sqlite_errorname", None) == "SQLITE_CONSTRAINT_UNIQUE"
+    assert is_unique_violation(exc, **_KW)
+
+
+def test_real_sqlite_unique_on_other_columns_does_not_match() -> None:
+    exc = _real_sqlite_error(
+        "CREATE TABLE user_story (project_id INT, story_id TEXT UNIQUE)",
+        "INSERT INTO user_story VALUES (1, 'S-1')",
+    )
+    assert not is_unique_violation(exc, **_KW)
+
+
+def test_sqlite_errorname_other_than_unique_does_not_match() -> None:
+    """Текст похож на UNIQUE, а расширенный код говорит иное — верим коду."""
+    err = sqlite3.IntegrityError(
+        "UNIQUE constraint failed: user_story.project_id, user_story.story_id"
+    )
+    err.sqlite_errorname = "SQLITE_CONSTRAINT_PRIMARYKEY"
+    assert not is_unique_violation(IntegrityError("INSERT", {}, err), **_KW)
+
+
+def test_sqlite_message_whitespace_is_tolerated() -> None:
+    exc = _sqlite("UNIQUE constraint failed:  user_story.project_id ,user_story.story_id \n")
+    assert is_unique_violation(exc, **_KW)

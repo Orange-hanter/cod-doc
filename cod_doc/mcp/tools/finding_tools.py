@@ -20,6 +20,10 @@ from cod_doc.mcp.tools._db import require_project_id, session_factory
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
+#: Потолок ``limit`` для клиента: каждая строка материализуется в память и в
+#: JSON-ответ общего демона, а ``limit=-1`` в SQLite значит «без предела».
+MAX_LIST_LIMIT = 500
+
 
 def register(mcp: FastMCP) -> None:
     """Register finding.* tools on the given FastMCP instance."""
@@ -35,6 +39,7 @@ def register(mcp: FastMCP) -> None:
 
         status: open | resolved | dismissed | promoted (RFC 22 §3.2).
         source: ai_review | zairgrush | routine.
+        limit: clamped to 1..500.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import finding_service
@@ -43,7 +48,11 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return finding_service.list_findings(
-                session, project_id, status=status, source=source, limit=limit
+                session,
+                project_id,
+                status=status,
+                source=source,
+                limit=max(1, min(limit, MAX_LIST_LIMIT)),
             )
 
     @mcp.tool(name="finding_get")

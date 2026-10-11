@@ -32,6 +32,9 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
+# Каждый шаг рекурсии, а не только якорь, остаётся в проекте: ``task_service``
+# кросс-проектных блокеров не создаёт, но ребро из испорченной или слитой
+# hub-БД не должно выводить цепочку в чужой проект (STO-030).
 _FORWARD_CHAIN_SQL = text("""
 WITH RECURSIVE chain(row_id, depth) AS (
     SELECT t.row_id, 0
@@ -43,6 +46,9 @@ WITH RECURSIVE chain(row_id, depth) AS (
     JOIN dependency d
       ON d.from_task_id = chain.row_id
      AND d.kind = 'blocks'
+    JOIN task nxt
+      ON nxt.row_id = d.to_task_id
+     AND nxt.project_id = :project_id
 )
 SELECT DISTINCT t.row_id, t.task_id, t.title, t.status, MIN(chain.depth) AS depth
 FROM chain
@@ -65,6 +71,9 @@ WITH RECURSIVE chain(row_id, depth) AS (
     JOIN dependency d
       ON d.to_task_id = chain.row_id
      AND d.kind = 'blocks'
+    JOIN task nxt
+      ON nxt.row_id = d.from_task_id
+     AND nxt.project_id = :project_id
 )
 SELECT DISTINCT t.row_id, t.task_id, t.title, t.status, MIN(chain.depth) AS depth
 FROM chain

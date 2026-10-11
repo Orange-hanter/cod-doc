@@ -37,7 +37,7 @@ def session_factory(project: str | None) -> tuple[sessionmaker[Session], Project
     cfg = Config.load()
     entry = cfg.get_project(name)
     if not entry:
-        raise ValueError(f"Project not found: {name!r}")
+        raise ValueError(f"Project not found: {name!r} — run 'cod-doc project add' first.")
     factory, _engine = db_for_entry(entry)
     return factory, entry
 

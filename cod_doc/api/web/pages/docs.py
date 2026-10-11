@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated, Any
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -16,7 +15,7 @@ from cod_doc.api.deps import (
     get_project_db,
     try_open_project_db,
 )
-from cod_doc.api.web.errors import ValidationWebError, truncate_for_cookie
+from cod_doc.api.web.errors import ValidationWebError, set_flash_cookie
 from cod_doc.api.web.markdown import render_markdown
 from cod_doc.api.web.templates_env import DOCUMENT_TYPES, templates
 from cod_doc.domain.entities import (
@@ -768,7 +767,7 @@ async def doc_generate_save(
 
 
 def _flash_import_warnings(
-    redirect: RedirectResponse, warnings: Sequence[CoercedField]
+    redirect: RedirectResponse, request: Request, warnings: Sequence[CoercedField]
 ) -> RedirectResponse:
     """ADO-015: carry «what the import had to bend» across the 303 redirect.
 
@@ -782,13 +781,7 @@ def _flash_import_warnings(
     if not warnings:
         return redirect
     message = "Импорт подменил frontmatter: " + "; ".join(w.describe() for w in warnings)
-    redirect.set_cookie("flash_severity", "warning", max_age=30, path="/")
-    redirect.set_cookie(
-        "flash_message",
-        quote(truncate_for_cookie(message)),
-        max_age=30,
-        path="/",
-    )
+    set_flash_cookie(redirect, request, severity="warning", message=message)
     return redirect
 
 
@@ -849,6 +842,7 @@ def docs_import(
         RedirectResponse(
             url=f"/p/{proj.entry.name}/docs/{report.document.doc_key}", status_code=303
         ),
+        request,
         report.warnings,
     )
 
