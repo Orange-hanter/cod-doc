@@ -403,7 +403,7 @@ def revert(session: Session, revision_id: str, *, author: str, project_id: int) 
     kind = EntityKind(model.entity_kind)
 
     if kind is EntityKind.TASK:
-        _revert_task(session, model, author=author)
+        _revert_task(session, model, author=author, project_id=project_id)
 
     elif kind is EntityKind.SECTION:
         _revert_section(session, model, author=author)
@@ -425,21 +425,21 @@ def revert(session: Session, revision_id: str, *, author: str, project_id: int) 
 # --------------------------------------------------------------------------- #
 
 
-def _task_of_revision(session: Session, model: RevisionModel) -> TaskModel:
-    """Задача TASK-ревизии — только если она в проекте самой ревизии.
+def _task_of_revision(session: Session, model: RevisionModel, project_id: int) -> TaskModel:
+    """Задача TASK-ревизии — только если она в проекте вызывающего ``project_id``.
 
-    `revert` уже сверил проект ревизии с проектом вызывающего; задача
-    достаётся по ``entity_id``, и её проект сверяется с ревизией ещё раз — при
+    `revert` уже нашёл ревизию в скоупе ``project_id``; задача достаётся по
+    ``entity_id``, и её проект сверяется с тем же ``project_id`` ещё раз — при
     рассинхроне (легаси-импорт, ручная правка БД) откат иначе молча лёг бы на
     задачу чужого проекта.
     """
     task_model = session.get(TaskModel, model.entity_id)
-    if task_model is None or task_model.project_id != model.project_id:
-        raise LookupError(f"task #{model.entity_id} not found in project #{model.project_id}")
+    if task_model is None or task_model.project_id != project_id:
+        raise LookupError(f"task #{model.entity_id} not found in project #{project_id}")
     return task_model
 
 
-def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None:
+def _revert_task(session: Session, model: RevisionModel, *, author: str, project_id: int) -> None:
     diff_obj = json.loads(model.diff)
     op = diff_obj.get("op")
 
@@ -449,7 +449,9 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
             raise RevertNotSupportedError(
                 f"TASK revision {model.revision_id}: op=affects_files без списка путей в 'old'"
             )
-        _revert_task_affects_files(session, model, old_paths=old_paths, author=author)
+        _revert_task_affects_files(
+            session, model, old_paths=old_paths, author=author, project_id=project_id
+        )
         return
     if op == "status":
         old_status = TaskStatus(diff_obj["old"])
@@ -458,7 +460,7 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
     else:
         raise RevertNotSupportedError(f"cannot auto-revert TASK revision with op={op!r}")
 
-    task_model = _task_of_revision(session, model)
+    task_model = _task_of_revision(session, model, project_id)
 
     # Import locally to avoid circular dependency.
     from cod_doc.services import task_service as _tasks
@@ -473,12 +475,12 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
         # machine (e.g. in_progress → pending). Bypass validation since the
         # original transition was already validated when first applied.
         force=True,
-        project_id=task_model.project_id,
+        project_id=project_id,
     )
 
 
 def _revert_task_affects_files(
-    session: Session, model: RevisionModel, *, old_paths: list[str], author: str
+    session: Session, model: RevisionModel, *, old_paths: list[str], author: str, project_id: int
 ) -> None:
     """AFT-021: вернуть набор ``affects_files``, сохранённый в ревизии как ``old``.
 
@@ -488,7 +490,7 @@ def _revert_task_affects_files(
     нынешнее правило путей отвергает, — `RevertNotSupportedError` с
     ``revision_id``.
     """
-    task_model = _task_of_revision(session, model)
+    task_model = _task_of_revision(session, model, project_id)
 
     from cod_doc.services import task_service as _tasks
 
@@ -510,7 +512,7 @@ def _revert_task_affects_files(
         mode="replace",
         author=author,
         reason=f"revert revision {model.revision_id}",
-        project_id=task_model.project_id,
+        project_id=project_id,
     )
 
 

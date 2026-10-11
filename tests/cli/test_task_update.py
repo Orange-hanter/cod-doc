@@ -287,7 +287,8 @@ def test_task_update_relative_parent_path_is_stored_as_given(tmp_path: Path) -> 
 
     result = _update("--affects-file", "../shared/x.py")
     assert result.exit_code == 0, result.output
-    assert "⚠" not in result.output, "относительный путь не абсолютный — предупреждать не о чем"
+    # Относительный путь не абсолютный — предупреждать не о чем: вывод — одна строка успеха.
+    assert " ".join(result.output.split()) == "✅ GCL-001: обновлено — affects_files", result.output
     assert _files("gp") == ["../shared/x.py"]
 
 

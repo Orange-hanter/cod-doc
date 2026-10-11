@@ -632,6 +632,7 @@ def test_revision_revert_refuses_task_of_another_project(engine_with_schema) -> 
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
         ).scalar_one()
+        assert model.entity_id == row_id, "ревизия указывает на задачу проекта A"
         model.project_id = other_pid
         session.flush()
 
