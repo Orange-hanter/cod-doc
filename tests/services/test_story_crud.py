@@ -97,6 +97,37 @@ def test_create_duplicate_story_id_raises(engine_with_schema) -> None:  # type: 
             _make_story(session, proj, story_id="US-001")
 
 
+def test_create_race_on_unique_maps_to_already_exists(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Гонка мимо проверки: UNIQUE(project_id, story_id) из 0047 → StoryAlreadyExistsError.
+
+    Конкурента изображает строка, добавленная в сессию без flush: под
+    ``no_autoflush`` проверка существования её не видит, а flush внутри
+    ``create`` вставляет обе и ловит UNIQUE — ровно как второй писатель.
+    """
+    from cod_doc.infra.models import UserStoryModel
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj = _seed_project(session)
+        now = datetime.now(UTC)
+        session.add(
+            UserStoryModel(
+                project_id=proj,
+                story_id="US-001",
+                persona="Rival",
+                narrative="concurrent writer",
+                status=UserStoryStatus.DRAFT.value,
+                priority=Priority.MEDIUM.value,
+                created=now,
+                last_updated=now,
+            )
+        )
+        with session.no_autoflush, pytest.raises(stories.StoryAlreadyExistsError) as exc:
+            _make_story(session, proj, story_id="US-001")
+        assert exc.value.__cause__ is not None
+        session.rollback()
+
+
 def test_create_rejects_invalid_story_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     from cod_doc.services import validation as v
 

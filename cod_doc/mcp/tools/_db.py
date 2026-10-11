@@ -47,13 +47,9 @@ def require_project_id(session: Any, project: str | None) -> int:
 
     Cycle-4: ``project=None`` falls back to workspace default.
     """
-    from cod_doc.infra.repositories import ProjectRepository
+    from cod_doc.services.project_lookup import require_project_id as _require
 
-    name = _resolve(project)
-    proj = ProjectRepository(session).get_by_slug(name)
-    if proj is None or proj.row_id is None:
-        raise ValueError(f"Project '{name}' not in DB — run 'cod-doc project add' first.")
-    return proj.row_id
+    return _require(session, _resolve(project))
 
 
 def doc_to_dict(d: Any) -> dict[str, Any]:

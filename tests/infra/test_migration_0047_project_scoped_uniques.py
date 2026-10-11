@@ -19,18 +19,35 @@ from __future__ import annotations
 import sqlite3
 import subprocess
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from tests._alembic import run_alembic
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-_PREVIOUS = "0046_adr_topics"
-_EARLIER = "0045_adr_relations"
 _THIS = "0047_project_scoped_uniques"
+_MIGRATIONS = Path(__file__).resolve().parents[2] / "cod_doc" / "infra" / "migrations"
+
+
+def _down_revision(revision: str) -> str:
+    """Предыдущая ревизия по цепочке alembic, а не захардкоженное имя.
+
+    Вставка миграции перед 0047 сдвинет «предыдущую» сама; слияние веток
+    (кортеж ``down_revision``) тест не умеет и должен упасть явно.
+    """
+    cfg = Config()
+    cfg.set_main_option("script_location", str(_MIGRATIONS))
+    script = ScriptDirectory.from_config(cfg).get_revision(revision)
+    assert script is not None, revision
+    down = script.down_revision
+    assert isinstance(down, str), f"{revision}: down_revision {down!r} — не одна ревизия"
+    return down
+
+
+_PREVIOUS = _down_revision(_THIS)
+_EARLIER = _down_revision(_PREVIOUS)
 
 _CHILD_TABLES = (
     "plan",
@@ -137,11 +154,23 @@ def _seed(db_path: Path) -> None:
         conn.close()
 
 
+#: Идентификаторы, которые разрешено подставлять в SQL строкой: имена таблиц
+#: и колонок не параметризуются, поэтому каждое сверяется с этим списком.
+_KEY_COLUMNS = {"plan": "scope", "user_story": "story_id", "module": "module_id"}
+_SQL_IDENTIFIERS = frozenset(_CHILD_TABLES) | frozenset(_KEY_COLUMNS.values())
+
+
+def _ident(name: str) -> str:
+    assert name in _SQL_IDENTIFIERS, f"идентификатор {name!r} вне белого списка"
+    return f'"{name}"'
+
+
 def _counts(db_path: Path) -> dict[str, int]:
     conn = sqlite3.connect(db_path)
     try:
         return {
-            t: int(conn.execute(f'SELECT count(*) FROM "{t}"').fetchone()[0]) for t in _CHILD_TABLES
+            t: int(conn.execute(f"SELECT count(*) FROM {_ident(t)}").fetchone()[0])
+            for t in _CHILD_TABLES
         }
     finally:
         conn.close()
@@ -197,17 +226,17 @@ def test_cross_project_duplicates_allowed_after_upgrade(tmp_path: Path) -> None:
         _add_keys(conn, 1, base=1)
         _add_keys(conn, 2, base=2)
         conn.commit()
-        for table, column in (
-            ("plan", "scope"),
-            ("user_story", "story_id"),
-            ("module", "module_id"),
+        for (table, column), key in zip(
+            _KEY_COLUMNS.items(), ("cod-doc-bootstrap", "US-001", "M1-auth"), strict=True
         ):
-            assert (
-                conn.execute(
-                    f"SELECT count(DISTINCT project_id) FROM {table} GROUP BY {column}"
-                ).fetchone()[0]
-                == 2
-            )
+            # Один и тот же ключ — в обоих проектах; запрос по конкретному
+            # значению, а не первая группа GROUP BY.
+            shared = conn.execute(
+                f"SELECT count(DISTINCT project_id) FROM {_ident(table)}"
+                f" WHERE {_ident(column)} = ?",
+                (key,),
+            ).fetchone()[0]
+            assert shared == 2, (table, column, key)
         # Внутри проекта ключ по-прежнему уникален.
         with pytest.raises(sqlite3.IntegrityError):
             _add_keys(conn, 1, base=3)

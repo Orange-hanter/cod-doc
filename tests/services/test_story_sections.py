@@ -517,7 +517,7 @@ def test_get_section_by_id_reads_one_row(engine_with_schema) -> None:  # type: i
         target_id = target.row_id
 
     with transactional(factory) as session:
-        got = stories.get_section_by_id(session, target_id)
+        got = stories.get_section_by_id(session, target_id, project_id=pid)
         assert got is not None
         assert (got.key, got.title) == ("module-2", "M2")
 
@@ -529,5 +529,24 @@ def test_get_section_by_id_on_unknown_row_returns_none(engine_with_schema) -> No
     """Повисшая ссылка не должна быть исключением: ON DELETE SET NULL это допускает."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed_project(session)
-        assert stories.get_section_by_id(session, 9999) is None
+        pid = _seed_project(session)
+        assert stories.get_section_by_id(session, 9999, project_id=pid) is None
+
+
+def test_get_section_by_id_hides_other_projects_section(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """STO-024: ``row_id`` секции чужого проекта даёт ``None``, а не её саму."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        sec = stories.create_section(
+            session, project_id=pid, key="module-a", title="A", author="human:test"
+        )
+        assert sec.row_id is not None
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="q", title="Q", root_path="/tmp/q", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+        assert stories.get_section_by_id(session, sec.row_id, project_id=int(other.row_id)) is None
+        assert stories.get_section_by_id(session, sec.row_id, project_id=pid) is not None

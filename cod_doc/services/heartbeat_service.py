@@ -26,11 +26,11 @@ from cod_doc.infra.models import (
     PlanSectionModel,
     ProjectModel,
     RevisionModel,
-    StoryLinkModel,
     TaskModel,
     UserStoryModel,
 )
 from cod_doc.services import task_service
+from cod_doc.services.story_lookup import story_id_for_task
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -73,19 +73,6 @@ def _resolve_blocked_by_ids(session: Session, task_row_id: int) -> list[str]:
     return list(session.execute(stmt).scalars())
 
 
-def _resolve_story_id(session: Session, project_id: int, task_id: str) -> str | None:
-    return session.execute(
-        select(UserStoryModel.story_id)
-        .join(StoryLinkModel, StoryLinkModel.story_id == UserStoryModel.row_id)
-        .where(
-            UserStoryModel.project_id == project_id,
-            StoryLinkModel.to_kind == "task",
-            StoryLinkModel.to_ref == task_id,
-        )
-        .limit(1)
-    ).scalar_one_or_none()
-
-
 def _resolve_ancestry(session: Session, model: TaskModel) -> dict[str, Any]:
     project = session.get(ProjectModel, model.project_id)
     plan = session.get(PlanModel, model.plan_id)
@@ -100,7 +87,7 @@ def _resolve_ancestry(session: Session, model: TaskModel) -> dict[str, Any]:
         ),
         "story": None,
     }
-    story_id = _resolve_story_id(session, model.project_id, model.task_id)
+    story_id = story_id_for_task(session, project_id=model.project_id, task_id=model.task_id)
     if story_id is not None:
         # STO-023: story_id уникален в проекте (0047), не во всей БД.
         story_model = session.execute(

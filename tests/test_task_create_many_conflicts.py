@@ -141,3 +141,31 @@ def test_error_message_has_no_sql(
     for err in result["errors"]:
         assert "INSERT" not in err["message"]
         assert "sqlite3" not in err["message"]
+
+
+def test_integrity_error_message_has_no_driver_detail(
+    factory: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """psycopg кладёт в ``exc.orig`` DETAIL со значениями полей — наружу не идёт."""
+    from sqlalchemy.exc import IntegrityError
+
+    from cod_doc.services import task_service
+
+    _seed(factory, "ADO-002")
+
+    def _pg_conflict(*_a: object, **_kw: object) -> None:
+        raise IntegrityError(
+            "INSERT INTO task ...",
+            {},
+            Exception(
+                'duplicate key value violates unique constraint "uq_task"\n'
+                "DETAIL:  Key (project_id, task_id)=(1, SECRET-7) already exists."
+            ),
+        )
+
+    monkeypatch.setattr(task_service, "create", _pg_conflict)
+    result = _create_many(factory, monkeypatch, [{"title": "One"}], continue_on_error=True)
+
+    [err] = result["errors"]
+    assert err["code"] == "conflict"
+    assert err["message"] == "unique constraint conflict"

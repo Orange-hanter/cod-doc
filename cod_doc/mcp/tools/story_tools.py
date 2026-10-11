@@ -45,7 +45,7 @@ def register(mcp: FastMCP) -> None:
             links = story_service.list_links(session, story_id, project_id=project_id)
             section_key = None
             if s.section_id is not None:
-                section_key = story_service.section_keys(session, s.project_id).get(s.section_id)
+                section_key = story_service.section_keys(session, project_id).get(s.section_id)
 
         result = story_to_dict(s, section_key)
         result["acceptance"] = [

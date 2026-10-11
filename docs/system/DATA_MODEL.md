@@ -194,13 +194,14 @@ CREATE INDEX ix_revision_parent ON revision(parent_revision_id);
 CREATE TABLE plan (
   row_id          INTEGER PRIMARY KEY,
   project_id      INTEGER NOT NULL REFERENCES project(row_id),
-  scope           TEXT    NOT NULL,         -- 'M1-auth-module','infra-cors'; UNIQUE(project_id, scope) — STO-018
+  scope           TEXT    NOT NULL,         -- 'M1-auth-module','infra-cors'
   principle       TEXT,                     -- 'test-first','fix-first'
   module_id       TEXT,                     -- 'M1-auth'
   parent_doc_id   INTEGER REFERENCES document(row_id),
   completed_log_id INTEGER REFERENCES document(row_id),
   created         TEXT NOT NULL,
-  last_updated    TEXT NOT NULL
+  last_updated    TEXT NOT NULL,
+  UNIQUE (project_id, scope)                -- STO-018, миграция 0047: в проекте, не во всей БД
 );
 
 CREATE TABLE plan_section (
@@ -295,7 +296,7 @@ CREATE INDEX ix_story_section_project ON story_section(project_id, position);
 CREATE TABLE user_story (
   row_id       INTEGER PRIMARY KEY,
   project_id   INTEGER NOT NULL REFERENCES project(row_id),
-  story_id     TEXT    NOT NULL,           -- 'US-014'; UNIQUE(project_id, story_id) — STO-018
+  story_id     TEXT    NOT NULL,           -- 'US-014'
   persona      TEXT    NOT NULL,           -- 'Agency Owner','Platform Admin'
   narrative    TEXT    NOT NULL,           -- 'As X, I want Y, so Z'
   status       TEXT    NOT NULL,           -- draft|accepted|delivered|deferred
@@ -303,7 +304,8 @@ CREATE TABLE user_story (
   created      TEXT NOT NULL,
   last_updated TEXT NOT NULL,
   -- SET NULL, не CASCADE: удаление секции осиротит историю, но не удалит её.
-  section_id   INTEGER REFERENCES story_section(row_id) ON DELETE SET NULL
+  section_id   INTEGER REFERENCES story_section(row_id) ON DELETE SET NULL,
+  UNIQUE (project_id, story_id)            -- STO-018, миграция 0047
 );
 
 CREATE TABLE story_acceptance (
@@ -329,11 +331,12 @@ CREATE TABLE story_link (
 CREATE TABLE module (
   row_id       INTEGER PRIMARY KEY,
   project_id   INTEGER NOT NULL REFERENCES project(row_id),
-  module_id    TEXT    NOT NULL,           -- 'M1-auth'; UNIQUE(project_id, module_id) — STO-024
+  module_id    TEXT    NOT NULL,           -- 'M1-auth'
   name         TEXT    NOT NULL,
   status       TEXT    NOT NULL,
   spec_doc_id  INTEGER REFERENCES document(row_id),
-  plan_id      INTEGER REFERENCES plan(row_id)
+  plan_id      INTEGER REFERENCES plan(row_id),
+  UNIQUE (project_id, module_id)           -- STO-024, миграция 0047
 );
 
 CREATE TABLE module_dependency (

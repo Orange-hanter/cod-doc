@@ -373,8 +373,8 @@ def task_create(
 
     from cod_doc.domain.entities import Priority, QuestionLinkKind, QuestionRelation, TaskType
     from cod_doc.infra.db import transactional
-    from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
-    from cod_doc.services import question_service, task_service
+    from cod_doc.infra.repositories import PlanSectionRepository
+    from cod_doc.services import plan_service, question_service, task_service
     from cod_doc.services.question_service import QuestionNotFoundError
     from cod_doc.services.task_service import DuplicateTaskIdError
     from cod_doc.services.validation import ValidationError
@@ -385,9 +385,9 @@ def task_create(
     # Phase 1: resolve IDs (read-only — sys.exit here is safe, nothing to commit)
     with transactional(sf) as session:
         project_id = _require_project_id(session, project)
-        plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
+        plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
         if plan is None or plan.row_id is None:
-            console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
+            console.print(f"[red]Plan '{plan_scope}' not found in project '{project}'.[/red]")
             sys.exit(1)
         sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
         section = next((s for s in sections if s.letter.upper() == section_letter.upper()), None)
@@ -435,8 +435,13 @@ def task_create(
         )
         sys.exit(1)
     except IntegrityError:
-        # Текст исключения несёт SQL-выражение и параметры — наружу не отдаём.
-        console.print("[red]Конфликт уникальности: задача не создана, повторите попытку.[/red]")
+        # Не только гонка за task_id: проект или план могли удалить между
+        # фазами, и тогда падает внешний ключ. Текст исключения несёт
+        # SQL-выражение и параметры — наружу не отдаём.
+        console.print(
+            "[red]Конфликт целостности БД (занятый task_id или удалённый проект/план): "
+            "задача не создана, повторите попытку.[/red]"
+        )
         sys.exit(1)
     except ValidationError as exc:
         console.print(f"[red]Validation error: {exc}[/red]")
@@ -677,8 +682,8 @@ def task_move(
     Каждая задача получает свою ревизию и своё событие.
     """
     from cod_doc.infra.db import transactional
-    from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
-    from cod_doc.services import task_service
+    from cod_doc.infra.repositories import PlanSectionRepository
+    from cod_doc.services import plan_service, task_service
     from cod_doc.services.task_service import (
         CrossPlanMoveError,
         SectionNotFoundError,
@@ -694,9 +699,9 @@ def task_move(
     try:
         with transactional(sf, commit=not dry_run) as session:
             project_id = _require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
+            plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
             if plan is None or plan.row_id is None:
-                console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
+                console.print(f"[red]Plan '{plan_scope}' not found in project '{project}'.[/red]")
                 sys.exit(1)
             sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
             section = next(

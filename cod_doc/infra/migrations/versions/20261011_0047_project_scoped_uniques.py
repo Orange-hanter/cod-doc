@@ -110,10 +110,13 @@ def _rebuild_sqlite(*, to_scoped: bool) -> None:
                 "0047: внешние ключи не выключились; DROP TABLE удалил бы дочерние "
                 "строки каскадом — миграция остановлена до изменений"
             )
+        # Порядок создания (rowid в sqlite_master), а не имени: представление,
+        # зависящее от другого, когда-то создавалось после него — значит, в этом
+        # порядке их можно восстановить. Снимаем в обратном: сначала зависимые.
         views = bind.exec_driver_sql(
-            "SELECT name, sql FROM sqlite_master WHERE type = 'view' ORDER BY name"
+            "SELECT name, sql FROM sqlite_master WHERE type = 'view' ORDER BY rowid"
         ).fetchall()
-        for name, _sql in views:
+        for name, _sql in reversed(views):
             op.execute(f'DROP VIEW "{name}"')
 
         for target in _TARGETS:

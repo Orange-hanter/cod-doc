@@ -133,20 +133,40 @@ def _parse_acceptance_checklist(acceptance: str | None) -> list[str]:
 # ----------------------------------------------------------------- #
 
 
+def _story_full_payload(session: Session, project_id: int, story_id: str) -> dict[str, Any] | None:
+    """История проекта с критериями приёмки — для карточки и ``agent_get``.
+
+    Одна форма на оба места; резолв идёт через ``story_service.get``, а не
+    ручным запросом. ``status``/``priority`` отдаются строками, как раньше.
+    """
+    from cod_doc.services import story_service
+
+    story = story_service.get(session, story_id, project_id=project_id)
+    if story is None:
+        return None
+    acceptance = story_service.list_acceptance(session, story_id, project_id=project_id)
+    return {
+        "story_id": story.story_id,
+        "persona": story.persona,
+        "narrative": story.narrative,
+        "status": story.status.value,
+        "priority": story.priority.value,
+        "acceptance_criteria": [
+            {"position": a.position, "criterion": a.criterion, "met": a.met} for a in acceptance
+        ],
+    }
+
+
 def _build_task_card(
     session: Session,
     project_id: int,
     task: Task,
 ) -> dict[str, Any]:
     """Assemble the agent_pick payload for an already-checked-out task."""
-    from cod_doc.infra.models import (
-        PlanModel,
-        PlanSectionModel,
-        StoryLinkModel,
-        UserStoryModel,
-    )
+    from cod_doc.infra.models import PlanModel, PlanSectionModel
     from cod_doc.services import activity_service, context_service
     from cod_doc.services.serializers import task_to_dict
+    from cod_doc.services.story_lookup import story_id_for_task
 
     # Build base context via existing L1 context_service.
     ctx = context_service.context_get(
@@ -179,36 +199,10 @@ def _build_task_card(
     )
 
     # Linked story (full): if any story_link → task, fetch story.
-    story_full: dict[str, Any] | None = None
-    story_link = session.execute(
-        select(UserStoryModel)
-        .join(StoryLinkModel, StoryLinkModel.story_id == UserStoryModel.row_id)
-        .where(
-            UserStoryModel.project_id == project_id,
-            StoryLinkModel.to_kind == "task",
-            StoryLinkModel.to_ref == task.task_id,
-        )
-        .limit(1)
-    ).scalar_one_or_none()
-    if story_link is not None:
-        from cod_doc.services import story_service
-
-        # UserStoryModel.status/priority are str columns, not enum instances.
-        # list_acceptance takes the canonical story_id (string), not row_id.
-        acceptance_criteria = story_service.list_acceptance(
-            session, story_link.story_id, project_id=project_id
-        )
-        story_full = {
-            "story_id": story_link.story_id,
-            "persona": story_link.persona,
-            "narrative": story_link.narrative,
-            "status": story_link.status,
-            "priority": story_link.priority,
-            "acceptance_criteria": [
-                {"position": a.position, "criterion": a.criterion, "met": a.met}
-                for a in acceptance_criteria
-            ],
-        }
+    story_id = story_id_for_task(session, project_id=project_id, task_id=task.task_id)
+    story_full = (
+        _story_full_payload(session, project_id, story_id) if story_id is not None else None
+    )
 
     # Recent activity events for this task scope (last 5).
     history_page = activity_service.list_events(
@@ -222,8 +216,10 @@ def _build_task_card(
 
     skills = _matching_skills_with_bodies(task.title, task.type.value)
 
+    # Четыре запроса на вызов — сериализуем один раз (story_id, affects_files…).
+    task_dict = task_to_dict(task, session=session)
     return {
-        "task": task_to_dict(task, session=session),
+        "task": task_dict,
         "context": {
             "plan": {
                 "scope": plan_row,
@@ -234,7 +230,7 @@ def _build_task_card(
             "story": story_full,
             "related_docs": ctx.get("related", {}).get("documents", []),
             "siblings": ctx.get("related", {}).get("tasks", []),
-            "affected_files": task_to_dict(task, session=session).get("affects_files", []),
+            "affected_files": task_dict.get("affects_files", []),
             "recent_history": recent_history_dicts,
         },
         "navigation": {
@@ -317,34 +313,12 @@ def get(
         }
 
     if what == "story_full":
-        from cod_doc.infra.models import UserStoryModel
-        from cod_doc.services import story_service
-
         if not ref:
             return {"found": False, "what": what, "ref": ref, "hint": "ref=story_id required"}
-        s = session.execute(
-            select(UserStoryModel).where(
-                UserStoryModel.project_id == project_id, UserStoryModel.story_id == ref
-            )
-        ).scalar_one_or_none()
-        if s is None:
+        payload = _story_full_payload(session, project_id, ref)
+        if payload is None:
             return {"found": False, "what": what, "ref": ref, "hint": f"story_id not found: {ref}"}
-        ac = story_service.list_acceptance(session, ref, project_id=project_id)
-        return {
-            "found": True,
-            "what": what,
-            "ref": ref,
-            "payload": {
-                "story_id": s.story_id,
-                "persona": s.persona,
-                "narrative": s.narrative,
-                "status": s.status,
-                "priority": s.priority,
-                "acceptance_criteria": [
-                    {"position": a.position, "criterion": a.criterion, "met": a.met} for a in ac
-                ],
-            },
-        }
+        return {"found": True, "what": what, "ref": ref, "payload": payload}
 
     if what == "plan_export":
         if not ref:

@@ -252,7 +252,7 @@ def update_section(
         validate_section_slug(slug)
 
     plan = _require_plan(session, project_id, plan_scope)
-    model = _require_section(session, plan.row_id, letter)
+    model = _require_section(session, plan.row_id, letter, project_id=project_id)
     if doc_id is not None:
         doc = session.get(DocumentModel, doc_id)
         if doc is None or doc.project_id != project_id:
@@ -359,13 +359,13 @@ def move_section(
         validate_plan_section_position(position)
 
     plan = _require_plan(session, project_id, plan_scope)
-    target = _require_section(session, plan.row_id, letter)
+    target = _require_section(session, plan.row_id, letter, project_id=project_id)
     anchor_letter = before if before is not None else after
     anchor: PlanSectionModel | None = None
     if anchor_letter is not None:
         if anchor_letter.strip().upper() == target.letter.upper():
             raise ValueError(f"section {target.letter!r} cannot be moved relative to itself")
-        anchor = _require_section(session, plan.row_id, anchor_letter)
+        anchor = _require_section(session, plan.row_id, anchor_letter, project_id=project_id)
 
     ordered = list(
         session.execute(
@@ -460,12 +460,12 @@ def delete_section(
         raise ValueError("reason is required for delete_section (RFC 26 §4)")
 
     plan = _require_plan(session, project_id, plan_scope)
-    model = _require_section(session, plan.row_id, letter)
+    model = _require_section(session, plan.row_id, letter, project_id=project_id)
     target: PlanSectionModel | None = None
     if reassign_to is not None:
         if reassign_to.strip().upper() == model.letter.upper():
             raise ValueError(f"section {model.letter!r} cannot be reassigned to itself")
-        target = _require_section(session, plan.row_id, reassign_to)
+        target = _require_section(session, plan.row_id, reassign_to, project_id=project_id)
 
     tasks = list(
         session.execute(
@@ -535,10 +535,17 @@ def _require_plan(session: Session, project_id: int, plan_scope: str) -> PlanMod
     return model
 
 
-def _require_section(session: Session, plan_id: int, letter: str) -> PlanSectionModel:
+def _require_section(
+    session: Session, plan_id: int, letter: str, *, project_id: int
+) -> PlanSectionModel:
+    # Секция ищется и по плану, и по проекту плана: голый plan_id чужого
+    # проекта не должен открывать его секции (STO-023).
     normalized = letter.strip().upper()
     model = session.execute(
-        select(PlanSectionModel).where(
+        select(PlanSectionModel)
+        .join(PlanModel, PlanModel.row_id == PlanSectionModel.plan_id)
+        .where(
+            PlanModel.project_id == project_id,
             PlanSectionModel.plan_id == plan_id,
             func.upper(PlanSectionModel.letter) == normalized,
         )

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import (
     EntityKind,
@@ -84,19 +85,29 @@ def create(
         section_id = section.row_id
 
     now = datetime.now(UTC)
-    story = UserStoryRepository(session).add(
-        UserStory(
-            project_id=project_id,
-            story_id=story_id,
-            persona=persona,
-            narrative=narrative,
-            status=status,
-            priority=priority,
-            created=now,
-            last_updated=now,
-            section_id=section_id,
+    try:
+        story = UserStoryRepository(session).add(
+            UserStory(
+                project_id=project_id,
+                story_id=story_id,
+                persona=persona,
+                narrative=narrative,
+                status=status,
+                priority=priority,
+                created=now,
+                last_updated=now,
+                section_id=section_id,
+            )
         )
-    )
+    except IntegrityError as exc:
+        # Проверка выше и INSERT — не одна операция: параллельный писатель
+        # успевает занять тот же story_id, и тогда срабатывает UNIQUE из
+        # 0047. Это тот же отказ, что и у проверки. Savepoint не берём
+        # (STO-022): транзакцию откатывает вызывающий. Прочие нарушения
+        # целостности не маскируем.
+        if not _is_story_id_conflict(exc):
+            raise
+        raise StoryAlreadyExistsError(story_id) from exc
     assert story.row_id is not None
 
     if acceptance:
@@ -148,6 +159,16 @@ def create(
     return story
 
 
+def _is_story_id_conflict(exc: IntegrityError) -> bool:
+    """Нарушен именно UNIQUE(project_id, story_id), а не внешний ключ.
+
+    SQLite называет колонки (``user_story.project_id, user_story.story_id``),
+    Postgres — имя ограничения.
+    """
+    text = str(exc.orig)
+    return "uq_user_story_project_story_id" in text or "user_story.story_id" in text
+
+
 def get(session: Session, story_id: str, *, project_id: int) -> UserStory | None:
     return UserStoryRepository(session).get_by_story_id(story_id, project_id=project_id)
 
@@ -162,10 +183,12 @@ def next_story_id(session: Session, project_id: int, prefix: str = "US") -> str:
     Used by AI-driven story generation flows where the LLM proposes drafts
     and the route persists them with sequential ids.
     """
+    # ``%`` и ``_`` в префиксе — метасимволы LIKE; экранируем, как regex ниже.
+    like_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     rows = session.execute(
         select(UserStoryModel.story_id).where(
             UserStoryModel.project_id == project_id,
-            UserStoryModel.story_id.like(f"{prefix}-%"),
+            UserStoryModel.story_id.like(f"{like_prefix}-%", escape="\\"),
         )
     ).scalars()
     pat = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
@@ -202,7 +225,7 @@ def list_tasks(session: Session, story_id: str, *, project_id: int) -> list[Task
         .order_by(TaskModel.task_id)
     )
     repo = TaskRepository(session)
-    return [repo._to_domain(m) for m in session.execute(stmt).scalars()]
+    return [repo.to_domain(m) for m in session.execute(stmt).scalars()]
 
 
 def update_status(

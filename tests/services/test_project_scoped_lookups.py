@@ -5,78 +5,25 @@
 ``US-001`` и ``M1-auth``; поиск без ``project_id`` либо падает на
 ``MultipleResultsFound``, либо отдаёт строку чужого проекта.
 
-Сид идёт через сервисы, а не ORM: ``create_plan`` и ``story_service.create``
-сами проверяют уникальность и до STO-023 отвергали второй проект.
+Сид — ``tests/_project_scoped_seed.py`` (планы и истории через сервисы, модуль
+через ORM); MCP-сторона тех же поисков — ``tests/test_project_scoped_tools_mcp.py``.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
-from mcp.server.fastmcp import FastMCP
-from sqlalchemy import select
 
-from cod_doc.domain.entities import Priority, StoryLinkKind, StoryRelation
-from cod_doc.infra.db import make_session_factory, transactional
-from cod_doc.infra.models import ModuleModel, PlanModel, PlanSectionModel, ProjectModel, TaskModel
+from cod_doc.domain.entities import StoryLinkKind, StoryRelation
+from cod_doc.infra.db import transactional
 from cod_doc.services import plan_service
 from cod_doc.services import story_service as stories
+from tests._project_scoped_seed import MODULE, SCOPE, SLUGS, STORY
+from tests._project_scoped_seed import seed_two_projects as _seed
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from sqlalchemy.engine import Engine
-    from sqlalchemy.orm import Session, sessionmaker
-
-SCOPE = "cod-doc-bootstrap"
-STORY = "US-001"
-MODULE = "M1-auth"
-SLUGS = ("alpha", "beta")
-
-
-def _seed(engine: Engine) -> tuple[sessionmaker[Session], dict[str, int]]:
-    """Два проекта с одинаковыми scope, story_id и module_id."""
-    factory = make_session_factory(engine)
-    pids: dict[str, int] = {}
-    with transactional(factory) as session:
-        for slug in SLUGS:
-            now = datetime.now(UTC)
-            proj = ProjectModel(slug=slug, title=slug, root_path=f"/tmp/{slug}", config_json={})
-            proj.created = now
-            proj.updated = now
-            session.add(proj)
-            session.flush()
-            pid = proj.row_id
-            pids[slug] = pid
-            plan_service.create_plan(
-                session,
-                project_id=pid,
-                scope=SCOPE,
-                principle=slug,
-                author="human:test",
-            )
-            plan_service.create_section(
-                session,
-                project_id=pid,
-                plan_scope=SCOPE,
-                letter="A",
-                title=f"Core {slug}",
-                author="human:test",
-            )
-            stories.create(
-                session,
-                project_id=pid,
-                story_id=STORY,
-                persona=f"persona-{slug}",
-                narrative="As X, I want Y, so Z.",
-                priority=Priority.MEDIUM,
-                author="human:test",
-            )
-            session.add(ModuleModel(project_id=pid, module_id=MODULE, name=slug, status="active"))
-            session.flush()
-    return factory, pids
 
 
 @pytest.mark.parametrize("slug", SLUGS)
@@ -119,55 +66,16 @@ def test_story_lookups_return_own_project_story(engine_with_schema: Engine, slug
         assert stories.list_links(session, STORY, project_id=pids[other]) == []
 
 
-def _mcp_tools(
-    monkeypatch: pytest.MonkeyPatch, factory: sessionmaker[Session]
-) -> dict[str, Callable[..., Any]]:
-    """task_create / story_get на свежем FastMCP; слаг резолвится по БД, как в бою."""
-    from cod_doc.mcp.tools import story_tools, task_tools
-
-    monkeypatch.setattr(task_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(story_tools, "session_factory", lambda project: (factory, None))
-    mcp = FastMCP("test")
-    task_tools.register(mcp)
-    story_tools.register(mcp)
-    return {name: mcp._tool_manager._tools[name].fn for name in ("task_create", "story_get")}
-
-
-@pytest.mark.parametrize("slug", SLUGS)
-def test_mcp_task_create_lands_in_own_project_plan(
-    monkeypatch: pytest.MonkeyPatch, engine_with_schema: Engine, slug: str
+@pytest.mark.parametrize("bad", [None, "1", True])
+def test_scoped_repo_lookups_reject_non_int_project_id(
+    engine_with_schema: Engine, bad: object
 ) -> None:
-    factory, pids = _seed(engine_with_schema)
-    tools = _mcp_tools(monkeypatch, factory)
+    """``project_id=None`` дал бы ``WHERE project_id IS NULL`` и тихое «не найдено»."""
+    from cod_doc.infra.repositories import PlanRepository, UserStoryRepository
 
-    out = tools["task_create"](
-        project=slug,
-        plan_scope=SCOPE,
-        section_letter="A",
-        title=f"Task for {slug}",
-        type="feature",
-        priority="medium",
-        task_id="BOOT-001",
-    )
-    assert out["plan_scope"] == SCOPE
-
-    with transactional(factory) as session:
-        row = session.execute(
-            select(TaskModel.project_id, PlanModel.project_id, PlanSectionModel.title)
-            .join(PlanModel, PlanModel.row_id == TaskModel.plan_id)
-            .join(PlanSectionModel, PlanSectionModel.row_id == TaskModel.section_id)
-            .where(TaskModel.title == f"Task for {slug}")
-        ).one()
-    assert tuple(row) == (pids[slug], pids[slug], f"Core {slug}")
-
-
-@pytest.mark.parametrize("slug", SLUGS)
-def test_mcp_story_get_returns_own_project_story(
-    monkeypatch: pytest.MonkeyPatch, engine_with_schema: Engine, slug: str
-) -> None:
     factory, _ = _seed(engine_with_schema)
-    tools = _mcp_tools(monkeypatch, factory)
-
-    out = tools["story_get"](project=slug, story_id=STORY)
-    assert out is not None
-    assert out["persona"] == f"persona-{slug}"
+    with transactional(factory) as session:
+        with pytest.raises(TypeError, match="project_id must be int"):
+            PlanRepository(session).get_by_scope(SCOPE, project_id=bad)
+        with pytest.raises(TypeError, match="project_id must be int"):
+            UserStoryRepository(session).get_by_story_id(STORY, project_id=bad)

@@ -586,8 +586,15 @@ def register(mcp: FastMCP) -> None:
                     "next_free_id": exc.next_free_id,
                 }
             if isinstance(exc, IntegrityError):
-                # str(exc) несёт SQL и параметры — отдаём только текст драйвера.
-                return {"index": i, "title": title, "message": str(exc.orig), "code": "conflict"}
+                # Ни str(exc) (SQL и параметры), ни str(exc.orig): у psycopg
+                # там DETAIL «Key (col)=(value) already exists» — значения
+                # полей. Наружу только фиксированный текст.
+                return {
+                    "index": i,
+                    "title": title,
+                    "message": "unique constraint conflict",
+                    "code": "conflict",
+                }
             code = "duplicate" if isinstance(exc, DuplicateTaskError) else "validation"
             return {"index": i, "title": title, "message": str(exc), "code": code}
 

@@ -41,7 +41,7 @@ def story_show(ctx: click.Context, story_id: str, project: str, as_json: bool) -
             if s.section_id is not None:
                 # Одна история — одна секция: точечное чтение, а не выгрузка
                 # всех секций проекта (ADO-159).
-                sec = story_service.get_section_by_id(session, s.section_id)
+                sec = story_service.get_section_by_id(session, s.section_id, project_id=project_id)
                 if sec is not None:
                     section_key, section_title = sec.key, sec.title
 

@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from cod_doc.domain.entities import Plan, PlanSection
 from cod_doc.infra.models import PlanModel, PlanSectionModel
-from cod_doc.infra.repositories.base import BaseRepository
+from cod_doc.infra.repositories.base import BaseRepository, require_int_project_id
 
 
 class PlanRepository(BaseRepository[Plan, PlanModel]):
@@ -49,6 +49,7 @@ class PlanRepository(BaseRepository[Plan, PlanModel]):
     def get_by_scope(self, scope: str, *, project_id: int) -> Plan | None:
         # STO-023: scope уникален в проекте (0047), без project_id hub-БД с
         # одинаковым scope в двух проектах дала бы MultipleResultsFound.
+        require_int_project_id(project_id)
         stmt = select(PlanModel).where(PlanModel.project_id == project_id, PlanModel.scope == scope)
         model = self.session.execute(stmt).scalar_one_or_none()
         return self._to_domain(model) if model else None

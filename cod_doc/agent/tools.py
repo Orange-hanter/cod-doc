@@ -293,15 +293,14 @@ class ToolExecutor:
     def _tool_plan_ready(self, plan_scope: str, limit: int = 5) -> dict[str, Any]:
         try:
             from cod_doc.infra.db import transactional
-            from cod_doc.mcp.tools._db import require_project_id, task_to_dict
             from cod_doc.services import plan_service
+            from cod_doc.services.project_lookup import require_project_id
+            from cod_doc.services.serializers import task_to_dict
 
             sf = self._make_db_session()
             with transactional(sf) as session:
-                from cod_doc.infra.repositories import PlanRepository
-
                 project_id = require_project_id(session, self.project.entry.name)
-                plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
+                plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
                 if plan is None or plan.row_id is None:
                     return {"error": f"Plan '{plan_scope}' not found"}
                 tasks = plan_service.ready(session, plan.row_id, limit=limit)
@@ -314,8 +313,8 @@ class ToolExecutor:
     def _tool_doc_body(self, doc_key: str) -> dict[str, Any]:
         try:
             from cod_doc.infra.db import transactional
-            from cod_doc.mcp.tools._db import require_project_id
             from cod_doc.services import doc_service
+            from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             with transactional(sf) as session:
@@ -341,8 +340,8 @@ class ToolExecutor:
 
             from cod_doc.infra.db import transactional
             from cod_doc.infra.models import DocumentModel, SectionModel
-            from cod_doc.mcp.tools._db import require_project_id
             from cod_doc.services import link_service
+            from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             with transactional(sf) as session:
@@ -386,8 +385,8 @@ class ToolExecutor:
     def _tool_story_get(self, story_id: str) -> dict[str, Any]:
         try:
             from cod_doc.infra.db import transactional
-            from cod_doc.mcp.tools._db import require_project_id
             from cod_doc.services import story_service
+            from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             with transactional(sf) as session:

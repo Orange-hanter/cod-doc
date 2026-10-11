@@ -357,7 +357,7 @@ sequenceDiagram
   делает push, если с прошлого снапшота накопилось больше N операций (по умолчанию
   5000), — иначе clone проекта со 100k операций replay'ил бы их все.
 - **Схема и эпохи (Q-012).** Реплика не применяет changeset с `schema_head` новее
-  своей головы миграций: `pull` отвечает «remote на схеме 0053, у вас 0051 —
+  своей головы миграций: `pull` отвечает «remote на схеме 0051_sync_access, у вас 0049_sync_rank —
   `cod-doc update`». Миграция, меняющая `authored`-колонки, открывает **эпоху**:
   1. `cod-doc update` перед миграцией проверяет неупакованные операции и требует
      `cod-doc push`; push на старой схеме принимается, пока `meta.epoch` remote не
@@ -552,7 +552,9 @@ reader.
 - **Postgres не нужен.** И реплика, и сервер работают на SQLite. Из Postgres-блокеров
   RFC 23 этому RFC нужны три — STO-018 и STO-024 (глобальные `UNIQUE` →
   проектные, сделано миграцией 0047) и STO-023 (поиски без `project_id`), без чего
-  клон в hub ломается (§3.3). STO-019…022 остаются за RFC 23.
+  клон в hub ломается (§3.3). Четвёртое предусловие — STO-029 (`task_service.get`
+  ищет `task_id` без `project_id`) — правка кода, не миграция: ревизий в таблице выше
+  не добавляет. STO-019…022 остаются за RFC 23.
 - **`doc import` в синхронизируемом проекте (Q-013)** — только для новых файлов и
   инициализации репозитория; правки идут через БД. Для самого cod-doc это расходится
   с нынешним PostToolUse-хуком «после правки `.md` — `doc import`»; смена хука и
@@ -1110,8 +1112,8 @@ critical» из `task-standard` соблюдено: 8 из 43), блокеры, 
 | ID | Задача | Тип · Пр. | Блокеры | Acceptance | Файлы |
 |---|---|---|---|---|---|
 | CLO-001 | Implement: реестр классов `sync_registry` и гейт полноты | f · M | — | все 64 таблицы классифицированы по §3.2; тест падает на модели без записи и на FK, не покрытом `logical_fks`; `row_is_local` для `restricted`, `authored_columns` для `link_suggestion.state` | `cod_doc/infra/sync_registry.py`, `tests/infra/test_sync_registry_complete.py` |
-| CLO-002 | Migration: `0048_sync_identity` — `uid`, служебные таблицы | m · H | CLO-001, STO-018 ✅, STO-023 ✅, STO-024 ✅, STO-029 | DDL §10.1; бэкфилл uuid7, у рёбер — uuid5; тест сохранности на `0047`: число секций, ссылок, задач, рёбер совпадает; downgrade симметричен | `cod_doc/infra/migrations/versions/…0048_sync_identity.py`, `cod_doc/infra/models/*.py`, `tests/infra/test_migration_0047_preserves_data.py` |
-| CLO-003 | Migration: `0049_sync_rank` — `rank` в 11 местах, снятие 4 UNIQUE | m · M | CLO-002 | порядок внутри каждого родителя до и после совпадает; у четырёх пересоздаваемых таблиц нет CASCADE-детей (проверка в тесте); downgrade восстанавливает UNIQUE | `…0049_sync_rank.py`, `tests/infra/test_migration_0048_rank.py` |
+| CLO-002 | Migration: `0048_sync_identity` — `uid`, служебные таблицы | m · H | CLO-001, STO-018 ✅, STO-023 ✅, STO-024 ✅, STO-029 | DDL §10.1; бэкфилл uuid7, у рёбер — uuid5; тест сохранности на `0047`: число секций, ссылок, задач, рёбер совпадает; downgrade симметричен | `cod_doc/infra/migrations/versions/…0048_sync_identity.py`, `cod_doc/infra/models/*.py`, `tests/infra/test_migration_0048_preserves_data.py` |
+| CLO-003 | Migration: `0049_sync_rank` — `rank` в 11 местах, снятие 4 UNIQUE | m · M | CLO-002 | порядок внутри каждого родителя до и после совпадает; у четырёх пересоздаваемых таблиц нет CASCADE-детей (проверка в тесте); downgrade восстанавливает UNIQUE | `…0049_sync_rank.py`, `tests/infra/test_migration_0049_rank.py` |
 | CLO-004 | Refactor: выдача и чтение порядка через `rank` | r · M | CLO-003 | вставка между соседями пишет один `rank`; `position` пересчитывается; аллокаторы `document_repo.py:208`, `story_repo.py:182`, `scenario_repo.py:111` переписаны; SCN-093 | `cod_doc/infra/repositories/*.py`, `cod_doc/services/plan_service/sections.py`, `cod_doc/services/doc_tree_service.py` |
 | CLO-005 | Implement: HLC и `replica` (`is_self`) | f · M | CLO-002 | HLC монотонен при откате часов назад; одна `is_self` на проект; формат из §10.1 | `cod_doc/infra/hlc.py`, `tests/infra/test_hlc.py` |
 | CLO-006 | Implement: хук `before_flush` → `sync_op` | f · C | CLO-001, CLO-005 | контракт §10.3: `fields`/`base` только authored-колонок, FK как uid, `restricted` и local не пишутся, `suspended` глушит хук; SCN-088 | `cod_doc/infra/sync_capture.py`, `cod_doc/infra/db.py`, `tests/infra/test_sync_capture.py` |
