@@ -311,3 +311,42 @@ def test_package_reexports_write_functions() -> None:
         assert hasattr(plan_pkg, name)
         assert name in plan_pkg.__all__
     assert "Pure read-side service" not in (plan_pkg.__doc__ or "")
+
+
+# Гонка мимо проверки существования: конкурента изображает строка, добавленная
+# в сессию без flush. Под ``no_autoflush`` проверка её не видит, а flush внутри
+# сервиса вставляет обе и ловит UNIQUE — ровно как второй писатель. После
+# отказа сессия ждёт явного отката (savepoint не берём, STO-022).
+
+
+def test_create_plan_race_on_unique_maps_to_already_exists(
+    sf: sessionmaker[Session], projects: tuple[int, int]
+) -> None:
+    alpha, _ = projects
+    with transactional(sf) as s:
+        now = datetime.now(UTC)
+        s.add(PlanModel(project_id=alpha, scope="plan-x", created=now, last_updated=now))
+        with s.no_autoflush, pytest.raises(svc.PlanAlreadyExistsError) as exc:
+            svc.create_plan(s, project_id=alpha, scope="plan-x", principle=None, author="t")
+        assert exc.value.__cause__ is not None
+        s.rollback()
+
+
+def test_create_section_race_on_unique_maps_to_already_exists(
+    sf: sessionmaker[Session], projects: tuple[int, int]
+) -> None:
+    alpha, _ = projects
+    _make_plan(sf, alpha)
+    with transactional(sf) as s:
+        plan_id = s.execute(
+            select(PlanModel.row_id).where(PlanModel.project_id == alpha)
+        ).scalar_one()
+        s.add(
+            PlanSectionModel(plan_id=plan_id, letter="B", title="Rival", slug="B-rival", position=0)
+        )
+        with s.no_autoflush, pytest.raises(svc.SectionAlreadyExistsError) as exc:
+            svc.create_section(
+                s, project_id=alpha, plan_scope="plan-x", letter="B", title="Mine", author="t"
+            )
+        assert exc.value.__cause__ is not None
+        s.rollback()

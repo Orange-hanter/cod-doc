@@ -542,3 +542,58 @@ def test_dismiss_unknown_finding_raises(engine_with_schema) -> None:  # type: ig
         project_id, _, _ = _seed_plan(session)
         with pytest.raises(ValueError, match="not found"):
             dismiss_finding(session, project_id=project_id, finding_uid="missing-uid")
+
+
+def test_promote_refuses_plan_of_another_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """plan_id/section_id — сырые row_id: план чужого проекта отвергается до записи."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id, _, _ = _seed_plan(session)
+        finding = _ingest_single_finding(session, project_id)
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="q", title="Q", root_path="/tmp/q", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+        plan = PlanModel(project_id=other.row_id, scope="q-plan", created=now, last_updated=now)
+        session.add(plan)
+        session.flush()
+        sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="Q", slug="A-Q", position=0)
+        session.add(sec)
+        session.flush()
+
+        with pytest.raises(ValueError, match="does not belong"):
+            promote_finding(
+                session,
+                project_id=project_id,
+                finding_id=finding.row_id,
+                on_finding="create_task",
+                plan_id=plan.row_id,
+                section_id=sec.row_id,
+            )
+        assert session.execute(select(TaskModel)).first() is None
+
+
+@pytest.mark.parametrize(("author", "expected"), [("routine:triage", "routine"), (None, "system")])
+def test_promote_event_actor_kind_follows_author(engine_with_schema, author, expected) -> None:  # type: ignore[no-untyped-def]
+    """ADR-012: actor_kind выводится из author, а не проставляется руками."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id, plan_id, section_id = _seed_plan(session)
+        finding = _ingest_single_finding(session, project_id)
+        kwargs = {} if author is None else {"author": author}
+        promote_finding(
+            session,
+            project_id=project_id,
+            finding_id=finding.row_id,
+            on_finding="create_task",
+            plan_id=plan_id,
+            section_id=section_id,
+            **kwargs,
+        )
+        session.flush()  # фабрика без autoflush
+        event = session.execute(
+            select(ActivityEventModel).where(ActivityEventModel.kind == "finding.promoted")
+        ).scalar_one()
+        assert event.actor_kind == expected

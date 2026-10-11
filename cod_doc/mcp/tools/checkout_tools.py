@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cod_doc.mcp.tools._db import session_factory
+from cod_doc.mcp.tools._db import require_project_id, session_factory
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -58,6 +58,7 @@ def register(mcp: FastMCP) -> None:
                 result = checkout_service.checkout(
                     session,
                     task_id,
+                    project_id=require_project_id(session, project),
                     agent=agent,
                     expected_statuses=expected_statuses,
                 )
@@ -97,6 +98,7 @@ def register(mcp: FastMCP) -> None:
                 result = checkout_service.release(
                     session,
                     task_id,
+                    project_id=require_project_id(session, project),
                     agent=agent,
                     force=force,
                 )

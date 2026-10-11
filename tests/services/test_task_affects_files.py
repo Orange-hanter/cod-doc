@@ -36,6 +36,7 @@ from cod_doc.services import plan_service as plans
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
 from cod_doc.services.task_service import TaskNotFoundError
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -109,6 +110,7 @@ def test_replace_swaps_whole_set_and_leaves_trail(engine_with_schema) -> None:  
 
         change = tasks.update_affects_files(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["src/b.py", "src/c.py"],
             mode="replace",
@@ -152,7 +154,12 @@ def test_add_appends_only_new_paths(engine_with_schema) -> None:  # type: ignore
         _pid, row_id = _seed(session, ["src/a.py"])
 
         change = tasks.update_affects_files(
-            session, task_id=_TASK, paths=["src/a.py", "src/z.py"], mode="add", author="human:t"
+            session,
+            project_id=sole_project_id(session),
+            task_id=_TASK,
+            paths=["src/a.py", "src/z.py"],
+            mode="add",
+            author="human:t",
         )
 
         assert change.new == ["src/a.py", "src/z.py"]
@@ -166,6 +173,7 @@ def test_remove_drops_listed_paths_and_ignores_absent(engine_with_schema) -> Non
 
         change = tasks.update_affects_files(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["src/a.py", "src/never.py"],
             mode="remove",
@@ -185,16 +193,27 @@ def test_same_set_is_noop_without_revision(engine_with_schema) -> None:  # type:
         # Тот же набор в другом порядке и с дублем — не изменение.
         replaced = tasks.update_affects_files(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["src/b.py", "src/a.py", "src/b.py"],
             mode="replace",
             author="human:t",
         )
         added = tasks.update_affects_files(
-            session, task_id=_TASK, paths=["src/a.py"], mode="add", author="human:t"
+            session,
+            project_id=sole_project_id(session),
+            task_id=_TASK,
+            paths=["src/a.py"],
+            mode="add",
+            author="human:t",
         )
         removed = tasks.update_affects_files(
-            session, task_id=_TASK, paths=["src/none.py"], mode="remove", author="human:t"
+            session,
+            project_id=sole_project_id(session),
+            task_id=_TASK,
+            paths=["src/none.py"],
+            mode="remove",
+            author="human:t",
         )
 
         assert not (replaced.changed or added.changed or removed.changed)
@@ -216,7 +235,12 @@ def test_replace_with_empty_list_clears_set(engine_with_schema) -> None:  # type
         _pid, row_id = _seed(session, ["src/a.py"])
 
         change = tasks.update_affects_files(
-            session, task_id=_TASK, paths=[], mode="replace", author="human:t"
+            session,
+            project_id=sole_project_id(session),
+            task_id=_TASK,
+            paths=[],
+            mode="replace",
+            author="human:t",
         )
 
         assert change.changed is True
@@ -231,6 +255,7 @@ def test_duplicates_collapse(engine_with_schema) -> None:  # type: ignore[no-unt
 
         change = tasks.update_affects_files(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["src/a.py", "src/a.py", "src/b.py", "src/a.py"],
             mode="replace",
@@ -247,7 +272,12 @@ def test_blank_path_is_rejected(engine_with_schema) -> None:  # type: ignore[no-
         _seed(session)
         with pytest.raises(ValueError, match="пуст"):
             tasks.update_affects_files(
-                session, task_id=_TASK, paths=["  "], mode="replace", author="human:t"
+                session,
+                project_id=sole_project_id(session),
+                task_id=_TASK,
+                paths=["  "],
+                mode="replace",
+                author="human:t",
             )
 
 
@@ -258,7 +288,12 @@ def test_paths_are_stripped_before_dedup(engine_with_schema) -> None:  # type: i
         _pid, row_id = _seed(session, ["src/a.py"])
 
         change = tasks.update_affects_files(
-            session, task_id=_TASK, paths=[" src/a.py ", "\tsrc/b.py"], mode="add", author="human:t"
+            session,
+            project_id=sole_project_id(session),
+            task_id=_TASK,
+            paths=[" src/a.py ", "\tsrc/b.py"],
+            mode="add",
+            author="human:t",
         )
 
         assert change.new == ["src/a.py", "src/b.py"]
@@ -285,7 +320,12 @@ def test_invalid_paths_are_rejected(  # type: ignore[no-untyped-def]
         _pid, row_id = _seed(session, ["src/keep.py"])
         with pytest.raises(ValueError, match=match):
             tasks.update_affects_files(
-                session, task_id=_TASK, paths=paths, mode="replace", author="human:t"
+                session,
+                project_id=sole_project_id(session),
+                task_id=_TASK,
+                paths=paths,
+                mode="replace",
+                author="human:t",
             )
         assert _paths(session, row_id) == ["src/keep.py"]
 
@@ -322,7 +362,12 @@ def test_unusual_paths_are_stored_as_given(engine_with_schema, path: str) -> Non
     with transactional(factory) as session:
         _pid, row_id = _seed(session)
         change = tasks.update_affects_files(
-            session, task_id=_TASK, paths=[path], mode="replace", author="human:t"
+            session,
+            project_id=sole_project_id(session),
+            task_id=_TASK,
+            paths=[path],
+            mode="replace",
+            author="human:t",
         )
         assert _paths(session, row_id) == [path]
         assert bool(change.warnings) == path.startswith("/")
@@ -351,7 +396,12 @@ def test_unknown_mode_is_rejected(engine_with_schema) -> None:  # type: ignore[n
         _seed(session)
         with pytest.raises(ValueError, match="mode"):
             tasks.update_affects_files(
-                session, task_id=_TASK, paths=["a"], mode="merge", author="human:t"
+                session,
+                project_id=sole_project_id(session),
+                task_id=_TASK,
+                paths=["a"],
+                mode="merge",
+                author="human:t",
             )
 
 
@@ -361,7 +411,12 @@ def test_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-unt
         _seed(session)
         with pytest.raises(TaskNotFoundError):
             tasks.update_affects_files(
-                session, task_id="NOPE-999", paths=["a"], mode="replace", author="human:t"
+                session,
+                project_id=sole_project_id(session),
+                task_id="NOPE-999",
+                paths=["a"],
+                mode="replace",
+                author="human:t",
             )
 
 
@@ -372,6 +427,7 @@ def test_out_of_root_path_warns_but_is_written(engine_with_schema) -> None:  # t
 
         change = tasks.update_affects_files(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["/elsewhere/x.py", "/repo/proj/in.py", "rel.py"],
             mode="replace",
@@ -395,6 +451,7 @@ def test_already_stored_foreign_path_does_not_warn_again(  # type: ignore[no-unt
 
         change = tasks.update_affects_files(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["/elsewhere/x.py", "rel.py"] if mode == "replace" else ["/elsewhere/x.py"],
             mode=mode,
@@ -411,7 +468,12 @@ def test_remove_mode_never_warns(engine_with_schema) -> None:  # type: ignore[no
         _seed(session, ["/elsewhere/x.py", "/elsewhere/y.py"])
 
         change = tasks.update_affects_files(
-            session, task_id=_TASK, paths=["/elsewhere/x.py"], mode="remove", author="human:t"
+            session,
+            project_id=sole_project_id(session),
+            task_id=_TASK,
+            paths=["/elsewhere/x.py"],
+            mode="remove",
+            author="human:t",
         )
 
         assert change.warnings == []
@@ -422,7 +484,12 @@ def test_revision_revert_restores_previous_set(engine_with_schema) -> None:  # t
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py", "src/b.py"])
         tasks.update_affects_files(
-            session, task_id=_TASK, paths=["src/c.py"], mode="replace", author="human:t"
+            session,
+            project_id=sole_project_id(session),
+            task_id=_TASK,
+            paths=["src/c.py"],
+            mode="replace",
+            author="human:t",
         )
         target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
 
@@ -445,7 +512,12 @@ def test_revision_revert_of_add_restores_set(engine_with_schema) -> None:  # typ
     with transactional(factory) as session:
         _pid, row_id = _seed(session)
         tasks.update_affects_files(
-            session, task_id=_TASK, paths=["src/new.py"], mode="add", author="human:t"
+            session,
+            project_id=sole_project_id(session),
+            task_id=_TASK,
+            paths=["src/new.py"],
+            mode="add",
+            author="human:t",
         )
         target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
 
@@ -461,7 +533,12 @@ def test_revision_revert_rejects_malformed_old(engine_with_schema, old: object) 
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
         tasks.update_affects_files(
-            session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t"
+            session,
+            project_id=sole_project_id(session),
+            task_id=_TASK,
+            paths=["src/b.py"],
+            mode="replace",
+            author="human:t",
         )
         target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
         model = session.execute(
@@ -674,6 +751,7 @@ def test_task_turns_foreign_after_paths_change(engine_with_schema) -> None:  # t
 
         tasks.update_affects_files(
             session,
+            project_id=pid,
             task_id=_TASK,
             paths=["/elsewhere/a.py"],
             mode="replace",

@@ -68,6 +68,7 @@ from cod_doc.infra.models import (
     UserStoryModel,
 )
 from cod_doc.infra.repositories import PlanSectionRepository, TaskRepository
+from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.infra.sql_helpers import ensure_outer_transaction, priority_sql_order
 from cod_doc.services import activity_service, event_bus, search_service, validation
 from cod_doc.services import revision_service as rev
@@ -166,7 +167,7 @@ def _project_slug(session: Session, project_id: int) -> str | None:
     ).scalar_one_or_none()
 
 
-def _require_task(session: Session, task_id: str, *, project_id: int | None) -> TaskModel:
+def _require_task(session: Session, task_id: str, *, project_id: int) -> TaskModel:
     """Найти задачу по ``task_id`` в скоупе проекта.
 
     ``project_id`` обязателен и без значения по умолчанию (ADO-200, RFC 26
@@ -175,12 +176,11 @@ def _require_task(session: Session, task_id: str, *, project_id: int | None) -> 
     ``scalar_one_or_none()`` через ``MultipleResultsFound``. Дефолт дал бы
     call-site'у забыть скоуп молча.
 
-    ``None`` — явный легаси-долг вызывающих, у которых ``project_id`` нет
-    в сигнатуре: поиск идёт по всей БД, как раньше.
+    Легаси-ветки ``project_id=None`` с поиском по всей БД больше нет
+    (STO-030): после 0047 она отдавала задачу чужого проекта с тем же ID.
     """
-    stmt = select(TaskModel).where(TaskModel.task_id == task_id)
-    if project_id is not None:
-        stmt = stmt.where(TaskModel.project_id == project_id)
+    require_int_project_id(project_id)
+    stmt = select(TaskModel).where(TaskModel.project_id == project_id, TaskModel.task_id == task_id)
     model = session.execute(stmt).scalar_one_or_none()
     if model is None:
         raise TaskNotFoundError(task_id)
@@ -590,6 +590,7 @@ def create(
 def update_status(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_status: TaskStatus,
     author: str,
@@ -630,18 +631,14 @@ def update_status(
         validate_transition,
     )
 
-    # ADO-200: project_id=None — легаси-долг. Публичные сигнатуры update_status,
-    # _update_text_field, update_priority, move_to_section, complete,
-    # set_blocker, clear_blocker и log_progress в этой задаче не меняются,
-    # скоупа проекта у них нет — поиск по всей БД, как раньше.
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     old_status = model.status
     target_status = canonical_task_status(new_status)
     # Сравнение по бакету, а не по строке: `todo → pending` — не переход, а
     # смена написания, и до ADO-156 она проходила как настоящая смена статуса
     # (ревизия, событие, перевод задачи обратно в легаси).
     if canonical_task_status(old_status) == target_status:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -717,6 +714,7 @@ def update_status(
 def _update_text_field(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     field: str,
     new_value: str,
@@ -729,10 +727,10 @@ def _update_text_field(
     No-ops when value is unchanged. Writes a TASK revision with
     op=`<field>` carrying old/new content (length-only when very long).
     """
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     old_value = getattr(model, field) or ""
     if old_value == new_value:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -775,6 +773,7 @@ def _update_text_field(
 def update_description(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_description: str,
     author: str,
@@ -785,6 +784,7 @@ def update_description(
     return _update_text_field(
         session,
         task_id=task_id,
+        project_id=project_id,
         field="description",
         new_value=new_description,
         author=author,
@@ -796,6 +796,7 @@ def update_description(
 def update_acceptance(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_acceptance: str,
     author: str,
@@ -806,6 +807,7 @@ def update_acceptance(
     return _update_text_field(
         session,
         task_id=task_id,
+        project_id=project_id,
         field="acceptance",
         new_value=new_acceptance,
         author=author,
@@ -817,6 +819,7 @@ def update_acceptance(
 def update_priority(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_priority: Priority,
     author: str,
@@ -833,10 +836,10 @@ def update_priority(
     ``activity_service.write_revision_and_emit_event`` (правило ADO-040);
     ``actor_kind`` выводится из ``author``.
     """
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     old_priority = model.priority
     if old_priority == new_priority.value:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -888,12 +891,12 @@ class AffectsFilesChange:
 def update_affects_files(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     paths: list[str],
     author: str,
     mode: str = "replace",
     reason: str | None = None,
-    project_id: int | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> AffectsFilesChange:
     """Править ``affects_files`` уже созданной задачи (AFT-021).
@@ -995,6 +998,7 @@ def update_affects_files(
 def move_to_section(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_section_id: int,
     author: str,
@@ -1017,10 +1021,10 @@ def move_to_section(
     No-op, когда задача уже в целевой секции. Revision и activity event
     пишутся одним атомарным вызовом (правило ADO-040).
     """
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     old_section_id = model.section_id
     if old_section_id == new_section_id:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -1079,11 +1083,11 @@ def move_to_section(
 def _move_one_to_plan(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_section_id: int,
     author: str,
     reason: str | None = None,
-    project_id: int | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Move a task into a section of ANOTHER plan of the same project (op=plan, ADO-243).
@@ -1119,7 +1123,7 @@ def _move_one_to_plan(
     old_section_id = model.section_id
     old_plan_id = model.plan_id
     if old_section_id == new_section_id:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -1368,6 +1372,7 @@ def move_tasks_to_plan(
 def complete(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     author: str,
     commit_sha: str | None = None,
@@ -1389,7 +1394,7 @@ def complete(
     """
     from cod_doc.services.task_status_machine import is_terminal, validate_transition
 
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
 
     if model.status == TaskStatus.DONE.value:
         raise TaskAlreadyDoneError(task_id)
@@ -1417,6 +1422,7 @@ def complete(
     if model.status in (TaskStatus.PENDING.value, TaskStatus.TODO.value):
         update_status(
             session,
+            project_id=project_id,
             task_id=task_id,
             new_status=TaskStatus.IN_PROGRESS_NEW,
             author=author,
@@ -1655,6 +1661,7 @@ def count_for_project(
 def set_blocker(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     reason: str,
     author: str,
@@ -1685,7 +1692,7 @@ def set_blocker(
     if not reason or not reason.strip():
         raise ValueError("reason must be non-empty")
 
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     old_reason = model.blocked_reason
     model.blocked_reason = reason
     model.last_updated = datetime.now(UTC)
@@ -1719,6 +1726,7 @@ def set_blocker(
 def clear_blocker(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     author: str,
 ) -> Task:
@@ -1733,7 +1741,7 @@ def clear_blocker(
     Отдельного события о возврате в ready-множество нет — как и у
     ``add_dependency``.
     """
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     if model.blocked_reason is None:
         t = TaskRepository(session).get(model.row_id)
         assert t is not None
@@ -2122,6 +2130,7 @@ def list_stale_in_progress(
 def log_progress(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     message: str,
     author: str,
@@ -2135,7 +2144,7 @@ def log_progress(
     if not message or not message.strip():
         raise ValueError("message must be non-empty")
 
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     model.last_updated = datetime.now(UTC)
     session.flush()
 

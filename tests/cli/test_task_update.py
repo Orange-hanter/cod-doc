@@ -28,6 +28,7 @@ from cod_doc.infra.models import (
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import task_service as tasks
 from cod_doc.services.project_lookup import require_project_id
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -169,7 +170,12 @@ def test_task_update_unknown_task_exits_nonzero(tmp_path: Path) -> None:
 def _seed_files(name: str, paths: list[str]) -> None:
     for session in _session(name):
         tasks.update_affects_files(
-            session, task_id="GCL-001", paths=paths, mode="replace", author="human:seed"
+            session,
+            task_id="GCL-001",
+            paths=paths,
+            mode="replace",
+            author="human:seed",
+            project_id=sole_project_id(session),
         )
 
 

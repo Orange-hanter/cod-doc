@@ -433,6 +433,7 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
 
     _tasks.update_status(
         session,
+        project_id=task_model.project_id,
         task_id=task_model.task_id,
         new_status=old_status,
         author=author,

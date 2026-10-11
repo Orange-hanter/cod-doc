@@ -58,6 +58,15 @@ _TARGETS: tuple[_Target, ...] = (
 )
 
 
+def _quote_ident(name: str) -> str:
+    """Идентификатор SQLite в двойных кавычках; кавычка внутри удваивается.
+
+    Имена view и индексов читаются из ``sqlite_master`` — их не выбирал этот
+    код, и ``"`` в имени без удвоения ломал бы синтаксис посреди пересборки.
+    """
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _global_clause(column: str) -> re.Pattern[str]:
     return re.compile(rf'UNIQUE\s*\(\s*"?{column}"?\s*\)')
 
@@ -88,7 +97,7 @@ def _swap(sql: str, target: _Target, *, to_scoped: bool) -> str:
 
 def _rename_create(sql: str, table: str, new_name: str) -> str:
     new_sql, count = re.subn(
-        rf'^CREATE TABLE\s+"?{table}"?', f'CREATE TABLE "{new_name}"', sql, count=1
+        rf'^CREATE TABLE\s+"?{table}"?', f"CREATE TABLE {_quote_ident(new_name)}", sql, count=1
     )
     if count != 1:
         raise RuntimeError(f"0047: не разобран заголовок CREATE TABLE {table}")
@@ -120,7 +129,7 @@ def _rebuild_sqlite(*, to_scoped: bool) -> None:
             "SELECT name, sql FROM sqlite_master WHERE type = 'view' ORDER BY rowid"
         ).fetchall()
         for name, _sql in reversed(views):
-            op.execute(f'DROP VIEW "{name}"')
+            op.execute(f"DROP VIEW {_quote_ident(name)}")
 
         for target in _TARGETS:
             table_sql = bind.exec_driver_sql(
@@ -136,11 +145,12 @@ def _rebuild_sqlite(*, to_scoped: bool) -> None:
             op.execute(
                 _rename_create(_swap(table_sql, target, to_scoped=to_scoped), target.table, tmp)
             )
-            op.execute(f'INSERT INTO "{tmp}" SELECT * FROM "{target.table}"')
+            table, tmp_q = _quote_ident(target.table), _quote_ident(tmp)
+            op.execute(f"INSERT INTO {tmp_q} SELECT * FROM {table}")
             for name, _sql in indexes:
-                op.execute(f'DROP INDEX "{name}"')
-            op.execute(f'DROP TABLE "{target.table}"')
-            op.execute(f'ALTER TABLE "{tmp}" RENAME TO "{target.table}"')
+                op.execute(f"DROP INDEX {_quote_ident(name)}")
+            op.execute(f"DROP TABLE {table}")
+            op.execute(f"ALTER TABLE {tmp_q} RENAME TO {table}")
             for _name, index_sql in indexes:
                 op.execute(index_sql)
 

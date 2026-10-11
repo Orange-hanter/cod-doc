@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Annotated, Any
 
@@ -22,10 +23,12 @@ from cod_doc.services import ai_text, trace_service
 from cod_doc.services import task_service as tasks
 from cod_doc.services.ai_text import AIBackendError
 from cod_doc.services.revision_service import RevisionConflictError
+from cod_doc.services.validation import ValidationError
 
 from ._shared import _is_htmx
 
 router = APIRouter()
+logger = logging.getLogger("cod_doc.api")
 
 
 _TASK_FIELDS: dict[str, tuple[str, str, Callable[..., Any]]] = {
@@ -215,6 +218,7 @@ def task_field_patch(
     try:
         updated = svc(
             session,
+            project_id=project_db_id,
             task_id=task_id,
             **{f"new_{field}": body},
             author="human:web",
@@ -224,9 +228,16 @@ def task_field_patch(
     except RevisionConflictError as exc:
         session.rollback()
         raise ConflictWebError(f"Конфликт ревизий: {exc}") from exc
-    except (IntegrityError, ValueError) as exc:
+    except ValidationError as exc:
+        # Доменная валидация: текст наш и адресован пользователю.
         session.rollback()
         raise ValidationWebError(str(exc)) from exc
+    except (IntegrityError, ValueError) as exc:
+        # str() от IntegrityError несёт SQL и параметры запроса — в лог, не
+        # в ответ.
+        session.rollback()
+        logger.warning("web task field patch failed for %s", task_id, exc_info=exc)
+        raise ValidationWebError("Не удалось сохранить изменения.") from exc
 
     if _is_htmx(request):
         return _render_task_field_view(

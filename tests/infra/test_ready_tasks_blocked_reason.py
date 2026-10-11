@@ -19,6 +19,7 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.services import plan_service, task_service
 from tests._alembic import run_alembic
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -114,7 +115,13 @@ def test_set_blocker_removes_task_from_view(engine_with_schema: Engine) -> None:
     _two_todo_tasks(engine_with_schema)
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        task_service.set_blocker(session, task_id="TA-001", reason="ждём API", author=_AUTHOR)
+        task_service.set_blocker(
+            session,
+            task_id="TA-001",
+            reason="ждём API",
+            author=_AUTHOR,
+            project_id=sole_project_id(session),
+        )
 
     assert _ready(engine_with_schema) == {"TA-002"}
     assert _status(engine_with_schema, "TA-001") == "todo"
@@ -124,9 +131,17 @@ def test_clear_blocker_returns_task_to_view(engine_with_schema: Engine) -> None:
     _two_todo_tasks(engine_with_schema)
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        task_service.set_blocker(session, task_id="TA-001", reason="ждём API", author=_AUTHOR)
+        task_service.set_blocker(
+            session,
+            task_id="TA-001",
+            reason="ждём API",
+            author=_AUTHOR,
+            project_id=sole_project_id(session),
+        )
     with transactional(factory) as session:
-        task_service.clear_blocker(session, task_id="TA-001", author=_AUTHOR)
+        task_service.clear_blocker(
+            session, task_id="TA-001", author=_AUTHOR, project_id=sole_project_id(session)
+        )
 
     assert _ready(engine_with_schema) == {"TA-001", "TA-002"}
 
@@ -135,13 +150,15 @@ def test_ready_for_project_respects_blocker(engine_with_schema: Engine) -> None:
     project_id = _two_todo_tasks(engine_with_schema)
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        task_service.set_blocker(session, task_id="TA-001", reason="ждём API", author=_AUTHOR)
+        task_service.set_blocker(
+            session, task_id="TA-001", reason="ждём API", author=_AUTHOR, project_id=project_id
+        )
     with transactional(factory) as session:
         blocked = plan_service.ready_for_project(session, project_id, local_only=False)
         assert [t.task_id for t in blocked] == ["TA-002"]
 
     with transactional(factory) as session:
-        task_service.clear_blocker(session, task_id="TA-001", author=_AUTHOR)
+        task_service.clear_blocker(session, task_id="TA-001", author=_AUTHOR, project_id=project_id)
     with transactional(factory) as session:
         cleared = plan_service.ready_for_project(session, project_id, local_only=False)
         assert {t.task_id for t in cleared} == {"TA-001", "TA-002"}
@@ -153,14 +170,22 @@ def test_chain_layout_ready_ids_respect_blocker(engine_with_schema: Engine) -> N
     _two_todo_tasks(engine_with_schema)
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        task_service.set_blocker(session, task_id="TA-001", reason="ждём API", author=_AUTHOR)
+        task_service.set_blocker(
+            session,
+            task_id="TA-001",
+            reason="ждём API",
+            author=_AUTHOR,
+            project_id=sole_project_id(session),
+        )
     with transactional(factory) as session:
         plan_id = session.execute(text("SELECT row_id FROM plan")).scalar_one()
         layout = plan_service.chain_layout(session, plan_id)
     assert layout["ready_ids"] == {"TA-002"}
 
     with transactional(factory) as session:
-        task_service.clear_blocker(session, task_id="TA-001", author=_AUTHOR)
+        task_service.clear_blocker(
+            session, task_id="TA-001", author=_AUTHOR, project_id=sole_project_id(session)
+        )
     with transactional(factory) as session:
         layout = plan_service.chain_layout(session, plan_id)
     assert layout["ready_ids"] == {"TA-001", "TA-002"}
@@ -174,7 +199,9 @@ def test_clear_blocker_keeps_dependency_rule(engine_with_schema: Engine) -> None
         _make(session, ids, "TA-004")
         _make(session, ids, "TA-003", blocked_by=["TA-004"], blocked_reason="ждём API")
     with transactional(factory) as session:
-        task_service.clear_blocker(session, task_id="TA-003", author=_AUTHOR)
+        task_service.clear_blocker(
+            session, task_id="TA-003", author=_AUTHOR, project_id=sole_project_id(session)
+        )
 
     assert _ready(engine_with_schema) == {"TA-004"}
 

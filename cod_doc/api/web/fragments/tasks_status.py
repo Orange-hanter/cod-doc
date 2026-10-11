@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -22,11 +23,42 @@ from cod_doc.services import task_service as tasks
 from cod_doc.services.checkout_service import CheckoutConflictError, CheckoutStatusError
 from cod_doc.services.revision_service import RevisionConflictError
 from cod_doc.services.task_service import TaskAlreadyDoneError, TaskBlockedError
-from cod_doc.services.task_status_machine import normalise
+from cod_doc.services.task_status_machine import StatusTransitionError, normalise
 
 from ._shared import _is_htmx, _render_task_row
 
 router = APIRouter()
+logger = logging.getLogger("cod_doc.api")
+
+# Текст для баннера, когда сбой не доменный. str() от IntegrityError несёт
+# SQL и параметры запроса — схему БД пользователю показывать незачем; сам
+# текст остаётся в логе сервера.
+_GENERIC_SAVE_ERROR = "Не удалось сохранить изменения."
+
+
+def _generic_save_error(exc: Exception, *, task_id: str) -> tuple[str, str]:
+    logger.warning("web task write failed for %s", task_id, exc_info=exc)
+    return ("error", _GENERIC_SAVE_ERROR)
+
+
+def _safe_back_url(request: Request, fallback: str) -> str:
+    """Путь возврата из ``Referer``, только в пределах этого же сайта (CWE-601).
+
+    Браузер шлёт ``Referer`` абсолютным URL, поэтому чужой хост — отказ, свой
+    хост — сводится к относительному пути. Итог обязан начинаться с одного
+    ``/``: ``//evil`` и ``/\\evil`` браузер читает как адрес другого хоста.
+    """
+    referer = request.headers.get("Referer")
+    if not referer:
+        return fallback
+    parts = urlsplit(referer)
+    foreign = parts.scheme not in ("http", "https") or parts.netloc != request.url.netloc
+    if (parts.scheme or parts.netloc) and foreign:
+        return fallback
+    path = parts.path
+    if not path.startswith("/") or path.startswith("//") or "\\" in path:
+        return fallback
+    return f"{path}?{parts.query}" if parts.query else path
 
 
 @router.post("/p/{slug}/tasks/{task_id}/status", response_class=HTMLResponse)
@@ -58,13 +90,16 @@ def task_status_update(
             normalise(existing.status.value) == "todo"
             and normalise(new_status.value) == "in_progress"
         ):
-            checkout_service.checkout(session, task_id=task_id, agent="human:web")
+            checkout_service.checkout(
+                session, task_id=task_id, project_id=project_db_id, agent="human:web"
+            )
             checked = tasks.get(session, task_id, project_id=project_db_id)
             assert checked is not None
             updated = checked
         else:
             updated = tasks.update_status(
                 session,
+                project_id=project_db_id,
                 task_id=task_id,
                 new_status=new_status,
                 author="human:web",
@@ -80,10 +115,15 @@ def task_status_update(
         session.rollback()
         updated = existing
         inline_alert = ("warning", f"conflict: {exc}")
-    except (IntegrityError, ValueError) as exc:
+    except StatusTransitionError as exc:
+        # Доменный отказ статус-машины: текст наш и осмысленный.
         session.rollback()
         updated = existing
         inline_alert = ("error", str(exc))
+    except (IntegrityError, ValueError) as exc:
+        session.rollback()
+        updated = existing
+        inline_alert = _generic_save_error(exc, task_id=task_id)
 
     if _is_htmx(request):
         return _render_task_row(
@@ -132,6 +172,7 @@ def task_complete(
     try:
         updated = tasks.complete(
             session,
+            project_id=project_db_id,
             task_id=task_id,
             author="human:web",
             reason="web ready-block complete",
@@ -149,10 +190,15 @@ def task_complete(
         session.rollback()
         updated = existing
         inline_alert = ("warning", f"conflict: {exc}")
-    except (IntegrityError, ValueError) as exc:
+    except StatusTransitionError as exc:
+        # Доменный отказ статус-машины: текст наш и осмысленный.
         session.rollback()
         updated = existing
         inline_alert = ("error", str(exc))
+    except (IntegrityError, ValueError) as exc:
+        session.rollback()
+        updated = existing
+        inline_alert = _generic_save_error(exc, task_id=task_id)
 
     if _is_htmx(request):
         return _render_task_row(
@@ -165,8 +211,8 @@ def task_complete(
     # possible (Referer), falling back to the project overview. The complete
     # button shows up on multiple pages (overview, plan view, tasks list)
     # and a hard-coded redirect to /p/{slug} was disorienting on the others.
-    referer = request.headers.get("Referer") or f"/p/{proj.entry.name}"
-    redirect = RedirectResponse(url=referer, status_code=303)
+    back = _safe_back_url(request, f"/p/{proj.entry.name}")
+    redirect = RedirectResponse(url=back, status_code=303)
     if inline_alert is not None:
         severity, message = inline_alert
         redirect.set_cookie("flash_severity", severity, max_age=30, path="/")

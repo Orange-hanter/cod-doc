@@ -33,6 +33,7 @@ from cod_doc.infra.models import (
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
 from cod_doc.services.task_service import TaskNotFoundError
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -84,6 +85,7 @@ def test_update_priority_writes_revision_and_event(engine_with_schema) -> None: 
 
         updated = tasks.update_priority(
             session,
+            project_id=sole_project_id(session),
             task_id=task.task_id,
             new_priority=Priority.CRITICAL,
             author="agent:run-X",
@@ -122,6 +124,7 @@ def test_update_priority_same_value_is_noop(engine_with_schema) -> None:  # type
 
         tasks.update_priority(
             session,
+            project_id=sole_project_id(session),
             task_id=task.task_id,
             new_priority=Priority.MEDIUM,
             author="human:test",
@@ -138,6 +141,7 @@ def test_update_priority_unknown_task_raises(engine_with_schema) -> None:  # typ
         with pytest.raises(TaskNotFoundError):
             tasks.update_priority(
                 session,
+                project_id=sole_project_id(session),
                 task_id="NOPE-999",
                 new_priority=Priority.LOW,
                 author="human:test",

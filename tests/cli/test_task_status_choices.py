@@ -24,6 +24,7 @@ from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import task_service
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -74,6 +75,7 @@ def _seed(tmp_path: Path, statuses: dict[str, TaskStatus]) -> str:
                         task_id=task_id,
                         new_status=status,
                         author="test",
+                        project_id=sole_project_id(session),
                     )
     finally:
         engine.dispose()

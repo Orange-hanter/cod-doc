@@ -248,9 +248,16 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                checkout_service.warn_if_no_checkout(session, task_id, author)
+                project_id = require_project_id(session, project)
+                checkout_service.warn_if_no_checkout(
+                    session, task_id, author, project_id=project_id
+                )
                 t = task_service.log_progress(
-                    session, task_id=task_id, message=message, author=author
+                    session,
+                    project_id=project_id,
+                    task_id=task_id,
+                    message=message,
+                    author=author,
                 )
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
@@ -280,9 +287,9 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                require_project_id(session, project)
                 return heartbeat_service.heartbeat_context(
                     session,
+                    project_id=require_project_id(session, project),
                     task_id=task_id,
                     since_revision_id=since_revision_id,
                 )
@@ -706,8 +713,14 @@ def register(mcp: FastMCP) -> None:
                 project_id = require_project_id(session, project)
                 from cod_doc.services import checkout_service as _co
 
-                _co.warn_if_no_checkout(session, task_id, author)
-                t = task_service.set_blocker(session, task_id=task_id, reason=reason, author=author)
+                _co.warn_if_no_checkout(session, task_id, author, project_id=project_id)
+                t = task_service.set_blocker(
+                    session,
+                    project_id=project_id,
+                    task_id=task_id,
+                    reason=reason,
+                    author=author,
+                )
                 from cod_doc.services import activity_service
 
                 activity_service.emit(
@@ -745,7 +758,9 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
-                t = task_service.clear_blocker(session, task_id=task_id, author=author)
+                t = task_service.clear_blocker(
+                    session, project_id=project_id, task_id=task_id, author=author
+                )
                 activity_service.emit(
                     session,
                     project_id,
@@ -948,6 +963,7 @@ def register(mcp: FastMCP) -> None:
                 project_id = require_project_id(session, project)
                 t = task_service.update_status(
                     session,
+                    project_id=project_id,
                     task_id=task_id,
                     new_status=TaskStatus(new_status),
                     author=author,
@@ -1057,6 +1073,7 @@ def register(mcp: FastMCP) -> None:
                 if description is not None:
                     t = task_service.update_description(
                         session,
+                        project_id=pid,
                         task_id=task_id,
                         new_description=description,
                         author=author,
@@ -1066,6 +1083,7 @@ def register(mcp: FastMCP) -> None:
                 if acceptance is not None:
                     t = task_service.update_acceptance(
                         session,
+                        project_id=pid,
                         task_id=task_id,
                         new_acceptance=acceptance,
                         author=author,
@@ -1075,6 +1093,7 @@ def register(mcp: FastMCP) -> None:
                 if priority is not None:
                     t = task_service.update_priority(
                         session,
+                        project_id=pid,
                         task_id=task_id,
                         new_priority=priority_enum,
                         author=author,
@@ -1084,12 +1103,12 @@ def register(mcp: FastMCP) -> None:
                 if affects_files is not None:
                     change = task_service.update_affects_files(
                         session,
+                        project_id=pid,
                         task_id=task_id,
                         paths=affects_files,
                         mode=affects_files_mode,
                         author=author,
                         reason=reason,
-                        project_id=pid,
                     )
                     t = change.task
                     warnings.extend(change.warnings)
@@ -1184,6 +1203,7 @@ def register(mcp: FastMCP) -> None:
                         continue
                     t = task_service.move_to_section(
                         session,
+                        project_id=project_id,
                         task_id=task_id,
                         new_section_id=section_id,
                         author=author,
@@ -1327,9 +1347,12 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf, commit=not dry_run) as session:
                 project_id = require_project_id(session, project)
-                checkout_service.warn_if_no_checkout(session, task_id, author)
+                checkout_service.warn_if_no_checkout(
+                    session, task_id, author, project_id=project_id
+                )
                 t = complete(
                     session,
+                    project_id=project_id,
                     task_id=task_id,
                     author=author,
                     commit_sha=commit_sha,

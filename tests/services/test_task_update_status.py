@@ -18,6 +18,7 @@ from cod_doc.infra.models import (
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
 from cod_doc.services.task_status_machine import StatusTransitionError
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -82,6 +83,7 @@ def test_update_status_pending_to_in_progress_requires_checkout(engine_with_sche
                 task_id=task.task_id,
                 new_status=TaskStatus.IN_PROGRESS,
                 author="human:dakh",
+                project_id=sole_project_id(session),
             )
         with pytest.raises(StatusTransitionError):
             tasks.update_status(
@@ -90,6 +92,7 @@ def test_update_status_pending_to_in_progress_requires_checkout(engine_with_sche
                 new_status=TaskStatus.IN_PROGRESS,
                 author="human:dakh",
                 strict=False,
+                project_id=sole_project_id(session),
             )
 
         updated = tasks.update_status(
@@ -98,6 +101,7 @@ def test_update_status_pending_to_in_progress_requires_checkout(engine_with_sche
             new_status=TaskStatus.IN_PROGRESS,
             author="human:dakh",
             via_checkout=True,
+            project_id=sole_project_id(session),
         )
         # ADO-156: легаси-член enum на входе принят, но записан канон.
         assert updated.status == TaskStatus.IN_PROGRESS_NEW
@@ -116,7 +120,11 @@ def test_update_status_no_op_if_same(engine_with_schema) -> None:  # type: ignor
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
         tasks.update_status(
-            session, task_id=task.task_id, new_status=TaskStatus.PENDING, author="x"
+            session,
+            task_id=task.task_id,
+            new_status=TaskStatus.PENDING,
+            author="x",
+            project_id=sole_project_id(session),
         )
         history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
         assert len(history) == 1
@@ -127,7 +135,11 @@ def test_update_status_unknown_task_raises(engine_with_schema) -> None:  # type:
 
     with transactional(factory) as session, pytest.raises(tasks.TaskNotFoundError):
         tasks.update_status(
-            session, task_id="GHOST-001", new_status=TaskStatus.IN_PROGRESS, author="x"
+            session,
+            task_id="GHOST-001",
+            new_status=TaskStatus.IN_PROGRESS,
+            author="x",
+            project_id=1,  # пустая БД: проекта #1 нет — задачи тем более
         )
 
 
@@ -145,6 +157,7 @@ def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type
             new_status=TaskStatus.IN_PROGRESS,
             author="other",
             via_checkout=True,
+            project_id=sole_project_id(session),
         )
 
         with pytest.raises(rev.RevisionConflictError):
@@ -154,4 +167,5 @@ def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type
                 new_status=TaskStatus.DONE,
                 author="x",
                 expected_parent_revision_id=head,
+                project_id=sole_project_id(session),
             )

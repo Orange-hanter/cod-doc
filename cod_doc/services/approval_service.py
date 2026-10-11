@@ -248,6 +248,7 @@ def request(
             if task is not None and task.status.value in _IN_PROGRESS_STATUSES:
                 _task_svc.update_status(
                     session,
+                    project_id=project_id,
                     task_id=ref,
                     new_status=TaskStatus.IN_REVIEW,
                     author=f"approval:{m.approval_id}",

@@ -76,7 +76,7 @@ def link(
     )
     existing = session.execute(stmt).scalar_one_or_none()
     if existing is not None:
-        return StoryLinkRepository(session)._to_domain(existing)
+        return StoryLinkRepository(session).to_domain(existing)
 
     new_link = StoryLinkRepository(session).add(
         StoryLink(

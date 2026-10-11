@@ -29,6 +29,7 @@ from cod_doc.infra.repositories import (
 )
 from cod_doc.services import task_service as tasks
 from cod_doc.services.project_lookup import require_project_id
+from tests._task_scope import sole_project_id
 
 
 @pytest.fixture
@@ -117,8 +118,11 @@ def tasks_client(tmp_path: Path, migrate_db):
             new_status=TaskStatus.IN_PROGRESS,
             author="human:dakh",
             via_checkout=True,
+            project_id=sole_project_id(session),
         )
-        tasks.complete(session, task_id=t3.task_id, author="human:dakh")
+        tasks.complete(
+            session, task_id=t3.task_id, author="human:dakh", project_id=sole_project_id(session)
+        )
     engine.dispose()
 
     from cod_doc.api.server import app

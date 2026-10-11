@@ -15,6 +15,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -72,7 +73,13 @@ def _seed_task(
         author="human:test",
     )
     if status is not TaskStatus.PENDING:
-        tasks.update_status(session, task_id=task_id, new_status=status, author="human:test")
+        tasks.update_status(
+            session,
+            project_id=sole_project_id(session),
+            task_id=task_id,
+            new_status=status,
+            author="human:test",
+        )
     return t
 
 
@@ -140,7 +147,12 @@ def test_audit_flags_done_with_unfinished_blocks(engine_with_schema) -> None:
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
         session.flush()
         tasks.update_status(
-            session, task_id="PLN-002", new_status=TaskStatus.DONE, author="drift", force=True
+            session,
+            project_id=sole_project_id(session),
+            task_id="PLN-002",
+            new_status=TaskStatus.DONE,
+            author="drift",
+            force=True,
         )
 
         report = plans.audit(session, plan_id)

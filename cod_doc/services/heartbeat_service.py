@@ -29,6 +29,7 @@ from cod_doc.infra.models import (
     TaskModel,
     UserStoryModel,
 )
+from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.services import task_service
 from cod_doc.services.story_lookup import story_id_for_task
 
@@ -227,6 +228,7 @@ def _resolve_pending_approvals(
 def heartbeat_context(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     since_revision_id: str | None = None,
 ) -> dict[str, Any]:
@@ -240,8 +242,11 @@ def heartbeat_context(
     under 4 KB. Callers can re-issue with a different ``since_revision_id``
     cursor for incremental updates.
     """
+    # STO-030: task_id уникален в проекте, не в БД — без скоупа снимок в
+    # hub-БД отдал бы задачу соседа или упал на MultipleResultsFound.
+    require_int_project_id(project_id)
     model = session.execute(
-        select(TaskModel).where(TaskModel.task_id == task_id)
+        select(TaskModel).where(TaskModel.project_id == project_id, TaskModel.task_id == task_id)
     ).scalar_one_or_none()
     if model is None:
         raise task_service.TaskNotFoundError(task_id)

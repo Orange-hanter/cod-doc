@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cod_doc.domain.entities import Priority, TaskType
-from cod_doc.infra.models import FindingModel
+from cod_doc.domain.entities import Priority, TaskType, actor_kind_for_author
+from cod_doc.infra.models import FindingModel, PlanModel, PlanSectionModel
 from cod_doc.infra.repositories import PlanSectionRepository
 from cod_doc.services import activity_service, plan_service, search_service, task_service
 from cod_doc.services.finding_service.queries import get_finding
@@ -36,7 +36,7 @@ def promote_finding(
     on_finding: str,
     plan_id: int,
     section_id: int,
-    author: str = "finding_service",
+    author: str = "system:finding_service",
     id_prefix: str = "FND",
 ) -> dict[str, Any]:
     """Promote a finding to a task based on ``on_finding`` policy.
@@ -50,6 +50,10 @@ def promote_finding(
     - ``comment_only``: no-op; returns ``{"promoted": False}``.
 
     Emits an ``activity_event`` when a task is created or updated.
+
+    ``plan_id``/``section_id`` — сырые ``row_id``, поэтому принадлежность
+    проекту проверяется здесь, а не только в :func:`promote_finding_by_ref`:
+    иначе прямой вызов создавал бы задачу в плане чужого проекта.
     """
     finding = session.get(FindingModel, finding_id)
     if finding is None:
@@ -61,6 +65,12 @@ def promote_finding(
         return {"promoted": False, "finding_id": finding_id}
 
     if on_finding == "create_task":
+        plan = session.get(PlanModel, plan_id)
+        if plan is None or plan.project_id != project_id:
+            raise ValueError(f"plan #{plan_id} does not belong to the given project")
+        section = session.get(PlanSectionModel, section_id)
+        if section is None or section.plan_id != plan_id:
+            raise ValueError(f"section #{section_id} does not belong to plan #{plan_id}")
         task = task_service.create(
             session,
             project_id=project_id,
@@ -82,7 +92,7 @@ def promote_finding(
             session,
             project_id,
             "finding.promoted",
-            actor_kind="system",
+            actor_kind=actor_kind_for_author(author),
             actor_id=author,
             scope_kind="finding",
             scope_id=finding.finding_uid,
@@ -107,6 +117,7 @@ def promote_finding(
             raise ValueError(f"finding #{finding_id} has no promoted_task_id to update")
         task_service.update_description(
             session,
+            project_id=project_id,
             task_id=finding.promoted_task_id,
             new_description=finding.body or "",
             author=author,
@@ -119,7 +130,7 @@ def promote_finding(
             session,
             project_id,
             "finding.promoted",
-            actor_kind="system",
+            actor_kind=actor_kind_for_author(author),
             actor_id=author,
             scope_kind="finding",
             scope_id=finding.finding_uid,
@@ -152,7 +163,7 @@ def promote_finding_by_ref(
     plan_scope: str,
     section_letter: str,
     on_finding: str,
-    author: str = "finding_service",
+    author: str = "system:finding_service",
     id_prefix: str = "FND",
 ) -> dict[str, Any]:
     """:func:`promote_finding` по внешним ключам: ``finding_uid``, scope плана, буква секции.

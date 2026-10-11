@@ -243,11 +243,16 @@ class ToolExecutor:
             from cod_doc.infra.db import transactional
             from cod_doc.services import plan_service
             from cod_doc.services.plan_service import TaskNotFoundInPlanError
+            from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             try:
                 with transactional(sf) as session:
-                    chain = plan_service.forward_chain(session, task_id)
+                    chain = plan_service.forward_chain(
+                        session,
+                        task_id,
+                        project_id=require_project_id(session, self.project.entry.name),
+                    )
             except TaskNotFoundInPlanError:
                 return {"error": f"Task '{task_id}' not found in any DB plan"}
             return {
@@ -269,11 +274,16 @@ class ToolExecutor:
             from cod_doc.infra.db import transactional
             from cod_doc.services import plan_service
             from cod_doc.services.plan_service import TaskNotFoundInPlanError
+            from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             try:
                 with transactional(sf) as session:
-                    chain = plan_service.reverse_chain(session, task_id)
+                    chain = plan_service.reverse_chain(
+                        session,
+                        task_id,
+                        project_id=require_project_id(session, self.project.entry.name),
+                    )
             except TaskNotFoundInPlanError:
                 return {"error": f"Task '{task_id}' not found in any DB plan"}
             return {

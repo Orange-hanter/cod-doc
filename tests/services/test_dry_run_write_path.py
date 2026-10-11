@@ -31,6 +31,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.mcp.tools import doc_tools, task_tools
 from cod_doc.services import task_service
+from tests._task_scope import sole_project_id
 
 
 def _get_tool(mcp: FastMCP, name: str) -> Any:
@@ -135,6 +136,7 @@ def test_task_update_status_dry_run_does_not_change_status(
         # Move to in_progress so we can test cancel transition.
         task_service.update_status(
             session,
+            project_id=sole_project_id(session),
             task_id="PLN-001",
             new_status=TaskStatus.IN_PROGRESS_NEW,
             author="t",

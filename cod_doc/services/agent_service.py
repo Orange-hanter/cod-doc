@@ -411,7 +411,13 @@ def report(
 
     if kind == "progress":
         try:
-            task_service.log_progress(session, task_id=task_id, message=message, author=agent_id)
+            task_service.log_progress(
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                message=message,
+                author=agent_id,
+            )
         except TaskNotFoundError:
             return {"ok": False, "kind": kind, "hint": f"task not found: {task_id}"}
         return {
@@ -425,9 +431,12 @@ def report(
         from cod_doc.domain.entities import TaskStatus
 
         try:
-            task_service.set_blocker(session, task_id=task_id, reason=message, author=agent_id)
+            task_service.set_blocker(
+                session, project_id=project_id, task_id=task_id, reason=message, author=agent_id
+            )
             t = task_service.update_status(
                 session,
+                project_id=project_id,
                 task_id=task_id,
                 new_status=TaskStatus("blocked"),
                 author=agent_id,
@@ -526,6 +535,7 @@ def complete(
     try:
         t = task_service.complete(
             session,
+            project_id=project_id,
             task_id=task_id,
             author=agent_id,
             commit_sha=commit_sha,
@@ -543,7 +553,9 @@ def complete(
     # hard to spot leaking locks (e.g. when admin closes someone else's
     # checked-out task with a different agent_id).
     try:
-        checkout_service.release(session, task_id, agent=agent_id, force=False)
+        checkout_service.release(
+            session, task_id, project_id=project_id, agent=agent_id, force=False
+        )
     except Exception as exc:
         import logging
 
@@ -587,17 +599,22 @@ def release(
     """AGT-007: release checkout lock without transitioning to done."""
     from cod_doc.services import activity_service, checkout_service
     from cod_doc.services.checkout_service import CheckoutConflictError
+    from cod_doc.services.task_service import TaskNotFoundError
 
     try:
-        result = checkout_service.release(session, task_id, agent=agent_id, force=False)
-    except LookupError:
+        result = checkout_service.release(
+            session, task_id, project_id=project_id, agent=agent_id, force=False
+        )
+    except TaskNotFoundError:
         return {"ok": False, "hint": f"task not found: {task_id}"}
     except CheckoutConflictError as exc:
         return {"ok": False, "hint": str(exc), "code": "not_held_by_this_agent"}
 
     from cod_doc.infra.models import TaskModel
 
-    task = session.execute(select(TaskModel).where(TaskModel.task_id == task_id)).scalar_one()
+    task = session.execute(
+        select(TaskModel).where(TaskModel.project_id == project_id, TaskModel.task_id == task_id)
+    ).scalar_one()
     if task.status in {"in_progress", "in-progress"}:
         task.status = "todo"
         task.last_updated = datetime.now(UTC)
@@ -657,6 +674,7 @@ def pick(
     from cod_doc.services import checkout_service
     from cod_doc.services.checkout_service import CheckoutConflictError, CheckoutStatusError
     from cod_doc.services.plan_service import reads as plan_reads
+    from cod_doc.services.task_service import TaskNotFoundError
 
     repo = TaskRepository(session)
 
@@ -717,9 +735,10 @@ def pick(
         checkout_service.checkout(
             session,
             target.task_id,
+            project_id=project_id,
             agent=agent_id,
         )
-    except (CheckoutConflictError, CheckoutStatusError, LookupError) as exc:
+    except (CheckoutConflictError, CheckoutStatusError, TaskNotFoundError) as exc:
         # Гонка за замок, дрейф статуса, задачу удалили между выборкой и
         # чекаутом — тексты доменные. Ошибки драйвера не перехватываются:
         # str() от них несёт SQL и параметры, наружу им незачем.

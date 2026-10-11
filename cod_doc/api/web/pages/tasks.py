@@ -522,8 +522,8 @@ def task_show(
         raise HTTPException(404, f"Задача не найдена: {task_id}")
     assert task.row_id is not None
 
-    forward = plans.forward_chain(session, task_id)
-    reverse = plans.reverse_chain(session, task_id)
+    forward = plans.forward_chain(session, task_id, project_id=project_db_id)
+    reverse = plans.reverse_chain(session, task_id, project_id=project_db_id)
     history = revisions.list_for_entity(session, EntityKind.TASK, task.row_id)
     trace = traces.list_for_task(session, task.row_id)
 

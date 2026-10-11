@@ -82,7 +82,7 @@ related_docs:
 | **storage-parity** (трек S) | 🔄 9/29 *(2026-10-03)* | Бывшая секция G + SYM-011; STO-001…028, префикс `STO`. Приоритет и критерий выхода — трек S ниже |
 | **tech-debt** | 🟡 0/39 *(2026-10-03)* | Открытое из секции D `adoption-2026-08` по темам: A схема и домен, B routines, C дрейф/ссылки/поиск, D документация и решения владельца, E CLI/web/качество, F пилот ZAIrgRush; префикс `DEBT` |
 | **agent-fit-2026-09** ([RFC 27](../../../proposals/27-agent-fit.md)) | ✅ 17/18 · AFT-018 backlog *(2026-09-27, v1.5.0)* | Coding-агент закрывает вопросы тулами, а не SQL. Все секции A–F закрыты; повторный замер (AFT-018) — через две недели после v1.5.0 |
-| **cloud-remote-2026-10** ([RFC 29](../../../proposals/29-cloud-remote-sync.md)) | 🟡 0/43 · секция A в `todo` *(2026-10-11)* | Репликация проекта по модели git: `clone`/`pull`/`push` через S3/MinIO или `cod-doc serve`. RFC и ADR-016/017 приняты 2026-10-11; предусловия в `storage-parity`: STO-018, STO-024, STO-023, STO-029 закрыты; STO-030 открыта |
+| **cloud-remote-2026-10** ([RFC 29](../../../proposals/29-cloud-remote-sync.md)) | 🟡 0/43 · секция A в `todo` *(2026-10-11)* | Репликация проекта по модели git: `clone`/`pull`/`push` через S3/MinIO или `cod-doc serve`. RFC и ADR-016/017 приняты 2026-10-11; предусловия в `storage-parity` закрыты (STO-018, STO-024, STO-023, STO-029, STO-030) |
 | RFC 16–21 (hackathon-track) | ❌ отбракованы 2026-08-29 | ADO-056: ни одна не закрывает спрос M2; пометки в [proposals/README.md](../../../proposals/README.md) |
 
 ## Смена приоритета: почему Adoption вперёд фич
@@ -173,8 +173,8 @@ byte-identical round-trip — перед первым `doc export` наружу)
 **`cloud-remote-2026-10`**, 43 задачи `CLO-001…043`: секция A в `todo`, остальные в
 `backlog`. Порядок: A → B → C, D и E параллельно после B, F по ходу. Предусловия:
 STO-018 и STO-024 закрыты миграцией `0047_project_scoped_uniques`, STO-023 и STO-029
-(поиски по ключам и по `task_id` без `project_id`) закрыты тем же PR #193; STO-030
-(write-пути задач по `task_id` без `project_id`) блокирует CLO-002. Очередь: `cod-doc plan ready cloud-remote-2026-10 -p cod-doc`.
+(поиски по ключам и по `task_id` без `project_id`) и STO-030 (write-пути задач по
+`task_id`) закрыты тем же PR #193 — вне плана блокеров у секции A нет. Очередь: `cod-doc plan ready cloud-remote-2026-10 -p cod-doc`.
 
 | Секция | Содержание | Задачи |
 |---|---|---|

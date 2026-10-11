@@ -21,10 +21,12 @@ import json
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import EntityKind, Plan
 from cod_doc.infra.models import DocumentModel, PlanModel, PlanSectionModel, TaskModel
 from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
+from cod_doc.infra.sql_helpers import is_unique_violation
 from cod_doc.services import activity_service
 from cod_doc.services import revision_service as rev
 from cod_doc.services.validation import (
@@ -115,10 +117,19 @@ def create_plan(
     if id_prefix is not None:
         validate_id_prefix(id_prefix)
 
-    plan = repo.add(
-        Plan(project_id=project_id, scope=scope, principle=principle, id_prefix=id_prefix)
-    )
-    session.flush()
+    try:
+        plan = repo.add(
+            Plan(project_id=project_id, scope=scope, principle=principle, id_prefix=id_prefix)
+        )
+    except IntegrityError as exc:
+        # Проверка выше и INSERT — не одна операция: параллельный писатель
+        # успевает занять тот же scope. Это тот же отказ, что и у проверки.
+        # Savepoint не берём (STO-022): транзакцию откатывает вызывающий.
+        if not is_unique_violation(
+            exc, constraint="uq_plan_project_scope", table="plan", columns=("project_id", "scope")
+        ):
+            raise
+        raise PlanAlreadyExistsError(scope) from exc
     assert plan.row_id is not None
 
     rev.write(
@@ -178,8 +189,19 @@ def create_section(
         slug=slug,
         position=position if position is not None else len(current),
     )
-    created = repo.add(section)
-    session.flush()
+    try:
+        created = repo.add(section)
+    except IntegrityError as exc:
+        # Та же гонка, что в create_plan: букву занял параллельный писатель
+        # между list_for_plan и INSERT. Savepoint не берём (STO-022).
+        if not is_unique_violation(
+            exc,
+            constraint="uq_plan_section_plan_letter",
+            table="plan_section",
+            columns=("plan_id", "letter"),
+        ):
+            raise
+        raise SectionAlreadyExistsError(section.letter) from exc
     assert created.row_id is not None
 
     rev.write(

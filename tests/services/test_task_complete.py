@@ -20,6 +20,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -75,6 +76,7 @@ def test_complete_task_with_no_deps(engine_with_schema) -> None:  # type: ignore
 
         done = tasks.complete(
             session,
+            project_id=sole_project_id(session),
             task_id=task.task_id,
             author="human:dakh",
             commit_sha="abc1234",
@@ -101,7 +103,9 @@ def test_complete_raises_when_blocking_dep_pending(engine_with_schema) -> None: 
         session.flush()
 
         with pytest.raises(tasks.TaskBlockedError, match="PLN-001"):
-            tasks.complete(session, task_id="PLN-002", author="x")
+            tasks.complete(
+                session, project_id=sole_project_id(session), task_id="PLN-002", author="x"
+            )
 
 
 def test_complete_succeeds_after_blocking_dep_done(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -113,8 +117,10 @@ def test_complete_succeeds_after_blocking_dep_done(engine_with_schema) -> None: 
         b = _task(session, p, pl, s, task_id="PLN-002")
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
 
-        tasks.complete(session, task_id="PLN-001", author="x")
-        done_b = tasks.complete(session, task_id="PLN-002", author="x")
+        tasks.complete(session, project_id=sole_project_id(session), task_id="PLN-001", author="x")
+        done_b = tasks.complete(
+            session, project_id=sole_project_id(session), task_id="PLN-002", author="x"
+        )
         assert done_b.status == TaskStatus.DONE
 
 
@@ -129,7 +135,9 @@ def test_complete_ignores_non_blocks_kind(engine_with_schema) -> None:  # type: 
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="relates"))
         session.flush()
 
-        done = tasks.complete(session, task_id="PLN-002", author="x")
+        done = tasks.complete(
+            session, project_id=sole_project_id(session), task_id="PLN-002", author="x"
+        )
         assert done.status == TaskStatus.DONE
 
 
@@ -144,6 +152,7 @@ def test_complete_conflict_via_expected_parent(engine_with_schema) -> None:  # t
 
         tasks.update_status(
             session,
+            project_id=sole_project_id(session),
             task_id=task.task_id,
             new_status=TaskStatus.IN_PROGRESS,
             author="other",
@@ -153,6 +162,7 @@ def test_complete_conflict_via_expected_parent(engine_with_schema) -> None:  # t
         with pytest.raises(rev.RevisionConflictError):
             tasks.complete(
                 session,
+                project_id=sole_project_id(session),
                 task_id=task.task_id,
                 author="x",
                 expected_parent_revision_id=original_head,
@@ -165,10 +175,14 @@ def test_complete_already_done_raises(engine_with_schema) -> None:  # type: igno
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
-        tasks.complete(session, task_id=task.task_id, author="x")
+        tasks.complete(
+            session, project_id=sole_project_id(session), task_id=task.task_id, author="x"
+        )
 
         with pytest.raises(tasks.TaskAlreadyDoneError):
-            tasks.complete(session, task_id=task.task_id, author="x")
+            tasks.complete(
+                session, project_id=sole_project_id(session), task_id=task.task_id, author="x"
+            )
 
 
 def test_list_for_plan_returns_all_tasks(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -204,7 +218,9 @@ def test_complete_rejects_terminal_sources(engine_with_schema, from_status) -> N
         _force_status(session, task.task_id, from_status)
 
         with pytest.raises(StatusTransitionError):
-            tasks.complete(session, task_id=task.task_id, author="x")
+            tasks.complete(
+                session, project_id=sole_project_id(session), task_id=task.task_id, author="x"
+            )
 
         rejected = tasks.get(session, task.task_id, project_id=p)
         assert rejected is not None
@@ -222,7 +238,9 @@ def test_complete_allows_legal_sources(engine_with_schema, from_status) -> None:
         task = _task(session, p, pl, s)
         _force_status(session, task.task_id, from_status)
 
-        tasks.complete(session, task_id=task.task_id, author="x")
+        tasks.complete(
+            session, project_id=sole_project_id(session), task_id=task.task_id, author="x"
+        )
         done = tasks.get(session, task.task_id, project_id=p)
         assert done is not None
         assert done.status is TaskStatus.DONE
@@ -237,7 +255,9 @@ def test_complete_from_todo_goes_via_checkout_leg(engine_with_schema, from_statu
         task = _task(session, p, pl, s)
         _force_status(session, task.task_id, from_status)
 
-        tasks.complete(session, task_id=task.task_id, author="x")
+        tasks.complete(
+            session, project_id=sole_project_id(session), task_id=task.task_id, author="x"
+        )
 
         done = tasks.get(session, task.task_id, project_id=p)
         assert done is not None

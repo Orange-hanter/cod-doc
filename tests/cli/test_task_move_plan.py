@@ -22,6 +22,7 @@ from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import checkout_service
 from cod_doc.services import task_service as tasks
 from cod_doc.services.project_lookup import require_project_id
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -152,7 +153,9 @@ def test_foreign_lock_exits_1_and_moves_nothing(tmp_path: Path) -> None:
     _init_project(tmp_path)
     _seed()
     for session in _session():
-        checkout_service.checkout(session, "ADO-002", agent="swarm-kimi")
+        checkout_service.checkout(
+            session, "ADO-002", agent="swarm-kimi", project_id=sole_project_id(session)
+        )
 
     code, out = _run("ADO-001", "ADO-002", "--plan", "new", "--section", "A")
     assert code == 1

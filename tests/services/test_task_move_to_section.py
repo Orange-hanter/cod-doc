@@ -37,6 +37,7 @@ from cod_doc.services.task_service import (
     SectionNotFoundError,
     TaskNotFoundError,
 )
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -101,6 +102,7 @@ def test_move_writes_revision_and_event(engine_with_schema) -> None:  # type: ig
 
         moved = tasks.move_to_section(
             session,
+            project_id=sole_project_id(session),
             task_id=task.task_id,
             new_section_id=b,
             author="agent:run-X",
@@ -141,7 +143,13 @@ def test_move_persists_section_id(engine_with_schema) -> None:  # type: ignore[n
         p, pl, a, b = _seed(session)
         task = _task(session, p, pl, a)
 
-        tasks.move_to_section(session, task_id=task.task_id, new_section_id=b, author="human:test")
+        tasks.move_to_section(
+            session,
+            project_id=sole_project_id(session),
+            task_id=task.task_id,
+            new_section_id=b,
+            author="human:test",
+        )
 
         session.flush()
         model = session.execute(
@@ -160,7 +168,13 @@ def test_move_to_same_section_is_noop(engine_with_schema) -> None:  # type: igno
         assert task.row_id is not None
         before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
 
-        tasks.move_to_section(session, task_id=task.task_id, new_section_id=a, author="human:test")
+        tasks.move_to_section(
+            session,
+            project_id=sole_project_id(session),
+            task_id=task.task_id,
+            new_section_id=a,
+            author="human:test",
+        )
 
         after = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
         assert after == before
@@ -174,7 +188,11 @@ def test_move_unknown_section_raises(engine_with_schema) -> None:  # type: ignor
 
         with pytest.raises(SectionNotFoundError):
             tasks.move_to_section(
-                session, task_id=task.task_id, new_section_id=999_999, author="human:test"
+                session,
+                project_id=sole_project_id(session),
+                task_id=task.task_id,
+                new_section_id=999_999,
+                author="human:test",
             )
 
 
@@ -187,7 +205,11 @@ def test_move_across_plans_raises(engine_with_schema) -> None:  # type: ignore[n
 
         with pytest.raises(CrossPlanMoveError):
             tasks.move_to_section(
-                session, task_id=task.task_id, new_section_id=other_section, author="human:test"
+                session,
+                project_id=sole_project_id(session),
+                task_id=task.task_id,
+                new_section_id=other_section,
+                author="human:test",
             )
 
 
@@ -198,7 +220,11 @@ def test_move_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[n
 
         with pytest.raises(TaskNotFoundError):
             tasks.move_to_section(
-                session, task_id="NOPE-001", new_section_id=b, author="human:test"
+                session,
+                project_id=sole_project_id(session),
+                task_id="NOPE-001",
+                new_section_id=b,
+                author="human:test",
             )
 
 

@@ -449,6 +449,7 @@ def import_legacy_tasks(
                     if canonical_task_status(status) != canonical_task_status(TaskStatus.TODO):
                         task_service.update_status(
                             session,
+                            project_id=task.project_id,
                             task_id=task.task_id,
                             new_status=status,
                             author=author,

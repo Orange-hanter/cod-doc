@@ -8,9 +8,9 @@ serialise correctly.
 
 Public API
 ----------
-- ``checkout(session, task_id, agent, expected_statuses)`` → CheckoutResult
-- ``release(session, task_id, agent)`` → CheckoutResult
-- ``has_active_checkout(session, task_id, agent)`` → bool
+- ``checkout(session, task_id, project_id, agent, expected_statuses)`` → CheckoutResult
+- ``release(session, task_id, project_id, agent)`` → CheckoutResult
+- ``has_active_checkout(session, task_id, agent, project_id)`` → bool
 - ``release_stale(session, ttl_minutes, project_id)`` → list[str] of released task_ids
 """
 
@@ -23,7 +23,9 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from cod_doc.infra.models import TaskModel
+from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.services import activity_service
+from cod_doc.services.task_service import TaskNotFoundError
 from cod_doc.services.task_status_machine import normalise
 
 if TYPE_CHECKING:
@@ -63,17 +65,32 @@ class CheckoutResult:
     idempotent: bool = False
 
 
-def _load_task(session: Session, task_id: str) -> TaskModel:
-    m = session.execute(select(TaskModel).where(TaskModel.task_id == task_id)).scalar_one_or_none()
+def _load_task(session: Session, task_id: str, *, project_id: int) -> TaskModel:
+    # STO-030: task_id уникален в проекте, не во всей БД (миграция 0047) —
+    # без скоупа замок в hub-БД ставился бы на одноимённую задачу соседа.
+    require_int_project_id(project_id)
+    m = session.execute(
+        select(TaskModel).where(TaskModel.project_id == project_id, TaskModel.task_id == task_id)
+    ).scalar_one_or_none()
     if m is None:
-        raise LookupError(f"Task {task_id!r} not found.")
+        raise TaskNotFoundError(f"Task {task_id!r} not found.")
     return m
+
+
+def _locked_by(session: Session, task_id: str, *, project_id: int) -> str | None:
+    require_int_project_id(project_id)
+    return session.execute(
+        select(TaskModel.checked_out_by).where(
+            TaskModel.project_id == project_id, TaskModel.task_id == task_id
+        )
+    ).scalar_one_or_none()
 
 
 def checkout(
     session: Session,
     task_id: str,
     *,
+    project_id: int,
     agent: str,
     expected_statuses: list[str | TaskStatus] | None = None,
 ) -> CheckoutResult:
@@ -89,7 +106,7 @@ def checkout(
     receive the value via the enum normaliser).
     """
     expected = [normalise(s) for s in (expected_statuses or ["todo", "pending"])]
-    m = _load_task(session, task_id)
+    m = _load_task(session, task_id, project_id=project_id)
 
     if m.checked_out_by is not None and m.checked_out_by != agent:
         raise CheckoutConflictError(task_id=task_id, locked_by=m.checked_out_by)
@@ -151,6 +168,7 @@ def release(
     session: Session,
     task_id: str,
     *,
+    project_id: int,
     agent: str,
     force: bool = False,
 ) -> CheckoutResult:
@@ -159,7 +177,7 @@ def release(
     No status change. To complete the task, call ``task_complete`` separately;
     to revert to TODO, call ``task_update_status`` after release.
     """
-    m = _load_task(session, task_id)
+    m = _load_task(session, task_id, project_id=project_id)
     if m.checked_out_by is None:
         return CheckoutResult(
             task_id=task_id,
@@ -197,14 +215,13 @@ def release(
     )
 
 
-def has_active_checkout(session: Session, task_id: str, agent: str) -> bool:
-    m = session.execute(
-        select(TaskModel.checked_out_by).where(TaskModel.task_id == task_id)
-    ).scalar_one_or_none()
-    return m == agent
+def has_active_checkout(session: Session, task_id: str, agent: str, *, project_id: int) -> bool:
+    return _locked_by(session, task_id, project_id=project_id) == agent
 
 
-def warn_if_no_checkout(session: Session, task_id: str, agent: str) -> str | None:
+def warn_if_no_checkout(
+    session: Session, task_id: str, agent: str, *, project_id: int
+) -> str | None:
     """PCA-921: Return a warning string if ``agent`` does not currently hold
     the lock for ``task_id``, otherwise None.
 
@@ -214,9 +231,7 @@ def warn_if_no_checkout(session: Session, task_id: str, agent: str) -> str | Non
     """
     import logging
 
-    locked_by = session.execute(
-        select(TaskModel.checked_out_by).where(TaskModel.task_id == task_id)
-    ).scalar_one_or_none()
+    locked_by = _locked_by(session, task_id, project_id=project_id)
     if locked_by == agent:
         return None
     if locked_by is None:

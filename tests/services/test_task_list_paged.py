@@ -9,6 +9,7 @@ from cod_doc.domain.entities import Priority, TaskStatus, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.services import task_service
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -111,6 +112,7 @@ def test_summarize_aggregates_by_status_and_priority(engine_with_schema) -> None
         # Move one to in-progress
         task_service.update_status(
             session,
+            project_id=sole_project_id(session),
             task_id="PR-002",
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",

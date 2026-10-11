@@ -40,6 +40,7 @@ from cod_doc.services.checkout_service import CheckoutConflictError
 from cod_doc.services.revision_service import RevertNotSupportedError
 from cod_doc.services.serializers import task_to_dict
 from cod_doc.services.task_service import CrossPlanMoveError, SectionNotFoundError
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -96,8 +97,18 @@ def _task(session: Session, p: int, plan: dict[str, int], letter: str, task_id: 
 
 
 def _move(session: Session, task_id: str, section_id: int, **kw: Any) -> Task:
+    # Задачи двигаются только в проекте `mp` из `_seed`; чужой проект в
+    # отдельных тестах — лишь место назначения.
+    project_id = session.execute(
+        select(ProjectModel.row_id).where(ProjectModel.slug == "mp")
+    ).scalar_one()
     return tasks._move_one_to_plan(
-        session, task_id=task_id, new_section_id=section_id, author="agent:groom", **kw
+        session,
+        project_id=project_id,
+        task_id=task_id,
+        new_section_id=section_id,
+        author="agent:groom",
+        **kw,
     )
 
 
@@ -113,7 +124,11 @@ def test_move_keeps_row_id_task_id_status_and_history(engine_with_schema) -> Non
         task = _task(session, p, old, "A", "ADO-001")
         assert task.row_id is not None
         tasks.update_status(
-            session, task_id="ADO-001", new_status=TaskStatus.BLOCKED, author="human:test"
+            session,
+            project_id=sole_project_id(session),
+            task_id="ADO-001",
+            new_status=TaskStatus.BLOCKED,
+            author="human:test",
         )
         before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
 
@@ -264,7 +279,13 @@ def test_done_task_moves_too(engine_with_schema) -> None:  # type: ignore[no-unt
     with transactional(factory) as session:
         p, old, new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
-        tasks.complete(session, task_id="ADO-001", author="human:test", commit_sha="abc1234")
+        tasks.complete(
+            session,
+            project_id=sole_project_id(session),
+            task_id="ADO-001",
+            author="human:test",
+            commit_sha="abc1234",
+        )
 
         moved = _move(session, "ADO-001", new["A"])
 
@@ -283,7 +304,9 @@ def test_foreign_lock_refuses_the_move(engine_with_schema) -> None:  # type: ign
     with transactional(factory) as session:
         p, old, new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
-        checkout_service.checkout(session, "ADO-001", agent="swarm-kimi")
+        checkout_service.checkout(
+            session, "ADO-001", project_id=sole_project_id(session), agent="swarm-kimi"
+        )
 
         with pytest.raises(CheckoutConflictError):
             _move(session, "ADO-001", new["A"])
@@ -297,7 +320,9 @@ def test_own_lock_moves_and_keeps_the_lock(engine_with_schema) -> None:  # type:
     with transactional(factory) as session:
         p, old, new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
-        checkout_service.checkout(session, "ADO-001", agent="agent:groom")
+        checkout_service.checkout(
+            session, "ADO-001", project_id=sole_project_id(session), agent="agent:groom"
+        )
 
         _move(session, "ADO-001", new["A"])
 
@@ -543,7 +568,9 @@ def test_mcp_foreign_lock_rolls_back_the_whole_batch(engine_with_schema, monkeyp
         p, old, _new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
         _task(session, p, old, "A", "ADO-002")
-        checkout_service.checkout(session, "ADO-002", agent="swarm-kimi")
+        checkout_service.checkout(
+            session, "ADO-002", project_id=sole_project_id(session), agent="swarm-kimi"
+        )
 
     move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
     with pytest.raises(ValueError, match="swarm-kimi"):
@@ -564,7 +591,9 @@ def test_mcp_continue_on_error_moves_the_rest(engine_with_schema, monkeypatch) -
         p, old, _new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
         _task(session, p, old, "A", "ADO-002")
-        checkout_service.checkout(session, "ADO-002", agent="swarm-kimi")
+        checkout_service.checkout(
+            session, "ADO-002", project_id=sole_project_id(session), agent="swarm-kimi"
+        )
 
     move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
     out = move(

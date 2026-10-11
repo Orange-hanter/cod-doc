@@ -12,6 +12,7 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -89,6 +90,7 @@ def test_set_blocker_stores_reason_and_writes_revision(engine_with_schema) -> No
 
         task_service.set_blocker(
             session,
+            project_id=sole_project_id(session),
             task_id="PR-001",
             reason="waiting on stakeholder X",
             author="human:test",
@@ -111,7 +113,13 @@ def test_set_blocker_rejects_empty_reason(engine_with_schema) -> None:  # type: 
         _make(session, p, pl, s, "PR-001")
 
         with pytest.raises(ValueError, match="non-empty"):
-            task_service.set_blocker(session, task_id="PR-001", reason="   ", author="human:test")
+            task_service.set_blocker(
+                session,
+                project_id=sole_project_id(session),
+                task_id="PR-001",
+                reason="   ",
+                author="human:test",
+            )
 
 
 def test_clear_blocker_removes_reason(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -120,8 +128,16 @@ def test_clear_blocker_removes_reason(engine_with_schema) -> None:  # type: igno
         p, pl, s = _seed(session)
         _make(session, p, pl, s, "PR-001")
 
-        task_service.set_blocker(session, task_id="PR-001", reason="x", author="human:test")
-        task_service.clear_blocker(session, task_id="PR-001", author="human:test")
+        task_service.set_blocker(
+            session,
+            project_id=sole_project_id(session),
+            task_id="PR-001",
+            reason="x",
+            author="human:test",
+        )
+        task_service.clear_blocker(
+            session, project_id=sole_project_id(session), task_id="PR-001", author="human:test"
+        )
 
         t = task_service.get(session, "PR-001", project_id=p)
         assert t is not None
@@ -138,7 +154,9 @@ def test_clear_blocker_noop_when_already_clear(engine_with_schema) -> None:  # t
         baseline = len(rev.list_for_entity(session, EntityKind.TASK, before.row_id))
 
         # No-op clear — should not write a revision
-        task_service.clear_blocker(session, task_id="PR-001", author="human:test")
+        task_service.clear_blocker(
+            session, project_id=sole_project_id(session), task_id="PR-001", author="human:test"
+        )
 
         after = len(rev.list_for_entity(session, EntityKind.TASK, before.row_id))
         assert after == baseline
@@ -150,8 +168,20 @@ def test_list_blocked_returns_tasks_with_blocker(engine_with_schema) -> None:  #
         p, pl, s = _seed(session)
         for tid in ("PR-001", "PR-002", "PR-003"):
             _make(session, p, pl, s, tid)
-        task_service.set_blocker(session, task_id="PR-001", reason="x", author="human:test")
-        task_service.set_blocker(session, task_id="PR-003", reason="y", author="human:test")
+        task_service.set_blocker(
+            session,
+            project_id=sole_project_id(session),
+            task_id="PR-001",
+            reason="x",
+            author="human:test",
+        )
+        task_service.set_blocker(
+            session,
+            project_id=sole_project_id(session),
+            task_id="PR-003",
+            reason="y",
+            author="human:test",
+        )
 
         blocked = task_service.list_blocked(session, p)
         assert {t.task_id for t in blocked} == {"PR-001", "PR-003"}
@@ -163,9 +193,16 @@ def test_list_blocked_excludes_done_tasks(engine_with_schema) -> None:  # type: 
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _make(session, p, pl, s, "PR-001")
-        task_service.set_blocker(session, task_id="PR-001", reason="x", author="human:test")
+        task_service.set_blocker(
+            session,
+            project_id=sole_project_id(session),
+            task_id="PR-001",
+            reason="x",
+            author="human:test",
+        )
         task_service.update_status(
             session,
+            project_id=sole_project_id(session),
             task_id="PR-001",
             new_status=TaskStatus.DONE,
             author="human:test",

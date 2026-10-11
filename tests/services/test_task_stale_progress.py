@@ -12,6 +12,7 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, TaskModel
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -55,6 +56,7 @@ def _make_in_progress(
     )
     task_service.update_status(
         session,
+        project_id=sole_project_id(session),
         task_id=tid,
         new_status=TaskStatus.IN_PROGRESS,
         author="human:test",
@@ -138,7 +140,11 @@ def test_log_progress_touches_last_updated(engine_with_schema) -> None:  # type:
         assert [t.task_id for t in before] == ["PR-001"]
 
         task_service.log_progress(
-            session, task_id="PR-001", message="reading spec", author="agent:x"
+            session,
+            project_id=sole_project_id(session),
+            task_id="PR-001",
+            message="reading spec",
+            author="agent:x",
         )
 
         # After progress note: no longer stale
@@ -155,7 +161,11 @@ def test_log_progress_writes_revision(engine_with_schema) -> None:  # type: igno
         assert t is not None and t.row_id is not None
 
         task_service.log_progress(
-            session, task_id="PR-001", message="step 2 of 5", author="agent:x"
+            session,
+            project_id=sole_project_id(session),
+            task_id="PR-001",
+            message="step 2 of 5",
+            author="agent:x",
         )
 
         history = rev.list_for_entity(session, EntityKind.TASK, t.row_id)
@@ -171,4 +181,10 @@ def test_log_progress_rejects_empty_message(engine_with_schema) -> None:  # type
         _make_in_progress(session, p, pl, s, "PR-001")
 
         with pytest.raises(ValueError, match="non-empty"):
-            task_service.log_progress(session, task_id="PR-001", message="   ", author="agent:x")
+            task_service.log_progress(
+                session,
+                project_id=sole_project_id(session),
+                task_id="PR-001",
+                message="   ",
+                author="agent:x",
+            )

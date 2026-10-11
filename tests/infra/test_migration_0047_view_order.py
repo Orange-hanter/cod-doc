@@ -54,3 +54,26 @@ def test_dependent_views_survive_rebuild(tmp_path: Path) -> None:
         assert conn.execute("SELECT count(*) FROM aa_dep").fetchone() == (0,)
     finally:
         conn.close()
+
+
+def test_quoted_identifiers_survive_rebuild(tmp_path: Path) -> None:
+    """Имена из sqlite_master с кавычкой внутри: без удвоения DROP падал посреди пересборки."""
+    db_path = tmp_path / "quoted.db"
+    db_url = f"sqlite:///{db_path}"
+    run_alembic("upgrade", _previous_revision(), db_url=db_url)
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute('CREATE VIEW "odd""view" AS SELECT scope FROM plan')
+        conn.execute('CREATE INDEX "odd""idx" ON plan (principle)')
+        conn.commit()
+    finally:
+        conn.close()
+
+    run_alembic("upgrade", _THIS, db_url=db_url)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master")}
+        assert {'odd"view', 'odd"idx'} <= names
+    finally:
+        conn.close()

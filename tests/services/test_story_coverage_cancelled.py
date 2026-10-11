@@ -28,6 +28,7 @@ from cod_doc.services import story_service as stories
 from cod_doc.services import task_service as tasks
 from tests._story_seed import seed_plan_with_section as _seed_plan_with_section
 from tests._story_seed import seed_project as _seed_project
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -62,6 +63,7 @@ def _link_task(session: Session, story_id: str, task_id: str, *, project_id: int
 def _cancel(session: Session, task_id: str) -> None:
     tasks.update_status(
         session,
+        project_id=sole_project_id(session),
         task_id=task_id,
         new_status=TaskStatus.CANCELLED,
         author="human:test",
@@ -89,7 +91,9 @@ def test_delivered_when_last_open_task_is_cancelled(engine_with_schema) -> None:
         _link_task(session, story.story_id, "TST-001", project_id=proj)
         _link_task(session, story.story_id, "TST-002", project_id=proj)
 
-        tasks.complete(session, task_id="TST-001", author="human:test")
+        tasks.complete(
+            session, project_id=sole_project_id(session), task_id="TST-001", author="human:test"
+        )
         _cancel(session, "TST-002")
 
         cov = stories.coverage(session, story.story_id, project_id=story.project_id)
@@ -149,7 +153,9 @@ def test_cancelled_does_not_shortcut_unmet_acceptance(engine_with_schema) -> Non
         _link_task(session, story.story_id, "TST-020", project_id=proj)
         _link_task(session, story.story_id, "TST-021", project_id=proj)
 
-        tasks.complete(session, task_id="TST-020", author="human:test")
+        tasks.complete(
+            session, project_id=sole_project_id(session), task_id="TST-020", author="human:test"
+        )
         _cancel(session, "TST-021")
         stories.set_criterion_met(
             session,

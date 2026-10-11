@@ -114,6 +114,7 @@ def test_limit_applies_after_filter(engine_with_schema) -> None:  # type: ignore
             task_id=ids["D"],
             new_priority=Priority.CRITICAL,
             author="human:test",
+            project_id=pid,
         )
 
         first = plans.ready_for_project(session, pid, limit=1)

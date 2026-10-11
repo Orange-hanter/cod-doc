@@ -33,6 +33,7 @@ from cod_doc.infra.repositories import (
     TaskRepository,
     UserStoryRepository,
 )
+from cod_doc.infra.sql_helpers import is_unique_violation
 from cod_doc.services import activity_service, search_service, validation
 from cod_doc.services import revision_service as rev
 
@@ -160,13 +161,13 @@ def create(
 
 
 def _is_story_id_conflict(exc: IntegrityError) -> bool:
-    """Нарушен именно UNIQUE(project_id, story_id), а не внешний ключ.
-
-    SQLite называет колонки (``user_story.project_id, user_story.story_id``),
-    Postgres — имя ограничения.
-    """
-    text = str(exc.orig)
-    return "uq_user_story_project_story_id" in text or "user_story.story_id" in text
+    """Нарушен именно UNIQUE(project_id, story_id), а не внешний ключ или CHECK."""
+    return is_unique_violation(
+        exc,
+        constraint="uq_user_story_project_story_id",
+        table="user_story",
+        columns=("project_id", "story_id"),
+    )
 
 
 def get(session: Session, story_id: str, *, project_id: int) -> UserStory | None:

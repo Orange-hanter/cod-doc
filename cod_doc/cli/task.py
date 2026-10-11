@@ -479,6 +479,7 @@ def task_status(
         with transactional(sf) as session:
             t = task_service.update_status(
                 session,
+                project_id=_require_project_id(session, project),
                 task_id=task_id,
                 new_status=TaskStatus(new_status),
                 author=author,
@@ -591,6 +592,7 @@ def task_update(
             if description is not None:
                 task_service.update_description(
                     session,
+                    project_id=pid,
                     task_id=task_id,
                     new_description=description,
                     author=author,
@@ -600,6 +602,7 @@ def task_update(
             if acceptance is not None:
                 task_service.update_acceptance(
                     session,
+                    project_id=pid,
                     task_id=task_id,
                     new_acceptance=acceptance,
                     author=author,
@@ -609,6 +612,7 @@ def task_update(
             if priority is not None:
                 task_service.update_priority(
                     session,
+                    project_id=pid,
                     task_id=task_id,
                     new_priority=Priority(priority),
                     author=author,
@@ -618,12 +622,12 @@ def task_update(
             if touch_files:
                 change = task_service.update_affects_files(
                     session,
+                    project_id=pid,
                     task_id=task_id,
                     paths=list(affects_files),
                     mode=affects_mode or "replace",
                     author=author,
                     reason=reason,
-                    project_id=pid,
                 )
                 warnings.extend(change.warnings)
                 if change.changed:
@@ -723,6 +727,7 @@ def task_move(
                     continue
                 task_service.move_to_section(
                     session,
+                    project_id=project_id,
                     task_id=task_id,
                     new_section_id=section.row_id,
                     author=author,
@@ -908,6 +913,7 @@ def task_complete(
         with transactional(sf) as session:
             t = complete(
                 session,
+                project_id=_require_project_id(session, project),
                 task_id=task_id,
                 author=author,
                 commit_sha=commit,
@@ -1139,6 +1145,7 @@ def task_checkout(
             result = checkout_service.checkout(
                 session,
                 task_id,
+                project_id=_require_project_id(session, project),
                 agent=agent,
                 expected_statuses=list(expected_statuses) or None,
             )
@@ -1186,7 +1193,13 @@ def task_release(
     # `task.released` тоже пишет сервис.
     try:
         with transactional(sf) as session:
-            result = checkout_service.release(session, task_id, agent=agent, force=force)
+            result = checkout_service.release(
+                session,
+                task_id,
+                project_id=_require_project_id(session, project),
+                agent=agent,
+                force=force,
+            )
     except LookupError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
         sys.exit(1)
