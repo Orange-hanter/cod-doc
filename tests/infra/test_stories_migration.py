@@ -116,42 +116,36 @@ def test_user_story_with_acceptance_and_links(engine_with_schema) -> None:  # ty
         }
 
 
-def test_user_story_id_is_unique_globally(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    """story_id is globally unique per DATA_MODEL §6."""
+def test_user_story_id_is_unique_per_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """story_id уникален в проекте (STO-018, миграция 0047), а не во всей БД."""
     from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
     now = datetime.now(UTC)
 
+    def story(project_id: int, persona: str) -> UserStoryModel:
+        return UserStoryModel(
+            project_id=project_id,
+            story_id="US-001",
+            persona=persona,
+            narrative="N",
+            status="draft",
+            priority="medium",
+            created=now,
+            last_updated=now,
+        )
+
     with transactional(factory) as session:
         a_id = _add_project(session, "a")
         b_id = _add_project(session, "b")
-        session.add(
-            UserStoryModel(
-                project_id=a_id,
-                story_id="US-001",
-                persona="X",
-                narrative="N",
-                status="draft",
-                priority="medium",
-                created=now,
-                last_updated=now,
-            )
-        )
+        session.add(story(a_id, "X"))
+
+    # Другой проект — тот же US-001 допустим (hub, RFC 29).
+    with transactional(factory) as session:
+        session.add(story(b_id, "Y"))
 
     with pytest.raises(IntegrityError), transactional(factory) as session:
-        session.add(
-            UserStoryModel(
-                project_id=b_id,
-                story_id="US-001",
-                persona="Y",
-                narrative="N2",
-                status="draft",
-                priority="medium",
-                created=now,
-                last_updated=now,
-            )
-        )
+        session.add(story(a_id, "Z"))
 
 
 def test_story_acceptance_cascade_delete(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -254,7 +248,8 @@ def test_module_dependency_unique_edge(engine_with_schema) -> None:  # type: ign
         session.add(ModuleDependencyModel(from_module=a, to_module=b))
 
 
-def test_module_id_unique_globally(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_module_id_unique_per_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """module_id уникален в проекте (STO-024, миграция 0047), а не во всей БД."""
     from sqlalchemy.exc import IntegrityError
 
     factory = make_session_factory(engine_with_schema)
@@ -264,5 +259,8 @@ def test_module_id_unique_globally(engine_with_schema) -> None:  # type: ignore[
         b = _add_project(session, "mb")
         session.add(ModuleModel(project_id=a, module_id="M1-auth", name="Auth A", status="active"))
 
-    with pytest.raises(IntegrityError), transactional(factory) as session:
+    with transactional(factory) as session:
         session.add(ModuleModel(project_id=b, module_id="M1-auth", name="Auth B", status="active"))
+
+    with pytest.raises(IntegrityError), transactional(factory) as session:
+        session.add(ModuleModel(project_id=a, module_id="M1-auth", name="Auth C", status="active"))

@@ -194,7 +194,7 @@ CREATE INDEX ix_revision_parent ON revision(parent_revision_id);
 CREATE TABLE plan (
   row_id          INTEGER PRIMARY KEY,
   project_id      INTEGER NOT NULL REFERENCES project(row_id),
-  scope           TEXT    NOT NULL UNIQUE,  -- 'M1-auth-module','infra-cors'
+  scope           TEXT    NOT NULL,         -- 'M1-auth-module','infra-cors'; UNIQUE(project_id, scope) — STO-018
   principle       TEXT,                     -- 'test-first','fix-first'
   module_id       TEXT,                     -- 'M1-auth'
   parent_doc_id   INTEGER REFERENCES document(row_id),
@@ -295,7 +295,7 @@ CREATE INDEX ix_story_section_project ON story_section(project_id, position);
 CREATE TABLE user_story (
   row_id       INTEGER PRIMARY KEY,
   project_id   INTEGER NOT NULL REFERENCES project(row_id),
-  story_id     TEXT    NOT NULL UNIQUE,    -- 'US-014'
+  story_id     TEXT    NOT NULL,           -- 'US-014'; UNIQUE(project_id, story_id) — STO-018
   persona      TEXT    NOT NULL,           -- 'Agency Owner','Platform Admin'
   narrative    TEXT    NOT NULL,           -- 'As X, I want Y, so Z'
   status       TEXT    NOT NULL,           -- draft|accepted|delivered|deferred
@@ -329,7 +329,7 @@ CREATE TABLE story_link (
 CREATE TABLE module (
   row_id       INTEGER PRIMARY KEY,
   project_id   INTEGER NOT NULL REFERENCES project(row_id),
-  module_id    TEXT    NOT NULL UNIQUE,    -- 'M1-auth'
+  module_id    TEXT    NOT NULL,           -- 'M1-auth'; UNIQUE(project_id, module_id) — STO-024
   name         TEXT    NOT NULL,
   status       TEXT    NOT NULL,
   spec_doc_id  INTEGER REFERENCES document(row_id),
@@ -705,7 +705,7 @@ FROM (
 |----------|----------|---------|
 | Module   | `M<N>-<slug>` | `M1-auth`, `M10-agencies` |
 | Task     | `<PREFIX>-<NNN>` | `AUTH-025`; ранжирование по секциям как в Restate |
-| Story    | `US-<NNN>` | globally unique |
+| Story    | `US-<NNN>` | уникален в пределах проекта (миграция 0047, STO-018) |
 | Plan     | `<MODULE-ID>-<kebab>` | `M1-auth-module` |
 | Document | `<path-without-ext>` | `modules/M1-auth/overview` |
 | Scenario | `SCN-<NNN>` | `SCN-001`; уникален в пределах проекта, не переиспользуется |

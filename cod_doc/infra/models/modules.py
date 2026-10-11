@@ -17,12 +17,16 @@ from .base import Base
 
 class ModuleModel(Base):
     __tablename__ = "module"
+    # STO-024: module_id уникален в пределах проекта, а не всей БД (миграция 0047).
+    __table_args__ = (
+        UniqueConstraint("project_id", "module_id", name="uq_module_project_module_id"),
+    )
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False
     )
-    module_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    module_id: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     spec_doc_id: Mapped[int | None] = mapped_column(

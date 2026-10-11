@@ -40,12 +40,16 @@ class StorySectionModel(Base):
 
 class UserStoryModel(Base):
     __tablename__ = "user_story"
+    # STO-018: story_id уникален в пределах проекта, а не всей БД (миграция 0047).
+    __table_args__ = (
+        UniqueConstraint("project_id", "story_id", name="uq_user_story_project_story_id"),
+    )
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False
     )
-    story_id: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    story_id: Mapped[str] = mapped_column(String(32), nullable=False)
     persona: Mapped[str] = mapped_column(String(128), nullable=False)
     narrative: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
