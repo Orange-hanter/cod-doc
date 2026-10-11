@@ -641,6 +641,34 @@ def test_revision_revert_refuses_task_of_another_project(engine_with_schema) -> 
         assert _paths(session, row_id) == ["src/b.py"]
 
 
+def test_revision_revert_refuses_task_doc_of_another_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Тот же сторож у TASK_DOC: документ задачи A не откатывается ревизией проекта B."""
+    from cod_doc.services import task_doc_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, row_id = _seed(session)
+        other_pid = _other_project(session)
+        task_doc_service.put(
+            session, project_id=pid, task_row_id=row_id, key="plan", title="P", body="v1\n"
+        )
+        td = task_doc_service.put(
+            session, project_id=pid, task_row_id=row_id, key="plan", title="P", body="v2\n"
+        )
+        first = rev.list_for_entity(session, EntityKind.TASK_DOC, td.row_id)[0]
+        model = session.execute(
+            select(RevisionModel).where(RevisionModel.revision_id == first.revision_id)
+        ).scalar_one()
+        model.project_id = other_pid
+        session.flush()
+
+        with pytest.raises(LookupError, match=f"task_doc #{td.row_id} not found in project"):
+            rev.revert(session, first.revision_id, author="human:undo", project_id=other_pid)
+        current = task_doc_service.get(session, task_row_id=row_id, key="plan")
+        assert current is not None
+        assert current.body == "v2\n"
+
+
 def test_revision_revert_wraps_rejected_old_paths(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Набор ``old`` из легаси-ревизии не проходит правило путей — ошибка называет ревизию."""
     factory = make_session_factory(engine_with_schema)

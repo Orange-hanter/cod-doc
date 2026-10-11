@@ -240,9 +240,8 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Revert a revision by creating an inverse revision (history is append-only).
         Supported: TASK status/complete/affects_files, SECTION unified-diff, DOCUMENT rename.
-        TASK affects_files is restored with ``replace`` to the whole ``old`` set of the
-        revision (``revision_service._revert_task_affects_files``). A revision of
-        another project is reported as not found.
+        TASK affects_files is restored with ``replace`` to the whole ``old`` set stored
+        in the revision. A revision of another project is reported as not found.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import revision_service

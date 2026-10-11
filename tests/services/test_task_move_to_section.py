@@ -14,6 +14,7 @@ tests/services/test_task_mutation_surface_parity.py.
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -310,7 +311,9 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
     with pytest.raises(ValueError, match=r"^Plan 'mv-plan' not found\.$"):
         move(project="other", task_ids=[task.task_id], plan_scope="mv-plan", section_letter="B")
     # ...а в своём плане B задача проекта A — «не найдена».
-    with pytest.raises(ValueError, match=rf"^{task.task_id}: task not found in project 'other'$"):
+    with pytest.raises(
+        ValueError, match=rf"^{re.escape(task.task_id)}: task not found in project 'other'$"
+    ):
         move(project="other", task_ids=[task.task_id], plan_scope="mv-other", section_letter="A")
 
     with transactional(factory) as session:

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import select
 
 from cod_doc.domain.entities import (
     DocumentStatus,
@@ -16,7 +17,14 @@ from cod_doc.domain.entities import (
     TaskType,
 )
 from cod_doc.infra.db import make_session_factory, transactional
-from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
+from cod_doc.infra.models import (
+    DocumentModel,
+    PlanModel,
+    PlanSectionModel,
+    ProjectModel,
+    RevisionModel,
+    SectionModel,
+)
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
@@ -261,11 +269,103 @@ def test_revert_document_rename_restores_key(engine_with_schema) -> None:  # typ
             session, rename_rev.revision_id, author="human:test", project_id=rename_rev.project_id
         )
 
-        from cod_doc.infra.models import DocumentModel
-
         doc_model = session.get(DocumentModel, doc.row_id)
         assert doc_model is not None
         assert doc_model.doc_key == "original-key"
+
+
+# ============================================================================ #
+# RevisionService.revert — скоуп проекта сущности (AFT-022)                    #
+# ============================================================================ #
+
+
+def _other_project(session: Session) -> int:
+    now = datetime.now(UTC)
+    proj = ProjectModel(slug="other", title="O", root_path="/tmp/o", config_json={})
+    proj.created = now
+    proj.updated = now
+    session.add(proj)
+    session.flush()
+    return proj.row_id
+
+
+def _move_revision_to(session: Session, revision_id: str, project_id: int) -> None:
+    """Рассинхрон легаси-импорта: ревизия числится за проектом B, сущность — в A."""
+    model = session.execute(
+        select(RevisionModel).where(RevisionModel.revision_id == revision_id)
+    ).scalar_one()
+    model.project_id = project_id
+    session.flush()
+
+
+def test_revert_section_of_another_project_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, _, _ = _seed(session)
+        other = _other_project(session)
+        doc = docs.create(
+            session,
+            project_id=p,
+            doc_key="d",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.DRAFT,
+            title="T",
+            author="human:test",
+        )
+        sec = docs.add_section(
+            session,
+            document_id=doc.row_id,
+            anchor="intro",
+            heading="Intro",
+            level=2,
+            position=0,
+            body="Original body.\n",
+            author="human:test",
+        )
+        docs.patch_section(
+            session,
+            document_id=doc.row_id,
+            anchor="intro",
+            new_body="Updated body.\n",
+            author="human:test",
+        )
+        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[-1]
+        _move_revision_to(session, patch_rev.revision_id, other)
+
+        with pytest.raises(
+            LookupError, match=f"section #{sec.row_id} not found in project #{other}"
+        ):
+            rev.revert(session, patch_rev.revision_id, author="human:test", project_id=other)
+        section = session.get(SectionModel, sec.row_id)
+        assert section is not None
+        assert section.body == "Updated body.\n"
+
+
+def test_revert_document_of_another_project_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, _, _ = _seed(session)
+        other = _other_project(session)
+        doc = docs.create(
+            session,
+            project_id=p,
+            doc_key="original-key",
+            type=DocumentType.GUIDE,
+            status=DocumentStatus.DRAFT,
+            title="T",
+            author="human:test",
+        )
+        docs.rename(session, document_id=doc.row_id, new_doc_key="renamed-key", author="human:test")
+        rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)[-1]
+        _move_revision_to(session, rename_rev.revision_id, other)
+
+        with pytest.raises(
+            LookupError, match=f"document #{doc.row_id} not found in project #{other}"
+        ):
+            rev.revert(session, rename_rev.revision_id, author="human:test", project_id=other)
+        doc_model = session.get(DocumentModel, doc.row_id)
+        assert doc_model is not None
+        assert doc_model.doc_key == "renamed-key"
 
 
 def test_revert_unsupported_entity_kind_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
