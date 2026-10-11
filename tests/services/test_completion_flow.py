@@ -191,8 +191,6 @@ def test_revert_section_patch_restores_old_body(engine_with_schema) -> None:  # 
             session, patch_rev.revision_id, author="human:test", project_id=patch_rev.project_id
         )
 
-        from cod_doc.infra.models import SectionModel
-
         sec_model = session.get(SectionModel, sec.row_id)
         assert sec_model is not None
         assert sec_model.body == "Original body.\n"
@@ -298,7 +296,7 @@ def _move_revision_to(session: Session, revision_id: str, project_id: int) -> No
     session.flush()
 
 
-def test_revert_section_with_plus_in_doc_key(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+def test_section_label_with_plus_in_doc_key_is_read_and_reverted(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """``doc_key`` не валидируется и может содержать ``+``: метка ревизии всё равно читается."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -338,6 +336,18 @@ def test_revert_section_with_plus_in_doc_key(engine_with_schema) -> None:  # typ
         section = session.get(SectionModel, sec.row_id)
         assert section is not None
         assert section.body == "Original body.\n"
+
+
+def test_section_label_takes_the_last_target_on_the_header_line() -> None:
+    """Куда-метка пишется последней: старый якорь с подстрокой ``+++ section:…@@``
+    не подменяет её, а тело секции со следующей строки в разбор не попадает."""
+    spoofed = (
+        "--- section:d#a+++ section:d#evil@@+++ section:d#real@@ -1 +1 @@\n"
+        "-old\n+new +++ section:d#body@@\n"
+    )
+    labelled = rev._SECTION_LABEL_RE.match(spoofed)
+    assert labelled is not None
+    assert labelled.group(1) == "real"
 
 
 def test_revert_section_of_another_project_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

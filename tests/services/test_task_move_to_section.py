@@ -205,26 +205,6 @@ def test_move_across_plans_raises(engine_with_schema) -> None:  # type: ignore[n
             )
 
 
-def test_create_rejects_plan_of_another_project_and_section_of_another_plan(
-    engine_with_schema,
-) -> None:  # type: ignore[no-untyped-def]
-    """AFT-022: ``plan_id``/``section_id`` — независимые FK; принадлежность сверяется."""
-    factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        p, pl, _a, _b = _seed(session)
-        _other_plan_id, other_section = _second_plan(session, p)
-        other = _other_project_with_plan(session)
-
-        with pytest.raises(ValueError, match=f"plan #{other.plan} not found in project #{p}"):
-            _task(session, p, other.plan, other.section, task_id="MV-101")
-        with pytest.raises(ValueError, match=f"section #{other_section} not found in plan #{pl}"):
-            _task(session, p, pl, other_section, task_id="MV-102")
-        with pytest.raises(ValueError, match="plan #999999 does not exist"):
-            _task(session, p, 999_999, other_section, task_id="MV-103")
-        with pytest.raises(ValueError, match="section #999999 does not exist"):
-            _task(session, p, pl, 999_999, task_id="MV-104")
-
-
 def test_move_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
@@ -349,16 +329,11 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
     with transactional(factory) as session:
         p, pl, a, _b = _seed(session)
         task = _task(session, p, pl, a)
-        now = datetime.now(UTC)
-        other = ProjectModel(slug="other", title="O", root_path="/o", config_json={})
-        other.created = now
-        other.updated = now
-        session.add(other)
-        session.flush()
-        other_pid = other.row_id
-        _second_plan(session, other_pid)  # план "mv-other" с секцией A — у проекта B
+        _other_project_with_plan(session)  # проект "other" со своим "other-plan", секция A
         assert task.row_id is not None
-        revisions_before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
+        revisions_before = [
+            r.revision_id for r in rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        ]
 
     move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     # План проекта A из проекта B не виден...
@@ -368,16 +343,22 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
     with pytest.raises(
         ValueError, match=rf"^{re.escape(task.task_id)}: task not found in project 'other'$"
     ):
-        move(project="other", task_ids=[task.task_id], plan_scope="mv-other", section_letter="A")
+        move(project="other", task_ids=[task.task_id], plan_scope="other-plan", section_letter="A")
 
     with transactional(factory) as session:
         got = tasks.get(session, task.task_id, project_id=p)
         assert got is not None
         assert got.section_id == a
-        # Отказ не оставил следа: ни ревизии, ни события о переносе.
-        assert len(rev.list_for_entity(session, EntityKind.TASK, task.row_id)) == revisions_before
+        # Отказ не оставил следа: история ревизий та же, события о переносе нет.
+        revisions_after = [
+            r.revision_id for r in rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        ]
+        assert revisions_after == revisions_before
         moved_events = session.execute(
-            select(ActivityEventModel).where(ActivityEventModel.kind == "task.section_changed")
+            select(ActivityEventModel).where(
+                ActivityEventModel.kind == "task.section_changed",
+                ActivityEventModel.scope_id == task.task_id,
+            )
         ).all()
         assert moved_events == []
 

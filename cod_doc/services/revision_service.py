@@ -468,7 +468,7 @@ def _task_of_revision(session: Session, model: RevisionModel, project_id: int) -
     """
     task_model = session.get(TaskModel, model.entity_id)
     if task_model is None:
-        raise LookupError(f"task #{model.entity_id} not found in project #{project_id}")
+        raise LookupError(f"task #{model.entity_id} not found (may have been deleted)")
     _require_same_project(model, "task", task_model.project_id, project_id)
     return task_model
 
@@ -591,10 +591,13 @@ def _restore_original_from_unified(diff: str) -> str:
 #: (`doc_service.section_label`; строки заголовка склеены — ``lineterm=""``).
 #: Сверяется только заголовок и только с начала diff: тело секции может само
 #: содержать текст вида ``section:x#y`` и подменило бы метку (ai-review #85).
-#: Откуда-часть — ленивое ``.*?`` до ``+++ section:``, а не ``[^+]*``: ``doc_key``
-#: не валидируется и может содержать ``+`` (``c++-guide``). ``.`` не ловит
-#: перевод строки, поэтому совпадение по-прежнему ограничено заголовком.
-_SECTION_LABEL_RE = re.compile(r"--- (?:/dev/null|section:.*?)\+\+\+ section:[^#]*#([^@]+)@@")
+#: Откуда-часть — жадное ``.*`` до ПОСЛЕДНЕГО ``+++ section:`` в строке
+#: заголовка, а не ``[^+]*``: ``doc_key`` не валидируется и может содержать
+#: ``+`` (``c++-guide``). Жадность, а не ленивость: куда-метка пишется
+#: последней, и старый якорь с подстрокой ``+++ section:x#y@@`` не подменит её.
+#: ``.`` не ловит перевод строки — совпадение ограничено заголовком, тело
+#: секции (со следующей строки) в разбор не попадает.
+_SECTION_LABEL_RE = re.compile(r"--- (?:/dev/null|section:.*)\+\+\+ section:[^#]*#([^@]+)@@")
 
 
 def _revert_section(

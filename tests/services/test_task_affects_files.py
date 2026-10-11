@@ -36,6 +36,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import revision_service as rev
+from cod_doc.services import task_doc_service
 from cod_doc.services import task_service as tasks
 from cod_doc.services.task_service import TaskNotFoundError
 
@@ -665,8 +666,6 @@ def test_revision_revert_refuses_task_of_another_project(engine_with_schema) -> 
 
 def test_revision_revert_refuses_task_doc_of_another_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     """Тот же сторож у TASK_DOC: документ задачи A не откатывается ревизией проекта B."""
-    from cod_doc.services import task_doc_service
-
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         pid, row_id = _seed(session)

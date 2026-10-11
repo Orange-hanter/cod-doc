@@ -17,6 +17,10 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
+from tests.services.test_task_move_to_section import _other_project_with_plan
+from tests.services.test_task_move_to_section import _second_plan as _mv_second_plan
+from tests.services.test_task_move_to_section import _seed as _mv_seed
+from tests.services.test_task_move_to_section import _task as _mv_task
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -448,3 +452,23 @@ def test_auto_id_is_isolated_between_projects(engine_with_schema) -> None:  # ty
         )
 
         assert first.task_id == "ISO-001", "нумерация не должна течь между проектами"
+
+
+def test_create_rejects_plan_of_another_project_and_section_of_another_plan(
+    engine_with_schema,
+) -> None:  # type: ignore[no-untyped-def]
+    """AFT-022: ``plan_id``/``section_id`` — независимые FK; принадлежность сверяется."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        p, pl, _a, _b = _mv_seed(session)
+        _other_plan_id, other_section = _mv_second_plan(session, p)
+        other = _other_project_with_plan(session)
+
+        with pytest.raises(ValueError, match=f"plan #{other.plan} not found in project #{p}"):
+            _mv_task(session, p, other.plan, other.section, task_id="MV-101")
+        with pytest.raises(ValueError, match=f"section #{other_section} not found in plan #{pl}"):
+            _mv_task(session, p, pl, other_section, task_id="MV-102")
+        with pytest.raises(ValueError, match="plan #999999 does not exist"):
+            _mv_task(session, p, 999_999, other_section, task_id="MV-103")
+        with pytest.raises(ValueError, match="section #999999 does not exist"):
+            _mv_task(session, p, pl, 999_999, task_id="MV-104")
