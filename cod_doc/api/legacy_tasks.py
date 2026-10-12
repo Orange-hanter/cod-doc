@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy.exc import IntegrityError
+
 from cod_doc.domain.entities import Priority, Task, TaskStatus
 from cod_doc.services import plan_service
 
@@ -101,6 +103,27 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
     своего скоупа REST-создание задач падало бы у всех проектов, кроме
     первого. В embedded-БД (один проект) scope прежний.
     """
+    # Два параллельных запроса могут оба не найти план и оба его создать:
+    # второй упрётся в уникальный scope — пред-проверкой сервиса
+    # (PlanAlreadyExistsError) или уникальным индексом (IntegrityError), смотря
+    # по тому, когда первый закоммитил. Создание идёт в savepoint, и разбор
+    # повторяется уже с планом, который вставил первый (в т.ч. если это был
+    # чужой проект — тогда scope станет собственным).
+    for attempt in range(2):
+        try:
+            with session.begin_nested():
+                return _ensure_legacy_plan_once(session, project_id)
+        except (
+            IntegrityError,
+            plan_service.PlanAlreadyExistsError,
+            plan_service.SectionAlreadyExistsError,
+        ):
+            if attempt:
+                raise
+    raise AssertionError("unreachable")
+
+
+def _ensure_legacy_plan_once(session: Session, project_id: int) -> tuple[int, int]:
     scope = LEGACY_PLAN_SCOPE
     plan = plan_service.get_by_scope(session, scope)
     if plan is not None and plan.project_id != project_id:

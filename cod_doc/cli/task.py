@@ -265,7 +265,7 @@ def task_show(ctx: click.Context, task_id: str, project: str, as_json: bool) -> 
     sf = _make_session(project, cfg)
 
     with transactional(sf) as session:
-        t = task_service.get(session, task_id)
+        t = task_service.get(session, task_id, project_id=_require_project_id(session, project))
 
     if t is None:
         console.print(f"[red]Task '{task_id}' not found.[/red]")

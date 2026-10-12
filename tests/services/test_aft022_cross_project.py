@@ -28,7 +28,7 @@ from cod_doc.infra.models import (
     ProjectModel,
     RevisionModel,
 )
-from cod_doc.services import checkout_service
+from cod_doc.services import agent_service, checkout_service
 from cod_doc.services import plan_service as plans
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
@@ -314,3 +314,60 @@ def test_dependency_chain_does_not_walk_into_another_project(engine_with_schema)
 
         assert plans.forward_chain(session, _TID, project_id=a.project) == []
         assert plans.reverse_chain(session, _TID, project_id=b.project) == []
+
+
+def test_agent_release_and_blocker_report_stay_in_the_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """agent_release возвращает в todo через сервис (с ревизией) и в скоупе
+    проекта; agent_report(blocker) блокирует задачу своего проекта."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        checkout_service.checkout(session, _TID, agent="agent:x", project_id=b.project)
+        before = len(rev.list_for_entity(session, EntityKind.TASK, b.task_row))
+
+        out = agent_service.release(
+            session, project_id=b.project, task_id=_TID, agent_id="agent:x", reason="handover"
+        )
+
+        assert out["ok"] is True
+        assert tasks.get(session, _TID, project_id=b.project).status is TaskStatus.TODO  # type: ignore[union-attr]
+        assert len(rev.list_for_entity(session, EntityKind.TASK, b.task_row)) == before + 1
+
+        agent_service.report(
+            session, project_id=a.project, task_id=_TID, kind="blocker", message="waiting"
+        )
+        assert tasks.get(session, _TID, project_id=a.project).status is TaskStatus.BLOCKED  # type: ignore[union-attr]
+        assert tasks.get(session, _TID, project_id=b.project).status is TaskStatus.TODO  # type: ignore[union-attr]
+
+
+def test_legacy_plan_creation_race_recovers(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Параллельный запрос успел создать план между чтением и вставкой: уникальный
+    scope даёт IntegrityError, повторный разбор находит готовый план."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        first = legacy_tasks.ensure_legacy_plan(session, a.project)
+
+        real_get = legacy_tasks.plan_service.get_by_scope
+        stale = {"left": 1}
+
+        def stale_once(session: Session, scope: str, **kwargs: Any) -> Any:
+            if stale["left"]:
+                stale["left"] -= 1
+                return None  # «не видим» план, созданный параллельным запросом
+            return real_get(session, scope, **kwargs)
+
+        monkeypatch.setattr(legacy_tasks.plan_service, "get_by_scope", stale_once)
+        assert legacy_tasks.ensure_legacy_plan(session, a.project) == first
+
+
+def test_mcp_task_get_reads_the_task_of_its_project(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _project_with_task(session, "a")
+        _project_with_task(session, "b")
+
+    task_get = _tool(_task_tools(monkeypatch, factory), "task_get")
+    assert task_get(project="b", task_id=_TID)["title"] == "Task of b"
+    assert task_get(project="a", task_id=_TID)["title"] == "Task of a"

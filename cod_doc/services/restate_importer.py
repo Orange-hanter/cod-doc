@@ -454,6 +454,7 @@ def import_legacy_tasks(
                             author=author,
                             reason="restate-import:status",
                             force=True,  # import sets arbitrary legacy status
+                            project_id=project_id,
                         )
             except Exception as exc:
                 summary.errors.append(f"{title!r}: {exc}")

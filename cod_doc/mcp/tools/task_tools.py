@@ -336,7 +336,13 @@ def register(mcp: FastMCP) -> None:
 
         sf, entry = session_factory(project)
         with transactional(sf) as session:
-            t = task_service.get(session, task_id)
+            # Проекта без строки в БД (только tasks.yaml) — DB-задач у него нет,
+            # сразу к YAML-fallback; иначе поиск в скоупе проекта (AFT-022).
+            try:
+                pid: int | None = require_project_id(session, project)
+            except ValueError:
+                pid = None
+            t = task_service.get(session, task_id, project_id=pid) if pid is not None else None
             if t is not None:
                 return task_to_dict(t, session=session)
 
