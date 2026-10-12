@@ -134,8 +134,8 @@ def test_import_links_commits_to_known_tasks(engine_with_schema, git_repo) -> No
     assert result["skipped_existing"] == 0
 
     with transactional(factory) as session:
-        cmt1 = commit_link_service.list_for_task(session, 1, "CMT-001")
-        cmt2 = commit_link_service.list_for_task(session, 1, "CMT-002")
+        cmt1 = commit_link_service.list_for_task(session, pid, "CMT-001")
+        cmt2 = commit_link_service.list_for_task(session, pid, "CMT-002")
     assert len(cmt1) == 2
     assert len(cmt2) == 1
 

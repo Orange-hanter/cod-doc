@@ -24,6 +24,7 @@ from cod_doc.infra.models import ProjectModel, RevisionModel
 from cod_doc.mcp.tools import doc_tools
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
+from tests._scope import doc_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -63,13 +64,6 @@ def _new_doc(session: Session, project_id: int, doc_key: str = "modules/M1-auth/
         preamble="Intro paragraph.",
     )
     return doc.row_id  # type: ignore[return-value]
-
-
-def _doc_project(session: Session, doc_id: int) -> int:
-    """Проект документа — скоуп для истории ревизий (AFT-023)."""
-    doc = docs.get_doc_by_id(session, doc_id)
-    assert doc is not None
-    return doc.project_id
 
 
 def _seed_doc_with_section(factory: Any, *, body: str = "old body") -> tuple[int, int]:
@@ -120,7 +114,7 @@ def test_doc_patch_section_success_creates_revision(
 
     with transactional(factory) as session:
         history = rev.list_for_entity(
-            session, EntityKind.SECTION, sec_row_id, project_id=_doc_project(session, doc_id)
+            session, EntityKind.SECTION, sec_row_id, project_id=doc_project_id(session, doc_id)
         )
         section = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "x")
     # add_section + patch_section == 2 revisions.
@@ -136,7 +130,7 @@ def test_doc_patch_section_conflict_on_stale_parent(
     doc_id, sec_row_id = _seed_doc_with_section(factory, body="v1")
     with transactional(factory) as session:
         first_rev = rev.list_for_entity(
-            session, EntityKind.SECTION, sec_row_id, project_id=_doc_project(session, doc_id)
+            session, EntityKind.SECTION, sec_row_id, project_id=doc_project_id(session, doc_id)
         )[0]
 
     _stub(monkeypatch, factory)
@@ -195,7 +189,7 @@ def test_doc_patch_section_dry_run_leaves_db_untouched(
 
     with transactional(factory) as session:
         history = rev.list_for_entity(
-            session, EntityKind.SECTION, sec_row_id, project_id=_doc_project(session, doc_id)
+            session, EntityKind.SECTION, sec_row_id, project_id=doc_project_id(session, doc_id)
         )
         section = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "x")
     # Nothing persisted: still just add_section's revision, body unchanged.
@@ -269,7 +263,7 @@ def test_doc_add_section_creates_section_and_revision(
             session,
             EntityKind.SECTION,
             sections[0].row_id,
-            project_id=_doc_project(session, doc_id),
+            project_id=doc_project_id(session, doc_id),
         )
     assert [s.anchor for s in sections] == ["intro"]
     assert sections[0].body == "first body"
@@ -388,7 +382,7 @@ def test_doc_authoring_cycle_needs_no_markdown_file(
             session,
             EntityKind.SECTION,
             sections[0].row_id,
-            project_id=_doc_project(session, doc_id),
+            project_id=doc_project_id(session, doc_id),
         )
         body = docs.render_body(session, doc_id)
     assert sections[0].body == "final"

@@ -173,7 +173,11 @@ def section_patch(
             f"Конфликт ревизий — секция была изменена другим автором. "
             f"Текущий head: {revisions.head_for_entity(session, EntityKind.SECTION, current.row_id, project_id=project_db_id)}"
         ) from exc
-    except (IntegrityError, ValueError) as exc:
+    except IntegrityError as exc:
+        session.rollback()
+        # Текст IntegrityError несёт SQL и параметры — пользователю он не нужен.
+        raise ValidationWebError("Правка нарушает ограничение данных секции.") from exc
+    except ValueError as exc:
         session.rollback()
         raise ValidationWebError(str(exc)) from exc
 

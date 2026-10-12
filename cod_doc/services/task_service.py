@@ -1224,9 +1224,7 @@ def _move_one_to_plan(
     old_section_id = model.section_id
     old_plan_id = model.plan_id
     if old_section_id == new_section_id:
-        t = TaskRepository(session).get(model.row_id)
-        assert t is not None
-        return t
+        return TaskRepository(session)._to_domain(model)
 
     sections = PlanSectionRepository(session)
     new_section = sections.get(new_section_id)

@@ -105,7 +105,7 @@ ORDER BY max_depth DESC
 """)
 
 
-def _chain_root(session: Session, task_id: str, project_id: int) -> tuple[int, int]:
+def _chain_root(session: Session, task_id: str, project_id: int) -> int:
     """(row_id, project_id) задачи-корня; с ``project_id`` — только в этом проекте.
 
     Цепочка якорится на row_id, а не на ``task_id``: в общей hub-БД один
@@ -114,14 +114,14 @@ def _chain_root(session: Session, task_id: str, project_id: int) -> tuple[int, i
     по задачам проекта корня: ребро ``dependency`` в чужой проект (легаси-
     данные) не выводит его задачи в цепочку.
     """
-    row = session.execute(
-        select(TaskModel.row_id, TaskModel.project_id).where(
+    row_id = session.execute(
+        select(TaskModel.row_id).where(
             TaskModel.task_id == task_id, TaskModel.project_id == project_id
         )
-    ).one_or_none()
-    if row is None:
+    ).scalar_one_or_none()
+    if row_id is None:
         raise TaskNotFoundInPlanError(task_id)
-    return int(row[0]), int(row[1])
+    return int(row_id)
 
 
 def forward_chain(session: Session, task_id: str, *, project_id: int) -> list[ChainEntry]:
@@ -131,8 +131,8 @@ def forward_chain(session: Session, task_id: str, *, project_id: int) -> list[Ch
     prerequisite). Raises `TaskNotFoundInPlanError` if task_id unknown.
     Per [user-stories-graph.md §6]: ``cod-doc graph forward <task_id>``.
     """
-    row_id, root_project = _chain_root(session, task_id, project_id)
-    rows = session.execute(_FORWARD_CHAIN_SQL, {"row_id": row_id, "project_id": root_project}).all()
+    row_id = _chain_root(session, task_id, project_id)
+    rows = session.execute(_FORWARD_CHAIN_SQL, {"row_id": row_id, "project_id": project_id}).all()
     return [
         ChainEntry(
             task_id=r[1],
@@ -151,8 +151,8 @@ def reverse_chain(session: Session, task_id: str, *, project_id: int) -> list[Ch
     directly blocked. Raises `TaskNotFoundInPlanError` if task_id unknown.
     Per [user-stories-graph.md §6]: ``cod-doc graph reverse <task_id>``.
     """
-    row_id, root_project = _chain_root(session, task_id, project_id)
-    rows = session.execute(_REVERSE_CHAIN_SQL, {"row_id": row_id, "project_id": root_project}).all()
+    row_id = _chain_root(session, task_id, project_id)
+    rows = session.execute(_REVERSE_CHAIN_SQL, {"row_id": row_id, "project_id": project_id}).all()
     return [
         ChainEntry(
             task_id=r[1],

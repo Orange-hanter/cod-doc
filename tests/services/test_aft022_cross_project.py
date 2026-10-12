@@ -514,6 +514,9 @@ def test_mcp_task_mutations_touch_only_the_projects_task(  # type: ignore[no-unt
             assert task_b.status is TaskStatus.DONE
         elif tool == "task_set_blocker":
             assert task_b.blocked_reason == "waiting"
+        else:  # task_log_progress — статус не трогает, пишет ревизию op=progress
+            assert task_b.status is TaskStatus.TODO
+            assert '"op": "progress"' in after_b[-1].diff
 
 
 def test_mcp_clear_blocker_and_release_stay_in_the_project(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -571,5 +574,7 @@ def test_reads_by_row_id_are_scoped_by_project(engine_with_schema) -> None:  # t
         with pytest.raises(plans.PlanNotFoundError):
             plans.critical_path(session, a.plan, project_id=b.project)
 
-        own = heartbeat_service.heartbeat_context(session, task_id=_TID, project_id=b.project)
-        assert own["task"]["title"] == "Task of b"
+        own_b = heartbeat_service.heartbeat_context(session, task_id=_TID, project_id=b.project)
+        own_a = heartbeat_service.heartbeat_context(session, task_id=_TID, project_id=a.project)
+        assert own_b["task"]["title"] == "Task of b"
+        assert own_a["task"]["title"] == "Task of a"

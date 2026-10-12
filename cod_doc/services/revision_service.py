@@ -64,17 +64,22 @@ def _to_domain(model: RevisionModel) -> Revision:
     )
 
 
-def _current_head(session: Session, entity_kind: EntityKind, entity_id: int) -> str | None:
-    """Latest `revision_id` for the entity, or None if no revisions yet."""
-    stmt = (
-        select(RevisionModel.revision_id)
-        .where(
-            RevisionModel.entity_kind == entity_kind.value,
-            RevisionModel.entity_id == entity_id,
-        )
-        .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
-        .limit(1)
+def _current_head(
+    session: Session, entity_kind: EntityKind, entity_id: int, project_id: int | None = None
+) -> str | None:
+    """Latest `revision_id` for the entity, or None if no revisions yet.
+
+    Единственный запрос «head сущности»: и для ``write`` (родитель новой
+    ревизии, проект — у пишущего), и для публичного `head_for_entity`,
+    который сужает его проектом вызывающего (AFT-023).
+    """
+    stmt = select(RevisionModel.revision_id).where(
+        RevisionModel.entity_kind == entity_kind.value,
+        RevisionModel.entity_id == entity_id,
     )
+    if project_id is not None:
+        stmt = stmt.where(RevisionModel.project_id == project_id)
+    stmt = stmt.order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc()).limit(1)
     return session.execute(stmt).scalar_one_or_none()
 
 
@@ -244,16 +249,7 @@ def head_for_entity(
     ``project_id`` обязателен (AFT-023): ``entity_id`` — row_id на всю hub-БД,
     и head чужого проекта иначе выдавался бы как токен конкурентности.
     """
-    return session.execute(
-        select(RevisionModel.revision_id)
-        .where(
-            RevisionModel.entity_kind == entity_kind.value,
-            RevisionModel.entity_id == entity_id,
-            RevisionModel.project_id == project_id,
-        )
-        .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
-        .limit(1)
-    ).scalar_one_or_none()
+    return _current_head(session, entity_kind, entity_id, project_id)
 
 
 def heads_for_entities(

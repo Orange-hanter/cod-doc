@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
 
 class Seed(NamedTuple):
+    project_id: int
     doc_id: int
     section_ids: dict[str, int]
     # revision_id последней записи каждой секции, снятый сразу после записи.
@@ -115,7 +116,7 @@ def _seed(engine: Engine) -> Seed:
         session.flush()
         section_ids["delta"] = bare.row_id
         heads["delta"] = None
-        return Seed(doc.row_id, section_ids, heads, alpha_first)
+        return Seed(proj.row_id, doc.row_id, section_ids, heads, alpha_first)
 
 
 @contextmanager
@@ -134,18 +135,17 @@ def _capture_sql(engine: Engine) -> Iterator[list[str]]:
         event.remove(engine, "before_cursor_execute", _on_execute)
 
 
-def _read(engine: Engine, doc_id: int, anchors: list[str]) -> list[dict[str, Any]]:
+def _read(
+    engine: Engine, doc_id: int, anchors: list[str], *, project_id: int
+) -> list[dict[str, Any]]:
     factory = make_session_factory(engine)
     with transactional(factory) as session:
-        doc = docs.get_doc_by_id(session, doc_id)
-        # Несуществующий документ ищется в скоупе единственного проекта БД.
-        project_id = doc.project_id if doc is not None else only_project_id(session)
         return docs.read_sections(session, doc_id, anchors, project_id=project_id)
 
 
 def test_read_one_section_returns_contract_keys(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     seed = _seed(engine_with_schema)
-    result = _read(engine_with_schema, seed.doc_id, ["beta"])
+    result = _read(engine_with_schema, seed.doc_id, ["beta"], project_id=seed.project_id)
     assert len(result) == 1
     assert set(result[0]) == {
         "anchor",
@@ -164,14 +164,21 @@ def test_read_one_section_returns_contract_keys(engine_with_schema) -> None:  # 
 
 def test_read_many_sections_keeps_request_order(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     seed = _seed(engine_with_schema)
-    result = _read(engine_with_schema, seed.doc_id, ["gamma", "alpha", "gamma"])
+    result = _read(
+        engine_with_schema, seed.doc_id, ["gamma", "alpha", "gamma"], project_id=seed.project_id
+    )
     assert [r["anchor"] for r in result] == ["gamma", "alpha"]
     assert [r["body"] for r in result] == ["BODY-GAMMA", "BODY-ALPHA-V2"]
 
 
 def test_head_revision_id_after_patch(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     seed = _seed(engine_with_schema)
-    result = _read(engine_with_schema, seed.doc_id, ["alpha", "beta", "gamma", "delta"])
+    result = _read(
+        engine_with_schema,
+        seed.doc_id,
+        ["alpha", "beta", "gamma", "delta"],
+        project_id=seed.project_id,
+    )
     by_anchor = {r["anchor"]: r["head_revision_id"] for r in result}
     # patch сдвинул head с ревизии add_section на ревизию правки.
     assert by_anchor["alpha"] == seed.heads["alpha"]
@@ -196,7 +203,7 @@ def test_head_revision_id_after_patch(engine_with_schema) -> None:  # type: igno
 
 def test_unknown_anchor_is_structured_miss(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     seed = _seed(engine_with_schema)
-    result = _read(engine_with_schema, seed.doc_id, ["alpha", "nope"])
+    result = _read(engine_with_schema, seed.doc_id, ["alpha", "nope"], project_id=seed.project_id)
     assert len(result) == 2
     assert result[0]["anchor"] == "alpha"
     assert result[0]["body"] == "BODY-ALPHA-V2"
@@ -213,7 +220,7 @@ def test_unknown_anchor_is_structured_miss(engine_with_schema) -> None:  # type:
 def test_read_does_not_load_other_bodies(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     seed = _seed(engine_with_schema)
     with _capture_sql(engine_with_schema) as statements:
-        result = _read(engine_with_schema, seed.doc_id, ["beta"])
+        result = _read(engine_with_schema, seed.doc_id, ["beta"], project_id=seed.project_id)
     assert result[0]["body"] == "BODY-BETA"
     assert statements
     assert not any("document_body" in s for s in statements)
@@ -228,9 +235,9 @@ def test_read_does_not_load_other_bodies(engine_with_schema) -> None:  # type: i
 def test_empty_anchors_and_missing_doc_raise(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     seed = _seed(engine_with_schema)
     with pytest.raises(ValueError, match="anchors"):
-        _read(engine_with_schema, seed.doc_id, [])
+        _read(engine_with_schema, seed.doc_id, [], project_id=seed.project_id)
     with pytest.raises(ValueError, match="#999999"):
-        _read(engine_with_schema, 999999, ["alpha"])
+        _read(engine_with_schema, 999999, ["alpha"], project_id=seed.project_id)
 
 
 def test_heads_for_entities_batch(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -250,3 +257,20 @@ def test_heads_for_entities_batch(engine_with_schema) -> None:  # type: ignore[n
         with _capture_sql(engine_with_schema) as statements:
             assert rev.heads_for_entities(session, EntityKind.SECTION, [], project_id=pid) == {}
         assert statements == []
+
+
+def test_read_sections_of_another_projects_document_is_not_found(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-023: document_id — row_id на всю БД; документ чужого проекта читается
+    как отсутствующий, тела его секций не отдаются."""
+    seed = _seed(engine_with_schema)
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="other", title="O", root_path="/tmp/o", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+        other_id = other.row_id
+    with pytest.raises(ValueError, match=f"#{seed.doc_id} not found"):
+        _read(engine_with_schema, seed.doc_id, ["alpha"], project_id=other_id)

@@ -26,6 +26,10 @@ from cod_doc.services import adr_service, finding_service, search_service, task_
 from cod_doc.services.story_service import acceptance as story_acceptance
 from cod_doc.services.story_service import crud as story_crud
 
+#: Для тестов без засеянного проекта (нет таблицы индекса, пустой запрос):
+#: скоуп проекта там не проверяется, а id нужен только сигнатуре.
+_NO_PROJECT = 1
+
 
 def _seed_project(session, slug: str) -> tuple[int, int, int]:  # type: ignore[no-untyped-def]
     """Проект + план + секция; возвращает (project_id, plan_id, section_id)."""
@@ -373,7 +377,7 @@ def test_search_invalid_scope_raises(engine_with_schema) -> None:  # type: ignor
     with pytest.raises(ValueError, match="invalid scope"), transactional(factory) as session:
         search_service.search(
             session,
-            project_id=1,
+            project_id=_NO_PROJECT,
             query="x",
             scope="weird",
         )
@@ -384,7 +388,7 @@ def test_search_empty_query_returns_zero_hits(engine_with_schema) -> None:  # ty
     with transactional(factory) as session:
         _seed(session)
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="   ")
+        result = search_service.search(session, project_id=_NO_PROJECT, query="   ")
     assert result["total"] == 0
 
 
@@ -536,7 +540,7 @@ def test_search_raises_search_index_missing_without_table(engine_with_schema) ->
         pytest.raises(search_service.SearchIndexMissing, match="db_search_idx"),
         transactional(factory) as session,
     ):
-        search_service.search(session, project_id=1, query="anything")
+        search_service.search(session, project_id=_NO_PROJECT, query="anything")
 
 
 def test_ensure_index_raises_search_index_missing_without_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -549,7 +553,7 @@ def test_ensure_index_raises_search_index_missing_without_table(engine_with_sche
         pytest.raises(search_service.SearchIndexMissing, match="db_search_idx"),
         transactional(factory) as session,
     ):
-        search_service.ensure_index(session, project_id=1)
+        search_service.ensure_index(session, project_id=_NO_PROJECT)
 
 
 def test_reindex_all_raises_search_index_missing_without_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -562,7 +566,7 @@ def test_reindex_all_raises_search_index_missing_without_table(engine_with_schem
         pytest.raises(search_service.SearchIndexMissing, match="db_search_idx"),
         transactional(factory) as session,
     ):
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=_NO_PROJECT)
 
 
 def test_other_operational_errors_are_not_swallowed(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -576,7 +580,7 @@ def test_other_operational_errors_are_not_swallowed(engine_with_schema) -> None:
         pytest.raises(OperationalError, match="task") as excinfo,
         transactional(factory) as session,
     ):
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=_NO_PROJECT)
     assert not isinstance(excinfo.value, search_service.SearchIndexMissing)
 
 
@@ -997,7 +1001,7 @@ def test_upsert_entity_raises_search_index_missing_without_table(engine_with_sch
         transactional(factory) as session,
     ):
         search_service.upsert_entity(
-            session, kind="task", ref="X-1", project_id=1, title="t", body="b"
+            session, kind="task", ref="X-1", project_id=_NO_PROJECT, title="t", body="b"
         )
 
 
@@ -1011,4 +1015,4 @@ def test_delete_entity_raises_search_index_missing_without_table(engine_with_sch
         pytest.raises(search_service.SearchIndexMissing, match="db_search_idx"),
         transactional(factory) as session,
     ):
-        search_service.delete_entity(session, kind="task", ref="X-1", project_id=1)
+        search_service.delete_entity(session, kind="task", ref="X-1", project_id=_NO_PROJECT)

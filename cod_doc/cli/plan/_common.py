@@ -61,9 +61,13 @@ def _project_id(session: Session, project: str) -> int:
 
 
 def _fail(message: str) -> None:
-    """Печать ошибки красным и выход без трейсбека."""
+    """Печать ошибки красным и выход без трейсбека.
+
+    Как и `_require_plan_id`, — ``click.exceptions.Exit``, а не ``sys.exit``:
+    это ``Exception``, и ``transactional`` откатывает транзакцию явно.
+    """
     console.print(message, style="red", markup=False)
-    sys.exit(1)
+    raise click.exceptions.Exit(1)
 
 
 def _guard() -> AbstractContextManager[None]:

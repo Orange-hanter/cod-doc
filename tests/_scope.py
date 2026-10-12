@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
-from cod_doc.infra.models import ProjectModel
+from cod_doc.infra.models import DocumentModel, ProjectModel
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -21,3 +21,12 @@ if TYPE_CHECKING:
 def only_project_id(session: Session) -> int:
     """``row_id`` единственного проекта БД; два и больше — ошибка."""
     return int(session.execute(select(ProjectModel.row_id)).scalar_one())
+
+
+def doc_project_id(session: Session, doc_id: int) -> int:
+    """``project_id`` документа ``doc_id`` — скоуп для его ревизий и секций."""
+    return int(
+        session.execute(
+            select(DocumentModel.project_id).where(DocumentModel.row_id == doc_id)
+        ).scalar_one()
+    )
