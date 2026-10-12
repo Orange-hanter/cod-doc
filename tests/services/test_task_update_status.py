@@ -128,14 +128,16 @@ def test_update_status_no_op_if_same(engine_with_schema) -> None:  # type: ignor
 def test_update_status_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
 
-    with transactional(factory) as session, pytest.raises(tasks.TaskNotFoundError):
-        tasks.update_status(
-            session,
-            task_id="GHOST-001",
-            new_status=TaskStatus.IN_PROGRESS,
-            author="x",
-            project_id=0,  # проектов в БД нет — несуществующий row_id
-        )
+    with transactional(factory) as session:
+        p, _pl, _s = _seed_plan(session)
+        with pytest.raises(tasks.TaskNotFoundError):
+            tasks.update_status(
+                session,
+                task_id="GHOST-001",
+                new_status=TaskStatus.IN_PROGRESS,
+                author="human:test",
+                project_id=p,
+            )
 
 
 def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

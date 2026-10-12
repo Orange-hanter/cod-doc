@@ -198,6 +198,7 @@ def build_wake_context(
     triggering_doc_ref: str | None = None,
     triggering_revision_id: str | None = None,
     skills_to_preload: list[str] | None = None,
+    project_id: int | None = None,
 ) -> WakeContext:
     """Assemble a :class:`WakeContext` for the orchestrator.
 
@@ -226,11 +227,15 @@ def build_wake_context(
             raise ValueError(f"reason={reason.value} requires task_id")
         if session is None:
             raise ValueError(f"reason={reason.value} requires a DB session for heartbeat lookup")
+        if project_id is None:
+            # AFT-023: задача ищется в скоупе проекта — в hub-БД task_id не уникален.
+            raise ValueError(f"reason={reason.value} requires project_id for heartbeat lookup")
         from cod_doc.services import heartbeat_service
 
         payload = heartbeat_service.heartbeat_context(
             session,
             task_id=task_id,
+            project_id=project_id,
             since_revision_id=triggering_revision_id,
         )
         payload = _trim_payload_to_budget(payload)

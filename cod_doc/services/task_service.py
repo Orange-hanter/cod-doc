@@ -658,9 +658,8 @@ def update_status(
 ) -> Task:
     """Set task.status directly; no dep-gate.
 
-    ``project_id`` сужает поиск задачи проектом (AFT-022); пока опционален —
-    ``update_status`` зовут ~40 мест, и обязательным он станет отдельной
-    правкой. Его передаёт откат ревизии.
+    ``project_id`` обязателен (AFT-023): в общей hub-БД один ``task_id`` живёт
+    в нескольких проектах, и поиск без скоупа сменил бы статус чужой задачи.
 
     For the guarded `→done` transition that validates blocking deps, use
     `complete()` instead.

@@ -23,6 +23,7 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as revisions
+from tests._scope import only_project_id
 
 
 @pytest.fixture
@@ -145,7 +146,9 @@ def _head_for_section(db_path: Path, section_row_id: int) -> str | None:
     engine = make_engine(f"sqlite:///{db_path}")
     factory = make_session_factory(engine)
     with transactional(factory) as session:
-        head = revisions.head_for_entity(session, EntityKind.SECTION, section_row_id)
+        head = revisions.head_for_entity(
+            session, EntityKind.SECTION, section_row_id, project_id=only_project_id(session)
+        )
     engine.dispose()
     return head
 

@@ -185,7 +185,7 @@ def test_reindex_counts_all_kinds(engine_with_schema) -> None:  # type: ignore[n
         _make_story(session, pid, "US-7", "dev", "I want to find anything by phrase")
         _make_adr(session, pid, "ADR-001", "FTS5 chosen", "FTS5 over Chroma for embedded queries.")
     with transactional(factory) as session:
-        counts = search_service.reindex_all(session, project_id=1)
+        counts = search_service.reindex_all(session, project_id=pid)
     assert counts["task"] == 1
     assert counts["doc"] == 1
     assert counts["story"] == 1
@@ -199,12 +199,12 @@ def test_reindex_is_idempotent(engine_with_schema) -> None:  # type: ignore[no-u
         pid, plid, sid = _seed(session)
         _make_task(session, pid, plid, sid, "SRP-010", "alpha beta")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
         n = session.execute(
-            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=1")
+            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=:pid"), {"pid": pid}
         ).scalar_one()
     assert int(n) == 1
 
@@ -222,18 +222,18 @@ def test_ensure_index_reindexes_when_empty(engine_with_schema) -> None:  # type:
 
     with transactional(factory) as session:
         n = session.execute(
-            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=1")
+            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=:pid"), {"pid": pid}
         ).scalar_one()
     assert int(n) == 0  # nothing indexed yet — reindex_all never ran
 
     with transactional(factory) as session:
-        meta = search_service.ensure_index(session, project_id=1)
+        meta = search_service.ensure_index(session, project_id=pid)
     assert meta["reindexed"] is True
     assert meta["total"] == 1
     assert meta["by_kind"]["task"] == 1
 
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="reindex")
+        result = search_service.search(session, project_id=pid, query="reindex")
     assert result["total"] == 1
     assert result["by_kind"]["task"][0]["ref"] == "SRP-030"
 
@@ -244,7 +244,7 @@ def test_ensure_index_is_noop_when_populated(engine_with_schema) -> None:  # typ
         pid, plid, sid = _seed(session)
         _make_task_raw(session, pid, plid, sid, "SRP-031", "Already indexed task")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
 
     # A task added *after* the reindex is deliberately left unindexed — it
     # is the marker that proves ensure_index did not touch the index below.
@@ -253,14 +253,14 @@ def test_ensure_index_is_noop_when_populated(engine_with_schema) -> None:  # typ
         _make_task_raw(session, pid, plid, sid, "SRP-032", "Added after reindex")
 
     with transactional(factory) as session:
-        meta = search_service.ensure_index(session, project_id=1)
+        meta = search_service.ensure_index(session, project_id=pid)
     assert meta["reindexed"] is False
     assert meta["total"] == 1
     assert meta["by_kind"] == {"task": 1}
 
     with transactional(factory) as session:
         n = session.execute(
-            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=1")
+            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=:pid"), {"pid": pid}
         ).scalar_one()
     assert int(n) == 1  # untouched — the late-added task is still not indexed
 
@@ -277,9 +277,9 @@ def test_search_finds_task_by_title(engine_with_schema) -> None:  # type: ignore
         _make_task(session, pid, plid, sid, "SRP-020", "Implement checkout endpoint")
         _make_task(session, pid, plid, sid, "SRP-021", "Fix login redirect")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="checkout")
+        result = search_service.search(session, project_id=pid, query="checkout")
     assert result["total"] == 1
     assert result["by_kind"]["task"][0]["ref"] == "SRP-020"
 
@@ -290,9 +290,9 @@ def test_search_finds_doc_by_body_word(engine_with_schema) -> None:  # type: ign
         pid, _, _ = _seed(session)
         _make_doc(session, pid, "ops/db", "DB ops", "Postgres vacuum schedule and WAL settings.")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="vacuum")
+        result = search_service.search(session, project_id=pid, query="vacuum")
     refs = [h["ref"] for h in result["by_kind"]["doc"]]
     assert "ops/db" in refs
 
@@ -303,9 +303,9 @@ def test_search_finds_story_by_narrative(engine_with_schema) -> None:  # type: i
         pid, _, _ = _seed(session)
         _make_story(session, pid, "US-30", "user", "Receive email after signup")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="signup")
+        result = search_service.search(session, project_id=pid, query="signup")
     assert any(h["ref"] == "US-30" for h in result["by_kind"]["story"])
 
 
@@ -315,9 +315,9 @@ def test_search_finds_adr_by_decision(engine_with_schema) -> None:  # type: igno
         pid, _, _ = _seed(session)
         _make_adr(session, pid, "ADR-040", "Use FTS5", "FTS5 chosen because no daemon dependency.")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="daemon")
+        result = search_service.search(session, project_id=pid, query="daemon")
     refs = [h["ref"] for h in result["by_kind"]["adr"]]
     assert "ADR-040" in refs
 
@@ -328,7 +328,7 @@ def test_reindex_counts_findings(engine_with_schema) -> None:  # type: ignore[no
         pid, _, _ = _seed(session)
         _make_finding(session, pid, "F-001", "Race in checkout", "Found a data race in checkout.")
     with transactional(factory) as session:
-        counts = search_service.reindex_all(session, project_id=1)
+        counts = search_service.reindex_all(session, project_id=pid)
     assert counts["finding"] == 1
     assert counts["total"] == 1
 
@@ -339,9 +339,9 @@ def test_search_finds_finding_by_body(engine_with_schema) -> None:  # type: igno
         pid, _, _ = _seed(session)
         _make_finding(session, pid, "F-002", "Memory leak", "Buffer is never released.")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="buffer")
+        result = search_service.search(session, project_id=pid, query="buffer")
     refs = [h["ref"] for h in result["by_kind"]["finding"]]
     assert "F-002" in refs
 
@@ -353,11 +353,11 @@ def test_search_scope_filters_to_one_kind(engine_with_schema) -> None:  # type: 
         _make_task(session, pid, plid, sid, "SRP-050", "duplicate detection")
         _make_doc(session, pid, "guide/dup", "Dup detection", "How dedup works")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
         result = search_service.search(
             session,
-            project_id=1,
+            project_id=pid,
             query="dup",
             scope="task",
         )
@@ -394,9 +394,9 @@ def test_search_snippet_marks_match(engine_with_schema) -> None:  # type: ignore
         pid, plid, sid = _seed(session)
         _make_task(session, pid, plid, sid, "SRP-060", "Investigate edge case in checkout")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="checkout")
+        result = search_service.search(session, project_id=pid, query="checkout")
     hit = result["by_kind"]["task"][0]
     assert "<mark>" in hit["snippet"]
     assert "</mark>" in hit["snippet"]
@@ -426,9 +426,11 @@ def test_search_limit_applies_per_kind_not_globally(engine_with_schema) -> None:
         for i in range(_MANY_TASKS):
             _make_task(session, pid, plid, sid, f"WDG-{i:03d}", f"widget task {i}")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="widget", limit=_PER_KIND_LIMIT)
+        result = search_service.search(
+            session, project_id=pid, query="widget", limit=_PER_KIND_LIMIT
+        )
     assert len(result["by_kind"]["task"]) == _MANY_TASKS
     assert len(result["by_kind"]["doc"]) == _PER_KIND_LIMIT
     assert result["total"] == _MANY_TASKS + _PER_KIND_LIMIT
@@ -452,9 +454,9 @@ def test_search_title_hit_ranks_above_body_hit(engine_with_schema) -> None:  # t
                 session, pid, f"guide/filler-{i}", f"filler {i}", "nothing to see here at all"
             )
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="gadget")
+        result = search_service.search(session, project_id=pid, query="gadget")
     hits = result["by_kind"]["doc"]
     refs = [h["ref"] for h in hits]
     assert refs == ["guide/title-hit", "guide/body-hit"]
@@ -468,9 +470,9 @@ def test_search_scope_finding_is_valid(engine_with_schema) -> None:  # type: ign
         pid, _, _ = _seed(session)
         _make_finding(session, pid, "F-010", "Timeout bug", "Request times out under load.")
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="timeout", scope="finding")
+        result = search_service.search(session, project_id=pid, query="timeout", scope="finding")
     refs = [h["ref"] for h in result["by_kind"]["finding"]]
     assert "F-010" in refs
     assert result["by_kind"]["task"] == []
@@ -499,13 +501,13 @@ def test_search_under_200ms_with_moderate_corpus(engine_with_schema) -> None:  #
                 f"This document discusses topic {i} indexing patterns.",
             )
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
 
     start = time.monotonic()
     with transactional(factory) as session:
         result = search_service.search(
             session,
-            project_id=1,
+            project_id=pid,
             query="indexing",
         )
     elapsed = time.monotonic() - start
@@ -739,7 +741,7 @@ def test_task_create_is_indexed_without_reindex(engine_with_schema) -> None:  # 
         _make_task(session, pid, plid, sid, "INC-001", "Incremental upsert of the index")
 
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="incremental", scope="task")
+        result = search_service.search(session, project_id=pid, query="incremental", scope="task")
     assert [h["ref"] for h in result["by_kind"]["task"]] == ["INC-001"]
 
 
@@ -759,7 +761,7 @@ def test_task_description_update_is_indexed(engine_with_schema) -> None:  # type
         )
 
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="rendezvous")
+        result = search_service.search(session, project_id=pid, query="rendezvous")
     assert [h["ref"] for h in result["by_kind"]["task"]] == ["INC-002"]
 
 
@@ -777,21 +779,19 @@ def test_task_acceptance_and_blocker_are_indexed(engine_with_schema) -> None:  #
             author="t",
             project_id=pid,
         )
-        # set_blocker / clear_blocker скоупа проекта пока не принимают (ADO-200,
-        # легаси-долг); project_id с AFT-022 требуют только grooming-мутации.
         task_service.set_blocker(
             session, task_id="INC-003", reason="waiting on kryptonite", author="t", project_id=pid
         )
 
     with transactional(factory) as session:
-        assert search_service.search(session, project_id=1, query="zeppelin")["total"] == 1
-        assert search_service.search(session, project_id=1, query="kryptonite")["total"] == 1
+        assert search_service.search(session, project_id=pid, query="zeppelin")["total"] == 1
+        assert search_service.search(session, project_id=pid, query="kryptonite")["total"] == 1
 
     # Clearing the blocker drops that text from the indexed body again.
     with transactional(factory) as session:
         task_service.clear_blocker(session, task_id="INC-003", author="t", project_id=pid)
     with transactional(factory) as session:
-        assert search_service.search(session, project_id=1, query="kryptonite")["total"] == 0
+        assert search_service.search(session, project_id=pid, query="kryptonite")["total"] == 0
 
 
 def test_task_complete_keeps_the_row_indexed(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -804,7 +804,7 @@ def test_task_complete_keeps_the_row_indexed(engine_with_schema) -> None:  # typ
         task_service.complete(session, task_id="INC-004", author="t", project_id=pid)
 
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="telemetry")
+        result = search_service.search(session, project_id=pid, query="telemetry")
     assert [h["ref"] for h in result["by_kind"]["task"]] == ["INC-004"]
 
 
@@ -823,7 +823,7 @@ def test_story_create_and_criterion_are_indexed(engine_with_schema) -> None:  # 
         )
 
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="curator", scope="story")
+        result = search_service.search(session, project_id=pid, query="curator", scope="story")
     assert [h["ref"] for h in result["by_kind"]["story"]] == ["US-100"]
 
     with transactional(factory) as session:
@@ -832,7 +832,7 @@ def test_story_create_and_criterion_are_indexed(engine_with_schema) -> None:  # 
         )
 
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="marmalade")
+        result = search_service.search(session, project_id=pid, query="marmalade")
     assert [h["ref"] for h in result["by_kind"]["story"]] == ["US-100"]
 
 
@@ -849,7 +849,7 @@ def test_adr_create_and_title_update_are_indexed(engine_with_schema) -> None:  #
         )
 
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="quicksilver", scope="adr")
+        result = search_service.search(session, project_id=pid, query="quicksilver", scope="adr")
     assert [h["ref"] for h in result["by_kind"]["adr"]] == ["ADR-001"]
 
     # Retitling replaces the row rather than adding a second one.
@@ -859,8 +859,8 @@ def test_adr_create_and_title_update_are_indexed(engine_with_schema) -> None:  #
         )
 
     with transactional(factory) as session:
-        assert search_service.search(session, project_id=1, query="quicksilver")["total"] == 0
-        result = search_service.search(session, project_id=1, query="obsidian")
+        assert search_service.search(session, project_id=pid, query="quicksilver")["total"] == 0
+        result = search_service.search(session, project_id=pid, query="obsidian")
     assert [h["ref"] for h in result["by_kind"]["adr"]] == ["ADR-001"]
 
 
@@ -874,7 +874,8 @@ def test_adr_deprecate_keeps_one_row(engine_with_schema) -> None:  # type: ignor
 
     with transactional(factory) as session:
         n = session.execute(
-            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=1 AND kind='adr'")
+            text("SELECT COUNT(*) FROM db_search_idx WHERE project_id=:pid AND kind='adr'"),
+            {"pid": pid},
         ).scalar_one()
     assert int(n) == 1
 
@@ -886,7 +887,9 @@ def test_finding_ingest_is_indexed_and_dismiss_removes_it(engine_with_schema) ->
         _ingest_finding(session, pid, "Pomegranate leak", "The pomegranate handle is never closed.")
 
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=1, query="pomegranate", scope="finding")
+        result = search_service.search(
+            session, project_id=pid, query="pomegranate", scope="finding"
+        )
     hits = result["by_kind"]["finding"]
     assert len(hits) == 1
     uid = hits[0]["ref"]
@@ -895,7 +898,7 @@ def test_finding_ingest_is_indexed_and_dismiss_removes_it(engine_with_schema) ->
         finding_service.dismiss_finding(session, project_id=pid, finding_uid=uid, author="human:t")
 
     with transactional(factory) as session:
-        assert search_service.search(session, project_id=1, query="pomegranate")["total"] == 0
+        assert search_service.search(session, project_id=pid, query="pomegranate")["total"] == 0
 
 
 def test_reindex_skips_dismissed_findings(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -906,16 +909,18 @@ def test_reindex_skips_dismissed_findings(engine_with_schema) -> None:  # type: 
         _ingest_finding(session, pid, "Tangerine leak", "Tangerine handle left open.")
 
     with transactional(factory) as session:
-        hits = search_service.search(session, project_id=1, query="tangerine")["by_kind"]["finding"]
+        hits = search_service.search(session, project_id=pid, query="tangerine")["by_kind"][
+            "finding"
+        ]
         uid = hits[0]["ref"]
     with transactional(factory) as session:
         finding_service.dismiss_finding(session, project_id=pid, finding_uid=uid, author="human:t")
 
     with transactional(factory) as session:
-        counts = search_service.reindex_all(session, project_id=1)
+        counts = search_service.reindex_all(session, project_id=pid)
     assert counts["finding"] == 0
     with transactional(factory) as session:
-        assert search_service.search(session, project_id=1, query="tangerine")["total"] == 0
+        assert search_service.search(session, project_id=pid, query="tangerine")["total"] == 0
 
 
 def test_incremental_rows_match_a_full_reindex(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -957,7 +962,7 @@ def test_incremental_rows_match_a_full_reindex(engine_with_schema) -> None:  # t
     assert {row[0] for row in incremental} == {"task", "story", "adr", "finding"}
 
     with transactional(factory) as session:
-        search_service.reindex_all(session, project_id=1)
+        search_service.reindex_all(session, project_id=pid)
     assert _index_rows(factory) == incremental
 
 

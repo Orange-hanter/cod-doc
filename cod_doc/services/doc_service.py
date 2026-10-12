@@ -330,7 +330,10 @@ def read_sections(
     ).scalars()
     by_anchor = {row.anchor: row for row in rows}
     heads = rev.heads_for_entities(
-        session, EntityKind.SECTION, [row.row_id for row in by_anchor.values()]
+        session,
+        EntityKind.SECTION,
+        [row.row_id for row in by_anchor.values()],
+        project_id=doc.project_id,
     )
 
     available: list[str] | None = None

@@ -116,7 +116,7 @@ def test_summary_returns_percentiles_by_type(engine_with_schema) -> None:  # typ
         for tid in ("MET-010", "MET-011", "MET-012"):
             task_service.complete(session, task_id=tid, author="a", project_id=pid)
     with transactional(factory) as session:
-        s = metrics_service.summary(session, project_id=1)
+        s = metrics_service.summary(session, project_id=pid)
     assert s["completed"] == 3
     assert "feature" in s["by_type"]
     assert "bug" in s["by_type"]
@@ -150,7 +150,7 @@ def test_sparkline_counts_today_completion(engine_with_schema) -> None:  # type:
     with transactional(factory) as session:
         task_service.complete(session, task_id="MET-020", author="a", project_id=pid)
     with transactional(factory) as session:
-        buckets = metrics_service.sparkline_buckets(session, project_id=1, days=7)
+        buckets = metrics_service.sparkline_buckets(session, project_id=pid, days=7)
     # Today's bucket has count=1.
     today = datetime.now(UTC).date().isoformat()
     today_b = next(b for b in buckets if b["date"] == today)

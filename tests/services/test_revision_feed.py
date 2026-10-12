@@ -17,7 +17,6 @@ from cod_doc.domain.entities import EntityKind
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import ProjectModel, RevisionModel
 from cod_doc.services import revision_service
-from tests._scope import only_project_id
 
 
 @pytest.fixture
@@ -135,8 +134,11 @@ def test_feed_entity_kind_and_since_combined(session_factory) -> None:  # type: 
     assert [r.reason for r in feed] == ["task-25"]
 
 
-def _seed_entity_history(session) -> None:  # type: ignore[no-untyped-def]
-    """One task with 5 revisions on consecutive days, 2026-09-20 … 2026-09-24."""
+def _seed_entity_history(session) -> int:  # type: ignore[no-untyped-def]
+    """One task with 5 revisions on consecutive days, 2026-09-20 … 2026-09-24.
+
+    Возвращает ``project_id`` — скоуп для ``list_for_entity`` (AFT-023).
+    """
     project_id = _seed_project(session)
     for day, reason in enumerate(["one", "two", "three", "four", "five"], start=20):
         _add_revision(
@@ -148,23 +150,22 @@ def _seed_entity_history(session) -> None:  # type: ignore[no-untyped-def]
             at=datetime(2026, 9, day, 10, 0, tzinfo=UTC),
             reason=reason,
         )
+    return project_id
 
 
 def test_list_for_entity_limit_returns_tail_oldest_first(session_factory) -> None:  # type: ignore[no-untyped-def]
     with transactional(session_factory) as session:
-        _seed_entity_history(session)
+        pid = _seed_entity_history(session)
     with transactional(session_factory) as session:
         tail = revision_service.list_for_entity(
-            session, EntityKind.TASK, 7, limit=2, project_id=only_project_id(session)
+            session, EntityKind.TASK, 7, limit=2, project_id=pid
         )
     assert [r.reason for r in tail] == ["four", "five"]
 
 
 def test_list_for_entity_without_limit_unchanged(session_factory) -> None:  # type: ignore[no-untyped-def]
     with transactional(session_factory) as session:
-        _seed_entity_history(session)
+        pid = _seed_entity_history(session)
     with transactional(session_factory) as session:
-        history = revision_service.list_for_entity(
-            session, EntityKind.TASK, 7, project_id=only_project_id(session)
-        )
+        history = revision_service.list_for_entity(session, EntityKind.TASK, 7, project_id=pid)
     assert [r.reason for r in history] == ["one", "two", "three", "four", "five"]

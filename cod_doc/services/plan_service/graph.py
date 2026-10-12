@@ -103,7 +103,7 @@ ORDER BY max_depth DESC
 """)
 
 
-def _chain_root(session: Session, task_id: str, project_id: int | None) -> tuple[int, int]:
+def _chain_root(session: Session, task_id: str, project_id: int) -> tuple[int, int]:
     """(row_id, project_id) задачи-корня; с ``project_id`` — только в этом проекте.
 
     Цепочка якорится на row_id, а не на ``task_id``: в общей hub-БД один
@@ -112,16 +112,17 @@ def _chain_root(session: Session, task_id: str, project_id: int | None) -> tuple
     по задачам проекта корня: ребро ``dependency`` в чужой проект (легаси-
     данные) не выводит его задачи в цепочку.
     """
-    stmt = select(TaskModel.row_id, TaskModel.project_id).where(TaskModel.task_id == task_id)
-    if project_id is not None:
-        stmt = stmt.where(TaskModel.project_id == project_id)
-    row = session.execute(stmt).one_or_none()
+    row = session.execute(
+        select(TaskModel.row_id, TaskModel.project_id).where(
+            TaskModel.task_id == task_id, TaskModel.project_id == project_id
+        )
+    ).one_or_none()
     if row is None:
         raise TaskNotFoundInPlanError(task_id)
     return int(row[0]), int(row[1])
 
 
-def forward_chain(session: Session, task_id: str, *, project_id: int | None) -> list[ChainEntry]:
+def forward_chain(session: Session, task_id: str, *, project_id: int) -> list[ChainEntry]:
     """Prerequisites of *task_id*: tasks that must complete BEFORE it.
 
     Follows `blocks`-edges transitively. Ordered by depth (depth=1 = direct
@@ -141,7 +142,7 @@ def forward_chain(session: Session, task_id: str, *, project_id: int | None) -> 
     ]
 
 
-def reverse_chain(session: Session, task_id: str, *, project_id: int | None) -> list[ChainEntry]:
+def reverse_chain(session: Session, task_id: str, *, project_id: int) -> list[ChainEntry]:
     """Dependents of *task_id*: tasks unblocked when it completes.
 
     Follows `blocks`-edges transitively in the reverse direction. Depth=1 =
@@ -161,7 +162,7 @@ def reverse_chain(session: Session, task_id: str, *, project_id: int | None) -> 
     ]
 
 
-def chain_layout(session: Session, plan_id: int) -> dict[str, Any]:
+def chain_layout(session: Session, plan_id: int, *, project_id: int) -> dict[str, Any]:
     """Topological-level layout of a plan's task graph (COD-021 follow-up).
 
     Returns ``{"levels", "critical_path", "ready_ids", "edge_count",
@@ -269,7 +270,7 @@ def chain_layout(session: Session, plan_id: int) -> dict[str, Any]:
             max_assigned += 1
             level[rid] = max_assigned
 
-    cp = critical_path(session, plan_id)
+    cp = critical_path(session, plan_id, project_id=project_id)
     critical_ids: set[str] = set(cp.task_ids)
 
     # ADO-078: «готова к старту» = тот же критерий, что у view `ready_tasks`
@@ -314,7 +315,7 @@ def chain_layout(session: Session, plan_id: int) -> dict[str, Any]:
     }
 
 
-def critical_path(session: Session, plan_id: int) -> CriticalPathResult:
+def critical_path(session: Session, plan_id: int, *, project_id: int) -> CriticalPathResult:
     """Longest sequential `blocks`-chain in the plan.
 
     Uses a recursive CTE to compute the maximum prerequisite-chain depth for
@@ -324,8 +325,10 @@ def critical_path(session: Session, plan_id: int) -> CriticalPathResult:
     Returns `CriticalPathResult` with `task_ids` (ordered source→sink),
     `chain` (list of ChainEntry with depth metadata), and `length` (task count).
     An empty plan returns length=0, task_ids=[].
+
+    ``project_id`` обязателен (AFT-023): ``plan_id`` — row_id на всю hub-БД.
     """
-    _require_plan(session, plan_id)
+    _require_plan(session, plan_id, project_id)
 
     depth_rows = session.execute(_DEPTH_CTE_SQL, {"plan_id": plan_id}).all()
     if not depth_rows:

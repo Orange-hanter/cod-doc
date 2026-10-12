@@ -39,7 +39,6 @@ from cod_doc.services import revision_service as rev
 from cod_doc.services import task_doc_service
 from cod_doc.services import task_service as tasks
 from cod_doc.services.task_service import TaskNotFoundError
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -111,10 +110,8 @@ def _paths(session: Session, row_id: int) -> list[str]:
     )
 
 
-def _revisions(session: Session, row_id: int) -> int:
-    return len(
-        rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=only_project_id(session))
-    )
+def _revisions(session: Session, row_id: int, project_id: int) -> int:
+    return len(rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=project_id))
 
 
 # --------------------------------------------------------------------------- #
@@ -200,7 +197,7 @@ def test_same_set_is_noop_without_revision(engine_with_schema) -> None:  # type:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py", "src/b.py"])
-        before = _revisions(session, row_id)
+        before = _revisions(session, row_id, _pid)
 
         # Тот же набор в другом порядке и с дублем — не изменение.
         replaced = _update(
@@ -216,7 +213,7 @@ def test_same_set_is_noop_without_revision(engine_with_schema) -> None:  # type:
         )
 
         assert not (replaced.changed or added.changed or removed.changed)
-        assert _revisions(session, row_id) == before, "no-op не должен писать ревизию"
+        assert _revisions(session, row_id, _pid) == before, "no-op не должен писать ревизию"
         session.flush()
         assert (
             session.execute(
@@ -806,7 +803,7 @@ def test_mcp_task_update_none_leaves_affects_files(engine_with_schema, monkeypat
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
-        before = _revisions(session, row_id)
+        before = _revisions(session, row_id, _pid)
 
     task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="af", task_id=_TASK, priority="high")
@@ -814,21 +811,21 @@ def test_mcp_task_update_none_leaves_affects_files(engine_with_schema, monkeypat
     assert out["updated_fields"] == ["priority"]
     assert out["affects_files"] == ["src/a.py"]
     with transactional(factory) as session:
-        assert _revisions(session, row_id) == before + 1, "только ревизия приоритета"
+        assert _revisions(session, row_id, _pid) == before + 1, "только ревизия приоритета"
 
 
 def test_mcp_task_update_same_set_writes_no_revision(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
-        before = _revisions(session, row_id)
+        before = _revisions(session, row_id, _pid)
 
     task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="af", task_id=_TASK, affects_files=["src/a.py"])
 
     assert out["updated_fields"] == [], "no-op не числится изменённым полем"
     with transactional(factory) as session:
-        assert _revisions(session, row_id) == before
+        assert _revisions(session, row_id, _pid) == before
 
 
 def test_mcp_task_update_foreign_project_not_found(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]

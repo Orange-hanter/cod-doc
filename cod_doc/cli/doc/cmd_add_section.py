@@ -114,7 +114,12 @@ def doc_add_section(
                     reason=reason,
                 )
                 assert created.row_id is not None
-                revision_id = revisions.head_for_entity(session, EntityKind.SECTION, created.row_id)
+                revision_id = revisions.head_for_entity(
+                    session,
+                    EntityKind.SECTION,
+                    created.row_id,
+                    project_id=project_id,
+                )
                 content_hash = created.content_hash
     except SectionAlreadyExistsError:
         console.print(

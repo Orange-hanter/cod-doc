@@ -233,6 +233,7 @@ def heartbeat_context(
     session: Session,
     *,
     task_id: str,
+    project_id: int,
     since_revision_id: str | None = None,
 ) -> dict[str, Any]:
     """Return a compact iteration-start snapshot for ``task_id``.
@@ -245,8 +246,9 @@ def heartbeat_context(
     under 4 KB. Callers can re-issue with a different ``since_revision_id``
     cursor for incremental updates.
     """
+    # AFT-023: задача ищется в скоупе проекта — в hub-БД task_id не уникален.
     model = session.execute(
-        select(TaskModel).where(TaskModel.task_id == task_id)
+        select(TaskModel).where(TaskModel.task_id == task_id, TaskModel.project_id == project_id)
     ).scalar_one_or_none()
     if model is None:
         raise task_service.TaskNotFoundError(task_id)

@@ -594,7 +594,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             plan_id = _require_plan_id(session, project_id, plan_scope)
-            report = plan_service.audit(session, plan_id)
+            report = plan_service.audit(session, plan_id, project_id=project_id)
         return {
             "issues_total": report.issues_total,
             "cycles": report.cycles,
@@ -626,7 +626,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             plan_id = _require_plan_id(session, project_id, plan_scope)
-            result = plan_service.critical_path(session, plan_id)
+            result = plan_service.critical_path(session, plan_id, project_id=project_id)
         return {
             "length": result.length,
             "task_ids": result.task_ids,

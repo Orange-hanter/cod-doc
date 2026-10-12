@@ -14,6 +14,7 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import ProjectModel, RevisionModel, SectionModel
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -234,8 +235,9 @@ def test_heads_for_entities_batch(engine_with_schema) -> None:  # type: ignore[n
     ids = [seed.section_ids["alpha"], seed.section_ids["beta"], seed.section_ids["delta"]]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
+        pid = only_project_id(session)
         with _capture_sql(engine_with_schema) as statements:
-            heads = rev.heads_for_entities(session, EntityKind.SECTION, ids)
+            heads = rev.heads_for_entities(session, EntityKind.SECTION, ids, project_id=pid)
         assert heads == {
             seed.section_ids["alpha"]: seed.heads["alpha"],
             seed.section_ids["beta"]: seed.heads["beta"],
@@ -243,5 +245,5 @@ def test_heads_for_entities_batch(engine_with_schema) -> None:  # type: ignore[n
         }
         assert len([s for s in statements if "FROM revision" in s]) == 1
         with _capture_sql(engine_with_schema) as statements:
-            assert rev.heads_for_entities(session, EntityKind.SECTION, []) == {}
+            assert rev.heads_for_entities(session, EntityKind.SECTION, [], project_id=pid) == {}
         assert statements == []

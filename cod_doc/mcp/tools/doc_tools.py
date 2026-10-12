@@ -57,6 +57,7 @@ def register(mcp: FastMCP) -> None:
                     session,
                     EntityKind.SECTION,
                     [s.row_id for s in sections if s.row_id is not None],
+                    project_id=project_id,
                 )
                 result["sections"] = [
                     {
@@ -300,7 +301,12 @@ def register(mcp: FastMCP) -> None:
                     expected_parent_revision_id=expected,
                 )
                 assert updated.row_id is not None
-                revision_id = revisions.head_for_entity(session, EntityKind.SECTION, updated.row_id)
+                revision_id = revisions.head_for_entity(
+                    session,
+                    EntityKind.SECTION,
+                    updated.row_id,
+                    project_id=project_id,
+                )
                 changed = old_body != body
         except RevisionConflictError as exc:
             raise ValueError(str(exc)) from exc
@@ -392,7 +398,10 @@ def register(mcp: FastMCP) -> None:
                     )
                     assert created.row_id is not None
                     revision_id = revisions.head_for_entity(
-                        session, EntityKind.SECTION, created.row_id
+                        session,
+                        EntityKind.SECTION,
+                        created.row_id,
+                        project_id=project_id,
                     )
                     hash_ = created.content_hash
         except SectionAlreadyExistsError as exc:
@@ -479,7 +488,12 @@ def register(mcp: FastMCP) -> None:
                 )
                 # ADO-213: ревизия удаления на документе. Поиск по SECTION
                 # вернул бы прошлую правку уже удалённой секции.
-                revision_id = revisions.head_for_entity(session, EntityKind.DOCUMENT, d.row_id)
+                revision_id = revisions.head_for_entity(
+                    session,
+                    EntityKind.DOCUMENT,
+                    d.row_id,
+                    project_id=project_id,
+                )
 
         out: dict[str, Any] = {
             "doc_key": doc_key,

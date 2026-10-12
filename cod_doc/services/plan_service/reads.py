@@ -28,13 +28,22 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-def get_by_scope(session: Session, scope: str, *, project_id: int | None) -> Plan | None:
+def get_by_scope(session: Session, scope: str, *, project_id: int) -> Plan | None:
     """Return a Plan by its unique ``scope`` slug, or None.
 
     Web handlers (story task-decomposition, master import) use this to look
     up a target plan by name without reaching into infra.repositories.
     """
     return PlanRepository(session).get_by_scope(scope, project_id=project_id)
+
+
+def scope_owner(session: Session, scope: str) -> int | None:
+    """``project_id`` владельца ``scope`` или ``None`` — scope уникален на всю БД.
+
+    Для проверки занятости scope при создании плана (legacy REST, restate-импорт):
+    сам чужой план наружу не отдаётся.
+    """
+    return PlanRepository(session).scope_owner(scope)
 
 
 def list_sections(session: Session, plan_id: int) -> list[PlanSection]:

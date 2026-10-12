@@ -109,6 +109,8 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
     # по тому, когда первый закоммитил. Создание идёт в savepoint, и разбор
     # повторяется уже с планом, который вставил первый (в т.ч. если это был
     # чужой проект — тогда scope станет собственным).
+    # Повтор — только если план нашего scope действительно появился за это
+    # время; иной IntegrityError (не про scope) пробрасывается как есть.
     for attempt in range(2):
         try:
             with session.begin_nested():
@@ -118,19 +120,26 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
             plan_service.PlanAlreadyExistsError,
             plan_service.SectionAlreadyExistsError,
         ):
-            if attempt:
+            if attempt or not _legacy_scope_taken(session, project_id):
                 raise
     raise AssertionError("unreachable")
 
 
+def _legacy_scope_taken(session: Session, project_id: int) -> bool:
+    """Занят ли один из legacy-scope этого проекта — признак проигранной гонки."""
+    return any(
+        plan_service.scope_owner(session, scope) is not None
+        for scope in (LEGACY_PLAN_SCOPE, f"{LEGACY_PLAN_SCOPE}-p{project_id}")
+    )
+
+
 def _ensure_legacy_plan_once(session: Session, project_id: int) -> tuple[int, int]:
     scope = LEGACY_PLAN_SCOPE
-    # По всей БД: scope уникален глобально, и занятость другим проектом надо
-    # увидеть, чтобы взять собственный.
-    plan = plan_service.get_by_scope(session, scope, project_id=None)
-    if plan is not None and plan.project_id != project_id:
+    # scope уникален на всю БД: занятый другим проектом — берём собственный.
+    owner = plan_service.scope_owner(session, scope)
+    if owner is not None and owner != project_id:
         scope = f"{LEGACY_PLAN_SCOPE}-p{project_id}"
-        plan = plan_service.get_by_scope(session, scope, project_id=project_id)
+    plan = plan_service.get_by_scope(session, scope, project_id=project_id)
     if plan is None:
         plan = plan_service.create_plan(
             session,

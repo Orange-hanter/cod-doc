@@ -17,6 +17,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -129,9 +130,10 @@ def test_forward_chain_depth_ordering(engine_with_schema) -> None:  # type: igno
 
 def test_forward_chain_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session, pytest.raises(plans.TaskNotFoundInPlanError):
-        # Проектов в БД нет: неизвестная задача ищется без скоупа.
-        plans.forward_chain(session, "GHOST-001", project_id=None)
+    with transactional(factory) as session:
+        proj, _plan, _sec = _seed(session)
+        with pytest.raises(plans.TaskNotFoundInPlanError):
+            plans.forward_chain(session, "GHOST-001", project_id=proj)
 
 
 def test_forward_chain_excludes_relates_kind(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -214,7 +216,7 @@ def test_critical_path_empty_plan(engine_with_schema) -> None:  # type: ignore[n
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _, plan_id, _ = _seed(session)
-        result = plans.critical_path(session, plan_id)
+        result = plans.critical_path(session, plan_id, project_id=only_project_id(session))
         assert result.length == 0
         assert result.task_ids == []
 
@@ -224,7 +226,7 @@ def test_critical_path_single_task(engine_with_schema) -> None:  # type: ignore[
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _task(session, p, pl, s, "GR-001")
-        result = plans.critical_path(session, pl)
+        result = plans.critical_path(session, pl, project_id=p)
         assert result.length == 1
         assert result.task_ids == ["GR-001"]
 
@@ -240,7 +242,7 @@ def test_critical_path_linear_chain(engine_with_schema) -> None:  # type: ignore
         _dep(session, b, a)
         _dep(session, c, b)
 
-        result = plans.critical_path(session, pl)
+        result = plans.critical_path(session, pl, project_id=p)
         assert result.length == 3
         assert result.task_ids == ["GR-001", "GR-002", "GR-003"]
 
@@ -261,7 +263,7 @@ def test_critical_path_picks_longest_branch(engine_with_schema) -> None:  # type
         _dep(session, d, b)
         _dep(session, d, c)
 
-        result = plans.critical_path(session, pl)
+        result = plans.critical_path(session, pl, project_id=p)
         assert result.length == 3
         assert result.task_ids[0] == "GR-001"  # source
         assert result.task_ids[-1] == "GR-004"  # end
@@ -275,7 +277,7 @@ def test_critical_path_parallel_tasks_dont_inflate(engine_with_schema) -> None: 
         for n in range(1, 6):
             _task(session, p, pl, s, f"GR-00{n}")
 
-        result = plans.critical_path(session, pl)
+        result = plans.critical_path(session, pl, project_id=p)
         assert result.length == 1  # all independent
 
 
@@ -289,7 +291,7 @@ def test_critical_path_includes_status_info(engine_with_schema) -> None:  # type
         _dep(session, b, a)
         tasks.complete(session, task_id="GR-001", author="human:test", project_id=p)
 
-        result = plans.critical_path(session, pl)
+        result = plans.critical_path(session, pl, project_id=p)
         ids_to_status = {e.task_id: e.status for e in result.chain}
         assert ids_to_status["GR-001"] is TaskStatus.DONE
         assert ids_to_status["GR-002"] is TaskStatus.TODO
@@ -297,5 +299,7 @@ def test_critical_path_includes_status_info(engine_with_schema) -> None:  # type
 
 def test_critical_path_unknown_plan_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session, pytest.raises(plans.PlanNotFoundError):
-        plans.critical_path(session, 9999)
+    with transactional(factory) as session:
+        proj, _plan, _sec = _seed(session)
+        with pytest.raises(plans.PlanNotFoundError):
+            plans.critical_path(session, 9999, project_id=proj)

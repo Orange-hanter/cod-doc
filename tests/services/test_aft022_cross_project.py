@@ -507,3 +507,31 @@ def test_mcp_clear_blocker_and_release_stay_in_the_project(engine_with_schema, m
         assert not checkout_service.has_active_checkout(
             session, _TID, "agent:x", project_id=b.project
         )
+
+
+def test_reads_by_row_id_are_scoped_by_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-023: head ревизии, аудит/критический путь плана и heartbeat задачи
+    по row_id/task_id другого проекта не отдают ничего."""
+    from cod_doc.services import heartbeat_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+
+        assert rev.head_for_entity(session, EntityKind.TASK, a.task_row, project_id=a.project)
+        assert (
+            rev.head_for_entity(session, EntityKind.TASK, a.task_row, project_id=b.project) is None
+        )
+        assert rev.heads_for_entities(
+            session, EntityKind.TASK, [a.task_row], project_id=b.project
+        ) == {a.task_row: None}
+
+        plans.audit(session, a.plan, project_id=a.project)
+        with pytest.raises(plans.PlanNotFoundError):
+            plans.audit(session, a.plan, project_id=b.project)
+        with pytest.raises(plans.PlanNotFoundError):
+            plans.critical_path(session, a.plan, project_id=b.project)
+
+        own = heartbeat_service.heartbeat_context(session, task_id=_TID, project_id=b.project)
+        assert own["task"]["title"] == "Task of b"

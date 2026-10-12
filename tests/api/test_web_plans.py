@@ -104,9 +104,7 @@ def plans_client(tmp_path: Path, migrate_db):
             author="human:dakh",
             id_prefix="PAY",
         )
-        tasks.complete(
-            session, task_id=d.task_id, author="human:dakh", project_id=only_project_id(session)
-        )
+        tasks.complete(session, task_id=d.task_id, author="human:dakh", project_id=proj.row_id)
     engine.dispose()
 
     from cod_doc.api.server import app

@@ -63,12 +63,11 @@ class CheckoutResult:
     idempotent: bool = False
 
 
-def _load_task(session: Session, task_id: str, project_id: int | None = None) -> TaskModel:
-    """Задача по ``task_id``; с ``project_id`` — только в этом проекте (AFT-022)."""
-    stmt = select(TaskModel).where(TaskModel.task_id == task_id)
-    if project_id is not None:
-        stmt = stmt.where(TaskModel.project_id == project_id)
-    m = session.execute(stmt).scalar_one_or_none()
+def _load_task(session: Session, task_id: str, project_id: int) -> TaskModel:
+    """Задача по ``task_id`` в проекте ``project_id`` (AFT-023: скоуп обязателен)."""
+    m = session.execute(
+        select(TaskModel).where(TaskModel.task_id == task_id, TaskModel.project_id == project_id)
+    ).scalar_one_or_none()
     if m is None:
         raise LookupError(f"Task {task_id!r} not found.")
     return m
@@ -203,12 +202,13 @@ def release(
     )
 
 
-def _checked_out_by(session: Session, task_id: str, project_id: int | None) -> str | None:
-    """Держатель брони задачи; с ``project_id`` — задачи этого проекта (AFT-022)."""
-    stmt = select(TaskModel.checked_out_by).where(TaskModel.task_id == task_id)
-    if project_id is not None:
-        stmt = stmt.where(TaskModel.project_id == project_id)
-    return session.execute(stmt).scalar_one_or_none()
+def _checked_out_by(session: Session, task_id: str, project_id: int) -> str | None:
+    """Держатель брони задачи ``task_id`` проекта ``project_id`` (AFT-023)."""
+    return session.execute(
+        select(TaskModel.checked_out_by).where(
+            TaskModel.task_id == task_id, TaskModel.project_id == project_id
+        )
+    ).scalar_one_or_none()
 
 
 def has_active_checkout(session: Session, task_id: str, agent: str, *, project_id: int) -> bool:

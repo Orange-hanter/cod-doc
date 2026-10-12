@@ -117,11 +117,9 @@ def tasks_client(tmp_path: Path, migrate_db):
             new_status=TaskStatus.IN_PROGRESS,
             author="human:dakh",
             via_checkout=True,
-            project_id=only_project_id(session),
+            project_id=proj.row_id,
         )
-        tasks.complete(
-            session, task_id=t3.task_id, author="human:dakh", project_id=only_project_id(session)
-        )
+        tasks.complete(session, task_id=t3.task_id, author="human:dakh", project_id=proj.row_id)
     engine.dispose()
 
     from cod_doc.api.server import app

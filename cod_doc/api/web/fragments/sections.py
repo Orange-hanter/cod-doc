@@ -98,7 +98,9 @@ def section_edit_form(
     proj = get_project(slug)
     session, project_db_id = db
     doc, section = _resolve_section(session, project_db_id, doc_key, anchor)
-    head_rev = revisions.head_for_entity(session, EntityKind.SECTION, section.row_id)
+    head_rev = revisions.head_for_entity(
+        session, EntityKind.SECTION, section.row_id, project_id=project_db_id
+    )
     return _render_section_edit(
         request,
         project_name=proj.entry.name,
@@ -169,7 +171,7 @@ def section_patch(
         _doc2, current = _resolve_section(session, project_db_id, doc_key, anchor)
         raise ConflictWebError(
             f"Конфликт ревизий — секция была изменена другим автором. "
-            f"Текущий head: {revisions.head_for_entity(session, EntityKind.SECTION, current.row_id)}"
+            f"Текущий head: {revisions.head_for_entity(session, EntityKind.SECTION, current.row_id, project_id=project_db_id)}"
         ) from exc
     except (IntegrityError, ValueError) as exc:
         session.rollback()

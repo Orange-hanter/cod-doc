@@ -28,7 +28,6 @@ from cod_doc.domain.entities import (
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.services import task_service as tasks
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -106,7 +105,7 @@ def _seed(session: Session) -> int:
                 task_id=task_id,
                 new_status=status,
                 author="t",
-                project_id=only_project_id(session),
+                project_id=proj.row_id,
             )
     return proj.row_id
 

@@ -38,7 +38,6 @@ from cod_doc.infra.repositories import (
 )
 from cod_doc.services import doc_service, projection_service, routine_service
 from cod_doc.services import task_service as tasks
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -118,7 +117,7 @@ def overview_client(tmp_path: Path, migrate_db):
             session,
             task_id=done_t.task_id,
             author="human:dakh",
-            project_id=only_project_id(session),
+            project_id=proj.row_id,
         )
 
         doc = doc_service.create(

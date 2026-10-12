@@ -78,7 +78,9 @@ def test_build_task_assigned_uses_heartbeat_payload(engine_with_schema) -> None:
             priority=Priority.MEDIUM,
             author="x",
         )
-        wc = build_wake_context(session, reason=WakeReason.TASK_ASSIGNED, task_id="WB-001")
+        wc = build_wake_context(
+            session, reason=WakeReason.TASK_ASSIGNED, task_id="WB-001", project_id=p
+        )
 
     assert wc.reason is WakeReason.TASK_ASSIGNED
     assert wc.task_id == "WB-001"
@@ -102,7 +104,9 @@ def test_build_approval_resolved_uses_heartbeat_payload(engine_with_schema) -> N
             priority=Priority.HIGH,
             author="x",
         )
-        wc = build_wake_context(session, reason=WakeReason.APPROVAL_RESOLVED, task_id="WB-002")
+        wc = build_wake_context(
+            session, reason=WakeReason.APPROVAL_RESOLVED, task_id="WB-002", project_id=p
+        )
 
     assert wc.reason is WakeReason.APPROVAL_RESOLVED
     assert wc.payload["task"]["id"] == "WB-002"
@@ -142,5 +146,9 @@ def test_build_doc_drift_without_doc_ref_raises(engine_with_schema) -> None:  # 
 
 def test_build_unknown_task_id_propagates(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session, pytest.raises(task_service.TaskNotFoundError):
-        build_wake_context(session, reason=WakeReason.TASK_ASSIGNED, task_id="NOPE-001")
+    with transactional(factory) as session:
+        p, _pl, _s = _seed_plan(session)
+        with pytest.raises(task_service.TaskNotFoundError):
+            build_wake_context(
+                session, reason=WakeReason.TASK_ASSIGNED, task_id="NOPE-001", project_id=p
+            )

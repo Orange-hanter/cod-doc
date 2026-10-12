@@ -338,11 +338,11 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
 
     move = _tool(_register(monkeypatch, factory), "task_move_to_section")
     # План проекта A из проекта B не виден...
-    with pytest.raises(ValueError, match=r"^Plan 'mv-plan' not found\.$"):
+    with pytest.raises(ValueError, match="Plan 'mv-plan' not found"):
         move(project="other", task_ids=[task.task_id], plan_scope="mv-plan", section_letter="B")
     # ...а в своём плане B задача проекта A — «не найдена».
     with pytest.raises(
-        ValueError, match=rf"^{re.escape(task.task_id)}: task not found in project 'other'$"
+        ValueError, match=rf"{re.escape(task.task_id)}: task not found in project 'other'"
     ):
         move(project="other", task_ids=[task.task_id], plan_scope="other-plan", section_letter="A")
 

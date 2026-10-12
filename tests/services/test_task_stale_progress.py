@@ -12,7 +12,6 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, TaskModel
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -60,7 +59,7 @@ def _make_in_progress(
         new_status=TaskStatus.IN_PROGRESS,
         author="human:test",
         via_checkout=True,
-        project_id=only_project_id(session),
+        project_id=proj,
     )
     if last_updated_offset_hours:
         # Backdate last_updated so we can test stale-cutoff.

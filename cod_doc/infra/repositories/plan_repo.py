@@ -46,12 +46,21 @@ class PlanRepository(BaseRepository[Plan, PlanModel]):
             kwargs["last_updated"] = entity.last_updated
         return PlanModel(**kwargs)
 
-    def get_by_scope(self, scope: str, *, project_id: int | None) -> Plan | None:
-        stmt = select(PlanModel).where(PlanModel.scope == scope)
-        if project_id is not None:
-            stmt = stmt.where(PlanModel.project_id == project_id)
+    def get_by_scope(self, scope: str, *, project_id: int) -> Plan | None:
+        stmt = select(PlanModel).where(PlanModel.scope == scope, PlanModel.project_id == project_id)
         model = self.session.execute(stmt).scalar_one_or_none()
         return self._to_domain(model) if model else None
+
+    def scope_owner(self, scope: str) -> int | None:
+        """``project_id`` плана со ``scope`` или ``None``, если scope свободен.
+
+        ``plan.scope`` уникален на всю БД (уникальный индекс), поэтому занятость
+        проверяется без скоупа проекта — но наружу отдаётся только владелец, не
+        сам план чужого проекта (AFT-023).
+        """
+        return self.session.execute(
+            select(PlanModel.project_id).where(PlanModel.scope == scope)
+        ).scalar_one_or_none()
 
 
 class PlanSectionRepository(BaseRepository[PlanSection, PlanSectionModel]):

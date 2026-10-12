@@ -64,11 +64,12 @@ def _enrich_chain(
     session: Session,
     plan_id: int,
     scope: str,
+    project_id: int,
 ) -> dict[str, Any]:
     """Wrap ``plan_service.chain_layout`` with display-only fields (scope label,
     type glyphs, priority sort) so the template stays free of computation.
     """
-    raw = plans.chain_layout(session, plan_id)
+    raw = plans.chain_layout(session, plan_id, project_id=project_id)
     levels: list[dict[str, Any]] = []
     for lvl_bucket in raw["levels"]:
         tasks_with_glyph = [
@@ -179,7 +180,7 @@ def tasks_list(
                         continue
                     if plan and p.scope != plan:
                         continue
-                    chain = _enrich_chain(session, p.row_id, p.scope)
+                    chain = _enrich_chain(session, p.row_id, p.scope, project_db_id)
                     if chain["task_count"] > 0:
                         chains.append(chain)
 

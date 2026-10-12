@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from ._common import _make_session, _require_plan_id, console
+from ._common import _make_session, _project_id, _require_plan_id, console
 from ._group import plan
 
 if TYPE_CHECKING:
@@ -30,7 +30,7 @@ def plan_audit(ctx: click.Context, plan_scope: str, project: str, as_json: bool)
 
     with transactional(sf) as session:
         plan_id = _require_plan_id(session, plan_scope, project)
-        report = plan_service.audit(session, plan_id)
+        report = plan_service.audit(session, plan_id, project_id=_project_id(session, project))
 
     if as_json:
         click.echo(

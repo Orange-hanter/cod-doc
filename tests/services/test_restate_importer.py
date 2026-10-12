@@ -544,20 +544,36 @@ def test_import_plan_of_a_second_hub_project_gets_its_own_scope(
 
 def test_import_plan_race_recovers(tmp_path: Path, engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """Параллельный импорт успел вставить план между чтением и вставкой:
-    уникальный scope даёт IntegrityError, повтор находит готовый план."""
+    уникальный scope даёт IntegrityError, повтор находит готовый план —
+    второй импорт ложится в тот же план, а не падает."""
+    yaml1 = tmp_path / "one.yaml"
+    _write_legacy_yaml(yaml1, [{"id": "a", "title": "First"}])
+    yaml2 = tmp_path / "two.yaml"
+    _write_legacy_yaml(yaml2, [{"id": "b", "title": "Second"}])
+
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         project_id = _seed_project(session, "demo", tmp_path)
-        first = restate_importer._ensure_import_plan(session, project_id)
+        restate_importer.import_legacy_tasks(session, yaml_path=yaml1, project_id=project_id)
 
+        # Чтение плана первой попытки «не видит» план, который параллельный
+        # импорт уже вставил; повторная попытка видит его как есть.
         real = restate_importer.PlanRepository.get_by_scope
-        stale = {"left": 2}  # оба чтения первой попытки «не видят» план
+        stale = {"left": 1}
 
-        def stale_reads(self, scope: str, *, project_id: int | None):  # type: ignore[no-untyped-def]
+        def stale_once(self, scope: str, *, project_id: int):  # type: ignore[no-untyped-def]
             if stale["left"]:
                 stale["left"] -= 1
                 return None
             return real(self, scope, project_id=project_id)
 
-        monkeypatch.setattr(restate_importer.PlanRepository, "get_by_scope", stale_reads)
-        assert restate_importer._ensure_import_plan(session, project_id) == first
+        monkeypatch.setattr(restate_importer.PlanRepository, "get_by_scope", stale_once)
+        restate_importer.import_legacy_tasks(session, yaml_path=yaml2, project_id=project_id)
+
+        assert stale["left"] == 0, "гонка действительно случилась"
+        plans = [
+            p
+            for p in plan_service.list_for_project(session, project_id)
+            if p.scope == "imported-legacy"
+        ]
+        assert len(plans) == 1

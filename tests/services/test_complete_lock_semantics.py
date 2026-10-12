@@ -16,16 +16,17 @@ from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, TaskModel
 from cod_doc.services import checkout_service, task_service
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
 
 
-def _checked_out_by(factory: sessionmaker[Session], task_id: str) -> str | None:
+def _checked_out_by(factory: sessionmaker[Session], task_id: str, project_id: int) -> str | None:
     with transactional(factory) as s:
         return s.execute(
-            select(TaskModel.checked_out_by).where(TaskModel.task_id == task_id)
+            select(TaskModel.checked_out_by).where(
+                TaskModel.task_id == task_id, TaskModel.project_id == project_id
+            )
         ).scalar_one()
 
 
@@ -38,6 +39,7 @@ def test_complete_keeps_lock_until_release(engine_with_schema) -> None:  # type:
         proj.updated = now
         s.add(proj)
         s.flush()
+        pid = proj.row_id
         plan = PlanModel(project_id=proj.row_id, scope="lck-plan", created=now, last_updated=now)
         s.add(plan)
         s.flush()
@@ -57,23 +59,19 @@ def test_complete_keeps_lock_until_release(engine_with_schema) -> None:  # type:
         )
 
     with transactional(factory) as s:
-        checkout_service.checkout(
-            s, task_id="LCK-001", agent="claude-x", project_id=only_project_id(s)
-        )
+        checkout_service.checkout(s, task_id="LCK-001", agent="claude-x", project_id=proj.row_id)
     with transactional(factory) as s:
         task_service.complete(
             s,
             task_id="LCK-001",
             author="claude-x",
             commit_sha="abc1234",
-            project_id=only_project_id(s),
+            project_id=proj.row_id,
         )
 
-    assert _checked_out_by(factory, "LCK-001") == "claude-x"
+    assert _checked_out_by(factory, "LCK-001", pid) == "claude-x"
 
     with transactional(factory) as s:
-        checkout_service.release(
-            s, task_id="LCK-001", agent="claude-x", project_id=only_project_id(s)
-        )
+        checkout_service.release(s, task_id="LCK-001", agent="claude-x", project_id=proj.row_id)
 
-    assert _checked_out_by(factory, "LCK-001") is None
+    assert _checked_out_by(factory, "LCK-001", pid) is None

@@ -113,7 +113,9 @@ def _require_plan_id(session: Session, plan_scope: str, project: str) -> int:
     )
     if plan is None or plan.row_id is None:
         console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
-        sys.exit(1)
+        # click.exceptions.Exit — Exception, а не SystemExit: transactional
+        # откатывает транзакцию явно, код выхода тот же (1).
+        raise click.exceptions.Exit(1)
     return plan.row_id
 
 

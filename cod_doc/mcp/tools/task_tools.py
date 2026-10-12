@@ -286,10 +286,11 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                require_project_id(session, project)
+                pid = require_project_id(session, project)
                 return heartbeat_service.heartbeat_context(
                     session,
                     task_id=task_id,
+                    project_id=pid,
                     since_revision_id=since_revision_id,
                 )
         except TaskNotFoundError:

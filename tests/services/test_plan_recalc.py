@@ -137,8 +137,8 @@ def test_recalc_section_done_when_all_done(engine_with_schema) -> None:  # type:
         p, plan_id, secs = _seed_plan_with_sections(session)
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-001")
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-002")
-        tasks.complete(session, task_id="PLN-001", author="x", project_id=p)
-        tasks.complete(session, task_id="PLN-002", author="x", project_id=p)
+        tasks.complete(session, task_id="PLN-001", author="human:test", project_id=p)
+        tasks.complete(session, task_id="PLN-002", author="human:test", project_id=p)
 
         progress = plans.recalc(session, plan_id)
         assert progress.status is plans.DerivedStatus.DONE
@@ -154,7 +154,7 @@ def test_recalc_partial_done_is_in_progress(engine_with_schema) -> None:  # type
         p, plan_id, secs = _seed_plan_with_sections(session)
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-001")
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-002")
-        tasks.complete(session, task_id="PLN-001", author="x", project_id=p)
+        tasks.complete(session, task_id="PLN-001", author="human:test", project_id=p)
 
         progress = plans.recalc(session, plan_id)
         assert progress.sections[0].status is plans.DerivedStatus.IN_PROGRESS

@@ -22,7 +22,6 @@ from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import task_service
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -73,7 +72,7 @@ def _seed(tmp_path: Path, *, done: frozenset[str] = frozenset()) -> None:
                         session,
                         task_id=tid,
                         author="human:test",
-                        project_id=only_project_id(session),
+                        project_id=project.row_id,
                     )
     finally:
         engine.dispose()

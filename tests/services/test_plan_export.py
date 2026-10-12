@@ -91,7 +91,7 @@ def test_export_progress_overview_has_section_rows(engine_with_schema) -> None: 
             session, [("A", "Data Core", "A-Data-Core"), ("B", "Services", "B-Services")]
         )
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-001")
-        tasks.complete(session, task_id="PLN-001", author="x", project_id=p)
+        tasks.complete(session, task_id="PLN-001", author="human:test", project_id=p)
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["B"], task_id="PLN-010")
 
         out = plans.export(session, plan_id)

@@ -111,9 +111,7 @@ def test_delivered_when_last_open_task_is_cancelled(engine_with_schema) -> None:
         _link_task(session, story.story_id, "TST-001")
         _link_task(session, story.story_id, "TST-002")
 
-        tasks.complete(
-            session, task_id="TST-001", author="human:test", project_id=only_project_id(session)
-        )
+        tasks.complete(session, task_id="TST-001", author="human:test", project_id=proj)
         _cancel(session, "TST-002")
 
         cov = stories.coverage(session, story.story_id)
@@ -173,9 +171,7 @@ def test_cancelled_does_not_shortcut_unmet_acceptance(engine_with_schema) -> Non
         _link_task(session, story.story_id, "TST-020")
         _link_task(session, story.story_id, "TST-021")
 
-        tasks.complete(
-            session, task_id="TST-020", author="human:test", project_id=only_project_id(session)
-        )
+        tasks.complete(session, task_id="TST-020", author="human:test", project_id=proj)
         _cancel(session, "TST-021")
         stories.set_criterion_met(
             session, story_id=story.story_id, position=1, met=True, author="human:test"

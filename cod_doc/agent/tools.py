@@ -241,10 +241,14 @@ class ToolExecutor:
         return sf
 
     def _project_db_id(self, session: Session) -> int:
-        """row_id проекта оркестратора — скоуп для чтений по task_id / plan_scope (AFT-023)."""
-        from cod_doc.mcp.tools._db import require_project_id
+        """row_id проекта оркестратора — скоуп для чтений по task_id / plan_scope (AFT-023).
 
-        return require_project_id(session, self.project.entry.name)
+        Через сервис, а не ``cod_doc.mcp.tools._db``: оркестратор не зависит от
+        MCP-слоя.
+        """
+        from cod_doc.services import project_service
+
+        return project_service.row_id_for_slug(session, self.project.entry.name)
 
     def _tool_plan_forward_chain(self, task_id: str) -> dict[str, Any]:
         try:
@@ -310,10 +314,8 @@ class ToolExecutor:
 
             sf = self._make_db_session()
             with transactional(sf) as session:
-                from cod_doc.infra.repositories import PlanRepository
-
-                plan = PlanRepository(session).get_by_scope(
-                    plan_scope, project_id=self._project_db_id(session)
+                plan = plan_service.get_by_scope(
+                    session, plan_scope, project_id=self._project_db_id(session)
                 )
                 if plan is None or plan.row_id is None:
                     return {"error": f"Plan '{plan_scope}' not found"}

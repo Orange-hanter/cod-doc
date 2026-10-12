@@ -327,9 +327,20 @@ def _ensure_import_plan(session: Session, project_id: int) -> tuple[int, int]:
             with session.begin_nested():
                 return _ensure_import_plan_once(session, project_id)
         except IntegrityError:
-            if attempt:
+            # Повтор — только если план нашего scope действительно появился
+            # за это время; иной IntegrityError пробрасывается как есть.
+            if attempt or not _import_scope_taken(session, project_id):
                 raise
     raise AssertionError("unreachable")
+
+
+def _import_scope_taken(session: Session, project_id: int) -> bool:
+    """Занят ли один из import-scope этого проекта — признак проигранной гонки."""
+    repo = PlanRepository(session)
+    return any(
+        repo.scope_owner(scope) is not None
+        for scope in (_IMPORT_PLAN_SCOPE, f"{_IMPORT_PLAN_SCOPE}-p{project_id}")
+    )
 
 
 def _ensure_import_plan_once(session: Session, project_id: int) -> tuple[int, int]:
@@ -338,8 +349,8 @@ def _ensure_import_plan_once(session: Session, project_id: int) -> tuple[int, in
     # проектом общей hub-БД, план этого проекта получает собственный scope —
     # иначе вставка падала бы на уникальном индексе (AFT-023).
     scope = _IMPORT_PLAN_SCOPE
-    taken = plan_repo.get_by_scope(scope, project_id=None)
-    if taken is not None and taken.project_id != project_id:
+    owner = plan_repo.scope_owner(scope)
+    if owner is not None and owner != project_id:
         scope = f"{_IMPORT_PLAN_SCOPE}-p{project_id}"
     plan = plan_repo.get_by_scope(scope, project_id=project_id)
     if plan is not None and plan.row_id is not None:

@@ -18,6 +18,7 @@ from cod_doc.infra.models import (
 from cod_doc.infra.repositories import UserStoryRepository
 from cod_doc.services import heartbeat_service, task_service
 from cod_doc.services.heartbeat_service import PAYLOAD_BUDGET_BYTES
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -64,7 +65,7 @@ def test_heartbeat_returns_full_shape_for_pending_task(engine_with_schema) -> No
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         _create_task(session, p, pl, s, task_id="HB-001", title="t")
-        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-001")
+        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-001", project_id=p)
 
     assert set(ctx.keys()) == {
         "task",
@@ -92,7 +93,9 @@ def test_heartbeat_unknown_task_raises(engine_with_schema) -> None:  # type: ign
     with transactional(factory) as session:
         _seed_plan(session)
         with pytest.raises(task_service.TaskNotFoundError):
-            heartbeat_service.heartbeat_context(session, task_id="NOPE-001")
+            heartbeat_service.heartbeat_context(
+                session, task_id="NOPE-001", project_id=only_project_id(session)
+            )
 
 
 # --------------------------------------------------------------------------- #
@@ -127,7 +130,7 @@ def test_heartbeat_payload_under_4kb_for_typical_task(engine_with_schema) -> Non
             blocked_by=["HB-010", "HB-020"],
             story_id="US-HB",
         )
-        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-030")
+        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-030", project_id=p)
 
     encoded = json.dumps(ctx, ensure_ascii=False).encode("utf-8")
     assert len(encoded) <= PAYLOAD_BUDGET_BYTES, f"payload {len(encoded)} > {PAYLOAD_BUDGET_BYTES}"
@@ -141,7 +144,7 @@ def test_heartbeat_trims_long_titles(engine_with_schema) -> None:  # type: ignor
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         _create_task(session, p, pl, s, task_id="HB-040", title=long_title)
-        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-040")
+        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-040", project_id=p)
 
     assert len(ctx["task"]["title"]) <= 160
     assert ctx["task"]["title"].endswith("…")
@@ -169,7 +172,7 @@ def test_heartbeat_no_cursor_returns_empty_recent_changes(engine_with_schema) ->
             project_id=p,
         )
 
-        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-001")
+        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-001", project_id=p)
 
     assert ctx["recent_changes"] == []
 
@@ -209,7 +212,7 @@ def test_heartbeat_with_cursor_returns_only_newer_revisions(engine_with_schema) 
         cursor_rev_id = all_revs[1].revision_id  # after create + first status
 
         ctx = heartbeat_service.heartbeat_context(
-            session, task_id="HB-001", since_revision_id=cursor_rev_id
+            session, task_id="HB-001", since_revision_id=cursor_rev_id, project_id=p
         )
 
     # Cursor is exclusive: should return revs after position 1 (i.e. positions 2+3 → 2 entries).
@@ -226,7 +229,10 @@ def test_heartbeat_unknown_cursor_returns_empty_recent_changes(
         p, pl, s = _seed_plan(session)
         _create_task(session, p, pl, s, task_id="HB-001", title="t")
         ctx = heartbeat_service.heartbeat_context(
-            session, task_id="HB-001", since_revision_id="01J0000NONEXISTENT0001234567"
+            session,
+            task_id="HB-001",
+            since_revision_id="01J0000NONEXISTENT0001234567",
+            project_id=p,
         )
 
     assert ctx["recent_changes"] == []
@@ -258,7 +264,7 @@ def test_heartbeat_cursor_caps_at_20_entries(engine_with_schema) -> None:  # typ
         cursor = all_revs[0].revision_id  # after the create — see all 25 status flips
 
         ctx = heartbeat_service.heartbeat_context(
-            session, task_id="HB-001", since_revision_id=cursor
+            session, task_id="HB-001", since_revision_id=cursor, project_id=p
         )
 
     assert len(ctx["recent_changes"]) == 20
@@ -274,7 +280,7 @@ def test_next_action_guess_pending_no_blockers(engine_with_schema) -> None:  # t
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         _create_task(session, p, pl, s, task_id="HB-001", title="t")
-        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-001")
+        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-001", project_id=p)
     assert "checkout" in ctx["next_action_guess"]
 
 
@@ -284,7 +290,7 @@ def test_next_action_guess_when_blocked_by_open_tasks(engine_with_schema) -> Non
         p, pl, s = _seed_plan(session)
         _create_task(session, p, pl, s, task_id="HB-010", title="blocker")
         _create_task(session, p, pl, s, task_id="HB-020", title="blocked", blocked_by=["HB-010"])
-        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-020")
+        ctx = heartbeat_service.heartbeat_context(session, task_id="HB-020", project_id=p)
 
     assert "wait on blockers" in ctx["next_action_guess"]
     assert "HB-010" in ctx["next_action_guess"]
