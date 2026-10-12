@@ -12,6 +12,7 @@ from hypothesis import strategies as st
 from sqlalchemy import create_engine, select
 from sqlalchemy.pool import NullPool
 
+from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, register_sqlite_pragmas, transactional
 from cod_doc.infra.models import (
     ActivityEventModel,
@@ -21,6 +22,7 @@ from cod_doc.infra.models import (
     PlanSectionModel,
     ProjectModel,
 )
+from cod_doc.services import task_service
 from cod_doc.services.finding_service import (
     FindingSeed,
     dismiss_finding,
@@ -32,6 +34,7 @@ from cod_doc.services.finding_service import (
     list_findings,
     promote_finding,
 )
+from cod_doc.services.task_service import TaskNotFoundError
 from tests._alembic import run_alembic
 
 if TYPE_CHECKING:
@@ -357,6 +360,94 @@ def test_promote_create_task_emits_activity_event(engine_with_schema) -> None:  
         assert len(events) == 1
         assert events[0].scope_id == finding.finding_uid
         assert events[0].payload["promoted_task_id"] == outcome["task_id"]
+
+
+def test_promote_create_task_rejects_plan_of_another_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-022: рутина не кладёт задачу проекта A в план проекта B."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id, _plan_id, _section_id = _seed_plan(session)
+        finding = _ingest_single_finding(session, project_id)
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="other", title="O", root_path="/tmp/o", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+        foreign_plan = PlanModel(
+            project_id=other.row_id, scope="o-plan", created=now, last_updated=now
+        )
+        session.add(foreign_plan)
+        session.flush()
+        foreign_sec = PlanSectionModel(
+            plan_id=foreign_plan.row_id, letter="A", title="O", slug="A-O", position=0
+        )
+        session.add(foreign_sec)
+        session.flush()
+
+        with pytest.raises(ValueError, match=f"plan #{foreign_plan.row_id} not found in project"):
+            promote_finding(
+                session,
+                project_id=project_id,
+                finding_id=finding.row_id,
+                on_finding="create_task",
+                plan_id=foreign_plan.row_id,
+                section_id=foreign_sec.row_id,
+                author="test",
+            )
+        assert session.get(FindingModel, finding.row_id).status == "open"
+
+
+def test_promote_update_existing_task_of_another_project_is_not_found(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """``promoted_task_id``, указывающий на задачу другого проекта (перенесённая
+    находка), не правит чужую задачу: update_description ищет её в скоупе проекта."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id, plan_id, section_id = _seed_plan(session)
+        finding = _ingest_single_finding(session, project_id)
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="other", title="O", root_path="/tmp/o", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+        foreign_plan = PlanModel(
+            project_id=other.row_id, scope="o-plan", created=now, last_updated=now
+        )
+        session.add(foreign_plan)
+        session.flush()
+        foreign_sec = PlanSectionModel(
+            plan_id=foreign_plan.row_id, letter="A", title="O", slug="A-O", position=0
+        )
+        session.add(foreign_sec)
+        session.flush()
+        foreign_task = task_service.create(
+            session,
+            project_id=other.row_id,
+            plan_id=foreign_plan.row_id,
+            section_id=foreign_sec.row_id,
+            task_id="OTH-001",
+            title="Чужая задача",
+            type=TaskType.BUG,
+            priority=Priority.LOW,
+            description="не трогать",
+            author="test",
+        )
+        finding.promoted_task_id = foreign_task.task_id
+        session.flush()
+
+        with pytest.raises(TaskNotFoundError):
+            promote_finding(
+                session,
+                project_id=project_id,
+                finding_id=finding.row_id,
+                on_finding="update_existing_task",
+                plan_id=plan_id,
+                section_id=section_id,
+            )
+        untouched = task_service.get(session, "OTH-001", project_id=other.row_id)
+        assert untouched is not None
+        assert untouched.description == "не трогать"
 
 
 def test_promote_comment_only_is_no_op(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

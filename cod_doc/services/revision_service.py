@@ -23,11 +23,12 @@ from sqlalchemy import func, select
 from ulid import ULID
 
 from cod_doc.domain.entities import EntityKind, Revision, TaskStatus
-from cod_doc.infra.models import RevisionModel, SectionModel, TaskModel
+from cod_doc.infra.models import DocumentModel, RevisionModel, SectionModel, TaskModel
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from sqlalchemy import ColumnElement
     from sqlalchemy.orm import InstrumentedAttribute, Session
 
 
@@ -159,14 +160,47 @@ def diff_preview(diff: str | None, *, limit: int = DIFF_PREVIEW_CHARS) -> str:
     return text.splitlines()[0][:limit]
 
 
+def _revision_in_project(
+    session: Session, revision_id: str, project_id: int
+) -> RevisionModel | None:
+    """Строка ревизии в скоупе проекта — общий запрос `get` и `revert`."""
+    return session.execute(
+        select(RevisionModel).where(
+            RevisionModel.revision_id == revision_id, RevisionModel.project_id == project_id
+        )
+    ).scalar_one_or_none()
+
+
+def get(session: Session, revision_id: str, *, project_id: int) -> Revision | None:
+    """Ревизия по ULID — только ревизия проекта ``project_id``.
+
+    ``project_id`` обязателен и не принимает ``None`` (AFT-022): MCP
+    ``revision_get`` и CLI ``revision show`` иначе отдавали бы diff, автора и
+    причину чужого проекта общей hub-БД по одному лишь ULID.
+    """
+    model = _revision_in_project(session, revision_id, project_id)
+    return _to_domain(model) if model is not None else None
+
+
+def _project_scope(project_id: int | None) -> tuple[ColumnElement[bool], ...]:
+    """Условие ``project_id`` для выборки ревизий; пусто, когда скоупа нет."""
+    return () if project_id is None else (RevisionModel.project_id == project_id,)
+
+
 def list_for_entity(
     session: Session,
     entity_kind: EntityKind,
     entity_id: int,
     *,
     limit: int | None = None,
+    project_id: int | None = None,
 ) -> list[Revision]:
     """History for the entity, oldest → newest.
+
+    ``project_id`` — скоуп поверхностей (MCP, CLI, web): ``entity_id`` — row_id,
+    общий на всю hub-БД, и без фильтра перебором id читалась бы история
+    чужого проекта. Поверхности и так резолвят сущность в скоупе проекта;
+    фильтр — второй рубеж. Сделать его обязательным — AFT-023.
 
     With `limit=None` (default) the full history is returned, exactly as
     before. With `limit` set, SQL fetches only the last `limit` revisions
@@ -180,6 +214,7 @@ def list_for_entity(
             .where(
                 RevisionModel.entity_kind == entity_kind.value,
                 RevisionModel.entity_id == entity_id,
+                *_project_scope(project_id),
             )
             .order_by(RevisionModel.at.asc(), RevisionModel.row_id.asc())
         )
@@ -190,6 +225,7 @@ def list_for_entity(
         .where(
             RevisionModel.entity_kind == entity_kind.value,
             RevisionModel.entity_id == entity_id,
+            *_project_scope(project_id),
         )
         .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
         .limit(limit)
@@ -359,7 +395,16 @@ class RevertNotSupportedError(NotImplementedError):
     """Raised for revision ops or entity kinds that cannot be auto-reverted."""
 
 
-def revert(session: Session, revision_id: str, *, author: str) -> Revision:
+class RevisionNotFoundError(LookupError):
+    """Ревизии с таким ULID нет в проекте вызывающего.
+
+    Отдельный подкласс, чтобы поверхности отличали «нет ревизии» от «ревизия
+    есть, но её сущность удалена или лежит в другом проекте» — второе тоже
+    `LookupError`, и его текст не должен подменяться на «not found».
+    """
+
+
+def revert(session: Session, revision_id: str, *, author: str, project_id: int) -> Revision:
     """Undo a revision by delegating to the entity-owning service.
 
     Dispatches based on `entity_kind` + the `op` field in `revision.diff`:
@@ -374,25 +419,28 @@ def revert(session: Session, revision_id: str, *, author: str) -> Revision:
 
     The inverse operation is written as a new revision (not amending history).
     Raises `RevertNotSupportedError` for ops or entity kinds not listed above.
+
+    ``project_id`` обязателен и не принимает ``None``, как у `get` (AFT-022):
+    ревизия чужого проекта общей hub-БД ищется как отсутствующая
+    (`LookupError`), а не откатывается.
     """
-    stmt = select(RevisionModel).where(RevisionModel.revision_id == revision_id)
-    model = session.execute(stmt).scalar_one_or_none()
+    model = _revision_in_project(session, revision_id, project_id)
     if model is None:
-        raise LookupError(f"revision not found: {revision_id!r}")
+        raise RevisionNotFoundError(f"revision not found: {revision_id!r}")
 
     kind = EntityKind(model.entity_kind)
 
     if kind is EntityKind.TASK:
-        _revert_task(session, model, author=author)
+        _revert_task(session, model, author=author, project_id=project_id)
 
     elif kind is EntityKind.SECTION:
-        _revert_section(session, model, author=author)
+        _revert_section(session, model, author=author, project_id=project_id)
 
     elif kind is EntityKind.DOCUMENT:
-        _revert_document(session, model, author=author)
+        _revert_document(session, model, author=author, project_id=project_id)
 
     elif kind is EntityKind.TASK_DOC:
-        _revert_task_doc(session, model, author=author)
+        _revert_task_doc(session, model, author=author, project_id=project_id)
 
     else:
         raise RevertNotSupportedError(f"revert not supported for entity_kind={kind.value!r}")
@@ -405,7 +453,36 @@ def revert(session: Session, revision_id: str, *, author: str) -> Revision:
 # --------------------------------------------------------------------------- #
 
 
-def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None:
+def _require_same_project(
+    model: RevisionModel, entity: str, owner_project_id: int, project_id: int
+) -> None:
+    """Сущность ревизии обязана лежать в проекте вызывающего (AFT-022).
+
+    `revert` нашёл ревизию в скоупе ``project_id``, но сущность достаётся по
+    ``entity_id`` — при рассинхроне (легаси-импорт, ручная правка БД) откат
+    иначе лёг бы на объект чужого проекта. Общий сторож для всех видов
+    сущностей, чтобы скоуп не был асимметричным.
+    """
+    if owner_project_id != project_id:
+        raise LookupError(f"{entity} #{model.entity_id} not found in project #{project_id}")
+
+
+def _task_of_revision(session: Session, model: RevisionModel, project_id: int) -> TaskModel:
+    """Задача TASK-ревизии — только если она в проекте вызывающего ``project_id``.
+
+    `revert` уже нашёл ревизию в скоупе ``project_id``; задача достаётся по
+    ``entity_id``, и её проект сверяется с тем же ``project_id`` ещё раз — при
+    рассинхроне (легаси-импорт, ручная правка БД) откат иначе молча лёг бы на
+    задачу чужого проекта.
+    """
+    task_model = session.get(TaskModel, model.entity_id)
+    if task_model is None:
+        raise LookupError(f"task #{model.entity_id} not found (may have been deleted)")
+    _require_same_project(model, "task", task_model.project_id, project_id)
+    return task_model
+
+
+def _revert_task(session: Session, model: RevisionModel, *, author: str, project_id: int) -> None:
     diff_obj = json.loads(model.diff)
     op = diff_obj.get("op")
 
@@ -415,7 +492,9 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
             raise RevertNotSupportedError(
                 f"TASK revision {model.revision_id}: op=affects_files без списка путей в 'old'"
             )
-        _revert_task_affects_files(session, model, old_paths=old_paths, author=author)
+        _revert_task_affects_files(
+            session, model, old_paths=old_paths, author=author, project_id=project_id
+        )
         return
     if op == "status":
         old_status = TaskStatus(diff_obj["old"])
@@ -424,9 +503,7 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
     else:
         raise RevertNotSupportedError(f"cannot auto-revert TASK revision with op={op!r}")
 
-    task_model = session.get(TaskModel, model.entity_id)
-    if task_model is None:
-        raise LookupError(f"task #{model.entity_id} not found (may have been deleted)")
+    task_model = _task_of_revision(session, model, project_id)
 
     # Import locally to avoid circular dependency.
     from cod_doc.services import task_service as _tasks
@@ -441,23 +518,35 @@ def _revert_task(session: Session, model: RevisionModel, *, author: str) -> None
         # machine (e.g. in_progress → pending). Bypass validation since the
         # original transition was already validated when first applied.
         force=True,
+        project_id=project_id,
     )
 
 
 def _revert_task_affects_files(
-    session: Session, model: RevisionModel, *, old_paths: list[str], author: str
+    session: Session, model: RevisionModel, *, old_paths: list[str], author: str, project_id: int
 ) -> None:
     """AFT-021: вернуть набор ``affects_files``, сохранённый в ревизии как ``old``.
 
     Ревизия хранит набор целиком, поэтому откат — ``replace`` на него, какой
     бы режим ни был у исходной правки. Если набор с тех пор уже равен
-    ``old``, сервис отработает no-op и новой ревизии не будет.
+    ``old``, сервис отработает no-op и новой ревизии не будет. Набор, который
+    нынешнее правило путей отвергает, — `RevertNotSupportedError` с
+    ``revision_id``.
     """
-    task_model = session.get(TaskModel, model.entity_id)
-    if task_model is None:
-        raise LookupError(f"task #{model.entity_id} not found (may have been deleted)")
+    task_model = _task_of_revision(session, model, project_id)
 
     from cod_doc.services import task_service as _tasks
+
+    # Набор из ревизии проверяется до правки и отдельно: ревизия могла
+    # прийти из легаси-импорта или быть старше `normalize_affected_paths`.
+    # Оборачивается только этот отказ — прочие ValueError сервиса остаются
+    # собой и не маскируются под «откат не поддержан».
+    try:
+        _tasks.normalize_affected_paths(old_paths)
+    except ValueError as exc:
+        raise RevertNotSupportedError(
+            f"TASK revision {model.revision_id}: набор 'old' не проходит правило путей — {exc}"
+        ) from exc
 
     _tasks.update_affects_files(
         session,
@@ -466,7 +555,7 @@ def _revert_task_affects_files(
         mode="replace",
         author=author,
         reason=f"revert revision {model.revision_id}",
-        project_id=task_model.project_id,
+        project_id=project_id,
     )
 
 
@@ -507,14 +596,38 @@ def _restore_original_from_unified(diff: str) -> str:
     return "".join(result)
 
 
-#: Заголовок SECTION-ревизии: ``--- <откуда>+++ section:<doc_key>#<anchor>@@``
-#: (`doc_service.section_label`; строки заголовка склеены — ``lineterm=""``).
-#: Сверяется только заголовок и только с начала diff: тело секции может само
-#: содержать текст вида ``section:x#y`` и подменило бы метку (ai-review #85).
-_SECTION_LABEL_RE = re.compile(r"--- (?:/dev/null|section:[^+]*)\+\+\+ section:[^#]*#([^@]+)@@")
+#: Заголовок SECTION-ревизии: ``--- <откуда>+++ section:<doc_key>#<anchor>@@ -…``
+#: (`doc_service.section_label`; строки заголовка склеены — ``lineterm=""``,
+#: и сразу за куда-меткой идёт заголовок ханка ``@@ -``). Сверяется только
+#: заголовок и только с начала diff: тело секции может само содержать текст
+#: вида ``section:x#y`` и подменило бы метку (ai-review #85).
+_HUNK_START_RE = re.compile(r"@@ -\d")
+_SECTION_LABEL_RE = re.compile(r"--- (?:/dev/null|section:.*)\+\+\+ section:[^#]*#([^@]+)$")
 
 
-def _revert_section(session: Session, model: RevisionModel, *, author: str) -> None:
+def _section_label_anchor(diff: str) -> str | None:
+    """Якорь куда-метки SECTION-ревизии или ``None``, если её не прочитать однозначно.
+
+    Ни ``doc_key``, ни якорь не валидируются, поэтому метка может содержать
+    ``+`` (``c++-guide``) и даже ``+++ section:``. Регулярка не должна угадывать
+    границу (ai-review #192: ленивый разбор отдавал якорь из подстроки
+    старого якоря, жадный — из подстроки нового): заголовок берётся до начала
+    ханка, и если ``+++ section:`` в нём не ровно один — разбор отказывает, а
+    откат — вместе с ним. Отказ безопасен: ревизия просто не откатывается.
+    """
+    hunk = _HUNK_START_RE.search(diff)
+    if hunk is None:
+        return None
+    header = diff[: hunk.start()]
+    if "\n" in header or header.count("+++ section:") != 1:
+        return None
+    labelled = _SECTION_LABEL_RE.match(header)
+    return labelled.group(1) if labelled else None
+
+
+def _revert_section(
+    session: Session, model: RevisionModel, *, author: str, project_id: int
+) -> None:
     """Restore section body by reversing the stored unified diff.
 
     ADO-213: ``section.row_id`` без AUTOINCREMENT, и после удаления секции
@@ -529,12 +642,20 @@ def _revert_section(session: Session, model: RevisionModel, *, author: str) -> N
     sec = session.get(SectionModel, model.entity_id)
     if sec is None:
         raise LookupError(f"section #{model.entity_id} not found")
+    doc = session.get(DocumentModel, sec.document_id)
+    if doc is None:
+        raise LookupError(f"section #{model.entity_id}: document #{sec.document_id} not found")
+    _require_same_project(model, "section", doc.project_id, project_id)
     # Без метки принадлежность не доказать — и такой ревизии на практике нет:
     # оба писателя (`add_section`, `patch_section`) метят diff, без метки
     # остаётся лишь пустой diff секции, созданной с пустым телом.
-    labelled = _SECTION_LABEL_RE.match(model.diff)
-    if labelled is None or labelled.group(1) != sec.anchor:
-        written_for = f"anchor {labelled.group(1)!r}" if labelled else "no section label"
+    written_anchor = _section_label_anchor(model.diff)
+    if written_anchor is None or written_anchor != sec.anchor:
+        written_for = (
+            f"anchor {written_anchor!r}"
+            if written_anchor is not None
+            else "no unambiguous section label"
+        )
         raise RevertNotSupportedError(
             f"revision {model.revision_id} was written for {written_for}, but section "
             f"row {model.entity_id} now holds anchor {sec.anchor!r} — the row id was "
@@ -553,7 +674,14 @@ def _revert_section(session: Session, model: RevisionModel, *, author: str) -> N
     )
 
 
-def _revert_document(session: Session, model: RevisionModel, *, author: str) -> None:
+def _revert_document(
+    session: Session, model: RevisionModel, *, author: str, project_id: int
+) -> None:
+    doc = session.get(DocumentModel, model.entity_id)
+    if doc is None:
+        raise LookupError(f"document #{model.entity_id} not found")
+    _require_same_project(model, "document", doc.project_id, project_id)
+
     diff_obj = json.loads(model.diff)
     op = diff_obj.get("op")
 
@@ -575,7 +703,9 @@ def _revert_document(session: Session, model: RevisionModel, *, author: str) -> 
     )
 
 
-def _revert_task_doc(session: Session, model: RevisionModel, *, author: str) -> None:
+def _revert_task_doc(
+    session: Session, model: RevisionModel, *, author: str, project_id: int
+) -> None:
     """PCA-917: Restore task-bound doc body from a revision snapshot.
 
     Delegates to ``task_doc_service.revert`` which handles snapshot lookup
@@ -587,9 +717,13 @@ def _revert_task_doc(session: Session, model: RevisionModel, *, author: str) -> 
     td = session.get(TaskDocumentModel, model.entity_id)
     if td is None:
         raise RevertNotSupportedError(f"TASK_DOC entity #{model.entity_id} not found")
+    owner = session.get(TaskModel, td.task_id)
+    if owner is None:
+        raise LookupError(f"task_doc #{model.entity_id}: task #{td.task_id} not found")
+    _require_same_project(model, "task_doc", owner.project_id, project_id)
     task_doc_service.revert(
         session,
-        project_id=model.project_id,
+        project_id=project_id,
         task_row_id=td.task_id,
         key=td.key,
         revision_id=model.revision_id,

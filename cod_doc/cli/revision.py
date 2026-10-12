@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from cod_doc.logging_config import get_logger
@@ -276,7 +277,7 @@ def revision_list(
         project_id = _require_project_id(session, project)
         entity_id = _resolve_entity_id(session, kind, ref, project_id)
         revisions = revision_service.list_for_entity(
-            session, EntityKind(kind), entity_id, limit=limit
+            session, EntityKind(kind), entity_id, limit=limit, project_id=project_id
         )
 
     if as_json:
@@ -412,24 +413,18 @@ def revision_summary(
 @click.pass_context
 def revision_show(ctx: click.Context, revision_id: str, project: str, as_json: bool) -> None:
     """Show a single revision (including its diff)."""
-    from sqlalchemy import select
-
     from cod_doc.infra.db import transactional
-    from cod_doc.infra.models import RevisionModel
     from cod_doc.services import revision_service
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
     with transactional(sf) as session:
-        _require_project_id(session, project)  # validate project exists
-        model = session.execute(
-            select(RevisionModel).where(RevisionModel.revision_id == revision_id)
-        ).scalar_one_or_none()
-        if model is None:
+        pid = _require_project_id(session, project)
+        r = revision_service.get(session, revision_id, project_id=pid)
+        if r is None:
             console.print(f"[red]Revision '{revision_id}' not found.[/red]")
             sys.exit(1)
-        r = revision_service._to_domain(model)
 
     if as_json:
         click.echo(
@@ -479,17 +474,21 @@ def revision_revert(ctx: click.Context, revision_id: str, project: str, author: 
     """Revert a revision (creates an inverse revision; history is append-only)."""
     from cod_doc.infra.db import transactional
     from cod_doc.services import revision_service
-    from cod_doc.services.revision_service import RevertNotSupportedError
+    from cod_doc.services.revision_service import RevertNotSupportedError, RevisionNotFoundError
 
     cfg: Config = ctx.obj["config"]
     sf = _make_session(project, cfg)
 
     try:
         with transactional(sf) as session:
-            _require_project_id(session, project)
-            new_rev = revision_service.revert(session, revision_id, author=author)
-    except LookupError:
+            pid = _require_project_id(session, project)
+            new_rev = revision_service.revert(session, revision_id, author=author, project_id=pid)
+    except RevisionNotFoundError:
         console.print(f"[red]Revision '{revision_id}' not found.[/red]")
+        sys.exit(1)
+    except LookupError as exc:
+        # Ревизия есть, но её сущность удалена или в другом проекте.
+        console.print(f"[red]Revision '{revision_id}' cannot be reverted: {escape(str(exc))}[/red]")
         sys.exit(1)
     except RevertNotSupportedError as exc:
         console.print(f"[red]Revert not supported: {exc}[/red]")

@@ -46,8 +46,10 @@ class PlanRepository(BaseRepository[Plan, PlanModel]):
             kwargs["last_updated"] = entity.last_updated
         return PlanModel(**kwargs)
 
-    def get_by_scope(self, scope: str) -> Plan | None:
+    def get_by_scope(self, scope: str, *, project_id: int | None = None) -> Plan | None:
         stmt = select(PlanModel).where(PlanModel.scope == scope)
+        if project_id is not None:
+            stmt = stmt.where(PlanModel.project_id == project_id)
         model = self.session.execute(stmt).scalar_one_or_none()
         return self._to_domain(model) if model else None
 

@@ -28,7 +28,10 @@ def is_foreign(paths: Sequence[str], root_path: str) -> bool:
     и лежит вне ``root_path``.
 
     Пустой список, относительный путь или ``~/…`` (не абсолютный)
-    делают задачу локальной. Пустой ``root_path`` — всегда False.
+    делают задачу локальной. Пустой ``root_path`` — всегда False: без корня
+    чужое не отличить от своего, и ``local_only=true`` такую задачу не
+    отфильтрует. Об этом предупреждает `foreign_paths_warning` при записи
+    путей — в отличие от `foreign_paths`, который тогда пуст.
     Принадлежность корню — через ``PurePath.is_relative_to``, а не
     ``startswith``: ``/a/bc/x`` не лежит внутри ``/a/b``.
     """
@@ -55,12 +58,22 @@ def foreign_paths_warning(paths: Sequence[str], root_path: str) -> str | None:
 
     Общий для ``task_create`` (MCP) и ``task_service.update_affects_files``
     (AFT-021) — запись не отклоняется, вызывающий получает только текст.
+    Сам ``root_path`` в текст не попадает: это раскладка ФС машины, которую
+    клиент не передавал; перечисляются только пути из его же запроса. Без
+    ``root_path`` у проекта предупреждает об абсолютных путях отдельно.
     """
+    if not root_path:
+        # Без корня локальность абсолютных путей не проверить — молчать об
+        # этом значило бы выдать их за свои.
+        absolute = [p for p in paths if PurePath(p).is_absolute()]
+        if not absolute:
+            return None
+        return f"root_path проекта не задан — локальность не проверить для: {', '.join(absolute)}"
     foreign = foreign_paths(paths, root_path)
     if not foreign:
         return None
     return (
-        f"affects_files вне корня проекта {root_path}: "
+        "affects_files вне корня проекта: "
         f"{', '.join(foreign)}; task_next_ready/plan_ready "
         "по умолчанию (local_only=true) такую задачу не выдадут, "
         "если все её файлы чужие"

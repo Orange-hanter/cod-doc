@@ -109,6 +109,7 @@ def promote_finding(
             new_description=finding.body or "",
             author=author,
             reason="finding_promote_update",
+            project_id=project_id,
         )
         finding.status = FINDING_STATUS_PROMOTED
         session.flush()

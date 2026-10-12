@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -29,6 +29,24 @@ from ._shared import _is_htmx, _render_task_row
 router = APIRouter()
 
 
+def _same_origin_path(request: Request) -> str | None:
+    """Путь из ``Referer`` — только если он с этого же хоста, иначе ``None``.
+
+    ``Referer`` задаёт клиент: подставленный сторонний URL превращал бы
+    редирект после формы в open redirect. Берутся только path и query — схема
+    и хост из заголовка в ``Location`` не попадают.
+    """
+    referer = request.headers.get("Referer")
+    if not referer:
+        return None
+    parts = urlsplit(referer)
+    if parts.netloc and parts.netloc != request.url.netloc:
+        return None
+    if not parts.path.startswith("/") or parts.path.startswith("//"):
+        return None
+    return parts.path + (f"?{parts.query}" if parts.query else "")
+
+
 @router.post("/p/{slug}/tasks/{task_id}/status", response_class=HTMLResponse)
 def task_status_update(
     request: Request,
@@ -46,8 +64,8 @@ def task_status_update(
 
     session, project_db_id = db
 
-    existing = tasks.get(session, task_id)
-    if existing is None or existing.project_id != project_db_id:
+    existing = tasks.get(session, task_id, project_id=project_db_id)
+    if existing is None:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 
     inline_alert: tuple[str, str] | None = None
@@ -58,8 +76,10 @@ def task_status_update(
             normalise(existing.status.value) == "todo"
             and normalise(new_status.value) == "in_progress"
         ):
-            checkout_service.checkout(session, task_id=task_id, agent="human:web")
-            checked = tasks.get(session, task_id)
+            checkout_service.checkout(
+                session, task_id=task_id, agent="human:web", project_id=project_db_id
+            )
+            checked = tasks.get(session, task_id, project_id=project_db_id)
             assert checked is not None
             updated = checked
         else:
@@ -70,6 +90,7 @@ def task_status_update(
                 author="human:web",
                 reason="web inline status",
                 strict=False,  # web UI allows direct jumps (user may skip steps)
+                project_id=project_db_id,
             )
         session.commit()
     except (CheckoutConflictError, CheckoutStatusError) as exc:
@@ -124,8 +145,8 @@ def task_complete(
     proj = get_project(slug)
     session, project_db_id = db
 
-    existing = tasks.get(session, task_id)
-    if existing is None or existing.project_id != project_db_id:
+    existing = tasks.get(session, task_id, project_id=project_db_id)
+    if existing is None:
         raise NotFoundWebError(f"Задача не найдена: {task_id}")
 
     inline_alert: tuple[str, str] | None = None
@@ -135,6 +156,7 @@ def task_complete(
             task_id=task_id,
             author="human:web",
             reason="web ready-block complete",
+            project_id=project_db_id,
         )
         session.commit()
     except TaskAlreadyDoneError as exc:
@@ -165,7 +187,7 @@ def task_complete(
     # possible (Referer), falling back to the project overview. The complete
     # button shows up on multiple pages (overview, plan view, tasks list)
     # and a hard-coded redirect to /p/{slug} was disorienting on the others.
-    referer = request.headers.get("Referer") or f"/p/{proj.entry.name}"
+    referer = _same_origin_path(request) or f"/p/{proj.entry.name}"
     redirect = RedirectResponse(url=referer, status_code=303)
     if inline_alert is not None:
         severity, message = inline_alert

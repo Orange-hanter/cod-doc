@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy.exc import IntegrityError
+
 from cod_doc.domain.entities import Priority, Task, TaskStatus
 from cod_doc.services import plan_service
 
@@ -94,16 +96,44 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
     конвенционный, его генерирует сервис. Существующие plan/plan_section не
     трогаются.
 
-    Остаточный долг: scope уникален на всю БД, а поиск по нему не скоупится
-    проектом — в hub-БД legacy-план другого проекта будет найден и
-    переиспользован. Поведение прежнее.
+    ``plan.scope`` уникален на всю БД. В hub-БД, где ``legacy-rest-api`` уже
+    занят другим проектом, план этого проекта получает собственный scope
+    ``legacy-rest-api-p<project_id>``: переиспользовать чужой нельзя —
+    `task_service.create` отвергает план чужого проекта (AFT-022), а без
+    своего скоупа REST-создание задач падало бы у всех проектов, кроме
+    первого. В embedded-БД (один проект) scope прежний.
     """
-    plan = plan_service.get_by_scope(session, LEGACY_PLAN_SCOPE)
+    # Два параллельных запроса могут оба не найти план и оба его создать:
+    # второй упрётся в уникальный scope — пред-проверкой сервиса
+    # (PlanAlreadyExistsError) или уникальным индексом (IntegrityError), смотря
+    # по тому, когда первый закоммитил. Создание идёт в savepoint, и разбор
+    # повторяется уже с планом, который вставил первый (в т.ч. если это был
+    # чужой проект — тогда scope станет собственным).
+    for attempt in range(2):
+        try:
+            with session.begin_nested():
+                return _ensure_legacy_plan_once(session, project_id)
+        except (
+            IntegrityError,
+            plan_service.PlanAlreadyExistsError,
+            plan_service.SectionAlreadyExistsError,
+        ):
+            if attempt:
+                raise
+    raise AssertionError("unreachable")
+
+
+def _ensure_legacy_plan_once(session: Session, project_id: int) -> tuple[int, int]:
+    scope = LEGACY_PLAN_SCOPE
+    plan = plan_service.get_by_scope(session, scope)
+    if plan is not None and plan.project_id != project_id:
+        scope = f"{LEGACY_PLAN_SCOPE}-p{project_id}"
+        plan = plan_service.get_by_scope(session, scope)
     if plan is None:
         plan = plan_service.create_plan(
             session,
             project_id=project_id,
-            scope=LEGACY_PLAN_SCOPE,
+            scope=scope,
             principle="from-legacy-api",
             author=LEGACY_AUTHOR,
             reason=None,
@@ -118,7 +148,7 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
     section = plan_service.create_section(
         session,
         project_id=project_id,
-        plan_scope=LEGACY_PLAN_SCOPE,
+        plan_scope=scope,
         letter=LEGACY_SECTION_LETTER,
         title=LEGACY_SECTION_TITLE,
         position=0,

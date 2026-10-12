@@ -8,7 +8,6 @@ skill_get — one call gives it everything.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
@@ -303,7 +302,7 @@ def get(
 
         if not ref:
             return {"found": False, "what": what, "ref": ref, "hint": "ref=task_id required"}
-        t = task_service.get(session, ref)
+        t = task_service.get(session, ref, project_id=project_id)
         if t is None:
             return {"found": False, "what": what, "ref": ref, "hint": f"task_id not found: {ref}"}
         return {
@@ -320,7 +319,9 @@ def get(
         if not ref:
             return {"found": False, "what": what, "ref": ref, "hint": "ref=story_id required"}
         s = session.execute(
-            select(UserStoryModel).where(UserStoryModel.story_id == ref)
+            select(UserStoryModel).where(
+                UserStoryModel.story_id == ref, UserStoryModel.project_id == project_id
+            )
         ).scalar_one_or_none()
         if s is None:
             return {"found": False, "what": what, "ref": ref, "hint": f"story_id not found: {ref}"}
@@ -344,7 +345,7 @@ def get(
     if what == "plan_export":
         if not ref:
             return {"found": False, "what": what, "ref": ref, "hint": "ref=plan_scope required"}
-        plan = PlanRepository(session).get_by_scope(ref)
+        plan = PlanRepository(session).get_by_scope(ref, project_id=project_id)
         if plan is None or plan.row_id is None:
             return {
                 "found": False,
@@ -430,7 +431,9 @@ def report(
 
     if kind == "progress":
         try:
-            task_service.log_progress(session, task_id=task_id, message=message, author=agent_id)
+            task_service.log_progress(
+                session, task_id=task_id, message=message, author=agent_id, project_id=project_id
+            )
         except TaskNotFoundError:
             return {"ok": False, "kind": kind, "hint": f"task not found: {task_id}"}
         return {
@@ -442,18 +445,32 @@ def report(
 
     if kind == "blocker":
         from cod_doc.domain.entities import TaskStatus
+        from cod_doc.services.task_status_machine import StatusTransitionError
 
+        # Причина блокировки и переход в blocked — одна операция: если переход
+        # не разрешён (из backlog / in_review / done / cancelled), откатываются
+        # оба шага, а агент получает подсказку, а не голое исключение.
         try:
-            task_service.set_blocker(session, task_id=task_id, reason=message, author=agent_id)
-            t = task_service.update_status(
-                session,
-                task_id=task_id,
-                new_status=TaskStatus("blocked"),
-                author=agent_id,
-                reason=message,
-            )
+            with session.begin_nested():
+                task_service.set_blocker(
+                    session,
+                    task_id=task_id,
+                    reason=message,
+                    author=agent_id,
+                    project_id=project_id,
+                )
+                t = task_service.update_status(
+                    session,
+                    task_id=task_id,
+                    new_status=TaskStatus("blocked"),
+                    author=agent_id,
+                    reason=message,
+                    project_id=project_id,
+                )
         except TaskNotFoundError:
             return {"ok": False, "kind": kind, "hint": f"task not found: {task_id}"}
+        except StatusTransitionError as exc:
+            return {"ok": False, "kind": kind, "hint": str(exc)}
         activity_service.emit(
             session,
             project_id,
@@ -549,6 +566,7 @@ def complete(
             author=agent_id,
             commit_sha=commit_sha,
             reason=summary,
+            project_id=project_id,
         )
     except TaskNotFoundError:
         return {"ok": False, "hint": f"task not found: {task_id}"}
@@ -562,7 +580,9 @@ def complete(
     # hard to spot leaking locks (e.g. when admin closes someone else's
     # checked-out task with a different agent_id).
     try:
-        checkout_service.release(session, task_id, agent=agent_id, force=False)
+        checkout_service.release(
+            session, task_id, agent=agent_id, force=False, project_id=project_id
+        )
     except Exception as exc:
         import logging
 
@@ -604,23 +624,33 @@ def release(
     reason: str | None = None,
 ) -> dict[str, Any]:
     """AGT-007: release checkout lock without transitioning to done."""
-    from cod_doc.services import activity_service, checkout_service
+    from cod_doc.services import activity_service, checkout_service, task_service
     from cod_doc.services.checkout_service import CheckoutConflictError
 
     try:
-        result = checkout_service.release(session, task_id, agent=agent_id, force=False)
+        result = checkout_service.release(
+            session, task_id, agent=agent_id, force=False, project_id=project_id
+        )
     except LookupError:
         return {"ok": False, "hint": f"task not found: {task_id}"}
     except CheckoutConflictError as exc:
         return {"ok": False, "hint": str(exc), "code": "not_held_by_this_agent"}
 
-    from cod_doc.infra.models import TaskModel
+    # Возврат в todo — через сервис, а не правкой ORM: так он оставляет
+    # ревизию и событие (ADO-040) и ищет задачу в скоупе проекта (AFT-022).
+    from cod_doc.domain.entities import TaskStatus
 
-    task = session.execute(select(TaskModel).where(TaskModel.task_id == task_id)).scalar_one()
-    if task.status in {"in_progress", "in-progress"}:
-        task.status = "todo"
-        task.last_updated = datetime.now(UTC)
-        session.flush()
+    if result.new_status in {"in_progress", "in-progress"}:
+        task_service.update_status(
+            session,
+            task_id=task_id,
+            new_status=TaskStatus.TODO,
+            author=agent_id,
+            reason=reason or "agent_release",
+            # in_progress → todo нет в прямой машине: откат брони, как в revert.
+            force=True,
+            project_id=project_id,
+        )
         result.new_status = "todo"
 
     activity_service.emit(
@@ -705,7 +735,7 @@ def pick(
     if plan_scope is not None:
         from cod_doc.infra.repositories import PlanRepository
 
-        plan = PlanRepository(session).get_by_scope(plan_scope)
+        plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
         plan_id = plan.row_id if plan is not None else -1
         ready = [t for t in ready if getattr(t, "plan_id", None) == plan_id]
     if ready:
@@ -736,6 +766,7 @@ def pick(
             session,
             target.task_id,
             agent=agent_id,
+            project_id=project_id,
         )
     except Exception as exc:  # CheckoutConflictError or status drift
         return {

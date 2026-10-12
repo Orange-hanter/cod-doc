@@ -131,7 +131,7 @@ def register(mcp: FastMCP) -> None:
                 project_id = require_project_id(session, project)
                 entity_id = _resolve_entity_id(session, kind, ref, project_id)
                 revisions = revision_service.list_for_entity(
-                    session, EntityKind(kind), entity_id, limit=limit
+                    session, EntityKind(kind), entity_id, limit=limit, project_id=project_id
                 )
             return [
                 {
@@ -205,22 +205,20 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(name="revision_get")
     def revision_get(project: str, revision_id: str) -> dict[str, Any] | None:
-        """Get a single revision by its ULID revision_id. Returns null if not found."""
-        from sqlalchemy import select
+        """Get a single revision by its ULID revision_id. Returns null if not found.
 
+        Only revisions of ``project`` are visible: a revision of another project in
+        a shared DB is reported as not found.
+        """
         from cod_doc.infra.db import transactional
-        from cod_doc.infra.models import RevisionModel
         from cod_doc.services import revision_service
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            require_project_id(session, project)
-            model = session.execute(
-                select(RevisionModel).where(RevisionModel.revision_id == revision_id)
-            ).scalar_one_or_none()
-            if model is None:
+            pid = require_project_id(session, project)
+            r = revision_service.get(session, revision_id, project_id=pid)
+            if r is None:
                 return None
-            r = revision_service._to_domain(model)
 
         return {
             "revision_id": r.revision_id,
@@ -242,18 +240,28 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Revert a revision by creating an inverse revision (history is append-only).
         Supported: TASK status/complete/affects_files, SECTION unified-diff, DOCUMENT rename.
+        TASK affects_files is restored with ``replace`` to the whole ``old`` set stored
+        in the revision. A revision of another project is reported as not found.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import revision_service
-        from cod_doc.services.revision_service import RevertNotSupportedError
+        from cod_doc.services.revision_service import (
+            RevertNotSupportedError,
+            RevisionNotFoundError,
+        )
 
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                require_project_id(session, project)
-                new_rev = revision_service.revert(session, revision_id, author=author)
-        except LookupError:
+                pid = require_project_id(session, project)
+                new_rev = revision_service.revert(
+                    session, revision_id, author=author, project_id=pid
+                )
+        except RevisionNotFoundError:
             raise ValueError(f"Revision '{revision_id}' not found.") from None
+        except LookupError as exc:
+            # Ревизия есть, но её сущность удалена или в другом проекте.
+            raise ValueError(f"Revision '{revision_id}' cannot be reverted: {exc}") from None
         except RevertNotSupportedError as exc:
             raise ValueError(str(exc)) from exc
         return {

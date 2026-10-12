@@ -839,7 +839,9 @@ def adr_show(
 
     # ADO-231: каждая запись ADR пишет revision; страница ревизий по сущности
     # уже есть, с карточки на неё просто не было входа.
-    history = revision_service.list_for_entity(session, EntityKind.ADR, row.row_id)
+    history = revision_service.list_for_entity(
+        session, EntityKind.ADR, row.row_id, project_id=project_id
+    )
     last_rev = history[-1] if history else None
     history_info = {
         "count": len(history),
@@ -851,9 +853,14 @@ def adr_show(
     # Голый task_id ничего не говорит о связи: без названия и статуса
     # приходилось открывать каждую задачу. Удалённая задача остаётся в
     # списке — ссылка из ADR на неё сама по себе факт.
+    # Одним запросом и в скоупе проекта ADR: одноимённая задача чужого проекта
+    # общей hub-БД не должна подставить свои title/status (AFT-022).
+    linked = task_service.get_many(
+        session, [link["task_id"] for link in payload["task_links"]], project_id=project_id
+    )
     task_links = []
     for link in payload["task_links"]:
-        task = task_service.get(session, link["task_id"])
+        task = linked.get(link["task_id"])
         task_links.append(
             {
                 **link,
