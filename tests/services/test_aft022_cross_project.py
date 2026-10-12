@@ -371,3 +371,69 @@ def test_mcp_task_get_reads_the_task_of_its_project(engine_with_schema, monkeypa
     task_get = _tool(_task_tools(monkeypatch, factory), "task_get")
     assert task_get(project="b", task_id=_TID)["title"] == "Task of b"
     assert task_get(project="a", task_id=_TID)["title"] == "Task of a"
+
+
+def test_agent_blocker_report_on_a_done_task_leaves_nothing_behind(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """done → blocked не разрешён: подсказка вместо исключения, и причина
+    блокировки не остаётся висеть без перехода."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        tasks.complete(session, task_id=_TID, author="human:t", project_id=a.project)
+
+        out = agent_service.report(
+            session, project_id=a.project, task_id=_TID, kind="blocker", message="late"
+        )
+
+        assert out["ok"] is False
+        assert "blocked" in out["hint"]
+        task = tasks.get(session, _TID, project_id=a.project)
+        assert task is not None
+        assert task.status is TaskStatus.DONE
+        assert task.blocked_reason is None
+
+
+def test_agent_get_story_full_does_not_read_another_projects_story(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.services import story_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        story_service.create(
+            session,
+            project_id=a.project,
+            story_id="US-001",
+            persona="dev",
+            narrative="secret of A",
+            priority=Priority.MEDIUM,
+            author="human:t",
+        )
+
+        foreign = agent_service.get(
+            session, project_id=b.project, task_id=_TID, what="story_full", ref="US-001"
+        )
+        own = agent_service.get(
+            session, project_id=a.project, task_id=_TID, what="story_full", ref="US-001"
+        )
+
+        assert foreign["found"] is False
+        assert own["found"] is True
+
+
+def test_checkout_warning_reads_the_lock_of_the_projects_task(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        checkout_service.checkout(session, _TID, agent="agent:x", project_id=b.project)
+
+        assert (
+            checkout_service.warn_if_no_checkout(session, _TID, "agent:x", project_id=b.project)
+            is None
+        )
+        assert checkout_service.warn_if_no_checkout(session, _TID, "agent:x", project_id=a.project)
+        assert checkout_service.has_active_checkout(session, _TID, "agent:x", project_id=b.project)
+        assert not checkout_service.has_active_checkout(
+            session, _TID, "agent:x", project_id=a.project
+        )

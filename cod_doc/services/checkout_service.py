@@ -203,14 +203,23 @@ def release(
     )
 
 
-def has_active_checkout(session: Session, task_id: str, agent: str) -> bool:
-    m = session.execute(
-        select(TaskModel.checked_out_by).where(TaskModel.task_id == task_id)
-    ).scalar_one_or_none()
-    return m == agent
+def _checked_out_by(session: Session, task_id: str, project_id: int | None) -> str | None:
+    """Держатель брони задачи; с ``project_id`` — задачи этого проекта (AFT-022)."""
+    stmt = select(TaskModel.checked_out_by).where(TaskModel.task_id == task_id)
+    if project_id is not None:
+        stmt = stmt.where(TaskModel.project_id == project_id)
+    return session.execute(stmt).scalar_one_or_none()
 
 
-def warn_if_no_checkout(session: Session, task_id: str, agent: str) -> str | None:
+def has_active_checkout(
+    session: Session, task_id: str, agent: str, *, project_id: int | None = None
+) -> bool:
+    return _checked_out_by(session, task_id, project_id) == agent
+
+
+def warn_if_no_checkout(
+    session: Session, task_id: str, agent: str, *, project_id: int | None = None
+) -> str | None:
     """PCA-921: Return a warning string if ``agent`` does not currently hold
     the lock for ``task_id``, otherwise None.
 
@@ -220,9 +229,7 @@ def warn_if_no_checkout(session: Session, task_id: str, agent: str) -> str | Non
     """
     import logging
 
-    locked_by = session.execute(
-        select(TaskModel.checked_out_by).where(TaskModel.task_id == task_id)
-    ).scalar_one_or_none()
+    locked_by = _checked_out_by(session, task_id, project_id)
     if locked_by == agent:
         return None
     if locked_by is None:

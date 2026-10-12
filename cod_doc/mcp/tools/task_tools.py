@@ -252,7 +252,9 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
-                checkout_service.warn_if_no_checkout(session, task_id, author)
+                checkout_service.warn_if_no_checkout(
+                    session, task_id, author, project_id=project_id
+                )
                 t = task_service.log_progress(
                     session, task_id=task_id, message=message, author=author, project_id=project_id
                 )
@@ -340,7 +342,7 @@ def register(mcp: FastMCP) -> None:
             # сразу к YAML-fallback; иначе поиск в скоупе проекта (AFT-022).
             try:
                 pid: int | None = require_project_id(session, project)
-            except ValueError:
+            except ValueError, LookupError:
                 pid = None
             t = task_service.get(session, task_id, project_id=pid) if pid is not None else None
             if t is not None:
@@ -703,7 +705,7 @@ def register(mcp: FastMCP) -> None:
                 project_id = require_project_id(session, project)
                 from cod_doc.services import checkout_service as _co
 
-                _co.warn_if_no_checkout(session, task_id, author)
+                _co.warn_if_no_checkout(session, task_id, author, project_id=project_id)
                 t = task_service.set_blocker(
                     session, task_id=task_id, reason=reason, author=author, project_id=project_id
                 )
@@ -1353,7 +1355,9 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf, commit=not dry_run) as session:
                 project_id = require_project_id(session, project)
-                checkout_service.warn_if_no_checkout(session, task_id, author)
+                checkout_service.warn_if_no_checkout(
+                    session, task_id, author, project_id=project_id
+                )
                 t = complete(
                     session,
                     task_id=task_id,
