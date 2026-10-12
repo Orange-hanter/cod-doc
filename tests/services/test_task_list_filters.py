@@ -17,7 +17,6 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, TaskModel
 from cod_doc.services import task_service
 from cod_doc.services.serializers import task_to_dict
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -298,9 +297,9 @@ def test_parse_since() -> None:
 def test_task_to_dict_carries_plan_scope_and_section_letter(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid = _seed(session)
 
-        task = task_service.get(session, "PXC-001", project_id=only_project_id(session))
+        task = task_service.get(session, "PXC-001", project_id=pid)
         assert task is not None
         row = task_to_dict(task, session=session)
         assert row["plan_scope"] == "plan-x"

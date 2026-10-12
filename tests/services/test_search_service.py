@@ -27,8 +27,9 @@ from cod_doc.services.story_service import acceptance as story_acceptance
 from cod_doc.services.story_service import crud as story_crud
 
 #: Для тестов без засеянного проекта (нет таблицы индекса, пустой запрос):
-#: скоуп проекта там не проверяется, а id нужен только сигнатуре.
-_NO_PROJECT = 1
+#: id нужен только сигнатуре. Заведомо несуществующий — не совпадёт с row_id
+#: первого настоящего проекта, если тест однажды его засеет.
+_NO_PROJECT = 999_999
 
 
 def _seed_project(session, slug: str) -> tuple[int, int, int]:  # type: ignore[no-untyped-def]

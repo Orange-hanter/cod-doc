@@ -63,10 +63,10 @@ def tools(
         plan.created = now
         plan.last_updated = now
         s.flush()
-        proj_id = proj.row_id
 
+    # require_project_id не подменяется: слаг «pv» резолвится настоящим
+    # резолвером, и гард проектной изоляции в plan_tools работает (AFT-023).
     monkeypatch.setattr(plan_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(plan_tools, "require_project_id", lambda session, project: proj_id)
     mcp = FastMCP("test")
     plan_tools.register(mcp)
     return {name: tool.fn for name, tool in mcp._tool_manager._tools.items()}

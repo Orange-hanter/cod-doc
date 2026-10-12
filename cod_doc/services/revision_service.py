@@ -102,7 +102,7 @@ def write(
     "I expect to be the first writer"), it must equal the current head, or
     `RevisionConflictError` is raised — this is the optimistic concurrency hook.
     """
-    head = _current_head(session, entity_kind, entity_id)
+    head = _current_head(session, entity_kind, entity_id, project_id)
     if expected_parent_revision_id is not _NO_PARENT_CHECK and head != expected_parent_revision_id:
         raise RevisionConflictError(
             f"head moved: expected parent={expected_parent_revision_id!r}, "

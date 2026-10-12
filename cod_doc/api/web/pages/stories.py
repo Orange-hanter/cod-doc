@@ -401,7 +401,7 @@ def stories_list(
             if t.plan_id in plan_ids_seen:
                 continue
             plan_ids_seen.add(t.plan_id)
-            plan = plans.get_for_project(session, project_db_id, t.plan_id)
+            plan = plans.get_for_project(session, t.plan_id, project_id=project_db_id)
             if plan is not None and plan.scope:
                 plan_scopes.append(plan.scope)
 

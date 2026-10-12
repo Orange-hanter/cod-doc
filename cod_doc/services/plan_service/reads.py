@@ -57,7 +57,7 @@ def list_sections(session: Session, plan_id: int) -> list[PlanSection]:
     return PlanSectionRepository(session).list_for_plan(plan_id)
 
 
-def get_for_project(session: Session, project_id: int, plan_id: int) -> Plan | None:
+def get_for_project(session: Session, plan_id: int, *, project_id: int) -> Plan | None:
     """Return the plan iff it belongs to the project; None otherwise.
 
     Used by web handlers to reject cross-project plan access (404).

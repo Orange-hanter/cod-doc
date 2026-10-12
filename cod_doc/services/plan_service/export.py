@@ -104,7 +104,9 @@ def export(session: Session, plan_id: int, *, project_id: int) -> dict[str, str]
 
     # Build row_id -> task_id map for the dependency graph.
     task_rows = session.execute(
-        select(TaskModel.row_id, TaskModel.task_id).where(TaskModel.plan_id == plan_id)
+        select(TaskModel.row_id, TaskModel.task_id).where(
+            TaskModel.plan_id == plan_id, TaskModel.project_id == project_id
+        )
     ).all()
     row_id_to_task_id = {r[0]: r[1] for r in task_rows}
 

@@ -78,7 +78,7 @@ def audit(session: Session, plan_id: int, *, project_id: int) -> PlanAuditReport
     # Load tasks (row_id -> task_id, status) for this plan.
     task_rows = session.execute(
         select(TaskModel.row_id, TaskModel.task_id, TaskModel.status).where(
-            TaskModel.plan_id == plan_id
+            TaskModel.plan_id == plan_id, TaskModel.project_id == project_id
         )
     ).all()
     row_id_to_task: dict[int, tuple[str, str]] = {r[0]: (r[1], r[2]) for r in task_rows}

@@ -531,7 +531,7 @@ def task_show(
     trace = traces.list_for_task(session, task.row_id)
 
     # Plan + section breadcrumb info.
-    plan = plans.get_for_project(session, project_db_id, task.plan_id)
+    plan = plans.get_for_project(session, task.plan_id, project_id=project_db_id)
     linked_questions = question_service.linked_questions(
         session, project_db_id, target_kind=QuestionLinkKind.TASK, target_ref=task_id
     )

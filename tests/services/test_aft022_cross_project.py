@@ -578,3 +578,35 @@ def test_reads_by_row_id_are_scoped_by_project(engine_with_schema) -> None:  # t
         own_a = heartbeat_service.heartbeat_context(session, task_id=_TID, project_id=a.project)
         assert own_b["task"]["title"] == "Task of b"
         assert own_a["task"]["title"] == "Task of a"
+
+
+def test_mcp_move_to_plan_does_not_move_another_projects_task(
+    engine_with_schema, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """``task_move_to_plan(project=B)`` не трогает одноимённую задачу проекта A:
+    в скоупе B переносится только задача B."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        now = datetime.now(UTC)
+        target = PlanModel(project_id=b.project, scope="b-target", created=now, last_updated=now)
+        session.add(target)
+        session.flush()
+        tsec = PlanSectionModel(
+            plan_id=target.row_id, letter="A", title="T", slug="A-T", position=0
+        )
+        session.add(tsec)
+        session.flush()
+        target_section = tsec.row_id
+
+    move = _tool(_task_tools(monkeypatch, factory), "task_move_to_plan")
+    out = move(project="b", plan_scope="b-target", section_letter="A", task_ids=[_TID])
+
+    assert [t["task_id"] for t in out["moved"]] == [_TID]
+    with transactional(factory) as session:
+        task_a = tasks.get(session, _TID, project_id=a.project)
+        task_b = tasks.get(session, _TID, project_id=b.project)
+        assert task_a is not None and task_b is not None
+        assert task_a.section_id == a.section, "задача проекта A осталась на месте"
+        assert task_b.section_id == target_section

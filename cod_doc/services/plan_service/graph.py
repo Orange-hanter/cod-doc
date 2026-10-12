@@ -86,6 +86,7 @@ WITH RECURSIVE depths(task_row_id, depth) AS (
           SELECT 1
           FROM dependency d
           JOIN task src ON src.row_id = d.to_task_id AND src.plan_id = :plan_id
+           AND src.project_id = :project_id
           WHERE d.from_task_id = t.row_id AND d.kind = 'blocks'
       )
   UNION ALL
@@ -206,7 +207,7 @@ def chain_layout(session: Session, plan_id: int, *, project_id: int) -> dict[str
             TaskModel.section_id,
             TaskModel.acceptance,
             TaskModel.blocked_reason,
-        ).where(TaskModel.plan_id == plan_id)
+        ).where(TaskModel.plan_id == plan_id, TaskModel.project_id == project_id)
     ).all()
 
     if not task_rows:

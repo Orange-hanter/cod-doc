@@ -863,7 +863,8 @@ def _routed(factory: Any) -> Any:
     known = {"af", "other", "nope"}
 
     def session_factory(project: str) -> tuple[Any, None]:
-        assert project in known, f"unexpected project slug {project!r}"
+        if project not in known:
+            raise ValueError(f"unexpected project slug {project!r}")
         return factory, None
 
     return session_factory

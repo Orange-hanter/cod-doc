@@ -68,7 +68,7 @@ def plan_show(
     proj = get_project(slug)
     session, project_db_id = db
 
-    plan_dom = plans.get_for_project(session, project_db_id, plan_id)
+    plan_dom = plans.get_for_project(session, plan_id, project_id=project_db_id)
     if plan_dom is None:
         raise HTTPException(404, f"Plan не найден в проекте: {plan_id}")
 
@@ -152,7 +152,7 @@ def plan_freeze(
     """COD-052: snapshot the current projection into an EXECUTION_LOG document."""
     proj = get_project(slug)
     session, project_db_id = db
-    plan_dom = plans.get_for_project(session, project_db_id, plan_id)
+    plan_dom = plans.get_for_project(session, plan_id, project_id=project_db_id)
     if plan_dom is None:
         raise HTTPException(404, f"Plan не найден в проекте: {plan_id}")
     frozen = plans.freeze_projection(session, plan_id, author="human:web", project_id=project_db_id)
