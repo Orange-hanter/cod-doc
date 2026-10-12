@@ -101,6 +101,79 @@ jobs:
           persist-credentials: false
           path: .ai-reviewer-engine
 
+      # Граф кода для blast radius: движок читает .graphify/graphify-out/graph.json
+      # и зовёт `.graphify/gf affected <символ>` (ai-reviewer lib/config.mjs).
+      # Без графа blast radius молча выключается (`skip_reason: graph_missing`) —
+      # так и было до этого шага. Строим на чекауте PR (merge-коммит): свежесть
+      # движок сверяет по «Built from commit» в GRAPH_REPORT.md с HEAD.
+      # graphify только парсит AST (без LLM и без исполнения кода PR), секретов
+      # у шага нет. Fail-open: сбой графа не должен ронять ревью.
+      #
+      # Ничего исполняемого из дерева PR: бинарь живёт в $RUNNER_TEMP и уходит
+      # движку абсолютным путём (GRAPHIFY_BIN), иначе закоммиченный в PR
+      # `.graphify/gf` исполнился бы в шаге с секретами. uv не читает конфиг
+      # репо (UV_NO_CONFIG: [tool.uv] в pyproject.toml / uv.toml подменил бы
+      # индекс), зависимости — по хэшам из ops/graphify-requirements.txt
+      # БАЗОВОЙ ветки (как ops/ai-reviewer-ref выше), только колёса — без
+      # build-хуков sdist. PR, меняющий требования, меняет граф после мержа.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        if: steps.pin.outputs.ref != ''
+        continue-on-error: true
+        with:
+          python-version: "3.13"
+
+      # До восстановления кэша: иначе rm снёс бы восстановленное.
+      - name: Drop PR-supplied .graphify
+        if: steps.pin.outputs.ref != ''
+        run: rm -rf .graphify
+
+      - name: Read pinned graphify requirements
+        id: gfreq
+        if: steps.pin.outputs.ref != ''
+        continue-on-error: true
+        env:
+          BASE_REF: ${{ github.base_ref }}   # через env, не в run: (script injection)
+        run: |
+          BASE_REF="${BASE_REF:-main}"
+          [[ "$BASE_REF" =~ ^[A-Za-z0-9_./-]+$ ]] || { echo "invalid BASE_REF"; exit 1; }
+          REQ="$RUNNER_TEMP/graphify-requirements.txt"
+          if ! git show "origin/$BASE_REF:ops/graphify-requirements.txt" > "$REQ" 2>/dev/null; then
+            echo "→ требований graphify нет в origin/$BASE_REF (бутстрап-PR) — граф пропущен"
+            exit 0
+          fi
+          echo "req=$REQ" >> "$GITHUB_OUTPUT"
+          echo "key=$(sha256sum "$REQ" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      # AST-кэш graphify ключуется sha256 содержимого файла — переносим между
+      # прогонами только его; stat-index.json (mtime-ярлык) после чекаута бесполезен.
+      # Кэш — JSON (не pickle): отравленный кэш портит граф, но кода не исполняет.
+      - name: Restore graphify AST cache
+        if: steps.gfreq.outputs.req != ''
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: .graphify/graphify-out/cache/ast
+          key: graphify-${{ steps.gfreq.outputs.key }}-${{ github.sha }}
+          restore-keys: graphify-${{ steps.gfreq.outputs.key }}-
+
+      - name: Build graphify graph
+        if: steps.gfreq.outputs.req != ''
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          GRAPHIFY_OUT: .graphify/graphify-out
+          GRAPHIFY_NO_TIPS: '1'
+          UV_NO_CONFIG: '1'
+          REQ: ${{ steps.gfreq.outputs.req }}
+        run: |
+          TOOLS="$RUNNER_TEMP/graphify"
+          uv venv -q "$TOOLS/venv"
+          uv pip install -q --require-hashes --only-binary :all: \
+            --index-url https://pypi.org/simple \
+            --python "$TOOLS/venv/bin/python" -r "$REQ"
+          "$TOOLS/venv/bin/graphify" update . --force
+          grep -m1 'Built from commit' .graphify/graphify-out/GRAPH_REPORT.md
+
       # Без continue-on-error: скрипт выходит с 1 только на мерж-гейте
       # (подтверждённые critical/major), инфраструктурные сбои — fail-open.
       # Профиль — .ai-reviewer.json в корне, движок находит его сам.
@@ -110,6 +183,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          # Абсолютный путь вне чекаута даже при упавшей сборке графа: дефолт
+          # движка `.graphify/gf` указывает в дерево PR.
+          GRAPHIFY_BIN: ${{ runner.temp }}/graphify/venv/bin/graphify
           REVIEW_MODE: moa
           MOA_REFERENCE_MODELS: kimi-k2.7-code,glm-5.2,deepseek-v4.1-flash
           MOA_SPECIALIST_MODELS: security:deepseek-v4.1-flash,correctness:kimi-k2.7-code,architecture:glm-5.2
