@@ -22,11 +22,13 @@ from cod_doc.domain.entities import EntityKind, Priority, TaskStatus, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import (
     AffectedFileModel,
+    DependencyModel,
     PlanModel,
     PlanSectionModel,
     ProjectModel,
     RevisionModel,
 )
+from cod_doc.services import checkout_service
 from cod_doc.services import plan_service as plans
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
@@ -254,3 +256,61 @@ def test_get_many_reads_only_the_project_tasks(engine_with_schema) -> None:  # t
         assert list(got) == [_TID]
         assert got[_TID].project_id == a.project
         assert tasks.get_many(session, [], project_id=a.project) == {}
+
+
+def test_task_mutations_act_on_the_task_of_the_given_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """complete / blocker / progress / checkout / release с ``project_id`` трогают
+    задачу своего проекта, а не падают ``MultipleResultsFound``."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+
+        checkout_service.checkout(session, _TID, agent="agent:x", project_id=b.project)
+        tasks.log_progress(
+            session, task_id=_TID, message="half way", author="agent:x", project_id=b.project
+        )
+        checkout_service.release(session, _TID, agent="agent:x", project_id=b.project)
+        tasks.set_blocker(
+            session, task_id=_TID, reason="waiting", author="human:t", project_id=a.project
+        )
+        tasks.clear_blocker(session, task_id=_TID, author="human:t", project_id=a.project)
+        tasks.complete(session, task_id=_TID, author="human:t", project_id=b.project)
+
+        task_a = tasks.get(session, _TID, project_id=a.project)
+        task_b = tasks.get(session, _TID, project_id=b.project)
+        assert task_a is not None and task_b is not None
+        assert task_a.status is TaskStatus.TODO
+        assert task_a.blocked_reason is None
+        assert task_b.status is TaskStatus.DONE
+
+
+def test_mcp_checkout_stays_in_the_project(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.mcp.tools import checkout_tools
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+
+    monkeypatch.setattr(checkout_tools, "session_factory", lambda project: (factory, None))
+    mcp = FastMCP("test")
+    checkout_tools.register(mcp)
+    _tool(mcp, "task_checkout")(project="b", task_id=_TID, agent="agent:x")
+
+    with transactional(factory) as session:
+        assert tasks.get(session, _TID, project_id=b.project).status is TaskStatus.IN_PROGRESS_NEW  # type: ignore[union-attr]
+        assert tasks.get(session, _TID, project_id=a.project).status is TaskStatus.TODO  # type: ignore[union-attr]
+
+
+def test_dependency_chain_does_not_walk_into_another_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Легаси-ребро в задачу чужого проекта не выводит её в цепочку."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        session.add(DependencyModel(from_task_id=a.task_row, to_task_id=b.task_row, kind="blocks"))
+        session.flush()
+
+        assert plans.forward_chain(session, _TID, project_id=a.project) == []
+        assert plans.reverse_chain(session, _TID, project_id=b.project) == []

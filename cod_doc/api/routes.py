@@ -221,7 +221,11 @@ def update_task(name: str, task_id: str, body: dict[str, Any]) -> dict[str, Any]
             raise HTTPException(404, f"Задача не найдена: {task_id}")
         if "result" in body:
             task_service.log_progress(
-                session, task_id=task_id, message=str(body["result"]), author=legacy_tasks.AUTHOR
+                session,
+                task_id=task_id,
+                message=str(body["result"]),
+                author=legacy_tasks.AUTHOR,
+                project_id=project_id,
             )
         if "status" in body:
             new_status = str(body["status"])
@@ -232,6 +236,7 @@ def update_task(name: str, task_id: str, body: dict[str, Any]) -> dict[str, Any]
                         task_id=task_id,
                         author=legacy_tasks.AUTHOR,
                         reason=str(body.get("result") or "via legacy REST"),
+                        project_id=project_id,
                     )
                 else:
                     task_service.update_status(

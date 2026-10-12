@@ -691,10 +691,12 @@ def update_status(
         validate_transition,
     )
 
-    # ADO-200: project_id=None — легаси-долг. У complete, set_blocker,
-    # clear_blocker и log_progress скоупа проекта нет — поиск по всей БД, как
-    # раньше; grooming-мутации (description/acceptance/priority/affects_files,
-    # move_to_section) его требуют с AFT-022.
+    # ADO-200: project_id=None — легаси-долг внутренних вызывающих; все
+    # поверхности (MCP, CLI, web, REST) с AFT-022 передают проект. Так же
+    # опционален он у complete, set_blocker, clear_blocker, log_progress и
+    # checkout; обязательным станет в AFT-023. Grooming-мутации
+    # (description/acceptance/priority/affects_files, move_to_section) его
+    # требуют уже сейчас.
     model = _require_task(session, task_id, project_id=project_id)
     old_status = model.status
     target_status = canonical_task_status(new_status)
@@ -1481,6 +1483,7 @@ def complete(
     commit_sha: str | None = None,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
+    project_id: int | None = None,
 ) -> Task:
     """Complete a task: validate deps → done, write revision.
 
@@ -1497,7 +1500,7 @@ def complete(
     """
     from cod_doc.services.task_status_machine import is_terminal, validate_transition
 
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
 
     if model.status == TaskStatus.DONE.value:
         raise TaskAlreadyDoneError(task_id)
@@ -1530,6 +1533,7 @@ def complete(
             author=author,
             reason="auto-checkout перед complete (ADO-038)",
             via_checkout=True,
+            project_id=project_id,
         )
     validate_transition(model.status, TaskStatus.DONE.value)
 
@@ -1790,6 +1794,7 @@ def set_blocker(
     task_id: str,
     reason: str,
     author: str,
+    project_id: int | None = None,
 ) -> Task:
     """Mark a task as externally blocked (free-text reason).
 
@@ -1817,7 +1822,7 @@ def set_blocker(
     if not reason or not reason.strip():
         raise ValueError("reason must be non-empty")
 
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     old_reason = model.blocked_reason
     model.blocked_reason = reason
     model.last_updated = datetime.now(UTC)
@@ -1853,6 +1858,7 @@ def clear_blocker(
     *,
     task_id: str,
     author: str,
+    project_id: int | None = None,
 ) -> Task:
     """Clear the external blocker on a task (no-op if already clear).
 
@@ -1865,7 +1871,7 @@ def clear_blocker(
     Отдельного события о возврате в ready-множество нет — как и у
     ``add_dependency``.
     """
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     if model.blocked_reason is None:
         t = TaskRepository(session).get(model.row_id)
         assert t is not None
@@ -2257,6 +2263,7 @@ def log_progress(
     task_id: str,
     message: str,
     author: str,
+    project_id: int | None = None,
 ) -> Task:
     """Record a progress note on an in-progress task.
 
@@ -2267,7 +2274,7 @@ def log_progress(
     if not message or not message.strip():
         raise ValueError("message must be non-empty")
 
-    model = _require_task(session, task_id, project_id=None)
+    model = _require_task(session, task_id, project_id=project_id)
     model.last_updated = datetime.now(UTC)
     session.flush()
 

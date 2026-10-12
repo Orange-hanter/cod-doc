@@ -251,9 +251,10 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
+                project_id = require_project_id(session, project)
                 checkout_service.warn_if_no_checkout(session, task_id, author)
                 t = task_service.log_progress(
-                    session, task_id=task_id, message=message, author=author
+                    session, task_id=task_id, message=message, author=author, project_id=project_id
                 )
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
@@ -697,7 +698,9 @@ def register(mcp: FastMCP) -> None:
                 from cod_doc.services import checkout_service as _co
 
                 _co.warn_if_no_checkout(session, task_id, author)
-                t = task_service.set_blocker(session, task_id=task_id, reason=reason, author=author)
+                t = task_service.set_blocker(
+                    session, task_id=task_id, reason=reason, author=author, project_id=project_id
+                )
                 from cod_doc.services import activity_service
 
                 activity_service.emit(
@@ -735,7 +738,9 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
-                t = task_service.clear_blocker(session, task_id=task_id, author=author)
+                t = task_service.clear_blocker(
+                    session, task_id=task_id, author=author, project_id=project_id
+                )
                 activity_service.emit(
                     session,
                     project_id,
@@ -1349,6 +1354,7 @@ def register(mcp: FastMCP) -> None:
                     author=author,
                     commit_sha=commit_sha,
                     reason=reason,
+                    project_id=project_id,
                 )
                 activity_service.emit(
                     session,

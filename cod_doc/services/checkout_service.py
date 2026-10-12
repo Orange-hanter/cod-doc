@@ -63,8 +63,12 @@ class CheckoutResult:
     idempotent: bool = False
 
 
-def _load_task(session: Session, task_id: str) -> TaskModel:
-    m = session.execute(select(TaskModel).where(TaskModel.task_id == task_id)).scalar_one_or_none()
+def _load_task(session: Session, task_id: str, project_id: int | None = None) -> TaskModel:
+    """Задача по ``task_id``; с ``project_id`` — только в этом проекте (AFT-022)."""
+    stmt = select(TaskModel).where(TaskModel.task_id == task_id)
+    if project_id is not None:
+        stmt = stmt.where(TaskModel.project_id == project_id)
+    m = session.execute(stmt).scalar_one_or_none()
     if m is None:
         raise LookupError(f"Task {task_id!r} not found.")
     return m
@@ -76,6 +80,7 @@ def checkout(
     *,
     agent: str,
     expected_statuses: list[str | TaskStatus] | None = None,
+    project_id: int | None = None,
 ) -> CheckoutResult:
     """Atomically lock a task and transition it to in_progress.
 
@@ -89,7 +94,7 @@ def checkout(
     receive the value via the enum normaliser).
     """
     expected = [normalise(s) for s in (expected_statuses or ["todo", "pending"])]
-    m = _load_task(session, task_id)
+    m = _load_task(session, task_id, project_id)
 
     if m.checked_out_by is not None and m.checked_out_by != agent:
         raise CheckoutConflictError(task_id=task_id, locked_by=m.checked_out_by)
@@ -153,13 +158,14 @@ def release(
     *,
     agent: str,
     force: bool = False,
+    project_id: int | None = None,
 ) -> CheckoutResult:
     """Release the lock if held by ``agent`` (or any agent when ``force=True``).
 
     No status change. To complete the task, call ``task_complete`` separately;
     to revert to TODO, call ``task_update_status`` after release.
     """
-    m = _load_task(session, task_id)
+    m = _load_task(session, task_id, project_id)
     if m.checked_out_by is None:
         return CheckoutResult(
             task_id=task_id,

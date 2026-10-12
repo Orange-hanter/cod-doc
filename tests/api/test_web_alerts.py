@@ -172,6 +172,29 @@ def test_not_found_error_redirects_with_cookie_flash(alerts_client) -> None:
     assert "flash_severity=error" in cookie_blob
 
 
+def test_complete_redirect_ignores_a_foreign_referer(alerts_client) -> None:
+    """``Referer`` задаёт клиент: чужой хост не попадает в ``Location`` (open redirect)."""
+    client, entry = alerts_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/ALR-001/complete",
+        headers={"Referer": "https://evil.example/phish"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/p/{entry.name}"
+
+
+def test_complete_redirect_keeps_a_same_origin_referer_path(alerts_client) -> None:
+    client, entry = alerts_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/ALR-001/complete",
+        headers={"Referer": f"http://testserver/p/{entry.name}/tasks?plan=x"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/p/{entry.name}/tasks?plan=x"
+
+
 # ── Cookie-flash surfaced on next page load ──────────────────────────────
 
 

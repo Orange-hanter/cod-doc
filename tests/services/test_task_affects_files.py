@@ -847,7 +847,7 @@ def test_mcp_task_update_foreign_project_leaves_priority(engine_with_schema, mon
     """Не только ``affects_files``: priority задачи проекта A через ``project=B`` не меняется."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid, _row_id = _seed(session)
         _other_project(session)
 
     task_update = _tool(_register(monkeypatch, factory), "task_update")
@@ -855,7 +855,7 @@ def test_mcp_task_update_foreign_project_leaves_priority(engine_with_schema, mon
         task_update(project="other", task_id=_TASK, priority="critical")
 
     with transactional(factory) as session:
-        task = tasks.get(session, _TASK)
+        task = tasks.get(session, _TASK, project_id=pid)
         assert task is not None
         assert task.priority is Priority.MEDIUM
 

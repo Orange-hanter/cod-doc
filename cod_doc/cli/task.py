@@ -919,6 +919,7 @@ def task_complete(
                 author=author,
                 commit_sha=commit,
                 reason=reason,
+                project_id=_require_project_id(session, project),
             )
     except TaskNotFoundError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
@@ -1148,6 +1149,7 @@ def task_checkout(
                 task_id,
                 agent=agent,
                 expected_statuses=list(expected_statuses) or None,
+                project_id=_require_project_id(session, project),
             )
     except LookupError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
@@ -1193,7 +1195,13 @@ def task_release(
     # `task.released` тоже пишет сервис.
     try:
         with transactional(sf) as session:
-            result = checkout_service.release(session, task_id, agent=agent, force=force)
+            result = checkout_service.release(
+                session,
+                task_id,
+                agent=agent,
+                force=force,
+                project_id=_require_project_id(session, project),
+            )
     except LookupError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
         sys.exit(1)

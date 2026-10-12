@@ -430,7 +430,9 @@ def report(
 
     if kind == "progress":
         try:
-            task_service.log_progress(session, task_id=task_id, message=message, author=agent_id)
+            task_service.log_progress(
+                session, task_id=task_id, message=message, author=agent_id, project_id=project_id
+            )
         except TaskNotFoundError:
             return {"ok": False, "kind": kind, "hint": f"task not found: {task_id}"}
         return {
@@ -444,7 +446,9 @@ def report(
         from cod_doc.domain.entities import TaskStatus
 
         try:
-            task_service.set_blocker(session, task_id=task_id, reason=message, author=agent_id)
+            task_service.set_blocker(
+                session, task_id=task_id, reason=message, author=agent_id, project_id=project_id
+            )
             t = task_service.update_status(
                 session,
                 task_id=task_id,
@@ -549,6 +553,7 @@ def complete(
             author=agent_id,
             commit_sha=commit_sha,
             reason=summary,
+            project_id=project_id,
         )
     except TaskNotFoundError:
         return {"ok": False, "hint": f"task not found: {task_id}"}
@@ -562,7 +567,9 @@ def complete(
     # hard to spot leaking locks (e.g. when admin closes someone else's
     # checked-out task with a different agent_id).
     try:
-        checkout_service.release(session, task_id, agent=agent_id, force=False)
+        checkout_service.release(
+            session, task_id, agent=agent_id, force=False, project_id=project_id
+        )
     except Exception as exc:
         import logging
 
@@ -608,7 +615,9 @@ def release(
     from cod_doc.services.checkout_service import CheckoutConflictError
 
     try:
-        result = checkout_service.release(session, task_id, agent=agent_id, force=False)
+        result = checkout_service.release(
+            session, task_id, agent=agent_id, force=False, project_id=project_id
+        )
     except LookupError:
         return {"ok": False, "hint": f"task not found: {task_id}"}
     except CheckoutConflictError as exc:
@@ -736,6 +745,7 @@ def pick(
             session,
             target.task_id,
             agent=agent_id,
+            project_id=project_id,
         )
     except Exception as exc:  # CheckoutConflictError or status drift
         return {

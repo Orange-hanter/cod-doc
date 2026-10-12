@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from cod_doc.mcp.tools._db import session_factory
+from cod_doc.mcp.tools._db import require_project_id, session_factory
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -60,6 +60,7 @@ def register(mcp: FastMCP) -> None:
                     task_id,
                     agent=agent,
                     expected_statuses=expected_statuses,
+                    project_id=require_project_id(session, project),
                 )
         except LookupError as exc:
             raise ValueError(str(exc)) from exc
@@ -99,6 +100,7 @@ def register(mcp: FastMCP) -> None:
                     task_id,
                     agent=agent,
                     force=force,
+                    project_id=require_project_id(session, project),
                 )
         except LookupError as exc:
             raise ValueError(str(exc)) from exc
