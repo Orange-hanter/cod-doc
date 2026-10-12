@@ -515,3 +515,49 @@ def test_import_legacy_tasks_progress_exception_is_swallowed(
         )
     assert summary.imported == 1
     assert summary.errors == []
+
+
+def test_import_plan_of_a_second_hub_project_gets_its_own_scope(
+    tmp_path: Path, engine_with_schema
+) -> None:  # type: ignore[no-untyped-def]
+    """AFT-023: scope «imported-legacy» уникален на всю БД; второй проект
+    hub-БД получает «imported-legacy-p<id>», а не IntegrityError."""
+    yaml_a = tmp_path / "a.yaml"
+    _write_legacy_yaml(yaml_a, [{"id": "a", "title": "From A"}])
+    yaml_b = tmp_path / "b.yaml"
+    _write_legacy_yaml(yaml_b, [{"id": "b", "title": "From B"}])
+    (tmp_path / "ra").mkdir()
+    (tmp_path / "rb").mkdir()
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _seed_project(session, "pa", tmp_path / "ra")
+        b = _seed_project(session, "pb", tmp_path / "rb")
+        restate_importer.import_legacy_tasks(session, yaml_path=yaml_a, project_id=a)
+        restate_importer.import_legacy_tasks(session, yaml_path=yaml_b, project_id=b)
+
+        scopes_a = {p.scope for p in plan_service.list_for_project(session, a)}
+        scopes_b = {p.scope for p in plan_service.list_for_project(session, b)}
+        assert "imported-legacy" in scopes_a
+        assert f"imported-legacy-p{b}" in scopes_b
+
+
+def test_import_plan_race_recovers(tmp_path: Path, engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Параллельный импорт успел вставить план между чтением и вставкой:
+    уникальный scope даёт IntegrityError, повтор находит готовый план."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+        first = restate_importer._ensure_import_plan(session, project_id)
+
+        real = restate_importer.PlanRepository.get_by_scope
+        stale = {"left": 2}  # оба чтения первой попытки «не видят» план
+
+        def stale_reads(self, scope: str, *, project_id: int | None):  # type: ignore[no-untyped-def]
+            if stale["left"]:
+                stale["left"] -= 1
+                return None
+            return real(self, scope, project_id=project_id)
+
+        monkeypatch.setattr(restate_importer.PlanRepository, "get_by_scope", stale_reads)
+        assert restate_importer._ensure_import_plan(session, project_id) == first

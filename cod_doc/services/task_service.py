@@ -1607,13 +1607,11 @@ def complete(
     return t
 
 
-def get(session: Session, task_id: str, *, project_id: int | None) -> Task | None:
-    """Задача по ``task_id``; с ``project_id`` — только в этом проекте.
+def get(session: Session, task_id: str, *, project_id: int) -> Task | None:
+    """Задача по ``task_id`` в проекте ``project_id`` (AFT-023: скоуп обязателен).
 
-    Поверхности, которые решают по найденной задаче (MCP/CLI ``move``),
-    передают проект: иначе в общей hub-БД нашлась бы одноимённая чужая.
-    Дефолт ``None`` — легаси-поведение для ~всех прочих чтений; сделать скоуп
-    обязательным — задача AFT-023.
+    В общей hub-БД один ``task_id`` живёт в нескольких проектах — нумерация
+    на проект, — и поиск без скоупа нашёл бы одноимённую чужую задачу.
     """
     return TaskRepository(session).get_by_task_id(task_id, project_id=project_id)
 

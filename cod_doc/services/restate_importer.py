@@ -24,6 +24,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.core.import_limits import DEFAULT_MAX_FILES as _DEFAULT_MAX_FILES
 from cod_doc.domain.entities import (
@@ -315,7 +316,23 @@ def _ensure_import_plan(session: Session, project_id: int) -> tuple[int, int]:
     """Return (plan_id, section_id) for the synthetic 'imported-legacy' plan.
 
     Created on first call; reused on subsequent imports for the same project.
+
+    Два параллельных импорта могут оба увидеть scope свободным и оба вставить
+    план — второй упрётся в уникальный индекс. Создание идёт в savepoint, и
+    разбор повторяется уже с планом первого (если он чужого проекта — scope
+    станет собственным), как у legacy REST-плана.
     """
+    for attempt in range(2):
+        try:
+            with session.begin_nested():
+                return _ensure_import_plan_once(session, project_id)
+        except IntegrityError:
+            if attempt:
+                raise
+    raise AssertionError("unreachable")
+
+
+def _ensure_import_plan_once(session: Session, project_id: int) -> tuple[int, int]:
     plan_repo = PlanRepository(session)
     # scope уникален на всю БД: если «imported-legacy» уже занят другим
     # проектом общей hub-БД, план этого проекта получает собственный scope —
