@@ -40,3 +40,6 @@ venv/
 
 # macOS
 .DS_Store
+
+# graphify: граф кода для blast radius ai-reviewer (строится локально и в pr-review.yml)
+.graphify/

@@ -101,6 +101,44 @@ jobs:
           persist-credentials: false
           path: .ai-reviewer-engine
 
+      # Граф кода для blast radius: движок читает .graphify/graphify-out/graph.json
+      # и зовёт `.graphify/gf affected <символ>` (ai-reviewer lib/config.mjs).
+      # Без графа blast radius молча выключается (`skip_reason: graph_missing`) —
+      # так и было до этого шага. Строим на чекауте PR (merge-коммит): свежесть
+      # движок сверяет по «Built from commit» в GRAPH_REPORT.md с HEAD.
+      # graphify только парсит AST (без LLM и без исполнения кода PR), секретов
+      # у шага нет. Fail-open: сбой графа не должен ронять ревью.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        if: steps.pin.outputs.ref != ''
+        continue-on-error: true
+        with:
+          python-version: "3.13"
+
+      # AST-кэш graphify ключуется sha256 содержимого файла — переносим между
+      # прогонами только его; stat-index.json (mtime-ярлык) после чекаута бесполезен.
+      - name: Restore graphify AST cache
+        if: steps.pin.outputs.ref != ''
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: .graphify/graphify-out/cache/ast
+          key: graphify-0.9.87-${{ github.sha }}
+          restore-keys: graphify-0.9.87-
+
+      - name: Build graphify graph
+        if: steps.pin.outputs.ref != ''
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          GRAPHIFY_OUT: .graphify/graphify-out
+          GRAPHIFY_NO_TIPS: '1'
+        run: |
+          uv venv -q .graphify/venv
+          uv pip install -q --python .graphify/venv/bin/python graphifyy==0.9.87
+          ln -sf venv/bin/graphify .graphify/gf
+          .graphify/gf update . --force
+          grep -m1 'Built from commit' .graphify/graphify-out/GRAPH_REPORT.md
+
       # Без continue-on-error: скрипт выходит с 1 только на мерж-гейте
       # (подтверждённые critical/major), инфраструктурные сбои — fail-open.
       # Профиль — .ai-reviewer.json в корне, движок находит его сам.
