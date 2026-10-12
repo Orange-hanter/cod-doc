@@ -1031,9 +1031,20 @@ def register(mcp: FastMCP) -> None:
         affects_files + affects_files_mode (replace | add | remove, default
         replace): ``replace`` — набор становится ровно этим списком (``[]``
         очищает), ``add`` / ``remove`` — добавить / убрать перечисленные пути.
-        Дубли схлопываются. Пути вне ``root_path`` проекта не отклоняются —
-        ответ несёт ``warnings`` (AFT-012). Набор влияет на локальность задачи
-        в ``task_next_ready`` / ``plan_ready`` (RFC 27 F13).
+        Дубли схлопываются, обрамляющие пробелы срезаются. ValueError — пустой
+        путь и невидимые символы: управляющие, bidi, U+200B, BOM, разделители
+        строк, суррогаты, филлеры. Исключение — ZWJ/ZWNJ (U+200D/U+200C): они
+        входят в эмодзи-последовательности и письменности и допустимы.
+        ``../``, обратные слэши и абсолютные пути пишутся как есть:
+        путь — метка локальности, файловых операций по нему нет. Пути вне
+        ``root_path`` проекта не отклоняются — ответ несёт ``warnings``
+        (AFT-012). Набор влияет на локальность задачи в ``task_next_ready`` /
+        ``plan_ready`` (RFC 27 F13). CLI-эквивалент очистки
+        (``affects_files=[]``) — ``cod-doc task update --clear-affects-files``:
+        повторяемая опция не умеет передать пустой список.
+
+        ``task_id`` ищется только в ``project``: задача другого проекта общей
+        БД — «not found».
 
         Не меняет ``title`` (идентичность задачи), ``status`` (см.
         ``task_update_status`` / ``task_checkout``) и принадлежность плану.
@@ -1080,6 +1091,8 @@ def register(mcp: FastMCP) -> None:
         try:
             with transactional(sf, commit=not dry_run) as session:
                 pid = require_project_id(session, project)
+                # Один поиск в скоупе проекта до правок: задача чужого проекта —
+                # «not found» сразу, и ``t`` дальше всегда задача.
                 t = task_service.get(session, task_id, project_id=pid)
                 if t is None:
                     raise TaskNotFoundError(task_id)
@@ -1224,9 +1237,16 @@ def register(mcp: FastMCP) -> None:
                     )
                     moved.append(task_to_dict(t))
                 except (TaskNotFoundError, SectionNotFoundError, CrossPlanMoveError) as exc:
-                    errors.append({"task_id": task_id, "message": str(exc)})
+                    # TaskNotFoundError несёт только task_id — без пояснения
+                    # сообщение выходило «MV-001: MV-001».
+                    message = (
+                        f"task not found in project {project!r}"
+                        if isinstance(exc, TaskNotFoundError)
+                        else str(exc)
+                    )
+                    errors.append({"task_id": task_id, "message": message})
                     if not continue_on_error:
-                        raise ValueError(f"{task_id}: {exc}") from None
+                        raise ValueError(f"{task_id}: {message}") from None
             committed = not dry_run
 
         result: dict[str, Any] = {

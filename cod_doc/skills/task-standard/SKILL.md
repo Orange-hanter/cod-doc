@@ -116,8 +116,16 @@ backlog ─→ todo ─→ in_progress ─→ in_review ─→ done
 
 | Поверхность | Как |
 |---|---|
-| MCP | `task_update(project, task_id, description=…, acceptance=…, priority=…, affects_files=[…], affects_files_mode="replace"\|"add"\|"remove")` — любое подмножество полей; ответ содержит `updated_fields` (и `warnings` для путей вне корня проекта) |
-| CLI | `cod-doc task update TASK_ID -p SLUG --description … --acceptance … --priority … --affects-file PATH… --affects-mode replace\|add\|remove` (`--clear-affects-files` — очистить) |
+| MCP | `task_update(project, task_id, description=…, acceptance=…, priority=…, affects_files=[…], affects_files_mode="replace"\|"add"\|"remove")` — любое подмножество полей; `affects_files_mode` по умолчанию `replace` (`affects_files=[]` очищает набор); ответ содержит `updated_fields` (и `warnings` для путей вне корня проекта) |
+| CLI | `cod-doc task update TASK_ID -p SLUG --description … --acceptance … --priority … --affects-file PATH… --affects-mode replace\|add\|remove` (режим по умолчанию — `replace`; `--clear-affects-files` — очистить) |
+
+Пути `affects_files` — метки локальности, а не файлы: пробелы по краям
+срезаются, пустой путь и невидимые символы (управляющие, bidi, U+200B, BOM,
+разделители строк) отвергаются — ZWJ/ZWNJ эмодзи и письменностей допустимы;
+`../` и абсолютные пути пишутся как есть. Абсолютный путь вне корня проекта
+(или при незаданном `root_path`) записывается, но ответ несёт `warnings` (AFT-012).
+Код, который однажды начнёт резолвить `affects_files` в файловую систему, обязан
+сам нормализовать путь и проверить, что он внутри корня: сервис этого не делает.
 
 Каждое изменённое поле пишет ревизию и activity event
 (`task.description_updated` / `task.acceptance_updated` /

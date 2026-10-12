@@ -28,7 +28,6 @@ from cod_doc.infra.models import (
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import task_service as tasks
 from cod_doc.services.project_lookup import require_project_id
-from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -169,13 +168,15 @@ def test_task_update_unknown_task_exits_nonzero(tmp_path: Path) -> None:
 
 def _seed_files(name: str, paths: list[str]) -> None:
     for session in _session(name):
+        project = ProjectRepository(session).get_by_slug(name)
+        assert project is not None
         tasks.update_affects_files(
             session,
             task_id="GCL-001",
             paths=paths,
             mode="replace",
             author="human:seed",
-            project_id=sole_project_id(session),
+            project_id=project.row_id,
         )
 
 
@@ -272,8 +273,43 @@ def test_task_update_out_of_root_path_warns(tmp_path: Path) -> None:
     # line proves the warning (rich may wrap the warning over several lines).
     out = result.output
     assert out.count("⚠") == 1
-    assert "/elsewhere/x.py" in out[out.index("⚠") : out.index("✅")]
+    assert out.count("✅") == 1, out
+    warning = " ".join(out[out.index("⚠") : out.index("✅")].split())
+    assert "/elsewhere/x.py" in warning
+    assert "вне корня проекта" in warning, "маркер ⚠ должен нести текст предупреждения"
+    assert str(tmp_path) not in warning, "root_path машины в предупреждение не попадает"
     assert _files("gp") == ["/elsewhere/x.py"]
+
+
+def test_task_update_relative_parent_path_is_stored_as_given(tmp_path: Path) -> None:
+    """``../`` не нормализуется и не отвергается: путь — метка локальности, не файл."""
+    _init_project(tmp_path)
+    _seed_task("gp")
+
+    result = _update("--affects-file", "../shared/x.py")
+    assert result.exit_code == 0, result.output
+    # Относительный путь не абсолютный — предупреждать не о чем.
+    assert "⚠" not in result.output, result.output
+    assert "вне корня" not in result.output, result.output
+    assert "обновлено — affects_files" in result.output
+    assert _files("gp") == ["../shared/x.py"]
+
+
+def test_task_update_rejects_empty_and_invisible_paths(tmp_path: Path) -> None:
+    _init_project(tmp_path)
+    _seed_task("gp")
+    _seed_files("gp", ["src/keep.py"])
+
+    empty = _update("--affects-file", "  ")
+    assert empty.exit_code == 1
+    assert "пуст" in empty.output
+
+    # bidi-override, zero-width, BOM, разделитель строки — тем же правилом, что в сервисе
+    for invisible in ("src/\u202eyp.a", "src/\u200ba.py", "\ufeffsrc/a.py", "src/a\u2028b.py"):
+        result = _update("--affects-file", invisible)
+        assert result.exit_code == 1, invisible
+        assert "невидим" in result.output, invisible
+    assert _files("gp") == ["src/keep.py"]
 
 
 def test_task_update_clear_conflicts_with_affects_file(tmp_path: Path) -> None:

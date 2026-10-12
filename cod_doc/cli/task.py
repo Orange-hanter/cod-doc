@@ -13,7 +13,7 @@ from rich.table import Table
 
 from cod_doc.cli._common import printable
 from cod_doc.cli._common import require_project_id as _require_project_id
-from cod_doc.domain.entities import AFFECTS_FILES_MODES, TaskStatus, TaskType
+from cod_doc.domain.entities import AFFECTS_FILES_MODES, AffectsFilesMode, TaskStatus, TaskType
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -523,7 +523,7 @@ def task_status(
     multiple=True,
     type=click.Path(),
     metavar="PATH",
-    help="Путь в affects_files (повторяемый); режим — --affects-mode",
+    help="Путь в affects_files, как есть (повторяемый); режим — --affects-mode",
 )
 @click.option(
     "--affects-mode",
@@ -532,7 +532,9 @@ def task_status(
     help="Как применить --affects-file: replace (по умолчанию) / add / remove",
 )
 @click.option(
-    "--clear-affects-files", is_flag=True, help="Очистить affects_files (replace на пустой набор)"
+    "--clear-affects-files",
+    is_flag=True,
+    help="Очистить affects_files; в MCP то же — пустой список affects_files",
 )
 @click.option("--author", default="cli", show_default=True)
 @click.option("--reason", default=None)
@@ -558,6 +560,10 @@ def task_update(
     AFT-021: `--affects-file` (повторяемый) с `--affects-mode replace|add|remove`
     правит набор затронутых файлов; `--clear-affects-files` очищает его.
     Пути вне корня проекта записываются с предупреждением (AFT-012).
+    Отдельный флаг очистки нужен потому, что повторяемая опция не умеет
+    передать пустой список — в MCP это `affects_files=[]`. Путь — метка
+    локальности, а не файл: `../`, обратные слэши и абсолютные пути не
+    нормализуются и не отвергаются; пустой путь и невидимые символы — ошибка.
     """
     from cod_doc.domain.entities import Priority
     from cod_doc.infra.db import transactional
@@ -625,7 +631,7 @@ def task_update(
                     project_id=pid,
                     task_id=task_id,
                     paths=list(affects_files),
-                    mode=affects_mode or "replace",
+                    mode=affects_mode or AffectsFilesMode.REPLACE,
                     author=author,
                     reason=reason,
                 )

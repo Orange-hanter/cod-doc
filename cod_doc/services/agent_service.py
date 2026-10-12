@@ -428,21 +428,32 @@ def report(
 
     if kind == "blocker":
         from cod_doc.domain.entities import TaskStatus
+        from cod_doc.services.task_status_machine import StatusTransitionError
 
+        # Причина блокировки и переход в blocked — одна операция: если переход
+        # не разрешён (из backlog / in_review / done / cancelled), откатываются
+        # оба шага, а агент получает подсказку, а не голое исключение.
         try:
-            task_service.set_blocker(
-                session, project_id=project_id, task_id=task_id, reason=message, author=agent_id
-            )
-            t = task_service.update_status(
-                session,
-                project_id=project_id,
-                task_id=task_id,
-                new_status=TaskStatus("blocked"),
-                author=agent_id,
-                reason=message,
-            )
+            with session.begin_nested():
+                task_service.set_blocker(
+                    session,
+                    task_id=task_id,
+                    reason=message,
+                    author=agent_id,
+                    project_id=project_id,
+                )
+                t = task_service.update_status(
+                    session,
+                    task_id=task_id,
+                    new_status=TaskStatus("blocked"),
+                    author=agent_id,
+                    reason=message,
+                    project_id=project_id,
+                )
         except TaskNotFoundError:
             return {"ok": False, "kind": kind, "hint": f"task not found: {task_id}"}
+        except StatusTransitionError as exc:
+            return {"ok": False, "kind": kind, "hint": str(exc)}
         activity_service.emit(
             session,
             project_id,

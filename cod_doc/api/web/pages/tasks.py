@@ -524,7 +524,9 @@ def task_show(
 
     forward = plans.forward_chain(session, task_id, project_id=project_db_id)
     reverse = plans.reverse_chain(session, task_id, project_id=project_db_id)
-    history = revisions.list_for_entity(session, EntityKind.TASK, task.row_id)
+    history = revisions.list_for_entity(
+        session, EntityKind.TASK, task.row_id, project_id=project_db_id
+    )
     trace = traces.list_for_task(session, task.row_id)
 
     # Plan + section breadcrumb info.

@@ -49,6 +49,7 @@ from sqlalchemy.exc import IntegrityError
 from cod_doc.domain.entities import (
     AFFECTS_FILES_MODES,
     AffectedFileKind,
+    AffectsFilesMode,
     EntityKind,
     Priority,
     Task,
@@ -384,13 +385,40 @@ def find_duplicate_by_title(session: Session, project_id: int, title: str) -> Ta
     return None
 
 
+#: Категории Unicode, запрещённые в пути ``affects_files``: управляющие (Cc),
+#: форматирующие (Cf), разделители строк/абзацев (Zl, Zp) и одиночные
+#: суррогаты (Cs) — последние не кодируются в UTF-8 и роняют запись в БД.
+_FORBIDDEN_PATH_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+
+#: Исключения из Cf: ZWNJ/ZWJ входят в легитимные имена — эмодзи-последовательности
+#: (``👨‍💻``) и письменности вроде персидской и деванагари. Видимый путь они не
+#: подменяют, в отличие от bidi-override, U+200B и BOM.
+_ALLOWED_FORMAT_CHARS = frozenset({"\u200c", "\u200d"})
+
+#: Невидимые «заполнители» вне Cc/Cf/Zl/Zp: категория Lo/So, но глифа нет —
+#: хангыльские филлеры и пустой шаблон Брайля выглядят как пробел или ничего.
+_INVISIBLE_FILLERS = frozenset({"\u115f", "\u1160", "\u3164", "\uffa0", "\u2800"})
+
+
+def _forbidden_in_path(ch: str) -> bool:
+    if ch in _INVISIBLE_FILLERS:
+        return True
+    return unicodedata.category(ch) in _FORBIDDEN_PATH_CATEGORIES and ch not in (
+        _ALLOWED_FORMAT_CHARS
+    )
+
+
 def normalize_affected_paths(paths: list[str]) -> list[str]:
     """Одно правило для ``affects_files`` в `create()` и `update_affects_files()`.
 
     Обрамляющие пробелы срезаются (иначе ``" a.py "`` и ``"a.py"`` расходятся в
-    дедупе и локальности). Пустой путь, NUL и прочие управляющие символы
-    (Unicode Cc) — ValueError: NUL не пишется в text-колонку hub-Postgres, а
-    управляющие символы ломают вывод CLI и markdown-проекцию. Остальное — как
+    дедупе и локальности). Пустой путь, NUL и прочие невидимые символы —
+    ValueError: NUL не пишется в text-колонку hub-Postgres, управляющие (Unicode
+    Cc) и разделители строк/абзацев (Zl, Zp) ломают вывод CLI и
+    markdown-проекцию, а форматирующие (Cf: bidi-override U+202E, zero-width
+    U+200B, BOM) показывают в выводе не тот путь, что записан. ZWNJ/ZWJ
+    (U+200C/U+200D) разрешены: без них не записать эмодзи-последовательность
+    и ряд письменностей. Остальное — как
     передано: путь — метка локальности, файловых операций по нему нет, поэтому
     ``../``, обратные слэши и абсолютные пути допустимы (вне ``root_path`` —
     AFT-012 warning у вызывающего).
@@ -401,9 +429,34 @@ def normalize_affected_paths(paths: list[str]) -> list[str]:
             raise ValueError("affects_files: путь не может быть пустым")
         if "\x00" in p:
             raise ValueError("affects_files: NUL в пути")
-        if any(unicodedata.category(ch) == "Cc" for ch in p):
-            raise ValueError(f"affects_files: управляющий символ в пути {p!r}")
+        bad = next((ch for ch in p if _forbidden_in_path(ch)), None)
+        if bad is not None:
+            raise ValueError(
+                f"affects_files: управляющий или невидимый символ U+{ord(bad):04X} "
+                f"(категория {unicodedata.category(bad)}) в пути {p!r}"
+            )
     return out
+
+
+def _require_plan_section_in_project(
+    session: Session, *, project_id: int, plan_id: int, section_id: int
+) -> None:
+    """План — проекта ``project_id``, секция — этого плана (AFT-022).
+
+    ``plan_id``/``section_id`` — два независимых FK без проверки принадлежности:
+    вызывающий (рутина `finding_promote`, импортёр) мог подставить план
+    чужого проекта общей hub-БД, и задача проекта A легла бы в план B.
+    """
+    plan = session.get(PlanModel, plan_id)
+    if plan is None:
+        raise ValueError(f"plan #{plan_id} does not exist")
+    if plan.project_id != project_id:
+        raise ValueError(f"plan #{plan_id} not found in project #{project_id}")
+    section = session.get(PlanSectionModel, section_id)
+    if section is None:
+        raise ValueError(f"section #{section_id} does not exist")
+    if section.plan_id != plan_id:
+        raise ValueError(f"section #{section_id} not found in plan #{plan_id}")
 
 
 def create(
@@ -464,6 +517,9 @@ def create(
             )
 
     validation.validate_task_type(type.value)
+    _require_plan_section_in_project(
+        session, project_id=project_id, plan_id=plan_id, section_id=section_id
+    )
 
     now = datetime.now(UTC)
     repo = TaskRepository(session)
@@ -780,7 +836,13 @@ def update_description(
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
-    """Replace task.description; writes a TASK revision (op=description)."""
+    """Replace task.description; writes a TASK revision (op=description).
+
+    ``project_id`` обязателен и без значения по умолчанию (как у
+    `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
+    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` не принимается:
+    обходить скоуп grooming-мутациям незачем.
+    """
     return _update_text_field(
         session,
         task_id=task_id,
@@ -803,7 +865,13 @@ def update_acceptance(
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
-    """Replace task.acceptance; writes a TASK revision (op=acceptance)."""
+    """Replace task.acceptance; writes a TASK revision (op=acceptance).
+
+    ``project_id`` обязателен и без значения по умолчанию (как у
+    `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
+    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` не принимается:
+    обходить скоуп grooming-мутациям незачем.
+    """
     return _update_text_field(
         session,
         task_id=task_id,
@@ -835,6 +903,11 @@ def update_priority(
     Revision и activity event пишутся одним атомарным вызовом
     ``activity_service.write_revision_and_emit_event`` (правило ADO-040);
     ``actor_kind`` выводится из ``author``.
+
+    ``project_id`` обязателен и без значения по умолчанию (как у
+    `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
+    hub-БД — `TaskNotFoundError`, а не чужая правка. ``None`` не принимается:
+    обходить скоуп grooming-мутациям незачем.
     """
     model = _require_task(session, task_id, project_id=project_id)
     old_priority = model.priority
@@ -895,7 +968,7 @@ def update_affects_files(
     task_id: str,
     paths: list[str],
     author: str,
-    mode: str = "replace",
+    mode: AffectsFilesMode | str = AffectsFilesMode.REPLACE,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> AffectsFilesChange:
@@ -907,13 +980,18 @@ def update_affects_files(
 
     ``mode``: ``replace`` — набор становится ровно ``paths`` (``[]`` очищает);
     ``add`` — пути из ``paths`` добавляются к текущим; ``remove`` — убираются
-    (отсутствующие игнорируются). Обрамляющие пробелы срезаются — иначе
-    ``" a.py "`` и ``"a.py"`` расходятся в дедупе и локальности; в остальном
-    пути пишутся как есть, как в `create()`. Дубли схлопываются
-    (``uq_affected_file_task_path``), пустой путь и NUL — ValueError.
+    (отсутствующие игнорируются). В ``replace``/``add`` пути проходят то же
+    правило, что и в `create()` (`normalize_affected_paths`); ``remove``
+    ничего не пишет и правилом не проверяется — так убираются и легаси-строки,
+    записанные до него. Дубли схлопываются (``uq_affected_file_task_path``).
 
-    ``project_id`` ограничивает поиск задачи проектом: тот же ``task_id`` в
-    чужом проекте общей hub-БД — `TaskNotFoundError`, а не чужая правка.
+    ``kind`` пути не задаётся ни здесь, ни в `create()`: новые строки —
+    ``source``. Строки, которые остаются в наборе, не пересоздаются и свой
+    ``kind`` сохраняют.
+
+    ``project_id`` обязателен и без значения по умолчанию (как у
+    `_require_task`, ADO-200): тот же ``task_id`` в чужом проекте общей
+    hub-БД — `TaskNotFoundError`, а не чужая правка.
 
     Совпадение итогового набора с текущим (порядок не важен) — no-op без
     ревизии и события. Иначе — TASK-ревизия ``op=affects_files`` со старым и
@@ -925,10 +1003,21 @@ def update_affects_files(
     попадают в ``warnings`` — только реально добавленные этим вызовом (в режиме
     ``remove`` и при no-op предупреждать не о чем).
     """
-    if mode not in AFFECTS_FILES_MODES:
-        raise ValueError(f"unknown mode {mode!r}; expected one of {list(AFFECTS_FILES_MODES)}")
-    paths = normalize_affected_paths(paths)
-    requested = list(dict.fromkeys(paths))
+    # Строка с поверхностей (MCP, CLI) приводится к enum здесь, в одном месте.
+    try:
+        mode = AffectsFilesMode(mode)
+    except ValueError:
+        raise ValueError(
+            f"unknown mode {mode!r}; expected one of {list(AFFECTS_FILES_MODES)}"
+        ) from None
+    if mode == AffectsFilesMode.REMOVE:
+        # Удаление ничего не пишет, поэтому правило путей к нему не
+        # применяется: легаси-строки, записанные до `normalize_affected_paths`
+        # (с U+200B, bidi, пробелами по краям), иначе нельзя было бы убрать
+        # поштучно. Путь сверяется и как передан, и после strip.
+        requested = list(dict.fromkeys([*paths, *(p.strip() for p in paths)]))
+    else:
+        requested = list(dict.fromkeys(normalize_affected_paths(paths)))
 
     model = _require_task(session, task_id, project_id=project_id)
     rows = list(
@@ -937,9 +1026,9 @@ def update_affects_files(
         ).scalars()
     )
     old = sorted(r.path for r in rows)
-    if mode == "replace":
+    if mode == AffectsFilesMode.REPLACE:
         new = sorted(requested)
-    elif mode == "add":
+    elif mode == AffectsFilesMode.ADD:
         new = sorted(set(old) | set(requested))
     else:
         new = sorted(set(old) - set(requested))
@@ -947,10 +1036,10 @@ def update_affects_files(
     # AFT-012: warn only about paths this call actually adds — a path already
     # in the set was reported when it was added, and a no-op stays silent.
     warnings: list[str] = []
-    added_paths = sorted(set(new) - set(old))
-    if added_paths:
+    added = sorted(set(new) - set(old))
+    if added:
         project = session.get(ProjectModel, model.project_id)
-        warning = foreign_paths_warning(added_paths, project.root_path if project else "")
+        warning = foreign_paths_warning(added, project.root_path if project else "")
         if warning is not None:
             warnings.append(warning)
 
@@ -959,7 +1048,6 @@ def update_affects_files(
         assert t is not None
         return AffectsFilesChange(task=t, old=old, new=new, changed=False, warnings=warnings)
 
-    added = sorted(set(new) - set(old))
     removed = sorted(set(old) - set(new))
     for row in rows:
         if row.path in removed:
@@ -978,15 +1066,20 @@ def update_affects_files(
         entity_kind=EntityKind.TASK,
         entity_id=model.row_id,
         author=author,
-        diff=_task_diff("affects_files", mode=mode, old=old, new=new),
+        diff=_task_diff("affects_files", mode=mode.value, old=old, new=new),
         reason=reason,
         expected_parent_revision_id=expected_parent_revision_id,
         activity_kind="task.affects_files_updated",
         activity_scope_kind="task",
         activity_scope_id=model.task_id,
-        activity_payload={"mode": mode, "added": added, "removed": removed, "reason": reason},
+        activity_payload={
+            "mode": mode.value,
+            "added": added,
+            "removed": removed,
+            "reason": reason,
+        },
         activity_summary=(
-            f"Task {model.task_id}: affects_files +{len(added)} −{len(removed)} ({mode})"
+            f"Task {model.task_id}: affects_files +{len(added)} -{len(removed)} ({mode.value})"
         ),
     )
 
@@ -1020,6 +1113,9 @@ def move_to_section(
 
     No-op, когда задача уже в целевой секции. Revision и activity event
     пишутся одним атомарным вызовом (правило ADO-040).
+
+    ``project_id`` обязателен и без значения по умолчанию, как у остальных
+    grooming-мутаций (AFT-022, ADO-200).
     """
     model = _require_task(session, task_id, project_id=project_id)
     old_section_id = model.section_id
@@ -1508,6 +1604,25 @@ def complete(
 def get(session: Session, task_id: str, *, project_id: int) -> Task | None:
     # STO-029: task_id уникален только в проекте.
     return TaskRepository(session).get_in_project(task_id, project_id=project_id)
+
+
+def get_many(session: Session, task_ids: list[str], *, project_id: int) -> dict[str, Task]:
+    """Задачи проекта по списку ``task_id`` одним запросом: ``{task_id: Task}``.
+
+    Отсутствующие ID в результат не попадают. Для страниц, которые
+    подставляют title/status к спискам ссылок (карточка ADR), — вместо
+    ``get`` на каждую ссылку.
+    """
+    require_int_project_id(project_id)
+    if not task_ids:
+        return {}
+    repo = TaskRepository(session)
+    models = session.execute(
+        select(TaskModel).where(
+            TaskModel.project_id == project_id, TaskModel.task_id.in_(set(task_ids))
+        )
+    ).scalars()
+    return {m.task_id: repo._to_domain(m) for m in models}
 
 
 def list_for_plan(session: Session, plan_id: int) -> list[Task]:

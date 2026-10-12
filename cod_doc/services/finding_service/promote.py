@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from cod_doc.domain.entities import Priority, TaskType, actor_kind_for_author
-from cod_doc.infra.models import FindingModel, PlanModel, PlanSectionModel
+from cod_doc.infra.models import FindingModel
 from cod_doc.services import activity_service, plan_service, search_service, task_service
 from cod_doc.services.finding_service.queries import get_finding
 
@@ -50,9 +50,9 @@ def promote_finding(
 
     Emits an ``activity_event`` when a task is created or updated.
 
-    ``plan_id``/``section_id`` — сырые ``row_id``, поэтому принадлежность
-    проекту проверяется здесь, а не только в :func:`promote_finding_by_ref`:
-    иначе прямой вызов создавал бы задачу в плане чужого проекта.
+    ``plan_id``/``section_id`` — сырые ``row_id``; принадлежность плана
+    проекту и секции плану проверяет ``task_service.create`` (AFT-022) для
+    любого вызывающего, а не только :func:`promote_finding_by_ref`.
     """
     finding = session.get(FindingModel, finding_id)
     if finding is None:
@@ -64,12 +64,6 @@ def promote_finding(
         return {"promoted": False, "finding_id": finding_id}
 
     if on_finding == "create_task":
-        plan = session.get(PlanModel, plan_id)
-        if plan is None or plan.project_id != project_id:
-            raise ValueError(f"plan #{plan_id} does not belong to the given project")
-        section = session.get(PlanSectionModel, section_id)
-        if section is None or section.plan_id != plan_id:
-            raise ValueError(f"section #{section_id} does not belong to plan #{plan_id}")
         task = task_service.create(
             session,
             project_id=project_id,
