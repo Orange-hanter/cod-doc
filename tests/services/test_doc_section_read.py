@@ -137,7 +137,10 @@ def _capture_sql(engine: Engine) -> Iterator[list[str]]:
 def _read(engine: Engine, doc_id: int, anchors: list[str]) -> list[dict[str, Any]]:
     factory = make_session_factory(engine)
     with transactional(factory) as session:
-        return docs.read_sections(session, doc_id, anchors)
+        doc = docs.get_doc_by_id(session, doc_id)
+        # Несуществующий документ ищется в скоупе единственного проекта БД.
+        project_id = doc.project_id if doc is not None else only_project_id(session)
+        return docs.read_sections(session, doc_id, anchors, project_id=project_id)
 
 
 def test_read_one_section_returns_contract_keys(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

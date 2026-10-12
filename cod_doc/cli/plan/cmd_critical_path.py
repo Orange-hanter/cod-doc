@@ -28,10 +28,9 @@ def plan_critical_path(ctx: click.Context, plan_scope: str, project: str, as_jso
     sf = _make_session(project, cfg)
 
     with transactional(sf) as session:
-        plan_id = _require_plan_id(session, plan_scope, project)
-        result = plan_service.critical_path(
-            session, plan_id, project_id=_project_id(session, project)
-        )
+        pid = _project_id(session, project)
+        plan_id = _require_plan_id(session, plan_scope, pid)
+        result = plan_service.critical_path(session, plan_id, project_id=pid)
 
     if as_json:
         click.echo(

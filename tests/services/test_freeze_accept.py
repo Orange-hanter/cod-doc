@@ -154,7 +154,9 @@ def test_freeze_projection_creates_execution_log_doc(
             author="human:test",
             id_prefix="FRZ",
         )
-        frozen = plan_service.freeze_projection(session, plan_id, author="human:test")
+        frozen = plan_service.freeze_projection(
+            session, plan_id, author="human:test", project_id=project_id
+        )
     assert frozen.row_id is not None
     assert frozen.type == DocumentType.EXECUTION_LOG
     assert frozen.status == DocumentStatus.ACTIVE
@@ -173,11 +175,15 @@ def test_freeze_projection_creates_distinct_snapshots_per_call(
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _project_id, plan_id = _seed(session, "p2", tmp_path)
-        first = plan_service.freeze_projection(session, plan_id, author="human:test")
+        first = plan_service.freeze_projection(
+            session, plan_id, author="human:test", project_id=_project_id
+        )
     assert first.row_id is not None
     # NB: no sleep — relies on ms-precision in the timestamp.
     with transactional(factory) as session:
-        second = plan_service.freeze_projection(session, plan_id, author="human:test")
+        second = plan_service.freeze_projection(
+            session, plan_id, author="human:test", project_id=_project_id
+        )
     assert second.row_id != first.row_id
     assert second.doc_key != first.doc_key
 
@@ -187,5 +193,9 @@ def test_freeze_projection_unknown_plan_raises(
     engine_with_schema,  # type: ignore[no-untyped-def]
 ) -> None:
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session, pytest.raises(plan_service.PlanNotFoundError):
-        plan_service.freeze_projection(session, 9999, author="human:test")
+    with transactional(factory) as session:
+        project_id, _plan_id = _seed(session, "p", tmp_path)
+        with pytest.raises(plan_service.PlanNotFoundError):
+            plan_service.freeze_projection(
+                session, 9999, author="human:test", project_id=project_id
+            )

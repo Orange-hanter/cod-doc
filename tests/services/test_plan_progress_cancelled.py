@@ -30,6 +30,7 @@ from cod_doc.infra.models import (
     TaskModel,
 )
 from cod_doc.services import plan_service as plans
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -97,7 +98,7 @@ def test_remaining_excludes_cancelled_without_inflating_done(engine_with_schema)
         )
 
     with transactional(factory) as session:
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
 
     assert progress.total == 6
     assert progress.done == 2, "cancelled не должен прибавляться к done"
@@ -116,7 +117,7 @@ def test_cancelled_is_visible_per_section(engine_with_schema) -> None:
         )
 
     with transactional(factory) as session:
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
 
     by_letter = {s.letter: s for s in progress.sections}
     assert (by_letter["A"].cancelled, by_letter["A"].remaining) == (1, 0)
@@ -135,7 +136,7 @@ def test_plan_reaches_done_when_only_cancelled_remain(engine_with_schema) -> Non
         plan_id, _ = _seed(session, {"A": ["done"] * 8 + ["cancelled"] * 2})
 
     with transactional(factory) as session:
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
 
     assert progress.status is plans.DerivedStatus.DONE
     assert progress.sections[0].status is plans.DerivedStatus.DONE
@@ -155,7 +156,7 @@ def test_backlog_stays_in_remaining(engine_with_schema) -> None:
         plan_id, _ = _seed(session, {"A": ["done", "backlog", "cancelled"]})
 
     with transactional(factory) as session:
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
 
     assert progress.remaining == 1, "backlog остаётся в остатке"
     assert progress.status is plans.DerivedStatus.IN_PROGRESS
@@ -178,7 +179,7 @@ def test_remaining_counts_every_non_terminal_bucket(  # type: ignore[no-untyped-
         plan_id, _ = _seed(session, {"A": statuses})
 
     with transactional(factory) as session:
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
 
     assert progress.remaining == expected
 
@@ -194,7 +195,7 @@ def test_recalc_for_project_agrees_with_recalc(engine_with_schema) -> None:
         project_id = session.get(PlanModel, plan_id).project_id  # type: ignore[union-attr]
 
     with transactional(factory) as session:
-        one = plans.recalc(session, plan_id)
+        one = plans.recalc(session, plan_id, project_id=project_id)
         batch = plans.recalc_for_project(session, project_id)[plan_id]
 
     assert (batch.total, batch.done, batch.cancelled, batch.remaining) == (
@@ -213,7 +214,9 @@ def test_export_progress_overview_shows_cancelled_column(engine_with_schema) -> 
         plan_id, _ = _seed(session, {"A": ["done", "cancelled", "todo"]})
 
     with transactional(factory) as session:
-        overview = plans.export(session, plan_id)["progress_overview"]
+        overview = plans.export(session, plan_id, project_id=only_project_id(session))[
+            "progress_overview"
+        ]
 
     assert "| Section | Total | Done | Cancelled | Remaining | Status |" in overview
     assert "| **TOTAL** | **3** | **1** | **1** | **1** |" in overview
@@ -231,7 +234,7 @@ def test_cancelled_task_status_is_still_reachable(engine_with_schema) -> None:
         plan_id, _ = _seed(session, {"A": [TaskStatus.CANCELLED.value]})
 
     with transactional(factory) as session:
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
 
     assert progress.cancelled == 1
 
@@ -248,7 +251,7 @@ def test_pct_closed_agrees_with_done_status(engine_with_schema) -> None:  # type
         plan_id, _ = _seed(session, {"A": ["done"] * 8 + ["cancelled"] * 2})
 
     with transactional(factory) as session:
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
 
     assert progress.status is plans.DerivedStatus.DONE
     assert progress.pct_closed == 100
@@ -262,7 +265,7 @@ def test_pct_closed_when_every_task_is_cancelled(engine_with_schema) -> None:  #
         plan_id, _ = _seed(session, {"A": ["cancelled"] * 3})
 
     with transactional(factory) as session:
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
 
     assert progress.status is plans.DerivedStatus.DONE
     assert progress.pct_closed == 100
@@ -275,7 +278,7 @@ def test_pct_closed_of_an_open_plan_counts_only_closed_work(engine_with_schema) 
         plan_id, _ = _seed(session, {"A": ["done", "cancelled", "todo", "in_progress"]})
 
     with transactional(factory) as session:
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
 
     assert progress.pct_closed == 50
     assert progress.remaining == 2

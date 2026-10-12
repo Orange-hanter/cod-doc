@@ -237,7 +237,7 @@ def register(mcp: FastMCP) -> None:
             d = doc_service.get(session, project_id, doc_key)
             if d is None or d.row_id is None:
                 raise ValueError(f"Document '{doc_key}' not found.")
-            return doc_service.read_sections(session, d.row_id, anchors)
+            return doc_service.read_sections(session, d.row_id, anchors, project_id=project_id)
 
     @mcp.tool(name="doc_patch_section")
     def doc_patch_section(

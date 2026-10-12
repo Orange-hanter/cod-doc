@@ -38,8 +38,12 @@ if TYPE_CHECKING:
     from cod_doc.config import Config, ProjectEntry
 
 
+class ProjectNotFoundError(LookupError):
+    """Проекта с таким слагом нет в БД (подкласс ``LookupError`` — совместимость)."""
+
+
 def row_id_for_slug(session: Session, slug: str) -> int:
-    """``project.row_id`` по слагу; нет проекта в БД — ``LookupError``.
+    """``project.row_id`` по слагу; нет проекта в БД — `ProjectNotFoundError`.
 
     Для вызывающих вне MCP-слоя (встроенный оркестратор, легаси agent-тулы),
     которым нужен скоуп проекта для чтений по ``task_id`` / ``plan_scope``
@@ -47,7 +51,7 @@ def row_id_for_slug(session: Session, slug: str) -> int:
     """
     proj = ProjectRepository(session).get_by_slug(slug)
     if proj is None or proj.row_id is None:
-        raise LookupError(f"Project '{slug}' not in DB")
+        raise ProjectNotFoundError(f"Project '{slug}' not in DB")
     return proj.row_id
 
 

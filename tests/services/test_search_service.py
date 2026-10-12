@@ -704,15 +704,16 @@ def test_resolve_cross_project_ids_maps_slugs_in_shared_db(engine_with_schema, t
 # ----------------------------------------------------------------- #
 
 
-def _index_rows(factory):  # type: ignore[no-untyped-def]
+def _index_rows(factory, project_id: int):  # type: ignore[no-untyped-def]
     with transactional(factory) as session:
         return [
             tuple(r)
             for r in session.execute(
                 text(
                     "SELECT kind, ref, title, body FROM db_search_idx "
-                    "WHERE project_id = 1 ORDER BY kind, ref"
-                )
+                    "WHERE project_id = :pid ORDER BY kind, ref"
+                ),
+                {"pid": project_id},
             ).all()
         ]
 
@@ -958,12 +959,12 @@ def test_incremental_rows_match_a_full_reindex(engine_with_schema) -> None:  # t
         )
         _ingest_finding(session, pid, "Parity finding", "finding body")
 
-    incremental = _index_rows(factory)
+    incremental = _index_rows(factory, pid)
     assert {row[0] for row in incremental} == {"task", "story", "adr", "finding"}
 
     with transactional(factory) as session:
         search_service.reindex_all(session, project_id=pid)
-    assert _index_rows(factory) == incremental
+    assert _index_rows(factory, pid) == incremental
 
 
 def test_write_path_survives_a_missing_index_table(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

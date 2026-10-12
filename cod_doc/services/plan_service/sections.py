@@ -112,7 +112,7 @@ def create_plan(
     repo = PlanRepository(session)
     # scope уникален на всю БД (уникальный индекс): занятый другим проектом
     # scope тоже не создать.
-    if repo.scope_owner(scope) is not None:
+    if repo.scope_exists(scope):
         raise PlanAlreadyExistsError(scope)
     if id_prefix is not None:
         validate_id_prefix(id_prefix)

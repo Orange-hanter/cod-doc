@@ -256,3 +256,13 @@ def test_checkout_unknown_task_raises_lookup(engine_with_schema) -> None:  # typ
         pid = _seed_task(session)
         with pytest.raises(LookupError):
             checkout.checkout(session, "NO-SUCH", agent="A", project_id=pid)
+        # Задача есть, но в другом проекте — та же LookupError, бронь не ставится.
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="other", title="O", root_path="/tmp/o", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+        with pytest.raises(LookupError):
+            checkout.checkout(session, "CO-001", agent="A", project_id=other.row_id)
+        assert not checkout.has_active_checkout(session, "CO-001", "A", project_id=pid)

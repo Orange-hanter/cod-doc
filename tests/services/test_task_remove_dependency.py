@@ -79,7 +79,7 @@ def test_remove_dependency_deletes_edge_and_unblocks_ready(engine_with_schema) -
         _make(session, p, pl, s, "MY-001")
         _make(session, p, pl, s, "MY-002", blocked_by=["MY-001"])
 
-        ready_ids = {t.task_id for t in plan_service.ready(session, pl)}
+        ready_ids = {t.task_id for t in plan_service.ready(session, pl, project_id=p)}
         assert "MY-002" not in ready_ids
 
         task_service.remove_dependency(
@@ -87,7 +87,7 @@ def test_remove_dependency_deletes_edge_and_unblocks_ready(engine_with_schema) -
         )
 
         assert _edges(session) == []
-        ready_ids = {t.task_id for t in plan_service.ready(session, pl)}
+        ready_ids = {t.task_id for t in plan_service.ready(session, pl, project_id=p)}
         assert "MY-002" in ready_ids
 
 

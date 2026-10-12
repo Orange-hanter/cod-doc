@@ -28,7 +28,6 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.services import story_service as stories
 from cod_doc.services import task_service as tasks
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -80,13 +79,13 @@ def _link_task(session: Session, story_id: str, task_id: str) -> None:
     )
 
 
-def _cancel(session: Session, task_id: str) -> None:
+def _cancel(session: Session, task_id: str, project_id: int) -> None:
     tasks.update_status(
         session,
         task_id=task_id,
         new_status=TaskStatus.CANCELLED,
         author="human:test",
-        project_id=only_project_id(session),
+        project_id=project_id,
     )
 
 
@@ -112,7 +111,7 @@ def test_delivered_when_last_open_task_is_cancelled(engine_with_schema) -> None:
         _link_task(session, story.story_id, "TST-002")
 
         tasks.complete(session, task_id="TST-001", author="human:test", project_id=proj)
-        _cancel(session, "TST-002")
+        _cancel(session, "TST-002", proj)
 
         cov = stories.coverage(session, story.story_id)
 
@@ -140,7 +139,7 @@ def test_all_tasks_cancelled_is_not_delivered(engine_with_schema) -> None:
             author="human:test",
         )
         _link_task(session, story.story_id, "TST-010")
-        _cancel(session, "TST-010")
+        _cancel(session, "TST-010", proj)
 
         cov = stories.coverage(session, story.story_id)
 
@@ -172,7 +171,7 @@ def test_cancelled_does_not_shortcut_unmet_acceptance(engine_with_schema) -> Non
         _link_task(session, story.story_id, "TST-021")
 
         tasks.complete(session, task_id="TST-020", author="human:test", project_id=proj)
-        _cancel(session, "TST-021")
+        _cancel(session, "TST-021", proj)
         stories.set_criterion_met(
             session, story_id=story.story_id, position=1, met=True, author="human:test"
         )

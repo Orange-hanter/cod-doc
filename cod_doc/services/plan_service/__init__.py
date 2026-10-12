@@ -61,7 +61,9 @@ from .reads import (
     recalc,
     recalc_for_project,
     require_plan_in_project,
-    scope_owner,
+    scope_exists,
+    scope_taken_by_other,
+    section_count_in_scopes,
     section_progress_for_project,
 )
 from .sections import (
@@ -116,7 +118,9 @@ __all__ = [
     "recalc_for_project",
     "require_plan_in_project",
     "reverse_chain",
-    "scope_owner",
+    "scope_exists",
+    "scope_taken_by_other",
+    "section_count_in_scopes",
     "section_progress_for_project",
     "update_section",
 ]

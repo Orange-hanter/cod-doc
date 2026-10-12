@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import click
 from rich.table import Table
 
-from ._common import _STATUS_ICON, _make_session, _require_plan_id, console
+from ._common import _STATUS_ICON, _make_session, _project_id, _require_plan_id, console
 from ._group import plan
 
 if TYPE_CHECKING:
@@ -29,8 +29,9 @@ def plan_show(ctx: click.Context, plan_scope: str, project: str, as_json: bool) 
     sf = _make_session(project, cfg)
 
     with transactional(sf) as session:
-        plan_id = _require_plan_id(session, plan_scope, project)
-        progress = plan_service.recalc(session, plan_id)
+        pid = _project_id(session, project)
+        plan_id = _require_plan_id(session, plan_scope, pid)
+        progress = plan_service.recalc(session, plan_id, project_id=pid)
 
     if as_json:
         click.echo(

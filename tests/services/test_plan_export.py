@@ -15,6 +15,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -94,7 +95,7 @@ def test_export_progress_overview_has_section_rows(engine_with_schema) -> None: 
         tasks.complete(session, task_id="PLN-001", author="human:test", project_id=p)
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["B"], task_id="PLN-010")
 
-        out = plans.export(session, plan_id)
+        out = plans.export(session, plan_id, project_id=p)
         po = out["progress_overview"]
         assert "Progress Overview" in po
         assert "A: Data Core" in po
@@ -126,7 +127,7 @@ def test_export_next_batch_lists_ready_tasks(engine_with_schema) -> None:  # typ
             priority=Priority.LOW,
         )
 
-        out = plans.export(session, plan_id)
+        out = plans.export(session, plan_id, project_id=p)
         nb = out["next_batch"]
         assert "Next Batch" in nb
         assert nb.index("PLN-001") < nb.index("PLN-002")
@@ -142,7 +143,7 @@ def test_export_dependency_graph_is_mermaid(engine_with_schema) -> None:  # type
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
         session.flush()
 
-        out = plans.export(session, plan_id)
+        out = plans.export(session, plan_id, project_id=p)
         dg = out["dependency_graph"]
         assert "```mermaid" in dg
         assert "graph TD" in dg
@@ -156,7 +157,7 @@ def test_export_empty_plan_renders_placeholders(engine_with_schema) -> None:  # 
 
     with transactional(factory) as session:
         _, plan_id, _ = _seed_plan_with_sections(session)
-        out = plans.export(session, plan_id)
+        out = plans.export(session, plan_id, project_id=only_project_id(session))
         assert "Progress Overview" in out["progress_overview"]
         assert "Next Batch" in out["next_batch"]
         assert "graph TD" in out["dependency_graph"]

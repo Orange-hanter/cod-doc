@@ -323,23 +323,27 @@ def _ensure_import_plan(session: Session, project_id: int) -> tuple[int, int]:
     станет собственным), как у legacy REST-плана.
     """
     for attempt in range(2):
+        before = _import_footprint(session, project_id)
         try:
             with session.begin_nested():
                 return _ensure_import_plan_once(session, project_id)
         except IntegrityError:
-            # Повтор — только если план нашего scope действительно появился
-            # за это время; иной IntegrityError пробрасывается как есть.
-            if attempt or not _import_scope_taken(session, project_id):
+            # Повтор — только если за время попытки появилось то, что мы
+            # создавали (план одного из наших scope или его секция); иной
+            # IntegrityError пробрасывается как есть.
+            if attempt or _import_footprint(session, project_id) == before:
                 raise
     raise AssertionError("unreachable")
 
 
-def _import_scope_taken(session: Session, project_id: int) -> bool:
-    """Занят ли один из import-scope этого проекта — признак проигранной гонки."""
+def _import_footprint(session: Session, project_id: int) -> tuple[bool, bool, int]:
+    """Что из import-плана уже есть в БД: оба scope заняты? сколько секций у своего плана."""
     repo = PlanRepository(session)
-    return any(
-        repo.scope_owner(scope) is not None
-        for scope in (_IMPORT_PLAN_SCOPE, f"{_IMPORT_PLAN_SCOPE}-p{project_id}")
+    own_scope = f"{_IMPORT_PLAN_SCOPE}-p{project_id}"
+    return (
+        repo.scope_exists(_IMPORT_PLAN_SCOPE),
+        repo.scope_exists(own_scope),
+        repo.section_count_in_scopes([_IMPORT_PLAN_SCOPE, own_scope], project_id),
     )
 
 
@@ -349,8 +353,7 @@ def _ensure_import_plan_once(session: Session, project_id: int) -> tuple[int, in
     # проектом общей hub-БД, план этого проекта получает собственный scope —
     # иначе вставка падала бы на уникальном индексе (AFT-023).
     scope = _IMPORT_PLAN_SCOPE
-    owner = plan_repo.scope_owner(scope)
-    if owner is not None and owner != project_id:
+    if plan_repo.scope_taken_by_other(scope, project_id):
         scope = f"{_IMPORT_PLAN_SCOPE}-p{project_id}"
     plan = plan_repo.get_by_scope(scope, project_id=project_id)
     if plan is not None and plan.row_id is not None:

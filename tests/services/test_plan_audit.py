@@ -72,8 +72,14 @@ def _seed_task(
         author="human:test",
     )
     if status is not TaskStatus.PENDING:
+        # Подготовка состояния, не проверка машины статусов: прыжок в любой статус.
         tasks.update_status(
-            session, task_id=task_id, new_status=status, author="human:test", project_id=proj_id
+            session,
+            task_id=task_id,
+            new_status=status,
+            author="human:test",
+            project_id=proj_id,
+            force=True,
         )
     return t
 
@@ -145,7 +151,7 @@ def test_audit_flags_done_with_unfinished_blocks(engine_with_schema) -> None:
             session,
             task_id="PLN-002",
             new_status=TaskStatus.DONE,
-            author="drift",
+            author="human:drift",
             force=True,
             project_id=p,
         )

@@ -90,17 +90,17 @@ def _render_dependency_graph(
     return "\n".join(lines) + "\n"
 
 
-def export(session: Session, plan_id: int) -> dict[str, str]:
+def export(session: Session, plan_id: int, *, project_id: int) -> dict[str, str]:
     """Render markdown projections for the plan.
 
     Returns a dict with keys: `progress_overview`, `next_batch`,
     `dependency_graph`. Callers compose them into the execution-plan markdown
     file (or the parent doc, in split format).
     """
-    _require_plan(session, plan_id)
+    _require_plan(session, plan_id, project_id)
 
-    progress = recalc(session, plan_id)
-    ready_tasks = ready(session, plan_id)
+    progress = recalc(session, plan_id, project_id=project_id)
+    ready_tasks = ready(session, plan_id, project_id=project_id)
 
     # Build row_id -> task_id map for the dependency graph.
     task_rows = session.execute(
@@ -119,6 +119,7 @@ def freeze_projection(
     session: Session,
     plan_id: int,
     *,
+    project_id: int,
     author: str,
     reason: str | None = None,
 ) -> Any:
@@ -140,8 +141,8 @@ def freeze_projection(
     )
     from cod_doc.services import doc_service
 
-    plan = _require_plan(session, plan_id)
-    parts = export(session, plan_id)
+    plan = _require_plan(session, plan_id, project_id)
+    parts = export(session, plan_id, project_id=project_id)
     # Millisecond resolution: two freezes back-to-back must yield distinct
     # doc_keys to avoid IntegrityError on UniqueConstraint(project_id, doc_key).
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S_%f")[:-3] + "Z"

@@ -352,7 +352,7 @@ def test_plan_ready_excludes_tasks_with_unfinished_blockers(engine_with_schema) 
             blocked_by=["MY-001"],
         )
 
-        ready = plan_service.ready(session, pl)
+        ready = plan_service.ready(session, pl, project_id=p)
         ready_ids = {t.task_id for t in ready}
         assert "MY-001" in ready_ids
         assert "MY-002" not in ready_ids

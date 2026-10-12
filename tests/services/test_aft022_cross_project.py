@@ -347,24 +347,51 @@ def test_agent_release_and_blocker_report_stay_in_the_project(engine_with_schema
 
 
 def test_legacy_plan_creation_race_recovers(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """Параллельный запрос успел создать план между чтением и вставкой: уникальный
-    scope даёт IntegrityError, повторный разбор находит готовый план."""
+    """Гонка: между «отпечатком» до попытки и созданием план успевает появиться
+    (параллельный запрос), а наше чтение его ещё не видит. Создание отказывает
+    по уникальному scope, отпечаток изменился — повтор находит план и
+    дозаводит секцию, а не падает."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         a = _project_with_task(session, "a")
-        first = legacy_tasks.ensure_legacy_plan(session, a.project)
 
-        real_get = legacy_tasks.plan_service.get_by_scope
-        stale = {"left": 1}
+    real_footprint = legacy_tasks._legacy_footprint
+    real_get = legacy_tasks.plan_service.get_by_scope
+    race = {"inserted": False, "stale": False}
 
-        def stale_once(session: Session, scope: str, **kwargs: Any) -> Any:
-            if stale["left"]:
-                stale["left"] -= 1
-                return None  # «не видим» план, созданный параллельным запросом
-            return real_get(session, scope, **kwargs)
+    def footprint_then_concurrent_insert(session: Session, pid: int) -> Any:
+        snapshot = real_footprint(session, pid)
+        if not race["inserted"]:
+            race["inserted"] = True
+            # «Параллельный запрос»: план вставлен вне savepoint попытки.
+            plans.create_plan(
+                session,
+                project_id=pid,
+                scope=legacy_tasks.LEGACY_PLAN_SCOPE,
+                principle="from-legacy-api",
+                author="api-legacy",
+                reason=None,
+            )
+            race["stale"] = True
+        return snapshot
 
-        monkeypatch.setattr(legacy_tasks.plan_service, "get_by_scope", stale_once)
-        assert legacy_tasks.ensure_legacy_plan(session, a.project) == first
+    def stale_once(session: Session, scope: str, **kwargs: Any) -> Any:
+        if race["stale"]:
+            race["stale"] = False
+            return None  # наше чтение сделано до чужой вставки
+        return real_get(session, scope, **kwargs)
+
+    monkeypatch.setattr(legacy_tasks, "_legacy_footprint", footprint_then_concurrent_insert)
+    monkeypatch.setattr(legacy_tasks.plan_service, "get_by_scope", stale_once)
+    with transactional(factory) as session:
+        plan_id, section_id = legacy_tasks.ensure_legacy_plan(session, a.project)
+
+    assert race["inserted"] and not race["stale"], "гонка действительно случилась"
+    with transactional(factory) as session:
+        plan = session.get(PlanModel, plan_id)
+        assert plan is not None
+        assert plan.scope == legacy_tasks.LEGACY_PLAN_SCOPE
+        assert [s.row_id for s in plans.list_sections(session, plan_id)] == [section_id]
 
 
 def test_mcp_task_get_reads_the_task_of_its_project(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -476,6 +503,17 @@ def test_mcp_task_mutations_touch_only_the_projects_task(  # type: ignore[no-unt
         after_b = rev.list_for_entity(session, EntityKind.TASK, b.task_row, project_id=b.project)
         assert after_a == before_a, "задача проекта A не тронута"
         assert len(after_b) >= 2, "у задачи проекта B появилась ревизия"
+
+        # Не только история: состояние задачи A не тронуто, у B — изменилось.
+        task_a = tasks.get(session, _TID, project_id=a.project)
+        task_b = tasks.get(session, _TID, project_id=b.project)
+        assert task_a is not None and task_b is not None
+        assert task_a.status is TaskStatus.TODO
+        assert task_a.blocked_reason is None
+        if tool == "task_complete":
+            assert task_b.status is TaskStatus.DONE
+        elif tool == "task_set_blocker":
+            assert task_b.blocked_reason == "waiting"
 
 
 def test_mcp_clear_blocker_and_release_stay_in_the_project(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]

@@ -30,7 +30,7 @@ from cod_doc.infra.models import (
     TaskModel,
 )
 from cod_doc.mcp.tools import doc_tools, task_tools
-from cod_doc.services import task_service
+from cod_doc.services import checkout_service, task_service
 
 
 def _get_tool(mcp: FastMCP, name: str) -> Any:
@@ -132,15 +132,9 @@ def test_task_update_status_dry_run_does_not_change_status(
             priority=Priority.MEDIUM,
             author="t",
         )
-        # Move to in_progress so we can test cancel transition.
-        task_service.update_status(
-            session,
-            task_id="PLN-001",
-            new_status=TaskStatus.IN_PROGRESS_NEW,
-            author="t",
-            via_checkout=True,
-            project_id=proj_id,
-        )
+        # Move to in_progress so we can test cancel transition — штатным
+        # checkout, а не update_status(via_checkout=True) в обход протокола.
+        checkout_service.checkout(session, "PLN-001", agent="agent:t", project_id=proj_id)
 
     _stub(monkeypatch, factory, module=task_tools)
     mcp = FastMCP("test")

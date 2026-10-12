@@ -81,6 +81,7 @@ WITH RECURSIVE depths(task_row_id, depth) AS (
     SELECT t.row_id, 0
     FROM task t
     WHERE t.plan_id = :plan_id
+      AND t.project_id = :project_id
       AND NOT EXISTS (
           SELECT 1
           FROM dependency d
@@ -95,6 +96,7 @@ WITH RECURSIVE depths(task_row_id, depth) AS (
       ON d.to_task_id = depths.task_row_id
      AND d.kind = 'blocks'
     JOIN task dep_task ON dep_task.row_id = d.from_task_id AND dep_task.plan_id = :plan_id
+     AND dep_task.project_id = :project_id
 )
 SELECT task_row_id, MAX(depth) AS max_depth
 FROM depths
@@ -191,7 +193,7 @@ def chain_layout(session: Session, plan_id: int, *, project_id: int) -> dict[str
     prereq sits at level N-1.  Tasks involved in cycles get pushed past the
     deepest computed level so the layout still renders without aborting.
     """
-    _require_plan(session, plan_id)
+    _require_plan(session, plan_id, project_id)
 
     task_rows = session.execute(
         select(
@@ -330,7 +332,9 @@ def critical_path(session: Session, plan_id: int, *, project_id: int) -> Critica
     """
     _require_plan(session, plan_id, project_id)
 
-    depth_rows = session.execute(_DEPTH_CTE_SQL, {"plan_id": plan_id}).all()
+    depth_rows = session.execute(
+        _DEPTH_CTE_SQL, {"plan_id": plan_id, "project_id": project_id}
+    ).all()
     if not depth_rows:
         return CriticalPathResult(plan_id=plan_id, task_ids=[], chain=[], length=0)
 

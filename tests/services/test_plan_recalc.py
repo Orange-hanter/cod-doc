@@ -16,6 +16,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -89,7 +90,7 @@ def test_recalc_empty_plan_is_empty(engine_with_schema) -> None:  # type: ignore
 
     with transactional(factory) as session:
         _, plan_id, _ = _seed_plan_with_sections(session)
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
 
         assert progress.plan_id == plan_id
         assert progress.total == 0
@@ -118,7 +119,7 @@ def test_recalc_section_pending_and_in_progress(engine_with_schema) -> None:  # 
         )
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["B"], task_id="PLN-011")
 
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=p)
         by_letter = {s.letter: s for s in progress.sections}
 
         assert by_letter["A"].status is plans.DerivedStatus.PENDING
@@ -140,7 +141,7 @@ def test_recalc_section_done_when_all_done(engine_with_schema) -> None:  # type:
         tasks.complete(session, task_id="PLN-001", author="human:test", project_id=p)
         tasks.complete(session, task_id="PLN-002", author="human:test", project_id=p)
 
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=p)
         assert progress.status is plans.DerivedStatus.DONE
         assert progress.sections[0].status is plans.DerivedStatus.DONE
         assert progress.done == 2 and progress.remaining == 0
@@ -156,12 +157,14 @@ def test_recalc_partial_done_is_in_progress(engine_with_schema) -> None:  # type
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-002")
         tasks.complete(session, task_id="PLN-001", author="human:test", project_id=p)
 
-        progress = plans.recalc(session, plan_id)
+        progress = plans.recalc(session, plan_id, project_id=p)
         assert progress.sections[0].status is plans.DerivedStatus.IN_PROGRESS
         assert progress.status is plans.DerivedStatus.IN_PROGRESS
 
 
 def test_recalc_unknown_plan_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session, pytest.raises(plans.PlanNotFoundError):
-        plans.recalc(session, 9999)
+    with transactional(factory) as session:
+        project_id, _plan_id, _sections = _seed_plan_with_sections(session)
+        with pytest.raises(plans.PlanNotFoundError):
+            plans.recalc(session, 9999, project_id=project_id)

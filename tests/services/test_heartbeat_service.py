@@ -18,7 +18,6 @@ from cod_doc.infra.models import (
 from cod_doc.infra.repositories import UserStoryRepository
 from cod_doc.services import heartbeat_service, task_service
 from cod_doc.services.heartbeat_service import PAYLOAD_BUDGET_BYTES
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -91,11 +90,9 @@ def test_heartbeat_returns_full_shape_for_pending_task(engine_with_schema) -> No
 def test_heartbeat_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed_plan(session)
+        p, _pl, _s = _seed_plan(session)
         with pytest.raises(task_service.TaskNotFoundError):
-            heartbeat_service.heartbeat_context(
-                session, task_id="NOPE-001", project_id=only_project_id(session)
-            )
+            heartbeat_service.heartbeat_context(session, task_id="NOPE-001", project_id=p)
 
 
 # --------------------------------------------------------------------------- #

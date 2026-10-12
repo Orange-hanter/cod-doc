@@ -40,7 +40,7 @@ def test_complete_keeps_lock_until_release(engine_with_schema) -> None:  # type:
         s.add(proj)
         s.flush()
         pid = proj.row_id
-        plan = PlanModel(project_id=proj.row_id, scope="lck-plan", created=now, last_updated=now)
+        plan = PlanModel(project_id=pid, scope="lck-plan", created=now, last_updated=now)
         s.add(plan)
         s.flush()
         sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="S", slug="A-S", position=0)
@@ -48,7 +48,7 @@ def test_complete_keeps_lock_until_release(engine_with_schema) -> None:  # type:
         s.flush()
         task_service.create(
             s,
-            project_id=proj.row_id,
+            project_id=pid,
             plan_id=plan.row_id,
             section_id=sec.row_id,
             task_id="LCK-001",
@@ -59,19 +59,19 @@ def test_complete_keeps_lock_until_release(engine_with_schema) -> None:  # type:
         )
 
     with transactional(factory) as s:
-        checkout_service.checkout(s, task_id="LCK-001", agent="claude-x", project_id=proj.row_id)
+        checkout_service.checkout(s, task_id="LCK-001", agent="claude-x", project_id=pid)
     with transactional(factory) as s:
         task_service.complete(
             s,
             task_id="LCK-001",
             author="claude-x",
             commit_sha="abc1234",
-            project_id=proj.row_id,
+            project_id=pid,
         )
 
     assert _checked_out_by(factory, "LCK-001", pid) == "claude-x"
 
     with transactional(factory) as s:
-        checkout_service.release(s, task_id="LCK-001", agent="claude-x", project_id=proj.row_id)
+        checkout_service.release(s, task_id="LCK-001", agent="claude-x", project_id=pid)
 
     assert _checked_out_by(factory, "LCK-001", pid) is None

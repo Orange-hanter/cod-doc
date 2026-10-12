@@ -37,13 +37,19 @@ def get_by_scope(session: Session, scope: str, *, project_id: int) -> Plan | Non
     return PlanRepository(session).get_by_scope(scope, project_id=project_id)
 
 
-def scope_owner(session: Session, scope: str) -> int | None:
-    """``project_id`` владельца ``scope`` или ``None`` — scope уникален на всю БД.
+def scope_exists(session: Session, scope: str) -> bool:
+    """Занят ли ``scope`` хоть каким-то планом — scope уникален на всю БД."""
+    return PlanRepository(session).scope_exists(scope)
 
-    Для проверки занятости scope при создании плана (legacy REST, restate-импорт):
-    сам чужой план наружу не отдаётся.
-    """
-    return PlanRepository(session).scope_owner(scope)
+
+def section_count_in_scopes(session: Session, scopes: list[str], project_id: int) -> int:
+    """Сколько секций у планов проекта с одним из ``scopes`` (отпечаток гонки создания)."""
+    return PlanRepository(session).section_count_in_scopes(scopes, project_id)
+
+
+def scope_taken_by_other(session: Session, scope: str, project_id: int) -> bool:
+    """Занят ли ``scope`` планом другого проекта (legacy REST, restate-импорт)."""
+    return PlanRepository(session).scope_taken_by_other(scope, project_id)
 
 
 def list_sections(session: Session, plan_id: int) -> list[PlanSection]:
@@ -368,9 +374,9 @@ def ready_for_project(
     return ready_batch_for_project(session, project_id, limit=limit, local_only=local_only).tasks
 
 
-def recalc(session: Session, plan_id: int) -> PlanProgress:
+def recalc(session: Session, plan_id: int, *, project_id: int) -> PlanProgress:
     """Read derived progress from `section_totals` + `plan_totals` views."""
-    plan = _require_plan(session, plan_id)
+    plan = _require_plan(session, plan_id, project_id)
 
     sec_rows = session.execute(
         text(
@@ -431,6 +437,7 @@ def ready_batch(
     session: Session,
     plan_id: int,
     *,
+    project_id: int,
     limit: int | None = None,
     local_only: bool = True,
 ) -> ReadyBatch:
@@ -439,7 +446,7 @@ def ready_batch(
     Фильтр идёт после сортировки и до среза ``limit``; ``root_path`` берётся
     через ``plan.project_id``.
     """
-    plan = _require_plan(session, plan_id)
+    plan = _require_plan(session, plan_id, project_id)
 
     rows = session.execute(
         text("SELECT row_id FROM ready_tasks WHERE plan_id = :pid"),
@@ -469,6 +476,7 @@ def ready(
     session: Session,
     plan_id: int,
     *,
+    project_id: int,
     limit: int | None = None,
     local_only: bool = True,
 ) -> list[Task]:
@@ -479,4 +487,6 @@ def ready(
     Default ``local_only=True`` отбрасывает задачи, чьи файлы целиком в
     чужом репо (RFC 27 F13).
     """
-    return ready_batch(session, plan_id, limit=limit, local_only=local_only).tasks
+    return ready_batch(
+        session, plan_id, project_id=project_id, limit=limit, local_only=local_only
+    ).tasks

@@ -30,7 +30,7 @@ def plans_list(request: Request, slug: str) -> HTMLResponse:
             db_available = True
             for plan in plans.list_for_project(session, project_db_id):
                 assert plan.row_id is not None
-                progress = plans.recalc(session, plan.row_id)
+                progress = plans.recalc(session, plan.row_id, project_id=project_db_id)
                 rows.append(
                     {
                         "plan_id": plan.row_id,
@@ -72,9 +72,9 @@ def plan_show(
     if plan_dom is None:
         raise HTTPException(404, f"Plan не найден в проекте: {plan_id}")
 
-    progress = plans.recalc(session, plan_id)
-    ready_tasks = plans.ready(session, plan_id, limit=PLAN_READY_LIMIT)
-    exported = plans.export(session, plan_id)
+    progress = plans.recalc(session, plan_id, project_id=project_db_id)
+    ready_tasks = plans.ready(session, plan_id, limit=PLAN_READY_LIMIT, project_id=project_db_id)
+    exported = plans.export(session, plan_id, project_id=project_db_id)
 
     # Group tasks by section so the template can render one collapsible
     # block per section without re-querying. list_for_plan is already
@@ -155,7 +155,7 @@ def plan_freeze(
     plan_dom = plans.get_for_project(session, project_db_id, plan_id)
     if plan_dom is None:
         raise HTTPException(404, f"Plan не найден в проекте: {plan_id}")
-    frozen = plans.freeze_projection(session, plan_id, author="human:web")
+    frozen = plans.freeze_projection(session, plan_id, author="human:web", project_id=project_db_id)
     session.commit()
     # Redirect to the new frozen document so the user can read/share it.
     return RedirectResponse(

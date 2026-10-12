@@ -355,7 +355,7 @@ def get(
             }
         from cod_doc.services.plan_service import reads as plan_reads
 
-        progress = plan_reads.recalc(session, plan.row_id)
+        progress = plan_reads.recalc(session, plan.row_id, project_id=project_id)
         return {
             "found": True,
             "what": what,

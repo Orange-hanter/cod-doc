@@ -33,9 +33,10 @@ def _get_tool(mcp: FastMCP, name: str) -> Any:
     return mcp._tool_manager._tools[name].fn
 
 
-def _stub(monkeypatch: pytest.MonkeyPatch, factory: Any, *, require_id: int = 1) -> None:
+def _stub(monkeypatch: pytest.MonkeyPatch, factory: Any) -> None:
+    # require_project_id не подменяется: тулы резолвят слаг «p» настоящим
+    # резолвером, и скоуп проекта проверяется, а не обходится (AFT-023).
     monkeypatch.setattr(doc_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(doc_tools, "require_project_id", lambda session, project: require_id)
 
 
 def _add_project(session: Session, slug: str = "p") -> int:

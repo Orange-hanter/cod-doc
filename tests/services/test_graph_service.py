@@ -17,7 +17,6 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -215,8 +214,8 @@ def test_reverse_chain_multiple_dependents(engine_with_schema) -> None:  # type:
 def test_critical_path_empty_plan(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _, plan_id, _ = _seed(session)
-        result = plans.critical_path(session, plan_id, project_id=only_project_id(session))
+        proj, plan_id, _ = _seed(session)
+        result = plans.critical_path(session, plan_id, project_id=proj)
         assert result.length == 0
         assert result.task_ids == []
 

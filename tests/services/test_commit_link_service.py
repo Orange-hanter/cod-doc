@@ -219,10 +219,10 @@ def test_import_updates_commit_count_in_metrics(engine_with_schema, git_repo) ->
 def test_import_rejects_non_git_path(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid, _plid, _sid = _seed(session)
     with pytest.raises(ValueError, match="not a git"), transactional(factory) as session:
         commit_link_service.import_from_git_log(
             session,
-            project_id=1,
+            project_id=pid,
             repo_path=tmp_path,
         )

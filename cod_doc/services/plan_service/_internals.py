@@ -30,14 +30,14 @@ _PRIORITY_ORDER: dict[str, int] = {
 }
 
 
-def _require_plan(session: Session, plan_id: int, project_id: int | None = None) -> PlanModel:
-    """План по row_id; с ``project_id`` — только план этого проекта (AFT-023).
+def _require_plan(session: Session, plan_id: int, project_id: int) -> PlanModel:
+    """План по row_id — только план проекта ``project_id`` (AFT-023).
 
-    План чужого проекта — тот же `PlanNotFoundError`: его существование не
-    раскрывается.
+    ``plan_id`` — row_id на всю hub-БД. План чужого проекта — тот же
+    `PlanNotFoundError`: его существование не раскрывается.
     """
     model = session.get(PlanModel, plan_id)
-    if model is None or (project_id is not None and model.project_id != project_id):
+    if model is None or model.project_id != project_id:
         raise PlanNotFoundError(f"plan #{plan_id}")
     return model
 
