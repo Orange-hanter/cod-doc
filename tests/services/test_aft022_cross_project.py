@@ -207,7 +207,7 @@ def test_revert_of_a_revision_whose_task_is_elsewhere_says_why(
         tasks.update_affects_files(
             session, task_id=_TID, paths=["src/a.py"], author="human:test", project_id=a.project
         )
-        target = rev.list_for_entity(session, EntityKind.TASK, a.task_row)[-1]
+        target = rev.list_for_entity(session, EntityKind.TASK, a.task_row, project_id=a.project)[-1]
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
         ).scalar_one()
@@ -324,7 +324,9 @@ def test_agent_release_and_blocker_report_stay_in_the_project(engine_with_schema
         a = _project_with_task(session, "a")
         b = _project_with_task(session, "b")
         checkout_service.checkout(session, _TID, agent="agent:x", project_id=b.project)
-        before = len(rev.list_for_entity(session, EntityKind.TASK, b.task_row))
+        before = len(
+            rev.list_for_entity(session, EntityKind.TASK, b.task_row, project_id=b.project)
+        )
 
         out = agent_service.release(
             session, project_id=b.project, task_id=_TID, agent_id="agent:x", reason="handover"
@@ -332,7 +334,10 @@ def test_agent_release_and_blocker_report_stay_in_the_project(engine_with_schema
 
         assert out["ok"] is True
         assert tasks.get(session, _TID, project_id=b.project).status is TaskStatus.TODO  # type: ignore[union-attr]
-        assert len(rev.list_for_entity(session, EntityKind.TASK, b.task_row)) == before + 1
+        assert (
+            len(rev.list_for_entity(session, EntityKind.TASK, b.task_row, project_id=b.project))
+            == before + 1
+        )
 
         agent_service.report(
             session, project_id=a.project, task_id=_TID, kind="blocker", message="waiting"
@@ -436,4 +441,69 @@ def test_checkout_warning_reads_the_lock_of_the_projects_task(engine_with_schema
         assert checkout_service.has_active_checkout(session, _TID, "agent:x", project_id=b.project)
         assert not checkout_service.has_active_checkout(
             session, _TID, "agent:x", project_id=a.project
+        )
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("task_complete", {}),
+        ("task_log_progress", {"message": "half way"}),
+        ("task_set_blocker", {"reason": "waiting"}),
+    ],
+)
+def test_mcp_task_mutations_touch_only_the_projects_task(  # type: ignore[no-untyped-def]
+    engine_with_schema, monkeypatch, tool: str, args: dict[str, Any]
+) -> None:
+    """AFT-023: каждая MCP-мутация задачи в hub-БД с одинаковым task_id меняет
+    задачу своего проекта, соседняя остаётся нетронутой."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        before_a = [
+            r.revision_id
+            for r in rev.list_for_entity(session, EntityKind.TASK, a.task_row, project_id=a.project)
+        ]
+
+    _tool(_task_tools(monkeypatch, factory), tool)(project="b", task_id=_TID, **args)
+
+    with transactional(factory) as session:
+        after_a = [
+            r.revision_id
+            for r in rev.list_for_entity(session, EntityKind.TASK, a.task_row, project_id=a.project)
+        ]
+        after_b = rev.list_for_entity(session, EntityKind.TASK, b.task_row, project_id=b.project)
+        assert after_a == before_a, "задача проекта A не тронута"
+        assert len(after_b) >= 2, "у задачи проекта B появилась ревизия"
+
+
+def test_mcp_clear_blocker_and_release_stay_in_the_project(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.mcp.tools import checkout_tools
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        for p in (a, b):
+            tasks.set_blocker(
+                session, task_id=_TID, reason="waiting", author="human:t", project_id=p.project
+            )
+            checkout_service.checkout(session, _TID, agent="agent:x", project_id=p.project)
+
+    _tool(_task_tools(monkeypatch, factory), "task_clear_blocker")(project="b", task_id=_TID)
+    monkeypatch.setattr(checkout_tools, "session_factory", lambda project: (factory, None))
+    mcp = FastMCP("test")
+    checkout_tools.register(mcp)
+    _tool(mcp, "task_release")(project="b", task_id=_TID, agent="agent:x")
+
+    with transactional(factory) as session:
+        task_a = tasks.get(session, _TID, project_id=a.project)
+        task_b = tasks.get(session, _TID, project_id=b.project)
+        assert task_a is not None and task_b is not None
+        assert task_a.blocked_reason == "waiting"
+        assert task_b.blocked_reason is None
+        assert checkout_service.has_active_checkout(session, _TID, "agent:x", project_id=a.project)
+        assert not checkout_service.has_active_checkout(
+            session, _TID, "agent:x", project_id=b.project
         )

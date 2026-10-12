@@ -13,6 +13,7 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import ProjectModel
 from cod_doc.services import revision_service as rev
 from cod_doc.services import story_service as stories
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -64,7 +65,9 @@ def test_create_persists_story_and_writes_revision(engine_with_schema) -> None: 
         assert story.story_id == "US-001"
         assert story.status is UserStoryStatus.ACCEPTED
 
-        history = rev.list_for_entity(session, EntityKind.STORY, story.row_id)
+        history = rev.list_for_entity(
+            session, EntityKind.STORY, story.row_id, project_id=only_project_id(session)
+        )
         assert len(history) == 1
         payload = json.loads(history[0].diff)
         assert payload["op"] == "create"
@@ -143,7 +146,9 @@ def test_update_status_writes_revision_and_chains(engine_with_schema) -> None:  
         )
         assert updated.status is UserStoryStatus.DELIVERED
 
-        history = rev.list_for_entity(session, EntityKind.STORY, story.row_id)
+        history = rev.list_for_entity(
+            session, EntityKind.STORY, story.row_id, project_id=only_project_id(session)
+        )
         assert len(history) == 2
         diff = json.loads(history[1].diff)
         assert diff["op"] == "status"
@@ -162,7 +167,14 @@ def test_update_status_no_op_writes_no_revision(engine_with_schema) -> None:  # 
             new_status=UserStoryStatus.ACCEPTED,
             author="human:test",
         )
-        assert len(rev.list_for_entity(session, EntityKind.STORY, story.row_id)) == 1
+        assert (
+            len(
+                rev.list_for_entity(
+                    session, EntityKind.STORY, story.row_id, project_id=only_project_id(session)
+                )
+            )
+            == 1
+        )
 
 
 def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -170,7 +182,9 @@ def test_update_status_concurrency_conflict(engine_with_schema) -> None:  # type
     with transactional(factory) as session:
         proj = _seed_project(session)
         story = _make_story(session, proj)
-        head = rev.list_for_entity(session, EntityKind.STORY, story.row_id)[0].revision_id
+        head = rev.list_for_entity(
+            session, EntityKind.STORY, story.row_id, project_id=only_project_id(session)
+        )[0].revision_id
 
         stories.update_status(
             session,
@@ -234,7 +248,9 @@ def test_set_criterion_met_writes_revision(engine_with_schema) -> None:  # type:
         items = stories.list_acceptance(session, story.story_id)
         assert items[0].met is True and items[1].met is False
 
-        history = rev.list_for_entity(session, EntityKind.STORY, story.row_id)
+        history = rev.list_for_entity(
+            session, EntityKind.STORY, story.row_id, project_id=only_project_id(session)
+        )
         assert any(json.loads(r.diff)["op"] == "criterion_met" for r in history)
 
 

@@ -110,7 +110,7 @@ def test_move_writes_revision_and_event(engine_with_schema) -> None:  # type: ig
         )
         assert moved.section_id == b
 
-        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         diff = json.loads(history[-1].diff)
         assert diff == {
             "op": "section",
@@ -162,13 +162,13 @@ def test_move_to_same_section_is_noop(engine_with_schema) -> None:  # type: igno
         p, pl, a, _b = _seed(session)
         task = _task(session, p, pl, a)
         assert task.row_id is not None
-        before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
+        before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p))
 
         tasks.move_to_section(
             session, task_id=task.task_id, new_section_id=a, author="human:test", project_id=p
         )
 
-        after = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
+        after = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p))
         assert after == before
 
 
@@ -332,7 +332,8 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
         _other_project_with_plan(session)  # проект "other" со своим "other-plan", секция A
         assert task.row_id is not None
         revisions_before = [
-            r.revision_id for r in rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+            r.revision_id
+            for r in rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         ]
 
     move = _tool(_register(monkeypatch, factory), "task_move_to_section")
@@ -351,7 +352,8 @@ def test_mcp_move_task_of_another_project_is_an_error(engine_with_schema, monkey
         assert got.section_id == a
         # Отказ не оставил следа: история ревизий та же, события о переносе нет.
         revisions_after = [
-            r.revision_id for r in rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+            r.revision_id
+            for r in rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         ]
         assert revisions_after == revisions_before
         moved_events = session.execute(

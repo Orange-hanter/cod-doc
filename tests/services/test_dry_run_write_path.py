@@ -139,6 +139,7 @@ def test_task_update_status_dry_run_does_not_change_status(
             new_status=TaskStatus.IN_PROGRESS_NEW,
             author="t",
             via_checkout=True,
+            project_id=proj_id,
         )
 
     _stub(monkeypatch, factory, module=task_tools)

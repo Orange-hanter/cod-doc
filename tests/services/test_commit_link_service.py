@@ -193,7 +193,7 @@ def test_import_updates_commit_count_in_metrics(engine_with_schema, git_repo) ->
         _make(session, pid, plid, sid, "CMT-002")
     # Complete CMT-001 so it has a task_metrics row.
     with transactional(factory) as session:
-        task_service.complete(session, task_id="CMT-001", author="t")
+        task_service.complete(session, task_id="CMT-001", author="t", project_id=pid)
 
     with transactional(factory) as session:
         commit_link_service.import_from_git_log(

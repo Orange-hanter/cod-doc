@@ -897,7 +897,7 @@ def story_tasks_generate(
     section_layout: list[tuple[str, str]] = []
     plan_id: int | None = None
     if plan_scope:
-        plan = plans.get_by_scope(session, plan_scope.strip())
+        plan = plans.get_by_scope(session, plan_scope.strip(), project_id=project_db_id)
         if plan and plan.row_id is not None:
             plan_id = plan.row_id
             section_layout = [
@@ -976,7 +976,7 @@ async def story_tasks_save(
     plan_scope = str(form.get("plan_scope") or "").strip()
     if not plan_scope:
         raise HTTPException(400, "plan_scope is required to save tasks")
-    plan = plans.get_by_scope(session, plan_scope)
+    plan = plans.get_by_scope(session, plan_scope, project_id=project_db_id)
     if plan is None or plan.row_id is None:
         raise HTTPException(404, f"Plan '{plan_scope}' not found")
 

@@ -121,9 +121,7 @@ def _chain_root(session: Session, task_id: str, project_id: int | None) -> tuple
     return int(row[0]), int(row[1])
 
 
-def forward_chain(
-    session: Session, task_id: str, *, project_id: int | None = None
-) -> list[ChainEntry]:
+def forward_chain(session: Session, task_id: str, *, project_id: int | None) -> list[ChainEntry]:
     """Prerequisites of *task_id*: tasks that must complete BEFORE it.
 
     Follows `blocks`-edges transitively. Ordered by depth (depth=1 = direct
@@ -143,9 +141,7 @@ def forward_chain(
     ]
 
 
-def reverse_chain(
-    session: Session, task_id: str, *, project_id: int | None = None
-) -> list[ChainEntry]:
+def reverse_chain(session: Session, task_id: str, *, project_id: int | None) -> list[ChainEntry]:
     """Dependents of *task_id*: tasks unblocked when it completes.
 
     Follows `blocks`-edges transitively in the reverse direction. Depth=1 =

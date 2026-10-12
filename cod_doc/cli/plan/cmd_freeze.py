@@ -39,7 +39,7 @@ def plan_freeze(
     sf = _make_session(project, cfg)
 
     with transactional(sf) as session:
-        plan_id = _require_plan_id(session, plan_scope)
+        plan_id = _require_plan_id(session, plan_scope, project)
         doc = plan_service.freeze_projection(session, plan_id, author=author, reason=reason)
         key = doc.doc_key
 

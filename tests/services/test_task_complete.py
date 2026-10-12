@@ -74,16 +74,13 @@ def test_complete_task_with_no_deps(engine_with_schema) -> None:  # type: ignore
         task = _task(session, p, pl, s)
 
         done = tasks.complete(
-            session,
-            task_id=task.task_id,
-            author="human:dakh",
-            commit_sha="abc1234",
+            session, task_id=task.task_id, author="human:dakh", commit_sha="abc1234", project_id=p
         )
         assert done.status == TaskStatus.DONE
         assert done.completed_at is not None
         assert done.completed_commit == "abc1234"
 
-        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         diff = json.loads(history[-1].diff)
         assert diff["op"] == "complete"
         assert diff["commit_sha"] == "abc1234"
@@ -101,7 +98,7 @@ def test_complete_raises_when_blocking_dep_pending(engine_with_schema) -> None: 
         session.flush()
 
         with pytest.raises(tasks.TaskBlockedError, match="PLN-001"):
-            tasks.complete(session, task_id="PLN-002", author="x")
+            tasks.complete(session, task_id="PLN-002", author="x", project_id=p)
 
 
 def test_complete_succeeds_after_blocking_dep_done(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -113,8 +110,8 @@ def test_complete_succeeds_after_blocking_dep_done(engine_with_schema) -> None: 
         b = _task(session, p, pl, s, task_id="PLN-002")
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
 
-        tasks.complete(session, task_id="PLN-001", author="x")
-        done_b = tasks.complete(session, task_id="PLN-002", author="x")
+        tasks.complete(session, task_id="PLN-001", author="x", project_id=p)
+        done_b = tasks.complete(session, task_id="PLN-002", author="x", project_id=p)
         assert done_b.status == TaskStatus.DONE
 
 
@@ -129,7 +126,7 @@ def test_complete_ignores_non_blocks_kind(engine_with_schema) -> None:  # type: 
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="relates"))
         session.flush()
 
-        done = tasks.complete(session, task_id="PLN-002", author="x")
+        done = tasks.complete(session, task_id="PLN-002", author="x", project_id=p)
         assert done.status == TaskStatus.DONE
 
 
@@ -139,7 +136,7 @@ def test_complete_conflict_via_expected_parent(engine_with_schema) -> None:  # t
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
-        first_history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        first_history = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         original_head = first_history[0].revision_id
 
         tasks.update_status(
@@ -148,6 +145,7 @@ def test_complete_conflict_via_expected_parent(engine_with_schema) -> None:  # t
             new_status=TaskStatus.IN_PROGRESS,
             author="other",
             via_checkout=True,
+            project_id=p,
         )
 
         with pytest.raises(rev.RevisionConflictError):
@@ -156,6 +154,7 @@ def test_complete_conflict_via_expected_parent(engine_with_schema) -> None:  # t
                 task_id=task.task_id,
                 author="x",
                 expected_parent_revision_id=original_head,
+                project_id=p,
             )
 
 
@@ -165,10 +164,10 @@ def test_complete_already_done_raises(engine_with_schema) -> None:  # type: igno
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
-        tasks.complete(session, task_id=task.task_id, author="x")
+        tasks.complete(session, task_id=task.task_id, author="x", project_id=p)
 
         with pytest.raises(tasks.TaskAlreadyDoneError):
-            tasks.complete(session, task_id=task.task_id, author="x")
+            tasks.complete(session, task_id=task.task_id, author="x", project_id=p)
 
 
 def test_list_for_plan_returns_all_tasks(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -204,9 +203,9 @@ def test_complete_rejects_terminal_sources(engine_with_schema, from_status) -> N
         _force_status(session, task.task_id, from_status)
 
         with pytest.raises(StatusTransitionError):
-            tasks.complete(session, task_id=task.task_id, author="x")
+            tasks.complete(session, task_id=task.task_id, author="x", project_id=p)
 
-        rejected = tasks.get(session, task.task_id)
+        rejected = tasks.get(session, task.task_id, project_id=p)
         assert rejected is not None
         assert rejected.status is from_status
 
@@ -222,8 +221,8 @@ def test_complete_allows_legal_sources(engine_with_schema, from_status) -> None:
         task = _task(session, p, pl, s)
         _force_status(session, task.task_id, from_status)
 
-        tasks.complete(session, task_id=task.task_id, author="x")
-        done = tasks.get(session, task.task_id)
+        tasks.complete(session, task_id=task.task_id, author="x", project_id=p)
+        done = tasks.get(session, task.task_id, project_id=p)
         assert done is not None
         assert done.status is TaskStatus.DONE
 
@@ -237,12 +236,12 @@ def test_complete_from_todo_goes_via_checkout_leg(engine_with_schema, from_statu
         task = _task(session, p, pl, s)
         _force_status(session, task.task_id, from_status)
 
-        tasks.complete(session, task_id=task.task_id, author="x")
+        tasks.complete(session, task_id=task.task_id, author="x", project_id=p)
 
-        done = tasks.get(session, task.task_id)
+        done = tasks.get(session, task.task_id, project_id=p)
         assert done is not None
         assert done.status is TaskStatus.DONE
-        history = rev.list_for_entity(session, EntityKind.TASK, done.row_id)  # type: ignore[arg-type]
+        history = rev.list_for_entity(session, EntityKind.TASK, done.row_id, project_id=p)  # type: ignore[arg-type]
         ops = [json.loads(r.diff)["op"] for r in history]
         # create → status(todo→in-progress, checkout-нога) → complete
         assert ops == ["create", "status", "complete"]

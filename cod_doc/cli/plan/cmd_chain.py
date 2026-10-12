@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from ._common import _make_session, _render_chain, console
+from ._common import _make_session, _project_id, _render_chain, console
 from ._group import plan
 
 if TYPE_CHECKING:
@@ -30,7 +30,9 @@ def plan_forward(ctx: click.Context, task_id: str, project: str, as_json: bool) 
 
     try:
         with transactional(sf) as session:
-            chain = plan_service.forward_chain(session, task_id)
+            chain = plan_service.forward_chain(
+                session, task_id, project_id=_project_id(session, project)
+            )
     except TaskNotFoundInPlanError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
         sys.exit(1)
@@ -54,7 +56,9 @@ def plan_reverse(ctx: click.Context, task_id: str, project: str, as_json: bool) 
 
     try:
         with transactional(sf) as session:
-            chain = plan_service.reverse_chain(session, task_id)
+            chain = plan_service.reverse_chain(
+                session, task_id, project_id=_project_id(session, project)
+            )
     except TaskNotFoundInPlanError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
         sys.exit(1)

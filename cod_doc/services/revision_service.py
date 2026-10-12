@@ -193,7 +193,7 @@ def list_for_entity(
     entity_id: int,
     *,
     limit: int | None = None,
-    project_id: int | None = None,
+    project_id: int | None,
 ) -> list[Revision]:
     """History for the entity, oldest → newest.
 

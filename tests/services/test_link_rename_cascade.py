@@ -11,6 +11,7 @@ from cod_doc.infra.models import ProjectModel
 from cod_doc.services import doc_service as docs
 from cod_doc.services import link_service as links
 from cod_doc.services import revision_service as rev
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -115,7 +116,9 @@ def test_rename_cascade_rewrites_section_body_and_writes_revision(engine_with_sc
         )
         links.resolve_section(session, sec.row_id)
 
-        before = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
+        before = rev.list_for_entity(
+            session, EntityKind.SECTION, sec.row_id, project_id=only_project_id(session)
+        )
         n_before = len(before)
 
         links.rename_cascade(
@@ -133,7 +136,9 @@ def test_rename_cascade_rewrites_section_body_and_writes_revision(engine_with_sc
         assert "old-key" not in body
         assert "new-key" in body
 
-        after = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
+        after = rev.list_for_entity(
+            session, EntityKind.SECTION, sec.row_id, project_id=only_project_id(session)
+        )
         assert len(after) == n_before + 1
 
 

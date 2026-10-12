@@ -21,6 +21,7 @@ from cod_doc.infra.repositories import (
     ProjectRepository,
 )
 from cod_doc.services import project_stats, task_service
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -77,7 +78,12 @@ def _seed_db_tasks(entry, *, n_todo: int, n_done: int) -> None:
                     id_prefix="ST",
                 )
                 if i < n_done:
-                    task_service.complete(session, task_id=task.task_id, author="human:test")
+                    task_service.complete(
+                        session,
+                        task_id=task.task_id,
+                        author="human:test",
+                        project_id=only_project_id(session),
+                    )
     finally:
         engine.dispose()
 

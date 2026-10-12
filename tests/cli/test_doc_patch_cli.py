@@ -22,6 +22,7 @@ from cod_doc.infra.models import ActivityEventModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -94,7 +95,9 @@ def _revisions(anchor: str, project_name: str = "p", doc_key: str = DOC_KEY) -> 
             assert section.row_id is not None
             return [
                 r.revision_id
-                for r in rev.list_for_entity(session, EntityKind.SECTION, section.row_id)
+                for r in rev.list_for_entity(
+                    session, EntityKind.SECTION, section.row_id, project_id=only_project_id(session)
+                )
             ]
     finally:
         engine.dispose()

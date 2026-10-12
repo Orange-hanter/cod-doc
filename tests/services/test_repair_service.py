@@ -440,7 +440,7 @@ def _seed_stale_lock(factory: sessionmaker) -> str:
             priority=Priority.MEDIUM,
             author="human:test",
         )
-        checkout_service.checkout(session, task_id, agent="agent-X")
+        checkout_service.checkout(session, task_id, agent="agent-X", project_id=project_id)
         model = session.execute(select(TaskModel).where(TaskModel.task_id == task_id)).scalar_one()
         model.checked_out_at = datetime.now(UTC) - timedelta(minutes=_LOCK_AGE_MIN)
     return task_id

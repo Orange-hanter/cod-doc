@@ -12,6 +12,7 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, TaskModel
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -59,6 +60,7 @@ def _make_in_progress(
         new_status=TaskStatus.IN_PROGRESS,
         author="human:test",
         via_checkout=True,
+        project_id=only_project_id(session),
     )
     if last_updated_offset_hours:
         # Backdate last_updated so we can test stale-cutoff.
@@ -138,7 +140,7 @@ def test_log_progress_touches_last_updated(engine_with_schema) -> None:  # type:
         assert [t.task_id for t in before] == ["PR-001"]
 
         task_service.log_progress(
-            session, task_id="PR-001", message="reading spec", author="agent:x"
+            session, task_id="PR-001", message="reading spec", author="agent:x", project_id=p
         )
 
         # After progress note: no longer stale
@@ -151,14 +153,14 @@ def test_log_progress_writes_revision(engine_with_schema) -> None:  # type: igno
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _make_in_progress(session, p, pl, s, "PR-001")
-        t = task_service.get(session, "PR-001")
+        t = task_service.get(session, "PR-001", project_id=p)
         assert t is not None and t.row_id is not None
 
         task_service.log_progress(
-            session, task_id="PR-001", message="step 2 of 5", author="agent:x"
+            session, task_id="PR-001", message="step 2 of 5", author="agent:x", project_id=p
         )
 
-        history = rev.list_for_entity(session, EntityKind.TASK, t.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, t.row_id, project_id=p)
         last = history[-1]
         assert "progress" in last.diff
         assert "step 2 of 5" in last.diff
@@ -171,4 +173,6 @@ def test_log_progress_rejects_empty_message(engine_with_schema) -> None:  # type
         _make_in_progress(session, p, pl, s, "PR-001")
 
         with pytest.raises(ValueError, match="non-empty"):
-            task_service.log_progress(session, task_id="PR-001", message="   ", author="agent:x")
+            task_service.log_progress(
+                session, task_id="PR-001", message="   ", author="agent:x", project_id=p
+            )

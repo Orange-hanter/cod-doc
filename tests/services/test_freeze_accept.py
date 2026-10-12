@@ -81,14 +81,18 @@ def test_update_status_writes_revision(tmp_path: Path, engine_with_schema) -> No
     with transactional(factory) as session:
         project_id, _ = _seed(session, "p", tmp_path)
         doc = _make_doc(session, project_id, "draft-doc", DocumentStatus.DRAFT)
-        before = revision_service.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)
+        before = revision_service.list_for_entity(
+            session, EntityKind.DOCUMENT, doc.row_id, project_id=project_id
+        )
         doc_service.update_status(
             session,
             document_id=doc.row_id,
             new_status=DocumentStatus.REVIEW,
             author="human:test",
         )
-        after = revision_service.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)
+        after = revision_service.list_for_entity(
+            session, EntityKind.DOCUMENT, doc.row_id, project_id=project_id
+        )
         assert len(after) == len(before) + 1
         assert "status" in after[-1].diff and "review" in after[-1].diff
 
@@ -98,14 +102,22 @@ def test_update_status_no_op_when_unchanged(tmp_path: Path, engine_with_schema) 
     with transactional(factory) as session:
         project_id, _ = _seed(session, "p", tmp_path)
         doc = _make_doc(session, project_id, "active-doc", DocumentStatus.ACTIVE)
-        baseline = len(revision_service.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id))
+        baseline = len(
+            revision_service.list_for_entity(
+                session, EntityKind.DOCUMENT, doc.row_id, project_id=project_id
+            )
+        )
         doc_service.update_status(
             session,
             document_id=doc.row_id,
             new_status=DocumentStatus.ACTIVE,
             author="human:test",
         )
-        after = len(revision_service.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id))
+        after = len(
+            revision_service.list_for_entity(
+                session, EntityKind.DOCUMENT, doc.row_id, project_id=project_id
+            )
+        )
     assert after == baseline
 
 

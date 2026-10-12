@@ -26,6 +26,7 @@ from cod_doc.infra.repositories import (
     ProjectRepository,
 )
 from cod_doc.services import task_service as tasks
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -103,7 +104,9 @@ def plans_client(tmp_path: Path, migrate_db):
             author="human:dakh",
             id_prefix="PAY",
         )
-        tasks.complete(session, task_id=d.task_id, author="human:dakh")
+        tasks.complete(
+            session, task_id=d.task_id, author="human:dakh", project_id=only_project_id(session)
+        )
     engine.dispose()
 
     from cod_doc.api.server import app
@@ -186,7 +189,11 @@ def test_plan_show_percent_counts_cancelled_as_closed(plans_client) -> None:
         ).scalars()
         for task_id in list(open_ids):
             tasks.update_status(
-                session, task_id=task_id, new_status=TaskStatus.CANCELLED, author="human:test"
+                session,
+                task_id=task_id,
+                new_status=TaskStatus.CANCELLED,
+                author="human:test",
+                project_id=only_project_id(session),
             )
     engine.dispose()
 

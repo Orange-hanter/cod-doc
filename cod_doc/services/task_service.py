@@ -654,7 +654,7 @@ def update_status(
     via_checkout: bool = False,
     strict: bool = True,
     force: bool = False,
-    project_id: int | None = None,
+    project_id: int,
 ) -> Task:
     """Set task.status directly; no dep-gate.
 
@@ -691,12 +691,8 @@ def update_status(
         validate_transition,
     )
 
-    # ADO-200: project_id=None — легаси-долг внутренних вызывающих; все
-    # поверхности (MCP, CLI, web, REST) с AFT-022 передают проект. Так же
-    # опционален он у complete, set_blocker, clear_blocker, log_progress и
-    # checkout; обязательным станет в AFT-023. Grooming-мутации
-    # (description/acceptance/priority/affects_files, move_to_section) его
-    # требуют уже сейчас.
+    # AFT-023: project_id обязателен у всех мутаций задачи — в общей hub-БД
+    # один task_id живёт в нескольких проектах (нумерация — на проект).
     model = _require_task(session, task_id, project_id=project_id)
     old_status = model.status
     target_status = canonical_task_status(new_status)
@@ -1193,7 +1189,7 @@ def _move_one_to_plan(
     new_section_id: int,
     author: str,
     reason: str | None = None,
-    project_id: int | None = None,
+    project_id: int,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Move a task into a section of ANOTHER plan of the same project (op=plan, ADO-243).
@@ -1229,7 +1225,7 @@ def _move_one_to_plan(
     old_section_id = model.section_id
     old_plan_id = model.plan_id
     if old_section_id == new_section_id:
-        t = TaskRepository(session).get_by_task_id(task_id)
+        t = TaskRepository(session).get(model.row_id)
         assert t is not None
         return t
 
@@ -1483,7 +1479,7 @@ def complete(
     commit_sha: str | None = None,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
-    project_id: int | None = None,
+    project_id: int,
 ) -> Task:
     """Complete a task: validate deps → done, write revision.
 
@@ -1611,7 +1607,7 @@ def complete(
     return t
 
 
-def get(session: Session, task_id: str, *, project_id: int | None = None) -> Task | None:
+def get(session: Session, task_id: str, *, project_id: int | None) -> Task | None:
     """Задача по ``task_id``; с ``project_id`` — только в этом проекте.
 
     Поверхности, которые решают по найденной задаче (MCP/CLI ``move``),
@@ -1794,7 +1790,7 @@ def set_blocker(
     task_id: str,
     reason: str,
     author: str,
-    project_id: int | None = None,
+    project_id: int,
 ) -> Task:
     """Mark a task as externally blocked (free-text reason).
 
@@ -1858,7 +1854,7 @@ def clear_blocker(
     *,
     task_id: str,
     author: str,
-    project_id: int | None = None,
+    project_id: int,
 ) -> Task:
     """Clear the external blocker on a task (no-op if already clear).
 
@@ -2263,7 +2259,7 @@ def log_progress(
     task_id: str,
     message: str,
     author: str,
-    project_id: int | None = None,
+    project_id: int,
 ) -> Task:
     """Record a progress note on an in-progress task.
 

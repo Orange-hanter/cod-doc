@@ -123,7 +123,7 @@ def test_approving_applies_the_patch_by_the_approver_and_revert_undoes_it(
         head = _section_head(session, pid)
         assert head is not None
         revisions = revision_service.list_for_entity(
-            session, EntityKind.SECTION, _section_row_id(session, doc_id)
+            session, EntityKind.SECTION, _section_row_id(session, doc_id), project_id=pid
         )
         assert next(r.author for r in revisions if r.revision_id == head) == "human:dakh"
 

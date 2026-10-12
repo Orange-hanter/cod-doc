@@ -39,6 +39,7 @@ from cod_doc.services import revision_service as rev
 from cod_doc.services import task_doc_service
 from cod_doc.services import task_service as tasks
 from cod_doc.services.task_service import TaskNotFoundError
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -111,7 +112,9 @@ def _paths(session: Session, row_id: int) -> list[str]:
 
 
 def _revisions(session: Session, row_id: int) -> int:
-    return len(rev.list_for_entity(session, EntityKind.TASK, row_id))
+    return len(
+        rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=only_project_id(session))
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -139,7 +142,7 @@ def test_replace_swaps_whole_set_and_leaves_trail(engine_with_schema) -> None:  
         assert change.warnings == []
         assert _paths(session, row_id) == ["src/b.py", "src/c.py"]
 
-        last = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        last = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
         assert json.loads(last.diff) == {
             "op": "affects_files",
             "mode": "replace",
@@ -476,12 +479,12 @@ def test_revision_revert_restores_previous_set(engine_with_schema) -> None:  # t
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py", "src/b.py"])
         _update(session, task_id=_TASK, paths=["src/c.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
 
         rev.revert(session, target.revision_id, author="human:undo", project_id=target.project_id)
 
         assert _paths(session, row_id) == ["src/a.py", "src/b.py"]
-        inverse = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        inverse = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
         assert inverse.revision_id != target.revision_id
         assert inverse.reason == f"revert revision {target.revision_id}"
         assert json.loads(inverse.diff) == {
@@ -497,7 +500,7 @@ def test_revision_revert_of_add_restores_set(engine_with_schema) -> None:  # typ
     with transactional(factory) as session:
         _pid, row_id = _seed(session)
         _update(session, task_id=_TASK, paths=["src/new.py"], mode="add", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
 
         rev.revert(session, target.revision_id, author="human:undo", project_id=target.project_id)
 
@@ -511,7 +514,7 @@ def test_revision_revert_rejects_malformed_old(engine_with_schema, old: object) 
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
         _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
         ).scalar_one()
@@ -616,7 +619,7 @@ def test_revision_revert_is_scoped_by_project(engine_with_schema) -> None:  # ty
         pid, row_id = _seed(session, ["src/a.py"])
         other_pid = _other_project(session)
         _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=pid)[-1]
 
         with pytest.raises(LookupError, match=f"revision not found: '{target.revision_id}'"):
             rev.revert(session, target.revision_id, author="human:undo", project_id=other_pid)
@@ -651,7 +654,7 @@ def test_revision_revert_refuses_task_of_another_project(engine_with_schema) -> 
         _pid, row_id = _seed(session, ["src/a.py"])
         other_pid = _other_project(session)
         _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
         ).scalar_one()
@@ -676,7 +679,7 @@ def test_revision_revert_refuses_task_doc_of_another_project(engine_with_schema)
         td = task_doc_service.put(
             session, project_id=pid, task_row_id=row_id, key="plan", title="P", body="v2\n"
         )
-        first = rev.list_for_entity(session, EntityKind.TASK_DOC, td.row_id)[0]
+        first = rev.list_for_entity(session, EntityKind.TASK_DOC, td.row_id, project_id=pid)[0]
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == first.revision_id)
         ).scalar_one()
@@ -696,7 +699,7 @@ def test_revision_revert_wraps_rejected_old_paths(engine_with_schema) -> None:  
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
         _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
         ).scalar_one()
@@ -869,7 +872,9 @@ def test_mcp_revision_revert_foreign_project_not_found(engine_with_schema, monke
         _pid, row_id = _seed(session, ["src/a.py"])
         _other_project(session)
         _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1].revision_id
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[
+            -1
+        ].revision_id
 
     monkeypatch.setattr(revision_tools, "session_factory", lambda project: (factory, None))
     mcp = FastMCP("test")
@@ -890,7 +895,9 @@ def test_mcp_revision_get_foreign_project_is_null(engine_with_schema, monkeypatc
         _pid, row_id = _seed(session, ["src/a.py"])
         _other_project(session)
         _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1].revision_id
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[
+            -1
+        ].revision_id
 
     monkeypatch.setattr(revision_tools, "session_factory", lambda project: (factory, None))
     foreign = FastMCP("test")

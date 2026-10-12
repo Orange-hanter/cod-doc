@@ -317,14 +317,21 @@ def _ensure_import_plan(session: Session, project_id: int) -> tuple[int, int]:
     Created on first call; reused on subsequent imports for the same project.
     """
     plan_repo = PlanRepository(session)
-    plan = plan_repo.get_by_scope(_IMPORT_PLAN_SCOPE)
-    if plan is not None and plan.project_id == project_id and plan.row_id is not None:
+    # scope уникален на всю БД: если «imported-legacy» уже занят другим
+    # проектом общей hub-БД, план этого проекта получает собственный scope —
+    # иначе вставка падала бы на уникальном индексе (AFT-023).
+    scope = _IMPORT_PLAN_SCOPE
+    taken = plan_repo.get_by_scope(scope, project_id=None)
+    if taken is not None and taken.project_id != project_id:
+        scope = f"{_IMPORT_PLAN_SCOPE}-p{project_id}"
+    plan = plan_repo.get_by_scope(scope, project_id=project_id)
+    if plan is not None and plan.row_id is not None:
         plan_id = plan.row_id
     else:
         new_plan = plan_repo.add(
             Plan(
                 project_id=project_id,
-                scope=_IMPORT_PLAN_SCOPE,
+                scope=scope,
                 principle=_IMPORT_PLAN_PRINCIPLE,
             )
         )

@@ -81,11 +81,13 @@ def test_revert_task_status_change(engine_with_schema) -> None:  # type: ignore[
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",
             via_checkout=True,
+            project_id=p,
         )
         history = rev.list_for_entity(
             session,
             EntityKind.TASK,
-            tasks.get(session, "CF-001").row_id,  # type: ignore[union-attr]
+            tasks.get(session, "CF-001", project_id=p).row_id,  # type: ignore[union-attr]
+            project_id=p,
         )
         status_rev = history[-1]
         assert status_rev.diff.startswith('{"op": "status"')
@@ -94,7 +96,7 @@ def test_revert_task_status_change(engine_with_schema) -> None:  # type: ignore[
             session, status_rev.revision_id, author="human:test", project_id=status_rev.project_id
         )
 
-        t = tasks.get(session, "CF-001")
+        t = tasks.get(session, "CF-001", project_id=p)
         assert t is not None
         # ADO-156: реверт приземляется в канонический бакет, а не в легаси.
         assert t.status is TaskStatus.TODO
@@ -105,12 +107,15 @@ def test_revert_task_complete(engine_with_schema) -> None:  # type: ignore[no-un
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _make_task(session, p, pl, s, "CF-001")
-        tasks.complete(session, task_id="CF-001", author="human:test", commit_sha="abc")
+        tasks.complete(
+            session, task_id="CF-001", author="human:test", commit_sha="abc", project_id=p
+        )
 
         history = rev.list_for_entity(
             session,
             EntityKind.TASK,
-            tasks.get(session, "CF-001").row_id,  # type: ignore[union-attr]
+            tasks.get(session, "CF-001", project_id=p).row_id,  # type: ignore[union-attr]
+            project_id=p,
         )
         complete_rev = history[-1]
         rev.revert(
@@ -120,7 +125,7 @@ def test_revert_task_complete(engine_with_schema) -> None:  # type: ignore[no-un
             project_id=complete_rev.project_id,
         )
 
-        t = tasks.get(session, "CF-001")
+        t = tasks.get(session, "CF-001", project_id=p)
         assert t is not None
         assert t.status is TaskStatus.TODO
 
@@ -134,7 +139,8 @@ def test_revert_task_unsupported_op_raises(engine_with_schema) -> None:  # type:
         history = rev.list_for_entity(
             session,
             EntityKind.TASK,
-            tasks.get(session, "CF-001").row_id,  # type: ignore[union-attr]
+            tasks.get(session, "CF-001", project_id=p).row_id,  # type: ignore[union-attr]
+            project_id=p,
         )
         create_rev = history[0]
         with pytest.raises(rev.RevertNotSupportedError):
@@ -184,7 +190,7 @@ def test_revert_section_patch_restores_old_body(engine_with_schema) -> None:  # 
             new_body="Updated body.\n",
             author="human:test",
         )
-        history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
+        history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p)
         patch_rev = history[-1]
 
         rev.revert(
@@ -226,14 +232,14 @@ def test_revert_section_writes_new_revision(engine_with_schema) -> None:  # type
             new_body="v2\n",
             author="human:test",
         )
-        n_before = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id))
+        n_before = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p))
 
-        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[-1]
+        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p)[-1]
         rev.revert(
             session, patch_rev.revision_id, author="human:test", project_id=patch_rev.project_id
         )
 
-        n_after = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id))
+        n_after = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p))
         assert n_after == n_before + 1  # the revert is a new revision
 
 
@@ -261,7 +267,7 @@ def test_revert_document_rename_restores_key(engine_with_schema) -> None:  # typ
             new_doc_key="renamed-key",
             author="human:test",
         )
-        rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)[-1]
+        rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id, project_id=p)[-1]
 
         rev.revert(
             session, rename_rev.revision_id, author="human:test", project_id=rename_rev.project_id
@@ -327,7 +333,7 @@ def test_section_label_with_plus_in_doc_key_is_read_and_reverted(engine_with_sch
             new_body="Updated body.\n",
             author="human:test",
         )
-        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[-1]
+        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p)[-1]
         # Метка несёт doc_key с «+» — именно её прежний [^+]* не дочитывал.
         assert patch_rev.diff.startswith("--- section:c++-guide#intro+++ section:c++-guide#intro@@")
 
@@ -391,7 +397,7 @@ def test_revert_section_of_another_project_raises(engine_with_schema) -> None:  
             new_body="Updated body.\n",
             author="human:test",
         )
-        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[-1]
+        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p)[-1]
         _move_revision_to(session, patch_rev.revision_id, other)
 
         with pytest.raises(
@@ -418,7 +424,7 @@ def test_revert_document_of_another_project_raises(engine_with_schema) -> None: 
             author="human:test",
         )
         docs.rename(session, document_id=doc.row_id, new_doc_key="renamed-key", author="human:test")
-        rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)[-1]
+        rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id, project_id=p)[-1]
         _move_revision_to(session, rename_rev.revision_id, other)
 
         with pytest.raises(
@@ -464,7 +470,7 @@ def test_complete_updates_plan_last_updated(engine_with_schema) -> None:  # type
         # SQLite stores datetimes without tzinfo; normalise for comparison.
         ts_before = plan_before.last_updated.replace(tzinfo=None)  # type: ignore[union-attr]
 
-        tasks.complete(session, task_id="CF-001", author="human:test")
+        tasks.complete(session, task_id="CF-001", author="human:test", project_id=p)
 
         plan_after = session.get(PlanModel, pl)
         ts_after = plan_after.last_updated.replace(tzinfo=None)  # type: ignore[union-attr]
@@ -477,10 +483,10 @@ def test_complete_plan_update_is_in_same_transaction(engine_with_schema) -> None
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _make_task(session, p, pl, s, "CF-001")
-        tasks.complete(session, task_id="CF-001", author="human:test")
+        tasks.complete(session, task_id="CF-001", author="human:test", project_id=p)
 
         # Both changes visible within the same session.
-        t = tasks.get(session, "CF-001")
+        t = tasks.get(session, "CF-001", project_id=p)
         plan = session.get(PlanModel, pl)
         assert t.status is TaskStatus.DONE  # type: ignore[union-attr]
         # Both timestamps should be very close (same flush cycle).

@@ -72,7 +72,9 @@ def _seed_task(
         author="human:test",
     )
     if status is not TaskStatus.PENDING:
-        tasks.update_status(session, task_id=task_id, new_status=status, author="human:test")
+        tasks.update_status(
+            session, task_id=task_id, new_status=status, author="human:test", project_id=proj_id
+        )
     return t
 
 
@@ -140,7 +142,12 @@ def test_audit_flags_done_with_unfinished_blocks(engine_with_schema) -> None:
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
         session.flush()
         tasks.update_status(
-            session, task_id="PLN-002", new_status=TaskStatus.DONE, author="drift", force=True
+            session,
+            task_id="PLN-002",
+            new_status=TaskStatus.DONE,
+            author="drift",
+            force=True,
+            project_id=p,
         )
 
         report = plans.audit(session, plan_id)

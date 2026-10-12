@@ -780,7 +780,7 @@ def test_task_acceptance_and_blocker_are_indexed(engine_with_schema) -> None:  #
         # set_blocker / clear_blocker скоупа проекта пока не принимают (ADO-200,
         # легаси-долг); project_id с AFT-022 требуют только grooming-мутации.
         task_service.set_blocker(
-            session, task_id="INC-003", reason="waiting on kryptonite", author="t"
+            session, task_id="INC-003", reason="waiting on kryptonite", author="t", project_id=pid
         )
 
     with transactional(factory) as session:
@@ -789,7 +789,7 @@ def test_task_acceptance_and_blocker_are_indexed(engine_with_schema) -> None:  #
 
     # Clearing the blocker drops that text from the indexed body again.
     with transactional(factory) as session:
-        task_service.clear_blocker(session, task_id="INC-003", author="t")
+        task_service.clear_blocker(session, task_id="INC-003", author="t", project_id=pid)
     with transactional(factory) as session:
         assert search_service.search(session, project_id=1, query="kryptonite")["total"] == 0
 
@@ -801,7 +801,7 @@ def test_task_complete_keeps_the_row_indexed(engine_with_schema) -> None:  # typ
         _make_task(session, pid, plid, sid, "INC-004", "Finish the telemetry export")
 
     with transactional(factory) as session:
-        task_service.complete(session, task_id="INC-004", author="t")
+        task_service.complete(session, task_id="INC-004", author="t", project_id=pid)
 
     with transactional(factory) as session:
         result = search_service.search(session, project_id=1, query="telemetry")
@@ -976,7 +976,7 @@ def test_write_path_survives_a_missing_index_table(engine_with_schema) -> None: 
         _make_task(session, pid, plid, sid, "INC-020", "Survives a missing index")
 
     with transactional(factory) as session:
-        t = task_service.get(session, "INC-020")
+        t = task_service.get(session, "INC-020", project_id=pid)
     assert t is not None
 
 

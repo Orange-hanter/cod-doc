@@ -352,7 +352,7 @@ async def import_master_save(
     plan_scope = str(form.get("plan_scope") or "").strip()
     saved_tasks = 0
     if plan_scope:
-        plan = plans.get_by_scope(session, plan_scope)
+        plan = plans.get_by_scope(session, plan_scope, project_id=project_db_id)
         if plan is None or plan.row_id is None:
             raise HTTPException(404, f"Plan '{plan_scope}' not found")
         sections = plans.list_sections(session, plan.row_id)

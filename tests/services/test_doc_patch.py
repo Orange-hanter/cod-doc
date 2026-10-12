@@ -79,7 +79,7 @@ def test_patch_section_updates_body_and_writes_revision(engine_with_schema) -> N
         assert patched.body == "new body"
         assert patched.content_hash == hashlib.sha256(b"new body").hexdigest()
 
-        history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
+        history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=proj_id)
         # add_section + patch_section → 2 revisions
         assert len(history) == 2
         assert history[1].parent_revision_id == history[0].revision_id
@@ -136,7 +136,7 @@ def test_patch_section_no_op_when_body_unchanged(engine_with_schema) -> None:  #
         )
         assert result.row_id == sec.row_id
 
-        history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
+        history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=proj_id)
         assert len(history) == 1  # only add_section's revision
 
 
@@ -156,7 +156,9 @@ def test_patch_section_optimistic_concurrency_conflict(engine_with_schema) -> No
             body="v1",
             author="x",
         )
-        first_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[0]
+        first_rev = rev.list_for_entity(
+            session, EntityKind.SECTION, sec.row_id, project_id=proj_id
+        )[0]
 
         # Concurrent patch lands first.
         docs.patch_section(

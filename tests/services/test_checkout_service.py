@@ -16,6 +16,7 @@ from cod_doc.services.checkout_service import (
     CheckoutConflictError,
     CheckoutStatusError,
 )
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -69,7 +70,9 @@ def test_checkout_of_a_legacy_pending_row_lands_canonical(engine_with_schema) ->
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
-        result = checkout.checkout(session, "CO-001", agent="orchestrator-run-X")
+        result = checkout.checkout(
+            session, "CO-001", agent="orchestrator-run-X", project_id=only_project_id(session)
+        )
         assert result.checked_out_by == "orchestrator-run-X"
         # Снимок «что было до чекаута» — история, её не канонизируем.
         assert result.expected_status_at_checkout == "pending"
@@ -81,7 +84,9 @@ def test_checkout_canonical_todo_promotes_to_underscore(engine_with_schema) -> N
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session, status="todo")
-        result = checkout.checkout(session, "CO-001", agent="run-X")
+        result = checkout.checkout(
+            session, "CO-001", agent="run-X", project_id=only_project_id(session)
+        )
         assert result.expected_status_at_checkout == "todo"
         assert result.new_status == "in_progress"
 
@@ -90,8 +95,12 @@ def test_checkout_idempotent_same_agent(engine_with_schema) -> None:  # type: ig
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
-        first = checkout.checkout(session, "CO-001", agent="agent-A")
-        second = checkout.checkout(session, "CO-001", agent="agent-A")
+        first = checkout.checkout(
+            session, "CO-001", agent="agent-A", project_id=only_project_id(session)
+        )
+        second = checkout.checkout(
+            session, "CO-001", agent="agent-A", project_id=only_project_id(session)
+        )
         assert second.idempotent is True
         assert second.checked_out_by == first.checked_out_by
         # SQLite strips tzinfo on round-trip; compare naive timestamps.
@@ -104,9 +113,11 @@ def test_checkout_conflict_different_agent_raises(engine_with_schema) -> None:  
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
-        checkout.checkout(session, "CO-001", agent="agent-A")
+        checkout.checkout(session, "CO-001", agent="agent-A", project_id=only_project_id(session))
         with pytest.raises(CheckoutConflictError, match="agent-A"):
-            checkout.checkout(session, "CO-001", agent="agent-B")
+            checkout.checkout(
+                session, "CO-001", agent="agent-B", project_id=only_project_id(session)
+            )
 
 
 def test_checkout_status_mismatch_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -114,15 +125,21 @@ def test_checkout_status_mismatch_raises(engine_with_schema) -> None:  # type: i
     with transactional(factory) as session:
         _seed_task(session, status="done")
         with pytest.raises(CheckoutStatusError, match="done"):
-            checkout.checkout(session, "CO-001", agent="A", expected_statuses=["todo", "pending"])
+            checkout.checkout(
+                session,
+                "CO-001",
+                agent="A",
+                expected_statuses=["todo", "pending"],
+                project_id=only_project_id(session),
+            )
 
 
 def test_release_clears_lock(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
-        checkout.checkout(session, "CO-001", agent="A")
-        result = checkout.release(session, "CO-001", agent="A")
+        checkout.checkout(session, "CO-001", agent="A", project_id=only_project_id(session))
+        result = checkout.release(session, "CO-001", agent="A", project_id=only_project_id(session))
         assert result.checked_out_by is None
         assert result.idempotent is False
 
@@ -131,7 +148,9 @@ def test_release_idempotent_when_no_lock(engine_with_schema) -> None:  # type: i
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
-        result = checkout.release(session, "CO-001", agent="anyone")
+        result = checkout.release(
+            session, "CO-001", agent="anyone", project_id=only_project_id(session)
+        )
         assert result.idempotent is True
 
 
@@ -139,17 +158,19 @@ def test_release_different_agent_raises_without_force(engine_with_schema) -> Non
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
-        checkout.checkout(session, "CO-001", agent="A")
+        checkout.checkout(session, "CO-001", agent="A", project_id=only_project_id(session))
         with pytest.raises(CheckoutConflictError):
-            checkout.release(session, "CO-001", agent="B")
+            checkout.release(session, "CO-001", agent="B", project_id=only_project_id(session))
 
 
 def test_release_force_bypasses_owner_check(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
-        checkout.checkout(session, "CO-001", agent="A")
-        result = checkout.release(session, "CO-001", agent="admin", force=True)
+        checkout.checkout(session, "CO-001", agent="A", project_id=only_project_id(session))
+        result = checkout.release(
+            session, "CO-001", agent="admin", force=True, project_id=only_project_id(session)
+        )
         assert result.checked_out_by is None
 
 
@@ -157,16 +178,26 @@ def test_has_active_checkout_distinguishes_owner(engine_with_schema) -> None:  #
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
-        checkout.checkout(session, "CO-001", agent="A")
-        assert checkout.has_active_checkout(session, "CO-001", agent="A") is True
-        assert checkout.has_active_checkout(session, "CO-001", agent="B") is False
+        checkout.checkout(session, "CO-001", agent="A", project_id=only_project_id(session))
+        assert (
+            checkout.has_active_checkout(
+                session, "CO-001", agent="A", project_id=only_project_id(session)
+            )
+            is True
+        )
+        assert (
+            checkout.has_active_checkout(
+                session, "CO-001", agent="B", project_id=only_project_id(session)
+            )
+            is False
+        )
 
 
 def test_release_stale_releases_old_locks(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
-        checkout.checkout(session, "CO-001", agent="A")
+        checkout.checkout(session, "CO-001", agent="A", project_id=only_project_id(session))
         # Backdate the lock past the TTL.
         m = session.query(TaskModel).filter(TaskModel.task_id == "CO-001").one()
         m.checked_out_at = datetime.now(UTC) - timedelta(hours=2)
@@ -179,7 +210,7 @@ def test_release_stale_skips_fresh_locks(engine_with_schema) -> None:  # type: i
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _seed_task(session)
-        checkout.checkout(session, "CO-001", agent="A")
+        checkout.checkout(session, "CO-001", agent="A", project_id=only_project_id(session))
         released = checkout.release_stale(session, ttl_minutes=30)
         assert released == []
 
@@ -212,7 +243,7 @@ def _seed_locked_task(session: Session, *, slug: str, task_id: str) -> int:
         priority=Priority.MEDIUM,
         author="x",
     )
-    checkout.checkout(session, task_id, agent="agent-A")
+    checkout.checkout(session, task_id, agent="agent-A", project_id=proj.row_id)
     m = session.query(TaskModel).filter(TaskModel.task_id == task_id).one()
     m.checked_out_at = now - timedelta(hours=2)
     session.flush()
@@ -245,4 +276,4 @@ def test_release_stale_without_project_id_stays_db_wide(engine_with_schema) -> N
 def test_checkout_unknown_task_raises_lookup(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session, pytest.raises(LookupError):
-        checkout.checkout(session, "NO-SUCH", agent="A")
+        checkout.checkout(session, "NO-SUCH", agent="A", project_id=0)  # проектов в БД нет

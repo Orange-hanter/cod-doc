@@ -281,9 +281,9 @@ def test_curator_suggests_resolving_when_every_addressing_task_is_done(  # type:
             relation=QuestionRelation.ADDRESSED_BY,
             author=AUTHOR,
         )
-        task_service.complete(session, task_id="PAY-001", author=AUTHOR)
+        task_service.complete(session, task_id="PAY-001", author=AUTHOR, project_id=pid)
         partial = question_service.answered_by_tasks(session, pid)
-        task_service.complete(session, task_id="PAY-002", author=AUTHOR)
+        task_service.complete(session, task_id="PAY-002", author=AUTHOR, project_id=pid)
         full = question_service.answered_by_tasks(session, pid)
         card = _curator(session, pid, tmp_path)
 

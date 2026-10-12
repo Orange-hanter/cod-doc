@@ -125,10 +125,12 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
 
 def _ensure_legacy_plan_once(session: Session, project_id: int) -> tuple[int, int]:
     scope = LEGACY_PLAN_SCOPE
-    plan = plan_service.get_by_scope(session, scope)
+    # По всей БД: scope уникален глобально, и занятость другим проектом надо
+    # увидеть, чтобы взять собственный.
+    plan = plan_service.get_by_scope(session, scope, project_id=None)
     if plan is not None and plan.project_id != project_id:
         scope = f"{LEGACY_PLAN_SCOPE}-p{project_id}"
-        plan = plan_service.get_by_scope(session, scope)
+        plan = plan_service.get_by_scope(session, scope, project_id=project_id)
     if plan is None:
         plan = plan_service.create_plan(
             session,

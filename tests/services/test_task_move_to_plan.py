@@ -96,8 +96,17 @@ def _task(session: Session, p: int, plan: dict[str, int], letter: str, task_id: 
 
 
 def _move(session: Session, task_id: str, section_id: int, **kw: Any) -> Task:
+    # Проект — тот, где живёт задача: в тестах с вторым проектом БД их больше одного.
+    project_id = session.execute(
+        select(TaskModel.project_id).where(TaskModel.task_id == task_id)
+    ).scalar_one()
     return tasks._move_one_to_plan(
-        session, task_id=task_id, new_section_id=section_id, author="agent:groom", **kw
+        session,
+        task_id=task_id,
+        new_section_id=section_id,
+        author="agent:groom",
+        project_id=project_id,
+        **kw,
     )
 
 
@@ -113,9 +122,13 @@ def test_move_keeps_row_id_task_id_status_and_history(engine_with_schema) -> Non
         task = _task(session, p, old, "A", "ADO-001")
         assert task.row_id is not None
         tasks.update_status(
-            session, task_id="ADO-001", new_status=TaskStatus.BLOCKED, author="human:test"
+            session,
+            task_id="ADO-001",
+            new_status=TaskStatus.BLOCKED,
+            author="human:test",
+            project_id=p,
         )
-        before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
+        before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p))
 
         moved = _move(session, "ADO-001", new["B"], reason="распил плана")
 
@@ -124,7 +137,7 @@ def test_move_keeps_row_id_task_id_status_and_history(engine_with_schema) -> Non
         assert moved.plan_id == new["plan"]
         assert moved.section_id == new["B"]
         assert moved.status == TaskStatus.BLOCKED
-        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         assert len(history) == before + 1, "старые ревизии остались на той же задаче"
         assert json.loads(history[-1].diff) == {
             "op": "plan",
@@ -179,7 +192,7 @@ def test_move_keeps_dependency_and_warns_about_the_cross_plan_edge(engine_with_s
 
         _move(session, "ADO-002", new["A"])
 
-        moved = tasks.get(session, "ADO-002")
+        moved = tasks.get(session, "ADO-002", project_id=p)
         assert moved is not None
         assert task_to_dict(moved, session)["blocked_by"] == ["ADO-001"]
         warnings = tasks.cross_plan_dependency_warnings(session, project_id=p, task_ids=["ADO-002"])
@@ -264,7 +277,9 @@ def test_done_task_moves_too(engine_with_schema) -> None:  # type: ignore[no-unt
     with transactional(factory) as session:
         p, old, new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
-        tasks.complete(session, task_id="ADO-001", author="human:test", commit_sha="abc1234")
+        tasks.complete(
+            session, task_id="ADO-001", author="human:test", commit_sha="abc1234", project_id=p
+        )
 
         moved = _move(session, "ADO-001", new["A"])
 
@@ -283,7 +298,7 @@ def test_foreign_lock_refuses_the_move(engine_with_schema) -> None:  # type: ign
     with transactional(factory) as session:
         p, old, new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
-        checkout_service.checkout(session, "ADO-001", agent="swarm-kimi")
+        checkout_service.checkout(session, "ADO-001", agent="swarm-kimi", project_id=p)
 
         with pytest.raises(CheckoutConflictError):
             _move(session, "ADO-001", new["A"])
@@ -297,7 +312,7 @@ def test_own_lock_moves_and_keeps_the_lock(engine_with_schema) -> None:  # type:
     with transactional(factory) as session:
         p, old, new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
-        checkout_service.checkout(session, "ADO-001", agent="agent:groom")
+        checkout_service.checkout(session, "ADO-001", agent="agent:groom", project_id=p)
 
         _move(session, "ADO-001", new["A"])
 
@@ -351,7 +366,7 @@ def test_revert_of_a_plan_move_is_an_explicit_refusal(engine_with_schema) -> Non
         task = _task(session, p, old, "A", "ADO-001")
         assert task.row_id is not None
         _move(session, "ADO-001", new["A"])
-        last = rev.list_for_entity(session, EntityKind.TASK, task.row_id)[-1]
+        last = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)[-1]
 
         with pytest.raises(RevertNotSupportedError):
             rev.revert(session, last.revision_id, author="human:test", project_id=last.project_id)
@@ -543,7 +558,7 @@ def test_mcp_foreign_lock_rolls_back_the_whole_batch(engine_with_schema, monkeyp
         p, old, _new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
         _task(session, p, old, "A", "ADO-002")
-        checkout_service.checkout(session, "ADO-002", agent="swarm-kimi")
+        checkout_service.checkout(session, "ADO-002", agent="swarm-kimi", project_id=p)
 
     move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
     with pytest.raises(ValueError, match="swarm-kimi"):
@@ -564,7 +579,7 @@ def test_mcp_continue_on_error_moves_the_rest(engine_with_schema, monkeypatch) -
         p, old, _new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
         _task(session, p, old, "A", "ADO-002")
-        checkout_service.checkout(session, "ADO-002", agent="swarm-kimi")
+        checkout_service.checkout(session, "ADO-002", agent="swarm-kimi", project_id=p)
 
     move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
     out = move(

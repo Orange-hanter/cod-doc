@@ -70,7 +70,7 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
             kwargs["completed_at"] = entity.completed_at
         return TaskModel(**kwargs)
 
-    def get_by_task_id(self, task_id: str, *, project_id: int | None = None) -> Task | None:
+    def get_by_task_id(self, task_id: str, *, project_id: int | None) -> Task | None:
         stmt = select(TaskModel).where(TaskModel.task_id == task_id)
         if project_id is not None:
             stmt = stmt.where(TaskModel.project_id == project_id)

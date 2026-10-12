@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-def get_by_scope(session: Session, scope: str, *, project_id: int | None = None) -> Plan | None:
+def get_by_scope(session: Session, scope: str, *, project_id: int | None) -> Plan | None:
     """Return a Plan by its unique ``scope`` slug, or None.
 
     Web handlers (story task-decomposition, master import) use this to look

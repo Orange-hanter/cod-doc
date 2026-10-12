@@ -717,8 +717,8 @@ def _l2_task_chains(session: Session, task: TaskModel) -> list[dict[str, Any]]:
     from cod_doc.services import plan_service
 
     try:
-        forward = plan_service.forward_chain(session, task.task_id)
-        reverse = plan_service.reverse_chain(session, task.task_id)
+        forward = plan_service.forward_chain(session, task.task_id, project_id=task.project_id)
+        reverse = plan_service.reverse_chain(session, task.task_id, project_id=task.project_id)
     except plan_service.TaskNotFoundInPlanError:
         return []
 

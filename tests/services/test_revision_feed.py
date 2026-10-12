@@ -17,6 +17,7 @@ from cod_doc.domain.entities import EntityKind
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import ProjectModel, RevisionModel
 from cod_doc.services import revision_service
+from tests._scope import only_project_id
 
 
 @pytest.fixture
@@ -153,7 +154,9 @@ def test_list_for_entity_limit_returns_tail_oldest_first(session_factory) -> Non
     with transactional(session_factory) as session:
         _seed_entity_history(session)
     with transactional(session_factory) as session:
-        tail = revision_service.list_for_entity(session, EntityKind.TASK, 7, limit=2)
+        tail = revision_service.list_for_entity(
+            session, EntityKind.TASK, 7, limit=2, project_id=only_project_id(session)
+        )
     assert [r.reason for r in tail] == ["four", "five"]
 
 
@@ -161,5 +164,7 @@ def test_list_for_entity_without_limit_unchanged(session_factory) -> None:  # ty
     with transactional(session_factory) as session:
         _seed_entity_history(session)
     with transactional(session_factory) as session:
-        history = revision_service.list_for_entity(session, EntityKind.TASK, 7)
+        history = revision_service.list_for_entity(
+            session, EntityKind.TASK, 7, project_id=only_project_id(session)
+        )
     assert [r.reason for r in history] == ["one", "two", "three", "four", "five"]

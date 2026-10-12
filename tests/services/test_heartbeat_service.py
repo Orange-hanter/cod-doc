@@ -166,6 +166,7 @@ def test_heartbeat_no_cursor_returns_empty_recent_changes(engine_with_schema) ->
             new_status=TaskStatus.IN_PROGRESS,
             author="x",
             via_checkout=True,
+            project_id=p,
         )
 
         ctx = heartbeat_service.heartbeat_context(session, task_id="HB-001")
@@ -189,9 +190,10 @@ def test_heartbeat_with_cursor_returns_only_newer_revisions(engine_with_schema) 
             new_status=TaskStatus.IN_PROGRESS,
             author="x",
             via_checkout=True,
+            project_id=p,
         )
         task_service.update_status(
-            session, task_id="HB-001", new_status=TaskStatus.PENDING, author="x"
+            session, task_id="HB-001", new_status=TaskStatus.PENDING, author="x", project_id=p
         )
         task_service.update_status(
             session,
@@ -199,9 +201,10 @@ def test_heartbeat_with_cursor_returns_only_newer_revisions(engine_with_schema) 
             new_status=TaskStatus.IN_PROGRESS,
             author="x",
             via_checkout=True,
+            project_id=p,
         )
 
-        all_revs = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        all_revs = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         assert len(all_revs) == 4  # 1 create + 3 status updates
         cursor_rev_id = all_revs[1].revision_id  # after create + first status
 
@@ -248,9 +251,10 @@ def test_heartbeat_cursor_caps_at_20_entries(engine_with_schema) -> None:  # typ
                 new_status=states[i % 2],
                 author="x",
                 via_checkout=True,
+                project_id=p,
             )
 
-        all_revs = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        all_revs = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         cursor = all_revs[0].revision_id  # after the create — see all 25 status flips
 
         ctx = heartbeat_service.heartbeat_context(

@@ -78,7 +78,7 @@ def test_forward_chain_empty_for_source_task(engine_with_schema) -> None:  # typ
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _task(session, p, pl, s, "GR-001")
-        chain = plans.forward_chain(session, "GR-001")
+        chain = plans.forward_chain(session, "GR-001", project_id=p)
         assert chain == []
 
 
@@ -91,7 +91,7 @@ def test_forward_chain_returns_direct_prerequisite(engine_with_schema) -> None: 
         b = _task(session, p, pl, s, "GR-002")
         _dep(session, b, a)  # GR-002 blocked by GR-001
 
-        chain = plans.forward_chain(session, "GR-002")
+        chain = plans.forward_chain(session, "GR-002", project_id=p)
         assert {e.task_id for e in chain} == {"GR-001"}
 
 
@@ -106,7 +106,7 @@ def test_forward_chain_transitive(engine_with_schema) -> None:  # type: ignore[n
         _dep(session, b, a)  # B depends on A
         _dep(session, c, b)  # C depends on B
 
-        chain = plans.forward_chain(session, "GR-003")
+        chain = plans.forward_chain(session, "GR-003", project_id=p)
         ids = {e.task_id for e in chain}
         assert ids == {"GR-001", "GR-002"}
 
@@ -122,7 +122,7 @@ def test_forward_chain_depth_ordering(engine_with_schema) -> None:  # type: igno
         _dep(session, b, a)
         _dep(session, c, b)
 
-        chain = plans.forward_chain(session, "GR-003")
+        chain = plans.forward_chain(session, "GR-003", project_id=p)
         depths = [e.depth for e in chain]
         assert depths == sorted(depths)  # depth-ascending
 
@@ -130,7 +130,8 @@ def test_forward_chain_depth_ordering(engine_with_schema) -> None:  # type: igno
 def test_forward_chain_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session, pytest.raises(plans.TaskNotFoundInPlanError):
-        plans.forward_chain(session, "GHOST-001")
+        # Проектов в БД нет: неизвестная задача ищется без скоупа.
+        plans.forward_chain(session, "GHOST-001", project_id=None)
 
 
 def test_forward_chain_excludes_relates_kind(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -143,7 +144,7 @@ def test_forward_chain_excludes_relates_kind(engine_with_schema) -> None:  # typ
         session.add(DependencyModel(from_task_id=b, to_task_id=a, kind="relates"))
         session.flush()
 
-        chain = plans.forward_chain(session, "GR-002")
+        chain = plans.forward_chain(session, "GR-002", project_id=p)
         assert chain == []
 
 
@@ -157,7 +158,7 @@ def test_reverse_chain_empty_for_leaf_task(engine_with_schema) -> None:  # type:
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _task(session, p, pl, s, "GR-001")
-        chain = plans.reverse_chain(session, "GR-001")
+        chain = plans.reverse_chain(session, "GR-001", project_id=p)
         assert chain == []
 
 
@@ -170,7 +171,7 @@ def test_reverse_chain_returns_direct_dependent(engine_with_schema) -> None:  # 
         b = _task(session, p, pl, s, "GR-002")
         _dep(session, b, a)
 
-        chain = plans.reverse_chain(session, "GR-001")
+        chain = plans.reverse_chain(session, "GR-001", project_id=p)
         assert {e.task_id for e in chain} == {"GR-002"}
 
 
@@ -185,7 +186,7 @@ def test_reverse_chain_transitive(engine_with_schema) -> None:  # type: ignore[n
         _dep(session, b, a)
         _dep(session, c, b)
 
-        chain = plans.reverse_chain(session, "GR-001")
+        chain = plans.reverse_chain(session, "GR-001", project_id=p)
         assert {e.task_id for e in chain} == {"GR-002", "GR-003"}
 
 
@@ -200,7 +201,7 @@ def test_reverse_chain_multiple_dependents(engine_with_schema) -> None:  # type:
         _dep(session, b, a)
         _dep(session, c, a)
 
-        chain = plans.reverse_chain(session, "GR-001")
+        chain = plans.reverse_chain(session, "GR-001", project_id=p)
         assert {e.task_id for e in chain} == {"GR-002", "GR-003"}
 
 
@@ -286,7 +287,7 @@ def test_critical_path_includes_status_info(engine_with_schema) -> None:  # type
         a = _task(session, p, pl, s, "GR-001")
         b = _task(session, p, pl, s, "GR-002")
         _dep(session, b, a)
-        tasks.complete(session, task_id="GR-001", author="human:test")
+        tasks.complete(session, task_id="GR-001", author="human:test", project_id=p)
 
         result = plans.critical_path(session, pl)
         ids_to_status = {e.task_id: e.status for e in result.chain}

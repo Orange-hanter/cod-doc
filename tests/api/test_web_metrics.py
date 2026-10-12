@@ -24,6 +24,7 @@ from cod_doc.infra.repositories import (
     ProjectRepository,
 )
 from cod_doc.services import task_service as tasks
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -81,7 +82,9 @@ def metrics_client(tmp_path: Path, migrate_db):
                 author="t",
                 id_prefix="MET",
             )
-            tasks.complete(session, task_id=t.task_id, author="t")
+            tasks.complete(
+                session, task_id=t.task_id, author="t", project_id=only_project_id(session)
+            )
     engine.dispose()
 
     from cod_doc.api.server import app
