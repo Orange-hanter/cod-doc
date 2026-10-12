@@ -43,3 +43,5 @@ venv/
 
 # graphify: граф кода для blast radius ai-reviewer (строится локально и в pr-review.yml)
 .graphify/
+# чекаут движка ai-reviewer в pr-review.yml; без игнора graphify индексирует его в граф cod-doc
+.ai-reviewer-engine/
