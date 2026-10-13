@@ -142,7 +142,7 @@ def _collect_links_at_risk(
     for doc in docs:
         if doc.row_id is None:
             continue
-        sections = doc_service.get_sections(session, doc.row_id)
+        sections = doc_service.get_sections(session, doc.row_id, project_id=project_id)
         for section in sections:
             if section.row_id is None:
                 continue

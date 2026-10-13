@@ -16,6 +16,7 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import comment_service as comments
 from cod_doc.services import doc_service as docs
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -62,6 +63,7 @@ def comments_client(tmp_path: Path, migrate_db):
         )
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="overview",
             heading="Overview",
@@ -302,7 +304,7 @@ def test_apply_with_ai_commit_patches_sections_and_marks_applied(
     with transactional(f) as s:
         proj_id = ProjectRepository(s).get_by_slug("demo").row_id
         doc = docs.get(s, proj_id, "guides/intro")
-        secs = docs.get_sections(s, doc.row_id)
+        secs = docs.get_sections(s, doc.row_id, project_id=proj_id)
         sec_body = next(x.body for x in secs if x.anchor == "overview")
         c = comments.get(s, cid)
     e.dispose()

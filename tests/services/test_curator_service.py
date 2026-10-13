@@ -21,6 +21,7 @@ from cod_doc.config import Config
 from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import curator_service
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -190,6 +191,7 @@ def test_conflict_outranks_edited_in_place_and_suggests_a_dry_run(curator_sessio
     assert beta is not None and beta.row_id is not None
     doc_service.add_section(
         session,
+        project_id=only_project_id(session),
         document_id=beta.row_id,
         anchor="db-only",
         heading="DB only",
@@ -518,11 +520,12 @@ def test_drift_issue_carries_the_reason_it_is_an_issue(curator_session) -> None:
     assert beta is not None and beta.row_id is not None
     doc_service.add_section(
         session,
+        project_id=project_id,
         document_id=beta.row_id,
         anchor="dropped-from-the-file",
         heading="Dropped from the file",
         level=2,
-        position=len(doc_service.get_sections(session, beta.row_id)),
+        position=len(doc_service.get_sections(session, beta.row_id, project_id=project_id)),
         body="Nobody kept this heading.",
         author="human:test",
     )

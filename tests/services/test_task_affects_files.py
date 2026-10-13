@@ -794,7 +794,7 @@ def test_revision_revert_refuses_task_doc_of_another_project(engine_with_schema)
 
         with pytest.raises(LookupError, match=f"task_doc #{td.row_id} not found in project"):
             rev.revert(session, first.revision_id, author="human:undo", project_id=other_pid)
-        current = task_doc_service.get(session, task_row_id=row_id, key="plan")
+        current = task_doc_service.get(session, project_id=pid, task_row_id=row_id, key="plan")
         assert current is not None
         assert current.body == "v2\n"
 

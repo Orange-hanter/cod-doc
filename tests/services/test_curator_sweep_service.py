@@ -28,6 +28,7 @@ from cod_doc.services import (
     projection_service,
 )
 from cod_doc.services.curator_sync_service import SyncReport
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -95,6 +96,7 @@ def _change_db(session: Session, doc_key: str) -> None:
     assert doc is not None and doc.row_id is not None
     doc_service.add_section(
         session,
+        project_id=only_project_id(session),
         document_id=doc.row_id,
         anchor="db-only",
         heading="DB only",

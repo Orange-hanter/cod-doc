@@ -59,6 +59,7 @@ def test_patch_section_updates_body_and_writes_revision(engine_with_schema) -> N
         doc = _new_doc(session, proj_id)
         sec = docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="x",
             heading="X",
@@ -70,6 +71,7 @@ def test_patch_section_updates_body_and_writes_revision(engine_with_schema) -> N
 
         patched = docs.patch_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="x",
             new_body="new body",
@@ -95,6 +97,7 @@ def test_patch_section_unknown_anchor_raises(engine_with_schema) -> None:  # typ
         with pytest.raises(docs.SectionNotFoundError):
             docs.patch_section(
                 session,
+                project_id=proj_id,
                 document_id=doc.row_id,
                 anchor="ghost",
                 new_body="x",
@@ -106,7 +109,14 @@ def test_patch_section_unknown_document_raises(engine_with_schema) -> None:  # t
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session, pytest.raises(docs.DocumentNotFoundError):
-        docs.patch_section(session, document_id=99999, anchor="x", new_body="x", author="x")
+        docs.patch_section(
+            session,
+            project_id=999_999,  # проекта нет — как и документа
+            document_id=99999,
+            anchor="x",
+            new_body="x",
+            author="x",
+        )
 
 
 def test_patch_section_no_op_when_body_unchanged(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -118,6 +128,7 @@ def test_patch_section_no_op_when_body_unchanged(engine_with_schema) -> None:  #
         doc = _new_doc(session, proj_id)
         sec = docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="x",
             heading="X",
@@ -129,6 +140,7 @@ def test_patch_section_no_op_when_body_unchanged(engine_with_schema) -> None:  #
 
         result = docs.patch_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="x",
             new_body="same",
@@ -148,6 +160,7 @@ def test_patch_section_optimistic_concurrency_conflict(engine_with_schema) -> No
         doc = _new_doc(session, proj_id)
         sec = docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="x",
             heading="X",
@@ -163,6 +176,7 @@ def test_patch_section_optimistic_concurrency_conflict(engine_with_schema) -> No
         # Concurrent patch lands first.
         docs.patch_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="x",
             new_body="v2",
@@ -173,6 +187,7 @@ def test_patch_section_optimistic_concurrency_conflict(engine_with_schema) -> No
         with pytest.raises(rev.RevisionConflictError):
             docs.patch_section(
                 session,
+                project_id=proj_id,
                 document_id=doc.row_id,
                 anchor="x",
                 new_body="v3",

@@ -79,6 +79,7 @@ def _seed(session: Session, root: Path) -> int:
     assert doc.row_id is not None
     doc_service.add_section(
         session,
+        project_id=pid,
         document_id=doc.row_id,
         anchor="providers",
         heading="Providers",

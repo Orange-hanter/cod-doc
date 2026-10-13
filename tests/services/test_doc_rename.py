@@ -60,6 +60,7 @@ def test_rename_updates_doc_key_and_writes_revision(engine_with_schema) -> None:
 
         renamed = docs.rename(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             new_doc_key="modules/M1-auth/spec",
             author="human:dakh",
@@ -80,7 +81,13 @@ def test_rename_unknown_document_raises(engine_with_schema) -> None:  # type: ig
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session, pytest.raises(docs.DocumentNotFoundError):
-        docs.rename(session, document_id=99999, new_doc_key="x", author="x")
+        docs.rename(
+            session,
+            project_id=999_999,  # проекта нет — как и документа
+            document_id=99999,
+            new_doc_key="x",
+            author="x",
+        )
 
 
 def test_rename_no_op_when_target_equals_current(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -92,6 +99,7 @@ def test_rename_no_op_when_target_equals_current(engine_with_schema) -> None:  #
 
         result = docs.rename(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             new_doc_key=doc.doc_key,
             new_path=doc.path,

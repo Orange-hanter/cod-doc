@@ -168,7 +168,7 @@ def test_move_keeps_task_documents(engine_with_schema) -> None:  # type: ignore[
 
         _move(session, "ADO-001", new["A"], project_id=p)
 
-        doc = task_doc_service.get(session, task.row_id, "contract")
+        doc = task_doc_service.get(session, task.row_id, "contract", project_id=p)
         assert doc is not None
         assert doc.body == "тело контракта"
 

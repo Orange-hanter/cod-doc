@@ -27,7 +27,7 @@ from sqlalchemy import select
 from ulid import ULID
 
 from cod_doc.domain.entities import EntityKind
-from cod_doc.infra.models import RevisionModel, TaskDocumentModel
+from cod_doc.infra.models import RevisionModel, TaskDocumentModel, TaskModel
 from cod_doc.services import activity_service
 from cod_doc.services.run_context import get_current_run_id
 
@@ -93,7 +93,25 @@ def _write_revision(
     return new_rev_id
 
 
-def get(session: Session, task_row_id: int, key: str) -> TaskDocument | None:
+def _task_in_project(session: Session, task_row_id: int, project_id: int) -> bool:
+    """Задача ``task_row_id`` принадлежит проекту ``project_id`` (AFT-024).
+
+    ``task_row_id`` — row_id на всю hub-БД: без сверки документы задачи
+    соседа читались и правились бы перебором id.
+    """
+    task = session.get(TaskModel, task_row_id)
+    return task is not None and task.project_id == project_id
+
+
+def _require_task_in_project(session: Session, task_row_id: int, project_id: int) -> None:
+    if not _task_in_project(session, task_row_id, project_id):
+        raise LookupError(f"task row_id={task_row_id} not found")
+
+
+def get(session: Session, task_row_id: int, key: str, *, project_id: int) -> TaskDocument | None:
+    """Документ задачи по ключу; задача чужого проекта — None, как несуществующая."""
+    if not _task_in_project(session, task_row_id, project_id):
+        return None
     m = session.execute(
         select(TaskDocumentModel).where(
             TaskDocumentModel.task_id == task_row_id,
@@ -103,7 +121,10 @@ def get(session: Session, task_row_id: int, key: str) -> TaskDocument | None:
     return _to_domain(m) if m is not None else None
 
 
-def list_for_task(session: Session, task_row_id: int) -> list[TaskDocument]:
+def list_for_task(session: Session, task_row_id: int, *, project_id: int) -> list[TaskDocument]:
+    """Документы задачи; у задачи чужого проекта — пусто (AFT-024)."""
+    if not _task_in_project(session, task_row_id, project_id):
+        return []
     rows = session.execute(
         select(TaskDocumentModel)
         .where(TaskDocumentModel.task_id == task_row_id)
@@ -128,8 +149,10 @@ def put(
     """Create or update a task document.
 
     If ``base_revision_id`` is provided and does not match the current head,
-    raises :class:`TaskDocConflictError` (optimistic lock).
+    raises :class:`TaskDocConflictError` (optimistic lock). Задача чужого
+    проекта — ``LookupError`` (AFT-024).
     """
+    _require_task_in_project(session, task_row_id, project_id)
     m = session.execute(
         select(TaskDocumentModel).where(
             TaskDocumentModel.task_id == task_row_id,
@@ -180,7 +203,12 @@ def revisions(
     task_row_id: int,
     key: str,
     limit: int = 20,
+    *,
+    project_id: int,
 ) -> list[dict[str, Any]]:
+    """История документа задачи; у задачи чужого проекта — пусто (AFT-024)."""
+    if not _task_in_project(session, task_row_id, project_id):
+        return []
     m = session.execute(
         select(TaskDocumentModel).where(
             TaskDocumentModel.task_id == task_row_id,
@@ -221,7 +249,11 @@ def revert(
     revision_id: str,
     author: str = "mcp",
 ) -> TaskDocument:
-    """Restore a task document to the body recorded in a specific revision."""
+    """Restore a task document to the body recorded in a specific revision.
+
+    Задача чужого проекта — ``LookupError`` (AFT-024).
+    """
+    _require_task_in_project(session, task_row_id, project_id)
     m = session.execute(
         select(TaskDocumentModel).where(
             TaskDocumentModel.task_id == task_row_id,

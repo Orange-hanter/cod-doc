@@ -86,7 +86,7 @@ def doc_add_section(
                 console.print(f"[red]Document '{doc_key}' not found.[/red]")
                 sys.exit(1)
 
-            existing = doc_service.get_sections(session, d.row_id)
+            existing = doc_service.get_sections(session, d.row_id, project_id=project_id)
             at = (
                 max((s.position for s in existing), default=-1) + 1
                 if position is None
@@ -104,6 +104,7 @@ def doc_add_section(
             else:
                 created = doc_service.add_section(
                     session,
+                    project_id=project_id,
                     document_id=d.row_id,
                     anchor=anchor,
                     heading=heading,

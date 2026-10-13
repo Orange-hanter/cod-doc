@@ -22,6 +22,7 @@ from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.models import ActivityEventModel, RevisionModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -64,6 +65,7 @@ def _seed_doc_with_sections(project_name: str = "p") -> None:
             for i, anchor in enumerate(("alpha", "beta", "gamma")):
                 docs.add_section(
                     session,
+                    project_id=only_project_id(session),
                     document_id=doc.row_id,
                     anchor=anchor,
                     heading=anchor.capitalize(),
@@ -86,7 +88,10 @@ def _positions(project_name: str = "p") -> list[tuple[str, int]]:
             assert proj is not None and proj.row_id is not None
             d = docs.get(session, proj.row_id, DOC_KEY)
             assert d is not None and d.row_id is not None
-            return [(s.anchor, s.position) for s in docs.get_sections(session, d.row_id)]
+            return [
+                (s.anchor, s.position)
+                for s in docs.get_sections(session, d.row_id, project_id=only_project_id(session))
+            ]
     finally:
         engine.dispose()
 

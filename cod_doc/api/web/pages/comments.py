@@ -51,7 +51,7 @@ async def comment_create(
 
     section_id: int | None = None
     if anchor:
-        sections = docs.get_sections(session, doc.row_id)
+        sections = docs.get_sections(session, doc.row_id, project_id=project_db_id)
         sec = next((s for s in sections if s.anchor == anchor), None)
         if sec is None or sec.row_id is None:
             raise HTTPException(404, f"Секция не найдена: {anchor}")
@@ -257,6 +257,7 @@ async def comments_apply_commit(
         try:
             docs.patch_section(
                 session,
+                project_id=project_db_id,
                 document_id=doc.row_id,
                 anchor=anchor,
                 new_body=body,

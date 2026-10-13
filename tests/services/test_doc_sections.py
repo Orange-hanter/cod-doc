@@ -59,6 +59,7 @@ def test_add_section_writes_section_revision(engine_with_schema) -> None:  # typ
         doc = _new_doc(session, proj_id)
         sec = docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="overview",
             heading="Overview",
@@ -83,6 +84,7 @@ def test_get_sections_in_position_order(engine_with_schema) -> None:  # type: ig
         # Insert out of order — get_sections must return by position.
         docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="b",
             heading="B",
@@ -93,6 +95,7 @@ def test_get_sections_in_position_order(engine_with_schema) -> None:  # type: ig
         )
         docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="a",
             heading="A",
@@ -101,7 +104,7 @@ def test_get_sections_in_position_order(engine_with_schema) -> None:  # type: ig
             body="Abody",
             author="x",
         )
-        anchors = [s.anchor for s in docs.get_sections(session, doc.row_id)]
+        anchors = [s.anchor for s in docs.get_sections(session, doc.row_id, project_id=proj_id)]
         assert anchors == ["a", "b"]
 
 
@@ -113,6 +116,7 @@ def test_render_body_uses_view(engine_with_schema) -> None:  # type: ignore[no-u
         doc = _new_doc(session, proj_id)
         docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="a",
             heading="Alpha",
@@ -144,6 +148,7 @@ def test_add_section_duplicate_anchor_raises(engine_with_schema) -> None:  # typ
         doc = _new_doc(session, proj_id)
         docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="dup",
             heading="Dup",
@@ -155,6 +160,7 @@ def test_add_section_duplicate_anchor_raises(engine_with_schema) -> None:  # typ
         with pytest.raises(SectionAlreadyExistsError):
             docs.add_section(
                 session,
+                project_id=proj_id,
                 document_id=doc.row_id,
                 anchor="dup",
                 heading="Dup2",

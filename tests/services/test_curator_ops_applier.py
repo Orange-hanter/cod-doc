@@ -24,6 +24,7 @@ from cod_doc.services import (
     question_service,
     revision_service,
 )
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -56,6 +57,7 @@ def _doc(session: Session, pid: int, key: str = "guide") -> int:
     assert doc.row_id is not None
     doc_service.add_section(
         session,
+        project_id=pid,
         document_id=doc.row_id,
         anchor="setup",
         heading="Setup",
@@ -88,7 +90,11 @@ def _propose_retarget(session: Session, pid: int, *, base: str | None, old: str 
 
 
 def _body(session: Session, doc_id: int) -> str:
-    return next(s.body for s in doc_service.get_sections(session, doc_id) if s.anchor == "setup")
+    return next(
+        s.body
+        for s in doc_service.get_sections(session, doc_id, project_id=only_project_id(session))
+        if s.anchor == "setup"
+    )
 
 
 def _status(session: Session, pid: int, approval_id: str) -> str:
@@ -140,7 +146,9 @@ def test_approving_applies_the_patch_by_the_approver_and_revert_undoes_it(
 
 def _section_row_id(session: Session, doc_id: int) -> int:
     row_id = next(
-        s.row_id for s in doc_service.get_sections(session, doc_id) if s.anchor == "setup"
+        s.row_id
+        for s in doc_service.get_sections(session, doc_id, project_id=only_project_id(session))
+        if s.anchor == "setup"
     )
     assert row_id is not None
     return row_id
@@ -154,6 +162,7 @@ def test_a_stale_base_expires_the_approval_and_writes_nothing(engine_with_schema
         # Человек поправил секцию после того, как куратор составил предложение.
         doc_service.patch_section(
             session,
+            project_id=pid,
             document_id=doc_id,
             anchor="setup",
             new_body=_BODY + "Правка человека.\n",

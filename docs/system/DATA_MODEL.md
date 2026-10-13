@@ -604,13 +604,21 @@ SELECT
   SUM(CASE WHEN t.status IN ('in_progress','in-progress') THEN 1 ELSE 0 END) AS tasks_in_progress,
   SUM(CASE WHEN t.status='cancelled' THEN 1 ELSE 0 END) AS tasks_cancelled
 FROM plan_section s
-LEFT JOIN task t ON t.section_id = s.row_id
+JOIN plan p ON p.row_id = s.plan_id
+LEFT JOIN task t ON t.section_id = s.row_id AND t.project_id = p.project_id
 GROUP BY s.row_id;
 ```
 
 ### 4.2 `plan_totals`
 
-Аналогично — агрегат по плану. Используется при генерации Progress Overview.
+Аналогично — агрегат по плану (`LEFT JOIN task t ON t.plan_id = p.row_id AND
+t.project_id = p.project_id`). Используется при генерации Progress Overview.
+
+> **Считаются только задачи проекта плана (миграция 0048, AFT-024).** В общей
+> hub-БД задача другого проекта с `plan_id`/`section_id` нашего плана (легаси-данные)
+> раньше попадала в счётчики, хотя `audit`/`export`/`chain_layout`/`critical_path`/
+> `ready_batch` её уже не видели. Условие стоит в `ON`, а не в `WHERE`: раздел без
+> своих задач остаётся строкой с нулями.
 
 > **Статус сравнивается с классом эквивалентности, а не со строкой (миграция 0035).**
 > `pending` ≡ `todo` и `in-progress` ≡ `in_progress` — один бакет

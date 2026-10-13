@@ -15,6 +15,7 @@ from cod_doc.domain.entities import Project as ProjectEntity
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import approval_service, curator_ops, doc_service, question_service
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -64,6 +65,7 @@ def stand(tmp_path: Path, migrate_db) -> Iterator[tuple[TestClient, sessionmaker
         assert doc.row_id is not None
         doc_service.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="setup",
             heading="Setup",
@@ -114,7 +116,12 @@ def _body(factory: sessionmaker) -> str:
     with transactional(factory, commit=False) as session:
         doc = doc_service.get(session, _pid(session), "guide")
         assert doc is not None and doc.row_id is not None
-        return next(s.body for s in doc_service.get_sections(session, doc.row_id))
+        return next(
+            s.body
+            for s in doc_service.get_sections(
+                session, doc.row_id, project_id=only_project_id(session)
+            )
+        )
 
 
 def test_the_page_shows_the_diff_rationale_and_curator_questions(stand) -> None:  # type: ignore[no-untyped-def]
@@ -168,6 +175,7 @@ def test_a_stale_patch_says_so_and_writes_nothing(stand) -> None:  # type: ignor
         assert doc is not None and doc.row_id is not None
         doc_service.patch_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="setup",
             new_body="Человек переписал. [гайд](old.md)\n",

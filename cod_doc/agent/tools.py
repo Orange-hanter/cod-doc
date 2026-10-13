@@ -371,7 +371,7 @@ class ToolExecutor:
                 if doc is None or doc.row_id is None:
                     return {"error": f"Document '{doc_key}' not found"}
                 links = []
-                for sec in doc_service.get_sections(session, doc.row_id):
+                for sec in doc_service.get_sections(session, doc.row_id, project_id=project_id):
                     if sec.row_id is not None:
                         links.extend(link_service.list_for_section(session, sec.row_id))
 
