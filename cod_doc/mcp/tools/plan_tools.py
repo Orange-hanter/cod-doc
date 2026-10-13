@@ -184,7 +184,9 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             plan_id = _require_plan_id(session, project_id, plan_scope)
-            doc = plan_service.freeze_projection(session, plan_id, author=author, reason=reason)
+            doc = plan_service.freeze_projection(
+                session, plan_id, author=author, reason=reason, project_id=project_id
+            )
         return {
             "frozen_doc_key": doc.doc_key,
             "document_id": doc.row_id,
@@ -541,7 +543,7 @@ def register(mcp: FastMCP) -> None:
                     "plans": [_progress_to_dict(p, with_sections=by_section) for p in plans],
                 }
             plan_id = _require_plan_id(session, project_id, plan_scope)
-            progress = plan_service.recalc(session, plan_id)
+            progress = plan_service.recalc(session, plan_id, project_id=project_id)
         return _progress_to_dict(progress, with_sections=True)
 
     @mcp.tool(name="plan_ready")
@@ -572,7 +574,9 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             plan_id = _require_plan_id(session, project_id, plan_scope)
-            batch = plan_service.ready_batch(session, plan_id, limit=limit, local_only=local_only)
+            batch = plan_service.ready_batch(
+                session, plan_id, limit=limit, local_only=local_only, project_id=project_id
+            )
         items = []
         for t in batch.tasks:
             row = task_to_dict(t)
@@ -594,7 +598,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             plan_id = _require_plan_id(session, project_id, plan_scope)
-            report = plan_service.audit(session, plan_id)
+            report = plan_service.audit(session, plan_id, project_id=project_id)
         return {
             "issues_total": report.issues_total,
             "cycles": report.cycles,
@@ -614,7 +618,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             plan_id = _require_plan_id(session, project_id, plan_scope)
-            return plan_service.export(session, plan_id)
+            return plan_service.export(session, plan_id, project_id=project_id)
 
     @mcp.tool(name="plan_critical_path")
     def plan_critical_path(project: str, plan_scope: str) -> dict[str, Any]:
@@ -626,7 +630,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             plan_id = _require_plan_id(session, project_id, plan_scope)
-            result = plan_service.critical_path(session, plan_id)
+            result = plan_service.critical_path(session, plan_id, project_id=project_id)
         return {
             "length": result.length,
             "task_ids": result.task_ids,
@@ -653,8 +657,8 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                require_project_id(session, project)
-                chain = plan_service.forward_chain(session, task_id)
+                pid = require_project_id(session, project)
+                chain = plan_service.forward_chain(session, task_id, project_id=pid)
         except TaskNotFoundInPlanError:
             raise ValueError(f"Task '{task_id}' not found.") from None
         return [
@@ -674,8 +678,8 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                require_project_id(session, project)
-                chain = plan_service.reverse_chain(session, task_id)
+                pid = require_project_id(session, project)
+                chain = plan_service.reverse_chain(session, task_id, project_id=pid)
         except TaskNotFoundInPlanError:
             raise ValueError(f"Task '{task_id}' not found.") from None
         return [

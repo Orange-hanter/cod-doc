@@ -115,7 +115,7 @@ def test_rename_cascade_rewrites_section_body_and_writes_revision(engine_with_sc
         )
         links.resolve_section(session, sec.row_id)
 
-        before = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
+        before = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=proj)
         n_before = len(before)
 
         links.rename_cascade(
@@ -133,7 +133,7 @@ def test_rename_cascade_rewrites_section_body_and_writes_revision(engine_with_sc
         assert "old-key" not in body
         assert "new-key" in body
 
-        after = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
+        after = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=proj)
         assert len(after) == n_before + 1
 
 

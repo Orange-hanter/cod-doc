@@ -297,9 +297,9 @@ def test_parse_since() -> None:
 def test_task_to_dict_carries_plan_scope_and_section_letter(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid = _seed(session)
 
-        task = task_service.get(session, "PXC-001")
+        task = task_service.get(session, "PXC-001", project_id=pid)
         assert task is not None
         row = task_to_dict(task, session=session)
         assert row["plan_scope"] == "plan-x"

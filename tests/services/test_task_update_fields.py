@@ -92,7 +92,7 @@ def test_update_priority_writes_revision_and_event(engine_with_schema) -> None: 
         )
         assert updated.priority is Priority.CRITICAL
 
-        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         diff = json.loads(history[-1].diff)
         assert diff == {"op": "priority", "old": "medium", "new": "critical"}
         assert history[-1].reason == "переоценка спринта"
@@ -119,7 +119,7 @@ def test_update_priority_same_value_is_noop(engine_with_schema) -> None:  # type
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
         assert task.row_id is not None
-        before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
+        before = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p))
 
         tasks.update_priority(
             session,
@@ -129,7 +129,7 @@ def test_update_priority_same_value_is_noop(engine_with_schema) -> None:  # type
             project_id=p,
         )
 
-        after = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id))
+        after = len(rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p))
         assert after == before, "no-op не должен писать ревизию"
 
 
@@ -188,7 +188,7 @@ def test_mcp_task_update_changes_all_three_fields(engine_with_schema, monkeypatc
     assert out["updated_fields"] == ["description", "acceptance", "priority"]
 
     with transactional(factory) as session:
-        t = tasks.get(session, "GRM-001")
+        t = tasks.get(session, "GRM-001", project_id=p)
         assert t is not None
         assert t.priority is Priority.HIGH
         assert t.description == "новая формулировка скоупа"
@@ -229,7 +229,7 @@ def test_mcp_task_update_dry_run_rolls_back(engine_with_schema, monkeypatch) -> 
     assert out["dry_run"] is True
 
     with transactional(factory) as session:
-        t = tasks.get(session, "GRM-001")
+        t = tasks.get(session, "GRM-001", project_id=p)
         assert t is not None
         assert t.priority is Priority.MEDIUM, "dry_run не должен коммитить"
 

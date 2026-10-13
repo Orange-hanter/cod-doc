@@ -79,16 +79,9 @@ def _seed(session: Session, affected: list[str] | None = None) -> tuple[int, int
     return proj.row_id, task.row_id
 
 
-def _update(session: Session, **kwargs: Any) -> tasks.AffectsFilesChange:
-    """``update_affects_files`` в скоупе засеянного проекта ``af``.
-
-    ``project_id`` обязателен у сервиса; тест на чужой проект передаёт свой.
-    """
-    if "project_id" not in kwargs:
-        kwargs["project_id"] = session.execute(
-            select(ProjectModel.row_id).where(ProjectModel.slug == "af")
-        ).scalar_one()
-    return tasks.update_affects_files(session, **kwargs)
+def _update(session: Session, *, project_id: int, **kwargs: Any) -> tasks.AffectsFilesChange:
+    """``update_affects_files`` в скоупе явно переданного проекта (AFT-023)."""
+    return tasks.update_affects_files(session, project_id=project_id, **kwargs)
 
 
 def _other_project(session: Session) -> int:
@@ -110,8 +103,8 @@ def _paths(session: Session, row_id: int) -> list[str]:
     )
 
 
-def _revisions(session: Session, row_id: int) -> int:
-    return len(rev.list_for_entity(session, EntityKind.TASK, row_id))
+def _revisions(session: Session, row_id: int, project_id: int) -> int:
+    return len(rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=project_id))
 
 
 # --------------------------------------------------------------------------- #
@@ -131,6 +124,7 @@ def test_replace_swaps_whole_set_and_leaves_trail(engine_with_schema) -> None:  
             mode="replace",
             author="agent:run-X",
             reason="переписан скоуп",
+            project_id=_pid,
         )
 
         assert change.changed is True
@@ -139,7 +133,7 @@ def test_replace_swaps_whole_set_and_leaves_trail(engine_with_schema) -> None:  
         assert change.warnings == []
         assert _paths(session, row_id) == ["src/b.py", "src/c.py"]
 
-        last = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        last = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
         assert json.loads(last.diff) == {
             "op": "affects_files",
             "mode": "replace",
@@ -169,7 +163,12 @@ def test_add_appends_only_new_paths(engine_with_schema) -> None:  # type: ignore
         _pid, row_id = _seed(session, ["src/a.py"])
 
         change = _update(
-            session, task_id=_TASK, paths=["src/a.py", "src/z.py"], mode="add", author="human:t"
+            session,
+            task_id=_TASK,
+            paths=["src/a.py", "src/z.py"],
+            mode="add",
+            author="human:t",
+            project_id=_pid,
         )
 
         assert change.new == ["src/a.py", "src/z.py"]
@@ -187,6 +186,7 @@ def test_remove_drops_listed_paths_and_ignores_absent(engine_with_schema) -> Non
             paths=["src/a.py", "src/never.py"],
             mode="remove",
             author="human:t",
+            project_id=_pid,
         )
 
         assert change.new == ["src/b.py"]
@@ -197,7 +197,7 @@ def test_same_set_is_noop_without_revision(engine_with_schema) -> None:  # type:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py", "src/b.py"])
-        before = _revisions(session, row_id)
+        before = _revisions(session, row_id, _pid)
 
         # Тот же набор в другом порядке и с дублем — не изменение.
         replaced = _update(
@@ -206,14 +206,27 @@ def test_same_set_is_noop_without_revision(engine_with_schema) -> None:  # type:
             paths=["src/b.py", "src/a.py", "src/b.py"],
             mode="replace",
             author="human:t",
+            project_id=_pid,
         )
-        added = _update(session, task_id=_TASK, paths=["src/a.py"], mode="add", author="human:t")
+        added = _update(
+            session,
+            task_id=_TASK,
+            paths=["src/a.py"],
+            mode="add",
+            author="human:t",
+            project_id=_pid,
+        )
         removed = _update(
-            session, task_id=_TASK, paths=["src/none.py"], mode="remove", author="human:t"
+            session,
+            task_id=_TASK,
+            paths=["src/none.py"],
+            mode="remove",
+            author="human:t",
+            project_id=_pid,
         )
 
         assert not (replaced.changed or added.changed or removed.changed)
-        assert _revisions(session, row_id) == before, "no-op не должен писать ревизию"
+        assert _revisions(session, row_id, _pid) == before, "no-op не должен писать ревизию"
         session.flush()
         assert (
             session.execute(
@@ -230,7 +243,9 @@ def test_replace_with_empty_list_clears_set(engine_with_schema) -> None:  # type
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
 
-        change = _update(session, task_id=_TASK, paths=[], mode="replace", author="human:t")
+        change = _update(
+            session, task_id=_TASK, paths=[], mode="replace", author="human:t", project_id=_pid
+        )
 
         assert change.changed is True
         assert change.new == []
@@ -248,6 +263,7 @@ def test_duplicates_collapse(engine_with_schema) -> None:  # type: ignore[no-unt
             paths=["src/a.py", "src/a.py", "src/b.py", "src/a.py"],
             mode="replace",
             author="human:t",
+            project_id=_pid,
         )
 
         assert change.new == ["src/a.py", "src/b.py"]
@@ -257,9 +273,16 @@ def test_duplicates_collapse(engine_with_schema) -> None:  # type: ignore[no-unt
 def test_blank_path_is_rejected(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid, _row_id = _seed(session)
         with pytest.raises(ValueError, match="пуст"):
-            _update(session, task_id=_TASK, paths=["  "], mode="replace", author="human:t")
+            _update(
+                session,
+                task_id=_TASK,
+                paths=["  "],
+                mode="replace",
+                author="human:t",
+                project_id=pid,
+            )
 
 
 def test_paths_are_stripped_before_dedup(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -269,7 +292,12 @@ def test_paths_are_stripped_before_dedup(engine_with_schema) -> None:  # type: i
         _pid, row_id = _seed(session, ["src/a.py"])
 
         change = _update(
-            session, task_id=_TASK, paths=[" src/a.py ", "\tsrc/b.py"], mode="add", author="human:t"
+            session,
+            task_id=_TASK,
+            paths=[" src/a.py ", "\tsrc/b.py"],
+            mode="add",
+            author="human:t",
+            project_id=_pid,
         )
 
         assert change.new == ["src/a.py", "src/b.py"]
@@ -308,7 +336,14 @@ def test_invalid_paths_are_rejected(  # type: ignore[no-untyped-def]
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/keep.py"])
         with pytest.raises(ValueError, match=match):
-            _update(session, task_id=_TASK, paths=paths, mode="replace", author="human:t")
+            _update(
+                session,
+                task_id=_TASK,
+                paths=paths,
+                mode="replace",
+                author="human:t",
+                project_id=_pid,
+            )
         assert _paths(session, row_id) == ["src/keep.py"]
 
 
@@ -360,7 +395,9 @@ def test_unusual_paths_are_stored_as_given(engine_with_schema, path: str) -> Non
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session)
-        change = _update(session, task_id=_TASK, paths=[path], mode="replace", author="human:t")
+        change = _update(
+            session, task_id=_TASK, paths=[path], mode="replace", author="human:t", project_id=_pid
+        )
         assert _paths(session, row_id) == [path]
         assert bool(change.warnings) == path.startswith("/")
 
@@ -385,17 +422,26 @@ def test_foreign_project_id_raises_not_found(engine_with_schema) -> None:  # typ
 def test_unknown_mode_is_rejected(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid, _row_id = _seed(session)
         with pytest.raises(ValueError, match="mode"):
-            _update(session, task_id=_TASK, paths=["a"], mode="merge", author="human:t")
+            _update(
+                session, task_id=_TASK, paths=["a"], mode="merge", author="human:t", project_id=pid
+            )
 
 
 def test_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid, _row_id = _seed(session)
         with pytest.raises(TaskNotFoundError):
-            _update(session, task_id="NOPE-999", paths=["a"], mode="replace", author="human:t")
+            _update(
+                session,
+                task_id="NOPE-999",
+                paths=["a"],
+                mode="replace",
+                author="human:t",
+                project_id=pid,
+            )
 
 
 def test_out_of_root_path_warns_but_is_written(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -409,6 +455,7 @@ def test_out_of_root_path_warns_but_is_written(engine_with_schema) -> None:  # t
             paths=["/elsewhere/x.py", "/repo/proj/in.py", "rel.py"],
             mode="replace",
             author="human:t",
+            project_id=_pid,
         )
 
         assert len(change.warnings) == 1
@@ -429,7 +476,12 @@ def test_absolute_path_without_project_root_warns(engine_with_schema) -> None:  
         session.flush()
 
         change = _update(
-            session, task_id=_TASK, paths=["/abs/x.py", "rel.py"], mode="replace", author="human:t"
+            session,
+            task_id=_TASK,
+            paths=["/abs/x.py", "rel.py"],
+            mode="replace",
+            author="human:t",
+            project_id=pid,
         )
 
         assert change.warnings == [
@@ -445,7 +497,7 @@ def test_already_stored_foreign_path_does_not_warn_again(  # type: ignore[no-unt
     """Предупреждение — только о реально добавленных путях: no-op не шумит (ревью PR #190)."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session, ["/elsewhere/x.py", "rel.py"])
+        pid, _row_id = _seed(session, ["/elsewhere/x.py", "rel.py"])
 
         change = _update(
             session,
@@ -453,6 +505,7 @@ def test_already_stored_foreign_path_does_not_warn_again(  # type: ignore[no-unt
             paths=["/elsewhere/x.py", "rel.py"] if mode == "replace" else ["/elsewhere/x.py"],
             mode=mode,
             author="human:t",
+            project_id=pid,
         )
 
         assert change.changed is False
@@ -462,10 +515,15 @@ def test_already_stored_foreign_path_does_not_warn_again(  # type: ignore[no-unt
 def test_remove_mode_never_warns(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session, ["/elsewhere/x.py", "/elsewhere/y.py"])
+        pid, _row_id = _seed(session, ["/elsewhere/x.py", "/elsewhere/y.py"])
 
         change = _update(
-            session, task_id=_TASK, paths=["/elsewhere/x.py"], mode="remove", author="human:t"
+            session,
+            task_id=_TASK,
+            paths=["/elsewhere/x.py"],
+            mode="remove",
+            author="human:t",
+            project_id=pid,
         )
 
         assert change.warnings == []
@@ -475,13 +533,20 @@ def test_revision_revert_restores_previous_set(engine_with_schema) -> None:  # t
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py", "src/b.py"])
-        _update(session, task_id=_TASK, paths=["src/c.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        _update(
+            session,
+            task_id=_TASK,
+            paths=["src/c.py"],
+            mode="replace",
+            author="human:t",
+            project_id=_pid,
+        )
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
 
         rev.revert(session, target.revision_id, author="human:undo", project_id=target.project_id)
 
         assert _paths(session, row_id) == ["src/a.py", "src/b.py"]
-        inverse = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        inverse = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
         assert inverse.revision_id != target.revision_id
         assert inverse.reason == f"revert revision {target.revision_id}"
         assert json.loads(inverse.diff) == {
@@ -496,8 +561,15 @@ def test_revision_revert_of_add_restores_set(engine_with_schema) -> None:  # typ
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session)
-        _update(session, task_id=_TASK, paths=["src/new.py"], mode="add", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        _update(
+            session,
+            task_id=_TASK,
+            paths=["src/new.py"],
+            mode="add",
+            author="human:t",
+            project_id=_pid,
+        )
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
 
         rev.revert(session, target.revision_id, author="human:undo", project_id=target.project_id)
 
@@ -510,8 +582,15 @@ def test_revision_revert_rejects_malformed_old(engine_with_schema, old: object) 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
-        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        _update(
+            session,
+            task_id=_TASK,
+            paths=["src/b.py"],
+            mode="replace",
+            author="human:t",
+            project_id=_pid,
+        )
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
         ).scalar_one()
@@ -547,6 +626,7 @@ def test_kept_paths_keep_their_kind(engine_with_schema) -> None:  # type: ignore
             paths=["tests/test_a.py", "src/new.py"],
             mode="replace",
             author="human:t",
+            project_id=_pid,
         )
 
         kinds = {
@@ -562,8 +642,15 @@ def test_activity_summary_is_ascii_counts(engine_with_schema) -> None:  # type: 
     """``+N -M`` ASCII-дефисом: summary грепают, а U+2212 под ``-`` не находится."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session, ["src/a.py"])
-        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
+        pid, _row_id = _seed(session, ["src/a.py"])
+        _update(
+            session,
+            task_id=_TASK,
+            paths=["src/b.py"],
+            mode="replace",
+            author="human:t",
+            project_id=pid,
+        )
         session.flush()
 
         summaries = list(
@@ -615,8 +702,15 @@ def test_revision_revert_is_scoped_by_project(engine_with_schema) -> None:  # ty
     with transactional(factory) as session:
         pid, row_id = _seed(session, ["src/a.py"])
         other_pid = _other_project(session)
-        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        _update(
+            session,
+            task_id=_TASK,
+            paths=["src/b.py"],
+            mode="replace",
+            author="human:t",
+            project_id=pid,
+        )
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=pid)[-1]
 
         with pytest.raises(LookupError, match=f"revision not found: '{target.revision_id}'"):
             rev.revert(session, target.revision_id, author="human:undo", project_id=other_pid)
@@ -633,7 +727,14 @@ def test_list_for_entity_is_scoped_by_project(engine_with_schema, limit: int | N
     with transactional(factory) as session:
         pid, row_id = _seed(session, ["src/a.py"])
         other_pid = _other_project(session)
-        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
+        _update(
+            session,
+            task_id=_TASK,
+            paths=["src/b.py"],
+            mode="replace",
+            author="human:t",
+            project_id=pid,
+        )
 
         own = rev.list_for_entity(session, EntityKind.TASK, row_id, limit=limit, project_id=pid)
         foreign = rev.list_for_entity(
@@ -650,8 +751,15 @@ def test_revision_revert_refuses_task_of_another_project(engine_with_schema) -> 
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
         other_pid = _other_project(session)
-        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        _update(
+            session,
+            task_id=_TASK,
+            paths=["src/b.py"],
+            mode="replace",
+            author="human:t",
+            project_id=_pid,
+        )
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
         ).scalar_one()
@@ -676,7 +784,7 @@ def test_revision_revert_refuses_task_doc_of_another_project(engine_with_schema)
         td = task_doc_service.put(
             session, project_id=pid, task_row_id=row_id, key="plan", title="P", body="v2\n"
         )
-        first = rev.list_for_entity(session, EntityKind.TASK_DOC, td.row_id)[0]
+        first = rev.list_for_entity(session, EntityKind.TASK_DOC, td.row_id, project_id=pid)[0]
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == first.revision_id)
         ).scalar_one()
@@ -695,8 +803,15 @@ def test_revision_revert_wraps_rejected_old_paths(engine_with_schema) -> None:  
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
-        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1]
+        _update(
+            session,
+            task_id=_TASK,
+            paths=["src/b.py"],
+            mode="replace",
+            author="human:t",
+            project_id=_pid,
+        )
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[-1]
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
         ).scalar_one()
@@ -739,10 +854,28 @@ def _tool(mcp: FastMCP, name: str) -> Callable[..., Any]:
     return call
 
 
+def _routed(factory: Any) -> Any:
+    """Стаб ``session_factory``: та же hub-БД, но только для слагов теста.
+
+    Неизвестный слаг падает, как у настоящего резолвера, — тул обязан
+    передать ``project`` дальше, а не игнорировать его. «nope» пропускается
+    нарочно: такого проекта нет в БД, и отказ должен прийти уже от
+    ``require_project_id``.
+    """
+    known = {"af", "other", "nope"}
+
+    def session_factory(project: str) -> tuple[Any, None]:
+        if project not in known:
+            raise ValueError(f"unexpected project slug {project!r}")
+        return factory, None
+
+    return session_factory
+
+
 def _register(monkeypatch, factory) -> FastMCP:  # type: ignore[no-untyped-def]
     from cod_doc.mcp.tools import task_tools
 
-    monkeypatch.setattr(task_tools, "session_factory", lambda project: (factory, None))
+    monkeypatch.setattr(task_tools, "session_factory", _routed(factory))
     mcp = FastMCP("test")
     task_tools.register(mcp)
     return mcp
@@ -803,7 +936,7 @@ def test_mcp_task_update_none_leaves_affects_files(engine_with_schema, monkeypat
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
-        before = _revisions(session, row_id)
+        before = _revisions(session, row_id, _pid)
 
     task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="af", task_id=_TASK, priority="high")
@@ -811,21 +944,21 @@ def test_mcp_task_update_none_leaves_affects_files(engine_with_schema, monkeypat
     assert out["updated_fields"] == ["priority"]
     assert out["affects_files"] == ["src/a.py"]
     with transactional(factory) as session:
-        assert _revisions(session, row_id) == before + 1, "только ревизия приоритета"
+        assert _revisions(session, row_id, _pid) == before + 1, "только ревизия приоритета"
 
 
 def test_mcp_task_update_same_set_writes_no_revision(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
-        before = _revisions(session, row_id)
+        before = _revisions(session, row_id, _pid)
 
     task_update = _tool(_register(monkeypatch, factory), "task_update")
     out = task_update(project="af", task_id=_TASK, affects_files=["src/a.py"])
 
     assert out["updated_fields"] == [], "no-op не числится изменённым полем"
     with transactional(factory) as session:
-        assert _revisions(session, row_id) == before
+        assert _revisions(session, row_id, _pid) == before
 
 
 def test_mcp_task_update_foreign_project_not_found(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -868,10 +1001,19 @@ def test_mcp_revision_revert_foreign_project_not_found(engine_with_schema, monke
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
         _other_project(session)
-        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1].revision_id
+        _update(
+            session,
+            task_id=_TASK,
+            paths=["src/b.py"],
+            mode="replace",
+            author="human:t",
+            project_id=_pid,
+        )
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[
+            -1
+        ].revision_id
 
-    monkeypatch.setattr(revision_tools, "session_factory", lambda project: (factory, None))
+    monkeypatch.setattr(revision_tools, "session_factory", _routed(factory))
     mcp = FastMCP("test")
     revision_tools.register(mcp)
     with pytest.raises(ValueError, match="not found"):
@@ -889,10 +1031,19 @@ def test_mcp_revision_get_foreign_project_is_null(engine_with_schema, monkeypatc
     with transactional(factory) as session:
         _pid, row_id = _seed(session, ["src/a.py"])
         _other_project(session)
-        _update(session, task_id=_TASK, paths=["src/b.py"], mode="replace", author="human:t")
-        target = rev.list_for_entity(session, EntityKind.TASK, row_id)[-1].revision_id
+        _update(
+            session,
+            task_id=_TASK,
+            paths=["src/b.py"],
+            mode="replace",
+            author="human:t",
+            project_id=_pid,
+        )
+        target = rev.list_for_entity(session, EntityKind.TASK, row_id, project_id=_pid)[
+            -1
+        ].revision_id
 
-    monkeypatch.setattr(revision_tools, "session_factory", lambda project: (factory, None))
+    monkeypatch.setattr(revision_tools, "session_factory", _routed(factory))
     foreign = FastMCP("test")
     revision_tools.register(foreign)
     assert _tool(foreign, "revision_get")(project="other", revision_id=target)["result"] is None
@@ -913,7 +1064,7 @@ def test_mcp_revision_get_unknown_project_and_revision(engine_with_schema, monke
     with transactional(factory) as session:
         _seed(session)
 
-    monkeypatch.setattr(revision_tools, "session_factory", lambda project: (factory, None))
+    monkeypatch.setattr(revision_tools, "session_factory", _routed(factory))
     mcp = FastMCP("test")
     revision_tools.register(mcp)
     revision_get = _tool(mcp, "revision_get")
@@ -1006,6 +1157,7 @@ def test_task_turns_foreign_after_paths_change(engine_with_schema) -> None:  # t
             paths=["/elsewhere/a.py"],
             mode="replace",
             author="human:t",
+            project_id=pid,
         )
 
         foreign = plans.ready_batch_for_project(session, pid)

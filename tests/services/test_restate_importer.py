@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import pytest
 import yaml
 
 from cod_doc.domain.entities import Project as ProjectEntity
@@ -515,3 +516,105 @@ def test_import_legacy_tasks_progress_exception_is_swallowed(
         )
     assert summary.imported == 1
     assert summary.errors == []
+
+
+def test_import_plan_of_a_second_hub_project_gets_its_own_scope(
+    tmp_path: Path, engine_with_schema
+) -> None:  # type: ignore[no-untyped-def]
+    """AFT-023: scope «imported-legacy» уникален на всю БД; второй проект
+    hub-БД получает «imported-legacy-p<id>», а не IntegrityError."""
+    yaml_a = tmp_path / "a.yaml"
+    _write_legacy_yaml(yaml_a, [{"id": "a", "title": "From A"}])
+    yaml_b = tmp_path / "b.yaml"
+    _write_legacy_yaml(yaml_b, [{"id": "b", "title": "From B"}])
+    (tmp_path / "ra").mkdir()
+    (tmp_path / "rb").mkdir()
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _seed_project(session, "pa", tmp_path / "ra")
+        b = _seed_project(session, "pb", tmp_path / "rb")
+        restate_importer.import_legacy_tasks(session, yaml_path=yaml_a, project_id=a)
+        restate_importer.import_legacy_tasks(session, yaml_path=yaml_b, project_id=b)
+
+        scopes_a = {p.scope for p in plan_service.list_for_project(session, a)}
+        scopes_b = {p.scope for p in plan_service.list_for_project(session, b)}
+        assert "imported-legacy" in scopes_a
+        assert f"imported-legacy-p{b}" in scopes_b
+
+
+def test_import_plan_race_recovers(tmp_path: Path, engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Гонка: между «отпечатком» до попытки и вставкой план успевает появиться
+    (параллельный импорт), а наше чтение его ещё не видит. Вставка падает на
+    уникальном scope, отпечаток изменился — повтор находит план, задача
+    импорта ложится в него."""
+    from cod_doc.domain.entities import Plan
+    from cod_doc.infra.repositories import PlanRepository
+
+    yaml_path = tmp_path / "one.yaml"
+    _write_legacy_yaml(yaml_path, [{"id": "a", "title": "First"}])
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+
+    real_footprint = restate_importer._import_footprint
+    real_get = PlanRepository.get_by_scope
+    race = {"inserted": False, "stale": False}
+
+    def footprint_then_concurrent_insert(session, pid):  # type: ignore[no-untyped-def]
+        snapshot = real_footprint(session, pid)
+        if not race["inserted"]:
+            race["inserted"] = True
+            # «Параллельный импорт»: вставка вне savepoint попытки — её откат
+            # этот план не уносит, как не унёс бы чужой коммит.
+            PlanRepository(session).add(
+                Plan(project_id=pid, scope="imported-legacy", principle="from-yaml")
+            )
+            race["stale"] = True
+        return snapshot
+
+    def stale_once(self, scope: str, *, project_id: int):  # type: ignore[no-untyped-def]
+        if race["stale"]:
+            race["stale"] = False
+            return None  # наше чтение сделано до чужой вставки
+        return real_get(self, scope, project_id=project_id)
+
+    monkeypatch.setattr(restate_importer, "_import_footprint", footprint_then_concurrent_insert)
+    monkeypatch.setattr(PlanRepository, "get_by_scope", stale_once)
+    with transactional(factory) as session:
+        restate_importer.import_legacy_tasks(session, yaml_path=yaml_path, project_id=project_id)
+
+    assert race["inserted"] and not race["stale"], "гонка действительно случилась"
+    with transactional(factory) as session:
+        plans = [
+            p
+            for p in plan_service.list_for_project(session, project_id)
+            if p.scope == "imported-legacy"
+        ]
+        assert len(plans) == 1
+        imported = task_service.list_for_plan(session, plans[0].row_id)
+        assert [t.title for t in imported] == ["First"], "задача импорта легла в план"
+
+
+def test_import_plan_unrelated_integrity_error_is_not_retried(
+    tmp_path: Path, engine_with_schema, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """IntegrityError, после которого ничего из создаваемого не появилось, — не
+    гонка: пробрасывается сразу, без повторной попытки."""
+    from sqlalchemy.exc import IntegrityError
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        project_id = _seed_project(session, "demo", tmp_path)
+
+    attempts = {"n": 0}
+
+    def broken_once(session, pid):  # type: ignore[no-untyped-def]
+        attempts["n"] += 1
+        raise IntegrityError("INSERT ...", {}, Exception("NOT NULL constraint failed: x"))
+
+    monkeypatch.setattr(restate_importer, "_ensure_import_plan_once", broken_once)
+    with transactional(factory) as session, pytest.raises(IntegrityError):
+        restate_importer._ensure_import_plan(session, project_id)
+    assert attempts["n"] == 1

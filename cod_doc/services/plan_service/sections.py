@@ -110,7 +110,9 @@ def create_plan(
     в который переносят, стоит заводить с явным префиксом.
     """
     repo = PlanRepository(session)
-    if repo.get_by_scope(scope) is not None:
+    # scope уникален на всю БД (уникальный индекс): занятый другим проектом
+    # scope тоже не создать.
+    if repo.scope_exists(scope):
         raise PlanAlreadyExistsError(scope)
     if id_prefix is not None:
         validate_id_prefix(id_prefix)

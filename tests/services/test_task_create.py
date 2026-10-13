@@ -80,7 +80,7 @@ def test_create_persists_task_with_todo_status(engine_with_schema) -> None:  # t
         assert task.status == TaskStatus.TODO
 
     with transactional(factory) as session:
-        loaded = tasks.get(session, "MY-001")
+        loaded = tasks.get(session, "MY-001", project_id=p)
         assert loaded is not None
         assert loaded.priority == Priority.MEDIUM
 
@@ -91,7 +91,7 @@ def test_create_writes_initial_revision(engine_with_schema) -> None:  # type: ig
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
-        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
 
         assert len(history) == 1
         assert history[0].parent_revision_id is None
@@ -352,7 +352,7 @@ def test_plan_ready_excludes_tasks_with_unfinished_blockers(engine_with_schema) 
             blocked_by=["MY-001"],
         )
 
-        ready = plan_service.ready(session, pl)
+        ready = plan_service.ready(session, pl, project_id=p)
         ready_ids = {t.task_id for t in ready}
         assert "MY-001" in ready_ids
         assert "MY-002" not in ready_ids

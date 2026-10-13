@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from sqlalchemy.orm import Session
+
 # Re-export for backward compatibility
 __all__ = ["TOOL_DEFINITIONS", "ToolExecutor"]
 
@@ -238,6 +240,18 @@ class ToolExecutor:
         sf, _ = session_factory(self.project.entry.name)
         return sf
 
+    def _project_db_id(self, session: Session) -> int:
+        """row_id проекта оркестратора — скоуп для чтений по task_id / plan_scope (AFT-023).
+
+        Через ``project_service``, а не ``require_project_id`` из
+        ``cod_doc.mcp.tools._db``. Остальные хелперы оркестратора (сессия,
+        сериализация задач) по-прежнему берутся оттуда — здесь новой
+        зависимости на MCP-слой не добавляется.
+        """
+        from cod_doc.services import project_service
+
+        return project_service.row_id_for_slug(session, self.project.entry.name)
+
     def _tool_plan_forward_chain(self, task_id: str) -> dict[str, Any]:
         try:
             from cod_doc.infra.db import transactional
@@ -247,7 +261,9 @@ class ToolExecutor:
             sf = self._make_db_session()
             try:
                 with transactional(sf) as session:
-                    chain = plan_service.forward_chain(session, task_id)
+                    chain = plan_service.forward_chain(
+                        session, task_id, project_id=self._project_db_id(session)
+                    )
             except TaskNotFoundInPlanError:
                 return {"error": f"Task '{task_id}' not found in any DB plan"}
             return {
@@ -273,7 +289,9 @@ class ToolExecutor:
             sf = self._make_db_session()
             try:
                 with transactional(sf) as session:
-                    chain = plan_service.reverse_chain(session, task_id)
+                    chain = plan_service.reverse_chain(
+                        session, task_id, project_id=self._project_db_id(session)
+                    )
             except TaskNotFoundInPlanError:
                 return {"error": f"Task '{task_id}' not found in any DB plan"}
             return {
@@ -298,12 +316,11 @@ class ToolExecutor:
 
             sf = self._make_db_session()
             with transactional(sf) as session:
-                from cod_doc.infra.repositories import PlanRepository
-
-                plan = PlanRepository(session).get_by_scope(plan_scope)
+                pid = self._project_db_id(session)
+                plan = plan_service.get_by_scope(session, plan_scope, project_id=pid)
                 if plan is None or plan.row_id is None:
                     return {"error": f"Plan '{plan_scope}' not found"}
-                tasks = plan_service.ready(session, plan.row_id, limit=limit)
+                tasks = plan_service.ready(session, plan.row_id, limit=limit, project_id=pid)
             return {"tasks": [task_to_dict(t) for t in tasks]}
         except Exception as e:
             return {"error": str(e)}

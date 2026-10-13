@@ -26,6 +26,7 @@ from cod_doc.infra.repositories import (
     ProjectRepository,
 )
 from cod_doc.services import task_service as tasks
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -103,7 +104,7 @@ def plans_client(tmp_path: Path, migrate_db):
             author="human:dakh",
             id_prefix="PAY",
         )
-        tasks.complete(session, task_id=d.task_id, author="human:dakh")
+        tasks.complete(session, task_id=d.task_id, author="human:dakh", project_id=proj.row_id)
     engine.dispose()
 
     from cod_doc.api.server import app
@@ -186,7 +187,11 @@ def test_plan_show_percent_counts_cancelled_as_closed(plans_client) -> None:
         ).scalars()
         for task_id in list(open_ids):
             tasks.update_status(
-                session, task_id=task_id, new_status=TaskStatus.CANCELLED, author="human:test"
+                session,
+                task_id=task_id,
+                new_status=TaskStatus.CANCELLED,
+                author="human:test",
+                project_id=only_project_id(session),
             )
     engine.dispose()
 
@@ -346,4 +351,31 @@ def test_plan_show_cross_project_404(plans_client, tmp_path: Path, migrate_db) -
 
     # Plan from `demo` (id=plan_id) accessed via `other` slug → 404.
     r = client.get(f"/p/{entry_b.name}/plans/{plan_id}")
+    assert r.status_code == 404
+
+
+def test_plan_show_404_for_plan_of_another_project(plans_client) -> None:
+    """AFT-023: plan_id — row_id на всю БД; план другого проекта той же БД по
+    URL проекта ``demo`` не показывается и не замораживается — оба маршрута 404."""
+    from pathlib import Path
+
+    client, entry, _plan_id = plans_client
+    db_path = Path(entry.cod_doc_dir) / "state.db"
+    engine = make_engine(f"sqlite:///{db_path}")
+    factory = make_session_factory(engine)
+    with transactional(factory) as session:
+        other = ProjectRepository(session).add(
+            ProjectEntity(slug="other", title="Other", root_path="/tmp/other", config={})
+        )
+        session.flush()
+        foreign = PlanRepository(session).add(
+            Plan(project_id=other.row_id, scope="foreign", principle="x")
+        )
+        session.flush()
+        foreign_id = foreign.row_id
+    engine.dispose()
+
+    r = client.get(f"/p/{entry.name}/plans/{foreign_id}")
+    assert r.status_code == 404
+    r = client.post(f"/p/{entry.name}/plans/{foreign_id}/freeze", follow_redirects=False)
     assert r.status_code == 404

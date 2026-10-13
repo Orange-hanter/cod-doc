@@ -30,16 +30,18 @@ from cod_doc.infra.models import (
     TaskModel,
 )
 from cod_doc.mcp.tools import doc_tools, task_tools
-from cod_doc.services import task_service
+from cod_doc.services import checkout_service, task_service
 
 
 def _get_tool(mcp: FastMCP, name: str) -> Any:
     return mcp._tool_manager._tools[name].fn
 
 
-def _stub(monkeypatch, factory, *, module, require_id: int = 1) -> None:
+def _stub(monkeypatch, factory, *, module) -> None:
+    # require_project_id не подменяется: слаг «p» из _seed резолвится настоящим
+    # резолвером — иначе проектный id совпадал с подставленным только на
+    # свежей БД (AFT-023).
     monkeypatch.setattr(module, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(module, "require_project_id", lambda session, project: require_id)
 
 
 def _seed(session) -> tuple[int, int, int]:
@@ -130,16 +132,11 @@ def test_task_update_status_dry_run_does_not_change_status(
             title="t",
             type=TaskType.FEATURE,
             priority=Priority.MEDIUM,
-            author="t",
+            author="human:test",
         )
-        # Move to in_progress so we can test cancel transition.
-        task_service.update_status(
-            session,
-            task_id="PLN-001",
-            new_status=TaskStatus.IN_PROGRESS_NEW,
-            author="t",
-            via_checkout=True,
-        )
+        # Move to in_progress so we can test cancel transition — штатным
+        # checkout, а не update_status(via_checkout=True) в обход протокола.
+        checkout_service.checkout(session, "PLN-001", agent="agent:t", project_id=proj_id)
 
     _stub(monkeypatch, factory, module=task_tools)
     mcp = FastMCP("test")

@@ -126,7 +126,7 @@ def test_import_links_commits_to_known_tasks(engine_with_schema, git_repo) -> No
     with transactional(factory) as session:
         result = commit_link_service.import_from_git_log(
             session,
-            project_id=1,
+            project_id=pid,
             repo_path=git_repo,
         )
     assert result["scanned"] == 3
@@ -134,8 +134,8 @@ def test_import_links_commits_to_known_tasks(engine_with_schema, git_repo) -> No
     assert result["skipped_existing"] == 0
 
     with transactional(factory) as session:
-        cmt1 = commit_link_service.list_for_task(session, 1, "CMT-001")
-        cmt2 = commit_link_service.list_for_task(session, 1, "CMT-002")
+        cmt1 = commit_link_service.list_for_task(session, pid, "CMT-001")
+        cmt2 = commit_link_service.list_for_task(session, pid, "CMT-002")
     assert len(cmt1) == 2
     assert len(cmt2) == 1
 
@@ -147,9 +147,11 @@ def test_import_idempotent(engine_with_schema, git_repo) -> None:  # type: ignor
         _make(session, pid, plid, sid, "CMT-001")
         _make(session, pid, plid, sid, "CMT-002")
     with transactional(factory) as session:
-        commit_link_service.import_from_git_log(session, project_id=1, repo_path=git_repo)
+        commit_link_service.import_from_git_log(session, project_id=pid, repo_path=git_repo)
     with transactional(factory) as session:
-        result = commit_link_service.import_from_git_log(session, project_id=1, repo_path=git_repo)
+        result = commit_link_service.import_from_git_log(
+            session, project_id=pid, repo_path=git_repo
+        )
     assert result["linked"] == 0
     assert result["skipped_existing"] == 3
 
@@ -178,7 +180,7 @@ def test_import_skips_unknown_task_ids(engine_with_schema, tmp_path) -> None:  #
     with transactional(factory) as session:
         result = commit_link_service.import_from_git_log(
             session,
-            project_id=1,
+            project_id=pid,
             repo_path=repo,
         )
     assert result["scanned"] == 1
@@ -193,12 +195,12 @@ def test_import_updates_commit_count_in_metrics(engine_with_schema, git_repo) ->
         _make(session, pid, plid, sid, "CMT-002")
     # Complete CMT-001 so it has a task_metrics row.
     with transactional(factory) as session:
-        task_service.complete(session, task_id="CMT-001", author="t")
+        task_service.complete(session, task_id="CMT-001", author="t", project_id=pid)
 
     with transactional(factory) as session:
         commit_link_service.import_from_git_log(
             session,
-            project_id=1,
+            project_id=pid,
             repo_path=git_repo,
         )
 
@@ -217,10 +219,10 @@ def test_import_updates_commit_count_in_metrics(engine_with_schema, git_repo) ->
 def test_import_rejects_non_git_path(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid, _plid, _sid = _seed(session)
     with pytest.raises(ValueError, match="not a git"), transactional(factory) as session:
         commit_link_service.import_from_git_log(
             session,
-            project_id=1,
+            project_id=pid,
             repo_path=tmp_path,
         )

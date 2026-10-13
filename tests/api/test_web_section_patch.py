@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from cod_doc.config import Config, ProjectEntry
 from cod_doc.core.project import Project
@@ -20,6 +21,7 @@ from cod_doc.domain.entities import (
     Project as ProjectEntity,
 )
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
+from cod_doc.infra.models import DocumentModel, SectionModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as revisions
@@ -145,7 +147,15 @@ def _head_for_section(db_path: Path, section_row_id: int) -> str | None:
     engine = make_engine(f"sqlite:///{db_path}")
     factory = make_session_factory(engine)
     with transactional(factory) as session:
-        head = revisions.head_for_entity(session, EntityKind.SECTION, section_row_id)
+        # Проект — тот, чьему документу принадлежит секция (AFT-023).
+        project_id = session.execute(
+            select(DocumentModel.project_id)
+            .join(SectionModel, SectionModel.document_id == DocumentModel.row_id)
+            .where(SectionModel.row_id == section_row_id)
+        ).scalar_one()
+        head = revisions.head_for_entity(
+            session, EntityKind.SECTION, section_row_id, project_id=project_id
+        )
     engine.dispose()
     return head
 

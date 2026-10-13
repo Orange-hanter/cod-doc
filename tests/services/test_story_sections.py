@@ -115,11 +115,13 @@ def test_section_revision_does_not_land_in_story_history(engine_with_schema) -> 
         section_row = sec.row_id
 
     with transactional(factory) as session:
-        story_hist = rev.list_for_entity(session, EntityKind.STORY, story_row)
+        story_hist = rev.list_for_entity(session, EntityKind.STORY, story_row, project_id=pid)
         ops = [json.loads(r.diff)["op"] for r in story_hist]
         assert "create_section" not in ops, "ревизия секции просочилась в историю истории"
 
-        section_hist = rev.list_for_entity(session, EntityKind.STORY_SECTION, section_row)
+        section_hist = rev.list_for_entity(
+            session, EntityKind.STORY_SECTION, section_row, project_id=pid
+        )
         assert [json.loads(r.diff)["op"] for r in section_hist] == ["create_section"]
 
 
@@ -302,7 +304,7 @@ def test_assign_section_writes_revision_and_event(engine_with_schema) -> None:  
 
     with transactional(factory) as session:
         assert stories.get(session, "US-001").section_id is not None
-        history = rev.list_for_entity(session, EntityKind.STORY, row_id)
+        history = rev.list_for_entity(session, EntityKind.STORY, row_id, project_id=pid)
         ops = [json.loads(r.diff)["op"] for r in history]
         assert "section" in ops
         latest = next(json.loads(r.diff) for r in history if json.loads(r.diff)["op"] == "section")
@@ -329,7 +331,7 @@ def test_assign_same_section_twice_is_noop(engine_with_schema) -> None:  # type:
         row_id = story.row_id
 
     with transactional(factory) as session:
-        history = rev.list_for_entity(session, EntityKind.STORY, row_id)
+        history = rev.list_for_entity(session, EntityKind.STORY, row_id, project_id=pid)
         section_revs = [r for r in history if json.loads(r.diff)["op"] == "section"]
         assert len(section_revs) == 1
 
@@ -432,7 +434,7 @@ def test_create_writes_section_key_not_row_id(engine_with_schema) -> None:  # ty
 
     with transactional(factory) as session:
         story = stories.get(session, "US-001")
-        history = rev.list_for_entity(session, EntityKind.STORY, story.row_id)
+        history = rev.list_for_entity(session, EntityKind.STORY, story.row_id, project_id=pid)
         diff = next(json.loads(r.diff) for r in history if json.loads(r.diff)["op"] == "create")
         assert diff["section"] == "module-1"
         assert "section_id" not in diff
@@ -453,7 +455,7 @@ def test_create_without_section_records_null(engine_with_schema) -> None:  # typ
 
     with transactional(factory) as session:
         story = stories.get(session, "US-001")
-        history = rev.list_for_entity(session, EntityKind.STORY, story.row_id)
+        history = rev.list_for_entity(session, EntityKind.STORY, story.row_id, project_id=pid)
         diff = next(json.loads(r.diff) for r in history if json.loads(r.diff)["op"] == "create")
         assert diff["section"] is None
 

@@ -198,6 +198,7 @@ def build_wake_context(
     triggering_doc_ref: str | None = None,
     triggering_revision_id: str | None = None,
     skills_to_preload: list[str] | None = None,
+    project_id: int | None = None,
 ) -> WakeContext:
     """Assemble a :class:`WakeContext` for the orchestrator.
 
@@ -206,9 +207,11 @@ def build_wake_context(
     - ``cold_start`` / ``manual`` — empty payload, ``skills_to_preload``
       defaults to ``["orchestrator"]`` if caller doesn't pass one. Cold
       start is the only path that lets the orchestrator call ``get_master``.
-    - ``task_assigned`` / ``approval_resolved`` — requires ``task_id``.
-      Builds the payload via :func:`heartbeat_service.heartbeat_context`
-      with the optional cursor; trimmed to fit ``PAYLOAD_BUDGET_BYTES``.
+    - ``task_assigned`` / ``approval_resolved`` — requires ``task_id`` and
+      ``project_id`` (AFT-023: задача ищется в скоупе проекта, в hub-БД
+      ``task_id`` не уникален). Builds the payload via
+      :func:`heartbeat_service.heartbeat_context` with the optional cursor;
+      trimmed to fit ``PAYLOAD_BUDGET_BYTES``.
     - ``doc_drift`` — requires ``triggering_doc_ref``. Payload contains a
       compact doc snippet and the trigger metadata; the agent will pull
       the full doc on demand if it actually needs it.
@@ -226,11 +229,15 @@ def build_wake_context(
             raise ValueError(f"reason={reason.value} requires task_id")
         if session is None:
             raise ValueError(f"reason={reason.value} requires a DB session for heartbeat lookup")
+        if project_id is None:
+            # AFT-023: задача ищется в скоупе проекта — в hub-БД task_id не уникален.
+            raise ValueError(f"reason={reason.value} requires project_id for heartbeat lookup")
         from cod_doc.services import heartbeat_service
 
         payload = heartbeat_service.heartbeat_context(
             session,
             task_id=task_id,
+            project_id=project_id,
             since_revision_id=triggering_revision_id,
         )
         payload = _trim_payload_to_budget(payload)

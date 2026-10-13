@@ -63,7 +63,7 @@ def test_create_with_blocked_reason_persists_field(engine_with_schema) -> None: 
             author="human:test",
             blocked_reason="waiting on legal review",
         )
-        t = task_service.get(session, "PR-001")
+        t = task_service.get(session, "PR-001", project_id=p)
         assert t is not None
         assert t.blocked_reason == "waiting on legal review"
 
@@ -73,7 +73,7 @@ def test_create_default_blocked_reason_is_none(engine_with_schema) -> None:  # t
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _make(session, p, pl, s, "PR-001")
-        t = task_service.get(session, "PR-001")
+        t = task_service.get(session, "PR-001", project_id=p)
         assert t is not None
         assert t.blocked_reason is None
 
@@ -84,7 +84,7 @@ def test_set_blocker_stores_reason_and_writes_revision(engine_with_schema) -> No
         p, pl, s = _seed(session)
         _make(session, p, pl, s, "PR-001")
 
-        before = task_service.get(session, "PR-001")
+        before = task_service.get(session, "PR-001", project_id=p)
         assert before is not None and before.row_id is not None
 
         task_service.set_blocker(
@@ -92,13 +92,14 @@ def test_set_blocker_stores_reason_and_writes_revision(engine_with_schema) -> No
             task_id="PR-001",
             reason="waiting on stakeholder X",
             author="human:test",
+            project_id=p,
         )
 
-        after = task_service.get(session, "PR-001")
+        after = task_service.get(session, "PR-001", project_id=p)
         assert after is not None
         assert after.blocked_reason == "waiting on stakeholder X"
 
-        history = rev.list_for_entity(session, EntityKind.TASK, before.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, before.row_id, project_id=p)
         last = history[-1]
         assert "set_blocker" in last.diff
         assert "waiting on stakeholder X" in last.diff
@@ -111,7 +112,9 @@ def test_set_blocker_rejects_empty_reason(engine_with_schema) -> None:  # type: 
         _make(session, p, pl, s, "PR-001")
 
         with pytest.raises(ValueError, match="non-empty"):
-            task_service.set_blocker(session, task_id="PR-001", reason="   ", author="human:test")
+            task_service.set_blocker(
+                session, task_id="PR-001", reason="   ", author="human:test", project_id=p
+            )
 
 
 def test_clear_blocker_removes_reason(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -120,10 +123,12 @@ def test_clear_blocker_removes_reason(engine_with_schema) -> None:  # type: igno
         p, pl, s = _seed(session)
         _make(session, p, pl, s, "PR-001")
 
-        task_service.set_blocker(session, task_id="PR-001", reason="x", author="human:test")
-        task_service.clear_blocker(session, task_id="PR-001", author="human:test")
+        task_service.set_blocker(
+            session, task_id="PR-001", reason="x", author="human:test", project_id=p
+        )
+        task_service.clear_blocker(session, task_id="PR-001", author="human:test", project_id=p)
 
-        t = task_service.get(session, "PR-001")
+        t = task_service.get(session, "PR-001", project_id=p)
         assert t is not None
         assert t.blocked_reason is None
 
@@ -133,14 +138,14 @@ def test_clear_blocker_noop_when_already_clear(engine_with_schema) -> None:  # t
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _make(session, p, pl, s, "PR-001")
-        before = task_service.get(session, "PR-001")
+        before = task_service.get(session, "PR-001", project_id=p)
         assert before is not None and before.row_id is not None
-        baseline = len(rev.list_for_entity(session, EntityKind.TASK, before.row_id))
+        baseline = len(rev.list_for_entity(session, EntityKind.TASK, before.row_id, project_id=p))
 
         # No-op clear — should not write a revision
-        task_service.clear_blocker(session, task_id="PR-001", author="human:test")
+        task_service.clear_blocker(session, task_id="PR-001", author="human:test", project_id=p)
 
-        after = len(rev.list_for_entity(session, EntityKind.TASK, before.row_id))
+        after = len(rev.list_for_entity(session, EntityKind.TASK, before.row_id, project_id=p))
         assert after == baseline
 
 
@@ -150,8 +155,12 @@ def test_list_blocked_returns_tasks_with_blocker(engine_with_schema) -> None:  #
         p, pl, s = _seed(session)
         for tid in ("PR-001", "PR-002", "PR-003"):
             _make(session, p, pl, s, tid)
-        task_service.set_blocker(session, task_id="PR-001", reason="x", author="human:test")
-        task_service.set_blocker(session, task_id="PR-003", reason="y", author="human:test")
+        task_service.set_blocker(
+            session, task_id="PR-001", reason="x", author="human:test", project_id=p
+        )
+        task_service.set_blocker(
+            session, task_id="PR-003", reason="y", author="human:test", project_id=p
+        )
 
         blocked = task_service.list_blocked(session, p)
         assert {t.task_id for t in blocked} == {"PR-001", "PR-003"}
@@ -163,13 +172,16 @@ def test_list_blocked_excludes_done_tasks(engine_with_schema) -> None:  # type: 
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _make(session, p, pl, s, "PR-001")
-        task_service.set_blocker(session, task_id="PR-001", reason="x", author="human:test")
+        task_service.set_blocker(
+            session, task_id="PR-001", reason="x", author="human:test", project_id=p
+        )
         task_service.update_status(
             session,
             task_id="PR-001",
             new_status=TaskStatus.DONE,
             author="human:test",
             force=True,
+            project_id=p,
         )
 
         assert task_service.list_blocked(session, p) == []

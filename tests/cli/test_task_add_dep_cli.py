@@ -44,8 +44,9 @@ def _seed(tmp_path: Path, *, done: frozenset[str] = frozenset()) -> None:
         with transactional(factory) as session:
             project = ProjectRepository(session).get_by_slug(_PROJECT)
             assert project is not None and project.row_id is not None
+            project_id = project.row_id
             now = datetime.now(UTC)
-            plan = PlanModel(project_id=project.row_id, scope=_SCOPE, created=now, last_updated=now)
+            plan = PlanModel(project_id=project_id, scope=_SCOPE, created=now, last_updated=now)
             session.add(plan)
             session.flush()
             sec = PlanSectionModel(
@@ -56,7 +57,7 @@ def _seed(tmp_path: Path, *, done: frozenset[str] = frozenset()) -> None:
             for tid in ("TA-001", "TA-002", "TA-003"):
                 task_service.create(
                     session,
-                    project_id=project.row_id,
+                    project_id=project_id,
                     plan_id=plan.row_id,
                     section_id=sec.row_id,
                     task_id=tid,
@@ -68,7 +69,12 @@ def _seed(tmp_path: Path, *, done: frozenset[str] = frozenset()) -> None:
         if done:
             with transactional(factory) as session:
                 for tid in done:
-                    task_service.complete(session, task_id=tid, author="human:test")
+                    task_service.complete(
+                        session,
+                        task_id=tid,
+                        author="human:test",
+                        project_id=project_id,
+                    )
     finally:
         engine.dispose()
 

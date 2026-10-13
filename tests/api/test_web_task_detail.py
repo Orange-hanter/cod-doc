@@ -138,6 +138,7 @@ def task_detail_client(tmp_path: Path, migrate_db):
             new_status=TaskStatus.IN_PROGRESS,
             author="human:dakh",
             via_checkout=True,
+            project_id=proj.row_id,
         )
     engine.dispose()
 
@@ -564,7 +565,9 @@ def test_task_detail_trace_section_lists_calls(task_detail_client) -> None:
     engine = make_engine(f"sqlite:///{db_path}")
     factory = make_session_factory(engine)
     with transactional(factory) as session:
-        task = task_svc.get(session, "DET-001")
+        project = ProjectRepository(session).get_by_slug(entry.name)
+        assert project is not None and project.row_id is not None
+        task = task_svc.get(session, "DET-001", project_id=project.row_id)
         assert task is not None and task.row_id is not None
         trace_svc.record(
             session,

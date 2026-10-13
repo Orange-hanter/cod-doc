@@ -104,7 +104,12 @@ def doc_patch(
                 expected_parent_revision_id=expected,
             )
             assert updated.row_id is not None
-            revision_id = revisions.head_for_entity(session, EntityKind.SECTION, updated.row_id)
+            revision_id = revisions.head_for_entity(
+                session,
+                EntityKind.SECTION,
+                updated.row_id,
+                project_id=project_id,
+            )
             content_hash = updated.content_hash
     except RevisionConflictError as exc:
         console.print(f"[red]Conflict: {exc}[/red]")

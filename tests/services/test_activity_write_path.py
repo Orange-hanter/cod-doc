@@ -171,6 +171,7 @@ def test_emit_error_is_not_swallowed_in_task_update_status(engine_with_schema) -
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",
             via_checkout=True,
+            project_id=p,
         )
 
 
@@ -223,6 +224,7 @@ def test_task_update_status_emits_event(engine_with_schema) -> None:  # type: ig
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",
             via_checkout=True,
+            project_id=p,
         )
 
     with transactional(factory) as session:
@@ -247,8 +249,8 @@ def test_task_complete_emits_event(engine_with_schema) -> None:  # type: ignore[
             priority=Priority.MEDIUM,
             author="human:test",
         )
-        checkout_service.checkout(session, task.task_id, agent="agent-X")
-        task_service.complete(session, task_id=task.task_id, author="human:test")
+        checkout_service.checkout(session, task.task_id, agent="agent-X", project_id=p)
+        task_service.complete(session, task_id=task.task_id, author="human:test", project_id=p)
 
     with transactional(factory) as session:
         ev = session.execute(
@@ -529,7 +531,7 @@ def test_checkout_emits_event(engine_with_schema) -> None:  # type: ignore[no-un
             priority=Priority.MEDIUM,
             author="human:test",
         )
-        checkout_service.checkout(session, task.task_id, agent="agent-X")
+        checkout_service.checkout(session, task.task_id, agent="agent-X", project_id=p)
 
     with transactional(factory) as session:
         ev = session.execute(

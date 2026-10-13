@@ -74,6 +74,7 @@ def _seed(tmp_path: Path, statuses: dict[str, TaskStatus]) -> str:
                         task_id=task_id,
                         new_status=status,
                         author="test",
+                        project_id=project.row_id,
                     )
     finally:
         engine.dispose()

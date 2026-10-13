@@ -294,7 +294,7 @@ def get_sections(session: Session, document_id: int) -> list[Section]:
 
 
 def read_sections(
-    session: Session, document_id: int, anchors: Sequence[str]
+    session: Session, document_id: int, anchors: Sequence[str], *, project_id: int
 ) -> list[dict[str, Any]]:
     """Тела секций документа по якорям — AFT-009 (RFC 27 F10).
 
@@ -320,7 +320,9 @@ def read_sections(
     if not requested:
         raise ValueError("anchors must not be empty")
     doc = session.get(DocumentModel, document_id)
-    if doc is None:
+    # AFT-023: document_id — row_id на всю hub-БД; документ чужого проекта —
+    # тот же «not found», его существование не раскрывается.
+    if doc is None or doc.project_id != project_id:
         raise ValueError(f"document #{document_id} not found")
 
     rows = session.execute(
@@ -330,7 +332,10 @@ def read_sections(
     ).scalars()
     by_anchor = {row.anchor: row for row in rows}
     heads = rev.heads_for_entities(
-        session, EntityKind.SECTION, [row.row_id for row in by_anchor.values()]
+        session,
+        EntityKind.SECTION,
+        [row.row_id for row in by_anchor.values()],
+        project_id=doc.project_id,
     )
 
     available: list[str] | None = None

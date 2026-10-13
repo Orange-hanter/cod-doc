@@ -113,7 +113,12 @@ def overview_client(tmp_path: Path, migrate_db):
             author="human:dakh",
             id_prefix="OVR",
         )
-        tasks.complete(session, task_id=done_t.task_id, author="human:dakh")
+        tasks.complete(
+            session,
+            task_id=done_t.task_id,
+            author="human:dakh",
+            project_id=proj.row_id,
+        )
 
         doc = doc_service.create(
             session,

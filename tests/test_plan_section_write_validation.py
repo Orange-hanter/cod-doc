@@ -23,6 +23,7 @@ from cod_doc.infra.models import PlanSectionModel
 from cod_doc.infra.repositories import PlanRepository, ProjectRepository
 from cod_doc.services.validation import ValidationError
 from tests._alembic import run_alembic
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -62,10 +63,14 @@ def tools(
         plan.created = now
         plan.last_updated = now
         s.flush()
-        proj_id = proj.row_id
 
-    monkeypatch.setattr(plan_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(plan_tools, "require_project_id", lambda session, project: proj_id)
+    # require_project_id не подменяется: слаг «pv» резолвится настоящим
+    # резолвером, и гард проектной изоляции в plan_tools работает (AFT-023).
+    def _session_factory(project: str | None) -> tuple[sessionmaker[Session], None]:
+        assert project == "pv", f"ожидался слаг 'pv', пришёл {project!r}"
+        return factory, None
+
+    monkeypatch.setattr(plan_tools, "session_factory", _session_factory)
     mcp = FastMCP("test")
     plan_tools.register(mcp)
     return {name: tool.fn for name, tool in mcp._tool_manager._tools.items()}
@@ -190,7 +195,7 @@ def test_legacy_slugs_still_readable(
     tools: dict[str, Callable[..., Any]], factory: sessionmaker[Session]
 ) -> None:
     with transactional(factory) as s:
-        plan = PlanRepository(s).get_by_scope(_PLAN_SCOPE)
+        plan = PlanRepository(s).get_by_scope(_PLAN_SCOPE, project_id=only_project_id(s))
         assert plan is not None
         s.add(
             PlanSectionModel(

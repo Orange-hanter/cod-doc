@@ -1159,7 +1159,9 @@ def doc_show(
                 "row_id": s.row_id,
                 "body": s.body or "",
                 "html": render_markdown(s.body or ""),
-                "head_rev": revisions.head_for_entity(session, EntityKind.SECTION, s.row_id)
+                "head_rev": revisions.head_for_entity(
+                    session, EntityKind.SECTION, s.row_id, project_id=project_db_id
+                )
                 if s.row_id is not None
                 else None,
             }

@@ -100,7 +100,13 @@ def _seed(session: Session) -> int:
             author="t",
         )
         if status is not TaskStatus.PENDING:
-            tasks.update_status(session, task_id=task_id, new_status=status, author="t")
+            tasks.update_status(
+                session,
+                task_id=task_id,
+                new_status=status,
+                author="t",
+                project_id=proj.row_id,
+            )
     return proj.row_id
 
 

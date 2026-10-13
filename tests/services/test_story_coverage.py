@@ -170,6 +170,7 @@ def test_coverage_in_progress_when_any_task_started(engine_with_schema) -> None:
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",
             via_checkout=True,
+            project_id=proj,
         )
         cov = stories.coverage(session, story.story_id)
         assert cov.status is stories.CoverageStatus.IN_PROGRESS
@@ -197,7 +198,7 @@ def test_coverage_delivered_requires_all_done_and_acceptance_met(engine_with_sch
         _link_task(session, story.story_id, "TST-001")
 
         # Task done, but only 1 of 2 acceptance criteria met — still in-progress.
-        tasks.complete(session, task_id="TST-001", author="human:test")
+        tasks.complete(session, task_id="TST-001", author="human:test", project_id=proj)
         stories.set_criterion_met(
             session,
             story_id=story.story_id,

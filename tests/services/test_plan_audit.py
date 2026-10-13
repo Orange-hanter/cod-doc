@@ -72,7 +72,15 @@ def _seed_task(
         author="human:test",
     )
     if status is not TaskStatus.PENDING:
-        tasks.update_status(session, task_id=task_id, new_status=status, author="human:test")
+        # Подготовка состояния, не проверка машины статусов: прыжок в любой статус.
+        tasks.update_status(
+            session,
+            task_id=task_id,
+            new_status=status,
+            author="human:test",
+            project_id=proj_id,
+            force=True,
+        )
     return t
 
 
@@ -86,7 +94,7 @@ def test_audit_clean_plan_has_no_issues(engine_with_schema) -> None:  # type: ig
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
         session.flush()
 
-        report = plans.audit(session, plan_id)
+        report = plans.audit(session, plan_id, project_id=p)
         assert report.cycles == []
         assert report.done_with_unfinished_blocks == []
         assert report.issues_total == 0
@@ -106,7 +114,7 @@ def test_audit_detects_cycle(engine_with_schema) -> None:  # type: ignore[no-unt
         session.add(DependencyModel(from_task_id=c.row_id, to_task_id=a.row_id, kind="blocks"))
         session.flush()
 
-        report = plans.audit(session, plan_id)
+        report = plans.audit(session, plan_id, project_id=p)
         assert len(report.cycles) >= 1
         cycle_ids = {tid for cyc in report.cycles for tid in cyc}
         assert cycle_ids == {"PLN-001", "PLN-002", "PLN-003"}
@@ -125,7 +133,7 @@ def test_audit_ignores_non_blocks_in_cycle_check(engine_with_schema) -> None:  #
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="relates"))
         session.flush()
 
-        report = plans.audit(session, plan_id)
+        report = plans.audit(session, plan_id, project_id=p)
         assert report.cycles == []
 
 
@@ -140,9 +148,14 @@ def test_audit_flags_done_with_unfinished_blocks(engine_with_schema) -> None:
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
         session.flush()
         tasks.update_status(
-            session, task_id="PLN-002", new_status=TaskStatus.DONE, author="drift", force=True
+            session,
+            task_id="PLN-002",
+            new_status=TaskStatus.DONE,
+            author="human:drift",
+            force=True,
+            project_id=p,
         )
 
-        report = plans.audit(session, plan_id)
+        report = plans.audit(session, plan_id, project_id=p)
         assert "PLN-002" in report.done_with_unfinished_blocks
         assert report.issues_total >= 1

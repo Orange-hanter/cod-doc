@@ -257,7 +257,10 @@ def _propose_doc_links(
             diff=_unified(section.body, after, ref),
             rationale=why,
             base_revision_id=revision_service.head_for_entity(
-                session, EntityKind.SECTION, section.row_id
+                session,
+                EntityKind.SECTION,
+                section.row_id,
+                project_id=project_id,
             ),
             requested_by=author,
         )
@@ -420,7 +423,10 @@ def propose_node_placements(
             diff=f"-{doc.doc_key}: Инбокс\n+{doc.doc_key}: {node_key}\n",
             rationale=why,
             base_revision_id=revision_service.head_for_entity(
-                session, EntityKind.DOCUMENT, doc.row_id
+                session,
+                EntityKind.DOCUMENT,
+                doc.row_id,
+                project_id=project_id,
             ),
             requested_by=author,
         )

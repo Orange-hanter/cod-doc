@@ -96,12 +96,15 @@ def test_ready_batch_counts_skipped(engine_with_schema) -> None:  # type: ignore
         assert batch_project.skipped_foreign == 1
         assert {t.task_id for t in batch_project.tasks} == {ids["A"], ids["B"], ids["C"]}
 
-        batch_plan = plans.ready_batch(session, plan_id)
+        batch_plan = plans.ready_batch(session, plan_id, project_id=pid)
         assert batch_plan.skipped_foreign == 1
         assert {t.task_id for t in batch_plan.tasks} == {ids["A"], ids["B"], ids["C"]}
 
         assert plans.ready_batch_for_project(session, pid, local_only=False).skipped_foreign == 0
-        assert plans.ready_batch(session, plan_id, local_only=False).skipped_foreign == 0
+        assert (
+            plans.ready_batch(session, plan_id, local_only=False, project_id=pid).skipped_foreign
+            == 0
+        )
 
 
 def test_limit_applies_after_filter(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -121,6 +124,6 @@ def test_limit_applies_after_filter(engine_with_schema) -> None:  # type: ignore
         assert len(first) == 1
         assert first[0].task_id != ids["D"]
 
-        first_plan = plans.ready(session, plan_id, limit=1)
+        first_plan = plans.ready(session, plan_id, limit=1, project_id=pid)
         assert len(first_plan) == 1
         assert first_plan[0].task_id != ids["D"]

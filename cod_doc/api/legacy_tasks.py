@@ -109,7 +109,11 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
     # по тому, когда первый закоммитил. Создание идёт в savepoint, и разбор
     # повторяется уже с планом, который вставил первый (в т.ч. если это был
     # чужой проект — тогда scope станет собственным).
+    # Повтор — только если за время попытки появилось то, что мы создавали
+    # (план одного из наших scope или его секция): так проигранная гонка
+    # отличается от постороннего IntegrityError, который пробрасывается как есть.
     for attempt in range(2):
+        before = _legacy_footprint(session, project_id)
         try:
             with session.begin_nested():
                 return _ensure_legacy_plan_once(session, project_id)
@@ -118,17 +122,27 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
             plan_service.PlanAlreadyExistsError,
             plan_service.SectionAlreadyExistsError,
         ):
-            if attempt:
+            if attempt or _legacy_footprint(session, project_id) == before:
                 raise
     raise AssertionError("unreachable")
 
 
+def _legacy_footprint(session: Session, project_id: int) -> tuple[bool, bool, int]:
+    """Что из legacy-плана уже есть в БД: оба scope заняты? сколько секций у своего плана."""
+    own_scope = f"{LEGACY_PLAN_SCOPE}-p{project_id}"
+    return (
+        plan_service.scope_exists(session, LEGACY_PLAN_SCOPE),
+        plan_service.scope_exists(session, own_scope),
+        plan_service.section_count_in_scopes(session, [LEGACY_PLAN_SCOPE, own_scope], project_id),
+    )
+
+
 def _ensure_legacy_plan_once(session: Session, project_id: int) -> tuple[int, int]:
     scope = LEGACY_PLAN_SCOPE
-    plan = plan_service.get_by_scope(session, scope)
-    if plan is not None and plan.project_id != project_id:
+    # scope уникален на всю БД: занятый другим проектом — берём собственный.
+    if plan_service.scope_taken_by_other(session, scope, project_id):
         scope = f"{LEGACY_PLAN_SCOPE}-p{project_id}"
-        plan = plan_service.get_by_scope(session, scope)
+    plan = plan_service.get_by_scope(session, scope, project_id=project_id)
     if plan is None:
         plan = plan_service.create_plan(
             session,
@@ -140,7 +154,7 @@ def _ensure_legacy_plan_once(session: Session, project_id: int) -> tuple[int, in
         )
     assert plan.row_id is not None
 
-    sections = plan_service.list_sections(session, plan.row_id)
+    sections = plan_service.list_sections(session, plan.row_id, project_id=project_id)
     if sections:
         assert sections[0].row_id is not None
         return plan.row_id, sections[0].row_id

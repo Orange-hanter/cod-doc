@@ -164,7 +164,9 @@ def test_section_progress_matches_recalc(seeded: Any) -> None:
         batch = plans.section_progress_for_project(session, ids["alpha"])
         for scope in ("plan-x", "plan-y"):
             plan_id = _plan_id(session, scope)
-            assert batch[plan_id] == plans.recalc(session, plan_id).sections
+            assert (
+                batch[plan_id] == plans.recalc(session, plan_id, project_id=ids["alpha"]).sections
+            )
 
     section_a = batch[_plan_id_from(factory, "plan-x")][0]
     assert (section_a.letter, section_a.total, section_a.done) == ("A", 5, 2)

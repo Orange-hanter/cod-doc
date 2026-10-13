@@ -77,7 +77,12 @@ def _seed_db_tasks(entry, *, n_todo: int, n_done: int) -> None:
                     id_prefix="ST",
                 )
                 if i < n_done:
-                    task_service.complete(session, task_id=task.task_id, author="human:test")
+                    task_service.complete(
+                        session,
+                        task_id=task.task_id,
+                        author="human:test",
+                        project_id=project.row_id,
+                    )
     finally:
         engine.dispose()
 

@@ -79,7 +79,7 @@ def test_remove_dependency_deletes_edge_and_unblocks_ready(engine_with_schema) -
         _make(session, p, pl, s, "MY-001")
         _make(session, p, pl, s, "MY-002", blocked_by=["MY-001"])
 
-        ready_ids = {t.task_id for t in plan_service.ready(session, pl)}
+        ready_ids = {t.task_id for t in plan_service.ready(session, pl, project_id=p)}
         assert "MY-002" not in ready_ids
 
         task_service.remove_dependency(
@@ -87,7 +87,7 @@ def test_remove_dependency_deletes_edge_and_unblocks_ready(engine_with_schema) -
         )
 
         assert _edges(session) == []
-        ready_ids = {t.task_id for t in plan_service.ready(session, pl)}
+        ready_ids = {t.task_id for t in plan_service.ready(session, pl, project_id=p)}
         assert "MY-002" in ready_ids
 
 
@@ -105,8 +105,8 @@ def test_remove_dependency_only_removes_the_requested_edge(engine_with_schema) -
 
         edges = _edges(session)
         assert len(edges) == 1
-        blocker = task_service.get(session, "MY-002")
-        task = task_service.get(session, "MY-003")
+        blocker = task_service.get(session, "MY-002", project_id=p)
+        task = task_service.get(session, "MY-003", project_id=p)
         assert blocker is not None and task is not None
         assert edges == [(task.row_id, blocker.row_id, "blocks")]
 
@@ -160,7 +160,7 @@ def test_remove_dependency_writes_revision_and_activity(engine_with_schema) -> N
         _make(session, p, pl, s, "MY-001")
         _make(session, p, pl, s, "MY-002", blocked_by=["MY-001"])
 
-        task = task_service.get(session, "MY-002")
+        task = task_service.get(session, "MY-002", project_id=p)
         assert task is not None and task.row_id is not None
 
         task_service.remove_dependency(
@@ -172,7 +172,7 @@ def test_remove_dependency_writes_revision_and_activity(engine_with_schema) -> N
             reason="spec changed",
         )
 
-        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         last = history[-1]
         diff = json.loads(last.diff)
         assert diff["op"] == "remove_dependency"

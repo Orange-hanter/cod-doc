@@ -43,7 +43,7 @@ def doc_section(
         if d is None or d.row_id is None:
             console.print(f"[red]Document '{doc_key}' not found.[/red]")
             sys.exit(1)
-        result = doc_service.read_sections(session, d.row_id, anchors)
+        result = doc_service.read_sections(session, d.row_id, anchors, project_id=project_id)
 
     has_miss = any(item.get("found") is False for item in result)
     if as_json:

@@ -61,9 +61,13 @@ def _project_id(session: Session, project: str) -> int:
 
 
 def _fail(message: str) -> None:
-    """Печать ошибки красным и выход без трейсбека."""
+    """Печать ошибки красным и выход без трейсбека.
+
+    Как и `_require_plan_id`, — ``click.exceptions.Exit``, а не ``sys.exit``:
+    это ``Exception``, и ``transactional`` откатывает транзакцию явно.
+    """
     console.print(message, style="red", markup=False)
-    sys.exit(1)
+    raise click.exceptions.Exit(1)
 
 
 def _guard() -> AbstractContextManager[None]:
@@ -100,13 +104,21 @@ def _guard() -> AbstractContextManager[None]:
     return _cm()
 
 
-def _require_plan_id(session: Session, plan_scope: str) -> int:
-    from cod_doc.infra.repositories import PlanRepository
+def _require_plan_id(session: Session, plan_scope: str, project_id: int) -> int:
+    """row_id плана ``plan_scope`` проекта ``project_id``; иначе сообщение и exit 1.
 
-    plan = PlanRepository(session).get_by_scope(plan_scope)
+    Скоуп проекта обязателен (AFT-023): scope уникален на всю БД, и без него
+    из одного проекта читался бы план другого. Проект резолвит вызывающий —
+    один раз, и тот же ``project_id`` уходит в сервис.
+    """
+    from cod_doc.services import plan_service
+
+    plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
     if plan is None or plan.row_id is None:
         console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
-        sys.exit(1)
+        # click.exceptions.Exit — Exception, а не SystemExit: transactional
+        # откатывает транзакцию явно, код выхода тот же (1).
+        raise click.exceptions.Exit(1)
     return plan.row_id
 
 

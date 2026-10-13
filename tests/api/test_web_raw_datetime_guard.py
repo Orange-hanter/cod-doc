@@ -132,8 +132,9 @@ def seeded_client(tmp_path: Path, migrate_db):  # type: ignore[no-untyped-def]
             author="human:dakh",
             reason="started",
             via_checkout=True,
+            project_id=proj.row_id,
         )
-        tasks.complete(session, task_id=task_id, author="human:dakh")
+        tasks.complete(session, task_id=task_id, author="human:dakh", project_id=proj.row_id)
     engine.dispose()
 
     from cod_doc.api.server import app
