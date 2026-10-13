@@ -56,8 +56,11 @@ def retarget_links(body: str, old: str, new: str) -> str:
     трогается — иначе правка ссылки переписала бы прозу.
     """
     target = re.escape(old)
-    body = re.sub(rf"\]\({target}(?=[)#\s])", f"]({new}", body)
-    return re.sub(rf"\[\[{target}(?=[\]|#])", f"[[{new}", body)
+    # Замена — функцией, а не строкой: строку re.sub читает как шаблон, и
+    # ``\n``/``\1`` в новой цели (``docs\new.md``) стали бы переводом строки
+    # или группой.
+    body = re.sub(rf"\]\({target}(?=[)#\s])", lambda _m: f"]({new}", body)
+    return re.sub(rf"\[\[{target}(?=[\]|#])", lambda _m: f"[[{new}", body)
 
 
 def _section(session: Session, project_id: int, args: Args) -> SectionModel:

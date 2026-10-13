@@ -15,7 +15,6 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -156,8 +155,8 @@ def test_export_empty_plan_renders_placeholders(engine_with_schema) -> None:  # 
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session:
-        _, plan_id, _ = _seed_plan_with_sections(session)
-        out = plans.export(session, plan_id, project_id=only_project_id(session))
+        pid, plan_id, _ = _seed_plan_with_sections(session)
+        out = plans.export(session, plan_id, project_id=pid)
         assert "Progress Overview" in out["progress_overview"]
         assert "Next Batch" in out["next_batch"]
         assert "graph TD" in out["dependency_graph"]

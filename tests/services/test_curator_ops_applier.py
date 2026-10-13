@@ -105,6 +105,13 @@ def test_retarget_touches_link_targets_only() -> None:
     assert "Слово old.md в прозе" in out
 
 
+def test_retarget_inserts_the_new_target_literally() -> None:
+    """Новая цель — литерал, а не шаблон re.sub: ``\\n`` и ``\\1`` не раскрываются."""
+    for new in (r"dir\new.md", r"a\1b.md"):
+        out = curator_ops.retarget_links("[x](old.md) и [[old.md]]", "old.md", new)
+        assert out == f"[x]({new}) и [[{new}]]"
+
+
 def test_approving_applies_the_patch_by_the_approver_and_revert_undoes_it(
     engine_with_schema: Engine,
 ) -> None:

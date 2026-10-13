@@ -65,7 +65,7 @@ def _to_domain(model: RevisionModel) -> Revision:
 
 
 def _current_head(
-    session: Session, entity_kind: EntityKind, entity_id: int, project_id: int | None = None
+    session: Session, entity_kind: EntityKind, entity_id: int, project_id: int
 ) -> str | None:
     """Latest `revision_id` for the entity, or None if no revisions yet.
 
@@ -76,9 +76,8 @@ def _current_head(
     stmt = select(RevisionModel.revision_id).where(
         RevisionModel.entity_kind == entity_kind.value,
         RevisionModel.entity_id == entity_id,
+        RevisionModel.project_id == project_id,
     )
-    if project_id is not None:
-        stmt = stmt.where(RevisionModel.project_id == project_id)
     stmt = stmt.order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc()).limit(1)
     return session.execute(stmt).scalar_one_or_none()
 

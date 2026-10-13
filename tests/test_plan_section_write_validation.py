@@ -66,7 +66,11 @@ def tools(
 
     # require_project_id не подменяется: слаг «pv» резолвится настоящим
     # резолвером, и гард проектной изоляции в plan_tools работает (AFT-023).
-    monkeypatch.setattr(plan_tools, "session_factory", lambda project: (factory, None))
+    def _session_factory(project: str | None) -> tuple[sessionmaker[Session], None]:
+        assert project == "pv", f"тул ушёл в чужой проект {project!r}"
+        return factory, None
+
+    monkeypatch.setattr(plan_tools, "session_factory", _session_factory)
     mcp = FastMCP("test")
     plan_tools.register(mcp)
     return {name: tool.fn for name, tool in mcp._tool_manager._tools.items()}

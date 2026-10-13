@@ -111,9 +111,9 @@ def _require_plan_id(session: Session, plan_scope: str, project_id: int) -> int:
     из одного проекта читался бы план другого. Проект резолвит вызывающий —
     один раз, и тот же ``project_id`` уходит в сервис.
     """
-    from cod_doc.infra.repositories import PlanRepository
+    from cod_doc.services import plan_service
 
-    plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
+    plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
     if plan is None or plan.row_id is None:
         console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
         # click.exceptions.Exit — Exception, а не SystemExit: transactional
