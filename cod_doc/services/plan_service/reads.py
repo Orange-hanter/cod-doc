@@ -448,9 +448,11 @@ def ready_batch(
     """
     plan = _require_plan(session, plan_id, project_id)
 
+    # Задачи плана И проекта: чужая задача с plan_id нашего плана (легаси-
+    # данные) не готова к работе здесь — как и в audit/export/chain_layout.
     rows = session.execute(
-        text("SELECT row_id FROM ready_tasks WHERE plan_id = :pid"),
-        {"pid": plan_id},
+        text("SELECT row_id FROM ready_tasks WHERE plan_id = :pid AND project_id = :proj"),
+        {"pid": plan_id, "proj": project_id},
     ).all()
     if not rows:
         return ReadyBatch(tasks=[], skipped_foreign=0)

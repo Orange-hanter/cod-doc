@@ -27,6 +27,7 @@ from cod_doc.infra.models import (
     PlanSectionModel,
     ProjectModel,
     RevisionModel,
+    TaskModel,
 )
 from cod_doc.services import agent_service, checkout_service
 from cod_doc.services import plan_service as plans
@@ -610,3 +611,19 @@ def test_mcp_move_to_plan_does_not_move_another_projects_task(
         assert task_a is not None and task_b is not None
         assert task_a.section_id == a.section, "задача проекта A осталась на месте"
         assert task_b.section_id == target_section
+
+
+def test_ready_skips_a_foreign_task_left_in_the_plan(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Задача чужого проекта с ``plan_id`` нашего плана (легаси-данные) в ready
+    не попадает — так же, как её не видят audit/export/chain_layout."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        leaked = session.get(TaskModel, b.task_row)
+        assert leaked is not None
+        leaked.plan_id, leaked.section_id = a.plan, a.section
+        session.flush()
+
+        ready = plans.ready(session, a.plan, project_id=a.project, local_only=False)
+        assert [t.row_id for t in ready] == [a.task_row]

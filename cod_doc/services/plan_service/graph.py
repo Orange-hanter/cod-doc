@@ -107,7 +107,7 @@ ORDER BY max_depth DESC
 
 
 def _chain_root(session: Session, task_id: str, project_id: int) -> int:
-    """(row_id, project_id) задачи-корня; с ``project_id`` — только в этом проекте.
+    """row_id задачи-корня ``task_id`` в проекте ``project_id``.
 
     Цепочка якорится на row_id, а не на ``task_id``: в общей hub-БД один
     ``task_id`` живёт в нескольких проектах (нумерация — на проект), и поиск
