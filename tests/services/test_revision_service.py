@@ -97,7 +97,7 @@ def test_list_for_entity_oldest_first(engine_with_schema) -> None:  # type: igno
             author="x",
             diff="3",
         )
-        history = rev.list_for_entity(session, EntityKind.TASK, 1)
+        history = rev.list_for_entity(session, EntityKind.TASK, 1, project_id=proj_id)
         assert [h.revision_id for h in history] == [a.revision_id, b.revision_id, c.revision_id]
 
 
@@ -132,9 +132,9 @@ def test_list_filters_by_entity(engine_with_schema) -> None:  # type: ignore[no-
             diff="d1",
         )
 
-        assert len(rev.list_for_entity(session, EntityKind.TASK, 1)) == 1
-        assert len(rev.list_for_entity(session, EntityKind.TASK, 2)) == 1
-        assert len(rev.list_for_entity(session, EntityKind.DOCUMENT, 1)) == 1
+        assert len(rev.list_for_entity(session, EntityKind.TASK, 1, project_id=proj_id)) == 1
+        assert len(rev.list_for_entity(session, EntityKind.TASK, 2, project_id=proj_id)) == 1
+        assert len(rev.list_for_entity(session, EntityKind.DOCUMENT, 1, project_id=proj_id)) == 1
 
 
 def test_expected_parent_match_succeeds(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -270,3 +270,30 @@ def test_revert_raises_lookup_for_unknown_revision_id(engine_with_schema) -> Non
         pid = _add_project(session)
         with pytest.raises(LookupError, match="revision not found"):
             rev.revert(session, "01HQX5Z9F0K8R0000000000000", author="human:test", project_id=pid)
+
+
+def test_reads_by_entity_are_scoped_by_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-023: entity_id — row_id на всю hub-БД; история, head и выборка по
+    ULID ревизии проекта A под project_id проекта B пусты."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _add_project(session, "a")
+        b = _add_project(session, "b")
+        r = rev.write(
+            session,
+            project_id=a,
+            entity_kind=EntityKind.TASK,
+            entity_id=42,
+            author="agent:task-steward",
+            diff="--- /dev/null\n+++ task\n@@",
+            reason="initial",
+        )
+
+        assert [
+            x.revision_id for x in rev.list_for_entity(session, EntityKind.TASK, 42, project_id=a)
+        ] == [r.revision_id]
+        assert rev.list_for_entity(session, EntityKind.TASK, 42, project_id=b) == []
+        assert rev.list_for_entity(session, EntityKind.TASK, 42, limit=1, project_id=b) == []
+        assert rev.head_for_entity(session, EntityKind.TASK, 42, project_id=a) == r.revision_id
+        assert rev.head_for_entity(session, EntityKind.TASK, 42, project_id=b) is None
+        assert rev.get(session, r.revision_id, project_id=b) is None

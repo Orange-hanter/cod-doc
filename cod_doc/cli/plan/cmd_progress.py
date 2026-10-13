@@ -157,7 +157,7 @@ def plan_progress(
 
     with _guard(), transactional(sf) as session:
         plan_id = plan_service.require_plan_in_project(session, pid, plan_scope)
-        progress = plan_service.recalc(session, plan_id)
+        progress = plan_service.recalc(session, plan_id, project_id=pid)
     row = _progress_to_dict(progress, with_sections=True)
     if as_json:
         click.echo(_json.dumps(row, ensure_ascii=False))

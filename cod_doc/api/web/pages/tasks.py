@@ -64,11 +64,12 @@ def _enrich_chain(
     session: Session,
     plan_id: int,
     scope: str,
+    project_id: int,
 ) -> dict[str, Any]:
     """Wrap ``plan_service.chain_layout`` with display-only fields (scope label,
     type glyphs, priority sort) so the template stays free of computation.
     """
-    raw = plans.chain_layout(session, plan_id)
+    raw = plans.chain_layout(session, plan_id, project_id=project_id)
     levels: list[dict[str, Any]] = []
     for lvl_bucket in raw["levels"]:
         tasks_with_glyph = [
@@ -133,7 +134,7 @@ def tasks_list(
                 if p.row_id is None:
                     continue
                 scope_by_pid[p.row_id] = p.scope
-                sects = plans.list_sections(session, p.row_id)
+                sects = plans.list_sections(session, p.row_id, project_id=project_db_id)
                 sections_by_pid[p.row_id] = {
                     s.row_id: {"letter": s.letter or "", "title": s.title}
                     for s in sects
@@ -179,7 +180,7 @@ def tasks_list(
                         continue
                     if plan and p.scope != plan:
                         continue
-                    chain = _enrich_chain(session, p.row_id, p.scope)
+                    chain = _enrich_chain(session, p.row_id, p.scope, project_db_id)
                     if chain["task_count"] > 0:
                         chains.append(chain)
 
@@ -530,7 +531,7 @@ def task_show(
     trace = traces.list_for_task(session, task.row_id)
 
     # Plan + section breadcrumb info.
-    plan = plans.get_for_project(session, project_db_id, task.plan_id)
+    plan = plans.get_for_project(session, task.plan_id, project_id=project_db_id)
     linked_questions = question_service.linked_questions(
         session, project_db_id, target_kind=QuestionLinkKind.TASK, target_ref=task_id
     )

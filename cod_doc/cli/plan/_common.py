@@ -56,9 +56,13 @@ def _project_id(session: Session, project: str) -> int:
 
 
 def _fail(message: str) -> None:
-    """Печать ошибки красным и выход без трейсбека."""
+    """Печать ошибки красным и выход без трейсбека.
+
+    Как и `_require_plan_id`, — ``click.exceptions.Exit``, а не ``sys.exit``:
+    это ``Exception``, и ``transactional`` откатывает транзакцию явно.
+    """
     console.print(message, style="red", markup=False)
-    sys.exit(1)
+    raise click.exceptions.Exit(1)
 
 
 def _guard() -> AbstractContextManager[None]:
@@ -95,8 +99,14 @@ def _guard() -> AbstractContextManager[None]:
     return _cm()
 
 
-def _require_plan_id(session: Session, project: str, plan_scope: str) -> int:
-    """``plan_scope`` проекта → ``plan.row_id``; scope уникален в проекте (STO-023)."""
+def _require_plan_id(session: Session, project: str, plan_scope: str) -> tuple[int, int]:
+    """``(project_id, plan_id)`` плана ``plan_scope`` проекта; иначе сообщение и exit 1.
+
+    scope уникален в проекте (STO-023), а сервисы плана требуют ``project_id``
+    (AFT-023) — проект резолвится здесь один раз и уходит вызывающему вместе
+    с планом. ``click.exceptions.Exit``, а не ``sys.exit``: это ``Exception``,
+    и ``transactional`` откатывает транзакцию явно, код выхода тот же (1).
+    """
     from cod_doc.services import plan_service
 
     project_id = _project_id(session, project)
@@ -107,8 +117,8 @@ def _require_plan_id(session: Session, project: str, plan_scope: str) -> int:
             style="red",
             markup=False,
         )
-        sys.exit(1)
-    return plan.row_id
+        raise click.exceptions.Exit(1)
+    return project_id, plan.row_id
 
 
 def _render_chain(

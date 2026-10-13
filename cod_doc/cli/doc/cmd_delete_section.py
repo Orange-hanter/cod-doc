@@ -119,7 +119,12 @@ def doc_delete_section(
                 console.print(f"[red]Section '{escape(anchor)}' is already gone.[/red]")
                 sys.exit(1)
             # Ревизия удаления висит на документе (ADO-213), а не на мёртвой строке.
-            revision_id = revisions.head_for_entity(session, EntityKind.DOCUMENT, document_id)
+            revision_id = revisions.head_for_entity(
+                session,
+                EntityKind.DOCUMENT,
+                document_id,
+                project_id=project_id,
+            )
 
     if as_json:
         payload: dict[str, object] = {

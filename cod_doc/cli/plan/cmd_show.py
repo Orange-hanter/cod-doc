@@ -29,8 +29,8 @@ def plan_show(ctx: click.Context, plan_scope: str, project: str, as_json: bool) 
     sf = _make_session(project, cfg)
 
     with transactional(sf) as session:
-        plan_id = _require_plan_id(session, project, plan_scope)
-        progress = plan_service.recalc(session, plan_id)
+        pid, plan_id = _require_plan_id(session, project, plan_scope)
+        progress = plan_service.recalc(session, plan_id, project_id=pid)
 
     if as_json:
         click.echo(

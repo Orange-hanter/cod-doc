@@ -168,7 +168,7 @@ def test_log_progress_writes_revision(engine_with_schema) -> None:  # type: igno
             author="agent:x",
         )
 
-        history = rev.list_for_entity(session, EntityKind.TASK, t.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, t.row_id, project_id=p)
         last = history[-1]
         assert "progress" in last.diff
         assert "step 2 of 5" in last.diff

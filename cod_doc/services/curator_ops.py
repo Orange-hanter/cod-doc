@@ -56,8 +56,11 @@ def retarget_links(body: str, old: str, new: str) -> str:
     трогается — иначе правка ссылки переписала бы прозу.
     """
     target = re.escape(old)
-    body = re.sub(rf"\]\({target}(?=[)#\s])", f"]({new}", body)
-    return re.sub(rf"\[\[{target}(?=[\]|#])", f"[[{new}", body)
+    # Замена — функцией, а не строкой: строку re.sub читает как шаблон, и
+    # ``\n``/``\1`` в новой цели (``docs\new.md``) стали бы переводом строки
+    # или группой.
+    body = re.sub(rf"\]\({target}(?=[)#\s])", lambda _m: f"]({new}", body)
+    return re.sub(rf"\[\[{target}(?=[\]|#])", lambda _m: f"[[{new}", body)
 
 
 def _section(session: Session, project_id: int, args: Args) -> SectionModel:
@@ -76,7 +79,9 @@ def _section(session: Session, project_id: int, args: Args) -> SectionModel:
 
 def _link_retarget_head(session: Session, project_id: int, args: Args) -> str | None:
     section = _section(session, project_id, args)
-    return revision_service.head_for_entity(session, EntityKind.SECTION, section.row_id)
+    return revision_service.head_for_entity(
+        session, EntityKind.SECTION, section.row_id, project_id=project_id
+    )
 
 
 def _link_retarget_apply(
@@ -111,7 +116,10 @@ def _document_id(session: Session, project_id: int, args: Args) -> int:
 
 def _doc_set_node_head(session: Session, project_id: int, args: Args) -> str | None:
     return revision_service.head_for_entity(
-        session, EntityKind.DOCUMENT, _document_id(session, project_id, args)
+        session,
+        EntityKind.DOCUMENT,
+        _document_id(session, project_id, args),
+        project_id=project_id,
     )
 
 
@@ -139,7 +147,9 @@ def _question_head(session: Session, project_id: int, args: Args) -> str | None:
     question = question_service.get(session, project_id, str(args["question_id"]))
     if question is None or question.row_id is None:
         raise CuratorOpError(f"вопроса {args['question_id']!r} больше нет")
-    return revision_service.head_for_entity(session, EntityKind.QUESTION, question.row_id)
+    return revision_service.head_for_entity(
+        session, EntityKind.QUESTION, question.row_id, project_id=project_id
+    )
 
 
 def _question_link_retarget_apply(

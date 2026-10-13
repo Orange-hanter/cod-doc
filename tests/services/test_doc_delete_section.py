@@ -31,6 +31,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
+from tests._scope import doc_project_id, only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -61,13 +62,6 @@ def _new_doc(session: Session, project_id: int, doc_key: str = "handbook") -> Do
         sensitivity=Sensitivity.INTERNAL,
         preamble="Intro paragraph.",
     )
-
-
-def _doc_project(session: Session, doc_id: int) -> int:
-    """Проект документа — скоуп для ``rev.revert`` (AFT-022)."""
-    doc = docs.get_doc_by_id(session, doc_id)
-    assert doc is not None
-    return doc.project_id
 
 
 def _seed_three(session: Session) -> int:
@@ -170,7 +164,9 @@ def test_delete_section_writes_a_revision_carrying_the_body(engine_with_schema) 
         docs.delete_section(session, document_id=doc_id, anchor="beta", author="agent:claude")
 
     with transactional(factory) as session:
-        revision_id = rev.head_for_entity(session, EntityKind.DOCUMENT, doc_id)
+        revision_id = rev.head_for_entity(
+            session, EntityKind.DOCUMENT, doc_id, project_id=only_project_id(session)
+        )
         assert revision_id is not None
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == revision_id)
@@ -192,12 +188,17 @@ def test_reverting_a_section_delete_is_refused_explicitly(engine_with_schema) ->
     with transactional(factory) as session:
         doc_id = _seed_three(session)
         docs.delete_section(session, document_id=doc_id, anchor="beta", author="human:dakh")
-        revision_id = rev.head_for_entity(session, EntityKind.DOCUMENT, doc_id)
+        revision_id = rev.head_for_entity(
+            session, EntityKind.DOCUMENT, doc_id, project_id=only_project_id(session)
+        )
         assert revision_id is not None
 
         with pytest.raises(rev.RevertNotSupportedError):
             rev.revert(
-                session, revision_id, author="human:dakh", project_id=_doc_project(session, doc_id)
+                session,
+                revision_id,
+                author="human:dakh",
+                project_id=doc_project_id(session, doc_id),
             )
 
 
@@ -221,7 +222,9 @@ def test_old_revision_of_a_deleted_section_never_reverts_onto_its_successor(
             author="human:dakh",
         )
         assert gamma.row_id is not None
-        gamma_patch = rev.head_for_entity(session, EntityKind.SECTION, gamma.row_id)
+        gamma_patch = rev.head_for_entity(
+            session, EntityKind.SECTION, gamma.row_id, project_id=only_project_id(session)
+        )
         assert gamma_patch is not None
 
         docs.delete_section(session, document_id=doc_id, anchor="gamma", author="human:dakh")
@@ -240,7 +243,10 @@ def test_old_revision_of_a_deleted_section_never_reverts_onto_its_successor(
 
         with pytest.raises(rev.RevertNotSupportedError):
             rev.revert(
-                session, gamma_patch, author="human:dakh", project_id=_doc_project(session, doc_id)
+                session,
+                gamma_patch,
+                author="human:dakh",
+                project_id=doc_project_id(session, doc_id),
             )
 
         bodies = {s.anchor: s.body for s in docs.get_sections(session, doc_id)}
@@ -362,7 +368,9 @@ def test_label_in_the_section_body_does_not_pass_for_the_header(engine_with_sche
             author="human:dakh",
         )
         assert gamma.row_id is not None
-        gamma_patch = rev.head_for_entity(session, EntityKind.SECTION, gamma.row_id)
+        gamma_patch = rev.head_for_entity(
+            session, EntityKind.SECTION, gamma.row_id, project_id=only_project_id(session)
+        )
         assert gamma_patch is not None
         docs.delete_section(session, document_id=doc_id, anchor="gamma", author="human:dakh")
         delta = docs.add_section(
@@ -379,5 +387,8 @@ def test_label_in_the_section_body_does_not_pass_for_the_header(engine_with_sche
 
         with pytest.raises(rev.RevertNotSupportedError):
             rev.revert(
-                session, gamma_patch, author="human:dakh", project_id=_doc_project(session, doc_id)
+                session,
+                gamma_patch,
+                author="human:dakh",
+                project_id=doc_project_id(session, doc_id),
             )

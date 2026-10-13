@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from cod_doc.domain.entities import Plan, PlanSection
 from cod_doc.infra.models import PlanModel, PlanSectionModel
 from cod_doc.infra.repositories.base import BaseRepository, require_int_project_id, require_key
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 class PlanRepository(BaseRepository[Plan, PlanModel]):
@@ -54,6 +57,16 @@ class PlanRepository(BaseRepository[Plan, PlanModel]):
         stmt = select(PlanModel).where(PlanModel.project_id == project_id, PlanModel.scope == scope)
         model = self.session.execute(stmt).scalar_one_or_none()
         return self._to_domain(model) if model else None
+
+    def section_count_in_scopes(self, scopes: Sequence[str], project_id: int) -> int:
+        """Сколько секций у планов проекта с одним из ``scopes`` — для «отпечатка» гонки."""
+        return int(
+            self.session.execute(
+                select(func.count(PlanSectionModel.row_id))
+                .join(PlanModel, PlanModel.row_id == PlanSectionModel.plan_id)
+                .where(PlanModel.scope.in_(list(scopes)), PlanModel.project_id == project_id)
+            ).scalar_one()
+        )
 
 
 class PlanSectionRepository(BaseRepository[PlanSection, PlanSectionModel]):

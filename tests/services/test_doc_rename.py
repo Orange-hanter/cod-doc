@@ -67,7 +67,7 @@ def test_rename_updates_doc_key_and_writes_revision(engine_with_schema) -> None:
         assert renamed.doc_key == "modules/M1-auth/spec"
         assert renamed.path == "modules/M1-auth/spec.md"
 
-        history = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)
+        history = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id, project_id=proj_id)
         assert len(history) == 2  # create + rename
         rename_rev = history[1]
         payload = json.loads(rename_rev.diff)
@@ -99,5 +99,5 @@ def test_rename_no_op_when_target_equals_current(engine_with_schema) -> None:  #
         )
         assert result.row_id == doc.row_id
 
-        history = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)
+        history = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id, project_id=proj_id)
         assert len(history) == 1  # only create

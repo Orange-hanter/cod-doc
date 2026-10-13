@@ -40,8 +40,19 @@ def get_by_scope(session: Session, scope: str, *, project_id: int) -> Plan | Non
     return PlanRepository(session).get_by_scope(scope, project_id=project_id)
 
 
-def list_sections(session: Session, plan_id: int) -> list[PlanSection]:
-    """Return the plan's sections in their stored order."""
+def section_count_in_scopes(session: Session, scopes: list[str], project_id: int) -> int:
+    """Сколько секций у планов проекта с одним из ``scopes`` (отпечаток гонки создания)."""
+    return PlanRepository(session).section_count_in_scopes(scopes, project_id)
+
+
+def list_sections(session: Session, plan_id: int, *, project_id: int) -> list[PlanSection]:
+    """Return the plan's sections in their stored order.
+
+    ``project_id`` обязателен (AFT-023): ``plan_id`` — row_id на всю hub-БД,
+    и секции плана чужого проекта иначе читались бы перебором id. План
+    другого проекта — `PlanNotFoundError`, как у остальных чтений по row_id.
+    """
+    _require_plan(session, plan_id, project_id)
     return PlanSectionRepository(session).list_for_plan(plan_id)
 
 
@@ -54,13 +65,14 @@ def get_section_by_letter(
     открывает (STO-023). Единая точка «буква → секция» для поверхностей —
     раньше каждая команда сравнивала буквы сама.
     """
-    if get_for_project(session, project_id, plan_id) is None:
+    if get_for_project(session, plan_id, project_id=project_id) is None:
         return None
     wanted = letter.strip().upper()
-    return next((s for s in list_sections(session, plan_id) if s.letter.upper() == wanted), None)
+    sections = list_sections(session, plan_id, project_id=project_id)
+    return next((s for s in sections if s.letter.upper() == wanted), None)
 
 
-def get_for_project(session: Session, project_id: int, plan_id: int) -> Plan | None:
+def get_for_project(session: Session, plan_id: int, *, project_id: int) -> Plan | None:
     """Return the plan iff it belongs to the project; None otherwise.
 
     Used by web handlers to reject cross-project plan access (404).
@@ -376,9 +388,9 @@ def ready_for_project(
     return ready_batch_for_project(session, project_id, limit=limit, local_only=local_only).tasks
 
 
-def recalc(session: Session, plan_id: int) -> PlanProgress:
+def recalc(session: Session, plan_id: int, *, project_id: int) -> PlanProgress:
     """Read derived progress from `section_totals` + `plan_totals` views."""
-    plan = _require_plan(session, plan_id)
+    plan = _require_plan(session, plan_id, project_id)
 
     sec_rows = session.execute(
         text(
@@ -439,6 +451,7 @@ def ready_batch(
     session: Session,
     plan_id: int,
     *,
+    project_id: int,
     limit: int | None = None,
     local_only: bool = True,
 ) -> ReadyBatch:
@@ -447,11 +460,13 @@ def ready_batch(
     Фильтр идёт после сортировки и до среза ``limit``; ``root_path`` берётся
     через ``plan.project_id``.
     """
-    plan = _require_plan(session, plan_id)
+    plan = _require_plan(session, plan_id, project_id)
 
+    # Задачи плана И проекта: чужая задача с plan_id нашего плана (легаси-
+    # данные) не готова к работе здесь — как и в audit/export/chain_layout.
     rows = session.execute(
-        text("SELECT row_id FROM ready_tasks WHERE plan_id = :pid"),
-        {"pid": plan_id},
+        text("SELECT row_id FROM ready_tasks WHERE plan_id = :pid AND project_id = :proj"),
+        {"pid": plan_id, "proj": project_id},
     ).all()
     if not rows:
         return ReadyBatch(tasks=[], skipped_foreign=0)
@@ -477,6 +492,7 @@ def ready(
     session: Session,
     plan_id: int,
     *,
+    project_id: int,
     limit: int | None = None,
     local_only: bool = True,
 ) -> list[Task]:
@@ -487,4 +503,6 @@ def ready(
     Default ``local_only=True`` отбрасывает задачи, чьи файлы целиком в
     чужом репо (RFC 27 F13).
     """
-    return ready_batch(session, plan_id, limit=limit, local_only=local_only).tasks
+    return ready_batch(
+        session, plan_id, project_id=project_id, limit=limit, local_only=local_only
+    ).tasks

@@ -27,6 +27,7 @@ from cod_doc.infra.models import (
     PlanSectionModel,
     ProjectModel,
     RevisionModel,
+    TaskModel,
 )
 from cod_doc.services import agent_service, checkout_service
 from cod_doc.services import plan_service as plans
@@ -211,7 +212,7 @@ def test_revert_of_a_revision_whose_task_is_elsewhere_says_why(
         tasks.update_affects_files(
             session, task_id=_TID, paths=["src/a.py"], author="human:test", project_id=a.project
         )
-        target = rev.list_for_entity(session, EntityKind.TASK, a.task_row)[-1]
+        target = rev.list_for_entity(session, EntityKind.TASK, a.task_row, project_id=a.project)[-1]
         model = session.execute(
             select(RevisionModel).where(RevisionModel.revision_id == target.revision_id)
         ).scalar_one()
@@ -278,6 +279,11 @@ def test_task_mutations_act_on_the_task_of_the_given_project(engine_with_schema)
         tasks.set_blocker(
             session, task_id=_TID, reason="waiting", author="human:t", project_id=a.project
         )
+        blocked_a = tasks.get(session, _TID, project_id=a.project)
+        still_b = tasks.get(session, _TID, project_id=b.project)
+        assert blocked_a is not None and still_b is not None
+        assert blocked_a.blocked_reason == "waiting", "блокер встал на задачу проекта A"
+        assert still_b.blocked_reason is None, "задача проекта B блокера не получила"
         tasks.clear_blocker(session, task_id=_TID, author="human:t", project_id=a.project)
         tasks.complete(session, task_id=_TID, author="human:t", project_id=b.project)
 
@@ -328,7 +334,9 @@ def test_agent_release_and_blocker_report_stay_in_the_project(engine_with_schema
         a = _project_with_task(session, "a")
         b = _project_with_task(session, "b")
         checkout_service.checkout(session, _TID, agent="agent:x", project_id=b.project)
-        before = len(rev.list_for_entity(session, EntityKind.TASK, b.task_row))
+        before = len(
+            rev.list_for_entity(session, EntityKind.TASK, b.task_row, project_id=b.project)
+        )
 
         out = agent_service.release(
             session, project_id=b.project, task_id=_TID, agent_id="agent:x", reason="handover"
@@ -336,7 +344,10 @@ def test_agent_release_and_blocker_report_stay_in_the_project(engine_with_schema
 
         assert out["ok"] is True
         assert tasks.get(session, _TID, project_id=b.project).status is TaskStatus.TODO  # type: ignore[union-attr]
-        assert len(rev.list_for_entity(session, EntityKind.TASK, b.task_row)) == before + 1
+        assert (
+            len(rev.list_for_entity(session, EntityKind.TASK, b.task_row, project_id=b.project))
+            == before + 1
+        )
 
         agent_service.report(
             session, project_id=a.project, task_id=_TID, kind="blocker", message="waiting"
@@ -346,24 +357,53 @@ def test_agent_release_and_blocker_report_stay_in_the_project(engine_with_schema
 
 
 def test_legacy_plan_creation_race_recovers(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """Параллельный запрос успел создать план между чтением и вставкой: уникальный
-    scope даёт IntegrityError, повторный разбор находит готовый план."""
+    """Гонка: между «отпечатком» до попытки и созданием план успевает появиться
+    (параллельный запрос), а наше чтение его ещё не видит. Создание отказывает
+    по уникальному scope, отпечаток изменился — повтор находит план и
+    дозаводит секцию, а не падает."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         a = _project_with_task(session, "a")
-        first = legacy_tasks.ensure_legacy_plan(session, a.project)
 
-        real_get = legacy_tasks.plan_service.get_by_scope
-        stale = {"left": 1}
+    real_footprint = legacy_tasks._legacy_footprint
+    real_get = legacy_tasks.plan_service.get_by_scope
+    race = {"inserted": False, "stale": False}
 
-        def stale_once(session: Session, scope: str, **kwargs: Any) -> Any:
-            if stale["left"]:
-                stale["left"] -= 1
-                return None  # «не видим» план, созданный параллельным запросом
-            return real_get(session, scope, **kwargs)
+    def footprint_then_concurrent_insert(session: Session, pid: int) -> Any:
+        snapshot = real_footprint(session, pid)
+        if not race["inserted"]:
+            race["inserted"] = True
+            # «Параллельный запрос»: план вставлен вне savepoint попытки.
+            plans.create_plan(
+                session,
+                project_id=pid,
+                scope=legacy_tasks.LEGACY_PLAN_SCOPE,
+                principle="from-legacy-api",
+                author="api-legacy",
+                reason=None,
+            )
+            race["stale"] = True
+        return snapshot
 
-        monkeypatch.setattr(legacy_tasks.plan_service, "get_by_scope", stale_once)
-        assert legacy_tasks.ensure_legacy_plan(session, a.project) == first
+    def stale_once(session: Session, scope: str, **kwargs: Any) -> Any:
+        if race["stale"] and scope == legacy_tasks.LEGACY_PLAN_SCOPE:
+            race["stale"] = False
+            return None  # наше чтение сделано до чужой вставки
+        return real_get(session, scope, **kwargs)
+
+    monkeypatch.setattr(legacy_tasks, "_legacy_footprint", footprint_then_concurrent_insert)
+    monkeypatch.setattr(legacy_tasks.plan_service, "get_by_scope", stale_once)
+    with transactional(factory) as session:
+        plan_id, section_id = legacy_tasks.ensure_legacy_plan(session, a.project)
+
+    assert race["inserted"] and not race["stale"], "гонка действительно случилась"
+    with transactional(factory) as session:
+        plan = session.get(PlanModel, plan_id)
+        assert plan is not None
+        assert plan.scope == legacy_tasks.LEGACY_PLAN_SCOPE
+        assert [s.row_id for s in plans.list_sections(session, plan_id, project_id=a.project)] == [
+            section_id
+        ]
 
 
 def test_mcp_task_get_reads_the_task_of_its_project(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -441,3 +481,215 @@ def test_checkout_warning_reads_the_lock_of_the_projects_task(engine_with_schema
         assert not checkout_service.has_active_checkout(
             session, _TID, "agent:x", project_id=a.project
         )
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [
+        ("task_complete", {}),
+        ("task_log_progress", {"message": "half way"}),
+        ("task_set_blocker", {"reason": "waiting"}),
+    ],
+)
+def test_mcp_task_mutations_touch_only_the_projects_task(  # type: ignore[no-untyped-def]
+    engine_with_schema, monkeypatch, tool: str, args: dict[str, Any]
+) -> None:
+    """AFT-023: каждая MCP-мутация задачи в hub-БД с одинаковым task_id меняет
+    задачу своего проекта, соседняя остаётся нетронутой."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        before_a = [
+            r.revision_id
+            for r in rev.list_for_entity(session, EntityKind.TASK, a.task_row, project_id=a.project)
+        ]
+
+    _tool(_task_tools(monkeypatch, factory), tool)(project="b", task_id=_TID, **args)
+
+    with transactional(factory) as session:
+        after_a = [
+            r.revision_id
+            for r in rev.list_for_entity(session, EntityKind.TASK, a.task_row, project_id=a.project)
+        ]
+        after_b = rev.list_for_entity(session, EntityKind.TASK, b.task_row, project_id=b.project)
+        assert after_a == before_a, "задача проекта A не тронута"
+        assert len(after_b) >= 2, "у задачи проекта B появилась ревизия"
+
+        # Не только история: состояние задачи A не тронуто, у B — изменилось.
+        task_a = tasks.get(session, _TID, project_id=a.project)
+        task_b = tasks.get(session, _TID, project_id=b.project)
+        assert task_a is not None and task_b is not None
+        assert task_a.status is TaskStatus.TODO
+        assert task_a.blocked_reason is None
+        if tool == "task_complete":
+            assert task_b.status is TaskStatus.DONE
+        elif tool == "task_set_blocker":
+            assert task_b.blocked_reason == "waiting"
+        else:  # task_log_progress — статус не трогает, пишет ревизию op=progress
+            assert task_b.status is TaskStatus.TODO
+            assert '"op": "progress"' in after_b[-1].diff
+
+
+def test_mcp_clear_blocker_and_release_stay_in_the_project(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.mcp.tools import checkout_tools
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        for p in (a, b):
+            tasks.set_blocker(
+                session, task_id=_TID, reason="waiting", author="human:t", project_id=p.project
+            )
+            checkout_service.checkout(session, _TID, agent="agent:x", project_id=p.project)
+
+    _tool(_task_tools(monkeypatch, factory), "task_clear_blocker")(project="b", task_id=_TID)
+
+    def _only_b(project: str) -> tuple[Any, None]:
+        assert project == "b", f"ожидался слаг 'b', пришёл {project!r}"
+        return factory, None
+
+    monkeypatch.setattr(checkout_tools, "session_factory", _only_b)
+    mcp = FastMCP("test")
+    checkout_tools.register(mcp)
+    _tool(mcp, "task_release")(project="b", task_id=_TID, agent="agent:x")
+
+    with transactional(factory) as session:
+        task_a = tasks.get(session, _TID, project_id=a.project)
+        task_b = tasks.get(session, _TID, project_id=b.project)
+        assert task_a is not None and task_b is not None
+        assert task_a.blocked_reason == "waiting"
+        assert task_b.blocked_reason is None
+        assert checkout_service.has_active_checkout(session, _TID, "agent:x", project_id=a.project)
+        assert not checkout_service.has_active_checkout(
+            session, _TID, "agent:x", project_id=b.project
+        )
+
+
+def test_reads_by_row_id_are_scoped_by_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-023: head ревизии, аудит/критический путь плана и heartbeat задачи
+    по row_id/task_id другого проекта не отдают ничего."""
+    from cod_doc.services import heartbeat_service
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+
+        assert rev.head_for_entity(session, EntityKind.TASK, a.task_row, project_id=a.project)
+        assert (
+            rev.head_for_entity(session, EntityKind.TASK, a.task_row, project_id=b.project) is None
+        )
+        assert rev.heads_for_entities(
+            session, EntityKind.TASK, [a.task_row], project_id=b.project
+        ) == {a.task_row: None}
+
+        plans.audit(session, a.plan, project_id=a.project)
+        with pytest.raises(plans.PlanNotFoundError):
+            plans.audit(session, a.plan, project_id=b.project)
+        with pytest.raises(plans.PlanNotFoundError):
+            plans.critical_path(session, a.plan, project_id=b.project)
+
+        own_b = heartbeat_service.heartbeat_context(session, task_id=_TID, project_id=b.project)
+        own_a = heartbeat_service.heartbeat_context(session, task_id=_TID, project_id=a.project)
+        assert own_b["task"]["title"] == "Task of b"
+        assert own_a["task"]["title"] == "Task of a"
+
+
+def test_mcp_move_to_plan_does_not_move_another_projects_task(
+    engine_with_schema, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """``task_move_to_plan(project=B)`` не трогает одноимённую задачу проекта A:
+    в скоупе B переносится только задача B."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        now = datetime.now(UTC)
+        target = PlanModel(project_id=b.project, scope="b-target", created=now, last_updated=now)
+        session.add(target)
+        session.flush()
+        tsec = PlanSectionModel(
+            plan_id=target.row_id, letter="A", title="T", slug="A-T", position=0
+        )
+        session.add(tsec)
+        session.flush()
+        target_section = tsec.row_id
+
+    move = _tool(_task_tools(monkeypatch, factory), "task_move_to_plan")
+    out = move(project="b", plan_scope="b-target", section_letter="A", task_ids=[_TID])
+
+    assert [t["task_id"] for t in out["moved"]] == [_TID]
+    with transactional(factory) as session:
+        task_a = tasks.get(session, _TID, project_id=a.project)
+        task_b = tasks.get(session, _TID, project_id=b.project)
+        assert task_a is not None and task_b is not None
+        assert task_a.section_id == a.section, "задача проекта A осталась на месте"
+        assert task_b.section_id == target_section
+
+
+def test_ready_skips_a_foreign_task_left_in_the_plan(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Задача чужого проекта с ``plan_id`` нашего плана (легаси-данные) в ready
+    не попадает — так же, как её не видят audit/export/chain_layout."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        leaked = session.get(TaskModel, b.task_row)
+        assert leaked is not None
+        leaked.plan_id, leaked.section_id = a.plan, a.section
+        session.flush()
+
+        ready = plans.ready(session, a.plan, project_id=a.project, local_only=False)
+        assert [t.row_id for t in ready] == [a.task_row]
+
+
+#: Всё, что берёт план по row_id: чтения и freeze_projection (пишет снимок,
+#: но план находит тем же _require_plan).
+_PLAN_BY_ROW_ID: dict[str, Any] = {
+    "audit": lambda s, plan, pid: plans.audit(s, plan, project_id=pid),
+    "critical_path": lambda s, plan, pid: plans.critical_path(s, plan, project_id=pid),
+    "chain_layout": lambda s, plan, pid: plans.chain_layout(s, plan, project_id=pid),
+    "list_sections": lambda s, plan, pid: plans.list_sections(s, plan, project_id=pid),
+    "recalc": lambda s, plan, pid: plans.recalc(s, plan, project_id=pid),
+    "ready": lambda s, plan, pid: plans.ready(s, plan, project_id=pid),
+    "ready_batch": lambda s, plan, pid: plans.ready_batch(s, plan, project_id=pid),
+    "export": lambda s, plan, pid: plans.export(s, plan, project_id=pid),
+    "freeze_projection": lambda s, plan, pid: plans.freeze_projection(
+        s, plan, project_id=pid, author="human:t"
+    ),
+}
+
+
+@pytest.mark.parametrize("read", sorted(_PLAN_BY_ROW_ID))
+def test_plan_ops_by_row_id_reject_a_plan_of_another_project(engine_with_schema, read) -> None:  # type: ignore[no-untyped-def]
+    """Каждая операция над планом по row_id сверяет владельца: план проекта A из
+    проекта B — ``PlanNotFoundError``, а из своего проекта читается."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        call = _PLAN_BY_ROW_ID[read]
+
+        call(session, a.plan, a.project)
+        with pytest.raises(plans.PlanNotFoundError):
+            call(session, a.plan, b.project)
+
+
+def test_critical_path_never_returns_a_foreign_task(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Задача чужого проекта с plan_id нашего плана (легаси-данные) в
+    критический путь не попадает. Ветка «все задачи независимы» выбирала
+    исток по алфавиту среди всех задач плана — чужая с меньшим ID побеждала."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        leaked = session.get(TaskModel, b.task_row)
+        assert leaked is not None
+        leaked.plan_id, leaked.section_id = a.plan, a.section
+        leaked.task_id = "AAA-001"  # раньше _TID по алфавиту
+        session.flush()
+
+        cp = plans.critical_path(session, a.plan, project_id=a.project)
+        assert cp.task_ids == [_TID]

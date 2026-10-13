@@ -151,6 +151,15 @@ def test_build_doc_drift_without_doc_ref_raises(engine_with_schema) -> None:  # 
         build_wake_context(session, reason=WakeReason.DOC_DRIFT)
 
 
+def test_build_task_wake_requires_project_id(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-023: в hub-БД task_id не уникален — без проекта задачу не ищем."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed_plan(session)
+        with pytest.raises(ValueError, match="requires project_id"):
+            build_wake_context(session, reason=WakeReason.TASK_ASSIGNED, task_id="NOPE-001")
+
+
 def test_build_unknown_task_id_propagates(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session, pytest.raises(task_service.TaskNotFoundError):

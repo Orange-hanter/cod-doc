@@ -68,14 +68,17 @@ def _find_cycles(adjacency: dict[int, list[int]]) -> list[list[int]]:
     return result
 
 
-def audit(session: Session, plan_id: int) -> PlanAuditReport:
-    """Integrity checks for the plan: cycle detection + done-drift."""
-    _require_plan(session, plan_id)
+def audit(session: Session, plan_id: int, *, project_id: int) -> PlanAuditReport:
+    """Integrity checks for the plan: cycle detection + done-drift.
+
+    ``project_id`` обязателен (AFT-023): ``plan_id`` — row_id на всю hub-БД.
+    """
+    _require_plan(session, plan_id, project_id)
 
     # Load tasks (row_id -> task_id, status) for this plan.
     task_rows = session.execute(
         select(TaskModel.row_id, TaskModel.task_id, TaskModel.status).where(
-            TaskModel.plan_id == plan_id
+            TaskModel.plan_id == plan_id, TaskModel.project_id == project_id
         )
     ).all()
     row_id_to_task: dict[int, tuple[str, str]] = {r[0]: (r[1], r[2]) for r in task_rows}
@@ -114,7 +117,7 @@ def audit(session: Session, plan_id: int) -> PlanAuditReport:
                 done_with_unfinished.append(src_task_id)
                 break
 
-    cp_length = critical_path(session, plan_id).length
+    cp_length = critical_path(session, plan_id, project_id=project_id).length
 
     return PlanAuditReport(
         plan_id=plan_id,

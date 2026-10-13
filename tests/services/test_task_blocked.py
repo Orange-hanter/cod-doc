@@ -100,7 +100,7 @@ def test_set_blocker_stores_reason_and_writes_revision(engine_with_schema) -> No
         assert after is not None
         assert after.blocked_reason == "waiting on stakeholder X"
 
-        history = rev.list_for_entity(session, EntityKind.TASK, before.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, before.row_id, project_id=p)
         last = history[-1]
         assert "set_blocker" in last.diff
         assert "waiting on stakeholder X" in last.diff
@@ -151,14 +151,14 @@ def test_clear_blocker_noop_when_already_clear(engine_with_schema) -> None:  # t
         _make(session, p, pl, s, "PR-001")
         before = task_service.get(session, "PR-001", project_id=p)
         assert before is not None and before.row_id is not None
-        baseline = len(rev.list_for_entity(session, EntityKind.TASK, before.row_id))
+        baseline = len(rev.list_for_entity(session, EntityKind.TASK, before.row_id, project_id=p))
 
         # No-op clear — should not write a revision
         task_service.clear_blocker(
             session, project_id=sole_project_id(session), task_id="PR-001", author="human:test"
         )
 
-        after = len(rev.list_for_entity(session, EntityKind.TASK, before.row_id))
+        after = len(rev.list_for_entity(session, EntityKind.TASK, before.row_id, project_id=p))
         assert after == baseline
 
 

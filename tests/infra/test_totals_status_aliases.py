@@ -26,6 +26,7 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services.plan_service import reads as plan_reads
 from tests._alembic import run_alembic
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -133,7 +134,7 @@ def test_plan_progress_sees_canonical_in_progress(engine_with_schema) -> None:  
         plan_id, _ = _seed(session, ["in_progress", "todo"])
 
     with transactional(factory) as session:
-        progress = plan_reads.recalc(session, plan_id)
+        progress = plan_reads.recalc(session, plan_id, project_id=only_project_id(session))
 
     assert progress.in_progress == 1
     assert progress.sections[0].in_progress == 1

@@ -330,7 +330,7 @@ def test_get_section_by_letter_is_case_insensitive_and_project_scoped(
     with transactional(factory) as session:
         plan = plan_service.get_by_scope(session, SCOPE, project_id=pids[slug])
         assert plan is not None and plan.row_id is not None
-        (section,) = plan_service.list_sections(session, plan.row_id)
+        (section,) = plan_service.list_sections(session, plan.row_id, project_id=pids[slug])
         for letter in (section.letter.lower(), f" {section.letter.upper()} "):
             found = plan_service.get_section_by_letter(
                 session, plan.row_id, letter, project_id=pids[slug]

@@ -24,6 +24,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 import yaml
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.core.import_limits import DEFAULT_MAX_FILES as _DEFAULT_MAX_FILES
 from cod_doc.domain.entities import (
@@ -315,7 +316,36 @@ def _ensure_import_plan(session: Session, project_id: int) -> tuple[int, int]:
     """Return (plan_id, section_id) for the synthetic 'imported-legacy' plan.
 
     Created on first call; reused on subsequent imports for the same project.
+
+    Два параллельных импорта одного проекта могут оба не найти план и оба его
+    вставить — второй упрётся в уникальный ``(project_id, scope)`` (0047).
+    Создание идёт в savepoint, и разбор повторяется уже с планом первого, как
+    у legacy REST-плана.
     """
+    for attempt in range(2):
+        before = _import_footprint(session, project_id)
+        try:
+            with session.begin_nested():
+                return _ensure_import_plan_once(session, project_id)
+        except IntegrityError:
+            # Повтор — только если за время попытки появилось то, что мы
+            # создавали (план или его секция); иной IntegrityError
+            # пробрасывается как есть.
+            if attempt or _import_footprint(session, project_id) == before:
+                raise
+    raise AssertionError("unreachable")
+
+
+def _import_footprint(session: Session, project_id: int) -> tuple[bool, int]:
+    """Что из import-плана проекта уже есть в БД: план? сколько у него секций."""
+    repo = PlanRepository(session)
+    return (
+        repo.get_by_scope(_IMPORT_PLAN_SCOPE, project_id=project_id) is not None,
+        repo.section_count_in_scopes([_IMPORT_PLAN_SCOPE], project_id),
+    )
+
+
+def _ensure_import_plan_once(session: Session, project_id: int) -> tuple[int, int]:
     plan_repo = PlanRepository(session)
     plan = plan_repo.get_by_scope(_IMPORT_PLAN_SCOPE, project_id=project_id)
     if plan is not None and plan.row_id is not None:

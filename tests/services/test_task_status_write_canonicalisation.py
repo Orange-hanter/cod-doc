@@ -50,6 +50,7 @@ from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, Task
 from cod_doc.services import checkout_service as checkout
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
+from tests._scope import only_project_id
 from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
@@ -153,7 +154,9 @@ def test_create_revision_records_the_status_it_actually_wrote(engine_with_schema
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         row_id = _make_task(session, "CA-002")
-        revisions = rev.list_for_entity(session, EntityKind.TASK, row_id)
+        revisions = rev.list_for_entity(
+            session, EntityKind.TASK, row_id, project_id=only_project_id(session)
+        )
         create_diffs = [
             json.loads(r.diff) for r in revisions if json.loads(r.diff).get("op") == "create"
         ]
@@ -198,7 +201,11 @@ def test_update_status_to_the_same_bucket_is_not_a_transition(engine_with_schema
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         row_id = _make_task(session, "CA-004")
-        before = len(rev.list_for_entity(session, EntityKind.TASK, row_id))
+        before = len(
+            rev.list_for_entity(
+                session, EntityKind.TASK, row_id, project_id=only_project_id(session)
+            )
+        )
         tasks.update_status(
             session,
             task_id="CA-004",
@@ -207,7 +214,14 @@ def test_update_status_to_the_same_bucket_is_not_a_transition(engine_with_schema
             project_id=sole_project_id(session),
         )
         assert _raw_status(session, "CA-004") == TaskStatus.TODO.value
-        assert len(rev.list_for_entity(session, EntityKind.TASK, row_id)) == before
+        assert (
+            len(
+                rev.list_for_entity(
+                    session, EntityKind.TASK, row_id, project_id=only_project_id(session)
+                )
+            )
+            == before
+        )
 
 
 def test_checkout_of_a_legacy_row_lands_canonical(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -235,7 +249,9 @@ def test_complete_from_a_legacy_row_leaves_no_legacy_behind(engine_with_schema) 
         assert _raw_status(session, "CA-006") == TaskStatus.DONE.value
         status_diffs = [
             json.loads(r.diff)
-            for r in rev.list_for_entity(session, EntityKind.TASK, row_id)
+            for r in rev.list_for_entity(
+                session, EntityKind.TASK, row_id, project_id=only_project_id(session)
+            )
             if json.loads(r.diff).get("op") == "status"
         ]
         assert status_diffs, "авточекаут обязан оставить ревизию перехода"

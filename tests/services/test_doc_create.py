@@ -73,7 +73,7 @@ def test_create_writes_initial_document_revision(engine_with_schema) -> None:  #
     with transactional(factory) as session:
         proj_id = _add_project(session)
         doc = _new_doc(session, proj_id)
-        history = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)
+        history = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id, project_id=proj_id)
 
         assert len(history) == 1
         assert history[0].parent_revision_id is None

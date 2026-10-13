@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 
 def _seed_task(session: Session, task_id: str = "CO-001", status: str = "pending") -> int:
+    """Проект «co» с задачей ``task_id`` в статусе ``status``; возвращает ``project_id``."""
     now = datetime.now(UTC)
     proj = ProjectModel(slug="co", title="CO", root_path="/tmp/co", config_json={})
     proj.created = now
@@ -55,10 +56,11 @@ def _seed_task(session: Session, task_id: str = "CO-001", status: str = "pending
     # Статус выставляется ВСЕГДА и мимо сервисов: после ADO-156 `create()`
     # пишет канонический `todo`, и легаси-строку, какая лежит в ещё не
     # мигрированной БД, иначе не получить.
+    assert t.row_id is not None
     m = session.query(TaskModel).filter(TaskModel.task_id == task_id).one()
     m.status = status
     session.flush()
-    return t.row_id
+    return int(proj.row_id)
 
 
 def test_checkout_of_a_legacy_pending_row_lands_canonical(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -123,12 +125,12 @@ def test_checkout_conflict_different_agent_raises(engine_with_schema) -> None:  
 def test_checkout_status_mismatch_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed_task(session, status="done")
+        pid = _seed_task(session, status="done")
         with pytest.raises(CheckoutStatusError, match="done"):
             checkout.checkout(
                 session,
                 "CO-001",
-                project_id=sole_project_id(session),
+                project_id=pid,
                 agent="A",
                 expected_statuses=["todo", "pending"],
             )

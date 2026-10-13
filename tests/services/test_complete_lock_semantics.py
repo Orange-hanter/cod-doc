@@ -22,10 +22,12 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
 
 
-def _checked_out_by(factory: sessionmaker[Session], task_id: str) -> str | None:
+def _checked_out_by(factory: sessionmaker[Session], task_id: str, project_id: int) -> str | None:
     with transactional(factory) as s:
         return s.execute(
-            select(TaskModel.checked_out_by).where(TaskModel.task_id == task_id)
+            select(TaskModel.checked_out_by).where(
+                TaskModel.task_id == task_id, TaskModel.project_id == project_id
+            )
         ).scalar_one()
 
 
@@ -38,7 +40,8 @@ def test_complete_keeps_lock_until_release(engine_with_schema) -> None:  # type:
         proj.updated = now
         s.add(proj)
         s.flush()
-        plan = PlanModel(project_id=proj.row_id, scope="lck-plan", created=now, last_updated=now)
+        pid = proj.row_id
+        plan = PlanModel(project_id=pid, scope="lck-plan", created=now, last_updated=now)
         s.add(plan)
         s.flush()
         sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="S", slug="A-S", position=0)
@@ -46,7 +49,7 @@ def test_complete_keeps_lock_until_release(engine_with_schema) -> None:  # type:
         s.flush()
         task_service.create(
             s,
-            project_id=proj.row_id,
+            project_id=pid,
             plan_id=plan.row_id,
             section_id=sec.row_id,
             task_id="LCK-001",
@@ -69,11 +72,11 @@ def test_complete_keeps_lock_until_release(engine_with_schema) -> None:  # type:
             project_id=sole_project_id(s),
         )
 
-    assert _checked_out_by(factory, "LCK-001") == "claude-x"
+    assert _checked_out_by(factory, "LCK-001", pid) == "claude-x"
 
     with transactional(factory) as s:
         checkout_service.release(
             s, task_id="LCK-001", agent="claude-x", project_id=sole_project_id(s)
         )
 
-    assert _checked_out_by(factory, "LCK-001") is None
+    assert _checked_out_by(factory, "LCK-001", pid) is None

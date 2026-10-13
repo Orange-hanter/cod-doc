@@ -172,7 +172,10 @@ def promote_finding_by_ref(
         session, plan.row_id, section_letter, project_id=project_id
     )
     if section is None or section.row_id is None:
-        letters = ", ".join(s.letter for s in plan_service.list_sections(session, plan.row_id))
+        letters = ", ".join(
+            s.letter
+            for s in plan_service.list_sections(session, plan.row_id, project_id=project_id)
+        )
         raise ValueError(f"Section '{section_letter}' not found. Available: {letters}")
 
     finding = get_finding(session, project_id, finding_uid)

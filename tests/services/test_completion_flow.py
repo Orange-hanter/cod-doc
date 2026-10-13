@@ -88,6 +88,7 @@ def test_revert_task_status_change(engine_with_schema) -> None:  # type: ignore[
             session,
             EntityKind.TASK,
             tasks.get(session, "CF-001", project_id=p).row_id,  # type: ignore[union-attr]
+            project_id=p,
         )
         status_rev = history[-1]
         assert status_rev.diff.startswith('{"op": "status"')
@@ -119,6 +120,7 @@ def test_revert_task_complete(engine_with_schema) -> None:  # type: ignore[no-un
             session,
             EntityKind.TASK,
             tasks.get(session, "CF-001", project_id=p).row_id,  # type: ignore[union-attr]
+            project_id=p,
         )
         complete_rev = history[-1]
         rev.revert(
@@ -143,6 +145,7 @@ def test_revert_task_unsupported_op_raises(engine_with_schema) -> None:  # type:
             session,
             EntityKind.TASK,
             tasks.get(session, "CF-001", project_id=p).row_id,  # type: ignore[union-attr]
+            project_id=p,
         )
         create_rev = history[0]
         with pytest.raises(rev.RevertNotSupportedError):
@@ -192,7 +195,7 @@ def test_revert_section_patch_restores_old_body(engine_with_schema) -> None:  # 
             new_body="Updated body.\n",
             author="human:test",
         )
-        history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
+        history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p)
         patch_rev = history[-1]
 
         rev.revert(
@@ -234,14 +237,14 @@ def test_revert_section_writes_new_revision(engine_with_schema) -> None:  # type
             new_body="v2\n",
             author="human:test",
         )
-        n_before = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id))
+        n_before = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p))
 
-        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[-1]
+        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p)[-1]
         rev.revert(
             session, patch_rev.revision_id, author="human:test", project_id=patch_rev.project_id
         )
 
-        n_after = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id))
+        n_after = len(rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p))
         assert n_after == n_before + 1  # the revert is a new revision
 
 
@@ -269,7 +272,7 @@ def test_revert_document_rename_restores_key(engine_with_schema) -> None:  # typ
             new_doc_key="renamed-key",
             author="human:test",
         )
-        rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)[-1]
+        rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id, project_id=p)[-1]
 
         rev.revert(
             session, rename_rev.revision_id, author="human:test", project_id=rename_rev.project_id
@@ -335,7 +338,7 @@ def test_section_label_with_plus_in_doc_key_is_read_and_reverted(engine_with_sch
             new_body="Updated body.\n",
             author="human:test",
         )
-        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[-1]
+        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p)[-1]
         # Метка несёт doc_key с «+» — именно её прежний [^+]* не дочитывал.
         assert patch_rev.diff.startswith("--- section:c++-guide#intro+++ section:c++-guide#intro@@")
 
@@ -399,7 +402,7 @@ def test_revert_section_of_another_project_raises(engine_with_schema) -> None:  
             new_body="Updated body.\n",
             author="human:test",
         )
-        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)[-1]
+        patch_rev = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=p)[-1]
         _move_revision_to(session, patch_rev.revision_id, other)
 
         with pytest.raises(
@@ -426,7 +429,7 @@ def test_revert_document_of_another_project_raises(engine_with_schema) -> None: 
             author="human:test",
         )
         docs.rename(session, document_id=doc.row_id, new_doc_key="renamed-key", author="human:test")
-        rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id)[-1]
+        rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id, project_id=p)[-1]
         _move_revision_to(session, rename_rev.revision_id, other)
 
         with pytest.raises(

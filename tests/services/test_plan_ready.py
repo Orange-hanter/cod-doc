@@ -94,11 +94,11 @@ def test_ready_returns_pending_tasks_with_done_deps(engine_with_schema) -> None:
         session.add(DependencyModel(from_task_id=b.row_id, to_task_id=a.row_id, kind="blocks"))
         session.flush()
 
-        ready = plans.ready(session, plan_id)
+        ready = plans.ready(session, plan_id, project_id=p)
         assert {t.task_id for t in ready} == {"PLN-001"}
 
         tasks.complete(session, project_id=sole_project_id(session), task_id="PLN-001", author="x")
-        ready = plans.ready(session, plan_id)
+        ready = plans.ready(session, plan_id, project_id=p)
         assert {t.task_id for t in ready} == {"PLN-002"}
 
 
@@ -119,7 +119,7 @@ def test_ready_excludes_in_progress_and_done(engine_with_schema) -> None:  # typ
         tasks.complete(session, project_id=sole_project_id(session), task_id="PLN-002", author="x")
         _seed_task(session, proj_id=p, plan_id=plan_id, section_id=secs["A"], task_id="PLN-003")
 
-        ready = plans.ready(session, plan_id)
+        ready = plans.ready(session, plan_id, project_id=p)
         assert {t.task_id for t in ready} == {"PLN-003"}
 
 
@@ -142,7 +142,7 @@ def test_ready_scoped_to_plan(engine_with_schema) -> None:  # type: ignore[no-un
             session, proj_id=p, plan_id=plan2.row_id, section_id=sec2.row_id, task_id="QQ-001"
         )
 
-        ready = plans.ready(session, plan_id)
+        ready = plans.ready(session, plan_id, project_id=p)
         assert {t.task_id for t in ready} == {"PLN-001"}
 
 
@@ -177,7 +177,7 @@ def test_ready_priority_order(engine_with_schema) -> None:  # type: ignore[no-un
             priority=Priority.MEDIUM,
         )
 
-        ready = plans.ready(session, plan_id)
+        ready = plans.ready(session, plan_id, project_id=p)
         assert [t.task_id for t in ready] == ["PLN-002", "PLN-003", "PLN-001"]
 
 
@@ -194,5 +194,5 @@ def test_ready_respects_limit(engine_with_schema) -> None:  # type: ignore[no-un
                 section_id=secs["A"],
                 task_id=f"PLN-00{n}",
             )
-        ready = plans.ready(session, plan_id, limit=3)
+        ready = plans.ready(session, plan_id, limit=3, project_id=p)
         assert len(ready) == 3

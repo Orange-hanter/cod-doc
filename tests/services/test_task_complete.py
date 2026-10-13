@@ -85,7 +85,7 @@ def test_complete_task_with_no_deps(engine_with_schema) -> None:  # type: ignore
         assert done.completed_at is not None
         assert done.completed_commit == "abc1234"
 
-        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        history = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         diff = json.loads(history[-1].diff)
         assert diff["op"] == "complete"
         assert diff["commit_sha"] == "abc1234"
@@ -147,7 +147,7 @@ def test_complete_conflict_via_expected_parent(engine_with_schema) -> None:  # t
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
-        first_history = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        first_history = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         original_head = first_history[0].revision_id
 
         tasks.update_status(
@@ -199,9 +199,11 @@ def test_list_for_plan_returns_all_tasks(engine_with_schema) -> None:  # type: i
 # ── ADO-038: complete() идёт через статус-машину ─────────────────────────────
 
 
-def _force_status(session: Session, task_id: str, status: TaskStatus) -> None:
+def _force_status(session: Session, task_id: str, status: TaskStatus, project_id: int) -> None:
     """Прямая установка статуса в обход сервиса (подготовка состояния теста)."""
-    model = session.execute(select(TaskModel).where(TaskModel.task_id == task_id)).scalar_one()
+    model = session.execute(
+        select(TaskModel).where(TaskModel.task_id == task_id, TaskModel.project_id == project_id)
+    ).scalar_one()
     model.status = status.value
     session.flush()
 
@@ -215,7 +217,7 @@ def test_complete_rejects_terminal_sources(engine_with_schema, from_status) -> N
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
-        _force_status(session, task.task_id, from_status)
+        _force_status(session, task.task_id, from_status, p)
 
         with pytest.raises(StatusTransitionError):
             tasks.complete(
@@ -236,7 +238,7 @@ def test_complete_allows_legal_sources(engine_with_schema, from_status) -> None:
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
-        _force_status(session, task.task_id, from_status)
+        _force_status(session, task.task_id, from_status, p)
 
         tasks.complete(
             session, project_id=sole_project_id(session), task_id=task.task_id, author="x"
@@ -253,7 +255,7 @@ def test_complete_from_todo_goes_via_checkout_leg(engine_with_schema, from_statu
     with transactional(factory) as session:
         p, pl, s = _seed_plan(session)
         task = _task(session, p, pl, s)
-        _force_status(session, task.task_id, from_status)
+        _force_status(session, task.task_id, from_status, p)
 
         tasks.complete(
             session, project_id=sole_project_id(session), task_id=task.task_id, author="x"
@@ -262,7 +264,7 @@ def test_complete_from_todo_goes_via_checkout_leg(engine_with_schema, from_statu
         done = tasks.get(session, task.task_id, project_id=p)
         assert done is not None
         assert done.status is TaskStatus.DONE
-        history = rev.list_for_entity(session, EntityKind.TASK, done.row_id)  # type: ignore[arg-type]
+        history = rev.list_for_entity(session, EntityKind.TASK, done.row_id, project_id=p)  # type: ignore[arg-type]
         ops = [json.loads(r.diff)["op"] for r in history]
         # create → status(todo→in-progress, checkout-нога) → complete
         assert ops == ["create", "status", "complete"]

@@ -28,7 +28,6 @@ from cod_doc.infra.models import DocumentModel, RevisionModel, SectionModel, Tas
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from sqlalchemy import ColumnElement
     from sqlalchemy.orm import InstrumentedAttribute, Session
 
 
@@ -65,17 +64,21 @@ def _to_domain(model: RevisionModel) -> Revision:
     )
 
 
-def _current_head(session: Session, entity_kind: EntityKind, entity_id: int) -> str | None:
-    """Latest `revision_id` for the entity, or None if no revisions yet."""
-    stmt = (
-        select(RevisionModel.revision_id)
-        .where(
-            RevisionModel.entity_kind == entity_kind.value,
-            RevisionModel.entity_id == entity_id,
-        )
-        .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
-        .limit(1)
+def _current_head(
+    session: Session, entity_kind: EntityKind, entity_id: int, project_id: int
+) -> str | None:
+    """Latest `revision_id` for the entity, or None if no revisions yet.
+
+    Единственный запрос «head сущности»: и для ``write`` (родитель новой
+    ревизии, проект — у пишущего), и для публичного `head_for_entity`,
+    который сужает его проектом вызывающего (AFT-023).
+    """
+    stmt = select(RevisionModel.revision_id).where(
+        RevisionModel.entity_kind == entity_kind.value,
+        RevisionModel.entity_id == entity_id,
+        RevisionModel.project_id == project_id,
     )
+    stmt = stmt.order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc()).limit(1)
     return session.execute(stmt).scalar_one_or_none()
 
 
@@ -98,7 +101,7 @@ def write(
     "I expect to be the first writer"), it must equal the current head, or
     `RevisionConflictError` is raised — this is the optimistic concurrency hook.
     """
-    head = _current_head(session, entity_kind, entity_id)
+    head = _current_head(session, entity_kind, entity_id, project_id)
     if expected_parent_revision_id is not _NO_PARENT_CHECK and head != expected_parent_revision_id:
         raise RevisionConflictError(
             f"head moved: expected parent={expected_parent_revision_id!r}, "
@@ -182,25 +185,18 @@ def get(session: Session, revision_id: str, *, project_id: int) -> Revision | No
     return _to_domain(model) if model is not None else None
 
 
-def _project_scope(project_id: int | None) -> tuple[ColumnElement[bool], ...]:
-    """Условие ``project_id`` для выборки ревизий; пусто, когда скоупа нет."""
-    return () if project_id is None else (RevisionModel.project_id == project_id,)
-
-
 def list_for_entity(
     session: Session,
     entity_kind: EntityKind,
     entity_id: int,
     *,
     limit: int | None = None,
-    project_id: int | None = None,
+    project_id: int,
 ) -> list[Revision]:
     """History for the entity, oldest → newest.
 
-    ``project_id`` — скоуп поверхностей (MCP, CLI, web): ``entity_id`` — row_id,
-    общий на всю hub-БД, и без фильтра перебором id читалась бы история
-    чужого проекта. Поверхности и так резолвят сущность в скоупе проекта;
-    фильтр — второй рубеж. Сделать его обязательным — AFT-023.
+    ``project_id`` обязателен (AFT-023): ``entity_id`` — row_id, общий на всю
+    hub-БД, и без фильтра перебором id читалась бы история чужого проекта.
 
     With `limit=None` (default) the full history is returned, exactly as
     before. With `limit` set, SQL fetches only the last `limit` revisions
@@ -214,7 +210,7 @@ def list_for_entity(
             .where(
                 RevisionModel.entity_kind == entity_kind.value,
                 RevisionModel.entity_id == entity_id,
-                *_project_scope(project_id),
+                RevisionModel.project_id == project_id,
             )
             .order_by(RevisionModel.at.asc(), RevisionModel.row_id.asc())
         )
@@ -225,7 +221,7 @@ def list_for_entity(
         .where(
             RevisionModel.entity_kind == entity_kind.value,
             RevisionModel.entity_id == entity_id,
-            *_project_scope(project_id),
+            RevisionModel.project_id == project_id,
         )
         .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
         .limit(limit)
@@ -239,6 +235,8 @@ def head_for_entity(
     session: Session,
     entity_kind: EntityKind,
     entity_id: int,
+    *,
+    project_id: int,
 ) -> str | None:
     """Return the current head revision_id for an entity, or None.
 
@@ -246,14 +244,19 @@ def head_for_entity(
     embeds this as a hidden `expected_parent_revision_id`, the handler
     passes it to `patch_section` (or similar), and a mid-flight write
     raises `RevisionConflictError`.
+
+    ``project_id`` обязателен (AFT-023): ``entity_id`` — row_id на всю hub-БД,
+    и head чужого проекта иначе выдавался бы как токен конкурентности.
     """
-    return _current_head(session, entity_kind, entity_id)
+    return _current_head(session, entity_kind, entity_id, project_id)
 
 
 def heads_for_entities(
     session: Session,
     entity_kind: EntityKind,
     entity_ids: Sequence[int],
+    *,
+    project_id: int,
 ) -> dict[int, str | None]:
     """Batch-вариант :func:`head_for_entity`: head каждой сущности одним SELECT.
 
@@ -269,6 +272,7 @@ def heads_for_entities(
         .where(
             RevisionModel.entity_kind == entity_kind.value,
             RevisionModel.entity_id.in_(heads),
+            RevisionModel.project_id == project_id,
         )
         .order_by(RevisionModel.at.desc(), RevisionModel.row_id.desc())
     )

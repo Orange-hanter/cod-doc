@@ -388,7 +388,10 @@ def task_create(
             session, plan.row_id, section_letter, project_id=project_id
         )
         if section is None or section.row_id is None:
-            letters = ", ".join(s.letter for s in plan_service.list_sections(session, plan.row_id))
+            letters = ", ".join(
+                s.letter
+                for s in plan_service.list_sections(session, plan.row_id, project_id=project_id)
+            )
             console.print(f"[red]Section '{section_letter}' not found. Available: {letters}[/red]")
             sys.exit(1)
         plan_id = plan.row_id

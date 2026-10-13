@@ -98,9 +98,9 @@ def test_record_is_idempotent_on_recomplete(engine_with_schema) -> None:  # type
 def test_summary_empty(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid, _plid, _sid = _seed(session)
     with transactional(factory) as session:
-        s = metrics_service.summary(session, project_id=1)
+        s = metrics_service.summary(session, project_id=pid)
     assert s["completed"] == 0
     assert s["duration_hours"]["p50"] is None
 
@@ -116,7 +116,7 @@ def test_summary_returns_percentiles_by_type(engine_with_schema) -> None:  # typ
         for tid in ("MET-010", "MET-011", "MET-012"):
             task_service.complete(session, project_id=pid, task_id=tid, author="a")
     with transactional(factory) as session:
-        s = metrics_service.summary(session, project_id=1)
+        s = metrics_service.summary(session, project_id=pid)
     assert s["completed"] == 3
     assert "feature" in s["by_type"]
     assert "bug" in s["by_type"]
@@ -135,9 +135,9 @@ def test_summary_returns_percentiles_by_type(engine_with_schema) -> None:  # typ
 def test_sparkline_returns_fixed_length(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid, _plid, _sid = _seed(session)
     with transactional(factory) as session:
-        buckets = metrics_service.sparkline_buckets(session, project_id=1, days=14)
+        buckets = metrics_service.sparkline_buckets(session, project_id=pid, days=14)
     assert len(buckets) == 14
     assert all("date" in b and "count" in b for b in buckets)
 
@@ -150,7 +150,7 @@ def test_sparkline_counts_today_completion(engine_with_schema) -> None:  # type:
     with transactional(factory) as session:
         task_service.complete(session, project_id=pid, task_id="MET-020", author="a")
     with transactional(factory) as session:
-        buckets = metrics_service.sparkline_buckets(session, project_id=1, days=7)
+        buckets = metrics_service.sparkline_buckets(session, project_id=pid, days=7)
     # Today's bucket has count=1.
     today = datetime.now(UTC).date().isoformat()
     today_b = next(b for b in buckets if b["date"] == today)

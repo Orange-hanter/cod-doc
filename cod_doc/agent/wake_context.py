@@ -207,9 +207,11 @@ def build_wake_context(
     - ``cold_start`` / ``manual`` — empty payload, ``skills_to_preload``
       defaults to ``["orchestrator"]`` if caller doesn't pass one. Cold
       start is the only path that lets the orchestrator call ``get_master``.
-    - ``task_assigned`` / ``approval_resolved`` — requires ``task_id``.
-      Builds the payload via :func:`heartbeat_service.heartbeat_context`
-      with the optional cursor; trimmed to fit ``PAYLOAD_BUDGET_BYTES``.
+    - ``task_assigned`` / ``approval_resolved`` — requires ``task_id`` and
+      ``project_id`` (AFT-023: задача ищется в скоупе проекта, в hub-БД
+      ``task_id`` не уникален). Builds the payload via
+      :func:`heartbeat_service.heartbeat_context` with the optional cursor;
+      trimmed to fit ``PAYLOAD_BUDGET_BYTES``.
     - ``doc_drift`` — requires ``triggering_doc_ref``. Payload contains a
       compact doc snippet and the trigger metadata; the agent will pull
       the full doc on demand if it actually needs it.

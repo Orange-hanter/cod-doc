@@ -70,7 +70,7 @@ def test_add_section_writes_section_revision(engine_with_schema) -> None:  # typ
         assert sec.row_id is not None
         assert sec.content_hash == hashlib.sha256(b"One paragraph.").hexdigest()
 
-        history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id)
+        history = rev.list_for_entity(session, EntityKind.SECTION, sec.row_id, project_id=proj_id)
         assert len(history) == 1
 
 

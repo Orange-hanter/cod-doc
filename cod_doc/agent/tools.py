@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from sqlalchemy.orm import Session
+
 # Re-export for backward compatibility
 __all__ = ["TOOL_DEFINITIONS", "ToolExecutor"]
 
@@ -238,6 +240,18 @@ class ToolExecutor:
         sf, _ = session_factory(self.project.entry.name)
         return sf
 
+    def _project_db_id(self, session: Session) -> int:
+        """row_id проекта оркестратора — скоуп для чтений по task_id / plan_scope (AFT-023).
+
+        Через ``project_service``, а не ``require_project_id`` из
+        ``cod_doc.mcp.tools._db``. Остальные хелперы оркестратора (сессия,
+        сериализация задач) по-прежнему берутся оттуда — здесь новой
+        зависимости на MCP-слой не добавляется.
+        """
+        from cod_doc.services import project_service
+
+        return project_service.row_id_for_slug(session, self.project.entry.name)
+
     def _tool_plan_forward_chain(self, task_id: str) -> dict[str, Any]:
         try:
             from cod_doc.infra.db import transactional
@@ -313,7 +327,7 @@ class ToolExecutor:
                 plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
                 if plan is None or plan.row_id is None:
                     return {"error": f"Plan '{plan_scope}' not found"}
-                tasks = plan_service.ready(session, plan.row_id, limit=limit)
+                tasks = plan_service.ready(session, plan.row_id, limit=limit, project_id=project_id)
             return {"tasks": [task_to_dict(t) for t in tasks]}
         except Exception as e:
             return {"error": str(e)}

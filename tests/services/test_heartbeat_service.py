@@ -93,11 +93,9 @@ def test_heartbeat_returns_full_shape_for_pending_task(engine_with_schema) -> No
 def test_heartbeat_unknown_task_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed_plan(session)
+        p, _pl, _s = _seed_plan(session)
         with pytest.raises(task_service.TaskNotFoundError):
-            heartbeat_service.heartbeat_context(
-                session, project_id=sole_project_id(session), task_id="NOPE-001"
-            )
+            heartbeat_service.heartbeat_context(session, project_id=p, task_id="NOPE-001")
 
 
 # --------------------------------------------------------------------------- #
@@ -219,7 +217,7 @@ def test_heartbeat_with_cursor_returns_only_newer_revisions(engine_with_schema) 
             via_checkout=True,
         )
 
-        all_revs = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        all_revs = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         assert len(all_revs) == 4  # 1 create + 3 status updates
         cursor_rev_id = all_revs[1].revision_id  # after create + first status
 
@@ -275,7 +273,7 @@ def test_heartbeat_cursor_caps_at_20_entries(engine_with_schema) -> None:  # typ
                 via_checkout=True,
             )
 
-        all_revs = rev.list_for_entity(session, EntityKind.TASK, task.row_id)
+        all_revs = rev.list_for_entity(session, EntityKind.TASK, task.row_id, project_id=p)
         cursor = all_revs[0].revision_id  # after the create — see all 25 status flips
 
         ctx = heartbeat_service.heartbeat_context(

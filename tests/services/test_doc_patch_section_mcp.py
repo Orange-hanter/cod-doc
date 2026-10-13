@@ -24,6 +24,7 @@ from cod_doc.infra.models import ProjectModel, RevisionModel
 from cod_doc.mcp.tools import doc_tools
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
+from tests._scope import doc_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -33,9 +34,10 @@ def _get_tool(mcp: FastMCP, name: str) -> Any:
     return mcp._tool_manager._tools[name].fn
 
 
-def _stub(monkeypatch: pytest.MonkeyPatch, factory: Any, *, require_id: int = 1) -> None:
+def _stub(monkeypatch: pytest.MonkeyPatch, factory: Any) -> None:
+    # require_project_id не подменяется: тулы резолвят слаг «p» настоящим
+    # резолвером, и скоуп проекта проверяется, а не обходится (AFT-023).
     monkeypatch.setattr(doc_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(doc_tools, "require_project_id", lambda session, project: require_id)
 
 
 def _add_project(session: Session, slug: str = "p") -> int:
@@ -111,7 +113,9 @@ def test_doc_patch_section_success_creates_revision(
     assert "dry_run" not in result
 
     with transactional(factory) as session:
-        history = rev.list_for_entity(session, EntityKind.SECTION, sec_row_id)
+        history = rev.list_for_entity(
+            session, EntityKind.SECTION, sec_row_id, project_id=doc_project_id(session, doc_id)
+        )
         section = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "x")
     # add_section + patch_section == 2 revisions.
     assert len(history) == 2
@@ -125,7 +129,9 @@ def test_doc_patch_section_conflict_on_stale_parent(
     factory = make_session_factory(engine_with_schema)
     doc_id, sec_row_id = _seed_doc_with_section(factory, body="v1")
     with transactional(factory) as session:
-        first_rev = rev.list_for_entity(session, EntityKind.SECTION, sec_row_id)[0]
+        first_rev = rev.list_for_entity(
+            session, EntityKind.SECTION, sec_row_id, project_id=doc_project_id(session, doc_id)
+        )[0]
 
     _stub(monkeypatch, factory)
     mcp = FastMCP("test")
@@ -182,7 +188,9 @@ def test_doc_patch_section_dry_run_leaves_db_untouched(
     assert "old body" in result["diff"] or "new body" in result["diff"]
 
     with transactional(factory) as session:
-        history = rev.list_for_entity(session, EntityKind.SECTION, sec_row_id)
+        history = rev.list_for_entity(
+            session, EntityKind.SECTION, sec_row_id, project_id=doc_project_id(session, doc_id)
+        )
         section = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "x")
     # Nothing persisted: still just add_section's revision, body unchanged.
     assert len(history) == 1
@@ -251,7 +259,12 @@ def test_doc_add_section_creates_section_and_revision(
 
     with transactional(factory) as session:
         sections = docs.get_sections(session, doc_id)
-        history = rev.list_for_entity(session, EntityKind.SECTION, sections[0].row_id)
+        history = rev.list_for_entity(
+            session,
+            EntityKind.SECTION,
+            sections[0].row_id,
+            project_id=doc_project_id(session, doc_id),
+        )
     assert [s.anchor for s in sections] == ["intro"]
     assert sections[0].body == "first body"
     assert sections[0].heading == "Intro"
@@ -365,7 +378,12 @@ def test_doc_authoring_cycle_needs_no_markdown_file(
     assert patched["changed"] is True
     with transactional(factory) as session:
         sections = docs.get_sections(session, doc_id)
-        history = rev.list_for_entity(session, EntityKind.SECTION, sections[0].row_id)
+        history = rev.list_for_entity(
+            session,
+            EntityKind.SECTION,
+            sections[0].row_id,
+            project_id=doc_project_id(session, doc_id),
+        )
         body = docs.render_body(session, doc_id)
     assert sections[0].body == "final"
     assert len(history) == 2
