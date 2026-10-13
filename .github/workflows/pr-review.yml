@@ -35,7 +35,12 @@ jobs:
   review:
     name: AI code review
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # LLM-фаза ограничена REVIEW_TIME_BUDGET_MIN=20 ниже
+    # LLM-фаза ограничена REVIEW_TIME_BUDGET_MIN=40 ниже. Запас 20 минут — не
+    # перестраховка: после дедлайна движок ещё дописывает частичный отчёт
+    # (агрегатор, verifier), и на PR #195 (120 файлов, 429 от Ollama Cloud)
+    # этот хвост занял больше 9 минут — при 30 минутах джоба убивалась
+    # раньше, чем публиковала хоть что-то.
+    timeout-minutes: 60
     # Черновики и PR ботов (Dependabot) не ревьюим; ready_for_review возвращает
     # черновик в работу через тип события.
     if: >-
@@ -203,7 +208,7 @@ jobs:
           # eslint/ast-grep prescan видит только JS/TS; cod-doc — Python.
           REVIEW_PRESCAN: '0'
           REVIEW_EXPORT: '1'
-          REVIEW_TIME_BUDGET_MIN: '20'  # дедлайн LLM; timeout-minutes выше обязан быть больше
+          REVIEW_TIME_BUDGET_MIN: '40'  # дедлайн LLM; timeout-minutes выше — с запасом на хвост
         run: node .ai-reviewer-engine/bin/pr-review.mjs
 
       # Имя артефакта — контракт с cod_doc/cli/cmd_ingest.py (`pr-review-export-<PR>`).
