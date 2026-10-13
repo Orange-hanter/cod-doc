@@ -174,15 +174,15 @@ def test_freeze_projection_creates_distinct_snapshots_per_call(
     resolution prevents UniqueConstraint collisions even within the same second)."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _project_id, plan_id = _seed(session, "p2", tmp_path)
+        pid, plan_id = _seed(session, "p2", tmp_path)
         first = plan_service.freeze_projection(
-            session, plan_id, author="human:test", project_id=_project_id
+            session, plan_id, author="human:test", project_id=pid
         )
     assert first.row_id is not None
     # NB: no sleep — relies on ms-precision in the timestamp.
     with transactional(factory) as session:
         second = plan_service.freeze_projection(
-            session, plan_id, author="human:test", project_id=_project_id
+            session, plan_id, author="human:test", project_id=pid
         )
     assert second.row_id != first.row_id
     assert second.doc_key != first.doc_key

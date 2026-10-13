@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 
 
 def only_project_id(session: Session) -> int:
-    """``row_id`` единственного проекта БД; два и больше — ошибка."""
+    """``row_id`` единственного проекта БД; ноль или два и больше — ошибка
+    (``scalar_one``), а не молча первый попавшийся."""
     return int(session.execute(select(ProjectModel.row_id)).scalar_one())
 
 

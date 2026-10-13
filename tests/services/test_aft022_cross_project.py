@@ -382,7 +382,7 @@ def test_legacy_plan_creation_race_recovers(engine_with_schema, monkeypatch) -> 
         return snapshot
 
     def stale_once(session: Session, scope: str, **kwargs: Any) -> Any:
-        if race["stale"]:
+        if race["stale"] and scope == legacy_tasks.LEGACY_PLAN_SCOPE:
             race["stale"] = False
             return None  # наше чтение сделано до чужой вставки
         return real_get(session, scope, **kwargs)
@@ -539,7 +539,12 @@ def test_mcp_clear_blocker_and_release_stay_in_the_project(engine_with_schema, m
             checkout_service.checkout(session, _TID, agent="agent:x", project_id=p.project)
 
     _tool(_task_tools(monkeypatch, factory), "task_clear_blocker")(project="b", task_id=_TID)
-    monkeypatch.setattr(checkout_tools, "session_factory", lambda project: (factory, None))
+
+    def _only_b(project: str) -> tuple[Any, None]:
+        assert project == "b", f"ожидался слаг 'b', пришёл {project!r}"
+        return factory, None
+
+    monkeypatch.setattr(checkout_tools, "session_factory", _only_b)
     mcp = FastMCP("test")
     checkout_tools.register(mcp)
     _tool(mcp, "task_release")(project="b", task_id=_TID, agent="agent:x")

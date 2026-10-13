@@ -107,7 +107,7 @@ def test_retarget_touches_link_targets_only() -> None:
 
 def test_retarget_inserts_the_new_target_literally() -> None:
     """Новая цель — литерал, а не шаблон re.sub: ``\\n`` и ``\\1`` не раскрываются."""
-    for new in (r"dir\new.md", r"a\1b.md"):
+    for new in (r"dir\new.md", r"a\1b.md", r"g\g<0>.md"):
         out = curator_ops.retarget_links("[x](old.md) и [[old.md]]", "old.md", new)
         assert out == f"[x]({new}) и [[{new}]]"
 

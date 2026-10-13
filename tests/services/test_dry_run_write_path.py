@@ -132,7 +132,7 @@ def test_task_update_status_dry_run_does_not_change_status(
             title="t",
             type=TaskType.FEATURE,
             priority=Priority.MEDIUM,
-            author="t",
+            author="human:test",
         )
         # Move to in_progress so we can test cancel transition — штатным
         # checkout, а не update_status(via_checkout=True) в обход протокола.

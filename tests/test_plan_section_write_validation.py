@@ -67,7 +67,7 @@ def tools(
     # require_project_id не подменяется: слаг «pv» резолвится настоящим
     # резолвером, и гард проектной изоляции в plan_tools работает (AFT-023).
     def _session_factory(project: str | None) -> tuple[sessionmaker[Session], None]:
-        assert project == "pv", f"тул ушёл в чужой проект {project!r}"
+        assert project == "pv", f"ожидался слаг 'pv', пришёл {project!r}"
         return factory, None
 
     monkeypatch.setattr(plan_tools, "session_factory", _session_factory)
