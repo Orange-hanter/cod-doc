@@ -26,9 +26,9 @@ from cod_doc.services import adr_service, finding_service, search_service, task_
 from cod_doc.services.story_service import acceptance as story_acceptance
 from cod_doc.services.story_service import crud as story_crud
 
-#: Для тестов без засеянного проекта (нет таблицы индекса, пустой запрос):
-#: id нужен только сигнатуре. Заведомо несуществующий — не совпадёт с row_id
-#: первого настоящего проекта, если тест однажды его засеет.
+#: Для тестов, где до скоупа проекта дело не доходит (нет таблицы индекса,
+#: неверный scope): id нужен только сигнатуре. Заведомо несуществующий — не
+#: совпадёт с row_id засеянного проекта, так что случайно скоуп не «сработает».
 _NO_PROJECT = 999_999
 
 
@@ -387,9 +387,10 @@ def test_search_invalid_scope_raises(engine_with_schema) -> None:  # type: ignor
 def test_search_empty_query_returns_zero_hits(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed(session)
+        pid, plid, sid = _seed(session)
+        _make_task(session, pid, plid, sid, "SRP-090", "Indexed task so the index is not empty")
     with transactional(factory) as session:
-        result = search_service.search(session, project_id=_NO_PROJECT, query="   ")
+        result = search_service.search(session, project_id=pid, query="   ")
     assert result["total"] == 0
 
 

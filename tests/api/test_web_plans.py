@@ -356,7 +356,7 @@ def test_plan_show_cross_project_404(plans_client, tmp_path: Path, migrate_db) -
 
 def test_plan_show_404_for_plan_of_another_project(plans_client) -> None:
     """AFT-023: plan_id — row_id на всю БД; план другого проекта той же БД по
-    URL проекта ``demo`` не показывается (ни прогресс, ни экспорт)."""
+    URL проекта ``demo`` не показывается — страница плана отдаёт 404."""
     from pathlib import Path
 
     client, entry, _plan_id = plans_client

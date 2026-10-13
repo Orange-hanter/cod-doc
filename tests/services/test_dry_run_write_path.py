@@ -37,9 +37,11 @@ def _get_tool(mcp: FastMCP, name: str) -> Any:
     return mcp._tool_manager._tools[name].fn
 
 
-def _stub(monkeypatch, factory, *, module, require_id: int = 1) -> None:
+def _stub(monkeypatch, factory, *, module) -> None:
+    # require_project_id не подменяется: слаг «p» из _seed резолвится настоящим
+    # резолвером — иначе проектный id совпадал с подставленным только на
+    # свежей БД (AFT-023).
     monkeypatch.setattr(module, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(module, "require_project_id", lambda session, project: require_id)
 
 
 def _seed(session) -> tuple[int, int, int]:

@@ -275,6 +275,11 @@ def test_task_mutations_act_on_the_task_of_the_given_project(engine_with_schema)
         tasks.set_blocker(
             session, task_id=_TID, reason="waiting", author="human:t", project_id=a.project
         )
+        blocked_a = tasks.get(session, _TID, project_id=a.project)
+        still_b = tasks.get(session, _TID, project_id=b.project)
+        assert blocked_a is not None and still_b is not None
+        assert blocked_a.blocked_reason == "waiting", "блокер встал на задачу проекта A"
+        assert still_b.blocked_reason is None, "задача проекта B блокера не получила"
         tasks.clear_blocker(session, task_id=_TID, author="human:t", project_id=a.project)
         tasks.complete(session, task_id=_TID, author="human:t", project_id=b.project)
 
@@ -627,3 +632,32 @@ def test_ready_skips_a_foreign_task_left_in_the_plan(engine_with_schema) -> None
 
         ready = plans.ready(session, a.plan, project_id=a.project, local_only=False)
         assert [t.row_id for t in ready] == [a.task_row]
+
+
+_PLAN_READS: dict[str, Any] = {
+    "audit": lambda s, plan, pid: plans.audit(s, plan, project_id=pid),
+    "critical_path": lambda s, plan, pid: plans.critical_path(s, plan, project_id=pid),
+    "chain_layout": lambda s, plan, pid: plans.chain_layout(s, plan, project_id=pid),
+    "recalc": lambda s, plan, pid: plans.recalc(s, plan, project_id=pid),
+    "ready": lambda s, plan, pid: plans.ready(s, plan, project_id=pid),
+    "ready_batch": lambda s, plan, pid: plans.ready_batch(s, plan, project_id=pid),
+    "export": lambda s, plan, pid: plans.export(s, plan, project_id=pid),
+    "freeze_projection": lambda s, plan, pid: plans.freeze_projection(
+        s, plan, project_id=pid, author="human:t"
+    ),
+}
+
+
+@pytest.mark.parametrize("read", sorted(_PLAN_READS))
+def test_plan_reads_by_row_id_reject_a_plan_of_another_project(engine_with_schema, read) -> None:  # type: ignore[no-untyped-def]
+    """Каждое чтение плана по row_id сверяет владельца: план проекта A из
+    проекта B — ``PlanNotFoundError``, а из своего проекта читается."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        call = _PLAN_READS[read]
+
+        call(session, a.plan, a.project)
+        with pytest.raises(plans.PlanNotFoundError):
+            call(session, a.plan, b.project)
