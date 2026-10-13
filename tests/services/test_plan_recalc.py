@@ -16,7 +16,6 @@ from cod_doc.infra.models import (
 )
 from cod_doc.services import plan_service as plans
 from cod_doc.services import task_service as tasks
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -89,8 +88,8 @@ def test_recalc_empty_plan_is_empty(engine_with_schema) -> None:  # type: ignore
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session:
-        _, plan_id, _ = _seed_plan_with_sections(session)
-        progress = plans.recalc(session, plan_id, project_id=only_project_id(session))
+        pid, plan_id, _ = _seed_plan_with_sections(session)
+        progress = plans.recalc(session, plan_id, project_id=pid)
 
         assert progress.plan_id == plan_id
         assert progress.total == 0

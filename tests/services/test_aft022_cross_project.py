@@ -639,7 +639,9 @@ def test_ready_skips_a_foreign_task_left_in_the_plan(engine_with_schema) -> None
         assert [t.row_id for t in ready] == [a.task_row]
 
 
-_PLAN_READS: dict[str, Any] = {
+#: Всё, что берёт план по row_id: чтения и freeze_projection (пишет снимок,
+#: но план находит тем же _require_plan).
+_PLAN_BY_ROW_ID: dict[str, Any] = {
     "audit": lambda s, plan, pid: plans.audit(s, plan, project_id=pid),
     "critical_path": lambda s, plan, pid: plans.critical_path(s, plan, project_id=pid),
     "chain_layout": lambda s, plan, pid: plans.chain_layout(s, plan, project_id=pid),
@@ -653,16 +655,34 @@ _PLAN_READS: dict[str, Any] = {
 }
 
 
-@pytest.mark.parametrize("read", sorted(_PLAN_READS))
-def test_plan_reads_by_row_id_reject_a_plan_of_another_project(engine_with_schema, read) -> None:  # type: ignore[no-untyped-def]
-    """Каждое чтение плана по row_id сверяет владельца: план проекта A из
+@pytest.mark.parametrize("read", sorted(_PLAN_BY_ROW_ID))
+def test_plan_ops_by_row_id_reject_a_plan_of_another_project(engine_with_schema, read) -> None:  # type: ignore[no-untyped-def]
+    """Каждая операция над планом по row_id сверяет владельца: план проекта A из
     проекта B — ``PlanNotFoundError``, а из своего проекта читается."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         a = _project_with_task(session, "a")
         b = _project_with_task(session, "b")
-        call = _PLAN_READS[read]
+        call = _PLAN_BY_ROW_ID[read]
 
         call(session, a.plan, a.project)
         with pytest.raises(plans.PlanNotFoundError):
             call(session, a.plan, b.project)
+
+
+def test_critical_path_never_returns_a_foreign_task(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Задача чужого проекта с plan_id нашего плана (легаси-данные) в
+    критический путь не попадает. Ветка «все задачи независимы» выбирала
+    исток по алфавиту среди всех задач плана — чужая с меньшим ID побеждала."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        a = _project_with_task(session, "a")
+        b = _project_with_task(session, "b")
+        leaked = session.get(TaskModel, b.task_row)
+        assert leaked is not None
+        leaked.plan_id, leaked.section_id = a.plan, a.section
+        leaked.task_id = "AAA-001"  # раньше _TID по алфавиту
+        session.flush()
+
+        cp = plans.critical_path(session, a.plan, project_id=a.project)
+        assert cp.task_ids == [_TID]

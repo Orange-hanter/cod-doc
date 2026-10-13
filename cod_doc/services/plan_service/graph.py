@@ -342,10 +342,12 @@ def critical_path(session: Session, plan_id: int, *, project_id: int) -> Critica
     # Map row_id → max_depth.
     depth_map: dict[int, int] = {r[0]: r[1] for r in depth_rows}
 
-    # Load full task info for the plan.
+    # Load full task info for the plan — только задачи проекта плана: чужая
+    # с plan_id нашего плана (легаси-данные) иначе выбиралась истоком в ветке
+    # «все задачи независимы» (min по task_id), как и в audit/chain_layout.
     task_rows = session.execute(
         select(TaskModel.row_id, TaskModel.task_id, TaskModel.title, TaskModel.status).where(
-            TaskModel.plan_id == plan_id
+            TaskModel.plan_id == plan_id, TaskModel.project_id == project_id
         )
     ).all()
     info: dict[int, tuple[str, str, str]] = {r[0]: (r[1], r[2], r[3]) for r in task_rows}

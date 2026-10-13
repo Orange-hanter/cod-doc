@@ -441,11 +441,16 @@ def _tool(mcp: FastMCP, name: str) -> Any:
     return mcp._tool_manager._tools[name].fn
 
 
-def _register(monkeypatch, factory, proj_id: int) -> FastMCP:  # type: ignore[no-untyped-def]
+def _register(monkeypatch, factory) -> FastMCP:  # type: ignore[no-untyped-def]
+    """task-тулы на тестовой БД. ``require_project_id`` настоящий: слаг «mp»
+    из ``_seed`` резолвится резолвером, а не подставленным id (AFT-023)."""
     from cod_doc.mcp.tools import task_tools
 
-    monkeypatch.setattr(task_tools, "session_factory", lambda project: (factory, None))
-    monkeypatch.setattr(task_tools, "require_project_id", lambda session, project: proj_id)
+    def _only_mp(project: str) -> tuple[Any, None]:
+        assert project == "mp", f"ожидался слаг 'mp', пришёл {project!r}"
+        return factory, None
+
+    monkeypatch.setattr(task_tools, "session_factory", _only_mp)
     mcp = FastMCP("test")
     task_tools.register(mcp)
     return mcp
@@ -458,7 +463,7 @@ def test_mcp_moves_a_batch_with_one_event_per_task(engine_with_schema, monkeypat
         for n in (1, 2, 3):
             _task(session, p, old, "A", f"ADO-00{n}")
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_plan")
     out = move(
         project="mp",
         task_ids=["ADO-001", "ADO-002", "ADO-003"],
@@ -490,7 +495,7 @@ def test_mcp_from_section_moves_the_whole_section(engine_with_schema, monkeypatc
         _task(session, p, old, "B", "ADO-001")
         _task(session, p, old, "A", "ADO-009")
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_plan")
     out = move(project="mp", from_section="old:B", plan_scope="new", section_letter="A")
     assert [t["task_id"] for t in out["moved"]] == ["ADO-001", "ADO-002"]
 
@@ -507,7 +512,7 @@ def test_mcp_requires_exactly_one_selector(engine_with_schema, monkeypatch) -> N
         p, old, _new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_plan")
     with pytest.raises(ValueError, match="exactly one"):
         move(project="mp", plan_scope="new", section_letter="A")
     with pytest.raises(ValueError, match="exactly one"):
@@ -526,7 +531,7 @@ def test_mcp_dry_run_writes_nothing(engine_with_schema, monkeypatch) -> None:  #
         p, old, _new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_plan")
     out = move(
         project="mp", task_ids=["ADO-001"], plan_scope="new", section_letter="A", dry_run=True
     )
@@ -557,7 +562,7 @@ def test_mcp_foreign_lock_rolls_back_the_whole_batch(engine_with_schema, monkeyp
         _task(session, p, old, "A", "ADO-002")
         checkout_service.checkout(session, "ADO-002", agent="swarm-kimi", project_id=p)
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_plan")
     with pytest.raises(ValueError, match="swarm-kimi"):
         move(project="mp", task_ids=["ADO-001", "ADO-002"], plan_scope="new", section_letter="A")
 
@@ -578,7 +583,7 @@ def test_mcp_continue_on_error_moves_the_rest(engine_with_schema, monkeypatch) -
         _task(session, p, old, "A", "ADO-002")
         checkout_service.checkout(session, "ADO-002", agent="swarm-kimi", project_id=p)
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_plan")
     out = move(
         project="mp",
         task_ids=["ADO-001", "ADO-002", "NOPE-999"],
@@ -598,7 +603,7 @@ def test_mcp_already_there_is_skipped(engine_with_schema, monkeypatch) -> None: 
         _task(session, p, old, "A", "ADO-001")
         _move(session, "ADO-001", new["A"], project_id=p)
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_plan")
     out = move(project="mp", task_ids=["ADO-001"], plan_scope="new", section_letter="A")
     assert out["moved"] == []
     assert out["skipped"] == ["ADO-001"]
@@ -610,6 +615,6 @@ def test_mcp_unknown_target_plan_raises(engine_with_schema, monkeypatch) -> None
         p, old, _new = _seed(session)
         _task(session, p, old, "A", "ADO-001")
 
-    move = _tool(_register(monkeypatch, factory, p), "task_move_to_plan")
+    move = _tool(_register(monkeypatch, factory), "task_move_to_plan")
     with pytest.raises(ValueError, match="not found"):
         move(project="mp", task_ids=["ADO-001"], plan_scope="nope", section_letter="A")
