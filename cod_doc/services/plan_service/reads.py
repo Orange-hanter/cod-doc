@@ -52,8 +52,14 @@ def scope_taken_by_other(session: Session, scope: str, project_id: int) -> bool:
     return PlanRepository(session).scope_taken_by_other(scope, project_id)
 
 
-def list_sections(session: Session, plan_id: int) -> list[PlanSection]:
-    """Return the plan's sections in their stored order."""
+def list_sections(session: Session, plan_id: int, *, project_id: int) -> list[PlanSection]:
+    """Return the plan's sections in their stored order.
+
+    ``project_id`` обязателен (AFT-023): ``plan_id`` — row_id на всю hub-БД,
+    и секции плана чужого проекта иначе читались бы перебором id. План
+    другого проекта — `PlanNotFoundError`, как у остальных чтений по row_id.
+    """
+    _require_plan(session, plan_id, project_id)
     return PlanSectionRepository(session).list_for_plan(plan_id)
 
 

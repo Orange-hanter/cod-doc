@@ -901,7 +901,8 @@ def story_tasks_generate(
         if plan and plan.row_id is not None:
             plan_id = plan.row_id
             section_layout = [
-                (s.letter.upper(), s.title) for s in plans.list_sections(session, plan.row_id)
+                (s.letter.upper(), s.title)
+                for s in plans.list_sections(session, plan.row_id, project_id=project_db_id)
             ]
 
     try:
@@ -980,7 +981,7 @@ async def story_tasks_save(
     if plan is None or plan.row_id is None:
         raise HTTPException(404, f"Plan '{plan_scope}' not found")
 
-    sections = plans.list_sections(session, plan.row_id)
+    sections = plans.list_sections(session, plan.row_id, project_id=project_db_id)
     section_by_letter = {s.letter.upper(): s for s in sections}
 
     selected = set(form.getlist("selected"))

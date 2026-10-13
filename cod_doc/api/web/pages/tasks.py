@@ -134,7 +134,7 @@ def tasks_list(
                 if p.row_id is None:
                     continue
                 scope_by_pid[p.row_id] = p.scope
-                sects = plans.list_sections(session, p.row_id)
+                sects = plans.list_sections(session, p.row_id, project_id=project_db_id)
                 sections_by_pid[p.row_id] = {
                     s.row_id: {"letter": s.letter or "", "title": s.title}
                     for s in sects

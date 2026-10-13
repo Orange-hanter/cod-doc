@@ -135,7 +135,7 @@ def section_list(ctx: click.Context, plan_scope: str, project: str, as_json: boo
                 "position": s.position,
                 "doc_id": s.doc_id,
             }
-            for s in plan_service.list_sections(session, found.row_id)
+            for s in plan_service.list_sections(session, found.row_id, project_id=pid)
         ]
 
     if as_json:

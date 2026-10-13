@@ -355,7 +355,7 @@ async def import_master_save(
         plan = plans.get_by_scope(session, plan_scope, project_id=project_db_id)
         if plan is None or plan.row_id is None:
             raise HTTPException(404, f"Plan '{plan_scope}' not found")
-        sections = plans.list_sections(session, plan.row_id)
+        sections = plans.list_sections(session, plan.row_id, project_id=project_db_id)
         if not sections:
             raise HTTPException(400, f"Plan '{plan_scope}' has no sections")
         section_by_letter = {s.letter.upper(): s for s in sections}

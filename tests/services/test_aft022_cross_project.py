@@ -397,7 +397,9 @@ def test_legacy_plan_creation_race_recovers(engine_with_schema, monkeypatch) -> 
         plan = session.get(PlanModel, plan_id)
         assert plan is not None
         assert plan.scope == legacy_tasks.LEGACY_PLAN_SCOPE
-        assert [s.row_id for s in plans.list_sections(session, plan_id)] == [section_id]
+        assert [s.row_id for s in plans.list_sections(session, plan_id, project_id=a.project)] == [
+            section_id
+        ]
 
 
 def test_mcp_task_get_reads_the_task_of_its_project(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -645,6 +647,7 @@ _PLAN_BY_ROW_ID: dict[str, Any] = {
     "audit": lambda s, plan, pid: plans.audit(s, plan, project_id=pid),
     "critical_path": lambda s, plan, pid: plans.critical_path(s, plan, project_id=pid),
     "chain_layout": lambda s, plan, pid: plans.chain_layout(s, plan, project_id=pid),
+    "list_sections": lambda s, plan, pid: plans.list_sections(s, plan, project_id=pid),
     "recalc": lambda s, plan, pid: plans.recalc(s, plan, project_id=pid),
     "ready": lambda s, plan, pid: plans.ready(s, plan, project_id=pid),
     "ready_batch": lambda s, plan, pid: plans.ready_batch(s, plan, project_id=pid),

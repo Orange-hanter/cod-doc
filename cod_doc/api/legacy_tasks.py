@@ -154,7 +154,7 @@ def _ensure_legacy_plan_once(session: Session, project_id: int) -> tuple[int, in
         )
     assert plan.row_id is not None
 
-    sections = plan_service.list_sections(session, plan.row_id)
+    sections = plan_service.list_sections(session, plan.row_id, project_id=project_id)
     if sections:
         assert sections[0].row_id is not None
         return plan.row_id, sections[0].row_id
