@@ -39,6 +39,7 @@ from cod_doc.services import revision_service as rev
 from cod_doc.services import task_doc_service
 from cod_doc.services import task_service as tasks
 from cod_doc.services.task_service import TaskNotFoundError
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -119,12 +120,12 @@ def test_replace_swaps_whole_set_and_leaves_trail(engine_with_schema) -> None:  
 
         change = _update(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["src/b.py", "src/c.py"],
             mode="replace",
             author="agent:run-X",
             reason="переписан скоуп",
-            project_id=_pid,
         )
 
         assert change.changed is True
@@ -182,11 +183,11 @@ def test_remove_drops_listed_paths_and_ignores_absent(engine_with_schema) -> Non
 
         change = _update(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["src/a.py", "src/never.py"],
             mode="remove",
             author="human:t",
-            project_id=_pid,
         )
 
         assert change.new == ["src/b.py"]
@@ -202,11 +203,11 @@ def test_same_set_is_noop_without_revision(engine_with_schema) -> None:  # type:
         # Тот же набор в другом порядке и с дублем — не изменение.
         replaced = _update(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["src/b.py", "src/a.py", "src/b.py"],
             mode="replace",
             author="human:t",
-            project_id=_pid,
         )
         added = _update(
             session,
@@ -259,11 +260,11 @@ def test_duplicates_collapse(engine_with_schema) -> None:  # type: ignore[no-unt
 
         change = _update(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["src/a.py", "src/a.py", "src/b.py", "src/a.py"],
             mode="replace",
             author="human:t",
-            project_id=_pid,
         )
 
         assert change.new == ["src/a.py", "src/b.py"]
@@ -451,11 +452,11 @@ def test_out_of_root_path_warns_but_is_written(engine_with_schema) -> None:  # t
 
         change = _update(
             session,
+            project_id=sole_project_id(session),
             task_id=_TASK,
             paths=["/elsewhere/x.py", "/repo/proj/in.py", "rel.py"],
             mode="replace",
             author="human:t",
-            project_id=_pid,
         )
 
         assert len(change.warnings) == 1
@@ -501,11 +502,11 @@ def test_already_stored_foreign_path_does_not_warn_again(  # type: ignore[no-unt
 
         change = _update(
             session,
+            project_id=pid,
             task_id=_TASK,
             paths=["/elsewhere/x.py", "rel.py"] if mode == "replace" else ["/elsewhere/x.py"],
             mode=mode,
             author="human:t",
-            project_id=pid,
         )
 
         assert change.changed is False
@@ -1153,11 +1154,11 @@ def test_task_turns_foreign_after_paths_change(engine_with_schema) -> None:  # t
 
         _update(
             session,
+            project_id=pid,
             task_id=_TASK,
             paths=["/elsewhere/a.py"],
             mode="replace",
             author="human:t",
-            project_id=pid,
         )
 
         foreign = plans.ready_batch_for_project(session, pid)

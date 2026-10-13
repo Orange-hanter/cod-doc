@@ -8,9 +8,9 @@ serialise correctly.
 
 Public API
 ----------
-- ``checkout(session, task_id, agent, expected_statuses)`` → CheckoutResult
-- ``release(session, task_id, agent)`` → CheckoutResult
-- ``has_active_checkout(session, task_id, agent)`` → bool
+- ``checkout(session, task_id, project_id, agent, expected_statuses)`` → CheckoutResult
+- ``release(session, task_id, project_id, agent)`` → CheckoutResult
+- ``has_active_checkout(session, task_id, agent, project_id)`` → bool
 - ``release_stale(session, ttl_minutes, project_id)`` → list[str] of released task_ids
 """
 
@@ -23,7 +23,9 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from cod_doc.infra.models import TaskModel
+from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.services import activity_service
+from cod_doc.services.task_service import TaskNotFoundError
 from cod_doc.services.task_status_machine import normalise
 
 if TYPE_CHECKING:
@@ -63,23 +65,34 @@ class CheckoutResult:
     idempotent: bool = False
 
 
-def _load_task(session: Session, task_id: str, project_id: int) -> TaskModel:
-    """Задача по ``task_id`` в проекте ``project_id`` (AFT-023: скоуп обязателен)."""
+def _load_task(session: Session, task_id: str, *, project_id: int) -> TaskModel:
+    # STO-030: task_id уникален в проекте, не во всей БД (миграция 0047) —
+    # без скоупа замок в hub-БД ставился бы на одноимённую задачу соседа.
+    require_int_project_id(project_id)
     m = session.execute(
-        select(TaskModel).where(TaskModel.task_id == task_id, TaskModel.project_id == project_id)
+        select(TaskModel).where(TaskModel.project_id == project_id, TaskModel.task_id == task_id)
     ).scalar_one_or_none()
     if m is None:
-        raise LookupError(f"Task {task_id!r} not found.")
+        raise TaskNotFoundError(f"Task {task_id!r} not found.")
     return m
+
+
+def _locked_by(session: Session, task_id: str, *, project_id: int) -> str | None:
+    require_int_project_id(project_id)
+    return session.execute(
+        select(TaskModel.checked_out_by).where(
+            TaskModel.project_id == project_id, TaskModel.task_id == task_id
+        )
+    ).scalar_one_or_none()
 
 
 def checkout(
     session: Session,
     task_id: str,
     *,
+    project_id: int,
     agent: str,
     expected_statuses: list[str | TaskStatus] | None = None,
-    project_id: int,
 ) -> CheckoutResult:
     """Atomically lock a task and transition it to in_progress.
 
@@ -93,7 +106,7 @@ def checkout(
     receive the value via the enum normaliser).
     """
     expected = [normalise(s) for s in (expected_statuses or ["todo", "pending"])]
-    m = _load_task(session, task_id, project_id)
+    m = _load_task(session, task_id, project_id=project_id)
 
     if m.checked_out_by is not None and m.checked_out_by != agent:
         raise CheckoutConflictError(task_id=task_id, locked_by=m.checked_out_by)
@@ -155,16 +168,16 @@ def release(
     session: Session,
     task_id: str,
     *,
+    project_id: int,
     agent: str,
     force: bool = False,
-    project_id: int,
 ) -> CheckoutResult:
     """Release the lock if held by ``agent`` (or any agent when ``force=True``).
 
     No status change. To complete the task, call ``task_complete`` separately;
     to revert to TODO, call ``task_update_status`` after release.
     """
-    m = _load_task(session, task_id, project_id)
+    m = _load_task(session, task_id, project_id=project_id)
     if m.checked_out_by is None:
         return CheckoutResult(
             task_id=task_id,
@@ -202,17 +215,8 @@ def release(
     )
 
 
-def _checked_out_by(session: Session, task_id: str, project_id: int) -> str | None:
-    """Держатель брони задачи ``task_id`` проекта ``project_id`` (AFT-023)."""
-    return session.execute(
-        select(TaskModel.checked_out_by).where(
-            TaskModel.task_id == task_id, TaskModel.project_id == project_id
-        )
-    ).scalar_one_or_none()
-
-
 def has_active_checkout(session: Session, task_id: str, agent: str, *, project_id: int) -> bool:
-    return _checked_out_by(session, task_id, project_id) == agent
+    return _locked_by(session, task_id, project_id=project_id) == agent
 
 
 def warn_if_no_checkout(
@@ -227,7 +231,7 @@ def warn_if_no_checkout(
     """
     import logging
 
-    locked_by = _checked_out_by(session, task_id, project_id)
+    locked_by = _locked_by(session, task_id, project_id=project_id)
     if locked_by == agent:
         return None
     if locked_by is None:

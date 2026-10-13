@@ -657,8 +657,9 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                pid = require_project_id(session, project)
-                chain = plan_service.forward_chain(session, task_id, project_id=pid)
+                chain = plan_service.forward_chain(
+                    session, task_id, project_id=require_project_id(session, project)
+                )
         except TaskNotFoundInPlanError:
             raise ValueError(f"Task '{task_id}' not found.") from None
         return [
@@ -678,8 +679,9 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                pid = require_project_id(session, project)
-                chain = plan_service.reverse_chain(session, task_id, project_id=pid)
+                chain = plan_service.reverse_chain(
+                    session, task_id, project_id=require_project_id(session, project)
+                )
         except TaskNotFoundInPlanError:
             raise ValueError(f"Task '{task_id}' not found.") from None
         return [

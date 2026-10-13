@@ -15,17 +15,17 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-def coverage(session: Session, story_id: str) -> StoryCoverage:
+def coverage(session: Session, story_id: str, *, project_id: int) -> StoryCoverage:
     """Derive a coverage snapshot for a story. See [user-stories-graph.md §4]."""
-    model = _require_story(session, story_id)
+    model = _require_story(session, story_id, project_id=project_id)
 
     acceptance = StoryAcceptanceRepository(session).list_for_story(model.row_id)
     acceptance_total = len(acceptance)
     acceptance_met = sum(1 for a in acceptance if a.met)
 
-    impl_tasks = list_tasks(session, story_id)
+    impl_tasks = list_tasks(session, story_id, project_id=project_id)
     tasks_total = len(impl_tasks)
-    tasks_done = sum(1 for t in impl_tasks if t.status.value == "done")
+    tasks_done = sum(1 for t in impl_tasks if t.status.value == TaskStatus.DONE.value)
     # ADO-078: тот же дефект, что в `plan_service`, — «закрыто» было сведено к
     # `done`, и стори, чья последняя реализующая задача отменена, не доходила
     # до DELIVERED никогда. `cancelled` тоже терминален

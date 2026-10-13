@@ -23,7 +23,6 @@ from cod_doc.infra.models import PlanSectionModel
 from cod_doc.infra.repositories import PlanRepository, ProjectRepository
 from cod_doc.services.validation import ValidationError
 from tests._alembic import run_alembic
-from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -195,7 +194,10 @@ def test_legacy_slugs_still_readable(
     tools: dict[str, Callable[..., Any]], factory: sessionmaker[Session]
 ) -> None:
     with transactional(factory) as s:
-        plan = PlanRepository(s).get_by_scope(_PLAN_SCOPE, project_id=only_project_id(s))
+        proj = ProjectRepository(s).get_by_slug("pv")
+        assert proj is not None
+        assert proj.row_id is not None
+        plan = PlanRepository(s).get_by_scope(_PLAN_SCOPE, project_id=proj.row_id)
         assert plan is not None
         s.add(
             PlanSectionModel(

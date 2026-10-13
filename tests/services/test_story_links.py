@@ -94,6 +94,7 @@ def test_link_to_task_validates_target_exists(engine_with_schema) -> None:  # ty
 
         link = stories.link(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             to_kind=StoryLinkKind.TASK,
             to_ref="AGN-012",
@@ -107,6 +108,7 @@ def test_link_to_task_validates_target_exists(engine_with_schema) -> None:  # ty
         with pytest.raises(stories.BrokenLinkError):
             stories.link(
                 session,
+                project_id=story.project_id,
                 story_id=story.story_id,
                 to_kind=StoryLinkKind.TASK,
                 to_ref="GHOST-999",
@@ -133,6 +135,7 @@ def test_link_to_document_validates_target(engine_with_schema) -> None:  # type:
 
         link = stories.link(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             to_kind=StoryLinkKind.DOCUMENT,
             to_ref="modules/M1-auth/overview",
@@ -157,6 +160,7 @@ def test_link_to_module_validates_target(engine_with_schema) -> None:  # type: i
         story = _make_story(session, proj)
         link = stories.link(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             to_kind=StoryLinkKind.MODULE,
             to_ref="M1-auth",
@@ -186,6 +190,7 @@ def test_link_dedup_skips_existing_edge(engine_with_schema) -> None:  # type: ig
 
         first = stories.link(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             to_kind=StoryLinkKind.TASK,
             to_ref="TST-001",
@@ -194,6 +199,7 @@ def test_link_dedup_skips_existing_edge(engine_with_schema) -> None:  # type: ig
         )
         second = stories.link(
             session,
+            project_id=story.project_id,
             story_id=story.story_id,
             to_kind=StoryLinkKind.TASK,
             to_ref="TST-001",
@@ -202,5 +208,5 @@ def test_link_dedup_skips_existing_edge(engine_with_schema) -> None:  # type: ig
         )
         assert first.row_id == second.row_id  # de-duped, same row returned
 
-        all_links = stories.list_links(session, story.story_id)
+        all_links = stories.list_links(session, story.story_id, project_id=story.project_id)
         assert len(all_links) == 1

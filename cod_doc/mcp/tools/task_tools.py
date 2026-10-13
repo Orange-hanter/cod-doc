@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 from cod_doc.domain.entities import actor_kind_for_author
@@ -10,6 +11,8 @@ from cod_doc.mcp.tools._db import require_project_id, session_factory, task_to_d
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
     from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 
 def _link_addressed_questions(
@@ -67,7 +70,9 @@ def register(mcp: FastMCP) -> None:
         pass ``local_only=False`` to see them.
 
         Use this as the input to ``task_checkout``. Returns ``None`` when
-        the ready-set is empty.
+        the ready-set is empty (or ``plan_scope`` names no plan of the
+        project). A project missing from the DB raises ``ValueError`` with
+        the ``cod-doc project add`` hint, like every other task tool.
         """
         from sqlalchemy import select as _select
 
@@ -77,19 +82,18 @@ def register(mcp: FastMCP) -> None:
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            try:
-                project_id = require_project_id(session, project)
-            except LookupError, ValueError:
-                return None
+            project_id = require_project_id(session, project)
 
             batch = plan_reads.ready_batch_for_project(session, project_id, local_only=local_only)
             ready = batch.tasks
             if plan_scope is not None:
-                from cod_doc.infra.repositories import PlanRepository
+                from cod_doc.services import plan_service
 
-                plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
-                plan_id = plan.row_id if plan is not None else -1
-                ready = [t for t in ready if getattr(t, "plan_id", None) == plan_id]
+                plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
+                if plan is None:
+                    # Плана с таким scope в проекте нет — готовых задач в нём тоже.
+                    return None
+                ready = [t for t in ready if t.plan_id == plan.row_id]
             if not ready:
                 return None
             ready_ids = [t.row_id for t in ready if t.row_id is not None]
@@ -256,7 +260,11 @@ def register(mcp: FastMCP) -> None:
                     session, task_id, author, project_id=project_id
                 )
                 t = task_service.log_progress(
-                    session, task_id=task_id, message=message, author=author, project_id=project_id
+                    session,
+                    project_id=project_id,
+                    task_id=task_id,
+                    message=message,
+                    author=author,
                 )
         except TaskNotFoundError:
             raise ValueError(f"Task '{task_id}' not found.") from None
@@ -286,11 +294,10 @@ def register(mcp: FastMCP) -> None:
         sf, _ = session_factory(project)
         try:
             with transactional(sf) as session:
-                pid = require_project_id(session, project)
                 return heartbeat_service.heartbeat_context(
                     session,
+                    project_id=require_project_id(session, project),
                     task_id=task_id,
-                    project_id=pid,
                     since_revision_id=since_revision_id,
                 )
         except TaskNotFoundError:
@@ -336,16 +343,16 @@ def register(mcp: FastMCP) -> None:
 
         from cod_doc.infra.db import transactional
         from cod_doc.services import task_service
+        from cod_doc.services.project_lookup import ProjectNotFoundError
 
         sf, entry = session_factory(project)
         with transactional(sf) as session:
-            # Проекта без строки в БД (только tasks.yaml) — DB-задач у него нет,
-            # сразу к YAML-fallback; иначе поиск в скоупе проекта (AFT-022).
             try:
                 pid: int | None = require_project_id(session, project)
-            except ValueError, LookupError:
+            except ProjectNotFoundError:
+                # Проекта нет в БД — ниже остаётся YAML-фолбэк и miss-hint.
                 pid = None
-            t = task_service.get(session, task_id, project_id=pid) if pid is not None else None
+            t = None if pid is None else task_service.get(session, task_id, project_id=pid)
             if t is not None:
                 return task_to_dict(t, session=session)
 
@@ -596,8 +603,15 @@ def register(mcp: FastMCP) -> None:
                     "next_free_id": exc.next_free_id,
                 }
             if isinstance(exc, IntegrityError):
-                # str(exc) несёт SQL и параметры — отдаём только текст драйвера.
-                return {"index": i, "title": title, "message": str(exc.orig), "code": "conflict"}
+                # Ни str(exc) (SQL и параметры), ни str(exc.orig): у psycopg
+                # там DETAIL «Key (col)=(value) already exists» — значения
+                # полей. Наружу только фиксированный текст.
+                return {
+                    "index": i,
+                    "title": title,
+                    "message": "unique constraint conflict",
+                    "code": "conflict",
+                }
             code = "duplicate" if isinstance(exc, DuplicateTaskError) else "validation"
             return {"index": i, "title": title, "message": str(exc), "code": code}
 
@@ -670,11 +684,17 @@ def register(mcp: FastMCP) -> None:
             # которых нет в БД.
             created = []
             if not errors:
+                # Сюда доходят только не-доменные сбои (доменные уже записаны
+                # в errors по элементу): str() от OperationalError или
+                # IntegrityError на коммите несёт SQL и параметры. Клиенту —
+                # тип, traceback — в DEBUG-лог сервера.
+                logger.warning("task_create_many batch failed: %s", type(exc).__name__)
+                logger.debug("task_create_many batch failed", exc_info=exc)
                 errors.append(
                     {
                         "index": None,
                         "title": None,
-                        "message": f"{type(exc).__name__}: {exc}",
+                        "message": f"{type(exc).__name__}: batch rolled back",
                         "code": "internal",
                     }
                 )
@@ -708,7 +728,11 @@ def register(mcp: FastMCP) -> None:
 
                 _co.warn_if_no_checkout(session, task_id, author, project_id=project_id)
                 t = task_service.set_blocker(
-                    session, task_id=task_id, reason=reason, author=author, project_id=project_id
+                    session,
+                    project_id=project_id,
+                    task_id=task_id,
+                    reason=reason,
+                    author=author,
                 )
                 from cod_doc.services import activity_service
 
@@ -748,7 +772,7 @@ def register(mcp: FastMCP) -> None:
             with transactional(sf) as session:
                 project_id = require_project_id(session, project)
                 t = task_service.clear_blocker(
-                    session, task_id=task_id, author=author, project_id=project_id
+                    session, project_id=project_id, task_id=task_id, author=author
                 )
                 activity_service.emit(
                     session,
@@ -952,11 +976,11 @@ def register(mcp: FastMCP) -> None:
                 project_id = require_project_id(session, project)
                 t = task_service.update_status(
                     session,
+                    project_id=project_id,
                     task_id=task_id,
                     new_status=TaskStatus(new_status),
                     author=author,
                     reason=reason,
-                    project_id=project_id,
                 )
                 activity_service.emit(
                     session,
@@ -1075,42 +1099,42 @@ def register(mcp: FastMCP) -> None:
                 if description is not None:
                     t = task_service.update_description(
                         session,
+                        project_id=pid,
                         task_id=task_id,
                         new_description=description,
                         author=author,
                         reason=reason,
-                        project_id=pid,
                     )
                     changed.append("description")
                 if acceptance is not None:
                     t = task_service.update_acceptance(
                         session,
+                        project_id=pid,
                         task_id=task_id,
                         new_acceptance=acceptance,
                         author=author,
                         reason=reason,
-                        project_id=pid,
                     )
                     changed.append("acceptance")
                 if priority is not None:
                     t = task_service.update_priority(
                         session,
+                        project_id=pid,
                         task_id=task_id,
                         new_priority=priority_enum,
                         author=author,
                         reason=reason,
-                        project_id=pid,
                     )
                     changed.append("priority")
                 if affects_files is not None:
                     change = task_service.update_affects_files(
                         session,
+                        project_id=pid,
                         task_id=task_id,
                         paths=affects_files,
                         mode=affects_files_mode,
                         author=author,
                         reason=reason,
-                        project_id=pid,
                     )
                     t = change.task
                     warnings.extend(change.warnings)
@@ -1182,8 +1206,8 @@ def register(mcp: FastMCP) -> None:
         committed = False
 
         with transactional(sf, commit=not dry_run) as session:
-            pid = require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=pid)
+            project_id = require_project_id(session, project)
+            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
             if plan is None or plan.row_id is None:
                 raise ValueError(f"Plan '{plan_scope}' not found.")
             sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
@@ -1197,7 +1221,7 @@ def register(mcp: FastMCP) -> None:
 
             for task_id in task_ids:
                 try:
-                    current = task_service.get(session, task_id, project_id=pid)
+                    current = task_service.get(session, task_id, project_id=project_id)
                     if current is None:
                         raise TaskNotFoundError(task_id)
                     if current.section_id == section_id:
@@ -1205,11 +1229,11 @@ def register(mcp: FastMCP) -> None:
                         continue
                     t = task_service.move_to_section(
                         session,
+                        project_id=project_id,
                         task_id=task_id,
                         new_section_id=section_id,
                         author=author,
                         reason=reason,
-                        project_id=pid,
                     )
                     moved.append(task_to_dict(t))
                 except (TaskNotFoundError, SectionNotFoundError, CrossPlanMoveError) as exc:
@@ -1361,11 +1385,11 @@ def register(mcp: FastMCP) -> None:
                 )
                 t = complete(
                     session,
+                    project_id=project_id,
                     task_id=task_id,
                     author=author,
                     commit_sha=commit_sha,
                     reason=reason,
-                    project_id=project_id,
                 )
                 activity_service.emit(
                     session,

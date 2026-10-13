@@ -761,10 +761,10 @@ def test_task_description_update_is_indexed(engine_with_schema) -> None:  # type
     with transactional(factory) as session:
         task_service.update_description(
             session,
+            project_id=pid,
             task_id="INC-002",
             new_description="Now mentions rendezvous in the body.",
             author="t",
-            project_id=pid,
         )
 
     with transactional(factory) as session:
@@ -780,14 +780,10 @@ def test_task_acceptance_and_blocker_are_indexed(engine_with_schema) -> None:  #
 
     with transactional(factory) as session:
         task_service.update_acceptance(
-            session,
-            task_id="INC-003",
-            new_acceptance="zeppelin lands",
-            author="t",
-            project_id=pid,
+            session, project_id=pid, task_id="INC-003", new_acceptance="zeppelin lands", author="t"
         )
         task_service.set_blocker(
-            session, task_id="INC-003", reason="waiting on kryptonite", author="t", project_id=pid
+            session, project_id=pid, task_id="INC-003", reason="waiting on kryptonite", author="t"
         )
 
     with transactional(factory) as session:
@@ -796,7 +792,7 @@ def test_task_acceptance_and_blocker_are_indexed(engine_with_schema) -> None:  #
 
     # Clearing the blocker drops that text from the indexed body again.
     with transactional(factory) as session:
-        task_service.clear_blocker(session, task_id="INC-003", author="t", project_id=pid)
+        task_service.clear_blocker(session, project_id=pid, task_id="INC-003", author="t")
     with transactional(factory) as session:
         assert search_service.search(session, project_id=pid, query="kryptonite")["total"] == 0
 
@@ -808,7 +804,7 @@ def test_task_complete_keeps_the_row_indexed(engine_with_schema) -> None:  # typ
         _make_task(session, pid, plid, sid, "INC-004", "Finish the telemetry export")
 
     with transactional(factory) as session:
-        task_service.complete(session, task_id="INC-004", author="t", project_id=pid)
+        task_service.complete(session, project_id=pid, task_id="INC-004", author="t")
 
     with transactional(factory) as session:
         result = search_service.search(session, project_id=pid, query="telemetry")
@@ -835,7 +831,11 @@ def test_story_create_and_criterion_are_indexed(engine_with_schema) -> None:  # 
 
     with transactional(factory) as session:
         story_acceptance.add_criterion(
-            session, story_id="US-100", criterion="search returns the marmalade", author="t"
+            session,
+            project_id=pid,
+            story_id="US-100",
+            criterion="search returns the marmalade",
+            author="t",
         )
 
     with transactional(factory) as session:

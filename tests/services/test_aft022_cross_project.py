@@ -168,7 +168,11 @@ def test_mcp_task_create_does_not_see_the_plan_of_another_project(
 
 
 def test_legacy_rest_plan_is_per_project_when_the_scope_is_taken(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
-    """Второй проект hub-БД получает собственный legacy-план, а не чужой."""
+    """Второй проект hub-БД получает собственный legacy-план, а не чужой.
+
+    Scope уникален в пределах проекта (STO-018, миграция 0047), поэтому оба
+    плана носят один и тот же ``LEGACY_PLAN_SCOPE`` без суффикса проекта.
+    """
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         a = _project_with_task(session, "a")
@@ -179,7 +183,7 @@ def test_legacy_rest_plan_is_per_project_when_the_scope_is_taken(engine_with_sch
 
         assert plan_a != plan_b
         assert session.get(PlanModel, plan_a).scope == legacy_tasks.LEGACY_PLAN_SCOPE  # type: ignore[union-attr]
-        assert session.get(PlanModel, plan_b).scope == f"legacy-rest-api-p{b.project}"  # type: ignore[union-attr]
+        assert session.get(PlanModel, plan_b).scope == legacy_tasks.LEGACY_PLAN_SCOPE  # type: ignore[union-attr]
         assert legacy_tasks.ensure_legacy_plan(session, b.project) == (plan_b, section_b)
         created = tasks.create(
             session,

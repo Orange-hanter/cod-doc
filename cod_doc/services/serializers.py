@@ -55,10 +55,9 @@ def task_to_dict(t: Task, session: Session | None = None) -> dict[str, Any]:
             DependencyModel,
             PlanModel,
             PlanSectionModel,
-            StoryLinkModel,
             TaskModel,
-            UserStoryModel,
         )
+        from cod_doc.services.story_lookup import story_id_for_task
 
         plan_row = session.execute(
             select(PlanModel.scope, PlanSectionModel.letter)
@@ -87,14 +86,5 @@ def task_to_dict(t: Task, session: Session | None = None) -> dict[str, Any]:
                 .order_by(AffectedFileModel.path)
             ).scalars()
         )
-        story = session.execute(
-            select(UserStoryModel.story_id)
-            .join(StoryLinkModel, StoryLinkModel.story_id == UserStoryModel.row_id)
-            .where(
-                StoryLinkModel.to_kind == "task",
-                StoryLinkModel.to_ref == t.task_id,
-            )
-            .limit(1)
-        ).scalar_one_or_none()
-        result["story_id"] = story
+        result["story_id"] = story_id_for_task(session, project_id=t.project_id, task_id=t.task_id)
     return result

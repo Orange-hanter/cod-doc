@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Annotated, Any
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from cod_doc.api.deps import get_config, get_project, get_project_db, try_open_project_db
-from cod_doc.api.web.errors import truncate_for_cookie
+from cod_doc.api.web.errors import set_flash_cookie
 from cod_doc.api.web.markdown import render_markdown, strip_frontmatter
 from cod_doc.api.web.templates_env import templates
 from cod_doc.domain.entities import EntityKind, Priority, TaskType
@@ -218,13 +217,7 @@ def project_init_db(request: Request, slug: str) -> Response:
         severity = "info"
 
     redirect = RedirectResponse(url=f"/p/{slug}", status_code=303)
-    redirect.set_cookie("flash_severity", severity, max_age=30, path="/")
-    redirect.set_cookie(
-        "flash_message",
-        quote(truncate_for_cookie(message)),
-        max_age=30,
-        path="/",
-    )
+    set_flash_cookie(redirect, request, severity=severity, message=message)
     return redirect
 
 

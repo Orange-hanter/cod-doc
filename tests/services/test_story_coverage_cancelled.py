@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from cod_doc.domain.entities import (
@@ -25,33 +24,14 @@ from cod_doc.domain.entities import (
     UserStoryStatus,
 )
 from cod_doc.infra.db import make_session_factory, transactional
-from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.services import story_service as stories
 from cod_doc.services import task_service as tasks
+from tests._story_seed import seed_plan_with_section as _seed_plan_with_section
+from tests._story_seed import seed_project as _seed_project
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
-
-
-def _seed_project(session: Session) -> int:
-    now = datetime.now(UTC)
-    proj = ProjectModel(slug="p", title="P", root_path="/tmp/p", config_json={})
-    proj.created = now
-    proj.updated = now
-    session.add(proj)
-    session.flush()
-    return proj.row_id
-
-
-def _seed_plan_with_section(session: Session, project_id: int) -> tuple[int, int]:
-    now = datetime.now(UTC)
-    plan = PlanModel(project_id=project_id, scope="p-plan", created=now, last_updated=now)
-    session.add(plan)
-    session.flush()
-    sec = PlanSectionModel(plan_id=plan.row_id, letter="A", title="X", slug="A-X", position=0)
-    session.add(sec)
-    session.flush()
-    return plan.row_id, sec.row_id
 
 
 def _make_task(session: Session, project_id: int, plan_id: int, sec_id: int, task_id: str) -> None:
@@ -68,9 +48,10 @@ def _make_task(session: Session, project_id: int, plan_id: int, sec_id: int, tas
     )
 
 
-def _link_task(session: Session, story_id: str, task_id: str) -> None:
+def _link_task(session: Session, story_id: str, task_id: str, *, project_id: int) -> None:
     stories.link(
         session,
+        project_id=project_id,
         story_id=story_id,
         to_kind=StoryLinkKind.TASK,
         to_ref=task_id,
@@ -79,13 +60,13 @@ def _link_task(session: Session, story_id: str, task_id: str) -> None:
     )
 
 
-def _cancel(session: Session, task_id: str, project_id: int) -> None:
+def _cancel(session: Session, task_id: str) -> None:
     tasks.update_status(
         session,
+        project_id=sole_project_id(session),
         task_id=task_id,
         new_status=TaskStatus.CANCELLED,
         author="human:test",
-        project_id=project_id,
     )
 
 
@@ -107,13 +88,15 @@ def test_delivered_when_last_open_task_is_cancelled(engine_with_schema) -> None:
             status=UserStoryStatus.ACCEPTED,
             author="human:test",
         )
-        _link_task(session, story.story_id, "TST-001")
-        _link_task(session, story.story_id, "TST-002")
+        _link_task(session, story.story_id, "TST-001", project_id=proj)
+        _link_task(session, story.story_id, "TST-002", project_id=proj)
 
-        tasks.complete(session, task_id="TST-001", author="human:test", project_id=proj)
-        _cancel(session, "TST-002", proj)
+        tasks.complete(
+            session, project_id=sole_project_id(session), task_id="TST-001", author="human:test"
+        )
+        _cancel(session, "TST-002")
 
-        cov = stories.coverage(session, story.story_id)
+        cov = stories.coverage(session, story.story_id, project_id=story.project_id)
 
     assert cov.status is stories.CoverageStatus.DELIVERED
     assert cov.tasks_done == 1, "cancelled не должен прибавляться к done"
@@ -138,10 +121,10 @@ def test_all_tasks_cancelled_is_not_delivered(engine_with_schema) -> None:
             status=UserStoryStatus.ACCEPTED,
             author="human:test",
         )
-        _link_task(session, story.story_id, "TST-010")
-        _cancel(session, "TST-010", proj)
+        _link_task(session, story.story_id, "TST-010", project_id=proj)
+        _cancel(session, "TST-010")
 
-        cov = stories.coverage(session, story.story_id)
+        cov = stories.coverage(session, story.story_id, project_id=story.project_id)
 
     assert cov.status is stories.CoverageStatus.ACCEPTED
     assert cov.tasks_cancelled == 1
@@ -167,16 +150,23 @@ def test_cancelled_does_not_shortcut_unmet_acceptance(engine_with_schema) -> Non
             author="human:test",
             acceptance=["A1.", "A2."],
         )
-        _link_task(session, story.story_id, "TST-020")
-        _link_task(session, story.story_id, "TST-021")
+        _link_task(session, story.story_id, "TST-020", project_id=proj)
+        _link_task(session, story.story_id, "TST-021", project_id=proj)
 
-        tasks.complete(session, task_id="TST-020", author="human:test", project_id=proj)
-        _cancel(session, "TST-021", proj)
+        tasks.complete(
+            session, project_id=sole_project_id(session), task_id="TST-020", author="human:test"
+        )
+        _cancel(session, "TST-021")
         stories.set_criterion_met(
-            session, story_id=story.story_id, position=1, met=True, author="human:test"
+            session,
+            project_id=story.project_id,
+            story_id=story.story_id,
+            position=1,
+            met=True,
+            author="human:test",
         )
 
-        cov = stories.coverage(session, story.story_id)
+        cov = stories.coverage(session, story.story_id, project_id=story.project_id)
 
     assert cov.status is stories.CoverageStatus.IN_PROGRESS
     assert cov.acceptance_met == 1

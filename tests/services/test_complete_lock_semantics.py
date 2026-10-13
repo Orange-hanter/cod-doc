@@ -16,6 +16,7 @@ from cod_doc.domain.entities import Priority, TaskType
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel, TaskModel
 from cod_doc.services import checkout_service, task_service
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session, sessionmaker
@@ -59,19 +60,23 @@ def test_complete_keeps_lock_until_release(engine_with_schema) -> None:  # type:
         )
 
     with transactional(factory) as s:
-        checkout_service.checkout(s, task_id="LCK-001", agent="claude-x", project_id=pid)
+        checkout_service.checkout(
+            s, task_id="LCK-001", agent="claude-x", project_id=sole_project_id(s)
+        )
     with transactional(factory) as s:
         task_service.complete(
             s,
             task_id="LCK-001",
             author="claude-x",
             commit_sha="abc1234",
-            project_id=pid,
+            project_id=sole_project_id(s),
         )
 
     assert _checked_out_by(factory, "LCK-001", pid) == "claude-x"
 
     with transactional(factory) as s:
-        checkout_service.release(s, task_id="LCK-001", agent="claude-x", project_id=pid)
+        checkout_service.release(
+            s, task_id="LCK-001", agent="claude-x", project_id=sole_project_id(s)
+        )
 
     assert _checked_out_by(factory, "LCK-001", pid) is None

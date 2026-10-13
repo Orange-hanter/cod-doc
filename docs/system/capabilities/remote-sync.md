@@ -5,7 +5,7 @@ status: draft
 source_of_truth: true
 owner: cod-doc core
 created: 2026-09-27
-last_updated: 2026-10-10
+last_updated: 2026-10-11
 related_docs:
   - ../ARCHITECTURE.md
   - ../DATA_MODEL.md
@@ -22,10 +22,11 @@ audience: [contributors, agents]
 > набор равноправных реплик. Реплики обмениваются журналом операций через
 > remote по модели git: `clone` / `pull` / `push`.
 
-> ⚠️ **Намечено, не реализовано (на 2026-09-27).** Спецификация по RFC 29
-> (черновик). Решения — ADR-016 (топология) и ADR-017 (идентичность и захват
-> операций), оба `proposed`. Плана нет. Контракт ниже — цель; детали схемы и
-> протокола — в [RFC 29](../../../proposals/29-cloud-remote-sync.md).
+> ⚠️ **Намечено, не реализовано (на 2026-10-11).** Спецификация по RFC 29
+> (принят 2026-10-11). Решения — ADR-016 (топология) и ADR-017 (идентичность и
+> захват операций), оба приняты. План `cloud-remote-2026-10`, секция A в работе.
+> Контракт ниже — цель; детали схемы и протокола — в
+> [RFC 29](../../../proposals/29-cloud-remote-sync.md).
 
 ## 0. As implemented (2026-09-27)
 
@@ -181,8 +182,8 @@ reverse proxy (Caddy) с TLS на 443. Сервер ограничивает ч�
   контракты §10, декомпозиция и DoD §11
 - План: `cloud-remote-2026-10` (CLO-001…043, backlog), трек в
   [ROADMAP](../roadmap/ROADMAP.md)
-- ADR-016 — командная работа через реплики и remote (proposed)
-- ADR-017 — глобальная идентичность и захват операций (proposed)
+- ADR-016 — командная работа через реплики и remote (accepted 2026-10-11)
+- ADR-017 — глобальная идентичность и захват операций (accepted 2026-10-11)
 - Пересекается: [backup-and-export.md](backup-and-export.md) (remote как бэкап),
   [cloud-agent-plane.md](cloud-agent-plane.md) (сервер-реплика вместо общей
   PostgreSQL)

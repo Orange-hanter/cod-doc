@@ -55,6 +55,7 @@ def _validate_link_target(
 def link(
     session: Session,
     *,
+    project_id: int,
     story_id: str,
     to_kind: StoryLinkKind,
     to_ref: str,
@@ -63,7 +64,7 @@ def link(
     reason: str | None = None,
 ) -> StoryLink:
     """Attach a story to a task/document/module. Idempotent on the (kind, ref, relation) edge."""
-    model = _require_story(session, story_id)
+    model = _require_story(session, story_id, project_id=project_id)
     _validate_link_target(session, model.project_id, to_kind, to_ref)
 
     # De-dup: same (kind, ref, relation) edge → return existing.
@@ -75,7 +76,7 @@ def link(
     )
     existing = session.execute(stmt).scalar_one_or_none()
     if existing is not None:
-        return StoryLinkRepository(session)._to_domain(existing)
+        return StoryLinkRepository(session).to_domain(existing)
 
     new_link = StoryLinkRepository(session).add(
         StoryLink(

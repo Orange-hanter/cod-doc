@@ -88,30 +88,19 @@ def to_legacy_dict(task: Task) -> dict[str, Any]:
 def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
     """Лениво создаёт служебный план/секцию для legacy-задач проекта.
 
-    Возвращает (plan_id, section_id). Scope уникален в пределах БД проекта
-    (embedded state.db), поэтому повторные вызовы идемпотентны.
+    Возвращает (plan_id, section_id). Scope уникален в пределах проекта
+    (STO-018, миграция 0047), поэтому повторные вызовы идемпотентны.
 
     Запись идёт через ``plan_service`` и оставляет ревизию и activity event
     (ADO-040, RFC 26 §5.1) с ``author='api-legacy'``; слаг новой секции —
     конвенционный, его генерирует сервис. Существующие plan/plan_section не
     трогаются.
-
-    ``plan.scope`` уникален на всю БД. В hub-БД, где ``legacy-rest-api`` уже
-    занят другим проектом, план этого проекта получает собственный scope
-    ``legacy-rest-api-p<project_id>``: переиспользовать чужой нельзя —
-    `task_service.create` отвергает план чужого проекта (AFT-022), а без
-    своего скоупа REST-создание задач падало бы у всех проектов, кроме
-    первого. В embedded-БД (один проект) scope прежний.
     """
     # Два параллельных запроса могут оба не найти план и оба его создать:
-    # второй упрётся в уникальный scope — пред-проверкой сервиса
+    # второй упрётся в уникальный (project_id, scope) — пред-проверкой сервиса
     # (PlanAlreadyExistsError) или уникальным индексом (IntegrityError), смотря
     # по тому, когда первый закоммитил. Создание идёт в savepoint, и разбор
-    # повторяется уже с планом, который вставил первый (в т.ч. если это был
-    # чужой проект — тогда scope станет собственным).
-    # Повтор — только если за время попытки появилось то, что мы создавали
-    # (план одного из наших scope или его секция): так проигранная гонка
-    # отличается от постороннего IntegrityError, который пробрасывается как есть.
+    # повторяется уже с планом, который вставил первый.
     for attempt in range(2):
         before = _legacy_footprint(session, project_id)
         try:
@@ -127,21 +116,20 @@ def ensure_legacy_plan(session: Session, project_id: int) -> tuple[int, int]:
     raise AssertionError("unreachable")
 
 
-def _legacy_footprint(session: Session, project_id: int) -> tuple[bool, bool, int]:
-    """Что из legacy-плана уже есть в БД: оба scope заняты? сколько секций у своего плана."""
-    own_scope = f"{LEGACY_PLAN_SCOPE}-p{project_id}"
+def _legacy_footprint(session: Session, project_id: int) -> tuple[bool, int]:
+    """Что из legacy-плана проекта уже есть в БД: план? сколько у него секций.
+
+    scope уникален в проекте (0047), так что гонку проигрывают только со
+    своим же проектом — чужой план тот же scope больше не занимает.
+    """
     return (
-        plan_service.scope_exists(session, LEGACY_PLAN_SCOPE),
-        plan_service.scope_exists(session, own_scope),
-        plan_service.section_count_in_scopes(session, [LEGACY_PLAN_SCOPE, own_scope], project_id),
+        plan_service.get_by_scope(session, LEGACY_PLAN_SCOPE, project_id=project_id) is not None,
+        plan_service.section_count_in_scopes(session, [LEGACY_PLAN_SCOPE], project_id),
     )
 
 
 def _ensure_legacy_plan_once(session: Session, project_id: int) -> tuple[int, int]:
     scope = LEGACY_PLAN_SCOPE
-    # scope уникален на всю БД: занятый другим проектом — берём собственный.
-    if plan_service.scope_taken_by_other(session, scope, project_id):
-        scope = f"{LEGACY_PLAN_SCOPE}-p{project_id}"
     plan = plan_service.get_by_scope(session, scope, project_id=project_id)
     if plan is None:
         plan = plan_service.create_plan(

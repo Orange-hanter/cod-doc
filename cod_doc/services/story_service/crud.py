@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import (
     EntityKind,
@@ -32,6 +33,7 @@ from cod_doc.infra.repositories import (
     TaskRepository,
     UserStoryRepository,
 )
+from cod_doc.infra.sql_helpers import is_unique_violation
 from cod_doc.services import activity_service, search_service, validation
 from cod_doc.services import revision_service as rev
 
@@ -68,7 +70,9 @@ def create(
     validation.validate_story_id(story_id)
     if (
         session.execute(
-            select(UserStoryModel.row_id).where(UserStoryModel.story_id == story_id)
+            select(UserStoryModel.row_id).where(
+                UserStoryModel.project_id == project_id, UserStoryModel.story_id == story_id
+            )
         ).scalar_one_or_none()
         is not None
     ):
@@ -76,25 +80,41 @@ def create(
 
     section_id: int | None = None
     if section_key is not None:
-        section = StorySectionRepository(session).get_by_key(project_id, section_key)
+        # Пустой ключ секцией не бывает (validate_story_section_key) — тот же
+        # промах, а не ошибка аргумента из репозитория.
+        section = (
+            StorySectionRepository(session).get_by_key(project_id, section_key)
+            if section_key
+            else None
+        )
         if section is None:
             raise SectionNotFoundError(section_key)
         section_id = section.row_id
 
     now = datetime.now(UTC)
-    story = UserStoryRepository(session).add(
-        UserStory(
-            project_id=project_id,
-            story_id=story_id,
-            persona=persona,
-            narrative=narrative,
-            status=status,
-            priority=priority,
-            created=now,
-            last_updated=now,
-            section_id=section_id,
+    try:
+        story = UserStoryRepository(session).add(
+            UserStory(
+                project_id=project_id,
+                story_id=story_id,
+                persona=persona,
+                narrative=narrative,
+                status=status,
+                priority=priority,
+                created=now,
+                last_updated=now,
+                section_id=section_id,
+            )
         )
-    )
+    except IntegrityError as exc:
+        # Проверка выше и INSERT — не одна операция: параллельный писатель
+        # успевает занять тот же story_id, и тогда срабатывает UNIQUE из
+        # 0047. Это тот же отказ, что и у проверки. Savepoint не берём
+        # (STO-022): транзакцию откатывает вызывающий. Прочие нарушения
+        # целостности не маскируем.
+        if not _is_story_id_conflict(exc):
+            raise
+        raise StoryAlreadyExistsError(story_id) from exc
     assert story.row_id is not None
 
     if acceptance:
@@ -146,8 +166,18 @@ def create(
     return story
 
 
-def get(session: Session, story_id: str) -> UserStory | None:
-    return UserStoryRepository(session).get_by_story_id(story_id)
+def _is_story_id_conflict(exc: IntegrityError) -> bool:
+    """Нарушен именно UNIQUE(project_id, story_id), а не внешний ключ или CHECK."""
+    return is_unique_violation(
+        exc,
+        constraint="uq_user_story_project_story_id",
+        table="user_story",
+        columns=("project_id", "story_id"),
+    )
+
+
+def get(session: Session, story_id: str, *, project_id: int) -> UserStory | None:
+    return UserStoryRepository(session).get_by_story_id(story_id, project_id=project_id)
 
 
 def list_for_project(session: Session, project_id: int) -> list[UserStory]:
@@ -160,10 +190,12 @@ def next_story_id(session: Session, project_id: int, prefix: str = "US") -> str:
     Used by AI-driven story generation flows where the LLM proposes drafts
     and the route persists them with sequential ids.
     """
+    # ``%`` и ``_`` в префиксе — метасимволы LIKE; экранируем, как regex ниже.
+    like_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     rows = session.execute(
         select(UserStoryModel.story_id).where(
             UserStoryModel.project_id == project_id,
-            UserStoryModel.story_id.like(f"{prefix}-%"),
+            UserStoryModel.story_id.like(f"{like_prefix}-%", escape="\\"),
         )
     ).scalars()
     pat = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
@@ -175,19 +207,19 @@ def next_story_id(session: Session, project_id: int, prefix: str = "US") -> str:
     return f"{prefix}-{max_n + 1:03d}"
 
 
-def list_acceptance(session: Session, story_id: str) -> list[StoryAcceptance]:
-    model = _require_story(session, story_id)
+def list_acceptance(session: Session, story_id: str, *, project_id: int) -> list[StoryAcceptance]:
+    model = _require_story(session, story_id, project_id=project_id)
     return StoryAcceptanceRepository(session).list_for_story(model.row_id)
 
 
-def list_links(session: Session, story_id: str) -> list[StoryLink]:
-    model = _require_story(session, story_id)
+def list_links(session: Session, story_id: str, *, project_id: int) -> list[StoryLink]:
+    model = _require_story(session, story_id, project_id=project_id)
     return StoryLinkRepository(session).list_for_story(model.row_id)
 
 
-def list_tasks(session: Session, story_id: str) -> list[Task]:
+def list_tasks(session: Session, story_id: str, *, project_id: int) -> list[Task]:
     """Tasks linked to the story via `implemented_by` relation."""
-    model = _require_story(session, story_id)
+    model = _require_story(session, story_id, project_id=project_id)
     stmt = (
         select(TaskModel)
         .join(StoryLinkModel, StoryLinkModel.to_ref == TaskModel.task_id)
@@ -200,22 +232,23 @@ def list_tasks(session: Session, story_id: str) -> list[Task]:
         .order_by(TaskModel.task_id)
     )
     repo = TaskRepository(session)
-    return [repo._to_domain(m) for m in session.execute(stmt).scalars()]
+    return [repo.to_domain(m) for m in session.execute(stmt).scalars()]
 
 
 def update_status(
     session: Session,
     *,
+    project_id: int,
     story_id: str,
     new_status: UserStoryStatus,
     author: str,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> UserStory:
-    model = _require_story(session, story_id)
+    model = _require_story(session, story_id, project_id=project_id)
     old_status = model.status
     if old_status == new_status.value:
-        s = UserStoryRepository(session).get_by_story_id(story_id)
+        s = UserStoryRepository(session).get_by_story_id(story_id, project_id=project_id)
         assert s is not None
         return s
 

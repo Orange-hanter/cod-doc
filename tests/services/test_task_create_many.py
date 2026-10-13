@@ -151,3 +151,33 @@ def test_create_many_continue_on_error_commits_good_ones(
             .all()
         )
     assert len(rows) == 2
+
+
+def test_create_many_internal_error_hides_exception_text(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Не-доменный сбой батча: клиенту тип, а не str() с SQL и параметрами."""
+    from sqlalchemy.exc import OperationalError
+
+    from cod_doc.infra import sql_helpers
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+    _stub(monkeypatch, factory)
+
+    def boom(*_a: object, **_kw: object) -> None:
+        raise OperationalError("SELECT hidden_table", {"p": "hidden-param"}, Exception("x"))
+
+    monkeypatch.setattr(sql_helpers, "ensure_outer_transaction", boom)
+    mcp = FastMCP("test")
+    task_tools.register(mcp)
+    result = _get_tool(mcp, "task_create_many")(
+        project="bm",
+        plan_scope="bm-plan",
+        section_letter="A",
+        items=[{"title": "Task A", "id_prefix": "BMP"}],
+    )
+    assert result["committed"] is False
+    (err,) = result["errors"]
+    assert err["code"] == "internal"
+    assert err["message"] == "OperationalError: batch rolled back"
+    assert "hidden" not in str(result)

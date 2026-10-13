@@ -13,7 +13,12 @@ keep using `HTTPException` — the global FastAPI handler renders a plain
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+from urllib.parse import quote
+
+if TYPE_CHECKING:
+    from fastapi import Request
+    from fastapi.responses import Response
 
 Severity = Literal["error", "warning", "info"]
 
@@ -33,6 +38,30 @@ def truncate_for_cookie(message: str, *, max_len: int = COOKIE_FLASH_MAX_LEN) ->
     if len(message) <= max_len:
         return message
     return message[: max_len - 1] + "…"
+
+
+def set_flash_cookie(response: Response, request: Request, *, severity: str, message: str) -> None:
+    """Положить flash-уведомление в пару cookie для следующей страницы.
+
+    Читает их только сервер (``base.html`` через ``request.cookies``), поэтому
+    ``HttpOnly``; ``SameSite=Lax`` — чтобы чужой сайт не подсовывал баннер
+    своим POST; ``Secure`` — когда страница отдана по https. Заголовки cookie
+    только latin-1, поэтому текст percent-кодируется после усечения.
+    """
+    secure = request.url.scheme == "https"
+    for name, value in (
+        ("flash_severity", severity),
+        ("flash_message", quote(truncate_for_cookie(message))),
+    ):
+        response.set_cookie(
+            name,
+            value,
+            max_age=30,
+            path="/",
+            httponly=True,
+            samesite="lax",
+            secure=secure,
+        )
 
 
 class WebError(Exception):

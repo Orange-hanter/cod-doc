@@ -6,16 +6,14 @@ type: rfc
 
 > Категория: 🔵 Архитектура · Риск: высокий · Зависимости: proposal 09 (activity), proposal 22 (hub), proposal 23 (cloud plane), proposal 26 (write-путь через сервисы)
 
-> **Статус: черновик (2026-09-27, сверен со схемой 2026-10-11).** Контракты — §10,
-> декомпозиция и DoD — §11; план `cloud-remote-2026-10` (CLO-001…043) заведён в БД
-> в статусе `backlog` и ждёт приёмки ADR.
-> Решения вынесены в ADR-016 (команда через реплики и remote) и ADR-017
-> (глобальная идентичность и захват операций), оба `proposed`. Целевой контракт —
-> capability [remote-sync](../docs/system/capabilities/remote-sync.md), сценарии
-> SCN-081…089 — [scenarios/remote-sync](../docs/system/scenarios/remote-sync.md).
-> Открытые вопросы Q-007…Q-016 решены владельцем 2026-10-10, текст приведён к
-> решениям (§9). Следующий шаг после приёмки ADR — истории, `plan_create` на scope
-> `cloud-remote-2026-10` и разбиение по секциям A–F из §7.
+> **Статус: принят 2026-10-11** (черновик 2026-09-27, сверен со схемой 2026-10-11).
+> Решения — ADR-016 (команда через реплики и remote) и ADR-017 (глобальная
+> идентичность и захват операций), оба приняты владельцем 2026-10-11. Открытые
+> вопросы Q-007…Q-017 решены (§9), блокирующих нет. Контракты — §10, декомпозиция и
+> DoD — §11; план `cloud-remote-2026-10` (CLO-001…043): секция A в `todo`, остальное
+> в `backlog`. Целевой контракт — capability
+> [remote-sync](../docs/system/capabilities/remote-sync.md), сценарии SCN-081…096 —
+> [scenarios/remote-sync](../docs/system/scenarios/remote-sync.md).
 
 ## 1. Контекст
 
@@ -51,7 +49,7 @@ git — источник модели (DAG коммитов, fast-forward push, 
 | PK — локальный `row_id INTEGER`, FK — тоже `row_id` | все `cod_doc/infra/models/*.py` | один и тот же `row_id` на двух машинах — разные сущности; переносить FK нельзя |
 | Человеческие ID выдаются как `max+1` | `task_service.py:190` `_next_task_id`, `adr_service.py:105` `_next_adr_id` (обёртка `next_adr_id` `:120`), `scenario_service/_internals.py:33` `_next_scenario_id`, `story_service/crud.py:157` `next_story_id`, `question_service/_internals.py:49` `_next_question_id` | две офлайн-реплики гарантированно выдадут один и тот же `ADO-229` разным задачам |
 | Позиции выдаются как `max+1` | `document_repo.py:208`, `story_repo.py:182`, `scenario_repo.py:111` | две вставки «в конец» на разных репликах получат одну позицию |
-| Глобальные `UNIQUE` вместо проектных | `plan.scope`, `user_story.story_id` (`stories.py:48`), `module.module_id` — открыты STO-018 и STO-024 | клон проекта в hub, где уже есть такой scope/story_id, упадёт на вставке; предусловие секции A |
+| Глобальные `UNIQUE` вместо проектных | `plan.scope`, `user_story.story_id` (`stories.py:48`), `module.module_id` — STO-018/024 закрыты миграцией `0047_project_scoped_uniques` 2026-10-11; поиски без `project_id` — STO-023 ✅; `task_service.get` — STO-029 ✅; write-пути по `task_id` — STO-030 ✅ | клон проекта в hub, где уже есть такой scope/story_id, упадёт на вставке; предусловие секции A |
 | `revision.diff` — unified diff, не состояние | `infra/models/revisions.py:42` | по журналу ревизий сущность не восстановить; для сущностей без ревизий (dependency, tag) журнала нет вовсе |
 | Глобальные ID уже есть точечно | `revision.revision_id` ULID (`revisions.py:33`), `activity_event.id` UUID, `finding.finding_uid` uuid7 | журнальные таблицы уже переносимы без перенумерации |
 | Единая точка write-пути | `activity_service.py:177` `write_revision_and_emit_event`, `:147` `emit_for_write` (ADO-040) | место есть, но оно видит событие, а не полный набор изменённых полей |
@@ -65,7 +63,7 @@ git — источник модели (DAG коммитов, fast-forward push, 
 | Hub | RFC 22 §3.1, `~/.cod-doc/hub.db`, `UNIQUE(project_id, task_id)` с миграции 0027 | единица синхронизации — проект, hub на это не влияет |
 | Identity / auth | ARCHITECTURE §12.2 (`actor` — только DDL-спека, «гейт неактивен, ADO-217»), `api/v1/__init__.py:11-15` (Bearer — только docstring) | в API и MCP нет аутентификации вообще; `author` — свободная строка (ADR-012) |
 | Модель ошибок | ARCHITECTURE §10 описывает `CodDocError` с кодами и exit 2–7, но `cod_doc/errors.py` нет: сервисы бросают stdlib-подклассы (`TaskNotFoundError(LookupError)`, `task_service.py:82-131`), MCP оборачивает в `ValueError`, CLI — `ClickException` с кодом 1, `/api/v1` отдаёт `{"detail": …}`; коды `PREFIX-NNN` живут только в `services/validation/_errors.py:9` | контракты §10 пишутся от того, что код делает сегодня; коды `SYNC-NNN` идут префиксом сообщения |
-| Миграции | голова `0046_adr_topics` (`versions/20261006_0046_adr_topics.py`) | ревизии этого RFC — `0047…0050` |
+| Миграции | голова `0047_project_scoped_uniques` (`versions/20261011_0047_project_scoped_uniques.py`) | ревизии этого RFC — `0048…0051` (`0047_project_scoped_uniques` — предусловие STO-018/024) |
 | Бэкап / экспорт | только проекции (`doc/plan/adr/scenario export`) | снапшота БД нет |
 | Решения о хранении | ADR-005 (PostgreSQL, accepted), ADR-010 (два профиля: embedded SQLite и server/cloud на PostgreSQL, accepted 2026-09-06; работы — секция G `adoption-2026-08`, STO-*) | командный профиль сегодня **определён** как общая PostgreSQL; этот RFC предлагает другой путь к команде и требует нового ADR (§4) |
 | VISION | §6 п. 5: цикл выполним удалённым ИИ-клиентом «против облачного узла COD-DOC» | цель та же, узел здесь — реплика с умным remote, а не общая БД |
@@ -199,11 +197,14 @@ Routine-находки — `derived`: каждая реплика пересчи
 Перебуквление детерминировано: обе реплики выбирают одну и ту же букву, потому что
 сортируют по `(hlc, uid)`.
 
-**Предусловие.** `plan.scope`, `user_story.story_id` и `module.module_id` сегодня
-уникальны глобально, а не в пределах проекта. В hub-режиме клон второго проекта с
-тем же scope упадёт на вставке, поэтому секция A начинается после STO-018
-(`UNIQUE(project_id, scope)`, `UNIQUE(project_id, story_id)`) и STO-024
-(`UNIQUE(project_id, module_id)`).
+**Предусловие.** `plan.scope`, `user_story.story_id` и `module.module_id` были
+уникальны глобально, а не в пределах проекта: в hub-режиме клон второго проекта с
+тем же scope упал бы на вставке. STO-018 и STO-024 закрыты миграцией
+`0047_project_scoped_uniques` (`UNIQUE(project_id, …)`); STO-023 убирает поиски по
+этим ключам без `project_id`, иначе вместо ошибки миграции были бы плавающие
+падения и чужой проект в выдаче (закрыта 2026-10-11). STO-029 — тот же класс для
+`task_service.get(task_id)`, и STO-030 — write-пути задач (checkout, complete,
+update_status) по `task_id` без `project_id`; обе закрыты тем же PR #193.
 
 **Рёбра и связи** — `dependency`, `adr_supersedes`, `adr_relation`, `adr_task`,
 `module_dependency`, `scenario_link`, `story_link`, `open_question_link`,
@@ -278,7 +279,7 @@ Changeset — неизменяемый объект:
   "parents": ["<sha256>", "..."],
   "replica": "<replica.uid>",
   "actor": "dakh",
-  "schema_head": "0048_sync_rank",
+  "schema_head": "0049_sync_rank",
   "hlc_max": "…",
   "ops": [ { "op_id": "…", "entity_kind": "task", "entity_uid": "…", "kind": "upsert",
              "fields": {"status": "done"}, "base": {"status": "in_progress"},
@@ -298,7 +299,7 @@ zstd. Первые 4 байта объекта — версия формата: 
   leases/checkout/<task_uid>  # {"replica", "actor", "at", "ttl"} — замок checkout (Q-011)
   objects/ab/cdef….zst        # changeset'ы
   snapshots/<epoch>/<sha>.db.zst  # SQLite authored+journal на момент changeset <sha>
-  meta.json                   # {"epoch": "0048_sync_rank", "schema_min": "0048_sync_rank", "created": …}
+  meta.json                   # {"epoch": "0049_sync_rank", "schema_min": "0049_sync_rank", "created": …}
 ```
 
 **Транспорт** — один интерфейс, три реализации:
@@ -354,7 +355,7 @@ sequenceDiagram
   делает push, если с прошлого снапшота накопилось больше N операций (по умолчанию
   5000), — иначе clone проекта со 100k операций replay'ил бы их все.
 - **Схема и эпохи (Q-012).** Реплика не применяет changeset с `schema_head` новее
-  своей головы миграций: `pull` отвечает «remote на схеме 0052, у вас 0050 —
+  своей головы миграций: `pull` отвечает «remote на схеме 0051_sync_access, у вас 0049_sync_rank —
   `cod-doc update`». Миграция, меняющая `authored`-колонки, открывает **эпоху**:
   1. `cod-doc update` перед миграцией проверяет неупакованные операции и требует
      `cod-doc push`; push на старой схеме принимается, пока `meta.epoch` remote не
@@ -523,14 +524,14 @@ reader.
 
 ## 4. Миграция / обратная совместимость
 
-- **Четыре ревизии alembic** после головы `0046_adr_topics`:
+- **Четыре ревизии alembic** после `0047_project_scoped_uniques` (STO-018/024 — проектные UNIQUE для `plan.scope`, `story_id`, `module_id`):
 
   | Ревизия | Что | Секция |
   |---|---|---|
-  | `0047_sync_identity` | `ADD COLUMN uid` во все authored-таблицы, бэкфилл (uuid7, у рёбер — uuid5 по §3.3), `CREATE UNIQUE INDEX`; таблицы `replica`, `sync_op`, `sync_ref`, `sync_lease`, `changeset`, `entity_alias` | A |
-  | `0048_sync_rank` | `ADD COLUMN rank` (и `document.node_rank`) в 11 мест порядка, бэкфилл в порядке текущего `position`; снятие четырёх `UNIQUE(…, position)` | A |
-  | `0049_sync_conflict` | таблица `sync_conflict` | C |
-  | `0050_sync_access` | `actor`, `api_token`, `project_member` — нужны только серверу | E |
+  | `0048_sync_identity` | `ADD COLUMN uid` во все authored-таблицы, бэкфилл (uuid7, у рёбер — uuid5 по §3.3), `CREATE UNIQUE INDEX`; таблицы `replica`, `sync_op`, `sync_ref`, `sync_lease`, `changeset`, `entity_alias` | A |
+  | `0049_sync_rank` | `ADD COLUMN rank` (и `document.node_rank`) в 11 мест порядка, бэкфилл в порядке текущего `position`; снятие четырёх `UNIQUE(…, position)` | A |
+  | `0050_sync_conflict` | таблица `sync_conflict` | C |
+  | `0051_sync_access` | `actor`, `api_token`, `project_member` — нужны только серверу | E |
 
 - **Снятие `UNIQUE(position)`** на SQLite — пересоздание таблицы. Это допустимо для
   `scenario_step`, `story_acceptance`, `adr_diagram`, `open_question_option`: у них
@@ -539,7 +540,7 @@ reader.
 - **Никакого `batch_alter_table` на `document`**: на SQLite он пересоздаёт таблицу, и
   CASCADE уносит все секции и ссылки (см. CLAUDE.md). Только `ALTER TABLE … ADD
   COLUMN` + `CREATE UNIQUE INDEX`. Тест по образцу
-  `test_migration_0035_preserves_data.py` наливает данные на `0046_adr_topics` и
+  `test_migration_0035_preserves_data.py` наливает данные на `0047_project_scoped_uniques` и
   гонит upgrade; число секций, ссылок, задач и рёбер до и после совпадает.
 - **Проект без remote** работает как сегодня; `sync_op` пишется всегда, чтобы
   первый `remote add` + `push` не терял историю между миграцией и подключением.
@@ -547,9 +548,11 @@ reader.
 - **Hub-режим**: единица синхронизации — проект; в одной `hub.db` часть проектов
   может иметь remote, часть нет.
 - **Postgres не нужен.** И реплика, и сервер работают на SQLite. Из Postgres-блокеров
-  RFC 23 этому RFC нужны только два — STO-018 и STO-024: они переводят глобальные
-  `UNIQUE` (`plan.scope`, `user_story.story_id`, `module.module_id`) в проектные,
-  без чего клон в hub ломается (§3.3). STO-019…023 остаются за RFC 23.
+  RFC 23 этому RFC нужны три — STO-018 и STO-024 (глобальные `UNIQUE` →
+  проектные, сделано миграцией 0047) и STO-023 (поиски без `project_id`), без чего
+  клон в hub ломается (§3.3). Четвёртое предусловие — STO-029 (`task_service.get`
+  ищет `task_id` без `project_id`) — правка кода, не миграция: ревизий в таблице выше
+  не добавляет. STO-019…022 остаются за RFC 23.
 - **`doc import` в синхронизируемом проекте (Q-013)** — только для новых файлов и
   инициализации репозитория; правки идут через БД. Для самого cod-doc это расходится
   с нынешним PostToolUse-хуком «после правки `.md` — `doc import`»; смена хука и
@@ -628,7 +631,7 @@ reader.
 | F. Поверхности и документация | рутина `sync`, ARCHITECTURE/DATA_MODEL, capability и скилл, финальный прогон | 4 |
 
 A → B → C строго последовательны; D и E параллельны после B; F идёт по ходу.
-Предусловия вне плана — STO-018 и STO-024.
+Предусловия вне плана — STO-018 ✅, STO-024 ✅, STO-023 ✅, STO-029 ✅, STO-030 ✅.
 
 ## 8. Критерий успеха
 
@@ -684,7 +687,7 @@ A → B → C строго последовательны; D и E паралле
 Новые таблицы (DDL для SQLite; `TEXT` для ULID/uuid, время — `DATETIME` UTC):
 
 ```sql
--- 0047_sync_identity
+-- 0048_sync_identity
 CREATE TABLE replica (
   uid         TEXT PRIMARY KEY,               -- uuid7
   project_id  INTEGER NOT NULL REFERENCES project(row_id) ON DELETE CASCADE,
@@ -757,12 +760,12 @@ CREATE UNIQUE INDEX uq_<t>_uid ON <t>(uid);
 -- NOT NULL обеспечивает хук и тест, не ограничение: ADD COLUMN NOT NULL без
 -- DEFAULT на SQLite невозможен, а пересоздавать document нельзя (§4).
 
--- 0048_sync_rank — в 11 местах порядка (§3.2):
+-- 0049_sync_rank — в 11 местах порядка (§3.2):
 ALTER TABLE <t> ADD COLUMN rank TEXT;         -- document: node_rank
--- 0049_sync_conflict — sync_conflict (§3.7, с колонкой kind):
+-- 0050_sync_conflict — sync_conflict (§3.7, с колонкой kind):
 --   kind TEXT NOT NULL CHECK (kind IN ('field','text','status','delete_edit',
 --        'key_merge','double_checkout'))
--- 0050_sync_access — actor, api_token, project_member (§3.8).
+-- 0051_sync_access — actor, api_token, project_member (§3.8).
 ```
 
 Remote-раскладка — §3.5; `meta.json`:
@@ -844,8 +847,8 @@ authored-колонок (только `local`) не пишется.
   "parents": ["<sha256>"],
   "replica": "<replica_uid>",
   "actor": "<handle>",
-  "epoch": "0048_sync_rank",
-  "schema_head": "0048_sync_rank",
+  "epoch": "0049_sync_rank",
+  "schema_head": "0049_sync_rank",
   "hlc_max": "<hlc>",
   "digest": "<sha256 состояния после применения>",
   "ops": [{"op_id", "hlc", "entity_kind", "entity_uid", "kind", "fields", "base", "author"}]
@@ -1068,7 +1071,7 @@ s3://cod-doc-remotes:
 
 План `cloud-remote-2026-10` (префикс `CLO`), 43 задачи, все заводятся в статусе
 `backlog` до приёмки ADR-016/017. Секции A → B → C последовательны; D и E
-параллельны после B; F — по ходу. Предусловия вне плана: **STO-018, STO-024**.
+параллельны после B; F — по ходу. Предусловия вне плана: **STO-018 ✅, STO-024 ✅, STO-023 ✅, STO-029 ✅, STO-030 ✅**.
 
 ### 11.1 DoD
 
@@ -1107,8 +1110,8 @@ critical» из `task-standard` соблюдено: 8 из 43), блокеры, 
 | ID | Задача | Тип · Пр. | Блокеры | Acceptance | Файлы |
 |---|---|---|---|---|---|
 | CLO-001 | Implement: реестр классов `sync_registry` и гейт полноты | f · M | — | все 64 таблицы классифицированы по §3.2; тест падает на модели без записи и на FK, не покрытом `logical_fks`; `row_is_local` для `restricted`, `authored_columns` для `link_suggestion.state` | `cod_doc/infra/sync_registry.py`, `tests/infra/test_sync_registry_complete.py` |
-| CLO-002 | Migration: `0047_sync_identity` — `uid`, служебные таблицы | m · H | CLO-001, STO-018, STO-024 | DDL §10.1; бэкфилл uuid7, у рёбер — uuid5; тест сохранности на `0046`: число секций, ссылок, задач, рёбер совпадает; downgrade симметричен | `cod_doc/infra/migrations/versions/…0047_sync_identity.py`, `cod_doc/infra/models/*.py`, `tests/infra/test_migration_0047_preserves_data.py` |
-| CLO-003 | Migration: `0048_sync_rank` — `rank` в 11 местах, снятие 4 UNIQUE | m · M | CLO-002 | порядок внутри каждого родителя до и после совпадает; у четырёх пересоздаваемых таблиц нет CASCADE-детей (проверка в тесте); downgrade восстанавливает UNIQUE | `…0048_sync_rank.py`, `tests/infra/test_migration_0048_rank.py` |
+| CLO-002 | Migration: `0048_sync_identity` — `uid`, служебные таблицы | m · H | CLO-001, STO-018 ✅, STO-023 ✅, STO-024 ✅, STO-029 ✅, STO-030 ✅ | DDL §10.1; бэкфилл uuid7, у рёбер — uuid5; тест сохранности на `0047`: число секций, ссылок, задач, рёбер совпадает; downgrade симметричен | `cod_doc/infra/migrations/versions/…0048_sync_identity.py`, `cod_doc/infra/models/*.py`, `tests/infra/test_migration_0048_preserves_data.py` |
+| CLO-003 | Migration: `0049_sync_rank` — `rank` в 11 местах, снятие 4 UNIQUE | m · M | CLO-002 | порядок внутри каждого родителя до и после совпадает; у четырёх пересоздаваемых таблиц нет CASCADE-детей (проверка в тесте); downgrade восстанавливает UNIQUE | `…0049_sync_rank.py`, `tests/infra/test_migration_0049_rank.py` |
 | CLO-004 | Refactor: выдача и чтение порядка через `rank` | r · M | CLO-003 | вставка между соседями пишет один `rank`; `position` пересчитывается; аллокаторы `document_repo.py:208`, `story_repo.py:182`, `scenario_repo.py:111` переписаны; SCN-093 | `cod_doc/infra/repositories/*.py`, `cod_doc/services/plan_service/sections.py`, `cod_doc/services/doc_tree_service.py` |
 | CLO-005 | Implement: HLC и `replica` (`is_self`) | f · M | CLO-002 | HLC монотонен при откате часов назад; одна `is_self` на проект; формат из §10.1 | `cod_doc/infra/hlc.py`, `tests/infra/test_hlc.py` |
 | CLO-006 | Implement: хук `before_flush` → `sync_op` | f · C | CLO-001, CLO-005 | контракт §10.3: `fields`/`base` только authored-колонок, FK как uid, `restricted` и local не пишутся, `suspended` глушит хук; SCN-088 | `cod_doc/infra/sync_capture.py`, `cod_doc/infra/db.py`, `tests/infra/test_sync_capture.py` |
@@ -1132,7 +1135,7 @@ critical» из `task-standard` соблюдено: 8 из 43), блокеры, 
 
 | ID | Задача | Тип · Пр. | Блокеры | Acceptance | Файлы |
 |---|---|---|---|---|---|
-| CLO-017 | Migration + Implement: `sync_conflict` и сервис конфликтов | m · M | CLO-013 | `0049`; `list_conflicts`, `resolve_conflict` пишут ревизию и событие; `SYNC-301/302` | `…0049_sync_conflict.py`, `cod_doc/services/sync_service/conflicts.py` |
+| CLO-017 | Migration + Implement: `sync_conflict` и сервис конфликтов | m · M | CLO-013 | `0050`; `list_conflicts`, `resolve_conflict` пишут ревизию и событие; `SYNC-301/302` | `…0050_sync_conflict.py`, `cod_doc/services/sync_service/conflicts.py` |
 | CLO-018 | Implement: LWW по полю, поглощение равных, порядок по `rank` | f · H | CLO-017 | разные поля одной задачи сливаются без конфликта; равные значения не дают операции; SCN-081, SCN-093 | `cod_doc/services/sync_service/merge.py` |
 | CLO-019 | Implement: 3-way merge текстов | f · M | CLO-017 | колонки `text_columns`; непересекающиеся ханки сливаются, пересекающиеся — конфликт `text` | `cod_doc/services/sync_service/text_merge.py` |
 | CLO-020 | Implement: статус задачи через статус-машину | f · M | CLO-018 | недопустимая пара переходов и двойной офлайн-checkout → конфликт | `merge.py`, `cod_doc/services/task_status_machine.py` (только чтение) |
@@ -1159,7 +1162,7 @@ critical» из `task-standard` соблюдено: 8 из 43), блокеры, 
 
 | ID | Задача | Тип · Пр. | Блокеры | Acceptance | Файлы |
 |---|---|---|---|---|---|
-| CLO-034 | Migration + Implement: `actor`, `api_token`, `project_member` | m · M | CLO-002 | `0050`; токен хранится как sha256, показывается один раз; отзыв действует сразу | `…0050_sync_access.py`, `cod_doc/services/access_service.py` |
+| CLO-034 | Migration + Implement: `actor`, `api_token`, `project_member` | m · M | CLO-002 | `0051`; токен хранится как sha256, показывается один раз; отзыв действует сразу | `…0051_sync_access.py`, `cod_doc/services/access_service.py` |
 | CLO-035 | Implement: `/api/sync/v1` и `HttpRemote` | f · M | CLO-034, CLO-029 | маршруты §10.9; формат ошибок `{"error": {...}}`; HttpRemote проходит те же тесты, что FileRemote | `cod_doc/api/sync/`, `cod_doc/infra/remote/http.py` |
 | CLO-036 | Implement: Bearer-гейт, rate limit, `auth.denied` | f · C | CLO-034 | закрывает `/api/sync/v1`, `/api/v1` и streamable-http MCP; constant-time; 401/403/429 пишут событие | `cod_doc/api/auth.py`, `cod_doc/api/server.py`, `cod_doc/mcp/server.py` |
 | CLO-037 | Implement: роли и проверка `actor`/`author` на push | f · M | CLO-035, CLO-036 | reader → 403 `SYNC-202`; чужой author → 422 `SYNC-203`; агент не выше владельца; SCN-084 | `cod_doc/api/sync/routes.py`, `access_service.py` |

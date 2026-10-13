@@ -21,12 +21,14 @@ from .base import Base, _utcnow
 
 class PlanModel(Base):
     __tablename__ = "plan"
+    # STO-018: scope уникален в пределах проекта, а не всей БД (миграция 0047).
+    __table_args__ = (UniqueConstraint("project_id", "scope", name="uq_plan_project_scope"),)
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("project.row_id", ondelete="CASCADE"), nullable=False
     )
-    scope: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    scope: Mapped[str] = mapped_column(String(128), nullable=False)
     principle: Mapped[str | None] = mapped_column(String(32))
     # ADO-243: префикс ID новых задач плана. NULL — вывод по задачам плана.
     id_prefix: Mapped[str | None] = mapped_column(String(5))

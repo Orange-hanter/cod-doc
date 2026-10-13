@@ -16,6 +16,7 @@ from cod_doc.infra.models import (
     ProjectModel,
 )
 from cod_doc.services import task_service
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -79,7 +80,10 @@ def test_build_task_assigned_uses_heartbeat_payload(engine_with_schema) -> None:
             author="x",
         )
         wc = build_wake_context(
-            session, reason=WakeReason.TASK_ASSIGNED, task_id="WB-001", project_id=p
+            session,
+            project_id=sole_project_id(session),
+            reason=WakeReason.TASK_ASSIGNED,
+            task_id="WB-001",
         )
 
     assert wc.reason is WakeReason.TASK_ASSIGNED
@@ -105,7 +109,10 @@ def test_build_approval_resolved_uses_heartbeat_payload(engine_with_schema) -> N
             author="x",
         )
         wc = build_wake_context(
-            session, reason=WakeReason.APPROVAL_RESOLVED, task_id="WB-002", project_id=p
+            session,
+            project_id=sole_project_id(session),
+            reason=WakeReason.APPROVAL_RESOLVED,
+            task_id="WB-002",
         )
 
     assert wc.reason is WakeReason.APPROVAL_RESOLVED
@@ -155,9 +162,17 @@ def test_build_task_wake_requires_project_id(engine_with_schema) -> None:  # typ
 
 def test_build_unknown_task_id_propagates(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
-    with transactional(factory) as session:
-        p, _pl, _s = _seed_plan(session)
-        with pytest.raises(task_service.TaskNotFoundError):
-            build_wake_context(
-                session, reason=WakeReason.TASK_ASSIGNED, task_id="NOPE-001", project_id=p
-            )
+    with transactional(factory) as session, pytest.raises(task_service.TaskNotFoundError):
+        build_wake_context(
+            session,
+            project_id=1,  # пустая БД: проекта #1 нет
+            reason=WakeReason.TASK_ASSIGNED,
+            task_id="NOPE-001",
+        )
+
+
+def test_build_task_assigned_without_project_id_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """STO-030: task_id уникален в проекте — без project_id снимок не строится."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session, pytest.raises(ValueError, match="requires project_id"):
+        build_wake_context(session, reason=WakeReason.TASK_ASSIGNED, task_id="WB-001")

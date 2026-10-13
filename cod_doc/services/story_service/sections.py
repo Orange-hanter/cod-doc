@@ -110,7 +110,7 @@ def sections_by_id(session: Session, project_id: int) -> dict[int, StorySection]
     }
 
 
-def get_section_by_id(session: Session, row_id: int) -> StorySection | None:
+def get_section_by_id(session: Session, row_id: int, *, project_id: int) -> StorySection | None:
     """Одна секция по ``row_id`` — одной строкой, без чтения всего проекта.
 
     ADO-159. ``story show`` показывает секцию ровно одной истории, а до этого
@@ -122,8 +122,14 @@ def get_section_by_id(session: Session, row_id: int) -> StorySection | None:
     ``sections_by_id`` остаётся для тех, кому секции нужны пачкой (список
     историй, MCP-выдача): там один запрос на всю страницу дешевле, чем
     точечный на каждую строку.
+
+    ``project_id`` обязателен (STO-024): секция чужого проекта — ``None``, как
+    и несуществующая, а не утечка через голый ``row_id``.
     """
-    return StorySectionRepository(session).get(row_id)
+    section = StorySectionRepository(session).get(row_id)
+    if section is None or section.project_id != project_id:
+        return None
+    return section
 
 
 def section_keys(session: Session, project_id: int) -> dict[int, str]:
@@ -139,6 +145,7 @@ def section_keys(session: Session, project_id: int) -> dict[int, str]:
 def assign_section(
     session: Session,
     *,
+    project_id: int,
     story_id: str,
     key: str | None,
     author: str,
@@ -150,12 +157,13 @@ def assign_section(
     Идемпотентно: повторная привязка к той же секции не пишет ни ревизию, ни
     событие — как ``update_status`` и ``set_criterion_met``.
     """
-    model = _require_story(session, story_id)
+    model = _require_story(session, story_id, project_id=project_id)
     repo = StorySectionRepository(session)
 
     new_section: StorySection | None = None
     if key is not None:
-        new_section = repo.get_by_key(model.project_id, key)
+        # Пустой ключ — промах, как в ``create`` (validate_story_section_key).
+        new_section = repo.get_by_key(model.project_id, key) if key else None
         if new_section is None:
             raise SectionNotFoundError(key)
 

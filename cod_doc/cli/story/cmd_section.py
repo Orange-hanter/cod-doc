@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 
 import click
 
-from ._common import _make_session, _require_project_id, console
+from cod_doc.cli._common import require_project_id as _require_project_id
+
+from ._common import _make_session, console
 from ._group import story
 
 if TYPE_CHECKING:
@@ -168,7 +170,12 @@ def story_set_section(
     try:
         with transactional(sf) as session:
             section = story_service.assign_section(
-                session, story_id=story_id, key=key, author=author, reason=reason
+                session,
+                project_id=_require_project_id(session, project),
+                story_id=story_id,
+                key=key,
+                author=author,
+                reason=reason,
             )
     except StoryNotFoundError:
         console.print(f"[red]Story '{story_id}' not found.[/red]")

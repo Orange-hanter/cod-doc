@@ -257,12 +257,15 @@ class ToolExecutor:
             from cod_doc.infra.db import transactional
             from cod_doc.services import plan_service
             from cod_doc.services.plan_service import TaskNotFoundInPlanError
+            from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             try:
                 with transactional(sf) as session:
                     chain = plan_service.forward_chain(
-                        session, task_id, project_id=self._project_db_id(session)
+                        session,
+                        task_id,
+                        project_id=require_project_id(session, self.project.entry.name),
                     )
             except TaskNotFoundInPlanError:
                 return {"error": f"Task '{task_id}' not found in any DB plan"}
@@ -285,12 +288,15 @@ class ToolExecutor:
             from cod_doc.infra.db import transactional
             from cod_doc.services import plan_service
             from cod_doc.services.plan_service import TaskNotFoundInPlanError
+            from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             try:
                 with transactional(sf) as session:
                     chain = plan_service.reverse_chain(
-                        session, task_id, project_id=self._project_db_id(session)
+                        session,
+                        task_id,
+                        project_id=require_project_id(session, self.project.entry.name),
                     )
             except TaskNotFoundInPlanError:
                 return {"error": f"Task '{task_id}' not found in any DB plan"}
@@ -311,16 +317,17 @@ class ToolExecutor:
     def _tool_plan_ready(self, plan_scope: str, limit: int = 5) -> dict[str, Any]:
         try:
             from cod_doc.infra.db import transactional
-            from cod_doc.mcp.tools._db import task_to_dict
             from cod_doc.services import plan_service
+            from cod_doc.services.project_lookup import require_project_id
+            from cod_doc.services.serializers import task_to_dict
 
             sf = self._make_db_session()
             with transactional(sf) as session:
-                pid = self._project_db_id(session)
-                plan = plan_service.get_by_scope(session, plan_scope, project_id=pid)
+                project_id = require_project_id(session, self.project.entry.name)
+                plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
                 if plan is None or plan.row_id is None:
                     return {"error": f"Plan '{plan_scope}' not found"}
-                tasks = plan_service.ready(session, plan.row_id, limit=limit, project_id=pid)
+                tasks = plan_service.ready(session, plan.row_id, limit=limit, project_id=project_id)
             return {"tasks": [task_to_dict(t) for t in tasks]}
         except Exception as e:
             return {"error": str(e)}
@@ -330,8 +337,8 @@ class ToolExecutor:
     def _tool_doc_body(self, doc_key: str) -> dict[str, Any]:
         try:
             from cod_doc.infra.db import transactional
-            from cod_doc.mcp.tools._db import require_project_id
             from cod_doc.services import doc_service
+            from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             with transactional(sf) as session:
@@ -353,34 +360,20 @@ class ToolExecutor:
 
     def _tool_link_list(self, doc_key: str) -> dict[str, Any]:
         try:
-            from sqlalchemy import select
-
             from cod_doc.infra.db import transactional
-            from cod_doc.infra.models import DocumentModel, SectionModel
-            from cod_doc.mcp.tools._db import require_project_id
-            from cod_doc.services import link_service
+            from cod_doc.services import doc_service, link_service
+            from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             with transactional(sf) as session:
                 project_id = require_project_id(session, self.project.entry.name)
-                doc_row = session.execute(
-                    select(DocumentModel.row_id).where(
-                        DocumentModel.project_id == project_id,
-                        DocumentModel.doc_key == doc_key,
-                    )
-                ).scalar_one_or_none()
-                if doc_row is None:
+                doc = doc_service.get(session, project_id, doc_key)
+                if doc is None or doc.row_id is None:
                     return {"error": f"Document '{doc_key}' not found"}
-                sec_ids = (
-                    session.execute(
-                        select(SectionModel.row_id).where(SectionModel.document_id == doc_row)
-                    )
-                    .scalars()
-                    .all()
-                )
                 links = []
-                for sid in sec_ids:
-                    links.extend(link_service.list_for_section(session, int(sid)))
+                for sec in doc_service.get_sections(session, doc.row_id):
+                    if sec.row_id is not None:
+                        links.extend(link_service.list_for_section(session, sec.row_id))
 
             return {
                 "doc_key": doc_key,
@@ -403,13 +396,15 @@ class ToolExecutor:
         try:
             from cod_doc.infra.db import transactional
             from cod_doc.services import story_service
+            from cod_doc.services.project_lookup import require_project_id
 
             sf = self._make_db_session()
             with transactional(sf) as session:
-                story = story_service.get(session, story_id)
+                project_id = require_project_id(session, self.project.entry.name)
+                story = story_service.get(session, story_id, project_id=project_id)
                 if story is None:
                     return {"error": f"Story '{story_id}' not found"}
-                criteria = story_service.list_acceptance(session, story_id)
+                criteria = story_service.list_acceptance(session, story_id, project_id=project_id)
             return {
                 "story_id": story.story_id,
                 "persona": story.persona,

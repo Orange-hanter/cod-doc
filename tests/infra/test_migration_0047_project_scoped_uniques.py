@@ -1,0 +1,291 @@
+"""STO-018, STO-024: миграция 0047 — натуральные ключи уникальны в проекте.
+
+Два вопроса, которые тест обязан закрыть:
+
+1. Ключи действительно стали проектными: два проекта с одним ``plan.scope``,
+   ``user_story.story_id`` и ``module.module_id`` уживаются в одной БД, дубль
+   внутри проекта по-прежнему отвергается, а до миграции тот же сценарий даёт
+   ``IntegrityError``.
+2. Пересборка таблиц ничего не теряет. У ``plan``, ``user_story`` и ``module``
+   есть CASCADE-дети; если ``PRAGMA foreign_keys=OFF`` не сработает (а внутри
+   открытой транзакции SQLite её молча игнорирует), ``DROP TABLE`` удалит их
+   каскадом. На пустой БД такую потерю не видно, поэтому данные наливаются на
+   предыдущей ревизии — и отдельно на ревизии раньше, чтобы 0046 и 0047 прошли
+   одним прогоном alembic.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import subprocess
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
+from tests._alembic import run_alembic
+
+_THIS = "0047_project_scoped_uniques"
+_MIGRATIONS = Path(__file__).resolve().parents[2] / "cod_doc" / "infra" / "migrations"
+
+
+def _down_revision(revision: str) -> str:
+    """Предыдущая ревизия по цепочке alembic, а не захардкоженное имя.
+
+    Вставка миграции перед 0047 сдвинет «предыдущую» сама; слияние веток
+    (кортеж ``down_revision``) тест не умеет и должен упасть явно.
+    """
+    cfg = Config()
+    cfg.set_main_option("script_location", str(_MIGRATIONS))
+    script = ScriptDirectory.from_config(cfg).get_revision(revision)
+    assert script is not None, revision
+    down = script.down_revision
+    assert isinstance(down, str), f"{revision}: down_revision {down!r} — не одна ревизия"
+    return down
+
+
+_PREVIOUS = _down_revision(_THIS)
+_EARLIER = _down_revision(_PREVIOUS)
+
+_CHILD_TABLES = (
+    "plan",
+    "plan_section",
+    "task",
+    "dependency",
+    "user_story",
+    "story_acceptance",
+    "story_link",
+    "tag",
+    "story_tag",
+    "module",
+    "module_code",
+    "module_dependency",
+)
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(sep=" ")
+
+
+def _connect(db_path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def _add_project(conn: sqlite3.Connection, row_id: int) -> None:
+    now = _now()
+    conn.execute(
+        "INSERT INTO project (row_id, slug, title, root_path, created, updated, config_json)"
+        " VALUES (?, ?, ?, ?, ?, ?, '{}')",
+        (row_id, f"p{row_id}", f"P{row_id}", f"/tmp/p{row_id}", now, now),
+    )
+
+
+def _add_keys(conn: sqlite3.Connection, project_id: int, *, base: int) -> None:
+    """План, история и модуль с одинаковыми именами в любом проекте."""
+    now = _now()
+    conn.execute(
+        "INSERT INTO plan (row_id, project_id, scope, created, last_updated)"
+        " VALUES (?, ?, 'cod-doc-bootstrap', ?, ?)",
+        (base, project_id, now, now),
+    )
+    conn.execute(
+        "INSERT INTO user_story (row_id, project_id, story_id, persona, narrative, status,"
+        " priority, created, last_updated)"
+        " VALUES (?, ?, 'US-001', 'p', 'n', 'draft', 'medium', ?, ?)",
+        (base, project_id, now, now),
+    )
+    conn.execute(
+        "INSERT INTO module (row_id, project_id, module_id, name, status)"
+        " VALUES (?, ?, 'M1-auth', 'Auth', 'active')",
+        (base, project_id),
+    )
+
+
+def _seed(db_path: Path) -> dict[str, int]:
+    """Проект с ключами и по строке в каждой CASCADE-дочерней таблице.
+
+    Возвращает счётчики сразу после сида — с ними тесты сверяют БД после
+    миграции. Ожидание выводится из самого сида, а не дублируется числами.
+    """
+    now = _now()
+    conn = _connect(db_path)
+    try:
+        _add_project(conn, 1)
+        _add_keys(conn, 1, base=1)
+        conn.execute(
+            "INSERT INTO module (row_id, project_id, module_id, name, status)"
+            " VALUES (2, 1, 'M2-core', 'Core', 'active')"
+        )
+        conn.execute(
+            "INSERT INTO plan_section (row_id, plan_id, letter, title, slug, position)"
+            " VALUES (1, 1, 'A', 'Core', 'A-Core', 0)"
+        )
+        for row_id, task_id in ((1, "COD-001"), (2, "COD-002")):
+            conn.execute(
+                "INSERT INTO task (row_id, project_id, task_id, plan_id, section_id, title,"
+                " status, type, priority, created, last_updated)"
+                " VALUES (?, 1, ?, 1, 1, ?, 'todo', 'feature', 'medium', ?, ?)",
+                (row_id, task_id, task_id, now, now),
+            )
+        conn.execute(
+            "INSERT INTO dependency (row_id, from_task_id, to_task_id, kind)"
+            " VALUES (1, 2, 1, 'blocks')"
+        )
+        conn.execute(
+            "INSERT INTO story_acceptance (row_id, story_id, position, criterion)"
+            " VALUES (1, 1, 0, 'c')"
+        )
+        conn.execute(
+            "INSERT INTO story_link (row_id, story_id, to_kind, to_ref, relation)"
+            " VALUES (1, 1, 'task', 'COD-001', 'implements')"
+        )
+        conn.execute("INSERT INTO tag (row_id, project_id, name) VALUES (1, 1, 'hub')")
+        conn.execute("INSERT INTO story_tag (story_id, tag_id) VALUES (1, 1)")
+        conn.execute(
+            "INSERT INTO module_code (row_id, module_id, kind, path)"
+            " VALUES (1, 1, 'source', 'cod_doc/auth.py')"
+        )
+        conn.execute(
+            "INSERT INTO module_dependency (row_id, from_module, to_module, reason)"
+            " VALUES (1, 1, 2, 'r')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    seeded = _counts(db_path)
+    empty = sorted(t for t, n in seeded.items() if n == 0)
+    assert not empty, (
+        f"_seed не наполнил CASCADE-дочерние таблицы {empty}: потерю строк в них "
+        "миграция покажет как пустоту до и после — добавь строку в _seed"
+    )
+    return seeded
+
+
+#: Идентификаторы, которые разрешено подставлять в SQL строкой: имена таблиц
+#: и колонок не параметризуются, поэтому каждое сверяется с этим списком.
+_KEY_COLUMNS = {"plan": "scope", "user_story": "story_id", "module": "module_id"}
+_SQL_IDENTIFIERS = frozenset(_CHILD_TABLES) | frozenset(_KEY_COLUMNS.values())
+
+
+def _ident(name: str) -> str:
+    assert name in _SQL_IDENTIFIERS, f"идентификатор {name!r} вне белого списка"
+    return f'"{name}"'
+
+
+def _counts(db_path: Path) -> dict[str, int]:
+    conn = sqlite3.connect(db_path)
+    try:
+        return {
+            t: int(conn.execute(f"SELECT count(*) FROM {_ident(t)}").fetchone()[0])
+            for t in _CHILD_TABLES
+        }
+    finally:
+        conn.close()
+
+
+def _fk_violations(db_path: Path) -> list[tuple[object, ...]]:
+    conn = sqlite3.connect(db_path)
+    try:
+        return conn.execute("PRAGMA foreign_key_check").fetchall()
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("seed_at", [_PREVIOUS, _EARLIER])
+def test_upgrade_keeps_cascade_children(tmp_path: Path, seed_at: str) -> None:
+    db_path = tmp_path / "seeded.db"
+    db_url = f"sqlite:///{db_path}"
+    run_alembic("upgrade", seed_at, db_url=db_url)
+    seeded = _seed(db_path)
+
+    run_alembic("upgrade", "head", db_url=db_url)
+
+    assert _counts(db_path) == seeded
+    assert _fk_violations(db_path) == []
+
+
+def test_cross_project_duplicates_rejected_before_upgrade(tmp_path: Path) -> None:
+    db_path = tmp_path / "before.db"
+    run_alembic("upgrade", _PREVIOUS, db_url=f"sqlite:///{db_path}")
+    conn = _connect(db_path)
+    try:
+        _add_project(conn, 1)
+        _add_project(conn, 2)
+        _add_keys(conn, 1, base=1)
+        with pytest.raises(sqlite3.IntegrityError):
+            _add_keys(conn, 2, base=2)
+    finally:
+        conn.close()
+
+
+def test_cross_project_duplicates_allowed_after_upgrade(tmp_path: Path) -> None:
+    db_path = tmp_path / "after.db"
+    run_alembic("upgrade", _THIS, db_url=f"sqlite:///{db_path}")
+    conn = _connect(db_path)
+    try:
+        _add_project(conn, 1)
+        _add_project(conn, 2)
+        _add_keys(conn, 1, base=1)
+        _add_keys(conn, 2, base=2)
+        conn.commit()
+        for (table, column), key in zip(
+            _KEY_COLUMNS.items(), ("cod-doc-bootstrap", "US-001", "M1-auth"), strict=True
+        ):
+            # Один и тот же ключ — в обоих проектах; запрос по конкретному
+            # значению, а не первая группа GROUP BY.
+            shared = conn.execute(
+                f"SELECT count(DISTINCT project_id) FROM {_ident(table)}"
+                f" WHERE {_ident(column)} = ?",
+                (key,),
+            ).fetchone()[0]
+            assert shared == 2, (table, column, key)
+        # Внутри проекта ключ по-прежнему уникален.
+        with pytest.raises(sqlite3.IntegrityError):
+            _add_keys(conn, 1, base=3)
+    finally:
+        conn.close()
+
+
+def test_downgrade_is_symmetric_and_keeps_data(tmp_path: Path) -> None:
+    db_path = tmp_path / "roundtrip.db"
+    db_url = f"sqlite:///{db_path}"
+    run_alembic("upgrade", _PREVIOUS, db_url=db_url)
+    seeded = _seed(db_path)
+    run_alembic("upgrade", _THIS, db_url=db_url)
+
+    run_alembic("downgrade", _PREVIOUS, db_url=db_url)
+
+    assert _counts(db_path) == seeded
+    assert _fk_violations(db_path) == []
+    conn = _connect(db_path)
+    try:
+        _add_project(conn, 2)
+        with pytest.raises(sqlite3.IntegrityError):
+            _add_keys(conn, 2, base=2)
+    finally:
+        conn.close()
+
+
+def test_downgrade_refuses_cross_project_duplicates(tmp_path: Path) -> None:
+    db_path = tmp_path / "dups.db"
+    db_url = f"sqlite:///{db_path}"
+    run_alembic("upgrade", _THIS, db_url=db_url)
+    conn = _connect(db_path)
+    try:
+        _add_project(conn, 1)
+        _add_project(conn, 2)
+        _add_keys(conn, 1, base=1)
+        _add_keys(conn, 2, base=2)
+        conn.commit()
+    finally:
+        conn.close()
+
+    with pytest.raises(subprocess.CalledProcessError) as excinfo:
+        run_alembic("downgrade", _PREVIOUS, db_url=db_url)
+    assert b"shared across projects" in (excinfo.value.stderr or b"")
+    assert _counts(db_path)["plan"] == 2

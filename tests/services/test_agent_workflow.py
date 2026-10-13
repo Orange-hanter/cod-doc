@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import select
 
 from cod_doc.domain.entities import (
@@ -229,3 +230,55 @@ def test_agent_release_drops_lock_without_done(engine_with_schema) -> None:  # t
         row = session.execute(select(TaskModel).where(TaskModel.task_id == "REL-001")).scalar_one()
     assert row.checked_out_by is None
     assert row.status != "done"
+
+
+@pytest.mark.parametrize(("agent_id", "kind"), [("agent:alpha", "agent"), ("human:dakh", "human")])
+def test_agent_release_reverts_status_through_status_machine(
+    engine_with_schema,  # type: ignore[no-untyped-def]
+    agent_id: str,
+    kind: str,
+) -> None:
+    """in_progress → todo идёт через update_status: событие перехода, роль — из автора."""
+    from cod_doc.infra.models import ActivityEventModel
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make_task(session, pid, plid, sid, "REL-002")
+    with transactional(factory) as session:
+        agent_service.pick(session, project_id=pid, agent_id=agent_id)
+    with transactional(factory) as session:
+        r = agent_service.release(
+            session, project_id=pid, task_id="REL-002", agent_id=agent_id, reason="rethink"
+        )
+    assert r["ok"] is True
+    assert r["status"] == "todo"
+    with transactional(factory) as session:
+        row = session.execute(select(TaskModel).where(TaskModel.task_id == "REL-002")).scalar_one()
+        assert row.status == "todo"
+        events = session.execute(
+            select(ActivityEventModel.kind, ActivityEventModel.actor_kind).where(
+                ActivityEventModel.scope_id == "REL-002"
+            )
+        ).all()
+    assert ("task.status_changed", kind) in events
+    assert {k for e, k in events if e == "task.released"} == {kind}
+
+
+def test_agent_report_rejects_unknown_approval_type(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid, plid, sid = _seed(session)
+        _make_task(session, pid, plid, sid, "APR-001")
+    with transactional(factory) as session:
+        r = agent_service.report(
+            session,
+            project_id=pid,
+            task_id="APR-001",
+            kind="approval_request",
+            message="please",
+            payload={"approval_type": "rm -rf"},
+        )
+    assert r["ok"] is False
+    assert "unknown approval_type" in r["hint"]
+    assert "manual" in r["legal_approval_types"]

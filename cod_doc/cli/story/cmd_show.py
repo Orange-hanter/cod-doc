@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 import click
 
+from cod_doc.cli._common import require_project_id as _require_project_id
+
 from ._common import _STATUS_ICON, _make_session, console
 from ._group import story
 
@@ -33,14 +35,15 @@ def story_show(ctx: click.Context, story_id: str, project: str, as_json: bool) -
     section_key: str | None = None
     section_title: str | None = None
     with transactional(sf) as session:
-        s = story_service.get(session, story_id)
+        project_id = _require_project_id(session, project)
+        s = story_service.get(session, story_id, project_id=project_id)
         if s is not None:
-            acceptance = story_service.list_acceptance(session, story_id)
-            links = story_service.list_links(session, story_id)
+            acceptance = story_service.list_acceptance(session, story_id, project_id=project_id)
+            links = story_service.list_links(session, story_id, project_id=project_id)
             if s.section_id is not None:
                 # Одна история — одна секция: точечное чтение, а не выгрузка
                 # всех секций проекта (ADO-159).
-                sec = story_service.get_section_by_id(session, s.section_id)
+                sec = story_service.get_section_by_id(session, s.section_id, project_id=project_id)
                 if sec is not None:
                     section_key, section_title = sec.key, sec.title
 

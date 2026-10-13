@@ -39,6 +39,7 @@ from cod_doc.infra.repositories import (
     ProjectRepository,
 )
 from cod_doc.services import task_service as tasks
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -138,7 +139,7 @@ def task_detail_client(tmp_path: Path, migrate_db):
             new_status=TaskStatus.IN_PROGRESS,
             author="human:dakh",
             via_checkout=True,
-            project_id=proj.row_id,
+            project_id=sole_project_id(session),
         )
     engine.dispose()
 
@@ -561,13 +562,12 @@ def test_task_detail_trace_section_lists_calls(task_detail_client) -> None:
     from cod_doc.infra.db import make_engine, make_session_factory, transactional
     from cod_doc.services import task_service as task_svc
     from cod_doc.services import trace_service as trace_svc
+    from cod_doc.services.project_lookup import require_project_id
 
     engine = make_engine(f"sqlite:///{db_path}")
     factory = make_session_factory(engine)
     with transactional(factory) as session:
-        project = ProjectRepository(session).get_by_slug(entry.name)
-        assert project is not None and project.row_id is not None
-        task = task_svc.get(session, "DET-001", project_id=project.row_id)
+        task = task_svc.get(session, "DET-001", project_id=require_project_id(session, entry.name))
         assert task is not None and task.row_id is not None
         trace_svc.record(
             session,
@@ -603,3 +603,49 @@ def test_task_detail_trace_section_lists_calls(task_detail_client) -> None:
     # Error row gets the error notice
     assert "rate limited" in body
     assert "trace-err" in body
+
+
+def _patch_field_service(monkeypatch, exc: Exception) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.api.web.fragments import tasks_fields
+
+    def boom(*_a: object, **_kw: object) -> None:
+        raise exc
+
+    attr, label, _svc = tasks_fields._TASK_FIELDS["description"]
+    monkeypatch.setitem(tasks_fields._TASK_FIELDS, "description", (attr, label, boom))
+
+
+def test_field_patch_integrity_error_text_stays_server_side(
+    task_detail_client, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    """str() от IntegrityError несёт SQL и параметры — в ответ идёт общий текст."""
+    from sqlalchemy.exc import IntegrityError
+
+    _patch_field_service(
+        monkeypatch,
+        IntegrityError("UPDATE secret_table SET x=?", {"p": "secret-param"}, Exception("x")),
+    )
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/fields/description",
+        data={"body": "x"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code >= 400
+    assert "Не удалось сохранить изменения." in r.text
+    assert "secret_table" not in r.text
+    assert "secret-param" not in r.text
+
+
+def test_field_patch_domain_validation_message_is_kept(task_detail_client, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from cod_doc.services.validation import ValidationError
+
+    _patch_field_service(monkeypatch, ValidationError("too_long", "описание слишком длинное"))
+    client, entry = task_detail_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/DET-001/fields/description",
+        data={"body": "x"},
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code >= 400
+    assert "описание слишком длинное" in r.text

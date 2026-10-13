@@ -26,11 +26,12 @@ from cod_doc.infra.models import (
     PlanSectionModel,
     ProjectModel,
     RevisionModel,
-    StoryLinkModel,
     TaskModel,
     UserStoryModel,
 )
+from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.services import task_service
+from cod_doc.services.story_lookup import story_id_for_task
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -73,15 +74,6 @@ def _resolve_blocked_by_ids(session: Session, task_row_id: int) -> list[str]:
     return list(session.execute(stmt).scalars())
 
 
-def _resolve_story_id(session: Session, task_id: str) -> str | None:
-    return session.execute(
-        select(UserStoryModel.story_id)
-        .join(StoryLinkModel, StoryLinkModel.story_id == UserStoryModel.row_id)
-        .where(StoryLinkModel.to_kind == "task", StoryLinkModel.to_ref == task_id)
-        .limit(1)
-    ).scalar_one_or_none()
-
-
 def _resolve_ancestry(session: Session, model: TaskModel) -> dict[str, Any]:
     project = session.get(ProjectModel, model.project_id)
     plan = session.get(PlanModel, model.plan_id)
@@ -96,10 +88,14 @@ def _resolve_ancestry(session: Session, model: TaskModel) -> dict[str, Any]:
         ),
         "story": None,
     }
-    story_id = _resolve_story_id(session, model.task_id)
+    story_id = story_id_for_task(session, project_id=model.project_id, task_id=model.task_id)
     if story_id is not None:
+        # STO-023: story_id уникален в проекте (0047), не во всей БД.
         story_model = session.execute(
-            select(UserStoryModel).where(UserStoryModel.story_id == story_id).limit(1)
+            select(UserStoryModel).where(
+                UserStoryModel.project_id == model.project_id,
+                UserStoryModel.story_id == story_id,
+            )
         ).scalar_one_or_none()
         if story_model is not None:
             out["story"] = {
@@ -232,8 +228,8 @@ def _resolve_pending_approvals(
 def heartbeat_context(
     session: Session,
     *,
-    task_id: str,
     project_id: int,
+    task_id: str,
     since_revision_id: str | None = None,
 ) -> dict[str, Any]:
     """Return a compact iteration-start snapshot for ``task_id``.
@@ -246,9 +242,11 @@ def heartbeat_context(
     under 4 KB. Callers can re-issue with a different ``since_revision_id``
     cursor for incremental updates.
     """
-    # AFT-023: задача ищется в скоупе проекта — в hub-БД task_id не уникален.
+    # STO-030: task_id уникален в проекте, не в БД — без скоупа снимок в
+    # hub-БД отдал бы задачу соседа или упал на MultipleResultsFound.
+    require_int_project_id(project_id)
     model = session.execute(
-        select(TaskModel).where(TaskModel.task_id == task_id, TaskModel.project_id == project_id)
+        select(TaskModel).where(TaskModel.project_id == project_id, TaskModel.task_id == task_id)
     ).scalar_one_or_none()
     if model is None:
         raise task_service.TaskNotFoundError(task_id)

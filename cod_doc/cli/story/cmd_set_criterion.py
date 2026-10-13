@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 
 import click
 
+from cod_doc.cli._common import require_project_id as _require_project_id
+
 from ._common import _make_session, console
 from ._group import story
 
@@ -48,6 +50,7 @@ def story_set_criterion(
         with transactional(sf) as session:
             ac = story_service.set_criterion_met(
                 session,
+                project_id=_require_project_id(session, project),
                 story_id=story_id,
                 position=position,
                 met=met,

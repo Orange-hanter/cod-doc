@@ -23,12 +23,13 @@ if TYPE_CHECKING:
 def add_criterion(
     session: Session,
     *,
+    project_id: int,
     story_id: str,
     criterion: str,
     author: str,
     reason: str | None = None,
 ) -> StoryAcceptance:
-    model = _require_story(session, story_id)
+    model = _require_story(session, story_id, project_id=project_id)
     repo = StoryAcceptanceRepository(session)
     existing = repo.list_for_story(model.row_id)
     next_pos = (max((a.position for a in existing), default=-1)) + 1
@@ -66,13 +67,14 @@ def add_criterion(
 def set_criterion_met(
     session: Session,
     *,
+    project_id: int,
     story_id: str,
     position: int,
     met: bool,
     author: str,
     reason: str | None = None,
 ) -> StoryAcceptance:
-    model = _require_story(session, story_id)
+    model = _require_story(session, story_id, project_id=project_id)
     stmt = select(StoryAcceptanceModel).where(
         StoryAcceptanceModel.story_id == model.row_id,
         StoryAcceptanceModel.position == position,

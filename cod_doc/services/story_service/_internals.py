@@ -15,8 +15,11 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-def _require_story(session: Session, story_id: str) -> UserStoryModel:
-    stmt = select(UserStoryModel).where(UserStoryModel.story_id == story_id)
+def _require_story(session: Session, story_id: str, *, project_id: int) -> UserStoryModel:
+    # STO-023: story_id уникален в проекте (0047), не во всей БД.
+    stmt = select(UserStoryModel).where(
+        UserStoryModel.project_id == project_id, UserStoryModel.story_id == story_id
+    )
     m = session.execute(stmt).scalar_one_or_none()
     if m is None:
         raise StoryNotFoundError(story_id)

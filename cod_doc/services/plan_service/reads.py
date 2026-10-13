@@ -29,7 +29,10 @@ if TYPE_CHECKING:
 
 
 def get_by_scope(session: Session, scope: str, *, project_id: int) -> Plan | None:
-    """Return a Plan by its unique ``scope`` slug, or None.
+    """Return the project's Plan by its ``scope`` slug, or None.
+
+    ``scope`` is unique within a project, not across the DB (STO-018,
+    migration 0047), so ``project_id`` is required (STO-023).
 
     Web handlers (story task-decomposition, master import) use this to look
     up a target plan by name without reaching into infra.repositories.
@@ -37,19 +40,9 @@ def get_by_scope(session: Session, scope: str, *, project_id: int) -> Plan | Non
     return PlanRepository(session).get_by_scope(scope, project_id=project_id)
 
 
-def scope_exists(session: Session, scope: str) -> bool:
-    """Занят ли ``scope`` хоть каким-то планом — scope уникален на всю БД."""
-    return PlanRepository(session).scope_exists(scope)
-
-
 def section_count_in_scopes(session: Session, scopes: list[str], project_id: int) -> int:
     """Сколько секций у планов проекта с одним из ``scopes`` (отпечаток гонки создания)."""
     return PlanRepository(session).section_count_in_scopes(scopes, project_id)
-
-
-def scope_taken_by_other(session: Session, scope: str, project_id: int) -> bool:
-    """Занят ли ``scope`` планом другого проекта (legacy REST, restate-импорт)."""
-    return PlanRepository(session).scope_taken_by_other(scope, project_id)
 
 
 def list_sections(session: Session, plan_id: int, *, project_id: int) -> list[PlanSection]:
@@ -61,6 +54,22 @@ def list_sections(session: Session, plan_id: int, *, project_id: int) -> list[Pl
     """
     _require_plan(session, plan_id, project_id)
     return PlanSectionRepository(session).list_for_plan(plan_id)
+
+
+def get_section_by_letter(
+    session: Session, plan_id: int, letter: str, *, project_id: int
+) -> PlanSection | None:
+    """Секция плана по букве без учёта регистра; None — нет такой.
+
+    План сверяется с проектом: голый ``plan_id`` чужого проекта секций не
+    открывает (STO-023). Единая точка «буква → секция» для поверхностей —
+    раньше каждая команда сравнивала буквы сама.
+    """
+    if get_for_project(session, plan_id, project_id=project_id) is None:
+        return None
+    wanted = letter.strip().upper()
+    sections = list_sections(session, plan_id, project_id=project_id)
+    return next((s for s in sections if s.letter.upper() == wanted), None)
 
 
 def get_for_project(session: Session, plan_id: int, *, project_id: int) -> Plan | None:
@@ -163,11 +172,10 @@ def plan_scopes(session: Session, project_id: int) -> list[str]:
 def require_plan_in_project(session: Session, project_id: int, plan_scope: str) -> int:
     """``row_id`` плана ``plan_scope`` в проекте; иначе ``PlanNotFoundError``.
 
-    Проверка идёт по паре (scope, project_id), а не через ``get_by_scope``:
-    scope уникален на БД, но в hub-БД несколько проектов, и ``get_by_scope``
-    нашёл бы план чужого проекта. Чужой план и отсутствующий дают одну и ту же
-    ошибку — существование чужого плана не раскрывается. Текст перечисляет
-    живые scope проекта, как это делает «Section not found».
+    Проверка идёт по паре (scope, project_id): scope уникален в пределах
+    проекта (STO-018, миграция 0047). Чужой план и отсутствующий дают одну и
+    ту же ошибку — существование чужого плана не раскрывается. Текст
+    перечисляет живые scope проекта, как это делает «Section not found».
     """
     row_id = session.execute(
         select(PlanModel.row_id).where(

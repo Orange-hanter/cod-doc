@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import click
 
+from cod_doc.cli._common import require_project_id as _require_project_id
+
 from ._common import _make_session, console
 from ._group import story
 
@@ -54,6 +56,7 @@ def story_link(
         with transactional(sf) as session:
             lk = story_service.link(
                 session,
+                project_id=_require_project_id(session, project),
                 story_id=story_id,
                 to_kind=StoryLinkKind(to_kind),
                 to_ref=to_ref,

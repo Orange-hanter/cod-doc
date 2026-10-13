@@ -58,9 +58,9 @@ def register(mcp: FastMCP) -> None:
                 result = checkout_service.checkout(
                     session,
                     task_id,
+                    project_id=require_project_id(session, project),
                     agent=agent,
                     expected_statuses=expected_statuses,
-                    project_id=require_project_id(session, project),
                 )
         except LookupError as exc:
             raise ValueError(str(exc)) from exc
@@ -98,9 +98,9 @@ def register(mcp: FastMCP) -> None:
                 result = checkout_service.release(
                     session,
                     task_id,
+                    project_id=require_project_id(session, project),
                     agent=agent,
                     force=force,
-                    project_id=require_project_id(session, project),
                 )
         except LookupError as exc:
             raise ValueError(str(exc)) from exc

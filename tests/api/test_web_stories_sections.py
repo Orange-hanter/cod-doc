@@ -51,7 +51,11 @@ def _seed_rows(engine, project_db_id, rows, sections):  # type: ignore[no-untype
             )
             if section_key:
                 story_service.assign_section(
-                    session, story_id=sid, key=section_key, author="human:test"
+                    session,
+                    project_id=project_db_id,
+                    story_id=sid,
+                    key=section_key,
+                    author="human:test",
                 )
 
 

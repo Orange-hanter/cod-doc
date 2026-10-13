@@ -51,6 +51,7 @@ from cod_doc.services import checkout_service as checkout
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
 from tests._scope import only_project_id
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -186,7 +187,7 @@ def test_update_status_canonicalises_a_legacy_enum_member(  # type: ignore[no-un
             task_id="CA-003",
             new_status=legacy_target,
             author="human:test",
-            project_id=only_project_id(session),
+            project_id=sole_project_id(session),
         )
         assert _raw_status(session, "CA-003") == expected
 
@@ -210,7 +211,7 @@ def test_update_status_to_the_same_bucket_is_not_a_transition(engine_with_schema
             task_id="CA-004",
             new_status=TaskStatus.PENDING,
             author="human:test",
-            project_id=only_project_id(session),
+            project_id=sole_project_id(session),
         )
         assert _raw_status(session, "CA-004") == TaskStatus.TODO.value
         assert (
@@ -229,7 +230,7 @@ def test_checkout_of_a_legacy_row_lands_canonical(engine_with_schema) -> None:  
     with transactional(factory) as session:
         _make_task(session, "CA-005", raw_status="pending")
         result = checkout.checkout(
-            session, "CA-005", agent="agent:test", project_id=only_project_id(session)
+            session, "CA-005", project_id=sole_project_id(session), agent="agent:test"
         )
         assert result.new_status == TaskStatus.IN_PROGRESS_NEW.value
         assert _raw_status(session, "CA-005") == TaskStatus.IN_PROGRESS_NEW.value
@@ -243,7 +244,7 @@ def test_complete_from_a_legacy_row_leaves_no_legacy_behind(engine_with_schema) 
     with transactional(factory) as session:
         row_id = _make_task(session, "CA-006", raw_status="pending")
         tasks.complete(
-            session, task_id="CA-006", author="human:test", project_id=only_project_id(session)
+            session, task_id="CA-006", author="human:test", project_id=sole_project_id(session)
         )
         assert _raw_status(session, "CA-006") == TaskStatus.DONE.value
         status_diffs = [
@@ -268,7 +269,7 @@ def test_revert_of_a_historical_legacy_revision_lands_canonical(engine_with_sche
     with transactional(factory) as session:
         row_id = _make_task(session, "CA-007")
         tasks.complete(
-            session, task_id="CA-007", author="human:test", project_id=only_project_id(session)
+            session, task_id="CA-007", author="human:test", project_id=sole_project_id(session)
         )
         model = session.get(TaskModel, row_id)
         assert model is not None
@@ -313,15 +314,15 @@ def test_no_write_path_leaves_a_legacy_spelling_in_the_column(engine_with_schema
             task_id="CA-011",
             new_status=TaskStatus.PENDING,
             author="human:test",
-            project_id=only_project_id(session),
+            project_id=sole_project_id(session),
         )
         _make_task(session, "CA-012")
         checkout.checkout(
-            session, "CA-012", agent="agent:test", project_id=only_project_id(session)
+            session, "CA-012", project_id=sole_project_id(session), agent="agent:test"
         )
         _make_task(session, "CA-013")
         tasks.complete(
-            session, task_id="CA-013", author="human:test", project_id=only_project_id(session)
+            session, task_id="CA-013", author="human:test", project_id=sole_project_id(session)
         )
 
         leaked = _stored_statuses(session) & set(TASK_STATUS_ALIASES)

@@ -392,7 +392,9 @@ def stories_list(
     # One pass per story — N+1, but story counts in real projects are small.
     enriched: list[dict[str, Any]] = []
     for s in rows:
-        linked = stories.list_tasks(session, s.story_id) if s.row_id else []
+        linked = (
+            stories.list_tasks(session, s.story_id, project_id=project_db_id) if s.row_id else []
+        )
         tasks_total = len(linked)
         tasks_done = sum(1 for t in linked if t.status.value == "done")
         plan_ids_seen: set[int] = set()
@@ -654,13 +656,13 @@ def story_show(
 ) -> HTMLResponse:
     proj = get_project(slug)
     session, project_db_id = db
-    story = stories.get(session, story_id)
-    if story is None or story.project_id != project_db_id:
+    story = stories.get(session, story_id, project_id=project_db_id)
+    if story is None:
         raise HTTPException(404, f"Story не найдена: {story_id}")
     assert story.row_id is not None
 
-    acceptance = stories.list_acceptance(session, story_id)
-    linked_tasks = stories.list_tasks(session, story_id)
+    acceptance = stories.list_acceptance(session, story_id, project_id=project_db_id)
+    linked_tasks = stories.list_tasks(session, story_id, project_id=project_db_id)
     return templates.TemplateResponse(
         request,
         "project/story_show.html",
@@ -857,8 +859,8 @@ def story_update_status(
     """Promote a story between statuses (draft → accepted, etc.)."""
     proj = get_project(slug)
     session, project_db_id = db
-    story = stories.get(session, story_id)
-    if story is None or story.project_id != project_db_id:
+    story = stories.get(session, story_id, project_id=project_db_id)
+    if story is None:
         raise HTTPException(404, f"Story не найдена: {story_id}")
     try:
         target = UserStoryStatus(new_status.strip().lower())
@@ -866,6 +868,7 @@ def story_update_status(
         raise HTTPException(400, f"Unknown status: {new_status}") from exc
     stories.update_status(
         session,
+        project_id=project_db_id,
         story_id=story_id,
         new_status=target,
         author="human:web",
@@ -890,8 +893,8 @@ def story_tasks_generate(
     proj = get_project(slug)
     session, project_db_id = db
     cfg = get_config()
-    story = stories.get(session, story_id)
-    if story is None or story.project_id != project_db_id:
+    story = stories.get(session, story_id, project_id=project_db_id)
+    if story is None:
         raise HTTPException(404, f"Story не найдена: {story_id}")
 
     section_layout: list[tuple[str, str]] = []
@@ -968,8 +971,8 @@ async def story_tasks_save(
 ) -> Response:
     proj = get_project(slug)
     session, project_db_id = db
-    story = stories.get(session, story_id)
-    if story is None or story.project_id != project_db_id:
+    story = stories.get(session, story_id, project_id=project_db_id)
+    if story is None:
         raise HTTPException(404, f"Story не найдена: {story_id}")
     assert story.row_id is not None
 
@@ -1024,6 +1027,7 @@ async def story_tasks_save(
                 )
                 stories.link(
                     session,
+                    project_id=project_db_id,
                     story_id=story_id,
                     to_kind=StoryLinkKind.TASK,
                     to_ref=task.task_id,

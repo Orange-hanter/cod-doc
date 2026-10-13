@@ -23,6 +23,8 @@ from cod_doc.services import task_service
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import pytest
+
 _PROJECT = "tcrc"
 _SCOPE = "adoption-2026-08"
 
@@ -114,3 +116,26 @@ def test_cli_create_explicit_free_id(tmp_path: Path) -> None:
     result = _create(["--id", "ADO-010"])
     assert result.exit_code == 0, result.output
     assert "ADO-010" in result.output
+
+
+def test_cli_create_fk_violation_between_phases(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Проект удалён между фазами — внешний ключ падает, CLI отвечает без трейсбека и SQL."""
+    from sqlalchemy.exc import IntegrityError
+
+    _seed(tmp_path)
+
+    def _fk_fail(*_a: object, **_kw: object) -> None:
+        raise IntegrityError(
+            "INSERT INTO task (project_id) VALUES (?)",
+            {"project_id": 1},
+            Exception("FOREIGN KEY constraint failed"),
+        )
+
+    monkeypatch.setattr(task_service, "create", _fk_fail)
+    result = _create([])
+    assert result.exit_code == 1, result.output
+    assert "удалённый проект/план" in result.output
+    for leak in ("Traceback", "INSERT", "FOREIGN KEY", "sqlite3"):
+        assert leak not in result.output, result.output

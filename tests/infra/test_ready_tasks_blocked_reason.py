@@ -19,6 +19,7 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import PlanModel, PlanSectionModel, ProjectModel
 from cod_doc.services import plan_service, task_service
 from tests._alembic import run_alembic
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -172,7 +173,7 @@ def test_chain_layout_ready_ids_respect_blocker(engine_with_schema: Engine) -> N
             task_id="TA-001",
             reason="ждём API",
             author=_AUTHOR,
-            project_id=project_id,
+            project_id=sole_project_id(session),
         )
     with transactional(factory) as session:
         plan_id = session.execute(text("SELECT row_id FROM plan")).scalar_one()
@@ -180,7 +181,9 @@ def test_chain_layout_ready_ids_respect_blocker(engine_with_schema: Engine) -> N
     assert layout["ready_ids"] == {"TA-002"}
 
     with transactional(factory) as session:
-        task_service.clear_blocker(session, task_id="TA-001", author=_AUTHOR, project_id=project_id)
+        task_service.clear_blocker(
+            session, task_id="TA-001", author=_AUTHOR, project_id=sole_project_id(session)
+        )
     with transactional(factory) as session:
         layout = plan_service.chain_layout(session, plan_id, project_id=project_id)
     assert layout["ready_ids"] == {"TA-001", "TA-002"}
@@ -194,7 +197,9 @@ def test_clear_blocker_keeps_dependency_rule(engine_with_schema: Engine) -> None
         _make(session, ids, "TA-004")
         _make(session, ids, "TA-003", blocked_by=["TA-004"], blocked_reason="ждём API")
     with transactional(factory) as session:
-        task_service.clear_blocker(session, task_id="TA-003", author=_AUTHOR, project_id=ids[0])
+        task_service.clear_blocker(
+            session, task_id="TA-003", author=_AUTHOR, project_id=sole_project_id(session)
+        )
 
     assert _ready(engine_with_schema) == {"TA-004"}
 

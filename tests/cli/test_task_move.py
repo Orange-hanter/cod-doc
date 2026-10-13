@@ -20,7 +20,7 @@ from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.models import ActivityEventModel, PlanModel, PlanSectionModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import task_service as tasks
-from tests._scope import only_project_id
+from cod_doc.services.project_lookup import require_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -83,7 +83,7 @@ def _seed(name: str, task_ids: tuple[str, ...] = ("MVC-001", "MVC-002")) -> None
 
 def _section_letter(name: str, task_id: str) -> str:
     for session in _session(name):
-        t = tasks.get(session, task_id, project_id=only_project_id(session))
+        t = tasks.get(session, task_id, project_id=require_project_id(session, name))
         assert t is not None
         sec = session.get(PlanSectionModel, t.section_id)
         assert sec is not None

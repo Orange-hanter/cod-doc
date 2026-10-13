@@ -59,7 +59,7 @@ def test_complete_records_metrics_row(engine_with_schema) -> None:  # type: igno
         pid, plid, sid = _seed(session)
         _make(session, pid, plid, sid, "MET-001")
     with transactional(factory) as session:
-        task_service.complete(session, task_id="MET-001", author="a", project_id=pid)
+        task_service.complete(session, project_id=pid, task_id="MET-001", author="a")
     with transactional(factory) as session:
         rows = list(session.execute(select(TaskMetricsModel)).scalars())
     assert len(rows) == 1
@@ -77,14 +77,14 @@ def test_record_is_idempotent_on_recomplete(engine_with_schema) -> None:  # type
         pid, plid, sid = _seed(session)
         _make(session, pid, plid, sid, "MET-002")
     with transactional(factory) as session:
-        task_service.complete(session, task_id="MET-002", author="a", project_id=pid)
+        task_service.complete(session, project_id=pid, task_id="MET-002", author="a")
     # Reopen via direct model touch (state-machine path is checked elsewhere).
     with transactional(factory) as session:
         m = session.execute(select(TaskModel).where(TaskModel.task_id == "MET-002")).scalar_one()
         m.status = TaskStatus.IN_PROGRESS.value
     # Complete again — second call should be a no-op for metrics.
     with transactional(factory) as session:
-        task_service.complete(session, task_id="MET-002", author="a", project_id=pid)
+        task_service.complete(session, project_id=pid, task_id="MET-002", author="a")
     with transactional(factory) as session:
         rows = list(session.execute(select(TaskMetricsModel)).scalars())
     assert len(rows) == 1
@@ -114,7 +114,7 @@ def test_summary_returns_percentiles_by_type(engine_with_schema) -> None:  # typ
         _make(session, pid, plid, sid, "MET-012", type=TaskType.BUG)
     with transactional(factory) as session:
         for tid in ("MET-010", "MET-011", "MET-012"):
-            task_service.complete(session, task_id=tid, author="a", project_id=pid)
+            task_service.complete(session, project_id=pid, task_id=tid, author="a")
     with transactional(factory) as session:
         s = metrics_service.summary(session, project_id=pid)
     assert s["completed"] == 3
@@ -148,7 +148,7 @@ def test_sparkline_counts_today_completion(engine_with_schema) -> None:  # type:
         pid, plid, sid = _seed(session)
         _make(session, pid, plid, sid, "MET-020")
     with transactional(factory) as session:
-        task_service.complete(session, task_id="MET-020", author="a", project_id=pid)
+        task_service.complete(session, project_id=pid, task_id="MET-020", author="a")
     with transactional(factory) as session:
         buckets = metrics_service.sparkline_buckets(session, project_id=pid, days=7)
     # Today's bucket has count=1.

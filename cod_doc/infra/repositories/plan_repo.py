@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from cod_doc.domain.entities import Plan, PlanSection
 from cod_doc.infra.models import PlanModel, PlanSectionModel
-from cod_doc.infra.repositories.base import BaseRepository
+from cod_doc.infra.repositories.base import BaseRepository, require_int_project_id, require_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -50,21 +50,13 @@ class PlanRepository(BaseRepository[Plan, PlanModel]):
         return PlanModel(**kwargs)
 
     def get_by_scope(self, scope: str, *, project_id: int) -> Plan | None:
-        stmt = select(PlanModel).where(PlanModel.scope == scope, PlanModel.project_id == project_id)
+        # STO-023: scope уникален в проекте (0047), без project_id hub-БД с
+        # одинаковым scope в двух проектах дала бы MultipleResultsFound.
+        require_int_project_id(project_id)
+        require_key(scope, "scope")
+        stmt = select(PlanModel).where(PlanModel.project_id == project_id, PlanModel.scope == scope)
         model = self.session.execute(stmt).scalar_one_or_none()
         return self._to_domain(model) if model else None
-
-    def scope_exists(self, scope: str) -> bool:
-        """Занят ли ``scope`` хоть каким-то планом БД.
-
-        ``plan.scope`` уникален на всю БД (уникальный индекс), поэтому занятость
-        проверяется без скоупа проекта. Наружу — только да/нет: ни план, ни
-        ``project_id`` чужого проекта не раскрываются (AFT-023).
-        """
-        return (
-            self.session.execute(select(PlanModel.row_id).where(PlanModel.scope == scope)).first()
-            is not None
-        )
 
     def section_count_in_scopes(self, scopes: Sequence[str], project_id: int) -> int:
         """Сколько секций у планов проекта с одним из ``scopes`` — для «отпечатка» гонки."""
@@ -74,17 +66,6 @@ class PlanRepository(BaseRepository[Plan, PlanModel]):
                 .join(PlanModel, PlanModel.row_id == PlanSectionModel.plan_id)
                 .where(PlanModel.scope.in_(list(scopes)), PlanModel.project_id == project_id)
             ).scalar_one()
-        )
-
-    def scope_taken_by_other(self, scope: str, project_id: int) -> bool:
-        """Занят ли ``scope`` планом другого проекта — тогда нужен собственный scope."""
-        return (
-            self.session.execute(
-                select(PlanModel.row_id).where(
-                    PlanModel.scope == scope, PlanModel.project_id != project_id
-                )
-            ).first()
-            is not None
         )
 
 

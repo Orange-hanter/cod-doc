@@ -28,6 +28,7 @@ from cod_doc.infra.models import (
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
 from cod_doc.services import task_service as tasks
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -77,11 +78,11 @@ def test_revert_task_status_change(engine_with_schema) -> None:  # type: ignore[
 
         tasks.update_status(
             session,
+            project_id=sole_project_id(session),
             task_id="CF-001",
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",
             via_checkout=True,
-            project_id=p,
         )
         history = rev.list_for_entity(
             session,
@@ -108,7 +109,11 @@ def test_revert_task_complete(engine_with_schema) -> None:  # type: ignore[no-un
         p, pl, s = _seed(session)
         _make_task(session, p, pl, s, "CF-001")
         tasks.complete(
-            session, task_id="CF-001", author="human:test", commit_sha="abc", project_id=p
+            session,
+            project_id=sole_project_id(session),
+            task_id="CF-001",
+            author="human:test",
+            commit_sha="abc",
         )
 
         history = rev.list_for_entity(
@@ -470,7 +475,9 @@ def test_complete_updates_plan_last_updated(engine_with_schema) -> None:  # type
         # SQLite stores datetimes without tzinfo; normalise for comparison.
         ts_before = plan_before.last_updated.replace(tzinfo=None)  # type: ignore[union-attr]
 
-        tasks.complete(session, task_id="CF-001", author="human:test", project_id=p)
+        tasks.complete(
+            session, project_id=sole_project_id(session), task_id="CF-001", author="human:test"
+        )
 
         plan_after = session.get(PlanModel, pl)
         ts_after = plan_after.last_updated.replace(tzinfo=None)  # type: ignore[union-attr]
@@ -483,7 +490,9 @@ def test_complete_plan_update_is_in_same_transaction(engine_with_schema) -> None
     with transactional(factory) as session:
         p, pl, s = _seed(session)
         _make_task(session, p, pl, s, "CF-001")
-        tasks.complete(session, task_id="CF-001", author="human:test", project_id=p)
+        tasks.complete(
+            session, project_id=sole_project_id(session), task_id="CF-001", author="human:test"
+        )
 
         # Both changes visible within the same session.
         t = tasks.get(session, "CF-001", project_id=p)

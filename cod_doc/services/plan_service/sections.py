@@ -21,10 +21,12 @@ import json
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import EntityKind, Plan
 from cod_doc.infra.models import DocumentModel, PlanModel, PlanSectionModel, TaskModel
 from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
+from cod_doc.infra.sql_helpers import is_unique_violation
 from cod_doc.services import activity_service
 from cod_doc.services import revision_service as rev
 from cod_doc.services.validation import (
@@ -44,7 +46,7 @@ if TYPE_CHECKING:
 
 
 class PlanAlreadyExistsError(ValueError):
-    """План с таким scope уже есть — scope уникален на всю БД."""
+    """План с таким scope уже есть в проекте — scope уникален в пределах проекта."""
 
     def __init__(self, scope: str) -> None:
         super().__init__(f"Plan with scope '{scope}' already exists.")
@@ -101,7 +103,7 @@ def create_plan(
     reason: str | None = None,
     id_prefix: str | None = None,
 ) -> Plan:
-    """Завести план. ``scope`` уникален на всю БД, а не в пределах проекта.
+    """Завести план. ``scope`` уникален в пределах проекта (STO-018, миграция 0047).
 
     ``id_prefix`` (ADO-243) закрепляет префикс ID новых задач плана
     (``WEB`` → ``WEB-001``). Без него префикс выводится из задач плана, а у
@@ -110,17 +112,24 @@ def create_plan(
     в который переносят, стоит заводить с явным префиксом.
     """
     repo = PlanRepository(session)
-    # scope уникален на всю БД (уникальный индекс): занятый другим проектом
-    # scope тоже не создать.
-    if repo.scope_exists(scope):
+    if repo.get_by_scope(scope, project_id=project_id) is not None:
         raise PlanAlreadyExistsError(scope)
     if id_prefix is not None:
         validate_id_prefix(id_prefix)
 
-    plan = repo.add(
-        Plan(project_id=project_id, scope=scope, principle=principle, id_prefix=id_prefix)
-    )
-    session.flush()
+    try:
+        plan = repo.add(
+            Plan(project_id=project_id, scope=scope, principle=principle, id_prefix=id_prefix)
+        )
+    except IntegrityError as exc:
+        # Проверка выше и INSERT — не одна операция: параллельный писатель
+        # успевает занять тот же scope. Это тот же отказ, что и у проверки.
+        # Savepoint не берём (STO-022): транзакцию откатывает вызывающий.
+        if not is_unique_violation(
+            exc, constraint="uq_plan_project_scope", table="plan", columns=("project_id", "scope")
+        ):
+            raise
+        raise PlanAlreadyExistsError(scope) from exc
     assert plan.row_id is not None
 
     rev.write(
@@ -167,7 +176,7 @@ def create_section(
     функция не возвращает: их формирует поверхность через
     ``validation.audit_html_escaped_text``.
     """
-    plan = _require_plan(session, project_id, plan_scope)
+    plan = _require_plan(session, plan_scope, project_id=project_id)
     repo = PlanSectionRepository(session)
     current = repo.list_for_plan(plan.row_id)
     if any(s.letter.upper() == letter.strip().upper() for s in current):
@@ -180,8 +189,19 @@ def create_section(
         slug=slug,
         position=position if position is not None else len(current),
     )
-    created = repo.add(section)
-    session.flush()
+    try:
+        created = repo.add(section)
+    except IntegrityError as exc:
+        # Та же гонка, что в create_plan: букву занял параллельный писатель
+        # между list_for_plan и INSERT. Savepoint не берём (STO-022).
+        if not is_unique_violation(
+            exc,
+            constraint="uq_plan_section_plan_letter",
+            table="plan_section",
+            columns=("plan_id", "letter"),
+        ):
+            raise
+        raise SectionAlreadyExistsError(section.letter) from exc
     assert created.row_id is not None
 
     rev.write(
@@ -253,8 +273,8 @@ def update_section(
         slug = slug.strip()
         validate_section_slug(slug)
 
-    plan = _require_plan(session, project_id, plan_scope)
-    model = _require_section(session, plan.row_id, letter)
+    plan = _require_plan(session, plan_scope, project_id=project_id)
+    model = _require_section(session, plan.row_id, letter, project_id=project_id)
     if doc_id is not None:
         doc = session.get(DocumentModel, doc_id)
         if doc is None or doc.project_id != project_id:
@@ -360,14 +380,14 @@ def move_section(
     if position is not None:
         validate_plan_section_position(position)
 
-    plan = _require_plan(session, project_id, plan_scope)
-    target = _require_section(session, plan.row_id, letter)
+    plan = _require_plan(session, plan_scope, project_id=project_id)
+    target = _require_section(session, plan.row_id, letter, project_id=project_id)
     anchor_letter = before if before is not None else after
     anchor: PlanSectionModel | None = None
     if anchor_letter is not None:
         if anchor_letter.strip().upper() == target.letter.upper():
             raise ValueError(f"section {target.letter!r} cannot be moved relative to itself")
-        anchor = _require_section(session, plan.row_id, anchor_letter)
+        anchor = _require_section(session, plan.row_id, anchor_letter, project_id=project_id)
 
     ordered = list(
         session.execute(
@@ -461,13 +481,13 @@ def delete_section(
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError("reason is required for delete_section (RFC 26 §4)")
 
-    plan = _require_plan(session, project_id, plan_scope)
-    model = _require_section(session, plan.row_id, letter)
+    plan = _require_plan(session, plan_scope, project_id=project_id)
+    model = _require_section(session, plan.row_id, letter, project_id=project_id)
     target: PlanSectionModel | None = None
     if reassign_to is not None:
         if reassign_to.strip().upper() == model.letter.upper():
             raise ValueError(f"section {model.letter!r} cannot be reassigned to itself")
-        target = _require_section(session, plan.row_id, reassign_to)
+        target = _require_section(session, plan.row_id, reassign_to, project_id=project_id)
 
     tasks = list(
         session.execute(
@@ -525,22 +545,29 @@ def delete_section(
     return len(moved_task_ids)
 
 
-def _require_plan(session: Session, project_id: int, plan_scope: str) -> PlanModel:
-    # PlanRepository.get_by_scope скоупа проекта не знает: scope уникален на
-    # БД, и без сверки project_id чужой план резолвился бы из любого проекта.
-    # Текст ошибки одинаковый в обоих случаях — чужой план не раскрывается.
+def _require_plan(session: Session, plan_scope: str, *, project_id: int) -> PlanModel:
+    # scope уникален в проекте (STO-018, миграция 0047): без project_id в
+    # hub-БД с одинаковым scope в двух проектах запрос дал бы
+    # MultipleResultsFound. Чужой план не раскрывается — его просто не видно.
     model = session.execute(
-        select(PlanModel).where(PlanModel.scope == plan_scope)
+        select(PlanModel).where(PlanModel.project_id == project_id, PlanModel.scope == plan_scope)
     ).scalar_one_or_none()
-    if model is None or model.project_id != project_id:
+    if model is None:
         raise PlanNotFoundError(f"Plan '{plan_scope}' not found in project")
     return model
 
 
-def _require_section(session: Session, plan_id: int, letter: str) -> PlanSectionModel:
+def _require_section(
+    session: Session, plan_id: int, letter: str, *, project_id: int
+) -> PlanSectionModel:
+    # Секция ищется и по плану, и по проекту плана: голый plan_id чужого
+    # проекта не должен открывать его секции (STO-023).
     normalized = letter.strip().upper()
     model = session.execute(
-        select(PlanSectionModel).where(
+        select(PlanSectionModel)
+        .join(PlanModel, PlanModel.row_id == PlanSectionModel.plan_id)
+        .where(
+            PlanModel.project_id == project_id,
             PlanSectionModel.plan_id == plan_id,
             func.upper(PlanSectionModel.letter) == normalized,
         )

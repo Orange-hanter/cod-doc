@@ -518,11 +518,11 @@ def test_import_legacy_tasks_progress_exception_is_swallowed(
     assert summary.errors == []
 
 
-def test_import_plan_of_a_second_hub_project_gets_its_own_scope(
+def test_import_plan_of_a_second_hub_project_gets_its_own_plan(
     tmp_path: Path, engine_with_schema
 ) -> None:  # type: ignore[no-untyped-def]
-    """AFT-023: scope «imported-legacy» уникален на всю БД; второй проект
-    hub-БД получает «imported-legacy-p<id>», а не IntegrityError."""
+    """scope «imported-legacy» уникален в проекте (0047, STO-018): второй
+    проект hub-БД получает свой план с тем же scope, а не IntegrityError."""
     yaml_a = tmp_path / "a.yaml"
     _write_legacy_yaml(yaml_a, [{"id": "a", "title": "From A"}])
     yaml_b = tmp_path / "b.yaml"
@@ -537,10 +537,11 @@ def test_import_plan_of_a_second_hub_project_gets_its_own_scope(
         restate_importer.import_legacy_tasks(session, yaml_path=yaml_a, project_id=a)
         restate_importer.import_legacy_tasks(session, yaml_path=yaml_b, project_id=b)
 
-        scopes_a = {p.scope for p in plan_service.list_for_project(session, a)}
-        scopes_b = {p.scope for p in plan_service.list_for_project(session, b)}
-        assert "imported-legacy" in scopes_a
-        assert f"imported-legacy-p{b}" in scopes_b
+        plans_a = {p.scope: p.row_id for p in plan_service.list_for_project(session, a)}
+        plans_b = {p.scope: p.row_id for p in plan_service.list_for_project(session, b)}
+        # scope уникален в проекте (0047): у каждого проекта свой план с тем же scope.
+        assert "imported-legacy" in plans_a and "imported-legacy" in plans_b
+        assert plans_a["imported-legacy"] != plans_b["imported-legacy"]
 
 
 def test_import_plan_race_recovers(tmp_path: Path, engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]

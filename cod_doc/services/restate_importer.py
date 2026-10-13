@@ -317,10 +317,10 @@ def _ensure_import_plan(session: Session, project_id: int) -> tuple[int, int]:
 
     Created on first call; reused on subsequent imports for the same project.
 
-    Два параллельных импорта могут оба увидеть scope свободным и оба вставить
-    план — второй упрётся в уникальный индекс. Создание идёт в savepoint, и
-    разбор повторяется уже с планом первого (если он чужого проекта — scope
-    станет собственным), как у legacy REST-плана.
+    Два параллельных импорта одного проекта могут оба не найти план и оба его
+    вставить — второй упрётся в уникальный ``(project_id, scope)`` (0047).
+    Создание идёт в savepoint, и разбор повторяется уже с планом первого, как
+    у legacy REST-плана.
     """
     for attempt in range(2):
         before = _import_footprint(session, project_id)
@@ -329,40 +329,32 @@ def _ensure_import_plan(session: Session, project_id: int) -> tuple[int, int]:
                 return _ensure_import_plan_once(session, project_id)
         except IntegrityError:
             # Повтор — только если за время попытки появилось то, что мы
-            # создавали (план одного из наших scope или его секция); иной
-            # IntegrityError пробрасывается как есть.
+            # создавали (план или его секция); иной IntegrityError
+            # пробрасывается как есть.
             if attempt or _import_footprint(session, project_id) == before:
                 raise
     raise AssertionError("unreachable")
 
 
-def _import_footprint(session: Session, project_id: int) -> tuple[bool, bool, int]:
-    """Что из import-плана уже есть в БД: оба scope заняты? сколько секций у своего плана."""
+def _import_footprint(session: Session, project_id: int) -> tuple[bool, int]:
+    """Что из import-плана проекта уже есть в БД: план? сколько у него секций."""
     repo = PlanRepository(session)
-    own_scope = f"{_IMPORT_PLAN_SCOPE}-p{project_id}"
     return (
-        repo.scope_exists(_IMPORT_PLAN_SCOPE),
-        repo.scope_exists(own_scope),
-        repo.section_count_in_scopes([_IMPORT_PLAN_SCOPE, own_scope], project_id),
+        repo.get_by_scope(_IMPORT_PLAN_SCOPE, project_id=project_id) is not None,
+        repo.section_count_in_scopes([_IMPORT_PLAN_SCOPE], project_id),
     )
 
 
 def _ensure_import_plan_once(session: Session, project_id: int) -> tuple[int, int]:
     plan_repo = PlanRepository(session)
-    # scope уникален на всю БД: если «imported-legacy» уже занят другим
-    # проектом общей hub-БД, план этого проекта получает собственный scope —
-    # иначе вставка падала бы на уникальном индексе (AFT-023).
-    scope = _IMPORT_PLAN_SCOPE
-    if plan_repo.scope_taken_by_other(scope, project_id):
-        scope = f"{_IMPORT_PLAN_SCOPE}-p{project_id}"
-    plan = plan_repo.get_by_scope(scope, project_id=project_id)
+    plan = plan_repo.get_by_scope(_IMPORT_PLAN_SCOPE, project_id=project_id)
     if plan is not None and plan.row_id is not None:
         plan_id = plan.row_id
     else:
         new_plan = plan_repo.add(
             Plan(
                 project_id=project_id,
-                scope=scope,
+                scope=_IMPORT_PLAN_SCOPE,
                 principle=_IMPORT_PLAN_PRINCIPLE,
             )
         )
@@ -487,12 +479,12 @@ def import_legacy_tasks(
                     if canonical_task_status(status) != canonical_task_status(TaskStatus.TODO):
                         task_service.update_status(
                             session,
+                            project_id=task.project_id,
                             task_id=task.task_id,
                             new_status=status,
                             author=author,
                             reason="restate-import:status",
                             force=True,  # import sets arbitrary legacy status
-                            project_id=project_id,
                         )
             except Exception as exc:
                 summary.errors.append(f"{title!r}: {exc}")

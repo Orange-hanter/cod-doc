@@ -20,6 +20,10 @@ from cod_doc.mcp.tools._db import require_project_id, session_factory
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
+#: Потолок ``limit`` для клиента: каждая строка материализуется в память и в
+#: JSON-ответ общего демона, а ``limit=-1`` в SQLite значит «без предела».
+MAX_LIST_LIMIT = 500
+
 
 def register(mcp: FastMCP) -> None:
     """Register finding.* tools on the given FastMCP instance."""
@@ -35,6 +39,7 @@ def register(mcp: FastMCP) -> None:
 
         status: open | resolved | dismissed | promoted (RFC 22 §3.2).
         source: ai_review | zairgrush | routine.
+        limit: clamped to 1..500.
         """
         from cod_doc.infra.db import transactional
         from cod_doc.services import finding_service
@@ -43,7 +48,11 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             return finding_service.list_findings(
-                session, project_id, status=status, source=source, limit=limit
+                session,
+                project_id,
+                status=status,
+                source=source,
+                limit=max(1, min(limit, MAX_LIST_LIMIT)),
             )
 
     @mcp.tool(name="finding_get")
@@ -76,34 +85,17 @@ def register(mcp: FastMCP) -> None:
         itself; this wrapper does not double-emit (proposal 09).
         """
         from cod_doc.infra.db import transactional
-        from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
         from cod_doc.services import finding_service
 
         sf, _ = session_factory(project)
         with transactional(sf) as session:
-            project_id = require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
-            if plan is None or plan.row_id is None:
-                raise ValueError(f"Plan '{plan_scope}' not found.")
-            sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
-            section = next(
-                (s for s in sections if s.letter.upper() == section_letter.upper()), None
-            )
-            if section is None or section.row_id is None:
-                letters = ", ".join(s.letter for s in sections)
-                raise ValueError(f"Section '{section_letter}' not found. Available: {letters}")
-
-            finding = finding_service.get_finding(session, project_id, finding_uid)
-            if finding is None:
-                raise ValueError(f"finding '{finding_uid}' not found")
-
-            return finding_service.promote_finding(
+            return finding_service.promote_finding_by_ref(
                 session,
-                project_id=project_id,
-                finding_id=finding["finding_id"],
+                project_id=require_project_id(session, project),
+                finding_uid=finding_uid,
+                plan_scope=plan_scope,
+                section_letter=section_letter,
                 on_finding=on_finding,
-                plan_id=plan.row_id,
-                section_id=section.row_id,
                 author=author,
                 id_prefix=id_prefix,
             )

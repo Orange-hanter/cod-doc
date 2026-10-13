@@ -11,6 +11,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from cod_doc.cli._common import printable, require_project_id
 from cod_doc.logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -50,14 +51,8 @@ def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
 
 
 def _project_id(session: Session, project: str) -> int:
-    """Слаг → ``project.row_id``; нет проекта в БД — сообщение и exit 1.
-
-    Тот же резолв, что фаза 1 ``task add-dep``. Импорт ленивый: модуль
-    ``cod_doc.cli.task`` тянет ``infra`` только в телах функций (ADO-179).
-    """
-    from cod_doc.cli.task import _require_project_id
-
-    return _require_project_id(session, project)
+    """Слаг → ``project.row_id``; нет проекта в БД — сообщение и exit 1."""
+    return require_project_id(session, project)
 
 
 def _fail(message: str) -> None:
@@ -104,22 +99,26 @@ def _guard() -> AbstractContextManager[None]:
     return _cm()
 
 
-def _require_plan_id(session: Session, plan_scope: str, project_id: int) -> int:
-    """row_id плана ``plan_scope`` проекта ``project_id``; иначе сообщение и exit 1.
+def _require_plan_id(session: Session, project: str, plan_scope: str) -> tuple[int, int]:
+    """``(project_id, plan_id)`` плана ``plan_scope`` проекта; иначе сообщение и exit 1.
 
-    Скоуп проекта обязателен (AFT-023): scope уникален на всю БД, и без него
-    из одного проекта читался бы план другого. Проект резолвит вызывающий —
-    один раз, и тот же ``project_id`` уходит в сервис.
+    scope уникален в проекте (STO-023), а сервисы плана требуют ``project_id``
+    (AFT-023) — проект резолвится здесь один раз и уходит вызывающему вместе
+    с планом. ``click.exceptions.Exit``, а не ``sys.exit``: это ``Exception``,
+    и ``transactional`` откатывает транзакцию явно, код выхода тот же (1).
     """
     from cod_doc.services import plan_service
 
+    project_id = _project_id(session, project)
     plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
     if plan is None or plan.row_id is None:
-        console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
-        # click.exceptions.Exit — Exception, а не SystemExit: transactional
-        # откатывает транзакцию явно, код выхода тот же (1).
+        console.print(
+            f"Plan '{printable(plan_scope)}' not found in project '{printable(project)}'.",
+            style="red",
+            markup=False,
+        )
         raise click.exceptions.Exit(1)
-    return plan.row_id
+    return project_id, plan.row_id
 
 
 def _render_chain(

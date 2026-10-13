@@ -38,6 +38,7 @@ from cod_doc.infra.repositories import (
 )
 from cod_doc.services import doc_service, projection_service, routine_service
 from cod_doc.services import task_service as tasks
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -117,7 +118,7 @@ def overview_client(tmp_path: Path, migrate_db):
             session,
             task_id=done_t.task_id,
             author="human:dakh",
-            project_id=proj.row_id,
+            project_id=sole_project_id(session),
         )
 
         doc = doc_service.create(
@@ -453,3 +454,117 @@ def test_ready_row_button_says_what_it_does(overview_client) -> None:
     assert "✓ Закрыть" in r.text, "у кнопки нет видимой подписи"
     assert "aria-label=" in r.text, "у кнопки нет доступного имени"
     assert 'title="Mark done"' not in r.text, "остался прежний невидимый title"
+
+
+@pytest.mark.parametrize(
+    "referer",
+    [
+        "https://evil.example/phish",
+        "//evil.example/phish",
+        "/\\evil.example/phish",
+        "javascript:alert(1)",
+        "http://testserver.evil.example/p/x",
+    ],
+)
+def test_complete_post_ignores_foreign_referer(overview_client, referer: str) -> None:
+    """CWE-601: Referer чужого сайта не становится целью редиректа."""
+    client, entry = overview_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/OVR-002/complete",
+        headers={"Referer": referer},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/p/{entry.name}"
+
+
+@pytest.mark.parametrize(
+    ("referer", "expected"),
+    [
+        ("http://testserver/p/demo/plans/x?tab=a", "/p/demo/plans/x?tab=a"),
+        ("/p/demo/tasks", "/p/demo/tasks"),
+    ],
+)
+def test_complete_post_returns_to_same_site_referer(
+    overview_client, referer: str, expected: str
+) -> None:
+    """WEB-014b: возврат туда, откуда пришли, — но только в пределах сайта."""
+    client, entry = overview_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/OVR-002/complete",
+        headers={"Referer": referer},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == expected
+
+
+def test_complete_post_integrity_error_log_has_no_sql_or_params(
+    overview_client, monkeypatch, caplog
+) -> None:
+    """WARNING-лог несёт тип и ограничение, а не текст запроса и параметры."""
+    import logging
+
+    from sqlalchemy.exc import IntegrityError
+
+    def boom(*_a: object, **_kw: object) -> None:
+        raise IntegrityError(
+            "INSERT INTO secret_table",
+            {"p": "secret-param"},
+            Exception("UNIQUE constraint failed: task.x"),
+        )
+
+    monkeypatch.setattr(tasks, "complete", boom)
+    client, entry = overview_client
+    with caplog.at_level(logging.WARNING, logger="cod_doc.api"):
+        client.post(f"/p/{entry.name}/tasks/OVR-002/complete", headers={"HX-Request": "true"})
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert warnings
+    for record in warnings:
+        text = record.getMessage()
+        assert "secret" not in text
+        assert record.exc_info is None
+    assert any("UNIQUE constraint failed: task.x" in r.getMessage() for r in warnings)
+
+
+def test_complete_post_flash_cookies_are_httponly_lax(overview_client, monkeypatch) -> None:
+    """Flash читает только сервер: HttpOnly и SameSite=Lax, Secure — только на https."""
+    from sqlalchemy.exc import IntegrityError
+
+    def boom(*_a: object, **_kw: object) -> None:
+        raise IntegrityError("INSERT", {}, Exception("x"))
+
+    monkeypatch.setattr(tasks, "complete", boom)
+    client, entry = overview_client
+    r = client.post(f"/p/{entry.name}/tasks/OVR-002/complete", follow_redirects=False)
+    cookies = [v for k, v in r.headers.multi_items() if k == "set-cookie"]
+    assert {c.split("=", 1)[0] for c in cookies} == {"flash_severity", "flash_message"}
+    for cookie in cookies:
+        attrs = cookie.lower()
+        assert "httponly" in attrs
+        assert "samesite=lax" in attrs
+        assert "secure" not in attrs.replace("samesite", "")
+
+
+def test_complete_post_integrity_error_text_stays_server_side(overview_client, monkeypatch) -> None:
+    """str() от IntegrityError несёт SQL и параметры — в баннер идёт общий текст."""
+    from sqlalchemy.exc import IntegrityError
+
+    def boom(*_a: object, **_kw: object) -> None:
+        raise IntegrityError("INSERT INTO secret_table", {"p": "secret-param"}, Exception("x"))
+
+    monkeypatch.setattr(tasks, "complete", boom)
+    client, entry = overview_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/OVR-002/complete",
+        headers={"HX-Request": "true"},
+    )
+    assert r.status_code == 200
+    assert "Не удалось сохранить изменения." in r.text
+    assert "secret_table" not in r.text
+    assert "secret-param" not in r.text
+
+    r = client.post(f"/p/{entry.name}/tasks/OVR-002/complete", follow_redirects=False)
+    flash = r.cookies.get("flash_message") or ""
+    assert flash
+    assert "secret" not in flash

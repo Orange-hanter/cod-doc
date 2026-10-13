@@ -11,6 +11,8 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from cod_doc.cli._common import printable
+from cod_doc.cli._common import require_project_id as _require_project_id
 from cod_doc.domain.entities import AFFECTS_FILES_MODES, AffectsFilesMode, TaskStatus, TaskType
 from cod_doc.logging_config import get_logger
 
@@ -61,16 +63,6 @@ def _make_session(project_name: str, cfg: Config) -> sessionmaker[Session]:
         sys.exit(1)
     factory, _engine = db_for_entry(entry)
     return factory
-
-
-def _require_project_id(session: Session, project_name: str) -> int:
-    from cod_doc.infra.repositories import ProjectRepository
-
-    proj = ProjectRepository(session).get_by_slug(project_name)
-    if proj is None or proj.row_id is None:
-        console.print(f"[red]Project '{project_name}' not in DB. Run 'project add' first.[/red]")
-        sys.exit(1)
-    return proj.row_id
 
 
 @click.group()
@@ -373,8 +365,7 @@ def task_create(
 
     from cod_doc.domain.entities import Priority, QuestionLinkKind, QuestionRelation, TaskType
     from cod_doc.infra.db import transactional
-    from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
-    from cod_doc.services import question_service, task_service
+    from cod_doc.services import plan_service, question_service, task_service
     from cod_doc.services.question_service import QuestionNotFoundError
     from cod_doc.services.task_service import DuplicateTaskIdError
     from cod_doc.services.validation import ValidationError
@@ -385,14 +376,22 @@ def task_create(
     # Phase 1: resolve IDs (read-only — sys.exit here is safe, nothing to commit)
     with transactional(sf) as session:
         project_id = _require_project_id(session, project)
-        plan = PlanRepository(session).get_by_scope(plan_scope, project_id=project_id)
+        plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
         if plan is None or plan.row_id is None:
-            console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
+            console.print(
+                f"Plan '{printable(plan_scope)}' not found in project '{printable(project)}'.",
+                style="red",
+                markup=False,
+            )
             sys.exit(1)
-        sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
-        section = next((s for s in sections if s.letter.upper() == section_letter.upper()), None)
+        section = plan_service.get_section_by_letter(
+            session, plan.row_id, section_letter, project_id=project_id
+        )
         if section is None or section.row_id is None:
-            letters = ", ".join(s.letter for s in sections)
+            letters = ", ".join(
+                s.letter
+                for s in plan_service.list_sections(session, plan.row_id, project_id=project_id)
+            )
             console.print(f"[red]Section '{section_letter}' not found. Available: {letters}[/red]")
             sys.exit(1)
         plan_id = plan.row_id
@@ -435,8 +434,13 @@ def task_create(
         )
         sys.exit(1)
     except IntegrityError:
-        # Текст исключения несёт SQL-выражение и параметры — наружу не отдаём.
-        console.print("[red]Конфликт уникальности: задача не создана, повторите попытку.[/red]")
+        # Не только гонка за task_id: проект или план могли удалить между
+        # фазами, и тогда падает внешний ключ. Текст исключения несёт
+        # SQL-выражение и параметры — наружу не отдаём.
+        console.print(
+            "[red]Конфликт целостности БД (занятый task_id или удалённый проект/план): "
+            "задача не создана, повторите попытку.[/red]"
+        )
         sys.exit(1)
     except ValidationError as exc:
         console.print(f"[red]Validation error: {exc}[/red]")
@@ -476,14 +480,13 @@ def task_status(
 
     try:
         with transactional(sf) as session:
-            pid = _require_project_id(session, project)
             t = task_service.update_status(
                 session,
+                project_id=_require_project_id(session, project),
                 task_id=task_id,
                 new_status=TaskStatus(new_status),
                 author=author,
                 reason=reason,
-                project_id=pid,
             )
     except TaskNotFoundError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
@@ -598,42 +601,42 @@ def task_update(
             if description is not None:
                 task_service.update_description(
                     session,
+                    project_id=pid,
                     task_id=task_id,
                     new_description=description,
                     author=author,
                     reason=reason,
-                    project_id=pid,
                 )
                 changed.append("description")
             if acceptance is not None:
                 task_service.update_acceptance(
                     session,
+                    project_id=pid,
                     task_id=task_id,
                     new_acceptance=acceptance,
                     author=author,
                     reason=reason,
-                    project_id=pid,
                 )
                 changed.append("acceptance")
             if priority is not None:
                 task_service.update_priority(
                     session,
+                    project_id=pid,
                     task_id=task_id,
                     new_priority=Priority(priority),
                     author=author,
                     reason=reason,
-                    project_id=pid,
                 )
                 changed.append("priority")
             if touch_files:
                 change = task_service.update_affects_files(
                     session,
+                    project_id=pid,
                     task_id=task_id,
                     paths=list(affects_files),
                     mode=affects_mode or AffectsFilesMode.REPLACE,
                     author=author,
                     reason=reason,
-                    project_id=pid,
                 )
                 warnings.extend(change.warnings)
                 if change.changed:
@@ -688,8 +691,7 @@ def task_move(
     Каждая задача получает свою ревизию и своё событие.
     """
     from cod_doc.infra.db import transactional
-    from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
-    from cod_doc.services import task_service
+    from cod_doc.services import plan_service, task_service
     from cod_doc.services.task_service import (
         CrossPlanMoveError,
         SectionNotFoundError,
@@ -704,15 +706,17 @@ def task_move(
 
     try:
         with transactional(sf, commit=not dry_run) as session:
-            pid = _require_project_id(session, project)
-            plan = PlanRepository(session).get_by_scope(plan_scope, project_id=pid)
+            project_id = _require_project_id(session, project)
+            plan = plan_service.get_by_scope(session, plan_scope, project_id=project_id)
             if plan is None or plan.row_id is None:
-                console.print(f"[red]Plan '{plan_scope}' not found.[/red]")
+                console.print(
+                    f"Plan '{printable(plan_scope)}' not found in project '{printable(project)}'.",
+                    style="red",
+                    markup=False,
+                )
                 sys.exit(1)
-            sections = PlanSectionRepository(session).list_for_plan(plan.row_id)
-            section = next(
-                (s for s in sections if s.letter.upper() == section_letter.upper()),
-                None,
+            section = plan_service.get_section_by_letter(
+                session, plan.row_id, section_letter, project_id=project_id
             )
             if section is None or section.row_id is None:
                 console.print(
@@ -721,7 +725,7 @@ def task_move(
                 sys.exit(1)
 
             for task_id in task_ids:
-                current = task_service.get(session, task_id, project_id=pid)
+                current = task_service.get(session, task_id, project_id=project_id)
                 if current is None:
                     raise TaskNotFoundError(task_id)
                 if current.section_id == section.row_id:
@@ -729,11 +733,11 @@ def task_move(
                     continue
                 task_service.move_to_section(
                     session,
+                    project_id=project_id,
                     task_id=task_id,
                     new_section_id=section.row_id,
                     author=author,
                     reason=reason,
-                    project_id=pid,
                 )
                 moved.append(task_id)
     except TaskNotFoundError as exc:
@@ -915,11 +919,11 @@ def task_complete(
         with transactional(sf) as session:
             t = complete(
                 session,
+                project_id=_require_project_id(session, project),
                 task_id=task_id,
                 author=author,
                 commit_sha=commit,
                 reason=reason,
-                project_id=_require_project_id(session, project),
             )
     except TaskNotFoundError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
@@ -1147,9 +1151,9 @@ def task_checkout(
             result = checkout_service.checkout(
                 session,
                 task_id,
+                project_id=_require_project_id(session, project),
                 agent=agent,
                 expected_statuses=list(expected_statuses) or None,
-                project_id=_require_project_id(session, project),
             )
     except LookupError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")
@@ -1198,9 +1202,9 @@ def task_release(
             result = checkout_service.release(
                 session,
                 task_id,
+                project_id=_require_project_id(session, project),
                 agent=agent,
                 force=force,
-                project_id=_require_project_id(session, project),
             )
     except LookupError:
         console.print(f"[red]Task '{task_id}' not found.[/red]")

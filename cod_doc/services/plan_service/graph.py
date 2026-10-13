@@ -22,6 +22,7 @@ from sqlalchemy import select, text
 
 from cod_doc.domain.entities import TaskStatus, canonical_task_status
 from cod_doc.infra.models import DependencyModel, TaskModel
+from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.services.task_status_machine import is_terminal
 
 from ._internals import _require_plan
@@ -31,23 +32,30 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
+# Каждый шаг рекурсии, а не только якорь, остаётся в проекте: ``task_service``
+# кросс-проектных блокеров не создаёт, но ребро из испорченной или слитой
+# hub-БД не должно выводить цепочку в чужой проект (STO-030).
 _FORWARD_CHAIN_SQL = text("""
 WITH RECURSIVE chain(row_id, depth) AS (
     SELECT t.row_id, 0
     FROM task t
-    WHERE t.row_id = :row_id
+    WHERE t.project_id = :project_id AND t.task_id = :task_id
   UNION ALL
     SELECT d.to_task_id, chain.depth + 1
     FROM chain
     JOIN dependency d
       ON d.from_task_id = chain.row_id
      AND d.kind = 'blocks'
-    JOIN task nxt ON nxt.row_id = d.to_task_id AND nxt.project_id = :project_id
+    JOIN task nxt
+      ON nxt.row_id = d.to_task_id
+     AND nxt.project_id = :project_id
 )
 SELECT DISTINCT t.row_id, t.task_id, t.title, t.status, MIN(chain.depth) AS depth
 FROM chain
 JOIN task t ON t.row_id = chain.row_id
-WHERE chain.row_id != :row_id
+WHERE chain.row_id != (
+    SELECT row_id FROM task WHERE project_id = :project_id AND task_id = :task_id
+)
 GROUP BY t.row_id, t.task_id, t.title, t.status
 ORDER BY depth
 """)
@@ -56,19 +64,23 @@ _REVERSE_CHAIN_SQL = text("""
 WITH RECURSIVE chain(row_id, depth) AS (
     SELECT t.row_id, 0
     FROM task t
-    WHERE t.row_id = :row_id
+    WHERE t.project_id = :project_id AND t.task_id = :task_id
   UNION ALL
     SELECT d.from_task_id, chain.depth + 1
     FROM chain
     JOIN dependency d
       ON d.to_task_id = chain.row_id
      AND d.kind = 'blocks'
-    JOIN task nxt ON nxt.row_id = d.from_task_id AND nxt.project_id = :project_id
+    JOIN task nxt
+      ON nxt.row_id = d.from_task_id
+     AND nxt.project_id = :project_id
 )
 SELECT DISTINCT t.row_id, t.task_id, t.title, t.status, MIN(chain.depth) AS depth
 FROM chain
 JOIN task t ON t.row_id = chain.row_id
-WHERE chain.row_id != :row_id
+WHERE chain.row_id != (
+    SELECT row_id FROM task WHERE project_id = :project_id AND task_id = :task_id
+)
 GROUP BY t.row_id, t.task_id, t.title, t.status
 ORDER BY depth
 """)
@@ -106,25 +118,6 @@ ORDER BY max_depth DESC
 """)
 
 
-def _chain_root(session: Session, task_id: str, project_id: int) -> int:
-    """row_id задачи-корня ``task_id`` в проекте ``project_id``.
-
-    Цепочка якорится на row_id, а не на ``task_id``: в общей hub-БД один
-    ``task_id`` живёт в нескольких проектах (нумерация — на проект), и поиск
-    без скоупа падал ``MultipleResultsFound`` (AFT-022). Рекурсия идёт только
-    по задачам проекта корня: ребро ``dependency`` в чужой проект (легаси-
-    данные) не выводит его задачи в цепочку.
-    """
-    row_id = session.execute(
-        select(TaskModel.row_id).where(
-            TaskModel.task_id == task_id, TaskModel.project_id == project_id
-        )
-    ).scalar_one_or_none()
-    if row_id is None:
-        raise TaskNotFoundInPlanError(task_id)
-    return int(row_id)
-
-
 def forward_chain(session: Session, task_id: str, *, project_id: int) -> list[ChainEntry]:
     """Prerequisites of *task_id*: tasks that must complete BEFORE it.
 
@@ -132,8 +125,17 @@ def forward_chain(session: Session, task_id: str, *, project_id: int) -> list[Ch
     prerequisite). Raises `TaskNotFoundInPlanError` if task_id unknown.
     Per [user-stories-graph.md §6]: ``cod-doc graph forward <task_id>``.
     """
-    row_id = _chain_root(session, task_id, project_id)
-    rows = session.execute(_FORWARD_CHAIN_SQL, {"row_id": row_id, "project_id": project_id}).all()
+    # STO-030: task_id уникален в проекте — старт цепочки берётся из своего.
+    require_int_project_id(project_id)
+    row = session.execute(
+        select(TaskModel.row_id).where(
+            TaskModel.project_id == project_id, TaskModel.task_id == task_id
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise TaskNotFoundInPlanError(task_id)
+
+    rows = session.execute(_FORWARD_CHAIN_SQL, {"project_id": project_id, "task_id": task_id}).all()
     return [
         ChainEntry(
             task_id=r[1],
@@ -152,8 +154,17 @@ def reverse_chain(session: Session, task_id: str, *, project_id: int) -> list[Ch
     directly blocked. Raises `TaskNotFoundInPlanError` if task_id unknown.
     Per [user-stories-graph.md §6]: ``cod-doc graph reverse <task_id>``.
     """
-    row_id = _chain_root(session, task_id, project_id)
-    rows = session.execute(_REVERSE_CHAIN_SQL, {"row_id": row_id, "project_id": project_id}).all()
+    # STO-030: task_id уникален в проекте — старт цепочки берётся из своего.
+    require_int_project_id(project_id)
+    row = session.execute(
+        select(TaskModel.row_id).where(
+            TaskModel.project_id == project_id, TaskModel.task_id == task_id
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        raise TaskNotFoundInPlanError(task_id)
+
+    rows = session.execute(_REVERSE_CHAIN_SQL, {"project_id": project_id, "task_id": task_id}).all()
     return [
         ChainEntry(
             task_id=r[1],

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
 from mcp.server.fastmcp import FastMCP
 
 from cod_doc.domain.entities import Priority, TaskType
@@ -107,6 +108,37 @@ def test_task_next_ready_empty_returns_none(engine_with_schema, monkeypatch) -> 
     task_next_ready = _setup(monkeypatch, factory)
     result = task_next_ready(project="nr")
     assert result is None
+
+
+def test_task_next_ready_plan_scope_filters_and_unknown_scope_is_none(
+    engine_with_schema, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        proj_id, plan_id, sec_id = _seed(session)
+        _make(session, proj_id, plan_id, sec_id, "NRD-001")
+
+    task_next_ready = _setup(monkeypatch, factory)
+    assert task_next_ready(project="nr", plan_scope="nr-plan")["task_id"] == "NRD-001"
+    assert task_next_ready(project="nr", plan_scope="no-such-plan") is None
+
+
+def test_task_next_ready_unknown_project_raises(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Проекта нет в БД — ошибка, как у соседних тулов, а не «готовых задач нет»."""
+    from cod_doc.services.project_lookup import ProjectNotFoundError
+
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        _seed(session)
+
+    monkeypatch.setattr(task_tools, "session_factory", lambda project: (factory, None))
+    mcp = FastMCP("test")
+    task_tools.register(mcp)
+    task_next_ready = _get_tool(mcp, "task_next_ready")
+
+    with pytest.raises(ProjectNotFoundError, match="not in DB — run 'cod-doc project add'"):
+        task_next_ready(project="ghost")
+    assert task_next_ready(project="nr") is None
 
 
 def test_next_ready_skips_foreign_by_default(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]

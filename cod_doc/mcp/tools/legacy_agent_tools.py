@@ -63,17 +63,17 @@ def _build_wake_for_run(
 
     from cod_doc.infra.db import db_for_entry, transactional
 
+    from ._db import require_project_id
+
     sf, _engine = db_for_entry(proj.entry)
     with transactional(sf) as session:
-        from cod_doc.services import project_service
-
         return build_wake_context(
             session,
             reason=reason,
             task_id=task_id,
+            project_id=require_project_id(session, proj.entry.name),
             triggering_doc_ref=triggering_doc_ref,
             triggering_revision_id=since_revision_id,
-            project_id=project_service.row_id_for_slug(session, proj.entry.name),
         )
 
 

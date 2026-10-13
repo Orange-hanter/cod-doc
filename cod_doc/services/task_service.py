@@ -69,6 +69,7 @@ from cod_doc.infra.models import (
     UserStoryModel,
 )
 from cod_doc.infra.repositories import PlanSectionRepository, TaskRepository
+from cod_doc.infra.repositories.base import require_int_project_id
 from cod_doc.infra.sql_helpers import ensure_outer_transaction, priority_sql_order
 from cod_doc.services import activity_service, event_bus, search_service, validation
 from cod_doc.services import revision_service as rev
@@ -167,7 +168,7 @@ def _project_slug(session: Session, project_id: int) -> str | None:
     ).scalar_one_or_none()
 
 
-def _require_task(session: Session, task_id: str, *, project_id: int | None) -> TaskModel:
+def _require_task(session: Session, task_id: str, *, project_id: int) -> TaskModel:
     """Найти задачу по ``task_id`` в скоупе проекта.
 
     ``project_id`` обязателен и без значения по умолчанию (ADO-200, RFC 26
@@ -176,12 +177,11 @@ def _require_task(session: Session, task_id: str, *, project_id: int | None) -> 
     ``scalar_one_or_none()`` через ``MultipleResultsFound``. Дефолт дал бы
     call-site'у забыть скоуп молча.
 
-    ``None`` — явный легаси-долг вызывающих, у которых ``project_id`` нет
-    в сигнатуре: поиск идёт по всей БД, как раньше.
+    Легаси-ветки ``project_id=None`` с поиском по всей БД больше нет
+    (STO-030): после 0047 она отдавала задачу чужого проекта с тем же ID.
     """
-    stmt = select(TaskModel).where(TaskModel.task_id == task_id)
-    if project_id is not None:
-        stmt = stmt.where(TaskModel.project_id == project_id)
+    require_int_project_id(project_id)
+    stmt = select(TaskModel).where(TaskModel.project_id == project_id, TaskModel.task_id == task_id)
     model = session.execute(stmt).scalar_one_or_none()
     if model is None:
         raise TaskNotFoundError(task_id)
@@ -646,6 +646,7 @@ def create(
 def update_status(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_status: TaskStatus,
     author: str,
@@ -654,12 +655,8 @@ def update_status(
     via_checkout: bool = False,
     strict: bool = True,
     force: bool = False,
-    project_id: int,
 ) -> Task:
     """Set task.status directly; no dep-gate.
-
-    ``project_id`` обязателен (AFT-023): в общей hub-БД один ``task_id`` живёт
-    в нескольких проектах, и поиск без скоупа сменил бы статус чужой задачи.
 
     For the guarded `→done` transition that validates blocking deps, use
     `complete()` instead.
@@ -690,8 +687,6 @@ def update_status(
         validate_transition,
     )
 
-    # AFT-023: project_id обязателен у всех мутаций задачи — в общей hub-БД
-    # один task_id живёт в нескольких проектах (нумерация — на проект).
     model = _require_task(session, task_id, project_id=project_id)
     old_status = model.status
     target_status = canonical_task_status(new_status)
@@ -775,12 +770,12 @@ def update_status(
 def _update_text_field(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     field: str,
     new_value: str,
     author: str,
     reason: str | None,
-    project_id: int,
     expected_parent_revision_id: str | object | None,
 ) -> Task:
     """Shared body for update_description / update_acceptance.
@@ -834,10 +829,10 @@ def _update_text_field(
 def update_description(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_description: str,
     author: str,
-    project_id: int,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
@@ -851,11 +846,11 @@ def update_description(
     return _update_text_field(
         session,
         task_id=task_id,
+        project_id=project_id,
         field="description",
         new_value=new_description,
         author=author,
         reason=reason,
-        project_id=project_id,
         expected_parent_revision_id=expected_parent_revision_id,
     )
 
@@ -863,10 +858,10 @@ def update_description(
 def update_acceptance(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_acceptance: str,
     author: str,
-    project_id: int,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
@@ -880,11 +875,11 @@ def update_acceptance(
     return _update_text_field(
         session,
         task_id=task_id,
+        project_id=project_id,
         field="acceptance",
         new_value=new_acceptance,
         author=author,
         reason=reason,
-        project_id=project_id,
         expected_parent_revision_id=expected_parent_revision_id,
     )
 
@@ -892,10 +887,10 @@ def update_acceptance(
 def update_priority(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_priority: Priority,
     author: str,
-    project_id: int,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
@@ -969,10 +964,10 @@ class AffectsFilesChange:
 def update_affects_files(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     paths: list[str],
     author: str,
-    project_id: int,
     mode: AffectsFilesMode | str = AffectsFilesMode.REPLACE,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
@@ -1096,10 +1091,10 @@ def update_affects_files(
 def move_to_section(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_section_id: int,
     author: str,
-    project_id: int,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
@@ -1184,11 +1179,11 @@ def move_to_section(
 def _move_one_to_plan(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     new_section_id: int,
     author: str,
     reason: str | None = None,
-    project_id: int,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
 ) -> Task:
     """Move a task into a section of ANOTHER plan of the same project (op=plan, ADO-243).
@@ -1224,7 +1219,9 @@ def _move_one_to_plan(
     old_section_id = model.section_id
     old_plan_id = model.plan_id
     if old_section_id == new_section_id:
-        return TaskRepository(session)._to_domain(model)
+        t = TaskRepository(session).get(model.row_id)
+        assert t is not None
+        return t
 
     sections = PlanSectionRepository(session)
     new_section = sections.get(new_section_id)
@@ -1471,12 +1468,12 @@ def move_tasks_to_plan(
 def complete(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     author: str,
     commit_sha: str | None = None,
     reason: str | None = None,
     expected_parent_revision_id: str | object | None = rev.NO_PARENT_CHECK,
-    project_id: int,
 ) -> Task:
     """Complete a task: validate deps → done, write revision.
 
@@ -1521,12 +1518,12 @@ def complete(
     if model.status in (TaskStatus.PENDING.value, TaskStatus.TODO.value):
         update_status(
             session,
+            project_id=project_id,
             task_id=task_id,
             new_status=TaskStatus.IN_PROGRESS_NEW,
             author=author,
             reason="auto-checkout перед complete (ADO-038)",
             via_checkout=True,
-            project_id=project_id,
         )
     validate_transition(model.status, TaskStatus.DONE.value)
 
@@ -1605,12 +1602,8 @@ def complete(
 
 
 def get(session: Session, task_id: str, *, project_id: int) -> Task | None:
-    """Задача по ``task_id`` в проекте ``project_id`` (AFT-023: скоуп обязателен).
-
-    В общей hub-БД один ``task_id`` живёт в нескольких проектах — нумерация
-    на проект, — и поиск без скоупа нашёл бы одноимённую чужую задачу.
-    """
-    return TaskRepository(session).get_by_task_id(task_id, project_id=project_id)
+    # STO-029: task_id уникален только в проекте.
+    return TaskRepository(session).get_in_project(task_id, project_id=project_id)
 
 
 def get_many(session: Session, task_ids: list[str], *, project_id: int) -> dict[str, Task]:
@@ -1620,6 +1613,7 @@ def get_many(session: Session, task_ids: list[str], *, project_id: int) -> dict[
     подставляют title/status к спискам ссылок (карточка ADR), — вместо
     ``get`` на каждую ссылку.
     """
+    require_int_project_id(project_id)
     if not task_ids:
         return {}
     repo = TaskRepository(session)
@@ -1782,10 +1776,10 @@ def count_for_project(
 def set_blocker(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     reason: str,
     author: str,
-    project_id: int,
 ) -> Task:
     """Mark a task as externally blocked (free-text reason).
 
@@ -1847,9 +1841,9 @@ def set_blocker(
 def clear_blocker(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     author: str,
-    project_id: int,
 ) -> Task:
     """Clear the external blocker on a task (no-op if already clear).
 
@@ -2251,10 +2245,10 @@ def list_stale_in_progress(
 def log_progress(
     session: Session,
     *,
+    project_id: int,
     task_id: str,
     message: str,
     author: str,
-    project_id: int,
 ) -> Task:
     """Record a progress note on an in-progress task.
 

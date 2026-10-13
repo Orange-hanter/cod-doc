@@ -28,7 +28,8 @@ from cod_doc.infra.repositories import (
     ProjectRepository,
 )
 from cod_doc.services import task_service as tasks
-from tests._scope import only_project_id
+from cod_doc.services.project_lookup import require_project_id
+from tests._task_scope import sole_project_id
 
 
 @pytest.fixture
@@ -117,9 +118,11 @@ def tasks_client(tmp_path: Path, migrate_db):
             new_status=TaskStatus.IN_PROGRESS,
             author="human:dakh",
             via_checkout=True,
-            project_id=proj.row_id,
+            project_id=sole_project_id(session),
         )
-        tasks.complete(session, task_id=t3.task_id, author="human:dakh", project_id=proj.row_id)
+        tasks.complete(
+            session, task_id=t3.task_id, author="human:dakh", project_id=sole_project_id(session)
+        )
     engine.dispose()
 
     from cod_doc.api.server import app
@@ -464,7 +467,9 @@ def test_chain_cards_have_no_nested_anchors(tasks_client) -> None:
     engine = make_engine(f"sqlite:///{db_path}")
     factory = make_session_factory(engine)
     with transactional(factory) as session:
-        anchor_task = tasks.get(session, task_id="AUTH-001", project_id=only_project_id(session))
+        anchor_task = tasks.get(
+            session, task_id="AUTH-001", project_id=require_project_id(session, entry.name)
+        )
         tasks.create(
             session,
             project_id=anchor_task.project_id,

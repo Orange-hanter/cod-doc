@@ -21,7 +21,8 @@ from cod_doc.infra.models import PlanModel, PlanSectionModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import checkout_service
 from cod_doc.services import task_service as tasks
-from tests._scope import only_project_id
+from cod_doc.services.project_lookup import require_project_id
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -90,7 +91,7 @@ def _seed() -> None:
 
 def _scope_of(task_id: str) -> str:
     for session in _session():
-        t = tasks.get(session, task_id, project_id=only_project_id(session))
+        t = tasks.get(session, task_id, project_id=require_project_id(session, NAME))
         assert t is not None
         plan = session.get(PlanModel, t.plan_id)
         assert plan is not None
@@ -153,7 +154,7 @@ def test_foreign_lock_exits_1_and_moves_nothing(tmp_path: Path) -> None:
     _seed()
     for session in _session():
         checkout_service.checkout(
-            session, "ADO-002", agent="swarm-kimi", project_id=only_project_id(session)
+            session, "ADO-002", agent="swarm-kimi", project_id=sole_project_id(session)
         )
 
     code, out = _run("ADO-001", "ADO-002", "--plan", "new", "--section", "A")

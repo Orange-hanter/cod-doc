@@ -49,6 +49,7 @@ from cod_doc.services import (
 from cod_doc.services.link_service import resolver as link_resolver
 from cod_doc.services.story_service import crud as story_crud
 from cod_doc.services.story_service import links as story_links
+from tests._task_scope import sole_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -171,7 +172,7 @@ def test_emit_error_is_not_swallowed_in_task_update_status(engine_with_schema) -
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",
             via_checkout=True,
-            project_id=p,
+            project_id=sole_project_id(session),
         )
 
 
@@ -224,7 +225,7 @@ def test_task_update_status_emits_event(engine_with_schema) -> None:  # type: ig
             new_status=TaskStatus.IN_PROGRESS,
             author="human:test",
             via_checkout=True,
-            project_id=p,
+            project_id=sole_project_id(session),
         )
 
     with transactional(factory) as session:
@@ -249,8 +250,12 @@ def test_task_complete_emits_event(engine_with_schema) -> None:  # type: ignore[
             priority=Priority.MEDIUM,
             author="human:test",
         )
-        checkout_service.checkout(session, task.task_id, agent="agent-X", project_id=p)
-        task_service.complete(session, task_id=task.task_id, author="human:test", project_id=p)
+        checkout_service.checkout(
+            session, task.task_id, agent="agent-X", project_id=sole_project_id(session)
+        )
+        task_service.complete(
+            session, task_id=task.task_id, author="human:test", project_id=sole_project_id(session)
+        )
 
     with transactional(factory) as session:
         ev = session.execute(
@@ -483,6 +488,7 @@ def test_story_link_emits_event(engine_with_schema) -> None:  # type: ignore[no-
         )
         story_links.link(
             session,
+            project_id=p,
             story_id="US-001",
             to_kind=StoryLinkKind.TASK,
             to_ref="ST-001",
@@ -531,7 +537,9 @@ def test_checkout_emits_event(engine_with_schema) -> None:  # type: ignore[no-un
             priority=Priority.MEDIUM,
             author="human:test",
         )
-        checkout_service.checkout(session, task.task_id, agent="agent-X", project_id=p)
+        checkout_service.checkout(
+            session, task.task_id, agent="agent-X", project_id=sole_project_id(session)
+        )
 
     with transactional(factory) as session:
         ev = session.execute(

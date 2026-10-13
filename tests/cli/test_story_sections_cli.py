@@ -15,6 +15,7 @@ from cod_doc.cli import main
 from cod_doc.config import Config
 from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.services import story_service
+from cod_doc.services.project_lookup import require_project_id
 
 PROJECT = "sp"
 NARRATIVE = "Как управляющий, я хочу алёрты, чтобы не ловить стоп-листы"
@@ -35,8 +36,9 @@ def _read(story_id: str):  # type: ignore[no-untyped-def]
     factory, engine = db_for_entry(entry)
     try:
         with transactional(factory) as session:
-            story = story_service.get(session, story_id)
-            acceptance = story_service.list_acceptance(session, story_id)
+            project_id = require_project_id(session, PROJECT)
+            story = story_service.get(session, story_id, project_id=project_id)
+            acceptance = story_service.list_acceptance(session, story_id, project_id=project_id)
             return story, acceptance
     finally:
         engine.dispose()

@@ -132,20 +132,40 @@ def _parse_acceptance_checklist(acceptance: str | None) -> list[str]:
 # ----------------------------------------------------------------- #
 
 
+def _story_full_payload(session: Session, project_id: int, story_id: str) -> dict[str, Any] | None:
+    """История проекта с критериями приёмки — для карточки и ``agent_get``.
+
+    Одна форма на оба места; резолв идёт через ``story_service.get``, а не
+    ручным запросом. ``status``/``priority`` отдаются строками, как раньше.
+    """
+    from cod_doc.services import story_service
+
+    story = story_service.get(session, story_id, project_id=project_id)
+    if story is None:
+        return None
+    acceptance = story_service.list_acceptance(session, story_id, project_id=project_id)
+    return {
+        "story_id": story.story_id,
+        "persona": story.persona,
+        "narrative": story.narrative,
+        "status": story.status.value,
+        "priority": story.priority.value,
+        "acceptance_criteria": [
+            {"position": a.position, "criterion": a.criterion, "met": a.met} for a in acceptance
+        ],
+    }
+
+
 def _build_task_card(
     session: Session,
     project_id: int,
     task: Task,
 ) -> dict[str, Any]:
     """Assemble the agent_pick payload for an already-checked-out task."""
-    from cod_doc.infra.models import (
-        PlanModel,
-        PlanSectionModel,
-        StoryLinkModel,
-        UserStoryModel,
-    )
+    from cod_doc.infra.models import PlanModel, PlanSectionModel
     from cod_doc.services import activity_service, context_service
     from cod_doc.services.serializers import task_to_dict
+    from cod_doc.services.story_lookup import story_id_for_task
 
     # Build base context via existing L1 context_service.
     ctx = context_service.context_get(
@@ -178,33 +198,10 @@ def _build_task_card(
     )
 
     # Linked story (full): if any story_link → task, fetch story.
-    story_full: dict[str, Any] | None = None
-    story_link = session.execute(
-        select(UserStoryModel)
-        .join(StoryLinkModel, StoryLinkModel.story_id == UserStoryModel.row_id)
-        .where(
-            StoryLinkModel.to_kind == "task",
-            StoryLinkModel.to_ref == task.task_id,
-        )
-        .limit(1)
-    ).scalar_one_or_none()
-    if story_link is not None:
-        from cod_doc.services import story_service
-
-        # UserStoryModel.status/priority are str columns, not enum instances.
-        # list_acceptance takes the canonical story_id (string), not row_id.
-        acceptance_criteria = story_service.list_acceptance(session, story_link.story_id)
-        story_full = {
-            "story_id": story_link.story_id,
-            "persona": story_link.persona,
-            "narrative": story_link.narrative,
-            "status": story_link.status,
-            "priority": story_link.priority,
-            "acceptance_criteria": [
-                {"position": a.position, "criterion": a.criterion, "met": a.met}
-                for a in acceptance_criteria
-            ],
-        }
+    story_id = story_id_for_task(session, project_id=project_id, task_id=task.task_id)
+    story_full = (
+        _story_full_payload(session, project_id, story_id) if story_id is not None else None
+    )
 
     # Recent activity events for this task scope (last 5).
     history_page = activity_service.list_events(
@@ -218,8 +215,12 @@ def _build_task_card(
 
     skills = _matching_skills_with_bodies(task.title, task.type.value)
 
+    # task_to_dict с сессией делает четыре запроса (план и секция, blocked_by,
+    # affects_files, story_id); карточке он нужен дважды — для "task" и для
+    # "affected_files", поэтому сериализуем один раз.
+    task_dict = task_to_dict(task, session=session)
     return {
-        "task": task_to_dict(task, session=session),
+        "task": task_dict,
         "context": {
             "plan": {
                 "scope": plan_row,
@@ -230,7 +231,7 @@ def _build_task_card(
             "story": story_full,
             "related_docs": ctx.get("related", {}).get("documents", []),
             "siblings": ctx.get("related", {}).get("tasks", []),
-            "affected_files": task_to_dict(task, session=session).get("affects_files", []),
+            "affected_files": task_dict.get("affects_files", []),
             "recent_history": recent_history_dicts,
         },
         "navigation": {
@@ -313,34 +314,12 @@ def get(
         }
 
     if what == "story_full":
-        from cod_doc.infra.models import UserStoryModel
-        from cod_doc.services import story_service
-
         if not ref:
             return {"found": False, "what": what, "ref": ref, "hint": "ref=story_id required"}
-        s = session.execute(
-            select(UserStoryModel).where(
-                UserStoryModel.story_id == ref, UserStoryModel.project_id == project_id
-            )
-        ).scalar_one_or_none()
-        if s is None:
+        payload = _story_full_payload(session, project_id, ref)
+        if payload is None:
             return {"found": False, "what": what, "ref": ref, "hint": f"story_id not found: {ref}"}
-        ac = story_service.list_acceptance(session, ref)
-        return {
-            "found": True,
-            "what": what,
-            "ref": ref,
-            "payload": {
-                "story_id": s.story_id,
-                "persona": s.persona,
-                "narrative": s.narrative,
-                "status": s.status,
-                "priority": s.priority,
-                "acceptance_criteria": [
-                    {"position": a.position, "criterion": a.criterion, "met": a.met} for a in ac
-                ],
-            },
-        }
+        return {"found": True, "what": what, "ref": ref, "payload": payload}
 
     if what == "plan_export":
         if not ref:
@@ -432,7 +411,11 @@ def report(
     if kind == "progress":
         try:
             task_service.log_progress(
-                session, task_id=task_id, message=message, author=agent_id, project_id=project_id
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                message=message,
+                author=agent_id,
             )
         except TaskNotFoundError:
             return {"ok": False, "kind": kind, "hint": f"task not found: {task_id}"}
@@ -493,10 +476,21 @@ def report(
     if kind == "approval_request":
         from cod_doc.services import approval_service
 
+        # Тип приходит из payload агента: чужое значение — структурный отказ,
+        # как у неизвестного kind, а не исключение из approval_service.
+        approval_type = (payload or {}).get("approval_type", "manual")
+        if not isinstance(approval_type, str) or approval_type not in approval_service.VALID_TYPES:
+            legal_types = sorted(approval_service.VALID_TYPES)
+            return {
+                "ok": False,
+                "kind": kind,
+                "hint": f"unknown approval_type {approval_type!r}. Legal values: {legal_types}",
+                "legal_approval_types": legal_types,
+            }
         approval = approval_service.request(
             session,
             project_id,
-            approval_type=(payload or {}).get("approval_type", "manual"),
+            approval_type=approval_type,
             requested_by=agent_id,
             payload={"message": message, **(payload or {})},
             linked_task_refs=[task_id],
@@ -507,7 +501,7 @@ def report(
             session,
             project_id,
             "approval.requested",
-            actor_kind="agent",
+            actor_kind=actor_kind_for_author(agent_id),
             actor_id=agent_id,
             scope_kind="approval",
             scope_id=approval.approval_id,
@@ -526,7 +520,7 @@ def report(
             session,
             project_id,
             "agent.needs_context",
-            actor_kind="agent",
+            actor_kind=actor_kind_for_author(agent_id),
             actor_id=agent_id,
             scope_kind="task",
             scope_id=task_id,
@@ -562,11 +556,11 @@ def complete(
     try:
         t = task_service.complete(
             session,
+            project_id=project_id,
             task_id=task_id,
             author=agent_id,
             commit_sha=commit_sha,
             reason=summary,
-            project_id=project_id,
         )
     except TaskNotFoundError:
         return {"ok": False, "hint": f"task not found: {task_id}"}
@@ -581,7 +575,7 @@ def complete(
     # checked-out task with a different agent_id).
     try:
         checkout_service.release(
-            session, task_id, agent=agent_id, force=False, project_id=project_id
+            session, task_id, project_id=project_id, agent=agent_id, force=False
         )
     except Exception as exc:
         import logging
@@ -599,7 +593,7 @@ def complete(
         session,
         project_id,
         "task.completed",
-        actor_kind="agent",
+        actor_kind=actor_kind_for_author(agent_id),
         actor_id=agent_id,
         scope_kind="task",
         scope_id=task_id,
@@ -623,41 +617,44 @@ def release(
     agent_id: str,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    """AGT-007: release checkout lock without transitioning to done."""
+    """AGT-007: release checkout lock without transitioning to done.
+
+    ``in_progress`` откатывается в ``todo`` через ``task_service.update_status``
+    — со сверкой по статус-машине, ревизией и событием перехода, как любая
+    смена статуса. Отказы — структурным ответом, как у ``pick``.
+    """
+    from cod_doc.domain.entities import TaskStatus
     from cod_doc.services import activity_service, checkout_service, task_service
     from cod_doc.services.checkout_service import CheckoutConflictError
+    from cod_doc.services.task_service import TaskNotFoundError
+    from cod_doc.services.task_status_machine import StatusTransitionError, normalise
 
     try:
         result = checkout_service.release(
-            session, task_id, agent=agent_id, force=False, project_id=project_id
+            session, task_id, project_id=project_id, agent=agent_id, force=False
         )
-    except LookupError:
+        if normalise(result.new_status) == TaskStatus.IN_PROGRESS_NEW.value:
+            updated = task_service.update_status(
+                session,
+                project_id=project_id,
+                task_id=task_id,
+                new_status=TaskStatus.TODO,
+                author=agent_id,
+                reason=reason or "agent_release",
+            )
+            result.new_status = updated.status.value
+    except TaskNotFoundError:
         return {"ok": False, "hint": f"task not found: {task_id}"}
     except CheckoutConflictError as exc:
         return {"ok": False, "hint": str(exc), "code": "not_held_by_this_agent"}
-
-    # Возврат в todo — через сервис, а не правкой ORM: так он оставляет
-    # ревизию и событие (ADO-040) и ищет задачу в скоупе проекта (AFT-022).
-    from cod_doc.domain.entities import TaskStatus
-
-    if result.new_status in {"in_progress", "in-progress"}:
-        task_service.update_status(
-            session,
-            task_id=task_id,
-            new_status=TaskStatus.TODO,
-            author=agent_id,
-            reason=reason or "agent_release",
-            # in_progress → todo нет в прямой машине: откат брони, как в revert.
-            force=True,
-            project_id=project_id,
-        )
-        result.new_status = "todo"
+    except StatusTransitionError as exc:
+        return {"ok": False, "hint": str(exc), "code": "status_transition"}
 
     activity_service.emit(
         session,
         project_id,
         "task.released",
-        actor_kind="agent",
+        actor_kind=actor_kind_for_author(agent_id),
         actor_id=agent_id,
         scope_kind="task",
         scope_id=task_id,
@@ -704,7 +701,9 @@ def pick(
     from cod_doc.infra.models import TaskModel
     from cod_doc.infra.repositories import TaskRepository
     from cod_doc.services import checkout_service
+    from cod_doc.services.checkout_service import CheckoutConflictError, CheckoutStatusError
     from cod_doc.services.plan_service import reads as plan_reads
+    from cod_doc.services.task_service import TaskNotFoundError
 
     repo = TaskRepository(session)
 
@@ -765,10 +764,13 @@ def pick(
         checkout_service.checkout(
             session,
             target.task_id,
-            agent=agent_id,
             project_id=project_id,
+            agent=agent_id,
         )
-    except Exception as exc:  # CheckoutConflictError or status drift
+    except (CheckoutConflictError, CheckoutStatusError, TaskNotFoundError) as exc:
+        # Гонка за замок, дрейф статуса, задачу удалили между выборкой и
+        # чекаутом — тексты доменные. Ошибки драйвера не перехватываются:
+        # str() от них несёт SQL и параметры, наружу им незачем.
         return {
             "task": None,
             "reason": "checkout_failed",

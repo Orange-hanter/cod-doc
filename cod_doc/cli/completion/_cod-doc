@@ -2226,7 +2226,7 @@ _cod-doc() {
   local -a cmds
   cmds=(
     'audit:Run integrity audit; cycle detection + done-drift check.'
-    'create:Создать план SCOPE в проекте. Scope уникален на всю БД.'
+    'create:Создать план SCOPE в проекте. Scope уникален в пределах проекта.'
     'critical-path:Show the critical path (longest sequential chain) for a plan.'
     'export:Export markdown projections for a plan.'
     'forward:Forward chain; prerequisites of TASK_ID (must complete BEFORE it).'

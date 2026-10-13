@@ -299,11 +299,13 @@ def test_assign_section_writes_revision_and_event(engine_with_schema) -> None:  
             session, project_id=pid, key="module-1", title="Запасы", author="human:test"
         )
         story = _make_story(session, pid)
-        stories.assign_section(session, story_id="US-001", key="module-1", author="human:test")
+        stories.assign_section(
+            session, project_id=pid, story_id="US-001", key="module-1", author="human:test"
+        )
         row_id = story.row_id
 
     with transactional(factory) as session:
-        assert stories.get(session, "US-001").section_id is not None
+        assert stories.get(session, "US-001", project_id=pid).section_id is not None
         history = rev.list_for_entity(session, EntityKind.STORY, row_id, project_id=pid)
         ops = [json.loads(r.diff)["op"] for r in history]
         assert "section" in ops
@@ -326,8 +328,12 @@ def test_assign_same_section_twice_is_noop(engine_with_schema) -> None:  # type:
             session, project_id=pid, key="module-1", title="Запасы", author="human:test"
         )
         story = _make_story(session, pid)
-        stories.assign_section(session, story_id="US-001", key="module-1", author="human:test")
-        stories.assign_section(session, story_id="US-001", key="module-1", author="human:test")
+        stories.assign_section(
+            session, project_id=pid, story_id="US-001", key="module-1", author="human:test"
+        )
+        stories.assign_section(
+            session, project_id=pid, story_id="US-001", key="module-1", author="human:test"
+        )
         row_id = story.row_id
 
     with transactional(factory) as session:
@@ -344,12 +350,16 @@ def test_assign_section_none_detaches(engine_with_schema) -> None:  # type: igno
             session, project_id=pid, key="module-1", title="Запасы", author="human:test"
         )
         _make_story(session, pid)
-        stories.assign_section(session, story_id="US-001", key="module-1", author="human:test")
-        result = stories.assign_section(session, story_id="US-001", key=None, author="human:test")
+        stories.assign_section(
+            session, project_id=pid, story_id="US-001", key="module-1", author="human:test"
+        )
+        result = stories.assign_section(
+            session, project_id=pid, story_id="US-001", key=None, author="human:test"
+        )
         assert result is None
 
     with transactional(factory) as session:
-        assert stories.get(session, "US-001").section_id is None
+        assert stories.get(session, "US-001", project_id=pid).section_id is None
 
 
 def test_assign_unknown_section_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -358,7 +368,9 @@ def test_assign_unknown_section_raises(engine_with_schema) -> None:  # type: ign
         pid = _seed_project(session)
         _make_story(session, pid)
         with pytest.raises(stories.SectionNotFoundError, match="nope"):
-            stories.assign_section(session, story_id="US-001", key="nope", author="human:test")
+            stories.assign_section(
+                session, project_id=pid, story_id="US-001", key="nope", author="human:test"
+            )
 
 
 def test_assign_section_unknown_story_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -369,7 +381,9 @@ def test_assign_section_unknown_story_raises(engine_with_schema) -> None:  # typ
             session, project_id=pid, key="module-1", title="Запасы", author="human:test"
         )
         with pytest.raises(stories.StoryNotFoundError, match="US-999"):
-            stories.assign_section(session, story_id="US-999", key="module-1", author="human:test")
+            stories.assign_section(
+                session, project_id=pid, story_id="US-999", key="module-1", author="human:test"
+            )
 
 
 def test_sections_are_scoped_per_project(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -404,7 +418,7 @@ def test_create_story_with_section_key(engine_with_schema) -> None:  # type: ign
         _make_story(session, pid, section_key="module-1")
 
     with transactional(factory) as session:
-        assert stories.get(session, "US-001").section_id == sec.row_id
+        assert stories.get(session, "US-001", project_id=pid).section_id == sec.row_id
 
 
 def test_create_story_with_unknown_section_key_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -433,7 +447,7 @@ def test_create_writes_section_key_not_row_id(engine_with_schema) -> None:  # ty
         _make_story(session, pid, section_key="module-1")
 
     with transactional(factory) as session:
-        story = stories.get(session, "US-001")
+        story = stories.get(session, "US-001", project_id=pid)
         history = rev.list_for_entity(session, EntityKind.STORY, story.row_id, project_id=pid)
         diff = next(json.loads(r.diff) for r in history if json.loads(r.diff)["op"] == "create")
         assert diff["section"] == "module-1"
@@ -454,7 +468,7 @@ def test_create_without_section_records_null(engine_with_schema) -> None:  # typ
         _make_story(session, pid)
 
     with transactional(factory) as session:
-        story = stories.get(session, "US-001")
+        story = stories.get(session, "US-001", project_id=pid)
         history = rev.list_for_entity(session, EntityKind.STORY, story.row_id, project_id=pid)
         diff = next(json.loads(r.diff) for r in history if json.loads(r.diff)["op"] == "create")
         assert diff["section"] is None
@@ -505,7 +519,7 @@ def test_get_section_by_id_reads_one_row(engine_with_schema) -> None:  # type: i
         target_id = target.row_id
 
     with transactional(factory) as session:
-        got = stories.get_section_by_id(session, target_id)
+        got = stories.get_section_by_id(session, target_id, project_id=pid)
         assert got is not None
         assert (got.key, got.title) == ("module-2", "M2")
 
@@ -517,5 +531,24 @@ def test_get_section_by_id_on_unknown_row_returns_none(engine_with_schema) -> No
     """Повисшая ссылка не должна быть исключением: ON DELETE SET NULL это допускает."""
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
-        _seed_project(session)
-        assert stories.get_section_by_id(session, 9999) is None
+        pid = _seed_project(session)
+        assert stories.get_section_by_id(session, 9999, project_id=pid) is None
+
+
+def test_get_section_by_id_hides_other_projects_section(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """STO-024: ``row_id`` секции чужого проекта даёт ``None``, а не её саму."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as session:
+        pid = _seed_project(session)
+        sec = stories.create_section(
+            session, project_id=pid, key="module-a", title="A", author="human:test"
+        )
+        assert sec.row_id is not None
+        now = datetime.now(UTC)
+        other = ProjectModel(slug="q", title="Q", root_path="/tmp/q", config_json={})
+        other.created = now
+        other.updated = now
+        session.add(other)
+        session.flush()
+        assert stories.get_section_by_id(session, sec.row_id, project_id=int(other.row_id)) is None
+        assert stories.get_section_by_id(session, sec.row_id, project_id=pid) is not None
