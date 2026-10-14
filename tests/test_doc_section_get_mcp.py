@@ -22,6 +22,7 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service
 from tests._alembic import run_alembic
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -66,6 +67,7 @@ def _seed(session: Session) -> int:
     ):
         doc_service.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor=anchor,
             heading=heading,

@@ -69,6 +69,7 @@ async def doc_accept(
         raise HTTPException(404, f"Документ не найден: {doc_key}")
     docs.update_status(
         session,
+        project_id=project_db_id,
         document_id=doc.row_id,
         new_status=new_status,
         author="human:web",
@@ -609,7 +610,7 @@ async def doc_generate_preview(
         doc = docs.get(session, project_db_id, key)
         if doc is None or doc.row_id is None:
             continue
-        body = docs.render_body(session, doc.row_id) or doc.preamble or ""
+        body = docs.render_body(session, doc.row_id, project_id=project_db_id) or doc.preamble or ""
         sources_text.append((doc.doc_key, body))
 
     notice = ""
@@ -713,6 +714,7 @@ async def doc_generate_save(
             anchor = heading.lower().replace(" ", "-").replace("/", "-")[:40] or f"section-{i}"
             docs.add_section(
                 session,
+                project_id=project_db_id,
                 document_id=doc.row_id,
                 anchor=anchor,
                 heading=heading,
@@ -746,6 +748,7 @@ async def doc_generate_save(
             )
             docs.add_section(
                 session,
+                project_id=project_db_id,
                 document_id=doc.row_id,
                 anchor="sources",
                 heading="Источники",
@@ -1001,14 +1004,14 @@ def suggestions_run(
     if doc is None or doc.row_id is None:
         raise HTTPException(404, f"Документ не найден: {doc_key}")
 
-    sections = doc_service.get_sections(session, doc.row_id)
+    sections = doc_service.get_sections(session, doc.row_id, project_id=project_db_id)
     sec_ids = [s.row_id for s in sections if s.row_id is not None]
 
     cfg = Config.load()
     total = 0
     for sid in sec_ids:
         try:
-            suggs = semantic.suggest_for_section(session, int(sid), cfg)
+            suggs = semantic.suggest_for_section(session, int(sid), cfg, project_id=project_db_id)
             total += len(suggs)
         except Exception:
             pass
@@ -1033,15 +1036,16 @@ def suggestion_accept(
     from cod_doc.services.link_service import semantic
 
     session, project_db_id = db
-    sugg = semantic.get_suggestion(session, row_id)
+    sugg = semantic.get_suggestion(session, row_id, project_id=project_db_id)
     if sugg is None or sugg["state"] != "pending":
         raise HTTPException(404, "Suggestion not found or already resolved")
 
-    sec = doc_service.get_section_by_id(session, sugg["from_section_id"])
+    sec = doc_service.get_section_by_id(session, sugg["from_section_id"], project_id=project_db_id)
     if sec is None:
         raise HTTPException(404, "Section not found")
-    parent_doc = doc_service.get_doc_by_id(session, sec.document_id)
-    if parent_doc is None or parent_doc.project_id != project_db_id:
+    # get_doc_by_id уже сверяет проект (AFT-024): чужой документ — None.
+    parent_doc = doc_service.get_doc_by_id(session, sec.document_id, project_id=project_db_id)
+    if parent_doc is None:
         raise HTTPException(404, "Document not found in project")
 
     target_doc = doc_service.get(session, project_db_id, sugg["to_doc_key"])
@@ -1068,13 +1072,14 @@ def suggestion_accept(
     assert parent_doc.row_id is not None
     doc_service.patch_section(
         session,
+        project_id=project_db_id,
         document_id=parent_doc.row_id,
         anchor=sec.anchor,
         new_body=body,
         author="human:web",
         reason=f"accept suggestion #{row_id}",
     )
-    semantic.update_suggestion_state(session, row_id, "accepted")
+    semantic.update_suggestion_state(session, row_id, "accepted", project_id=project_db_id)
     session.commit()
     return JSONResponse({"accepted": True, "row_id": row_id})
 
@@ -1089,8 +1094,8 @@ def suggestion_reject(
     """PCA-422 UI: Mark a suggestion as rejected (no body change)."""
     from cod_doc.services.link_service import semantic
 
-    session, _ = db
-    if not semantic.update_suggestion_state(session, row_id, "rejected"):
+    session, project_db_id = db
+    if not semantic.update_suggestion_state(session, row_id, "rejected", project_id=project_db_id):
         raise HTTPException(404, "Suggestion not found")
     session.commit()
     return JSONResponse({"rejected": True, "row_id": row_id})
@@ -1123,7 +1128,7 @@ def doc_show(
     doc = docs.get(session, project_db_id, doc_key)
     if doc is None or doc.row_id is None:
         raise HTTPException(404, f"Документ не найден: {doc_key}")
-    sections_db = docs.get_sections(session, doc.row_id)
+    sections_db = docs.get_sections(session, doc.row_id, project_id=project_db_id)
     doc_node_chain = _doc_node_chain(session, project_db_id, doc.node_id)
 
     # Sidebar nav uses the section anchors regardless of mode — they match
@@ -1139,7 +1144,9 @@ def doc_show(
     sections_html: list[dict[str, Any]] = []
 
     if is_raw:
-        raw_body = docs.render_body(session, doc.row_id) or doc.preamble or ""
+        raw_body = (
+            docs.render_body(session, doc.row_id, project_id=project_db_id) or doc.preamble or ""
+        )
     else:
         preamble_html = render_markdown(doc.preamble or "") or None
         # WEB-012: expose head revision_id per section so the edit form can
@@ -1202,7 +1209,7 @@ def doc_show(
     # Comments on this document — section-anchored bubbles + doc-level zone.
     from cod_doc.services import comment_service as _comments
 
-    comments_rows = _comments.list_for_document(session, doc.row_id)
+    comments_rows = _comments.list_for_document(session, doc.row_id, project_id=project_db_id)
     comments_by_anchor: dict[str, list[dict[str, Any]]] = {}
     doc_level_comments: list[dict[str, Any]] = []
     open_count = 0
@@ -1348,6 +1355,7 @@ def doc_expand(
             try:
                 docs.add_section(
                     session,
+                    project_id=project_db_id,
                     document_id=doc.row_id,
                     anchor=_make_anchor(draft.heading, idx),
                     heading=draft.heading,

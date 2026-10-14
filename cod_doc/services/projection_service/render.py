@@ -41,7 +41,7 @@ def render_markdown(
     if _audience_blocks_sensitivity(audience, model.sensitivity):
         body = _REDACTION_MARKER.format(sensitivity=model.sensitivity)
     else:
-        body = docs.render_body(session, document_id) or ""
+        body = docs.render_body(session, document_id, project_id=model.project_id) or ""
 
     show_h1 = bool(model.title) and model.title_in_body is not False
     blocks = [b for b in (f"# {model.title}" if show_h1 else "", body.strip("\n")) if b]

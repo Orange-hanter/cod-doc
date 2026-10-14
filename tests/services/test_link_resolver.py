@@ -23,6 +23,7 @@ from cod_doc.infra.models import (
 from cod_doc.services import doc_service as docs
 from cod_doc.services import link_service as links
 from cod_doc.services import task_service as tasks
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -91,6 +92,7 @@ def test_sync_section_creates_link_rows(engine_with_schema) -> None:  # type: ig
         doc = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc,
             anchor="intro",
             heading="Intro",
@@ -111,6 +113,7 @@ def test_sync_section_replaces_old_links(engine_with_schema) -> None:  # type: i
         doc = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc,
             anchor="intro",
             heading="Intro",
@@ -125,6 +128,7 @@ def test_sync_section_replaces_old_links(engine_with_schema) -> None:  # type: i
         # Patch body, sync should replace.
         docs.patch_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc,
             anchor="intro",
             new_body="See [[doc:new]] and [[task:T-1]].",
@@ -151,6 +155,7 @@ def test_resolve_canonical_finds_doc(engine_with_schema) -> None:  # type: ignor
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -180,6 +185,7 @@ def test_resolve_markdown_strips_docs_prefix(engine_with_schema) -> None:  # typ
         host = _add_doc(session, proj, doc_key="CLAUDE")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -205,6 +211,7 @@ def test_resolve_markdown_relative_to_source_dir(engine_with_schema) -> None:  #
         host = _add_doc(session, proj, doc_key="architecture/overview")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -229,6 +236,7 @@ def test_resolve_intra_doc_anchor(engine_with_schema) -> None:  # type: ignore[n
         host = _add_doc(session, proj, doc_key="business/requirements")
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="target-anchor",
             heading="Target",
@@ -239,6 +247,7 @@ def test_resolve_intra_doc_anchor(engine_with_schema) -> None:  # type: ignore[n
         )
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="src",
             heading="Src",
@@ -266,6 +275,7 @@ def test_resolve_markdown_walks_up_source_dir(engine_with_schema) -> None:  # ty
         host = _add_doc(session, proj, doc_key="architecture/v2/cloud_connectivity")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -290,6 +300,7 @@ def test_resolve_markdown_existing_directory_target(engine_with_schema, tmp_path
         host = _add_doc(session, proj, doc_key="docs/system/overview")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -311,6 +322,7 @@ def test_resolve_canonical_unknown_marks_unresolved(engine_with_schema) -> None:
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -332,6 +344,7 @@ def test_resolve_section_ref_validates_anchor(engine_with_schema) -> None:  # ty
         target = _add_doc(session, proj, doc_key="t")
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=target,
             anchor="data-model",
             heading="Data Model",
@@ -343,6 +356,7 @@ def test_resolve_section_ref_validates_anchor(engine_with_schema) -> None:  # ty
         host = _add_doc(session, proj, doc_key="src")
         sec_ok = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="ok",
             heading="OK",
@@ -353,6 +367,7 @@ def test_resolve_section_ref_validates_anchor(engine_with_schema) -> None:  # ty
         )
         sec_bad = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="bad",
             heading="BAD",
@@ -394,6 +409,7 @@ def test_resolve_task_ref(engine_with_schema) -> None:  # type: ignore[no-untype
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -429,6 +445,7 @@ def test_resolve_story_ref(engine_with_schema) -> None:  # type: ignore[no-untyp
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -453,6 +470,7 @@ def test_resolve_wiki_exact_match_only(engine_with_schema) -> None:  # type: ign
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -477,6 +495,7 @@ def test_resolve_url_marks_resolved(engine_with_schema) -> None:  # type: ignore
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -504,6 +523,7 @@ def test_verify_recomputes_resolved_state(engine_with_schema) -> None:  # type: 
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -540,6 +560,7 @@ def test_verify_skips_url_kind(engine_with_schema) -> None:  # type: ignore[no-u
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -567,6 +588,7 @@ def test_resolve_adr_ref(engine_with_schema) -> None:  # type: ignore[no-untyped
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -598,6 +620,7 @@ def test_resolve_adr_bare_token(engine_with_schema) -> None:  # type: ignore[no-
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -630,6 +653,7 @@ def test_execution_plan_bare_adr_task_id_resolves_as_task(engine_with_schema) ->
         )
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="section-b",
             heading="Section B",
@@ -662,6 +686,7 @@ def test_non_plan_bare_adr_token_stays_adr_link(engine_with_schema) -> None:  # 
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -691,6 +716,7 @@ def test_bare_adr_is_not_broken_when_project_has_no_adr_registry(engine_with_sch
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="changelog",
             heading="Changelog",
@@ -717,6 +743,7 @@ def test_bare_adr_still_broken_when_registry_is_in_use(engine_with_schema) -> No
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",

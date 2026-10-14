@@ -173,12 +173,14 @@ def _next_action_guess(task: TaskModel, blocked_by_ids: list[str]) -> str:
     return ""
 
 
-def _resolve_task_documents(session: Session, task_row_id: int) -> list[dict[str, Any]]:
+def _resolve_task_documents(
+    session: Session, task_row_id: int, *, project_id: int
+) -> list[dict[str, Any]]:
     """PCA-916: compact list of task-bound docs (key/title/format)."""
     try:
         from cod_doc.services import task_doc_service
 
-        docs = task_doc_service.list_for_task(session, task_row_id)
+        docs = task_doc_service.list_for_task(session, task_row_id, project_id=project_id)
         return [{"key": d.key, "title": d.title or "", "format": d.format or ""} for d in docs]
     except Exception:
         return []
@@ -254,7 +256,7 @@ def heartbeat_context(
     blocked_by_ids = _resolve_blocked_by_ids(session, model.row_id)
 
     # PCA-916: include task-bound docs and pending approvals.
-    task_documents = _resolve_task_documents(session, model.row_id)
+    task_documents = _resolve_task_documents(session, model.row_id, project_id=project_id)
     pending_approvals = _resolve_pending_approvals(session, model.project_id, task_id)
 
     return {

@@ -32,7 +32,7 @@ def doc_body(ctx: click.Context, doc_key: str, project: str) -> None:
         if d is None or d.row_id is None:
             console.print(f"[red]Document '{doc_key}' not found.[/red]")
             sys.exit(1)
-        body = doc_service.render_body(session, d.row_id)
+        body = doc_service.render_body(session, d.row_id, project_id=project_id)
 
     if body is None:
         console.print("[dim](empty)[/dim]")

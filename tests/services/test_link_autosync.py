@@ -61,6 +61,7 @@ def test_add_section_auto_syncs_link_rows(engine_with_schema) -> None:  # type: 
 
         section = doc_service.add_section(
             session,
+            project_id=project_id,
             document_id=doc_a.row_id,
             anchor="see-b",
             heading="See also",
@@ -86,6 +87,7 @@ def test_patch_section_replaces_link_rows(engine_with_schema) -> None:  # type: 
         _create_doc(session, project_id, "doc-c")
         section = doc_service.add_section(
             session,
+            project_id=project_id,
             document_id=doc_a.row_id,
             anchor="ref",
             heading="Refs",
@@ -97,6 +99,7 @@ def test_patch_section_replaces_link_rows(engine_with_schema) -> None:  # type: 
         # Replace body — old link should disappear, new one appear.
         doc_service.patch_section(
             session,
+            project_id=project_id,
             document_id=doc_a.row_id,
             anchor="ref",
             new_body="Now we point at [C](doc-c) instead.",
@@ -118,6 +121,7 @@ def test_link_backfill_picks_up_legacy_sections(engine_with_schema) -> None:  # 
         _create_doc(session, project_id, "doc-b")
         section = doc_service.add_section(
             session,
+            project_id=project_id,
             document_id=doc_a.row_id,
             anchor="x",
             heading="X",

@@ -149,9 +149,15 @@ def section_delete_diff(body: str, *, doc_key: str, anchor: str) -> str:
     return _delete_diff(body, label=section_label(doc_key, anchor))
 
 
-def _require_doc(session: Session, document_id: int) -> DocumentModel:
+def _require_doc(session: Session, document_id: int, project_id: int) -> DocumentModel:
+    """Документ по row_id — только документ проекта ``project_id`` (AFT-024).
+
+    ``document_id`` — row_id на всю hub-БД: без сверки проекта мутация по
+    перебранному id правила бы документ соседа. Документ чужого проекта — тот
+    же `DocumentNotFoundError`, его существование не раскрывается.
+    """
     model = session.get(DocumentModel, document_id)
-    if model is None:
+    if model is None or model.project_id != project_id:
         raise DocumentNotFoundError(f"document #{document_id}")
     return model
 
@@ -276,20 +282,38 @@ def list_for_project(session: Session, project_id: int) -> list[Document]:
     return DocumentRepository(session).list_for_project(project_id)
 
 
-def get_section_by_id(session: Session, section_id: int) -> Section | None:
-    """Return one Section domain object by its row_id, or None."""
+def _owned_doc(session: Session, document_id: int, project_id: int) -> DocumentModel | None:
+    """Документ ``document_id``, если он принадлежит проекту; иначе None (AFT-024)."""
+    doc = session.get(DocumentModel, document_id)
+    return doc if doc is not None and doc.project_id == project_id else None
+
+
+def get_section_by_id(session: Session, section_id: int, *, project_id: int) -> Section | None:
+    """Return one Section domain object by its row_id, or None.
+
+    ``project_id`` обязателен (AFT-024): ``section_id`` — row_id на всю hub-БД;
+    секция документа чужого проекта — None, как несуществующая.
+    """
     sec_model = session.get(SectionModel, section_id)
-    if sec_model is None:
+    if sec_model is None or _owned_doc(session, sec_model.document_id, project_id) is None:
         return None
     return SectionRepository(session).get(sec_model.row_id)
 
 
-def get_doc_by_id(session: Session, document_id: int) -> Document | None:
-    """Return one Document domain object by its row_id, or None."""
+def get_doc_by_id(session: Session, document_id: int, *, project_id: int) -> Document | None:
+    """Return one Document domain object by its row_id, or None.
+
+    Документ чужого проекта — None (AFT-024), как и несуществующий.
+    """
+    if _owned_doc(session, document_id, project_id) is None:
+        return None
     return DocumentRepository(session).get(document_id)
 
 
-def get_sections(session: Session, document_id: int) -> list[Section]:
+def get_sections(session: Session, document_id: int, *, project_id: int) -> list[Section]:
+    """Секции документа по порядку; у документа чужого проекта — пусто (AFT-024)."""
+    if _owned_doc(session, document_id, project_id) is None:
+        return []
     return SectionRepository(session).list_for_document(document_id)
 
 
@@ -319,10 +343,10 @@ def read_sections(
     requested = list(dict.fromkeys(anchors))
     if not requested:
         raise ValueError("anchors must not be empty")
-    doc = session.get(DocumentModel, document_id)
     # AFT-023: document_id — row_id на всю hub-БД; документ чужого проекта —
     # тот же «not found», его существование не раскрывается.
-    if doc is None or doc.project_id != project_id:
+    doc = _owned_doc(session, document_id, project_id)
+    if doc is None:
         raise ValueError(f"document #{document_id} not found")
 
     rows = session.execute(
@@ -377,12 +401,15 @@ def read_sections(
     return result
 
 
-def render_body(session: Session, document_id: int) -> str | None:
+def render_body(session: Session, document_id: int, *, project_id: int) -> str | None:
     """Full body via the `document_body` view; None if document is absent.
 
     Returns preamble + concatenated section bodies (with markdown headings),
-    in `section.position` order — see DATA_MODEL §4.3a.
+    in `section.position` order — see DATA_MODEL §4.3a. Документ чужого
+    проекта — None, как отсутствующий (AFT-024).
     """
+    if _owned_doc(session, document_id, project_id) is None:
+        return None
     return session.execute(
         text("SELECT body FROM document_body WHERE document_id = :d"),
         {"d": document_id},
@@ -392,6 +419,7 @@ def render_body(session: Session, document_id: int) -> str | None:
 def add_section(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     anchor: str,
     heading: str,
@@ -411,7 +439,7 @@ def add_section(
     Raises `SectionAlreadyExistsError` if a section with the same anchor
     already exists in this document.
     """
-    doc = _require_doc(session, document_id)
+    doc = _require_doc(session, document_id, project_id)
 
     try:
         # Use a savepoint so that an IntegrityError on duplicate anchor rolls
@@ -501,6 +529,7 @@ def _sync_section_links_safe(session: Session, section_id: int) -> None:
 def patch_section(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     anchor: str,
     new_body: str,
@@ -515,7 +544,7 @@ def patch_section(
 
     No-op if `new_body` equals the current body (no row update, no revision).
     """
-    doc = _require_doc(session, document_id)
+    doc = _require_doc(session, document_id, project_id)
 
     stmt = select(SectionModel).where(
         SectionModel.document_id == document_id, SectionModel.anchor == anchor
@@ -597,6 +626,7 @@ def _renumber_positions(session: Session, document_id: int) -> None:
 def delete_section(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     anchor: str,
     author: str,
@@ -635,7 +665,7 @@ def delete_section(
 
     ``reindex=False`` — see :func:`add_section`.
     """
-    doc = _require_doc(session, document_id)
+    doc = _require_doc(session, document_id, project_id)
 
     stmt = select(SectionModel).where(
         SectionModel.document_id == document_id, SectionModel.anchor == anchor
@@ -784,6 +814,7 @@ def move_section(
 def update_status(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     new_status: DocumentStatus,
     author: str,
@@ -794,7 +825,7 @@ def update_status(
 
     No-op when the new status equals the current one (no revision written).
     """
-    doc = _require_doc(session, document_id)
+    doc = _require_doc(session, document_id, project_id)
     if doc.status == new_status.value:
         cached = DocumentRepository(session).get(document_id)
         assert cached is not None
@@ -835,6 +866,7 @@ def update_status(
 def accept(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     author: str,
     reason: str | None = None,
@@ -842,6 +874,7 @@ def accept(
     """Promote DRAFT/REVIEW → ACTIVE (the COD-052 'accept' transition)."""
     return update_status(
         session,
+        project_id=project_id,
         document_id=document_id,
         new_status=DocumentStatus.ACTIVE,
         author=author,
@@ -863,6 +896,7 @@ class MetadataUpdate(NamedTuple):
 def update_metadata(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     author: str,
     title: str | None = None,
@@ -885,7 +919,7 @@ def update_metadata(
     owner of an ACTIVE document is refused exactly as ``create`` would refuse it.
     No-op (no revision, no event) when nothing changes.
     """
-    doc = _require_doc(session, document_id)
+    doc = _require_doc(session, document_id, project_id)
     if title is not None and not title.strip():
         raise validation.ValidationError("DM-001", "document title must not be empty")
 
@@ -952,6 +986,7 @@ def update_metadata(
 def rename(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     new_doc_key: str,
     author: str,
@@ -966,7 +1001,7 @@ def rename(
     and rewrite canonical refs in section bodies. Pass `cascade_links=False`
     only when the caller will run the cascade later (e.g. bulk import).
     """
-    doc = _require_doc(session, document_id)
+    doc = _require_doc(session, document_id, project_id)
     old_key = doc.doc_key
     old_path = doc.path
     target_path = new_path or f"{new_doc_key}.md"

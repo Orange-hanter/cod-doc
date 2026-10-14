@@ -363,6 +363,7 @@ def link_suggest(
                     session,
                     int(sid),
                     cfg,
+                    project_id=project_id,
                     threshold=threshold,
                     dry_run=dry_run,
                 )

@@ -86,10 +86,11 @@ class TaskRepository(BaseRepository[Task, TaskModel]):
         model = self.session.execute(stmt).scalar_one_or_none()
         return self._to_domain(model) if model else None
 
-    def list_for_plan(self, plan_id: int) -> list[Task]:
+    def list_for_plan(self, plan_id: int, *, project_id: int) -> list[Task]:
+        require_int_project_id(project_id)
         stmt = (
             select(TaskModel)
-            .where(TaskModel.plan_id == plan_id)
+            .where(TaskModel.plan_id == plan_id, TaskModel.project_id == project_id)
             .order_by(TaskModel.section_id, TaskModel.task_id)
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]

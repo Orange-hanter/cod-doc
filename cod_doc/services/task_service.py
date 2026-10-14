@@ -1625,8 +1625,13 @@ def get_many(session: Session, task_ids: list[str], *, project_id: int) -> dict[
     return {m.task_id: repo._to_domain(m) for m in models}
 
 
-def list_for_plan(session: Session, plan_id: int) -> list[Task]:
-    return TaskRepository(session).list_for_plan(plan_id)
+def list_for_plan(session: Session, plan_id: int, *, project_id: int) -> list[Task]:
+    """Задачи плана — только проекта ``project_id`` (AFT-024).
+
+    Чужая задача с ``plan_id`` нашего плана (легаси-данные) не попадает в
+    выдачу — как и в audit/export/chain_layout/ready_batch.
+    """
+    return TaskRepository(session).list_for_plan(plan_id, project_id=project_id)
 
 
 def parse_since(value: str) -> datetime:
