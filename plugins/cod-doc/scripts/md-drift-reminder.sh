@@ -4,8 +4,9 @@
 #
 # В cod-doc markdown — проекция, source of truth — БД (.cod-doc/state.db).
 # Правка tracked-документа на диске без `doc import` даёт drift
-# (edited_in_place). Хук ТОЛЬКО напоминает — молчаливых записей в БД из хука
-# быть не должно.
+# (edited_in_place). Документы пишутся в БД тулами (doc_patch_section /
+# `cod-doc doc patch`), а не через файл. Хук ТОЛЬКО напоминает — молчаливых
+# записей в БД из хука быть не должно.
 #
 # Отличие от репо-локального предшественника: файл проверяется по таблице
 # `document`, поэтому untracked-markdown (README форка, черновики, чужие
@@ -56,7 +57,7 @@ tracked="$(sqlite3 -readonly "$COD_DOC_ROOT/.cod-doc/state.db" \
 [ -n "$tracked" ] || exit 0
 
 bin="${COD_DOC_BIN:-cod-doc}"
-msg="cod-doc drift: правлен tracked-документ ${rel} (doc_key ${tracked}). Синхронизируй БД: ${bin} doc import '${rel}' -p ${COD_DOC_SLUG}"
+msg="cod-doc drift: правлен tracked-документ ${rel} (doc_key ${tracked}) — это проекция, не исходник. Пиши в БД тулом: MCP doc_patch_section / doc_add_section или ${bin} doc patch ${tracked} <anchor> -p ${COD_DOC_SLUG}, файл верни git checkout; правку человека, которую надо сохранить, — ${bin} doc import '${rel}' -p ${COD_DOC_SLUG}"
 
 # Реестр хэшей корневого MASTER.md: пересчёт нужен, только если ссылка на
 # файл несёт `🔑 sha:`. Ссылка без хэша (DEBT-001) ничего не требует.
