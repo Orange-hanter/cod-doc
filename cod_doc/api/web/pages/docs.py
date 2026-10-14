@@ -1011,7 +1011,7 @@ def suggestions_run(
     total = 0
     for sid in sec_ids:
         try:
-            suggs = semantic.suggest_for_section(session, int(sid), cfg)
+            suggs = semantic.suggest_for_section(session, int(sid), cfg, project_id=project_db_id)
             total += len(suggs)
         except Exception:
             pass

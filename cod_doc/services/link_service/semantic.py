@@ -128,12 +128,16 @@ def suggest_for_section(
     section_id: int,
     config: Config,
     *,
+    project_id: int,
     k: int = DEFAULT_K,
     threshold: float = DEFAULT_THRESHOLD,
     top_n: int = DEFAULT_TOP_N,
     dry_run: bool = False,
 ) -> list[dict[str, Any]]:
     """Generate semantic link suggestions for one section.
+
+    Секция документа чужого проекта — пустой результат, ничего не пишется
+    (AFT-024): ``section_id`` сквозной на всю hub-БД.
 
     Returns a list of suggestion dicts (regardless of *dry_run*).
     When *dry_run* is False, suggestions are upserted into ``link_suggestion``.
@@ -151,7 +155,7 @@ def suggest_for_section(
 
     # Get the parent document to know the project context
     doc = session.get(DocumentModel, sec.document_id)
-    if doc is None:
+    if doc is None or doc.project_id != project_id:
         return []
 
     # 2. Query ChromaDB
@@ -291,6 +295,7 @@ def backfill_project(
                 session,
                 sid,
                 config,
+                project_id=project_id,
                 k=k,
                 threshold=threshold,
                 top_n=top_n,
@@ -413,6 +418,9 @@ def list_suggestions_for_document(
             .where(
                 LinkSuggestionModel.from_section_id.in_(sec_ids),
                 LinkSuggestionModel.state == state,
+                # project_id в сигнатуре был, но не применялся: document_id
+                # соседа отдавал его предложения (AFT-024).
+                _in_project(project_id),
             )
             .order_by(
                 LinkSuggestionModel.from_section_id,

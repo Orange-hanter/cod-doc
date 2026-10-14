@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import pytest
 
@@ -336,14 +336,33 @@ def test_link_suggestion_of_another_project_cannot_be_read_or_resolved(engine_wi
     with transactional(factory) as session:
         assert semantic.get_suggestion(session, sugg_id, project_id=b.project) is None
         assert semantic.list_suggestions(session, project_id=b.project) == []
+        assert (
+            semantic.list_suggestions_for_document(session, project_id=b.project, document_id=a.doc)
+            == []
+        )
         for state in ("rejected", "accepted"):
             assert not semantic.update_suggestion_state(
                 session, sugg_id, state, project_id=b.project
             )
+        # Генерация по секции соседа отказывает до обращения к индексу
+        # эмбеддингов — конфиг не нужен, и ничего не пишется.
+        no_config: Any = None
+        assert (
+            semantic.suggest_for_section(
+                session, a.doc_section, no_config, project_id=b.project, dry_run=False
+            )
+            == []
+        )
 
     with transactional(factory) as session:
         own = semantic.get_suggestion(session, sugg_id, project_id=a.project)
         assert own is not None and own["state"] == "pending"
+        assert [
+            s["row_id"]
+            for s in semantic.list_suggestions_for_document(
+                session, project_id=a.project, document_id=a.doc
+            )
+        ] == [sugg_id]
         assert [s["row_id"] for s in semantic.list_suggestions(session, project_id=a.project)] == [
             sugg_id
         ]
