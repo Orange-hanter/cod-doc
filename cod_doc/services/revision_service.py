@@ -670,6 +670,7 @@ def _revert_section(
 
     _docs.patch_section(
         session,
+        project_id=project_id,
         document_id=sec.document_id,
         anchor=sec.anchor,
         new_body=old_body,
@@ -699,6 +700,7 @@ def _revert_document(
 
     _docs.rename(
         session,
+        project_id=project_id,
         document_id=model.entity_id,
         new_doc_key=old_doc_key,
         new_path=old_path,

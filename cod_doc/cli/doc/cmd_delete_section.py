@@ -79,7 +79,7 @@ def doc_delete_section(
             sys.exit(1)
         document_id = d.row_id
 
-        before = doc_service.get_sections(session, document_id)
+        before = doc_service.get_sections(session, document_id, project_id=project_id)
         section = next((s for s in before if s.anchor == anchor), None)
         if section is None:
             console.print(
@@ -109,6 +109,7 @@ def doc_delete_section(
             try:
                 doc_service.delete_section(
                     session,
+                    project_id=project_id,
                     document_id=document_id,
                     anchor=anchor,
                     author=author,

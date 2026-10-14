@@ -119,6 +119,7 @@ def test_master_stale_export_is_stale(engine_with_schema: Engine, tmp_path: Path
         master_id = _import_master(session, project_id, tmp_path)
         doc_service.patch_section(
             session,
+            project_id=project_id,
             document_id=master_id,
             anchor="summary",
             new_body="149 MCP-тулов.",
@@ -143,6 +144,7 @@ def test_master_in_conflict_is_stale(engine_with_schema: Engine, tmp_path: Path)
         master_id = _import_master(session, project_id, tmp_path)
         doc_service.patch_section(
             session,
+            project_id=project_id,
             document_id=master_id,
             anchor="summary",
             new_body="149 MCP-тулов.",

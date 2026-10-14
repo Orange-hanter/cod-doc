@@ -295,7 +295,7 @@ def get(
         doc = doc_service.get(session, project_id, ref)
         if doc is None or doc.row_id is None:
             return {"found": False, "what": what, "ref": ref, "hint": f"doc_key not found: {ref}"}
-        body = doc_service.render_body(session, doc.row_id) or ""
+        body = doc_service.render_body(session, doc.row_id, project_id=project_id) or ""
         return {"found": True, "what": what, "ref": ref, "payload": {"doc_key": ref, "body": body}}
 
     if what == "related_task":

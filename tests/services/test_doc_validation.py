@@ -148,6 +148,7 @@ def test_rename_rejects_absolute_new_path(engine_with_schema) -> None:  # type: 
         with pytest.raises(validation.ValidationError) as exc:
             docs.rename(
                 session,
+                project_id=proj_id,
                 document_id=doc.row_id,
                 new_doc_key="ok-renamed",
                 new_path="/etc/passwd",

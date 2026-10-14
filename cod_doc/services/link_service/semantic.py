@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from sqlalchemy import ColumnElement
     from sqlalchemy.orm import Session
 
     from cod_doc.config import Config
@@ -127,12 +128,16 @@ def suggest_for_section(
     section_id: int,
     config: Config,
     *,
+    project_id: int,
     k: int = DEFAULT_K,
     threshold: float = DEFAULT_THRESHOLD,
     top_n: int = DEFAULT_TOP_N,
     dry_run: bool = False,
 ) -> list[dict[str, Any]]:
     """Generate semantic link suggestions for one section.
+
+    Секция документа чужого проекта — пустой результат, ничего не пишется
+    (AFT-024): ``section_id`` сквозной на всю hub-БД.
 
     Returns a list of suggestion dicts (regardless of *dry_run*).
     When *dry_run* is False, suggestions are upserted into ``link_suggestion``.
@@ -150,7 +155,7 @@ def suggest_for_section(
 
     # Get the parent document to know the project context
     doc = session.get(DocumentModel, sec.document_id)
-    if doc is None:
+    if doc is None or doc.project_id != project_id:
         return []
 
     # 2. Query ChromaDB
@@ -290,6 +295,7 @@ def backfill_project(
                 session,
                 sid,
                 config,
+                project_id=project_id,
                 k=k,
                 threshold=threshold,
                 top_n=top_n,
@@ -325,19 +331,42 @@ def _auto_accept_above(session: Session, from_section_id: int, threshold: float)
     )
 
 
+def _in_project(project_id: int) -> ColumnElement[bool]:
+    """Условие «предложение принадлежит проекту»: через секцию-источник и её документ.
+
+    У ``link_suggestion`` нет своего ``project_id``, а ``row_id`` сквозной на
+    всю hub-БД — без этого условия предложение соседа читалось и меняло
+    состояние перебором id (AFT-024).
+    """
+    from sqlalchemy import select
+
+    from cod_doc.infra.models.documents import DocumentModel, SectionModel
+    from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
+
+    owned_sections = (
+        select(SectionModel.row_id)
+        .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
+        .where(DocumentModel.project_id == project_id)
+    )
+    return LinkSuggestionModel.from_section_id.in_(owned_sections)
+
+
 def list_suggestions(
     session: Session,
     *,
+    project_id: int,
     from_section_id: int | None = None,
     state: str = "pending",
     limit: int = 100,
 ) -> list[dict[str, Any]]:
-    """Return suggestion rows as plain dicts."""
+    """Return suggestion rows of the project as plain dicts (AFT-024: скоуп обязателен)."""
     from sqlalchemy import select
 
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
-    stmt = select(LinkSuggestionModel).where(LinkSuggestionModel.state == state)
+    stmt = select(LinkSuggestionModel).where(
+        LinkSuggestionModel.state == state, _in_project(project_id)
+    )
     if from_section_id is not None:
         stmt = stmt.where(LinkSuggestionModel.from_section_id == from_section_id)
     stmt = stmt.order_by(LinkSuggestionModel.score.desc()).limit(limit)
@@ -389,6 +418,9 @@ def list_suggestions_for_document(
             .where(
                 LinkSuggestionModel.from_section_id.in_(sec_ids),
                 LinkSuggestionModel.state == state,
+                # project_id в сигнатуре был, но не применялся: document_id
+                # соседа отдавал его предложения (AFT-024).
+                _in_project(project_id),
             )
             .order_by(
                 LinkSuggestionModel.from_section_id,
@@ -411,11 +443,20 @@ def list_suggestions_for_document(
     ]
 
 
-def get_suggestion(session: Session, row_id: int) -> dict[str, Any] | None:
-    """Return a single suggestion row as a plain dict, or None."""
+def get_suggestion(session: Session, row_id: int, *, project_id: int) -> dict[str, Any] | None:
+    """Return a single suggestion row as a plain dict, or None.
+
+    Предложение чужого проекта — None, как несуществующее (AFT-024).
+    """
+    from sqlalchemy import select
+
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
-    r = session.get(LinkSuggestionModel, row_id)
+    r = session.execute(
+        select(LinkSuggestionModel).where(
+            LinkSuggestionModel.row_id == row_id, _in_project(project_id)
+        )
+    ).scalar_one_or_none()
     if r is None:
         return None
     return {
@@ -432,22 +473,29 @@ def update_suggestion_state(
     session: Session,
     row_id: int,
     new_state: str,
+    *,
+    project_id: int,
 ) -> bool:
-    """Change state of a suggestion (pending → accepted | rejected).  Returns True if found."""
-    from sqlalchemy import update
+    """Change state of a suggestion (pending → accepted | rejected).  Returns True if found.
 
-    from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
+    Предложение чужого проекта — False, как несуществующее (AFT-024): иначе
+    отклонить или принять его можно было бы перебором ``row_id``.
+    """
+    from sqlalchemy import update
 
     if new_state not in ("accepted", "rejected", "pending"):
         raise ValueError(f"Invalid state: {new_state!r}")
 
-    row = session.get(LinkSuggestionModel, row_id)
-    if row is None:
+    if get_suggestion(session, row_id, project_id=project_id) is None:
         return False
 
+    from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
+
+    # Скоуп и в самом UPDATE, не только в проверке выше: строка, которую
+    # меняем, — ровно та, что принадлежит проекту.
     session.execute(
         update(LinkSuggestionModel)
-        .where(LinkSuggestionModel.row_id == row_id)
+        .where(LinkSuggestionModel.row_id == row_id, _in_project(project_id))
         .values(state=new_state, updated_at=datetime.now(UTC))
     )
     return True

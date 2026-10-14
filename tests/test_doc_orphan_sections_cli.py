@@ -21,6 +21,7 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import DocumentModel, ProjectModel
 from cod_doc.services import doc_service, import_service
 from tests._alembic import run_alembic
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -118,7 +119,12 @@ def _anchors(cfg: Config) -> list[str]:
         with transactional(factory) as session:
             d = doc_service.get(session, 1, "master")
             assert d is not None and d.row_id is not None
-            return [s.anchor for s in doc_service.get_sections(session, d.row_id)]
+            return [
+                s.anchor
+                for s in doc_service.get_sections(
+                    session, d.row_id, project_id=only_project_id(session)
+                )
+            ]
     finally:
         engine.dispose()
 

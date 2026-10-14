@@ -67,6 +67,7 @@ def test_backlinks_collects_docs_tasks_and_adrs(engine_with_schema) -> None:  # 
         assert doc.row_id is not None
         docs.add_section(
             session,
+            project_id=pid,
             document_id=doc.row_id,
             anchor="provenance",
             heading="Провенанс",

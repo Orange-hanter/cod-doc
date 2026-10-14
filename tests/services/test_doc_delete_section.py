@@ -72,6 +72,7 @@ def _seed_three(session: Session) -> int:
     for i, anchor in enumerate(("alpha", "beta", "gamma")):
         docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor=anchor,
             heading=anchor.capitalize(),
@@ -88,7 +89,11 @@ def test_delete_section_removes_the_row(engine_with_schema) -> None:  # type: ig
     with transactional(factory) as session:
         doc_id = _seed_three(session)
         removed = docs.delete_section(
-            session, document_id=doc_id, anchor="beta", author="human:dakh"
+            session,
+            project_id=only_project_id(session),
+            document_id=doc_id,
+            anchor="beta",
+            author="human:dakh",
         )
 
     assert removed.anchor == "beta"
@@ -96,7 +101,10 @@ def test_delete_section_removes_the_row(engine_with_schema) -> None:  # type: ig
     assert removed.position == 1
 
     with transactional(factory) as session:
-        anchors = [s.anchor for s in docs.get_sections(session, doc_id)]
+        anchors = [
+            s.anchor
+            for s in docs.get_sections(session, doc_id, project_id=only_project_id(session))
+        ]
     assert anchors == ["alpha", "gamma"]
 
 
@@ -105,10 +113,16 @@ def test_delete_section_renumbers_the_rest(engine_with_schema) -> None:  # type:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         doc_id = _seed_three(session)
-        docs.delete_section(session, document_id=doc_id, anchor="alpha", author="human:dakh")
+        docs.delete_section(
+            session,
+            project_id=only_project_id(session),
+            document_id=doc_id,
+            anchor="alpha",
+            author="human:dakh",
+        )
 
     with transactional(factory) as session:
-        sections = docs.get_sections(session, doc_id)
+        sections = docs.get_sections(session, doc_id, project_id=only_project_id(session))
     assert [(s.anchor, s.position) for s in sections] == [("beta", 0), ("gamma", 1)]
 
 
@@ -117,10 +131,17 @@ def test_delete_then_add_lands_at_the_end(engine_with_schema) -> None:  # type: 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         doc_id = _seed_three(session)
-        docs.delete_section(session, document_id=doc_id, anchor="beta", author="human:dakh")
-        existing = docs.get_sections(session, doc_id)
+        docs.delete_section(
+            session,
+            project_id=only_project_id(session),
+            document_id=doc_id,
+            anchor="beta",
+            author="human:dakh",
+        )
+        existing = docs.get_sections(session, doc_id, project_id=only_project_id(session))
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc_id,
             anchor="delta",
             heading="Delta",
@@ -131,7 +152,7 @@ def test_delete_then_add_lands_at_the_end(engine_with_schema) -> None:  # type: 
         )
 
     with transactional(factory) as session:
-        sections = docs.get_sections(session, doc_id)
+        sections = docs.get_sections(session, doc_id, project_id=only_project_id(session))
     assert [(s.anchor, s.position) for s in sections] == [
         ("alpha", 0),
         ("gamma", 1),
@@ -143,8 +164,14 @@ def test_delete_section_removes_the_body_from_the_rendered_document(engine_with_
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         doc_id = _seed_three(session)
-        docs.delete_section(session, document_id=doc_id, anchor="beta", author="human:dakh")
-        body = docs.render_body(session, doc_id)
+        docs.delete_section(
+            session,
+            project_id=only_project_id(session),
+            document_id=doc_id,
+            anchor="beta",
+            author="human:dakh",
+        )
+        body = docs.render_body(session, doc_id, project_id=only_project_id(session))
 
     assert body is not None
     assert "Body of beta." not in body
@@ -161,7 +188,13 @@ def test_delete_section_writes_a_revision_carrying_the_body(engine_with_schema) 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         doc_id = _seed_three(session)
-        docs.delete_section(session, document_id=doc_id, anchor="beta", author="agent:claude")
+        docs.delete_section(
+            session,
+            project_id=only_project_id(session),
+            document_id=doc_id,
+            anchor="beta",
+            author="agent:claude",
+        )
 
     with transactional(factory) as session:
         revision_id = rev.head_for_entity(
@@ -187,7 +220,13 @@ def test_reverting_a_section_delete_is_refused_explicitly(engine_with_schema) ->
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         doc_id = _seed_three(session)
-        docs.delete_section(session, document_id=doc_id, anchor="beta", author="human:dakh")
+        docs.delete_section(
+            session,
+            project_id=only_project_id(session),
+            document_id=doc_id,
+            anchor="beta",
+            author="human:dakh",
+        )
         revision_id = rev.head_for_entity(
             session, EntityKind.DOCUMENT, doc_id, project_id=only_project_id(session)
         )
@@ -216,6 +255,7 @@ def test_old_revision_of_a_deleted_section_never_reverts_onto_its_successor(
         doc_id = _seed_three(session)
         gamma = docs.patch_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc_id,
             anchor="gamma",
             new_body="Gamma, second draft.",
@@ -227,9 +267,16 @@ def test_old_revision_of_a_deleted_section_never_reverts_onto_its_successor(
         )
         assert gamma_patch is not None
 
-        docs.delete_section(session, document_id=doc_id, anchor="gamma", author="human:dakh")
+        docs.delete_section(
+            session,
+            project_id=only_project_id(session),
+            document_id=doc_id,
+            anchor="gamma",
+            author="human:dakh",
+        )
         delta = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc_id,
             anchor="delta",
             heading="Delta",
@@ -249,7 +296,10 @@ def test_old_revision_of_a_deleted_section_never_reverts_onto_its_successor(
                 project_id=doc_project_id(session, doc_id),
             )
 
-        bodies = {s.anchor: s.body for s in docs.get_sections(session, doc_id)}
+        bodies = {
+            s.anchor: s.body
+            for s in docs.get_sections(session, doc_id, project_id=only_project_id(session))
+        }
     assert bodies["delta"] == "Body of delta."
 
 
@@ -257,7 +307,13 @@ def test_delete_section_emits_an_activity_event(engine_with_schema) -> None:  # 
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         doc_id = _seed_three(session)
-        docs.delete_section(session, document_id=doc_id, anchor="beta", author="agent:claude")
+        docs.delete_section(
+            session,
+            project_id=only_project_id(session),
+            document_id=doc_id,
+            anchor="beta",
+            author="agent:claude",
+        )
 
     with transactional(factory) as session:
         event = session.execute(
@@ -276,7 +332,13 @@ def test_delete_section_rejects_an_unknown_anchor(engine_with_schema) -> None:  
     with transactional(factory) as session:
         doc_id = _seed_three(session)
         with pytest.raises(docs.SectionNotFoundError, match="handbook#nope"):
-            docs.delete_section(session, document_id=doc_id, anchor="nope", author="human:dakh")
+            docs.delete_section(
+                session,
+                project_id=only_project_id(session),
+                document_id=doc_id,
+                anchor="nope",
+                author="human:dakh",
+            )
 
 
 def test_delete_section_rejects_an_unknown_document(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -284,7 +346,13 @@ def test_delete_section_rejects_an_unknown_document(engine_with_schema) -> None:
     with transactional(factory) as session:
         _seed_three(session)
         with pytest.raises(docs.DocumentNotFoundError):
-            docs.delete_section(session, document_id=99999, anchor="alpha", author="human:dakh")
+            docs.delete_section(
+                session,
+                project_id=only_project_id(session),
+                document_id=99999,
+                anchor="alpha",
+                author="human:dakh",
+            )
 
 
 def test_delete_section_takes_its_links_with_it(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -296,6 +364,7 @@ def test_delete_section_takes_its_links_with_it(engine_with_schema) -> None:  # 
         assert doc.row_id is not None
         docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="alpha",
             heading="Alpha",
@@ -309,7 +378,9 @@ def test_delete_section_takes_its_links_with_it(engine_with_schema) -> None:  # 
     with transactional(factory) as session:
         before = session.execute(select(LinkModel)).scalars().all()
         assert before, "фикстура бесполезна, если ссылка не распарсилась"
-        docs.delete_section(session, document_id=doc_id, anchor="alpha", author="human:dakh")
+        docs.delete_section(
+            session, project_id=proj_id, document_id=doc_id, anchor="alpha", author="human:dakh"
+        )
 
     with transactional(factory) as session:
         assert session.execute(select(LinkModel)).scalars().all() == []
@@ -324,9 +395,13 @@ def test_unlabelled_section_revision_is_not_reverted_blindly(engine_with_schema)
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         doc_id = _seed_three(session)
-        beta = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "beta")
+        beta = next(
+            s
+            for s in docs.get_sections(session, doc_id, project_id=only_project_id(session))
+            if s.anchor == "beta"
+        )
         assert beta.row_id is not None
-        doc = docs.get_doc_by_id(session, doc_id)
+        doc = docs.get_doc_by_id(session, doc_id, project_id=only_project_id(session))
         assert doc is not None
         unlabelled = rev.write(
             session,
@@ -346,7 +421,11 @@ def test_unlabelled_section_revision_is_not_reverted_blindly(engine_with_schema)
                 project_id=unlabelled.project_id,
             )
 
-        body = next(s.body for s in docs.get_sections(session, doc_id) if s.anchor == "beta")
+        body = next(
+            s.body
+            for s in docs.get_sections(session, doc_id, project_id=only_project_id(session))
+            if s.anchor == "beta"
+        )
     assert body == "Body of beta."
 
 
@@ -362,6 +441,7 @@ def test_label_in_the_section_body_does_not_pass_for_the_header(engine_with_sche
         doc_id = _seed_three(session)
         gamma = docs.patch_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc_id,
             anchor="gamma",
             new_body="See section:handbook#delta@@ for details.",
@@ -372,9 +452,16 @@ def test_label_in_the_section_body_does_not_pass_for_the_header(engine_with_sche
             session, EntityKind.SECTION, gamma.row_id, project_id=only_project_id(session)
         )
         assert gamma_patch is not None
-        docs.delete_section(session, document_id=doc_id, anchor="gamma", author="human:dakh")
+        docs.delete_section(
+            session,
+            project_id=only_project_id(session),
+            document_id=doc_id,
+            anchor="gamma",
+            author="human:dakh",
+        )
         delta = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc_id,
             anchor="delta",
             heading="Delta",
