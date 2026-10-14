@@ -641,6 +641,7 @@ def register(mcp: FastMCP) -> None:
             old_status = d.status.value
             updated = doc_service.update_status(
                 session,
+                project_id=project_id,
                 document_id=d.row_id,
                 new_status=new_status,
                 author=author,
