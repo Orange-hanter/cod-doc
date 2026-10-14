@@ -64,6 +64,7 @@ def _seed(session: Session, root: Path, *, tracked: bool) -> int:
         for i, (anchor, body) in enumerate([("links", _registry(WRONG)), ("table", _table(WRONG))]):
             docs.add_section(
                 session,
+                project_id=proj.row_id,
                 document_id=d.row_id,
                 anchor=anchor,
                 heading=anchor.title(),
@@ -79,7 +80,7 @@ def _master_body(session: Session, pid: int) -> str:
     d = docs.get_by_path(session, pid, "MASTER.md")
     assert d is not None
     assert d.row_id is not None
-    return docs.render_body(session, d.row_id) or ""
+    return docs.render_body(session, d.row_id, project_id=pid) or ""
 
 
 def test_tracked_registry_is_rewritten_in_db_not_on_disk(engine_with_schema, tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -105,7 +106,7 @@ def test_tracked_registry_is_rewritten_in_db_not_on_disk(engine_with_schema, tmp
         d = docs.get_by_path(s, pid, "MASTER.md")
         assert d is not None
         assert d.row_id is not None
-        for sec in docs.get_sections(s, d.row_id):
+        for sec in docs.get_sections(s, d.row_id, project_id=pid):
             assert sec.row_id is not None
             assert len(rev.list_for_entity(s, EntityKind.SECTION, sec.row_id, project_id=pid)) == 2
         s.flush()

@@ -188,7 +188,9 @@ def test_explicit_dry_run_false_repairs(project) -> None:  # type: ignore[no-unt
         master = doc_service.get_by_path(session, _project_id(session), "MASTER.md")
         assert master is not None
         assert master.row_id is not None
-        assert _WRONG_HASH not in (doc_service.render_body(session, master.row_id) or "")
+        assert _WRONG_HASH not in (
+            doc_service.render_body(session, master.row_id, project_id=_project_id(session)) or ""
+        )
         assert _alpha_drift(session, root) is DriftStatus.IN_SYNC
 
 

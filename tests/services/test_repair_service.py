@@ -218,7 +218,9 @@ def test_apply_rewrites_the_stale_registry(project) -> None:
         master = doc_service.get_by_path(session, _project_id(session), "MASTER.md")
         assert master is not None
         assert master.row_id is not None
-        body = doc_service.render_body(session, master.row_id) or ""
+        body = (
+            doc_service.render_body(session, master.row_id, project_id=_project_id(session)) or ""
+        )
         plan = _diagnose(session, root)
     assert _WRONG_HASH not in body
     assert _WRONG_HASH in (root / "MASTER.md").read_text(encoding="utf-8")

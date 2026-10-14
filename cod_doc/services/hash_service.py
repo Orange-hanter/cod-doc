@@ -57,7 +57,7 @@ def registry_text(session: Session, project_id: int, master_path: Path, root_pat
     """Текст реестра: тело документа из БД, иначе файл; нет ни того ни другого — ``""``."""
     doc = _master_document(session, project_id, master_path, root_path)
     if doc is not None and doc.row_id is not None:
-        return doc_service.render_body(session, doc.row_id) or ""
+        return doc_service.render_body(session, doc.row_id, project_id=project_id) or ""
     return master_path.read_text(encoding="utf-8") if master_path.exists() else ""
 
 
@@ -114,7 +114,10 @@ def _update_in_db(
 ) -> tuple[int, list[str]]:
     """Пересчёт реестра в преамбуле и секциях документа; пишутся только изменённые части."""
     assert doc.row_id is not None
-    sections = sorted(doc_service.get_sections(session, doc.row_id), key=lambda s: s.position)
+    sections = sorted(
+        doc_service.get_sections(session, doc.row_id, project_id=doc.project_id),
+        key=lambda s: s.position,
+    )
     texts = [doc.preamble, *(s.body for s in sections)]
     new_texts, updated, warnings = recompute_hashes(texts, root)
     if not updated:
@@ -123,12 +126,18 @@ def _update_in_db(
     reason = "hash update (DEBT-009)"
     if new_texts[0] != doc.preamble:
         doc_service.update_metadata(
-            session, document_id=doc.row_id, author=author, preamble=new_texts[0], reason=reason
+            session,
+            project_id=doc.project_id,
+            document_id=doc.row_id,
+            author=author,
+            preamble=new_texts[0],
+            reason=reason,
         )
     for section, new_body in zip(sections, new_texts[1:], strict=True):
         if new_body != section.body:
             doc_service.patch_section(
                 session,
+                project_id=doc.project_id,
                 document_id=doc.row_id,
                 anchor=section.anchor,
                 new_body=new_body,
