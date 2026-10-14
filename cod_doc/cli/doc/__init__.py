@@ -20,6 +20,7 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_export,
     cmd_import,
     cmd_list,
+    cmd_move_section,
     cmd_patch,
     cmd_rename,
     cmd_section,

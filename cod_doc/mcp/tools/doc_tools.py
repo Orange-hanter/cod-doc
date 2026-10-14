@@ -564,6 +564,60 @@ def register(mcp: FastMCP) -> None:
             out["dry_run"] = True
         return out
 
+    @mcp.tool(name="doc_move_section")
+    def doc_move_section(
+        project: str,
+        doc_key: str,
+        anchor: str,
+        position: int,
+        author: str = "mcp",
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """DEBT-007: move a section to index ``position`` (0-based) in its document.
+
+        The section keeps its row, body and revision history — unlike delete +
+        add. ``position`` must be within ``0 … sections-1``. Returns
+        ``from`` / ``to`` / ``changed`` and ``order`` (all anchors after the
+        move). Moving to the current index writes nothing.
+        ``dry_run=True`` returns the resulting order without writing.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_service
+        from cod_doc.services.doc_service import SectionNotFoundError
+        from cod_doc.services.validation import ValidationError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf, commit=not dry_run) as session:
+                project_id = require_project_id(session, project)
+                d = doc_service.get(session, project_id, doc_key)
+                if d is None or d.row_id is None:
+                    raise ValueError(f"Document '{doc_key}' not found.")
+                move = doc_service.move_section(
+                    session,
+                    document_id=d.row_id,
+                    anchor=anchor,
+                    position=position,
+                    author=author,
+                    reason=reason,
+                )
+        except SectionNotFoundError as exc:
+            raise ValueError(f"Section '{anchor}' not found in document '{doc_key}'.") from exc
+        except ValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        out: dict[str, Any] = {
+            "doc_key": doc_key,
+            "anchor": anchor,
+            "from": move.from_position,
+            "to": move.to_position,
+            "changed": move.from_position != move.to_position,
+            "order": move.order,
+        }
+        if dry_run:
+            out["dry_run"] = True
+        return out
+
     @mcp.tool(name="doc_accept")
     def doc_accept(
         project: str,

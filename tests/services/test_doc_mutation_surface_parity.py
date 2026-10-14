@@ -37,6 +37,7 @@ SPEC = ServiceSpec(
             "add_section",
             "patch_section",
             "delete_section",
+            "move_section",
             "update_status",
             "update_metadata",
             "accept",

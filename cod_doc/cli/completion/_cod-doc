@@ -1240,6 +1240,7 @@ _cod-doc() {
         (export)              _cod_doc_doc_export && ret=0 ;;
         (import)              _cod_doc_doc_import && ret=0 ;;
         (list)                _cod_doc_doc_list && ret=0 ;;
+        (move-section)        _cod_doc_doc_move_section && ret=0 ;;
         (patch)               _cod_doc_doc_patch && ret=0 ;;
         (rename)              _cod_doc_doc_rename && ret=0 ;;
         (section)             _cod_doc_doc_section && ret=0 ;;
@@ -1268,6 +1269,7 @@ _cod-doc() {
     'export:Export a document projection to disk (writes <project-root>/<doc.pa…'
     'import:Import frontmatter changes from a projection file back into the DB.'
     'list:List all documents for a project.'
+    'move-section:Move section ANCHOR of DOC_KEY to index --position.'
     'patch:Replace the body of section ANCHOR in DOC_KEY.'
     'rename:Rename a document key (and optionally its path); cascades incoming…'
     'section:Тела секций документа по якорям — без чтения тела всего документа.'
@@ -1442,6 +1444,23 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_move_section] )) || _cod_doc_doc_move_section() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--position)--position=[Target index in the document, 0-based]:position' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--dry-run)--dry-run[Show the resulting order without writing anything]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' \
+    '2:anchor:_cod_doc_doc_sections' && ret=0
   return ret
 }
 
