@@ -734,6 +734,7 @@ class SectionMove(NamedTuple):
 def move_section(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     anchor: str,
     position: int,
@@ -756,7 +757,7 @@ def move_section(
     precedent of :func:`delete_section`: order is a property of the document,
     not of one section. Moving to the current index is a no-op.
     """
-    doc = _require_doc(session, document_id)
+    doc = _require_doc(session, document_id, project_id)
     _renumber_positions(session, document_id)
     rows = list(
         session.execute(

@@ -605,6 +605,7 @@ def register(mcp: FastMCP) -> None:
                     raise ValueError(f"Document '{doc_key}' not found.")
                 move = doc_service.move_section(
                     session,
+                    project_id=project_id,
                     document_id=d.row_id,
                     anchor=anchor,
                     position=position,
