@@ -601,6 +601,59 @@ def register(mcp: FastMCP) -> None:
             )
         return doc_to_dict(updated)
 
+    @mcp.tool(name="doc_delete")
+    def doc_delete(
+        project: str,
+        doc_key: str,
+        author: str = "mcp",
+        reason: str | None = None,
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """DEBT-006: delete a document from the DB — irreversible; dry run by default.
+
+        Removes the document, its sections and their outgoing links; revisions
+        and activity events stay. The projection file on disk is not touched.
+        Links from OTHER documents pointing here stay and become broken — they
+        are listed in ``incoming_links``.
+
+        Defaults to ``dry_run=True``: the first call shows what would go
+        (``section_count``, ``incoming_links``); delete with an explicit second
+        call ``dry_run=False``. Not exposed on the ``agent``/``minimal`` profiles.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_service, link_service
+        from cod_doc.services.doc_service import DocumentNotFoundError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf, commit=not dry_run) as session:
+                project_id = require_project_id(session, project)
+                incoming = link_service.list_incoming_for_doc(session, project_id, doc_key)
+                result = doc_service.delete(
+                    session,
+                    project_id=project_id,
+                    doc_key=doc_key,
+                    author=author,
+                    reason=reason,
+                )
+        except DocumentNotFoundError as exc:
+            raise ValueError(f"Document '{doc_key}' not found.") from exc
+        return {
+            "doc_key": result.doc_key,
+            "title": result.title,
+            "section_count": result.section_count,
+            "incoming_links": [
+                {
+                    "source_doc_key": il.source_doc_key,
+                    "section_anchor": il.section_anchor,
+                    "label": il.label,
+                }
+                for il in incoming
+            ],
+            "deleted": not dry_run,
+            "dry_run": dry_run,
+        }
+
     @mcp.tool(name="doc_update_status")
     def doc_update_status(
         project: str,

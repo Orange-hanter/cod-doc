@@ -325,7 +325,7 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
 | `services/test_activity_write_path.py` | каждый write-сервис эмитит activity event |
 | `services/test_swap_boundary_imports.py` | границу свапа рантайма: `runtime_service`/`launchd_service` импортируют только stdlib, а у `update_service` нет ленивых импортов (инверсия правила ADO-179) |
 | `services/test_task_mutation_surface_parity.py` | мутация в `task_service` и `story_service/` выставлена и в MCP, и в CLI (allowlist с обоснованиями внутри) |
-| `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017) и `doc_tree_service` (ADO-116); незакрытый долг — `update_status` и `delete`, каждый с обоснованием |
+| `services/test_doc_mutation_surface_parity.py` | то же для `doc_service` (STO-017) и `doc_tree_service` (ADO-116); долга нет — `update_status` и `delete` выставлены в DEBT-005/006 |
 | `services/test_plan_mutation_surface_parity.py` | то же для `plan_service` (ADO-209): секции и планы на MCP и CLI; `freeze_projection` вне спеки — пишет через `doc_service` |
 | `services/test_adr_mutation_surface_parity.py` | то же для `adr_service` (ARG-001): `relate`/`unrelate` на обеих поверхностях; долг CLI — `update`, `add_diagram`, `link_task`, каждый с обоснованием |
 | `services/test_approval_mutation_surface_parity.py` | то же для `approval_service` (ACU-010): `resolve`/`cancel` на MCP и CLI; `request_doc_patch` — внутренний (собирает куратор), `request` — долг CLI с обоснованием |

@@ -29,6 +29,7 @@ description: |
 | Прочитать секцию (+ head-ревизия) | `doc_section_get(project, doc_key, anchors=[…])` | `cod-doc doc section <doc_key> <anchor> -p <slug>` |
 | Заменить тело секции | `doc_patch_section(project, doc_key, anchor, body, expected_parent_revision_id=…)` | `cod-doc doc patch <doc_key> <anchor> --body-file - --expected-revision … -p <slug>` |
 | Удалить секцию | `doc_delete_section` | `cod-doc doc delete-section <doc_key> <anchor> -p <slug>` |
+| Удалить документ (необратимо; MCP — сначала dry run) | `doc_delete(project, doc_key)` → `doc_delete(…, dry_run=False)` | `cod-doc doc delete <doc_key> -p <slug>` |
 | Переименовать ключ/путь | `doc_rename` | `cod-doc doc rename` |
 | DRAFT/REVIEW → ACTIVE | `doc_accept` | `cod-doc doc accept` |
 | Любой статус (deprecated, done, …) | `doc_update_status(project, doc_key, status)` | `cod-doc doc status <doc_key> <status> -p <slug>` |
