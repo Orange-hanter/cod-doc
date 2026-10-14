@@ -218,7 +218,9 @@ def ctx_docs(
             token_estimate = 0
             for doc in sorted(filtered, key=lambda d: d.doc_key):
                 body = (
-                    doc_service.render_body(session, doc.row_id) if doc.row_id is not None else None
+                    doc_service.render_body(session, doc.row_id, project_id=project_id)
+                    if doc.row_id is not None
+                    else None
                 )
                 doc_tokens = _estimate_tokens(body)
                 if budget_tokens is not None and token_estimate + doc_tokens > budget_tokens:

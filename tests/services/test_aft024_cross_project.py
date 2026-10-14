@@ -367,3 +367,50 @@ def test_link_suggestion_of_another_project_cannot_be_read_or_resolved(engine_wi
             sugg_id
         ]
         assert semantic.update_suggestion_state(session, sugg_id, "rejected", project_id=a.project)
+
+
+# --------------------------------------------------------------------------- #
+# render_body и comment_service (ai-review PR #200)                            #
+# --------------------------------------------------------------------------- #
+
+
+def test_render_body_hides_another_projects_document(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    factory, a, b = _two_projects(engine_with_schema)
+    with transactional(factory) as session:
+        assert doc_service.render_body(session, a.doc, project_id=b.project) is None
+        own = doc_service.render_body(session, a.doc, project_id=a.project)
+        assert own is not None and "body of a" in own
+
+
+def test_comments_of_another_project_cannot_be_read_changed_or_deleted(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Комментарий к документу проекта A: из проекта B его не видно, статус не
+    меняется, удалить нельзя; на документ A из B комментарий не создать."""
+    from cod_doc.services import comment_service as comments
+
+    factory, a, b = _two_projects(engine_with_schema)
+    with transactional(factory) as session:
+        comment = comments.create(
+            session, project_id=a.project, document_id=a.doc, body="fix this", author=_AUTHOR
+        )
+        cid = comment.row_id
+        assert cid is not None
+
+    with transactional(factory) as session:
+        assert comments.get(session, cid, project_id=b.project) is None
+        assert comments.list_for_document(session, a.doc, project_id=b.project) == []
+        with pytest.raises(comments.CommentNotFoundError):
+            comments.update_status(
+                session, project_id=b.project, comment_id=cid, new_status="resolved"
+            )
+        assert comments.delete(session, cid, project_id=b.project) is False
+        with pytest.raises(ValueError, match="not found"):
+            comments.create(
+                session, project_id=b.project, document_id=a.doc, body="intruder", author=_AUTHOR
+            )
+
+    with transactional(factory) as session:
+        own = comments.get(session, cid, project_id=a.project)
+        assert own is not None and own.status == "open"
+        assert [
+            c.row_id for c in comments.list_for_document(session, a.doc, project_id=a.project)
+        ] == [cid]

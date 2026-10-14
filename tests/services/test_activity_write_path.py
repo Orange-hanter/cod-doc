@@ -514,6 +514,7 @@ def test_comment_create_emits_event(engine_with_schema) -> None:  # type: ignore
         doc_id = _new_doc(session, p, "doc-1")
         comment_service.create(
             session,
+            project_id=p,
             document_id=doc_id,
             body="Please fix this.",
             author="human:test",

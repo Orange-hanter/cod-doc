@@ -132,7 +132,10 @@ def test_edited_in_place_is_imported_by_the_curator_and_the_file_is_untouched(pr
         assert _status(session, root, "alpha") is projection_service.DriftStatus.IN_SYNC
         alpha = doc_service.get(session, _pid(session), "alpha")
         assert alpha is not None and alpha.row_id is not None
-        assert "Правка на диске." in (doc_service.render_body(session, alpha.row_id) or "")
+        assert "Правка на диске." in (
+            doc_service.render_body(session, alpha.row_id, project_id=only_project_id(session))
+            or ""
+        )
         authors = set(
             session.execute(
                 select(ActivityEventModel.actor_id).where(

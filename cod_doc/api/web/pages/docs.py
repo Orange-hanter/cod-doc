@@ -610,7 +610,7 @@ async def doc_generate_preview(
         doc = docs.get(session, project_db_id, key)
         if doc is None or doc.row_id is None:
             continue
-        body = docs.render_body(session, doc.row_id) or doc.preamble or ""
+        body = docs.render_body(session, doc.row_id, project_id=project_db_id) or doc.preamble or ""
         sources_text.append((doc.doc_key, body))
 
     notice = ""
@@ -1144,7 +1144,9 @@ def doc_show(
     sections_html: list[dict[str, Any]] = []
 
     if is_raw:
-        raw_body = docs.render_body(session, doc.row_id) or doc.preamble or ""
+        raw_body = (
+            docs.render_body(session, doc.row_id, project_id=project_db_id) or doc.preamble or ""
+        )
     else:
         preamble_html = render_markdown(doc.preamble or "") or None
         # WEB-012: expose head revision_id per section so the edit form can
@@ -1207,7 +1209,7 @@ def doc_show(
     # Comments on this document — section-anchored bubbles + doc-level zone.
     from cod_doc.services import comment_service as _comments
 
-    comments_rows = _comments.list_for_document(session, doc.row_id)
+    comments_rows = _comments.list_for_document(session, doc.row_id, project_id=project_db_id)
     comments_by_anchor: dict[str, list[dict[str, Any]]] = {}
     doc_level_comments: list[dict[str, Any]] = []
     open_count = 0

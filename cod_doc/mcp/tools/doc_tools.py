@@ -210,7 +210,7 @@ def register(mcp: FastMCP) -> None:
             d = doc_service.get(session, project_id, doc_key)
             if d is None or d.row_id is None:
                 raise ValueError(f"Document '{doc_key}' not found.")
-            body = doc_service.render_body(session, d.row_id)
+            body = doc_service.render_body(session, d.row_id, project_id=project_id)
         return body or ""
 
     @mcp.tool(name="doc_section_get")

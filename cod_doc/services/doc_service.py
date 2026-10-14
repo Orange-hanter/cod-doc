@@ -343,10 +343,10 @@ def read_sections(
     requested = list(dict.fromkeys(anchors))
     if not requested:
         raise ValueError("anchors must not be empty")
-    doc = session.get(DocumentModel, document_id)
     # AFT-023: document_id — row_id на всю hub-БД; документ чужого проекта —
     # тот же «not found», его существование не раскрывается.
-    if doc is None or doc.project_id != project_id:
+    doc = _owned_doc(session, document_id, project_id)
+    if doc is None:
         raise ValueError(f"document #{document_id} not found")
 
     rows = session.execute(
@@ -401,12 +401,15 @@ def read_sections(
     return result
 
 
-def render_body(session: Session, document_id: int) -> str | None:
+def render_body(session: Session, document_id: int, *, project_id: int) -> str | None:
     """Full body via the `document_body` view; None if document is absent.
 
     Returns preamble + concatenated section bodies (with markdown headings),
-    in `section.position` order — see DATA_MODEL §4.3a.
+    in `section.position` order — see DATA_MODEL §4.3a. Документ чужого
+    проекта — None, как отсутствующий (AFT-024).
     """
+    if _owned_doc(session, document_id, project_id) is None:
+        return None
     return session.execute(
         text("SELECT body FROM document_body WHERE document_id = :d"),
         {"d": document_id},

@@ -346,7 +346,7 @@ class ToolExecutor:
                 doc = doc_service.get(session, project_id, doc_key)
                 if doc is None or doc.row_id is None:
                     return {"error": f"Document '{doc_key}' not found"}
-                body = doc_service.render_body(session, doc.row_id)
+                body = doc_service.render_body(session, doc.row_id, project_id=project_id)
 
             if body is None:
                 return {"error": f"Document '{doc_key}' has no body"}

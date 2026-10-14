@@ -211,7 +211,7 @@ def test_replace_mode_makes_the_rendered_body_match_the_file(engine_with_schema)
         doc_id = first.document.row_id
         assert doc_id is not None
         _import(session, project_id, TWO_SECTIONS_PLUS_NEW, replace=True)
-        body = doc_service.render_body(session, doc_id)
+        body = doc_service.render_body(session, doc_id, project_id=project_id)
 
     assert body is not None
     assert "Stale map." not in body

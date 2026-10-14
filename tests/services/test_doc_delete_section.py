@@ -171,7 +171,7 @@ def test_delete_section_removes_the_body_from_the_rendered_document(engine_with_
             anchor="beta",
             author="human:dakh",
         )
-        body = docs.render_body(session, doc_id)
+        body = docs.render_body(session, doc_id, project_id=only_project_id(session))
 
     assert body is not None
     assert "Body of beta." not in body

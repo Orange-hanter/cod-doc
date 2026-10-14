@@ -125,7 +125,7 @@ def test_render_body_uses_view(engine_with_schema) -> None:  # type: ignore[no-u
             body="Alpha body.",
             author="x",
         )
-        body = docs.render_body(session, doc.row_id)
+        body = docs.render_body(session, doc.row_id, project_id=proj_id)
         assert body is not None
         assert body.startswith("Intro paragraph.")
         assert "## Alpha\n\nAlpha body." in body
@@ -135,7 +135,7 @@ def test_render_body_returns_none_for_unknown_doc(engine_with_schema) -> None:  
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session:
-        assert docs.render_body(session, 99999) is None
+        assert docs.render_body(session, 99999, project_id=999_999) is None
 
 
 def test_add_section_duplicate_anchor_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]

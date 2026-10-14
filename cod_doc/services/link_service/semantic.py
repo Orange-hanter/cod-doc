@@ -491,9 +491,11 @@ def update_suggestion_state(
 
     from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
 
+    # Скоуп и в самом UPDATE, не только в проверке выше: строка, которую
+    # меняем, — ровно та, что принадлежит проекту.
     session.execute(
         update(LinkSuggestionModel)
-        .where(LinkSuggestionModel.row_id == row_id)
+        .where(LinkSuggestionModel.row_id == row_id, _in_project(project_id))
         .values(state=new_state, updated_at=datetime.now(UTC))
     )
     return True

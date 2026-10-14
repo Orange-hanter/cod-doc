@@ -397,7 +397,7 @@ def test_doc_authoring_cycle_needs_no_markdown_file(
             sections[0].row_id,
             project_id=doc_project_id(session, doc_id),
         )
-        body = docs.render_body(session, doc_id)
+        body = docs.render_body(session, doc_id, project_id=only_project_id(session))
     assert sections[0].body == "final"
     assert len(history) == 2
     assert body is not None and "final" in body
