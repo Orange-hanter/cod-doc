@@ -14,6 +14,7 @@ from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
 from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -57,6 +58,7 @@ def seeded(tmp_path: Path, isolated_cod_doc_home: Path, monkeypatch: pytest.Monk
             ):
                 docs.add_section(
                     session,
+                    project_id=only_project_id(session),
                     document_id=d.row_id,
                     anchor=anchor,
                     heading=anchor.title(),

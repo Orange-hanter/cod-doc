@@ -40,7 +40,9 @@ def doc_accept(
         if d is None or d.row_id is None:
             console.print(f"[red]Document '{doc_key}' not found.[/red]")
             sys.exit(1)
-        updated = doc_service.accept(session, document_id=d.row_id, author=author, reason=reason)
+        updated = doc_service.accept(
+            session, project_id=project_id, document_id=d.row_id, author=author, reason=reason
+        )
         status = updated.status.value
 
     console.print(f"[green]✓ Accepted[/green] {doc_key} → [cyan]{status}[/cyan]")

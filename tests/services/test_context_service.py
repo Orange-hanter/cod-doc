@@ -177,6 +177,7 @@ def test_l1_document_includes_sections(engine_with_schema) -> None:  # type: ign
 
         doc_service.add_section(
             session,
+            project_id=proj_id,
             document_id=doc_id,
             anchor="data-model",
             heading="Data Model",
@@ -438,6 +439,7 @@ def test_l2_document_includes_cross_doc_links(engine_with_schema) -> None:  # ty
         # Section in source doc with an outgoing link to M2
         sec = doc_service.add_section(
             session,
+            project_id=proj_id,
             document_id=src_id,
             anchor="see-also",
             heading="See Also",
@@ -602,6 +604,7 @@ def test_small_budget_stops_document_sections(engine_with_schema) -> None:  # ty
         for i in range(5):
             doc_service.add_section(
                 session,
+                project_id=proj_id,
                 document_id=doc_id,
                 anchor=f"s{i}",
                 heading=f"Section {i}",

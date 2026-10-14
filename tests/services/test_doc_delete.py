@@ -75,6 +75,7 @@ def test_delete_removes_doc_sections_links_and_fts_emits_event(
         doc = _new_doc(session, proj_id, "doc-to-delete", title="Delete Me")
         section = docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="intro",
             heading="Intro",

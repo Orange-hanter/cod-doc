@@ -22,6 +22,7 @@ from cod_doc.infra.models import ActivityEventModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -74,7 +75,10 @@ def _sections(project_name: str = "p", doc_key: str = DOC_KEY) -> dict[str, str]
             assert proj is not None and proj.row_id is not None
             d = docs.get(session, proj.row_id, doc_key)
             assert d is not None and d.row_id is not None
-            return {s.anchor: s.body for s in docs.get_sections(session, d.row_id)}
+            return {
+                s.anchor: s.body
+                for s in docs.get_sections(session, d.row_id, project_id=only_project_id(session))
+            }
     finally:
         engine.dispose()
 
@@ -90,7 +94,11 @@ def _revisions(anchor: str, project_name: str = "p", doc_key: str = DOC_KEY) -> 
             assert proj is not None and proj.row_id is not None
             d = docs.get(session, proj.row_id, doc_key)
             assert d is not None and d.row_id is not None
-            section = next(s for s in docs.get_sections(session, d.row_id) if s.anchor == anchor)
+            section = next(
+                s
+                for s in docs.get_sections(session, d.row_id, project_id=only_project_id(session))
+                if s.anchor == anchor
+            )
             assert section.row_id is not None
             return [
                 r.revision_id

@@ -86,7 +86,11 @@ def doc_patch(
                 sys.exit(1)
 
             section = next(
-                (s for s in doc_service.get_sections(session, d.row_id) if s.anchor == anchor),
+                (
+                    s
+                    for s in doc_service.get_sections(session, d.row_id, project_id=project_id)
+                    if s.anchor == anchor
+                ),
                 None,
             )
             if section is None:
@@ -96,6 +100,7 @@ def doc_patch(
 
             updated = doc_service.patch_section(
                 session,
+                project_id=project_id,
                 document_id=d.row_id,
                 anchor=anchor,
                 new_body=new_body,
