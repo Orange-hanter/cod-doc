@@ -304,6 +304,7 @@ def test_doc_patch_section_emits_event(engine_with_schema) -> None:  # type: ign
         doc_id = _new_doc(session, p, "doc-1")
         doc_service.add_section(
             session,
+            project_id=p,
             document_id=doc_id,
             anchor="intro",
             heading="Intro",
@@ -314,6 +315,7 @@ def test_doc_patch_section_emits_event(engine_with_schema) -> None:  # type: ign
         )
         doc_service.patch_section(
             session,
+            project_id=p,
             document_id=doc_id,
             anchor="intro",
             new_body="hello world",
@@ -338,6 +340,7 @@ def test_doc_delete_section_emits_event(engine_with_schema) -> None:  # type: ig
         doc_id = _new_doc(session, p, "doc-1")
         doc_service.add_section(
             session,
+            project_id=p,
             document_id=doc_id,
             anchor="intro",
             heading="Intro",
@@ -348,6 +351,7 @@ def test_doc_delete_section_emits_event(engine_with_schema) -> None:  # type: ig
         )
         doc_service.delete_section(
             session,
+            project_id=p,
             document_id=doc_id,
             anchor="intro",
             author="agent:run-X",
@@ -510,6 +514,7 @@ def test_comment_create_emits_event(engine_with_schema) -> None:  # type: ignore
         doc_id = _new_doc(session, p, "doc-1")
         comment_service.create(
             session,
+            project_id=p,
             document_id=doc_id,
             body="Please fix this.",
             author="human:test",
@@ -597,6 +602,7 @@ def test_link_resolver_sync_emits_event(engine_with_schema) -> None:  # type: ig
         doc_id = _new_doc(session, p, "doc-1")
         sec = doc_service.add_section(
             session,
+            project_id=p,
             document_id=doc_id,
             anchor="intro",
             heading="Intro",

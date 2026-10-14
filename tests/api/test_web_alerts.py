@@ -149,7 +149,7 @@ def test_validation_error_redirects_with_cookie_flash(alerts_client) -> None:
         follow_redirects=False,
     )
     assert r.status_code == 303
-    assert r.headers["location"] == f"http://testserver/p/{entry.name}/tasks"
+    assert r.headers["location"] == f"/p/{entry.name}/tasks"
     cookies = r.headers.get_list("set-cookie")
     cookie_blob = " ".join(cookies)
     assert "flash_message=" in cookie_blob
@@ -170,6 +170,31 @@ def test_not_found_error_redirects_with_cookie_flash(alerts_client) -> None:
     assert r.status_code == 303
     cookie_blob = " ".join(r.headers.get_list("set-cookie"))
     assert "flash_severity=error" in cookie_blob
+
+
+def test_web_error_redirect_ignores_a_foreign_referer(alerts_client) -> None:
+    """DEBT-003: обработчик ``WebError`` не уводит на чужой ``Referer`` (CWE-601)."""
+    client, entry = alerts_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/ALR-001/status",
+        data={"status": "garbage"},
+        headers={"Referer": "https://evil.example/phish"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == "/"
+
+
+def test_web_error_redirect_keeps_a_same_origin_referer_path(alerts_client) -> None:
+    client, entry = alerts_client
+    r = client.post(
+        f"/p/{entry.name}/tasks/ALR-001/status",
+        data={"status": "garbage"},
+        headers={"Referer": f"http://testserver/p/{entry.name}/tasks?plan=x"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/p/{entry.name}/tasks?plan=x"
 
 
 def test_complete_redirect_ignores_a_foreign_referer(alerts_client) -> None:

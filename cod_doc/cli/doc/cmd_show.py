@@ -38,7 +38,7 @@ def doc_show(ctx: click.Context, doc_key: str, project: str, sections: bool, as_
             console.print(f"[red]Document '{doc_key}' not found.[/red]")
             sys.exit(1)
         if sections and d.row_id is not None:
-            sec_list = doc_service.get_sections(session, d.row_id)
+            sec_list = doc_service.get_sections(session, d.row_id, project_id=project_id)
 
     if as_json:
         data: dict[str, Any] = {

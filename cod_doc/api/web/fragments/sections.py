@@ -78,7 +78,7 @@ def _resolve_section(
     doc = docs.get(session, project_db_id, doc_key)
     if doc is None or doc.row_id is None:
         raise NotFoundWebError(f"Документ не найден: {doc_key}")
-    for s in docs.get_sections(session, doc.row_id):
+    for s in docs.get_sections(session, doc.row_id, project_id=project_db_id):
         if s.anchor == anchor:
             return doc, s
     raise NotFoundWebError(f"Секция не найдена: {doc_key}#{anchor}")
@@ -154,6 +154,7 @@ def section_patch(
     try:
         updated = docs.patch_section(
             session,
+            project_id=project_db_id,
             document_id=doc.row_id,
             anchor=anchor,
             new_body=body,

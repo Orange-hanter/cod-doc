@@ -142,7 +142,7 @@ def _collect_links_at_risk(
     for doc in docs:
         if doc.row_id is None:
             continue
-        sections = doc_service.get_sections(session, doc.row_id)
+        sections = doc_service.get_sections(session, doc.row_id, project_id=project_id)
         for section in sections:
             if section.row_id is None:
                 continue
@@ -218,7 +218,9 @@ def ctx_docs(
             token_estimate = 0
             for doc in sorted(filtered, key=lambda d: d.doc_key):
                 body = (
-                    doc_service.render_body(session, doc.row_id) if doc.row_id is not None else None
+                    doc_service.render_body(session, doc.row_id, project_id=project_id)
+                    if doc.row_id is not None
+                    else None
                 )
                 doc_tokens = _estimate_tokens(body)
                 if budget_tokens is not None and token_estimate + doc_tokens > budget_tokens:

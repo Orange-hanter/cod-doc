@@ -397,6 +397,7 @@ def test_verify_resolves_each_kind(factory, tmp_path: Path) -> None:  # type: ig
         assert doc.row_id is not None
         doc_service.add_section(
             session,
+            project_id=pid,
             document_id=doc.row_id,
             anchor="providers",
             heading="Providers",
