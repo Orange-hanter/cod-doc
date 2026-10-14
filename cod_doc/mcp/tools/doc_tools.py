@@ -236,6 +236,7 @@ def register(mcp: FastMCP) -> None:
                     raise ValueError(f"Document '{doc_key}' not found.")
                 result = doc_service.update_metadata(
                     session,
+                    project_id=project_id,
                     document_id=d.row_id,
                     author=author,
                     title=title,

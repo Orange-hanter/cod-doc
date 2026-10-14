@@ -80,6 +80,7 @@ def doc_update(
                 sys.exit(1)
             result = doc_service.update_metadata(
                 session,
+                project_id=project_id,
                 document_id=d.row_id,
                 author=author,
                 title=title,

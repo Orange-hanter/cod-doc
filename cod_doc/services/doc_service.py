@@ -803,6 +803,7 @@ class MetadataUpdate(NamedTuple):
 def update_metadata(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     author: str,
     title: str | None = None,
@@ -825,7 +826,7 @@ def update_metadata(
     owner of an ACTIVE document is refused exactly as ``create`` would refuse it.
     No-op (no revision, no event) when nothing changes.
     """
-    doc = _require_doc(session, document_id)
+    doc = _require_doc(session, document_id, project_id)
     if title is not None and not title.strip():
         raise validation.ValidationError("DM-001", "document title must not be empty")
 
