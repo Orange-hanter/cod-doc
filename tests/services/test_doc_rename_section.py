@@ -48,6 +48,7 @@ def _doc(session: Session, pid: int, key: str, sections: list[tuple[str, str]]) 
     for i, (anchor, body) in enumerate(sections):
         docs.add_section(
             session,
+            project_id=pid,
             document_id=d.row_id,
             anchor=anchor,
             heading=anchor.replace("-", " ").title(),
@@ -82,7 +83,9 @@ def _body(session: Session, pid: int, key: str, anchor: str) -> str:
     d = docs.get(session, pid, key)
     assert d is not None
     assert d.row_id is not None
-    return next(s.body for s in docs.get_sections(session, d.row_id) if s.anchor == anchor)
+    return next(
+        s.body for s in docs.get_sections(session, d.row_id, project_id=pid) if s.anchor == anchor
+    )
 
 
 def _broken_links(session: Session, pid: int) -> int:
@@ -91,7 +94,7 @@ def _broken_links(session: Session, pid: int) -> int:
         d = docs.get(session, pid, key)
         assert d is not None
         assert d.row_id is not None
-        for s in docs.get_sections(session, d.row_id):
+        for s in docs.get_sections(session, d.row_id, project_id=pid):
             assert s.row_id is not None
             broken += link_service.verify_section(session, s.row_id).broken
     return broken
@@ -102,12 +105,21 @@ def test_rename_rewrites_links_and_keeps_section(engine_with_schema) -> None:  #
     with transactional(factory) as s:
         pid, target = _seed(s)
         assert _broken_links(s, pid) == 0
-        sec_id = next(x.row_id for x in docs.get_sections(s, target) if x.anchor == "data-model")
+        sec_id = next(
+            x.row_id
+            for x in docs.get_sections(s, target, project_id=pid)
+            if x.anchor == "data-model"
+        )
         assert sec_id is not None
         history = len(rev.list_for_entity(s, EntityKind.SECTION, sec_id, project_id=pid))
 
         result = docs.rename_section(
-            s, document_id=target, anchor="data-model", heading="Data Model v2", author="t"
+            s,
+            project_id=pid,
+            document_id=target,
+            anchor="data-model",
+            heading="Data Model v2",
+            author="t",
         )
 
         assert (result.section.anchor, result.section.heading) == ("data-model-v2", "Data Model v2")
@@ -132,6 +144,7 @@ def test_explicit_anchor_keeps_links_untouched(engine_with_schema) -> None:  # t
         pid, target = _seed(s)
         result = docs.rename_section(
             s,
+            project_id=pid,
             document_id=target,
             anchor="data-model",
             heading="Модель данных",
@@ -149,13 +162,25 @@ def test_collision_empty_heading_and_noop(engine_with_schema) -> None:  # type: 
         pid, target = _seed(s)
         with pytest.raises(SectionAlreadyExistsError):
             docs.rename_section(
-                s, document_id=target, anchor="data-model", heading="Intro", author="t"
+                s,
+                project_id=pid,
+                document_id=target,
+                anchor="data-model",
+                heading="Intro",
+                author="t",
             )
         with pytest.raises(ValidationError):
-            docs.rename_section(s, document_id=target, anchor="data-model", heading=" ", author="t")
+            docs.rename_section(
+                s, project_id=pid, document_id=target, anchor="data-model", heading=" ", author="t"
+            )
         n = len(rev.list_for_entity(s, EntityKind.DOCUMENT, target, project_id=pid))
         docs.rename_section(
-            s, document_id=target, anchor="data-model", heading="Data Model", author="t"
+            s,
+            project_id=pid,
+            document_id=target,
+            anchor="data-model",
+            heading="Data Model",
+            author="t",
         )
         assert len(rev.list_for_entity(s, EntityKind.DOCUMENT, target, project_id=pid)) == n
 

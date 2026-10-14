@@ -665,6 +665,7 @@ def register(mcp: FastMCP) -> None:
                     raise ValueError(f"Document '{doc_key}' not found.")
                 result = doc_service.rename_section(
                     session,
+                    project_id=project_id,
                     document_id=d.row_id,
                     anchor=anchor,
                     heading=heading,

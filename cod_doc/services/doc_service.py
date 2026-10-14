@@ -826,6 +826,7 @@ class SectionRename(NamedTuple):
 def rename_section(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     anchor: str,
     heading: str,
@@ -853,7 +854,7 @@ def rename_section(
     from cod_doc.services import link_service
     from cod_doc.services.import_service import _slugify
 
-    doc = _require_doc(session, document_id)
+    doc = _require_doc(session, document_id, project_id)
     if not heading.strip():
         raise validation.ValidationError("DM-001", "section heading must not be empty")
     sec = session.execute(
