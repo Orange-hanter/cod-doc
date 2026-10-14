@@ -1036,15 +1036,16 @@ def suggestion_accept(
     from cod_doc.services.link_service import semantic
 
     session, project_db_id = db
-    sugg = semantic.get_suggestion(session, row_id)
+    sugg = semantic.get_suggestion(session, row_id, project_id=project_db_id)
     if sugg is None or sugg["state"] != "pending":
         raise HTTPException(404, "Suggestion not found or already resolved")
 
     sec = doc_service.get_section_by_id(session, sugg["from_section_id"], project_id=project_db_id)
     if sec is None:
         raise HTTPException(404, "Section not found")
+    # get_doc_by_id уже сверяет проект (AFT-024): чужой документ — None.
     parent_doc = doc_service.get_doc_by_id(session, sec.document_id, project_id=project_db_id)
-    if parent_doc is None or parent_doc.project_id != project_db_id:
+    if parent_doc is None:
         raise HTTPException(404, "Document not found in project")
 
     target_doc = doc_service.get(session, project_db_id, sugg["to_doc_key"])
@@ -1078,7 +1079,7 @@ def suggestion_accept(
         author="human:web",
         reason=f"accept suggestion #{row_id}",
     )
-    semantic.update_suggestion_state(session, row_id, "accepted")
+    semantic.update_suggestion_state(session, row_id, "accepted", project_id=project_db_id)
     session.commit()
     return JSONResponse({"accepted": True, "row_id": row_id})
 
@@ -1093,8 +1094,8 @@ def suggestion_reject(
     """PCA-422 UI: Mark a suggestion as rejected (no body change)."""
     from cod_doc.services.link_service import semantic
 
-    session, _ = db
-    if not semantic.update_suggestion_state(session, row_id, "rejected"):
+    session, project_db_id = db
+    if not semantic.update_suggestion_state(session, row_id, "rejected", project_id=project_db_id):
         raise HTTPException(404, "Suggestion not found")
     session.commit()
     return JSONResponse({"rejected": True, "row_id": row_id})

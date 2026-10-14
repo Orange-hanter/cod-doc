@@ -604,7 +604,7 @@ SELECT
   SUM(CASE WHEN t.status IN ('in_progress','in-progress') THEN 1 ELSE 0 END) AS tasks_in_progress,
   SUM(CASE WHEN t.status='cancelled' THEN 1 ELSE 0 END) AS tasks_cancelled
 FROM plan_section s
-JOIN plan p ON p.row_id = s.plan_id
+LEFT JOIN plan p ON p.row_id = s.plan_id
 LEFT JOIN task t ON t.section_id = s.row_id AND t.project_id = p.project_id
 GROUP BY s.row_id;
 ```

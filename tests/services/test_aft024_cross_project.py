@@ -237,7 +237,7 @@ def _leak_b_task_into_a_plan(session: Session, a: _Proj, b: _Proj) -> None:
     leaked = session.get(TaskModel, b.task_row)
     assert leaked is not None
     leaked.plan_id, leaked.section_id = a.plan, a.section
-    leaked.status = "done"
+    leaked.status = TaskStatus.DONE.value
     session.flush()
 
 
@@ -310,3 +310,41 @@ def test_approval_task_refs_touch_only_tasks_of_the_requesting_project(engine_wi
         assert task_b.status is TaskStatus.IN_REVIEW, "задача проекта одобрения — в ревью"
         assert task_a.status is TaskStatus.IN_PROGRESS_NEW, "одноимённая задача соседа не тронута"
         assert only.status is TaskStatus.IN_PROGRESS_NEW, "ссылка мимо проекта ничего не меняет"
+
+
+# --------------------------------------------------------------------------- #
+# link_service.semantic: предложения ссылок (ai-review PR #200)               #
+# --------------------------------------------------------------------------- #
+
+
+def test_link_suggestion_of_another_project_cannot_be_read_or_resolved(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Предложение ссылки из секции проекта A: из проекта B его не видно ни
+    чтением, ни списком, а reject/accept по ``row_id`` — «не найдено» и
+    состояние не меняют."""
+    from cod_doc.infra.models.link_suggestions import LinkSuggestionModel
+    from cod_doc.services.link_service import semantic
+
+    factory, a, b = _two_projects(engine_with_schema)
+    with transactional(factory) as session:
+        sugg = LinkSuggestionModel(
+            from_section_id=a.doc_section, to_doc_key="guide", score=0.9, state="pending"
+        )
+        session.add(sugg)
+        session.flush()
+        sugg_id = sugg.row_id
+
+    with transactional(factory) as session:
+        assert semantic.get_suggestion(session, sugg_id, project_id=b.project) is None
+        assert semantic.list_suggestions(session, project_id=b.project) == []
+        for state in ("rejected", "accepted"):
+            assert not semantic.update_suggestion_state(
+                session, sugg_id, state, project_id=b.project
+            )
+
+    with transactional(factory) as session:
+        own = semantic.get_suggestion(session, sugg_id, project_id=a.project)
+        assert own is not None and own["state"] == "pending"
+        assert [s["row_id"] for s in semantic.list_suggestions(session, project_id=a.project)] == [
+            sugg_id
+        ]
+        assert semantic.update_suggestion_state(session, sugg_id, "rejected", project_id=a.project)

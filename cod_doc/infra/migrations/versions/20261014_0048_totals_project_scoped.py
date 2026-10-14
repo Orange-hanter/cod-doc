@@ -10,7 +10,9 @@
 
 Условие стоит в `ON` левого соединения, а не в `WHERE`: раздел или план без
 единой своей задачи остаётся строкой с нулями, как и раньше. Проект плана
-секция берёт через `plan` (у `plan_section` своего `project_id` нет).
+секция берёт через `plan` (у `plan_section` своего `project_id` нет) — тоже
+левым соединением, чтобы раздел с висячим `plan_id` не пропал из вида, как
+не пропадал до 0048 (задач у него тогда просто ноль).
 
 Определения статусов — дословно из 0039: миграция — застывший снимок схемы.
 Порядок колонок прежний: позиционные `SELECT *` по вьюхам не сдвигаются.
@@ -48,7 +50,7 @@ SELECT
   ) AS tasks_in_progress,
   COALESCE(SUM(CASE WHEN t.status = 'cancelled' THEN 1 ELSE 0 END), 0) AS tasks_cancelled
 FROM plan_section s
-JOIN plan p ON p.row_id = s.plan_id
+LEFT JOIN plan p ON p.row_id = s.plan_id
 LEFT JOIN task t ON t.section_id = s.row_id AND t.project_id = p.project_id
 GROUP BY s.row_id
 """

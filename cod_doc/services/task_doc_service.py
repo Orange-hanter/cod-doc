@@ -223,6 +223,7 @@ def revisions(
         .where(
             RevisionModel.entity_kind == EntityKind.TASK_DOC.value,
             RevisionModel.entity_id == m.row_id,
+            RevisionModel.project_id == project_id,
         )
         .order_by(RevisionModel.at.asc(), RevisionModel.row_id.asc())
         .limit(limit)
@@ -268,6 +269,7 @@ def revert(
             RevisionModel.revision_id == revision_id,
             RevisionModel.entity_kind == EntityKind.TASK_DOC.value,
             RevisionModel.entity_id == m.row_id,
+            RevisionModel.project_id == project_id,
         )
     ).scalar_one_or_none()
     if target_rev is None:
