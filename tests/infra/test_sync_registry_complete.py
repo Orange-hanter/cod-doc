@@ -255,7 +255,7 @@ def _doc_row(table: str, label: object, *, key: bool = True) -> dict[str, object
         if key:
             row["sensitivity"] = label
         return row
-    row = {"document_id": 1}
+    row = {"document_id": 1, "section_id": None} if table == "doc_comment" else {"document_id": 1}
     if key:
         row[sensitivity_key("document_id")] = label
     return row
@@ -606,6 +606,15 @@ def test_owned_rows_point_to_document() -> None:
         assert targets == {"document"}, table
 
 
+_DECISION: dict[str, object] = {
+    "from_section_id": 1,
+    "from_section_id.sensitivity": "internal",
+    "to_doc_key": "docs/b",
+    "to_doc_key.sensitivity": "internal",
+    "to_section_id": None,
+}
+
+
 def test_link_suggestion_decision_is_authored() -> None:
     """Q-017: подсказка derived, решение по ней (``state ≠ pending``) уезжает."""
     spec = spec_for("link_suggestion")
@@ -613,10 +622,10 @@ def test_link_suggestion_decision_is_authored() -> None:
     assert "state" in spec.authored_columns
     assert {"score", "evidence"}.isdisjoint(spec.authored_columns)
     assert spec.deterministic_uid == ("from_section_id", "to_doc_key", "to_section_id")
-    assert row_class("link_suggestion", {"state": "pending"}) is SyncClass.LOCAL
-    assert row_class("link_suggestion", {"state": "rejected"}) is SyncClass.DERIVED
+    assert row_class("link_suggestion", {**_DECISION, "state": "pending"}) is SyncClass.LOCAL
+    assert row_class("link_suggestion", {**_DECISION, "state": "rejected"}) is SyncClass.DERIVED
     assert spec.row_is_local is not None
-    assert not spec.row_is_local({"state": "accepted"})
+    assert not spec.row_is_local({**_DECISION, "state": "accepted"})
 
 
 def test_routine_findings_are_derived() -> None:
@@ -745,3 +754,54 @@ def test_registry_imports_only_stdlib_and_domain() -> None:
         and m.split(".")[0] not in sys.stdlib_module_names
     }
     assert bad == set()
+
+
+# --- регрессии fail-closed (security review CLO-001, четвёртый раунд) --------
+# Каждый случай ниже уже уезжал после одной из правок. Тесты закрепляют:
+# ссылка, которую нельзя проверить, считается ссылкой на restricted-документ.
+
+
+@pytest.mark.parametrize(
+    ("table", "row"),
+    [
+        ("section", {}),
+        ("section", {"document_id": None}),
+        ("doc_comment", {}),
+        ("doc_comment", {"document_id": None}),
+        ("document_tag", {"tag_id": 1}),
+        ("revision", {"entity_kind": "document"}),
+        ("revision", {"entity_kind": "section", "entity_id": None}),
+        ("activity_event", {"kind": "doc.x", "scope_kind": "doc"}),
+        ("activity_event", {"kind": "doc.x", "scope_kind": "document", "scope_id": None}),
+        ("approval_doc_revision_link", {}),
+        ("approval_doc_revision_link", {"revision_id": None}),
+        ("link_suggestion", {"state": "accepted"}),
+        ("link_suggestion", {"state": "accepted", "from_section_id": None}),
+        ("story_link", {"to_kind": "document"}),
+        ("open_question_link", {"to_kind": "section", "to_ref": None}),
+        ("external_ref", {"entity_kind": "document"}),
+        ("external_ref", {"entity_kind": "section", "entity_row_id": None}),
+    ],
+)
+def test_unverifiable_document_reference_is_local(table: str, row: dict[str, object]) -> None:
+    assert row_class(table, row) is SyncClass.LOCAL
+
+
+def test_cleared_labels_are_an_allow_list() -> None:
+    """Новая метка ``Sensitivity`` не уезжает, пока её не впишут в перечень."""
+    assert (
+        frozenset({Sensitivity.PUBLIC, Sensitivity.INTERNAL, Sensitivity.CONFIDENTIAL})
+        == reg._CLEARED_SENSITIVITY
+    )
+    assert {s for s in Sensitivity if reg._cleared(s.value)} == reg._CLEARED_SENSITIVITY
+
+
+def test_doc_ref_nullability_matches_schema() -> None:
+    """``nullable`` ссылки нельзя ослабить: NOT NULL колонка с None — не «нет ссылки»."""
+    tables = _all_model_tables()
+    for table, refs in DOC_REFS.items():
+        for ref in refs:
+            assert ref.nullable == bool(tables[table].columns[ref.column].nullable), (
+                table,
+                ref.column,
+            )

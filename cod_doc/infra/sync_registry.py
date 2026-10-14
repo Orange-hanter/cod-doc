@@ -119,6 +119,16 @@
     Derived (``link``, ``doc_node_suggestion``, FTS) не уезжает вовсе.
     ``approval_doc_revision_link.revision_id`` — метка документа, к которому
     относится ревизия.
+17. **Непроверяемая ссылка — ссылка на restricted** (четвёртый раунд,
+    регрессия решения 16). Первая версия ``DOC_REFS`` считала пустую или
+    отсутствующую ссылку «ссылки нет», и секция без ``document_id``, ревизия
+    документа без ``entity_id``, событие ``doc`` без ``scope_id`` уезжали, хотя
+    до этого были local. Теперь «ссылки нет» — только ``None`` в ``nullable``
+    колонке без дискриминатора (``nullable`` сверяется со схемой), а у
+    полиморфной ссылки — только заведомо не-документный вид. Метки —
+    снова перечень ``_CLEARED_SENSITIVITY``, а не ``!= restricted``. Захват
+    (CLO-006) поэтому обязан передавать строку целиком, а не только
+    изменённые поля: без колонки-ссылки строка-связь не уедет.
 """
 
 from __future__ import annotations
@@ -232,9 +242,16 @@ def parse_sensitivity(value: object) -> Sensitivity | None:
         return None
 
 
+#: Метки, с которыми документ уезжает (Q-015). Перечень, а не
+#: ``!= restricted``: новая метка ``Sensitivity`` не уезжает, пока её не впишут
+#: сюда (решение 17).
+_CLEARED_SENSITIVITY = frozenset(
+    {Sensitivity.PUBLIC, Sensitivity.INTERNAL, Sensitivity.CONFIDENTIAL}
+)
+
+
 def _cleared(value: object) -> bool:
-    parsed = parse_sensitivity(value)
-    return parsed is not None and parsed is not Sensitivity.RESTRICTED
+    return parse_sensitivity(value) in _CLEARED_SENSITIVITY
 
 
 def _parse_entity_kind(value: object) -> EntityKind | None:
@@ -259,6 +276,11 @@ class DocRef:
     строка уезжает без них. ``kind_column``/``kinds`` — для полиморфных
     ссылок: ссылка на документ, только когда дискриминатор в ``kinds``;
     незнакомый дискриминатор считается ссылкой на документ.
+
+    Ссылку, которую нельзя проверить, гейт считает ссылкой на документ
+    (решение 17): колонки нет в строке, NOT NULL-колонка пуста, дискриминатор
+    указывает на документ при пустом id. ``None`` значит «ссылки нет» только у
+    ``nullable`` колонки без дискриминатора; ``nullable`` сверяется со схемой.
     """
 
     column: str
@@ -266,6 +288,7 @@ class DocRef:
     withheld: tuple[str, ...] = ()
     kind_column: str | None = None
     kinds: frozenset[str] = frozenset()
+    nullable: bool = False
 
 
 def sensitivity_key(column: str) -> str:
@@ -274,13 +297,16 @@ def sensitivity_key(column: str) -> str:
 
 
 def _points_to_document(ref: DocRef, row: Mapping[str, object]) -> bool:
-    if row.get(ref.column) is None:
-        return False
-    if ref.kind_column is None:
+    """Ведёт ли ссылка на документ; непроверяемое — ведёт (решение 17)."""
+    if ref.kind_column is not None:
+        kind = row.get(ref.kind_column)
+        non_doc = _NON_DOC_KINDS.get(ref.kind_column, frozenset()) - ref.kinds
+        # Только заведомо не-документный вид снимает ссылку; пустой id при
+        # документном или незнакомом виде — не «ссылки нет».
+        return not (isinstance(kind, str) and kind in non_doc)
+    if ref.column not in row:
         return True
-    kind = row.get(ref.kind_column)
-    known = ref.kinds | _NON_DOC_KINDS.get(ref.kind_column, frozenset())
-    return not isinstance(kind, str) or kind in ref.kinds or kind not in known
+    return row[ref.column] is not None or not ref.nullable
 
 
 def ref_cleared(ref: DocRef, row: Mapping[str, object]) -> bool:
@@ -384,16 +410,16 @@ def _whole(column: str) -> DocRef:
 DOC_REFS: Mapping[str, tuple[DocRef, ...]] = MappingProxyType(
     {
         "section": (_whole("document_id"),),
-        "doc_comment": (_whole("document_id"), _whole("section_id")),
+        "doc_comment": (_whole("document_id"), DocRef("section_id", whole_row=True, nullable=True)),
         "document_tag": (_whole("document_id"),),
-        "plan": (DocRef("parent_doc_id"), DocRef("completed_log_id")),
-        "plan_section": (DocRef("doc_id"),),
-        "module": (DocRef("spec_doc_id"),),
+        "plan": (DocRef("parent_doc_id", nullable=True), DocRef("completed_log_id", nullable=True)),
+        "plan_section": (DocRef("doc_id", nullable=True),),
+        "module": (DocRef("spec_doc_id", nullable=True),),
         "scenario": (
-            DocRef("document_id", withheld=("section_anchor", "doc_content_hash")),
-            DocRef("doc_key", withheld=("section_anchor", "doc_content_hash")),
+            DocRef("document_id", nullable=True, withheld=("section_anchor", "doc_content_hash")),
+            DocRef("doc_key", nullable=True, withheld=("section_anchor", "doc_content_hash")),
         ),
-        "open_question": (DocRef("source_doc_key"),),
+        "open_question": (DocRef("source_doc_key", nullable=True),),
         "open_question_link": (
             DocRef("to_ref", whole_row=True, kind_column="to_kind", kinds=_DOC_LINK_KINDS),
         ),
@@ -414,7 +440,7 @@ DOC_REFS: Mapping[str, tuple[DocRef, ...]] = MappingProxyType(
         "approval_doc_revision_link": (_whole("revision_id"),),
         "link_suggestion": (
             _whole("from_section_id"),
-            _whole("to_section_id"),
+            DocRef("to_section_id", whole_row=True, nullable=True),
             _whole("to_doc_key"),
         ),
         "revision": (
@@ -431,6 +457,7 @@ DOC_REFS: Mapping[str, tuple[DocRef, ...]] = MappingProxyType(
                 whole_row=True,
                 kind_column="scope_kind",
                 kinds=_DOC_EVENT_SCOPES,
+                nullable=True,
             ),
         ),
     }
