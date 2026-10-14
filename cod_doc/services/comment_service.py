@@ -94,7 +94,10 @@ def create(
     """Persist a new comment. ``section_id`` None → document-level comment.
 
     If ``section_id`` is given but ``anchor`` isn't, the anchor is looked
-    up so the bubble can be rendered without an extra join later.
+    up so the bubble can be rendered without an extra join later. Секция
+    сверяется с документом всегда, а не только при пустом ``anchor``: иначе
+    комментарий сохранялся с секцией чужого документа, и ``apply_open_with_ai``
+    отправлял бы её тело в LLM (AFT-024).
     """
     if not body.strip():
         raise ValueError("Comment body is empty.")
@@ -103,13 +106,14 @@ def create(
     if doc is None:
         raise ValueError(f"Document #{document_id} not found")
 
-    if section_id is not None and anchor is None:
+    if section_id is not None:
         sec = session.get(SectionModel, section_id)
         if sec is None:
             raise ValueError(f"Unknown section #{section_id}")
         if sec.document_id != document_id:
             raise ValueError(f"Section #{section_id} does not belong to document #{document_id}")
-        anchor = sec.anchor
+        if anchor is None:
+            anchor = sec.anchor
 
     now = datetime.now(UTC)
     model = DocCommentModel(
@@ -338,7 +342,9 @@ def apply_open_with_ai(
         if section_id is None:
             continue
         sec = session.get(SectionModel, section_id)
-        if sec is None:
+        # Секция — только этого документа: section_id комментария из легаси-
+        # данных мог указывать в чужой документ, и его тело ушло бы в LLM.
+        if sec is None or sec.document_id != document_id:
             skipped.append(
                 {
                     "section_id": section_id,

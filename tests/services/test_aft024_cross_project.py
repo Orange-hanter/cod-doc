@@ -414,3 +414,45 @@ def test_comments_of_another_project_cannot_be_read_changed_or_deleted(engine_wi
         assert [
             c.row_id for c in comments.list_for_document(session, a.doc, project_id=a.project)
         ] == [cid]
+
+
+def test_comment_section_must_belong_to_the_comments_document(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Секция комментария сверяется с документом и при явном ``anchor``;
+    легаси-комментарий с секцией чужого документа ``apply_open_with_ai``
+    пропускает — её тело не уходит в LLM (вызова LLM нет вовсе)."""
+    from cod_doc.infra.models import DocCommentModel
+    from cod_doc.services import comment_service as comments
+
+    factory, a, b = _two_projects(engine_with_schema)
+    with transactional(factory) as session:
+        with pytest.raises(ValueError, match="does not belong"):
+            comments.create(
+                session,
+                project_id=a.project,
+                document_id=a.doc,
+                section_id=b.doc_section,
+                anchor="intro",
+                body="points elsewhere",
+                author=_AUTHOR,
+            )
+        now = datetime.now(UTC)
+        session.add(
+            DocCommentModel(
+                document_id=a.doc,
+                section_id=b.doc_section,
+                anchor="intro",
+                body="legacy row",
+                author=_AUTHOR,
+                status="open",
+                created=now,
+                last_updated=now,
+            )
+        )
+        session.flush()
+
+        no_config: Any = None
+        rework = comments.apply_open_with_ai(
+            session, project_id=a.project, document_id=a.doc, cfg=no_config
+        )
+        assert rework.section_reworks == []
+        assert [s["section_id"] for s in rework.skipped] == [b.doc_section]
