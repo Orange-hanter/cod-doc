@@ -18,9 +18,9 @@
 | `/cod-doc:drift` | проверка и (по `--fix`) починка `edited_in_place` |
 | `/cod-doc:setup` | подключение нового репозитория к cod-doc |
 | skill `task-flow` | закон работы с задачами; подхватывается по контексту |
-| skill `doc-sync` | markdown ↔ БД, hash-реестр, семантика drift |
+| skill `doc-sync` | запись документов в БД тулами MCP/CLI, семантика drift, hash-реестр |
 | agent `cod-doc-scout` | read-only разведка по базе без вываливания документов в контекст |
-| hook PostToolUse | после правки **tracked** `.md` напоминает про `doc import` |
+| hook PostToolUse | после правки **tracked** `.md` напоминает, что это проекция, и даёт команду записи в БД |
 | hook SessionStart | сводка незакрытых задач — **выключена по умолчанию** |
 
 ## Установка

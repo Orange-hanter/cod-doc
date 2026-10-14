@@ -1,77 +1,73 @@
 ---
 name: doc-sync
 description: |
-  Синхронизация markdown ↔ БД в cod-doc: doc import после правки файла, hash
-  update для реестра MASTER.md, семантика drift, регистрация нового документа.
+  Документы cod-doc пишутся в БД напрямую — MCP-тулами `doc_*` или CLI
+  `cod-doc doc …`, без промежуточного markdown. Семантика drift, починка
+  чужой правки проекции, реестр MASTER.md.
   Триггеры: drift, doc import, edited_in_place, stale_export, conflict, MASTER.md, хэш,
-  реестр, правка документации, документ не виден в БД.
+  реестр, правка документации, новый документ, документ не виден в БД.
 ---
 
 # Doc sync — markdown это проекция, истина в БД
 
-Правка tracked-`.md` на диске оставляет БД позади → drift `edited_in_place`.
-PostToolUse-хук плагина напомнит (он проверяет файл по таблице `document`,
-поэтому молчит на untracked-файлах); дальше — вручную.
+Документ создаётся и правится **в БД**, тулами. `.md` на диске — проекция:
+её не пишут руками, чтобы потом импортировать, и не выгружают после записи.
 
-Слаг проекта: `cod-doc project list` или
-`cod-doc project list --json` → `[{slug, root_path, db_url}]`, слаг — элемент, чей `root_path` совпадает с корнем репо.
+Слаг проекта: `cod-doc project list --json` → `[{slug, root_path, db_url}]`,
+слаг — элемент, чей `root_path` совпадает с корнем репо.
 
-## Правка существующего документа
+## Запись документа
 
-```bash
-cod-doc doc import <file.md> -p <slug>    # frontmatter + body → БД
-cod-doc doc drift -p <slug> --all         # контроль: edited_in_place == 0
-```
+Порядок: MCP-тул → CLI. Python-скрипты поверх `services/` и SQL в `state.db`
+не используются.
 
-Гибридная ссылка `📁 /path | 🗃️ doc:key` хэша не требует: устаревание
-документа из БД ловит `doc drift`. Только если ссылка на файл в корневом
-`MASTER.md` несёт хвост `| 🔑 sha:…` (старый формат), реестр нужно пересчитать:
+| Действие | MCP | CLI |
+|---|---|---|
+| Новый документ | `doc_create(project, doc_key, type, status, title, preamble=…)` | `cod-doc doc create --key … --type … --title … -p <slug>` |
+| Добавить секцию | `doc_add_section(project, doc_key, anchor, heading, body, level, position)` | `cod-doc doc add-section <doc_key> <anchor> --heading … --body-file - -p <slug>` |
+| Прочитать секцию (+ head-ревизия) | `doc_section_get(project, doc_key, anchors=[…])` | `cod-doc doc section <doc_key> <anchor> -p <slug>` |
+| Заменить тело секции | `doc_patch_section(project, doc_key, anchor, body, expected_parent_revision_id=…)` | `cod-doc doc patch <doc_key> <anchor> --body-file - --expected-revision … -p <slug>` |
+| Удалить секцию | `doc_delete_section` | `cod-doc doc delete-section <doc_key> <anchor> -p <slug>` |
+| Переименовать ключ/путь | `doc_rename` | `cod-doc doc rename` |
+| DRAFT/REVIEW → ACTIVE | `doc_accept` | `cod-doc doc accept` |
+| Положить в раздел дерева | `doc_set_node` | `cod-doc doc tree move` |
 
-```bash
-cod-doc hash update                       # пересчёт реестра (правит MASTER.md)
-cod-doc doc import MASTER.md -p <slug>    # и сам MASTER.md — тоже в БД
-```
+У мутаций есть `dry_run` / `--dry-run` — для правки чужого текста смотри diff
+до записи. `patch` с `expected_parent_revision_id` не перетрёт правку, которая
+легла после твоего чтения.
 
-Хэш в ссылке на документ из БД лучше снять: он дублирует дрейф и требует
-этих двух шагов при каждой правке.
+После записи **не** создавай и не обновляй `.md`: ни руками, ни `doc export`.
+`stale_export` на только что записанном документе — норма, а не задача.
 
 ## Семантика drift
 
 | Статус | Значение | Действие |
 |---|---|---|
-| `edited_in_place` | файл правлен, БД отстала | **дефект** → `doc import` |
-| `stale_export` | БД свежее, проекция на диске старее | **норма** в files-are-source; не трогать |
-| `missing` | файла нет | разобраться; вслепую не пересоздавать |
-| `conflict` | после выгрузки правили и БД, и файл | **дефект**, решает человек: `doc export <key> --dry-run` показывает, что потеряет файл; в files-are-source обычно прав файл → `doc import` (правки БД в тех же секциях уйдут) |
+| `edited_in_place` | кто-то правил файл, БД отстала | **дефект** — см. ниже |
+| `stale_export` | БД свежее проекции на диске | **норма**; не трогать |
+| `missing` | файла нет | норма для документа, созданного тулом; вслепую не пересоздавать |
+| `conflict` | после выгрузки правили и БД, и файл | **дефект**, решает человек: `doc export <key> --dry-run` показывает, что потеряет файл |
 
-`doc export` на диск — под guard'ом до byte-identical round-trip; наружу
-экспортировать не надо.
+`doc export` на диск — под guard'ом до byte-identical round-trip; не зови его.
 
-## Новый документ → регистрация в БД
+### `edited_in_place` — правка проекции мимо тулов
 
-CLI `doc import` работает только по уже известным ключам. Новый файл
-регистрируется сервисом:
+Это ремонт чужой правки, не способ писать документы. Если файл правил ты сам —
+перенеси изменение тулом (`doc_patch_section` / `doc_add_section`) и верни
+файл (`git checkout -- <file>`): дальше он честно покажет `stale_export`. Если правку
+сделал человек и она должна остаться — `cod-doc doc import <file> -p <slug>`
+(перечитывает файл целиком в БД), затем `cod-doc doc drift -p <slug> --all`.
 
-```python
-from cod_doc.domain.entities import DocumentType
-from cod_doc.services import import_service
-# внутри transactional(sf) as s:
-import_service.import_markdown(
-    s, project_id=<id>, doc_key="docs/system/новый-документ",   # путь без .md
-    raw_markdown=raw, fallback_title="…",
-    fallback_type=DocumentType.MODULE_SPEC,
-    author="claude-x", reason="registration")
-```
+## MASTER.md
 
-Повторный `import_markdown` того же ключа падает — для обновления есть
-`import_or_update_markdown` (его и зовёт `doc import`).
-
-Массовая регистрация нового дерева документации — `cod-doc import docs -p
-<slug> --dry-run` сначала, и только после просмотра плана — без `--dry-run`.
+Гибридная ссылка `📁 /path | 🗃️ doc:key` хэша не требует: устаревание
+документа ловит `doc drift`. Ссылка с хвостом `| 🔑 sha:…` (старый формат
+чужих проектов) требует `cod-doc hash update` после изменения документа, а
+затем `cod-doc doc import MASTER.md -p <slug>`: `hash update` пишет файл, не
+БД. В ссылку на документ из БД хэш не добавляй.
 
 ## Не забывай
 
-- Корневой `MASTER.md` — regen-on-write: правил его, импортируй его.
 - Числа в документации (счётчики тулов, документов) сторожат anti-drift тесты
   проекта: правишь одну сторону — правь обе.
 - Тесты с CLI-выводом гоняй `env -u FORCE_COLOR`: rich красит вывод внутри
