@@ -23,21 +23,24 @@ import pytest
 from sqlalchemy import Column, ForeignKey, Integer, MetaData, String, Table, UniqueConstraint
 
 import cod_doc.infra.models as models_pkg
-from cod_doc.domain.entities import EntityKind
+from cod_doc.domain.entities import EntityKind, Sensitivity
 from cod_doc.infra import sync_registry as reg
 from cod_doc.infra.models.base import Base
 from cod_doc.infra.sync_registry import (
+    DOC_REFS,
     ENTITY_KIND_TABLES,
     POLYMORPHIC_FKS,
     REGISTRY,
-    RESTRICTED_OWNER_FK,
     KeyKind,
     SyncClass,
     TableSpec,
     authored_tables,
     human_ref_target,
+    parse_sensitivity,
     row_class,
+    sensitivity_key,
     spec_for,
+    withheld_columns,
 )
 
 if TYPE_CHECKING:
@@ -242,44 +245,102 @@ def test_natural_key_kinds() -> None:
 # --- построчные исключения ---------------------------------------------------
 
 
-@pytest.mark.parametrize("table", ["document", *RESTRICTED_OWNER_FK])
+_DOC_OWNED = ("section", "doc_comment", "document_tag")
+
+
+def _doc_row(table: str, label: object, *, key: bool = True) -> dict[str, object]:
+    """Строка таблицы, принадлежащей документу с меткой ``label``."""
+    if table == "document":
+        row: dict[str, object] = {"path": "docs/a.md"}
+        if key:
+            row["sensitivity"] = label
+        return row
+    row = {"document_id": 1}
+    if key:
+        row[sensitivity_key("document_id")] = label
+    return row
+
+
+@pytest.mark.parametrize("table", ["document", *_DOC_OWNED])
 def test_restricted_rows_are_local(table: str) -> None:
-    assert row_class(table, {"sensitivity": "restricted", "path": "docs/a.md"}) is SyncClass.LOCAL
-    assert (
-        row_class(table, {"sensitivity": "confidential", "path": "docs/a.md"}) is SyncClass.AUTHORED
-    )
-    assert row_class(table, {"sensitivity": "internal", "path": "docs/a.md"}) is SyncClass.AUTHORED
-    assert row_class(table, {"sensitivity": "public", "path": "docs/a.md"}) is SyncClass.AUTHORED
+    assert row_class(table, _doc_row(table, "restricted")) is SyncClass.LOCAL
+    for label in ("confidential", "internal", "public", Sensitivity.INTERNAL):
+        assert row_class(table, _doc_row(table, label)) is SyncClass.AUTHORED, label
 
 
 # --- fail-closed: неизвестное не уезжает (security review CLO-001) -----------
 
 
-@pytest.mark.parametrize("table", ["document", *RESTRICTED_OWNER_FK])
+@pytest.mark.parametrize("table", ["document", *_DOC_OWNED])
 @pytest.mark.parametrize(
-    "row",
-    [{}, {"sensitivity": None}, {"sensitivity": "secret"}, {"sensitivity": "RESTRICTED"}],
-    ids=["no-key", "null", "unknown", "wrong-case"],
+    "label",
+    [
+        None,
+        "secret",
+        "RESTRICTED",
+        "Restricted",
+        "Internal",
+        "INTERNAL",
+        " internal",
+        "internal ",
+        "internal\n",
+        "",
+        b"internal",
+        1,
+    ],
 )
-def test_unknown_sensitivity_is_local(table: str, row: dict[str, object]) -> None:
-    """Секция без разрешённого владельца и документ с непонятной меткой — local."""
-    assert row_class(table, {**row, "path": "docs/a.md"}) is SyncClass.LOCAL
+def test_noncanonical_sensitivity_is_local(table: str, label: object) -> None:
+    """Метка, которую ``Sensitivity(value)`` не разобрал бы, — local (parser differential)."""
+    assert parse_sensitivity(label) is None
+    assert row_class(table, _doc_row(table, label)) is SyncClass.LOCAL
+
+
+@pytest.mark.parametrize("table", ["document", *_DOC_OWNED])
+def test_missing_sensitivity_is_local(table: str) -> None:
+    """Секция без разрешённого владельца — local."""
+    assert row_class(table, _doc_row(table, None, key=False)) is SyncClass.LOCAL
+
+
+def test_parse_sensitivity_matches_repository_read_path() -> None:
+    """Гейт и ``document_repo`` разбирают метку одним конструктором."""
+    for member in Sensitivity:
+        assert parse_sensitivity(member.value) is member
+        assert parse_sensitivity(member) is member
+
+
+def _doc_ref_row(column: str, label: object, **extra: object) -> dict[str, object]:
+    return {column: 1, sensitivity_key(column): label, **extra}
 
 
 @pytest.mark.parametrize(
     ("table", "row"),
     [
-        ("revision", {"entity_kind": "document", "sensitivity": "restricted"}),
-        ("revision", {"entity_kind": "section"}),
+        ("revision", _doc_ref_row("entity_id", "restricted", entity_kind="document")),
+        ("revision", _doc_ref_row("entity_id", "Internal", entity_kind="section")),
+        ("revision", {"entity_kind": "section", "entity_id": 1}),
+        ("revision", {"entity_kind": "Document", "entity_id": 1}),
+        ("revision", {"entity_kind": " task", "entity_id": 1}),
         ("revision", {}),
-        ("activity_event", {"kind": "doc.updated", "scope_kind": "document"}),
-        ("activity_event", {"kind": "section.patched", "scope_kind": "section"}),
-        ("activity_event", {"kind": "doc.x", "scope_kind": "doc", "sensitivity": "restricted"}),
+        ("activity_event", {"kind": "doc.updated", "scope_kind": "document", "scope_id": "d"}),
+        ("activity_event", {"kind": "section.patched", "scope_kind": "section", "scope_id": "s"}),
+        ("activity_event", {"kind": "comment.added", "scope_kind": "comment", "scope_id": "1"}),
+        (
+            "activity_event",
+            _doc_ref_row("scope_id", "restricted", kind="doc.x", scope_kind="doc"),
+        ),
+        ("activity_event", {"kind": "task.created", "scope_kind": "Task", "scope_id": "T"}),
+        ("activity_event", {"kind": "task.created", "scope_kind": None}),
+        ("activity_event", {"kind": "run.started", "scope_kind": "run", "scope_id": "r"}),
         ("activity_event", {}),
         ("finding", {}),
         ("finding", {"source": None}),
+        ("finding", {"source": " routine"}),
+        ("finding", {"source": "Routine"}),
+        ("finding", {"source": ""}),
         ("link_suggestion", {}),
         ("link_suggestion", {"state": "weird"}),
+        ("link_suggestion", {"state": "Accepted"}),
+        ("link_suggestion", {"state": " accepted"}),
     ],
 )
 def test_unknown_or_restricted_journal_and_row_values_do_not_ship(
@@ -292,13 +353,111 @@ def test_unknown_or_restricted_journal_and_row_values_do_not_ship(
 
 def test_cleared_journal_rows_ship() -> None:
     assert (
-        row_class("revision", {"entity_kind": "document", "sensitivity": "internal"})
+        row_class("revision", _doc_ref_row("entity_id", "internal", entity_kind="document"))
         is SyncClass.JOURNAL
     )
-    assert row_class("revision", {"entity_kind": "task"}) is SyncClass.JOURNAL
+    assert row_class("revision", {"entity_kind": "task", "entity_id": 1}) is SyncClass.JOURNAL
     assert (
-        row_class("activity_event", {"kind": "task.created", "scope_kind": "task"})
+        row_class("activity_event", {"kind": "task.created", "scope_kind": "task", "scope_id": "T"})
         is SyncClass.JOURNAL
+    )
+    assert (
+        row_class(
+            "activity_event", _doc_ref_row("scope_id", "public", kind="doc.x", scope_kind="doc")
+        )
+        is SyncClass.JOURNAL
+    )
+
+
+# --- все пути к restricted-документу (sibling-path parity) -------------------
+
+_DOC_TABLES = frozenset({"document", "section"})
+
+
+def _doc_reference_columns(tables: Mapping[str, Table]) -> set[tuple[str, str]]:
+    """Колонки уезжающих таблиц, которые ссылаются на документ или секцию.
+
+    FK и ``logical_fks`` на ``document``/``section``, колонки ``*doc_key``,
+    полиморфные ссылки, которые могут указывать на документ. Сам документ не
+    считается: его метка — его собственная колонка.
+    """
+    found: set[tuple[str, str]] = set()
+    for name, table in tables.items():
+        spec = REGISTRY[name]
+        if not _shipped(spec) or name == "document":
+            continue
+        for column in table.columns:
+            targets = {fk.column.table.name for fk in column.foreign_keys}
+            if column.name in spec.logical_fks:
+                targets.add(spec.logical_fks[column.name])
+            if targets & _DOC_TABLES or column.name.endswith("doc_key"):
+                found.add((name, column.name))
+        if "to_ref" in table.columns and "to_kind" in table.columns:
+            found.add((name, "to_ref"))
+    found |= {key for key in POLYMORPHIC_FKS if key[0] in tables}
+    found.add(("activity_event", "scope_id"))
+    found.add(("approval_doc_revision_link", "revision_id"))
+    return found
+
+
+def test_every_document_reference_is_gated() -> None:
+    """Каждая ссылка на документ/секцию из уезжающей таблицы объявлена в DOC_REFS."""
+    declared = {(t, ref.column) for t, refs in DOC_REFS.items() for ref in refs}
+    missing = sorted(_doc_reference_columns(_all_model_tables()) - declared)
+    assert missing == []
+
+
+def test_doc_refs_cover_real_columns() -> None:
+    tables = _all_model_tables()
+    for table, refs in DOC_REFS.items():
+        cols = tables[table].columns
+        for ref in refs:
+            assert ref.column in cols, (table, ref.column)
+            assert all(c in cols for c in ref.withheld), (table, ref.withheld)
+            assert ref.kind_column is None or ref.kind_column in cols, (table, ref.kind_column)
+
+
+@pytest.mark.parametrize(
+    ("table", "column"),
+    sorted({(t, ref.column) for t, refs in DOC_REFS.items() for ref in refs}),
+)
+def test_reference_to_restricted_document_never_ships(table: str, column: str) -> None:
+    """Строка-связь не уезжает, у сущности со ссылкой ссылка вырезается."""
+    ref = next(r for r in DOC_REFS[table] if r.column == column)
+    base: dict[str, object] = {
+        "kind": "x.y",
+        "state": "accepted",
+        "path": "docs/a.md",
+        "sensitivity": "internal",
+    }
+    if ref.kind_column is not None:
+        base[ref.kind_column] = sorted(ref.kinds)[0]
+    for other in DOC_REFS[table]:
+        base[other.column] = 1
+        base[sensitivity_key(other.column)] = "internal"
+    for label in ("restricted", None, "Internal"):
+        row = {**base, sensitivity_key(column): label}
+        if ref.whole_row:
+            assert row_class(table, row) in {SyncClass.LOCAL, SyncClass.DERIVED}, label
+        else:
+            assert row_class(table, row) is not SyncClass.LOCAL
+            assert {column, *ref.withheld} <= withheld_columns(table, row), label
+    cleared = {**base, sensitivity_key(column): "internal"}
+    assert withheld_columns(table, cleared) == frozenset()
+
+
+def test_null_reference_needs_no_label() -> None:
+    assert (
+        withheld_columns("plan", {"parent_doc_id": None, "completed_log_id": None}) == frozenset()
+    )
+    assert row_class("story_link", {"to_kind": "task", "to_ref": "ADO-1"}) is SyncClass.AUTHORED
+
+
+def test_unknown_polymorphic_kind_is_treated_as_document() -> None:
+    row = {"to_kind": "Document", "to_ref": "docs/a"}
+    assert row_class("story_link", row) is SyncClass.LOCAL
+    assert row_class("external_ref", {"entity_kind": "secret_kind", "entity_row_id": 1}) is (
+        SyncClass.LOCAL
     )
 
 
@@ -355,7 +514,17 @@ def test_registry_errors_do_not_echo_row_contents() -> None:
 
 @pytest.mark.parametrize(
     "path",
-    ["/Users/dakh/Git/x.py", "~/notes.md", "C:\\Users\\x\\a.py", "c:/x/a.py", "\\\\host\\share\\a"],
+    [
+        "/Users/dakh/Git/x.py",
+        "~/notes.md",
+        "C:\\Users\\x\\a.py",
+        "c:/x/a.py",
+        " /Users/x/a.py",
+        "file:///Users/x/a.py",
+        "a.py\x00",
+        "",
+        "\\\\host\\share\\a",
+    ],
 )
 @pytest.mark.parametrize(
     ("table", "extra"),
@@ -430,10 +599,10 @@ def test_shipped_columns_match_schema() -> None:
     assert problems == []
 
 
-def test_restricted_owner_fk_points_to_document() -> None:
+def test_owned_rows_point_to_document() -> None:
     tables = _all_model_tables()
-    for table, column in RESTRICTED_OWNER_FK.items():
-        targets = {fk.column.table.name for fk in tables[table].columns[column].foreign_keys}
+    for table in _DOC_OWNED:
+        targets = {fk.column.table.name for fk in tables[table].columns["document_id"].foreign_keys}
         assert targets == {"document"}, table
 
 
@@ -458,7 +627,9 @@ def test_routine_findings_are_derived() -> None:
 def test_link_and_routine_events_stay_local() -> None:
     assert row_class("activity_event", {"kind": "link.synced"}) is SyncClass.LOCAL
     assert row_class("activity_event", {"kind": "routine.fired"}) is SyncClass.LOCAL
-    assert row_class("activity_event", {"kind": "task.created"}) is SyncClass.JOURNAL
+    assert (
+        row_class("activity_event", {"kind": "task.created"}) is SyncClass.LOCAL
+    )  # без области — local
 
 
 # --- ссылки ------------------------------------------------------------------

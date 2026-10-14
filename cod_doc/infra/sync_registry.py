@@ -24,13 +24,13 @@
 2. **``row_is_local`` значит «строка не уезжает»**, а не «класс local». У
    ``finding`` строки ``source = "routine"`` по RFC — derived; ``row_class``
    отдаёт для них ``DERIVED``, для остальных построчных исключений — ``LOCAL``.
-3. **Restricted и потомки документа.** Строка секции не несёт ``sensitivity``.
-   Для таблиц из ``RESTRICTED_OWNER_FK`` (``section``, ``doc_comment``,
-   ``document_tag``) вызывающий кладёт в строку ``sensitivity`` документа-
-   владельца; без неё строка не уезжает (решение 12). RFC называет только секции; комментарий цитирует текст документа,
-   а тег и комментарий без документа на другой реплике висели бы на
-   несуществующем uid — поэтому в списке все три таблицы, которые документ
-   держит по ``ON DELETE CASCADE`` и которые authored.
+3. **Restricted и потомки документа.** Строка секции не несёт метки
+   документа. Каждая колонка, ссылающаяся на документ или секцию, объявлена в
+   ``DOC_REFS``; вызывающий кладёт метку документа под ключ
+   ``sensitivity_key(колонка)`` (``"document_id.sensitivity"``), без неё ссылка
+   не разрешена (решения 12, 16). RFC называет только секции; комментарий
+   цитирует текст документа, а тег и комментарий без документа на другой
+   реплике висели бы на несуществующем uid.
 4. **``link_suggestion``.** Класс ``DERIVED``; ``authored_columns`` — ``state``
    и колонки ключа решения (``from_section_id``, ``to_doc_key``,
    ``to_section_id``): без них на другой реплике решение не к чему приложить.
@@ -65,16 +65,14 @@
     нет — получают случайный uid.
 11. **``text_columns``** — ровно список RFC §3.7.
 12. **Fail-closed по строкам** (security review CLO-001). Документ уезжает
-    только с меткой из перечня ``public``/``internal``/``confidential``; нет
-    метки, ``NULL``, незнакомое значение — local. То же для потомков из
-    ``RESTRICTED_OWNER_FK``: если владельца не разрешили и ``sensitivity`` в
-    строку не положили, строка local. Журнал по RFC уезжает целиком, но
+    только с меткой ``public``/``internal``/``confidential``; нет метки,
+    ``NULL``, незнакомое значение — local. Журнал по RFC уезжает целиком, но
     ``revision`` документа/секции несёт diff его текста, а ``activity_event`` со
-    ``scope_kind`` ``doc``/``document``/``section`` — payload о нём: такие строки
-    уезжают только с разрешённой ``sensitivity`` владельца в строке (тот же
-    приём). Пустой ``entity_kind``/``kind`` — local; ``finding`` без
-    ``source`` — derived; подсказка уезжает только с ``state`` из
-    ``accepted``/``rejected``.
+    ``scope_kind`` ``doc``/``document``/``section``/``comment`` — сведения о нём:
+    они в ``DOC_REFS`` наравне с остальными ссылками. Незнакомый
+    ``entity_kind``, пустой ``kind``, незнакомая или пустая ``scope_kind`` —
+    local; ``finding`` без канонического ``source`` — derived; подсказка
+    уезжает только с ``state`` из ``accepted``/``rejected``.
 13. **Fail-closed по колонкам.** ``SHIPPED_COLUMNS`` перечисляет уезжающие
     колонки authored- и journal-таблиц явно; ``column_class`` отдаёт ``LOCAL``
     для колонки вне перечня, ``row_id`` и ``local_columns``, ``KeyError`` для
@@ -98,6 +96,29 @@
     (тела секций, описания задач, ``revision.diff``) не фильтруется — это
     содержимое проекта, а не метаданные машины; от него защищает только
     ``restricted``.
+15. **Разбор значений как у репозитория** (security review CLO-001, третий
+    раунд, parser differential). Метка разбирается ``parse_sensitivity`` — тем
+    же ``Sensitivity(value)``, что и ``document_repo``, без ``strip``/``lower``:
+    ``"Restricted"``, ``" internal"`` — не канон, строка local.
+    ``sensitivity_scanner.clearance_meets`` для тех же значений делает
+    ``lower()`` и считает неизвестное ``internal`` — гейт синхронизации с ним
+    расходится намеренно, в сторону «не уезжает». ``entity_kind`` — через
+    ``EntityKind(value)``; ``source`` находки — строчный токен; путь с
+    пробелом по краям, NUL или схемой URI — машинный.
+16. **Все пути к restricted-документу под одним гейтом** (третий раунд,
+    sibling-path parity). ``DOC_REFS`` перечисляет каждую ссылку на документ или
+    секцию из уезжающих таблиц — FK, логическую, строковую ``doc_key``,
+    полиморфную (``to_ref``/``to_kind``, ``entity_id``/``entity_kind``,
+    ``scope_id``/``scope_kind``). Строка-связь (секция, комментарий, тег,
+    ссылка вопроса/истории/сценария, внешняя ссылка, ревизия, событие,
+    решение по подсказке, связь согласования с ревизией) не уезжает целиком;
+    сущность со ссылкой (план, секция плана, модуль, сценарий, вопрос) уезжает
+    без ссылки и связанных с ней колонок (``withheld_columns``). Гейт сверяет
+    полноту: каждая FK/логическая ссылка на ``document``/``section`` и каждая
+    колонка ``*doc_key`` уезжающей таблицы обязаны быть в ``DOC_REFS``.
+    Derived (``link``, ``doc_node_suggestion``, FTS) не уезжает вовсе.
+    ``approval_doc_revision_link.revision_id`` — метка документа, к которому
+    относится ревизия.
 """
 
 from __future__ import annotations
@@ -153,83 +174,290 @@ class TableSpec:
 #
 # Fail-closed (решение 12): предикат выпускает строку, только если видит
 # значение, разрешающее её выпустить. Нет ключа, NULL, незнакомое значение —
-# строка не уезжает.
+# строка не уезжает. Значения разбираются тем же конструктором enum, что и
+# путь чтения (``document_repo``: ``Sensitivity(model.sensitivity)``), без
+# ``strip``/``lower``: что репозиторий не прочитал бы, то и не уезжает
+# (решение 15).
 
 _SENSITIVITY = "sensitivity"
 _ROUTINE_SOURCE = "routine"
-#: Метки, с которыми документ уезжает (Q-015): перечень, а не
-#: ``!= restricted`` — незнакомая метка не уезжает.
-_CLEARED_SENSITIVITY = frozenset(
-    {Sensitivity.PUBLIC, Sensitivity.INTERNAL, Sensitivity.CONFIDENTIAL}
-)
+#: Канонический источник находки: строчный токен. ``" routine"``, ``"Routine"``
+#: и пустое — не канон, строка не уезжает.
+_SOURCE_TOKEN = re.compile(r"[a-z][a-z0-9_-]*")
 #: Решение по подсказке (Q-017); ``pending`` и незнакомое — не решение.
 _DECIDED_STATES = frozenset({"accepted", "rejected"})
 _LOCAL_EVENT_PREFIX = "link."
 _LOCAL_EVENT_KINDS = frozenset({"routine.fired"})
-#: Журнальные записи о документе или секции несут их текст (diff ревизии,
-#: payload события) — уезжают только при разрешённой метке документа.
-_DOC_REVISION_KINDS = frozenset({EntityKind.DOCUMENT, EntityKind.SECTION})
-_DOC_EVENT_SCOPES = frozenset({"doc", "document", "section"})
+#: Области событий о документе: уезжают только при разрешённой метке.
+_DOC_EVENT_SCOPES = frozenset({"doc", "document", "section", "comment"})
+#: Области событий без документа. Прочие (``link``, ``run``, ``source_run``,
+#: незнакомые, NULL) — local: о производных и локальных сущностях журнал не
+#: везёт, а незнакомую область нечем проверить.
+_PLAIN_EVENT_SCOPES = frozenset(
+    {
+        "adr",
+        "adr_relation",
+        "adr_topic",
+        "approval",
+        "doc_code_claim",
+        "doc_node",
+        "finding",
+        "plan",
+        "plan_section",
+        "project",
+        "question",
+        "routine",
+        "scenario",
+        "scenario_group",
+        "story",
+        "story_section",
+        "structure_finding",
+        "structure_snapshot",
+        "structure_waiver",
+        "task",
+        "task_doc",
+    }
+)
 
 
-def _not_cleared(row: Mapping[str, object]) -> bool:
-    """Документ без разрешённой метки и его потомки (решения 3, 12)."""
-    value = row.get(_SENSITIVITY)
-    return not isinstance(value, str) or value not in _CLEARED_SENSITIVITY
+def parse_sensitivity(value: object) -> Sensitivity | None:
+    """Метка документа, как её прочитал бы ``document_repo``; иначе ``None``."""
+    if isinstance(value, Sensitivity):
+        return value
+    if type(value) is not str:
+        return None
+    try:
+        return Sensitivity(value)
+    except ValueError:
+        return None
+
+
+def _cleared(value: object) -> bool:
+    parsed = parse_sensitivity(value)
+    return parsed is not None and parsed is not Sensitivity.RESTRICTED
+
+
+def _parse_entity_kind(value: object) -> EntityKind | None:
+    if isinstance(value, EntityKind):
+        return value
+    if type(value) is not str:
+        return None
+    try:
+        return EntityKind(value)
+    except ValueError:
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class DocRef:
+    """Ссылка строки на документ или секцию (решение 16).
+
+    Строка, ссылающаяся на документ, несёт метку этого документа под ключом
+    ``sensitivity_key(column)`` — её кладёт вызывающий (захват, CLO-006).
+    Ссылка без разрешённой метки: ``whole_row`` — строка local целиком (она и
+    есть связь с документом); иначе не уезжают ``column`` и ``withheld``, а
+    строка уезжает без них. ``kind_column``/``kinds`` — для полиморфных
+    ссылок: ссылка на документ, только когда дискриминатор в ``kinds``;
+    незнакомый дискриминатор считается ссылкой на документ.
+    """
+
+    column: str
+    whole_row: bool = False
+    withheld: tuple[str, ...] = ()
+    kind_column: str | None = None
+    kinds: frozenset[str] = frozenset()
+
+
+def sensitivity_key(column: str) -> str:
+    """Ключ строки, под которым лежит метка документа, на который смотрит ``column``."""
+    return f"{column}.{_SENSITIVITY}"
+
+
+def _points_to_document(ref: DocRef, row: Mapping[str, object]) -> bool:
+    if row.get(ref.column) is None:
+        return False
+    if ref.kind_column is None:
+        return True
+    kind = row.get(ref.kind_column)
+    known = ref.kinds | _NON_DOC_KINDS.get(ref.kind_column, frozenset())
+    return not isinstance(kind, str) or kind in ref.kinds or kind not in known
+
+
+def ref_cleared(ref: DocRef, row: Mapping[str, object]) -> bool:
+    """Ссылка не ведёт на документ или ведёт на документ с разрешённой меткой."""
+    if not _points_to_document(ref, row):
+        return True
+    return _cleared(row.get(sensitivity_key(ref.column)))
+
+
+_PATH = "path"
+_DRIVE = re.compile(r"^[A-Za-z]:")
+_URI = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+
+
+def _is_machine_path(value: str) -> bool:
+    """Путь, который описывает машину, а не проект (решения 14, 15).
+
+    Абсолютный POSIX, ``~``, диск Windows, UNC, URI со схемой; пробел по краям
+    и NUL — не канон: ``" /Users/…"`` иначе прошёл бы как относительный.
+    """
+    return (
+        not value
+        or value != value.strip()
+        or "\x00" in value
+        or value.startswith(("/", "~", "\\"))
+        or _DRIVE.match(value) is not None
+        or _URI.match(value) is not None
+    )
+
+
+def _machine_path(row: Mapping[str, object]) -> bool:
+    """Обязательный ``path``: нет ключа, не строка или машинный путь — local."""
+    value = row.get(_PATH)
+    return type(value) is not str or _is_machine_path(value)
+
+
+def _optional_machine_path(row: Mapping[str, object]) -> bool:
+    """Необязательный ``path``: ``NULL`` допустим, машинный путь — нет."""
+    value = row.get(_PATH)
+    if value is None:
+        return False
+    return type(value) is not str or _is_machine_path(value)
+
+
+def _local_document(row: Mapping[str, object]) -> bool:
+    return not _cleared(row.get(_SENSITIVITY)) or _machine_path(row)
 
 
 def _routine_finding(row: Mapping[str, object]) -> bool:
     source = row.get("source")
-    return not isinstance(source, str) or not source or source == _ROUTINE_SOURCE
-
-
-def _undecided_suggestion(row: Mapping[str, object]) -> bool:
-    return row.get("state") not in _DECIDED_STATES
-
-
-def _local_revision(row: Mapping[str, object]) -> bool:
-    kind = row.get("entity_kind")
-    if not isinstance(kind, str):
+    if type(source) is not str or _SOURCE_TOKEN.fullmatch(source) is None:
         return True
-    return kind in _DOC_REVISION_KINDS and _not_cleared(row)
-
-
-def _local_event(row: Mapping[str, object]) -> bool:
-    kind = row.get("kind")
-    if not isinstance(kind, str):
-        return True
-    if kind.startswith(_LOCAL_EVENT_PREFIX) or kind in _LOCAL_EVENT_KINDS:
-        return True
-    return row.get("scope_kind") in _DOC_EVENT_SCOPES and _not_cleared(row)
-
-
-_PATH = "path"
-_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
-
-
-def _is_machine_path(value: str) -> bool:
-    """Абсолютный путь (POSIX, ``~``, диск Windows, UNC) — описывает машину (решение 14)."""
-    return value.startswith(("/", "~", "\\")) or _DRIVE.match(value) is not None
-
-
-def _machine_path(row: Mapping[str, object]) -> bool:
-    """Обязательный ``path``: нет ключа, не строка или абсолютный — строка local."""
-    value = row.get(_PATH)
-    return not isinstance(value, str) or _is_machine_path(value)
-
-
-def _optional_machine_path(row: Mapping[str, object]) -> bool:
-    """Необязательный ``path``: ``NULL`` допустим, абсолютный — нет."""
-    value = row.get(_PATH)
-    return isinstance(value, str) and _is_machine_path(value)
-
-
-def _local_document(row: Mapping[str, object]) -> bool:
-    return _not_cleared(row) or _machine_path(row)
+    return source == _ROUTINE_SOURCE
 
 
 def _held_finding(row: Mapping[str, object]) -> bool:
     return _routine_finding(row) or _optional_machine_path(row)
+
+
+def _undecided_suggestion(row: Mapping[str, object]) -> bool:
+    state = row.get("state")
+    return type(state) is not str or state not in _DECIDED_STATES
+
+
+def _local_revision(row: Mapping[str, object]) -> bool:
+    return _parse_entity_kind(row.get("entity_kind")) is None
+
+
+def _local_event(row: Mapping[str, object]) -> bool:
+    kind = row.get("kind")
+    if type(kind) is not str or not kind:
+        return True
+    if kind.startswith(_LOCAL_EVENT_PREFIX) or kind in _LOCAL_EVENT_KINDS:
+        return True
+    scope = row.get("scope_kind")
+    return not isinstance(scope, str) or scope not in _DOC_EVENT_SCOPES | _PLAIN_EVENT_SCOPES
+
+
+_DOC_ENTITY_KINDS = frozenset({EntityKind.DOCUMENT.value, EntityKind.SECTION.value})
+_DOC_LINK_KINDS = frozenset({"document", "section"})
+#: Значения дискриминатора, о которых известно, что это НЕ документ. Всё вне
+#: ``kinds`` и вне этого перечня считается ссылкой на документ (fail-closed).
+_NON_DOC_KINDS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "entity_kind": frozenset(k.value for k in EntityKind) - _DOC_ENTITY_KINDS,
+        "scope_kind": _PLAIN_EVENT_SCOPES,
+        "to_kind": frozenset(
+            {"task", "story", "module", "criterion", "adr", "scenario", "finding", "code", "url"}
+        ),
+    }
+)
+
+
+def _whole(column: str) -> DocRef:
+    return DocRef(column, whole_row=True)
+
+
+#: Каждая колонка shipped-таблицы, которая ссылается на документ или секцию
+#: (FK, логическая, строковая ``doc_key`` или полиморфная). Полноту по FK и
+#: по ``doc_key`` сверяет гейт (решение 16).
+DOC_REFS: Mapping[str, tuple[DocRef, ...]] = MappingProxyType(
+    {
+        "section": (_whole("document_id"),),
+        "doc_comment": (_whole("document_id"), _whole("section_id")),
+        "document_tag": (_whole("document_id"),),
+        "plan": (DocRef("parent_doc_id"), DocRef("completed_log_id")),
+        "plan_section": (DocRef("doc_id"),),
+        "module": (DocRef("spec_doc_id"),),
+        "scenario": (
+            DocRef("document_id", withheld=("section_anchor", "doc_content_hash")),
+            DocRef("doc_key", withheld=("section_anchor", "doc_content_hash")),
+        ),
+        "open_question": (DocRef("source_doc_key"),),
+        "open_question_link": (
+            DocRef("to_ref", whole_row=True, kind_column="to_kind", kinds=_DOC_LINK_KINDS),
+        ),
+        "story_link": (
+            DocRef("to_ref", whole_row=True, kind_column="to_kind", kinds=_DOC_LINK_KINDS),
+        ),
+        "scenario_link": (
+            DocRef("to_ref", whole_row=True, kind_column="to_kind", kinds=_DOC_LINK_KINDS),
+        ),
+        "external_ref": (
+            DocRef(
+                "entity_row_id",
+                whole_row=True,
+                kind_column="entity_kind",
+                kinds=_DOC_ENTITY_KINDS,
+            ),
+        ),
+        "approval_doc_revision_link": (_whole("revision_id"),),
+        "link_suggestion": (
+            _whole("from_section_id"),
+            _whole("to_section_id"),
+            _whole("to_doc_key"),
+        ),
+        "revision": (
+            DocRef(
+                "entity_id",
+                whole_row=True,
+                kind_column="entity_kind",
+                kinds=_DOC_ENTITY_KINDS,
+            ),
+        ),
+        "activity_event": (
+            DocRef(
+                "scope_id",
+                whole_row=True,
+                kind_column="scope_kind",
+                kinds=_DOC_EVENT_SCOPES,
+            ),
+        ),
+    }
+)
+
+
+def _doc_refs_block_row(table: str, row: Mapping[str, object]) -> bool:
+    return any(ref.whole_row and not ref_cleared(ref, row) for ref in DOC_REFS.get(table, ()))
+
+
+def _gated(table: str, extra: RowPredicate | None = None) -> RowPredicate:
+    """``row_is_local`` таблицы: ссылки на документ (``DOC_REFS``) плюс ``extra``."""
+
+    def predicate(row: Mapping[str, object]) -> bool:
+        return _doc_refs_block_row(table, row) or (extra is not None and extra(row))
+
+    return predicate
+
+
+def withheld_columns(table: str, row: Mapping[str, object]) -> frozenset[str]:
+    """Колонки строки, которые не уезжают из-за ссылки на restricted-документ."""
+    out: set[str] = set()
+    for ref in DOC_REFS.get(table, ()):
+        if not ref.whole_row and not ref_cleared(ref, row):
+            out.add(ref.column)
+            out.update(ref.withheld)
+    return frozenset(out)
 
 
 # --- сокращения для таблицы --------------------------------------------------
@@ -268,12 +496,12 @@ _SPECS: tuple[TableSpec, ...] = (
         "section",
         _A,
         local_columns=_POSITION,
-        row_is_local=_not_cleared,
+        row_is_local=_gated("section"),
         natural_keys=(_name("document_id", "anchor"),),
         rank_column=_RANK,
         text_columns=frozenset({"body"}),
     ),
-    TableSpec("doc_comment", _A, row_is_local=_not_cleared),
+    TableSpec("doc_comment", _A, row_is_local=_gated("doc_comment")),
     TableSpec(
         "doc_node",
         _A,
@@ -348,6 +576,7 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "story_link",
         _A,
+        row_is_local=_gated("story_link"),
         human_id_refs=_TO_REF,
         deterministic_uid=("story_id", "to_kind", "to_ref", "relation"),
     ),
@@ -370,6 +599,7 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "scenario_link",
         _A,
+        row_is_local=_gated("scenario_link"),
         human_id_refs=_TO_REF,
         deterministic_uid=("scenario_row_id", "to_kind", "to_ref", "relation"),
     ),
@@ -382,7 +612,7 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "document_tag",
         _A,
-        row_is_local=_not_cleared,
+        row_is_local=_gated("document_tag"),
         deterministic_uid=("document_id", "tag_id"),
     ),
     TableSpec("task_tag", _A, deterministic_uid=("task_id", "tag_id")),
@@ -391,11 +621,12 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "external_ref",
         _A,
+        row_is_local=_gated("external_ref"),
         natural_keys=(_name("project_id", "system", "external_id"),),
     ),
     TableSpec("approval", _A, local_columns=frozenset({"run_id", "payload_json"})),
     TableSpec("approval_task_link", _A, human_id_refs={"task_ref": "task"}),
-    TableSpec("approval_doc_revision_link", _A),
+    TableSpec("approval_doc_revision_link", _A, row_is_local=_gated("approval_doc_revision_link")),
     TableSpec("routine", _A, natural_keys=(_name("project_id", "name"),)),
     TableSpec(
         "structure_waiver",
@@ -421,17 +652,23 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "open_question_link",
         _A,
+        row_is_local=_gated("open_question_link"),
         local_columns=frozenset({"resolved", "broken_reason", "last_checked"}),
         human_id_refs=_TO_REF,
         deterministic_uid=("question_row_id", "to_kind", "to_ref", "relation"),
     ),
     # --- journal ------------------------------------------------------------
-    TableSpec("revision", _J, local_columns=frozenset({"run_id"}), row_is_local=_local_revision),
+    TableSpec(
+        "revision",
+        _J,
+        local_columns=frozenset({"run_id"}),
+        row_is_local=_gated("revision", _local_revision),
+    ),
     TableSpec(
         "activity_event",
         _J,
         local_columns=frozenset({"run_id", "payload"}),
-        row_is_local=_local_event,
+        row_is_local=_gated("activity_event", _local_event),
     ),
     # --- derived ------------------------------------------------------------
     TableSpec("link", _D),
@@ -439,7 +676,7 @@ _SPECS: tuple[TableSpec, ...] = (
         "link_suggestion",
         _D,
         authored_columns=frozenset({"state", "from_section_id", "to_doc_key", "to_section_id"}),
-        row_is_local=_undecided_suggestion,
+        row_is_local=_gated("link_suggestion", _undecided_suggestion),
         logical_fks={"from_section_id": "section", "to_section_id": "section"},
         deterministic_uid=("from_section_id", "to_doc_key", "to_section_id"),
     ),
@@ -489,12 +726,6 @@ REGISTRY: Mapping[str, TableSpec] = _index(_SPECS)
 
 #: Куда уходит строка, которую ``row_is_local`` не выпускает (решение 2).
 _ROW_CLASS_WHEN_HELD: Mapping[str, SyncClass] = MappingProxyType({"finding": SyncClass.DERIVED})
-
-#: Таблицы-потомки документа: по какой FK-колонке брать ``sensitivity``
-#: владельца для ``row_is_local`` (решение 3).
-RESTRICTED_OWNER_FK: Mapping[str, str] = MappingProxyType(
-    {"section": "document_id", "doc_comment": "document_id", "document_tag": "document_id"}
-)
 
 #: Полиморфные ссылки на ``row_id``: колонка → колонка-дискриминатор со
 #: значением ``EntityKind`` (решение 5).
