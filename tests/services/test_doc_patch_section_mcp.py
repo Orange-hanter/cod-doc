@@ -24,7 +24,7 @@ from cod_doc.infra.models import ProjectModel, RevisionModel
 from cod_doc.mcp.tools import doc_tools
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as rev
-from tests._scope import doc_project_id
+from tests._scope import doc_project_id, only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -73,6 +73,7 @@ def _seed_doc_with_section(factory: Any, *, body: str = "old body") -> tuple[int
         doc_id = _new_doc(session, proj_id)
         sec = docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc_id,
             anchor="x",
             heading="X",
@@ -116,7 +117,11 @@ def test_doc_patch_section_success_creates_revision(
         history = rev.list_for_entity(
             session, EntityKind.SECTION, sec_row_id, project_id=doc_project_id(session, doc_id)
         )
-        section = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "x")
+        section = next(
+            s
+            for s in docs.get_sections(session, doc_id, project_id=only_project_id(session))
+            if s.anchor == "x"
+        )
     # add_section + patch_section == 2 revisions.
     assert len(history) == 2
     assert section.body == "new body"
@@ -159,7 +164,11 @@ def test_doc_patch_section_conflict_on_stale_parent(
         )
 
     with transactional(factory) as session:
-        section = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "x")
+        section = next(
+            s
+            for s in docs.get_sections(session, doc_id, project_id=only_project_id(session))
+            if s.anchor == "x"
+        )
     # v3 must never have landed.
     assert section.body == "v2"
 
@@ -191,7 +200,11 @@ def test_doc_patch_section_dry_run_leaves_db_untouched(
         history = rev.list_for_entity(
             session, EntityKind.SECTION, sec_row_id, project_id=doc_project_id(session, doc_id)
         )
-        section = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "x")
+        section = next(
+            s
+            for s in docs.get_sections(session, doc_id, project_id=only_project_id(session))
+            if s.anchor == "x"
+        )
     # Nothing persisted: still just add_section's revision, body unchanged.
     assert len(history) == 1
     assert section.body == "old body"
@@ -258,7 +271,7 @@ def test_doc_add_section_creates_section_and_revision(
     assert "dry_run" not in result
 
     with transactional(factory) as session:
-        sections = docs.get_sections(session, doc_id)
+        sections = docs.get_sections(session, doc_id, project_id=only_project_id(session))
         history = rev.list_for_entity(
             session,
             EntityKind.SECTION,
@@ -289,7 +302,7 @@ def test_doc_add_section_appends_after_existing(
 
     assert result["position"] == 1
     with transactional(factory) as session:
-        sections = docs.get_sections(session, doc_id)
+        sections = docs.get_sections(session, doc_id, project_id=only_project_id(session))
     assert [(s.anchor, s.position) for s in sections] == [("x", 0), ("y", 1)]
 
 
@@ -321,7 +334,7 @@ def test_doc_add_section_duplicate_anchor_raises(
         )
 
     with transactional(factory) as session:
-        sections = docs.get_sections(session, doc_id)
+        sections = docs.get_sections(session, doc_id, project_id=only_project_id(session))
     assert len(sections) == 1
     assert sections[0].body == "old body"
 
@@ -348,7 +361,7 @@ def test_doc_add_section_dry_run_leaves_db_untouched(
     assert "preview me" in result["diff"]
 
     with transactional(factory) as session:
-        assert docs.get_sections(session, doc_id) == []
+        assert docs.get_sections(session, doc_id, project_id=only_project_id(session)) == []
 
 
 def test_doc_authoring_cycle_needs_no_markdown_file(
@@ -377,14 +390,14 @@ def test_doc_authoring_cycle_needs_no_markdown_file(
 
     assert patched["changed"] is True
     with transactional(factory) as session:
-        sections = docs.get_sections(session, doc_id)
+        sections = docs.get_sections(session, doc_id, project_id=only_project_id(session))
         history = rev.list_for_entity(
             session,
             EntityKind.SECTION,
             sections[0].row_id,
             project_id=doc_project_id(session, doc_id),
         )
-        body = docs.render_body(session, doc_id)
+        body = docs.render_body(session, doc_id, project_id=only_project_id(session))
     assert sections[0].body == "final"
     assert len(history) == 2
     assert body is not None and "final" in body
@@ -426,7 +439,7 @@ def test_doc_delete_section_removes_the_section(
     assert "dry_run" not in result
 
     with transactional(factory) as session:
-        assert docs.get_sections(session, doc_id) == []
+        assert docs.get_sections(session, doc_id, project_id=only_project_id(session)) == []
         # ai-review #85 (critical): тул искал ревизию по SECTION и возвращал
         # прошлую правку уже удалённой секции — непустой id, но не тот.
         # Ревизия удаления — на документе.
@@ -458,7 +471,10 @@ def test_doc_delete_section_dry_run_leaves_db_untouched(
     assert "-keep me" in result["diff"]
 
     with transactional(factory) as session:
-        assert [s.anchor for s in docs.get_sections(session, doc_id)] == ["x"]
+        assert [
+            s.anchor
+            for s in docs.get_sections(session, doc_id, project_id=only_project_id(session))
+        ] == ["x"]
 
 
 def test_doc_delete_section_rejects_unknown_anchor(

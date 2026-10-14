@@ -180,6 +180,7 @@ def test_revert_section_patch_restores_old_body(engine_with_schema) -> None:  # 
         # _restore_original_from_unified; that edge case is addressed in COD-023.
         sec = docs.add_section(
             session,
+            project_id=p,
             document_id=doc.row_id,
             anchor="intro",
             heading="Intro",
@@ -190,6 +191,7 @@ def test_revert_section_patch_restores_old_body(engine_with_schema) -> None:  # 
         )
         docs.patch_section(
             session,
+            project_id=p,
             document_id=doc.row_id,
             anchor="intro",
             new_body="Updated body.\n",
@@ -222,6 +224,7 @@ def test_revert_section_writes_new_revision(engine_with_schema) -> None:  # type
         )
         sec = docs.add_section(
             session,
+            project_id=p,
             document_id=doc.row_id,
             anchor="intro",
             heading="Intro",
@@ -232,6 +235,7 @@ def test_revert_section_writes_new_revision(engine_with_schema) -> None:  # type
         )
         docs.patch_section(
             session,
+            project_id=p,
             document_id=doc.row_id,
             anchor="intro",
             new_body="v2\n",
@@ -268,6 +272,7 @@ def test_revert_document_rename_restores_key(engine_with_schema) -> None:  # typ
         )
         docs.rename(
             session,
+            project_id=p,
             document_id=doc.row_id,
             new_doc_key="renamed-key",
             author="human:test",
@@ -323,6 +328,7 @@ def test_section_label_with_plus_in_doc_key_is_read_and_reverted(engine_with_sch
         )
         sec = docs.add_section(
             session,
+            project_id=p,
             document_id=doc.row_id,
             anchor="intro",
             heading="Intro",
@@ -333,6 +339,7 @@ def test_section_label_with_plus_in_doc_key_is_read_and_reverted(engine_with_sch
         )
         docs.patch_section(
             session,
+            project_id=p,
             document_id=doc.row_id,
             anchor="intro",
             new_body="Updated body.\n",
@@ -387,6 +394,7 @@ def test_revert_section_of_another_project_raises(engine_with_schema) -> None:  
         )
         sec = docs.add_section(
             session,
+            project_id=p,
             document_id=doc.row_id,
             anchor="intro",
             heading="Intro",
@@ -397,6 +405,7 @@ def test_revert_section_of_another_project_raises(engine_with_schema) -> None:  
         )
         docs.patch_section(
             session,
+            project_id=p,
             document_id=doc.row_id,
             anchor="intro",
             new_body="Updated body.\n",
@@ -428,7 +437,13 @@ def test_revert_document_of_another_project_raises(engine_with_schema) -> None: 
             title="T",
             author="human:test",
         )
-        docs.rename(session, document_id=doc.row_id, new_doc_key="renamed-key", author="human:test")
+        docs.rename(
+            session,
+            project_id=p,
+            document_id=doc.row_id,
+            new_doc_key="renamed-key",
+            author="human:test",
+        )
         rename_rev = rev.list_for_entity(session, EntityKind.DOCUMENT, doc.row_id, project_id=p)[-1]
         _move_revision_to(session, rename_rev.revision_id, other)
 

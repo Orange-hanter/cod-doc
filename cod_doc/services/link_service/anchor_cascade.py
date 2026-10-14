@@ -121,6 +121,7 @@ def anchor_cascade(
             continue
         docs.patch_section(
             session,
+            project_id=project_id,
             document_id=sec.document_id,
             anchor=sec.anchor,
             new_body=new_body,

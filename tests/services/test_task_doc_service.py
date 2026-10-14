@@ -21,6 +21,7 @@ from cod_doc.services import task_doc_service as tdocs
 from cod_doc.services import task_service as tasks
 from cod_doc.services.run_context import set_current_run_id
 from cod_doc.services.task_doc_service import TaskDocConflictError
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -57,7 +58,7 @@ def test_get_returns_none_when_doc_missing(engine_with_schema) -> None:  # type:
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _, task_row_id = _seed_task(session)
-        assert tdocs.get(session, task_row_id, "plan") is None
+        assert tdocs.get(session, task_row_id, "plan", project_id=only_project_id(session)) is None
 
 
 def test_put_creates_new_doc_with_revision(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -177,7 +178,7 @@ def test_list_for_task_returns_all_keys(engine_with_schema) -> None:  # type: ig
                 title=key.title(),
                 body=f"body-{key}",
             )
-        docs = tdocs.list_for_task(session, task_row_id)
+        docs = tdocs.list_for_task(session, task_row_id, project_id=proj_id)
         assert {d.key for d in docs} == {"plan", "design", "verification"}
 
 
@@ -194,7 +195,7 @@ def test_revisions_returns_history_oldest_first(engine_with_schema) -> None:  # 
         tdocs.put(
             session, project_id=proj_id, task_row_id=task_row_id, key="plan", title="P", body="v3"
         )
-        history = tdocs.revisions(session, task_row_id, "plan")
+        history = tdocs.revisions(session, task_row_id, "plan", project_id=proj_id)
         assert len(history) == 3
         assert history[0]["parent_revision_id"] is None
         assert history[1]["parent_revision_id"] == history[0]["revision_id"]
@@ -205,7 +206,9 @@ def test_revisions_returns_empty_for_missing_doc(engine_with_schema) -> None:  #
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as session:
         _, task_row_id = _seed_task(session)
-        assert tdocs.revisions(session, task_row_id, "plan") == []
+        assert (
+            tdocs.revisions(session, task_row_id, "plan", project_id=only_project_id(session)) == []
+        )
 
 
 def test_revert_restores_body_to_target_revision(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -228,7 +231,7 @@ def test_revert_restores_body_to_target_revision(engine_with_schema) -> None:  #
         )
         assert reverted.body == "v1"
         # The revert itself is a new revision.
-        history = tdocs.revisions(session, task_row_id, "plan")
+        history = tdocs.revisions(session, task_row_id, "plan", project_id=proj_id)
         assert len(history) == 3
         assert history[-1]["reason"].startswith("revert to ")
 

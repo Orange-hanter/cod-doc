@@ -38,7 +38,9 @@ def normalize_repo_path(path: str) -> str:
     return cleaned
 
 
-def orphan_section_anchors(session: Session, document_id: int, file_text: str) -> tuple[str, ...]:
+def orphan_section_anchors(
+    session: Session, document_id: int, file_text: str, *, project_id: int
+) -> tuple[str, ...]:
     """Anchors of level-2 DB sections this file's headings do not account for.
 
     ADO-213. Reported beside `DriftStatus`, never folded into it: the four
@@ -64,7 +66,7 @@ def orphan_section_anchors(session: Session, document_id: int, file_text: str) -
 
     parsed = import_service.parse_markdown(file_text)
     match = import_service.match_file_sections(
-        doc_service.get_sections(session, document_id), parsed.sections
+        doc_service.get_sections(session, document_id, project_id=project_id), parsed.sections
     )
     return match.orphans
 
@@ -98,7 +100,7 @@ def detect_drift(
     file_text = file_path.read_text(encoding="utf-8")
     file_hash = _sha256(file_text)
     mismatch = metadata_mismatches(model, file_text)
-    orphans = orphan_section_anchors(session, document_id, file_text)
+    orphans = orphan_section_anchors(session, document_id, file_text, project_id=model.project_id)
 
     accepted_file_hash = getattr(model, "content_sha256_head", None)
     # ACU-001: the file is "ours" iff it is the last export or the accepted

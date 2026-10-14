@@ -192,7 +192,7 @@ def test_list_for_plan_returns_all_tasks(engine_with_schema) -> None:  # type: i
         p, pl, s = _seed_plan(session)
         for n in range(1, 4):
             _task(session, p, pl, s, task_id=f"PLN-{n:03d}", title=f"T{n}")
-        all_tasks = tasks.list_for_plan(session, pl)
+        all_tasks = tasks.list_for_plan(session, pl, project_id=p)
         assert {t.task_id for t in all_tasks} == {"PLN-001", "PLN-002", "PLN-003"}
 
 

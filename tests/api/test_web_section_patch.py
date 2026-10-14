@@ -25,6 +25,7 @@ from cod_doc.infra.models import DocumentModel, SectionModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
 from cod_doc.services import revision_service as revisions
+from tests._scope import only_project_id
 
 
 @pytest.fixture
@@ -70,6 +71,7 @@ def section_client(tmp_path: Path, migrate_db):
         )
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="overview",
             heading="Overview",

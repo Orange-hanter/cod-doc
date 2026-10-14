@@ -59,6 +59,7 @@ def test_add_section_writes_section_revision(engine_with_schema) -> None:  # typ
         doc = _new_doc(session, proj_id)
         sec = docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="overview",
             heading="Overview",
@@ -83,6 +84,7 @@ def test_get_sections_in_position_order(engine_with_schema) -> None:  # type: ig
         # Insert out of order — get_sections must return by position.
         docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="b",
             heading="B",
@@ -93,6 +95,7 @@ def test_get_sections_in_position_order(engine_with_schema) -> None:  # type: ig
         )
         docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="a",
             heading="A",
@@ -101,7 +104,7 @@ def test_get_sections_in_position_order(engine_with_schema) -> None:  # type: ig
             body="Abody",
             author="x",
         )
-        anchors = [s.anchor for s in docs.get_sections(session, doc.row_id)]
+        anchors = [s.anchor for s in docs.get_sections(session, doc.row_id, project_id=proj_id)]
         assert anchors == ["a", "b"]
 
 
@@ -113,6 +116,7 @@ def test_render_body_uses_view(engine_with_schema) -> None:  # type: ignore[no-u
         doc = _new_doc(session, proj_id)
         docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="a",
             heading="Alpha",
@@ -121,7 +125,7 @@ def test_render_body_uses_view(engine_with_schema) -> None:  # type: ignore[no-u
             body="Alpha body.",
             author="x",
         )
-        body = docs.render_body(session, doc.row_id)
+        body = docs.render_body(session, doc.row_id, project_id=proj_id)
         assert body is not None
         assert body.startswith("Intro paragraph.")
         assert "## Alpha\n\nAlpha body." in body
@@ -131,7 +135,7 @@ def test_render_body_returns_none_for_unknown_doc(engine_with_schema) -> None:  
     factory = make_session_factory(engine_with_schema)
 
     with transactional(factory) as session:
-        assert docs.render_body(session, 99999) is None
+        assert docs.render_body(session, 99999, project_id=999_999) is None
 
 
 def test_add_section_duplicate_anchor_raises(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -144,6 +148,7 @@ def test_add_section_duplicate_anchor_raises(engine_with_schema) -> None:  # typ
         doc = _new_doc(session, proj_id)
         docs.add_section(
             session,
+            project_id=proj_id,
             document_id=doc.row_id,
             anchor="dup",
             heading="Dup",
@@ -155,6 +160,7 @@ def test_add_section_duplicate_anchor_raises(engine_with_schema) -> None:  # typ
         with pytest.raises(SectionAlreadyExistsError):
             docs.add_section(
                 session,
+                project_id=proj_id,
                 document_id=doc.row_id,
                 anchor="dup",
                 heading="Dup2",

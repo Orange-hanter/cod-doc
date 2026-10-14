@@ -42,6 +42,7 @@ from cod_doc.services import (
 )
 from cod_doc.services.doc_taxonomy import DEFAULT_TREE
 from cod_doc.services.projection_service import DriftStatus
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -510,6 +511,7 @@ def test_stale_export_and_missing_are_reported_never_repaired(project) -> None:
     with transactional(factory) as session:
         doc_service.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=_doc_row_id(session, "alpha"),
             anchor="extra",
             heading="Extra",
@@ -542,6 +544,7 @@ def test_conflict_is_reported_never_repaired(project) -> None:
     with transactional(factory) as session:
         doc_service.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=_doc_row_id(session, "alpha"),
             anchor="extra",
             heading="Extra",

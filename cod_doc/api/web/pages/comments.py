@@ -51,7 +51,7 @@ async def comment_create(
 
     section_id: int | None = None
     if anchor:
-        sections = docs.get_sections(session, doc.row_id)
+        sections = docs.get_sections(session, doc.row_id, project_id=project_db_id)
         sec = next((s for s in sections if s.anchor == anchor), None)
         if sec is None or sec.row_id is None:
             raise HTTPException(404, f"Секция не найдена: {anchor}")
@@ -60,6 +60,7 @@ async def comment_create(
     try:
         comments.create(
             session,
+            project_id=project_db_id,
             document_id=doc.row_id,
             section_id=section_id,
             anchor=anchor,
@@ -96,12 +97,14 @@ def comment_resolve(
     if doc is None or doc.row_id is None:
         raise HTTPException(404, f"Документ не найден: {doc_key}")
 
-    existing = comments.get(session, comment_id)
+    existing = comments.get(session, comment_id, project_id=project_db_id)
     if existing is None or existing.document_id != doc.row_id:
         raise HTTPException(404, "Comment not found in this document")
 
     fragment = existing.anchor or "comments"
-    comments.update_status(session, comment_id=comment_id, new_status="resolved")
+    comments.update_status(
+        session, project_id=project_db_id, comment_id=comment_id, new_status="resolved"
+    )
     session.commit()
     return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303)
 
@@ -123,12 +126,14 @@ def comment_reopen(
     if doc is None or doc.row_id is None:
         raise HTTPException(404, f"Документ не найден: {doc_key}")
 
-    existing = comments.get(session, comment_id)
+    existing = comments.get(session, comment_id, project_id=project_db_id)
     if existing is None or existing.document_id != doc.row_id:
         raise HTTPException(404, "Comment not found in this document")
 
     fragment = existing.anchor or "comments"
-    comments.update_status(session, comment_id=comment_id, new_status="open")
+    comments.update_status(
+        session, project_id=project_db_id, comment_id=comment_id, new_status="open"
+    )
     session.commit()
     return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303)
 
@@ -150,12 +155,12 @@ def comment_delete(
     if doc is None or doc.row_id is None:
         raise HTTPException(404, f"Документ не найден: {doc_key}")
 
-    existing = comments.get(session, comment_id)
+    existing = comments.get(session, comment_id, project_id=project_db_id)
     if existing is None or existing.document_id != doc.row_id:
         raise HTTPException(404, "Comment not found in this document")
 
     fragment = existing.anchor or "comments"
-    comments.delete(session, comment_id)
+    comments.delete(session, comment_id, project_id=project_db_id)
     session.commit()
     return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}#{fragment}", status_code=303)
 
@@ -186,7 +191,9 @@ def comments_apply(
     error: str | None = None
     rework = None
     try:
-        rework = comments.apply_open_with_ai(session, document_id=doc.row_id, cfg=cfg)
+        rework = comments.apply_open_with_ai(
+            session, project_id=project_db_id, document_id=doc.row_id, cfg=cfg
+        )
     except Exception as exc:  # AIBackendError, ValueError, etc.
         error = str(exc)
 
@@ -257,6 +264,7 @@ async def comments_apply_commit(
         try:
             docs.patch_section(
                 session,
+                project_id=project_db_id,
                 document_id=doc.row_id,
                 anchor=anchor,
                 new_body=body,
@@ -280,8 +288,15 @@ async def comments_apply_commit(
             applied_comment_ids.add(int(cid))
 
     for cid_int in applied_comment_ids:
+        # id приходят из формы: «применённым» отмечается только комментарий
+        # этого документа (чужой проект сервис и так не найдёт — AFT-024).
+        existing = comments.get(session, cid_int, project_id=project_db_id)
+        if existing is None or existing.document_id != doc.row_id:
+            continue
         with contextlib.suppress(comments.CommentNotFoundError):
-            comments.update_status(session, comment_id=cid_int, new_status="applied")
+            comments.update_status(
+                session, project_id=project_db_id, comment_id=cid_int, new_status="applied"
+            )
 
     session.commit()
     return RedirectResponse(url=f"/p/{proj.entry.name}/docs/{doc_key}#comments", status_code=303)
@@ -303,7 +318,7 @@ def comments_json(
     if doc is None or doc.row_id is None:
         raise HTTPException(404, f"Документ не найден: {doc_key}")
 
-    rows = comments.list_for_document(session, doc.row_id)
+    rows = comments.list_for_document(session, doc.row_id, project_id=project_db_id)
     return JSONResponse(
         [
             {

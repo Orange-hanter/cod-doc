@@ -48,6 +48,7 @@ def _seed(session: Session, slug: str = "p", root: str = "/tmp/p") -> tuple[int,
     for i, anchor in enumerate(ANCHORS):
         docs.add_section(
             session,
+            project_id=proj.row_id,
             document_id=d.row_id,
             anchor=anchor,
             heading=anchor.upper(),
@@ -59,8 +60,13 @@ def _seed(session: Session, slug: str = "p", root: str = "/tmp/p") -> tuple[int,
     return proj.row_id, d.row_id
 
 
-def _order(session: Session, doc_id: int) -> list[str]:
-    return [s.anchor for s in sorted(docs.get_sections(session, doc_id), key=lambda s: s.position)]
+def _order(session: Session, pid: int, doc_id: int) -> list[str]:
+    return [
+        s.anchor
+        for s in sorted(
+            docs.get_sections(session, doc_id, project_id=pid), key=lambda s: s.position
+        )
+    ]
 
 
 @pytest.mark.parametrize(
@@ -76,24 +82,34 @@ def test_move_reorders_keeps_row_and_history(  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as s:
         pid, doc_id = _seed(s)
-        before = {x.anchor: x.row_id for x in docs.get_sections(s, doc_id)}
+        before = {x.anchor: x.row_id for x in docs.get_sections(s, doc_id, project_id=pid)}
         sec_id = before[anchor]
         history_before = len(rev.list_for_entity(s, EntityKind.SECTION, sec_id, project_id=pid))
 
         move = docs.move_section(
-            s, document_id=doc_id, anchor=anchor, position=position, author="claude-test"
+            s,
+            project_id=pid,
+            document_id=doc_id,
+            anchor=anchor,
+            position=position,
+            author="claude-test",
         )
 
         assert move.order == expected
-        assert _order(s, doc_id) == expected
-        assert sorted(x.position for x in docs.get_sections(s, doc_id)) == [0, 1, 2, 3]
+        assert _order(s, pid, doc_id) == expected
+        assert sorted(x.position for x in docs.get_sections(s, doc_id, project_id=pid)) == [
+            0,
+            1,
+            2,
+            3,
+        ]
         assert move.section.row_id == sec_id
         assert len(rev.list_for_entity(s, EntityKind.SECTION, sec_id, project_id=pid)) == (
             history_before
         )
         doc_revs = rev.list_for_entity(s, EntityKind.DOCUMENT, doc_id, project_id=pid)
         assert json.loads(doc_revs[-1].diff)["op"] == "move_section"
-        body = docs.render_body(s, doc_id)
+        body = docs.render_body(s, doc_id, project_id=pid)
         assert body is not None
         heads = [f"## {a.upper()}" for a in expected]
         assert [body.index(h) for h in heads] == sorted(body.index(h) for h in heads)
@@ -104,7 +120,9 @@ def test_move_to_current_position_writes_nothing(engine_with_schema) -> None:  #
     with transactional(factory) as s:
         pid, doc_id = _seed(s)
         n = len(rev.list_for_entity(s, EntityKind.DOCUMENT, doc_id, project_id=pid))
-        move = docs.move_section(s, document_id=doc_id, anchor="b", position=1, author="t")
+        move = docs.move_section(
+            s, project_id=pid, document_id=doc_id, anchor="b", position=1, author="t"
+        )
         assert move.from_position == move.to_position == 1
         assert len(rev.list_for_entity(s, EntityKind.DOCUMENT, doc_id, project_id=pid)) == n
 
@@ -112,12 +130,16 @@ def test_move_to_current_position_writes_nothing(engine_with_schema) -> None:  #
 def test_out_of_range_and_unknown_anchor(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
     factory = make_session_factory(engine_with_schema)
     with transactional(factory) as s:
-        _, doc_id = _seed(s)
+        pid, doc_id = _seed(s)
         with pytest.raises(ValidationError) as exc:
-            docs.move_section(s, document_id=doc_id, anchor="a", position=4, author="t")
+            docs.move_section(
+                s, project_id=pid, document_id=doc_id, anchor="a", position=4, author="t"
+            )
         assert exc.value.code == "DM-002"
         with pytest.raises(SectionNotFoundError):
-            docs.move_section(s, document_id=doc_id, anchor="zz", position=0, author="t")
+            docs.move_section(
+                s, project_id=pid, document_id=doc_id, anchor="zz", position=0, author="t"
+            )
 
 
 def test_mcp_dry_run_reports_order_without_writing(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -137,7 +159,7 @@ def test_mcp_dry_run_reports_order_without_writing(engine_with_schema, monkeypat
     assert out["order"] == ["c", "a", "b", "d"]
     assert out["dry_run"] is True
     with transactional(factory) as s:
-        assert _order(s, doc_id) == ANCHORS
+        assert _order(s, pid, doc_id) == ANCHORS
     with pytest.raises(ValueError, match="out of range"):
         tool(project="p", doc_key="arch/overview", anchor="c", position=9)
 
@@ -153,7 +175,7 @@ def test_cli_move_section_json(tmp_path: Path) -> None:
     cfg.projects = [ProjectEntry(name="ms", path=str(repo)).model_dump()]
     factory = make_session_factory(make_engine(f"sqlite:///{db_path}"))
     with transactional(factory) as s:
-        _, doc_id = _seed(s, slug="ms", root=str(repo))
+        pid, doc_id = _seed(s, slug="ms", root=str(repo))
 
     result = CliRunner().invoke(
         doc,
@@ -164,4 +186,19 @@ def test_cli_move_section_json(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["order"] == ["a", "c", "d", "b"]
     with transactional(factory) as s:
-        assert _order(s, doc_id) == ["a", "c", "d", "b"]
+        assert _order(s, pid, doc_id) == ["a", "c", "d", "b"]
+
+
+def test_document_of_another_project_is_not_found(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-024: чужой проект не переставляет секции документа по его row_id."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as s:
+        _, doc_id = _seed(s)
+        other = ProjectModel(slug="q", title="Q", root_path="/tmp/q", config_json={})
+        other.created = other.updated = datetime.now(UTC)
+        s.add(other)
+        s.flush()
+        with pytest.raises(docs.DocumentNotFoundError):
+            docs.move_section(
+                s, project_id=other.row_id, document_id=doc_id, anchor="a", position=1, author="t"
+            )

@@ -44,6 +44,7 @@ def _seed(session: Session) -> int:
     target = _create(session, pid, "arch/target")
     docs.add_section(
         session,
+        project_id=pid,
         document_id=target,
         anchor="intro",
         heading="Intro",
@@ -55,6 +56,7 @@ def _seed(session: Session) -> int:
     source = _create(session, pid, "arch/source")
     docs.add_section(
         session,
+        project_id=pid,
         document_id=source,
         anchor="refs",
         heading="Refs",

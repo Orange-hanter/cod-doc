@@ -66,6 +66,7 @@ def doc_rename_section(
                 sys.exit(1)
             result = doc_service.rename_section(
                 session,
+                project_id=project_id,
                 document_id=d.row_id,
                 anchor=anchor,
                 heading=heading,
