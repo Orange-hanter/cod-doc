@@ -85,10 +85,24 @@
     предлагаемой правки документа — мог бы унести текст restricted-документа),
     ``finding.payload`` (сырые данные производителя), ``run_id`` у ``revision``
     и ``activity_event`` (ссылка на local ``agent_run``).
+14. **Машинно-приватные данные** (security review CLO-001, второй раунд).
+    Строка с абсолютным ``path`` (POSIX, ``~``, диск Windows, UNC) не уезжает:
+    ``affected_file``, ``module_code``, ``document`` (путь обязателен — нет
+    ключа, тоже local) и ``finding`` (путь необязателен — ``NULL`` уезжает).
+    На живой БД cod-doc таких строк 4 в ``affected_file``. ``activity_event.payload``
+    — local: свободный JSON с абсолютными путями (``master.hashes_updated``,
+    ``doc.exported``) и текстами ошибок (``project.repaired``); событие уезжает
+    с ``kind``/``scope``/``summary``. ``commit_link.message`` и ``.author`` —
+    local: git-автор (имя/почта) и сообщение восстанавливаются из репозитория
+    по ``sha``, везти их вторым каналом незачем. Свободный авторский текст
+    (тела секций, описания задач, ``revision.diff``) не фильтруется — это
+    содержимое проекта, а не метаданные машины; от него защищает только
+    ``restricted``.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -189,6 +203,35 @@ def _local_event(row: Mapping[str, object]) -> bool:
     return row.get("scope_kind") in _DOC_EVENT_SCOPES and _not_cleared(row)
 
 
+_PATH = "path"
+_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _is_machine_path(value: str) -> bool:
+    """Абсолютный путь (POSIX, ``~``, диск Windows, UNC) — описывает машину (решение 14)."""
+    return value.startswith(("/", "~", "\\")) or _DRIVE.match(value) is not None
+
+
+def _machine_path(row: Mapping[str, object]) -> bool:
+    """Обязательный ``path``: нет ключа, не строка или абсолютный — строка local."""
+    value = row.get(_PATH)
+    return not isinstance(value, str) or _is_machine_path(value)
+
+
+def _optional_machine_path(row: Mapping[str, object]) -> bool:
+    """Необязательный ``path``: ``NULL`` допустим, абсолютный — нет."""
+    value = row.get(_PATH)
+    return isinstance(value, str) and _is_machine_path(value)
+
+
+def _local_document(row: Mapping[str, object]) -> bool:
+    return _not_cleared(row) or _machine_path(row)
+
+
+def _held_finding(row: Mapping[str, object]) -> bool:
+    return _routine_finding(row) or _optional_machine_path(row)
+
+
 # --- сокращения для таблицы --------------------------------------------------
 
 _A = SyncClass.AUTHORED
@@ -217,7 +260,7 @@ _SPECS: tuple[TableSpec, ...] = (
         "document",
         _A,
         local_columns=frozenset({"projection_hash", "content_sha256_head", "node_position"}),
-        row_is_local=_not_cleared,
+        row_is_local=_local_document,
         natural_keys=(_name("project_id", "doc_key"),),
         rank_column="node_rank",
     ),
@@ -254,7 +297,9 @@ _SPECS: tuple[TableSpec, ...] = (
         text_columns=frozenset({"description", "acceptance"}),
     ),
     TableSpec("dependency", _A, deterministic_uid=("from_task_id", "to_task_id", "kind")),
-    TableSpec("affected_file", _A, deterministic_uid=("task_id", "path")),
+    TableSpec(
+        "affected_file", _A, row_is_local=_machine_path, deterministic_uid=("task_id", "path")
+    ),
     TableSpec(
         "task_document",
         _A,
@@ -264,6 +309,7 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "commit_link",
         _A,
+        local_columns=frozenset({"message", "author"}),
         human_id_refs={"task_id": "task"},
         deterministic_uid=("project_id", "task_id", "sha"),
     ),
@@ -330,7 +376,7 @@ _SPECS: tuple[TableSpec, ...] = (
     # --- authored: модули ---------------------------------------------------
     TableSpec("module", _A, natural_keys=(_name("project_id", "module_id"),)),
     TableSpec("module_dependency", _A, deterministic_uid=("from_module", "to_module")),
-    TableSpec("module_code", _A),
+    TableSpec("module_code", _A, row_is_local=_machine_path),
     # --- authored: теги (составной PK, uid вычисляется при захвате) ---------
     TableSpec("tag", _A, natural_keys=(_name("project_id", "name"),)),
     TableSpec(
@@ -360,7 +406,7 @@ _SPECS: tuple[TableSpec, ...] = (
         "finding",
         _A,
         local_columns=frozenset({"run_id", "miss_streak", "payload"}),
-        row_is_local=_routine_finding,
+        row_is_local=_held_finding,
         natural_keys=(_name("project_id", "source", "fingerprint"),),
         human_id_refs={"promoted_task_id": "task"},
     ),
@@ -381,7 +427,12 @@ _SPECS: tuple[TableSpec, ...] = (
     ),
     # --- journal ------------------------------------------------------------
     TableSpec("revision", _J, local_columns=frozenset({"run_id"}), row_is_local=_local_revision),
-    TableSpec("activity_event", _J, local_columns=frozenset({"run_id"}), row_is_local=_local_event),
+    TableSpec(
+        "activity_event",
+        _J,
+        local_columns=frozenset({"run_id", "payload"}),
+        row_is_local=_local_event,
+    ),
     # --- derived ------------------------------------------------------------
     TableSpec("link", _D),
     TableSpec(
@@ -504,7 +555,6 @@ SHIPPED_COLUMNS: Mapping[str, frozenset[str]] = MappingProxyType(
                 "kind",
                 "scope_kind",
                 "scope_id",
-                "payload",
                 "summary",
             }
         ),
@@ -549,9 +599,7 @@ SHIPPED_COLUMNS: Mapping[str, frozenset[str]] = MappingProxyType(
         ),
         "approval_doc_revision_link": frozenset({"approval_id", "revision_id"}),
         "approval_task_link": frozenset({"approval_id", "task_ref"}),
-        "commit_link": frozenset(
-            {"project_id", "task_id", "sha", "short_sha", "message", "author", "ts"}
-        ),
+        "commit_link": frozenset({"project_id", "task_id", "sha", "short_sha", "ts"}),
         "dependency": frozenset({"from_task_id", "to_task_id", "kind", "note"}),
         "doc_comment": frozenset(
             {

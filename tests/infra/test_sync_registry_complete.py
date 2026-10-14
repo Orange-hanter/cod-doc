@@ -244,10 +244,12 @@ def test_natural_key_kinds() -> None:
 
 @pytest.mark.parametrize("table", ["document", *RESTRICTED_OWNER_FK])
 def test_restricted_rows_are_local(table: str) -> None:
-    assert row_class(table, {"sensitivity": "restricted"}) is SyncClass.LOCAL
-    assert row_class(table, {"sensitivity": "confidential"}) is SyncClass.AUTHORED
-    assert row_class(table, {"sensitivity": "internal"}) is SyncClass.AUTHORED
-    assert row_class(table, {"sensitivity": "public"}) is SyncClass.AUTHORED
+    assert row_class(table, {"sensitivity": "restricted", "path": "docs/a.md"}) is SyncClass.LOCAL
+    assert (
+        row_class(table, {"sensitivity": "confidential", "path": "docs/a.md"}) is SyncClass.AUTHORED
+    )
+    assert row_class(table, {"sensitivity": "internal", "path": "docs/a.md"}) is SyncClass.AUTHORED
+    assert row_class(table, {"sensitivity": "public", "path": "docs/a.md"}) is SyncClass.AUTHORED
 
 
 # --- fail-closed: неизвестное не уезжает (security review CLO-001) -----------
@@ -261,7 +263,7 @@ def test_restricted_rows_are_local(table: str) -> None:
 )
 def test_unknown_sensitivity_is_local(table: str, row: dict[str, object]) -> None:
     """Секция без разрешённого владельца и документ с непонятной меткой — local."""
-    assert row_class(table, row) is SyncClass.LOCAL
+    assert row_class(table, {**row, "path": "docs/a.md"}) is SyncClass.LOCAL
 
 
 @pytest.mark.parametrize(
@@ -336,6 +338,69 @@ def test_column_class_unknown_table_raises() -> None:
 def test_row_class_unknown_table_raises() -> None:
     with pytest.raises(KeyError):
         row_class("no_such_table", {})
+
+
+def test_registry_errors_do_not_echo_row_contents() -> None:
+    secret = "s3cr3t-token-/Users/someone/.ssh"
+    with pytest.raises(KeyError) as exc:
+        row_class("no_such_table", {"body": secret, "path": secret})
+    assert secret not in str(exc.value)
+    with pytest.raises(KeyError) as exc:
+        reg.column_class("no_such_table", "body")
+    assert secret not in str(exc.value)
+
+
+# --- машинно-приватные данные (security review CLO-001, второй раунд) --------
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/Users/dakh/Git/x.py", "~/notes.md", "C:\\Users\\x\\a.py", "c:/x/a.py", "\\\\host\\share\\a"],
+)
+@pytest.mark.parametrize(
+    ("table", "extra"),
+    [
+        ("affected_file", {}),
+        ("module_code", {}),
+        ("document", {"sensitivity": "internal"}),
+        ("finding", {"source": "ai_review"}),
+    ],
+)
+def test_absolute_paths_do_not_ship(table: str, extra: dict[str, object], path: str) -> None:
+    """Абсолютный путь описывает машину, а не проект: строка не уезжает."""
+    assert row_class(table, {**extra, "path": path}) is not SyncClass.AUTHORED
+
+
+@pytest.mark.parametrize(
+    ("table", "extra"),
+    [
+        ("affected_file", {}),
+        ("module_code", {}),
+        ("document", {"sensitivity": "internal"}),
+        ("finding", {"source": "ai_review"}),
+    ],
+)
+def test_relative_paths_ship(table: str, extra: dict[str, object]) -> None:
+    assert row_class(table, {**extra, "path": "cod_doc/infra/db.py"}) is SyncClass.AUTHORED
+
+
+def test_path_missing_is_local_where_required() -> None:
+    assert row_class("affected_file", {}) is SyncClass.LOCAL
+    assert row_class("module_code", {}) is SyncClass.LOCAL
+    # у находки путь необязателен: NULL — не абсолютный путь
+    assert row_class("finding", {"source": "ai_review", "path": None}) is SyncClass.AUTHORED
+
+
+@pytest.mark.parametrize(
+    ("table", "column"),
+    [
+        ("activity_event", "payload"),
+        ("commit_link", "message"),
+        ("commit_link", "author"),
+    ],
+)
+def test_machine_and_git_metadata_columns_are_local(table: str, column: str) -> None:
+    assert reg.column_class(table, column) is SyncClass.LOCAL
 
 
 def test_shipped_columns_match_schema() -> None:
