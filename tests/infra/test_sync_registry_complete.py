@@ -246,7 +246,123 @@ def test_natural_key_kinds() -> None:
 def test_restricted_rows_are_local(table: str) -> None:
     assert row_class(table, {"sensitivity": "restricted"}) is SyncClass.LOCAL
     assert row_class(table, {"sensitivity": "confidential"}) is SyncClass.AUTHORED
-    assert row_class(table, {"sensitivity": None}) is SyncClass.AUTHORED
+    assert row_class(table, {"sensitivity": "internal"}) is SyncClass.AUTHORED
+    assert row_class(table, {"sensitivity": "public"}) is SyncClass.AUTHORED
+
+
+# --- fail-closed: неизвестное не уезжает (security review CLO-001) -----------
+
+
+@pytest.mark.parametrize("table", ["document", *RESTRICTED_OWNER_FK])
+@pytest.mark.parametrize(
+    "row",
+    [{}, {"sensitivity": None}, {"sensitivity": "secret"}, {"sensitivity": "RESTRICTED"}],
+    ids=["no-key", "null", "unknown", "wrong-case"],
+)
+def test_unknown_sensitivity_is_local(table: str, row: dict[str, object]) -> None:
+    """Секция без разрешённого владельца и документ с непонятной меткой — local."""
+    assert row_class(table, row) is SyncClass.LOCAL
+
+
+@pytest.mark.parametrize(
+    ("table", "row"),
+    [
+        ("revision", {"entity_kind": "document", "sensitivity": "restricted"}),
+        ("revision", {"entity_kind": "section"}),
+        ("revision", {}),
+        ("activity_event", {"kind": "doc.updated", "scope_kind": "document"}),
+        ("activity_event", {"kind": "section.patched", "scope_kind": "section"}),
+        ("activity_event", {"kind": "doc.x", "scope_kind": "doc", "sensitivity": "restricted"}),
+        ("activity_event", {}),
+        ("finding", {}),
+        ("finding", {"source": None}),
+        ("link_suggestion", {}),
+        ("link_suggestion", {"state": "weird"}),
+    ],
+)
+def test_unknown_or_restricted_journal_and_row_values_do_not_ship(
+    table: str, row: dict[str, object]
+) -> None:
+    """Ревизия restricted-документа несёт его diff — не уезжает; пустая строка тоже."""
+    expected = SyncClass.DERIVED if table == "finding" else SyncClass.LOCAL
+    assert row_class(table, row) is expected
+
+
+def test_cleared_journal_rows_ship() -> None:
+    assert (
+        row_class("revision", {"entity_kind": "document", "sensitivity": "internal"})
+        is SyncClass.JOURNAL
+    )
+    assert row_class("revision", {"entity_kind": "task"}) is SyncClass.JOURNAL
+    assert (
+        row_class("activity_event", {"kind": "task.created", "scope_kind": "task"})
+        is SyncClass.JOURNAL
+    )
+
+
+@pytest.mark.parametrize(
+    ("table", "column"),
+    [
+        ("project", "root_path"),
+        ("project", "config_json"),
+        ("approval", "payload_json"),
+        ("finding", "payload"),
+        ("revision", "run_id"),
+        ("activity_event", "run_id"),
+        ("document", "row_id"),
+        ("document", "no_such_column"),
+        ("task", "brand_new_column"),
+        ("link_suggestion", "score"),
+        ("trace_call", "model"),
+    ],
+)
+def test_sensitive_and_unknown_columns_are_local(table: str, column: str) -> None:
+    assert reg.column_class(table, column) is not SyncClass.AUTHORED
+    assert reg.column_class(table, column) is not SyncClass.JOURNAL
+
+
+def test_column_class_known_columns() -> None:
+    assert reg.column_class("task", "title") is SyncClass.AUTHORED
+    assert reg.column_class("revision", "diff") is SyncClass.JOURNAL
+    assert reg.column_class("link_suggestion", "state") is SyncClass.AUTHORED
+    assert reg.column_class("document", "projection_hash") is SyncClass.LOCAL
+
+
+def test_column_class_unknown_table_raises() -> None:
+    with pytest.raises(KeyError):
+        reg.column_class("no_such_table", "x")
+
+
+def test_row_class_unknown_table_raises() -> None:
+    with pytest.raises(KeyError):
+        row_class("no_such_table", {})
+
+
+def test_shipped_columns_match_schema() -> None:
+    """Новая колонка authored/journal-таблицы роняет гейт: её класс выбирают явно.
+
+    В рантайме неизвестная колонка — local (``column_class``), так что без этой
+    записи она не уехала бы; гейт не даёт этому случиться молча.
+    """
+    tables = _all_model_tables()
+    problems = []
+    for name, spec in REGISTRY.items():
+        if spec.cls not in {SyncClass.AUTHORED, SyncClass.JOURNAL}:
+            continue
+        shipped = reg.SHIPPED_COLUMNS[name]
+        schema = {c.name for c in tables[name].columns} - {"row_id"}
+        problems += [
+            f"{name}.{c}: не классифицирована"
+            for c in sorted(schema - shipped - spec.local_columns)
+        ]
+        problems += [f"{name}.{c}: нет в схеме" for c in sorted(shipped - schema)]
+        problems += [
+            f"{name}.{c}: и shipped, и local" for c in sorted(shipped & spec.local_columns)
+        ]
+    assert set(reg.SHIPPED_COLUMNS) == {
+        n for n, s in REGISTRY.items() if s.cls in {SyncClass.AUTHORED, SyncClass.JOURNAL}
+    }
+    assert problems == []
 
 
 def test_restricted_owner_fk_points_to_document() -> None:

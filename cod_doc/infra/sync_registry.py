@@ -27,7 +27,7 @@
 3. **Restricted и потомки документа.** Строка секции не несёт ``sensitivity``.
    Для таблиц из ``RESTRICTED_OWNER_FK`` (``section``, ``doc_comment``,
    ``document_tag``) вызывающий кладёт в строку ``sensitivity`` документа-
-   владельца. RFC называет только секции; комментарий цитирует текст документа,
+   владельца; без неё строка не уезжает (решение 12). RFC называет только секции; комментарий цитирует текст документа,
    а тег и комментарий без документа на другой реплике висели бы на
    несуществующем uid — поэтому в списке все три таблицы, которые документ
    держит по ``ON DELETE CASCADE`` и которые authored.
@@ -64,6 +64,27 @@
     ``approval_task_link``/``approval_doc_revision_link`` в списке рёбер RFC
     нет — получают случайный uid.
 11. **``text_columns``** — ровно список RFC §3.7.
+12. **Fail-closed по строкам** (security review CLO-001). Документ уезжает
+    только с меткой из перечня ``public``/``internal``/``confidential``; нет
+    метки, ``NULL``, незнакомое значение — local. То же для потомков из
+    ``RESTRICTED_OWNER_FK``: если владельца не разрешили и ``sensitivity`` в
+    строку не положили, строка local. Журнал по RFC уезжает целиком, но
+    ``revision`` документа/секции несёт diff его текста, а ``activity_event`` со
+    ``scope_kind`` ``doc``/``document``/``section`` — payload о нём: такие строки
+    уезжают только с разрешённой ``sensitivity`` владельца в строке (тот же
+    приём). Пустой ``entity_kind``/``kind`` — local; ``finding`` без
+    ``source`` — derived; подсказка уезжает только с ``state`` из
+    ``accepted``/``rejected``.
+13. **Fail-closed по колонкам.** ``SHIPPED_COLUMNS`` перечисляет уезжающие
+    колонки authored- и journal-таблиц явно; ``column_class`` отдаёт ``LOCAL``
+    для колонки вне перечня, ``row_id`` и ``local_columns``, ``KeyError`` для
+    незнакомой таблицы. Гейт требует, чтобы каждая колонка схемы была либо в
+    перечне, либо в ``local_columns``: новая колонка получает класс явным
+    решением, а до него не уезжает. Сверх списка RFC local стали:
+    ``project.config_json`` (конфиг машины), ``approval.payload_json`` (тело
+    предлагаемой правки документа — мог бы унести текст restricted-документа),
+    ``finding.payload`` (сырые данные производителя), ``run_id`` у ``revision``
+    и ``activity_event`` (ссылка на local ``agent_run``).
 """
 
 from __future__ import annotations
@@ -115,32 +136,57 @@ class TableSpec:
 
 
 # --- построчные предикаты ---------------------------------------------------
+#
+# Fail-closed (решение 12): предикат выпускает строку, только если видит
+# значение, разрешающее её выпустить. Нет ключа, NULL, незнакомое значение —
+# строка не уезжает.
 
 _SENSITIVITY = "sensitivity"
 _ROUTINE_SOURCE = "routine"
-_PENDING_STATE = "pending"
+#: Метки, с которыми документ уезжает (Q-015): перечень, а не
+#: ``!= restricted`` — незнакомая метка не уезжает.
+_CLEARED_SENSITIVITY = frozenset(
+    {Sensitivity.PUBLIC, Sensitivity.INTERNAL, Sensitivity.CONFIDENTIAL}
+)
+#: Решение по подсказке (Q-017); ``pending`` и незнакомое — не решение.
+_DECIDED_STATES = frozenset({"accepted", "rejected"})
 _LOCAL_EVENT_PREFIX = "link."
 _LOCAL_EVENT_KINDS = frozenset({"routine.fired"})
+#: Журнальные записи о документе или секции несут их текст (diff ревизии,
+#: payload события) — уезжают только при разрешённой метке документа.
+_DOC_REVISION_KINDS = frozenset({EntityKind.DOCUMENT, EntityKind.SECTION})
+_DOC_EVENT_SCOPES = frozenset({"doc", "document", "section"})
 
 
-def _restricted(row: Mapping[str, object]) -> bool:
-    """Документ ``restricted`` и его потомки (решение 3 в докстринге модуля)."""
-    return row.get(_SENSITIVITY) == Sensitivity.RESTRICTED
+def _not_cleared(row: Mapping[str, object]) -> bool:
+    """Документ без разрешённой метки и его потомки (решения 3, 12)."""
+    value = row.get(_SENSITIVITY)
+    return not isinstance(value, str) or value not in _CLEARED_SENSITIVITY
 
 
 def _routine_finding(row: Mapping[str, object]) -> bool:
-    return row.get("source") == _ROUTINE_SOURCE
+    source = row.get("source")
+    return not isinstance(source, str) or not source or source == _ROUTINE_SOURCE
 
 
-def _pending_suggestion(row: Mapping[str, object]) -> bool:
-    return row.get("state") == _PENDING_STATE
+def _undecided_suggestion(row: Mapping[str, object]) -> bool:
+    return row.get("state") not in _DECIDED_STATES
+
+
+def _local_revision(row: Mapping[str, object]) -> bool:
+    kind = row.get("entity_kind")
+    if not isinstance(kind, str):
+        return True
+    return kind in _DOC_REVISION_KINDS and _not_cleared(row)
 
 
 def _local_event(row: Mapping[str, object]) -> bool:
     kind = row.get("kind")
     if not isinstance(kind, str):
-        return False
-    return kind.startswith(_LOCAL_EVENT_PREFIX) or kind in _LOCAL_EVENT_KINDS
+        return True
+    if kind.startswith(_LOCAL_EVENT_PREFIX) or kind in _LOCAL_EVENT_KINDS:
+        return True
+    return row.get("scope_kind") in _DOC_EVENT_SCOPES and _not_cleared(row)
 
 
 # --- сокращения для таблицы --------------------------------------------------
@@ -166,12 +212,12 @@ _TO_REF = {"to_ref": "to_kind"}
 
 _SPECS: tuple[TableSpec, ...] = (
     # --- authored: проект, документы, дерево ---------------------------------
-    TableSpec("project", _A, local_columns=frozenset({"root_path"})),
+    TableSpec("project", _A, local_columns=frozenset({"root_path", "config_json"})),
     TableSpec(
         "document",
         _A,
         local_columns=frozenset({"projection_hash", "content_sha256_head", "node_position"}),
-        row_is_local=_restricted,
+        row_is_local=_not_cleared,
         natural_keys=(_name("project_id", "doc_key"),),
         rank_column="node_rank",
     ),
@@ -179,12 +225,12 @@ _SPECS: tuple[TableSpec, ...] = (
         "section",
         _A,
         local_columns=_POSITION,
-        row_is_local=_restricted,
+        row_is_local=_not_cleared,
         natural_keys=(_name("document_id", "anchor"),),
         rank_column=_RANK,
         text_columns=frozenset({"body"}),
     ),
-    TableSpec("doc_comment", _A, row_is_local=_restricted),
+    TableSpec("doc_comment", _A, row_is_local=_not_cleared),
     TableSpec(
         "doc_node",
         _A,
@@ -290,7 +336,7 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "document_tag",
         _A,
-        row_is_local=_restricted,
+        row_is_local=_not_cleared,
         deterministic_uid=("document_id", "tag_id"),
     ),
     TableSpec("task_tag", _A, deterministic_uid=("task_id", "tag_id")),
@@ -301,7 +347,7 @@ _SPECS: tuple[TableSpec, ...] = (
         _A,
         natural_keys=(_name("project_id", "system", "external_id"),),
     ),
-    TableSpec("approval", _A, local_columns=frozenset({"run_id"})),
+    TableSpec("approval", _A, local_columns=frozenset({"run_id", "payload_json"})),
     TableSpec("approval_task_link", _A, human_id_refs={"task_ref": "task"}),
     TableSpec("approval_doc_revision_link", _A),
     TableSpec("routine", _A, natural_keys=(_name("project_id", "name"),)),
@@ -313,7 +359,7 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "finding",
         _A,
-        local_columns=frozenset({"run_id", "miss_streak"}),
+        local_columns=frozenset({"run_id", "miss_streak", "payload"}),
         row_is_local=_routine_finding,
         natural_keys=(_name("project_id", "source", "fingerprint"),),
         human_id_refs={"promoted_task_id": "task"},
@@ -334,15 +380,15 @@ _SPECS: tuple[TableSpec, ...] = (
         deterministic_uid=("question_row_id", "to_kind", "to_ref", "relation"),
     ),
     # --- journal ------------------------------------------------------------
-    TableSpec("revision", _J),
-    TableSpec("activity_event", _J, row_is_local=_local_event),
+    TableSpec("revision", _J, local_columns=frozenset({"run_id"}), row_is_local=_local_revision),
+    TableSpec("activity_event", _J, local_columns=frozenset({"run_id"}), row_is_local=_local_event),
     # --- derived ------------------------------------------------------------
     TableSpec("link", _D),
     TableSpec(
         "link_suggestion",
         _D,
         authored_columns=frozenset({"state", "from_section_id", "to_doc_key", "to_section_id"}),
-        row_is_local=_pending_suggestion,
+        row_is_local=_undecided_suggestion,
         logical_fks={"from_section_id": "section", "to_section_id": "section"},
         deterministic_uid=("from_section_id", "to_doc_key", "to_section_id"),
     ),
@@ -443,6 +489,309 @@ HUMAN_ID_KINDS: Mapping[str, str] = MappingProxyType(
 )
 
 
+#: Колонки authored- и journal-таблиц, которые уезжают (решение 13).
+#: Явный перечень, а не «все, кроме local_columns»: новая колонка не уезжает,
+#: пока её не впишут сюда, а гейт не даёт оставить её без решения.
+SHIPPED_COLUMNS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "activity_event": frozenset(
+            {
+                "id",
+                "project_id",
+                "ts",
+                "actor_kind",
+                "actor_id",
+                "kind",
+                "scope_kind",
+                "scope_id",
+                "payload",
+                "summary",
+            }
+        ),
+        "adr": frozenset(
+            {
+                "project_id",
+                "adr_id",
+                "title",
+                "status",
+                "decided_at",
+                "context",
+                "decision",
+                "alternatives",
+                "consequences",
+                "author",
+                "created",
+                "last_updated",
+                "topic_id",
+            }
+        ),
+        "adr_diagram": frozenset({"adr_id", "title", "mermaid"}),
+        "adr_relation": frozenset({"from_id", "to_id", "kind", "reason", "at"}),
+        "adr_supersedes": frozenset({"superseding_id", "superseded_id", "reason", "at"}),
+        "adr_task": frozenset({"adr_row_id", "task_id", "relation"}),
+        "adr_topic": frozenset(
+            {"project_id", "name", "includes", "excludes", "created", "last_updated"}
+        ),
+        "affected_file": frozenset({"task_id", "path", "kind"}),
+        "approval": frozenset(
+            {
+                "approval_id",
+                "project_id",
+                "approval_type",
+                "status",
+                "requested_by",
+                "requested_at",
+                "resolved_by",
+                "resolved_at",
+                "expires_at",
+                "decision_comment",
+            }
+        ),
+        "approval_doc_revision_link": frozenset({"approval_id", "revision_id"}),
+        "approval_task_link": frozenset({"approval_id", "task_ref"}),
+        "commit_link": frozenset(
+            {"project_id", "task_id", "sha", "short_sha", "message", "author", "ts"}
+        ),
+        "dependency": frozenset({"from_task_id", "to_task_id", "kind", "note"}),
+        "doc_comment": frozenset(
+            {
+                "document_id",
+                "section_id",
+                "anchor",
+                "quote",
+                "body",
+                "author",
+                "status",
+                "created",
+                "last_updated",
+            }
+        ),
+        "doc_node": frozenset(
+            {
+                "project_id",
+                "node_key",
+                "parent_id",
+                "title",
+                "intent",
+                "expected_types",
+                "min_docs",
+                "is_inbox",
+            }
+        ),
+        "document": frozenset(
+            {
+                "project_id",
+                "doc_key",
+                "path",
+                "type",
+                "status",
+                "source_of_truth",
+                "sensitivity",
+                "owner",
+                "title",
+                "preamble",
+                "frontmatter_json",
+                "frontmatter_raw",
+                "title_in_body",
+                "node_id",
+                "created",
+                "last_updated",
+                "last_reviewed",
+            }
+        ),
+        "document_tag": frozenset({"document_id", "tag_id"}),
+        "external_ref": frozenset(
+            {"project_id", "entity_kind", "entity_row_id", "system", "external_id", "url"}
+        ),
+        "finding": frozenset(
+            {
+                "project_id",
+                "finding_uid",
+                "source",
+                "source_ref",
+                "fingerprint",
+                "severity",
+                "kind",
+                "title",
+                "body",
+                "path",
+                "line",
+                "status",
+                "confidence",
+                "first_seen_at",
+                "last_seen_at",
+                "times_seen",
+                "promoted_task_id",
+            }
+        ),
+        "module": frozenset(
+            {"project_id", "module_id", "name", "status", "spec_doc_id", "plan_id"}
+        ),
+        "module_code": frozenset({"module_id", "kind", "path"}),
+        "module_dependency": frozenset({"from_module", "to_module", "reason"}),
+        "open_question": frozenset(
+            {
+                "project_id",
+                "question_id",
+                "title",
+                "question",
+                "context",
+                "status",
+                "priority",
+                "owner",
+                "resolution",
+                "resolved_by_adr",
+                "resolved_at",
+                "source_doc_key",
+                "author",
+                "created",
+                "last_updated",
+            }
+        ),
+        "open_question_link": frozenset(
+            {"question_row_id", "to_kind", "to_ref", "relation", "note"}
+        ),
+        "open_question_option": frozenset({"question_row_id", "title", "body", "chosen"}),
+        "plan": frozenset(
+            {
+                "project_id",
+                "scope",
+                "principle",
+                "id_prefix",
+                "module_id",
+                "parent_doc_id",
+                "completed_log_id",
+                "created",
+                "last_updated",
+            }
+        ),
+        "plan_section": frozenset({"plan_id", "letter", "title", "slug", "doc_id"}),
+        "project": frozenset({"slug", "title", "created", "updated"}),
+        "revision": frozenset(
+            {
+                "revision_id",
+                "project_id",
+                "entity_kind",
+                "entity_id",
+                "parent_revision_id",
+                "author",
+                "at",
+                "diff",
+                "reason",
+                "commit_sha",
+            }
+        ),
+        "routine": frozenset(
+            {
+                "project_id",
+                "name",
+                "enabled",
+                "trigger",
+                "cron",
+                "check_name",
+                "check_args",
+                "on_finding",
+                "concurrency",
+                "catch_up",
+                "created",
+                "last_updated",
+            }
+        ),
+        "scenario": frozenset(
+            {
+                "project_id",
+                "scenario_id",
+                "title",
+                "kind",
+                "group_key",
+                "document_id",
+                "doc_key",
+                "section_anchor",
+                "doc_content_hash",
+                "module_id",
+                "subject_ref",
+                "status",
+                "provenance",
+                "preconditions",
+                "expected",
+                "notes",
+                "author",
+                "created",
+                "last_updated",
+            }
+        ),
+        "scenario_link": frozenset({"scenario_row_id", "to_kind", "to_ref", "relation"}),
+        "scenario_step": frozenset({"scenario_row_id", "text"}),
+        "section": frozenset({"document_id", "anchor", "heading", "level", "body", "content_hash"}),
+        "story_acceptance": frozenset({"story_id", "criterion", "met"}),
+        "story_link": frozenset({"story_id", "to_kind", "to_ref", "relation"}),
+        "story_section": frozenset({"project_id", "key", "title"}),
+        "story_tag": frozenset({"story_id", "tag_id"}),
+        "structure_waiver": frozenset(
+            {
+                "project_id",
+                "finding_fingerprint",
+                "owner",
+                "reason",
+                "scope",
+                "expires_at",
+                "created",
+            }
+        ),
+        "tag": frozenset({"project_id", "name"}),
+        "task": frozenset(
+            {
+                "project_id",
+                "task_id",
+                "plan_id",
+                "section_id",
+                "title",
+                "status",
+                "type",
+                "priority",
+                "description",
+                "acceptance",
+                "created",
+                "last_updated",
+                "completed_at",
+                "completed_commit",
+                "blocked_reason",
+                "normalized_title",
+                "checked_out_by",
+                "checked_out_at",
+                "expected_status_at_checkout",
+            }
+        ),
+        "task_document": frozenset(
+            {
+                "task_id",
+                "key",
+                "title",
+                "body",
+                "format",
+                "current_revision_id",
+                "created",
+                "last_updated",
+            }
+        ),
+        "task_tag": frozenset({"task_id", "tag_id"}),
+        "user_story": frozenset(
+            {
+                "project_id",
+                "story_id",
+                "persona",
+                "narrative",
+                "status",
+                "priority",
+                "section_id",
+                "created",
+                "last_updated",
+            }
+        ),
+    }
+)
+
+
 def spec_for(table: str) -> TableSpec:
     """Запись реестра; ``KeyError`` — незаклассифицированная таблица, баг."""
     return REGISTRY[table]
@@ -454,6 +803,23 @@ def authored_tables() -> list[TableSpec]:
         (spec for spec in REGISTRY.values() if spec.cls is SyncClass.AUTHORED),
         key=lambda spec: spec.table,
     )
+
+
+def column_class(table: str, column: str) -> SyncClass:
+    """Класс колонки; неизвестная колонка — ``LOCAL`` (fail-closed, решение 13).
+
+    ``row_id`` — локальный PK, на другой реплике бессмыслен: всегда ``LOCAL``.
+    Незнакомая таблица — ``KeyError`` (как у ``spec_for``).
+    """
+    spec = spec_for(table)
+    if column in spec.local_columns:
+        return SyncClass.LOCAL
+    if column in spec.authored_columns:
+        return SyncClass.AUTHORED
+    shipped = SHIPPED_COLUMNS.get(table)
+    if shipped is None:
+        return spec.cls
+    return spec.cls if column in shipped else SyncClass.LOCAL
 
 
 def row_class(table: str, row: Mapping[str, object]) -> SyncClass:
