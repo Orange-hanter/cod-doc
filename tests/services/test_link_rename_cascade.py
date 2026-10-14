@@ -11,6 +11,7 @@ from cod_doc.infra.models import ProjectModel
 from cod_doc.services import doc_service as docs
 from cod_doc.services import link_service as links
 from cod_doc.services import revision_service as rev
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -70,6 +71,7 @@ def test_rename_cascade_updates_link_rows(engine_with_schema) -> None:  # type: 
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -105,6 +107,7 @@ def test_rename_cascade_rewrites_section_body_and_writes_revision(engine_with_sc
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -145,6 +148,7 @@ def test_rename_cascade_no_op_when_keys_match(engine_with_schema) -> None:  # ty
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -176,6 +180,7 @@ def test_rename_cascade_only_touches_matching_links(engine_with_schema) -> None:
         host = _add_doc(session, proj, doc_key="src")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -222,6 +227,7 @@ def test_rename_cascade_rewrites_markdown_relative_via_path_map(engine_with_sche
         )
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="overview",
             heading="Overview",
@@ -257,6 +263,7 @@ def test_rename_cascade_path_only_change_rewrites_markdown(engine_with_schema) -
         host = _add_doc_with_path(session, proj, doc_key="src", path="docs/src.md")
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -294,6 +301,7 @@ def test_rename_cascade_with_anchor_in_markdown_relative(engine_with_schema) -> 
         )
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -330,6 +338,7 @@ def test_rename_cascade_idempotent_on_repeat(engine_with_schema) -> None:  # typ
         )
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -373,6 +382,7 @@ def test_rename_cascade_skips_urls_and_anchors(engine_with_schema) -> None:  # t
         body = "External: [a](https://example.com/x.md). Anchor: [up](#x). Local: [x](x.md)."
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -413,6 +423,7 @@ def test_doc_service_rename_with_path_change_cascades_markdown(engine_with_schem
         )
         sec = docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=host,
             anchor="i",
             heading="I",
@@ -425,6 +436,7 @@ def test_doc_service_rename_with_path_change_cascades_markdown(engine_with_schem
 
         docs.rename(
             session,
+            project_id=only_project_id(session),
             document_id=target,
             new_doc_key="modules/M1/spec",
             new_path="modules/M1/spec.md",

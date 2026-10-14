@@ -459,6 +459,7 @@ def import_markdown(
     for i, section in enumerate(parsed.sections):
         docs.add_section(
             session,
+            project_id=project_id,
             document_id=doc.row_id,
             anchor=section.anchor,
             heading=section.heading,
@@ -563,7 +564,9 @@ def import_or_update_markdown(
     # patch each section body to create section revisions when needed.
     assert existing.row_id is not None
     parsed = parse_markdown(raw_markdown)
-    match = match_file_sections(docs.get_sections(session, existing.row_id), parsed.sections)
+    match = match_file_sections(
+        docs.get_sections(session, existing.row_id, project_id=project_id), parsed.sections
+    )
     if replace and not parsed.sections and match.orphans and not force:
         raise ReplaceWouldEmptyError(
             f"{doc_key}: the file parses to no sections at all, while the DB holds "
@@ -595,6 +598,7 @@ def import_or_update_markdown(
             try:
                 docs.patch_section(
                     session,
+                    project_id=project_id,
                     document_id=existing.row_id,
                     anchor=target,
                     new_body=section.body,
@@ -615,10 +619,11 @@ def import_or_update_markdown(
             continue
 
         try:
-            existing_sections = docs.get_sections(session, existing.row_id)
+            existing_sections = docs.get_sections(session, existing.row_id, project_id=project_id)
             position = len(existing_sections)
             docs.add_section(
                 session,
+                project_id=project_id,
                 document_id=existing.row_id,
                 anchor=section.anchor,
                 heading=section.heading,
@@ -647,6 +652,7 @@ def import_or_update_markdown(
         for anchor in orphans:
             docs.delete_section(
                 session,
+                project_id=project_id,
                 document_id=existing.row_id,
                 anchor=anchor,
                 author=author,

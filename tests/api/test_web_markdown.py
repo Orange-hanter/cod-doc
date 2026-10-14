@@ -26,6 +26,7 @@ from cod_doc.domain.entities import (
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service as docs
+from tests._scope import only_project_id
 
 # ── Renderer unit tests ──────────────────────────────────────────────────
 
@@ -353,6 +354,7 @@ def md_doc_client(tmp_path: Path, migrate_db):
         )
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="data-model",
             heading="Data Model",
@@ -363,6 +365,7 @@ def md_doc_client(tmp_path: Path, migrate_db):
         )
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="api",
             heading="API",
@@ -447,6 +450,7 @@ def test_doc_show_does_not_smuggle_raw_html(md_doc_client) -> None:
         doc = docs.get(session, proj.row_id, "modules/M1/spec")
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="evil",
             heading="Evil",

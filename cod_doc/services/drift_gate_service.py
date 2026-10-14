@@ -229,7 +229,7 @@ def link_findings(session: Session, docs: Sequence[Document]) -> list[GateFindin
     for doc in docs:
         if doc.row_id is None:
             continue
-        for section in doc_service.get_sections(session, doc.row_id):
+        for section in doc_service.get_sections(session, doc.row_id, project_id=doc.project_id):
             if section.row_id is None:
                 continue
             # resolve_section синхронизирует ссылки секции в памяти; вызывающий

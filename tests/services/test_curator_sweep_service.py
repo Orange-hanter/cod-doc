@@ -28,6 +28,7 @@ from cod_doc.services import (
     projection_service,
 )
 from cod_doc.services.curator_sync_service import SyncReport
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -95,6 +96,7 @@ def _change_db(session: Session, doc_key: str) -> None:
     assert doc is not None and doc.row_id is not None
     doc_service.add_section(
         session,
+        project_id=only_project_id(session),
         document_id=doc.row_id,
         anchor="db-only",
         heading="DB only",
@@ -130,7 +132,10 @@ def test_edited_in_place_is_imported_by_the_curator_and_the_file_is_untouched(pr
         assert _status(session, root, "alpha") is projection_service.DriftStatus.IN_SYNC
         alpha = doc_service.get(session, _pid(session), "alpha")
         assert alpha is not None and alpha.row_id is not None
-        assert "Правка на диске." in (doc_service.render_body(session, alpha.row_id) or "")
+        assert "Правка на диске." in (
+            doc_service.render_body(session, alpha.row_id, project_id=only_project_id(session))
+            or ""
+        )
         authors = set(
             session.execute(
                 select(ActivityEventModel.actor_id).where(

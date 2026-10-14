@@ -65,7 +65,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             task_row_id = _resolve_task_row_id(session, project_id, task_id)
-            doc = task_doc_service.get(session, task_row_id, key)
+            doc = task_doc_service.get(session, task_row_id, key, project_id=project_id)
         return _doc_to_dict(doc) if doc is not None else None
 
     @mcp.tool(name="task_doc_put")
@@ -122,7 +122,7 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             task_row_id = _resolve_task_row_id(session, project_id, task_id)
-            docs = task_doc_service.list_for_task(session, task_row_id)
+            docs = task_doc_service.list_for_task(session, task_row_id, project_id=project_id)
         return [
             {
                 "key": d.key,
@@ -146,7 +146,9 @@ def register(mcp: FastMCP) -> None:
         with transactional(sf) as session:
             project_id = require_project_id(session, project)
             task_row_id = _resolve_task_row_id(session, project_id, task_id)
-            return task_doc_service.revisions(session, task_row_id, key, limit=limit)
+            return task_doc_service.revisions(
+                session, task_row_id, key, project_id=project_id, limit=limit
+            )
 
     @mcp.tool(name="task_doc_revert")
     def task_doc_revert(

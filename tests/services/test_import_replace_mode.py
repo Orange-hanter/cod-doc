@@ -24,6 +24,7 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import ActivityEventModel
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import doc_service, import_service
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -114,7 +115,10 @@ def _import(
 
 
 def _anchors(session: Session, document_id: int) -> list[str]:
-    return [s.anchor for s in doc_service.get_sections(session, document_id)]
+    return [
+        s.anchor
+        for s in doc_service.get_sections(session, document_id, project_id=only_project_id(session))
+    ]
 
 
 def _file_anchors(raw: str) -> list[str]:
@@ -194,7 +198,9 @@ def test_replace_mode_brings_db_order_to_file_order(engine_with_schema) -> None:
 
         assert report.reordered is True
         assert _anchors(session, doc_id) == _file_anchors(TWO_SECTIONS_PLUS_NEW)
-        assert [s.position for s in doc_service.get_sections(session, doc_id)] == [0, 1, 2]
+        assert [
+            s.position for s in doc_service.get_sections(session, doc_id, project_id=project_id)
+        ] == [0, 1, 2]
 
 
 def test_replace_mode_makes_the_rendered_body_match_the_file(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
@@ -205,7 +211,7 @@ def test_replace_mode_makes_the_rendered_body_match_the_file(engine_with_schema)
         doc_id = first.document.row_id
         assert doc_id is not None
         _import(session, project_id, TWO_SECTIONS_PLUS_NEW, replace=True)
-        body = doc_service.render_body(session, doc_id)
+        body = doc_service.render_body(session, doc_id, project_id=project_id)
 
     assert body is not None
     assert "Stale map." not in body
@@ -267,6 +273,7 @@ def test_a_db_authored_section_is_not_an_orphan(engine_with_schema) -> None:  # 
         assert doc_id is not None
         doc_service.add_section(
             session,
+            project_id=project_id,
             document_id=doc_id,
             anchor="db-only",
             heading="DB only",
@@ -357,6 +364,7 @@ def _seed_scenario_doc(session: Session, project_id: int) -> tuple[int, int]:
     assert doc_id is not None
     section = doc_service.add_section(
         session,
+        project_id=project_id,
         document_id=doc_id,
         anchor=HAND_AUTHORED_ANCHOR,
         heading=HAND_AUTHORED_HEADING,
@@ -405,7 +413,9 @@ def test_replace_patches_a_hand_authored_anchor_in_place(engine_with_schema) -> 
         assert report.deleted_sections == []
         assert _anchors(session, doc_id) == ["executive-summary", HAND_AUTHORED_ANCHOR]
         survivor = next(
-            s for s in doc_service.get_sections(session, doc_id) if s.anchor == HAND_AUTHORED_ANCHOR
+            s
+            for s in doc_service.get_sections(session, doc_id, project_id=project_id)
+            if s.anchor == HAND_AUTHORED_ANCHOR
         )
         # Same row, so the revision chain and every `#scn-001` link still land.
         assert survivor.row_id == section_row_id
@@ -480,6 +490,7 @@ def test_reorder_leaves_a_section_the_file_cannot_carry_where_it_is(engine_with_
         assert doc_id is not None
         doc_service.add_section(
             session,
+            project_id=project_id,
             document_id=doc_id,
             anchor="db-only",
             heading="DB only",
@@ -489,12 +500,18 @@ def test_reorder_leaves_a_section_the_file_cannot_carry_where_it_is(engine_with_
             author="human:test",
         )
         _import(session, project_id, two_sections)
-        before = {s.anchor: s.position for s in doc_service.get_sections(session, doc_id)}
+        before = {
+            s.anchor: s.position
+            for s in doc_service.get_sections(session, doc_id, project_id=project_id)
+        }
         assert before == {"executive-summary": 0, "db-only": 1, "validation": 2}
 
         report = _import(session, project_id, reordered_file, replace=True)
 
-        after = {s.anchor: s.position for s in doc_service.get_sections(session, doc_id)}
+        after = {
+            s.anchor: s.position
+            for s in doc_service.get_sections(session, doc_id, project_id=project_id)
+        }
         assert report.reordered is True
         assert after["db-only"] == before["db-only"]
         assert after == {"validation": 0, "db-only": 1, "executive-summary": 2}

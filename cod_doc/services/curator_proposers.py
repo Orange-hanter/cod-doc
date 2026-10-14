@@ -400,7 +400,9 @@ def propose_node_placements(
         doc = doc_service.get(session, project_id, placement.doc_key)
         if doc is None or doc.row_id is None:
             continue
-        body = (doc_service.render_body(session, doc.row_id) or "")[:_BODY_CHARS]
+        body = (doc_service.render_body(session, doc.row_id, project_id=project_id) or "")[
+            :_BODY_CHARS
+        ]
         try:
             picked, why = _choose(
                 chooser,

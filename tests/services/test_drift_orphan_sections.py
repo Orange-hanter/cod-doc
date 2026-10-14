@@ -21,6 +21,7 @@ from cod_doc.services import doc_service as docs
 from cod_doc.services import import_service
 from cod_doc.services import projection_service as proj
 from cod_doc.services.projection_service._types import ORPHAN_SECTION_COUNT_KEY
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -150,6 +151,7 @@ def test_db_authored_deeper_section_is_not_an_orphan(engine_with_schema, tmp_pat
         doc_id = _accepted_document(session, root, file_text=TWO_SECTIONS, db_text=TWO_SECTIONS)
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc_id,
             anchor="db-only",
             heading="DB only",
@@ -255,6 +257,7 @@ def test_a_hand_authored_anchor_is_not_an_orphan(engine_with_schema, tmp_path: P
         doc_id = _accepted_document(session, root, file_text=SCENARIO_FILE, db_text=ONE_SECTION)
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc_id,
             anchor="scn-001",
             heading=SCENARIO_HEADING,
@@ -279,6 +282,7 @@ def test_a_heading_the_file_really_dropped_is_still_an_orphan(  # type: ignore[n
         doc_id = _accepted_document(session, root, file_text=SCENARIO_FILE, db_text=ONE_SECTION)
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc_id,
             anchor="scn-001",
             heading=SCENARIO_HEADING,
@@ -289,6 +293,7 @@ def test_a_heading_the_file_really_dropped_is_still_an_orphan(  # type: ignore[n
         )
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc_id,
             anchor="long-gone",
             heading="A heading nobody kept",

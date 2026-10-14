@@ -73,6 +73,7 @@ def _seed(engine: Engine) -> Seed:
         for position, anchor in enumerate(("alpha", "beta", "gamma")):
             sec = docs.add_section(
                 session,
+                project_id=only_project_id(session),
                 document_id=doc.row_id,
                 anchor=anchor,
                 heading=anchor.title(),
@@ -88,6 +89,7 @@ def _seed(engine: Engine) -> Seed:
         assert alpha_first is not None
         docs.patch_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="alpha",
             new_body="BODY-ALPHA",
@@ -96,6 +98,7 @@ def _seed(engine: Engine) -> Seed:
         # patch с тем же телом — no-op; настоящая правка ниже.
         docs.patch_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="alpha",
             new_body="BODY-ALPHA-V2",
@@ -193,6 +196,7 @@ def test_head_revision_id_after_patch(engine_with_schema) -> None:  # type: igno
     with transactional(factory) as session:
         docs.patch_section(
             session,
+            project_id=only_project_id(session),
             document_id=seed.doc_id,
             anchor="alpha",
             new_body="BODY-ALPHA-V3",

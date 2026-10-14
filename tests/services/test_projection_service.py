@@ -13,6 +13,7 @@ from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.models import ProjectModel
 from cod_doc.services import doc_service as docs
 from cod_doc.services import projection_service as proj
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -82,6 +83,7 @@ def test_render_markdown_includes_section_body(engine_with_schema) -> None:  # t
         doc_id = _make_doc(session, p)
         docs.add_section(
             session,
+            project_id=p,
             document_id=doc_id,
             anchor="intro",
             heading="Introduction",
@@ -175,6 +177,7 @@ def test_export_reruns_after_content_change(engine_with_schema, root_path: Path)
         # Modify the document; hash in DB should differ from projection_hash.
         docs.add_section(
             session,
+            project_id=p,
             document_id=doc_id,
             anchor="new-section",
             heading="New",
@@ -226,6 +229,7 @@ def test_detect_drift_stale_export_after_db_change(engine_with_schema, root_path
         # Mutate DB without re-exporting.
         docs.add_section(
             session,
+            project_id=p,
             document_id=doc_id,
             anchor="s",
             heading="S",
@@ -257,6 +261,7 @@ def test_detect_drift_edited_in_place(engine_with_schema, root_path: Path) -> No
 def _add_db_section(session: Session, doc_id: int) -> None:
     docs.add_section(
         session,
+        project_id=only_project_id(session),
         document_id=doc_id,
         anchor="s",
         heading="S",
@@ -527,6 +532,7 @@ def test_import_applies_body_changes_and_accepts_file_baseline(
         doc_id = _make_doc(session, p)
         docs.add_section(
             session,
+            project_id=p,
             document_id=doc_id,
             anchor="body",
             heading="Body",
@@ -554,7 +560,9 @@ def test_import_applies_body_changes_and_accepts_file_baseline(
         )
 
         assert imported is not None
-        section = next(s for s in docs.get_sections(session, doc_id) if s.anchor == "body")
+        section = next(
+            s for s in docs.get_sections(session, doc_id, project_id=p) if s.anchor == "body"
+        )
         assert section.body == "After."
         report = proj.detect_drift(session, doc_id, root_path=root_path)
         assert report.status is proj.DriftStatus.IN_SYNC

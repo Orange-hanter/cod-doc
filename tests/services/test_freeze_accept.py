@@ -86,6 +86,7 @@ def test_update_status_writes_revision(tmp_path: Path, engine_with_schema) -> No
         )
         doc_service.update_status(
             session,
+            project_id=project_id,
             document_id=doc.row_id,
             new_status=DocumentStatus.REVIEW,
             author="human:test",
@@ -109,6 +110,7 @@ def test_update_status_no_op_when_unchanged(tmp_path: Path, engine_with_schema) 
         )
         doc_service.update_status(
             session,
+            project_id=project_id,
             document_id=doc.row_id,
             new_status=DocumentStatus.ACTIVE,
             author="human:test",
@@ -126,7 +128,9 @@ def test_accept_promotes_draft_to_active(tmp_path: Path, engine_with_schema) -> 
     with transactional(factory) as session:
         project_id, _ = _seed(session, "p", tmp_path)
         doc = _make_doc(session, project_id, "to-accept", DocumentStatus.DRAFT)
-        promoted = doc_service.accept(session, document_id=doc.row_id, author="human:test")
+        promoted = doc_service.accept(
+            session, project_id=project_id, document_id=doc.row_id, author="human:test"
+        )
     assert promoted.status == DocumentStatus.ACTIVE
 
 

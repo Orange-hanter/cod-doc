@@ -93,6 +93,7 @@ def _link_retarget_apply(
         raise CuratorOpError(f"в {args['doc_key']}#{args['anchor']} нет ссылки на {args['old']!r}")
     doc_service.patch_section(
         session,
+        project_id=project_id,
         document_id=section.document_id,
         anchor=section.anchor,
         new_body=new_body,
