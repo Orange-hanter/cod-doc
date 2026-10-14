@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from starlette.requests import Request
 
-from cod_doc.api.web.fragments.tasks_status import _safe_back_url
+from cod_doc.api.web.errors import _safe_back_url
 
 _FALLBACK = "/p/demo"
 
