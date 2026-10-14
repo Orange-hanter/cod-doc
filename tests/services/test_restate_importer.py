@@ -594,7 +594,7 @@ def test_import_plan_race_recovers(tmp_path: Path, engine_with_schema, monkeypat
             if p.scope == "imported-legacy"
         ]
         assert len(plans) == 1
-        imported = task_service.list_for_plan(session, plans[0].row_id)
+        imported = task_service.list_for_plan(session, plans[0].row_id, project_id=project_id)
         assert [t.title for t in imported] == ["First"], "задача импорта легла в план"
 
 

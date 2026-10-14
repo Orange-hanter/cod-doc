@@ -75,6 +75,7 @@ def test_add_section_indexes_the_section_body(engine_with_schema: Engine) -> Non
         assert doc.row_id is not None
         doc_service.add_section(
             session,
+            project_id=pid,
             document_id=doc.row_id,
             anchor="drain",
             heading="Drain",
@@ -94,6 +95,7 @@ def test_patch_section_reindexes_the_new_body(engine_with_schema: Engine) -> Non
         assert doc.row_id is not None
         doc_service.add_section(
             session,
+            project_id=pid,
             document_id=doc.row_id,
             anchor="drain",
             heading="Drain",
@@ -104,6 +106,7 @@ def test_patch_section_reindexes_the_new_body(engine_with_schema: Engine) -> Non
         )
         doc_service.patch_section(
             session,
+            project_id=pid,
             document_id=doc.row_id,
             anchor="drain",
             new_body="Obsidian wording replaces it.",
@@ -121,6 +124,7 @@ def test_rename_moves_the_index_row_to_the_new_key(engine_with_schema: Engine) -
         assert doc.row_id is not None
         doc_service.rename(
             session,
+            project_id=pid,
             document_id=doc.row_id,
             new_doc_key="guides/new-name",
             author=AUTHOR,

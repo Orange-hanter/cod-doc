@@ -67,6 +67,7 @@ def doc_move_section(
                 sys.exit(1)
             move = doc_service.move_section(
                 session,
+                project_id=project_id,
                 document_id=d.row_id,
                 anchor=anchor,
                 position=position,

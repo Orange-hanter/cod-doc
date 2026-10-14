@@ -84,6 +84,7 @@ def _add_section(session: Session, project_id: int, doc_key: str, anchor: str) -
     assert doc is not None and doc.row_id is not None
     doc_service.add_section(
         session,
+        project_id=project_id,
         document_id=doc.row_id,
         anchor=anchor,
         heading=anchor.title(),

@@ -14,6 +14,7 @@ from cod_doc.domain.entities import Project as ProjectEntity
 from cod_doc.infra.db import make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from tests._alembic import run_alembic
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -326,6 +327,7 @@ def test_cli_link_backfill_syncs_sections(tmp_path: Path) -> None:
         )
         sec = doc_service.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc_a.row_id,
             anchor="ref",
             heading="Ref",
@@ -401,6 +403,7 @@ def test_cli_link_backfill_dry_run_does_not_persist(tmp_path: Path) -> None:
         )
         sec = doc_service.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="x",
             heading="X",

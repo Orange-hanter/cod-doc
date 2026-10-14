@@ -68,6 +68,7 @@ def test_update_changes_only_passed_fields_and_leaves_trace(engine_with_schema) 
 
         result = docs.update_metadata(
             s,
+            project_id=pid,
             document_id=doc.row_id,
             author="claude-test",
             title="New title",
@@ -104,7 +105,7 @@ def test_update_without_difference_writes_nothing(engine_with_schema) -> None:  
         before = len(rev.list_for_entity(s, EntityKind.DOCUMENT, doc.row_id, project_id=pid))
 
         result = docs.update_metadata(
-            s, document_id=doc.row_id, author="claude-test", title="Old title"
+            s, project_id=pid, document_id=doc.row_id, author="claude-test", title="Old title"
         )
 
         assert result.changes == {}
@@ -119,7 +120,9 @@ def test_clearing_owner_of_active_document_is_refused(engine_with_schema) -> Non
         doc = _new_doc(s, pid)
         assert doc.row_id is not None
         with pytest.raises(ValidationError) as exc:
-            docs.update_metadata(s, document_id=doc.row_id, author="claude-test", owner="")
+            docs.update_metadata(
+                s, project_id=pid, document_id=doc.row_id, author="claude-test", owner=""
+            )
         assert exc.value.code == "FM-002"
 
 
@@ -129,7 +132,9 @@ def test_clearing_owner_of_draft_document_sets_none(engine_with_schema) -> None:
         pid = _add_project(s)
         doc = _new_doc(s, pid, status=DocumentStatus.DRAFT)
         assert doc.row_id is not None
-        result = docs.update_metadata(s, document_id=doc.row_id, author="claude-test", owner="")
+        result = docs.update_metadata(
+            s, project_id=pid, document_id=doc.row_id, author="claude-test", owner=""
+        )
         assert result.document.owner is None
 
 
@@ -140,7 +145,9 @@ def test_empty_title_is_refused(engine_with_schema) -> None:  # type: ignore[no-
         doc = _new_doc(s, pid)
         assert doc.row_id is not None
         with pytest.raises(ValidationError) as exc:
-            docs.update_metadata(s, document_id=doc.row_id, author="claude-test", title="  ")
+            docs.update_metadata(
+                s, project_id=pid, document_id=doc.row_id, author="claude-test", title="  "
+            )
         assert exc.value.code == "DM-001"
 
 
@@ -224,3 +231,15 @@ def test_cli_doc_update_requires_a_field(tmp_path: Path) -> None:
     cfg = _cli_bootstrap(tmp_path)
     result = CliRunner().invoke(doc, ["update", "arch/overview", "-p", "du"], obj={"config": cfg})
     assert result.exit_code == 1
+
+
+def test_document_of_another_project_is_not_found(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """AFT-024: document_id — row_id на всю hub-БД; чужой проект его не правит."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as s:
+        pid = _add_project(s)
+        other = _add_project(s, slug="q", root="/tmp/q")
+        doc = _new_doc(s, pid)
+        assert doc.row_id is not None
+        with pytest.raises(docs.DocumentNotFoundError):
+            docs.update_metadata(s, project_id=other, document_id=doc.row_id, author="t", title="X")

@@ -70,9 +70,20 @@ def _to_domain(m: DocCommentModel) -> DocComment:
     )
 
 
+def _doc_in_project(session: Session, document_id: int, project_id: int) -> DocumentModel | None:
+    """Документ комментария, если он принадлежит проекту; иначе None (AFT-024).
+
+    ``document_id`` и ``comment_id`` — row_id на всю hub-БД: без сверки
+    проекта комментарии соседа читались, меняли статус и удалялись перебором id.
+    """
+    doc = session.get(DocumentModel, document_id)
+    return doc if doc is not None and doc.project_id == project_id else None
+
+
 def create(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     body: str,
     author: str = "human:web",
@@ -83,22 +94,26 @@ def create(
     """Persist a new comment. ``section_id`` None → document-level comment.
 
     If ``section_id`` is given but ``anchor`` isn't, the anchor is looked
-    up so the bubble can be rendered without an extra join later.
+    up so the bubble can be rendered without an extra join later. Секция
+    сверяется с документом всегда, а не только при пустом ``anchor``: иначе
+    комментарий сохранялся с секцией чужого документа, и ``apply_open_with_ai``
+    отправлял бы её тело в LLM (AFT-024).
     """
     if not body.strip():
         raise ValueError("Comment body is empty.")
 
-    doc = session.get(DocumentModel, document_id)
+    doc = _doc_in_project(session, document_id, project_id)
     if doc is None:
         raise ValueError(f"Document #{document_id} not found")
 
-    if section_id is not None and anchor is None:
+    if section_id is not None:
         sec = session.get(SectionModel, section_id)
         if sec is None:
             raise ValueError(f"Unknown section #{section_id}")
         if sec.document_id != document_id:
             raise ValueError(f"Section #{section_id} does not belong to document #{document_id}")
-        anchor = sec.anchor
+        if anchor is None:
+            anchor = sec.anchor
 
     now = datetime.now(UTC)
     model = DocCommentModel(
@@ -135,9 +150,15 @@ def list_for_document(
     session: Session,
     document_id: int,
     *,
+    project_id: int,
     include_resolved: bool = True,
 ) -> list[DocComment]:
-    """Return all comments for the doc, newest last (creation order)."""
+    """Return all comments for the doc, newest last (creation order).
+
+    У документа чужого проекта — пусто (AFT-024).
+    """
+    if _doc_in_project(session, document_id, project_id) is None:
+        return []
     stmt = select(DocCommentModel).where(DocCommentModel.document_id == document_id)
     if not include_resolved:
         stmt = stmt.where(DocCommentModel.status == "open")
@@ -145,56 +166,66 @@ def list_for_document(
     return [_to_domain(m) for m in session.execute(stmt).scalars()]
 
 
-def get(session: Session, comment_id: int) -> DocComment | None:
+def _comment_in_project(
+    session: Session, comment_id: int, project_id: int
+) -> DocCommentModel | None:
     m = session.get(DocCommentModel, comment_id)
+    if m is None or _doc_in_project(session, m.document_id, project_id) is None:
+        return None
+    return m
+
+
+def get(session: Session, comment_id: int, *, project_id: int) -> DocComment | None:
+    """Комментарий по row_id; комментарий чужого проекта — None (AFT-024)."""
+    m = _comment_in_project(session, comment_id, project_id)
     return _to_domain(m) if m else None
 
 
-def update_status(session: Session, *, comment_id: int, new_status: str) -> DocComment:
+def update_status(
+    session: Session, *, project_id: int, comment_id: int, new_status: str
+) -> DocComment:
+    """Сменить статус комментария; чужой проект — ``CommentNotFoundError`` (AFT-024)."""
     if new_status not in VALID_STATUS:
         raise ValueError(f"Unknown status: {new_status}")
-    m = session.get(DocCommentModel, comment_id)
+    m = _comment_in_project(session, comment_id, project_id)
     if m is None:
         raise CommentNotFoundError(f"comment #{comment_id}")
     m.status = new_status
     m.last_updated = datetime.now(UTC)
     session.flush()
 
-    doc = session.get(DocumentModel, m.document_id)
-    project_id = doc.project_id if doc is not None else None
-    if project_id is not None:
-        activity_service.emit_for_write(
-            session,
-            project_id,
-            "comment.status_changed",
-            "system",
-            scope_kind="comment",
-            scope_id=str(comment_id),
-            payload={"document_id": m.document_id, "new_status": new_status},
-            summary=f"Comment #{comment_id} status → {new_status}",
-        )
+    # Проект уже сверен в _comment_in_project — выводить его из документа заново не нужно.
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "comment.status_changed",
+        "system",
+        scope_kind="comment",
+        scope_id=str(comment_id),
+        payload={"document_id": m.document_id, "new_status": new_status},
+        summary=f"Comment #{comment_id} status → {new_status}",
+    )
     return _to_domain(m)
 
 
-def delete(session: Session, comment_id: int) -> bool:
-    m = session.get(DocCommentModel, comment_id)
+def delete(session: Session, comment_id: int, *, project_id: int) -> bool:
+    """Удалить комментарий; комментарий чужого проекта — False, как несуществующий."""
+    m = _comment_in_project(session, comment_id, project_id)
     if m is None:
         return False
-    doc = session.get(DocumentModel, m.document_id)
-    project_id = doc.project_id if doc is not None else None
+    document_id = m.document_id
     session.delete(m)
     session.flush()
-    if project_id is not None:
-        activity_service.emit_for_write(
-            session,
-            project_id,
-            "comment.deleted",
-            "system",
-            scope_kind="comment",
-            scope_id=str(comment_id),
-            payload={"document_id": m.document_id},
-            summary=f"Comment #{comment_id} deleted",
-        )
+    activity_service.emit_for_write(
+        session,
+        project_id,
+        "comment.deleted",
+        "system",
+        scope_kind="comment",
+        scope_id=str(comment_id),
+        payload={"document_id": document_id},
+        summary=f"Comment #{comment_id} deleted",
+    )
     return True
 
 
@@ -272,6 +303,7 @@ def _call_rewrite(body: str, comments: list[str], cfg: Config) -> str:
 def apply_open_with_ai(
     session: Session,
     *,
+    project_id: int,
     document_id: int,
     cfg: Config,
 ) -> DocRework:
@@ -287,13 +319,15 @@ def apply_open_with_ai(
     The DB session is read-only here — no comments or sections are
     mutated. Mutation happens at the route layer once the user accepts.
     """
-    doc = session.get(DocumentModel, document_id)
+    doc = _doc_in_project(session, document_id, project_id)
     if doc is None:
         raise ValueError(f"Document #{document_id} not found")
 
     open_comments = [
         c
-        for c in list_for_document(session, document_id, include_resolved=False)
+        for c in list_for_document(
+            session, document_id, project_id=project_id, include_resolved=False
+        )
         if c.status == "open"
     ]
 
@@ -308,7 +342,9 @@ def apply_open_with_ai(
         if section_id is None:
             continue
         sec = session.get(SectionModel, section_id)
-        if sec is None:
+        # Секция — только этого документа: section_id комментария из легаси-
+        # данных мог указывать в чужой документ, и его тело ушло бы в LLM.
+        if sec is None or sec.document_id != document_id:
             skipped.append(
                 {
                     "section_id": section_id,

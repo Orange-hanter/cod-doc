@@ -50,6 +50,7 @@ def doc_rename(
                 sys.exit(1)
             doc_service.rename(
                 session,
+                project_id=project_id,
                 document_id=d.row_id,
                 new_doc_key=new_key,
                 author=author,

@@ -52,7 +52,7 @@ def register(mcp: FastMCP) -> None:
                 return None
             result = doc_to_dict(d)
             if include_sections and d.row_id is not None:
-                sections = doc_service.get_sections(session, d.row_id)
+                sections = doc_service.get_sections(session, d.row_id, project_id=project_id)
                 heads = revision_service.heads_for_entities(
                     session,
                     EntityKind.SECTION,
@@ -175,6 +175,7 @@ def register(mcp: FastMCP) -> None:
                 raise ValueError(f"Document '{doc_key}' not found.")
             updated = doc_service.rename(
                 session,
+                project_id=project_id,
                 document_id=d.row_id,
                 new_doc_key=new_key,
                 author=author,
@@ -235,6 +236,7 @@ def register(mcp: FastMCP) -> None:
                     raise ValueError(f"Document '{doc_key}' not found.")
                 result = doc_service.update_metadata(
                     session,
+                    project_id=project_id,
                     document_id=d.row_id,
                     author=author,
                     title=title,
@@ -264,7 +266,7 @@ def register(mcp: FastMCP) -> None:
             d = doc_service.get(session, project_id, doc_key)
             if d is None or d.row_id is None:
                 raise ValueError(f"Document '{doc_key}' not found.")
-            body = doc_service.render_body(session, d.row_id)
+            body = doc_service.render_body(session, d.row_id, project_id=project_id)
         return body or ""
 
     @mcp.tool(name="doc_section_get")
@@ -334,7 +336,11 @@ def register(mcp: FastMCP) -> None:
                     raise ValueError(f"Document '{doc_key}' not found.")
 
                 section = next(
-                    (s for s in doc_service.get_sections(session, d.row_id) if s.anchor == anchor),
+                    (
+                        s
+                        for s in doc_service.get_sections(session, d.row_id, project_id=project_id)
+                        if s.anchor == anchor
+                    ),
                     None,
                 )
                 if section is None:
@@ -348,6 +354,7 @@ def register(mcp: FastMCP) -> None:
                 )
                 updated = doc_service.patch_section(
                     session,
+                    project_id=project_id,
                     document_id=d.row_id,
                     anchor=anchor,
                     new_body=body,
@@ -424,7 +431,7 @@ def register(mcp: FastMCP) -> None:
                 if d is None or d.row_id is None:
                     raise ValueError(f"Document '{doc_key}' not found.")
 
-                existing = doc_service.get_sections(session, d.row_id)
+                existing = doc_service.get_sections(session, d.row_id, project_id=project_id)
                 at = (
                     max((s.position for s in existing), default=-1) + 1
                     if position is None
@@ -442,6 +449,7 @@ def register(mcp: FastMCP) -> None:
                 else:
                     created = doc_service.add_section(
                         session,
+                        project_id=project_id,
                         document_id=d.row_id,
                         anchor=anchor,
                         heading=heading,
@@ -524,7 +532,7 @@ def register(mcp: FastMCP) -> None:
             if d is None or d.row_id is None:
                 raise ValueError(f"Document '{doc_key}' not found.")
 
-            before = doc_service.get_sections(session, d.row_id)
+            before = doc_service.get_sections(session, d.row_id, project_id=project_id)
             section = next((s for s in before if s.anchor == anchor), None)
             if section is None:
                 raise ValueError(f"Section '{anchor}' not found in document '{doc_key}'.")
@@ -536,6 +544,7 @@ def register(mcp: FastMCP) -> None:
             if not dry_run:
                 doc_service.delete_section(
                     session,
+                    project_id=project_id,
                     document_id=d.row_id,
                     anchor=anchor,
                     author=author,
@@ -596,6 +605,7 @@ def register(mcp: FastMCP) -> None:
                     raise ValueError(f"Document '{doc_key}' not found.")
                 move = doc_service.move_section(
                     session,
+                    project_id=project_id,
                     document_id=d.row_id,
                     anchor=anchor,
                     position=position,
@@ -699,7 +709,7 @@ def register(mcp: FastMCP) -> None:
             if d is None or d.row_id is None:
                 raise ValueError(f"Document '{doc_key}' not found.")
             updated = doc_service.accept(
-                session, document_id=d.row_id, author=author, reason=reason
+                session, project_id=project_id, document_id=d.row_id, author=author, reason=reason
             )
             activity_service.emit(
                 session,
@@ -798,6 +808,7 @@ def register(mcp: FastMCP) -> None:
             old_status = d.status.value
             updated = doc_service.update_status(
                 session,
+                project_id=project_id,
                 document_id=d.row_id,
                 new_status=new_status,
                 author=author,

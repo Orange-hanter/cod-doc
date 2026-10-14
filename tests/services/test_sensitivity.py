@@ -275,6 +275,7 @@ def _create_doc(
     )
     docs.add_section(
         session,
+        project_id=project_id,
         document_id=doc.row_id,
         anchor="i",
         heading="I",

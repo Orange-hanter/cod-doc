@@ -16,6 +16,7 @@ from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import comment_service as comments
 from cod_doc.services import doc_service as docs
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -62,6 +63,7 @@ def comments_client(tmp_path: Path, migrate_db):
         )
         docs.add_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="overview",
             heading="Overview",
@@ -101,7 +103,7 @@ def test_create_section_comment_via_post(comments_client) -> None:
         # Project + doc lookup via service.
         proj_id = ProjectRepository(s).get_by_slug("demo").row_id
         doc = docs.get(s, proj_id, "guides/intro")
-        rows = comments.list_for_document(s, doc.row_id)
+        rows = comments.list_for_document(s, doc.row_id, project_id=proj_id)
     e.dispose()
     assert len(rows) == 1
     assert rows[0].anchor == "overview"
@@ -123,7 +125,7 @@ def test_create_doc_level_comment(comments_client) -> None:
     with transactional(f) as s:
         proj_id = ProjectRepository(s).get_by_slug("demo").row_id
         doc = docs.get(s, proj_id, "guides/intro")
-        rows = comments.list_for_document(s, doc.row_id)
+        rows = comments.list_for_document(s, doc.row_id, project_id=proj_id)
     e.dispose()
     assert len(rows) == 1
     assert rows[0].section_id is None
@@ -143,7 +145,7 @@ def test_comment_resolve_and_reopen(comments_client) -> None:
     with transactional(f) as s:
         proj_id = ProjectRepository(s).get_by_slug("demo").row_id
         doc = docs.get(s, proj_id, "guides/intro")
-        cid = comments.list_for_document(s, doc.row_id)[0].row_id
+        cid = comments.list_for_document(s, doc.row_id, project_id=proj_id)[0].row_id
     e.dispose()
 
     r = client.post(
@@ -154,7 +156,7 @@ def test_comment_resolve_and_reopen(comments_client) -> None:
 
     e, f = _engine(db_path)
     with transactional(f) as s:
-        c = comments.get(s, cid)
+        c = comments.get(s, cid, project_id=proj_id)
     e.dispose()
     assert c.status == "resolved"
 
@@ -165,7 +167,7 @@ def test_comment_resolve_and_reopen(comments_client) -> None:
     assert r.status_code == 303
     e, f = _engine(db_path)
     with transactional(f) as s:
-        c = comments.get(s, cid)
+        c = comments.get(s, cid, project_id=proj_id)
     e.dispose()
     assert c.status == "open"
 
@@ -181,7 +183,7 @@ def test_comment_delete(comments_client) -> None:
     with transactional(f) as s:
         proj_id = ProjectRepository(s).get_by_slug("demo").row_id
         doc = docs.get(s, proj_id, "guides/intro")
-        cid = comments.list_for_document(s, doc.row_id)[0].row_id
+        cid = comments.list_for_document(s, doc.row_id, project_id=proj_id)[0].row_id
     e.dispose()
 
     r = client.post(
@@ -191,7 +193,7 @@ def test_comment_delete(comments_client) -> None:
     assert r.status_code == 303
     e, f = _engine(db_path)
     with transactional(f) as s:
-        assert comments.get(s, cid) is None
+        assert comments.get(s, cid, project_id=proj_id) is None
     e.dispose()
 
 
@@ -284,7 +286,7 @@ def test_apply_with_ai_commit_patches_sections_and_marks_applied(
     with transactional(f) as s:
         proj_id = ProjectRepository(s).get_by_slug("demo").row_id
         doc = docs.get(s, proj_id, "guides/intro")
-        cid = comments.list_for_document(s, doc.row_id)[0].row_id
+        cid = comments.list_for_document(s, doc.row_id, project_id=proj_id)[0].row_id
     e.dispose()
 
     r = client.post(
@@ -302,9 +304,9 @@ def test_apply_with_ai_commit_patches_sections_and_marks_applied(
     with transactional(f) as s:
         proj_id = ProjectRepository(s).get_by_slug("demo").row_id
         doc = docs.get(s, proj_id, "guides/intro")
-        secs = docs.get_sections(s, doc.row_id)
+        secs = docs.get_sections(s, doc.row_id, project_id=proj_id)
         sec_body = next(x.body for x in secs if x.anchor == "overview")
-        c = comments.get(s, cid)
+        c = comments.get(s, cid, project_id=proj_id)
     e.dispose()
     assert sec_body == "Brand-new body for overview."
     assert c.status == "applied"

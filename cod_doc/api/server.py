@@ -25,7 +25,7 @@ from cod_doc.api.routes import router as core_router
 from cod_doc.api.structure import router as structure_router
 from cod_doc.api.v1.routes import router as v1_router
 from cod_doc.api.web import fragments_router, pages_router
-from cod_doc.api.web.errors import WebError, set_flash_cookie
+from cod_doc.api.web.errors import WebError, _safe_back_url, set_flash_cookie
 from cod_doc.api.web.templates_env import STATIC_DIR, templates
 from cod_doc.api.webhooks import router as webhook_router
 from cod_doc.api.websocket import router as websocket_router
@@ -104,7 +104,7 @@ async def web_error_handler(request: Request, exc: WebError) -> Response:
             status_code=exc.status_code,
             headers={"HX-Reswap": "none"},
         )
-    referer = request.headers.get("Referer") or "/"
-    response = RedirectResponse(url=referer, status_code=303)
+    # DEBT-003: ``Referer`` задаёт клиент — чужой хост в ``Location`` не идёт.
+    response = RedirectResponse(url=_safe_back_url(request, "/"), status_code=303)
     set_flash_cookie(response, request, severity=exc.severity, message=exc.message)
     return response

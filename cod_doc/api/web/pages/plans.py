@@ -80,7 +80,7 @@ def plan_show(
     # block per section without re-querying. list_for_plan is already
     # ordered by (section_id, task_id) so iteration preserves layout.
     tasks_by_section: dict[int, list[dict[str, Any]]] = {}
-    for t in tasks.list_for_plan(session, plan_id):
+    for t in tasks.list_for_plan(session, plan_id, project_id=project_db_id):
         tasks_by_section.setdefault(t.section_id, []).append(
             {
                 "task_id": t.task_id,

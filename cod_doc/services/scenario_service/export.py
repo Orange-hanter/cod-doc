@@ -72,6 +72,7 @@ def _sync_sections(
         if current is None:
             doc_service.add_section(
                 session,
+                project_id=project_id,
                 document_id=document_id,
                 anchor=section.anchor,
                 heading=section.heading,
@@ -86,6 +87,7 @@ def _sync_sections(
         # of an untouched group writes no revisions.
         doc_service.patch_section(
             session,
+            project_id=project_id,
             document_id=document_id,
             anchor=section.anchor,
             new_body=section.body,

@@ -13,6 +13,7 @@ from cod_doc.config import Config
 from cod_doc.infra.db import db_for_entry, transactional
 from cod_doc.infra.repositories import ProjectRepository
 from cod_doc.services import approval_service, curator_ops, doc_service
+from tests._scope import only_project_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -76,7 +77,11 @@ def _setup_body(factory: sessionmaker) -> str:
         doc = doc_service.get(session, _pid(session), "guide")
         assert doc is not None and doc.row_id is not None
         return next(
-            s.body for s in doc_service.get_sections(session, doc.row_id) if s.anchor == "setup"
+            s.body
+            for s in doc_service.get_sections(
+                session, doc.row_id, project_id=only_project_id(session)
+            )
+            if s.anchor == "setup"
         )
 
 
@@ -119,6 +124,7 @@ def test_approve_of_a_stale_patch_says_so_and_writes_nothing(factory: sessionmak
         assert doc is not None and doc.row_id is not None
         doc_service.patch_section(
             session,
+            project_id=only_project_id(session),
             document_id=doc.row_id,
             anchor="setup",
             new_body="Человек переписал секцию. [гайд](old.md)\n",
