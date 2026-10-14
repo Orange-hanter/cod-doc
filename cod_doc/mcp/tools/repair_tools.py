@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from cod_doc.infra.db import transactional
 from cod_doc.mcp.tools._db import require_project_id, session_factory
-from cod_doc.services import repair_service
+from cod_doc.services import hash_service, repair_service
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -87,3 +87,43 @@ def register(mcp: FastMCP) -> None:
                 author="mcp:project_repair",
             )
         return result.as_dict()
+
+    @mcp.tool(name="master_hash_update")
+    def master_hash_update(
+        project: str,
+        author: str = "mcp",
+        dry_run: bool = True,
+    ) -> dict[str, Any]:
+        """DEBT-009: пересчитать реестр хэшей ``MASTER.md`` (зеркало ``cod-doc hash update``).
+
+        Если ``MASTER.md`` — документ проекта, пересчёт пишет в БД (секции —
+        с ревизиями) и файл не трогает; ``doc import MASTER.md`` после него
+        не нужен и вреден. Если не заведён — переписывается файл, как раньше.
+        Касается только ссылок с ``🔑 sha:``; ссылка без хэша не меняется.
+
+        ``dry_run=True`` по умолчанию — возвращает находки ``STALE``/``BROKEN``,
+        которые пересчёт бы исправил, ничего не записывая.
+
+        Returns: ``{"target": "db"|"file", "stale": [...], "updated": n,
+        "warnings": [...], "dry_run": bool}``.
+        """
+        sf, entry = session_factory(project)
+        root = Path(entry.path).expanduser().resolve()
+        master = root / "MASTER.md"
+        with transactional(sf, commit=not dry_run) as session:
+            project_id = require_project_id(session, project)
+            in_db = hash_service.registry_in_db(session, project_id, master, root)
+            stale = hash_service.stale_refs(session, project_id, master, root)
+            updated = 0
+            warnings: list[str] = []
+            if not dry_run:
+                updated, warnings = hash_service.update_master_hashes(
+                    session, project_id, master, author=author, root_path=root
+                )
+        return {
+            "target": "db" if in_db else "file",
+            "stale": stale,
+            "updated": updated,
+            "warnings": warnings,
+            "dry_run": dry_run,
+        }

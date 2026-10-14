@@ -48,7 +48,9 @@ def hash_update(master_path: str, project: str | None, author: str) -> None:
     """Обновить все хэши в MASTER.md.
 
     Пересчёт — запись в проект, поэтому он оставляет activity-событие
-    ``master.hashes_updated`` (ACU-002). Для события нужен проект: без
+    ``master.hashes_updated`` (ACU-002). Если ``MASTER.md`` — документ
+    проекта, реестр пересчитывается в БД, а файл не трогается (DEBT-009):
+    ``doc import MASTER.md`` после этого не нужен. Для события нужен проект: без
     ``--project`` он ищется по пути файла среди зарегистрированных. Файл вне
     зарегистрированных проектов пересчитывается как раньше, но без следа —
     об этом команда предупреждает.
@@ -83,7 +85,7 @@ def hash_update(master_path: str, project: str | None, author: str) -> None:
                     console.print(f"[red]Проект '{entry.name}' не заведён в БД.[/red]")
                     sys.exit(1)
                 n, warns = hash_service.update_master_hashes(
-                    session, row.row_id, path, author=author
+                    session, row.row_id, path, author=author, root_path=entry.root
                 )
         finally:
             engine.dispose()

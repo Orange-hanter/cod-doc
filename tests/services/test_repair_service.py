@@ -212,23 +212,42 @@ def test_apply_rewrites_the_stale_registry(project) -> None:
         result = _apply(session, root)
 
     assert result.ok, result.errors
-    assert _WRONG_HASH not in (root / "MASTER.md").read_text(encoding="utf-8")
-
+    # DEBT-009: реестр — документ БД; пересчёт пишет туда, файл-проекция не трогается.
     with transactional(factory, commit=False) as session:
+        master = doc_service.get_by_path(session, _project_id(session), "MASTER.md")
+        assert master is not None
+        assert master.row_id is not None
+        body = doc_service.render_body(session, master.row_id) or ""
         plan = _diagnose(session, root)
+    assert _WRONG_HASH not in body
+    assert _WRONG_HASH in (root / "MASTER.md").read_text(encoding="utf-8")
     assert plan.curable[repair_service.KIND_HASH_UPDATE] == 0
 
 
-def test_master_is_imported_only_after_the_registry_is_rewritten(project) -> None:
-    """Протокол drift.md: hash update → doc import MASTER.md, не наоборот."""
+def test_registry_rewrite_plans_no_master_import(project) -> None:
+    """DEBT-009: пересчёт пишет в БД — импорт файла после него вернул бы старые хэши."""
     factory, root = project
     _seed_stale_registry(root)
 
     with transactional(factory, commit=False) as session:
         kinds = [(a.kind, a.ref) for a in _diagnose(session, root).actions]
 
-    assert kinds.index((repair_service.KIND_HASH_UPDATE, "MASTER.md")) < kinds.index(
-        (repair_service.KIND_DOC_IMPORT, "MASTER.md")
+    assert (repair_service.KIND_HASH_UPDATE, "MASTER.md") in kinds
+    assert (repair_service.KIND_DOC_IMPORT, "MASTER.md") not in kinds
+
+
+def test_hand_edited_master_is_imported_before_the_registry_is_rewritten(project) -> None:
+    """Правка MASTER.md на диске едет в БД ДО пересчёта, иначе затёрла бы его результат."""
+    factory, root = project
+    _seed_stale_registry(root)
+    with (root / "MASTER.md").open("a", encoding="utf-8") as fh:
+        fh.write("\nПравка реестра мимо БД.\n")
+
+    with transactional(factory, commit=False) as session:
+        kinds = [(a.kind, a.ref) for a in _diagnose(session, root).actions]
+
+    assert kinds.index((repair_service.KIND_DOC_IMPORT, "MASTER.md")) < kinds.index(
+        (repair_service.KIND_HASH_UPDATE, "MASTER.md")
     )
 
 
@@ -377,7 +396,7 @@ def test_default_skip_kinds_keeps_the_old_behaviour(project) -> None:
 
 
 def test_skipping_hash_update_drops_the_import_that_served_it(project) -> None:
-    """Третий шаг протокола существует только ради результата второго."""
+    """Выключенный пересчёт остаётся в плане пропущенным и не тянет импорт MASTER.md."""
     factory, root = project
     _seed_stale_registry(root)
 
@@ -584,10 +603,8 @@ def test_one_broken_repairer_does_not_stop_the_rest(
 
     by_kind = {(a.kind, a.ref): a for a in result.actions}
     assert by_kind[(repair_service.KIND_HASH_UPDATE, "MASTER.md")].error
-    # Импорт правленого beta.md идёт до сломанной чинилки, импорт MASTER.md —
-    # после неё. Обрыва нет ни там, ни там.
+    # Импорт правленого beta.md идёт до сломанной чинилки и не обрывается ею.
     assert by_kind[(repair_service.KIND_DOC_IMPORT, "beta.md")].applied is True
-    assert by_kind[(repair_service.KIND_DOC_IMPORT, "MASTER.md")].applied is True
 
 
 def _repaired_events(factory: sessionmaker) -> int:

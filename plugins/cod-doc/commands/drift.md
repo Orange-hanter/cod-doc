@@ -33,9 +33,9 @@ argument-hint: "[путь к .md | --all] [--fix]"
 ```
 
 Если ссылка на файл в корневом `MASTER.md` несёт `🔑 sha:` — после импорта
-ещё `<cod-doc> hash update`, а затем `doc import MASTER.md` (`hash update`
-пишет файл, а не БД). Ссылка без хэша (`📁 /path | 🗃️ doc:key`) этого
-шага не требует.
+ещё `<cod-doc> hash update` (MCP `master_hash_update`): реестр в БД
+пересчитывается там же, `doc import MASTER.md` после него не нужен. Ссылка без
+хэша (`📁 /path | 🗃️ doc:key`) этого шага не требует.
 
 `doc export` на диск не запускай — он под guard'ом до byte-identical
 round-trip.

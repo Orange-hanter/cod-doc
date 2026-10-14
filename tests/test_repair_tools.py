@@ -182,8 +182,13 @@ def test_explicit_dry_run_false_repairs(project) -> None:  # type: ignore[no-unt
     assert payload["ok"] is True, payload["errors"]
     assert payload["dry_run"] is False
     assert payload["applied"] >= 1
-    assert _WRONG_HASH not in (root / "MASTER.md").read_text(encoding="utf-8")
+    # DEBT-009: MASTER.md — документ проекта, реестр переписан в БД, файл не тронут.
+    assert _WRONG_HASH in (root / "MASTER.md").read_text(encoding="utf-8")
     with transactional(factory, commit=False) as session:
+        master = doc_service.get_by_path(session, _project_id(session), "MASTER.md")
+        assert master is not None
+        assert master.row_id is not None
+        assert _WRONG_HASH not in (doc_service.render_body(session, master.row_id) or "")
         assert _alpha_drift(session, root) is DriftStatus.IN_SYNC
 
 

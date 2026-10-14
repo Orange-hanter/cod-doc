@@ -226,13 +226,14 @@ def _check_stale_refs(session: Session, project_id: int, **_: Any) -> dict[str, 
     куратора (``curator_service.next``). Здесь остались резолв корня проекта
     и форма ответа routine.
     """
-    from cod_doc.core.hash_calc import check_stale_refs
+    from cod_doc.services import hash_service
 
     root = _get_project_root(session, project_id)
     if root is None:
         return {"findings": [], "note": "project not found"}
 
-    findings = check_stale_refs(root / "MASTER.md", repo_root=root)
+    # DEBT-009: реестр из БД, если MASTER.md — документ проекта.
+    findings = hash_service.stale_refs(session, project_id, root / "MASTER.md", root)
     return {"findings": findings, "findings_count": len(findings)}
 
 

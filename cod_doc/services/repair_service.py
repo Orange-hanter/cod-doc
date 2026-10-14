@@ -38,9 +38,10 @@ hash ``STALE``       реестр ``MASTER.md`` разошёлся с файло
 ``RepairPlan.not_collected``.
 
 Порядок исполнения задан протоколом ``plugins/cod-doc/commands/drift.md`` и
-менять его нельзя: если импортированный файл входит в реестр хэшей корневого
-``MASTER.md``, после импорта идёт ``update_hashes``, и только затем
-``doc import MASTER.md`` — иначе реестр разъедется с файлами.
+менять его нельзя: сначала импорт правленых файлов (и самого ``MASTER.md``,
+если его правили руками), потом пересчёт реестра. С DEBT-009 пересчёт пишет
+документ ``MASTER.md`` прямо в БД, и импорт файла после него вернул бы туда
+старые хэши — поэтому третьего шага «``doc import MASTER.md``» больше нет.
 
 .. warning::
 
@@ -266,7 +267,7 @@ def _relative(path: Path, root: Path) -> str:
         return str(path)
 
 
-def _registry_paths(master_path: Path) -> set[str]:
+def _registry_paths(session: Session, ctx: _Context) -> set[str]:
     """Пути из реестра гибридных ссылок ``MASTER.md``.
 
     Принадлежность реестру решает, нужен ли после импорта ``update_hashes``:
@@ -274,9 +275,7 @@ def _registry_paths(master_path: Path) -> set[str]:
     без хэша (DEBT-001) реестру хэшей не принадлежит: пересчитывать в ней
     нечего.
     """
-    if not master_path.exists():
-        return set()
-    content = master_path.read_text(encoding="utf-8")
+    content = hash_service.registry_text(session, ctx.project_id, ctx.master_path, ctx.root_path)
     return {
         m.group("path").lstrip("/")
         for m in LINK_PATTERN.finditer(content)
@@ -316,8 +315,8 @@ def _stale_hash_detail(entries: Sequence[dict[str, str]]) -> str:
 def _master_is_document(session: Session, project_id: int, master_rel: str) -> bool:
     """Зарегистрирован ли сам ``MASTER.md`` документом проекта.
 
-    Если нет — после ``update_hashes`` импортировать нечего, и планировать
-    третий шаг протокола не нужно.
+    Если нет — правку файла импортировать некуда: такой реестр живёт только
+    в файле, и пересчёт пишет его туда же.
     """
     return any(doc.path == master_rel for doc in doc_service.list_for_project(session, project_id))
 
@@ -331,8 +330,13 @@ def _build_actions(
     issues: list[dict[str, Any]] = card["drift"]["issues"]
     edited = [i for i in issues if i["status"] == DriftStatus.EDITED_IN_PLACE.value]
     stale_refs = [e for e in card["master"] if e["status"] == _MASTER_STALE]
-    registry = _registry_paths(ctx.master_path)
+    registry = _registry_paths(session, ctx)
 
+    # Шаг 1: правленые на диске файлы — в БД. Сюда входит и сам MASTER.md,
+    # если его правили руками: импорт обязан пройти ДО пересчёта, потому что
+    # пересчёт (DEBT-009) пишет реестр в БД, а импорт файла после него вернул
+    # бы туда старые хэши.
+    master_edited = any(i["path"] == ctx.master_rel for i in edited)
     actions = [
         RepairAction(
             kind=KIND_DOC_IMPORT,
@@ -342,8 +346,18 @@ def _build_actions(
         for issue in edited
         if issue["path"] != ctx.master_rel
     ]
+    if master_edited and _master_is_document(session, ctx.project_id, ctx.master_rel):
+        actions.append(
+            RepairAction(
+                kind=KIND_DOC_IMPORT,
+                ref=ctx.master_rel,
+                detail="MASTER.md правлен на диске — импорт до пересчёта реестра",
+            )
+        )
 
-    # Шаг 2 протокола: реестр пересчитывается ПОСЛЕ импорта правленых файлов.
+    # Шаг 2: реестр пересчитывается ПОСЛЕ импорта правленых файлов — их sha
+    # поменялся. Документ MASTER.md пересчёт пишет прямо в БД, импортировать
+    # после него нечего.
     touches_registry = bool(stale_refs) or any(i["path"] in registry for i in edited)
     if touches_registry:
         actions.append(
@@ -351,22 +365,6 @@ def _build_actions(
                 kind=KIND_HASH_UPDATE,
                 ref=ctx.master_rel,
                 detail=_stale_hash_detail(stale_refs),
-            )
-        )
-
-    # Шаг 3: и только теперь сам MASTER.md едет в БД — иначе в неё попадёт
-    # реестр, который вот-вот перепишут. Если пересчёт выключен, то и везти
-    # в БД нечего: третий шаг существует только ради результата второго.
-    master_edited = any(i["path"] == ctx.master_rel for i in edited)
-    rewrite_planned = touches_registry and KIND_HASH_UPDATE not in ctx.skip_kinds
-    if (rewrite_planned or master_edited) and _master_is_document(
-        session, ctx.project_id, ctx.master_rel
-    ):
-        actions.append(
-            RepairAction(
-                kind=KIND_DOC_IMPORT,
-                ref=ctx.master_rel,
-                detail="реестр переписан — правка едет в БД",
             )
         )
 
@@ -561,7 +559,7 @@ def _run_hash_update(session: Session, action: RepairAction, ctx: _Context) -> N
     # Реестр живёт на диске, но запись в него — мутация проекта: событие
     # `master.hashes_updated` пишет сервис (ACU-002).
     updated, warnings = hash_service.update_master_hashes(
-        session, ctx.project_id, ctx.master_path, author=ctx.author
+        session, ctx.project_id, ctx.master_path, author=ctx.author, root_path=ctx.root_path
     )
     action.applied = True
     action.detail = f"{action.detail}; переписано записей: {updated}"
