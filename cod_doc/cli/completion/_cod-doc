@@ -1245,6 +1245,7 @@ _cod-doc() {
         (section)             _cod_doc_doc_section && ret=0 ;;
         (show)                _cod_doc_doc_show && ret=0 ;;
         (tree)                _cod_doc_doc_tree && ret=0 ;;
+        (update)              _cod_doc_doc_update && ret=0 ;;
         (*)                   _default && ret=0 ;;
       esac
       ;;
@@ -1271,6 +1272,7 @@ _cod-doc() {
     'section:Тела секций документа по якорям — без чтения тела всего документа.'
     'show:Show document metadata (and optionally sections).'
     'tree:Дерево документации; разделы, раскладка документов, Инбокс.'
+    'update:Change title, type, owner, sensitivity or preamble of DOC_KEY.'
   )
   _describe -t cod-doc-doc-commands 'cod-doc doc command' cmds
 }
@@ -1669,6 +1671,26 @@ _cod-doc() {
     '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_update] )) || _cod_doc_doc_update() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--title)--title=:title' \
+    '(--type)--type=:doc-type:(module-spec module-subdoc execution-plan task-section execution-log standard architecture vision guide user-story decision open-question redirect design audit audit-report journal plan analysis research capability scenario-set index rfc)' \
+    '(--owner)--owner=[New owner; '\'''\'' clears it]:owner' \
+    '(--sensitivity)--sensitivity=:sensitivity:(public internal confidential restricted)' \
+    '(--preamble)--preamble=[New preamble text]:preamble' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--dry-run)--dry-run[Validate and show what would change without writing anything]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' && ret=0
   return ret
 }
 

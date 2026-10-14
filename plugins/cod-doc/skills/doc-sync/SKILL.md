@@ -24,6 +24,7 @@ description: |
 | Действие | MCP | CLI |
 |---|---|---|
 | Новый документ | `doc_create(project, doc_key, type, status, title, preamble=…)` | `cod-doc doc create --key … --type … --title … -p <slug>` |
+| Title, type, owner, sensitivity, preamble | `doc_update(project, doc_key, title=…, type=…, owner=…, sensitivity=…, preamble=…)` | `cod-doc doc update <doc_key> --title … -p <slug>` |
 | Добавить секцию | `doc_add_section(project, doc_key, anchor, heading, body, level, position)` | `cod-doc doc add-section <doc_key> <anchor> --heading … --body-file - -p <slug>` |
 | Прочитать секцию (+ head-ревизия) | `doc_section_get(project, doc_key, anchors=[…])` | `cod-doc doc section <doc_key> <anchor> -p <slug>` |
 | Заменить тело секции | `doc_patch_section(project, doc_key, anchor, body, expected_parent_revision_id=…)` | `cod-doc doc patch <doc_key> <anchor> --body-file - --expected-revision … -p <slug>` |

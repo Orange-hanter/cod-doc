@@ -197,6 +197,61 @@ def register(mcp: FastMCP) -> None:
             )
         return doc_to_dict(updated)
 
+    @mcp.tool(name="doc_update")
+    def doc_update(
+        project: str,
+        doc_key: str,
+        title: str | None = None,
+        type: str | None = None,
+        owner: str | None = None,
+        sensitivity: str | None = None,
+        preamble: str | None = None,
+        author: str = "mcp",
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """DEBT-004: change a document's metadata in the DB — no markdown, no doc import.
+
+        Partial update: omitted (None) fields stay as they are; ``owner=""``
+        clears the owner. Status is changed by ``doc_accept``, not here.
+        type: same values as ``doc_create``. sensitivity: public | internal |
+        confidential | restricted.
+
+        Returns the document plus ``changes`` ({field: {from, to}}); an empty
+        ``changes`` means nothing differed and nothing was written.
+        ``dry_run=True`` validates and reports ``changes`` without writing.
+        """
+        from cod_doc.domain.entities import DocumentType, Sensitivity
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_service
+        from cod_doc.services.validation import ValidationError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf, commit=not dry_run) as session:
+                project_id = require_project_id(session, project)
+                d = doc_service.get(session, project_id, doc_key)
+                if d is None or d.row_id is None:
+                    raise ValueError(f"Document '{doc_key}' not found.")
+                result = doc_service.update_metadata(
+                    session,
+                    document_id=d.row_id,
+                    author=author,
+                    title=title,
+                    type=DocumentType(type) if type is not None else None,
+                    owner=owner,
+                    sensitivity=Sensitivity(sensitivity) if sensitivity is not None else None,
+                    preamble=preamble,
+                    reason=reason,
+                )
+        except ValidationError as exc:
+            raise ValueError(str(exc)) from exc
+        out = doc_to_dict(result.document)
+        out["changes"] = result.changes
+        if dry_run:
+            out["dry_run"] = True
+        return out
+
     @mcp.tool(name="doc_body")
     def doc_body(project: str, doc_key: str) -> str:
         """Return the full rendered body of a document (preamble + all sections)."""
