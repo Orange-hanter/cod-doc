@@ -38,6 +38,7 @@ SPEC = ServiceSpec(
             "patch_section",
             "delete_section",
             "update_status",
+            "update_metadata",
             "accept",
             "rename",
             "delete",
@@ -64,15 +65,6 @@ SPEC = ServiceSpec(
         }
     ),
     surface_debt={
-        "update_status": (
-            frozenset({"mcp", "cli"}),
-            "Из семи переходов жизненного цикла наружу выставлен ровно один — "
-            "DRAFT/REVIEW → ACTIVE через `accept` (doc_accept / doc accept), и он "
-            "есть на обеих поверхностях. Произвольная смена статуса, в первую "
-            "очередь понижение до DEPRECATED, пока только в web: это решение о "
-            "судьбе документа, а не правка текста. Выставлять — отдельной "
-            "задачей вместе с правилами перехода, не попутно с STO-010/011.",
-        ),
         "delete": (
             frozenset({"mcp"}),
             "CLI `doc delete` есть (ADO-031), MCP-тула нет намеренно: удаление "

@@ -31,6 +31,7 @@ description: |
 | Удалить секцию | `doc_delete_section` | `cod-doc doc delete-section <doc_key> <anchor> -p <slug>` |
 | Переименовать ключ/путь | `doc_rename` | `cod-doc doc rename` |
 | DRAFT/REVIEW → ACTIVE | `doc_accept` | `cod-doc doc accept` |
+| Любой статус (deprecated, done, …) | `doc_update_status(project, doc_key, status)` | `cod-doc doc status <doc_key> <status> -p <slug>` |
 | Положить в раздел дерева | `doc_set_node` | `cod-doc doc tree move` |
 
 У мутаций есть `dry_run` / `--dry-run` — для правки чужого текста смотри diff

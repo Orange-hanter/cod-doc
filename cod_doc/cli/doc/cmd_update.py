@@ -55,7 +55,7 @@ def doc_update(
     """Change title, type, owner, sensitivity or preamble of DOC_KEY.
 
     Only the options you pass are changed. Status has its own command
-    (`doc accept`). This replaces editing frontmatter and running `doc import`.
+    (`doc status`). This replaces editing frontmatter and running `doc import`.
     """
     from cod_doc.domain.entities import DocumentType, Sensitivity
     from cod_doc.infra.db import transactional

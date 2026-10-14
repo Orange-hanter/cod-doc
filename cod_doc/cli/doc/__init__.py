@@ -24,6 +24,7 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_rename,
     cmd_section,
     cmd_show,
+    cmd_status,
     cmd_tree,
     cmd_tree_health,
     cmd_update,
