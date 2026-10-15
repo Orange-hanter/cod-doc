@@ -215,6 +215,8 @@ def register(mcp: FastMCP) -> None:
 
         Partial update: omitted (None) fields stay as they are; ``owner=""``
         clears the owner. Status is changed by ``doc_update_status``, not here.
+        Sensitivity can be raised but not lowered here: lowering un-redacts
+        the document and is left to a human (CLI ``doc update``).
         type: same values as ``doc_create``. sensitivity: public | internal |
         confidential | restricted.
 
@@ -675,7 +677,8 @@ def register(mcp: FastMCP) -> None:
         """DEBT-005: set a document's lifecycle status — any value, not only accept.
 
         status: draft | review | active | authoritative | resolved | done | deprecated.
-        Writes a DOCUMENT revision and a ``doc.status_changed`` event; setting
+        Writes a DOCUMENT revision and a ``doc.status_changed`` event — both
+        inside ``doc_service.update_status``, in this transaction; setting
         the current status is a no-op (``changed: false``, nothing written).
         Returns the document plus ``from`` / ``to`` / ``changed``.
         ``dry_run=True`` reports the transition without writing.

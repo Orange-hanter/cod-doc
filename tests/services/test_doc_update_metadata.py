@@ -243,3 +243,48 @@ def test_document_of_another_project_is_not_found(engine_with_schema) -> None:  
         assert doc.row_id is not None
         with pytest.raises(docs.DocumentNotFoundError):
             docs.update_metadata(s, project_id=other, document_id=doc.row_id, author="t", title="X")
+
+
+def test_lowering_sensitivity_needs_explicit_declassify(engine_with_schema) -> None:  # type: ignore[no-untyped-def]
+    """Понижение грифа снимает редакцию проекций — только с allow_declassify (CLI)."""
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as s:
+        pid = _add_project(s)
+        doc = _new_doc(s, pid)
+        assert doc.row_id is not None
+        raised = docs.update_metadata(
+            s,
+            project_id=pid,
+            document_id=doc.row_id,
+            author="t",
+            sensitivity=Sensitivity.RESTRICTED,
+        )
+        assert raised.document.sensitivity == Sensitivity.RESTRICTED
+        with pytest.raises(ValidationError) as exc:
+            docs.update_metadata(
+                s,
+                project_id=pid,
+                document_id=doc.row_id,
+                author="t",
+                sensitivity=Sensitivity.PUBLIC,
+            )
+        assert exc.value.code == "DM-003"
+        lowered = docs.update_metadata(
+            s,
+            project_id=pid,
+            document_id=doc.row_id,
+            author="human:test",
+            sensitivity=Sensitivity.PUBLIC,
+            allow_declassify=True,
+        )
+        assert lowered.document.sensitivity == Sensitivity.PUBLIC
+
+
+def test_mcp_cannot_lower_sensitivity(engine_with_schema, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    factory = make_session_factory(engine_with_schema)
+    with transactional(factory) as s:
+        pid = _add_project(s)
+        _new_doc(s, pid)
+    tool = _mcp_tool(monkeypatch, factory, pid)
+    with pytest.raises(ValueError, match="only a human"):
+        tool(project="p", doc_key="arch/overview", sensitivity="public")

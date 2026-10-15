@@ -789,6 +789,15 @@ def accept(
     )
 
 
+#: Порядок грифов — тот же, что у редакции проекций (``projection_service``).
+_SENSITIVITY_RANK: dict[str, int] = {
+    Sensitivity.PUBLIC.value: 0,
+    Sensitivity.INTERNAL.value: 1,
+    Sensitivity.CONFIDENTIAL.value: 2,
+    Sensitivity.RESTRICTED.value: 3,
+}
+
+
 class MetadataUpdate(NamedTuple):
     """Result of :func:`update_metadata`: the refreshed document and what moved.
 
@@ -813,6 +822,7 @@ def update_metadata(
     preamble: str | None = None,
     reason: str | None = None,
     reindex: bool = True,
+    allow_declassify: bool = False,
 ) -> MetadataUpdate:
     """Change title / type / owner / sensitivity / preamble of an existing doc (DEBT-004).
 
@@ -825,6 +835,14 @@ def update_metadata(
     The FM-002/FM-003 gate runs against the resulting record, so clearing the
     owner of an ACTIVE document is refused exactly as ``create`` would refuse it.
     No-op (no revision, no event) when nothing changes.
+
+    Lowering ``sensitivity`` (say ``restricted`` → ``public``) un-redacts the
+    document in projections for lower audiences (``projection_service``
+    redaction), so it is refused with ``ValidationError("DM-003")`` unless
+    ``allow_declassify=True``. ``author`` cannot carry that decision — it is a
+    string the caller chooses; the surface does: the CLI, run by a human at a
+    terminal, opts in, the MCP tool does not. Raising sensitivity is always
+    allowed.
     """
     doc = _require_doc(session, document_id, project_id)
     if title is not None and not title.strip():
@@ -839,6 +857,14 @@ def update_metadata(
         wanted["owner"] = owner or None
     if sensitivity is not None:
         wanted["sensitivity"] = sensitivity.value
+        if not allow_declassify and _SENSITIVITY_RANK[sensitivity.value] < _SENSITIVITY_RANK.get(
+            doc.sensitivity, 1
+        ):
+            raise validation.ValidationError(
+                "DM-003",
+                f"lowering sensitivity {doc.sensitivity} → {sensitivity.value} un-redacts "
+                "the document; only a human may do it (CLI `doc update`)",
+            )
     if preamble is not None:
         wanted["preamble"] = preamble
 
