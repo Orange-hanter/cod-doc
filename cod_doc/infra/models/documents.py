@@ -20,13 +20,13 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, SyncUidMixin, _utcnow
+from .base import Base, RankMixin, SyncUidMixin, _utcnow
 
 if TYPE_CHECKING:
     from .project import ProjectModel
 
 
-class DocNodeModel(SyncUidMixin, Base):
+class DocNodeModel(RankMixin, SyncUidMixin, Base):
     """Раздел дерева документации (ADO-116).
 
     Аналог ``plan_section`` для планов и ``story_section`` для историй:
@@ -151,6 +151,9 @@ class DocumentModel(SyncUidMixin, Base):
     )
     #: Ручной порядок внутри раздела; NULL сортируется последним.
     node_position: Mapped[int | None] = mapped_column(Integer)
+    #: Синхронизируемый порядок внутри раздела (RFC 29 §3.2, миграция 0050);
+    #: ``node_position`` — его local-производная. NULL у неразложенных.
+    node_rank: Mapped[str | None] = mapped_column(Text)
     created: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
@@ -163,11 +166,11 @@ class DocumentModel(SyncUidMixin, Base):
     sections: Mapped[list[SectionModel]] = relationship(
         back_populates="document",
         cascade="all, delete-orphan",
-        order_by="SectionModel.position",
+        order_by="[SectionModel.rank, SectionModel.uid, SectionModel.row_id]",
     )
 
 
-class SectionModel(SyncUidMixin, Base):
+class SectionModel(RankMixin, SyncUidMixin, Base):
     __tablename__ = "section"
     __table_args__ = (
         UniqueConstraint("document_id", "anchor", name="uq_section_document_anchor"),

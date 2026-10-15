@@ -43,6 +43,7 @@ from cod_doc.domain.entities import (
     Section,
     Sensitivity,
 )
+from cod_doc.infra import ordering
 from cod_doc.infra.models import DocumentModel, SectionModel
 from cod_doc.infra.repositories import DocumentRepository, SectionRepository
 from cod_doc.services import activity_service, search_service, validation
@@ -384,7 +385,7 @@ def read_sections(
                 session.execute(
                     select(SectionModel.anchor)
                     .where(SectionModel.document_id == document_id)
-                    .order_by(SectionModel.position)
+                    .order_by(*ordering.order_by(SectionModel))
                 ).scalars()
             )
         result.append(
@@ -455,6 +456,11 @@ def add_section(
                     position=position,
                     body=body,
                     content_hash=_content_hash(body),
+                    # CLO-004: один ранг между соседями; их ранги и позиции не
+                    # трогаются — существующие секции не перенумеровываются.
+                    rank=ordering.insert_rank(
+                        session, SectionModel, position=position, document_id=document_id
+                    ),
                 )
             )
     except IntegrityError as exc:
@@ -610,7 +616,7 @@ def _renumber_positions(session: Session, document_id: int) -> None:
         session.execute(
             select(SectionModel)
             .where(SectionModel.document_id == document_id)
-            .order_by(SectionModel.position, SectionModel.row_id)
+            .order_by(*ordering.order_by(SectionModel))
         )
         .scalars()
         .all()
@@ -764,7 +770,7 @@ def move_section(
         session.execute(
             select(SectionModel)
             .where(SectionModel.document_id == document_id)
-            .order_by(SectionModel.position)
+            .order_by(*ordering.order_by(SectionModel))
         )
         .scalars()
         .all()
@@ -781,10 +787,10 @@ def move_section(
 
     from_position = moving.position
     if from_position != position:
-        rows.remove(moving)
-        rows.insert(position, moving)
-        for index, row in enumerate(rows):
-            row.position = index
+        # CLO-004: новый ранг только у перемещаемой секции; position — индекс,
+        # пересчитанный из ранга.
+        rows = ordering.place(rows, moving, position)
+        ordering.renumber(rows)
         doc.last_updated = datetime.now(UTC)
         session.flush()
         activity_service.write_revision_and_emit_event(

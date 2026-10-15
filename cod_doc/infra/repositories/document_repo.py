@@ -14,6 +14,7 @@ from cod_doc.domain.entities import (
     Section,
     Sensitivity,
 )
+from cod_doc.infra import ordering
 from cod_doc.infra.models import DocNodeModel, DocumentModel, SectionModel
 from cod_doc.infra.repositories.base import BaseRepository
 
@@ -118,6 +119,7 @@ class SectionRepository(BaseRepository[Section, SectionModel]):
             heading=model.heading,
             level=model.level,
             position=model.position,
+            rank=model.rank,
             body=model.body,
             content_hash=model.content_hash,
         )
@@ -129,6 +131,7 @@ class SectionRepository(BaseRepository[Section, SectionModel]):
             "heading": entity.heading,
             "level": entity.level,
             "position": entity.position,
+            "rank": entity.rank,
             "body": entity.body,
             "content_hash": entity.content_hash,
         }
@@ -140,7 +143,7 @@ class SectionRepository(BaseRepository[Section, SectionModel]):
         stmt = (
             select(SectionModel)
             .where(SectionModel.document_id == document_id)
-            .order_by(SectionModel.position)
+            .order_by(*ordering.order_by(SectionModel))
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
 
@@ -159,6 +162,7 @@ class DocNodeRepository(BaseRepository[DocNode, DocNodeModel]):
             title=model.title,
             intent=model.intent,
             position=model.position,
+            rank=model.rank,
             expected_types=list(model.expected_types or []),
             min_docs=model.min_docs,
             is_inbox=bool(model.is_inbox),
@@ -172,6 +176,7 @@ class DocNodeRepository(BaseRepository[DocNode, DocNodeModel]):
             "title": entity.title,
             "intent": entity.intent,
             "position": entity.position,
+            "rank": entity.rank,
             "expected_types": list(entity.expected_types),
             "min_docs": entity.min_docs,
             "is_inbox": entity.is_inbox,
@@ -189,11 +194,11 @@ class DocNodeRepository(BaseRepository[DocNode, DocNodeModel]):
         return self._to_domain(m) if m else None
 
     def list_for_project(self, project_id: int) -> list[DocNode]:
-        """Разделы в порядке показа: position, затем node_key как тай-брейк."""
+        """Разделы в порядке показа — по рангу (CLO-004, ``ordering.order_by``)."""
         stmt = (
             select(DocNodeModel)
             .where(DocNodeModel.project_id == project_id)
-            .order_by(DocNodeModel.position, DocNodeModel.node_key)
+            .order_by(*ordering.order_by(DocNodeModel))
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
 
@@ -209,8 +214,8 @@ class DocNodeRepository(BaseRepository[DocNode, DocNodeModel]):
         """Следующая позиция в конце списка — агрегатом, а не выгрузкой строк.
 
         Гонка та же, что у ``StorySectionRepository.next_position`` и с тем же
-        последствием: дублирующийся ``position`` деградирует до сортировки по
-        ``node_key``, а не до ошибки. ``position`` — advisory-порядок показа.
+        последствием: дублирующийся ``position`` — не ошибка. С CLO-004
+        ``position`` — advisory-число, порядок держит ранг (``ordering.insert_rank``).
         """
         stmt = select(func.max(DocNodeModel.position)).where(DocNodeModel.project_id == project_id)
         current = self.session.execute(stmt).scalar()

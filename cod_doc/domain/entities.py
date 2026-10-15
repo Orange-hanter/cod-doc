@@ -544,6 +544,8 @@ class DocNode:
     title: str
     position: int
     row_id: int | None = None
+    #: Дробный ранг (RFC 29 §3.2, CLO-004); ``None`` — поставит ``ordering``.
+    rank: str | None = None
     parent_id: int | None = None
     intent: str = ""
     expected_types: list[str] = field(default_factory=list)
@@ -561,6 +563,8 @@ class Section:
     body: str
     content_hash: str
     row_id: int | None = None
+    #: Дробный ранг (RFC 29 §3.2, CLO-004); ``None`` — поставит ``ordering``.
+    rank: str | None = None
 
 
 @dataclass(slots=True)
@@ -602,6 +606,8 @@ class PlanSection:
     slug: str
     position: int
     row_id: int | None = None
+    #: Дробный ранг (RFC 29 §3.2, CLO-004); ``None`` — поставит ``ordering``.
+    rank: str | None = None
     doc_id: int | None = None
 
 
@@ -657,6 +663,8 @@ class StorySection:
     title: str
     position: int
     row_id: int | None = None
+    #: Дробный ранг (RFC 29 §3.2, CLO-004); ``None`` — поставит ``ordering``.
+    rank: str | None = None
 
 
 @dataclass(slots=True)
@@ -680,6 +688,8 @@ class StoryAcceptance:
     criterion: str
     met: bool = False
     row_id: int | None = None
+    #: Дробный ранг (RFC 29 §3.2, CLO-004); ``None`` — поставит ``ordering``.
+    rank: str | None = None
 
 
 @dataclass(slots=True)
@@ -720,6 +730,8 @@ class Scenario:
     subject_ref: str | None = None
     notes: str | None = None
     row_id: int | None = None
+    #: Дробный ранг (RFC 29 §3.2, CLO-004); ``None`` — поставит ``ordering``.
+    rank: str | None = None
     created: datetime | None = None
     last_updated: datetime | None = None
 
@@ -730,6 +742,8 @@ class ScenarioStep:
     position: int
     text: str
     row_id: int | None = None
+    #: Дробный ранг (RFC 29 §3.2, CLO-004); ``None`` — поставит ``ordering``.
+    rank: str | None = None
 
 
 @dataclass(slots=True)
@@ -776,6 +790,8 @@ class QuestionOption:
     body: str | None = None
     chosen: bool = False
     row_id: int | None = None
+    #: Дробный ранг (RFC 29 §3.2, CLO-004); ``None`` — поставит ``ordering``.
+    rank: str | None = None
 
 
 @dataclass(slots=True)
@@ -919,6 +935,8 @@ class AdrDiagram:
     title: str | None = None
     mermaid: str = ""
     row_id: int | None = None
+    #: Дробный ранг (RFC 29 §3.2, CLO-004); ``None`` — поставит ``ordering``.
+    rank: str | None = None
 
 
 @dataclass(slots=True)

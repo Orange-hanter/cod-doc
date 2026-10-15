@@ -35,6 +35,7 @@ import yaml
 from sqlalchemy import select
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType, Sensitivity
+from cod_doc.infra import ordering
 from cod_doc.infra.models import DocumentModel
 from cod_doc.services import activity_service, search_service
 from cod_doc.services import doc_service as docs
@@ -815,7 +816,7 @@ def _apply_file_section_order(
         session.execute(
             select(SectionModel)
             .where(SectionModel.document_id == document_id)
-            .order_by(SectionModel.position, SectionModel.row_id)
+            .order_by(*ordering.order_by(SectionModel))
         ).scalars()
     )
     movable = [(i, row) for i, row in enumerate(rows) if row.level == _FILE_SECTION_LEVEL]
@@ -829,8 +830,12 @@ def _apply_file_section_order(
         return False
     for slot, (_, row) in zip(slots, ordered, strict=True):
         row.position = slot
+    # CLO-004: ранг — источник порядка; переписываются ранги только тех
+    # секций, что выпали из возрастающей цепочки, а не всего документа.
+    final_rows = sorted(rows, key=lambda row: row.position)
+    ordering.conform(final_rows)
     session.flush()
-    final = [row.anchor for row in sorted(rows, key=lambda row: row.position)]
+    final = [row.anchor for row in final_rows]
     activity_service.emit_for_write(
         session,
         project_id,

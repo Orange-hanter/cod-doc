@@ -35,6 +35,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy import func, select
 
 from cod_doc.domain.entities import EntityKind
+from cod_doc.infra import ordering
 from cod_doc.infra.models import (
     ADRDiagramModel,
     ADRModel,
@@ -543,6 +544,9 @@ def add_diagram(
         position=position,
         title=title,
         mermaid=mermaid,
+        # CLO-004: ранг между соседями по заявленной позиции; position диаграммы
+        # — её номер в выдаче adr_get, он не пересчитывается.
+        rank=ordering.insert_rank(session, ADRDiagramModel, position=position, adr_id=adr.row_id),
     )
     session.add(row)
     session.flush()
@@ -1073,7 +1077,7 @@ def backlinks(session: Session, project_id: int, adr_id: str) -> dict[str, list[
         .join(SectionModel, SectionModel.row_id == LinkModel.from_section_id)
         .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
         .where(LinkModel.project_id == project_id, LinkModel.to_adr_id == adr_id)
-        .order_by(DocumentModel.doc_key, SectionModel.position)
+        .order_by(DocumentModel.doc_key, *ordering.order_by(SectionModel))
     ).all()
     docs: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -1180,7 +1184,7 @@ def adr_to_dict(
             session.execute(
                 select(ADRDiagramModel)
                 .where(ADRDiagramModel.adr_id == adr.row_id)
-                .order_by(ADRDiagramModel.position)
+                .order_by(*ordering.order_by(ADRDiagramModel))
             )
             .scalars()
             .all()

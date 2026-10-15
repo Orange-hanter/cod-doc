@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, SyncUidMixin, _utcnow
+from .base import Base, RankMixin, SyncUidMixin, _utcnow
 
 
 class OpenQuestionModel(SyncUidMixin, Base):
@@ -65,7 +65,7 @@ class OpenQuestionModel(SyncUidMixin, Base):
     options: Mapped[list[QuestionOptionModel]] = relationship(
         back_populates="question",
         cascade="all, delete-orphan",
-        order_by="QuestionOptionModel.position",
+        order_by="[QuestionOptionModel.rank, QuestionOptionModel.uid, QuestionOptionModel.row_id]",
     )
     links: Mapped[list[QuestionLinkModel]] = relationship(
         back_populates="question",
@@ -73,10 +73,10 @@ class OpenQuestionModel(SyncUidMixin, Base):
     )
 
 
-class QuestionOptionModel(SyncUidMixin, Base):
+class QuestionOptionModel(RankMixin, SyncUidMixin, Base):
     __tablename__ = "open_question_option"
     __table_args__ = (
-        UniqueConstraint("question_row_id", "position", name="uq_open_question_option_position"),
+        Index("ix_open_question_option_position", "question_row_id", "position"),
         Index("ix_open_question_option_question", "question_row_id"),
     )
 

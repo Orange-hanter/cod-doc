@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from cod_doc.domain.entities import EntityKind, StoryAcceptance
+from cod_doc.infra import ordering
 from cod_doc.infra.models import StoryAcceptanceModel
 from cod_doc.infra.repositories import StoryAcceptanceRepository
 from cod_doc.services import activity_service, search_service
@@ -34,8 +35,17 @@ def add_criterion(
     existing = repo.list_for_story(model.row_id)
     next_pos = (max((a.position for a in existing), default=-1)) + 1
 
+    # CLO-004: ранг после последнего критерия, остальные не трогаются.
+    # ``position`` — адрес критерия (``set_criterion_met``, ``<story_id>#<position>``
+    # в ссылках сценариев), поэтому остаётся append-счётчиком, а не индексом.
     ac = repo.add(
-        StoryAcceptance(story_id=model.row_id, position=next_pos, criterion=criterion, met=False)
+        StoryAcceptance(
+            story_id=model.row_id,
+            position=next_pos,
+            criterion=criterion,
+            met=False,
+            rank=ordering.insert_rank(session, StoryAcceptanceModel, story_id=model.row_id),
+        )
     )
     model.last_updated = datetime.now(UTC)
     session.flush()

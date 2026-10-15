@@ -55,9 +55,9 @@
    дерева на этой машине), ``finding.run_id`` и ``approval.run_id`` (ссылка на
    local ``agent_run``, ADR-012), ``finding.miss_streak`` (счётчик сверки
    ``reconcile_partition``, которая по RFC остаётся локальной).
-9. **``rank_column``** объявлен заранее для 11 мест порядка; колонок ``rank`` /
-   ``node_rank`` в схеме ещё нет (миграция CLO-003), поэтому гейт сверяет
-   существование всех объявленных колонок, кроме ``rank_column``.
+9. **``rank_column``** у 11 мест порядка — колонки ``rank`` / ``node_rank`` из
+   миграции 0050 (CLO-003); гейт сверяет их существование наравне с прочими
+   объявленными колонками и запрещает ``UNIQUE`` на позиции этих таблиц.
 10. **``deterministic_uid``** — колонки, из которых uuid5 собирается после
     перевода FK в uid; совпадает с ``UNIQUE`` ребра. У ``story_link`` такого
     ``UNIQUE`` в схеме нет — детерминированный uid сделает дубль невозможным.
@@ -1144,12 +1144,19 @@ UID_TABLES: frozenset[str] = (
     frozenset(t for t, s in REGISTRY.items() if s.cls is SyncClass.AUTHORED) - COMPOSITE_PK_TABLES
 )
 
-#: ``uid`` — сама идентичность строки: уезжает у каждой таблицы, где он есть.
+
+def _with_identity_and_rank(table: str, cols: frozenset[str]) -> frozenset[str]:
+    if table in UID_TABLES:
+        cols |= {"uid"}
+    rank = REGISTRY[table].rank_column
+    return cols | {rank} if rank else cols
+
+
+#: ``uid`` — сама идентичность строки: уезжает у каждой таблицы, где он есть;
+#: ``rank_column`` — синхронизируемый порядок (0050, Q-009), в отличие от
+#: local-позиции рядом с ним.
 SHIPPED_COLUMNS: Mapping[str, frozenset[str]] = MappingProxyType(
-    {
-        table: cols | {"uid"} if table in UID_TABLES else cols
-        for table, cols in _SHIPPED_BEFORE_UID.items()
-    }
+    {table: _with_identity_and_rank(table, cols) for table, cols in _SHIPPED_BEFORE_UID.items()}
 )
 
 #: Пространство имён uuid5 рёбер. Константа навсегда: смена значения меняет

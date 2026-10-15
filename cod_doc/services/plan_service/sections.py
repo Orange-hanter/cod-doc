@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from cod_doc.domain.entities import EntityKind, Plan
+from cod_doc.infra import ordering
 from cod_doc.infra.models import DocumentModel, PlanModel, PlanSectionModel, TaskModel
 from cod_doc.infra.repositories import PlanRepository, PlanSectionRepository
 from cod_doc.infra.sql_helpers import is_unique_violation
@@ -188,6 +189,10 @@ def create_section(
         title=title,
         slug=slug,
         position=position if position is not None else len(current),
+    )
+    # CLO-004: ранг между соседями по заявленной позиции, соседи не трогаются.
+    section.rank = ordering.insert_rank(
+        session, PlanSectionModel, position=section.position, plan_id=plan.row_id
     )
     try:
         created = repo.add(section)
@@ -393,16 +398,19 @@ def move_section(
         session.execute(
             select(PlanSectionModel)
             .where(PlanSectionModel.plan_id == plan.row_id)
-            .order_by(PlanSectionModel.position, PlanSectionModel.row_id)
+            .order_by(*ordering.order_by(PlanSectionModel))
         ).scalars()
     )
-    ordered.remove(target)
+    others = [m for m in ordered if m is not target]
     if anchor is not None:
-        index = ordered.index(anchor) + (1 if after is not None else 0)
+        index = others.index(anchor) + (1 if after is not None else 0)
     else:
         assert position is not None
-        index = min(position, len(ordered))
-    ordered.insert(index, target)
+        index = min(position, len(others))
+    old_index = ordered.index(target)
+    # CLO-004: на месте — ни одного нового ранга; иначе ранг только у target.
+    if index != old_index:
+        ordered = ordering.place(ordered, target, index)
 
     moved: list[tuple[PlanSectionModel, int, int]] = []
     for new_position, model in enumerate(ordered):

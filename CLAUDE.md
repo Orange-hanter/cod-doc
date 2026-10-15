@@ -288,6 +288,15 @@ cli/ tui/ api/ mcp/   → services/   → domain/   ← infra/
   нормализуется в NULL. Раскладка не двигает `document.last_updated`: это
   отметка о свежести содержимого, и `classify --apply` обнулил бы её всему
   корпусу разом.
+- **Порядок — ранг, не `position`** (RFC 29 §3.2, CLO-003/004). Одиннадцать
+  мест порядка несут дробный `rank` (у `document` — `node_rank`,
+  `infra/rank.py`); читать — `ordering.order_by(Model)` (`rank, uid, row_id`),
+  вставлять и двигать — `ordering.insert_rank`/`place`: новый ранг получает
+  одна строка, соседи не трогаются. `position` — local: там, где он индекс,
+  пересчитывается `ordering.renumber`; там, где адрес (критерий истории,
+  опция вопроса, диаграмма ADR), остаётся append-счётчиком. Строка без ранга
+  получает его в `before_flush` по своему `position`. UNIQUE на позиции нет и
+  не будет — гейт `test_order_places_have_no_position_unique`.
 - **Миграции, трогающие `document`, — без `batch_alter_table`.** На SQLite
   batch пересоздаёт таблицу, а DROP старой уносит по CASCADE все `section` и
   висящие на них `link`. Проверено: 1379 секций и 841 ссылка. На пустой
