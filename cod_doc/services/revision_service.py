@@ -24,6 +24,7 @@ from ulid import ULID
 
 from cod_doc.domain.entities import EntityKind, Revision, TaskStatus
 from cod_doc.infra.models import DocumentModel, RevisionModel, SectionModel, TaskModel
+from cod_doc.infra.sync_capture import set_author
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -101,6 +102,8 @@ def write(
     "I expect to be the first writer"), it must equal the current head, or
     `RevisionConflictError` is raised — this is the optimistic concurrency hook.
     """
+    # RFC 29 §10.3 (CLO-006): автор транзакции для операций ``sync_op``.
+    set_author(session, author)
     head = _current_head(session, entity_kind, entity_id, project_id)
     if expected_parent_revision_id is not _NO_PARENT_CHECK and head != expected_parent_revision_id:
         raise RevisionConflictError(

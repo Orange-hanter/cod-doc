@@ -201,7 +201,16 @@ def make_engine(url: str | None = None, *, echo: bool = False) -> Engine:
 
 
 def make_session_factory(engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
+    """Единственная фабрика сессий; на ней висит захват ``sync_op`` (RFC 29 §10.3).
+
+    Голый ``Session(engine)`` захвата не получает — так задумано: хук ставится
+    на фабрику, а не на класс ``Session`` (CLO-006).
+    """
+    from cod_doc.infra import sync_capture  # ленивый: тянет модели и реестр
+
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
+    sync_capture.install(factory)
+    return factory
 
 
 class SchemaMismatchError(Exception):
