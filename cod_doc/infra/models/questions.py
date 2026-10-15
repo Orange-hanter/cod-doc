@@ -24,10 +24,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 
-class OpenQuestionModel(Base):
+class OpenQuestionModel(SyncUidMixin, Base):
     __tablename__ = "open_question"
     __table_args__ = (
         UniqueConstraint("project_id", "question_id", name="uq_open_question_project_qid"),
@@ -73,7 +73,7 @@ class OpenQuestionModel(Base):
     )
 
 
-class QuestionOptionModel(Base):
+class QuestionOptionModel(SyncUidMixin, Base):
     __tablename__ = "open_question_option"
     __table_args__ = (
         UniqueConstraint("question_row_id", "position", name="uq_open_question_option_position"),
@@ -92,7 +92,7 @@ class QuestionOptionModel(Base):
     question: Mapped[OpenQuestionModel] = relationship(back_populates="options")
 
 
-class QuestionLinkModel(Base):
+class QuestionLinkModel(SyncUidMixin, Base):
     __tablename__ = "open_question_link"
     __table_args__ = (
         UniqueConstraint(

@@ -17,10 +17,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 
-class ADRModel(Base):
+class ADRModel(SyncUidMixin, Base):
     __tablename__ = "adr"
     __table_args__ = (
         UniqueConstraint("project_id", "adr_id", name="uq_adr_project_id"),
@@ -65,7 +65,7 @@ class ADRModel(Base):
     )
 
 
-class ADRDiagramModel(Base):
+class ADRDiagramModel(SyncUidMixin, Base):
     __tablename__ = "adr_diagram"
     __table_args__ = (
         UniqueConstraint("adr_id", "position", name="uq_adr_diagram_position"),
@@ -83,7 +83,7 @@ class ADRDiagramModel(Base):
     adr: Mapped[ADRModel] = relationship(back_populates="diagrams")
 
 
-class ADRSupersedeModel(Base):
+class ADRSupersedeModel(SyncUidMixin, Base):
     __tablename__ = "adr_supersedes"
     __table_args__ = (
         UniqueConstraint(
@@ -115,7 +115,7 @@ class ADRSupersedeModel(Base):
 ADR_RELATION_KINDS: tuple[str, ...] = ("amends", "depends_on")
 
 
-class ADRRelationModel(Base):
+class ADRRelationModel(SyncUidMixin, Base):
     """Связь «уточняет» / «опирается на» между двумя ADR одного проекта.
 
     ``from_id`` — решение, которое заявляет связь: ADR-010 уточняет ADR-005,
@@ -143,7 +143,7 @@ class ADRRelationModel(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
-class ADRTopicModel(Base):
+class ADRTopicModel(SyncUidMixin, Base):
     """ARG-008 (RFC 34 §3.4): полка реестра ADR — тема, о чём решение.
 
     ``includes`` / ``excludes`` — состав полки: агент выбирает полку по ним,
@@ -176,7 +176,7 @@ class ADRTopicModel(Base):
     )
 
 
-class ADRTaskModel(Base):
+class ADRTaskModel(SyncUidMixin, Base):
     __tablename__ = "adr_task"
     __table_args__ = (
         UniqueConstraint(

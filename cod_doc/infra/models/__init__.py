@@ -17,6 +17,9 @@ point.
 
 from __future__ import annotations
 
+from sqlalchemy import Index as _Index
+from sqlalchemy import Table as _Table
+
 from .activity import ActivityEventModel
 from .adrs import (
     ADRDiagramModel,
@@ -27,7 +30,7 @@ from .adrs import (
     ADRTopicModel,
 )
 from .approvals import ApprovalDocRevisionLinkModel, ApprovalModel, ApprovalTaskLinkModel
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 from .comments import DocCommentModel
 from .commits import CommitLinkModel
 from .documents import (
@@ -72,9 +75,25 @@ from .structure import (
     StructureLinkSuggestionModel,
     StructureWaiverModel,
 )
+from .sync import (
+    ChangesetModel,
+    EntityAliasModel,
+    ReplicaModel,
+    SyncLeaseModel,
+    SyncOpModel,
+    SyncRefModel,
+)
 from .tags import DocumentTagModel, StoryTagModel, TagModel, TaskTagModel
 from .task_docs import TaskDocumentModel
 from .traces import TraceCallModel
+
+# ``uq_<t>_uid`` (миграция 0049) — у каждой модели с ``SyncUidMixin``. Цепляется
+# здесь, а не в ``__table_args__`` миксина: собственные ``__table_args__``
+# моделей перекрыли бы его.
+for _mapper in Base.registry.mappers:
+    _table = _mapper.local_table
+    if issubclass(_mapper.class_, SyncUidMixin) and isinstance(_table, _Table):
+        _Index(f"uq_{_table.name}_uid", _table.c.uid, unique=True)
 
 __all__ = [
     "ADRDiagramModel",
@@ -90,6 +109,7 @@ __all__ = [
     "ApprovalModel",
     "ApprovalTaskLinkModel",
     "Base",
+    "ChangesetModel",
     "CodeBoundaryModel",
     "CodeContractModel",
     "CodeEdgeModel",
@@ -103,6 +123,7 @@ __all__ = [
     "DocNodeSuggestionModel",
     "DocumentModel",
     "DocumentTagModel",
+    "EntityAliasModel",
     "ExternalRefModel",
     "FindingModel",
     "FindingSourceRunModel",
@@ -116,6 +137,7 @@ __all__ = [
     "ProjectModel",
     "QuestionLinkModel",
     "QuestionOptionModel",
+    "ReplicaModel",
     "RepoFileModel",
     "RepoImportModel",
     "RepoSymbolModel",
@@ -135,6 +157,10 @@ __all__ = [
     "StructureFindingModel",
     "StructureLinkSuggestionModel",
     "StructureWaiverModel",
+    "SyncLeaseModel",
+    "SyncOpModel",
+    "SyncRefModel",
+    "SyncUidMixin",
     "TagModel",
     "TaskDocumentModel",
     "TaskMetricsModel",

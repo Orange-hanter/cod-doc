@@ -12,8 +12,6 @@ from sqlalchemy.exc import IntegrityError
 
 from cod_doc.infra.db import make_engine, make_session_factory, transactional
 from cod_doc.infra.models import (
-    AffectedFileModel,
-    DependencyModel,
     PlanModel,
     PlanSectionModel,
     ProjectModel,
@@ -38,18 +36,18 @@ def db_url(tmp_path: Path) -> str:
     return f"sqlite:///{tmp_path / 'shared_hub.db'}"
 
 
-def _insert_plan(session: Session, *, project_id: int, scope: str, now: datetime) -> int:
-    """Завести план сырым SQL — без колонок, которых нет на старой ревизии."""
-    session.execute(
-        text(
-            "INSERT INTO plan (project_id, scope, created, last_updated) "
-            "VALUES (:pid, :scope, :now, :now)"
-        ),
-        {"pid": project_id, "scope": scope, "now": now},
-    )
+def _insert_row(session: Session, table: str, **values: object) -> int:
+    """Строка сырым SQL — только колонки, которые есть на старой ревизии.
+
+    ORM-модель знает колонки поздних ревизий (``plan.id_prefix`` из 0043,
+    ``uid`` из 0049) и вставляет их как NULL даже незаданными; в схеме 0026
+    их ещё нет. ``table`` — литерал из этого модуля.
+    """
+    cols = ", ".join(values)
+    marks = ", ".join(f":{c}" for c in values)
     return int(
         session.execute(
-            text("SELECT row_id FROM plan WHERE scope = :scope"), {"scope": scope}
+            text(f"INSERT INTO {table} ({cols}) VALUES ({marks}) RETURNING row_id"), values
         ).scalar_one()
     )
 
@@ -72,93 +70,74 @@ def _seed_pre_0027(db_url: str) -> tuple[int, int, int, int, int, int]:
 
     try:
         with transactional(factory) as session:
-            proj_a = ProjectModel(slug="a", title="A", root_path="/tmp/a", config_json={})
-            proj_b = ProjectModel(slug="b", title="B", root_path="/tmp/b", config_json={})
-            proj_a.created = now
-            proj_a.updated = now
-            proj_b.created = now
-            proj_b.updated = now
-            session.add_all([proj_a, proj_b])
-            session.flush()
-
-            # План — сырым SQL: ORM-модель знает колонки поздних ревизий
-            # (``id_prefix``, 0043), которых в схеме 0026 ещё нет.
+            proj_a, proj_b = (
+                _insert_row(
+                    session,
+                    "project",
+                    slug=slug,
+                    title=slug.upper(),
+                    root_path=f"/tmp/{slug}",
+                    config_json="{}",
+                    created=now,
+                    updated=now,
+                )
+                for slug in ("a", "b")
+            )
             plan_a_id, plan_b_id = (
-                _insert_plan(session, project_id=pid, scope=scope, now=now)
-                for pid, scope in ((proj_a.row_id, "a-plan"), (proj_b.row_id, "b-plan"))
+                _insert_row(
+                    session, "plan", project_id=pid, scope=scope, created=now, last_updated=now
+                )
+                for pid, scope in ((proj_a, "a-plan"), (proj_b, "b-plan"))
             )
-
-            sec_a = PlanSectionModel(
-                plan_id=plan_a_id,
-                letter="A",
-                title="Section A",
-                slug="A-sec",
-                position=0,
+            sec_a, sec_b = (
+                _insert_row(
+                    session,
+                    "plan_section",
+                    plan_id=plan_id,
+                    letter="A",
+                    title=title,
+                    slug=slug,
+                    position=0,
+                )
+                for plan_id, title, slug in (
+                    (plan_a_id, "Section A", "A-sec"),
+                    (plan_b_id, "Section B", "B-sec"),
+                )
             )
-            sec_b = PlanSectionModel(
-                plan_id=plan_b_id,
-                letter="A",
-                title="Section B",
-                slug="B-sec",
-                position=0,
+            t_a1, t_a2, t_b1 = (
+                _insert_row(
+                    session,
+                    "task",
+                    project_id=pid,
+                    task_id=task_id,
+                    plan_id=plan_id,
+                    section_id=sec_id,
+                    title=title,
+                    status=status,
+                    type=type_,
+                    priority=priority,
+                    created=now,
+                    last_updated=now,
+                )
+                for pid, task_id, plan_id, sec_id, title, status, type_, priority in (
+                    (
+                        proj_a,
+                        "TASK-001",
+                        plan_a_id,
+                        sec_a,
+                        "A first",
+                        "pending",
+                        "feature",
+                        "medium",
+                    ),
+                    (proj_a, "TASK-002", plan_a_id, sec_a, "A second", "done", "bug", "high"),
+                    (proj_b, "B-001", plan_b_id, sec_b, "B first", "pending", "feature", "low"),
+                )
             )
-            session.add_all([sec_a, sec_b])
-            session.flush()
-
-            t_a1 = TaskModel(
-                project_id=proj_a.row_id,
-                task_id="TASK-001",
-                plan_id=plan_a_id,
-                section_id=sec_a.row_id,
-                title="A first",
-                status="pending",
-                type="feature",
-                priority="medium",
-                created=now,
-                last_updated=now,
-            )
-            t_a2 = TaskModel(
-                project_id=proj_a.row_id,
-                task_id="TASK-002",
-                plan_id=plan_a_id,
-                section_id=sec_a.row_id,
-                title="A second",
-                status="done",
-                type="bug",
-                priority="high",
-                created=now,
-                last_updated=now,
-            )
-            t_b1 = TaskModel(
-                project_id=proj_b.row_id,
-                task_id="B-001",
-                plan_id=plan_b_id,
-                section_id=sec_b.row_id,
-                title="B first",
-                status="pending",
-                type="feature",
-                priority="low",
-                created=now,
-                last_updated=now,
-            )
-            session.add_all([t_a1, t_a2, t_b1])
-            session.flush()
-
-            session.add(
-                DependencyModel(from_task_id=t_a1.row_id, to_task_id=t_a2.row_id, kind="blocks")
-            )
-            session.add(AffectedFileModel(task_id=t_a1.row_id, path="a/foo.py", kind="source"))
-            session.add(AffectedFileModel(task_id=t_b1.row_id, path="b/bar.py", kind="test"))
-            session.flush()
-
-            return (
-                proj_a.row_id,
-                proj_b.row_id,
-                t_a1.row_id,
-                t_a2.row_id,
-                t_b1.row_id,
-                sec_a.row_id,
-            )
+            _insert_row(session, "dependency", from_task_id=t_a1, to_task_id=t_a2, kind="blocks")
+            _insert_row(session, "affected_file", task_id=t_a1, path="a/foo.py", kind="source")
+            _insert_row(session, "affected_file", task_id=t_b1, path="b/bar.py", kind="test")
+            return proj_a, proj_b, t_a1, t_a2, t_b1, sec_a
     finally:
         engine.dispose()
 

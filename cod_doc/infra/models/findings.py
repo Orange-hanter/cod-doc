@@ -19,10 +19,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 
-class FindingModel(Base):
+class FindingModel(SyncUidMixin, Base):
     __tablename__ = "finding"
     __table_args__ = (
         UniqueConstraint(
@@ -87,7 +87,7 @@ class FindingSourceRunModel(Base):
     raw: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
 
-class ExternalRefModel(Base):
+class ExternalRefModel(SyncUidMixin, Base):
     __tablename__ = "external_ref"
     __table_args__ = (
         UniqueConstraint(

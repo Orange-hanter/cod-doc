@@ -16,10 +16,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 
-class PlanModel(Base):
+class PlanModel(SyncUidMixin, Base):
     __tablename__ = "plan"
     # STO-018: scope уникален в пределах проекта, а не всей БД (миграция 0047).
     __table_args__ = (UniqueConstraint("project_id", "scope", name="uq_plan_project_scope"),)
@@ -57,7 +57,7 @@ class PlanModel(Base):
     )
 
 
-class PlanSectionModel(Base):
+class PlanSectionModel(SyncUidMixin, Base):
     __tablename__ = "plan_section"
     __table_args__ = (UniqueConstraint("plan_id", "letter", name="uq_plan_section_plan_letter"),)
 
@@ -80,7 +80,7 @@ class PlanSectionModel(Base):
     )
 
 
-class TaskModel(Base):
+class TaskModel(SyncUidMixin, Base):
     __tablename__ = "task"
     __table_args__ = (
         Index("ix_task_status", "status", "priority"),
@@ -135,7 +135,7 @@ class TaskModel(Base):
     )
 
 
-class DependencyModel(Base):
+class DependencyModel(SyncUidMixin, Base):
     __tablename__ = "dependency"
     __table_args__ = (
         UniqueConstraint("from_task_id", "to_task_id", "kind", name="uq_dependency_edge"),
@@ -159,7 +159,7 @@ class DependencyModel(Base):
     to_task: Mapped[TaskModel] = relationship(foreign_keys=[to_task_id])
 
 
-class AffectedFileModel(Base):
+class AffectedFileModel(SyncUidMixin, Base):
     __tablename__ = "affected_file"
     __table_args__ = (
         UniqueConstraint("task_id", "path", name="uq_affected_file_task_path"),

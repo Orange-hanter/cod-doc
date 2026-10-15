@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import JSON, DateTime, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 if TYPE_CHECKING:
     from .documents import DocumentModel
 
 
-class ProjectModel(Base):
+class ProjectModel(SyncUidMixin, Base):
     __tablename__ = "project"
 
     row_id: Mapped[int] = mapped_column(Integer, primary_key=True)

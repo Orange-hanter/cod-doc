@@ -129,11 +129,26 @@
     снова перечень ``_CLEARED_SENSITIVITY``, а не ``!= restricted``. Захват
     (CLO-006) поэтому обязан передавать строку целиком, а не только
     изменённые поля: без колонки-ссылки строка-связь не уедет.
+18. **Колонка ``uid``** (CLO-002, миграция ``0049_sync_identity``). Есть у
+    каждой authored-таблицы, кроме тег-таблиц с составным PK
+    (``COMPOSITE_PK_TABLES``): RFC §3.3/§10.1 исключает их — uid тега
+    вычисляется при захвате из той же формулы, а ``deterministic_uid`` в их
+    записях и есть её вход. ``uid`` уезжает (``SHIPPED_COLUMNS``): это
+    идентичность строки, без неё операция не адресуема. Рёбра получают
+    ``edge_uid`` — uuid5 от JSON ``[таблица, *ключ]``, где FK ключа заменены на
+    uid концов; остальные строки — случайный uuid7. Поэтому uid ребра
+    детерминирован относительно uid концов, но не между двумя независимо
+    мигрированными БД: концы у них получили разные uuid7. Шесть служебных
+    таблиц синхронизации (``replica``, ``sync_op``, ``changeset``,
+    ``sync_ref``, ``sync_lease``, ``entity_alias``) — ``local``: это состояние
+    реплики, а не проекта.
 """
 
 from __future__ import annotations
 
+import json
 import re
+import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -752,6 +767,13 @@ _SPECS: tuple[TableSpec, ...] = (
     TableSpec("trace_call", _L),
     TableSpec("task_metrics", _L),
     TableSpec("finding_source_run", _L),
+    # --- local: служебные таблицы синхронизации (0049, RFC 29 §10.1) ---------
+    TableSpec("replica", _L),
+    TableSpec("sync_op", _L),
+    TableSpec("changeset", _L),
+    TableSpec("sync_ref", _L),
+    TableSpec("sync_lease", _L),
+    TableSpec("entity_alias", _L),
 )
 
 
@@ -817,7 +839,7 @@ HUMAN_ID_KINDS: Mapping[str, str] = MappingProxyType(
 #: Колонки authored- и journal-таблиц, которые уезжают (решение 13).
 #: Явный перечень, а не «все, кроме local_columns»: новая колонка не уезжает,
 #: пока её не впишут сюда, а гейт не даёт оставить её без решения.
-SHIPPED_COLUMNS: Mapping[str, frozenset[str]] = MappingProxyType(
+_SHIPPED_BEFORE_UID: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "activity_event": frozenset(
             {
@@ -1112,6 +1134,54 @@ SHIPPED_COLUMNS: Mapping[str, frozenset[str]] = MappingProxyType(
         ),
     }
 )
+
+#: Тег-таблицы с составным PK: колонки ``uid`` у них нет, uid ребра
+#: вычисляется при захвате той же ``edge_uid`` (RFC 29 §3.3, §10.1; решение 18).
+COMPOSITE_PK_TABLES: frozenset[str] = frozenset({"document_tag", "task_tag", "story_tag"})
+
+#: Таблицы с колонкой ``uid`` (миграция 0049): authored без составного PK.
+UID_TABLES: frozenset[str] = (
+    frozenset(t for t, s in REGISTRY.items() if s.cls is SyncClass.AUTHORED) - COMPOSITE_PK_TABLES
+)
+
+#: ``uid`` — сама идентичность строки: уезжает у каждой таблицы, где он есть.
+SHIPPED_COLUMNS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        table: cols | {"uid"} if table in UID_TABLES else cols
+        for table, cols in _SHIPPED_BEFORE_UID.items()
+    }
+)
+
+#: Пространство имён uuid5 рёбер. Константа навсегда: смена значения меняет
+#: uid всех рёбер на всех репликах, а миграция 0049 держит свою копию.
+EDGE_UID_NAMESPACE = uuid.UUID("03a4b384-e781-5d7b-90ee-d862b599d935")
+
+
+def edge_canonical(table: str, row: Mapping[str, object]) -> str:
+    """Каноническая строка ребра: JSON ``[таблица, *значения ключа]``.
+
+    Значения — в порядке ``deterministic_uid``; FK-колонки ключа уже
+    переведены в uid концов (RFC 29 §3.3: «uid концов»), остальное — как в
+    строке (``kind``, ``relation``, ``to_ref``, ``path``, ``sha``). JSON, а не
+    склейка разделителем: значение с разделителем внутри не склеится с соседним.
+    ``KeyError`` — у таблицы нет детерминированного uid или в строке нет колонки.
+    """
+    columns = spec_for(table).deterministic_uid
+    if columns is None:
+        msg = f"sync_registry: у {table!r} нет deterministic_uid"
+        raise KeyError(msg)
+    values = [row[column] for column in columns]
+    return json.dumps([table, *values], ensure_ascii=False, separators=(",", ":"))
+
+
+def edge_uid(table: str, row: Mapping[str, object]) -> str:
+    """Детерминированный uid ребра: ``uuid5(EDGE_UID_NAMESPACE, edge_canonical)``.
+
+    Одно ребро, добавленное на двух репликах, получает один uid, и add-wins
+    сводится к идемпотентной вставке (RFC 29 §3.3). Бэкфилл миграции 0049
+    считает так же — сверяет ``tests/infra/test_migration_0049_preserves_data.py``.
+    """
+    return str(uuid.uuid5(EDGE_UID_NAMESPACE, edge_canonical(table, row)))
 
 
 def spec_for(table: str) -> TableSpec:

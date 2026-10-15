@@ -12,10 +12,10 @@ from datetime import datetime  # noqa: TC003
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 
-class TaskDocumentModel(Base):
+class TaskDocumentModel(SyncUidMixin, Base):
     """One structured document pinned to a task.
 
     Canonical keys: 'plan', 'design', 'verification', 'acceptance', or custom.

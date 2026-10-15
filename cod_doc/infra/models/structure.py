@@ -18,7 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, _utcnow
+from .base import Base, SyncUidMixin, _utcnow
 
 
 class CodeStructureSnapshotModel(Base):
@@ -230,7 +230,7 @@ class DocCodeClaimModel(Base):
     )
 
 
-class StructureWaiverModel(Base):
+class StructureWaiverModel(SyncUidMixin, Base):
     __tablename__ = "structure_waiver"
     __table_args__ = (
         UniqueConstraint(

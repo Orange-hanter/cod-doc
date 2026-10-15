@@ -15,10 +15,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base
+from .base import Base, SyncUidMixin
 
 
-class CommitLinkModel(Base):
+class CommitLinkModel(SyncUidMixin, Base):
     __tablename__ = "commit_link"
     __table_args__ = (
         UniqueConstraint("project_id", "task_id", "sha", name="uq_commit_link_edge"),

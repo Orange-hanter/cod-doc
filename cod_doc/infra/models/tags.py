@@ -10,10 +10,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base
+from .base import Base, SyncUidMixin
 
 
-class TagModel(Base):
+class TagModel(SyncUidMixin, Base):
     __tablename__ = "tag"
     __table_args__ = (UniqueConstraint("project_id", "name", name="uq_tag_project_name"),)
 
