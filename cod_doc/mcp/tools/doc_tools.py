@@ -214,7 +214,7 @@ def register(mcp: FastMCP) -> None:
         """DEBT-004: change a document's metadata in the DB — no markdown, no doc import.
 
         Partial update: omitted (None) fields stay as they are; ``owner=""``
-        clears the owner. Status is changed by ``doc_accept``, not here.
+        clears the owner. Status is changed by ``doc_update_status``, not here.
         Sensitivity can be raised but not lowered here: lowering un-redacts
         the document and is left to a human (CLI ``doc update``).
         type: same values as ``doc_create``. sensitivity: public | internal |
@@ -611,6 +611,52 @@ def register(mcp: FastMCP) -> None:
                 summary=f"Document {doc_key!r} accepted → {updated.status.value}",
             )
         return doc_to_dict(updated)
+
+    @mcp.tool(name="doc_update_status")
+    def doc_update_status(
+        project: str,
+        doc_key: str,
+        status: str,
+        author: str = "mcp",
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """DEBT-005: set a document's lifecycle status — any value, not only accept.
+
+        status: draft | review | active | authoritative | resolved | done | deprecated.
+        Writes a DOCUMENT revision and a ``doc.status_changed`` event — both
+        inside ``doc_service.update_status``, in this transaction; setting
+        the current status is a no-op (``changed: false``, nothing written).
+        Returns the document plus ``from`` / ``to`` / ``changed``.
+        ``dry_run=True`` reports the transition without writing.
+        """
+        from cod_doc.domain.entities import DocumentStatus
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_service
+
+        new_status = DocumentStatus(status)
+        sf, _ = session_factory(project)
+        with transactional(sf, commit=not dry_run) as session:
+            project_id = require_project_id(session, project)
+            d = doc_service.get(session, project_id, doc_key)
+            if d is None or d.row_id is None:
+                raise ValueError(f"Document '{doc_key}' not found.")
+            old_status = d.status.value
+            updated = doc_service.update_status(
+                session,
+                project_id=project_id,
+                document_id=d.row_id,
+                new_status=new_status,
+                author=author,
+                reason=reason,
+            )
+        out = doc_to_dict(updated)
+        out["from"] = old_status
+        out["to"] = new_status.value
+        out["changed"] = old_status != new_status.value
+        if dry_run:
+            out["dry_run"] = True
+        return out
 
     @mcp.tool(name="doc_export")
     def doc_export(

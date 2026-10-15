@@ -1244,6 +1244,7 @@ _cod-doc() {
         (rename)              _cod_doc_doc_rename && ret=0 ;;
         (section)             _cod_doc_doc_section && ret=0 ;;
         (show)                _cod_doc_doc_show && ret=0 ;;
+        (status)              _cod_doc_doc_status && ret=0 ;;
         (tree)                _cod_doc_doc_tree && ret=0 ;;
         (update)              _cod_doc_doc_update && ret=0 ;;
         (*)                   _default && ret=0 ;;
@@ -1271,6 +1272,7 @@ _cod-doc() {
     'rename:Rename a document key (and optionally its path); cascades incoming…'
     'section:Тела секций документа по якорям — без чтения тела всего документа.'
     'show:Show document metadata (and optionally sections).'
+    'status:Set STATUS on DOC_KEY — any lifecycle value, e.g. deprecated.'
     'tree:Дерево документации; разделы, раскладка документов, Инбокс.'
     'update:Change title, type, owner, sensitivity or preamble of DOC_KEY.'
   )
@@ -1501,6 +1503,22 @@ _cod-doc() {
     '(--json)--json' \
     '(- *)--help[Show this message and exit.]' \
     '1:doc-key:_cod_doc_docs' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_status] )) || _cod_doc_doc_status() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--dry-run)--dry-run[Show the transition without writing anything]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' \
+    '2:status:(draft review active authoritative resolved done deprecated)' && ret=0
   return ret
 }
 
