@@ -215,6 +215,8 @@ def register(mcp: FastMCP) -> None:
 
         Partial update: omitted (None) fields stay as they are; ``owner=""``
         clears the owner. Status is changed by ``doc_update_status``, not here.
+        Sensitivity can be raised but not lowered here: lowering un-redacts
+        the document and is left to a human (CLI ``doc update``).
         type: same values as ``doc_create``. sensitivity: public | internal |
         confidential | restricted.
 
