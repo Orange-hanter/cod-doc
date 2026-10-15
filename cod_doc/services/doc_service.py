@@ -27,6 +27,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -810,6 +811,136 @@ def move_section(
     moved = SectionRepository(session).get(moving.row_id)
     assert moved is not None
     return SectionMove(moved, from_position, position, [r.anchor for r in rows])
+
+
+#: Алфавит якоря секции — тот же, что оставляет ``import_service._slugify``.
+_ANCHOR_RE = re.compile(r"[\w-]+", re.UNICODE)
+
+
+class SectionRename(NamedTuple):
+    """Result of :func:`rename_section`. ``rewritten`` — ``doc_key#anchor`` of
+    every section whose body was rewritten to follow the new anchor."""
+
+    section: Section
+    old_heading: str
+    old_anchor: str
+    rewritten: list[str]
+    links: int
+
+
+def rename_section(
+    session: Session,
+    *,
+    project_id: int,
+    document_id: int,
+    anchor: str,
+    heading: str,
+    author: str,
+    new_anchor: str | None = None,
+    reason: str | None = None,
+) -> SectionRename:
+    """Change a section's heading and anchor; re-point links to it (DEBT-008).
+
+    ``new_anchor`` defaults to the slug of ``heading`` — the same slug
+    ``doc import`` gives a heading, so a later import of the projection
+    lands on this section instead of creating an orphan. Pass it explicitly
+    to keep a stable anchor while changing only the wording.
+
+    The section row, body and SECTION history stay. Links to the old anchor
+    in any document (``[[doc:KEY#a]]``, ``[x](path.md#a)``, ``[x](#a)``) are
+    rewritten by ``link_service.anchor_cascade``, each changed section with
+    its own SECTION revision. The rename itself is a DOCUMENT revision
+    ``op="rename_section"``, by the precedent of :func:`delete_section`.
+
+    Empty heading → ``ValidationError("DM-001")``; an anchor outside
+    letters, digits, ``_`` and ``-`` → ``ValidationError("DM-004")``; a ``new_anchor`` already
+    taken in the document → `SectionAlreadyExistsError`; unknown ``anchor`` →
+    `SectionNotFoundError`. Same heading and anchor — no-op.
+    """
+    from cod_doc.services import link_service
+    from cod_doc.services.import_service import _slugify
+
+    doc = _require_doc(session, document_id, project_id)
+    if not heading.strip():
+        raise validation.ValidationError("DM-001", "section heading must not be empty")
+    sec = session.execute(
+        select(SectionModel).where(
+            SectionModel.document_id == document_id, SectionModel.anchor == anchor
+        )
+    ).scalar_one_or_none()
+    if sec is None:
+        raise SectionNotFoundError(f"section {doc.doc_key}#{anchor}")
+
+    target_anchor = new_anchor or _slugify(heading)
+    # ai-review #208: якорь уходит в тела ЧУЖИХ документов как фрагмент ссылки
+    # (`[[doc:K#a]]`, `[x](p.md#a)`). `]`, `)`, `#`, пробел или перевод строки
+    # в нём — инъекция разметки в эти тела. Допустим ровно алфавит слага
+    # импорта; пустой слаг (заголовок из одних символов) — та же ошибка.
+    if not _ANCHOR_RE.fullmatch(target_anchor):
+        raise validation.ValidationError(
+            "DM-004",
+            f"anchor {target_anchor!r} must be non-empty letters, digits, '_' or '-'",
+            anchor=target_anchor,
+        )
+    old_heading = sec.heading
+    if old_heading == heading and anchor == target_anchor:
+        unchanged = SectionRepository(session).get(sec.row_id)
+        assert unchanged is not None
+        return SectionRename(unchanged, old_heading, anchor, [], 0)
+    if target_anchor != anchor:
+        taken = session.execute(
+            select(SectionModel.row_id).where(
+                SectionModel.document_id == document_id,
+                SectionModel.anchor == target_anchor,
+            )
+        ).scalar_one_or_none()
+        if taken is not None:
+            raise SectionAlreadyExistsError(
+                f"section {target_anchor!r} already exists in document {doc.doc_key}"
+            )
+
+    sec.heading = heading
+    sec.anchor = target_anchor
+    doc.last_updated = datetime.now(UTC)
+    session.flush()
+    activity_service.write_revision_and_emit_event(
+        session,
+        project_id=doc.project_id,
+        entity_kind=EntityKind.DOCUMENT,
+        entity_id=document_id,
+        author=author,
+        diff=json.dumps(
+            {
+                "op": "rename_section",
+                "from": {"anchor": anchor, "heading": old_heading},
+                "to": {"anchor": target_anchor, "heading": heading},
+            },
+            ensure_ascii=False,
+        ),
+        reason=reason or "rename_section",
+        activity_kind="doc.section_renamed",
+        activity_scope_kind="section",
+        activity_scope_id=f"{doc.doc_key}#{target_anchor}",
+        activity_payload={"old_anchor": anchor, "new_anchor": target_anchor},
+        activity_summary=f"Document {doc.doc_key}: section {anchor} → {target_anchor}",
+    )
+
+    report = link_service.AnchorCascadeReport([], 0)
+    if target_anchor != anchor:
+        report = link_service.anchor_cascade(
+            session,
+            project_id=doc.project_id,
+            document_id=document_id,
+            old_anchor=anchor,
+            new_anchor=target_anchor,
+            author=author,
+            reason=reason,
+        )
+    session.flush()
+    search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
+    renamed = SectionRepository(session).get(sec.row_id)
+    assert renamed is not None
+    return SectionRename(renamed, old_heading, anchor, report.rewritten, report.links)
 
 
 def update_status(

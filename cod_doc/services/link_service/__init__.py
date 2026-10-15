@@ -39,6 +39,7 @@ from ._types import (
     RenameCascadeReport,
     VerifyReport,
 )
+from .anchor_cascade import AnchorCascadeReport, anchor_cascade
 from .parser import parse
 from .rename_cascade import rename_cascade
 from .resolver import (
@@ -55,6 +56,7 @@ from .resolver import (
 )
 
 __all__ = [
+    "AnchorCascadeReport",
     "EntityKind",
     "IncomingLink",
     "LinkCounts",
@@ -62,6 +64,7 @@ __all__ = [
     "ParsedLink",
     "RenameCascadeReport",
     "VerifyReport",
+    "anchor_cascade",
     "counts_for_project",
     "list_code_refs",
     "list_for_section",

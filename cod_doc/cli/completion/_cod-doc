@@ -1243,6 +1243,7 @@ _cod-doc() {
         (move-section)        _cod_doc_doc_move_section && ret=0 ;;
         (patch)               _cod_doc_doc_patch && ret=0 ;;
         (rename)              _cod_doc_doc_rename && ret=0 ;;
+        (rename-section)      _cod_doc_doc_rename_section && ret=0 ;;
         (section)             _cod_doc_doc_section && ret=0 ;;
         (show)                _cod_doc_doc_show && ret=0 ;;
         (status)              _cod_doc_doc_status && ret=0 ;;
@@ -1272,6 +1273,7 @@ _cod-doc() {
     'move-section:Move section ANCHOR of DOC_KEY to index --position.'
     'patch:Replace the body of section ANCHOR in DOC_KEY.'
     'rename:Rename a document key (and optionally its path); cascades incoming…'
+    'rename-section:Rename section ANCHOR of DOC_KEY; links to the old anchor are rewri…'
     'section:Тела секций документа по якорям — без чтения тела всего документа.'
     'show:Show document metadata (and optionally sections).'
     'status:Set STATUS on DOC_KEY — any lifecycle value, e.g. deprecated.'
@@ -1496,6 +1498,24 @@ _cod-doc() {
     '(- *)--help[Show this message and exit.]' \
     '1:doc-key:_cod_doc_docs' \
     '2:new-key' && ret=0
+  return ret
+}
+
+(( $+functions[_cod_doc_doc_rename_section] )) || _cod_doc_doc_rename_section() {
+  local curcontext="$curcontext" ret=1
+  local -a line
+  typeset -A opt_args
+  _arguments -s -S \
+    '(-p --project)'{-p+,--project=}'[Project slug]:project:_cod_doc_projects' \
+    '(--heading)--heading=[New heading text]:heading' \
+    '(--anchor)--anchor=[New anchor; default — slug of --heading, as doc import derives it]:new-anchor' \
+    '(--author)--author=:author' \
+    '(--reason)--reason=:reason' \
+    '(--dry-run)--dry-run[Show the rename and the links that would move, write nothing]' \
+    '(--json)--json' \
+    '(- *)--help[Show this message and exit.]' \
+    '1:doc-key:_cod_doc_docs' \
+    '2:anchor:_cod_doc_doc_sections' && ret=0
   return ret
 }
 

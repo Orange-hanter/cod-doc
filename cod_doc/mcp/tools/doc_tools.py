@@ -630,6 +630,66 @@ def register(mcp: FastMCP) -> None:
             out["dry_run"] = True
         return out
 
+    @mcp.tool(name="doc_rename_section")
+    def doc_rename_section(
+        project: str,
+        doc_key: str,
+        anchor: str,
+        heading: str,
+        new_anchor: str | None = None,
+        author: str = "mcp",
+        reason: str | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """DEBT-008: rename a section's heading and anchor; links follow.
+
+        ``new_anchor`` defaults to the slug of ``heading`` (what ``doc import``
+        would derive). Links to the old anchor anywhere in the project —
+        ``[[doc:KEY#a]]``, ``[x](path.md#a)``, ``[x](#a)`` — are rewritten;
+        ``rewritten`` lists the sections whose bodies changed, ``links`` how
+        many links moved. The section keeps its body and revision history.
+        ``dry_run=True`` reports all of it without writing.
+        """
+        from cod_doc.infra.db import transactional
+        from cod_doc.services import doc_service
+        from cod_doc.services.doc_service import (
+            SectionAlreadyExistsError,
+            SectionNotFoundError,
+        )
+        from cod_doc.services.validation import ValidationError
+
+        sf, _ = session_factory(project)
+        try:
+            with transactional(sf, commit=not dry_run) as session:
+                project_id = require_project_id(session, project)
+                d = doc_service.get(session, project_id, doc_key)
+                if d is None or d.row_id is None:
+                    raise ValueError(f"Document '{doc_key}' not found.")
+                result = doc_service.rename_section(
+                    session,
+                    project_id=project_id,
+                    document_id=d.row_id,
+                    anchor=anchor,
+                    heading=heading,
+                    new_anchor=new_anchor,
+                    author=author,
+                    reason=reason,
+                )
+        except SectionNotFoundError as exc:
+            raise ValueError(f"Section '{anchor}' not found in document '{doc_key}'.") from exc
+        except (SectionAlreadyExistsError, ValidationError) as exc:
+            raise ValueError(str(exc)) from exc
+        out: dict[str, Any] = {
+            "doc_key": doc_key,
+            "from": {"anchor": result.old_anchor, "heading": result.old_heading},
+            "to": {"anchor": result.section.anchor, "heading": result.section.heading},
+            "rewritten": result.rewritten,
+            "links": result.links,
+        }
+        if dry_run:
+            out["dry_run"] = True
+        return out
+
     @mcp.tool(name="doc_accept")
     def doc_accept(
         project: str,
