@@ -90,3 +90,21 @@ def test_hash_update_with_an_unknown_project_fails(
 
     assert result.exit_code == 1
     assert _WRONG_HASH in master.read_text(encoding="utf-8")
+
+
+def test_hash_update_dry_run_lists_and_writes_nothing(
+    tmp_path: Path, isolated_cod_doc_home: Path
+) -> None:
+    """Зеркало `master_hash_update(dry_run=True)`: находки на экране, файл и журнал не тронуты."""
+    root = tmp_path / _PROJECT
+    root.mkdir()
+    added = CliRunner().invoke(main, ["project", "add", str(root), "--name", _PROJECT])
+    assert added.exit_code == 0, added.output
+    master = _master(root)
+
+    result = CliRunner().invoke(main, ["hash", "update", str(master), "--dry-run"])
+
+    assert result.exit_code == 0, result.output
+    assert "STALE: beta.md" in result.output
+    assert _WRONG_HASH in master.read_text(encoding="utf-8")
+    assert _event_authors(_PROJECT) == []

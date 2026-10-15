@@ -224,11 +224,17 @@ def _link_card(session: Session, project_id: int) -> list[dict[str, Any]]:
     ]
 
 
-def _master_card(master_path: Path, root_path: Path) -> list[dict[str, str]]:
-    """Реестр гибридных ссылок MASTER.md: находки ``BROKEN`` / ``STALE``."""
-    from cod_doc.core.hash_calc import check_stale_refs
+def _master_card(
+    session: Session, project_id: int, master_path: Path, root_path: Path
+) -> list[dict[str, str]]:
+    """Реестр гибридных ссылок MASTER.md: находки ``BROKEN`` / ``STALE``.
 
-    return check_stale_refs(master_path, repo_root=root_path)
+    DEBT-009: реестр читается из БД, если ``MASTER.md`` — документ проекта:
+    пересчёт пишет туда, и отстающий файл держал бы находки открытыми вечно.
+    """
+    from cod_doc.services import hash_service
+
+    return hash_service.stale_refs(session, project_id, master_path, root_path)
 
 
 def _unplaced_card(session: Session, project_id: int) -> dict[str, Any]:
@@ -587,7 +593,7 @@ def next(
     card: dict[str, Any] = {
         "drift": _drift_card(session, project_id, root_path),
         "links": [] if skip_links else _link_card(session, project_id),
-        "master": _master_card(master_path, root_path),
+        "master": _master_card(session, project_id, master_path, root_path),
         "findings": _findings_card(session, project_id),
         "unplaced": _unplaced_card(session, project_id),
         "questions": _questions_card(session, project_id),

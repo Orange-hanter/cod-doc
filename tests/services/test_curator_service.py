@@ -59,11 +59,21 @@ def _import_docs(root: Path) -> None:
     assert result.exit_code == 0, result.output
 
 
+def _land_master(root: Path, text: str) -> None:
+    """Записать реестр и довезти его в БД: с DEBT-009 реестр читается оттуда.
+
+    `project init` заводит MASTER.md документом, так что одна запись файла
+    дала бы `edited_in_place` на нём, а не находку реестра.
+    """
+    (root / "MASTER.md").write_text(text, encoding="utf-8")
+    result = CliRunner().invoke(main, ["doc", "import", str(root / "MASTER.md"), "-p", _PROJECT])
+    assert result.exit_code == 0, result.output
+
+
 def _write_master_with_stale_ref(root: Path) -> None:
     """Реестр гибридных ссылок, где хэш beta.md заведомо разошёлся."""
-    (root / "MASTER.md").write_text(
-        f"# MASTER\n\n- **Ссылка:** 📁 /beta.md | 🗃️ doc:beta_md | 🔑 sha:{_WRONG_HASH}\n",
-        encoding="utf-8",
+    _land_master(
+        root, f"# MASTER\n\n- **Ссылка:** 📁 /beta.md | 🗃️ doc:beta_md | 🔑 sha:{_WRONG_HASH}\n"
     )
 
 
@@ -235,11 +245,11 @@ def test_master_broken_ref_outranks_stale_one(curator_session) -> None:
     """BROKEN (файла нет) обязан стоять выше STALE (файл есть, хэш устарел)."""
     session, root = curator_session
     _import_docs(root)
-    (root / "MASTER.md").write_text(
+    _land_master(
+        root,
         "# MASTER\n\n"
         f"- 📁 /beta.md | 🗃️ doc:beta_md | 🔑 sha:{_WRONG_HASH}\n"
         f"- 📁 /gone.md | 🗃️ doc:gone_md | 🔑 sha:{_WRONG_HASH}\n",
-        encoding="utf-8",
     )
 
     master_items = [i for i in _call(session, root)["priority"] if i["kind"] == "master"]

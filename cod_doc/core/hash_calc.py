@@ -6,6 +6,10 @@ import hashlib
 import re
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 #: Сколько ждать `git check-ignore`. Он локальный и мгновенный; секунда — это
 #: защита от подвисшего git, а не рабочий бюджет.
@@ -94,7 +98,20 @@ def check_hash(file_path: str | Path, expected: str) -> bool:
 def check_stale_refs(
     master_path: str | Path, *, repo_root: Path | None = None
 ) -> list[dict[str, str]]:
-    """Пройти реестр гибридных ссылок MASTER.md и вернуть находки.
+    """Пройти реестр гибридных ссылок файла ``MASTER.md`` и вернуть находки.
+
+    Файловая обёртка над :func:`stale_refs_in`. Для проекта, где ``MASTER.md``
+    — документ БД, реестр читают из БД (``hash_service.stale_refs``): после
+    DEBT-009 пересчёт пишет туда, и файл-проекция законно отстаёт.
+    """
+    master = Path(master_path)
+    root = repo_root if repo_root is not None else master.parent
+    content = master.read_text(encoding="utf-8") if master.exists() else ""
+    return stale_refs_in(content, root)
+
+
+def stale_refs_in(content: str, root: Path) -> list[dict[str, str]]:
+    """Находки реестра в тексте ``content``; пути ссылок — от ``root``.
 
     ``BROKEN`` — файла по пути из ссылки нет на диске. ``STALE`` — файл есть,
     но его sha256[:12] разошёлся с записанным в реестре; ``actual`` несёт
@@ -103,13 +120,9 @@ def check_stale_refs(
 
     CUR-016: логика жила приватной ``routine_service._check_stale_refs`` и у
     второго потребителя (doc card куратора) не было способа её позвать, кроме
-    импорта приватного имени через слой. Теперь это публичная точка входа, а
-    routine — её первый вызывающий.
+    импорта приватного имени через слой. DEBT-009: на вход — текст, а не
+    файл, чтобы реестр можно было сверять и по телу документа в БД.
     """
-    master = Path(master_path)
-    root = repo_root if repo_root is not None else master.parent
-    content = master.read_text(encoding="utf-8") if master.exists() else ""
-
     findings: list[dict[str, str]] = []
     for m in LINK_PATTERN.finditer(content):
         rel = m.group("path").lstrip("/")
@@ -150,24 +163,38 @@ def make_ref(file_path: Path, repo_root: Path, *, with_hash: bool = True) -> str
 
 
 def update_hashes(master_path: Path) -> tuple[int, list[str]]:
-    """
-    Пересчитать хэши в MASTER.md — и в блоках со ссылкой, и в таблице реестра.
+    """Пересчитать хэши в файле MASTER.md — и в блоках со ссылкой, и в таблице реестра.
 
-    Возвращает (кол-во обновлённых, предупреждения).
+    Возвращает (кол-во обновлённых, предупреждения). Файловая обёртка над
+    :func:`recompute_hashes` — для ``MASTER.md`` вне БД. Документ БД
+    пересчитывает ``hash_service.update_master_hashes`` (DEBT-009).
 
-    ADO-180: раньше обновлялись только блоки. Таблица велась руками и молча
-    отставала — на момент правки 7 записей из 16 расходились, причём во всех
-    семи правдой была ссылка. Теперь колонка хэша в таблице производная: она
-    берётся из блока того же документа, а строки без блока (RFC 23, RFC 24)
-    остаются нетронутыми.
-
-    DEBT-001: ссылка без хэша не трогается и хэш не получает. Файл
-    перезаписывается, только если что-то поменялось: безусловная запись
-    двигала mtime впустую.
+    DEBT-001: файл перезаписывается, только если что-то поменялось:
+    безусловная запись двигала mtime впустую.
     """
     master = Path(master_path)
-    repo_root = master.parent
-    content = master.read_text(encoding="utf-8")
+    original = master.read_text(encoding="utf-8")
+    (content,), updated, warnings = recompute_hashes([original], master.parent)
+    if content != original:
+        master.write_text(content, encoding="utf-8")
+    return updated, warnings
+
+
+def recompute_hashes(texts: Sequence[str], repo_root: Path) -> tuple[list[str], int, list[str]]:
+    """Пересчитать реестр в наборе текстов: блоки со ссылкой, затем таблица.
+
+    Возвращает (новые тексты в том же порядке, кол-во обновлённых,
+    предупреждения). Ничего не пишет — запись за вызывающим.
+
+    Тексты — части одного реестра: тело файла целиком либо преамбула и
+    секции документа из БД. Сначала по всем частям проходят блоки и наполняют
+    ``fresh``, потом по всем — таблица: строка таблицы может стоять в другой
+    секции, чем блок её документа.
+
+    ADO-180: колонка хэша в таблице производная — берётся из блока того же
+    документа; строки без блока (RFC 23, RFC 24) остаются нетронутыми.
+    DEBT-001: ссылка без хэша не трогается и хэш не получает.
+    """
     updated = 0
     warnings: list[str] = []
 
@@ -208,10 +235,5 @@ def update_hashes(master_path: Path) -> tuple[int, list[str]]:
         return m.group("prefix") + new_hash + m.group("suffix")
 
     # Порядок важен: сначала блоки наполняют `fresh`, затем таблица его читает.
-    original = content
-    content = LINK_PATTERN.sub(replace_link_hash, content)
-    content = TABLE_ROW_PATTERN.sub(replace_table_hash, content)
-
-    if content != original:
-        master.write_text(content, encoding="utf-8")
-    return updated, warnings
+    linked = [LINK_PATTERN.sub(replace_link_hash, text) for text in texts]
+    return [TABLE_ROW_PATTERN.sub(replace_table_hash, text) for text in linked], updated, warnings
