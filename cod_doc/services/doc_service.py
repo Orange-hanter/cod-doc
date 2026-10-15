@@ -789,6 +789,133 @@ def accept(
     )
 
 
+#: Порядок грифов — тот же, что у редакции проекций (``projection_service``).
+_SENSITIVITY_RANK: dict[str, int] = {
+    Sensitivity.PUBLIC.value: 0,
+    Sensitivity.INTERNAL.value: 1,
+    Sensitivity.CONFIDENTIAL.value: 2,
+    Sensitivity.RESTRICTED.value: 3,
+}
+
+
+class MetadataUpdate(NamedTuple):
+    """Result of :func:`update_metadata`: the refreshed document and what moved.
+
+    ``changes`` maps a field name to ``{"from": old, "to": new}``; it holds
+    only fields whose value actually changed, so an empty dict means no-op.
+    """
+
+    document: Document
+    changes: dict[str, dict[str, str | None]]
+
+
+def update_metadata(
+    session: Session,
+    *,
+    project_id: int,
+    document_id: int,
+    author: str,
+    title: str | None = None,
+    type: DocumentType | None = None,
+    owner: str | None = None,
+    sensitivity: Sensitivity | None = None,
+    preamble: str | None = None,
+    reason: str | None = None,
+    reindex: bool = True,
+    allow_declassify: bool = False,
+) -> MetadataUpdate:
+    """Change title / type / owner / sensitivity / preamble of an existing doc (DEBT-004).
+
+    Partial update: ``None`` leaves a field untouched. ``owner=""`` clears the
+    owner. Status is not here — it has its own transition (:func:`update_status`).
+
+    Before this a metadata change meant editing frontmatter in the file and
+    running ``doc import`` — the file-first path agents must not take.
+
+    The FM-002/FM-003 gate runs against the resulting record, so clearing the
+    owner of an ACTIVE document is refused exactly as ``create`` would refuse it.
+    No-op (no revision, no event) when nothing changes.
+
+    Lowering ``sensitivity`` (say ``restricted`` → ``public``) un-redacts the
+    document in projections for lower audiences (``projection_service``
+    redaction), so it is refused with ``ValidationError("DM-003")`` unless
+    ``allow_declassify=True``. ``author`` cannot carry that decision — it is a
+    string the caller chooses; the surface does: the CLI, run by a human at a
+    terminal, opts in, the MCP tool does not. Raising sensitivity is always
+    allowed.
+    """
+    doc = _require_doc(session, document_id, project_id)
+    if title is not None and not title.strip():
+        raise validation.ValidationError("DM-001", "document title must not be empty")
+
+    wanted: dict[str, str | None] = {}
+    if title is not None:
+        wanted["title"] = title
+    if type is not None:
+        wanted["type"] = type.value
+    if owner is not None:
+        wanted["owner"] = owner or None
+    if sensitivity is not None:
+        wanted["sensitivity"] = sensitivity.value
+        if not allow_declassify and _SENSITIVITY_RANK[sensitivity.value] < _SENSITIVITY_RANK.get(
+            doc.sensitivity, 1
+        ):
+            raise validation.ValidationError(
+                "DM-003",
+                f"lowering sensitivity {doc.sensitivity} → {sensitivity.value} un-redacts "
+                "the document; only a human may do it (CLI `doc update`)",
+            )
+    if preamble is not None:
+        wanted["preamble"] = preamble
+
+    changes: dict[str, dict[str, str | None]] = {
+        field: {"from": getattr(doc, field), "to": value}
+        for field, value in wanted.items()
+        if getattr(doc, field) != value
+    }
+    if not changes:
+        unchanged = DocumentRepository(session).get(document_id)
+        assert unchanged is not None
+        return MetadataUpdate(unchanged, {})
+
+    _gate_frontmatter(
+        type=type or DocumentType(doc.type),
+        status=DocumentStatus(doc.status),
+        owner=wanted.get("owner", doc.owner),
+        frontmatter=doc.frontmatter_json,
+    )
+    for field, change in changes.items():
+        setattr(doc, field, change["to"])
+    doc.last_updated = datetime.now(UTC)
+    session.flush()
+
+    rev.write(
+        session,
+        project_id=doc.project_id,
+        entity_kind=EntityKind.DOCUMENT,
+        entity_id=document_id,
+        author=author,
+        diff=json.dumps({"op": "metadata", "changes": changes}, ensure_ascii=False),
+        reason=reason or "metadata",
+    )
+    activity_service.emit_for_write(
+        session,
+        doc.project_id,
+        "doc.metadata_updated",
+        author,
+        scope_kind="doc",
+        scope_id=doc.doc_key,
+        payload={"fields": sorted(changes), "reason": reason},
+        summary=f"Document {doc.doc_key}: {', '.join(sorted(changes))} updated",
+    )
+    # Заголовок и преамбула попадают в поисковый индекс (ADO-211).
+    if reindex and changes.keys() & {"title", "preamble"}:
+        search_service.index_doc(session, project_id=doc.project_id, doc_key=doc.doc_key)
+    refreshed = DocumentRepository(session).get(document_id)
+    assert refreshed is not None
+    return MetadataUpdate(refreshed, changes)
+
+
 def rename(
     session: Session,
     *,

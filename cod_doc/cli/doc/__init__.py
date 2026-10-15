@@ -26,6 +26,7 @@ from . import (  # noqa: F401 — registration side-effects
     cmd_show,
     cmd_tree,
     cmd_tree_health,
+    cmd_update,
 )
 from ._group import doc
 
