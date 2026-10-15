@@ -602,9 +602,7 @@ def _(w: World) -> Expect:
     doc_service.move_section(
         w.session, project_id=w.pid, document_id=w.doc_id, anchor="two", position=0, author=AUTHOR
     )
-    # Порядок уезжает rank'ом (CLO-003/004); пока его нет, move пишет
-    # last_updated документа — операция документа есть.
-    return [("document", w.now(DocumentModel, doc_key="spec-a"))]
+    return [("section", w.now(SectionModel, anchor="two"))]
 
 
 @case("doc_service.rename_section")
@@ -823,8 +821,7 @@ def _(w: World) -> Expect:
         author=AUTHOR,
         reason="reorder",
     )
-    # Порядок уезжает rank'ом (CLO-004); до него move пишет last_updated плана.
-    return [("plan", w.now(PlanModel, scope="w-plan"))]
+    return [("plan_section", w.now(PlanSectionModel, letter="B"))]
 
 
 @case("plan_service.delete_section")
@@ -948,7 +945,6 @@ def _(w: World) -> Expect:
 @case("adr_topic_service.move")
 def _(w: World) -> Expect:
     adr_topic_service.move(w.session, project_id=w.pid, name="data", position=0, author=AUTHOR)
-    # Порядок уезжает rank'ом (CLO-004); move пишет updated_at темы.
     return [("adr_topic", w.now(ADRTopicModel, name="data"))]
 
 
@@ -1441,12 +1437,6 @@ def _(w: World) -> Expect:
     return [("project", w.later(ProjectModel, slug="second"))]
 
 
-#: Перемещение меняет только ``position`` — она local (Q-009); порядок уедет
-#: колонкой ``rank`` (CLO-003/004). До неё операции нет — и это верно.
-ORDER_UNTIL_CLO_004: dict[str, str] = {
-    "plan_service.move_section": "move пишет только position секций — local до rank",
-}
-
 #: Захват bulk-путей чинит CLO-007 (RFC §3.4); до него случаи падают.
 BULK_UNTIL_CLO_007: dict[str, str] = {
     "scenario_service.set_steps": "delete(ScenarioStepModel) — шаги удаляются мимо хука",
@@ -1565,10 +1555,6 @@ def _params() -> list[Any]:
         if name in BULK_UNTIL_CLO_007:
             marks.append(
                 pytest.mark.xfail(strict=True, reason=f"CLO-007: {BULK_UNTIL_CLO_007[name]}")
-            )
-        if name in ORDER_UNTIL_CLO_004:
-            marks.append(
-                pytest.mark.xfail(strict=True, reason=f"CLO-004: {ORDER_UNTIL_CLO_004[name]}")
             )
         out.append(pytest.param(name, marks=marks, id=name))
     return out

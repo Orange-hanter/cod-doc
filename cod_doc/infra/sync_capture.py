@@ -157,6 +157,8 @@ class TableInfo:
     shipped: frozenset[str]
     #: FK (настоящие и логические) → таблица конца.
     fk_targets: Mapping[str, str]
+    #: Логические FK (без ограничения в БД): висячее значение = «ссылки нет».
+    logical: frozenset[str]
     #: Полиморфные FK → колонка-дискриминатор (``POLYMORPHIC_FKS``).
     polymorphic: Mapping[str, str]
     has_uid: bool
@@ -199,6 +201,7 @@ def _table_info(mapper: Mapper[object]) -> TableInfo | None:
         columns=columns,
         shipped=shipped,
         fk_targets=MappingProxyType(fk_targets),
+        logical=frozenset(spec.logical_fks),
         polymorphic=MappingProxyType(polymorphic),
         has_uid=_UID in table.c,
         nullable=frozenset(c.name for c in table.columns if c.nullable),
@@ -236,6 +239,20 @@ def _table_order() -> dict[str, int]:
 
 
 # --- чтение связанных строк ---------------------------------------------------
+
+
+class SyncCaptureError(RuntimeError):
+    """Операцию над authored-строкой построить нельзя — транзакция не коммитится.
+
+    Fail-closed (RFC 29 §10.10, ``SYNC-001``: запись в authored мимо журнала).
+    Запись без операции молча развела бы реплики; урезанная операция — тоже.
+    Сообщение называет только таблицу и колонку, без значений.
+    """
+
+    code = "SYNC-001"
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(f"{self.code} {detail}")
 
 
 class _Unresolvable(Exception):
@@ -296,7 +313,7 @@ class _Lookup:
         row = self.row(table, row_id)
         value = row.get(_UID) if row is not None else None
         if not isinstance(value, str) or not value:
-            raise _Unresolvable(f"{table}.row_id={row_id!r} без uid")
+            raise _Unresolvable(f"конец в {table} без uid")
         return value
 
     def doc_sensitivity_by_key(self, project_id: object, doc_key: object) -> object:
@@ -441,16 +458,21 @@ def _serialize(info: TableInfo, column: str, row: Mapping[str, object], lookup: 
     if value is None:
         return None
     if column in info.fk_targets:
-        return lookup.uid(info.fk_targets[column], value)
+        target = info.fk_targets[column]
+        if column in info.logical and lookup.row(target, value) is None:
+            return None  # висячая логическая ссылка (полку удалили мимо сервиса)
+        return lookup.uid(target, value)
     if column in info.polymorphic:
         try:
             kind = EntityKind(str(row.get(info.polymorphic[column])))
         except ValueError as exc:
-            raise _Unresolvable(f"{info.table}.{column}: незнакомый вид") from exc
-        target = reg.ENTITY_KIND_TABLES.get(kind)
-        if target is None or target not in reg.UID_TABLES:
-            raise _Unresolvable(f"{info.table}.{column}: {kind} без uid")
-        return lookup.uid(target, value)
+            raise _Unresolvable("незнакомый вид сущности") from exc
+        poly_target = reg.ENTITY_KIND_TABLES.get(kind)
+        if poly_target is None or poly_target not in reg.UID_TABLES:
+            raise _Unresolvable("вид сущности без uid")
+        if lookup.row(poly_target, value) is None:
+            return None  # висячая полиморфная ссылка: FK нет, ссылаться не на что
+        return lookup.uid(poly_target, value)
     return value
 
 
@@ -467,7 +489,7 @@ def _columns_payload(
         try:
             out[column] = _serialize(info, column, row, lookup)
         except _Unresolvable as exc:
-            logger.warning("sync_capture: колонка не уезжает — %s", exc)
+            raise SyncCaptureError(f"{info.table}.{column}: {exc}") from None
     return out
 
 
@@ -479,7 +501,7 @@ def _edge_key(info: TableInfo, row: Mapping[str, object], lookup: _Lookup) -> di
         if value is None and column not in info.nullable:
             # До flush FK, выставленный через relationship, ещё пуст: uid
             # ребра с ``None`` вместо конца совпал бы у всех таких рёбер.
-            raise _Unresolvable(f"{info.table}.{column} ещё не проставлен")
+            raise _Unresolvable(f"{info.table}.{column}: ещё не проставлен")
         if column in info.fk_targets and value is not None:
             value = lookup.uid(info.fk_targets[column], value)
         key[column] = value
@@ -510,6 +532,8 @@ class PendingOp:
     base: dict[str, object]
     author: str | None
     tx: SessionTransaction | None = field(default=None, repr=False)
+    #: Строка на момент захвата (row_id-FK) — для пересверки гейта на commit.
+    row: dict[str, object] | None = field(default=None, repr=False)
 
 
 def _pending(session: Session) -> list[PendingOp]:
@@ -555,14 +579,10 @@ def _new_op(
     kind: OpKind,
     fields: dict[str, object],
     base: dict[str, object],
-) -> PendingOp | None:
+    row: Mapping[str, object],
+) -> PendingOp:
     if not isinstance(project_id, int):
-        logger.error(
-            "sync_capture: у %s uid=%s не нашёлся проект — операция не записана",
-            info.table,
-            entity_uid,
-        )
-        return None
+        raise SyncCaptureError(f"{info.table}: проект строки не найден")
     return PendingOp(
         op_id=str(ULID()),
         project_id=project_id,
@@ -573,6 +593,7 @@ def _new_op(
         base=base,
         author=session.info.get(AUTHOR_KEY),
         tx=_current_tx(session),
+        row=dict(row),
     )
 
 
@@ -605,9 +626,8 @@ def _upsert_op(
         if not _ships(info.table, gate_now):
             if ships_before:
                 logger.warning(
-                    "sync_capture: %s uid=%s стала local — на remote осталась история (Q-015)",
+                    "sync_capture: строка %s стала local — на remote осталась история (Q-015)",
                     info.table,
-                    now.get(_UID),
                 )
             return None
         promoted = not ships_before
@@ -615,8 +635,7 @@ def _upsert_op(
         return None
     entity_uid = _entity_uid(info, now, lookup)
     if entity_uid is None:
-        logger.warning("sync_capture: %s без uid — операция не записана", info.table)
-        return None
+        raise SyncCaptureError(f"{info.table}.uid: пуст")
     withheld = reg.withheld_columns(info.table, gate_now)
     if is_new or promoted:
         fields = _columns_payload(info, info.shipped - withheld, now, lookup)
@@ -627,7 +646,7 @@ def _upsert_op(
             return None
         fields = _columns_payload(info, columns, now, lookup)
         base = _columns_payload(info, columns, before, lookup)
-    return _new_op(session, info, project_id, entity_uid, "upsert", fields, base)
+    return _new_op(session, info, project_id, entity_uid, "upsert", fields, base, now)
 
 
 def _delete_op(
@@ -640,11 +659,10 @@ def _delete_op(
         return None
     entity_uid = _entity_uid(info, before, lookup)
     if entity_uid is None:
-        logger.warning("sync_capture: удаление %s без uid — операция не записана", info.table)
-        return None
+        raise SyncCaptureError(f"{info.table}.uid: пуст у удаляемой строки")
     withheld = reg.withheld_columns(info.table, gate)
     base = _columns_payload(info, info.shipped - withheld, before, lookup)
-    return _new_op(session, info, project_id, entity_uid, "delete", {}, base)
+    return _new_op(session, info, project_id, entity_uid, "delete", {}, base, before)
 
 
 # --- события --------------------------------------------------------------------
@@ -680,10 +698,10 @@ def _assign_uids(session: Session) -> None:
 
 def _late_edge_uid(session: Session, info: TableInfo, obj: object, lookup: _Lookup) -> None:
     row = _row_now(info, obj)
-    uid = _edge_uid(info, row, lookup)
-    if uid is None:
-        logger.warning("sync_capture: концы ребра %s без uid — uid случайный", info.table)
-        uid = str(uuid.uuid7())
+    try:
+        uid = reg.edge_uid(info.table, _edge_key(info, row, lookup))
+    except _Unresolvable as exc:
+        raise SyncCaptureError(f"{exc}") from None
     tbl = _table(attributes.instance_state(obj).mapper)
     lookup.conn.execute(update(tbl).where(tbl.c.row_id == row[_ROW_ID]).values(uid=uid))
     attributes.set_committed_value(obj, info.attr(_UID), uid)
@@ -720,9 +738,15 @@ def _after_flush(session: Session, flush_context: UOWTransaction) -> None:
             upserts.append((order.get(info.table, 0), op))
     if not upserts and not deletes:
         return
-    pending = _pending(session)
-    pending.extend(op for _, op in sorted(upserts, key=lambda p: p[0]))
-    pending.extend(op for _, op in sorted(deletes, key=lambda p: -p[0]))
+    captured = [op for _, op in sorted(upserts, key=lambda p: p[0])]
+    captured += [op for _, op in sorted(deletes, key=lambda p: -p[0])]
+    if _COMMITTING_KEY in session.info:
+        # Flush commit'а после нашего before_commit (чужой before_commit
+        # что-то поменял): хвост уже записан, пишем эти операции сразу —
+        # иначе их выбросил бы конец транзакции.
+        _write(session, lookup.conn, captured, session.info[_COMMITTING_KEY])
+        return
+    _pending(session).extend(captured)
 
 
 def coalesce(ops: list[PendingOp]) -> list[PendingOp]:
@@ -755,23 +779,57 @@ def coalesce(ops: list[PendingOp]) -> list[PendingOp]:
 _PROJECT_EXISTS = text("SELECT 1 FROM project WHERE row_id = :p")
 
 
-def _replica_if_project_exists(session: Session, project_id: int) -> str | None:
+def _replica_if_project_exists(conn: Connection, project_id: int) -> str | None:
     """Своя реплика проекта; ``None`` — проекта больше нет.
 
     Удаление проекта — не операция проекта: ``sync_op`` и ``replica`` висят на
     нём с ``ON DELETE CASCADE``, вставка упала бы на FK.
     """
-    if session.execute(_PROJECT_EXISTS, {"p": project_id}).first() is None:
+    if conn.execute(_PROJECT_EXISTS, {"p": project_id}).first() is None:
         return None
-    return self_replica(session, project_id)
+    return self_replica(conn, project_id)
 
 
-def _before_commit(session: Session) -> None:
-    if session.in_nested_transaction():
-        return  # RELEASE SAVEPOINT: внешняя транзакция ещё может откатиться
-    session.flush()  # последний flush commit'а идёт после этого события
-    pending = coalesce(session.info.pop(_PENDING_KEY, []))
-    author = session.info.pop(AUTHOR_KEY, None)
+def _regate(lookup: _Lookup, pending: list[PendingOp]) -> list[PendingOp]:
+    """Пересверить гейт реестра на состоянии к commit'у (Q-015, решение 16).
+
+    Операция захвачена flush'ем, а документ мог стать restricted позже в той
+    же транзакции: без пересверки уехали бы его тело, секции и ссылки на него.
+    Строка — текущая из БД по uid (удалённая позже — снимок захвата), метки
+    документов — текущие. Не проходит — операция выбрасывается; ссылка стала
+    закрытой — её колонки вычищаются из ``fields`` и ``base``.
+    """
+    out: list[PendingOp] = []
+    for op in pending:
+        table = op.entity_kind
+        spec = reg.spec_for(table)
+        if op.row is None or (spec.row_is_local is None and table not in reg.DOC_REFS):
+            out.append(op)
+            continue
+        row: Mapping[str, object] = op.row
+        mapper = _mapper_for(table)
+        if op.kind == "upsert" and mapper is not None and table in reg.UID_TABLES:
+            tbl = _table(mapper)
+            hit = lookup.conn.execute(select(tbl).where(tbl.c.uid == op.entity_uid)).mappings()
+            current = hit.first()
+            row = dict(current) if current is not None else row
+        gate = gating_row(lookup, table, row, op.project_id)
+        if not _ships(table, gate):
+            continue
+        for column in reg.withheld_columns(table, gate):
+            op.fields.pop(column, None)
+            op.base.pop(column, None)
+        out.append(op)
+    return out
+
+
+_COMMITTING_KEY = "cod_doc.sync_capture.committing"
+
+
+def _write(
+    session: Session, conn: Connection, pending: list[PendingOp], author: str | None
+) -> None:
+    pending = _regate(_Lookup(session), pending)
     if not pending:
         return
     if author is None and any(op.author is None for op in pending):
@@ -784,7 +842,7 @@ def _before_commit(session: Session) -> None:
     rows: list[dict[str, object]] = []
     for op in pending:
         if op.project_id not in replicas:
-            replicas[op.project_id] = _replica_if_project_exists(session, op.project_id)
+            replicas[op.project_id] = _replica_if_project_exists(conn, op.project_id)
         replica = replicas[op.project_id]
         if replica is None:
             continue  # проект удалён этой транзакцией: журнал ушёл бы каскадом
@@ -793,7 +851,7 @@ def _before_commit(session: Session) -> None:
                 "op_id": op.op_id,
                 "project_id": op.project_id,
                 "replica_uid": replica,
-                "hlc": str(clock_for(session, replica).now()),
+                "hlc": str(clock_for(conn, replica).now()),
                 "entity_kind": op.entity_kind,
                 "entity_uid": op.entity_uid,
                 "kind": op.kind,
@@ -804,7 +862,18 @@ def _before_commit(session: Session) -> None:
             }
         )
     if rows:
-        session.execute(insert(SyncOpModel), rows)
+        conn.execute(insert(cast("Table", SyncOpModel.__table__)), rows)
+
+
+def _before_commit(session: Session) -> None:
+    if session.in_nested_transaction():
+        return  # RELEASE SAVEPOINT: внешняя транзакция ещё может откатиться
+    session.flush()  # последний flush commit'а идёт после этого события
+    pending = coalesce(session.info.pop(_PENDING_KEY, []))
+    author = session.info.pop(AUTHOR_KEY, None)
+    session.info[_COMMITTING_KEY] = author
+    if pending:
+        _write(session, session.connection(), pending, author)
 
 
 def _within(tx: SessionTransaction | None, ancestor: SessionTransaction) -> bool:
@@ -826,6 +895,7 @@ def _after_transaction_end(session: Session, transaction: SessionTransaction) ->
         # Корневая закончилась: commit уже записал хвост, rollback/close — выбросил.
         session.info.pop(_PENDING_KEY, None)
         session.info.pop(AUTHOR_KEY, None)
+        session.info.pop(_COMMITTING_KEY, None)
 
 
 _EVENTS = (

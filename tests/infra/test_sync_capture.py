@@ -618,10 +618,9 @@ def test_record_writes_explicit_op_and_drops_non_authored(
             )
 
 
-def test_unresolvable_fk_is_withheld_not_serialised_as_row_id(
-    factory: sessionmaker[Session], caplog: pytest.LogCaptureFixture
-) -> None:
-    """Конец без uid (вставлен мимо хука) — колонка не уезжает, row_id не утекает."""
+def test_unresolvable_fk_fails_the_transaction(factory: sessionmaker[Session]) -> None:
+    """Конец без uid (вставлен мимо хука): операцию не построить — транзакция
+    падает, а не коммитится без операции или с урезанной (fail-closed)."""
     with factory() as session:
         ids = seed_plan(session)
         session.commit()
@@ -631,12 +630,145 @@ def test_unresolvable_fk_is_withheld_not_serialised_as_row_id(
             plan.uid = None
             bare.commit()
         session.expire_all()
-        with caplog.at_level(logging.WARNING, logger="cod_doc.infra.sync_capture"):
-            task = make_task(session, ids)
+        with pytest.raises(cap.SyncCaptureError) as err:
+            make_task(session, ids)
             session.commit()
-        [op] = ops(session, entity_uid=task.uid)
-        assert "plan_id" not in op["fields"]
-        assert "без uid" in caplog.text
+        assert err.value.code == "SYNC-001"
+        # Только таблица и колонка — ни row_id, ни значений.
+        assert str(err.value) == "SYNC-001 task.plan_id: конец в plan без uid"
+        session.rollback()
+        assert session.scalars(select(TaskModel)).all() == [], "запись без операции не прошла"
+
+
+def test_dangling_logical_ref_ships_as_null_not_row_id(factory: sessionmaker[Session]) -> None:
+    """Логическая/полиморфная ссылка без строки-цели (FK в БД нет) — «ссылки
+    нет»: уезжает ``null``, а не локальный row_id и не падение транзакции."""
+    from cod_doc.infra.models import ExternalRefModel
+
+    with factory() as session:
+        ids = seed_plan(session)
+        session.add(
+            ExternalRefModel(
+                project_id=ids[0],
+                entity_kind="task",
+                entity_row_id=999,
+                system="github",
+                external_id="1",
+            )
+        )
+        session.commit()
+        [op] = ops(session, entity_kind="external_ref")
+        assert op["fields"]["entity_row_id"] is None
+
+
+def test_flush_after_before_commit_is_still_journaled(factory: sessionmaker[Session]) -> None:
+    """Правка из чужого before_commit (после нашего) уходит последним flush'ем
+    commit'а — её операция тоже записана, а не выброшена с концом транзакции."""
+    from sqlalchemy import event
+
+    with factory() as session:
+        ids = seed_plan(session)
+        task = make_task(session, ids)
+        session.commit()
+
+        def late(sess: Session) -> None:
+            if task.title != "late":
+                task.title = "late"
+
+        event.listen(factory, "before_commit", late)
+        try:
+            cap.set_author(session, AUTHOR)
+            task.description = "x"
+            session.commit()
+        finally:
+            event.remove(factory, "before_commit", late)
+        titles = [o["fields"].get("title") for o in ops(session, entity_uid=task.uid)]
+        assert "late" in titles
+
+
+def test_ops_do_not_leak_into_next_transaction_after_close(
+    factory: sessionmaker[Session],
+) -> None:
+    with factory() as session:
+        ids = seed_plan(session)
+        session.commit()
+        make_task(session, ids, "PLN-001")
+        session.flush()
+        assert cap.pending_ops(session), "операции захвачены"
+        session.close()
+        assert cap.pending_ops(session) == []
+        session.add(ProjectModel(slug="z", title="Z", root_path="/tmp/z", config_json={}))
+        cap.set_author(session, AUTHOR)
+        session.commit()
+        assert not ops(session, entity_kind="task")
+
+
+def test_document_restricted_later_in_same_transaction_ships_nothing(
+    factory: sessionmaker[Session], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Документ создан internal, затем в той же транзакции поднят до restricted:
+    ни его тело, ни секции не уезжают, а лог не несёт значений."""
+    with factory() as session:
+        ids = seed_plan(session)
+        session.commit()
+        doc = make_doc(session, ids[0], "secret-later")
+        section = session.scalars(
+            select(SectionModel).where(SectionModel.document_id == doc.row_id)
+        ).one()
+        session.flush()
+        doc.sensitivity = Sensitivity.RESTRICTED.value
+        with caplog.at_level(logging.DEBUG, logger="cod_doc.infra.sync_capture"):
+            session.commit()
+        leaked = {o["entity_uid"] for o in ops(session)}
+        assert doc.uid not in leaked
+        assert section.uid not in leaked
+        assert "hello" not in caplog.text and "secret-later" not in caplog.text
+
+
+def test_scenario_withheld_after_ref_turns_restricted_in_same_transaction(
+    factory: sessionmaker[Session],
+) -> None:
+    """Сущность со ссылкой на документ, ставший restricted позже в транзакции,
+    уезжает без ссылки и связанных колонок (withheld пересчитан на commit)."""
+    with factory() as session:
+        ids = seed_plan(session)
+        doc = make_doc(session, ids[0], "spec-x")
+        session.commit()
+        scenario_service.create(
+            session,
+            project_id=ids[0],
+            title="t",
+            kind=ScenarioKind.INVARIANT,
+            preconditions="p",
+            expected="e",
+            author=AUTHOR,
+            scenario_id="SCN-001",
+            group_key="g",
+            doc_key="spec-x",
+            section_anchor="intro",
+            steps=["one"],
+        )
+        session.flush()
+        doc.sensitivity = Sensitivity.RESTRICTED.value
+        session.commit()
+        [op] = ops(session, entity_kind="scenario")
+        withheld = {"document_id", "doc_key", "section_anchor", "doc_content_hash"}
+        assert not withheld & set(op["fields"]), op["fields"]
+
+
+def test_log_messages_name_columns_not_values(
+    factory: sessionmaker[Session], caplog: pytest.LogCaptureFixture
+) -> None:
+    with factory() as session:
+        ids = seed_plan(session)
+        doc = make_doc(session, ids[0], "spec-a")
+        session.commit()
+        doc.sensitivity = Sensitivity.RESTRICTED.value
+        with caplog.at_level(logging.DEBUG, logger="cod_doc.infra.sync_capture"):
+            session.commit()
+        assert "на remote осталась история" in caplog.text
+        assert str(doc.uid) not in caplog.text
+        assert "spec-a" not in caplog.text
 
 
 def test_every_new_factory_gets_listeners_despite_id_reuse() -> None:
@@ -660,3 +792,61 @@ def test_every_new_factory_gets_listeners_despite_id_reuse() -> None:
             gc.collect()
     engine.dispose()
     assert missing == 0
+
+
+def test_new_ordered_rows_ship_rank_not_position(factory: sessionmaker[Session]) -> None:
+    """CLO-003/004: ранг ставит before_flush ``infra/ordering``, захват собирает
+    операции в after_flush — ранг уже в строке при любом порядке слушателей."""
+    with factory() as session:
+        ids = seed_plan(session)
+        make_doc(session, ids[0], "spec-a")
+        scenario_service.create(
+            session,
+            project_id=ids[0],
+            title="t",
+            kind=ScenarioKind.INVARIANT,
+            preconditions="p",
+            expected="e",
+            author=AUTHOR,
+            scenario_id="SCN-001",
+            group_key="g",
+            steps=["one"],
+        )
+        session.commit()
+        for table in ("section", "plan_section", "scenario_step"):
+            [op] = ops(session, entity_kind=table)
+            assert op["fields"].get("rank"), (table, op["fields"])
+            assert "position" not in op["fields"], table
+
+
+def test_move_ships_only_rank(factory: sessionmaker[Session]) -> None:
+    with factory() as session:
+        ids = seed_plan(session)
+        doc = make_doc(session, ids[0], "spec-a")
+        doc_service.add_section(
+            session,
+            project_id=ids[0],
+            document_id=doc.row_id,
+            anchor="two",
+            heading="Two",
+            level=2,
+            position=1,
+            body="b",
+            author=AUTHOR,
+            reindex=False,
+        )
+        session.commit()
+        two = session.scalars(select(SectionModel).where(SectionModel.anchor == "two")).one()
+        old_rank = two.rank
+        doc_service.move_section(
+            session,
+            project_id=ids[0],
+            document_id=doc.row_id,
+            anchor="two",
+            position=0,
+            author=AUTHOR,
+        )
+        session.commit()
+        moved = [o for o in ops(session, entity_uid=two.uid) if o["base"]]
+        assert moved[-1]["fields"] == {"rank": two.rank}
+        assert moved[-1]["base"] == {"rank": old_rank}

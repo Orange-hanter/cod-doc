@@ -41,6 +41,7 @@ from sqlalchemy import Boolean, DateTime, bindparam, text
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from sqlalchemy import Connection
     from sqlalchemy.orm import Session
 
 #: Счётчик — четыре десятичных знака формата §10.1.
@@ -133,7 +134,7 @@ _CLOCKS: dict[str, HybridClock] = {}
 _CLOCKS_LOCK = threading.Lock()
 
 
-def clock_for(session: Session, replica_uid: str) -> HybridClock:
+def clock_for(session: Session | Connection, replica_uid: str) -> HybridClock:
     """Часы реплики в этом процессе; при первом обращении засеваются из журнала."""
     with _CLOCKS_LOCK:
         clock = _CLOCKS.get(replica_uid)
@@ -166,7 +167,9 @@ _INSERT_SELF = text(
 ).bindparams(bindparam("t", type_=Boolean), bindparam("created", type_=DateTime(timezone=True)))
 
 
-def self_replica(session: Session, project_id: int, *, label: str | None = None) -> str:
+def self_replica(
+    session: Session | Connection, project_id: int, *, label: str | None = None
+) -> str:
     """uid своей реплики проекта; создаёт её (``is_self = 1``) при первом вызове.
 
     Core-запросы, а не ORM: функцию зовёт хук захвата из ``before_commit``, где
