@@ -65,7 +65,7 @@ class OpenQuestionModel(SyncUidMixin, Base):
     options: Mapped[list[QuestionOptionModel]] = relationship(
         back_populates="question",
         cascade="all, delete-orphan",
-        order_by="QuestionOptionModel.position",
+        order_by="[QuestionOptionModel.rank, QuestionOptionModel.uid, QuestionOptionModel.row_id]",
     )
     links: Mapped[list[QuestionLinkModel]] = relationship(
         back_populates="question",

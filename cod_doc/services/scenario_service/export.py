@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from cod_doc.domain.entities import DocumentStatus, DocumentType
+from cod_doc.infra import ordering
 from cod_doc.infra.models import SectionModel
 from cod_doc.services import activity_service, doc_service, projection_service
 
@@ -101,6 +102,16 @@ def _sync_sections(
         if anchor not in wanted:
             session.delete(model)
     session.flush()
+    # CLO-004: порядок выдачи — ранг; переписываются только ранги секций,
+    # выпавших из порядка рендера.
+    by_anchor = {
+        m.anchor: m
+        for m in session.execute(
+            select(SectionModel).where(SectionModel.document_id == document_id)
+        ).scalars()
+    }
+    if ordering.conform([by_anchor[s.anchor] for s in rendered]):
+        session.flush()
     return len(rendered) - 1  # minus the Overview section
 
 

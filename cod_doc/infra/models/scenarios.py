@@ -74,7 +74,7 @@ class ScenarioModel(RankMixin, SyncUidMixin, Base):
     steps: Mapped[list[ScenarioStepModel]] = relationship(
         back_populates="scenario",
         cascade="all, delete-orphan",
-        order_by="ScenarioStepModel.position",
+        order_by="[ScenarioStepModel.rank, ScenarioStepModel.uid, ScenarioStepModel.row_id]",
     )
     links: Mapped[list[ScenarioLinkModel]] = relationship(
         back_populates="scenario",

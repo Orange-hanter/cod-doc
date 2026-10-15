@@ -49,7 +49,7 @@ class PlanModel(SyncUidMixin, Base):
     sections: Mapped[list[PlanSectionModel]] = relationship(
         back_populates="plan",
         cascade="all, delete-orphan",
-        order_by="PlanSectionModel.position",
+        order_by="[PlanSectionModel.rank, PlanSectionModel.uid, PlanSectionModel.row_id]",
     )
     tasks: Mapped[list[TaskModel]] = relationship(
         back_populates="plan",

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 
+from cod_doc.infra import ordering
 from cod_doc.infra.models import (
     DocumentModel,
     LinkModel,
@@ -85,7 +86,7 @@ def export_obligations(
         select(SectionModel, DocumentModel)
         .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
         .where(DocumentModel.project_id == project_id)
-        .order_by(DocumentModel.doc_key, SectionModel.position)
+        .order_by(DocumentModel.doc_key, *ordering.order_by(SectionModel))
     ).all()
     for section, document in sections:
         for line in section.body.splitlines():
@@ -124,7 +125,7 @@ def export_obligations(
         criteria = session.execute(
             select(StoryAcceptanceModel)
             .where(StoryAcceptanceModel.story_id == story.row_id)
-            .order_by(StoryAcceptanceModel.position)
+            .order_by(*ordering.order_by(StoryAcceptanceModel))
         ).scalars()
         for criterion in criteria:
             statement = criterion.criterion.strip()

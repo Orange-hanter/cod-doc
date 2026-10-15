@@ -63,6 +63,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from cod_doc.core.hash_calc import LINK_PATTERN
+from cod_doc.infra import ordering
 from cod_doc.infra.models import DocumentModel, SectionModel, TaskModel
 from cod_doc.services import (
     activity_service,
@@ -721,7 +722,7 @@ def backfill_project_links(session: Session, project_id: int) -> tuple[int, int,
         select(SectionModel.row_id, DocumentModel.doc_key)
         .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
         .where(DocumentModel.project_id == project_id)
-        .order_by(DocumentModel.doc_key, SectionModel.position)
+        .order_by(DocumentModel.doc_key, *ordering.order_by(SectionModel))
     ).all()
 
     sections_done = 0

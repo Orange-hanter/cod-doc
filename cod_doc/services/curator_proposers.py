@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from cod_doc.domain.entities import EntityKind
+from cod_doc.infra import ordering
 from cod_doc.infra.models import DocumentModel, LinkModel, RepoFileModel, SectionModel
 from cod_doc.services import (
     approval_service,
@@ -208,7 +209,7 @@ def _propose_doc_links(
         .join(SectionModel, SectionModel.row_id == LinkModel.from_section_id)
         .join(DocumentModel, DocumentModel.row_id == SectionModel.document_id)
         .where(LinkModel.project_id == project_id, LinkModel.resolved.is_(False))
-        .order_by(DocumentModel.doc_key, SectionModel.position, LinkModel.row_id)
+        .order_by(DocumentModel.doc_key, *ordering.order_by(SectionModel), LinkModel.row_id)
     ).all()
     for link, section, doc in rows:
         if stats.created >= max_proposals:

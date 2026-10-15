@@ -70,7 +70,7 @@ class UserStoryModel(SyncUidMixin, Base):
     acceptance: Mapped[list[StoryAcceptanceModel]] = relationship(
         back_populates="story",
         cascade="all, delete-orphan",
-        order_by="StoryAcceptanceModel.position",
+        order_by="[StoryAcceptanceModel.rank, StoryAcceptanceModel.uid, StoryAcceptanceModel.row_id]",
     )
     links: Mapped[list[StoryLinkModel]] = relationship(
         back_populates="story",

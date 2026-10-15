@@ -57,7 +57,7 @@ class ADRModel(SyncUidMixin, Base):
     diagrams: Mapped[list[ADRDiagramModel]] = relationship(
         back_populates="adr",
         cascade="all, delete-orphan",
-        order_by="ADRDiagramModel.position",
+        order_by="[ADRDiagramModel.rank, ADRDiagramModel.uid, ADRDiagramModel.row_id]",
     )
     task_links: Mapped[list[ADRTaskModel]] = relationship(
         back_populates="adr",

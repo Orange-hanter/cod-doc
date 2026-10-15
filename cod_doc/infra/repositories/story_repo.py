@@ -16,6 +16,7 @@ from cod_doc.domain.entities import (
     UserStory,
     UserStoryStatus,
 )
+from cod_doc.infra import ordering
 from cod_doc.infra.models import (
     StoryAcceptanceModel,
     StoryLinkModel,
@@ -88,6 +89,7 @@ class StoryAcceptanceRepository(BaseRepository[StoryAcceptance, StoryAcceptanceM
             row_id=model.row_id,
             story_id=model.story_id,
             position=model.position,
+            rank=model.rank,
             criterion=model.criterion,
             met=bool(model.met),
         )
@@ -96,6 +98,7 @@ class StoryAcceptanceRepository(BaseRepository[StoryAcceptance, StoryAcceptanceM
         kwargs: dict[str, Any] = {
             "story_id": entity.story_id,
             "position": entity.position,
+            "rank": entity.rank,
             "criterion": entity.criterion,
             "met": entity.met,
         }
@@ -107,7 +110,7 @@ class StoryAcceptanceRepository(BaseRepository[StoryAcceptance, StoryAcceptanceM
         stmt = (
             select(StoryAcceptanceModel)
             .where(StoryAcceptanceModel.story_id == story_id)
-            .order_by(StoryAcceptanceModel.position)
+            .order_by(*ordering.order_by(StoryAcceptanceModel))
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
 
@@ -154,6 +157,7 @@ class StorySectionRepository(BaseRepository[StorySection, StorySectionModel]):
             key=model.key,
             title=model.title,
             position=model.position,
+            rank=model.rank,
         )
 
     def _to_model(self, entity: StorySection) -> StorySectionModel:
@@ -162,6 +166,7 @@ class StorySectionRepository(BaseRepository[StorySection, StorySectionModel]):
             "key": entity.key,
             "title": entity.title,
             "position": entity.position,
+            "rank": entity.rank,
         }
         if entity.row_id is not None:
             kwargs["row_id"] = entity.row_id
@@ -180,11 +185,11 @@ class StorySectionRepository(BaseRepository[StorySection, StorySectionModel]):
         return self._to_domain(m) if m else None
 
     def list_for_project(self, project_id: int) -> list[StorySection]:
-        """Секции в порядке показа: position, затем key как тай-брейк."""
+        """Секции в порядке показа — по рангу (CLO-004, ``ordering.order_by``)."""
         stmt = (
             select(StorySectionModel)
             .where(StorySectionModel.project_id == project_id)
-            .order_by(StorySectionModel.position, StorySectionModel.key)
+            .order_by(*ordering.order_by(StorySectionModel))
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
 
@@ -195,18 +200,10 @@ class StorySectionRepository(BaseRepository[StorySection, StorySectionModel]):
         читать N строк и их поля ради одного максимума — лишняя работа
         ровно на каждой ``create_section``.
 
-        Гонка здесь остаётся и названа сознательно: два параллельных
-        создания могут получить один и тот же номер. На SQLite (один
-        писатель) вызовы сериализуются, а последствие — дублирующийся
-        ``position``, который деградирует до сортировки по ``key``
-        (см. ``list_for_project``), а не до ошибки или потери данных.
-        ``position`` — advisory-порядок показа, и это его контракт.
-
-        Закрыть гонку по-настоящему нечем, пока БД — SQLite:
-        ``SELECT … FOR UPDATE`` он игнорирует, а
-        ``UniqueConstraint(project_id, position)`` сломал бы легитимное
-        ручное переупорядочивание. Фикс повешен зависимостью на переезд
-        на Postgres.
+        С CLO-004 это только advisory-число: порядок держит ранг, который
+        ``create_section`` ставит отдельно (``ordering.insert_rank``).
+        Два параллельных создания с одним номером — дублирующийся
+        ``position``, а не ошибка: порядок между ними решают ранг и ``uid``.
         """
         stmt = select(func.max(StorySectionModel.position)).where(
             StorySectionModel.project_id == project_id

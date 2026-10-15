@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from cod_doc.infra import ordering
 from cod_doc.infra.models import QuestionOptionModel
 from cod_doc.infra.repositories import QuestionOptionRepository
 from cod_doc.services import activity_service, search_service
@@ -71,7 +72,16 @@ def add_option(
     validate_text("option title", title)
     model = _require_question(session, project_id, question_id)
     position = max((o.position for o in model.options), default=0) + 1
-    opt = QuestionOptionModel(position=position, title=title, body=body, chosen=False)
+    # CLO-004: ранг после последней опции; position — номер опции (адрес в
+    # CLI/MCP), остаётся max+1 и не пересчитывается.
+    last = max((o.rank for o in model.options if o.rank is not None), default=None)
+    opt = QuestionOptionModel(
+        position=position,
+        title=title,
+        body=body,
+        chosen=False,
+        rank=ordering.rank_between(last, None),
+    )
     model.options.append(opt)
     model.last_updated = datetime.now(UTC)
     _record(

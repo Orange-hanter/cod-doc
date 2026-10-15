@@ -95,6 +95,10 @@ for _mapper in Base.registry.mappers:
     if issubclass(_mapper.class_, SyncUidMixin) and isinstance(_table, _Table):
         _Index(f"uq_{_table.name}_uid", _table.c.uid, unique=True)
 
+# Страховка ранга (CLO-004): ``before_flush`` ставит rank новой строке без него.
+# Регистрируется импортом — модели загружены везде, где есть сессия.
+from cod_doc.infra import ordering as _ordering  # noqa: E402, F401
+
 __all__ = [
     "ADRDiagramModel",
     "ADRModel",

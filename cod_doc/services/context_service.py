@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import or_, select
 
 from cod_doc.domain.entities import QuestionLinkKind, TaskStatus, equivalent_task_statuses
+from cod_doc.infra import ordering
 from cod_doc.infra.models import (
     ADRModel,
     ADRTaskModel,
@@ -528,7 +529,7 @@ def _build_document_context(
     sections_stmt = (
         select(SectionModel)
         .where(SectionModel.document_id == doc.row_id)
-        .order_by(SectionModel.position)
+        .order_by(*ordering.order_by(SectionModel))
     )
     sections_rows = session.execute(sections_stmt).scalars().all()
     packet.core["sections"] = _section_excerpts(sections_rows, budget)
@@ -693,7 +694,7 @@ def _build_module_context(
         spec_stmt = (
             select(SectionModel)
             .where(SectionModel.document_id == module.spec_doc_id)
-            .order_by(SectionModel.position)
+            .order_by(*ordering.order_by(SectionModel))
             .limit(5)
         )
         spec_sections = session.execute(spec_stmt).scalars().all()

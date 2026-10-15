@@ -166,7 +166,7 @@ class DocumentModel(SyncUidMixin, Base):
     sections: Mapped[list[SectionModel]] = relationship(
         back_populates="document",
         cascade="all, delete-orphan",
-        order_by="SectionModel.position",
+        order_by="[SectionModel.rank, SectionModel.uid, SectionModel.row_id]",
     )
 
 

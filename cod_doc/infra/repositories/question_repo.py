@@ -15,6 +15,7 @@ from cod_doc.domain.entities import (
     QuestionRelation,
     QuestionStatus,
 )
+from cod_doc.infra import ordering
 from cod_doc.infra.models import (
     OpenQuestionModel,
     QuestionLinkModel,
@@ -87,6 +88,7 @@ class QuestionOptionRepository(BaseRepository[QuestionOption, QuestionOptionMode
             row_id=model.row_id,
             question_row_id=model.question_row_id,
             position=model.position,
+            rank=model.rank,
             title=model.title,
             body=model.body,
             chosen=model.chosen,
@@ -96,6 +98,7 @@ class QuestionOptionRepository(BaseRepository[QuestionOption, QuestionOptionMode
         kwargs: dict[str, Any] = {
             "question_row_id": entity.question_row_id,
             "position": entity.position,
+            "rank": entity.rank,
             "title": entity.title,
             "body": entity.body,
             "chosen": entity.chosen,
@@ -108,7 +111,7 @@ class QuestionOptionRepository(BaseRepository[QuestionOption, QuestionOptionMode
         stmt = (
             select(QuestionOptionModel)
             .where(QuestionOptionModel.question_row_id == question_row_id)
-            .order_by(QuestionOptionModel.position)
+            .order_by(*ordering.order_by(QuestionOptionModel))
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
 

@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 
+from cod_doc.infra import ordering
 from cod_doc.infra.models import (
     ADRModel,
     DocumentModel,
@@ -208,7 +209,7 @@ def _doc_payload(session: Session, d: DocumentModel) -> tuple[str, str]:
         session.execute(
             select(SectionModel)
             .where(SectionModel.document_id == d.row_id)
-            .order_by(SectionModel.position)
+            .order_by(*ordering.order_by(SectionModel))
         ).scalars()
     )
     body = "\n\n".join(
@@ -223,7 +224,7 @@ def _story_payload(session: Session, s: UserStoryModel) -> tuple[str, str]:
         session.execute(
             select(StoryAcceptanceModel.criterion)
             .where(StoryAcceptanceModel.story_id == s.row_id)
-            .order_by(StoryAcceptanceModel.position)
+            .order_by(*ordering.order_by(StoryAcceptanceModel))
         ).scalars()
     )
     narrative = s.narrative or ""
@@ -251,7 +252,7 @@ def _question_payload(session: Session, q: OpenQuestionModel) -> tuple[str, str]
     options = session.execute(
         select(QuestionOptionModel)
         .where(QuestionOptionModel.question_row_id == q.row_id)
-        .order_by(QuestionOptionModel.position)
+        .order_by(*ordering.order_by(QuestionOptionModel))
     ).scalars()
     parts = [q.question or "", q.context or ""]
     parts += [o.title + "\n" + (o.body or "") for o in options]

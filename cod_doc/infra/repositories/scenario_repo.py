@@ -16,6 +16,7 @@ from cod_doc.domain.entities import (
     ScenarioStatus,
     ScenarioStep,
 )
+from cod_doc.infra import ordering
 from cod_doc.infra.models import (
     ScenarioLinkModel,
     ScenarioModel,
@@ -47,6 +48,7 @@ class ScenarioRepository(BaseRepository[Scenario, ScenarioModel]):
             expected=model.expected,
             notes=model.notes,
             position=model.position,
+            rank=model.rank,
             author=model.author,
             created=model.created,
             last_updated=model.last_updated,
@@ -71,6 +73,7 @@ class ScenarioRepository(BaseRepository[Scenario, ScenarioModel]):
             "expected": entity.expected,
             "notes": entity.notes,
             "position": entity.position,
+            "rank": entity.rank,
             "author": entity.author,
         }
         if entity.row_id is not None:
@@ -93,7 +96,7 @@ class ScenarioRepository(BaseRepository[Scenario, ScenarioModel]):
         stmt = (
             select(ScenarioModel)
             .where(ScenarioModel.project_id == project_id)
-            .order_by(ScenarioModel.group_key, ScenarioModel.position, ScenarioModel.scenario_id)
+            .order_by(ScenarioModel.group_key, *ordering.order_by(ScenarioModel))
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
 
@@ -104,7 +107,7 @@ class ScenarioRepository(BaseRepository[Scenario, ScenarioModel]):
                 ScenarioModel.project_id == project_id,
                 ScenarioModel.group_key == group_key,
             )
-            .order_by(ScenarioModel.position, ScenarioModel.scenario_id)
+            .order_by(*ordering.order_by(ScenarioModel))
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
 
@@ -125,6 +128,7 @@ class ScenarioStepRepository(BaseRepository[ScenarioStep, ScenarioStepModel]):
             row_id=model.row_id,
             scenario_row_id=model.scenario_row_id,
             position=model.position,
+            rank=model.rank,
             text=model.text,
         )
 
@@ -132,6 +136,7 @@ class ScenarioStepRepository(BaseRepository[ScenarioStep, ScenarioStepModel]):
         kwargs: dict[str, Any] = {
             "scenario_row_id": entity.scenario_row_id,
             "position": entity.position,
+            "rank": entity.rank,
             "text": entity.text,
         }
         if entity.row_id is not None:
@@ -142,7 +147,7 @@ class ScenarioStepRepository(BaseRepository[ScenarioStep, ScenarioStepModel]):
         stmt = (
             select(ScenarioStepModel)
             .where(ScenarioStepModel.scenario_row_id == scenario_row_id)
-            .order_by(ScenarioStepModel.position)
+            .order_by(*ordering.order_by(ScenarioStepModel))
         )
         return [self._to_domain(m) for m in self.session.execute(stmt).scalars()]
 
